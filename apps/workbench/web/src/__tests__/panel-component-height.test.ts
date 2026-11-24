@@ -304,7 +304,6 @@ it("wraps frame <Projection> in .sdk-panel-member and forwards class and style",
     initial: { selected: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
     operations: noOperations.operations,
     confirmOperation: noOperations.confirmOperation,
-    recordDraftCreated: async () => {},
     readProjection: async () => summaryProj as never,
   });
   const host = document.createElement("div");
@@ -512,7 +511,6 @@ it("renders ObjectForm with a scrollable body and sibling pinned actions bar", a
     text: createPanelText({}, ref("en"), "en"),
     operations: noOperations.operations,
     confirmOperation: noOperations.confirmOperation,
-    recordDraftCreated: async () => {},
     expandPageComposer: noOperations.expandPageComposer,
     navigate: noOperations.navigate,
     nested: noOperations.nested,
@@ -545,7 +543,7 @@ it("renders ObjectForm with a scrollable body and sibling pinned actions bar", a
           values: { name: "Nightly" },
           revision: 1,
           errors: [],
-          save: { method: "PUT", path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+          save: { method: "PUT", path: "/tasks/:id", bodySchema: {} },
         } as never,
       };
     },

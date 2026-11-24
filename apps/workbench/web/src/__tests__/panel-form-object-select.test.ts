@@ -51,7 +51,7 @@ function open(described: typeof field, held: Record<string, unknown>) {
     read: async (request): Promise<ProductPanelReadResponse> => request.operations
       ? { status: "ready", value: { save } as never }
         : { status: "ready", value: { fields: [described], values: held, errors: [], revision: 1,
-        save: { method: "PUT", path: "/entries/:id", bodySchema: {}, draftOperation: "entry.update" } } as never },
+        save: { method: "PUT", path: "/entries/:id", bodySchema: {} } } as never },
   });
   const element = document.createElement("div");
   document.body.append(element);

@@ -36,7 +36,6 @@ export function mountCreatePanel(options: {
   const reads: PanelMemberReadRequest[] = [];
   const prepared: [string, unknown][] = [];
   const savedEvents: unknown[] = [];
-  const recordedDrafts: { link: unknown; created: string }[] = [];
   let outcome: unknown = {
     kind: "success",
     data: { result: "{\"ok\":true}", affects: [ORDER] },
@@ -75,10 +74,6 @@ export function mountCreatePanel(options: {
       if (maybeAffected) instance.refresh(maybeAffected as never);
       return result;
     },
-    recordDraftCreated: async (link, created) => {
-      recordedDrafts.push({ link, created });
-    },
-    reportDraftError: () => {},
     readProjection: async (id) => options.projections[id]!,
     read: async (request) => {
       reads.push(request);
@@ -110,7 +105,6 @@ export function mountCreatePanel(options: {
     reads,
     prepared,
     savedEvents,
-    recordedDrafts,
     setOutcome: (next: unknown) => { outcome = next; },
     unmount: () => app.unmount(),
   };

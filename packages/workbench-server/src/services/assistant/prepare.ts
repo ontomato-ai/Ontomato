@@ -101,7 +101,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   return {
     language: resolveLocale(credentials.locale), input,
     definition: {agentId:session.agent_id,...runDefinition(instructions+"\n\n"+artifactInstructions+"\n"+ASSISTANT_INTERACTION_CONTEXT,
-      a.model_selection.modelId,skills,credentials.locale,profile?[]:a.enabled_mcp_service_ids.map(id=>({id})),prepared?.pageDrafts??false),
+      a.model_selection.modelId,skills,credentials.locale,profile?[]:a.enabled_mcp_service_ids.map(id=>({id})),prepared?.pageControl??false),
       ...(profile?{productTools:profileRuntimeTools(profile,sessionId),toolSurface:"product" as const}:{})},
     environment: {
       values: {

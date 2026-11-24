@@ -58,6 +58,13 @@ vi.mock("../../identity/installed", async original => ({
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
 
+const actionStatusTitle = "状态";
+const actionStatusOptions = [
+  { value: "PENDING_REVIEW", label: "待审核" },
+  { value: "PUBLISHED", label: "已发布" },
+  { value: "UNUSED", label: "已停用" },
+];
+
 let server: Server;
 let contentRoot: string;
 let cataloguePath: string;
@@ -343,10 +350,20 @@ beforeAll(async () => {
         expect(req.body).toEqual({ id: action.id });
         res.json({ success: true, data: action });
       } else if (req.body.target.kind === "draft") {
-        expect(req.body).toEqual({ target: { kind: "draft" }, values: { name: "New review" }, changedField: null });
+        const { values = {} } = req.body;
+        expect(req.body).toEqual({
+          target: { kind: "draft" }, changedField: null, ...(req.body.values && { values: { name: "New review" } }),
+        });
         res.json({ success: true, data: {
-          fields: [], values: req.body.values, errors: [],
-          save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.create" },
+          fields: [{
+            path: "/status", label: actionStatusTitle, required: false, readOnly: false,
+            valueSchema: { type: "string", enum: actionStatusOptions.map(option => option.value) },
+            control: { kind: "select", options: actionStatusOptions.map(option => ({
+              ...option, description: null, disabled: false, disabledReason: null,
+            })) },
+          }],
+          values, errors: [],
+          save: { method: "POST", path: "/action/save", bodySchema: {} },
         } });
       } else {
         expect(req.body).toMatchObject({
@@ -355,7 +372,7 @@ beforeAll(async () => {
         });
         res.json({ success: true, data: {
           fields: [], values: req.body.values, errors: [],
-          save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.update" },
+          save: { method: "POST", path: "/action/save", bodySchema: {} },
         } });
       }
     });
@@ -379,7 +396,7 @@ beforeAll(async () => {
       if (!draft) expect(req.body.target).toEqual({ kind: "object", objectType, primaryKey: definition.id });
       res.json({ success: true, data: {
         fields: [], values: req.body.values ?? { name: draft ? "" : definition.name }, errors: [],
-        save: { method: "POST", path: `/${root}/save`, bodySchema: {}, draftOperation: draft ? "create" : "update" },
+        save: { method: "POST", path: `/${root}/save`, bodySchema: {} },
       } });
     });
   }
@@ -682,7 +699,7 @@ it("reads back stable member keys and named data, and leaves the record intact a
     status: "ready", value: { revision: task.revision, values: { task: { title: task.title, frequency: task.frequency } } },
   });
   expect(await (await read("create", "createForm", {})).json()).toMatchObject({
-    status: "ready", value: { values: { task: { appId: "", timeZone: task.timeZone } }, save: { draftOperation: "platform:ScheduledTask.create" } },
+    status: "ready", value: { values: { task: { appId: "", timeZone: task.timeZone } } },
   });
   expect(await (await read("create", "createForm", { defaultAppId: task.appId })).json()).toMatchObject({
     status: "ready", value: {
@@ -1167,7 +1184,7 @@ it("reads the metric and function catalogues, a definition and its forms with th
     expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { primaryKey: definition.id } });
     expect(await read("missing", "record")).toEqual({ status: "error", message: "Definition not found" });
     expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft" }, errors: [] } });
-    expect(await read("create", "form")).toMatchObject({ status: "ready", value: { values: { name: "" }, save: { draftOperation: "create" } } });
+    expect(await read("create", "form")).toMatchObject({ status: "ready", value: { values: { name: "" } } });
   }
 });
 
@@ -1277,7 +1294,7 @@ it("dispatches the action catalog's reads and both operation descriptions", asyn
   expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { fields: { status: "Published" } } });
   expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft review" }, errors: [] } });
   expect(await read("create", "createForm")).toMatchObject({
-    status: "ready", value: { values: { name: "New review" }, save: { draftOperation: "action.create" } },
+    status: "ready", value: { values: { name: "New review" } },
   });
   expect(await read("explained", "definition")).toMatchObject({
     status: "ready", value: { source: "DERIVED", effects: [{ kind: "UPDATE_OBJECT", kindLabel: "更新对象" }], affects: ["Order"] },
@@ -1296,7 +1313,13 @@ it("dispatches the action catalog's reads and both operation descriptions", asyn
     memberPath: [{ member }], operations: true, inputs: { action: selectedAction },
   })).json();
   expect(await readOperations("status")).toMatchObject({
-    status: "ready", value: { change: { handlerRef: "actions.setStatus", batch: true } },
+    status: "ready", value: { change: {
+      handlerRef: "actions.setStatus", batch: true,
+      inputSchema: { properties: { status: {
+        title: actionStatusTitle,
+        oneOf: actionStatusOptions.map(option => ({ const: option.value, title: option.label })),
+      } } },
+    } },
   });
   const ordinaryDelete = await readOperations("remove");
   expect(ordinaryDelete).toMatchObject({

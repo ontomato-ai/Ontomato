@@ -1,6 +1,6 @@
 import { DOMAIN_COMPONENTS_PATH } from "@ontomato/contracts/domain-components";
 import { domainComponentsRouter } from "../api/routes/domain-components";
-import { governanceWindowsRouter, assistantInternalRouter } from "../api/routes/governance";
+import { governanceStatusRouter, governanceWindowsRouter } from "../api/routes/governance";
 import { agentChannelRouter } from "../api/routes/agent-channel";
 import { createHealthRouter } from "../api/routes/health";
 import { systemConfigRouter } from "../api/routes/system-config";
@@ -10,7 +10,7 @@ import { createComponentPackagesRouter, mountComponentPackageAssets } from "../a
 import { checkComponentPackageUpgrade } from "../services/component-packages/upgrade";
 import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
-import assistantRouter, { assistantQualityRouter } from "../api/routes/assistant";
+import assistantRouter, { assistantInternalRouter, assistantQualityRouter } from "../api/routes/assistant";
 import { scheduleApplicationsRouter, scheduleExecutionStatus } from "../api/routes/schedule-applications";
 import { startAssistantReconciliation } from "../services/assistant/service";
 import { registerAssistantSkills } from "../services/assistant/skills";
@@ -193,8 +193,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/workspaces", workspacePreviewRouter);
   app.use(unwrapCallbackCredential);
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
-  app.use("/internal/assistant", assistantInternalRouter);
-  app.use("/internal/assistant", assistantQualityRouter);
+  app.use("/internal/assistant", governanceStatusRouter, assistantInternalRouter, assistantQualityRouter);
   app.use("/internal/product-panels", productPanelsInternalRouter);
   app.use(objectDetailsInternalRouter);
   app.use("/internal/agent-channel", agentChannelRouter);
@@ -294,6 +293,8 @@ export async function startWorkbench(
   startModelMigration();
   getWorkbenchLogStore();
   const stopApplication = await initializeApplication?.();
+  const { initializeExistingDomainPresetAgents } = await import("../services/assistant/preset-initialization");
+  await initializeExistingDomainPresetAgents();
   const shutdown = async () => {
     stopModelMigration();
     try { await stopApplication?.(); } finally { await closeWorkbenchLogging(); }

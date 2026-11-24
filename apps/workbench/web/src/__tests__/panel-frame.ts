@@ -605,19 +605,47 @@ export function panelSnapshot(panel: ProductPanel, current: Record<string, { rev
 }
 
 /**
- * Panel application A with a panel that is the task's form alone, and a draft an agent wrote for that page: the page's
- * address with the draft's link, and what the platform answers for the page, the panel and the frame. The draft is the
- * form's own save unless `operation` names another.
+ * Panel application A with a panel that is the task's form alone: the page's address with the task selected, and what
+ * the platform answers for the page, the panel, its projection, and its form read.
  */
-export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
+export function liveFormScenario() {
   const formProjection = projections["projection-schedules-form"]!;
   const panel = panelRecord(
     "panel-schedules-form",
     "Task form (trial)",
-    definePanel({ state: selectedTask, members: { form: slot(formProjection.id, "task") } }),
+    definePanel({
+      state: {
+        ...selectedTask,
+        mode: { type: { kind: "scalar", type: "string" }, default: "view" },
+        tab: { type: { kind: "scalar", type: "string" }, deepLink: true },
+        search: { type: { kind: "scalar", type: "string" } },
+        status: { type: { kind: "scalar", type: "string" } },
+        checked: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+        grantDialog: { type: { kind: "scalar", type: "boolean" } },
+      },
+      members: { form: slot(formProjection.id, "task") },
+    }),
   );
+  panel.content.module = `import { h, resolveComponent, vShow, withDirectives } from "vue";
+import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+await mountPanel({
+  setup() {
+    const { instance } = usePanelContext();
+    const Projection = resolveComponent("Projection");
+    return () => {
+      const { mode, tab, search, status, checked, grantDialog } = instance.state.values.value;
+      return h("div", [
+        h("output", { "data-list": "" }, JSON.stringify({ search, status, checked })),
+        tab ? h("section", { "data-tab": tab }) : null,
+        mode === "edit"
+          ? withDirectives(h("section", [h(Projection, { slot: "form" })]), [[vShow, !tab || tab === "definition"]])
+          : h("button", { type: "button", "data-edit": "", onClick: () => instance.state.set("mode", "edit") }, "Edit"),
+        grantDialog ? h("div", { role: "dialog", "data-grant": "" }) : null,
+      ]);
+    };
+  },
+});`;
   const use = panelUse("use-trial-a-form", "panels-trial-a-form", panel.id, "/applications/app-panels-trial-a/form");
-  // The operations application's form for the task, with a second case set to choose from.
   const form = platformScheduleFormSchema.parse({
     ...taskForm,
     fields: taskForm.fields.map((field) =>
@@ -626,14 +654,8 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
         : field,
     ),
   });
-  // What the agent wrote: the task's own form, with the other case set.
-  const draft = { pageKey: use.pageKey, operation, target: { objectType: SCHEDULED_TASK, id: task.id }, form: { ...task.content, caseSetId: "set-smoke" } };
-  const link = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
-  const address = `/applications/app-panels-trial-a/form?${link}`;
-  // The form's projection is answered only after the draft: the draft reaches the panel before the form that takes it
-  // exists, which is the order the SDK has to hold the draft for.
-  let draftServed!: () => void;
-  const served = new Promise<void>((resolve) => (draftServed = resolve));
+  const address = `/applications/app-panels-trial-a/form?${new URLSearchParams({ selectedTask: task.id })}`;
+  let formReads = 0;
   const answer = (request: Sent) => {
     if (request.path === "/api/data-query/platform/applications/app-panels-trial-a/panel-uses")
       return Response.json({
@@ -644,19 +666,25 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
     if (request.path === "/api/apps-sdk/current") return currentSdk();
     if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, projections, request);
     if (request.path === `/api/product-projections/${formProjection.id}`)
-      return served.then(() => Response.json({ projection: formProjection }));
+      return Response.json({ projection: formProjection });
     if (request.path === `/api/data-query/platform/scheduled-tasks/${task.id}`) return Response.json(task);
-    // The owner answers its form for the values it is given, as it checks a draft against them.
     if (request.path === `/api/data-query/platform/scheduled-tasks/applications/${task.appId}/form`)
       return Response.json({ ...form, values: (request.body as { values: typeof form.values }).values });
-    if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") {
-      draftServed();
-      return Response.json(draft);
-    }
-    // The owner's form as Node's read entry describes it, for the values the form asks with: the case set to choose.
     if (request.path === "/api/product-panels/read") {
-      // The values the form asks with: the component's own, or an input the projection declares for them.
-      const { inputs, runtimeParams } = request.body as { inputs: { values?: Record<string, unknown> }; runtimeParams?: { values?: Record<string, unknown> } };
+      const { operations, inputs, runtimeParams } = request.body as {
+        operations?: true;
+        inputs: { values?: Record<string, unknown> };
+        runtimeParams?: { values?: Record<string, unknown> };
+      };
+      if (operations) {
+        return Response.json({ status: "ready", value: {
+          save: {
+            kind: "form.save", handlerRef: `${SCHEDULED_TASK}.save`, label: "Save", effect: "write",
+            target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false,
+          },
+        } });
+      }
+      formReads += 1;
       const values = runtimeParams?.values ?? inputs.values ?? task.content;
       return Response.json({ status: "ready", value: {
         fields: [{
@@ -665,14 +693,17 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
             { value: task.content.caseSetId, label: "Regression (12)", description: null, disabled: false, disabledReason: null },
             { value: "set-smoke", label: "Smoke (8)", description: null, disabled: false, disabledReason: null },
           ] },
+        }, {
+          path: "/settings", label: "Settings", required: false, readOnly: false,
+          valueSchema: { type: "object" }, control: { kind: "code", language: "json" },
         }],
         values, errors: [], revision: task.revision,
-        save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+        save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {} },
       } });
     }
     return nothingAt(request);
   };
-  return { panel, use, address, answer };
+  return { panel, use, address, answer, formReads: () => formReads };
 }
 
 /** The coordinator of an instance a test builds by hand and runs no operation of: any call to it fails the test. */
@@ -769,8 +800,8 @@ export function humanIntents(
  */
 export function directRun(given: Pick<DirectPanelRun, "pageKey" | "url" | "label" | "initial"> & Partial<DirectPanelRun>): DirectPanelRun {
   return {
-    state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
-    draftOpened: () => {}, failed: (reason) => { throw reason; },
+    state: () => {}, context: () => {}, operations: () => {}, dirty: () => {},
+    failed: (reason) => { throw reason; },
     ...given,
   };
 }

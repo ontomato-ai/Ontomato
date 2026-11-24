@@ -19,14 +19,16 @@ const props = withDefaults(
   defineProps<{
     /** The field of each owner record that holds its slash-separated path; absent or empty, the record's own key. */
     pathField?: string;
-    /** With nothing selected, select the first file in tree order. */
+    /** Preferred file key to auto-select when nothing is selected and the file exists in `files`. */
+    defaultKey?: string;
+    /** With nothing selected, select the first file in tree order when `defaultKey` is unset or absent. */
     fallbackToFirst?: boolean;
     /** The panel's message key for what an empty tree says. */
     emptyText?: string;
     /** The panel's message key for the tree's accessible name. */
     label?: string;
   }>(),
-  { pathField: "path", fallbackToFirst: false, emptyText: undefined, label: undefined },
+  { pathField: "path", defaultKey: undefined, fallbackToFirst: false, emptyText: undefined, label: undefined },
 );
 
 const { locale } = useI18n();
@@ -45,18 +47,19 @@ const items = computed<readonly PathTreeItem[]>(() =>
 const selectedKey = computed(() => (typeof selected.value.value === "string" ? selected.value.value : null));
 
 /**
- * Each time the owner answers with the files — the first time, and again when the tree's object changes (another skill
- * chosen) — the selection is checked against them: a file still in the tree stays selected; one that is not (a file the
- * new package does not have), or none, gives way to the first file when the placement asks for it, and to nothing
- * otherwise. Only an answer counts: while the files are read, the selection (one from the address included) stays.
+ * Each time the owner answers with the files and nothing is selected (`selectedKey === null`), auto-select `defaultKey`
+ * if present in `files`, otherwise the first file in tree order when `fallbackToFirst` is enabled. Once a selection is
+ * present (from a deep link, user click, or `present({ selected, filePath })`), never overwrite or clear it even when
+ * absent from `files`, so a paired reader can report the missing file in place.
  */
 const answered = computed(() => files.value.status === "ready" || files.value.status === "empty");
 watch([items, answered], ([next, isAnswered]) => {
-  if (!isAnswered) return;
-  const current = selectedKey.value;
-  if (current !== null && records.value.some((record) => record.primaryKey === current)) return;
-  const fallback = props.fallbackToFirst && next.length ? firstTreeFile(buildPathTree(next))?.key ?? null : null;
-  if (fallback !== current) selected.set(fallback);
+  if (!isAnswered || selectedKey.value !== null) return;
+  const preferred = props.defaultKey && records.value.some((record) => record.primaryKey === props.defaultKey)
+    ? props.defaultKey
+    : null;
+  const fallback = preferred ?? (props.fallbackToFirst && next.length ? firstTreeFile(buildPathTree(next))?.key ?? null : null);
+  if (fallback !== null) selected.set(fallback);
 }, { immediate: true });
 
 function onSelect(key: string) {

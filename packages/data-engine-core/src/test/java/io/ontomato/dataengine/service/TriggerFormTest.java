@@ -104,16 +104,15 @@ class TriggerFormTest {
         JSONObject.of("target", JSONObject.of("kind", "object", "objectType", "platform:Trigger", "primaryKey", "tr-1")),
         "en", "d1");
     assertEquals("principal:ops-bot", loaded.getJSONObject("values").getString("executor"));
-    assertEquals("trigger.update", loaded.getJSONObject("save").getString("draftOperation"));
     assertTrue(fieldPaths(loaded).contains("/effect/actionId"));
     assertFalse(fieldPaths(loaded).contains("/effect/workflowId"));
 
-    JSONObject draftValues = JSONObject.parseObject(loaded.getJSONObject("values").toJSONString());
-    draftValues.put("effectKind", Trigger.EFFECT_WORKFLOW);
+    JSONObject trialValues = JSONObject.parseObject(loaded.getJSONObject("values").toJSONString());
+    trialValues.put("effectKind", Trigger.EFFECT_WORKFLOW);
     JSONObject refreshed = service.definitionForm(
         JSONObject.of(
             "target", JSONObject.of("kind", "object", "objectType", "platform:Trigger", "primaryKey", "tr-1"),
-            "values", draftValues,
+            "values", trialValues,
             "changedField", "/effectKind"),
         "en", "d1");
     assertTrue(fieldPaths(refreshed).contains("/effect/workflowId"));

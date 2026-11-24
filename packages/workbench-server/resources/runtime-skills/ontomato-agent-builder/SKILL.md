@@ -1,6 +1,6 @@
 ---
 name: ontomato-agent-builder
-description: Create and edit Ontomato agent definitions (prompt, model, skills, classes and external MCP services) on the agent settings page, and hand the user a filled, unsaved page draft to save.
+description: Create and edit Ontomato agent definitions (prompt, model, skills, classes and external MCP services) on the agent settings page through live page tools or direct CLI outside the platform.
 compatibility: Requires Node.js 18 or newer and an Ontomato 5.0 deployment. In the platform the runtime supplies the service addresses and the caller's credential; outside it, set ONTOMATO_URL and ONTOMATO_TK or ONTOMATO_API_KEY.
 ---
 
@@ -13,14 +13,14 @@ The page is the agent platform's agent settings page (the ontology manager shows
 | `name`, `description`, `icon` | Identity in the agent list; `description` is one line. |
 | `enabled` | Whether the agent is available in conversations. |
 | `systemPrompt` | The agent's own prompt: role, which capability to use for which question, answer format. |
-| `modelSelection` | `{"modelId":"<provider>/<model>"}` from `models`; `null` follows the domain default. |
+| `modelSelection` | `{"modelId":"<provider>/<model>"}` from `models`. `{"modelId":null}` follows the domain default. |
 | `skills` | The agent's skills, each `{namespace, name}` from `skills`. Send the array to replace the whole selection, `[]` to clear it, or leave it out to keep the stored skills. |
 | `classNames` | Ontology classes it may query; empty means unrestricted. |
 | `enabledMcpServiceIds` | External MCP services it may call. |
 | `sortOrder` | Order in the list. |
-| `executionUserId` | `null` (the default) runs with the reader's own permission; a user ID from `execution-users` runs with that real domain user's permission. |
+| `executionUserId` | Default execution identity for automated/unattended runs (`null` by default). Interactive conversations with a logged-in user always inherit that user's permissions. |
 
-A save is the whole definition: read it, change the fields, and send every field back without `id`. The one field an update may leave out is `skills`: leave it out to keep the agent's stored skills, or name the array — an empty one included — to replace the whole selection. Never read the agent and send the skills it shows back to keep them: `get` lists only the skills this caller may see, and that array is an explicit whole-selection change. Every other field goes back as it was; `name`, `description`, `icon`, `enabled` and `systemPrompt` are required, and leaving out `classNames`, `enabledMcpServiceIds` or `modelSelection` takes its default (`[]`, `[]`, the domain model) instead of the stored value. The selected model and every skill you send must exist in the catalog, so read `models` and `skills` before choosing. Names, descriptions and prompts are business content; write them in the user's language.
+Fill only the requested fields in the live form. A direct CLI update takes the complete definition input described in [forms](references/forms.md). Include `skills` only when replacing the selection. Read `models` and `skills` before choosing catalog entries. Write names, descriptions and prompts in the user's language.
 
 Some skills are protected: an agent may hold skills this caller cannot see, and the page, `get` and the catalogs show only the ones this caller may see. If the agent holds such a skill, an update that names `skills` is refused as a whole, and none of that request is written; the refusal does not name the skill. Leave `skills` out unless the user asked to change them. When an explicit skills change is refused, say it must be made by someone who can see the complete selection; never send back the skills `get` showed as a way around it.
 
@@ -36,24 +36,15 @@ node skills/ontomato-agent-builder/scripts/page.mjs get <id>
 node skills/ontomato-agent-builder/scripts/page.mjs skills
 node skills/ontomato-agent-builder/scripts/page.mjs models
 node skills/ontomato-agent-builder/scripts/page.mjs execution-users [keyword]
-node skills/ontomato-agent-builder/scripts/page.mjs draft create @work/agent.json [outputs/drafts/agent.page-draft.json]
-node skills/ontomato-agent-builder/scripts/page.mjs draft update <id> @work/agent.json [outputs/drafts/agent.page-draft.json]
-node skills/ontomato-agent-builder/scripts/page.mjs validate-draft @outputs/drafts/agent.page-draft.json
-node skills/ontomato-agent-builder/scripts/page.mjs draft-link @outputs/drafts/agent.page-draft.json
-node skills/ontomato-agent-builder/scripts/page.mjs create @work/agent.json
-node skills/ontomato-agent-builder/scripts/page.mjs update <id> @work/agent.json
-node skills/ontomato-agent-builder/scripts/page.mjs delete <id>
 ```
 
-Read [pages](references/pages.md) for the read commands and addresses, [forms](references/forms.md) for the form, drafts and direct writes, and [tasks](references/tasks.md) for typical procedures.
+Read [pages](references/pages.md) for the read commands and addresses, [forms](references/forms.md) for the form and direct writes, and [tasks](references/tasks.md) for typical procedures.
 
-## Drafts inside the platform, direct writes outside
+## Create, edit and delete
 
-The platform sets `ONTOMATO_SKILL_SCENARIO=platform`. Then `create`, `update` and `delete` refuse: write a page draft, validate it, and give the user the `draft-link` URL. The page opens with the form filled and unsaved; the user saves or discards it. Never say a change is saved, and never simulate the page's save.
-
-A draft's form is the same whole definition: `get` the agent, bring every other field back as it was, and leave only `skills` out when the user is not changing them. Naming the skills, `[]` included, replaces the whole selection.
-
-Without `ONTOMATO_SKILL_SCENARIO` (the Skill suite, using the reader's own credential) the same package writes directly through the same endpoints.
+- With `present`, `fill_form` and `page_action`, use the live Agent Settings page. Fill only the requested fields and leave the form open for review. Use `page_action` for the requested write. See [forms](references/forms.md) for the form member and operations.
+- In a platform background or delegated run without page tools, agent settings have no capability-layer write operation. Return the target ID and structured proposed fields or requested deletion to the user or assigning agent, with the write still pending.
+- Outside the platform, the [direct CLI commands](references/forms.md#direct-writes) use your own credential and the deployment's agent settings API.
 
 ## Page context
 
@@ -61,4 +52,4 @@ When a message ends with the current page and the selected item, the selected it
 
 ## Links
 
-Write a page link as the page's path, for example `[Customer assistant](/agents/settings/<id>)`; the platform opens it beside the conversation. A draft link is the exact line `draft-link` prints, for example `[Open the draft](#/agents/settings/<id>?draftSessionId=...&draftRunId=...&draftPath=...)`.
+Write a page link as the page's path, for example `[Customer assistant](/agents/settings/<id>)`; the platform opens it beside the conversation.

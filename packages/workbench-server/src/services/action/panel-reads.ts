@@ -13,6 +13,7 @@ import type { UnavailableObjectAction } from "@ontomato/contracts/platform-type-
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
 import {
   panelFormDescriptionSchema, type PanelFieldTone, type PanelFormDescription, type PanelFormValues, type PanelRecord,
+  type PanelRecordChildReferenceFieldValue, type PanelRecordFieldArrayItem, type PanelRecordFieldValue,
 } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
 import { createLogger } from "../../logging/logger";
@@ -22,6 +23,7 @@ import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
 import type { ProductOwner } from "../product-governance/grants";
 import { objectActionDeclaration, readRefusal, storedObjectActionSchema } from "./object-actions";
+import { operationHost } from "../product-panels/operation-host";
 import { describeServerOperation, panelServerOperation } from "../product-panels/server-operations";
 
 /*
@@ -48,8 +50,6 @@ const actionSchema = z.object({
   function: z.object({ name: z.string().nullish() }).passthrough().nullish(),
 }).passthrough();
 type ActionAsset = z.infer<typeof actionSchema>;
-
-const ACTION_PARAMETER_TYPE = "platform:ActionParameter";
 
 const logger = createLogger("action-panel-reads");
 const listedActionSchema = storedObjectActionSchema.pick({ id: true }).extend({
@@ -194,6 +194,118 @@ function splitReferenceParts(value: string, pattern: RegExp | null): AnnotatedCo
   return parts.length > 0 ? parts : [{ text: value }];
 }
 
+function splitParameterFieldValue(
+  value: string,
+  pattern: RegExp | null,
+  primaryKey: string,
+): PanelRecordFieldValue {
+  if (!pattern || !value) return value;
+  const parts: PanelRecordFieldArrayItem[] = [];
+  let cursor = 0;
+  let matched = false;
+  pattern.lastIndex = 0;
+  for (const match of value.matchAll(pattern)) {
+    const start = match.index ?? 0;
+    if (start > cursor) parts.push(value.slice(cursor, start));
+    parts.push({
+      kind: "child-reference",
+      parent: { objectType: ACTION, primaryKey },
+      collection: "parameters",
+      primaryKey: match[0],
+      label: match[0],
+    });
+    matched = true;
+    cursor = start + match[0].length;
+  }
+  if (!matched) return value;
+  if (cursor < value.length) parts.push(value.slice(cursor));
+  return parts;
+}
+
+function childSegmentsOf(segment: ActionCodeSegment): ActionCodeSegment[] {
+  const children: ActionCodeSegment[] = [];
+  if (Array.isArray(segment.segs)) children.push(...segment.segs);
+  if (Array.isArray(segment.trySegs)) children.push(...segment.trySegs);
+  for (const arm of segment.branchArms ?? []) {
+    if (Array.isArray(arm.segs)) children.push(...arm.segs);
+  }
+  for (const handler of segment.catchs ?? []) {
+    if (Array.isArray(handler.segs)) children.push(...handler.segs);
+  }
+  const maybeFinally = (segment as Record<string, unknown>).finallySegs;
+  if (Array.isArray(maybeFinally)) {
+    for (const candidate of maybeFinally) {
+      const parsed = actionCodeSegmentSchema.safeParse(candidate);
+      if (parsed.success) children.push(parsed.data);
+    }
+  }
+  return children;
+}
+
+function collectSegmentParameterNames(
+  segment: ActionCodeSegment,
+  translate: (key: string) => string,
+  paramPattern: RegExp,
+): Set<string> {
+  const matched = new Set<string>();
+  for (const detail of segmentDetails(segment, translate, paramPattern)) {
+    for (const part of detail.parts) {
+      if (part.refKey) matched.add(part.refKey);
+    }
+  }
+  const scan = (text: string | undefined) => {
+    if (!text) return;
+    paramPattern.lastIndex = 0;
+    for (const match of text.matchAll(paramPattern)) {
+      matched.add(match[0]);
+    }
+  };
+  for (const arm of segment.branchArms ?? []) {
+    scan(arm.condition);
+  }
+  const maybeExpression = (segment as Record<string, unknown>).expression;
+  if (typeof maybeExpression === "string") scan(maybeExpression);
+  return matched;
+}
+
+function collectParameterCodeLocations(
+  segments: readonly ActionCodeSegment[],
+  translate: (key: string) => string,
+  paramPattern: RegExp | null,
+  primaryKey: string,
+): Map<string, PanelRecordChildReferenceFieldValue[]> {
+  const locations = new Map<string, PanelRecordChildReferenceFieldValue[]>();
+  if (!paramPattern || segments.length === 0) return locations;
+  const seenByParam = new Map<string, Set<string>>();
+  const visit = (segment: ActionCodeSegment) => {
+    const start = segment.codeRange.start;
+    const end = Math.max(start, segment.codeRange.end);
+    for (const paramName of collectSegmentParameterNames(segment, translate, paramPattern)) {
+      let seen = seenByParam.get(paramName);
+      if (!seen) {
+        seen = new Set<string>();
+        seenByParam.set(paramName, seen);
+      }
+      if (seen.has(segment.id)) continue;
+      seen.add(segment.id);
+      const bucket = locations.get(paramName) ?? [];
+      bucket.push({
+        kind: "child-reference",
+        parent: { objectType: ACTION, primaryKey },
+        collection: "codeSegments",
+        primaryKey: segment.id,
+        label: `${segment.title} (L${start}–${end})`,
+      });
+      locations.set(paramName, bucket);
+    }
+    for (const child of childSegmentsOf(segment)) {
+      visit(child);
+    }
+  };
+  for (const segment of segments) visit(segment);
+  return locations;
+}
+
 function segmentDetails(
   segment: ActionCodeSegment,
   translate: (key: string) => string,
@@ -277,23 +389,7 @@ function mapAnnotatedSegment(
   paramPattern: RegExp | null,
 ): AnnotatedCodeSegment {
   const details = segmentDetails(segment, translate, paramPattern);
-  const rawChildren: ActionCodeSegment[] = [];
-  if (Array.isArray(segment.segs)) rawChildren.push(...segment.segs);
-  if (Array.isArray(segment.trySegs)) rawChildren.push(...segment.trySegs);
-  for (const arm of segment.branchArms ?? []) {
-    if (Array.isArray(arm.segs)) rawChildren.push(...arm.segs);
-  }
-  for (const handler of segment.catchs ?? []) {
-    if (Array.isArray(handler.segs)) rawChildren.push(...handler.segs);
-  }
-  const maybeFinally = (segment as Record<string, unknown>).finallySegs;
-  if (Array.isArray(maybeFinally)) {
-    for (const candidate of maybeFinally) {
-      const parsed = actionCodeSegmentSchema.safeParse(candidate);
-      if (parsed.success) rawChildren.push(parsed.data);
-    }
-  }
-  const children = rawChildren.map(child => mapAnnotatedSegment(child, translate, paramPattern));
+  const children = childSegmentsOf(segment).map(child => mapAnnotatedSegment(child, translate, paramPattern));
   const start = segment.codeRange.start;
   const end = Math.max(start, segment.codeRange.end);
   return {
@@ -311,10 +407,11 @@ function mapAnnotatedSegment(
 
 function actionRecord(action: ActionAsset, fieldLabels: Record<string, string>): PanelRecord {
   const statusTone = actionStatusTone(action.status);
+  const description = action.description?.trim() ?? "";
   return {
     primaryKey: action.id,
     label: action.name,
-    ...(action.description ? { subtitle: action.description } : {}),
+    ...(description ? { subtitle: description } : {}),
     fieldLabels,
     fields: {
       status: action.statusLabel ?? "",
@@ -390,8 +487,9 @@ export async function readObjectActions(viewer: AssistantCredentials, objectType
   return { actions, unavailableActions };
 }
 
-export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
+export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
   const owner = actionOwner(viewer);
+  const readActions = () => owner("action-list", "/action/queryList", {}, z.array(actionSchema));
   const translate = (key: string) => tForLocale(viewer.locale, key);
   const fieldLabels = () => Object.fromEntries(
     ["status", "origin", "createdBy", "reviewedBy", "function", "updatedAt"]
@@ -405,7 +503,10 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
   return {
     async list(): Promise<PanelRecord[]> {
       const labels = fieldLabels();
-      return (await owner("action-list", "/action/queryList", {}, z.array(actionSchema))).map(action => actionRecord(action, labels));
+      return (await readActions()).map(action => actionRecord(action, labels));
+    },
+    async count() {
+      return { rows: [], total: (await readActions()).length };
     },
     async record(primaryKey: string): Promise<PanelRecord> {
       return actionRecord(await owner("action-record", "/action/queryById", { id: primaryKey }, actionSchema), fieldLabels());
@@ -425,13 +526,14 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
         z.object({ definition: actionDefinitionSchema }).passthrough());
       const definition = action.definition;
       const affects = definition.affects ?? [];
+      const description = definition.description?.trim() ?? "";
       const declaredTarget = definition.declaredTarget
         ? `${definition.declaredTarget.className} ← ${definition.declaredTarget.keyParameter}`
         : translate("panels.action.derived.noTarget");
       return {
         primaryKey,
         label: definition.name,
-        ...(definition.description ? { subtitle: definition.description } : {}),
+        ...(description ? { subtitle: description } : {}),
         fieldLabels: {
           declaredTarget: translate("panels.action.derived.fields.declaredTarget"),
           affects: translate("panels.action.derived.fields.affects"),
@@ -446,9 +548,11 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
     /** Standard record list of derived effects ordered by semantic group (create, update, delete, link, vector, other). */
     async derivedEffects(primaryKey: string): Promise<PanelRecord[]> {
       const action = await owner("action-derived-effects", "/action/queryById", { id: primaryKey },
-        z.object({ definition: actionDefinitionSchema }).passthrough());
+        explainedActionSchema.extend({ definition: actionDefinitionSchema }));
       const effects = action.definition.effects ?? [];
       if (effects.length === 0) return [];
+      const parameterNames = (action.definition.parameters ?? action.function?.parameters ?? []).map(parameter => parameter.name);
+      const paramPattern = buildParameterPattern(parameterNames);
       const buckets = new Map<string, NonNullable<ActionDefinition["effects"]>>();
       for (const effect of effects) {
         const key = GROUP_OF_EFFECT_KIND.get(effect.kind) ?? "other";
@@ -485,17 +589,18 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
           if (effect.attrName) targetParts.push(effect.attrName);
           if (effect.textFrom) targetParts.push(`${textWord} ← ${effect.textFrom}`);
           if (effect.fileIdFrom) targetParts.push(`${fileWord} ← ${effect.fileIdFrom}`);
+          const narrative = effect.narrative?.trim() ?? "";
           rows.push({
             primaryKey: `effect-${group.key}-${index}`,
             label: effect.title?.trim() || effect.kindLabel,
-            ...(effect.narrative ? { subtitle: effect.narrative } : {}),
+            ...(narrative ? { subtitle: narrative } : {}),
             fieldLabels: effectFieldLabels,
             fields: {
               group: groupLabel,
               kind: effect.kindLabel,
-              target: targetParts.join(" · "),
-              fields: formatAssignments(effect.assignments),
-              guards: formatJsonValue(effect.guards),
+              target: splitParameterFieldValue(targetParts.join(" · "), paramPattern, primaryKey),
+              fields: splitParameterFieldValue(formatAssignments(effect.assignments), paramPattern, primaryKey),
+              guards: splitParameterFieldValue(formatJsonValue(effect.guards), paramPattern, primaryKey),
             },
             tones: { kind: effectKindTone(effect.kind) },
           });
@@ -506,26 +611,31 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
     /** Standard record list of derived parameters keyed by parameter name for cross-tab reference highlighting. */
     async derivedParameters(primaryKey: string): Promise<PanelRecord[]> {
       const action = await owner("action-derived-parameters", "/action/queryById", { id: primaryKey },
-        z.object({ definition: actionDefinitionSchema }).passthrough());
+        explainedActionSchema.extend({ definition: actionDefinitionSchema }));
       const parameters = action.definition.parameters ?? [];
       if (parameters.length === 0) return [];
+      const paramPattern = buildParameterPattern(parameters.map(parameter => parameter.name));
+      const parsedSegments = z.array(actionCodeSegmentSchema).parse(action.codeSegments ?? []);
+      const codeLocationsByParam = collectParameterCodeLocations(parsedSegments, translate, paramPattern, primaryKey);
       const paramFieldLabels = {
         type: translate("panels.action.derived.fields.paramType"),
         required: translate("panels.action.derived.fields.required"),
         objectTypes: translate("panels.action.derived.fields.objectTypes"),
         sample: translate("panels.action.derived.fields.sample"),
         constraints: translate("panels.action.derived.fields.constraints"),
+        codeLocations: translate("panels.action.derived.fields.codeLocations"),
       };
       const yesLabel = translate("panels.action.derived.yes");
       const noLabel = translate("panels.action.derived.no");
       return parameters.map(parameter => {
         const objectTypes = parameter.objectTypes ?? [];
         const required = parameter.required == null ? "" : (parameter.required ? yesLabel : noLabel);
+        const description = parameter.description?.trim() ?? "";
+        const codeLocations = codeLocationsByParam.get(parameter.name);
         return {
           primaryKey: parameter.name,
-          className: ACTION_PARAMETER_TYPE,
           label: parameter.name,
-          ...(parameter.description ? { subtitle: parameter.description } : {}),
+          ...(description ? { subtitle: description } : {}),
           fieldLabels: paramFieldLabels,
           fields: {
             type: parameter.type,
@@ -533,6 +643,7 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
             ...(objectTypes.length === 0 ? { objectTypes: "" } : {}),
             sample: formatJsonValue(parameter.sample),
             constraints: formatJsonValue(parameter.constraints),
+            ...(codeLocations && codeLocations.length > 0 ? { codeLocations } : {}),
           },
           ...(objectTypes.length > 0 ? { tags: { objectTypes } } : {}),
         };
@@ -541,7 +652,7 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
     /** Standard record list of derived submission conditions and unrepresentable custom checks. */
     async derivedConditions(primaryKey: string): Promise<PanelRecord[]> {
       const action = await owner("action-derived-conditions", "/action/queryById", { id: primaryKey },
-        z.object({ definition: actionDefinitionSchema }).passthrough());
+        explainedActionSchema.extend({ definition: actionDefinitionSchema }));
       const criteria = action.definition.submissionCriteria;
       const conditions = criteria?.conditions ?? [];
       const rawUnrepresentable = Array.isArray((criteria as Record<string, unknown> | undefined)?.unrepresentable)
@@ -554,9 +665,12 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
         )),
       );
       if (conditions.length === 0 && customChecks.length === 0) return [];
+      const parameterNames = (action.definition.parameters ?? action.function?.parameters ?? []).map(parameter => parameter.name);
+      const paramPattern = buildParameterPattern(parameterNames);
       const conditionFieldLabels = {
         kind: translate("panels.action.derived.fields.conditionKind"),
         join: translate("panels.action.derived.fields.conditionJoin"),
+        expression: translate("panels.action.derived.fields.conditionExpression"),
         detail: translate("panels.action.derived.fields.conditionDetail"),
       };
       const joinLabel = String((criteria as Record<string, unknown> | undefined)?.operator ?? "").toUpperCase() === "OR"
@@ -584,7 +698,8 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
           fields: {
             kind: ruleKindLabel,
             join: conditions.length > 1 ? joinLabel : "",
-            detail,
+            expression: splitParameterFieldValue(label, paramPattern, primaryKey),
+            detail: splitParameterFieldValue(detail, paramPattern, primaryKey),
           },
           tones: { kind: "info" },
         });
@@ -602,7 +717,8 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
           fields: {
             kind: customKindLabel,
             join: "",
-            detail: reason,
+            expression: splitParameterFieldValue(label, paramPattern, primaryKey),
+            detail: splitParameterFieldValue(reason, paramPattern, primaryKey),
           },
           tones: { kind: "warning" },
         });
@@ -659,10 +775,10 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
     /** The published object Actions for an author's type table: `readObjectActions` as this viewer. */
     objectActions: (objectType?: string) => readObjectActions(viewer, objectType),
     [`${SET_ACTION_STATUS}.describe`]() {
-      return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), viewer.locale);
+      return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), operationHost({ owner: reader, credentials: viewer }));
     },
     [`${DELETE_ACTION}.describe`]() {
-      return describeServerOperation(panelServerOperation(DELETE_ACTION), viewer.locale);
+      return describeServerOperation(panelServerOperation(DELETE_ACTION), operationHost({ owner: reader, credentials: viewer }));
     },
   };
 }

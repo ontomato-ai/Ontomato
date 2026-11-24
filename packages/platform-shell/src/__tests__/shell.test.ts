@@ -62,7 +62,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-async function mount(component: unknown, props: Record<string, unknown>, slots: Record<string, () => unknown> = {}) {
+async function mount(component: unknown, props: Record<string, unknown>, slots: Record<string, (...args: never[]) => unknown> = {}) {
   const root = document.createElement("div");
   document.body.appendChild(root);
   app = createApp({ render: () => h(component as never, props, slots) });
@@ -276,7 +276,7 @@ describe("account menu", () => {
 });
 
 describe("the menu of an application whose pages are its own menu", () => {
-  it("lists pages by group and marks the current one with the selected band", async () => {
+  it("lists pages by group, renders shell-internal native page counts when no #item-trailing slot is given, and marks the current one with the selected band", async () => {
     const onSelect = vi.fn();
     const root = await mount(AppPanelPages, {
       groups: [
@@ -294,17 +294,36 @@ describe("the menu of an application whose pages are its own menu", () => {
     expect(onSelect).toHaveBeenCalledWith("/objects");
   });
 
-  it("shows a page not yet moved into the application as disabled", async () => {
-    const root = await mount(AppPanelPages, {
-      groups: [{ key: "knowledge", label: "Knowledge", pages: [{ id: "feedback", label: "User feedback", icon: "pages", unavailableHint: "Moving here" }] }],
-      activePageId: null,
+  it("shows unavailable group rows and unavailable foot entries as disabled without firing selectPage", async () => {
+    const onSelect = vi.fn();
+    const root = await mount(AppMenu, {
+      title: "Knowledge",
+      groups: [{ key: "knowledge", label: "Knowledge", items: [{ id: "feedback", label: "User feedback", icon: "pages", unavailableHint: "Moving here" }] }],
+      foot: { id: "/settings/models", label: "Models", icon: "pages", unavailableHint: "Coming soon" },
+      activeId: null,
+      onSelect,
     });
-    const row = root.querySelector(".page-row.unavailable");
-    expect(row?.getAttribute("aria-disabled")).toBe("true");
-    expect(row?.getAttribute("title")).toBe("Moving here");
+    const unavailableRows = [...root.querySelectorAll<HTMLElement>(".page-row.unavailable")];
+    expect(unavailableRows).toHaveLength(2);
+    expect(unavailableRows[0]?.tagName).toBe("SPAN");
+    expect(unavailableRows[0]?.getAttribute("aria-disabled")).toBe("true");
+    expect(unavailableRows[0]?.getAttribute("title")).toBe("Moving here");
+
+    const footRow = root.querySelector<HTMLElement>(".page-foot .page-row.unavailable");
+    expect(footRow?.tagName).toBe("SPAN");
+    expect(footRow?.getAttribute("aria-disabled")).toBe("true");
+    expect(footRow?.getAttribute("title")).toBe("Coming soon");
+    footRow?.click();
+    expect(onSelect).not.toHaveBeenCalled();
+
+    const options = [...root.querySelectorAll<HTMLOptionElement>(".mobile-page-select option")];
+    expect(options.map((opt) => ({ value: opt.value, disabled: opt.disabled }))).toEqual([
+      { value: "feedback", disabled: true },
+      { value: "/settings/models", disabled: true },
+    ]);
   });
 
-  it("renders AppMenu with title, overlaid counts/icons, mobile select, and strictly single active item", async () => {
+  it("renders AppMenu with title, overlaid icons, mobile select, and strictly single active item", async () => {
     const onSelect = vi.fn();
     const root = await mount(AppMenu, {
       title: "Ontology manager",
@@ -322,15 +341,10 @@ describe("the menu of an application whose pages are its own menu", () => {
           key: "capabilities",
           label: "Capabilities",
           items: [
-            { id: "/ontology/assets/actions", label: "Actions", count: 5 },
+            { id: "/ontology/assets/actions", label: "Actions" },
           ],
         },
       ],
-      counts: {
-        "/ontology/objects": 18,
-        "/ontology/knowledge": 42,
-        "/ontology/assets/actions": 21,
-      },
       icons: {
         "/ontology/playground": "network",
         "/ontology/objects": "boxes",
@@ -349,11 +363,6 @@ describe("the menu of an application whose pages are its own menu", () => {
     expect(activeRows[0]?.textContent).toContain("Ontology graph");
 
     const rows = [...root.querySelectorAll<HTMLButtonElement>(".page-row")];
-    expect(rows.find((row) => row.textContent?.includes("Ontology graph"))?.querySelector(".page-count")).toBeNull();
-    expect(rows.find((row) => row.textContent?.includes("Object types"))?.querySelector(".page-count")?.textContent).toBe("18");
-    expect(rows.find((row) => row.textContent?.includes("Business knowledge"))?.querySelector(".page-count")?.textContent).toBe("42");
-    expect(rows.find((row) => row.textContent?.includes("Actions"))?.querySelector(".page-count")?.textContent).toBe("21");
-
     rows.find((row) => row.textContent?.includes("Business knowledge"))?.click();
     expect(onSelect).toHaveBeenCalledWith("/ontology/knowledge");
 
@@ -391,6 +400,67 @@ describe("the menu of an application whose pages are its own menu", () => {
       ariaLabel: "Pages",
     });
     expect(siblingRoot.querySelectorAll(".page-row.active")).toHaveLength(0);
+  });
+
+  it("renders #item-trailing slot on AppPanelPages and AppMenu and formats mobile options via itemTrailingText", async () => {
+    const groups = [
+      {
+        key: "facts",
+        label: "Facts",
+        items: [
+          { id: "/ontology/playground", label: "Ontology graph" },
+          { id: "/ontology/objects", label: "Object types" },
+          { id: "/ontology/knowledge", label: "Business knowledge" },
+        ],
+      },
+    ];
+    const foot = { id: "/settings/models", label: "Models" };
+    const root = await mount(
+      AppMenu,
+      {
+        title: "Ontology manager",
+        groups,
+        foot,
+        itemTrailingText: {
+          "/ontology/playground": "Beta",
+          "/ontology/objects": "(18)",
+          "/ontology/knowledge": null,
+          "/settings/models": "v2",
+        },
+        activeId: "/ontology/objects",
+        ariaLabel: "Pages",
+      },
+      {
+        "item-trailing": ({ item }: { item: { id: string; label: string } }) =>
+          item.id === "/ontology/objects"
+            ? h("span", { class: "custom-trailing", "data-id": item.id }, "18")
+            : item.id === "/settings/models"
+              ? h("span", { class: "custom-foot-trailing" }, "v2")
+              : null,
+      },
+    );
+
+    expect(root.querySelectorAll(".page-count")).toHaveLength(0);
+    const objectsRow = [...root.querySelectorAll(".page-row")].find((row) => row.textContent?.includes("Object types"));
+    expect(objectsRow?.querySelector(".custom-trailing")?.textContent).toBe("18");
+    expect(objectsRow?.querySelector(".custom-trailing")?.getAttribute("data-id")).toBe("/ontology/objects");
+    const playgroundRow = [...root.querySelectorAll(".page-row")].find((row) => row.textContent?.includes("Ontology graph"));
+    expect(playgroundRow?.querySelector(".custom-trailing")).toBeNull();
+    // Empty trailing wrapper collapses via :empty (zero element children and no text content).
+    const emptyTrailing = playgroundRow?.querySelector(".page-trailing");
+    expect(emptyTrailing?.childElementCount).toBe(0);
+    expect(emptyTrailing?.textContent).toBe("");
+    const footRow = root.querySelector(".page-foot .page-row");
+    expect(footRow?.querySelector(".custom-foot-trailing")?.textContent).toBe("v2");
+
+    // Mobile <select> uses itemTrailingText verbatim without count-specific formatting.
+    const optionTexts = [...root.querySelectorAll(".mobile-page-select option")].map((opt) => opt.textContent?.trim());
+    expect(optionTexts).toEqual([
+      "Ontology graph Beta",
+      "Object types (18)",
+      "Business knowledge",
+      "Models v2",
+    ]);
   });
 });
 

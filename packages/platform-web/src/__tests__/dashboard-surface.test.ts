@@ -5,7 +5,7 @@ import { defineComponent, h, ref } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import { AgentShell, pageCounterKey } from "@ontomato/agent-shell-ui";
-import { pilotPageKey, platformPageAccessKey } from "@ontomato/platform-shell";
+import { pilotPageKey, platformPageAccessKey, provideUnsavedChanges, type UnsavedChangesCheck } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import en from "@ontomato/workbench-ui/locales/en";
@@ -25,10 +25,18 @@ import { openLink } from "../../../workbench-ui/src/features/workbench/__tests__
 
 /** The dashboards' own requests: one list of two boards, and nothing else here. */
 const boards = () => ({ data: [{ id: "board-a", name: "Sales" }, { id: "board-b", name: "Stock" }] });
+const dashboardHomeEmit = vi.hoisted(() => ({ emitDirty: null as null | ((dirty: boolean) => void) }));
 // The board's own drawing is another line's; these read where the board is, not what it draws.
 vi.mock("@ontomato/workbench-ui/features/dashboard", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/workbench-ui/features/dashboard")>()),
-  DashboardHome: defineComponent({ name: "DashboardHome", setup: () => () => h("div", { class: "board" }) }),
+  DashboardHome: defineComponent({
+    name: "DashboardHome",
+    emits: ["display-dirty"],
+    setup(_props, { emit }) {
+      dashboardHomeEmit.emitDirty = (dirty: boolean) => emit("display-dirty", dirty);
+      return () => h("div", { class: "board" });
+    },
+  }),
   DashboardPanel: defineComponent({ name: "DashboardPanel", setup: () => () => h("div", { class: "panel" }) }),
 }));
 
@@ -65,6 +73,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  dashboardHomeEmit.emitDirty = null;
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
@@ -241,5 +250,63 @@ describe("the board belongs to the page it is mounted on", () => {
     await flushPromises();
     expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
     expect(router.currentRoute.value.query.page).toBe("/dashboards?dashboardId=board-b");
+  });
+
+  it("forwards display-dirty from DashboardHome and registers platform unsaved state in both standalone and paired modes", async () => {
+    // 1. Standalone mode: registers dirty state with provideUnsavedChanges (guards beforeunload & route leave).
+    const router = await routerAt("/dashboards", { dashboardId: "board-a" });
+    let unsavedCheck!: UnsavedChangesCheck;
+    const standalone = mount(defineComponent({
+      setup() {
+        unsavedCheck = provideUnsavedChanges(async () => false);
+        return () => h(DashboardsPage);
+      },
+    }), {
+      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) },
+    });
+    wrappers.push(standalone);
+    await flushPromises();
+
+    expect(unsavedCheck.dirty()).toBe(false);
+    dashboardHomeEmit.emitDirty?.(true);
+    await flushPromises();
+    expect(unsavedCheck.dirty()).toBe(true);
+    expect(await unsavedCheck.allows("/other")).toBe(false);
+    expect(standalone.findComponent(DashboardsPage).emitted("display-dirty")).toEqual([[true]]);
+
+    dashboardHomeEmit.emitDirty?.(false);
+    await flushPromises();
+    expect(unsavedCheck.dirty()).toBe(false);
+    standalone.unmount();
+    wrappers.splice(wrappers.indexOf(standalone), 1);
+
+    // 2. Paired mode beside a conversation: forwards display-dirty to BusinessWorkbench's display and platform unsaved guard.
+    await router.push(platformRoutes.chat.path);
+    await flushPromises();
+    let pairedUnsaved!: UnsavedChangesCheck;
+    const refuseLeave = vi.fn(async () => false);
+    const workbench = mount(defineComponent({
+      setup() {
+        pairedUnsaved = provideUnsavedChanges(refuseLeave);
+        return () => h(BusinessWorkbench, { defaultLogo: "", defaultBrandName: "Ontomato" });
+      },
+    }), {
+      global: { plugins: [workbenchI18n(), ElementPlus, router], provide: provide(router) },
+    });
+    wrappers.push(workbench);
+    await flushPromises();
+    await openLink(workbench, "/dashboards?dashboardId=board-a");
+    await flushPromises();
+
+    expect(pairedUnsaved.dirty()).toBe(false);
+    dashboardHomeEmit.emitDirty?.(true);
+    await flushPromises();
+    expect(pairedUnsaved.dirty()).toBe(true);
+
+    // Trying to close the paired dashboard while dirty asks the leave guard and stays open on cancel.
+    const display = (workbench.findComponent(AgentShell).props("display") as { close(): Promise<boolean>; page: { value: { address: string } | null } });
+    expect(await display.close()).toBe(false);
+    expect(refuseLeave).toHaveBeenCalledOnce();
+    expect(display.page.value?.address).toBe("/dashboards?dashboardId=board-a");
   });
 });

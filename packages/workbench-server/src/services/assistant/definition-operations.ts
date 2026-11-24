@@ -9,12 +9,11 @@ import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { assertPermission } from "../../identity/installed";
 import {
-  agentDefinitionPermissions, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, saveAgentDefinitionSnapshot,
+  agentDefinitionDeletionRestriction, agentDefinitionPermissions, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, saveAgentDefinitionSnapshot,
 } from "./definitions";
 import type { AssistantSkillView } from "./skills";
 import type { PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
 import { AgentDefinitionFieldError, agentDefinitionSave, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
-import { resolveAssistantSkillReferences } from "./skill-references";
 
 const targetSchema = panelFormTargetSchema.options[0].extend({
   objectType: z.literal(AGENT_DEFINITION),
@@ -82,19 +81,12 @@ export const agentDefinitionOperations = [
     targetSchema: z.discriminatedUnion("kind", [targetSchema, panelFormTargetSchema.options[1]]),
     inputSchema,
     resultSchema: assistantAgentDefinitionSchema,
-    draftOperation: (target: PanelOperationTarget) => agentDefinitionSave(target).draftOperation,
     draftInput,
-    formInstructions: "Read the definition form for the intended target. Use its fields and option sources, save.bodySchema for the value shapes, and save.draftOperation for the draft. For an edit draft, put only the changed fields in form, including skills only when changing the selection. For a create draft, include all required fields.",
+
     projectResult(data: unknown, view: AssistantSkillView) {
       return projectAgentDefinitionSkills(assistantAgentDefinitionSchema.parse(data), view);
     },
-    create: {
-      draftValues(values: unknown, domainId: string) {
-        const input = parseAgentDefinitionForm(values);
-        return { ...input, skills: resolveAssistantSkillReferences(input.skills, domainId), executionUserId: input.executionUserId ?? null };
-      },
-      createdObject: (data: unknown) => ({ objectType: AGENT_DEFINITION, primaryKey: assistantAgentDefinitionSchema.parse(data).id }),
-    },
+    create: true,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome> {
       const { owner, credentials } = host.executor;
       const selection = { credentials: host.initiator.credentials, view: host.skillView! };
@@ -129,6 +121,9 @@ export const agentDefinitionOperations = [
     targetLabel: definitionLabel,
     done: (host, name) => tForLocale(host.locale, "panels.agentDefinition.deleted", { name }),
     inspectImpact: deleteImpact,
+    unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
+      return agentDefinitionDeletionRestriction(target.primaryKey, host.initiator.owner, host.locale);
+    },
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "DELETE" });
       return response.ok
@@ -136,4 +131,4 @@ export const agentDefinitionOperations = [
         : unsuccessfulWrite(response);
     },
   },
-] satisfies readonly PanelServerOperation[];
+] as const satisfies readonly PanelServerOperation[];

@@ -579,7 +579,6 @@ class OntologyModelServiceImplTest {
 		assertEquals(List.of("className", "showName"), texts(form.save().bodySchema().get("required")));
 		assertEquals("POST", form.save().method());
 		assertEquals("/ontology/model/object-type/update", form.save().path());
-		assertEquals("objectType.update", form.save().draftOperation());
 	}
 
 	@Test
@@ -599,7 +598,6 @@ class OntologyModelServiceImplTest {
 		assertEquals(List.of("className", "primaryKeyName", "showName"),
 				texts(form.save().bodySchema().get("required")));
 		assertEquals("/ontology/model/object-type/create", form.save().path());
-		assertEquals("objectType.create", form.save().draftOperation());
 	}
 
 	@Test
@@ -624,7 +622,6 @@ class OntologyModelServiceImplTest {
 		assertEquals("Admin.form.primaryKeySwitchHint", primaryKey.get("readOnlyReason").asText());
 		assertEquals(Map.of("className", "Device", "name", "id", "type", "varchar", "showName", "id", "attrDesc", "",
 				"enable", true, "businessKey", false, "primaryKey", true), form.values());
-		assertEquals("attribute.update", form.save().draftOperation());
 	}
 
 	@Test
@@ -639,7 +636,6 @@ class OntologyModelServiceImplTest {
 				"businessKey", false, "primaryKey", false), form.values());
 		assertEquals(List.of("className", "name", "showName", "type", "enable", "businessKey"),
 				texts(form.save().bodySchema().get("required")));
-		assertEquals("attribute.create", form.save().draftOperation());
 	}
 
 	@Test
@@ -699,7 +695,6 @@ class OntologyModelServiceImplTest {
 				"toField", "id", "desc", "owns"), form.values());
 		assertEquals(List.of("id", "site_id", "size"), optionValues(fieldOf(form, "/fromField")));
 		assertEquals(List.of("id"), optionValues(fieldOf(form, "/toField")));
-		assertEquals("relationship.update", form.save().draftOperation());
 	}
 
 	@Test

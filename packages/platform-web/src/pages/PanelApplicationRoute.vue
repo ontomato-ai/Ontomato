@@ -17,13 +17,11 @@ import { localizedApplicationText } from "@ontomato/contracts/application-metada
 import { applicationFrameContextOf, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { PageComposer, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
-import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 import { cachedApplicationFrameManifest, framePanelHost, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import EntryUnit from "./EntryUnit.vue";
-import { expandDeclaredComposer, hostThemeMode } from "../app-host";
+import { hostThemeMode } from "../app-host";
 import { platformApplicationsKey } from "../apps";
 import { useApplicationCatalog } from "../catalog";
 
@@ -69,8 +67,6 @@ const emit = defineEmits<{
   "display-dirty": [dirty: boolean];
   /** Which page skill a message written beside the shown page reaches, as Node answered it with the page's panel. */
   "display-skill": [context: PageSkillContext];
-  /** The reader manually edited an unsaved form inside the shown panel. */
-  "form-edited": [target: PanelFormEditedTarget];
 }>();
 
 const route = useRoute();
@@ -80,7 +76,7 @@ const { t, locale, fallbackLocale } = useI18n();
 const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
 /** What the conversation's and an operation's changes reach: the shown page's instance. */
-type ShownInstance = Pick<PanelInstanceView, "refresh" | "applyState" | "applyAddress" | "fillForm" | "executeAction">;
+type ShownInstance = Pick<PanelInstanceView, "refresh" | "validateState" | "applyState" | "blocksNavigation" | "probePresentation" | "presentationAddress" | "fillForm" | "executeAction" | "snapshotMeta" | "isLoading">;
 const host = ref<ShownInstance | null>(null);
 const frameHost = ref<ShownInstance | null>(null);
 let pendingControllerState: Record<string, RuntimeJsonValue> | null = null;
@@ -96,15 +92,24 @@ watch(host, (nextHost) => {
 });
 if (props.registerPageController) {
   const unregister = props.registerPageController({
+    blocksNavigation(next) {
+      return host.value?.blocksNavigation(next) ?? false;
+    },
+    async probePresentation(next) {
+      return host.value?.probePresentation(next);
+    },
+    presentationAddress(address, patch) {
+      return host.value?.presentationAddress(address, patch) ?? address;
+    },
+    validateState(patch) {
+      host.value?.validateState(patch);
+    },
     applyState(patch) {
       if (!host.value) {
         pendingControllerState = { ...(pendingControllerState ?? {}), ...patch };
         return;
       }
       host.value.applyState(patch);
-    },
-    applyAddress(url, options) {
-      host.value?.applyAddress(url, options);
     },
     fillForm(request) {
       if (!host.value) {
@@ -129,26 +134,28 @@ if (props.registerPageController) {
       }
       return host.value.executeAction(request);
     },
+    snapshotMeta() {
+      return host.value?.snapshotMeta?.() ?? {};
+    },
+    isLoading() {
+      if (failure.value || missing.value) return false;
+      if (!answered.value || !host.value) return true;
+      return host.value.isLoading?.() ?? false;
+    },
   });
   onBeforeUnmount(() => {
     pendingControllerState = null;
     unregister();
   });
 }
-/** The Manager's counts, where it is installed: told which object types a write changed, they decide whether to re-read. */
-const countedTypesChanged = inject(countedTypesChangedKey, null);
 const platformApplications = inject(platformApplicationsKey, null);
 /**
  * A change to objects the page shows, from the conversation or from a receipt for an operation in the shown frame: the
- * one place either is taken in. The shown instance re-reads what it displays of the target, and the counts hear of the
- * object types the write changed.
+ * one place either is taken in. Both the entry panel and the enclosing application frame re-read what they display.
  */
 function changed(change: PanelObjectChange) {
   host.value?.refresh(change.target, change.affected, change.operation);
   frameHost.value?.refresh(change.target, change.affected, change.operation);
-  if (change.affected) {
-    countedTypesChanged?.(change.affected.objectTypes);
-  }
 }
 watch(() => props.objectRefresh?.seq, () => {
   if (props.objectRefresh) changed(props.objectRefresh);
@@ -459,36 +466,8 @@ const labels = computed<PanelHostLabels>(() => ({
     scriptRejected: t("platform.panelScriptRejected"),
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
-  draft: {
-    opening: t("platform.panelDraftOpening"),
-    close: t("platform.panelDraftClose"),
-    toAgent: t("platform.panelDraftToAgent"),
-    // The host puts the reason where `{reason}` stands.
-    toAgentText: t("platform.panelDraftToAgentText", { reason: "{reason}" }),
-  },
   refresh: t("common.refresh"),
 }));
-
-/**
- * Hands why the linked draft could not be used back to the agent: the page's composer (beside a conversation, the
- * conversation's) opens on the page's agent with the sentence, for the reader to send or change.
- */
-function draftToAgent(text: string) {
-  expandDeclaredComposer({ target: { kind: "page-default" }, prefill: text });
-}
-
-/**
- * The reader closed the notice of a draft the shown page cannot use: the page opens as it does without the draft — its
- * entry's own address, the panel's defaults, no form left half open — as its menu row does. A frame keeps its own state.
- */
-function leaveDraft() {
-  const page = shownPage.value;
-  if (!page) return;
-  const frameForUrl = lastFrame.value && lastFrame.value.framePanelId === resolution.value?.framePanelId
-    ? lastFrame.value.addressState
-    : parseApplicationPanelAddress(opened.value).frame;
-  reportAddress({ kind: "state", address: applicationPanelAddress(panelUsePath(page.use.path), { frame: frameForUrl }) });
-}
 
 /**
  * The composer at the foot of the page at its own address (big main's ruling, 2026-11-21): what a message written here
@@ -514,8 +493,8 @@ const composerLabels = computed(() => ({
 }));
 
 /**
- * The page's address without the panel's own state: this relation's own full path and the rest of the address's query — a draft an agent wrote for this page names itself there (`draftSessionId`, `draftRunId`,
- * `draftPath`), and the panel reads it from the address it is given. The state is the instance's to add.
+ * The page's address without the panel's own state: this relation's own full path and any preserved shell query
+ * parameters. The state is the instance's to add.
  */
 const pageAddress = computed(() => {
   const search = opened.value.split("?")[1];
@@ -723,14 +702,11 @@ function reportDirty(page: KeptPage, dirty: boolean) {
             :entry-inputs="entryInputs(page.use)"
             :live-state="page === shownPage ? liveStatePatch : null"
             :frame-state="frameState"
-            :draft-to-agent="draftToAgent"
-            :leave-draft="leaveDraft"
             :history-back="!props.navigate"
             @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
             @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
             @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
             @context="(context: PageContext) => reportContext(page, context)"
-            @form-edited="(target: PanelFormEditedTarget) => page === shownPage && emit('form-edited', target)"
             @reopened="markReopened(page)"
             @withdrawn="withdraw(page)"
           />
@@ -763,14 +739,11 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           :entry-inputs="entryInputs(page.use)"
           :live-state="page === shownPage ? liveStatePatch : null"
           :frame-state="frameState"
-          :draft-to-agent="draftToAgent"
-          :leave-draft="leaveDraft"
           :history-back="!props.navigate"
           @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
           @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
           @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
           @context="(context: PageContext) => reportContext(page, context)"
-          @form-edited="(target: PanelFormEditedTarget) => page === shownPage && emit('form-edited', target)"
           @reopened="markReopened(page)"
           @withdrawn="withdraw(page)"
         />

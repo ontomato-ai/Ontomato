@@ -133,7 +133,7 @@ function javaOwner(app: express.Express) {
       fields: [textField("/className", "API name", true), textField("/primaryKeyName", "Primary key name", true),
         textField("/showName", "Display name", true), textField("/classDesc", "Description", false)],
       values: { className: "", primaryKeyName: "", showName: "", classDesc: "" },
-      save: { method: "POST", path: "/ontology/model/object-type/create", bodySchema: { type: "object" }, draftOperation: "objectType.create" },
+      save: { method: "POST", path: "/ontology/model/object-type/create", bodySchema: { type: "object" } },
     });
   });
   app.post("/ontology/model/object-type/create", (req, res) => {
@@ -340,7 +340,7 @@ it("serves the ontology model's catalog reads to a panel viewer through the owne
   }]);
   expect(await read("summary", "record")).toMatchObject({ primaryKey: "warehouse", fields: { attributeCount: "2" } });
   expect(await read("create", "form")).toMatchObject({
-    values: { className: "" }, errors: [], save: { draftOperation: "objectType.create" },
+    values: { className: "" }, errors: [],
   });
   expect((await operations("removeType")).delete).toMatchObject({
     kind: "action", handlerRef: DELETE_OBJECT_TYPE, label: "Delete object type", effect: "write", batch: false,

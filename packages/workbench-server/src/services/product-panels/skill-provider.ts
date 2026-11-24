@@ -9,7 +9,7 @@ import { PANEL_SKILL_PROVIDER_ID } from "./skill-identity";
 
 const sourceResponse = z.object({ success: z.literal(true), data: panelSkillSourcesResponseSchema });
 
-async function readSources(domainId: string) {
+export async function readPanelSkillSources(domainId: string) {
   const query = new URLSearchParams(panelSkillSourcesQuerySchema.parse({ domainId }));
   const response = await backendGet("panel-skill-sources",
     `${config.dataQuery.baseUrl}/platform/applications/panel-skill-sources?${query}`,
@@ -29,14 +29,14 @@ export const panelSkillProvider: SkillProvider<ProtectedSkillOffering> & {
   async list({ domainId, reader, reportSourceFailure }) {
     const { panelSkillSources } = await import("./skill-package");
     const offerings: ProtectedSkillOffering[] = [];
-    for (const source of await panelSkillSources(domainId, await readSources(domainId), reader)) {
+    for (const source of await panelSkillSources(domainId, await readPanelSkillSources(domainId), reader)) {
       if ("kind" in source) offerings.push(source);
       else reportSourceFailure(source);
     }
     return offerings;
   },
   async findByUse(domainId, { applicationId, useId }, reader) {
-    const source = (await readSources(domainId)).find(entry => entry.applicationId === applicationId && entry.useId === useId);
+    const source = (await readPanelSkillSources(domainId)).find(entry => entry.applicationId === applicationId && entry.useId === useId);
     if (!source) return null;
     const { panelSkillSources } = await import("./skill-package");
     const [result] = await panelSkillSources(domainId, [source], reader);

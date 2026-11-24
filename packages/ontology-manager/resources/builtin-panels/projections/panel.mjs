@@ -1,6 +1,5 @@
 import { computed, watch } from "vue";
 import {
-  draftTarget,
   mountPanel,
   panelAddress,
   usePanelBack,
@@ -31,7 +30,8 @@ const newProjectionId = () => `projection-${Date.now().toString(36)}-${Math.rand
 
 const ProjectionsCataloguePanel = {
   setup() {
-    const { instance, navigate, notify, t } = usePanelContext();
+    const ctx = usePanelContext();
+    const { instance, navigate, notify, t } = ctx;
     const values = instance.state.values;
 
     const selected = computed(() => values.value.selected ?? null);
@@ -92,16 +92,124 @@ const ProjectionsCataloguePanel = {
     const usedByCount = computed(() => (typeof usedByCountOutput.value === "number" ? usedByCountOutput.value : 0));
     const hiddenUsedByCount = computed(() => (typeof hiddenUsedByCountOutput.value === "number" ? hiddenUsedByCountOutput.value : 0));
 
+    // Align dialog and submit availability strictly with the detail entry conditions.
+    const canStartEdit = computed(() => Boolean(selectedKey.value) && !isFormMode.value && recordReady.value && canEdit.value);
+    const canOpenCopy = computed(
+      () => Boolean(selectedKey.value) && !isFormMode.value && recordReady.value && canEdit.value && canCopy.value && !isChart.value,
+    );
+    const canTriggerDelete = computed(() => Boolean(selectedKey.value) && !isFormMode.value && recordReady.value && canEdit.value && canDelete.value);
+    const canOpenGrant = computed(() => Boolean(selectedKey.value) && !isFormMode.value && recordReady.value && canEdit.value && canGrant.value);
+
+    const CLOSED_DIALOGS_PATCH = {
+      copyDialog: null,
+      copyId: null,
+      copyName: null,
+      grantDialog: null,
+      grantUser: null,
+      grantRole: null,
+      grantPrincipalId: null,
+    };
+
+    let silentDiscard = false;
+    let guardingSelection = false;
+    let leavingFormPromise = null;
+    let committedSelected = selected.value;
+
+    function isFormDirty() {
+      return isFormMode.value && instance.forms.dirty("form");
+    }
+
+    async function confirmAndDiscardForm() {
+      if (!isFormDirty()) return true;
+      if (leavingFormPromise) return false;
+      const run = (async () => {
+        if (ctx.confirmLeaveUnsaved) {
+          const allowed = await ctx.confirmLeaveUnsaved();
+          if (!allowed) return false;
+          silentDiscard = true;
+          try {
+            instance.forms.discard("form");
+          } finally {
+            silentDiscard = false;
+          }
+          return true;
+        }
+        silentDiscard = true;
+        try {
+          return await instance.forms.reset("form", { confirm: true });
+        } finally {
+          silentDiscard = false;
+        }
+      })();
+      leavingFormPromise = run;
+      try {
+        return await run;
+      } finally {
+        leavingFormPromise = null;
+      }
+    }
+
+    // Registered first so `lastPatchedKeys` reflects the incoming `selected` update before sibling watchers run.
+    // Returns to view mode and closes dialogs when only `selected` changes, while preserving fields explicitly
+    // passed in the same atomic `setState` (for example `{ selected, detailMode: "edit" }`).
+    watch(selectedKey, (nextKey, prevKey) => {
+      if (nextKey === prevKey || guardingSelection) return;
+
+      const prevSelected = committedSelected;
+      const nextSelected = selected.value;
+      const patched = instance.state.lastPatchedKeys;
+
+      const resetPatch = {};
+      if (!patched?.has("creating") && values.value.creating !== null) {
+        resetPatch.creating = null;
+      }
+      if (!patched?.has("detailMode") && values.value.detailMode !== "view") {
+        resetPatch.detailMode = "view";
+      }
+      if (!patched?.has("copyDialog")) {
+        if (values.value.copyDialog !== null) resetPatch.copyDialog = null;
+        if (!patched?.has("copyId") && values.value.copyId !== null) resetPatch.copyId = null;
+        if (!patched?.has("copyName") && values.value.copyName !== null) resetPatch.copyName = null;
+      }
+      if (!patched?.has("grantDialog")) {
+        if (values.value.grantDialog !== null) resetPatch.grantDialog = null;
+        if (!patched?.has("grantUser") && values.value.grantUser !== null) resetPatch.grantUser = null;
+        if (!patched?.has("grantRole") && values.value.grantRole !== null) resetPatch.grantRole = null;
+        if (!patched?.has("grantPrincipalId") && values.value.grantPrincipalId !== null) resetPatch.grantPrincipalId = null;
+      }
+
+      if (isFormDirty()) {
+        const restoreTarget = creating.value ? null : prevSelected;
+        guardingSelection = true;
+        instance.state.set("selected", restoreTarget);
+        void confirmAndDiscardForm()
+          .then((allowed) => {
+            if (!allowed) return;
+            committedSelected = nextSelected;
+            instance.state.setState({ selected: nextSelected, ...resetPatch });
+          })
+          .finally(() => {
+            guardingSelection = false;
+          });
+        return;
+      }
+
+      committedSelected = nextSelected;
+      if (Object.keys(resetPatch).length > 0) {
+        instance.state.setState(resetPatch);
+      }
+    });
+
     // Fall back to overview tab if the selected projection does not grant permission editing.
-    watch([selectedKey, recordReady, canGrant, tabModel], ([key, ready, grantable, activeTab]) => {
+    watch([selectedKey, recordReady, canOpenGrant, tabModel], ([key, ready, grantable, activeTab]) => {
       if (key && ready && !grantable && activeTab === "grants") {
         instance.state.set("tab", "overview");
       }
     });
 
-    // Keep deleteRevision aligned with the selected projection's current revision for OperationButton binding.
-    watch([selectedKey, revision], ([key, rev]) => {
-      const next = key && rev !== null ? rev : null;
+    // Keep deleteRevision aligned with the ready selected projection's revision for OperationButton binding.
+    watch([selectedKey, recordReady, revision], ([key, ready, rev]) => {
+      const next = key && ready && rev !== null ? rev : null;
       if ((values.value.deleteRevision ?? null) !== next) {
         instance.state.set("deleteRevision", next);
       }
@@ -109,10 +217,10 @@ const ProjectionsCataloguePanel = {
 
     // Dialog states backed by manifest.state so agents can inspect and operate them.
     const copyDialogOpen = computed({
-      get: () => values.value.copyDialog === true,
+      get: () => canOpenCopy.value && values.value.copyDialog === true,
       set: (open) => {
         if (!open) instance.state.setState({ copyDialog: null, copyId: null, copyName: null });
-        else instance.state.set("copyDialog", true);
+        else if (canOpenCopy.value) instance.state.set("copyDialog", true);
       },
     });
     const copyIdModel = computed({
@@ -125,15 +233,22 @@ const ProjectionsCataloguePanel = {
     });
     const copyReady = computed(() => Boolean(copyIdModel.value.trim() && copyNameModel.value.trim()));
 
-    const deleteDialogOpen = computed({
-      get: () => values.value.deleteDialog === true,
-      set: (open) => instance.state.set("deleteDialog", open ? true : null),
-    });
     const deleteRevision = computed(() => (typeof values.value.deleteRevision === "number" ? values.value.deleteRevision : null));
 
     const grantDialogOpen = computed({
-      get: () => values.value.grantDialog === true,
-      set: (open) => instance.state.set("grantDialog", open ? true : null),
+      get: () => canOpenGrant.value && values.value.grantDialog === true,
+      set: (open) => {
+        if (!open) {
+          instance.state.setState({
+            grantDialog: null,
+            grantUser: null,
+            grantRole: null,
+            grantPrincipalId: null,
+          });
+        } else if (canOpenGrant.value) {
+          instance.state.set("grantDialog", true);
+        }
+      },
     });
     const grantPrincipalKindModel = computed({
       get: () => (values.value.grantPrincipalKind === "role" ? "role" : "principal"),
@@ -180,51 +295,79 @@ const ProjectionsCataloguePanel = {
       if (Object.keys(patch).length) instance.state.setState(patch);
     }
 
+    function onFormDiscarded() {
+      if (silentDiscard) return;
+      closeForm();
+    }
+
     const formBack = usePanelBack(isFormMode, closeForm, {
       pushHistory: false,
       forms: "form",
     });
 
     function closeFormGuarded() {
-      void formBack.back();
+      if (ctx.confirmLeaveUnsaved) {
+        void formBack.back();
+        return;
+      }
+      void confirmAndDiscardForm().then((allowed) => {
+        if (allowed) closeForm();
+      });
     }
 
-    // Route incoming assistant drafts to either create mode or edit mode on the target projection.
-    watch(
-      instance.draft,
-      (draft) => {
-        if (!draft) return;
-        const target = draftTarget(draft);
-        if (target.kind === "create") {
-          instance.state.setState({ selected: null, creating: true, detailMode: "view" });
-        } else if (target.id) {
-          instance.state.setState({
-            creating: null,
-            selected: { className: PROJECTION_TYPE, primaryKey: target.id },
-            detailMode: "edit",
-          });
-        }
-      },
-      { immediate: true },
-    );
-
-    function startCreate() {
-      instance.state.setState({ selected: null, creating: true, detailMode: "view" });
+    async function startCreate() {
+      if (isFormDirty()) {
+        const allowed = await confirmAndDiscardForm();
+        if (!allowed) return;
+      }
+      committedSelected = null;
+      instance.state.setState({
+        selected: null,
+        creating: true,
+        detailMode: "view",
+        ...CLOSED_DIALOGS_PATCH,
+      });
     }
 
     function startEdit() {
-      if (!selectedKey.value || !canEdit.value) return;
-      instance.state.setState({ creating: null, detailMode: "edit" });
+      if (!canStartEdit.value) return;
+      instance.state.setState({ creating: null, detailMode: "edit", ...CLOSED_DIALOGS_PATCH });
     }
 
-    function onChooseProjection() {
-      if (isFormMode.value) closeForm();
+    async function onChooseProjection(nextSelection) {
+      if (!isFormMode.value) return;
+      if (!isFormDirty()) {
+        closeForm();
+        return;
+      }
+      // ObjectList writes `selected` synchronously before emitting `choose`; restore the active form target
+      // in the same tick so ObjectForm stays mounted on the unsaved draft until the reader decides.
+      const restoreTarget = creating.value ? null : committedSelected;
+      guardingSelection = true;
+      try {
+        instance.state.set("selected", restoreTarget);
+        const allowed = await confirmAndDiscardForm();
+        if (!allowed) return;
+        committedSelected = nextSelection ?? null;
+        instance.state.setState({
+          selected: nextSelection ?? null,
+          creating: null,
+          detailMode: "view",
+          ...CLOSED_DIALOGS_PATCH,
+        });
+      } finally {
+        guardingSelection = false;
+      }
     }
 
     function onSaved(saved) {
+      const nextSelected = saved?.primaryKey
+        ? { className: saved.className ?? PROJECTION_TYPE, primaryKey: saved.primaryKey }
+        : selected.value;
+      committedSelected = nextSelected ?? null;
       const patch = { creating: null, detailMode: "view" };
       if (saved?.primaryKey) {
-        patch.selected = { className: saved.className ?? PROJECTION_TYPE, primaryKey: saved.primaryKey };
+        patch.selected = nextSelected;
       }
       instance.state.setState(patch);
       instance.refreshObjects();
@@ -232,7 +375,7 @@ const ProjectionsCataloguePanel = {
     }
 
     function openCopy() {
-      if (!selectedKey.value || !canCopy.value) return;
+      if (!canOpenCopy.value) return;
       const baseName = selectedLabel.value || selectedKey.value;
       instance.state.setState({
         copyName: t("copy.defaultName", { name: baseName }),
@@ -243,40 +386,33 @@ const ProjectionsCataloguePanel = {
 
     function onCopyDone(outcome) {
       if (outcome?.kind !== "success") return;
-      const copiedId = typeof outcome.data?.id === "string" && outcome.data.id
-        ? outcome.data.id
-        : copyIdModel.value.trim();
+      const copiedId = typeof outcome.data?.id === "string" && outcome.data.id ? outcome.data.id : "";
+      const nextSelected = copiedId ? { className: PROJECTION_TYPE, primaryKey: copiedId } : null;
+      if (nextSelected) committedSelected = nextSelected;
       instance.state.setState({
         copyDialog: null,
         copyId: null,
         copyName: null,
         detailMode: "view",
-        ...(copiedId ? { selected: { className: PROJECTION_TYPE, primaryKey: copiedId } } : {}),
+        ...(nextSelected ? { selected: nextSelected } : {}),
       });
       instance.refreshObjects();
     }
 
-    function openDelete() {
-      if (!selectedKey.value || !canDelete.value) return;
-      instance.state.setState({
-        deleteRevision: revision.value,
-        deleteDialog: true,
-      });
-    }
-
     function onDeleteDone(outcome) {
       if (outcome?.kind !== "success") return;
+      committedSelected = null;
       instance.state.setState({
-        deleteDialog: null,
         deleteRevision: null,
         detailMode: "view",
         selected: null,
+        ...CLOSED_DIALOGS_PATCH,
       });
       instance.refreshObjects();
     }
 
     function openGrantDialog() {
-      if (!selectedKey.value || !canGrant.value) return;
+      if (!canOpenGrant.value) return;
       instance.state.setState({
         grantPrincipalKind: "principal",
         grantUser: null,
@@ -362,10 +498,10 @@ const ProjectionsCataloguePanel = {
       recordStatus,
       recordReady,
       recordErrorText,
-      canEdit,
-      canGrant,
-      canDelete,
-      canCopy,
+      canStartEdit,
+      canOpenCopy,
+      canTriggerDelete,
+      canOpenGrant,
       isChart,
       domainShared,
       usedByCount,
@@ -374,7 +510,6 @@ const ProjectionsCataloguePanel = {
       copyIdModel,
       copyNameModel,
       copyReady,
-      deleteDialogOpen,
       deleteRevision,
       grantDialogOpen,
       grantPrincipalKindModel,
@@ -384,12 +519,12 @@ const ProjectionsCataloguePanel = {
       startCreate,
       startEdit,
       closeForm,
+      onFormDiscarded,
       closeFormGuarded,
       onChooseProjection,
       onSaved,
       openCopy,
       onCopyDone,
-      openDelete,
       onDeleteDone,
       openGrantDialog,
       onGrantAdded,

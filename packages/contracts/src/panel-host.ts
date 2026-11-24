@@ -2,7 +2,6 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
-import { PAGE_DRAFT_QUERY_KEYS, pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
 import {
   normalizePanelDeepLinkState, normalizeExternalPanelValue, panelChildObjectIdentitySchema,
@@ -207,11 +206,6 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
   /** The instance's deep-linkable state, which the host keeps in the address. */
   z.object({ kind: z.literal("state"), fromAddress: z.string().min(1).max(4000), state: runtimeJsonObjectSchema }).strict(),
   /**
-   * The reader saved or discarded this linked draft. The host removes only its draft parameters if its current
-   * address still names that artifact; it reflects the resulting address through the normal address message.
-   */
-  z.object({ kind: z.literal("draft-settled"), draft: pageDraftLinkSchema }).strict(),
-  /**
    * The operations this instance offers, as the header and an agent list them. They are the panel's projections' and its
    * own declaration's; the frame runs one when the host asks it to.
    */
@@ -292,7 +286,6 @@ export const PANEL_FRAME_QUERY_PREFIX = "frame.";
  * interpreted as panel state or overwritten when panel state changes.
  */
 export const PANEL_ADDRESS_RESERVED_QUERY_KEYS = [
-  ...PAGE_DRAFT_QUERY_KEYS,
   "standalone",
   "from",
   "navigationContext",
@@ -472,7 +465,7 @@ export function parseApplicationPanelAddress(
 
 /**
  * Encode frame (`frame.<name>`) and content (`<name>`) deep-link state as flat named query parameters,
- * omitting null/empty/default values and preserving shell query parameters (such as draft links and `standalone`).
+ * omitting null/empty/default values and preserving shell query parameters (such as `standalone`).
  */
 export function applicationPanelAddress(path: string, {
   frame = {}, state = {}, query, frameManifest, stateManifest,
@@ -584,4 +577,21 @@ export function panelAddressState(
     (bucket[key] ??= []).push(value);
   }
   return collapseBucket(bucket, manifest);
+}
+
+/** The complete deep-link state restored by an address, including defaults for omitted fields. */
+export function restoredPanelAddressState(
+  address: string,
+  manifest: Pick<PanelManifest, "state">,
+): Record<string, PanelDeepLinkStateValue> {
+  const decoded = panelAddressState(address, manifest);
+  return Object.fromEntries(Object.entries(manifest.state)
+    .filter(([, field]) => field.deepLink)
+    .map(([name, field]) => [name, Object.hasOwn(decoded, name) ? decoded[name]! : field.default ?? null]));
+}
+
+/** A live patch on a bare address for the same page preserves its current deep-link state. */
+export function presentationAppliesAddress(current: string, next: string, hasStatePatch: boolean): boolean {
+  return !hasStatePatch || next.includes("?") || next.includes("#")
+    || next.split(/[?#]/, 1)[0] !== current.split(/[?#]/, 1)[0];
 }

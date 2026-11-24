@@ -38,7 +38,7 @@ const tagOptions = ["General", "Business", "Tech"].map(value => ({
   value, label: value, description: null, disabled: false, disabledReason: null,
 }));
 /** The owner's form description, as BussinessKnowledgeForm describes it; the field labels come per request language. */
-const ownerForm = (values: Record<string, unknown>, path: string, draftOperation: string) => ({
+const ownerForm = (values: Record<string, unknown>, path: string) => ({
   values,
   fields: [
     { path: "/knowledgeTitle", label: "Knowledge title", control: { kind: "text", multiline: false, placeholder: null },
@@ -55,17 +55,17 @@ const ownerForm = (values: Record<string, unknown>, path: string, draftOperation
       valueSchema: { type: "string" }, required: false, readOnly: false, defaultValue: "" },
   ],
   save: {
-    method: "POST", path, draftOperation,
+    method: "POST", path,
     bodySchema: { type: "object", required: ["knowledgeTitle", "knowledgeText", "knowledgeTags", "status"], additionalProperties: false },
   },
 });
 const draftForm = ownerForm(
   { knowledgeID: "", knowledgeTitle: "", knowledgeText: "", knowledgeTags: [], status: 1 },
-  "/admin/addBussinessKnowledge", "knowledge.create",
+  "/admin/addBussinessKnowledge",
 );
 const entryForm = (entry: OwnerEntry) => ownerForm(
   { knowledgeID: entry.knowledgeID, knowledgeTitle: entry.knowledgeTitle, knowledgeText: entry.knowledgeText, knowledgeTags: entry.knowledgeTags, status: entry.status },
-  "/admin/editBussinessKnowledge", "knowledge.update",
+  "/admin/editBussinessKnowledge",
 );
 
 // Short contents show whole under the title, so a content hit is highlighted at the same place in the subtitle.

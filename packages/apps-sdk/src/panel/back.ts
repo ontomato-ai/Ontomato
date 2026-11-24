@@ -58,9 +58,7 @@ export function usePanelBack(
     if (!panel) return false;
     if (slots === undefined) return panel.instance.dirty();
     if (slots.length === 0) return false;
-    if (panel.instance.forms.dirty(slots)) return true;
-    const activeDraft = panel.instance.draft.value;
-    return activeDraft !== null && slots.includes(activeDraft.slot);
+    return panel.instance.forms.dirty(slots);
   };
 
   const runBack = () => {
@@ -70,10 +68,6 @@ export function usePanelBack(
         panel.instance.forms.discardAll();
       } else if (slots.length > 0) {
         panel.instance.forms.discardAll(slots);
-        const activeDraft = panel.instance.draft.value;
-        if (activeDraft !== null && slots.includes(activeDraft.slot)) {
-          panel.instance.forms.discard(activeDraft.slot);
-        }
       }
     }
     onBack();

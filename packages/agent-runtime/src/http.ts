@@ -416,6 +416,9 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     res.type(response.headers.get("content-type") || "application/octet-stream");
     Readable.fromWeb(response.body as import("node:stream/web").ReadableStream<Uint8Array>).pipe(res);
   }));
+  app.get("/v1/channel/intents/:runId",route(async(req,res)=>{
+    res.json(await runtime.channel.facts.intent(scope(req).scope,runtimeIdSchema.parse(req.params.runId)));
+  }));
   app.get("/v1/channel/sessions/:sessionId/intents/:runId",route(async(req,res)=>{
     const ctx=scope(req),sessionId=runtimeIdSchema.parse(req.params.sessionId),intent=await runtime.channel.facts.intent(ctx.scope,runtimeIdSchema.parse(req.params.runId));
     if(intent.session.sessionId!==sessionId) throw new RuntimeError(404,"NOT_FOUND","Execution intent not found");
@@ -509,10 +512,10 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
   app.delete(
     "/v1/sessions/:sessionId",
     route(async (req, res) => {
-      await runtime.deleteSession(
-        scope(req).scope,
-        runtimeIdSchema.parse(req.params.sessionId),
-      );
+      const ctx = scope(req);
+      const sessionId = runtimeIdSchema.parse(req.params.sessionId);
+      await runtime.deleteSession(ctx.scope, sessionId);
+      runtime.channel.releaseSession(ctx.scope, sessionId);
       res.status(204).end();
     }),
   );

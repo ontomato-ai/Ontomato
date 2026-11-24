@@ -1,10 +1,11 @@
 import { z } from "zod";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { ACTION, DELETE_ACTION, FUNCTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
-import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
+import { panelFormDescriptionSchema, panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
+import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type {
   PanelBatchCalls, PanelImpactInspector, PanelOperationTarget, PanelRecordTarget, PanelServerOperation,
   SinglePanelOperationOutcome,
@@ -13,6 +14,7 @@ import {
   affected, ownerDeleteUnavailable, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, remove, save, savedIdSchema, targetLabel,
   valuesForTarget, type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
+import { readRefusal } from "./object-actions";
 
 /*
  * The action owner as panel server operations: the form save the coordinator dispatches for a person's or an agent's
@@ -28,6 +30,28 @@ const statusInputSchema = z.object({
     "Target publication status (PENDING_REVIEW, PUBLISHED, or UNUSED)",
   ),
 }).strict();
+
+async function describeStatusInputSchema(host: Host) {
+  const result = await ownerPost(host, "/action/definitionForm", { target: { kind: "draft" }, changedField: null }, ownerEnvelopeSchema);
+  if (!result.success) throw readRefusal(result, "ACTION_READ_FAILED", "The owner could not read the action definition form");
+  const status = panelFormDescriptionSchema.parse(result.data).fields.find(field => field.path === "/status");
+  if (status?.control.kind !== "select") throw new Error("The Action definition form must describe /status as a select");
+
+  const inputSchema = cachedZodToRuntimeJsonSchema(statusInputSchema, { effectStrategy: "input" });
+  const properties = inputSchema.properties as { status: Record<string, RuntimeJsonValue> };
+  return {
+    ...inputSchema,
+    properties: {
+      ...properties,
+      status: {
+        ...properties.status,
+        title: status.label,
+        oneOf: status.control.options.map(option => ({ const: option.value, title: option.label })),
+      },
+    },
+  };
+}
+
 /**
  * The owner answers one status change per requested id: a saved action, its refusal, or its failure. The saved action
  * is read with the rest of the receipt, so a receipt this operation cannot read leaves only its own group unknown.
@@ -103,7 +127,6 @@ const deleteActionImpact: PanelImpactInspector = {
   },
 };
 
-const formInstructions = "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
 
 export const m6ServerOperations = [
   {
@@ -117,17 +140,9 @@ export const m6ServerOperations = [
     targetSchema: actionSaveTarget,
     inputSchema: saveInputSchema,
     resultSchema: savedIdSchema,
-    draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "action.create" : "action.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
-    create: {
-      draftValues(values: unknown) {
-        return runtimeJsonObjectSchema.parse(values);
-      },
-      createdObject(data: unknown) {
-        return { objectType: ACTION, primaryKey: savedIdSchema.parse(data).id };
-      },
-    },
+
+    create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/action/save", saveBody(target, input),
         "ACTION_SAVE_FAILED", ACTION, [ACTION, FUNCTION]);
@@ -165,6 +180,7 @@ export const m6ServerOperations = [
     targetType: ACTION,
     targetSchema: actionObjectTarget,
     inputSchema: statusInputSchema,
+    describeInputSchema: describeStatusInputSchema,
     resultSchema: savedIdSchema,
     targetInput: "action",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/action/queryById", "ACTION_UNAVAILABLE"),

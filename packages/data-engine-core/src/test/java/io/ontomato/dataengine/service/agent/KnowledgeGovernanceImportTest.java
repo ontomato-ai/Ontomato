@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.dao.KnowledgeEntity;
 import io.ontomato.dataengine.service.*;
 import java.util.List;
 import java.util.Map;
@@ -28,8 +29,26 @@ class KnowledgeGovernanceImportTest {
     assertThrows(AgentHttpException.class,()->ReflectionTestUtils.invokeMethod(service,"importKnowledge","11111111-1111-4111-8111-111111111111","run",input,owner,owner));
     verify(knowledge,never()).addBussinessKnowledge(anyString(),anyString(),anyString(),anyInt(),anyList(),any());
     input.getJSONArray("items").getJSONObject(0).put("sourceIds",List.of("source"));
-    ReflectionTestUtils.invokeMethod(service,"importKnowledge","11111111-1111-4111-8111-111111111111","run",input,owner,owner);
+    var approved = new KnowledgeEntity();
+    approved.setKnowledgeTitle("Approved fact");
+    approved.setKnowledgeText("Approved text");
+    approved.setStatus(1);
+    when(knowledge.getBussinessKnowledge("domain")).thenReturn(Map.of("approved", approved));
+    var existingItem = JSONObject.of("id", "approved", "title", "Approved fact", "text", "Approved text",
+        "sourceIds", List.of("source"));
+    input.getJSONArray("items").add(existingItem);
+    JSONObject receipt = ReflectionTestUtils.invokeMethod(service, "importKnowledge",
+        "11111111-1111-4111-8111-111111111111", "run", input, owner, owner);
+    assertEquals(List.of("record"), receipt.getList("imported", String.class));
+    assertEquals(List.of("approved"), receipt.getList("skipped", String.class));
+    assertEquals("pending", receipt.getString("status"));
     verify(knowledge).addBussinessKnowledge(eq("record"),eq("Source fact"),eq("A sourced statement"),eq(0),eq(List.of()),any(User.class));
+    JSONObject replayReceipt = ReflectionTestUtils.invokeMethod(service, "importKnowledge",
+        "11111111-1111-4111-8111-111111111111", "run", JSONObject.of("items", List.of(existingItem)), owner, owner);
+    assertTrue(replayReceipt.getList("imported", String.class).isEmpty());
+    assertEquals(List.of("approved"), replayReceipt.getList("skipped", String.class));
+    assertFalse(replayReceipt.containsKey("status"));
+    verify(knowledge, never()).addBussinessKnowledge(eq("approved"), anyString(), anyString(), anyInt(), anyList(), any());
     when(identity.hasKnowledgeGovernanceAccess("user","domain")).thenReturn(false);
     assertThrows(AgentHttpException.class,()->ReflectionTestUtils.invokeMethod(service,"importKnowledge","11111111-1111-4111-8111-111111111111","run",input,owner,owner));
   }

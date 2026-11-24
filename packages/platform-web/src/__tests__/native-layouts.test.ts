@@ -112,13 +112,17 @@ describe("the operations application's user feedback", () => {
   });
 });
 
-it("skips reading native page counts for applications whose menu is not active", () => {
-  let called = 0;
+it("skips reading legacy native page counts for inactive apps and never attaches them to panel entries", () => {
+  let nativeCalled = 0;
+  let entryCalled = 0;
   const base = generatedNavigation();
   const navigation = {
     ...base,
     pages: [
-      ...base.pages,
+      ...base.pages.map((page) =>
+        page.path === "/ontology/knowledge"
+          ? { ...page, count: () => { entryCalled += 1; return 99; } }
+          : page),
       {
         path: "/ontology/assets/workflows",
         titleKey: "nav.workflowManagement",
@@ -126,7 +130,7 @@ it("skips reading native page counts for applications whose menu is not active",
         group: "ontology",
         ownHeader: true,
         count: () => {
-          called += 1;
+          nativeCalled += 1;
           return 4;
         },
       },
@@ -134,12 +138,15 @@ it("skips reading native page counts for applications whose menu is not active",
   };
   const access = closedAccess(["ontology-modeling", "action-management"]);
   const inactive = appDeclarations(navigation, access, catalogPartition(catalogFixture(), "en"), t, () => false);
-  expect(called).toBe(0);
+  expect(nativeCalled).toBe(0);
+  expect(entryCalled).toBe(0);
   expect(inactive.find((app) => app.id === "ontology")!.groups!.flatMap((g) => g.pages)
-    .find((p) => p.id === "/ontology/assets/workflows")?.count).toBeNull();
+    .find((p) => p.id === "/ontology/assets/workflows")?.count).toBeUndefined();
 
   const active = appDeclarations(navigation, access, catalogPartition(catalogFixture(), "en"), t, (id) => id === "ontology");
-  expect(called).toBe(1);
-  expect(active.find((app) => app.id === "ontology")!.groups!.flatMap((g) => g.pages)
-    .find((p) => p.id === "/ontology/assets/workflows")?.count).toBe(4);
+  expect(nativeCalled).toBe(1);
+  expect(entryCalled).toBe(0);
+  const ontologyPages = active.find((app) => app.id === "ontology")!.groups!.flatMap((g) => g.pages);
+  expect(ontologyPages.find((p) => p.id === "/ontology/assets/workflows")?.count).toBe(4);
+  expect(ontologyPages.find((p) => p.id === "/ontology/knowledge")?.count).toBeUndefined();
 });

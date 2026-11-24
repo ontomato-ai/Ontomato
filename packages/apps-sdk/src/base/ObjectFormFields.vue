@@ -7,8 +7,8 @@ import { useFormFieldsContext } from "./object-form-types";
 
 /**
  * Renders a chosen slice of an enclosing `ObjectForm`'s fields inside any panel-authored card, tab pane, or wizard step
- * while sharing the form's single draft, validation, dirty state, `usePanelFormDraft`, `usePanelBack`, and agent draft
- * lifecycle. Select fields by explicit JSON Pointer paths (`fields`), an owner `section` key, a declared `group` key,
+ * while sharing the form's single form state, validation, dirty state, `usePanelFormDraft`, `usePanelBack`, and live
+ * assistant form filling. Select fields by explicit JSON Pointer paths (`fields`), an owner `section` key, a declared `group` key,
  * or `rest` (all remaining non-hidden fields not claimed by sibling `<object-form-fields>` slices).
  */
 const props = withDefaults(

@@ -27,8 +27,8 @@ import {
   type AssistantSkillView,
 } from "./skills";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import { draftTarget } from "@ontomato/contracts/page-draft";
 import { tForLocale } from "../../i18n";
+import { isPresetAgentKind } from "./preset-definitions";
 import { withDomainSkills } from "../skills/operations";
 import { effectiveSystemPrompt, storedSystemPrompt } from "./prompts";
 import { assistantName, assistantDescription } from "./labels";
@@ -143,8 +143,7 @@ export async function validateAgentDefinition(
   owner: AssistantOwner,
   credentials: AssistantCredentials,
 ) {
-  const target = draftTarget(draft);
-  const old = target.kind === "update" ? await editableAgent(target.id, owner) : null;
+  const old = "id" in draft.target ? await editableAgent(draft.target.id, owner) : null;
   await checkedDefinition(draft.form, owner, credentials, old?.execution_user_id ?? null, old?.skills ?? []);
 }
 export async function saveAgentDefinition(
@@ -291,11 +290,22 @@ export async function createAgentDefinitionSnapshot(
 
 export async function listAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
   const skillView = await readAssistantSkillView(owner.domainId, credentials);
-  const agents = await assistantStore.agents(owner.domainId, { skillView });
+  const agents = await assistantStore.agents(owner.domainId);
   return { agents: agents.map(agent => projectAgentDefinitionSkills(view(agent, credentials.locale), skillView)) };
 }
-export async function deleteAgentDefinition(id: string, owner: AssistantOwner) {
-  await editableAgent(id, owner);
+function presetDeletionRestriction(kind: string, locale?: string) {
+  if (isPresetAgentKind(kind)) return { reason: tForLocale(locale, "panels.agentDefinition.presetCannotDelete") };
+}
+
+export async function agentDefinitionDeletionRestriction(id: string, owner: AssistantOwner, locale?: string) {
+  const agent = await assistantStore.findAgent(id, owner.domainId);
+  if (agent) return presetDeletionRestriction(agent.kind, locale);
+}
+
+export async function deleteAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
+  const agent = await editableAgent(id, owner);
+  const restriction = presetDeletionRestriction(agent.kind, locale);
+  if (restriction) throw new HttpError(403, restriction.reason, "PRESET_AGENT_READ_ONLY");
   await getPostgresPool().query(
     `DELETE FROM ${t("assistant_agents")} WHERE id=$1 AND domain_id=$2`,
     [id, owner.domainId],

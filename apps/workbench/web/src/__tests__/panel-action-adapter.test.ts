@@ -23,7 +23,7 @@ const formDescription = {
   fields: [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: { type: "string" }, required: true, readOnly: false }],
   values: { name: "Approve order" },
   errors: [{ field: "/name", code: "required", message: "name is required" }],
-  save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.update" },
+  save: { method: "POST", path: "/action/save", bodySchema: {} },
 };
 
 describe("action resource adapter", () => {

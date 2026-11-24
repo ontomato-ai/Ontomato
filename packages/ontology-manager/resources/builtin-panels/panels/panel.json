@@ -54,7 +54,7 @@
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": true,
+        "deepLink": false,
         "default": "view"
       },
       "sourceFile": {
@@ -145,6 +145,41 @@
           "type": "string"
         },
         "default": "use"
+      },
+      "formTarget": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductPanel"
+        },
+        "default": null
+      },
+      "previewTarget": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductPanel"
+        },
+        "default": null
+      },
+      "memberProjection": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        },
+        "default": null
+      },
+      "memberPickProjection": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductProjection"
+        },
+        "default": null
+      },
+      "memberPickPanel": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductPanel"
+        },
+        "default": null
       }
     },
     "members": {
@@ -175,6 +210,11 @@
           "layout": "table",
           "pagination": "pages",
           "pageSize": 20,
+          "pageSizes": [
+            20,
+            50,
+            100
+          ],
           "fallbackToFirst": false,
           "searchPlaceholder": "list.search",
           "emptyText": "list.empty",
@@ -610,10 +650,149 @@
         },
         "id": "builtin-product-0df2c184-2139-4637-abb0-ca91839ef259"
       },
+      "unavailableList": {
+        "component": "ObjectList",
+        "type": "platform:ProductPanel",
+        "data": {
+          "rows": "unavailable"
+        },
+        "state": {
+          "selected": "selected"
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "showFooter": false,
+          "showChevron": true,
+          "statusField": "reason",
+          "statusStyle": "dot",
+          "emptyText": "unavailable.none"
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b0108"
+      },
+      "unavailableSummary": {
+        "component": "ObjectSummary",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "id",
+            "unavailableReason",
+            "revision",
+            "objectType"
+          ],
+          "copyableFields": [
+            "id"
+          ]
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b0109"
+      },
+      "memberProjectionHeader": {
+        "component": "ObjectHeader",
+        "type": "platform:ProductProjection",
+        "target": "memberProjection",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "statusField": "scope"
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b010a"
+      },
+      "memberProjectionSummary": {
+        "component": "ObjectSummary",
+        "type": "platform:ProductProjection",
+        "target": "memberProjection",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "id",
+            "component",
+            "owner",
+            "projectionKind",
+            "scope",
+            "access",
+            "revision",
+            "updatedAt"
+          ],
+          "copyableFields": [
+            "id"
+          ]
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b010b"
+      },
+      "memberProjectionPicker": {
+        "component": "ObjectList",
+        "type": "platform:ProductProjection",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "scope": {
+                "literal": "all"
+              },
+              "sort": {
+                "literal": "name"
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "memberPickProjection"
+        },
+        "config": {
+          "layout": "list",
+          "pagination": "load-more",
+          "pageSize": 10,
+          "fallbackToFirst": false,
+          "toggleable": true,
+          "searchPlaceholder": "members.search",
+          "emptyText": "members.noMatches"
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b010c"
+      },
+      "memberPanelPicker": {
+        "component": "ObjectList",
+        "type": "platform:ProductPanel",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "scope": {
+                "literal": "all"
+              },
+              "sort": {
+                "literal": "name"
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "memberPickPanel"
+        },
+        "config": {
+          "layout": "list",
+          "pagination": "load-more",
+          "pageSize": 10,
+          "fallbackToFirst": false,
+          "toggleable": true,
+          "searchPlaceholder": "members.search",
+          "emptyText": "members.noMatches"
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b010d"
+      },
       "form": {
         "component": "ObjectForm",
         "type": "platform:ProductPanel",
-        "target": "selected",
+        "target": "formTarget",
         "data": {
           "form": "form",
           "createForm": "createForm"
@@ -623,7 +802,7 @@
       },
       "preview": {
         "target": {
-          "fromState": "selected",
+          "fromState": "previewTarget",
           "candidates": {
             "rule": "usable"
           }
@@ -734,7 +913,27 @@
         "notify.copied": "Created panel {id}.",
         "notify.deleted": "Panel deleted.",
         "notify.deletedWithProjections": "Panel deleted. Removed unused projections: {deleted}.",
-        "notify.deletedWithRetained": "Panel deleted. Retained projections without edit rights: {retained}."
+        "notify.deletedWithRetained": "Panel deleted. Retained projections without edit rights: {retained}.",
+        "unavailable.title": "Unavailable panels",
+        "unavailable.none": "No unavailable panels.",
+        "unavailable.detailBanner": "This panel's stored definition is invalid and cannot be opened or edited. Review the reason below or delete it if you have permission.",
+        "unavailable.cannotDelete": "Only the author or an editor with a valid revision can delete this unavailable panel.",
+        "members.addExisting": "Add existing member",
+        "members.projection": "Projection",
+        "members.panel": "Panel",
+        "members.search": "Search by name or description",
+        "members.noMatches": "No matching members.",
+        "members.slotPlaceholder": "Member slot name",
+        "members.selectedCandidate": "Selected: {name}",
+        "members.chooseCandidate": "Select a projection or panel above, then enter a slot name.",
+        "members.keyExists": "This slot name is already declared in /manifest/members.",
+        "members.cannotEmbedSelf": "A panel cannot embed itself as a member.",
+        "members.added": "Added member \"{slot}\".",
+        "members.projectionRecord": "Projection summary",
+        "members.projectionEmpty": "Click a projection row above to inspect its summary here, or click its link to open Projections.",
+        "members.openInProjections": "Open in Projections",
+        "usage.skills": "Page skills",
+        "usage.skillsNote": "Each application entry above derives a page skill bound to that entry path, exposing this panel's reads, live form filling, and declared operations."
       },
       "zh-CN": {
         "panel.name": "面板",
@@ -837,7 +1036,27 @@
         "notify.copied": "已创建面板 {id}。",
         "notify.deleted": "面板已删除。",
         "notify.deletedWithProjections": "面板已删除，一并清理了未再使用的投影：{deleted}。",
-        "notify.deletedWithRetained": "面板已删除，因无编辑权保留的投影：{retained}。"
+        "notify.deletedWithRetained": "面板已删除，因无编辑权保留的投影：{retained}。",
+        "unavailable.title": "不可用面板",
+        "unavailable.none": "没有不可用面板。",
+        "unavailable.detailBanner": "该面板已保存的定义无效，无法正常打开或编辑。请在下方查看损坏原因，有权限时可直接删除。",
+        "unavailable.cannotDelete": "仅原作者或具备编辑权的成员可删除该不可用面板。",
+        "members.addExisting": "添加已有成员",
+        "members.projection": "投影",
+        "members.panel": "面板",
+        "members.search": "按名称或说明搜索",
+        "members.noMatches": "没有符合条件的成员。",
+        "members.slotPlaceholder": "输入成员槽位名",
+        "members.selectedCandidate": "已选：{name}",
+        "members.chooseCandidate": "先在上方选择一个投影或面板，再输入成员槽位名。",
+        "members.keyExists": "该槽位名已在 /manifest/members 中存在。",
+        "members.cannotEmbedSelf": "面板不能将自身添加为成员。",
+        "members.added": "已添加成员“{slot}”。",
+        "members.projectionRecord": "引用投影概要",
+        "members.projectionEmpty": "点击上方投影行可在此查看概要，或点击引用链接前往投影目录。",
+        "members.openInProjections": "在投影目录中打开",
+        "usage.skills": "页面技能",
+        "usage.skillsNote": "上方每个应用入口都会按该入口地址派生对应的页面技能，向智能体提供本面板的读取、实时填表与已声明操作。"
       },
       "zh-TW": {
         "panel.name": "面板",
@@ -940,7 +1159,27 @@
         "notify.copied": "已建立面板 {id}。",
         "notify.deleted": "面板已刪除。",
         "notify.deletedWithProjections": "面板已刪除，一併清理了未再使用的投影：{deleted}。",
-        "notify.deletedWithRetained": "面板已刪除，因無編輯權保留的投影：{retained}。"
+        "notify.deletedWithRetained": "面板已刪除，因無編輯權保留的投影：{retained}。",
+        "unavailable.title": "不可用面板",
+        "unavailable.none": "沒有不可用面板。",
+        "unavailable.detailBanner": "此面板已儲存的定義無效，無法正常開啟或編輯。請在下方檢視損壞原因，有權限時可直接刪除。",
+        "unavailable.cannotDelete": "僅原作者或具備編輯權的成員可刪除此不可用面板。",
+        "members.addExisting": "新增既有成員",
+        "members.projection": "投影",
+        "members.panel": "面板",
+        "members.search": "依名稱或說明搜尋",
+        "members.noMatches": "沒有符合條件的成員。",
+        "members.slotPlaceholder": "輸入成員槽位名稱",
+        "members.selectedCandidate": "已選：{name}",
+        "members.chooseCandidate": "先在上方選擇一個投影或面板，再輸入成員槽位名稱。",
+        "members.keyExists": "此槽位名稱已在 /manifest/members 中存在。",
+        "members.cannotEmbedSelf": "面板不能將自身新增為成員。",
+        "members.added": "已新增成員「{slot}」。",
+        "members.projectionRecord": "引用投影概要",
+        "members.projectionEmpty": "點擊上方投影列可在此檢視概要，或點擊引用連結前往投影目錄。",
+        "members.openInProjections": "在投影目錄中開啟",
+        "usage.skills": "頁面技能",
+        "usage.skillsNote": "上方每個應用入口都會依該入口位址派生對應的頁面技能，向智能體提供本面板的讀取、即時填表與已宣告操作。"
       },
       "ja": {
         "panel.name": "パネル",
@@ -1043,7 +1282,27 @@
         "notify.copied": "パネル {id} を作成しました。",
         "notify.deleted": "パネルを削除しました。",
         "notify.deletedWithProjections": "パネルを削除し、未使用のプロジェクションも削除しました：{deleted}。",
-        "notify.deletedWithRetained": "パネルを削除しました。編集権限がないプロジェクションは保持されました：{retained}。"
+        "notify.deletedWithRetained": "パネルを削除しました。編集権限がないプロジェクションは保持されました：{retained}。",
+        "unavailable.title": "利用できないパネル",
+        "unavailable.none": "利用できないパネルはありません。",
+        "unavailable.detailBanner": "このパネルの保存済み定義は無効なため開いたり編集したりできません。下の理由を確認し、権限がある場合は削除できます。",
+        "unavailable.cannotDelete": "この利用できないパネルを削除できるのは作成者または編集権限を持つメンバーのみです。",
+        "members.addExisting": "既存メンバーを追加",
+        "members.projection": "プロジェクション",
+        "members.panel": "パネル",
+        "members.search": "名前または説明で検索",
+        "members.noMatches": "一致するメンバーがありません。",
+        "members.slotPlaceholder": "メンバースロット名",
+        "members.selectedCandidate": "選択中：{name}",
+        "members.chooseCandidate": "上でプロジェクションまたはパネルを選択し、スロット名を入力してください。",
+        "members.keyExists": "このスロット名はすでに /manifest/members に存在します。",
+        "members.cannotEmbedSelf": "パネル自身をメンバーとして追加することはできません。",
+        "members.added": "メンバー「{slot}」を追加しました。",
+        "members.projectionRecord": "参照プロジェクション概要",
+        "members.projectionEmpty": "上のプロジェクション行をクリックするとここで概要を確認でき、リンクからプロジェクション一覧を開けます。",
+        "members.openInProjections": "プロジェクション一覧で開く",
+        "usage.skills": "ページスキル",
+        "usage.skillsNote": "上の各アプリ入口は、その入口パスに紐づくページスキルを派生し、このパネルの読み取り・フォーム入力・宣言済み操作を提供します。"
       },
       "ar": {
         "panel.name": "اللوحات",
@@ -1146,7 +1405,27 @@
         "notify.copied": "تم إنشاء اللوحة {id}.",
         "notify.deleted": "تم حذف اللوحة.",
         "notify.deletedWithProjections": "تم حذف اللوحة وإزالة الإسقاطات غير المستخدمة: {deleted}.",
-        "notify.deletedWithRetained": "تم حذف اللوحة مع الإبقاء على الإسقاطات دون صلاحية تحرير: {retained}."
+        "notify.deletedWithRetained": "تم حذف اللوحة مع الإبقاء على الإسقاطات دون صلاحية تحرير: {retained}.",
+        "unavailable.title": "لوحات غير متاحة",
+        "unavailable.none": "لا توجد لوحات غير متاحة.",
+        "unavailable.detailBanner": "تعريف هذه اللوحة المحفوظ غير صالح ولا يمكن فتحه أو تحريره. راجع السبب أدناه أو احذفها إذا كانت لديك الصلاحية.",
+        "unavailable.cannotDelete": "لا يمكن حذف هذه اللوحة غير المتاحة إلا بواسطة المؤلف أو محرر لديه رقم مراجعة صالح.",
+        "members.addExisting": "إضافة عضو موجود",
+        "members.projection": "إسقاط",
+        "members.panel": "لوحة",
+        "members.search": "ابحث بالاسم أو الوصف",
+        "members.noMatches": "لا توجد أعضاء مطابقة.",
+        "members.slotPlaceholder": "اسم فتحة العضو",
+        "members.selectedCandidate": "المحدد: {name}",
+        "members.chooseCandidate": "اختر إسقاطًا أو لوحة أعلاه ثم أدخل اسم الفتحة.",
+        "members.keyExists": "اسم الفتحة هذا موجود بالفعل في /manifest/members.",
+        "members.cannotEmbedSelf": "لا يمكن للوحة تضمين نفسها كعضو.",
+        "members.added": "تمت إضافة العضو \"{slot}\".",
+        "members.projectionRecord": "ملخص الإسقاط",
+        "members.projectionEmpty": "انقر على صف إسقاط أعلاه لمعاينة ملخصه هنا، أو انقر على الرابط لفتح دليل الإسقاطات.",
+        "members.openInProjections": "فتح في دليل الإسقاطات",
+        "usage.skills": "مهارات الصفحة",
+        "usage.skillsNote": "يشتق كل مدخل تطبيق أعلاه مهارة صفحة مرتبطة بمسار ذلك المدخل، تعرض قراءات هذه اللوحة وتعبئة النماذج والعمليات المعلنة."
       },
       "fr": {
         "panel.name": "Panneaux",
@@ -1249,7 +1528,27 @@
         "notify.copied": "Panneau {id} créé.",
         "notify.deleted": "Panneau supprimé.",
         "notify.deletedWithProjections": "Panneau supprimé. Projections inutilisées retirées : {deleted}.",
-        "notify.deletedWithRetained": "Panneau supprimé. Projections conservées sans droit de modification : {retained}."
+        "notify.deletedWithRetained": "Panneau supprimé. Projections conservées sans droit de modification : {retained}.",
+        "unavailable.title": "Panneaux indisponibles",
+        "unavailable.none": "Aucun panneau indisponible.",
+        "unavailable.detailBanner": "La définition enregistrée de ce panneau est invalide et ne peut être ni ouverte ni modifiée. Consultez la raison ci-dessous ou supprimez-le si vous avez les droits.",
+        "unavailable.cannotDelete": "Seul l'auteur ou un éditeur disposant d'une révision valide peut supprimer ce panneau indisponible.",
+        "members.addExisting": "Ajouter un membre existant",
+        "members.projection": "Projection",
+        "members.panel": "Panneau",
+        "members.search": "Rechercher par nom ou description",
+        "members.noMatches": "Aucun membre correspondant.",
+        "members.slotPlaceholder": "Nom de l'emplacement",
+        "members.selectedCandidate": "Sélectionné : {name}",
+        "members.chooseCandidate": "Sélectionnez une projection ou un panneau ci-dessus, puis saisissez un nom d'emplacement.",
+        "members.keyExists": "Ce nom d'emplacement existe déjà dans /manifest/members.",
+        "members.cannotEmbedSelf": "Un panneau ne peut pas s'intégrer lui-même comme membre.",
+        "members.added": "Membre « {slot} » ajouté.",
+        "members.projectionRecord": "Résumé de la projection",
+        "members.projectionEmpty": "Cliquez sur une ligne de projection ci-dessus pour consulter son résumé ici, ou cliquez sur le lien pour ouvrir les projections.",
+        "members.openInProjections": "Ouvrir dans Projections",
+        "usage.skills": "Compétences de page",
+        "usage.skillsNote": "Chaque entrée d'application ci-dessus dérive une compétence de page liée à ce chemin d'entrée, exposant les lectures, formulaires et opérations déclarées de ce panneau."
       },
       "de": {
         "panel.name": "Panels",
@@ -1352,7 +1651,27 @@
         "notify.copied": "Panel {id} erstellt.",
         "notify.deleted": "Panel gelöscht.",
         "notify.deletedWithProjections": "Panel gelöscht. Ungenutzte Projektionen entfernt: {deleted}.",
-        "notify.deletedWithRetained": "Panel gelöscht. Projektionen ohne Bearbeitungsrecht behalten: {retained}."
+        "notify.deletedWithRetained": "Panel gelöscht. Projektionen ohne Bearbeitungsrecht behalten: {retained}.",
+        "unavailable.title": "Nicht verfügbare Panels",
+        "unavailable.none": "Keine nicht verfügbaren Panels.",
+        "unavailable.detailBanner": "Die gespeicherte Definition dieses Panels ist ungültig und kann nicht geöffnet oder bearbeitet werden. Prüfen Sie den Grund unten oder löschen Sie es bei entsprechender Berechtigung.",
+        "unavailable.cannotDelete": "Nur der Autor oder ein Bearbeiter mit gültiger Revision kann dieses nicht verfügbare Panel löschen.",
+        "members.addExisting": "Vorhandenes Mitglied hinzufügen",
+        "members.projection": "Projektion",
+        "members.panel": "Panel",
+        "members.search": "Nach Name oder Beschreibung suchen",
+        "members.noMatches": "Keine passenden Mitglieder.",
+        "members.slotPlaceholder": "Slot-Name des Mitglieds",
+        "members.selectedCandidate": "Ausgewählt: {name}",
+        "members.chooseCandidate": "Wählen Sie oben eine Projektion oder ein Panel aus und geben Sie einen Slot-Namen ein.",
+        "members.keyExists": "Dieser Slot-Name ist in /manifest/members bereits vorhanden.",
+        "members.cannotEmbedSelf": "Ein Panel kann sich nicht selbst als Mitglied einbetten.",
+        "members.added": "Mitglied „{slot}“ hinzugefügt.",
+        "members.projectionRecord": "Projektionsübersicht",
+        "members.projectionEmpty": "Klicken Sie oben auf eine Projektionszeile, um hier ihre Übersicht anzuzeigen, oder folgen Sie dem Link zum Projektionsverzeichnis.",
+        "members.openInProjections": "In Projektionen öffnen",
+        "usage.skills": "Seiten-Skills",
+        "usage.skillsNote": "Jeder Anwendungseinstieg oben leitet einen an diesen Einstiegspfad gebundenen Seiten-Skill ab, der die Lesezugriffe, Formulare und deklarierten Operationen dieses Panels bereitstellt."
       },
       "it": {
         "panel.name": "Pannelli",
@@ -1455,7 +1774,27 @@
         "notify.copied": "Pannello {id} creato.",
         "notify.deleted": "Pannello eliminato.",
         "notify.deletedWithProjections": "Pannello eliminato. Proiezioni inutilizzate rimosse: {deleted}.",
-        "notify.deletedWithRetained": "Pannello eliminato. Proiezioni mantenute senza diritti di modifica: {retained}."
+        "notify.deletedWithRetained": "Pannello eliminato. Proiezioni mantenute senza diritti di modifica: {retained}.",
+        "unavailable.title": "Pannelli non disponibili",
+        "unavailable.none": "Nessun pannello non disponibile.",
+        "unavailable.detailBanner": "La definizione salvata di questo pannello non è valida e non può essere aperta o modificata. Verifica il motivo qui sotto o eliminalo se hai i permessi.",
+        "unavailable.cannotDelete": "Solo l'autore o un editor con una revisione valida può eliminare questo pannello non disponibile.",
+        "members.addExisting": "Aggiungi membro esistente",
+        "members.projection": "Proiezione",
+        "members.panel": "Pannello",
+        "members.search": "Cerca per nome o descrizione",
+        "members.noMatches": "Nessun membro corrispondente.",
+        "members.slotPlaceholder": "Nome slot del membro",
+        "members.selectedCandidate": "Selezionato: {name}",
+        "members.chooseCandidate": "Seleziona una proiezione o un pannello sopra, quindi inserisci un nome slot.",
+        "members.keyExists": "Questo nome slot è già presente in /manifest/members.",
+        "members.cannotEmbedSelf": "Un pannello non può incorporare se stesso come membro.",
+        "members.added": "Membro \"{slot}\" aggiunto.",
+        "members.projectionRecord": "Riepilogo proiezione",
+        "members.projectionEmpty": "Fai clic su una riga proiezione sopra per vederne qui il riepilogo, oppure segui il link per aprire le proiezioni.",
+        "members.openInProjections": "Apri in Proiezioni",
+        "usage.skills": "Competenze di pagina",
+        "usage.skillsNote": "Ogni voce applicativa sopra deriva una competenza di pagina associata a quel percorso, esponendo letture, moduli e operazioni dichiarate di questo pannello."
       }
     }
   }

@@ -147,8 +147,7 @@ public final class BussinessKnowledgeForm {
         return new JSONObject()
                 .fluentPut("method", "POST")
                 .fluentPut("path", create ? "/admin/addBussinessKnowledge" : "/admin/editBussinessKnowledge")
-                .fluentPut("bodySchema", bodySchema())
-                .fluentPut("draftOperation", create ? "knowledge.create" : "knowledge.update");
+                .fluentPut("bodySchema", bodySchema());
     }
 
     private static JSONObject bodySchema() {

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
+import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import type { AssistantCredentials } from "../../../utils/assistant-credentials";
 import {
   runtimeSkillKey,
@@ -150,7 +151,7 @@ export class SkillRegistryManager {
       if (!visibility?.protected(skill)) continue;
       try {
         this.skills.push(await this.providerEntry(provider, skill, () => offering.readManifest(skill),
-          context => offering.provide(skill, context), offering));
+          context => offering.provide(skill, { ...context, admittedEntrances: visibility.admittedEntrances?.(skill) }), offering));
       } catch (error) {
         if (!(error instanceof SkillSourceRecordError)) throw error;
         this.failedManifests.set(runtimeSkillKey(skill), { skill, ...error.detail });
@@ -177,6 +178,7 @@ export type ListedSourceFailure = SkillSourceFailure & { providerId: string; ski
 type AdmitSkills = (sources: readonly ListedProtectedSkill[], failures: readonly ListedSourceFailure[]) => Promise<{
   public(skill: RuntimeSkillRef): boolean;
   protected(skill: RuntimeSkillRef): boolean;
+  admittedEntrances?(skill: RuntimeSkillRef): readonly PageSkillEntrance[] | undefined;
 }>;
 
 export class DomainSkillRegistryManager {

@@ -23,8 +23,6 @@ import org.springframework.scheduling.support.CronExpression;
 public final class TriggerForm {
   private TriggerForm() {}
 
-  public static final String CREATE_OPERATION = "trigger.create";
-  public static final String UPDATE_OPERATION = "trigger.update";
   public static final String DEFAULT_TIME_ZONE = "Asia/Shanghai";
 
   private static final int NAME_MAX = 255;
@@ -132,7 +130,6 @@ public final class TriggerForm {
   public static JSONObject describe(
       JSONObject values,
       List<ObjectNode> errors,
-      boolean existing,
       List<Action> actions,
       List<Workflow> workflows,
       String lang,
@@ -274,7 +271,7 @@ public final class TriggerForm {
             null,
             false));
 
-    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save(existing));
+    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save());
   }
 
   /**
@@ -541,7 +538,7 @@ public final class TriggerForm {
     return options;
   }
 
-  private static JSONObject save(boolean existing) {
+  private static JSONObject save() {
     JSONObject properties = new JSONObject();
     properties.put("id", PanelFormFields.schema("string"));
     properties.put("name", JSONObject.of("type", "string", "minLength", 1, "maxLength", NAME_MAX));
@@ -559,8 +556,7 @@ public final class TriggerForm {
             JSONObject.of(
                 "type", "object",
                 "properties", properties,
-                "required", JSONArray.of("name", "condition", "effectKind", "effect")),
-        "draftOperation", existing ? UPDATE_OPERATION : CREATE_OPERATION);
+                "required", JSONArray.of("name", "condition", "effectKind", "effect")));
   }
 
   private static JSONObject nullableObject() {

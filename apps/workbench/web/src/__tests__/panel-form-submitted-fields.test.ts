@@ -33,7 +33,7 @@ const fields: PanelFormDescription["fields"] = [
   field("/skills", "Skills", { kind: "reference", objectType: SKILL, multiple: true }),
 ];
 const AGENT = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
-const save = { method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: "agent.update" };
+const save = { method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {} };
 const current = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
   updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain" as const,
@@ -82,10 +82,8 @@ const manifest = definePanel({
 });
 const panel = panelRecord("panel-submitted", "Agents", manifest, { definition: { "field-skills": "skills" } });
 const use = panelUse("use-submitted", "submitted", panel.id, "/ontology/agents");
-const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/agent.page-draft.json" };
-const draftAt = `/api/assistant/sessions/${link.sessionId}/runs/${link.runId}/page-draft`;
 
-/** The definitions service: a checked draft comes back whole, the fields it did not write as they are stored. */
+/** The definitions service: returns the form with stored values merged with any checked values. */
 function owner(request: Sent, held: PanelFormValues): Response | undefined {
   const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
   if (projected) return Response.json({ projection: projections[projected[1]!] });
@@ -98,17 +96,13 @@ function owner(request: Sent, held: PanelFormValues): Response | undefined {
   return undefined;
 }
 
-async function open(draft?: PanelFormValues, shown: PanelFormValues = stored) {
+async function open(shown: PanelFormValues = stored) {
   const intents = humanIntents(() => ({ kind: "success", data: {} }), { source: "input", input: "agent" });
-  const sent = installPlatform((request) => {
-    if (draft && request.path === draftAt) return Response.json({ pageKey: use.pageKey, operation: "agent.update", target: { objectType: AGENT_DEFINITION, id: AGENT }, form: draft });
-    return intents(request) ?? owner(request, shown) ?? nothingAt(request);
-  });
+  const sent = installPlatform((request) => intents(request) ?? owner(request, shown) ?? nothingAt(request));
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
-  const query = draft ? `?${new URLSearchParams({ draftSessionId: link.sessionId, draftRunId: link.runId, draftPath: link.path })}` : "";
-  writePanelDocument(registered("ontology", use, panel), `/ontology/agents${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } } as never);
+  writePanelDocument(registered("ontology", use, panel), "/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } } as never);
   inside(frame);
   const mounted = await mountPanel(panelWithSlots(["definition"], { definition: { "field-skills": "skills" } }));
   await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#app [data-field="/name"] input')?.value).toBeTruthy(), { timeout: 5000 });
@@ -148,16 +142,26 @@ it("names the fields the reader set, an emptied list and a value set back to the
   expect(submitted(2)).toEqual(["/description"]);
 });
 
-it("names the fields a draft wrote, and not the ones it left out", async () => {
-  const { context, submitted } = await open({ name: "Analyst v2", skills: [sql, chart] });
-  await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name", "/skills"])), { timeout: 5000 });
+it("names the fields live fillForm wrote, and not the ones it left out", async () => {
+  const { context, form, submitted } = await open();
+  const outcome = await context.instance.fillForm({
+    member: "definition",
+    values: { "/name": "Analyst v2", "/skills": [sql, chart] },
+  });
+  expect(outcome).toMatchObject({ ok: true, member: "definition", filledFields: ["/name", "/skills"] });
+  expect(form.changed.value).toEqual(new Set(["/name", "/skills"]));
   await context.instance.invoke("definition.save");
   expect(new Set(submitted(0))).toEqual(new Set(["/name", "/skills"]));
 });
 
-it("does not count a field the draft left out, even though the owner's checked values carry it", async () => {
-  const { context, submitted } = await open({ name: "Analyst v2" });
-  await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name"])), { timeout: 5000 });
+it("does not count a field fillForm left out, even though the owner's values carry it", async () => {
+  const { context, form, submitted } = await open();
+  const outcome = await context.instance.fillForm({
+    member: "definition",
+    values: { "/name": "Analyst v2" },
+  });
+  expect(outcome).toMatchObject({ ok: true, member: "definition", filledFields: ["/name"] });
+  expect(form.changed.value).toEqual(new Set(["/name"]));
   await context.instance.invoke("definition.save");
   expect(submitted(0)).toEqual(["/name"]);
 });
@@ -175,7 +179,7 @@ it("forgets what was submitted once the reader discards", async () => {
 });
 
 it("lets the reader save a field set back to the value shown, such as skills cleared to the empty list they showed", async () => {
-  const { form, saves, submitted } = await open(undefined, { ...stored, skills: [] });
+  const { form, saves, submitted } = await open({ ...stored, skills: [] });
   form.set("/skills", [sql]);
   form.set("/skills", []);
   await nextTick();
@@ -186,8 +190,13 @@ it("lets the reader save a field set back to the value shown, such as skills cle
   expect(submitted(0)).toEqual(["/skills"]);
 });
 
-it("keeps a draft's field written as the value shown, and saves it from the button", async () => {
-  const { saves, submitted } = await open({ skills: [] }, { ...stored, skills: [] });
+it("keeps a field filled as the value shown, and saves it from the button", async () => {
+  const { context, saves, submitted } = await open({ ...stored, skills: [] });
+  const outcome = await context.instance.fillForm({
+    member: "definition",
+    values: { "/skills": [] },
+  });
+  expect(outcome).toMatchObject({ ok: true, member: "definition", filledFields: ["/skills"] });
   await vi.waitFor(() => expect(saveButton().disabled).toBe(false), { timeout: 5000 });
   saveButton().click();
   await vi.waitFor(() => expect(saves()).toHaveLength(1));

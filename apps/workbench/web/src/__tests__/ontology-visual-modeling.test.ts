@@ -183,7 +183,7 @@ function simpleForm(objectType: string, values: Record<string, RuntimeJsonValue>
     })),
     values,
     errors: [],
-    save: { draftOperation: `${objectType}.save`, submit: "save" },
+    save: { submit: "save" },
   };
 }
 

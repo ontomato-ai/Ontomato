@@ -13,6 +13,7 @@ import { HttpError } from "../../utils/errors";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-query-operations";
 import type { ProductOwner } from "../product-governance/grants";
 import { describeServerOperation, panelServerOperation } from "../product-panels/server-operations";
+import { operationHost } from "../product-panels/operation-host";
 
 /*
  * The trigger catalogue's named reads for a direct panel, read as the viewer: the full list, the searched and paged
@@ -132,7 +133,7 @@ function triggerOwner(viewer: AssistantCredentials) {
   };
 }
 
-export function createTriggerReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
+export function createTriggerReadAdapter(reader: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
   const owner = triggerOwner(viewer);
   const translate = (key: string) => tForLocale(viewer.locale, key);
   const fieldLabels = () => Object.fromEntries(
@@ -163,10 +164,10 @@ export function createTriggerReadAdapter(_owner: ProductOwner, viewer: Assistant
       return definitionForm("trigger-create-form", { kind: "draft" }, params);
     },
     [`${SET_TRIGGER_STATUS}.describe`]() {
-      return describeServerOperation(panelServerOperation(SET_TRIGGER_STATUS), viewer.locale);
+      return describeServerOperation(panelServerOperation(SET_TRIGGER_STATUS), operationHost({ owner: reader, credentials: viewer }));
     },
     [`${DELETE_TRIGGER}.describe`]() {
-      return describeServerOperation(panelServerOperation(DELETE_TRIGGER), viewer.locale);
+      return describeServerOperation(panelServerOperation(DELETE_TRIGGER), operationHost({ owner: reader, credentials: viewer }));
     },
   };
 }

@@ -5,7 +5,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
-import { AGENT_DEFINITION } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client-requests";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", assertPermission: vi.fn(), skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
@@ -39,6 +39,8 @@ import assistantRouter from "../routes/assistant";
 import { HttpError } from "../../utils/errors";
 import { createAgentDefinition, filterReadableAgentDefinitions, saveAgentDefinition, saveAgentDefinitionSnapshot, validateAgentDefinition, type AgentDefinitionSkillSelection } from "../../services/assistant/definitions";
 import { readAssistantSkillView } from "../../services/assistant/skills";
+import type { PanelOperationHost } from "../../services/product-panels/server-operations";
+import { tForLocale } from "../../i18n";
 import { agentDefinitionOperations } from "../../services/assistant/definition-operations";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 
@@ -81,13 +83,21 @@ describe("agent definitions on PostgreSQL", () => {
     state.skillView.mockResolvedValue(certainSkillView);
     state.hiddenSkills.mockImplementation((_refs, skillView: { hidden?: boolean }) => skillView.hidden === true);
     state.visibleSkills.mockImplementation((refs, skillView: { hidden?: boolean }) => skillView.hidden ? [] : refs);
-    configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
+    configureI18n({
+      defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: true,
+      packs: {
+        en: { messages: en, ...enLocaleMeta },
+        "zh-CN": { ...enLocaleMeta, messages: {
+          ...en, "panels.agentDefinition.presetCannotDelete": "此智能体为预置智能体",
+        } as typeof en },
+      },
+    });
     const requirePermission: WorkbenchIdentity["requirePermission"] = () => (_req, _res, next) => next();
     installWorkbenchIdentity({ requireDomainId: () => owner.domainId, requirePermission } as unknown as WorkbenchIdentity);
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
-      Object.assign(req, owner, { token: "editor", locale: "en" });
+      Object.assign(req, owner, { token: "editor", locale: req.header("Accept-Language") ?? "en" });
       next();
     });
     app.use("/api/assistant", assistantRouter);
@@ -101,6 +111,48 @@ describe("agent definitions on PostgreSQL", () => {
       await state.pool.query(`DROP SCHEMA "${state.schema}" CASCADE`);
       await state.pool.end();
     }
+  });
+  it("uses the same localized refusal for the delete button, agent operation and REST request", async () => {
+    const [, remove] = agentDefinitionOperations;
+    expect(remove.handlerRef).toBe(DELETE_AGENT);
+    const locale = "zh-CN";
+    const actor = { owner, credentials: { token: "editor", locale } };
+    const host: PanelOperationHost = {
+      initiator: actor, executor: actor, locale,
+      request: async () => { throw new Error("The definition owner is the Workbench Server"); },
+      requestWorkbench: (path, init) => fetch(base.slice(0, -"/assistant/agent-definitions".length) + path, {
+        ...init, headers: { "Accept-Language": locale },
+      }),
+    };
+    const target = (id: string) => ({ kind: "object" as const, objectType: AGENT_DEFINITION, primaryKey: id });
+    const insert = async (kind: string, id = randomUUID()) => {
+      await state.pool!.query(
+        `INSERT INTO "${state.schema}".assistant_agents (id,domain_id,kind) VALUES($1,$2,$3)`,
+        [id, owner.domainId, kind],
+      );
+      return id;
+    };
+    const reason = tForLocale(locale, "panels.agentDefinition.presetCannotDelete");
+    expect(reason).not.toBe(tForLocale("en", "panels.agentDefinition.presetCannotDelete"));
+    for (const kind of ["regular", "analysis", "knowledge-governance"]) {
+      const id = await insert(kind);
+      expect(await remove.unavailable(host, target(id))).toEqual({ reason });
+      const response = await fetch(base + "/" + id, { method: "DELETE", headers: { "Accept-Language": locale } });
+      expect(response.status).toBe(403);
+      expect((await response.json()).error).toEqual({ code: "PRESET_AGENT_READ_ONLY", message: reason });
+      expect(await remove.execute(host, target(id))).toEqual({
+        kind: "refusal", code: "PRESET_AGENT_READ_ONLY", message: reason,
+      });
+      expect(await stored(id)).toMatchObject({ kind });
+      await state.pool!.query(`DELETE FROM "${state.schema}".assistant_agents WHERE id=$1`, [id]);
+    }
+    const custom = randomUUID();
+    await insert(custom, custom);
+    expect(await remove.unavailable(host, target(custom))).toBeUndefined();
+    expect(await remove.execute(host, target(custom))).toMatchObject({ kind: "success" });
+    expect(await stored(custom)).toBeUndefined();
+    expect(await remove.unavailable(host, target(custom))).toBeUndefined();
+    expect((await fetch(base + "/" + custom, { method: "DELETE" })).status).toBe(404);
   });
   it("creates and replays a UUID definition with its selected class range", async () => {
     const id = randomUUID();

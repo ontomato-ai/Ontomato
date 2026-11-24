@@ -64,9 +64,7 @@ test("the action type declares its new-action form, definition and explanation r
   assert.deepEqual(reads.explanation, { source: "object", parameterMode: "fixed", params: {}, result: "actionExplanation" });
   assert.deepEqual(reads.derivedSummary, { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" });
   assert.deepEqual(reads.derivedEffects, { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" });
-  assert.deepEqual(reads.derivedParameters, {
-    source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: "platform:ActionParameter",
-  });
+  assert.deepEqual(reads.derivedParameters, { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" });
   assert.deepEqual(reads.derivedConditions, { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" });
   assert.deepEqual(reads.annotatedExplanation, { source: "object", parameterMode: "fixed", params: {}, result: "annotatedCode" });
   assert.equal(panelReadResultSchemas.actionDefinition, actionDefinitionSchema);

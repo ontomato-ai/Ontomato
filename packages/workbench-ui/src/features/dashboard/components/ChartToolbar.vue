@@ -38,6 +38,8 @@
       scene="chart"
       trigger-class="ai-chart-tool-btn"
       icon-color="currentColor"
+      :board-locked="boardLocked"
+      :lock-reason="lockReason"
       @command="(cmd) => emit('command', cmd)"
       @visible-change="handleVisibleChange"
     />
@@ -54,6 +56,8 @@ const { t } = useI18n();
 
 defineProps({
   dataOpen: { type: Boolean, default: false },
+  boardLocked: { type: Boolean, default: false },
+  lockReason: { type: String, default: "" },
 });
 
 const emit = defineEmits(["openZoom", "toggleData", "command", "edit-parameters"]);

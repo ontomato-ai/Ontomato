@@ -10,9 +10,9 @@
 - `dialog` 是页面开着的对话框：`class`（新建对象类型）、`relation`（新建关系类型），仅公开状态、不写入地址，页头两个命令打开的就是它。
 - 回答“现在选了什么、在改什么”时，先看这几个状态，再用本页声明的读取（`nodeHeader`、`edgeHeader`、`attributes` 及对应表单）取当前字段，不要凭记忆。
 
-## 起草表单（读者保存后才写入）
+## 填写表单（经保存后才写入）
 
-起草前先读属主表单（类的 `classForm`/`classCreate`、关系的 `relationForm`/`relationCreate`、属性的 `attributeForm`），`operation` 用它返回的 `save.draftOperation`，`form` 里只放要改的字段。草稿怎么写（草稿信封、链接参数）见本页生成的技能。把草稿链接交给读者，由读者在表单里检查并保存；不要替读者保存。
+填表前先读属主表单（类的 `classForm`/`classCreate`、关系的 `relationForm`/`relationCreate`、属性的 `attributeForm`）。先用 `present` 选中目标或打开对应弹窗（如 `selectedNode`、`selectedEdge`、`selectedAttribute`、`dialog: "class"` / `"relation"`），再用 `fill_form` 往当前挂载的表单填入要改的字段（页面标出改动并保持未保存）；需要保存时用 `page_action` 调用对应表单的保存操作（默认在对话中确认，全自动会话直接保存），否则由读者在表单里检查并保存。
 
 - 改类：只有显示名和说明可改，API 名只读。
 - 新建类：字段是 API 名、主键名、显示名、业务描述；格式和重名由属主校验，原因显示在字段旁。

@@ -12,6 +12,10 @@ import {
   writtenText,
 } from "./page-context";
 import {
+  classifyPanelOperationDispatch,
+  classifyPanelOperationOutcome,
+} from "./panel-agent";
+import {
   displayPageAddressInputSchema,
   displaySnapshotSchema,
   fillFormRequestSchema,
@@ -35,15 +39,11 @@ test("present accepts only workspace outputs or a site-relative page and rejects
     target: "outputs/result.dataset.json",
   });
   assert.deepEqual(presentRequestSchema.parse({ target: address, state }), { target: address, state });
-  assert.deepEqual(presentRequestSchema.parse({ target: address, overwriteUnsavedDraft: true }), {
-    target: address, overwriteUnsavedDraft: true,
-  });
   for (const invalid of [
     { target: "result.dataset.json" },
     { target: "outputs/../result.dataset.json" },
     { target: "outputs/", state },
     { target: "outputs/result.dataset.json", state },
-    { target: "outputs/result.dataset.json", overwriteUnsavedDraft: true },
     { target: "https://example.com/page" },
     { target: "//[", state },
     { target: "/\\example.com/page" },
@@ -283,4 +283,188 @@ test("fill_form and page_action requests, frames, and receipts validate on the s
     current: { known: false, reason: "receipt_missing" },
   };
   assert.deepEqual(presentationResultSchema.parse(missingWithIntent), missingWithIntent);
+
+  const outcomeUnknownReceipt = {
+    connectionId: id,
+    toolCallId: "act-unknown",
+    result: {
+      status: "unknown",
+      reason: "outcome_unknown",
+      operation: "batch.updateStatus",
+      intentId: id,
+      outcome: { kind: "unknown", message: "Owner connection closed before answer." },
+      current: selected,
+      error: { code: "ACTION_OUTCOME_UNKNOWN", message: "Owner connection closed before answer." },
+    },
+  };
+  assert.deepEqual(presentationReceiptSchema.parse(outcomeUnknownReceipt), outcomeUnknownReceipt);
+  assert.deepEqual(presentationResultSchema.parse(outcomeUnknownReceipt.result), outcomeUnknownReceipt.result);
+
+  // LLM tool requests must NOT accept manual expected* binding fields; the platform injects them on PresentationFrame.
+  assert.throws(() => fillFormRequestSchema.parse({
+    mode: "fill_form",
+    member: "form",
+    values: { "/name": "Scoped" },
+    expectedPageInstanceId: "page-1",
+  }));
+  assert.throws(() => pageActionRequestSchema.parse({
+    mode: "page_action",
+    operation: "list.batchDelete",
+    expectedTarget: { kind: "draft", objectType: "platform:ScheduledTask" },
+    expectedCheckedKeys: ["platform:ScheduledTask:task-1"],
+  }));
+
+  const boundFillFrame = {
+    type: "presentation",
+    sessionId: id,
+    runId: id,
+    toolCallId: "fill-bound",
+    target: {
+      kind: "fill_form",
+      member: "form",
+      memberPath: ["detail"],
+      values: { "/name": "Scoped" },
+      expectedPageInstanceId: "page-1",
+      expectedPanelInstanceId: "panel-1",
+      expectedMemberInstanceId: "nested-1",
+      expectedFormInstanceId: "form-1",
+      expectedTarget: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+      expectedDashboardId: "dash-1",
+      expectedCardId: "card-1",
+    },
+  };
+  assert.deepEqual(presentationFrameSchema.parse(boundFillFrame), boundFillFrame);
+
+  const boundActionFrame = {
+    type: "presentation",
+    sessionId: id,
+    runId: id,
+    toolCallId: "action-bound",
+    target: {
+      kind: "page_action",
+      operation: "list.batchDelete",
+      rowKey: "platform:ScheduledTask:task-1",
+      expectedPageInstanceId: "page-1",
+      expectedPanelInstanceId: "panel-1",
+      expectedMemberInstanceId: "nested-1",
+      expectedEntryInstanceId: "entry-1",
+      expectedTarget: { kind: "draft", objectType: "platform:ScheduledTask" },
+      expectedCheckedKeys: ["platform:ScheduledTask:task-1", "platform:ScheduledTask:task-2"],
+      expectedDashboardId: "dash-1",
+      expectedCardId: "card-1",
+    },
+  };
+  assert.deepEqual(presentationFrameSchema.parse(boundActionFrame), boundActionFrame);
+
+  const selectedWithBinding = {
+    known: true,
+    observedAt: "2026-11-23T14:00:00Z",
+    placement: "side",
+    target: {
+      kind: "page",
+      url: address,
+      label: "Tasks",
+      selection: [],
+      pageInstanceId: "page-1",
+      panelInstanceId: "panel-1",
+      memberInstances: { detail: "nested-1" },
+      entryInstances: { "list.batchDelete": "entry-1" },
+      checkedKeys: { checked: ["platform:ScheduledTask:task-1"] },
+      dashboardId: "dash-1",
+      cardId: "card-1",
+    },
+    load: { status: "ready" },
+  };
+  const staleFillReceipt = {
+    connectionId: id,
+    toolCallId: "fill-2",
+    result: {
+      status: "not_filled",
+      reason: "stale",
+      member: "form",
+      current: selectedWithBinding,
+    },
+  };
+  assert.deepEqual(presentationReceiptSchema.parse(staleFillReceipt), staleFillReceipt);
+
+  const partialReceipt = {
+    connectionId: id,
+    toolCallId: "action-partial",
+    result: {
+      status: "partially_executed",
+      reason: "partial_completion",
+      operation: "form.save",
+      intentId: id,
+      savedFields: ["/name"],
+      outcome: { kind: "refusal", code: "PROTECTED_FIELD", message: "Protected field rejected.", savedFields: { "/name": "Updated" } },
+      current: selectedWithBinding,
+      error: { code: "PROTECTED_FIELD", message: "Protected field rejected." },
+    },
+  };
+  assert.deepEqual(presentationReceiptSchema.parse(partialReceipt), partialReceipt);
+});
+
+test("shared panel operation classifier separates executed, failed (preserving code), partial, and unknown", () => {
+  const executed = classifyPanelOperationOutcome({ kind: "success", data: {}, message: "Done" }, "intent-1");
+  assert.equal(executed.kind, "executed");
+
+  const refusedTaskRunning = classifyPanelOperationDispatch(
+    {
+      kind: "dispatched",
+      intentId: "intent-2",
+      outcome: { kind: "refusal", code: "TASK_RUNNING", message: "Task is already running." },
+    },
+  );
+  assert.equal(refusedTaskRunning.kind, "failed");
+  assert.equal(refusedTaskRunning.code, "TASK_RUNNING");
+
+  const notDispatched = classifyPanelOperationDispatch({
+    kind: "not-dispatched",
+    intentId: "intent-3",
+    code: "FORM_CONFIRMATION_STALE",
+    message: "Form changed.",
+  });
+  assert.equal(notDispatched.kind, "failed");
+  assert.equal(notDispatched.code, "FORM_CONFIRMATION_STALE");
+
+  const partialRefusal = classifyPanelOperationOutcome(
+    {
+      kind: "refusal",
+      code: "PARTIAL_REJECTED",
+      message: "Some fields could not be saved.",
+      savedFields: { "/name": "New" },
+    },
+    "intent-4",
+  );
+  assert.equal(partialRefusal.kind, "partial");
+  assert.equal(partialRefusal.code, "PARTIAL_REJECTED");
+  assert.deepEqual(partialRefusal.savedFields, ["/name"]);
+
+  const partialBatch = classifyPanelOperationOutcome(
+    {
+      kind: "batch",
+      items: [
+        { target: { objectType: "platform:ScheduledTask", primaryKey: "t1" }, outcome: { kind: "success", data: {} } },
+        { target: { objectType: "platform:ScheduledTask", primaryKey: "t2" }, outcome: { kind: "refusal", code: "TASK_RUNNING", message: "Busy" } },
+      ],
+    },
+    "intent-5",
+  );
+  assert.equal(partialBatch.kind, "partial");
+  assert.equal(partialBatch.code, "TASK_RUNNING");
+
+  const unknownSingle = classifyPanelOperationOutcome(null, "intent-6");
+  assert.equal(unknownSingle.kind, "unknown");
+
+  const unknownBatch = classifyPanelOperationOutcome(
+    {
+      kind: "batch",
+      items: [
+        { target: { objectType: "platform:ScheduledTask", primaryKey: "t1" }, outcome: { kind: "success", data: {} } },
+        { target: { objectType: "platform:ScheduledTask", primaryKey: "t2" }, outcome: { kind: "unknown", message: "Timed out" } },
+      ],
+    },
+    "intent-7",
+  );
+  assert.equal(unknownBatch.kind, "unknown");
 });

@@ -1,6 +1,6 @@
 ---
 name: ontomato-app-builder
-description: "Compose, check and register panel applications with the Ontomato SDK. Use when building a panel or adapting a page into a panel."
+description: "Compose, check and register panel applications with the Ontomato SDK. Use when building a panel or moving an existing page into the product layer."
 ---
 
 # Ontomato app builder
@@ -11,34 +11,41 @@ description: "Compose, check and register panel applications with the Ontomato S
 
 Authoring panels:
 
-1. A panel must lay out according to the width and height of its container: when the container's width or height changes, the layout adapts accordingly; when content exceeds the container's height, it scrolls inside the container. The same code must render and operate properly in all three placements: full page, embedded in another panel, and beside a conversation.
-2. A panel must read business data only through projections and modify business data only by invoking registered operations. Panel code must not call business APIs directly.
-3. A panel must not render ontology data itself. Any place that displays business data as text, graphics, or options, or provides an entry point for a business operation, must place a projection rendered by a base component. Exception: unsaved input inside a form does not count as ontology data; the panel may read it directly for live preview. Static content that does not display ontology data (subheadings, dividers) and controls that only toggle local view state (selection, checkboxes, expand/collapse, tab switching) are written directly in the panel and do not require registering a projection.
-4. Panels and base components must not implement business calculations or business decisions. Computed results, sentences composed from business data, and decision outcomes must be provided by capability-layer MetricViews (reads) or Actions (writes); the platform's own objects are served by the platform's built-in reads.
-5. The only business values a panel may use are the outputs declared by its projections (for example, the selected object and its name, record count, or current value). Those values have only three permitted uses: as inputs to other projections; to decide which block to show, which item to select, or where to navigate; or inserted verbatim into text-only slots such as titles and tab labels. Panels must not read record fields and must not compute on these values.
-6. A panel must not trigger business writes on load, URL restoration, selection, or re-render. Business writes happen only when the user explicitly acts or an agent explicitly invokes a registered operation.
-7. Use official components in this order, advancing to the next step only when the previous step cannot meet the need: (1) default appearance; (2) component configuration options; (3) placing other components in slots provided by the component; (4) writing a custom component.
-8. The platform does not draw page headers. When a panel needs a header, place the official page header component at the top of the panel content and supply its title, description, back action, and buttons; without it, there is no page header. Buttons in the page header may only update the panel's declared public state or invoke registered operations.
-9. A panel declaration must declare its public state and common usages. State that needs to be read or controlled by an agent, written to the URL, saved per user, or exposed externally must be declared as public state; temporary interaction state used only inside a panel instance stays in Vue and is not declared.
-10. Before implementing a page, search for reusable base components, projections, and panels. When business capabilities (read functions, forms, operations) are missing, the capability owner must add them; when generic UI primitives are missing, the platform must add them to the official SDK. When renovating an existing page, check every user action against the original page item by item.
+1. **Container-driven layout.** Lay out by container width and height (`@container` / flex / grid), never by browser window width or hardcoded viewport subtractions. The same code must work full-page, embedded in another panel, and beside a conversation. When the container has no definite height, grow naturally with content; when it has a definite height, either grow and let the outer area scroll or fill the container and scroll the needed sub-region.
+2. **Reads through projections, writes through declared operations.** Never call business APIs directly. Every button that performs a business write must invoke a named operation bound on a projection member of this panel; buttons for local UI interaction only (open dialog, go back, navigate, discard unsaved draft) are written directly in the panel as `<sdk-button>` or component buttons.
+   - Whether rendered in `<page-header>`, a table slot, or a form, the button calls the same declared binding so target and parameter sources are traceable.
+   - A save bound on a form projection submits that form's live draft; a write operation on another member that submits a form's draft must explicitly name that form member (`draft: "<formMember>"`).
+   - Post-action UI updates or navigation must rely on the operation's success outcome; any new object ID needed afterward (for example navigating to a newly created record) must be declared and returned by the operation owner. Never infer success or guess a new ID from list changes.
+3. **Never render ontology data in the panel.** Business data is rendered by base components according to projection declarations so every displayed result, field, or object is traceable.
+   - Exception 1: Unsaved draft input in a form/canvas/wizard is not ontology data and may be read via the component's declared draft output for live preview.
+   - Exception 2: Declared read-only projection outputs may be placed into text-only slots such as titles and tab labels (see Rule 5).
+   - Static non-business content and pure local view toggles are written directly in the panel or with data-free SDK UI primitives without registering projections.
+4. **No business calculations or business judgments in panels or components.** Computed results and business judgments come from capability-layer MetricViews (reads) or Actions (writes), or platform built-in reads for platform objects. Base components may format already-provided values in three ways only: fill values into a fixed sentence template (`RecordTemplate`), map raw values to label/tone/icon via exact-match `valueMap` (`TypedValue`, `InfoBanner`, `ObjectList` columns), or perform pure text filtering on a complete unpaged list and expose `filteredCount`. Never compute new business values, infer thresholds/statuses, or pass off loaded row counts as a paged total — use the owner-returned `total`.
+5. **Read-only projection outputs only.** The only business values a panel script/template may read are declared read-only outputs (`usePanelOutput` / `usePanelOutputs`, e.g., selected object/label, owner `total`, `loadedCount`, `filteredCount`, `dirty`, owner-declared scalar outputs). Use them only to feed other members, control visibility/selection/navigation (checking presence, equality, or zero is not business calculation), or fill text-only slots with optional fixed prefixes/suffixes. Never read raw record fields or compute on them.
+6. **No automatic writes on display.** Never trigger business writes on load, URL restoration, selection, or re-render. Writes occur only on explicit user action or an explicit agent call to a registered operation.
+7. **Component lookup order.** Advance only when the previous step cannot satisfy the need: (1) official component defaults; (2) component `config`; (3) placing another component in an official Vue slot (`#cell-<key>`, `#actions`, `#row-detail`, `#field-<dotPath>`); (4) authoring a dedicated component as a last resort. Slot components that only display values passed by the official component are listed in `manifest.components` (not registered as projections); slot blocks that read additional ontology data remain projections receiving `:inputs="{ target: ref }"`. Per-row business operations are declared on the `ObjectList` projection and invoked by slot buttons.
+8. **Page headers belong to the panel.** The platform does not draw page headers. Place `<page-header>` at the top of `panel.html` when needed (omit for headerless pages), supply title, description, back action, `:draft="usePanelFormDraft(...)"`, and buttons obeying Rule 2.
+9. **Public state, `deepLink`, and recipes.** Declare all members (`manifest.members`), slot-only domain components (`manifest.components`), and public states (`manifest.state`). Data-free official UI primitives (`<page-header>`, `<sdk-*>`) are not listed as members.
+   - Always declare as public state: (a) state deciding which business content the reader sees (tabs, filters, selections, view modes); (b) state opening or switching an editable business form (including blank create dialogs such as `creating`). Leave pure transient UI state (hover, help tooltips, scroll position) in Vue.
+   - Mark `deepLink: true` **only** on state needed for another reader to return to the same view (selected object, tab, view mode, list search/filter/sort). **Never** mark dialog toggles (`creating`, `grantDialog`, `dialog`, `compose`) or active-edit trackers (`editingEntryId`) with `deepLink: true`.
+   - Use `present` to open the page or editor, `fill_form` to enter unsaved values in the live form, and `page_action` to request the declared save when asked. The same form, operation and permissions apply to humans and assistants. Write typical flows in `recipes.md`.
+10. **Reuse first, escalate missing capabilities.** Search for existing base components, projections, and panels first. Missing business reads, forms, or Actions are added by the capability owner; missing generic UI primitives belong in the official SDK. When migrating an existing page, verify every visible item and user action against the original page.
 
 Authoring components:
 
-11. A base component must not call business APIs directly; the platform supplies its data according to the projection declaration. The "meaning" in its declaration must make clear to both humans and agents what the component renders and what it can do.
+11. **Declared meaning, no direct business APIs.** Base components never call business APIs directly; data comes through the projection declaration. Write clear `meaning`, data ports, config, inputs, outputs, and operations so both humans and agents understand what the component renders and can do.
 
-**Machine-checked rules (violations fail checks; no need to memorize)**
+**Machine-checked rules (`panel check` catches these automatically)**
 
-- Page code uses Vue single-file components and standard CSS; scripts may import only Vue and the platform SDK.
-- Data-free UI primitives (buttons, tabs, tables, dialogs, etc.) are imported from the platform SDK using SDK component names; third-party UI library component names must not be referenced directly.
-- Panel declaration structure: members, the four attributes of each public state field (type, persisted per user, synced to URL, exposed externally), and the five items when adding a new projection (base component, data source, component config, operations, and public state wired to inputs/outputs).
-- Every base component must include a declaration covering its meaning, required data, configuration options, inputs, outputs, and invocable operations.
+- Panel code uses Vue templates, standard CSS, and scripts importing only `vue` and `@ontomato/sdk/panel`. Direct network calls (`fetch`, `XMLHttpRequest`, `EventSource`, `WebSocket`) are rejected.
+- Data-free UI primitives use `<page-header>`, `<sdk-*>`, `v-sdk-*`, and `--sdk-*` tokens. Third-party library names (`el-*`, `v-loading`, `--el-*`, `element-plus`) are rejected.
+- Manifest structure, typed public states, member bindings, and component declarations (including `bindsElement` meaning applicable ontology types; actual bindings always go through reads or operations) are validated against the SDK catalogue and type table.
 
 ## Getting started
 
-Start with the [Vue panel skill](references/panel-authoring/SKILL.md) and [page templates](references/templates/README.md).
-The [technical guide](GUIDE.md) covers connection, CLI commands (`scripts/ontomato.mjs`), registration, and capability
-authoring. For an existing application, start with the [decomposition skill](references/app-standard/SKILL.md). When
-the platform supplies `application-design`, read it before designing or polishing a panel.
+- **New panel or application:** read the [Vue panel skill](references/panel-authoring/SKILL.md) and pick a [page template](references/templates/README.md).
+- **Moving an already-built page into the product layer:** read [Migrating an existing page into the product layer](references/migrate-existing-page.md) and the [application decomposition skill](references/app-standard/SKILL.md).
+- **CLI, registration, customer Actions & MetricViews:** read the [technical guide](GUIDE.md) (`scripts/ontomato.mjs`) and the [full standard](references/app-standard/references/standard.md). When the platform supplies `application-design`, read it before designing or polishing a panel.
 
 Use the attached workspace and current identity. Run `panel check`, then register and open the application entry. For
 new Actions and MetricViews, read the owner context, write a definition, and have the Java authoring API test and accept

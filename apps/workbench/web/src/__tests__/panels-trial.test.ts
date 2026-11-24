@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { computed, createApp, defineComponent, h, nextTick, ref, shallowRef } from "vue";
+import { computed, createApp, defineComponent, h, nextTick } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelInstance } from "../../../../../packages/apps-sdk/src/panel/instance";
-import { PanelFormAdapters, receivePanelDraft, type ReceivedPanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
 import { portsOf } from "../../../../../packages/apps-sdk/src/panel/ports-of";
 import { operationCall } from "../../../../../packages/apps-sdk/src/panel/ports";
 import { registeredHandlers } from "../../../../../packages/apps-sdk/src/panel/handlers";
@@ -60,7 +59,6 @@ function instance(initial?: Record<string, unknown>) {
     url: () => "/applications/app-panels-trial-a/tasks",
     label: () => "panels-trial-a-tasks",
     initial: initial as never,
-    recordDraftCreated: async () => {},
     readProjection: async (id) => records.get(id)!,
   });
 }
@@ -84,7 +82,6 @@ describe("a panel's projection", () => {
       url: () => "/applications/app-panels-trial-a/tasks",
       label: () => "panels-trial-a-tasks",
       initial: { selectedTask: task("task-1") },
-      recordDraftCreated: async () => {},
       readProjection: async (id) => records.get(id)!,
     });
     first.register({
@@ -94,7 +91,6 @@ describe("a panel's projection", () => {
         kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
         inputSchema: {}, resultSchema: {}, batch: false,
       } },
-      takesDrafts: false,
     });
     await first.invoke("run.runNow");
     expect(prepare).toHaveBeenCalledWith("run.runNow", { call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" }, input: {} } }, undefined);
@@ -152,107 +148,12 @@ describe("a panel instance", () => {
       url: () => "/applications/app-panels-trial-b/summary",
       label: () => "panels-trial-b-summary",
       initial: { selectedTask: task("task-7") },
-      recordDraftCreated: async () => {},
       readProjection: async (id) => records.get(id)!,
     });
     p.state.set("selectedTask", task("task-9"));
     expect(p.pageContext.value.selection[0]?.id).toBe("task-9");
     // Q shows the task its address named, and keeps it when P's reader chooses another.
     expect(q.pageContext.value.selection[0]?.id).toBe("task-7");
-  });
-
-  it("hands a draft to the form whose owner names its operation, and marks the fields it changed", async () => {
-    const adapters = new PanelFormAdapters();
-    // A form whose owner performs another operation for the draft's target declines it; the next form is asked.
-    const form = (performs: string, changed: readonly string[]) => ({
-      handle: {
-        fields: shallowRef([]),
-        values: shallowRef({}),
-        errors: shallowRef({}),
-        changed: shallowRef(new Set<string>()),
-        busy: ref(false),
-        dirty: ref(false),
-        dirtyFields: shallowRef(new Set<string>()),
-        submitting: ref(false),
-        canSubmit: ref(false),
-        set: () => {},
-        submit: async () => ({}),
-        reset: async () => true,
-      },
-      receive: async (draft: { operation: string }) => (draft.operation === performs ? new Set(changed) : null),
-      // Which slot takes the draft and what it changed is this test's subject; the form's own save and showing are the
-      // component's, checked where the component is mounted.
-      submit: async () => ({}),
-      dirty: () => false,
-      discard: () => {},
-    });
-    adapters.register("other", form("agent.update", []));
-    adapters.register("form", form("platform:ScheduledTask.save", ["/instruction", "/operation"]));
-    const received = await new Promise<ReceivedPanelDraft<Record<string, unknown>>>((taken) =>
-      void receivePanelDraft(
-        "panels-trial-a-tasks",
-        adapters,
-        {
-          readPageDraft: async () => ({
-            pageKey: "panels-trial-a-tasks",
-            operation: "platform:ScheduledTask.save",
-            target: { objectType: SCHEDULED_TASK, id: "task-1" },
-            form: { operation: "inspection", instruction: "look at tonight's failures" },
-          }),
-        },
-        { sessionId: "s", runId: "r", path: "outputs/drafts/a.page-draft.json" },
-        taken,
-      ),
-    );
-    // The draft is unsaved: it is what the form now holds, and the fields it changed are marked.
-    expect(received.slot).toBe("form");
-    expect([...received.changed].sort()).toEqual(["/instruction", "/operation"]);
-    expect(adapters.unclaimed(["other", "form"])).toBeNull();
-  });
-
-  it("preserves optional itemKey on a received draft target for embedded row edits", async () => {
-    const form = (performs: string) => ({
-      handle: {
-        fields: shallowRef([]),
-        values: shallowRef({}),
-        errors: shallowRef({}),
-        changed: shallowRef(new Set<string>()),
-        busy: ref(false),
-        dirty: ref(false),
-        dirtyFields: shallowRef(new Set<string>()),
-        submitting: ref(false),
-        canSubmit: ref(false),
-        set: () => {},
-        submit: async () => ({}),
-        reset: async () => true,
-      },
-      receive: async (draft: { operation: string }) => (draft.operation === performs ? new Set(["/label"]) : null),
-      submit: async () => ({}),
-      dirty: () => false,
-      discard: () => {},
-    });
-
-    for (const itemKey of ["row-1", { className: SCHEDULED_TASK, primaryKey: "row-2" }] as const) {
-      const adapters = new PanelFormAdapters();
-      adapters.register("rowForm", form("row.save"));
-      const received = await new Promise<ReceivedPanelDraft<Record<string, unknown>>>((taken) =>
-        void receivePanelDraft(
-          "panels-trial-a-tasks",
-          adapters,
-          {
-            readPageDraft: async () => ({
-              pageKey: "panels-trial-a-tasks",
-              operation: "row.save",
-              target: { objectType: SCHEDULED_TASK, id: "parent-1", itemKey },
-              form: { label: "Updated row" },
-            }),
-          },
-          { sessionId: "s", runId: "r", path: "outputs/drafts/row.page-draft.json" },
-          taken,
-        ),
-      );
-      expect(received.target).toEqual({ objectType: SCHEDULED_TASK, id: "parent-1", itemKey });
-    }
   });
 });
 
@@ -264,7 +165,7 @@ describe("a panel's module", () => {
       list: async () => [{ primaryKey: "task-1", label: "Nightly", fields: {} }],
       read: async (primaryKey) => ({ primaryKey, label: "Nightly", fields: { application: "operations", state: "on" } }),
       forms: {
-        describe: async () => ({ fields: [], values: {}, errors: [], revision: 1, save: { method: "PUT", path: "/", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` } }),
+        describe: async () => ({ fields: [], values: {}, errors: [], revision: 1, save: { method: "PUT", path: "/", bodySchema: {} } }),
         save: async (target) => ({ primaryKey: target.kind === "object" ? target.primaryKey : "", label: "Nightly", fields: {} }),
       },
     });
@@ -293,7 +194,6 @@ describe("a panel's module", () => {
       projection: (id: string) => panelInstance.projection(id),
       invoke: (handlerRef: string, call) => panelInstance.runHandler(handlerRef, call),
       projectionsChanged: () => () => {},
-      draft: ref(null),
       holdUnsaved: () => () => {},
       t: (key: string) => key,
       resources: async () => {},

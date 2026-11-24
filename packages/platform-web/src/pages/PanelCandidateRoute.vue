@@ -10,8 +10,8 @@ import { candidatePanelHost } from "../panel-host";
 /**
  * An author's preview of the panel candidate in one of their workspaces (design 6.2): the workspace's `panel.html`,
  * `panel.mjs` and `panel.json` at a ref — `working` or a commit — shown by the same panel host a registered panel is,
- * before anything is registered. The address names the workspace, the ref and the page key a draft for this page names;
- * the panel's state and a draft's link ride in its query as on any panel page.
+ * before anything is registered. The address names the workspace, the ref and the page key; the panel's state rides in
+ * its query as on any panel page.
  *
  * Node answers the candidate only to the workspace's author; anyone else is refused there and the refusal is shown. The
  * frame runs on the workspace's build-test context, so no request it makes is live.
@@ -20,7 +20,7 @@ const props = defineProps<{
   workspaceId: string;
   /** `working` for the current files, or a commit of the workspace (the address's `ref`). */
   revision: string;
-  /** The page key the candidate is previewed as: a draft written for this page names it. */
+  /** The page key the candidate is previewed as. */
   pageKey: string;
 }>();
 
@@ -41,16 +41,10 @@ const labels = computed<PanelHostLabels>(() => ({
     scriptRejected: t("platform.panelScriptRejected"),
   },
   content: { styleOutside: t("platform.panelStyleOutside") },
-  draft: {
-    opening: t("platform.panelDraftOpening"),
-    close: t("platform.panelDraftClose"),
-    toAgent: t("platform.panelDraftToAgent"),
-    toAgentText: t("platform.panelDraftToAgentText", { reason: "{reason}" }),
-  },
   refresh: t("common.refresh"),
 }));
 
-/** The preview's full address; PanelHost replaces declared deep-link params in place while keeping draft links and other query params. */
+/** The preview's full address; PanelHost replaces declared deep-link params in place while keeping other query params. */
 const address = computed(() => route.fullPath);
 const requestedState = computed(() => panelAddressState(route.fullPath));
 

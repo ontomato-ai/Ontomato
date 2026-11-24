@@ -166,7 +166,7 @@ describe("governance panel read adapter", () => {
             fields: [],
             values: { parentId: "org-root" },
             errors: [],
-            save: { method: "POST", path: "/panel/governance/org-units/save", bodySchema: { type: "object" }, draftOperation: "orgUnit.create" },
+            save: { method: "POST", path: "/panel/governance/org-units/save", bodySchema: { type: "object" } },
           },
         };
       }

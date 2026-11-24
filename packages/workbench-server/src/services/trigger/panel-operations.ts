@@ -53,7 +53,6 @@ const deleteTriggerImpact: PanelImpactInspector = {
   },
 };
 
-const formInstructions = "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
 
 export const triggerServerOperations = [
   {
@@ -67,17 +66,9 @@ export const triggerServerOperations = [
     targetSchema: triggerSaveTarget,
     inputSchema: saveInputSchema,
     resultSchema: savedIdSchema,
-    draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "trigger.create" : "trigger.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
-    create: {
-      draftValues(values: unknown) {
-        return runtimeJsonObjectSchema.parse(values);
-      },
-      createdObject(data: unknown) {
-        return { objectType: TRIGGER, primaryKey: savedIdSchema.parse(data).id };
-      },
-    },
+
+    create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/trigger/save", saveBody(target, input), "TRIGGER_SAVE_FAILED", TRIGGER, [TRIGGER]);
     },

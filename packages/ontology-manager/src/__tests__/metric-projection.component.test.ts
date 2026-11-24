@@ -1,9 +1,7 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {createApp,h,nextTick,ref,type App} from 'vue';
-import {ElButton,ElCheckbox,ElFormItem,ElInput,ElInputNumber,ElOption,ElSelect} from 'element-plus';
-import {productAssetInputSchema,productAssetSchema,productAuthoringSchema} from '@ontomato/contracts/product-assets';
+import {productAssetSchema} from '@ontomato/contracts/product-assets';
 import MetricProjectionRuntime from '../products/MetricProjectionRuntime.vue';
-import ProductAssetCatalog from '../products/ProductAssetCatalog.vue';
 import DashboardChartPicker from '../components/DashboardChartPicker.vue';
 import {installObjectViewHost} from './object-view-host';
 import {chartFile} from './chart-fixture';
@@ -56,100 +54,6 @@ describe('a MetricWidget chart',()=>{
   });
 });
 
-/** The catalog's own controls come from the host's global Element Plus registration. */
-function installElement(app:App){for(const component of [ElButton,ElFormItem,ElInput,ElSelect,ElOption,ElCheckbox,ElInputNumber])app.component(component.name!,component);}
-/** The catalog's buttons as a reader meets them; its controls are Element Plus components. */
-const findButton=(scope:ParentNode,text:string)=>Array.from(scope.querySelectorAll("button")).find(item=>item.textContent?.trim()===text) as HTMLButtonElement|undefined;
-
-describe('a chart MetricWidget',()=>{
-  const settle=async()=>{for(let i=0;i<40;i++){await new Promise(resolve=>setTimeout(resolve,0));await nextTick();}};
-  const card={id:'card-1',name:'Orders by kind',query:{kind:'metric',metricId:'orders',parameters:{year:2026}},chartFile:{name:'orders.chart.json',content:chartFile()}};
-  /** An existing MetricWidget as the asset API returns it; `presentation` is what the form starts from. */
-  const stored=(presentation:Record<string,unknown>)=>({id:'asset-1',ownerId:'author',name:'Orders',description:'',visibility:'private',revision:1,editable:true,createdAt:'now',updatedAt:'now',document:{kind:'metric-widget',renders:{kind:'MetricView',id:'orders'},parameters:{},height:240,isDefault:false,audience:'both',...presentation}});
-  /** A saved document the API answers with, so the form can open it. */
-  const savedDocument=(presentation:Record<string,unknown>)=>({kind:'metric-widget',renders:{kind:'MetricView',id:'orders'},parameters:{},height:240,isDefault:false,audience:'both',...presentation});
-  function host(loaded:unknown,update?:unknown){
-    const sent:Array<{url:string;method:string;body:Record<string,any>|undefined}>=[];
-    vi.stubGlobal('fetch',async(url:string,init:RequestInit={})=>{
-      sent.push({url,method:init.method??'GET',body:init.body?JSON.parse(String(init.body)):undefined});
-      if(url.endsWith('/dashboards'))return Response.json({success:true,data:[{id:'board-1',name:'Sales',createdAt:0,updatedAt:0}]});
-      if(url.includes('/dashboards/board-1'))return Response.json({success:true,data:{id:'board-1',ownerId:'author',name:'Sales',createdAt:0,updatedAt:0,groups:[{id:'g',title:'Sales',metrics:[],charts:[card]}]}});
-      if(url.endsWith('/queryList'))return Response.json({success:true,data:[{id:'orders',name:'Orders',status:'PUBLISHED'}]});
-      if(url.endsWith('/native-binding'))return Response.json({});
-      if(init.method==='PUT'){const body=JSON.parse(String(init.body));return Response.json({asset:{...body,id:'asset-1',ownerId:'author',revision:2,createdAt:'now',updatedAt:'now',editable:true}});}
-      if(update&&url.includes('/product-assets/asset-1'))return Response.json(update);
-      if(url.includes('/product-assets/asset-1'))return Response.json(loaded);
-      return Response.json({success:true,data:{items:[],total:0}});
-    });
-    return sent;
-  }
-  function mountCatalog(){
-    const element=document.createElement("div");document.body.append(element);
-    app=createApp({render:()=>h(ProductAssetCatalog,{assetId:'asset-1'})});
-    // The catalog's own controls come from the host's global Element Plus registration.
-    installElement(app);
-    installObjectViewHost(app);app.mount(element);
-    return element;
-  }
-  const button=findButton;
-  async function editView(element:HTMLElement){
-    button(element,"Edit")!.click();
-    await settle();
-  }
-  async function bringIn(element:HTMLElement){
-    button(element,"Bring in a chart")!.click();
-    await settle();
-    button(document.querySelector(".el-overlay-dialog")!,"Bring in")!.click();
-    await settle();
-  }
-  async function save(element:HTMLElement){
-    button(element,"Save")!.click();
-    await settle();
-  }
-  const saved=(sent:Array<{url:string;method:string;body:Record<string,any>|undefined}>)=>sent.find(item=>item.method==="PUT")?.body;
-
-  it('saves the chart it brought in as the chart file and its MetricView alone',async()=>{
-    const sent=host({asset:stored({renderer:'chart',chartFile:chartFile()})});
-    const element=mountCatalog();
-    await settle();
-    await editView(element);
-    await bringIn(element);
-    await save(element);
-    const body=saved(sent)!;
-    // Nothing the number presentation wrote survives, and the chart's own identity is what is saved.
-    expect(body.document).toMatchObject({kind:'metric-widget',renderer:'chart',renders:{kind:'MetricView',id:'orders'},chartFile:chartFile(),parameters:{year:{source:'literal',value:2026}}});
-    expect(body.document).not.toHaveProperty('format');
-    expect(productAuthoringSchema.safeParse(body).success).toBe(true);
-  });
-});
-describe('a product form',()=>{
-  const settle=async()=>{for(let i=0;i<40;i++){await new Promise(resolve=>setTimeout(resolve,0));await nextTick();}};
-  it('starts the next form clean: a refused save belongs to the form that made it',async()=>{
-    const number={id:'asset-1',ownerId:'author',name:'Orders',description:'',visibility:'private',revision:1,editable:true,createdAt:'now',updatedAt:'now',document:{kind:'metric-widget',renders:{kind:'MetricView',id:'orders'},renderer:'number',parameters:{},height:240,isDefault:false,audience:'both',valueField:'amount'}};
-    vi.stubGlobal('fetch',async(url:string,init:RequestInit={})=>{
-      if(url.endsWith('/native-binding'))return Response.json({});
-      if(init.method==='PUT')throw new TypeError('document.renders.id: String must contain at least 1 character');
-      if(url.includes('/product-assets/asset-1'))return Response.json({asset:number});
-      if(url.endsWith('/queryList'))return Response.json({success:true,data:[]});
-      return Response.json({success:true,data:{items:[],total:0}});
-    });
-    const element=document.createElement('div');document.body.append(element);
-    app=createApp({render:()=>h(ProductAssetCatalog,{assetId:'asset-1'})});installElement(app);installObjectViewHost(app);app.mount(element);
-    await settle();
-    // A save the server refuses leaves its reason on that form.
-    findButton(element,'Edit')!.click();
-    await settle();
-    findButton(element,'Save')!.click();
-    await settle();
-    expect(element.querySelector('.product-alert el-alert')?.getAttribute('title')).toContain('document.renders.id');
-    // Reopening the editor starts clean: the refusal belonged to that save, not to the asset.
-    findButton(element,'Cancel')!.click();
-    await settle();
-    findButton(element,'Edit')!.click();
-    await settle();
-    expect(element.querySelector('.product-alert')).toBeNull();
-  });
-});
 describe('bringing in a dashboard chart',()=>{
   const settle=async()=>{for(let i=0;i<10;i++){await new Promise(resolve=>setTimeout(resolve,0));await nextTick();}};
   it('lists the author\'s dashboards and hands over the chosen card as stored',async()=>{

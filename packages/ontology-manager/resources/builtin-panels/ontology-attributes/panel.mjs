@@ -1,6 +1,5 @@
 import { computed, ref, watch } from "vue";
 import {
-  draftTarget,
   mountPanel,
   panelAddress,
   usePanelBack,
@@ -61,6 +60,8 @@ await mountPanel({
     });
     const isPrimaryKeyOutput = usePanelOutput("detail", "isPrimaryKey");
     const isPrimaryKey = computed(() => isPrimaryKeyOutput.value === true);
+    // Fail closed: allow setPrimaryKey only when detail explicitly reports isPrimaryKey === false.
+    const setPrimaryKeyDisabled = computed(() => isPrimaryKeyOutput.value !== false);
 
     const formDraft = usePanelFormDraft("form", {
       when: () => Boolean(selectedKey.value) && detailStatus.value === "ready",
@@ -131,32 +132,13 @@ await mountPanel({
       closeDetail();
     }
 
-    // Open the target editor or create dialog for an accepted assistant draft. A create draft brings its own
-    // `className`, so clear `createIn` instead of fixing the current list filter.
-    watch(
-      instance.draft,
-      (draft) => {
-        if (!draft) return;
-        const target = draftTarget(draft);
-        if (target.kind === "update") {
-          const patch = { creating: false, createIn: null };
-          if (target.id && target.id !== selectedKey.value) {
-            patch.selected = { className: ATTRIBUTE_TYPE, primaryKey: target.id };
-          }
-          instance.state.setState(patch);
-        } else {
-          instance.state.setState({ creating: true, selected: null, createIn: null });
-        }
-      },
-      { immediate: true },
-    );
-
     return {
       rootRef,
       narrow,
       selectedKey,
       detailStatus,
       isPrimaryKey,
+      setPrimaryKeyDisabled,
       search,
       countText,
       creating,

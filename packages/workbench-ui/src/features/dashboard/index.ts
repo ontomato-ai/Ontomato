@@ -3,9 +3,7 @@ export { default as AddChartFileDialog } from "./components/AddChartFileDialog.v
 export { default as DashboardHome } from "./components/DashboardHome.vue";
 export { default as DashboardPanel } from "./components/DashboardPanel.vue";
 export { fetchDashboardList } from "./api";
-export { acceptDraft, DraftRejected } from "./draft";
 export { dashboardSelectionFrom } from "./selection";
-export type { AcceptedDraft } from "./draft";
 export { useDashboardStore } from "./stores/dashboard";
 export type { DashboardSurface } from "./dashboard-surface";
 export { default as DashboardMetricPreview } from "./components/DashboardMetricPreview.vue";

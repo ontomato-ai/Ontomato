@@ -4,6 +4,7 @@ import ElementPlus from "element-plus";
 import ChartCard from "../ChartCard.vue";
 import MetricCard from "../MetricCard.vue";
 import CardParameterDialog from "../CardParameterDialog.vue";
+import DashboardPanel from "../DashboardPanel.vue";
 import MetricSourceDialog from "../MetricSourceDialog.vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -20,6 +21,8 @@ import { workbenchI18n } from "../../../../i18n";
  */
 const api = vi.hoisted(() => ({
   cardCalls: [] as string[],
+  paramFormCalls: [] as string[],
+  paramFormOverride: null as ((dashboardId: string, cardId: string) => Promise<unknown>) | null,
   saved: [] as unknown[],
   saveError: null as unknown,
   chartName: null as string | null,
@@ -65,22 +68,54 @@ vi.mock("../../api", async () => {
         truncation: null,
       };
     },
-    fetchCardParameterForm: async () => ({
-      revision: "r1",
-      fields: ["year", "region", "owner"].map((key) => ({
-        key, label: key, required: false, defaultValue: null, help: null, placeholder: null, maxLength: 200, multiline: false,
-        type: "text",
-      })),
-      values: { year: "2026", region: "", owner: "{{account.id}}" },
-      readOnly: ["owner"],
-    }),
-    saveCardParameters: async (input: unknown) => {
+    fetchCardParameterForm: async (dashboardId: string, cardId: string) => {
+      api.paramFormCalls.push(cardId);
+      if (api.paramFormOverride) return api.paramFormOverride(dashboardId, cardId);
+      if (cardId === "n-new") {
+        return {
+          revision: "r2",
+          fields: ["quarter", "currency"].map((key) => ({
+            key, label: key, required: false, defaultValue: null, help: null, placeholder: null, maxLength: 200, multiline: false,
+            type: "text",
+          })),
+          values: { quarter: "Q1", currency: "CNY" },
+          readOnly: [],
+        };
+      }
+      return {
+        revision: "r1",
+        fields: ["year", "region", "owner"].map((key) => ({
+          key, label: key, required: false, defaultValue: null, help: null, placeholder: null, maxLength: 200, multiline: false,
+          type: "text",
+        })),
+        values: { year: "2026", region: "", owner: "{{account.id}}" },
+        readOnly: ["owner"],
+      };
+    },
+    saveCardParameters: async (input: { cardId?: string; revision?: string } & Record<string, unknown>) => {
       api.saved.push(input);
       if (api.saveError) throw api.saveError;
-      return { cardId: "c-new", query: { kind: "metric", metricId: "m-1", parameters: { year: 2025 } }, revision: "r1" };
+      return {
+        cardId: input.cardId ?? "c-new",
+        query: { kind: "metric", metricId: "m-1", parameters: { year: 2025 } },
+        revision: input.revision ?? "r1",
+      };
     },
+    prepareDashboardAgentConfirm: async () => ({
+      intentId: "intent-auto",
+      autoMode: true,
+      questionId: null,
+      label: "Save card parameters",
+    }),
+    renameDashboard: async () => true,
     modifyResultSetName: async () => true,
     deleteResultSet: async () => true,
+    deleteDimension: async () => true,
+    deleteMetric: async () => true,
+    modifyDashboardLayout: async () => true,
+    modifyDimensionName: async () => true,
+    modifyMetricName: async () => true,
+    createDimension: async () => ({ id: "g-new" }),
   };
 });
 /** The platform's chart, drawn from a file and this output; the double states what it was given. */
@@ -113,6 +148,8 @@ async function load() {
 afterEach(() => {
   document.body.innerHTML = "";
   api.cardCalls = [];
+  api.paramFormCalls = [];
+  api.paramFormOverride = null;
   api.saved = [];
   api.saveError = null;
   api.chartName = null;
@@ -225,26 +262,12 @@ describe("metric-reference cards on a dashboard", () => {
     expect(mask).toContain(truncation.truncationHint);
     expect(mask).not.toContain(t("common.noData"));
   });
-
-  it("draws a draft's chart file over this card's output and names both names", async () => {
-    const group = await load();
-    const draftFile = { name: "draft.chart.json", content: { ...group.charts[0].chartFile.content, title: { text: "Draft" } } };
-    const card = mount(ChartCard, {
-      props: { chart: group.charts[0], previewFile: draftFile, previewName: "Revenue by province", draft: true },
-      global: { plugins, stubs: { EChart: true } },
-    });
-    const drawn = card.findComponent({ name: "MetricChart" });
-    expect(drawn.props("file")).toEqual(draftFile.content);
-    expect(drawn.props("metric")).toMatchObject({ rows: group.charts[0].rows });
-    expect(card.find(".chart-original-name").text()).toBe("Revenue by region");
-    expect(card.find(".chart-draft-badge").text()).toBe(t("dashboard.draft.chartChanged"));
-  });
 });
 
 describe("the card parameter form", () => {
-  async function openDialog(draft?: { revision: string; values: Record<string, unknown> }) {
+  async function openDialog() {
     const wrapper = mount(CardParameterDialog, {
-      props: { modelValue: false, dashboardId: "d1", card: { id: "c-new", name: "Revenue by region" }, draft },
+      props: { modelValue: false, dashboardId: "d1", card: { id: "c-new", name: "Revenue by region" } },
       global: { plugins, stubs: { transition: false } },
     });
     await wrapper.setProps({ modelValue: true });
@@ -286,21 +309,186 @@ describe("the card parameter form", () => {
     wrapper.unmount();
   });
 
-  it("fills a draft's values against its own revision and shows each change's original value", async () => {
-    const wrapper = await openDialog({ revision: "r1", values: { year: "2024" } });
+  it("fills live values through fillValues, keeps them unsaved until saveFromAction, and blocks read-only or unsaved overwrites", async () => {
+    const wrapper = await openDialog();
+    const vm = wrapper.vm as unknown as {
+      fillValues: (values: Record<string, unknown>, overwriteUnsaved?: boolean) => Promise<unknown>;
+      saveFromAction: (operation: string, agentRun: { sessionId: string; runId: string; toolCallId: string }) => Promise<unknown>;
+    };
+    const filled = await vm.fillValues({ year: "2024", owner: "someone" });
+    await flushPromises();
+    expect(filled).toEqual({
+      ok: true,
+      member: "card.parameters",
+      filledFields: ["year"],
+      rejectedFields: [{ path: "owner", reason: "read_only", message: "Parameter 'owner' is read-only." }],
+    });
     expect(document.querySelector<HTMLInputElement>("[data-field='year'] input")!.value).toBe("2024");
     expect(document.body.textContent).toContain("2026");
     expect(document.body.textContent).toContain("2024");
-    document.querySelector<HTMLButtonElement>(".el-dialog__footer .el-button--primary")!.click();
+    expect(api.saved).toEqual([]);
+
+    // Consecutive agent fills merge cleanly; user manual edits block conflicting agent overwrites.
+    const merged = await vm.fillValues({ year: "2023" });
+    expect(merged).toEqual({ ok: true, member: "card.parameters", filledFields: ["year"] });
     await flushPromises();
+    expect(document.querySelector<HTMLInputElement>("[data-field='year'] input")!.value).toBe("2023");
+
+    // Simulate a manual user edit on 'year' -> conflicting agent fill without overwriteUnsaved is blocked.
+    const input = document.querySelector<HTMLInputElement>("[data-field='year'] input")!;
+    input.value = "2024";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await flushPromises();
+
+    const blocked = await vm.fillValues({ year: "2022" });
+    expect(blocked).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "card.parameters" });
+
+    const saved = await vm.saveFromAction("card.parameters.save", { sessionId: "s1", runId: "r1", toolCallId: "t1" });
+    await flushPromises();
+    expect(saved).toEqual({ ok: true, kind: "executed", operation: "card.parameters.save", intentId: "intent-auto" });
     expect(api.saved).toEqual([{ dashboardId: "d1", cardId: "c-new", revision: "r1", values: { year: "2024" } }]);
     wrapper.unmount();
   });
 
-  it("does not save a draft written against another revision", async () => {
-    const wrapper = await openDialog({ revision: "r0", values: { year: "2024" } });
-    expect(document.body.textContent).toContain(t("dashboard.draft.revisionChanged"));
-    expect(document.querySelector<HTMLButtonElement>(".el-dialog__footer .el-button--primary")!.disabled).toBe(true);
+  it("reloads the form and discards stale edits/responses when switching cards while already open", async () => {
+    let resolveSlowA!: (value: unknown) => void;
+    let calls = 0;
+    api.paramFormOverride = (_dashboardId, cardId) => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.resolve({
+          revision: "r1",
+          fields: [{ key: "year", label: "year", required: false, defaultValue: null, help: null, placeholder: null, maxLength: 200, multiline: false, type: "text" }],
+          values: { year: "2026" },
+          readOnly: [],
+        });
+      }
+      if (cardId === "c-slow") {
+        return new Promise((resolve) => {
+          resolveSlowA = resolve;
+        });
+      }
+      return Promise.resolve({
+        revision: "r2",
+        fields: [{ key: "quarter", label: "quarter", required: false, defaultValue: null, help: null, placeholder: null, maxLength: 200, multiline: false, type: "text" }],
+        values: { quarter: "Q1" },
+        readOnly: [],
+      });
+    };
+
+    const wrapper = await openDialog();
+    const inputA = document.querySelector<HTMLInputElement>("[data-field='year'] input")!;
+    inputA.value = "2025";
+    inputA.dispatchEvent(new Event("input"));
+    await flushPromises();
+
+    // Switch to a slow card, then immediately switch again to n-new before c-slow resolves.
+    await wrapper.setProps({ card: { id: "c-slow", name: "Slow card" } });
+    await wrapper.setProps({ card: { id: "n-new", name: "Total revenue" } });
+    await flushPromises();
+
+    // Even if the superseded c-slow request resolves late, it must not overwrite n-new's form.
+    resolveSlowA({
+      revision: "r-slow",
+      fields: [{ key: "year", label: "year", required: false, defaultValue: null, help: null, placeholder: null, maxLength: 200, multiline: false, type: "text" }],
+      values: { year: "1999" },
+      readOnly: [],
+    });
+    await flushPromises();
+
+    expect(document.querySelector("[data-field='year']")).toBeNull();
+    const inputB = document.querySelector<HTMLInputElement>("[data-field='quarter'] input")!;
+    expect(inputB.value).toBe("Q1");
+    inputB.value = "Q4";
+    inputB.dispatchEvent(new Event("input"));
+    await flushPromises();
+
+    document.querySelector<HTMLButtonElement>(".el-dialog__footer .el-button--primary")!.click();
+    await flushPromises();
+    expect(api.saved).toEqual([{ dashboardId: "d1", cardId: "n-new", revision: "r2", values: { quarter: "Q4" } }]);
+    wrapper.unmount();
+  });
+
+  it("blocks switching to another card with unsaved edits and cleanly reloads when clean or explicitly overwritten", async () => {
+    const wrapper = mount(DashboardPanel, {
+      props: { dashboardId: "d1" },
+      global: {
+        plugins,
+        stubs: {
+          transition: false,
+          ChartCard: { name: "ChartCard", props: ["chart"], template: "<div class='stub-chart' />" },
+          MetricCard: { name: "MetricCard", props: ["metric"], template: "<div class='stub-metric' />" },
+        },
+      },
+    });
+    await flushPromises();
+
+    const vm = wrapper.vm as unknown as {
+      selectCardById: (id: string) => boolean;
+      fillForm: (request: { member?: string; values: Record<string, unknown>; overwriteUnsaved?: boolean }) => Promise<unknown>;
+      executeAction: (request: { operation: string; input?: Record<string, unknown>; agentRun?: { sessionId: string; runId: string; toolCallId: string } }) => Promise<unknown>;
+    };
+    const agentRun = { sessionId: "s1", runId: "r1", toolCallId: "t1" };
+
+    // Open card A (c-new) and create unsaved edits.
+    expect(await vm.executeAction({ operation: "card.parameters.open", input: { cardId: "c-new" } })).toEqual({
+      ok: true,
+      kind: "executed",
+      operation: "card.parameters.open",
+    });
+    await flushPromises();
+    expect(await vm.fillForm({ member: "card.parameters", values: { year: "2025" } })).toMatchObject({
+      ok: true,
+      filledFields: ["year"],
+    });
+
+    // Attempting to open card B while card A has unsaved edits must be rejected without touching A.
+    const blockedOpen = await vm.executeAction({ operation: "card.parameters.open", input: { cardId: "n-new" } });
+    expect(blockedOpen).toMatchObject({ ok: false, reason: "action_unavailable", operation: "card.parameters.open" });
+    expect(document.querySelector<HTMLInputElement>("[data-field='year'] input")!.value).toBe("2025");
+
+    // Selecting card B in page state and calling fillForm without overwriteUnsaved must also be blocked.
+    expect(vm.selectCardById("n-new")).toBe(true);
+    const blockedFill = await vm.fillForm({ member: "card.parameters", values: { quarter: "Q2" } });
+    expect(blockedFill).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "card.parameters" });
+    expect(document.querySelector<HTMLInputElement>("[data-field='year'] input")!.value).toBe("2025");
+
+    // Passing overwriteUnsaved: true switches to card B, loads B's form, and fills B cleanly.
+    const filledB = await vm.fillForm({ member: "card.parameters", values: { quarter: "Q2" }, overwriteUnsaved: true });
+    await flushPromises();
+    expect(filledB).toEqual({ ok: true, member: "card.parameters", filledFields: ["quarter"] });
+    expect(await vm.executeAction({ operation: "card.parameters.save", agentRun })).toEqual({
+      ok: true,
+      kind: "executed",
+      operation: "card.parameters.save",
+      intentId: "intent-auto",
+    });
+    expect(api.saved).toEqual([{ dashboardId: "d1", cardId: "n-new", revision: "r2", values: { quarter: "Q2" } }]);
+
+    // When clean, opening card A then switching straight to card B reloads B and submits only B's values.
+    api.saved = [];
+    expect(await vm.executeAction({ operation: "card.parameters.open", input: { cardId: "c-new" } })).toEqual({
+      ok: true,
+      kind: "executed",
+      operation: "card.parameters.open",
+    });
+    expect(await vm.executeAction({ operation: "card.parameters.open", input: { cardId: "n-new" } })).toEqual({
+      ok: true,
+      kind: "executed",
+      operation: "card.parameters.open",
+    });
+    expect(await vm.fillForm({ member: "card.parameters", values: { quarter: "Q3" } })).toEqual({
+      ok: true,
+      member: "card.parameters",
+      filledFields: ["quarter"],
+    });
+    expect(await vm.executeAction({ operation: "card.parameters.save", agentRun })).toEqual({
+      ok: true,
+      kind: "executed",
+      operation: "card.parameters.save",
+      intentId: "intent-auto",
+    });
+    expect(api.saved).toEqual([{ dashboardId: "d1", cardId: "n-new", revision: "r2", values: { quarter: "Q3" } }]);
     wrapper.unmount();
   });
 });

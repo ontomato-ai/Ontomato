@@ -55,7 +55,7 @@ it("keeps what the reader typed after asking the owner, and asks once more for t
       const given = request.inputs.values as Record<string, string> | undefined;
       const values = given ?? { code: "", hint: "" };
       const answer = { status: "ready" as const, value: { fields, values: { ...values, hint: `for ${values.code}` }, errors: [], revision: 1,
-        save: { method: "PUT", path: "/entries/:id", bodySchema: {}, draftOperation: "entry.update" } } as never };
+        save: { method: "PUT", path: "/entries/:id", bodySchema: {} } } as never };
       if (!given) return answer;
       asked.push(given.code!);
       // The owner answers each change only when the test lets it.

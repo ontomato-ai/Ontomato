@@ -15,7 +15,10 @@ const outputPathSchema = runtimeRelativePathSchema.refine(
   (path) => path.startsWith("outputs/"),
   "Expected a workspace path inside outputs/",
 );
-const pageAddressSchema = z.string().regex(/^\/(?!\/)[^\\\s\p{Cc}]*$/u, "Expected a site-relative page address");
+const pageAddressSchema = z.string().regex(
+  /^\/(?!\/)[^\\\s\p{Cc}]*$/u,
+  "Expected a site-relative page path starting with a single '/'",
+);
 
 function hasStateQuery(address: string): boolean {
   const search = /^[^?#]*\?([^#]*)/.exec(address)?.[1];
@@ -23,19 +26,20 @@ function hasStateQuery(address: string): boolean {
 }
 
 /** Route registration, access and declared page state belong to the page resolver. */
-export const presentRequestSchema = z.object({
-  target: z.union([outputPathSchema, pageAddressSchema]),
+const presentTargetMessage = "Invalid present target: target must be either a registered site-relative page path starting with '/' "
+  + "(such as an entrance path listed under Available entrances in the panel skill, e.g. '/ontology/assets/actions') "
+  + "or an artifact file path under 'outputs/<relative-path>'.";
+const presentFields = z.object({
+  target: z.string({ required_error: presentTargetMessage, invalid_type_error: presentTargetMessage }).refine(
+    target => pageAddressSchema.safeParse(target).success || outputPathSchema.safeParse(target).success,
+    presentTargetMessage,
+  ),
   state: runtimeJsonObjectSchema.optional(),
-  /** Explicitly allow replacing unsaved edits in the target form after the user confirms. */
-  overwriteUnsavedDraft: z.boolean().optional(),
-}).strict().refine(
-  ({ target, state }) => state === undefined ||
-    (target.startsWith("/") && !hasStateQuery(target)),
-  { path: ["state"], message: "State requires a page address that provides no state query" },
-).refine(
-  ({ target, overwriteUnsavedDraft }) => overwriteUnsavedDraft === undefined || target.startsWith("/"),
-  { path: ["overwriteUnsavedDraft"], message: "overwriteUnsavedDraft applies only to a page address" },
-);
+}).strict();
+const validPresentState = ({ target, state }: z.infer<typeof presentFields>) =>
+  state === undefined || (target.startsWith("/") && !hasStateQuery(target));
+const presentStateIssue = { path: ["state"], message: "State requires a page path without a '?state=' query parameter" };
+export const presentRequestSchema = presentFields.refine(validPresentState, presentStateIssue);
 export type PresentRequest = z.infer<typeof presentRequestSchema>;
 
 /** Read-only mid-round observation request for the user's current conversation display. */
@@ -43,6 +47,20 @@ export const observeDisplayRequestSchema = z.object({
   mode: z.literal("observe"),
 }).strict();
 export type ObserveDisplayRequest = z.infer<typeof observeDisplayRequestSchema>;
+
+/** Target object or create-draft identity an agent observed and expects a live form or page action to bind to. */
+export const expectedPageTargetSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("object"),
+    objectType: runtimeKeySchema,
+    primaryKey: runtimeKeySchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("draft"),
+    objectType: runtimeKeySchema,
+  }).strict(),
+]);
+export type ExpectedPageTarget = z.infer<typeof expectedPageTargetSchema>;
 
 /** Fill explicit fields in a live form currently displayed beside the conversation. */
 export const fillFormRequestSchema = z.object({
@@ -56,7 +74,7 @@ export const fillFormRequestSchema = z.object({
     (values) => Object.keys(values).length > 0,
     { message: "values must include at least one field" },
   ),
-  /** Explicitly allow modifying a form that already has unsaved edits after the user confirms. */
+  /** Explicitly allow overwriting fields edited by the user after explicit user confirmation. */
   overwriteUnsaved: z.boolean().optional(),
 }).strict();
 export type FillFormRequest = z.infer<typeof fillFormRequestSchema>;
@@ -68,7 +86,10 @@ export const pageActionRequestSchema = z.object({
   operation: runtimeKeySchema,
   /** Optional nested panel member path keys when disambiguating nested panel actions. */
   memberPath: z.array(runtimeKeySchema).min(1).optional(),
-  /** For row actions on a list member, the stable primary key of the loaded row. */
+  /**
+   * For row actions on a list member: the composite `<className>:<primaryKey>` key (required on mixed-type or
+   * dynamic-type lists) or the plain `<primaryKey>` on single-type lists.
+   */
   rowKey: runtimeKeySchema.optional(),
   /** Optional unbound action parameters (never form save field values). */
   input: runtimeJsonObjectSchema.optional(),
@@ -78,7 +99,12 @@ export type PageActionRequest = z.infer<typeof pageActionRequestSchema>;
 /** Private transport from the runtime display tools to the host bound to this call. */
 export const presentationCallRequestSchema = z.object({
   toolCallId: runtimeKeySchema,
-  input: z.union([presentRequestSchema, observeDisplayRequestSchema, fillFormRequestSchema, pageActionRequestSchema]),
+  input: z.discriminatedUnion("mode", [
+    presentFields.extend({ mode: z.undefined() }),
+    observeDisplayRequestSchema,
+    fillFormRequestSchema,
+    pageActionRequestSchema,
+  ]).refine(input => input.mode !== undefined || validPresentState(input), presentStateIssue),
 }).strict();
 
 /** Private to admission and the active runtime tool, outside the definition and sandbox environment. */
@@ -114,6 +140,25 @@ const observedDisplaySchema = z.object({
   known: z.literal(true),
   observedAt: runtimeTimestampSchema,
 }).strict();
+export const observedPageTargetSchema = pageContextSchema.extend({
+  kind: z.literal("page"),
+  /** Unique ID of this mounted page instance; changes on remount or switching pages. */
+  pageInstanceId: runtimeKeySchema.optional(),
+  /** Unique ID of the mounted top-level direct panel instance; changes when the panel definition is swapped in place. */
+  panelInstanceId: runtimeKeySchema.optional(),
+  /** Unique instance IDs of mounted nested panel members keyed by dotted member path. */
+  memberInstances: z.record(runtimeKeySchema, runtimeKeySchema).optional(),
+  /** Unique instance IDs of mounted action/list/form entries keyed by full operation ID (or `row:<opId>`). */
+  entryInstances: z.record(runtimeKeySchema, runtimeKeySchema).optional(),
+  /** Current checked row keys (`<className>:<primaryKey>`) per list-of-object state field. */
+  checkedKeys: z.record(runtimeKeySchema, z.array(runtimeKeySchema)).optional(),
+  /** Current dashboard board ID on dashboard pages. */
+  dashboardId: runtimeKeySchema.optional(),
+  /** Current selected or parameter-dialog card ID on dashboard pages. */
+  cardId: runtimeKeySchema.optional(),
+});
+export type ObservedPageTarget = z.infer<typeof observedPageTargetSchema>;
+
 const selectedDisplaySchema = observedDisplaySchema.extend({
   placement: z.enum(["side", "overlay", "full-page"]),
   target: z.discriminatedUnion("kind", [
@@ -123,7 +168,7 @@ const selectedDisplaySchema = observedDisplaySchema.extend({
       path: outputPathSchema,
       title: z.string(),
     }).strict(),
-    pageContextSchema.extend({ kind: z.literal("page"), state: runtimeJsonObjectSchema.optional() }),
+    observedPageTargetSchema,
   ]),
   load: displayLoadSchema,
 });
@@ -144,15 +189,16 @@ const notOpenedResultSchema = z.object({
   status: z.literal("not_opened"),
   reason: z.enum([
     "view_unavailable", "not_viewing_session", "sidebar_unavailable",
-    "forbidden", "not_found", "unsupported_target", "blocked_unsaved", "superseded",
+    "forbidden", "not_found", "unsupported_target", "blocked_unsaved", "superseded", "previous_step_failed",
   ]),
   current: displaySnapshotSchema,
   error: displayErrorSchema.optional(),
 }).strict();
 const observedDisplayResultSchema = z.object({
   status: z.literal("observed"),
-  reason: z.enum(["current_display", "view_unavailable", "not_viewing_session"]),
+  reason: z.enum(["current_display", "view_unavailable", "not_viewing_session", "previous_step_failed"]),
   current: displaySnapshotSchema,
+  error: displayErrorSchema.optional(),
 }).strict();
 export const formFieldRejectionSchema = z.object({
   path: runtimeKeySchema,
@@ -167,6 +213,13 @@ export interface FormFillRequestInput {
   readonly memberPath?: readonly string[];
   readonly values: Readonly<Record<string, RuntimeJsonValue>>;
   readonly overwriteUnsaved?: boolean;
+  readonly expectedPageInstanceId?: string;
+  readonly expectedPanelInstanceId?: string;
+  readonly expectedMemberInstanceId?: string;
+  readonly expectedFormInstanceId?: string;
+  readonly expectedTarget?: ExpectedPageTarget;
+  readonly expectedDashboardId?: string;
+  readonly expectedCardId?: string;
 }
 
 /** In-browser outcome returned by a mounted panel or form adapter for a `fill_form` request. */
@@ -185,7 +238,8 @@ export type FormFillOutcome =
         | "form_ambiguous"
         | "form_not_ready"
         | "blocked_unsaved"
-        | "all_fields_rejected";
+        | "all_fields_rejected"
+        | "stale";
       readonly member?: string;
       readonly memberPath?: readonly string[];
       readonly rejectedFields?: readonly FormFieldRejection[];
@@ -215,6 +269,8 @@ const notFilledResultSchema = z.object({
     "form_not_ready",
     "blocked_unsaved",
     "all_fields_rejected",
+    "stale",
+    "previous_step_failed",
   ]),
   member: runtimeKeySchema.optional(),
   memberPath: z.array(runtimeKeySchema).min(1).optional(),
@@ -228,6 +284,14 @@ export interface PageActionRequestInput {
   readonly memberPath?: readonly string[];
   readonly rowKey?: string;
   readonly input?: Readonly<Record<string, RuntimeJsonValue>>;
+  readonly expectedPageInstanceId?: string;
+  readonly expectedPanelInstanceId?: string;
+  readonly expectedMemberInstanceId?: string;
+  readonly expectedEntryInstanceId?: string;
+  readonly expectedTarget?: ExpectedPageTarget;
+  readonly expectedCheckedKeys?: readonly string[];
+  readonly expectedDashboardId?: string;
+  readonly expectedCardId?: string;
   readonly agentRun: {
     readonly sessionId: string;
     readonly runId: string;
@@ -246,7 +310,10 @@ export type PageActionConfirmedDispatchResult =
   | {
       readonly ok: false;
       readonly intentId: string;
-      readonly reason: "stale" | "not_dispatched" | "failed" | "unknown";
+      readonly reason: "stale" | "not_dispatched" | "failed" | "partial" | "unknown";
+      readonly code?: string;
+      readonly savedFields?: readonly string[];
+      readonly outcome?: unknown;
       readonly message: string;
     };
 
@@ -281,6 +348,26 @@ export type PageActionOutcome =
     }
   | {
       readonly ok: false;
+      readonly kind: "partially_executed";
+      readonly reason: "partial_completion";
+      readonly operation: string;
+      readonly intentId?: string;
+      readonly code: string;
+      readonly message: string;
+      readonly savedFields?: readonly string[];
+      readonly outcome: unknown;
+    }
+  | {
+      readonly ok: false;
+      readonly kind: "unknown";
+      readonly reason: "outcome_unknown";
+      readonly operation: string;
+      readonly intentId?: string;
+      readonly outcome?: unknown;
+      readonly message?: string;
+    }
+  | {
+      readonly ok: false;
       readonly reason:
         | "action_not_found"
         | "action_unavailable"
@@ -292,6 +379,7 @@ export type PageActionOutcome =
         | "failed";
       readonly operation?: string;
       readonly intentId?: string;
+      readonly code?: string;
       readonly message?: string;
     };
 
@@ -302,6 +390,16 @@ const pageActionExecutedResultSchema = z.object({
   intentId: runtimeIdSchema.optional(),
   outcome: z.unknown().optional(),
   current: displaySnapshotSchema,
+}).strict();
+const pageActionPartiallyExecutedResultSchema = z.object({
+  status: z.literal("partially_executed"),
+  reason: z.literal("partial_completion"),
+  operation: runtimeKeySchema,
+  intentId: runtimeIdSchema.optional(),
+  savedFields: z.array(runtimeKeySchema).optional(),
+  outcome: z.unknown(),
+  current: displaySnapshotSchema,
+  error: displayErrorSchema,
 }).strict();
 const pageActionAwaitingConfirmationResultSchema = z.object({
   status: z.literal("awaiting_confirmation"),
@@ -329,9 +427,19 @@ const pageActionNotExecutedResultSchema = z.object({
     "cancelled",
     "stale",
     "failed",
+    "previous_step_failed",
   ]),
   operation: runtimeKeySchema.optional(),
   intentId: runtimeIdSchema.optional(),
+  current: displaySnapshotSchema,
+  error: displayErrorSchema.optional(),
+}).strict();
+const pageActionUnknownResultSchema = z.object({
+  status: z.literal("unknown"),
+  reason: z.literal("outcome_unknown"),
+  operation: runtimeKeySchema,
+  intentId: runtimeIdSchema.optional(),
+  outcome: z.unknown().optional(),
   current: displaySnapshotSchema,
   error: displayErrorSchema.optional(),
 }).strict();
@@ -350,8 +458,10 @@ const observedResultSchema = z.discriminatedUnion("status", [
   filledResultSchema,
   notFilledResultSchema,
   pageActionExecutedResultSchema,
+  pageActionPartiallyExecutedResultSchema,
   pageActionAwaitingConfirmationResultSchema,
   pageActionNotExecutedResultSchema,
+  pageActionUnknownResultSchema,
 ]).refine(
   (result) => result.status !== "opened" || (result.reason === "load_error") === (result.current.load.status === "error"),
   { path: ["reason"], message: "An opened result reports load_error exactly when the selected target failed to load" },
@@ -359,8 +469,11 @@ const observedResultSchema = z.discriminatedUnion("status", [
 export const presentationResultSchema = z.union([observedResultSchema, unknownResultSchema]);
 export type PresentationResult = z.infer<typeof presentationResultSchema>;
 
-/** A view keeps its ID for the lifetime of its mount, across session-run streams. */
-export const presentationBindingSchema = z.object({ viewId: runtimeIdSchema }).strict();
+/** The view ID lasts for the mount. The initial page belongs only to the run started by this message. */
+export const presentationBindingSchema = z.object({
+  viewId: runtimeIdSchema,
+  initialPage: observedPageTargetSchema.optional(),
+}).strict();
 export type PresentationBinding = z.infer<typeof presentationBindingSchema>;
 
 /** Live-only payload on the host's session-run stream, carried as event: presentation. */
@@ -375,7 +488,6 @@ export const presentationFrameSchema = z.object({
       kind: z.literal("page"),
       address: pageAddressSchema,
       state: runtimeJsonObjectSchema.optional(),
-      overwriteUnsavedDraft: z.boolean().optional(),
     }).strict(),
     z.object({ kind: z.literal("observe") }).strict(),
     z.object({
@@ -384,6 +496,13 @@ export const presentationFrameSchema = z.object({
       memberPath: z.array(runtimeKeySchema).min(1).optional(),
       values: runtimeJsonObjectSchema,
       overwriteUnsaved: z.boolean().optional(),
+      expectedPageInstanceId: runtimeKeySchema.optional(),
+      expectedPanelInstanceId: runtimeKeySchema.optional(),
+      expectedMemberInstanceId: runtimeKeySchema.optional(),
+      expectedFormInstanceId: runtimeKeySchema.optional(),
+      expectedTarget: expectedPageTargetSchema.optional(),
+      expectedDashboardId: runtimeKeySchema.optional(),
+      expectedCardId: runtimeKeySchema.optional(),
     }).strict(),
     z.object({
       kind: z.literal("page_action"),
@@ -391,6 +510,14 @@ export const presentationFrameSchema = z.object({
       memberPath: z.array(runtimeKeySchema).min(1).optional(),
       rowKey: runtimeKeySchema.optional(),
       input: runtimeJsonObjectSchema.optional(),
+      expectedPageInstanceId: runtimeKeySchema.optional(),
+      expectedPanelInstanceId: runtimeKeySchema.optional(),
+      expectedMemberInstanceId: runtimeKeySchema.optional(),
+      expectedEntryInstanceId: runtimeKeySchema.optional(),
+      expectedTarget: expectedPageTargetSchema.optional(),
+      expectedCheckedKeys: z.array(runtimeKeySchema).optional(),
+      expectedDashboardId: runtimeKeySchema.optional(),
+      expectedCardId: runtimeKeySchema.optional(),
     }).strict(),
   ]),
 }).strict();

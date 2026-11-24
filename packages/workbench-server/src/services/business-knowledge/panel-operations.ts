@@ -51,6 +51,7 @@ const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict
 const actionInputSchema = z.object({}).strict();
 
 type Host = Pick<PanelOperationHost, "request">;
+type ApproveHost = Pick<PanelOperationHost, "request" | "locale">;
 
 async function ownerPost(host: Host, path: string, body: unknown) {
   const response = await host.request(`${DATA_QUERY_GATEWAY}${path}`, {
@@ -119,7 +120,7 @@ const affected = (primaryKey: string) => ({
 });
 
 /** Owner availability check for approving one entry: only pending entries can be approved. */
-function approveUnavailableReason(host: PanelOperationHost, found: KnowledgeEntry | undefined) {
+function approveUnavailableReason(host: Pick<PanelOperationHost, "locale">, found: KnowledgeEntry | undefined) {
   if (!found) return { reason: tForLocale(host.locale, "panels.knowledge.notFound") };
   if (found.status === 1) return { reason: tForLocale(host.locale, "panels.knowledge.alreadyApproved") };
   return undefined;
@@ -127,12 +128,17 @@ function approveUnavailableReason(host: PanelOperationHost, found: KnowledgeEntr
 
 /** One approval under its single rule: the entry read from the domain's list, rewritten whole with status 1. */
 async function approveOne(
-  host: Host, entries: Record<string, KnowledgeEntry>, target: PanelRecordTarget,
+  host: ApproveHost, entries: Record<string, KnowledgeEntry>, target: PanelRecordTarget,
 ): Promise<SinglePanelOperationOutcome> {
   const found = entries[target.primaryKey];
   if (!found) return {
     kind: "refusal", code: "KNOWLEDGE_APPROVE_REFUSED",
     message: `Business knowledge ${target.primaryKey} is not in this domain`,
+  };
+  const unavailable = approveUnavailableReason(host, found);
+  if (unavailable) return {
+    kind: "refusal", code: "KNOWLEDGE_APPROVE_REFUSED",
+    message: unavailable.reason,
   };
   const envelope = await ownerPost(host, "/admin/editBussinessKnowledge", { ...found, knowledgeTags: found.knowledgeTags ?? [], status: 1 });
   return envelope.success
@@ -175,7 +181,6 @@ async function save(host: Host, target: PanelOperationTarget, values: Record<str
   return { kind: "success", data: {}, affected: affected(target.primaryKey) };
 }
 
-const formInstructions = "Read the knowledge form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
 
 /*
  * The delete's impact for a confirming human: which entries it takes, each under the title the owner lists it by, and
@@ -211,17 +216,9 @@ export const m7ServerOperations = [
     targetSchema: saveTarget,
     inputSchema: saveInputSchema,
     resultSchema: savedResultSchema,
-    draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "knowledge.create" : "knowledge.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
-    create: {
-      draftValues(values: unknown) {
-        return runtimeJsonObjectSchema.parse(values);
-      },
-      createdObject(data: unknown) {
-        return { objectType: BUSINESS_KNOWLEDGE, primaryKey: savedIdSchema.parse(data).id };
-      },
-    },
+
+    create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, target, valuesForTarget(target, submittedValues(saveInputSchema.parse(input))));
     },
@@ -252,11 +249,11 @@ export const m7ServerOperations = [
       }
       return reasons;
     },
-    async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
+    async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Approve acts on a selected entry");
       return approveOne(host, await readEntries(host), target);
     },
-    async executeBatch(host: Host, calls: readonly PanelBatchCalls[number][]): Promise<PanelOperationOutcome> {
+    async executeBatch(host: PanelOperationHost, calls: readonly PanelBatchCalls[number][]): Promise<PanelOperationOutcome> {
       // One read of the whole domain serves every call's rule, exactly as one read serves a single approval.
       const entries = await readEntries(host);
       return batchAnswers(host, calls, call => approveOne(host, entries, call.target));

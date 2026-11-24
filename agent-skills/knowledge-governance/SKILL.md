@@ -27,8 +27,8 @@ options with descriptions and one `isDefault: true`, and `defaultAssumption`). I
 questions to ask at once, split them by priority across turns; readers may also reply directly in conversation.
 
 In platform runs, the host supplies `ONTOMATO_SKILL_SCENARIO=platform`, a window callback
-and the real run identity. The first command requests a write window from Node; no report
-is created merely because this skill is installed. The host closes writes when the run ends or stops.
+and the real run identity. The first command that uses the governance record requests a write window
+from Node. The host closes writes when the run ends or stops.
 Do not call close or switch to external begin in a platform run.
 
 Outside the platform, set `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_TK` or `ONTOMATO_API_KEY`,
@@ -38,19 +38,21 @@ the first ordinary command also begins external work if none exists. Keep the re
 External begin replaces the previous window, creates no runtime agent, and uses your own permissions.
 Run `close` when finished. Expired or closed writes fail with HTTP 409; begin a new round explicitly.
 
-Commands save governance work and source references. When the user asks to draft, add or change
-business knowledge, including a definition not yet recorded, use `import-knowledge`.
-In platform runs it writes one `outputs/drafts/*.page-draft.json` file per item and prints its
-business-knowledge page link; include that link in your reply. A recommendation in the report
-is not a knowledge draft.
-It reads existing knowledge to select create/update; the entry an update changes is named in the
-draft's target, never repeated in the form. A new item is written as pending; an update keeps the
-entry's status. Outside the platform it calls Java import
-with your credential. Report imported knowledge only after that interface confirms it.
+When asked to add or change business knowledge, use the [extraction workflow](references/extraction.md).
 
-In platform replies, keep the link targets in each draft's `link` (`#/ontology/knowledge?draft...`)
-and your `outputs/reports/<name>/report.md` links accurate; you may adapt the link text to the
-reader's language.
+- With `present`, `fill_form` and `page_action`, use the live business-knowledge form. Run
+  `import-knowledge` to prepare its fields. For updates, fill only the fields being changed.
+  Send `status: 0` only for new entries. The `form` member holds one live form at a time.
+  Show one item and wait for the user to review and save it before filling the next. Keep any
+  unsaved item visible until it is settled. Use `page_action` to request a save only when asked.
+- In a background or delegated run without page tools, an explicitly requested import of
+  new pending items can use `import-pending` through the current governance window.
+  The import cannot update, approve or delete existing knowledge. For those writes or a
+  request to review before saving, return the structured proposals to the user or assigning agent.
+- Outside the platform, `import-knowledge` imports pending items in an external Java window
+  using your credential. Report an import only after the owner confirms it.
+
+In platform replies, keep your `outputs/reports/<name>/report.md` and `#/ontology/knowledge` links
+accurate; you may adapt the link text to the reader's language.
 Page links are ready-to-paste Markdown links with in-app relative addresses (`#/...`): do not add a
-host or construct them with any `ONTOMATO_*_URL`. Do not use image syntax or link to or embed
-draft files themselves.
+host or construct them with any `ONTOMATO_*_URL`. Do not use image syntax.

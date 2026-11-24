@@ -1,27 +1,27 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
 
 const env = process.env;
-// The platform sets ONTOMATO_SKILL_SCENARIO=platform and only drafts; the Skill suite writes directly.
 const platform = env.ONTOMATO_SKILL_SCENARIO === "platform";
 const workbench = (env.ONTOMATO_WORKBENCH_URL || env.ONTOMATO_URL || "").replace(/\/$/, "");
 const ontology = (env.ONTOMATO_ONTOLOGY_URL || `${workbench}/api/data-query`).replace(/\/$/, "");
 const definitions = `${workbench}/api/assistant/agent-definitions`;
-const defaultDraft = "outputs/drafts/agent.page-draft.json";
 
 function required(value, what) {
   if (!value) throw new Error(`${what} is required`);
   return value;
 }
 
-function headers() {
-  const credentials = [
-    ["ONTOMATO_EXECUTION_CALLBACK", "X-Ontomato-Callback-Credential"],
+function headers(url) {
+  const callback = ["ONTOMATO_EXECUTION_CALLBACK", "X-Ontomato-Callback-Credential"];
+  const userCredentials = [
     ["ONTOMATO_TK", "tk"],
     ["ONTOMATO_API_KEY", "X-API-Key"],
-  ].filter(([variable]) => env[variable]);
+  ];
+  const callbackUrl = new URL(url).pathname.startsWith(`/api/assistant/executions/${env.ONTOMATO_RUN_ID}/`);
+  const credentials = (platform ? (callbackUrl ? [callback] : userCredentials) : [callback, ...userCredentials])
+    .filter(([variable]) => env[variable]);
   if (credentials.length > 1)
     throw new Error("Set only one of ONTOMATO_EXECUTION_CALLBACK, ONTOMATO_TK or ONTOMATO_API_KEY");
   const result = { "Content-Type": "application/json", "Accept-Language": env.ONTOMATO_LANGUAGE || "en" };
@@ -44,7 +44,7 @@ async function request(method, url, body, extra = {}) {
   if (!workbench) throw new Error("Set ONTOMATO_WORKBENCH_URL (platform) or ONTOMATO_URL (deployment)");
   const response = await fetch(url, {
     method,
-    headers: { ...headers(), ...extra },
+    headers: { ...headers(url), ...extra },
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: "error",
   });
@@ -66,58 +66,9 @@ async function form(argument) {
   return value;
 }
 
-function draftPath(value) {
-  const parts = value.split("/");
-  if (value.includes("\\") || parts.length !== 3 || parts[0] !== "outputs" || parts[1] !== "drafts" || !parts[2].endsWith(".page-draft.json") || parts[2] === ".page-draft.json")
-    throw new Error("The draft path must be outputs/drafts/<name>.page-draft.json");
-  return value;
-}
-
-const draftObjectType = "platform:AgentDefinition";
-
-async function readDraft(argument) {
-  const file = draftPath(required(argument, "The draft file, e.g. @outputs/drafts/agent.page-draft.json").replace(/^@/, ""));
-  const value = JSON.parse(await readFile(file, "utf8"));
-  if (value.pageKey !== "agents-agent-settings" || !["agent.create", "agent.update"].includes(value.operation)
-    || !value.form || typeof value.form !== "object" || Array.isArray(value.form))
-    throw new Error(`${file} is not an agent-settings page draft`);
-  const target = value.target;
-  if (target?.objectType !== draftObjectType)
-    throw new Error(`${file}: target.objectType must be ${draftObjectType}`);
-  const id = target.id;
-  if (value.operation === "agent.create" ? id !== undefined : typeof id !== "string" || !id.length || id.length > 200)
-    throw new Error(`${file}: target.id must be omitted on create and supplied on update`);
-  return { file, value };
-}
-
-async function draftCommand(args) {
-  const [kind, ...rest] = args;
-  const target = { objectType: draftObjectType };
-  let formArgument, file;
-  if (kind === "create") [formArgument, file] = rest;
-  else if (kind === "update") {
-    const [id, next, nextFile] = rest;
-    target.id = required(id, "The agent id for draft update");
-    [formArgument, file] = [next, nextFile];
-  } else throw new Error("draft requires create or update");
-  const value = { pageKey: "agents-agent-settings", operation: `agent.${kind}`, target, form: await form(formArgument) };
-  file = draftPath(file ?? defaultDraft);
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
-  console.log(file);
-}
-
-async function draftLink(argument) {
-  const { file, value } = await readDraft(argument);
-  const session = env.ONTOMATO_SESSION_ID, run = env.ONTOMATO_RUN_ID;
-  if (!session || !run) throw new Error("A draft link needs the current platform run: ONTOMATO_SESSION_ID and ONTOMATO_RUN_ID are not set");
-  const id = value.target.id ?? "new";
-  console.log(`#/agents/settings/${encodeURIComponent(id)}?draftSessionId=${encodeURIComponent(session)}&draftRunId=${encodeURIComponent(run)}&draftPath=${encodeURIComponent(file)}`);
-}
-
 async function directWrite(command, args) {
   if (platform)
-    throw new Error("Direct writes are unavailable in the platform. Write a page draft with `draft create|update`, check it with `validate-draft`, and give the user the `draft-link` URL; the user saves on the page.");
+    throw new Error("Agent settings writes in the platform require live page tools. With `present`, `fill_form` and `page_action`, follow SKILL.md. Without those tools, return the proposed changes as structured content for the user or assigning agent.");
   if (command === "create") return print(await request("POST", definitions, await form(args[0]), { "Idempotency-Key": randomUUID() }));
   const agentId = encodeURIComponent(required(args[0], "An agent id"));
   if (command === "update") return print(await request("PUT", `${definitions}/${agentId}`, await form(args[1])));
@@ -133,16 +84,8 @@ async function main() {
   if (command === "models") return print((await request("GET", `${ontology}/model-options`)).data);
   if (command === "execution-users")
     return print(await request("GET", `${ontology}/platform/agent-execution/options?${new URLSearchParams({ keyword: args[0] ?? "", pageNum: "1", pageSize: "100" })}`));
-  if (command === "draft") return draftCommand(args);
-  if (command === "validate-draft") {
-    const { value } = await readDraft(args[0]);
-    await request("POST", `${definitions}/validate`, { target: value.target, form: value.form });
-    console.log("ok");
-    return;
-  }
-  if (command === "draft-link") return draftLink(args[0]);
   if (["create", "update", "delete"].includes(command)) return directWrite(command, args);
-  throw new Error("Use list, get, skills, models, execution-users, draft, validate-draft, draft-link, create, update or delete");
+  throw new Error("Use list, get, skills, models, execution-users, create, update or delete");
 }
 
 main().catch((error) => {

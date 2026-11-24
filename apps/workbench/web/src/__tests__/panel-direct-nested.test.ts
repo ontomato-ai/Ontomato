@@ -45,7 +45,7 @@ const chosenPanel = (id: string) => ({ className: PRODUCT_PANEL, primaryKey: id 
 function base(reads: PanelMemberReadRequest[], projections: Record<string, DirectProjection | Error>): Omit<DirectPanelInstanceOptions, "nested"> {
   return {
     pageKey: "p", url: () => "/p", label: () => "P", text: createPanelText({}, ref("en"), "en"),
-    ...noOperations, recordDraftCreated: async () => {},
+    ...noOperations,
     readProjection: async (id) => {
       const found = projections[id];
       if (!found) throw new Error(`No projection ${id}`);
@@ -205,4 +205,40 @@ it("asks for the chosen object's detail panel by the object alone, and the place
   await vi.waitFor(() => expect(outer.operations.value.map(({ id, memberPath }) => [id, memberPath]))
     .toEqual([["detail.approve.runNow", [found, { member: "approve" }]]]));
   expect(reads.find((read) => read.operations)!.memberPath).toEqual([found, { member: "approve" }]);
+});
+
+it("passes { dynamic: true } to readProjection only for fromState dynamic projection members", async () => {
+  const calls: { id: string; hasSecondArg: boolean; options: unknown }[] = [];
+  const manifest: DirectPanelManifest = {
+    state: {
+      chosen: { type: { kind: "object", objectType: PRODUCT_PROJECTION }, personal: false, deepLink: true, external: false },
+    },
+    members: {
+      fixed: { target: { projectionId: "tasks-fixed" } },
+      preview: { target: { fromState: "chosen", candidates: { rule: "usable" } } },
+    },
+  };
+  const instance = createDirectPanelInstance(manifest, {
+    pageKey: "p",
+    url: () => "/p",
+    label: () => "P",
+    text: createPanelText({}, ref("en"), "en"),
+    ...noOperations,
+    initial: { chosen: chosenProjection("tasks-dyn") },
+    nested: noOperations.nested,
+    readProjection: async (...args: unknown[]) => {
+      const [id, readOptions] = args as [string, unknown];
+      calls.push({ id, hasSecondArg: args.length > 1, options: readOptions });
+      return list(id);
+    },
+    read: async (request) => ready(request.operations ? { runNow } : []),
+  });
+
+  await instance.projectionOf("fixed");
+  await instance.projectionOf("preview");
+
+  expect(calls).toEqual([
+    { id: "tasks-fixed", hasSecondArg: false, options: undefined },
+    { id: "tasks-dyn", hasSecondArg: true, options: { dynamic: true } },
+  ]);
 });

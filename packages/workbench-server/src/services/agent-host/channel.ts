@@ -15,7 +15,7 @@ import { restoreAgentCaller } from "./caller";
 import { workbenchIdentity } from "../../identity/installed";
 import { answerText } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { presentationCallback, visibilityReader } from "./presentation";
+import { presentationCallback, releasePresentationRun, visibilityReader } from "./presentation";
 
 async function caller(body: { actor: AgentRunContext["actor"] }, domain: string, provider?: string, readOnly = false, credentials: AssistantCredentials = {}) {
   const current = await restoreAgentCaller(body.actor, domain, readOnly, credentials);
@@ -87,12 +87,20 @@ export const agentChannelService = {
   },
   async settle(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
     const { body, owner } = await this.execution(raw, domain);
-    if (body.execution.session.providerId === "workbench") await assistantService.settleTurn(body.execution.runId,owner,body.execution.session.sessionId);
+    const provider = body.execution.session.providerId;
+    if (provider === "workbench" || provider === "observe") {
+      releasePresentationRun(provider, owner, body.execution.runId);
+    }
+    if (provider === "workbench") await assistantService.settleTurn(body.execution.runId,owner,body.execution.session.sessionId);
     return { accepted: true };
   },
   async cancel(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {
     const { body, owner,credentials } = await this.execution(raw, domain);
-    if (body.execution.session.providerId === "workbench") await assistantService.cancelScope(body.execution.runId,owner,credentials);
+    const provider = body.execution.session.providerId;
+    if (provider === "workbench" || provider === "observe") {
+      releasePresentationRun(provider, owner, body.execution.runId);
+    }
+    if (provider === "workbench") await assistantService.cancelScope(body.execution.runId,owner,credentials);
     return { accepted: true };
   },
   async read(raw: unknown, domain: string, _supplied: AssistantCredentials = {}) {

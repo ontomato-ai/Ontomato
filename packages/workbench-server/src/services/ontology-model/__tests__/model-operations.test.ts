@@ -103,30 +103,10 @@ describe("ontology model server operations", () => {
     ]);
   });
 
-  it("names the draft operation and create identity for each form save", () => {
-    expect(saveObjectType.draftOperation({ kind: "draft" })).toBe("objectType.create");
-    expect(saveObjectType.draftOperation(objectTarget)).toBe("objectType.update");
-    expect(saveAttribute.draftOperation({ kind: "draft" })).toBe("attribute.create");
-    expect(saveAttribute.draftOperation(attributeTarget)).toBe("attribute.update");
-    expect(saveRelationship.draftOperation({ kind: "draft" })).toBe("relationship.create");
-    expect(saveRelationship.draftOperation(relationshipTarget)).toBe("relationship.update");
-
+  it("rejects an unrelated target type and extracts input for form validation", () => {
     expect(() => saveObjectType.targetSchema.parse({ kind: "object", objectType: ATTRIBUTE, primaryKey: "Device" })).toThrow();
     const values = { className: "Pump", primaryKeyName: "pump_no", showName: "Pump display", classDesc: "" };
     expect(saveObjectType.draftInput({ values })).toEqual(values);
-    expect(saveObjectType.create.draftValues(values, "d1")).toEqual(values);
-    expect(saveObjectType.create.createdObject(objectTypeView)).toEqual({
-      objectType: OBJECT_TYPE,
-      primaryKey: "Pump",
-    });
-    expect(saveAttribute.create.createdObject(attributeView)).toEqual({
-      objectType: ATTRIBUTE,
-      primaryKey: '["Device","size"]',
-    });
-    expect(saveRelationship.create.createdObject(relationshipView)).toEqual({
-      objectType: RELATIONSHIP,
-      primaryKey: "owns",
-    });
   });
 
   it("creates and updates object types with matching affected objectTypes", async () => {

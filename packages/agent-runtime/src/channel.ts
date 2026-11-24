@@ -64,6 +64,18 @@ export class AgentChannel {
     chain.executions.delete(intent.id);
     if (!chain.executions.size) this.chains.delete(key);
   }
+  /** Drop in-memory credentials and bindings rooted at a deleted session. */
+  releaseSession(scope: Scope, sessionId: string) {
+    const providerIds = new Set(
+      (this.runtime.options.agentProviders ?? []).filter(p => p.hostId === scope.hostId).map(p => p.id),
+    );
+    for (const key of this.chains.keys()) {
+      const [domainId, providerId, rootSessionId] = JSON.parse(key) as [string, string, string, string];
+      if (domainId === scope.domainId && rootSessionId === sessionId && providerIds.has(providerId)) {
+        this.chains.delete(key);
+      }
+    }
+  }
   constructor(readonly runtime: AgentRuntime) { this.facts = new ChannelStore(runtime.store); }
   provider(id: string) {
     const provider = this.runtime.options.agentProviders?.find(p => p.id === id);
@@ -287,10 +299,22 @@ export class AgentChannel {
       if(queued && input.role==="notification" && input.kind==="agent-message" && !steer) throw new RuntimeError(409,"SESSION_BUSY","Use steer to insert an ordinary message into a running session");
       if(web && input.role==="notification" && input.replyTo && !(await this.facts.pendingQuestions(scope,target.sessionId)).some(question=>question.requestId===input.replyTo)) throw new RuntimeError(400,"INVALID_REPLY","replyTo must identify a pending question for this conversation's user");
       const openRun=session.activeRunId && this.runtime.acceptsInput(scope,session.activeRunId) ? session.activeRunId : null;
+      const sameSource = (candidate: AgentRunIntent) => {
+        if (web) {
+          return Boolean(web.channel.userRecipient) === Boolean(candidate.channel.userRecipient)
+            && Boolean(web.channel.requestedBy) === Boolean(candidate.channel.requestedBy)
+            && web.channel.actor.domainId === candidate.channel.actor.domainId;
+        }
+        if (external) {
+          return !candidate.channel.userRecipient
+            && !candidate.channel.requestedBy
+            && external.actor.domainId === candidate.channel.actor.domainId;
+        }
+        return true;
+      };
       let existingRun: string | null = null;
       for (const candidate of [openRun, waiting]) {
-        if (candidate && (!web || Boolean(web.channel.userRecipient) ===
-          Boolean((await this.facts.intent(scope, candidate)).channel.userRecipient))) {
+        if (candidate && ((!web && !external) || sameSource(await this.facts.intent(scope, candidate)))) {
           existingRun = candidate;
           break;
         }
@@ -397,16 +421,14 @@ export class AgentChannel {
       return rows;
     });
     if (!pending.length) return [];
-    let context: string | undefined;
     for (const row of pending) {
       const channel = run.channel!;
       const prepared = agentSteerPreparationSchema.parse(await this.post(this.provider(channel.agent.providerId), "/prepare", { mode: "steer", executionActor:run.executionUserId ? {userId:run.executionUserId,domainId:scope.domainId} : null, language: run.language, agent: channel.agent, actor: channel.actor, sessionId: run.sessionId, runId: run.id, inputId: row.id, input: row.message, authority: channel.authority, requestedBy: channel.requestedBy, root: channel.root, userRecipient: channel.userRecipient ?? null }, scope.domainId, this.credential(channel)));
-      if (prepared.context !== undefined) context = prepared.context;
+      await this.runtime.locked(scope, run.sessionId, async () => {
+        await this.facts.consume(scope, run.sessionId, run.id, [row.id]);
+        if (prepared.context !== undefined) await this.runtime.updateHostContext(scope, run.id, prepared.context);
+      });
     }
-    await this.runtime.locked(scope,run.sessionId,async () => {
-      await this.facts.consume(scope,run.sessionId,run.id,pending.map(row => row.id));
-      if (context !== undefined) await this.runtime.updateHostContext(scope,run.id,context);
-    });
     return pending.map(row => { const message = row.message as unknown as Message; this.inputIds.set(message, row.id); return message; });
   }
   /** The rebuilt model request has already consumed these queued inputs at a safe boundary. */
@@ -581,6 +603,6 @@ export class AgentChannel {
         createdAt: intent.createdAt, agentRef: intent.channel.agent, sessionRef: intent.session, runId: intent.id, process: delivery?.process ?? { mode: "none" }, results: delivery?.results ?? [],...(delivery?.retrieval?{retrieval:delivery.retrieval}:{}) });
     }
     // Quality checks belong to the host's replies; the host adds them to this projection.
-    return { sessionId, tasks, qualityResults: [], preparationFailures: await this.facts.preparationFailures(scope,sessionId), pendingQuestions: await this.facts.pendingQuestions(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };
+    return { sessionId, tasks, qualityResults: [], preparationFailures: await this.facts.preparationFailures(scope,sessionId), queuedRuns: await this.facts.queuedRuns(scope,sessionId), pendingQuestions: await this.facts.pendingQuestions(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };
   }
 }

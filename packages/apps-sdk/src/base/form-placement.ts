@@ -1,11 +1,13 @@
+import type { FormFieldRejection } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { findPanelFormOption } from "@ontomato/contracts/form-fields";
 import {
   panelFormObjectActiveFields,
   panelFormObjectActiveVariant,
   type PanelFormField,
   type PanelFormValues,
 } from "@ontomato/contracts/panel-projection";
-import { jsonValuesEqual, valueAt, withValueAt } from "../panel/form-values";
+import { admitsNull, jsonValuesEqual, valueAt, withValueAt } from "../panel/form-values";
 
 function isPlainObject(value: RuntimeJsonValue | undefined): value is PanelFormValues {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -83,6 +85,278 @@ export function activeFieldAt(
     }
   }
   return undefined;
+}
+
+export interface ResolvedActiveFormField {
+  readonly field: PanelFormField;
+  readonly readOnly: boolean;
+  readonly readOnlyReason?: string;
+}
+
+/**
+ * Resolves the active visible field at `path` together with effective read-only state inherited from any ancestor
+ * `object` or `object-array` field. Hidden fields and their descendants are treated as absent.
+ */
+export function resolveActiveField(
+  fields: readonly PanelFormField[],
+  values: PanelFormValues,
+  path: string,
+  base = "",
+  inheritedReadOnly = false,
+  inheritedReadOnlyReason?: string,
+): ResolvedActiveFormField | undefined {
+  for (const field of fields) {
+    if (field.control.kind === "hidden") continue;
+    const at = base + field.path;
+    const readOnly = inheritedReadOnly || field.readOnly;
+    const readOnlyReason = inheritedReadOnly
+      ? inheritedReadOnlyReason
+      : (field.readOnly ? field.readOnlyReason : undefined);
+    if (path === at) return { field, readOnly, ...(readOnlyReason ? { readOnlyReason } : {}) };
+    if (!path.startsWith(`${at}/`)) continue;
+    const { control } = field;
+    if (control.kind === "object") {
+      const current = valueAt(values, at);
+      if (!isPlainObject(current)) return undefined;
+      return resolveActiveField(
+        panelFormObjectActiveFields(control, current),
+        values,
+        path,
+        at,
+        readOnly,
+        readOnlyReason,
+      );
+    }
+    if (control.kind === "object-array") {
+      const rowToken = path.slice(at.length + 1).split("/")[0]!;
+      const index = Number(rowToken);
+      const rows = valueAt(values, at);
+      if (!/^\d+$/.test(rowToken) || !Array.isArray(rows) || !isPlainObject(rows[index])) return undefined;
+      return resolveActiveField(
+        control.itemFields,
+        values,
+        path,
+        `${at}/${rowToken}`,
+        readOnly,
+        readOnlyReason,
+      );
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Validates that a value assigned via `fillForm` respects the same UI restrictions a human control enforces:
+ * - Closed `select` controls (and static `valueSchema.enum`) only accept enabled declared options.
+ * - Whole-object and whole-array assignments cannot alter nested `fixed`, `readOnly`, or `hidden` child fields,
+ *   and nested editable children obey the same option/composite constraints.
+ */
+export function validateFormFieldValue(
+  field: PanelFormField,
+  pointer: string,
+  value: RuntimeJsonValue,
+  currentValues: PanelFormValues,
+  fixedValues: Readonly<Record<string, RuntimeJsonValue>>,
+): FormFieldRejection | null {
+  const { control } = field;
+  if (control.kind === "select") {
+    if (control.multiple) {
+      if (!Array.isArray(value)) {
+        return { path: pointer, reason: "invalid_value", message: `Field ${pointer} expects an array of choices.` };
+      }
+      for (const item of value) {
+        const matched = findPanelFormOption(control.options, item);
+        if (matched?.disabled) {
+          return {
+            path: pointer,
+            reason: "invalid_value",
+            message: matched.disabledReason ?? `Option ${JSON.stringify(item)} is disabled for field ${pointer}.`,
+          };
+        }
+        if (!matched && !control.allowCreate) {
+          return {
+            path: pointer,
+            reason: "invalid_value",
+            message: `Value ${JSON.stringify(item)} is not an allowed option for field ${pointer}.`,
+          };
+        }
+      }
+      return null;
+    }
+    if (value === null) {
+      const objectSelect = control.options.some((option) => typeof option.value === "object");
+      if (!field.required && (objectSelect || admitsNull(field.valueSchema))) return null;
+      return {
+        path: pointer,
+        reason: "invalid_value",
+        message: `Field ${pointer} requires choosing one of its allowed options.`,
+      };
+    }
+    const matched = findPanelFormOption(control.options, value);
+    if (matched?.disabled) {
+      return {
+        path: pointer,
+        reason: "invalid_value",
+        message: matched.disabledReason ?? `Option ${JSON.stringify(value)} is disabled for field ${pointer}.`,
+      };
+    }
+    if (!matched && !control.allowCreate) {
+      return {
+        path: pointer,
+        reason: "invalid_value",
+        message: `Value ${JSON.stringify(value)} is not an allowed option for field ${pointer}.`,
+      };
+    }
+    return null;
+  }
+
+  const schemaEnum = field.valueSchema.enum;
+  if (Array.isArray(schemaEnum) && schemaEnum.length > 0) {
+    if (!schemaEnum.some((allowed) => jsonValuesEqual(allowed as RuntimeJsonValue, value))) {
+      return {
+        path: pointer,
+        reason: "invalid_value",
+        message: `Value ${JSON.stringify(value)} is not an allowed enum value for field ${pointer}.`,
+      };
+    }
+  }
+
+  if (control.kind === "object") {
+    const currentValue = valueAt(currentValues, pointer);
+    const currentObj = isPlainObject(currentValue) ? currentValue : undefined;
+    const fixedDescendants = Object.keys(fixedValues).filter((fixedPath) => fixedPath.startsWith(`${pointer}/`));
+    if (value === null) {
+      if (field.required) {
+        return { path: pointer, reason: "invalid_value", message: `Field ${pointer} is required and cannot be null.` };
+      }
+      if (fixedDescendants.length > 0) {
+        return {
+          path: pointer,
+          reason: "fixed",
+          message: `Field ${pointer} contains fixed field ${fixedDescendants[0]} and cannot be cleared.`,
+        };
+      }
+      if (currentObj) {
+        for (const child of panelFormObjectActiveFields(control, currentObj)) {
+          const beforeChild = valueAt(currentObj, child.path);
+          if ((child.readOnly || child.control.kind === "hidden") && beforeChild !== undefined) {
+            return {
+              path: pointer,
+              reason: "read_only",
+              message: child.readOnlyReason ?? `Nested field ${pointer}${child.path} is read-only and cannot be removed.`,
+            };
+          }
+        }
+      }
+      return null;
+    }
+    if (!isPlainObject(value)) {
+      return { path: pointer, reason: "invalid_value", message: `Field ${pointer} expects an object value.` };
+    }
+    for (const fixedPath of fixedDescendants) {
+      const relPath = fixedPath.slice(pointer.length);
+      if (!jsonValuesEqual(valueAt(value, relPath), fixedValues[fixedPath])) {
+        return {
+          path: pointer,
+          reason: "fixed",
+          message: `Nested field ${fixedPath} is fixed by page state and cannot be modified.`,
+        };
+      }
+    }
+    const nextActive = panelFormObjectActiveFields(control, value);
+    const checkedPaths = new Set<string>();
+    const checkChild = (child: PanelFormField): FormFieldRejection | null => {
+      if (checkedPaths.has(child.path)) return null;
+      checkedPaths.add(child.path);
+      const childAbsPath = `${pointer}${child.path}`;
+      const beforeChild = currentObj ? valueAt(currentObj, child.path) : undefined;
+      const afterChild = valueAt(value, child.path);
+      if (child.control.kind === "hidden" || child.readOnly) {
+        if (!jsonValuesEqual(beforeChild, afterChild)) {
+          return {
+            path: pointer,
+            reason: "read_only",
+            message: child.readOnlyReason ?? `Nested field ${childAbsPath} is read-only and cannot be modified.`,
+          };
+        }
+        return null;
+      }
+      if (afterChild !== undefined) {
+        const nestedRejection = validateFormFieldValue(child, childAbsPath, afterChild, currentValues, fixedValues);
+        if (nestedRejection) return { ...nestedRejection, path: pointer };
+      }
+      return null;
+    };
+    for (const child of nextActive) {
+      const rejection = checkChild(child);
+      if (rejection) return rejection;
+    }
+    if (currentObj) {
+      for (const child of panelFormObjectActiveFields(control, currentObj)) {
+        if (child.readOnly || child.control.kind === "hidden") {
+          const rejection = checkChild(child);
+          if (rejection) return rejection;
+        }
+      }
+    }
+    return null;
+  }
+
+  if (control.kind === "object-array") {
+    if (!Array.isArray(value)) {
+      return { path: pointer, reason: "invalid_value", message: `Field ${pointer} expects an array of objects.` };
+    }
+    const fixedDescendants = Object.keys(fixedValues).filter((fixedPath) => fixedPath.startsWith(`${pointer}/`));
+    for (const fixedPath of fixedDescendants) {
+      const relPath = fixedPath.slice(pointer.length);
+      const nextFixed = valueAt({ _: value }, `/_${relPath}`);
+      if (!jsonValuesEqual(nextFixed, fixedValues[fixedPath])) {
+        return {
+          path: pointer,
+          reason: "fixed",
+          message: `Nested field ${fixedPath} is fixed by page state and cannot be modified.`,
+        };
+      }
+    }
+    const currentRows = valueAt(currentValues, pointer);
+    const prevRows = Array.isArray(currentRows) ? currentRows : [];
+    const keyPath = control.itemKeyPath;
+    for (let index = 0; index < value.length; index++) {
+      const row = value[index];
+      if (!isPlainObject(row)) {
+        return { path: pointer, reason: "invalid_value", message: `Row ${index} of ${pointer} must be an object.` };
+      }
+      const rowKey = keyPath ? valueAt(row, keyPath) : undefined;
+      const prevRowCandidate = keyPath && rowKey !== undefined
+        ? prevRows.find((candidate) => isPlainObject(candidate) && jsonValuesEqual(valueAt(candidate, keyPath), rowKey))
+        : prevRows[index];
+      const prevRow = isPlainObject(prevRowCandidate) ? prevRowCandidate : undefined;
+      for (const child of control.itemFields) {
+        const childAbsPath = `${pointer}/${index}${child.path}`;
+        const beforeChild = prevRow
+          ? valueAt(prevRow, child.path)
+          : (control.defaultItem ? valueAt(control.defaultItem, child.path) : undefined);
+        const afterChild = valueAt(row, child.path);
+        if (child.control.kind === "hidden" || child.readOnly) {
+          if (!jsonValuesEqual(beforeChild, afterChild)) {
+            return {
+              path: pointer,
+              reason: "read_only",
+              message: child.readOnlyReason ?? `Nested field ${childAbsPath} is read-only and cannot be modified.`,
+            };
+          }
+          continue;
+        }
+        if (afterChild !== undefined) {
+          const nestedRejection = validateFormFieldValue(child, childAbsPath, afterChild, currentValues, fixedValues);
+          if (nestedRejection) return { ...nestedRejection, path: pointer };
+        }
+      }
+    }
+    return null;
+  }
+
+  return null;
 }
 
 /** Top-level described field paths whose values differ between two form snapshots, independent of object key order. */

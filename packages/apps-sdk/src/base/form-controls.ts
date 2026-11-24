@@ -1,6 +1,7 @@
 import { inject, type InjectionKey, type Ref, type Slot } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
+import type { InvalidFormText } from "../panel/forms";
 
 /*
  * What the controls of one owner form edit, provided by the form that holds it: the values, the messages and marks by
@@ -27,6 +28,7 @@ export interface FormControls {
   isTopLevel(path: string): boolean;
   /** Whether `path` currently holds unparseable local text (such as invalid JSON in a code editor). */
   hasInvalid(path: string): boolean;
+  invalidText(path: string): string | undefined;
   set(path: string, value: RuntimeJsonValue): void;
   /** Leaves the field at `path` out of the values: a choice cleared, which the owner then does not receive. */
   remove(path: string): void;
@@ -35,8 +37,8 @@ export interface FormControls {
    * inside a row move with it.
    */
   reorder(path: string, order: readonly number[]): void;
-  /** The field at `path` holds text that is not a value of the owner's (a message), or no longer does (null). */
-  invalid(path: string, message: string | null): void;
+  /** Keeps unparseable field text and its validation message until the field has a value again. */
+  invalid(path: string, text: InvalidFormText | null): void;
   /**
    * Look up a custom Vue slot for a form field (`#field-<path>`, `#field-<arrayPath>/*<itemPath>`, or `#field`).
    * Returns the slot function and scoped props when a slot is provided for this field, or `undefined` to render the

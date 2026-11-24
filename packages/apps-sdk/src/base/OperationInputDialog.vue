@@ -105,17 +105,17 @@ function submit() {
       >
         <el-select
           v-if="field.kind === 'select'"
-          :model-value="(draft[field.name] as string | number | boolean | undefined)"
+          :model-value="(draft[field.name] as RuntimeJsonValue | undefined)"
           :clearable="!field.required"
           class="sdk-operation-input-full"
           @update:model-value="(value) => { draft[field.name] = value; clearError(field.name); }"
         >
           <el-option
             v-for="option in field.options"
-            :key="String(option)"
-            :label="String(option)"
-            :value="(option as string | number | boolean)"
-          ></el-option>
+            :key="JSON.stringify(option.value)"
+            :label="option.label"
+            :value="(option.value as NonNullable<RuntimeJsonValue>)"
+          />
         </el-select>
         <el-switch
           v-else-if="field.kind === 'boolean'"

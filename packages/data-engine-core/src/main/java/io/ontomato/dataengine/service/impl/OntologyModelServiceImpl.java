@@ -1130,16 +1130,14 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 					objectSchema(List.of("className", "showName"), "className",
 							stringSchema(label.get("className")), "showName",
 							stringSchema(label.get("showName")), "classDesc",
-							stringSchema(label.get("classDesc"))),
-					"objectType.update");
+							stringSchema(label.get("classDesc"))));
 		}
 		return new FormSave("POST", "/ontology/model/object-type/create",
 				objectSchema(List.of("className", "primaryKeyName", "showName"), "className",
 						stringSchema(label.get("className")), "primaryKeyName",
 						stringSchema(label.get("primaryKeyName")), "showName",
 						stringSchema(label.get("showName")), "classDesc",
-						stringSchema(label.get("classDesc"))),
-				"objectType.create");
+						stringSchema(label.get("classDesc"))));
 	}
 
 	private FormSave attributeFormSave(boolean edit, String lang) {
@@ -1152,8 +1150,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 							stringSchema(label.get("showName")), "attrDesc",
 							stringSchema(label.get("attrDesc")), "enable",
 							booleanSchema(label.get("enable")), "businessKey",
-							booleanSchema(label.get("businessKey"))),
-					"attribute.update");
+							booleanSchema(label.get("businessKey"))));
 		}
 		return new FormSave("POST", "/ontology/model/attribute/create",
 				objectSchema(List.of("className", "name", "showName", "type", "enable", "businessKey"), "className",
@@ -1164,8 +1161,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 						stringSchema(label.get("attrDesc")), "enable",
 						booleanSchema(label.get("enable")), "businessKey",
 						booleanSchema(label.get("businessKey")), "primaryKey",
-						booleanSchema(label.get("primaryKey"))),
-				"attribute.create");
+						booleanSchema(label.get("primaryKey"))));
 	}
 
 	private FormSave relationshipFormSave(boolean edit, boolean joinRequired, String lang) {
@@ -1194,8 +1190,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		}
 		return new FormSave("POST",
 				edit ? "/ontology/model/relationship/update" : "/ontology/model/relationship/create",
-				object("type", "object", "properties", properties, "required", required, "additionalProperties", false),
-				edit ? "relationship.update" : "relationship.create");
+				object("type", "object", "properties", properties, "required", required, "additionalProperties", false));
 	}
 
 	private ObjectTypeView objectTypeView(Map<String, Object> classDef,

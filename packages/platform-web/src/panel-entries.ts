@@ -63,13 +63,10 @@ export const unknownAddressRoute: RouteRecordRaw = { ...platformRoutes.unknown, 
 export function panelEntryGuard(router: Router): NavigationGuard {
   const catalog = useApplicationCatalog();
   const unknown = (address: string) => router.resolve(address).name === platformRoutes.unknown.name;
-  /** This start of the platform's own read of the catalog: one read before the first unknown address is decided. */
-  let read: Promise<void> | null = null;
   return async (to) => {
     if (to.name !== platformRoutes.unknown.name) return true;
-    await (read ??= catalog.refresh());
     servePanelEntries(router);
-    // A grant since that read may not be listed yet: read it again once.
+    // A cold link or a newly granted or published entry may be missing from the current catalog.
     if (unknown(to.fullPath)) {
       await catalog.refresh();
       servePanelEntries(router);
@@ -89,13 +86,12 @@ export function addressLandingGuard(router: Router): NavigationGuard {
   const unknown = (address: string) => router.resolve(address).name === platformRoutes.unknown.name;
   /** The address last sent to the landing because nothing served it for this reader. */
   let sentToLanding: string | null = null;
-  let read: Promise<void> | null = null;
   return async (to) => {
     if (to.name === platformRoutes.ontology.name) {
       // Every page guard left this reader at `/ontology` because they have no native page in the navigation:
       // land on the first permission-gated panel entry they hold — ontology first (for example business knowledge),
       // then another native application (for example operations' user feedback).
-      await (read ??= catalog.refresh());
+      if (catalog.applications.value.length === 0 && catalog.loading.value) await catalog.refresh();
       const nativeApps = catalog.applications.value.filter((app) => !isPanelApplication(app));
       const ordered = [
         ...nativeApps.filter((app) => app.id === "ontology"),

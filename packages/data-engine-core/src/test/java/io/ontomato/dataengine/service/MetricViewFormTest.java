@@ -88,7 +88,6 @@ class MetricViewFormTest {
     JSONObject save = form.getJSONObject("save");
     assertEquals("POST", save.getString("method"));
     assertEquals("/metricView/save", save.getString("path"));
-    assertEquals("metric-view.update", save.getString("draftOperation"));
     assertEquals("object", save.getJSONObject("bodySchema").getString("type"));
     assertFalse(form.containsKey("revision"));
   }
@@ -178,7 +177,6 @@ class MetricViewFormTest {
     // A new metric's query starts from no column labels, as the page always showed it.
     assertEquals(new JSONObject(), values.getJSONObject("function").getJSONObject("returnDef").getJSONObject("columnLabels"));
     assertTrue(values.getJSONArray("bindings").isEmpty());
-    assertEquals("metric-view.create", form.getJSONObject("save").getString("draftOperation"));
     assertEquals("string-array", field(form, "/matchQuestions").getJSONObject("control").getString("kind"));
     assertEquals("object-array", field(form, "/bindings").getJSONObject("control").getString("kind"));
   }

@@ -72,8 +72,8 @@ async function open(state: Record<string, unknown>, held?: Promise<void>) {
       const { target } = request.body as { target: { kind: string; primaryKey?: string } };
       const name = target.kind === "draft" ? "" : agents.find((agent) => agent.id === target.primaryKey)!.name;
       const save = target.kind === "draft"
-        ? { method: "POST", path: "/assistant/agent-definitions", bodySchema: {}, draftOperation: "agent.create" }
-        : { method: "PUT", path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: "agent.update" };
+        ? { method: "POST", path: "/assistant/agent-definitions", bodySchema: {} }
+        : { method: "PUT", path: "/assistant/agent-definitions/:id", bodySchema: {} };
       return Response.json({ fields, values: { name }, revision, errors: [], save });
     }
     // The owner's description of what the form can do may still be on its way.

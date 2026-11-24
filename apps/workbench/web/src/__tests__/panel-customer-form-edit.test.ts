@@ -11,7 +11,6 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import { FUNCTION } from "@ontomato/contracts/platform-object-types";
 import { createDirectPanelInstance, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
-import { receivePanelDraft } from "../../../../../packages/apps-sdk/src/panel/draft";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { PlatformObjectRefusal } from "../../../../../packages/apps-sdk/src/panel/platform-objects";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -73,7 +72,6 @@ function mountCustomerForm(options: {
   objectType?: string;
   primaryKey?: string | null;
   includeCreateForm?: boolean;
-  draftOperation?: string;
 }) {
   const objectType = options.objectType ?? CUSTOMER;
   const primaryKey = options.primaryKey === undefined ? "cust-1" : options.primaryKey;
@@ -158,8 +156,6 @@ function mountCustomerForm(options: {
         },
       },
     }),
-    recordDraftCreated: async () => {},
-    reportDraftError: () => {},
     readProjection: async (id) => projections[id]!,
     read: async (request: PanelMemberReadRequest) => {
       if (request.operations) {
@@ -178,7 +174,6 @@ function mountCustomerForm(options: {
           method: "PUT",
           path: `/ontology/objects/${objectType}`,
           bodySchema: {},
-          draftOperation: options.draftOperation ?? `${objectType}.update`,
         },
       });
     },
@@ -260,7 +255,7 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     unmount();
   });
 
-  it("refuses submit before any write request when an unwired field is edited programmatically or by draft, keeping edits and changed state", async () => {
+  it("refuses submit before any write request when an unwired field is edited programmatically, and rejects unwired fields on live fillForm", async () => {
     const { instance, element, prepared, unmount } = mountCustomerForm({
       fields: baseFields,
       values: { id: "cust-1", name: "Alice", grade: "A", phone: "13800001111" },
@@ -299,40 +294,23 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     expect(form.dirtyFields.value.has("/phone")).toBe(true);
     expect(form.errors.value["/phone"]).toBe(publicEn.platform.formFieldNotSavedByAction);
 
-    // 2. Received draft modifying unwired `/phone` also refuses before writing and keeps `changed`.
+    // 2. Live fillForm rejects unwired read-only `/phone` while filling wired `/name`.
     await form.reset();
     await nextTick();
-    await receivePanelDraft(
-      "customer-edit",
-      instance.forms,
-      {
-        readPageDraft: async () => ({
-          pageKey: "customer-edit",
-          operation: `${CUSTOMER}.update`,
-          target: { objectType: CUSTOMER, id: "cust-1" },
-          form: { name: "Alice Draft", phone: "13700009999" },
-        }),
-      },
-      { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/draft.json" },
-      instance.receiveDraft,
-    );
-    await vi.waitFor(() => expect(form.changed.value.has("/phone")).toBe(true));
-
-    let draftError: unknown;
-    try {
-      await instance.forms.submit("customerForm");
-    } catch (reason) {
-      draftError = reason;
-    }
-
-    expect(draftError).toBeInstanceOf(PlatformObjectRefusal);
-    expect((draftError as PlatformObjectRefusal).fields).toEqual({
-      "/phone": publicEn.platform.formFieldNotSavedByAction,
+    const fillOutcome = await instance.fillForm({
+      member: "customerForm",
+      values: { "/name": "Alice Filled", "/phone": "13700009999" },
     });
-    expect(prepared).toHaveLength(0);
-    expect(form.changed.value.has("/phone")).toBe(true);
+    expect(fillOutcome).toMatchObject({
+      ok: true,
+      member: "customerForm",
+      filledFields: ["/name"],
+      rejectedFields: [{ path: "/phone", reason: "read_only" }],
+    });
     expect(form.changed.value.has("/name")).toBe(true);
-    expect(form.values.value.phone).toBe("13700009999");
+    expect(form.changed.value.has("/phone")).toBe(false);
+    expect(form.values.value.name).toBe("Alice Filled");
+    expect(form.values.value.phone).toBe("13800001111");
 
     unmount();
   });
@@ -685,7 +663,6 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     const platform = mountCustomerForm({
       objectType: FUNCTION,
       primaryKey: "fn-1",
-      draftOperation: "function.save",
       fields: [
         { path: "/name", label: "Name", valueSchema: { type: "string" }, required: true, readOnly: false, control: { kind: "text" } },
         { path: "/description", label: "Description", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
@@ -758,7 +735,6 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
       objectType: FUNCTION,
       primaryKey: null,
       includeCreateForm: true,
-      draftOperation: "function.save",
       fields: [
         { path: "/name", label: "Name", valueSchema: { type: "string" }, required: true, readOnly: true, control: { kind: "text" } },
       ],
@@ -847,7 +823,6 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
       objectType: FUNCTION,
       primaryKey: null,
       includeCreateForm: true,
-      draftOperation: "function.save",
       fields: platformFields,
       values: platformValues,
       operations: {
@@ -890,7 +865,6 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     const deniedEdit = mountCustomerForm({
       objectType: FUNCTION,
       primaryKey: "fn-1",
-      draftOperation: "function.save",
       fields: platformFields,
       values: platformValues,
       operations: {
@@ -921,7 +895,6 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     const admittedEdit = mountCustomerForm({
       objectType: FUNCTION,
       primaryKey: "fn-1",
-      draftOperation: "function.save",
       fields: platformFields,
       values: platformValues,
       operations: {

@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { runtimeArtifactSchema, runtimeFileMetadataSchema } from "./agent-runtime-artifacts";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema, runtimeSequenceSchema } from "./agent-runtime-values";
-import { pageDraftSchema } from "./page-draft";
 import { packageRecipeSchema, queryPackageSchema, queryParameterSchema } from "./query-package";
 import { querySubgraphSchema } from "./query-subgraph";
 
@@ -121,12 +120,7 @@ export const actionExplanationEvidenceSchema = z.object({
   acceptedResult: acceptedActionExplanationSchema,
 }).strict();
 
-/** The Action owner recognizes the explanation reference on the ordinary page draft form. */
-export const actionAuthoringPageDraftSchema = pageDraftSchema.extend({
-  form: z.object({ explanationRef: actionExplanationRefSchema.optional() }).catchall(runtimeJsonValueSchema),
-});
-
-/** The host extracts a draft's form from its immutable artifact, or supplies the actual definition to be saved. */
+/** The host supplies the actual definition to be saved. */
 const authoringAdoptionInputSchema = z.object({ definition: runtimeJsonObjectSchema }).strict();
 
 export const authoringAdoptionRequestSchema = z.object({
@@ -191,7 +185,6 @@ export const authoringWireSchemas = {
   explainDraftRequest: authoringExplainDraftRequestSchema,
   explainDraftResponse: authoringExplainDraftResponseSchema,
   actionExplanationEvidence: actionExplanationEvidenceSchema,
-  actionPageDraft: actionAuthoringPageDraftSchema,
   adoptionRequest: authoringAdoptionRequestSchema,
   adoptionResponse: authoringAdoptionResponseSchema,
 };

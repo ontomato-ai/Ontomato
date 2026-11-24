@@ -1,6 +1,5 @@
 import { loadDomainComponent } from "./domain-component";
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
-import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
   applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelPageSkillContextResponseSchema, productPanelResponseSchema, productPanelSchema,
   type ApplicationEntryResolution, type ApplicationEntryResolutionQuery, type ApplicationPanelUse,
@@ -191,6 +190,7 @@ export function platformPanelHost(
         mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
         panelDomainComponents = answer.domainComponents;
         lastPanel = answer.panel;
+        sourceReconciled = true;
         return { kind: "registered", applicationId, use, panel: answer.panel };
       } catch (failure) {
         sourceFailed = true;
@@ -223,7 +223,8 @@ export function platformPanelHost(
       (opened) => mountCoded(withNested({
         ...directOptions(source, opened, shown, changed, beside, undefined, undefined, mountUnavailable),
         ...(panelDomainComponents ? { panelDomainComponents } : {}),
-      }, { kind: "registered", ...shown }), target, source.panel.content.module)),
+      }, { kind: "registered", ...shown }), target, source.panel.content.module),
+      source.panel.id === use.panelId ? Object.keys(use.inputs ?? {}) : []),
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
@@ -310,6 +311,7 @@ export function framePanelHost(
       mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
       frameDomainComponents = answer.domainComponents;
       lastPanel = answer.panel;
+      sourceReconciled = true;
       return { kind: "registered", applicationId, use, panel: answer.panel };
     },
     sourceReconciled: () => sourceReconciled,
@@ -383,6 +385,7 @@ export function builtinFramePanelHost(
   const sourceQuery = new URLSearchParams({ includeProjections: "1" });
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
   let lastPanel: ProductPanel | undefined;
+  let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
   let sourceReconciled = false;
   return {
     async source() {
@@ -397,9 +400,10 @@ export function builtinFramePanelHost(
           invalidateCachedPanel(cacheKey);
           throw failure;
         }
-        reconcileDefinitionCacheWithSnapshot(cacheKey, cached, verified, scope);
+        const forbidden = reconcileDefinitionCacheWithSnapshot(cacheKey, cached, verified, scope);
         if (verified.panel.revision === cached.revision) {
           lastPanel = cached;
+          mountUnavailable = forbidden;
           sourceReconciled = true;
           return { kind: "registered", applicationId, use: placeholderUse, panel: cached };
         }
@@ -409,8 +413,9 @@ export function builtinFramePanelHost(
       const scope = currentDefinitionCacheScope();
       const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${sourceQuery}`));
       setCachedPanel(cacheKey, answer.panel, scope);
-      ingestBundledPanelProjections(answer.projections, scope);
+      mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
       lastPanel = answer.panel;
+      sourceReconciled = true;
       return { kind: "registered", applicationId, use: placeholderUse, panel: answer.panel };
     },
     sourceReconciled: () => sourceReconciled,
@@ -421,7 +426,7 @@ export function builtinFramePanelHost(
         const scope = currentDefinitionCacheScope();
         const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}?${sourceQuery}`));
         setCachedPanel(cacheKey, answer.panel, scope);
-        ingestBundledPanelProjections(answer.projections, scope);
+        mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
         lastPanel = answer.panel;
         return answer.panel;
       }
@@ -436,7 +441,11 @@ export function builtinFramePanelHost(
         manifest: source.panel.manifest,
         run,
         requests: platformRequests,
-        readProjection: (id) => readCachedProjection(id, () => readProjectionForRender(platformRequests, id)),
+        readProjection: (id, readOptions) => readCachedProjection(
+          id,
+          () => readPlatformProjection(id),
+          readOptions?.dynamic ? { verifyAccess: true } : { mountUnavailable },
+        ),
         use: null,
         read: () => Promise.resolve({ status: "forbidden", reason: "Native frame does not read panel data" }),
         confirmOperation: () => Promise.reject(new Error("A native frame runs no panel operations")),
@@ -462,7 +471,11 @@ export function builtinFramePanelHost(
         invalidateCachedPanel(targetKey);
         throw failure;
       }
-      reconcileDefinitionCacheWithSnapshot(targetKey, lastPanel, answer, scope);
+      const forbidden = reconcileDefinitionCacheWithSnapshot(targetKey, lastPanel, answer, scope);
+      if (mountUnavailable && answer.members !== undefined) {
+        mountUnavailable.clear();
+        for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
+      }
       return answer;
     },
     mode: { kind: "view" },
@@ -496,6 +509,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         manifest: source.panel.manifest,
         run,
         requests: platformRequests,
+        readProjection: readPlatformProjection,
         ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
         read: request => readPanelData({ source: { kind: "candidate", workspace: source.workspace }, ...request }),
@@ -521,6 +535,20 @@ const platformRequests: PlatformRequests = {
   request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, init),
 };
 
+/**
+ * Reads a projection render payload through the platform's host request layer, translating HTTP 403/404
+ * `ApiRequestError`s from `nodeApiRequest` into `PanelMemberUnavailable` so member slots and definition cache eviction
+ * handle revoked/missing projections identically to the frame bridge.
+ */
+function readPlatformProjection(id: string) {
+  return readProjectionForRender(platformRequests, id).catch((failure: unknown) => {
+    if (failure instanceof ApiRequestError && (failure.status === 403 || failure.status === 404)) {
+      throw new PanelMemberUnavailable(failure.status, failure.message);
+    }
+    throw failure;
+  });
+}
+
 /** What a panel of an application use runs on in this document: the SDK's instance with this platform's reads, requests and words. */
 function directOptions(
   source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void, beside?: (address: string) => void,
@@ -537,7 +565,11 @@ function directOptions(
     manifest: source.panel.manifest,
     run,
     requests: platformRequests,
-    readProjection: (id) => readCachedProjection(id, () => readProjectionForRender(platformRequests, id), mountUnavailable),
+    readProjection: (id, readOptions) => readCachedProjection(
+      id,
+      () => readPlatformProjection(id),
+      readOptions?.dynamic ? { verifyAccess: true } : { mountUnavailable },
+    ),
     use: root ? { ...use, root } : use,
     read: request => readPanelData({ source: readSource, ...request }),
     confirmOperation: (preparation, hooks) => confirmPanelIntent(
@@ -600,8 +632,9 @@ async function mountNested(
   const dropTheme = applyTheme(element, () => composeThemes(panel.theme, run.theme), hostThemeMode);
   try {
     const nestedReadProjection = source.kind === "candidate"
-      ? undefined
-      : (id: string) => readCachedProjection(id, () => readProjectionForRender(platformRequests, id));
+      ? (id: string) => readPlatformProjection(id)
+      : (id: string) => readCachedProjection(id, () => readPlatformProjection(id), { verifyAccess: true });
+    const last = memberPath.at(-1);
     const mount = await withPersonalState(source, placedAt, panel.manifest, run, (opened) => mountCoded(
       withNested({
         ...outer,
@@ -613,7 +646,7 @@ async function mountNested(
         panelDomainComponents: domainComponents,
       }, source),
       { element, template }, panel.content.module,
-    ));
+    ), Object.keys(last ? outer.manifest.members[last.member]?.inputs ?? {} : {}));
     return { element, mount: { ...mount, dispose() { mount.dispose(); dropStyle?.(); dropTheme(); } } };
   } catch (failure) {
     dropStyle?.();
@@ -623,46 +656,47 @@ async function mountNested(
 }
 
 /*
- * Personal state (product-layer standard, part two): a field a panel declares \`personal: true\` is kept for each reader,
- * by the use relation and the place the panel stands at. Opening, the panel takes the reader's saved values under what
- * the address or the entry gives it (those win), above its declared defaults; as the reader changes them, they are
- * saved, a moment after the last change and once more when the panel goes — or the whole page does (a reload or a closed
- * tab unmounts nothing), then as a request that outlives the page. A panel that keeps none reads and writes nothing; a
- * read that fails opens the panel at its defaults.
+ * Personal state (product-layer standard, part two): a field a panel declares `personal: true` is kept for each reader,
+ * by the use relation and the place the panel stands at, unless controlled by the entry's inputs or the enclosing
+ * panel's member inputs (controlled fields are excluded from personal-state reads and writes at that slot). Opening,
+ * the panel takes the reader's saved values under what the address or the entry gives it (those win), above its
+ * declared defaults; as the reader changes them, they are saved, a moment after the last change and once more when the
+ * panel goes — or the whole page does (a reload or a closed tab unmounts nothing), then as a request that outlives the
+ * page. A panel that keeps none reads and writes nothing; a read that fails opens the panel at its defaults.
  */
 const PERSONAL_STATE_DELAY = 400;
 
-function personalFields(manifest: PanelManifest) {
-  return Object.entries(manifest.state).filter(([, field]) => field.personal).map(([name]) => name);
+function personalFields(manifest: PanelManifest, controlled: ReadonlySet<string>) {
+  return Object.entries(manifest.state)
+    .filter(([name, field]) => field.personal && !controlled.has(name))
+    .map(([name]) => name);
 }
 
 async function withPersonalState(
   source: PanelReadSource, memberPath: PanelMemberPath, manifest: PanelManifest, run: DirectPanelRun,
   mount: (run: DirectPanelRun) => Promise<PanelRunMount>,
+  controlled: readonly string[] = [],
 ): Promise<PanelRunMount> {
-  const fields = personalFields(manifest);
+  const fields = personalFields(manifest, new Set(controlled));
   if (!fields.length || source.kind !== "registered") return mount(run);
-  const personalSet = new Set(fields);
   const scope = { source, memberPath };
   const saved = await json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) })
     .then((answer) => panelPersonalStateResponseSchema.parse(answer).values, () => ({}));
   const mounted = await mount({ ...run, initial: { ...saved, ...run.initial } as PanelHostState });
-  // Keep saved personal preferences separate from transient external overrides so withdrawing an external entry input
-  // restores the user's saved value without writing external or fallback values back to personal storage.
-  const savedValues: Record<string, RuntimeJsonValue> = { ...saved };
-  const readField = (field: string): RuntimeJsonValue =>
-    (mounted.instance.state.values.value[field] ?? null) as RuntimeJsonValue;
-  const lastValues: Record<string, RuntimeJsonValue> = Object.fromEntries(
-    fields.map((field) => [field, readField(field)]),
-  );
-  const dirtyFields = new Set<string>();
-  let applyingExternal = false;
+  const readField = (field: string) => mounted.instance.state.values.value[field] ?? null;
+  const stored: Record<string, string> = Object.fromEntries(fields.map((field) => [field, JSON.stringify(readField(field))]));
   let timer: ReturnType<typeof setTimeout> | undefined;
   const save = (keepalive = false) => {
     timer = undefined;
-    if (!dirtyFields.size) return;
-    const values = Object.fromEntries([...dirtyFields].map((field) => [field, savedValues[field] ?? null]));
-    dirtyFields.clear();
+    const values: Record<string, unknown> = {};
+    for (const field of fields) {
+      const raw = readField(field);
+      const serialized = JSON.stringify(raw);
+      if (serialized === stored[field]) continue;
+      stored[field] = serialized;
+      values[field] = raw;
+    }
+    if (!Object.keys(values).length) return;
     void json(`/api${PANEL_PERSONAL_STATE_PATH}`, {
       method: "PUT", body: JSON.stringify({ ...scope, values }), ...(keepalive && { keepalive: true }),
     }).catch(() => {});
@@ -675,47 +709,12 @@ async function withPersonalState(
   };
   const leave = () => flush(true);
   window.addEventListener("pagehide", leave);
-  const stop = Vue.watch(
-    () => JSON.stringify(fields.map((field) => [field, readField(field)])),
-    () => {
-      let changed = false;
-      for (const field of fields) {
-        const next = readField(field);
-        if (JSON.stringify(next) === JSON.stringify(lastValues[field])) continue;
-        lastValues[field] = next;
-        if (!applyingExternal) {
-          savedValues[field] = next;
-          dirtyFields.add(field);
-          changed = true;
-        }
-      }
-      if (!changed) return;
-      clearTimeout(timer);
-      timer = setTimeout(save, PERSONAL_STATE_DELAY);
-    },
-    { flush: "sync" },
-  );
+  const stop = Vue.watch(() => JSON.stringify(fields.map((field) => [field, readField(field)])), () => {
+    clearTimeout(timer);
+    timer = setTimeout(save, PERSONAL_STATE_DELAY);
+  });
   return {
     ...mounted,
-    setState(patch, stateOptions) {
-      const withdrawn = new Set(stateOptions?.withdrawn ?? []);
-      const resolvedPatch: Record<string, RuntimeJsonValue> = {};
-      for (const [name, value] of Object.entries(patch)) {
-        resolvedPatch[name] = withdrawn.has(name) && personalSet.has(name) && Object.hasOwn(savedValues, name)
-          ? savedValues[name]!
-          : value;
-      }
-      if (stateOptions?.external) {
-        applyingExternal = true;
-        try {
-          mounted.setState?.(resolvedPatch, stateOptions);
-        } finally {
-          applyingExternal = false;
-        }
-      } else {
-        mounted.setState?.(resolvedPatch, stateOptions);
-      }
-    },
     dispose() {
       stop();
       window.removeEventListener("pagehide", leave);

@@ -1,18 +1,20 @@
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DomainComponentRuntime } from "@ontomato/contracts/domain-components";
-import { effectScope, h, ref, watch, type Component, type Ref, type VNode, type Slots } from "vue";
+import { effectScope, h, ref, type Component, type Ref, type VNode, type Slots } from "vue";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-host";
 import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
-import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type MemberInputs } from "./direct";
+import {
+  createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type DirectProjectionReadOptions,
+  type MemberInputs,
+} from "./direct";
 import { runPanel } from "./lifecycle";
 import { type PanelMessages, type ProductProjectionRenderResponse } from "@ontomato/contracts/product-panels";
 import { panelHumanOperations, type PanelOperationUse } from "./human-operations";
 import type { PlatformRequests } from "./platform-objects";
-import { readComponentPackage, readPageDraft, readProjectionForRender, recordDraftCreated } from "./platform-requests";
+import { readComponentPackage, readProjectionForRender } from "./platform-requests";
 import type { ComponentPackageResponse } from "@ontomato/contracts/component-packages";
 import { createPanelText } from "./text";
-import { draftRefusalText } from "./draft-refusal";
 import { checkPanelValue, type PanelFieldValue } from "./state";
 import PanelMember from "./PanelMember.vue";
 
@@ -27,13 +29,13 @@ import PanelMember from "./PanelMember.vue";
 export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "expandPageComposer" | "navigate"> {
   manifest: PanelManifest;
   run: DirectPanelRun;
-  /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
+  /** The platform's request path, as the reader: projection records and the coordinator's operations. */
   requests: PlatformRequests;
   /**
    * Optional host hook for reading a projection's render payload (e.g. from bundled panel definitions or a
    * revision-checked client cache). Falls back to `readProjectionForRender(requests, id)` when omitted.
    */
-  readProjection?(id: string): Promise<ProductProjectionRenderResponse>;
+  readProjection?(id: string, options?: DirectProjectionReadOptions): Promise<ProductProjectionRenderResponse>;
   loadDomainComponent?(runtime: DomainComponentRuntime): Promise<Component>;
   /** Author-registered components declared in `manifest.components`, keyed by component ID. */
   panelDomainComponents?: Readonly<Record<string, DomainComponentRuntime>>;
@@ -78,7 +80,6 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     const address = ref(run.url());
     const { requests } = options;
     const domainSources = new WeakMap<object, DomainComponentRuntime>();
-    const translate = options.translate ?? ((key: string) => key);
     const instance = createDirectPanelInstance(options.manifest, {
       read: options.read,
       confirmOperation: options.confirmOperation,
@@ -91,13 +92,13 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       ...(run.confirmLeaveUnsaved ? { confirmLeaveUnsaved: () => (instance.dirty() ? run.confirmLeaveUnsaved!() : Promise.resolve(true)) } : {}),
       ...(options.memberPath ? { memberPath: options.memberPath } : {}),
       translate: options.translate,
-      // A draft a form could not take is the draft's problem: the reader is told, the panel goes on.
-      reportDraftError: (reason) => run.draftRefused(translate("platform.draftFailed", { reason: reason instanceof Error ? reason.message : String(reason) })),
       text: createPanelText(options.messages, options.locale, options.defaultLocale),
       operations: panelHumanOperations(options.use, requests),
-      recordDraftCreated: (link, id) => recordDraftCreated(requests, link, id),
-      readProjection: async (id) => {
-        const { projection, domainComponent } = await (options.readProjection?.(id) ?? readProjectionForRender(requests, id));
+      readProjection: async (id, readOptions) => {
+        const read = options.readProjection
+          ? (readOptions ? options.readProjection(id, readOptions) : options.readProjection(id))
+          : readProjectionForRender(requests, id);
+        const { projection, domainComponent } = await read;
         if (domainComponent) domainSources.set(projection, domainComponent);
         return projection;
       },
@@ -122,31 +123,27 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     let active = true;
     const panelRun = runPanel({
       instance,
-      pageKey: run.pageKey,
       address,
       isDirty: () => instance.dirty(),
-      readPageDraft: (sessionId, runId, path) => readPageDraft(requests, sessionId, runId, path),
       projectionChanged: (id, revision) => instance.projectionChanged(id, revision),
       refreshObject: (target) => (target ? instance.refresh({ objects: [target], objectTypes: [] }) : instance.refreshObjects()),
       onAddressPending: (pending) => instance.setAddressPending(pending),
-      reports: { ...run, draftRefused: (refusal) => run.draftRefused(draftRefusalText(refusal, translate)) },
+      reports: {
+        state: run.state,
+        context: run.context,
+        dirty: run.dirty,
+        operations: run.operations,
+        failed: run.failed,
+      },
     });
-    // A draft that none of this panel's forms performs is not this panel's: once every member has registered and none
-    // takes it, the reader is told so, rather than waiting for a form that will never come; the panel goes on.
-    watch(instance.unclaimedDraft, (unclaimed) => {
-      if (unclaimed !== null) run.draftRefused(translate("platform.panelDraftUnclaimed", { ...unclaimed }));
-    });
-    // Every member the panel declares is held from the start, drawn or not: its operations are listed, a draft is offered
-    // to it, and the panel's own code reads its data, whether or not a layout or a template places it.
+    // Every member the panel declares is held from the start, drawn or not: its operations are listed and the panel's
+    // own code reads its data, whether or not a layout or a template places it.
     // A member that cannot be read is that member's failure, not the panel's: whoever draws it (`<Projection>`) or reads
     // it (`usePanelData`) shows the reason in its place, from this same hold; the rest of the panel goes on.
     const declaredMembers = Object.keys(options.manifest.members);
     if (declaredMembers.length) {
-      instance.forms.setUndrawnReady(false);
-      void Promise.allSettled(declaredMembers.map((member) => instance.placing(member)))
-        .finally(() => instance.forms.setUndrawnReady(true));
+      void Promise.allSettled(declaredMembers.map((member) => instance.placing(member)));
     }
-    void panelRun.start().catch(run.failed);
     return {
       instance,
       member: (ref, slots, inputs) => h(PanelMember, {
@@ -155,7 +152,10 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
         ...(inputs ? { inputs: inputs as MemberInputs } : {}),
         key: `${ref}:${instance.projectionVersion(ref)}`,
       }, slots),
-      address: (url, addressOptions) => panelRun.address(url, addressOptions),
+      address: (url) => panelRun.address(url),
+      publicState: instance.publicState,
+      blocksFormInputChange: instance.blocksFormInputChange,
+      applyStatePreservingDrafts: instance.applyStatePreservingDrafts,
       setState(patch) {
         const entries = Object.entries(patch);
         if (!entries.length) return;
@@ -180,7 +180,22 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       invoke: (id, input) => instance.invoke(id, input),
       fillForm: (request) => instance.fillForm(request),
       executeAction: (request) => instance.executeAction(request),
-      dispose: () => scope.stop(),
+      snapshotMeta() {
+        const memberInstances = instance.memberInstances();
+        const entryInstances = instance.entryInstances();
+        const checkedKeys = instance.checkedKeys();
+        return {
+          panelInstanceId: instance.instanceId,
+          ...(Object.keys(memberInstances).length ? { memberInstances } : {}),
+          ...(Object.keys(entryInstances).length ? { entryInstances } : {}),
+          ...(Object.keys(checkedKeys).length ? { checkedKeys } : {}),
+        };
+      },
+      isLoading: () => instance.isLoading(),
+      dispose() {
+        instance.markDisposed();
+        scope.stop();
+      },
     };
   })!;
 }

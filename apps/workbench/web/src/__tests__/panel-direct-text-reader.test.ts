@@ -48,7 +48,7 @@ function mount(projection: DirectProjection, inputs: Record<string, RuntimeJsonV
     state: {}, members: { reader: { target: { projectionId: projection.id }, inputs: Object.fromEntries(Object.entries(inputs).map(([name, literal]) => [name, { literal }])) } },
   }), {
     pageKey: "p", url: () => "/p", label: () => "P", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => {
       reads.push(request);
@@ -99,16 +99,75 @@ it("reads a record's sources page by page through the owner's reads", async () =
   expect(element.querySelector(".fui-segmented-reader-more")).toBeNull();
 });
 
-it("shows one object's whole text from its record, with its line breaks", async () => {
+it("shows plain preformatted text when format is plain or when the record path has no file extension", async () => {
+  const plainProjection: DirectProjection = {
+    ...base, id: "file-plain", name: "File", componentId: "@ontomato/sdk:ObjectTextReader",
+    inputs: { skill: { kind: "object", objectType: SKILL }, path: { kind: "scalar", type: "string" } }, outputs: {}, config: { format: "plain" },
+    data: { record: { source: recordOf("skill"), read: "file", params: { path: { input: "path" } } } },
+  };
+  const plain = mount(plainProjection, { skill: { className: SKILL, primaryKey: "sk-1" }, path: "SKILL.md" }, () =>
+    ({ status: "ready", value: { primaryKey: "SKILL.md", label: "SKILL.md", fields: { content: "# Skill\nLine two" } } as never }));
+  await vi.waitFor(() => expect(plain.element.querySelector(".sdk-object-text-reader-whole")?.textContent).toBe("# Skill\nLine two"));
+  expect(plain.reads()).toEqual([expect.objectContaining({ dataName: "record", inputs: { skill: { className: SKILL, primaryKey: "sk-1" }, path: "SKILL.md" } })]);
+  plain.unmount();
+
+  const noExtProjection: DirectProjection = { ...plainProjection, id: "file-noext", config: {} };
+  const noExt = mount(noExtProjection, { skill: { className: SKILL, primaryKey: "sk-1" }, path: "README" }, () =>
+    ({ status: "ready", value: { primaryKey: "README", label: "README", fields: { content: "Plain notes\nLine two" } } as never }));
+  await vi.waitFor(() => expect(noExt.element.querySelector(".sdk-object-text-reader-whole")?.textContent).toBe("Plain notes\nLine two"));
+  noExt.unmount();
+});
+
+it("renders Markdown with separated YAML frontmatter when auto-detected or forced", async () => {
   const projection: DirectProjection = {
-    ...base, id: "file", name: "File", componentId: "@ontomato/sdk:ObjectTextReader",
+    ...base, id: "file-md", name: "File", componentId: "@ontomato/sdk:ObjectTextReader",
     inputs: { skill: { kind: "object", objectType: SKILL }, path: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
     data: { record: { source: recordOf("skill"), read: "file", params: { path: { input: "path" } } } },
   };
-  const { element, reads } = mount(projection, { skill: { className: SKILL, primaryKey: "sk-1" }, path: "SKILL.md" }, () =>
-    ({ status: "ready", value: { primaryKey: "SKILL.md", label: "SKILL.md", fields: { content: "# Skill\nLine two" } } as never }));
-  await vi.waitFor(() => expect(element.querySelector(".sdk-object-text-reader-whole")?.textContent).toBe("# Skill\nLine two"));
-  expect(reads()).toEqual([expect.objectContaining({ dataName: "record", inputs: { skill: { className: SKILL, primaryKey: "sk-1" }, path: "SKILL.md" } })]);
+  const content = "---\nname: demo-skill\ndescription: Demo description\n---\n# Heading\n\nBody **bold** text.";
+  const { element, unmount } = mount(projection, { skill: { className: SKILL, primaryKey: "sk-1" }, path: "SKILL.md" }, () =>
+    ({ status: "ready", value: { primaryKey: "SKILL.md", label: "SKILL.md", fields: { content } } as never }));
+  await vi.waitFor(() => {
+    expect(element.querySelector(".sdk-object-text-reader-frontmatter")?.textContent).toContain("name: demo-skill");
+    expect(element.querySelector(".markdown-view")?.textContent).toContain("Heading");
+    expect(element.querySelector(".markdown-view")?.textContent).toContain("Body bold text.");
+  });
+  expect(element.querySelector(".sdk-object-text-reader-whole")).toBeNull();
+  unmount();
+
+  const noFrontmatter = mount(projection, { skill: { className: SKILL, primaryKey: "sk-1" }, path: "notes.md" }, () =>
+    ({ status: "ready", value: { primaryKey: "notes.md", label: "notes.md", fields: { content: "## Plain Markdown\nHello" } } as never }));
+  await vi.waitFor(() => {
+    expect(noFrontmatter.element.querySelector(".markdown-view")?.textContent).toContain("Plain Markdown");
+  });
+  expect(noFrontmatter.element.querySelector(".sdk-object-text-reader-frontmatter")).toBeNull();
+  noFrontmatter.unmount();
+});
+
+it("renders non-Markdown files with a read-only CodeEditor and honors pathField", async () => {
+  const projection: DirectProjection = {
+    ...base, id: "file-code", name: "File", componentId: "@ontomato/sdk:ObjectTextReader",
+    inputs: { skill: { kind: "object", objectType: SKILL }, path: { kind: "scalar", type: "string" } }, outputs: {}, config: { pathField: "filePath" },
+    data: { record: { source: recordOf("skill"), read: "file", params: { path: { input: "path" } } } },
+  };
+  const { element, unmount } = mount(projection, { skill: { className: SKILL, primaryKey: "sk-1" }, path: "scripts/run.py" }, () =>
+    ({
+      status: "ready",
+      value: {
+        primaryKey: "file-1",
+        label: "Runner",
+        fields: { filePath: "scripts/run.py", content: "def main():\n    return 42\n" },
+      } as never,
+    }));
+  await vi.waitFor(() => {
+    const editor = element.querySelector(".sdk-object-text-reader-code .cm-content");
+    expect(editor).not.toBeNull();
+    expect(editor?.textContent).toContain("def main():");
+    expect(editor?.getAttribute("contenteditable")).toBe("false");
+  });
+  expect(element.querySelector(".sdk-object-text-reader-whole")).toBeNull();
+  expect(element.querySelector(".markdown-view")).toBeNull();
+  unmount();
 });
 
 /*
@@ -138,7 +197,7 @@ it("opens the source the page writes, in the reader its anchor names, and reads 
     },
   }), {
     pageKey: "p", url: () => "/p", label: () => "P", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
       reads.push(request);

@@ -12,7 +12,7 @@ import {
   projectionOperationTargetMatches, type DirectProjectionData, type DirectProjectionPorts, type ProjectionOperationBinding,
   type ProjectionOperationParam,
 } from "./panel-projection";
-import { DASHBOARD_CARD, platformOntologyLayers } from "./platform-object-types";
+import { customerRelationReads, DASHBOARD_CARD, platformOntologyLayers } from "./platform-object-types";
 import { chartProjectionSchema } from "./product-panels";
 import type { PlatformTypeTableResponse } from "./platform-type-table";
 
@@ -59,6 +59,7 @@ export function expandPanelAuthoringMember(
     return fail("component", "This component does not declare projection data");
   const componentData = component.data ?? {};
   const componentId = qualifiedId(component);
+  const isObjectRelations = componentId === "@ontomato/sdk:ObjectRelations";
   if (member.agent !== undefined && componentId !== "@ontomato/sdk:ConversationEntry")
     return fail("agent", "The agent target belongs to the official ConversationEntry component");
   const conversationEntry = member.agent === undefined ? undefined : panelConversationEntrySchema.parse({
@@ -168,7 +169,7 @@ export function expandPanelAuthoringMember(
       inputBindings.set(name, source);
       return { input: name };
     }
-    if (expected && expected.kind !== "json" && !matchesDirectPanelValue(expected, source.literal)) {
+    if ("literal" in source && expected && expected.kind !== "json" && !matchesDirectPanelValue(expected, source.literal)) {
       fail(path, `Literal value does not match input '${name}'`);
     }
     if (!inputTypes.has(name)) {
@@ -193,9 +194,12 @@ export function expandPanelAuthoringMember(
     const path = `data.${name}`;
     const { read, type: declaredType, params: explicit = {} } = typeof shorthand === "string" ? { read: shorthand } : shorthand;
     const readType = declaredType ?? typeId ?? fail(`${path}.type`, "Declare the datum's owner type");
-    if (!Object.hasOwn(objectTypes, readType))
+    // Relationship identities are resolved by the domain owner at registration.
+    const relationship = isObjectRelations && name === "neighbors" && declaredType !== undefined
+      && !declaredType.startsWith("platform:") && Object.hasOwn(customerRelationReads, read);
+    if (!relationship && !Object.hasOwn(objectTypes, readType))
       fail(`${path}.type`, `Type '${readType}' is absent from the author type table`);
-    const reads = objectTypes[readType].reads;
+    const reads = relationship ? customerRelationReads : objectTypes[readType].reads;
     const declaration = reads && Object.hasOwn(reads, read) ? reads[read]
       : fail(`${path}.read`, `'${read}' is not registered on type '${readType}'`);
     dataTypes.set(name, readType);
@@ -206,7 +210,8 @@ export function expandPanelAuthoringMember(
       fail(path, `The component does not accept result '${declaration.result}' for this datum`);
     let source: DirectProjectionData["source"];
     if (declaration.source === "type") {
-      source = { type: { kind: readType.startsWith("platform:") ? "PlatformObjectType" : "ObjectType", id: readType } };
+      const kind = relationship ? "Relationship" : readType.startsWith("platform:") ? "PlatformObjectType" : "ObjectType";
+      source = { type: { kind, id: readType } };
     } else if (targetIsFromSlot) {
       inputTypes.set(targetPort, { kind: "object", objectType: readType });
       source = { object: { input: targetPort } };
@@ -280,10 +285,31 @@ export function expandPanelAuthoringMember(
     return port;
   }
 
+  function boundComponentPort(
+    name: string,
+    declared: DirectPanelPortType,
+    actual: DirectPanelPortType | undefined,
+    path: string,
+  ): DirectPanelPortType {
+    if (declared.kind === "object" && declared.objectType === "@any") {
+      if (actual?.kind !== "object" && actual?.kind !== "object-union")
+        return fail(path, `Port '${name}' requires object or object-union state`);
+      return actual;
+    }
+    if (isObjectRelations && name === "visibleRelationKinds" && actual !== undefined) {
+      if (actual.kind !== "list" || (actual.items.kind !== "object"
+        && !(actual.items.kind === "scalar" && actual.items.type === "string")))
+        return fail(path, `Port '${name}' requires a list of strings or object references`);
+      return actual;
+    }
+    return concretePort(declared, path);
+  }
+
   for (const [port, source] of Object.entries(member.inputs ?? {})) {
     const path = `inputs.${port}`;
     const declared = component.inputs && Object.hasOwn(component.inputs, port) ? component.inputs[port] : undefined;
-    const expected = declared ? concretePort(declared, path) : undefined;
+    const actual = "state" in source ? stateType(source.state, path) : undefined;
+    const expected = declared ? boundComponentPort(port, declared, actual, path) : undefined;
     bindMemberInput(port, source, path, expected, bindingType);
   }
 
@@ -293,7 +319,7 @@ export function expandPanelAuthoringMember(
     const input = component.inputs && Object.hasOwn(component.inputs, port) ? component.inputs[port] : undefined;
     const output = component.outputs && Object.hasOwn(component.outputs, port) ? component.outputs[port] : undefined;
     if (input) {
-      const expected = concretePort(input, path);
+      const expected = boundComponentPort(port, input, actual, path);
       if (!directProjectionInputAccepts(expected, actual))
         fail(path, `State '${fieldName}' has an incompatible type for component input '${port}'`);
       bindInput(port, fieldName, path);
@@ -305,6 +331,26 @@ export function expandPanelAuthoringMember(
       let offered: DirectPanelPortType;
       if (usesOntologyNodes) {
         offered = ontologyNode;
+      } else if (
+        componentId === "@ontomato/sdk:ObjectList"
+        && port === "selected"
+        && actual.kind === "child-object"
+      ) {
+        const rowsDatum = data.rows;
+        const rowsParentType = dataTypes.get("rows");
+        const hasDeclaredCollection = rowsParentType !== undefined
+          && objectTypes[rowsParentType]?.childCollections?.includes(actual.collection) === true;
+        if (
+          rowsDatum !== undefined
+          && "object" in rowsDatum.source
+          && rowsParentType === actual.parentType
+          && dataRowTypes.get("rows") === rowsParentType
+          && hasDeclaredCollection
+        ) {
+          offered = actual;
+        } else {
+          offered = boundComponentPort(port, output, actual, path);
+        }
       } else if (componentId === "@ontomato/sdk:ObjectRefCard" && port === "navigate") {
         const targetClassName = typeof member.config?.targetClassName === "string" ? member.config.targetClassName.trim() : "";
         if (targetClassName) {
@@ -315,7 +361,7 @@ export function expandPanelAuthoringMember(
           offered = concretePort(output, path);
         }
       } else {
-        offered = concretePort(output, path);
+        offered = boundComponentPort(port, output, actual, path);
       }
       if (!panelPortAccepts(actual, offered))
         fail(path, `State '${fieldName}' cannot receive component output '${port}'`);

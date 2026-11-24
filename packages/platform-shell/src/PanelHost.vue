@@ -2,11 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
-import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
-import { X as CloseIcon } from "lucide-vue-next";
-import { ElAlert, ElButton } from "element-plus";
 import { confirmDanger } from "./confirm-danger";
 import { createPanelBackController } from "./panel-back";
 import { useOptionalLeaveConfirmation } from "./unsaved-changes";
@@ -59,16 +56,6 @@ const props = withDefaults(defineProps<{
   /** Current application frame state when this content panel runs under a frame panel. */
   frameState?: Readonly<Record<string, unknown>>;
   /**
-   * Hands why the linked draft could not be used back to the agent, as the sentence for the page's composer. Absent where
-   * the page has no composer (an author's preview): the notice then offers only leaving the draft.
-   */
-  draftToAgent?: (text: string) => void;
-  /**
-   * Leaves the linked draft once the reader closes its notice: the page that holds this instance opens it as without the
-   * draft (its address, state and forms). Absent, the instance's address only drops the draft's link.
-   */
-  leaveDraft?: () => void;
-  /**
    * Whether panel-local back handlers with `pushHistory: true` may push browser history entries. True at full page and
    * candidate preview; false beside a conversation or for a custom application frame panel.
    */
@@ -80,8 +67,6 @@ const props = withDefaults(defineProps<{
   wired: () => [],
   currentEntry: undefined,
   frameState: undefined,
-  draftToAgent: undefined,
-  leaveDraft: undefined,
   historyBack: true,
   confirmLeave: undefined,
   liveState: null,
@@ -95,8 +80,6 @@ const emit = defineEmits<{
   "display-state": [state: import("./panel-host").PanelHostState];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
-  /** The reader manually edited an unsaved form inside this panel. */
-  "form-edited": [target: PanelFormEditedTarget];
   /** Shown again, the page passed its checks: its frame may ask again and its objects are being read again. */
   reopened: [];
   /** Shown again, the page is no longer its application's: its use relation was withdrawn or bound elsewhere. */
@@ -156,7 +139,6 @@ const view = usePanelInstance(props.port, {
   entryInputs: () => props.entryInputs,
   liveState: () => props.liveState ?? null,
   wired: () => props.wired,
-  formEdited: (target) => emit("form-edited", target),
   shown: () => props.shown,
   reopened: () => emit("reopened"),
   withdrawn: () => emit("withdrawn"),
@@ -168,19 +150,6 @@ const view = usePanelInstance(props.port, {
 watch(() => [props.address, props.initial, view.address.value], () => backController.syncHistorySnapshot(), { flush: "post" });
 const frame = ref<HTMLIFrameElement | null>(null);
 /** Where the panel goes in the page: the element its own component is mounted in, placed once. */
-/** The reader closes the notice: the page goes on as it does without the draft. */
-function leave() {
-  view.dismissDraftRefusal();
-  if (props.leaveDraft) props.leaveDraft();
-  else view.leaveDraft();
-}
-
-/** Hands the reason back to the agent — the page's composer opens with it, for the reader to send or change — and closes. */
-function toAgent() {
-  props.draftToAgent?.(props.labels.draft.toAgentText.replace("{reason}", view.draftRefusal.value));
-  leave();
-}
-
 function placeCoded(place: unknown) {
   const shown = view.direct.value;
   if (place instanceof HTMLElement && shown && shown.element.parentElement !== place)
@@ -192,8 +161,7 @@ watch(
   { flush: "post" },
 );
 watch(view.pageContext, (context) => context && emit("context", context));
-// The instance's address exists once its record is read; before that there is none to report, and reporting an empty one
-// would replace the page's address — and the draft link in it — before the panel has read it.
+// The instance's address exists once its record is read; before that there is none to report.
 watch(view.address, (address) => emit("display-address", { kind: "state", address }));
 watch(view.state, (state) => emit("display-state", state), { immediate: true });
 watch(view.displayLoad, (load) => emit("display-loaded", load));
@@ -214,26 +182,10 @@ defineExpose({ ...view, operations });
   <section class="panel-host">
     <header v-if="title" class="panel-host-title">{{ title }}</header>
     <p v-if="view.error.value" role="alert" class="panel-host-error">{{ view.error.value }}</p>
-    <!-- A draft the panel cannot take never fails it (owner refused, unreadable, no form takes it): its sentence, above it. -->
-    <div v-else-if="view.draftRefusal.value && view.admitted.value" class="panel-host-draft">
-      <ElAlert type="warning" show-icon :closable="false" :title="view.draftRefusal.value">
-        <div v-if="draftToAgent" class="panel-host-draft-actions">
-          <ElButton size="small" @click="toAgent">{{ labels.draft.toAgent }}</ElButton>
-        </div>
-      </ElAlert>
-      <!-- The library's own close is no button (no role, no name, not in the tab order): this one is. -->
-      <button type="button" class="panel-host-draft-close" :aria-label="labels.draft.close" :title="labels.draft.close" @click="leave">
-        <CloseIcon :size="16" aria-hidden="true" />
-      </button>
-    </div>
-    <!-- A linked draft is opened before the page is shown: never a page that is about to turn into the draft's. -->
-    <p v-if="!view.error.value && view.draftOpening.value && view.admitted.value" role="status" class="panel-host-draft-opening">
-      {{ labels.draft.opening }}
-    </p>
     <!-- A host notice stands above the content box so the box height adjusts around it and never scrolls the notice. -->
     <p
       v-if="!view.error.value && view.direct.value && view.notice.value"
-      v-show="view.admitted.value && !view.draftOpening.value"
+      v-show="view.admitted.value"
       role="status"
       class="panel-host-notice"
     >
@@ -242,7 +194,7 @@ defineExpose({ ...view, operations });
     <!-- Drawn while Java's answer is coming, so its members read at once; shown only once that answer names the page. -->
     <div
       v-if="!view.error.value && view.direct.value"
-      v-show="view.admitted.value && !view.draftOpening.value"
+      v-show="view.admitted.value"
       class="panel-host-direct"
       :data-panel-instance="view.instance"
     >
@@ -285,52 +237,6 @@ defineExpose({ ...view, operations });
   margin: var(--spacing-sm, 8px) var(--spacing-md, 12px) 0;
   color: var(--el-color-warning);
   font-size: 12px;
-}
-.panel-host-draft-opening {
-  flex-shrink: 0;
-  margin: 0;
-  padding: var(--spacing-md, 12px);
-  color: var(--el-text-color-secondary);
-}
-.panel-host-draft {
-  position: relative;
-  flex-shrink: 0;
-  margin: var(--spacing-md, 12px) var(--spacing-md, 12px) 0;
-}
-.panel-host-draft :deep(.el-alert) {
-  padding-right: calc(var(--spacing-md, 12px) + 24px);
-}
-.panel-host-draft :deep(.el-alert__title) {
-  overflow-wrap: anywhere;
-}
-.panel-host-draft-close {
-  position: absolute;
-  top: var(--spacing-sm, 8px);
-  right: var(--spacing-sm, 8px);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--el-border-radius-small, 2px);
-  background: transparent;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-}
-.panel-host-draft-close:hover {
-  color: var(--el-text-color-primary);
-}
-.panel-host-draft-close:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 1px;
-}
-.panel-host-draft-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm, 8px);
-  margin-top: var(--spacing-sm, 8px);
 }
 .panel-host-frame {
   border: 0;

@@ -67,7 +67,6 @@ const dynamicAppIds=computed(()=>catalog.applications.value.filter(app=>['hosted
 async function readShortcuts(){try{pinnedAppIds.value=(await readHomeState()).favorites.filter(item=>item.kind==='application').map(item=>item.id);}catch{/* Shortcut discovery must not prevent opening the platform. */}}
 onMounted(()=>{void readShortcuts();window.addEventListener(HOME_PREFERENCES_CHANGED,readShortcuts);});
 onBeforeUnmount(()=>window.removeEventListener(HOME_PREFERENCES_CHANGED,readShortcuts));
-watch(()=>route.path,()=>{void readShortcuts();});
 onMounted(() => { void catalog.refresh(); });
 watch(() => host.navigation.value, () => { void catalog.refresh(); }, { deep: true });
 // The home lists every application, so returning to it reads the catalog again; the first read above covers a shell
@@ -75,7 +74,7 @@ watch(() => host.navigation.value, () => { void catalog.refresh(); }, { deep: tr
 watch(() => route.path === platformRoutes.home.path, (home) => { if (home) void catalog.refresh(); });
 /** The rail's placeholders stand in for a list it does not have yet; a later read keeps the rows it shows. */
 const railLoading = computed(() => catalog.loading.value && catalog.applications.value.length === 0);
-/** Applications whose own menu column can be visible at the current route; only their counts are read. */
+/** Applications whose own menu column can be visible at the current route; only their legacy native counts are read. */
 const activeMenuApps = computed(() => {
   const active = new Set<string>();
   if (typeof route.query.navigationContext === "string" && route.query.navigationContext) {

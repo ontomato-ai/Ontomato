@@ -50,7 +50,7 @@ const fields: PanelFormDescription["fields"] = [
 const AGENT = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
 const CREATED = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a09";
 const revision = 7;
-const save = (operation: string) => ({ method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: operation });
+const save = { method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {} };
 
 const current = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
@@ -139,7 +139,7 @@ function owner(request: Sent, valuesById: ReadonlyMap<string, PanelFormValues>):
         { field: "/executionUserId", code: "target_unavailable", message: "Only a domain governance administrator changes it" },
       ] } }, { status: 422 });
     const shown = values ? { ...values, name: String(values.name).trim() } : base;
-    return Response.json({ fields, values: shown, revision, errors: [], save: save(create ? "agent.create" : "agent.update") });
+    return Response.json({ fields, values: shown, revision, errors: [], save });
   }
   const agent = /^\/api\/assistant\/agent-definitions\/([^/]+)$/.exec(request.path);
   if (agent && request.method === "GET") return Response.json(definition(agent[1]!, valuesById.get(agent[1]!)!));
@@ -267,60 +267,42 @@ it("creates with the owner's defaults, and moves the panel onto the agent the ow
   await vi.waitFor(() => expect(context.instance.state.values.value.selectedAgent).toEqual({ className: AGENT_DEFINITION, primaryKey: CREATED }));
 });
 
-/** The panel opened at a link to a draft the agent wrote for it, the agent selected. */
-/** The draft the agent wrote, as its link names it. */
-const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/agent.page-draft.json" };
-const draftAt = `/api/assistant/sessions/${link.sessionId}/runs/${link.runId}/page-draft`;
+/** The form's action button by label. */
+const button = (label: string) =>
+  [...document.querySelectorAll<HTMLButtonElement>("#app .sdk-owner-form-actions button")].find((item) => item.textContent?.trim() === label)!;
 
-async function openWithDraft(form: PanelFormValues, envelope: { operation: string; target: { objectType: string; id?: string }; created?: { id: string } } = { operation: "agent.update", target: { objectType: AGENT_DEFINITION, id: AGENT } }) {
-  const query = new URLSearchParams({ draftSessionId: link.sessionId, draftRunId: link.runId, draftPath: link.path });
-  const draft = { pageKey: use.pageKey, ...envelope, form };
-  const answer = ownerForInstance();
-  const sent = installPlatform((request) => {
-    if (request.path === draftAt) return Response.json(draft);
-    if (request.path === `${draftAt}/created`) return new Response(null, { status: 204 });
-    return answer(request) ?? nothingAt(request);
+it("rejects read-only fields on live fillForm and leaves the form clean", async () => {
+  const { context, failed, sent } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
+  await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst"), { timeout: 5000 });
+  const outcome = await context.instance.fillForm({
+    member: "definition",
+    values: { "/executionUserId": "user-2" },
   });
-  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
-  const frame = panelFrame();
-  platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, panel), true);
-  writePanelDocument(registered("ontology", use, panel), `/ontology/agents?${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
-  inside(frame);
-  const failed: string[] = [];
-  const settled: unknown[] = [];
-  window.addEventListener("message", (event) => {
-    if (event.data?.channel !== PANEL_HOST_CHANNEL) return;
-    if (event.data.kind === "failed") failed.push(event.data.message);
-    if (event.data.kind === "draft-settled") settled.push(event.data.draft);
+  expect(outcome).toMatchObject({
+    ok: false,
+    reason: "all_fields_rejected",
+    member: "definition",
+    rejectedFields: [{
+      path: "/executionUserId",
+      reason: "read_only",
+      message: "Only a domain governance administrator changes it",
+    }],
   });
-  return {
-    ...(await mountPanel(panelWithSlots(["definition"], {
-      definition: { "field-skills": "skills", "field-modelSelection.modelId": "model" },
-    }))),
-    failed, settled, sent, draft,
-  };
-}
-
-// The owner refusing the draft is the form's to say (panelisation lead, 2026-11-21): on the form, the panel going on.
-it("refuses a draft the owner refuses, whole, naming the reason on the form, and marks nothing", async () => {
-  const { context, failed, sent, draft } = await openWithDraft({ ...stored, executionUserId: "user-2" });
-  // Its reason is the field's: said there, and counted below the form.
-  await vi.waitFor(() => expect(document.querySelector("#app .sdk-owner-form-refusal")?.textContent?.trim()).toBe("1 field needs changing"), { timeout: 5000 });
-  expect(document.querySelector('#app [data-field="/executionUserId"]')?.textContent).toContain("Only a domain governance administrator changes it");
   expect(failed).toEqual([]);
-  // The whole draft went to the owner for its check, as the agent wrote it.
-  expect(sent.find((request) => (request.body as { values?: unknown } | null)?.values)?.body)
-    .toEqual({ target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: AGENT }, values: draft.form, changedField: null });
-  expect(context.draft.value).toBeNull();
   expect(context.instance.dirty()).toBe(false);
   expect(formSaveCalls(sent)).toEqual([]);
 });
 
-it("shows a draft the owner accepts in the form and its field projections, marked and unsaved", async () => {
-  const { context, sent } = await openWithDraft({ ...stored, name: "  Analyst v2 ", skills: [sql, chart] });
-  await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name", "/skills"])), { timeout: 5000 });
+it("fills editable fields live in the form and its field projections, marked and unsaved, and enforces overwriteUnsaved", async () => {
+  const { context, sent } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
+  await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst"), { timeout: 5000 });
+
+  const filled = await context.instance.fillForm({
+    member: "definition",
+    values: { "/name": "Analyst v2", "/skills": [sql, chart] },
+  });
+  expect(filled).toMatchObject({ ok: true, member: "definition", filledFields: ["/name", "/skills"] });
   await vi.waitFor(() => expect(fieldItem("/skills")?.textContent).toContain("Charts"));
-  // The owner's normalised value is what the form holds; the picker's field is the same form's, marked with it.
   expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst v2");
   expect(fieldItem("/skills")?.classList.contains("sdk-reference-picker-changed")).toBe(true);
   expect(fieldItem("/name")?.classList.contains("sdk-owner-form-field-changed")).toBe(true);
@@ -328,30 +310,42 @@ it("shows a draft the owner accepts in the form and its field projections, marke
   expect(document.querySelector("#app .sdk-owner-form-changed")?.textContent?.trim()).toBe("Changed: Name, Skills");
   expect(context.instance.dirty()).toBe(true);
   expect(formSaveCalls(sent)).toEqual([]);
-});
 
-it("opens a draft that changes nothing as the agent is, with nothing unsaved", async () => {
-  const { context, failed, sent } = await openWithDraft(stored);
-  // The owner checked the draft, and the form shows the agent as it is.
-  await vi.waitFor(() => expect(sent.some((request) => (request.body as { values?: unknown } | null)?.values)).toBe(true), { timeout: 5000 });
-  await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst"));
-  await nextTick();
-  expect(context.draft.value).toBeNull();
-  expect(context.instance.dirty()).toBe(false);
-  expect(failed).toEqual([]);
-});
+  // Agent refining its own previously filled field merges cleanly without blocked_unsaved.
+  const refined = await context.instance.fillForm({
+    member: "definition",
+    values: { "/name": "Analyst v2b" },
+  });
+  expect(refined).toMatchObject({ ok: true, member: "definition", filledFields: ["/name"] });
+  expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst v2b");
 
-it("reopens a saved create draft on the agent it created, and creates nothing again", async () => {
-  const { context, sent } = await openWithDraft(stored, { operation: "agent.create", target: { objectType: AGENT_DEFINITION }, created: { id: AGENT } });
-  // The owner checked the draft against the agent it created.
-  await vi.waitFor(() => expect(sent.some((request) => (request.body as { values?: unknown } | null)?.values)).toBe(true), { timeout: 5000 });
-  await vi.waitFor(() => expect(context.instance.state.values.value.selectedAgent).toEqual({ className: AGENT_DEFINITION, primaryKey: AGENT }));
-  await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst"));
-  // The draft was compared with the agent it created, not offered as a new one.
-  expect(sent.filter((request) => (request.body as { values?: unknown } | null)?.values).map((request) => request.body))
-    .toEqual([{ target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: AGENT }, values: stored, changedField: null }]);
-  expect(context.draft.value).toBeNull();
-  expect(context.instance.dirty()).toBe(false);
+  // A manual user edit on a field blocks agent overwrite on that field unless overwriteUnsaved is explicitly true.
+  const nameInput = fieldItem("/name")!.querySelector("input")!;
+  nameInput.value = "Analyst user edit";
+  nameInput.dispatchEvent(new Event("input"));
+  await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst user edit"));
+
+  const blocked = await context.instance.fillForm({
+    member: "definition",
+    values: { "/name": "Analyst v3" },
+  });
+  expect(blocked).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "definition" });
+  expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst user edit");
+
+  const overwritten = await context.instance.fillForm({
+    member: "definition",
+    values: { "/name": "Analyst v3" },
+    overwriteUnsaved: true,
+  });
+  expect(overwritten).toMatchObject({ ok: true, member: "definition", filledFields: ["/name"] });
+  await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst v3"));
+
+  // Discarding restores the owner's baseline and writes nothing.
+  button("Discard").click();
+  await confirmDiscard();
+  await vi.waitFor(() => expect(context.instance.dirty()).toBe(false));
+  expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst");
+  expect(document.querySelector("#app .sdk-owner-form-changed")).toBeNull();
   expect(formSaveCalls(sent)).toEqual([]);
 });
 
@@ -364,46 +358,6 @@ it("shows a localized reason for a stored skill no longer in the catalogue", asy
     expect(document.querySelector('.el-select-dropdown__item[title="Unavailable"]')?.textContent).toContain("sql");
   });
   expect(context.instance.dirty()).toBe(false);
-});
-
-const button = (label: string) =>
-  [...document.querySelectorAll<HTMLButtonElement>("#app .sdk-owner-form-actions button")].find((item) => item.textContent?.trim() === label)!;
-
-it("tells the host the draft is settled once the reader saved it, naming the draft that ended", async () => {
-  const { context, settled, sent } = await openWithDraft({ ...stored, name: "Analyst v2" });
-  await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name"])), { timeout: 5000 });
-  expect(settled).toEqual([]);
-  await context.instance.invoke("definition.save");
-  await vi.waitFor(() => expect(settled).toEqual([link]));
-  expect(formSaveCalls(sent)).toHaveLength(1);
-  // An update draft has nothing to record: its object already existed.
-  expect(sent.some((request) => request.path === `${draftAt}/created`)).toBe(false);
-  expect(context.draft.value).toBeNull();
-});
-
-it("tells the host the draft is settled once the reader discarded it, and writes nothing", async () => {
-  const { context, settled, sent } = await openWithDraft({ ...stored, name: "Analyst v2" });
-  await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name"])), { timeout: 5000 });
-  button("Discard").click();
-  await confirmDiscard();
-  await vi.waitFor(() => expect(settled).toEqual([link]));
-  expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst");
-  expect(context.instance.dirty()).toBe(false);
-  expect(formSaveCalls(sent)).toEqual([]);
-  expect(sent.some((request) => request.path === `${draftAt}/created`)).toBe(false);
-});
-
-it("records what a saved create draft created before it tells the host the draft is settled", async () => {
-  const { context, settled, sent } = await openWithDraft({ ...defaults, name: "Planner" }, { operation: "agent.create", target: { objectType: AGENT_DEFINITION } });
-  await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name"])), { timeout: 5000 });
-  expect(context.instance.state.values.value.selectedAgent).toBeNull();
-  await context.instance.invoke("definition.save");
-  await vi.waitFor(() => expect(settled).toEqual([link]));
-  const created = sent.findIndex((request) => request.path === `${draftAt}/created`);
-  expect(sent[created]?.body).toEqual({ path: link.path, id: CREATED });
-  const dispatched = sent.findIndex((request) => request.method === "POST" && request.path.endsWith("/dispatch"));
-  expect(dispatched).toBeGreaterThanOrEqual(0);
-  expect(created).toBeGreaterThan(dispatched);
 });
 
 /** Clears a picker as a reader does: hover it, then its clear icon. */

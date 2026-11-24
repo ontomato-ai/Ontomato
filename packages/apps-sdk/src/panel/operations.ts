@@ -1,9 +1,9 @@
-import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
+import type { PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import { projectionOperation } from "@ontomato/contracts/panel-projection";
-import { operationCall, operationInvocation, type PanelProjectionRegistration } from "./ports";
+import { operationCall, operationInvocation, slotInputValues, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
-import type { PanelStateStore } from "./state";
-import type { PanelFormAdapters } from "./draft";
+import type { PanelInstance } from "./instance";
+import type { PanelFormAdapters } from "./forms";
 import type { PanelReadCall, PanelWriteInvocation } from "./human-operations";
 
 /*
@@ -18,15 +18,15 @@ import type { PanelReadCall, PanelWriteInvocation } from "./human-operations";
 
 /** What a panel offers: its projections' operations, each with what runs it. */
 export function panelOperations(
-  manifest: PanelManifest,
+  instance: Pick<PanelInstance, "manifest" | "state" | "outputs">,
   registrations: readonly PanelProjectionRegistration[],
-  state: PanelStateStore,
   forms: PanelFormAdapters,
   write: (operationId: string, invocation: PanelWriteInvocation) => Promise<unknown>,
   read: (operationId: string, call: PanelReadCall) => Promise<unknown>,
   /** Where a member's operation is published: its ID, and the path the platform finds a nested publisher by. */
   place: (member: string, name: string) => { id: string; memberPath?: [PanelMemberPath[number], ...PanelMemberPath] },
 ): PanelOperationBinding[] {
+  const { manifest, state } = instance;
   return registrations.flatMap((registration) =>
     Object.entries(registration.operations).map(([name, descriptor]) => {
       const { id, memberPath } = place(registration.slot, name);
@@ -47,7 +47,7 @@ export function panelOperations(
               operationId: operation.id,
               descriptor,
               ...(binding ? { binding } : {}),
-              extraInput: input,
+              memberInputs: slotInputValues(instance, registration.slot),
             });
           }
           return write(operation.id, operationInvocation(operation, state.values.value, input ?? {}));

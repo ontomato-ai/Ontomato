@@ -1,92 +1,252 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { FormFields } from "@ontomato/foundation-ui/form";
+import type {
+  FormFieldRejection,
+  FormFillOutcome,
+  PageActionConfirmedDispatchResult,
+  PageActionOutcome,
+  PageActionRequestInput,
+  PendingPageActionConfirmation,
+} from "@ontomato/contracts/agent-presentation";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { formFieldKey } from "@ontomato/contracts/form-fields";
 import type { DashboardParameterForm } from "@ontomato/contracts/dashboard";
 import { ApiRequestError } from "../../../utils/api";
-import { fetchCardParameterForm, saveCardParameters } from "../api";
+import { fetchCardParameterForm, prepareDashboardAgentConfirm, saveCardParameters } from "../api";
 import { cardError, cardErrorHeadline, type CardError } from "./utils/metricCard";
-import { parameterText } from "../draft";
+
+type PageActionAgentRun = PageActionRequestInput["agentRun"];
 
 /**
  * Edits one card's parameters through the metric's own form: the fields, values, read-only keys and validation are
- * the metric's; only the keys the reader edited are sent, and the metric interprets the text.
- *
- * A draft fills the first values and keeps its own revision: when the metric moved since the draft was written, the
- * draft's text stays, the reader is told to read the form again, and nothing is saved under the new definition.
+ * the metric's; only the keys the reader (or a live agent `fill_form` call) edited are sent, and the metric interprets
+ * the text.
  */
 const props = defineProps<{
   dashboardId: string;
   card: { id: string; name: string } | null;
-  /** A draft's parameter body for this card: the revision it was written against and the values it changes. */
-  draft?: { revision: string; values: Record<string, unknown> } | null;
 }>();
 const visible = defineModel<boolean>({ required: true });
-const emit = defineEmits<{ saved: [cardId: string] }>();
+const emit = defineEmits<{ saved: [cardId: string]; dirty: [dirty: boolean] }>();
 const { t } = useI18n();
 
 const form = ref<DashboardParameterForm | null>(null);
-const draftValues = ref<Record<string, string>>({});
+const loadedCardId = ref<string | null>(null);
+const loadedDashboardId = ref<string | null>(null);
+const values = ref<Record<string, string>>({});
 const original = ref<Record<string, string>>({});
-const edited = ref(new Set<string>());
+const userEditedKeys = ref(new Set<string>());
+const agentEditedKeys = ref(new Set<string>());
+const edited = computed(() => new Set<string>([...userEditedKeys.value, ...agentEditedKeys.value]));
 const fieldErrors = ref<Record<string, string>>({});
 const failure = ref<CardError | null>(null);
 const loading = ref(false);
 const saving = ref(false);
+let loadPromise: Promise<void> | null = null;
+let loadSeq = 0;
+let editSeq = 0;
+let unmounted = false;
 const failureHeadline = computed(() => (failure.value ? cardErrorHeadline(failure.value, t) : null));
 
-/** The revision the form was written against says whether this draft still addresses the same definition. */
-const unchanged = computed(() => !props.draft || !form.value || props.draft.revision === form.value.revision);
-/** The draft's changes, original value beside new, for the keys the form does not show or the reader cannot type into. */
+const isDirty = computed(() => visible.value && edited.value.size > 0);
+watch(isDirty, (dirty) => emit("dirty", dirty), { flush: "sync", immediate: true });
+onBeforeUnmount(() => {
+  unmounted = true;
+  emit("dirty", false);
+});
+
+/** Edited values, original value beside new, so both human edits and live fills stay reviewable before saving. */
 const changes = computed(() => {
   if (!form.value) return [];
   return form.value.fields
     .filter((field) => edited.value.has(field.key))
-    .map((field) => ({ key: field.key, label: field.label, from: original.value[field.key] ?? "", to: draftValues.value[field.key] ?? "" }));
+    .map((field) => ({ key: field.key, label: field.label, from: original.value[field.key] ?? "", to: values.value[field.key] ?? "" }));
 });
 
-watch(visible, async (open) => {
-  if (!open || !props.card) return;
-  form.value = null;
-  draftValues.value = {};
-  original.value = {};
-  edited.value = new Set();
-  fieldErrors.value = {};
-  failure.value = null;
-  loading.value = true;
-  try {
-    form.value = await fetchCardParameterForm(props.dashboardId, props.card.id);
-    original.value = { ...form.value.values };
-    draftValues.value = { ...form.value.values, ...parameterText(form.value.readOnly, props.draft?.values) };
-    edited.value = new Set(Object.keys(parameterText(form.value.readOnly, props.draft?.values)));
-  } catch (error) {
-    failure.value = cardError(error);
-  } finally {
-    loading.value = false;
+function isCurrentFormLoaded(): boolean {
+  return Boolean(
+    visible.value
+    && form.value
+    && props.card
+    && loadedCardId.value === props.card.id
+    && loadedDashboardId.value === props.dashboardId,
+  );
+}
+
+async function waitForLoad(): Promise<void> {
+  while (loadPromise) {
+    const pending = loadPromise;
+    await pending;
   }
-}, { immediate: true });
+}
+
+watch(
+  [visible, () => props.dashboardId, () => props.card?.id ?? null] as const,
+  ([open, dashboardId, cardId]) => {
+    const seq = ++loadSeq;
+    editSeq += 1;
+    loadedCardId.value = null;
+    loadedDashboardId.value = null;
+    form.value = null;
+    values.value = {};
+    original.value = {};
+    userEditedKeys.value = new Set();
+    agentEditedKeys.value = new Set();
+    fieldErrors.value = {};
+    failure.value = null;
+    if (!open || !cardId) {
+      loading.value = false;
+      loadPromise = null;
+      return;
+    }
+    loading.value = true;
+    loadPromise = (async () => {
+      try {
+        const loaded = await fetchCardParameterForm(dashboardId, cardId);
+        if (loadSeq !== seq) return;
+        form.value = loaded;
+        loadedCardId.value = cardId;
+        loadedDashboardId.value = dashboardId;
+        original.value = { ...loaded.values };
+        values.value = { ...loaded.values };
+      } catch (error) {
+        if (loadSeq !== seq) return;
+        failure.value = cardError(error);
+      } finally {
+        if (loadSeq === seq) {
+          loading.value = false;
+          loadPromise = null;
+        }
+      }
+    })();
+  },
+  { immediate: true },
+);
 
 function edit(key: string, value: string) {
-  draftValues.value = { ...draftValues.value, [key]: value };
-  edited.value = new Set(edited.value).add(key);
+  editSeq += 1;
+  values.value = { ...values.value, [key]: value };
+  const nextUser = new Set(userEditedKeys.value);
+  const nextAgent = new Set(agentEditedKeys.value);
+  nextAgent.delete(key);
+  if (value === (original.value[key] ?? "")) {
+    nextUser.delete(key);
+  } else {
+    nextUser.add(key);
+  }
+  userEditedKeys.value = nextUser;
+  agentEditedKeys.value = nextAgent;
   const { [key]: _, ...rest } = fieldErrors.value;
   fieldErrors.value = rest;
 }
 
-async function save() {
-  const card = props.card!;
+function normalizeParameterKey(rawKey: string): string {
+  if (rawKey.startsWith("/values/")) return rawKey.slice("/values/".length);
+  if (rawKey.startsWith("/")) return rawKey.slice(1);
+  return rawKey;
+}
+
+async function fillValues(
+  patch: Readonly<Record<string, RuntimeJsonValue>>,
+  overwriteUnsaved?: boolean,
+): Promise<FormFillOutcome> {
+  await waitForLoad();
+  if (!isCurrentFormLoaded() || !form.value) {
+    return {
+      ok: false,
+      reason: "form_not_ready",
+      member: "card.parameters",
+      message: "The card parameter form is not loaded.",
+    };
+  }
+  const known = new Set(form.value.fields.map((field) => field.key));
+  const readOnly = new Set(form.value.readOnly);
+  const validEntries: Array<{ key: string; value: string }> = [];
+  const rejectedFields: FormFieldRejection[] = [];
+  for (const [rawKey, rawValue] of Object.entries(patch)) {
+    const key = normalizeParameterKey(rawKey);
+    if (!known.has(key)) {
+      rejectedFields.push({ path: rawKey, reason: "unknown_field", message: `Unknown parameter '${key}'.` });
+      continue;
+    }
+    if (readOnly.has(key)) {
+      rejectedFields.push({ path: rawKey, reason: "read_only", message: `Parameter '${key}' is read-only.` });
+      continue;
+    }
+    if (rawValue !== null && typeof rawValue !== "string" && typeof rawValue !== "number" && typeof rawValue !== "boolean") {
+      rejectedFields.push({ path: rawKey, reason: "invalid_value", message: `Parameter '${key}' must be a scalar value.` });
+      continue;
+    }
+    validEntries.push({ key, value: rawValue === null ? "" : String(rawValue) });
+  }
+  const conflicts = validEntries
+    .map((entry) => entry.key)
+    .filter((key) => userEditedKeys.value.has(key));
+  if (conflicts.length > 0 && !overwriteUnsaved) {
+    return {
+      ok: false,
+      reason: "blocked_unsaved",
+      member: "card.parameters",
+      message: `The card parameter form has unsaved user edits on: ${conflicts.join(", ")}.`,
+    };
+  }
+  if (!validEntries.length) {
+    return {
+      ok: false,
+      reason: "all_fields_rejected",
+      member: "card.parameters",
+      rejectedFields,
+      message: "No parameter fields could be filled.",
+    };
+  }
+  editSeq += 1;
+  const nextValues = { ...values.value };
+  const nextUser = new Set(userEditedKeys.value);
+  const nextAgent = new Set(agentEditedKeys.value);
+  const nextErrors = { ...fieldErrors.value };
+  const filledFields: string[] = [];
+  for (const { key, value } of validEntries) {
+    nextValues[key] = value;
+    nextUser.delete(key);
+    nextAgent.add(key);
+    delete nextErrors[key];
+    filledFields.push(key);
+  }
+  values.value = nextValues;
+  userEditedKeys.value = nextUser;
+  agentEditedKeys.value = nextAgent;
+  fieldErrors.value = nextErrors;
+  return {
+    ok: true,
+    member: "card.parameters",
+    filledFields,
+    ...(rejectedFields.length ? { rejectedFields } : {}),
+  };
+}
+
+async function save(): Promise<boolean> {
+  if (!isCurrentFormLoaded() || !props.card || !form.value) return false;
+  const targetDashboardId = props.dashboardId;
+  const targetCardId = props.card.id;
+  const targetRevision = form.value.revision;
+  const targetValues = Object.fromEntries([...edited.value].map((key) => [key, values.value[key]!]));
   saving.value = true;
   failure.value = null;
   try {
     await saveCardParameters({
-      dashboardId: props.dashboardId,
-      cardId: card.id,
-      revision: form.value!.revision,
-      values: Object.fromEntries([...edited.value].map((key) => [key, draftValues.value[key]!])),
+      dashboardId: targetDashboardId,
+      cardId: targetCardId,
+      revision: targetRevision,
+      values: targetValues,
     });
-    emit("saved", card.id);
-    visible.value = false;
+    editSeq += 1;
+    emit("saved", targetCardId);
+    if (props.card?.id === targetCardId && props.dashboardId === targetDashboardId) {
+      visible.value = false;
+    }
+    return true;
   } catch (error) {
     const details = error instanceof ApiRequestError ? (error.payload.details as { errors?: { field: string; message: string }[] }) : undefined;
     if (error instanceof ApiRequestError && error.code === "METRIC_PARAMETERS_INVALID" && details?.errors) {
@@ -105,10 +265,189 @@ async function save() {
     } else {
       failure.value = cardError(error);
     }
+    return false;
   } finally {
     saving.value = false;
   }
 }
+
+function currentEditedSnapshot(): string {
+  return JSON.stringify([...edited.value].sort().map((key) => [key, values.value[key] ?? ""]));
+}
+
+function saveFromAction(operation: string, agentRun: PageActionAgentRun): Promise<PageActionOutcome> {
+  return settleFromAction(operation, "card.parameters.save", agentRun);
+}
+
+function discardFromAction(operation: string, agentRun?: PageActionAgentRun): Promise<PageActionOutcome> {
+  return settleFromAction(operation, "card.parameters.discard", agentRun);
+}
+
+async function settleFromAction(
+  operation: string,
+  confirmationOperation: "card.parameters.save" | "card.parameters.discard",
+  agentRun?: PageActionAgentRun,
+): Promise<PageActionOutcome> {
+  await waitForLoad();
+  if (!isCurrentFormLoaded() || !form.value || !props.card) {
+    return { ok: false, reason: "action_not_ready", operation, message: "The card parameter form is not open." };
+  }
+  const discarding = confirmationOperation === "card.parameters.discard";
+  if (edited.value.size === 0) {
+    if (discarding) {
+      discard();
+      return { ok: true, kind: "executed", operation };
+    }
+    return { ok: false, reason: "action_unavailable", operation, message: "There are no parameter changes to save." };
+  }
+  if (!agentRun) {
+    return { ok: false, reason: "action_unavailable", operation, message: "Card parameter changes require an active agent run." };
+  }
+
+  const hasHumanUnsavedEdits = userEditedKeys.value.size > 0;
+  const capturedDashboardId = props.dashboardId;
+  const capturedCardId = props.card.id;
+  const capturedCardName = props.card.name || props.card.id;
+  const capturedRevision = form.value.revision;
+  const capturedEditSeq = editSeq;
+  const capturedSnapshot = currentEditedSnapshot();
+
+  // Privacy rule: list only edited parameter field labels/keys, never edited field values.
+  const fieldLabels = changes.value.map((change) => change.label || change.key);
+  const impactSummary = fieldLabels.length > 0 ? `Fields: ${fieldLabels.join(", ")}` : undefined;
+
+  let prepared;
+  try {
+    prepared = await prepareDashboardAgentConfirm({
+      dashboardId: capturedDashboardId,
+      operation: confirmationOperation,
+      targetLabel: capturedCardName,
+      impactSummary,
+      ...(discarding && hasHumanUnsavedEdits ? { requireConfirmation: true } : {}),
+      agentRun,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "failed",
+      operation,
+      message: error instanceof Error ? error.message : "Failed to prepare card parameter confirmation.",
+    };
+  }
+
+  let cancelled = false;
+  let dispatched = false;
+  const isStillValid = () => {
+    if (unmounted) return { ok: false as const, reason: "stale", message: "The card parameter dialog was closed." };
+    if (cancelled) return { ok: false as const, reason: "stale", message: "The card parameter confirmation was cancelled." };
+    if (dispatched) return { ok: false as const, reason: "stale", message: "The card parameter confirmation was already executed." };
+    if (!visible.value || !isCurrentFormLoaded() || !form.value) {
+      return { ok: false as const, reason: "stale", message: "The card parameter dialog was closed or reloaded." };
+    }
+    if (props.dashboardId !== capturedDashboardId || props.card?.id !== capturedCardId) {
+      return { ok: false as const, reason: "stale", message: "The dashboard or target card changed." };
+    }
+    if (form.value.revision !== capturedRevision) {
+      return { ok: false as const, reason: "stale", message: "The parameter form revision changed." };
+    }
+    if (editSeq !== capturedEditSeq || currentEditedSnapshot() !== capturedSnapshot) {
+      return { ok: false as const, reason: "stale", message: "The card parameter values changed after confirmation was requested." };
+    }
+    if (saving.value || loading.value) {
+      return { ok: false as const, reason: "stale", message: "The card parameter dialog is currently busy." };
+    }
+    return { ok: true as const };
+  };
+
+  if (prepared.autoMode) {
+    const check = isStillValid();
+    if (!check.ok) {
+      return { ok: false, reason: "stale", operation, intentId: prepared.intentId, message: check.message };
+    }
+    dispatched = true;
+    if (discarding) {
+      discard();
+      return { ok: true, kind: "executed", operation, intentId: prepared.intentId };
+    }
+    const ok = await save();
+    if (ok) return { ok: true, kind: "executed", operation, intentId: prepared.intentId };
+    const fieldMessages = Object.values(fieldErrors.value);
+    if (fieldMessages.length) {
+      return { ok: false, reason: "validation_failed", operation, intentId: prepared.intentId, message: fieldMessages.join(" ") };
+    }
+    return {
+      ok: false,
+      reason: "failed",
+      operation,
+      intentId: prepared.intentId,
+      message: failure.value?.message ?? "Failed to save parameters.",
+    };
+  }
+
+  const questionId = prepared.questionId;
+  if (questionId === null) throw new Error("Card parameter confirmation did not return a question ID.");
+  const confirmation: PendingPageActionConfirmation = {
+    intentId: prepared.intentId,
+    questionId,
+    operationId: operation,
+    label: prepared.label,
+    isStillValid,
+    async dispatch(): Promise<PageActionConfirmedDispatchResult> {
+      const check = isStillValid();
+      if (!check.ok) {
+        return { ok: false, intentId: prepared.intentId, reason: "stale", message: check.message };
+      }
+      dispatched = true;
+      if (discarding) {
+        discard();
+        return { ok: true, intentId: prepared.intentId, outcome: { discarded: true }, summary: prepared.label };
+      }
+      const ok = await save();
+      if (ok) {
+        return {
+          ok: true,
+          intentId: prepared.intentId,
+          outcome: { cardId: capturedCardId },
+          summary: prepared.label,
+        };
+      }
+      const fieldMessages = Object.values(fieldErrors.value);
+      return {
+        ok: false,
+        intentId: prepared.intentId,
+        reason: "failed",
+        message: fieldMessages.join(" ") || failure.value?.message || "Failed to save parameters.",
+      };
+    },
+    async cancel() {
+      cancelled = true;
+    },
+  };
+
+  return {
+    ok: true,
+    kind: "awaiting_confirmation",
+    operation,
+    intentId: prepared.intentId,
+    questionId,
+    label: prepared.label,
+    confirmation,
+  };
+}
+
+function discard() {
+  visible.value = false;
+}
+
+defineExpose({
+  isOpen: visible,
+  currentCardId: () => props.card?.id ?? null,
+  hasUnsavedChanges: () => edited.value.size > 0,
+  waitForLoad,
+  fillValues,
+  saveFromAction,
+  discardFromAction,
+});
 </script>
 
 <template>
@@ -122,9 +461,9 @@ async function save() {
       <el-form v-if="form && form.fields.length" label-position="top" @submit.prevent>
         <FormFields
           :fields="form.fields"
-          :values="draftValues"
+          :values="values"
           :errors="fieldErrors"
-          :disabled="saving || !unchanged"
+          :disabled="saving"
           :choose-placeholder="t('dashboard.choose')"
           :read-only="form.readOnly"
           @input="edit"
@@ -139,7 +478,6 @@ async function save() {
           <span class="now">{{ change.to || "—" }}</span>
         </el-descriptions-item>
       </el-descriptions>
-      <p v-if="!unchanged" class="note" role="note">{{ t("dashboard.draft.revisionChanged") }}</p>
       <div v-if="failure" class="failure" role="alert">
         <strong v-if="failureHeadline">{{ failureHeadline }}</strong>
         <span>{{ failure.message }}</span>
@@ -147,7 +485,7 @@ async function save() {
     </div>
     <template #footer>
       <el-button :disabled="saving" @click="visible = false">{{ t("common.cancel") }}</el-button>
-      <el-button type="primary" :loading="saving" :disabled="!form || edited.size === 0 || !unchanged" @click="save">
+      <el-button type="primary" :loading="saving" :disabled="!form || edited.size === 0" @click="save">
         {{ t("common.save") }}
       </el-button>
     </template>

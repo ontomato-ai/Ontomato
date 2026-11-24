@@ -14,7 +14,7 @@
           "type": "boolean"
         },
         "default": false,
-        "deepLink": true
+        "deepLink": false
       }
     },
     "members": {
@@ -38,16 +38,26 @@
           "showTitle": false
         }
       },
-      "form": {
+      "createForm": {
         "component": "ObjectForm",
-        "target": "selected",
+        "type": "platform:AgentDefinition",
         "data": {
-          "form": "form",
           "createForm": "createForm"
         },
         "operation": "platform:AgentDefinition.save",
         "config": {
           "actions": "create-only"
+        }
+      },
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:AgentDefinition.save",
+        "config": {
+          "actions": "none"
         }
       }
     }

@@ -8,6 +8,7 @@ import { withProductGrants } from "../product-assets/grants";
 import { nativeProfileId } from "../product-assets/platform-assets";
 import { profileIdForAgent } from "../product-assets/agent-profile";
 import { assistantStore, type AssistantOwner } from "./store";
+import { isPresetAgentKind } from "./preset-definitions";
 import { assistantDescription, assistantName } from "./labels";
 import { effectiveAssistantSkills, readAssistantSkillView, resolveCurrentPageSkillMember } from "./skills";
 
@@ -43,7 +44,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       defaultAgent: group?.defaults.find(entry => entry.pageKey === query.pageKey)?.defaultAgent ?? { kind: "preset", agentKind: "regular" },
     };
   }
-  const definitions = await assistantStore.agents(owner.domainId, { skillView: view });
+  const definitions = await assistantStore.agents(owner.domainId);
   return withProductGrants(owner, async () => {
     const agents = [];
     for (const agent of definitions) {
@@ -66,9 +67,8 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       throw new HttpError(409, "The page's default agent is unavailable", "PAGE_DEFAULT_AGENT_UNAVAILABLE");
 
     const candidateIds = new Set(candidates.map(agent => agent.id));
-    // User-created definitions store their own ID as their kind.
     const presetAgentIds = Object.fromEntries(definitions
-      .filter(agent => agent.kind !== agent.id && candidateIds.has(agent.id))
+      .filter(agent => isPresetAgentKind(agent.kind) && candidateIds.has(agent.id))
       .map(agent => [agent.kind, agent.id]));
     return assistantAgentListSchema.parse({
       agents: candidates,

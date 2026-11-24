@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { h } from "vue";
+import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import type { PresentationFrame } from "@ontomato/contracts/agent-presentation";
 import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
@@ -9,6 +10,7 @@ import { panelAddress, type ProductPanelReadRequest } from "@ontomato/contracts/
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { DELETE_SKILL, EXPORT_SKILL, IMPORT_SKILL, SKILL, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
+import { useConversationDisplay } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
@@ -535,6 +537,289 @@ describe("skills-library builtin panel", () => {
         expect(element.querySelector(".detail-head")?.classList.contains("is-ready")).toBe(true);
         expect(element.querySelector<HTMLElement>(".package")?.style.display).not.toBe("none");
       });
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("preserves explicit filePath across same-page present switches (including shared filenames), handles missing filePath in place, selects SKILL.md or first file on plain switch, and renders Markdown frontmatter and read-only code", async () => {
+    const SESSION = "11111111-1111-4111-8111-111111111111";
+    const RUN = "22222222-2222-4222-8222-222222222222";
+    const filesBySkill: Record<string, Record<string, string>> = {
+      "skill-a": {
+        "SKILL.md": "---\nname: skill-a\ndescription: Skill A\n---\n# Skill A Guide\n\nInstructions for A.",
+        "references/readme.md": "# Skill A Reference\nFrom skill A.",
+        "scripts/run.py": "def run_a():\n    return 'A'\n",
+      },
+      "skill-b": {
+        "SKILL.md": "---\nname: skill-b\ndescription: Skill B\n---\n# Skill B Guide\n\nInstructions for B.",
+        "references/readme.md": "# Skill B Reference\nFrom skill B.",
+        "config.json": "{\n  \"enabled\": true\n}\n",
+      },
+      "skill-no-md": {
+        "scripts/entry.py": "print('first in tree')\n",
+        "zebra.txt": "plain file\n",
+      },
+    };
+    const contentReads: Array<{ skill: string; path: unknown }> = [];
+    const presentFrame = (state: Record<string, unknown>, address = use.path): PresentationFrame => ({
+      type: "presentation",
+      sessionId: SESSION,
+      runId: RUN,
+      toolCallId: `call-${Math.random()}`,
+      target: {
+        kind: "page",
+        address,
+        state: state as PresentationFrame["target"] extends { state?: infer S } ? S : never,
+      },
+    });
+
+    installPlatform((request: Sent) => {
+      const { path } = request;
+      if (path === `/api/data-query/platform/applications/${appId}/panel-uses`) {
+        return Response.json({
+          data: { applicationId: appId, entry: { path: "/ontology", renderer: "panels" }, panelUses: [use] },
+        });
+      }
+      if (path === `/api/product-panels/${skillsPanel.id}`) return panelAnswer(skillsPanel, request);
+      if (path === `/api/product-panels/${skillsPanel.id}/snapshot`) {
+        return panelSnapshot(skillsPanel, Object.fromEntries(projections), request);
+      }
+      if (path.startsWith("/api/product-projections/")) {
+        return Response.json({ projection: projections.get(path.split("/").at(-1)!) });
+      }
+      if (path === "/api/product-panels/read") {
+        const body = request.body as ProductPanelReadRequest;
+        if ("operations" in body) {
+          return Response.json({ status: "ready", value: body.memberPath[0]?.member === "detail" ? detailOperations : {} });
+        }
+        const member = body.memberPath[0]?.member;
+        const skillInput = Object.values(body.inputs).find(
+          (value): value is { className?: string; primaryKey?: string } =>
+            Boolean(value && typeof value === "object" && "primaryKey" in value),
+        );
+        const skillId = skillInput?.primaryKey ?? "";
+        if (member === "list") {
+          return Response.json({
+            status: "ready",
+            value: {
+              rows: [
+                skillRow("skill-a", "Skill A", "First skill", "Domain"),
+                skillRow("skill-b", "Skill B", "Second skill", "Domain"),
+                skillRow("skill-no-md", "Skill No MD", "Package without SKILL.md", "Domain"),
+              ],
+              total: 3,
+            },
+          });
+        }
+        if (member === "detail") {
+          return Response.json({ status: "ready", value: skillRow(skillId, `Title ${skillId}`, `Desc ${skillId}`, "Domain") });
+        }
+        if (member === "tree") {
+          const entries = Object.keys(filesBySkill[skillId] ?? {});
+          return Response.json({
+            status: "ready",
+            value: entries.map((entry) => ({ primaryKey: entry, label: entry, fieldLabels: { size: "Size" }, fields: { size: "10" } })),
+          });
+        }
+        if (member === "content") {
+          const requestedPath = String(body.inputs.path ?? "");
+          contentReads.push({ skill: skillId, path: requestedPath });
+          const text = filesBySkill[skillId]?.[requestedPath];
+          if (text === undefined) {
+            return Response.json({ status: "error", message: `File not found: ${requestedPath}` });
+          }
+          return Response.json({
+            status: "ready",
+            value: { primaryKey: requestedPath, label: requestedPath, fieldLabels: { content: "Content" }, fields: { content: text } },
+          });
+        }
+        return Response.json({ status: "empty" });
+      }
+      return nothingAt(request);
+    });
+
+    useApplicationCatalog().applications.value = [
+      {
+        id: appId,
+        kind: "product",
+        names: { en: "Ontology" },
+        descriptions: {},
+        icon: "ontology",
+        rail: "apps",
+        category: "build",
+        sort: 0,
+        entry: { path: "/ontology", renderer: "panels" },
+        entryAccess: ["domain-member"],
+        scheduleAdapter: null,
+        releaseId: null,
+        panelUses: [use],
+      },
+    ];
+
+    type ObservedContext = { state?: Record<string, unknown> } | null;
+    const observed = { context: null as ObservedContext };
+    const display = useConversationDisplay({
+      features: () => [{ id: "panel", label: "Skills", icon: "pages", availability: "page", withConversation: true }],
+      resolve: (address) => (address.split("?")[0] === use.path ? { featureId: "panel", address, instance: use.path } : null),
+      serialize: async () => true,
+      context: (page, reported) => ({
+        url: page.address,
+        label: reported?.label || "Skills",
+        selection: reported?.selection ?? [],
+        ...(reported?.state ? { state: reported.state } : {}),
+      }),
+      leave: { leaves: () => false, confirm: async () => true },
+    });
+    display.placed(() => "side");
+
+    const initialAddress = panelAddress(
+      use.path,
+      { selected: skillRef("skill-a"), filePath: "references/readme.md" },
+      skillsPanel.manifest,
+    );
+    await display.present({
+      type: "presentation",
+      sessionId: SESSION,
+      runId: RUN,
+      toolCallId: "open-initial",
+      target: { kind: "page", address: initialAddress },
+    });
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/chat", component: { template: "<div />" } }],
+    });
+    await router.push("/chat");
+
+    const Host = defineComponent({
+      setup() {
+        return () =>
+          display.page.value
+            ? h(PanelApplicationRoute, {
+                applicationId: appId,
+                address: display.page.value.address,
+                liveState: display.liveState.value,
+                registerPageController: (controller: unknown) =>
+                  display.registerPageController(display.page.value!.instance, controller as never),
+                onDisplayAddress: display.address,
+                onDisplayLoaded: display.loaded,
+                onContext: (reported: ObservedContext) => {
+                  observed.context = reported;
+                  display.context(reported as never);
+                },
+              })
+            : null;
+      },
+    });
+
+    const { app, element } = mountPlatformPage(() => h(Host), router);
+    try {
+      // 1. Cold start on skill-a with references/readme.md keeps that file and renders Markdown.
+      await vi.waitFor(() => {
+        expect(element.querySelector(".markdown-view")?.textContent).toContain("From skill A.");
+      });
+      expect(observed.context?.state?.filePath).toBe("references/readme.md");
+
+      // 2. Same-page present({ selected: skill-b, filePath: "references/readme.md" }) (same filename across skills)
+      //    keeps references/readme.md and NEVER resets to SKILL.md.
+      contentReads.length = 0;
+      await display.present(
+        presentFrame({ selected: skillRef("skill-b"), filePath: "references/readme.md" }, display.page.value!.address),
+      );
+      await vi.waitFor(() => {
+        expect(element.querySelector(".markdown-view")?.textContent).toContain("From skill B.");
+      });
+      expect(observed.context?.state?.filePath).toBe("references/readme.md");
+      expect(contentReads.some((entry) => entry.skill === "skill-b" && entry.path === "SKILL.md")).toBe(false);
+
+      // 3. Same-page present with a nonexistent filePath keeps filePath intact and shows DataState error in place.
+      contentReads.length = 0;
+      await display.present(
+        presentFrame({ selected: skillRef("skill-b"), filePath: "references/missing.md" }, display.page.value!.address),
+      );
+      await vi.waitFor(() => {
+        const alert = element.querySelector(".package-viewer .fui-data-state-error [role='alert']");
+        expect(alert?.textContent).toContain("File not found: references/missing.md");
+      });
+      expect(observed.context?.state?.filePath).toBe("references/missing.md");
+
+      // 4. Switching skills without specifying filePath selects SKILL.md (with frontmatter + Markdown) when present.
+      await display.present(presentFrame({ selected: skillRef("skill-a") }, display.page.value!.address));
+      await vi.waitFor(() => {
+        expect(observed.context?.state?.filePath).toBe("SKILL.md");
+        expect(element.querySelector(".sdk-object-text-reader-frontmatter")?.textContent).toContain("name: skill-a");
+        expect(element.querySelector(".markdown-view")?.textContent).toContain("Skill A Guide");
+      });
+
+      // 5. Opening a code file (.py / .json) renders the read-only CodeEditor.
+      await display.present(
+        presentFrame({ selected: skillRef("skill-b"), filePath: "config.json" }, display.page.value!.address),
+      );
+      await vi.waitFor(() => {
+        const editor = element.querySelector(".package-viewer .sdk-object-text-reader-code .cm-content");
+        expect(editor).not.toBeNull();
+        expect(editor?.textContent).toContain('"enabled": true');
+        expect(editor?.getAttribute("contenteditable")).toBe("false");
+      });
+
+      // 6. Switching without filePath to a package lacking SKILL.md selects the first file in tree order (scripts/entry.py)
+      //    and renders it as read-only code without ever requesting SKILL.md.
+      contentReads.length = 0;
+      await display.present(presentFrame({ selected: skillRef("skill-no-md") }, display.page.value!.address));
+      await vi.waitFor(() => {
+        expect(observed.context?.state?.filePath).toBe("scripts/entry.py");
+        const editor = element.querySelector(".package-viewer .sdk-object-text-reader-code .cm-content");
+        expect(editor?.textContent).toContain("print('first in tree')");
+      });
+      expect(contentReads.some((entry) => entry.skill === "skill-no-md" && entry.path === "SKILL.md")).toBe(false);
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("keeps a nonexistent cold-start deep-linked filePath intact and shows ObjectTextReader error in place", async () => {
+    const contentReads: unknown[] = [];
+    const route = mountSkillsRoute({
+      initialState: { selected: skillRef("domain-skill"), filePath: "references/does-not-exist.md" },
+      onRead(body) {
+        const member = body.memberPath[0]?.member;
+        if (member === "list") {
+          return Response.json({
+            status: "ready",
+            value: { rows: [skillRow("domain-skill", "Domain Skill", "Desc", "Domain")], total: 1 },
+          });
+        }
+        if (member === "detail") {
+          return Response.json({ status: "ready", value: skillRow("domain-skill", "Domain Skill", "Desc", "Domain") });
+        }
+        if (member === "tree") {
+          return Response.json({
+            status: "ready",
+            value: [
+              { primaryKey: "SKILL.md", label: "SKILL.md", fieldLabels: { size: "Size" }, fields: { size: "42" } },
+            ],
+          });
+        }
+        if (member === "content") {
+          contentReads.push(body.inputs.path);
+          return Response.json({ status: "error", message: "Requested file does not exist" });
+        }
+        return Response.json({ status: "empty" });
+      },
+      onOperations(body) {
+        return Response.json({ status: "ready", value: body.memberPath[0]?.member === "detail" ? detailOperations : {} });
+      },
+    });
+
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        const alert = element.querySelector(".package-viewer .fui-data-state-error [role='alert']");
+        expect(alert?.textContent).toContain("Requested file does not exist");
+      });
+      expect(route.router.currentRoute.value.query.filePath).toBe("references/does-not-exist.md");
+      expect(contentReads).toEqual(["references/does-not-exist.md"]);
     } finally {
       app.unmount();
     }

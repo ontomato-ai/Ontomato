@@ -6,13 +6,14 @@ import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { PanelFormRequest, PanelOption, PanelRecord } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
 import { assertPermission } from "../../identity/installed";
+import { HttpError } from "../../utils/errors";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { describeAgentDefinitionForm } from "./definition-form";
 import { agentDefinitionPermissions, listAgentDefinitions, readAgentDefinition } from "./definitions";
 import { queryExecutionOptions } from "./execution-setting";
 import { readDomainModelOptions } from "./model-panel-form";
-import type { AssistantOwner } from "./store";
+import { assistantStore, type AssistantOwner } from "./store";
 
 type FormInputs = Pick<PanelFormRequest, "values" | "changedField">;
 
@@ -32,13 +33,20 @@ export function createAgentDefinitionReadAdapter(owner: AssistantOwner, viewer: 
     tones: { enabled: enabled ? "success" : "default" },
   });
   return {
+    async count() {
+      await admit();
+      return { rows: [], total: await assistantStore.countAgentDefinitions(owner.domainId) };
+    },
     async list() {
       await admit();
       return (await listAgentDefinitions(owner, viewer)).agents.map(record);
     },
     async record(primaryKey: string) {
       await admit();
-      return record(await readAgentDefinition(id.parse(primaryKey), owner, viewer));
+      if (!id.safeParse(primaryKey).success) {
+        throw new HttpError(400, "Invalid agent definition target", "INVALID_REQUEST");
+      }
+      return record(await readAgentDefinition(primaryKey, owner, viewer));
     },
     async form(primaryKey: string, params: FormInputs) {
       await admit();

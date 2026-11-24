@@ -1,21 +1,28 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from "vue";
+import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
+import { randomId } from "@ontomato/contracts/random-id";
+import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
+import { classifyDispatchResponseForAction } from "../panel/instance";
 import { useMember, useMemberOperations } from "../panel/member";
+import { missingOperationDescriptorResult } from "../panel/member-operations";
+import { matchesExpectedCheckedKeys, matchesExpectedTarget } from "../panel/operation-binding";
 import { useDataStateLabels } from "./data-state-labels";
 import { readConfigString } from "./localized-text";
 import {
+  filterAllowedOperationInput,
   formatOperationLabel,
   isOperationReady,
+  listBatchReceiptKey,
   resolveOperationInputFields,
   resolveOperationTarget,
   useOperationRunner,
   type OperationOutcome,
 } from "./operation-dispatch";
+import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
 
@@ -77,6 +84,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** A write was dispatched and its owner answered: the outcome, for the page to act on. */
   done: [outcome: OperationOutcome];
+  /** A read-only operation answered: the result, for the page to react to. */
+  read: [result: PanelReadOperationResult];
 }>();
 
 const { t } = useI18n();
@@ -84,6 +93,7 @@ const slot = useProjectionSlot();
 const panel = usePanelContext();
 const member = useMember();
 const labels = useDataStateLabels();
+const publishBatchReceipt = inject(listBatchReceiptKey, null);
 
 /** The member's operations, as their owners admit them now. */
 const operations = useMemberOperations();
@@ -108,11 +118,9 @@ const {
   read,
   receipt,
   outcome,
-  batchItems: items,
-  batchDone: done,
+  named,
   inputDialogOpen,
   said,
-  nameOf,
   trigger,
   confirmInput,
   run,
@@ -122,7 +130,25 @@ const {
   slot: () => slot,
   member: () => member,
   t,
-  onDone: (_name, answered) => emit("done", answered),
+  isEntryAvailable: () => {
+    if (hiddenByAvailability.value) {
+      return {
+        ok: false,
+        message: descriptor.value?.unavailable?.reason ?? `Operation '${props.operation}' is currently hidden or unavailable.`,
+      };
+    }
+    if (props.disabled) {
+      return { ok: false, message: `Operation '${props.operation}' is currently disabled.` };
+    }
+    return { ok: true };
+  },
+  onDone: (_name, answered) => {
+    if (answered.kind === "batch") publishBatchReceipt?.({ items: answered.items, named: named.value });
+    emit("done", answered);
+  },
+  onRead: (_name, answered) => {
+    emit("read", answered);
+  },
 });
 
 const values = computed(() => panel.instance.state.values.value);
@@ -161,7 +187,22 @@ const inputFields = computed(() =>
   resolveOperationInputFields(panel, slot, props.operation, descriptor.value),
 );
 
-watch(targetKey, () => {
+const draftSlot = computed(() => {
+  if (descriptor.value?.target.source === "draft") return descriptor.value.target.slot;
+  return (
+    panel.manifest.members[slot.slot]?.operationDrafts?.[props.operation]?.slot
+    ?? panel.manifest.members[slot.slot]?.readOperationInputs?.[props.operation]?.draft?.slot
+    ?? null
+  );
+});
+
+const draftFormKey = computed(() => {
+  if (!draftSlot.value) return null;
+  const snap = panel.instance.forms.snapshot(draftSlot.value);
+  return snap ? `${snap.formInstanceId ?? ""}:${JSON.stringify(snap.target ?? null)}` : null;
+});
+
+watch([targetKey, draftFormKey], () => {
   reset();
 });
 
@@ -172,22 +213,64 @@ const hiddenByAvailability = computed(() => {
 });
 
 const ready = computed(() =>
-  !props.disabled && isOperationReady(descriptor.value, targetInfo.value, running.value),
+  !props.disabled && isOperationReady(descriptor.value, targetInfo.value, running.value, panel.instance.forms),
 );
 
 function onTriggerClick() {
   if (!descriptor.value || !ready.value) return;
+  if (targetInfo.value.batch) publishBatchReceipt?.(null);
   trigger(props.operation, descriptor.value);
 }
 
+const entryInstanceId = ref(randomId());
+const entryBindingSignature = computed(() => {
+  const draftFormId = draftSlot.value
+    ? (panel.instance.forms.snapshot(draftSlot.value)?.formInstanceId ?? null)
+    : null;
+  return JSON.stringify({
+    target: targetInfo.value.target,
+    checked: targetInfo.value.checkedTargets,
+    inputs: member.inputs.value,
+    draftFormId,
+  });
+});
+watch(entryBindingSignature, (next, prev) => {
+  if (next !== prev) entryInstanceId.value = randomId();
+});
+
 const unregisterAction = panel.instance.registerActionHandler(
   panel.instance.operationIdOf(slot.slot, props.operation),
-  async ({ input }) => {
-    if (hiddenByAvailability.value) {
-      return { ok: false, reason: "action_unavailable", message: `Operation '${props.operation}' is currently hidden or unavailable.` };
-    }
+  async ({ input, expectedTarget, expectedCheckedKeys, agentContext }) => {
     if (!descriptor.value) {
-      return { ok: false, reason: "action_not_ready", message: `Operation '${props.operation}' is not ready yet.` };
+      return missingOperationDescriptorResult(operations.value, props.operation);
+    }
+    if (expectedCheckedKeys !== undefined && targetInfo.value.checkedState !== null) {
+      if (!matchesExpectedCheckedKeys(targetInfo.value.checkedTargets, expectedCheckedKeys)) {
+        return {
+          ok: false,
+          reason: "stale",
+          message: "The checked batch selection changed since your last observation.",
+        };
+      }
+    }
+    if (expectedTarget !== undefined) {
+      const currentTarget = draftSlot.value
+        ? (panel.instance.forms.snapshot(draftSlot.value)?.target ?? null)
+        : targetInfo.value.target;
+      if (!matchesExpectedTarget(currentTarget, expectedTarget)) {
+        return {
+          ok: false,
+          reason: "stale",
+          message: "The target object or draft changed since your last observation.",
+        };
+      }
+    }
+    if (hiddenByAvailability.value) {
+      return {
+        ok: false,
+        reason: "action_unavailable",
+        message: descriptor.value.unavailable?.reason ?? `Operation '${props.operation}' is currently hidden or unavailable.`,
+      };
     }
     if (!ready.value) {
       return {
@@ -196,9 +279,9 @@ const unregisterAction = panel.instance.registerActionHandler(
         message: descriptor.value.unavailable?.reason ?? `Operation '${props.operation}' is currently disabled.`,
       };
     }
-    const providedInput = input ?? {};
+    const filteredInput = filterAllowedOperationInput(input, inputFields.value);
     const missing = inputFields.value
-      .filter((field) => field.required && !(field.name in providedInput))
+      .filter((field) => field.required && !(field.name in filteredInput))
       .map((field) => field.name);
     if (missing.length > 0) {
       return {
@@ -207,15 +290,27 @@ const unregisterAction = panel.instance.registerActionHandler(
         message: `Operation '${props.operation}' requires input fields: ${missing.join(", ")}.`,
       };
     }
-    await run(props.operation, descriptor.value, { ...providedInput });
+    if (targetInfo.value.batch) publishBatchReceipt?.(null);
+    const status = await run(props.operation, descriptor.value, filteredInput, agentContext);
+    const dispatchedResponse = receipt.value ?? agentContext?.completed?.response;
+    if (dispatchedResponse) {
+      return classifyDispatchResponseForAction(dispatchedResponse);
+    }
     if (failure.value) {
       return { ok: false, reason: "failed", message: failure.value.message };
+    }
+    if (status === "cancelled") {
+      return { ok: false, reason: "cancelled", message: `Operation '${props.operation}' was cancelled.` };
+    }
+    if (status === "skipped") {
+      return { ok: false, reason: "action_unavailable", message: `Operation '${props.operation}' is currently busy.` };
     }
     if (read.value) {
       return { ok: true, outcome: read.value };
     }
-    return { ok: true, outcome: outcome.value ?? receipt.value ?? undefined };
+    return { ok: true, outcome: outcome.value ?? undefined };
   },
+  { entryInstanceId: () => entryInstanceId.value },
 );
 onBeforeUnmount(unregisterAction);
 </script>
@@ -284,16 +379,9 @@ onBeforeUnmount(unregisterAction);
     <template v-if="receipt">
       <p v-if="receipt.kind === 'not-dispatched'" role="alert">{{ receipt.message }}</p>
       <p v-else-if="outcome === null" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
-      <div v-else-if="outcome.kind === 'batch'" class="sdk-operation-batch" role="status">
-        <p>{{ t("platform.operationBatchDone", { done, total: items.length }) }}</p>
-        <ul>
-          <li
-            v-for="item in items"
-            :key="item.target.objectType + ':' + item.target.primaryKey"
-            :data-outcome="item.outcome.kind"
-          >{{ nameOf(item.target) }}: {{ said(item.outcome) }}</li>
-        </ul>
-      </div>
+      <template v-else-if="outcome.kind === 'batch'">
+        <OperationBatchReceipt v-if="!publishBatchReceipt" class="sdk-operation-batch" :items="outcome.items" :named="named" />
+      </template>
       <p v-else role="alert" :data-outcome="outcome.kind">{{ said(outcome) }}</p>
     </template>
   </div>
@@ -308,15 +396,5 @@ onBeforeUnmount(unregisterAction);
   margin: var(--spacing-xs) 0 0;
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
-}
-.sdk-operation-batch ul {
-  margin: var(--spacing-xs) 0 0;
-  padding-inline-start: var(--spacing-lg);
-}
-.sdk-operation-batch li[data-outcome="success"] {
-  color: var(--el-text-color-secondary);
-}
-.sdk-operation-batch li:not([data-outcome="success"]) {
-  color: var(--el-color-danger-text);
 }
 </style>

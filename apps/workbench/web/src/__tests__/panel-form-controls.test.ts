@@ -68,7 +68,7 @@ const stored: PanelFormValues = {
   schema: { type: "object" },
   tags: ["ops"],
 };
-const save = { method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: "agent.update" };
+const save = { method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {} };
 const projection: ProductProjection = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
   updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain",

@@ -1,7 +1,7 @@
 import { computed } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
-/** Canonical route paths mapped to the frame's declared count read members. */
+/** Canonical route paths mapped to the frame's declared ObjectCount members. */
 const COUNT_MEMBERS = {
   "/ontology/objects": "objectTypes",
   "/ontology/attributes": "attributes",
@@ -43,53 +43,27 @@ const ENTRY_ICONS = {
   "/ontology/projections": "layers",
   "/ontology/panels": "panels-top-left",
   "/ontology/applications": "app-window",
-  "/ontology/products": "shapes",
   "/ontology/agents": "bot",
 };
 
-function readCount(state) {
-  if (!state) return null;
-  if (state.status === "empty") return 0;
-  if (state.status !== "ready") return null;
-  const value = state.value;
-  if (Array.isArray(value)) return value.length;
-  if (value && typeof value === "object" && typeof value.total === "number" && Number.isFinite(value.total)) {
-    return value.total;
-  }
-  return null;
+function countMemberFor(path) {
+  return Object.hasOwn(COUNT_MEMBERS, path) ? COUNT_MEMBERS[path] : undefined;
 }
 
 await mountPanel({
   setup() {
     const context = usePanelContext();
-    const visiblePaths = new Set();
-    for (const use of context.entryMenu.value?.panelUses ?? []) {
-      visiblePaths.add(use.path);
-    }
-    for (const group of context.hostMenu?.value ?? []) {
-      for (const item of group.items) {
-        visiblePaths.add(item.id);
-      }
-    }
-    // Workflows and triggers share the action-management permission with Actions and Capability Map.
-    if (visiblePaths.has("/ontology/assets/actions") || visiblePaths.has("/ontology/assets/capability-map")) {
-      visiblePaths.add("/ontology/assets/workflows");
-      visiblePaths.add("/ontology/assets/triggers");
-    }
+    const totals = Object.entries(COUNT_MEMBERS).map(([path, member]) => [
+      path,
+      usePanelOutput(member, "total"),
+    ]);
 
-    // Subscribe only to owner count reads for entries this reader is authorized to see.
-    const readers = {};
-    for (const [path, member] of Object.entries(COUNT_MEMBERS)) {
-      if (visiblePaths.has(path)) {
-        readers[path] = usePanelData(member, "rows");
-      }
-    }
-
-    const counts = computed(() => {
+    const trailingText = computed(() => {
       const next = {};
-      for (const [path, reader] of Object.entries(readers)) {
-        const value = readCount(reader.value);
-        if (value !== null) next[path] = value;
+      for (const [path, total] of totals) {
+        if (typeof total.value === "number" && Number.isFinite(total.value)) {
+          next[path] = `(${total.value})`;
+        }
       }
       return next;
     });
@@ -101,8 +75,9 @@ await mountPanel({
 
     return {
       t: context.t,
-      counts,
       icons: ENTRY_ICONS,
+      countMemberFor,
+      trailingText,
       openEntry,
     };
   },

@@ -296,7 +296,7 @@ class PanelApplicationsTest {
 
         var sources = catalog.panelSkillSources("domain");
         assertEquals(new PanelSkills.Use("app-panel-a", "use-a", "panel-p", first.path(),
-            new PageSkills.Entrance("menu", null, "schedules-a")), sources.getFirst());
+            new PageSkills.Entrance("menu", null, "schedules-a"), null, null), sources.getFirst());
         assertEquals(4, sources.size());
         var mapping = new PageSkills.Mapping("menu", null, null, null, List.of(new PageSkills.Default("schedules-a", firstAgent)));
         assertEquals(new PageSkills.Projection(List.of(mapping), List.of(), List.of(
@@ -307,7 +307,11 @@ class PanelApplicationsTest {
     }
 
     @Test void serviceCatalogListsCompleteEntrancesFromTwoApplicationsAndIsolatesDomains() throws Exception {
-        var a = app("app-panels-trial-a", "panels", List.of(use("app-panels-trial-a", "panels-trial-a-tasks", null)));
+        var a = app("app-panels-trial-a", "panels", List.of(
+            new ApplicationPanelUse("use-panels-trial-a-tasks", "panels-trial-a-tasks", "panel-p",
+                "/applications/app-panels-trial-a/panels-trial-a-tasks", new ApplicationPanelUse.Access(null, "domain-member"),
+                null, Map.of("en", "Task list", "zh-CN", "任务列表"))));
+        a.put("names", Map.of("en", "Schedules", "zh-CN", "计划管理"));
         var b = app("app-panels-trial-b", "panels", List.of(use("app-panels-trial-b", "panels-trial-b-tasks", null),
             new ApplicationPanelUse("use-q", "panels-trial-b-summary", "panel-q", "/applications/app-panels-trial-b/summary",
                 new ApplicationPanelUse.Access(null, "domain-member"), null, null)));
@@ -327,9 +331,15 @@ class PanelApplicationsTest {
             .andExpect(jsonPath("$.data[0].useId").value("use-panels-trial-a-tasks"))
             .andExpect(jsonPath("$.data[0].panelId").value("panel-p"))
             .andExpect(jsonPath("$.data[0].path").value("/applications/app-panels-trial-a/panels-trial-a-tasks"))
+            .andExpect(jsonPath("$.data[0].names.en").value("Task list"))
+            .andExpect(jsonPath("$.data[0].names['zh-CN']").value("任务列表"))
+            .andExpect(jsonPath("$.data[0].applicationNames.en").value("Schedules"))
+            .andExpect(jsonPath("$.data[0].applicationNames['zh-CN']").value("计划管理"))
             .andExpect(jsonPath("$.data[0].entrance.access").value("domain-member"))
             .andExpect(jsonPath("$.data[0].entrance.pageKey").value("panels-trial-a-tasks"))
             .andExpect(jsonPath("$.data[1].entrance.pageKey").value("panels-trial-b-tasks"))
+            .andExpect(jsonPath("$.data[1].names").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data[1].applicationNames").doesNotHaveJsonPath())
             .andExpect(jsonPath("$.data[1].panelId").value("panel-p"))
             .andExpect(jsonPath("$.data[2].panelId").value("panel-q"));
         mvc.perform(get(ApplicationController.PANEL_SKILL_SOURCES)

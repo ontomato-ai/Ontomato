@@ -17,6 +17,11 @@ definitions are prepared in this conversation, tested here, and drafted into the
 - `publishStatus` (`publishStatus.setStatus` / `metricViews.setStatus`) is a batch `OperationButton` bound to `checked`
   and `batchStatus` (`PENDING_REVIEW`, `PUBLISHED`, `UNUSED`), updating the publication status of checked rows and
   reporting per-metric outcomes.
+- `testMarkdown` (`testMarkdown.test` / `metricViews.test`) and `testJson` (`testJson.testExecute` /
+  `metricViews.testExecute`) are standalone `OperationButton` projections mounted inside the test dialog when
+  `testOpen: true`. They read the live `definition` form draft together with `testParameters` (selected via
+  `testSource: "explicit"` or `"binding:<index>"`) and render Markdown preview/source or formatted JSON with truncation
+  warnings without saving.
 - `remove` (`remove.delete` / `metricViews.delete`) deletes the selected metric after confirmation, reporting the
   bindings deleted with it.
 
@@ -32,12 +37,13 @@ definitions are prepared in this conversation, tested here, and drafted into the
    `function.returnDef.columnLabels` (every output key labeled in the reader's language), `function.logic`,
    `matchQuestions`, and any `bindings` rows with values for every declared parameter. Declare every parameter the query
    package uses and no others; never copy another metric's values into `parameterDefs` as defaults.
-3. **Test on real data before drafting.** Use the two read-only trial operations declared on the `definition` form
-   member — `definition.test` (`metricViews.test`, Markdown output) and `definition.testExecute`
-   (`metricViews.testExecute`, raw JSON output with truncation metadata) — with `{ draft, parameters }`. Neither saves
-   anything. Treat a truncated result as partial, never as the complete numbers.
-4. **Draft into the form and leave saving to the reader.** How to write the draft is in this page's generated skill;
-   the reader reviews it in the `definition` form and saves or discards it.
+3. **Test on real data before saving.** Use `present` to open the metric's detail view (`selected` or
+   `{ selected: null, creating: true }`) and open the test dialog by setting `testOpen: true` (along with
+   `testSource: "explicit"` or `"binding:<index>"`, optional `testTab: "markdown" | "json"`, and `testParameters`), then
+   invoke `page_action` with `testMarkdown.test` (`metricViews.test`, Markdown output) or `testJson.testExecute`
+   (`metricViews.testExecute`, raw JSON output with truncation metadata). Neither saves anything. Treat a truncated
+   result as partial, never as the complete numbers.
+4. **Fill the live form and save through confirmation.** Use `present` to open the metric's `definition` form — or, for a new metric (especially when an existing metric is already selected), always pass `{ selected: null, creating: true }` so `selected` is cleared and the form does not keep pointing at the previous object — then use `fill_form` to enter the fields directly on screen and `page_action({ operation: "definition.save" })` when ready to save (confirmed in conversation by default).
 
 ## Owner rules this page shows and never rejudges
 

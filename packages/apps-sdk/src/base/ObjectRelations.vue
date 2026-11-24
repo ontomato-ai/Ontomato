@@ -3,26 +3,24 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import type { PanelObjectRef } from "@ontomato/contracts/panel-manifest";
-import type { PlatformOntologyEdgeBinding } from "@ontomato/contracts/platform-ontology";
+import type { PanelRelationNeighbors } from "@ontomato/contracts/panel-projection";
+import type {
+  PlatformOntologyEdge,
+  PlatformOntologyEdgeBinding,
+  PlatformOntologyNeighborsResponse,
+  PlatformOntologyNode,
+} from "@ontomato/contracts/platform-ontology";
 import {
-  ONTOLOGY_RELATION_KIND,
   platformObjectTypes,
   platformRelationKinds,
 } from "@ontomato/contracts/platform-object-types";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberOutput, useMemberParam, useMemberRead } from "../panel/member";
-import type {
-  PlatformGraphEdge,
-  PlatformGraphNeighborsResult,
-  PlatformGraphNode,
-  PlatformGraphStatus,
-} from "../panel/platform-objects";
+import type { PlatformGraphStatus } from "../panel/platform-objects";
 import { stateObject, type PanelFieldValue } from "../panel/state";
 
 type PanelObjectValue = PanelObjectRef;
-type RelationGraphEdge = PlatformGraphEdge & {
-  readonly binding?: PlatformOntologyEdgeBinding;
-};
+type RelationNeighbors = PlatformOntologyNeighborsResponse | PanelRelationNeighbors;
 
 /**
  * Displays one-hop relations of the currently selected node, shared by the four-layer capability map (M3) and the
@@ -43,7 +41,7 @@ const props = withDefaults(
     /** Prompt shown when no node is selected. */
     emptyText?: string;
     /**
-     * Relation kinds to display (`platform:OntologyRelationKind` refs or relation kind IDs). When omitted, reads and
+     * Relation kinds to display (relation kind IDs or object references). When omitted, reads and
      * writes the member's `visibleRelationKinds` parameter (bound panel state or local filter).
      */
     visibleRelationKinds?: readonly (PanelObjectValue | string)[] | null;
@@ -74,7 +72,7 @@ const emit = defineEmits<{
   /** Emitted when a reader promotes a peer node to be the graph start. */
   "update:start": [node: PanelObjectValue];
   /** Emitted when a reader updates the active relation kind filter (`null` clears the filter to show all kinds). */
-  "update:visibleRelationKinds": [kinds: PanelObjectValue[] | null];
+  "update:visibleRelationKinds": [kinds: (PanelObjectValue | string)[] | null];
 }>();
 
 const { t, te } = useI18n();
@@ -96,7 +94,7 @@ const relationMetaById = new Map(platformRelationKinds.map((kind) => [kind.id, k
 const manualLoading = ref(false);
 const manualForbidden = ref(false);
 const manualFailure = shallowRef<Error | null>(null);
-const manualResult = shallowRef<PlatformGraphNeighborsResult | null>(null);
+const manualResult = shallowRef<RelationNeighbors | null>(null);
 
 function nodeKey(ref: PanelObjectValue): string {
   return `${ref.className}\u0000${ref.primaryKey}`;
@@ -132,14 +130,14 @@ const failure = computed<Error | null>(() => {
   if (!usesMemberDatum.value) return manualFailure.value;
   return memberNeighbors.value.status === "error" ? new Error(memberNeighbors.value.message) : null;
 });
-const result = computed<PlatformGraphNeighborsResult | null>(() => {
+const result = computed<RelationNeighbors | null>(() => {
   if (!usesMemberDatum.value) return manualResult.value;
   return memberNeighbors.value.status === "ready"
-    ? (memberNeighbors.value.value as unknown as PlatformGraphNeighborsResult)
+    ? (memberNeighbors.value.value as unknown as RelationNeighbors)
     : null;
 });
 
-function nameNodes(nodes: readonly PlatformGraphNode[]) {
+function nameNodes(nodes: readonly PlatformOntologyNode[]) {
   const byType = new Map<string, { primaryKey: string; label: string }[]>();
   for (const node of nodes) {
     let bucket = byType.get(node.className);
@@ -167,7 +165,8 @@ function resolveKey(key: string | undefined, fallback: string): string {
   return fromPanel !== key ? fromPanel : fallback;
 }
 
-function typeDisplayName(className: string): string {
+function typeDisplayName(className: string, typeLabel?: string): string {
+  if (typeLabel) return resolveKey(typeLabel, typeLabel);
   return resolveKey(platformObjectTypes[className]?.labelKey, className);
 }
 
@@ -193,7 +192,8 @@ interface RelationGroup {
   readonly status: PlatformGraphStatus;
   readonly reason?: string;
   readonly derived?: boolean;
-  readonly truncated?: boolean;
+  readonly edgeCount: number;
+  readonly truncated: boolean;
   readonly edges: readonly RelationEdgeRow[];
 }
 
@@ -205,7 +205,7 @@ const currentNodeLabel = computed(() => {
 
 const currentNodeTypeLabel = computed(() => {
   const className = result.value?.node.className ?? activeSelected.value?.className;
-  return className ? typeDisplayName(className) : "";
+  return className ? typeDisplayName(className, result.value?.node.typeLabel) : "";
 });
 
 function hasBindingDetails(binding: PlatformOntologyEdgeBinding | undefined): binding is PlatformOntologyEdgeBinding {
@@ -217,12 +217,12 @@ const groups = computed<readonly RelationGroup[]>(() => {
   const data = result.value;
   if (!data) return [];
 
-  const nodesByKey = new Map<string, PlatformGraphNode>();
+  const nodesByKey = new Map<string, PlatformOntologyNode>();
   nodesByKey.set(nodeKey(data.node), data.node);
   for (const neighbor of data.neighbors) nodesByKey.set(nodeKey(neighbor), neighbor);
 
-  const edgesByKind = new Map<string, RelationGraphEdge[]>();
-  for (const edge of data.edges as readonly RelationGraphEdge[]) {
+  const edgesByKind = new Map<string, PlatformOntologyEdge[]>();
+  for (const edge of data.edges) {
     let bucket = edgesByKind.get(edge.relationKind);
     if (!bucket) {
       bucket = [];
@@ -231,7 +231,7 @@ const groups = computed<readonly RelationGroup[]>(() => {
     bucket.push(edge);
   }
 
-  const toRows = (edges: readonly RelationGraphEdge[], kindDerived: boolean | undefined): RelationEdgeRow[] =>
+  const toRows = (edges: readonly PlatformOntologyEdge[], kindDerived: boolean | undefined): RelationEdgeRow[] =>
     edges.map((edge) => {
       const peerRef = edge.direction === "outgoing" ? edge.to : edge.from;
       const peerNode = nodesByKey.get(nodeKey(peerRef));
@@ -241,7 +241,7 @@ const groups = computed<readonly RelationGroup[]>(() => {
         derived: edge.derived ?? kindDerived ?? false,
         peer: { className: peerRef.className, primaryKey: peerRef.primaryKey },
         peerLabel: peerNode?.label ?? peerRef.primaryKey,
-        peerTypeLabel: typeDisplayName(peerRef.className),
+        peerTypeLabel: typeDisplayName(peerRef.className, peerNode?.typeLabel),
         ...(hasBindingDetails(edge.binding) ? { binding: edge.binding } : {}),
       };
     });
@@ -254,14 +254,14 @@ const groups = computed<readonly RelationGroup[]>(() => {
     const kindEdges = edgesByKind.get(statusEntry.relationKind) ?? [];
     const meta = relationMetaById.get(statusEntry.relationKind);
     const derived = kindEdges[0]?.derived ?? meta?.derived;
-    const truncated = "truncated" in statusEntry ? Boolean((statusEntry as { truncated?: boolean }).truncated) : false;
     built.push({
       relationKind: statusEntry.relationKind,
-      label: relationDisplayName(statusEntry.relationKind, kindEdges[0]?.label),
+      label: relationDisplayName(statusEntry.relationKind, statusEntry.label || kindEdges[0]?.label),
       status: statusEntry.status,
       reason: statusEntry.reason,
       derived,
-      ...(truncated ? { truncated: true } : {}),
+      edgeCount: statusEntry.edgeCount ?? kindEdges.length,
+      truncated: "truncated" in statusEntry && Boolean(statusEntry.truncated),
       edges: toRows(kindEdges, derived),
     });
   }
@@ -274,6 +274,8 @@ const groups = computed<readonly RelationGroup[]>(() => {
       relationKind,
       label: relationDisplayName(relationKind, kindEdges[0]?.label),
       status: "ok",
+      edgeCount: kindEdges.length,
+      truncated: false,
       derived,
       edges: toRows(kindEdges, derived),
     });
@@ -308,9 +310,11 @@ const shownRelationKinds = computed<ReadonlySet<string> | null>(() =>
 
 function updateRelationFilter(ids: readonly string[]) {
   const unique = [...new Set(ids.filter((id) => id.length > 0))];
-  const next: PanelObjectValue[] | null = unique.length
-    ? unique.map((id) => ({ className: ONTOLOGY_RELATION_KIND, primaryKey: id }))
-    : null;
+  const port = member.projection.outputs.visibleRelationKinds ?? member.projection.inputs.visibleRelationKinds;
+  const items = port?.kind === "list" ? port.items : undefined;
+  const next = unique.length === 0 ? null
+    : items?.kind === "object" ? unique.map((id) => ({ className: items.objectType, primaryKey: id }))
+      : unique;
   visibleKindsParam.set(next);
   emit("update:visibleRelationKinds", next);
 }
@@ -347,25 +351,26 @@ const GROUP_STATUS_PRIORITY: Readonly<Record<PlatformGraphStatus, number>> = {
 const displayedGroups = computed<readonly RelationGroup[]>(() => {
   if (!props.collapseEmptyGroups) return filteredGroups.value;
   return filteredGroups.value
-    .filter((group) => group.edges.length > 0 || group.status !== "ok")
+    .filter((group) => group.edges.length > 0 || group.status !== "ok" || group.truncated)
     .sort((left, right) => GROUP_STATUS_PRIORITY[left.status] - GROUP_STATUS_PRIORITY[right.status]);
 });
 
 const collapsedEmptyGroups = computed<readonly RelationGroup[]>(() => {
   if (!props.collapseEmptyGroups) return [];
-  return filteredGroups.value.filter((group) => group.edges.length === 0 && group.status === "ok");
+  return filteredGroups.value.filter((group) => group.edges.length === 0 && group.status === "ok" && !group.truncated);
 });
 
 const relationSummary = computed(() => {
   const data = result.value;
   if (!data) return null;
   const allGroups = groups.value;
+  const truncated = allGroups.some((group) => group.truncated);
   const edgeCount = data.edges.length;
   const refused = allGroups.filter((group) => group.status === "refused");
   const failed = allGroups.filter((group) => group.status === "failed");
   const unavailable = allGroups.filter((group) => group.status === "unavailable");
-  const noNeighbors = edgeCount === 0 && refused.length === 0 && failed.length === 0 && unavailable.length === 0;
-  return { edgeCount, refused, failed, unavailable, noNeighbors };
+  const noNeighbors = !truncated && edgeCount === 0 && refused.length === 0 && failed.length === 0 && unavailable.length === 0;
+  return { edgeCount, truncated, refused, failed, unavailable, noNeighbors };
 });
 
 const hasSummaryNotices = computed(() => {
@@ -380,7 +385,7 @@ function formatSummaryKinds(items: readonly RelationGroup[]): string {
 
 const canSetStart = computed(() =>
   props.allowSetStart
-  || Boolean(panel.manifest.members[member.key]?.outputs?.start || member.projection.outputs?.start),
+  || Boolean(panel.manifest.members[member.key]?.outputs?.start),
 );
 
 const memberStatus = computed<"idle" | "loading" | "ready" | "forbidden" | "error">(() => {
@@ -392,7 +397,10 @@ const memberStatus = computed<"idle" | "loading" | "ready" | "forbidden" | "erro
 });
 
 useMemberOutput("status", () => memberStatus.value);
-useMemberOutput("edgeCount", () => (result.value ? result.value.edges.length : null));
+useMemberOutput("edgeCount", () => {
+  const summary = relationSummary.value;
+  return summary && !summary.truncated ? summary.edgeCount : null;
+});
 useMemberOutput("label", () => currentNodeLabel.value || null);
 
 let requestSeq = 0;
@@ -411,7 +419,7 @@ function load(target: PanelObjectValue | null) {
     if (seq !== requestSeq) return;
     manualLoading.value = false;
     if (state.status === "ready") {
-      manualResult.value = state.value as unknown as PlatformGraphNeighborsResult;
+      manualResult.value = state.value as unknown as RelationNeighbors;
     } else if (state.status === "forbidden") {
       manualResult.value = null;
       manualForbidden.value = true;
@@ -474,7 +482,7 @@ function statusText(status: PlatformGraphStatus): string {
           v-if="showSummary && relationSummary && !loading && !forbidden && !failure"
           class="sdk-object-relations-summary-count"
         >
-          {{ t("platform.relationsSummaryCount", { count: relationSummary.edgeCount }) }}
+          {{ t(relationSummary.truncated ? "platform.relationsSummaryTruncated" : "platform.relationsSummaryCount", { count: relationSummary.edgeCount }) }}
         </span>
       </header>
 
@@ -578,12 +586,12 @@ function statusText(status: PlatformGraphStatus): string {
                 <span class="sdk-object-relations-swatch" aria-hidden="true"></span>
                 <span>{{ group.derived ? t("platform.graphEdgeDerived") : t("platform.graphEdgeStored") }}</span>
               </span>
-              <span v-if="group.status === 'ok' && group.edges.length > 0" class="sdk-object-relations-count">
-                {{ group.edges.length }}
+              <span v-if="group.truncated || group.edges.length > 0" class="sdk-object-relations-count">
+                {{ group.truncated ? t("platform.relationsGroupTruncated", { count: group.edgeCount }) : group.edgeCount }}
               </span>
             </div>
 
-            <ul v-if="group.status === 'ok' && group.edges.length > 0" class="sdk-object-relations-edges">
+            <ul v-if="group.edges.length > 0" class="sdk-object-relations-edges">
               <li v-for="edge in group.edges" :key="edge.id" class="sdk-object-relations-edge">
                 <div class="sdk-object-relations-edge-main">
                   <span
@@ -644,7 +652,7 @@ function statusText(status: PlatformGraphStatus): string {
             </ul>
 
             <p
-              v-else
+              v-if="group.status !== 'ok' || group.edges.length === 0"
               class="sdk-object-relations-status"
               :data-status="group.status === 'ok' ? 'empty' : group.status"
             >

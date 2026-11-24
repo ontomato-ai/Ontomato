@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { ArrowDown, CircleAlert } from "lucide-vue-next";
+import { ArrowDown, CircleAlert, Clock } from "lucide-vue-next";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { ShellFeedbackPort } from "../types";
 import { shellContextKey } from "../context";
@@ -78,7 +78,7 @@ const empty = computed(
 const lastItem = computed(() => props.items.at(-1));
 /** A run is admitted but has produced no assistant message yet. */
 const waiting = computed(
-  () => props.busy && (props.pendingInput !== null || lastItem.value?.kind === "user"),
+  () => props.busy && (props.pendingInput !== null || (lastItem.value?.kind === "user" && !lastItem.value.queued)),
 );
 const lastUserKey = computed(() => [...props.items].reverse().find((item) => item.kind === "user")?.key ?? null);
 /** The question at the top of the latest turn, once the reader started one here. */
@@ -279,8 +279,12 @@ async function send(text: string) {
             <button type="button" @click="emit('retry')">{{ labels.retry }}</button>
           </div>
           <template v-for="item in items" :key="item.key">
-            <div v-if="item.kind === 'user'" class="user-turn" :data-pin="item.key === pinTarget || undefined">
+            <div v-if="item.kind === 'user'" class="user-turn" :class="{ queued: item.queued }" :data-pin="item.key === pinTarget || undefined">
               <div class="user-bubble">{{ item.answer ? labels.answered(written(item.text)) : written(item.text) }}</div>
+              <div v-if="item.queued" class="user-queued" role="status" aria-live="polite">
+                <Clock :size="12" aria-hidden="true" />
+                <span>{{ labels.queuedWaiting }}</span>
+              </div>
             </div>
             <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><ShellMarkdown v-if="item.markdownRunId" class="notification-markdown" :content="item.text" final :run-id="item.markdownRunId" /><span v-else>{{ item.text }}</span></div>
             <ShellResponse v-else :item="item" :session-id="sessionId" :feedback="feedback" />
@@ -391,7 +395,17 @@ async function send(text: string) {
 .history-more button:disabled { cursor: default; }
 .user-turn {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.user-queued {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 /* A new question starts a new visual group; streaming and pending messages keep the same geometry. */
 .thread > .response + .user-turn {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef, watch, type Component } from "vue";
+import { computed, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef, useAttrs, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState } from "@ontomato/foundation-ui/data-state";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
@@ -7,9 +7,12 @@ import { componentFor } from "../catalogue-components";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance, type MemberInputs } from "./direct";
 import { memberComponentId } from "./projection-element";
+import { declaredComponentProps, pickProjectionPlacementAttrs } from "./projection-attrs";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 import { useListRowSlot } from "./slot-context";
 import { useDataStateLabels } from "../base/data-state-labels";
+
+defineOptions({ inheritAttrs: false });
 
 const props = defineProps<{
   instance: DirectPanelInstance;
@@ -19,16 +22,16 @@ const props = defineProps<{
   inputs?: MemberInputs;
 }>();
 
+const attrs = useAttrs();
+
 const { t } = useI18n();
 const declaration = props.instance.direct.members[props.member];
 if (!declaration) throw new Error(`The panel declares no member '${props.member}'`);
 const listRowSlot = useListRowSlot();
 const isScoped = props.inputs !== undefined || listRowSlot !== null;
-const stopDrawn = isScoped ? () => {} : props.instance.markDrawn(props.member);
 let disposeScoped: (() => void) | undefined;
 onBeforeUnmount(() => {
   disposeScoped?.();
-  stopDrawn();
 });
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ component: Component; slot: ProjectionSlot; member: PanelMemberContext } | null>(null);
@@ -74,7 +77,6 @@ if (isScoped) {
       loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
     }
   }).catch((reason: unknown) => {
-    stopDrawn();
     failure.value = reason instanceof Error ? reason : new Error(String(reason));
   });
 }
@@ -96,15 +98,18 @@ provide(panelContextKey, directPanelContext(props.instance));
 provide(projectionKey, { slot: props.member, get projection() { return loaded.value!.slot.projection; }, get inputs() { return loaded.value!.member.inputs.value; } });
 provide(panelMemberKey, () => loaded.value!.member);
 /**
- * What the component takes as its own props: its configuration and the inputs it declares as props, such as a graph's
- * `selected`. The rest of its inputs it reads through its slot; passed down, they would land on its root element as
- * attributes (`selected="[object Object]"`).
+ * What the component takes as its own props: its configuration, the inputs it declares as props (such as a graph's
+ * `selected`), event listeners, and declared component props passed on `<Projection>` (such as `:disabled`). Any
+ * undeclared inputs or attributes are filtered out so they do not fall through as DOM attributes.
  */
 const bound = computed(() => {
   const { component, slot, member } = loaded.value!;
-  const options = component as { props?: readonly string[] | Record<string, unknown> };
-  const declared = new Set(Array.isArray(options.props) ? options.props : Object.keys(options.props ?? {}));
-  return Object.fromEntries(Object.entries({ ...slot.projection.config, ...member.inputs.value }).filter(([name]) => declared.has(name)));
+  const declared = declaredComponentProps(component);
+  const fromProjection = Object.fromEntries(
+    Object.entries({ ...slot.projection.config, ...member.inputs.value }).filter(([name]) => declared.has(name)),
+  );
+  const { listeners, props: placementProps } = pickProjectionPlacementAttrs(attrs, declared);
+  return { ...fromProjection, ...placementProps, ...listeners };
 });
 const labels = useDataStateLabels();
 </script>

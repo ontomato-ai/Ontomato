@@ -115,7 +115,6 @@ export function createBuilderModelReads(owner: AssistantOwner, viewer: Assistant
         method: "PUT",
         path: `${agentsPath}/models`,
         bodySchema: formJsonSchema(batchModelsPatch),
-        draftOperation: operation,
       },
     };
   }
@@ -144,7 +143,7 @@ export function createBuilderModelReads(owner: AssistantOwner, viewer: Assistant
       if (primaryKey === BUILDER_MODELS_FORM_KEY) return describeBatchForm(inputs);
       const agent = await readBuilderAgent(owner, id.parse(primaryKey));
       return describeModelPanelForm(owner.domainId, agent.modelSelection.modelId, inputs, {
-        method: "PUT", path: `${agentsPath}/${primaryKey}/model`, draftOperation: operation,
+        method: "PUT", path: `${agentsPath}/${primaryKey}/model`,
       }, viewer.locale, {
         label: displayName(agent.name),
         help: text("builderDescription"),
@@ -162,7 +161,7 @@ export function createBuilderModelReads(owner: AssistantOwner, viewer: Assistant
           path: "/name", label: nameLabel, valueSchema: formJsonSchema(builderAgentName),
           required: true, readOnly: false, control: { kind: "text", maxLength: 200 },
         }],
-        save: { method: "POST", path: agentsPath, bodySchema: formJsonSchema(createValues), draftOperation: operation },
+        save: { method: "POST", path: agentsPath, bodySchema: formJsonSchema(createValues) },
       };
     },
   };
@@ -235,17 +234,13 @@ export const builderModelOperations = [{
     panelFormTargetSchema.options[1],
   ]),
   inputSchema: saveInput, resultSchema: result,
-  draftOperation: () => operation,
   draftInput(input, target: PanelOperationTarget) {
     if (target.kind === "draft") return createValues.parse(saveInput.parse(input).values);
     if (target.primaryKey === BUILDER_MODELS_FORM_KEY) return submittedBatchValues(input);
     return modelSelectionWrite.parse(saveInput.parse(input).values);
   },
-  formInstructions: "For a new builder agent, submit its name; it starts on the domain default model. For the domain form ('all'), submit only changed agent IDs to a chat model reference or '@default'. For a single agent, select a chat model or null to return to the domain default.",
-  create: {
-    draftValues: values => createValues.parse(values),
-    createdObject: data => ({ objectType: BUILDER_AGENT, primaryKey: result.parse(data).id }),
-  },
+
+  create: true,
   async execute(host, target, input, intentId) {
     const { owner, credentials } = host.executor;
     await assertAppBuilderAccess(credentials);

@@ -13,7 +13,6 @@ import { workbenchI18n } from "../../../../i18n";
  * the board's own API and the platform's chart.
  */
 const api = vi.hoisted(() => ({ boards: [] as { id: string; name: string }[] }));
-vi.mock("../../../workbench/assistant-host", () => ({ createAssistantClient: () => ({ readPageDraft: async () => ({}) }) }));
 vi.mock("../../api", () => ({
   fetchDashboardList: async () => api.boards.map((board) => ({ ...board, createdAt: 0, updatedAt: 0 })),
   fetchDashboardLocalDetail: async (id: string) => ({ id, ownerId: "u1", name: id, createdAt: 0, updatedAt: 0, groups: [] }),

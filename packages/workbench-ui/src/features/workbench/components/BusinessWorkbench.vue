@@ -9,7 +9,7 @@ import {
   type DisplayHistory, type DisplayPage, type DisplayPageController, type DisplayView, type PageContext, type PageSelection,
   type ShellBottomEntry, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
-import { useLeaveConfirmation, usePageAccess, usePageAdmission, usePilotPage } from "@ontomato/platform-shell";
+import { useLeaveConfirmation, usePageAccess, usePageAdmission, usePilotPage, useUnsavedChanges } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
@@ -121,6 +121,11 @@ const display = useConversationDisplay({
   }),
   leave: { leaves: (address) => leave.leaves(address?.split("?")[0] ?? ""), confirm: () => leave.confirm() },
 });
+// Keep the platform unsaved-changes guard (route leaves and beforeunload) informed when a paired page reports dirty.
+useUnsavedChanges({
+  dirty: () => display.isDirty.value,
+  paths: () => [route.path],
+});
 // A native entry becomes resolvable beside the conversation when the reader's application catalog arrives.
 watch(
   () => {
@@ -157,8 +162,8 @@ const shell = ref<InstanceType<typeof AgentShell> | null>(null);
  * another application's routes. The pages the display opens beside the conversation never reach here.
  *
  * Any other page of the platform that the router can resolve opens at its real address, its query kept as it was
- * written, so a draft handoff's parameters travel with it; an address the router does not resolve is no page and stays
- * text. A host outside the platform (another scheme, another host) is never one of these.
+ * written; an address the router does not resolve is no page and stays text. A host outside the platform (another
+ * scheme, another host) is never one of these.
  */
 function pageLinks(href: string): (() => void) | null {
   const address = href.replace(/^#/, "");
@@ -461,7 +466,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
         @display-loaded="display.loaded"
         @display-dirty="display.dirty"
         @display-skill="display.skill"
-        @form-edited="display.formEdited"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>

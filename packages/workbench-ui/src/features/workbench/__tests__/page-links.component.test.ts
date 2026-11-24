@@ -12,9 +12,9 @@ import { linkOf, openLink } from "./shell";
 
 /*
  * An answer may link a page of the platform. The pages this assembly mounts beside a conversation open there; any other
- * page the router resolves opens at its real address, its query and draft handoff kept, so a link the agent wrote is
- * followed the way a reader would. An address the router does not resolve is not a page and stays text — the shell never
- * makes an arbitrary relative link clickable.
+ * page the router resolves opens at its real address, its query kept, so a link the agent wrote is followed the way a
+ * reader would. An address the router does not resolve is not a page and stays text — the shell never makes an
+ * arbitrary relative link clickable.
  */
 const i18n = workbenchI18n();
 const agents = vi.hoisted(() => [{ id: "11111111-1111-4111-8111-111111111111", name: "Assistant", description: "", icon: null, enabled: true }]);
@@ -87,9 +87,9 @@ async function openAt(): Promise<{ router: Router; wrapper: VueWrapper }> {
 }
 
 describe("the pages an answer links", () => {
-  it("opens a page of the platform at its own address, with the draft handoff it names", async () => {
+  it("opens a page of the platform at its own address, with its query parameters intact", async () => {
     const { router, wrapper } = await openAt();
-    const href = "#/ontology/knowledge?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json";
+    const href = "#/ontology/knowledge?tab=terms&keyword=order";
     const open = linkOf(wrapper, href)!;
     expect(open).toBeTypeOf("function");
 
@@ -98,7 +98,7 @@ describe("the pages an answer links", () => {
     expect(router.currentRoute.value.path).toBe(platformRoutes.knowledge.path);
     // The conversation the reader was in is left; the link's own parameters come with it, untouched.
     expect(router.currentRoute.value.query).toEqual({
-      draftSessionId: "s", draftRunId: "r", draftPath: "outputs/drafts/a.page-draft.json",
+      tab: "terms", keyword: "order",
     });
   });
 

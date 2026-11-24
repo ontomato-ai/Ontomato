@@ -68,15 +68,16 @@ export type PanelOwnerOperationDescriptor = z.infer<typeof panelOwnerOperationDe
 
 /** Combine the same declaration shown to authors with facts of the admitted runtime operation. */
 export function describePanelOperationFromDeclaration(
-  { id, target, ...staticFields }: PanelOperationDeclaration,
-  { handlerRef = id, slot, target: placedTarget, ...runtime }: Pick<PanelOwnerOperationDescriptor, "label" | "resultSchema" | "inspectImpact" | "unavailable"> & {
+  { id, target, inputSchema: declaredInputSchema, ...staticFields }: PanelOperationDeclaration,
+  { handlerRef = id, slot, target: placedTarget, inputSchema = declaredInputSchema, ...runtime }: Pick<PanelOwnerOperationDescriptor, "label" | "resultSchema" | "inspectImpact" | "unavailable"> & {
     handlerRef?: string;
     slot?: string;
     target?: PanelOwnerOperationDescriptor["target"];
+    inputSchema?: PanelOwnerOperationDescriptor["inputSchema"];
   },
 ): PanelOwnerOperationDescriptor {
   return panelOwnerOperationDescriptorSchema.parse({
-    ...staticFields, ...runtime, handlerRef,
+    ...staticFields, ...runtime, handlerRef, inputSchema,
     target: placedTarget ?? (target.source === "draft" ? { ...target, slot } : target),
   });
 }
@@ -146,14 +147,18 @@ export const panelReadOperationCallSchema = z.object({
 /** The JSON success body of a read. File-producing reads send bytes with attachment headers. */
 export const panelReadOperationJsonResultSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("markdown"), markdown: z.string() }).strict(),
-  z.object({ kind: z.literal("json"), value: runtimeJsonValueSchema }).strict(),
+  z.object({
+    kind: z.literal("json"),
+    value: runtimeJsonValueSchema,
+    truncation: z.object({ rowLimit: z.number().nullable(), hint: z.string().nullable() }).strict().optional(),
+  }).strict(),
 ]);
 export const panelReadOperationResultSchema = z.union([panelReadOperationJsonResultSchema, panelDownloadReceiptSchema]);
 export type PanelReadOperationResult = z.infer<typeof panelReadOperationResultSchema>;
 
 
 /** One call or a nonempty set of concrete calls belonging to the same operation and execution identity. */
-const panelBatchOperationCallSchema = panelOperationCallSchema.omit({ draft: true }).extend({
+const panelBatchOperationCallSchema = panelOperationCallSchema.extend({
   target: panelObjectIdentitySchema.extend({ kind: z.literal("object") }),
 });
 export const panelSingleInvocationSchema = z.object({ call: panelOperationCallSchema }).strict();

@@ -25,10 +25,7 @@ await mountPanel({
     const cursor = ref(null);
     const runsData = usePanelData("history", "runs", () => (cursor.value ? { cursor: cursor.value } : {}));
     const focusData = usePanelData("focus", "run");
-    const opEnable = usePanelOperation("opEnable", "setEnabled");
-    const opRunNow = usePanelOperation("opRunNow", "runNow");
-    const opDelete = usePanelOperation("opDelete", "delete");
-    const opRenew = usePanelOperation("renew", "renewCredential");
+    const opRenew = usePanelOperation("renew", "renewCredential", { entry: false });
     const renewalProblem = ref("");
 
     // Public search filter backed by declared panel state.
@@ -38,7 +35,7 @@ await mountPanel({
     });
     const schedulePage = ref(null);
     const editPane = ref(null);
-    // Draft links use the page state to open the owner's form before it checks the draft.
+    // Assistants use page state (`compose: "new"` or `compose: "edit"`) to open the owner's form before calling `fill_form`.
     const mode = computed(() => {
       if (values.value.compose === "new") return appsProblem.value ? "view" : "create";
       return values.value.compose === "edit" && selected.value ? "edit" : "view";
@@ -54,7 +51,7 @@ await mountPanel({
         if (mode.value === "edit" && editPane.value === pane) pane.focus();
       });
     }, { flush: "post" });
-    const busy = ref(new Set());
+    const preparingBusy = ref(new Set());
     const runs = ref([]);
     const nextCursor = ref(null);
     const expanded = ref(new Set());
@@ -306,18 +303,8 @@ await mountPanel({
     function refusalText(outcome) {
       return outcome.message || outcome.code || t("message.unconfirmed");
     }
-    async function act(id, work) {
-      if (busy.value.has(id)) return;
-      busy.value = new Set(busy.value).add(id);
-      try {
-        await work();
-      } catch (error) {
-        notify({ kind: "error", text: t("message.refused", { reason: error?.message ?? String(error) }) });
-      } finally {
-        const next = new Set(busy.value);
-        next.delete(id);
-        busy.value = next;
-      }
+    function notifyActionError(error) {
+      notify({ kind: "error", text: t("message.refused", { reason: error?.message ?? String(error) }) });
     }
     function refused(outcome) {
       if (outcome.kind === "cancel") return;
@@ -329,20 +316,40 @@ await mountPanel({
       }
       notify({ kind: "error", text: t("message.refused", { reason: refusalText(outcome) }) });
     }
-    function toggle(row, enabled) {
-      return act(row.primaryKey, async () => {
-        const rev = await ready(row.primaryKey);
-        const outcome = outcomeOf(await opEnable.run({ enabled, revision: rev }));
+    // Custom buttons/switches/menus for the selected task exist whenever the task is shown in the detail pane or card list.
+    const canOperateSelected = computed(() => Boolean(
+      selectedId.value
+      && (
+        (mode.value === "view" && detailRow.value?.primaryKey === selectedId.value)
+        || shown.value.some((row) => row.primaryKey === selectedId.value)
+      ),
+    ));
+    const isSelectedBusy = (self) => Boolean(
+      selectedId.value && (
+        preparingBusy.value.has(selectedId.value)
+        || (self !== "enable" && opEnable.running.value)
+        || (self !== "runNow" && opRunNow.running.value)
+        || (self !== "delete" && opDelete.running.value)
+      ),
+    );
+    const opEnable = usePanelOperation("opEnable", "setEnabled", {
+      available: canOperateSelected,
+      busy: () => isSelectedBusy("enable"),
+      onSettled(receipt, context) {
+        const outcome = outcomeOf(receipt);
         if (outcome.kind !== "success") return refused(outcome);
         const pause = outcome.data?.pause;
+        const enabled = Boolean(context.input.enabled);
         if (enabled && pause) notify({ kind: "warning", text: t("message.stillPaused", { reason: pause.message }) });
         else notify({ kind: "success", text: t(enabled ? "message.enabled" : "message.disabled") });
-      });
-    }
-    function runNow(row) {
-      return act(row.primaryKey, async () => {
-        await ready(row.primaryKey);
-        const outcome = outcomeOf(await opRunNow.run({}));
+      },
+      onError: notifyActionError,
+    });
+    const opRunNow = usePanelOperation("opRunNow", "runNow", {
+      available: canOperateSelected,
+      busy: () => isSelectedBusy("runNow"),
+      onSettled(receipt, context) {
+        const outcome = outcomeOf(receipt);
         if (outcome.kind === "success") {
           const run = outcome.data ?? {};
           const reason = runReason(run.error);
@@ -357,22 +364,72 @@ await mountPanel({
         if (outcome.code === "TASK_RUNNING" && active) {
           instance.state.set("runId", active);
           notify({ kind: "info", text: t("message.runActive") });
-          showRecords(row.primaryKey);
+          const targetId = context.target && !Array.isArray(context.target) && context.target.kind === "object"
+            ? context.target.primaryKey
+            : selectedId.value;
+          if (targetId) showRecords(targetId);
           return;
         }
         refused(outcome);
-      });
-    }
+      },
+      onError: notifyActionError,
+    });
     // The platform asks the reader to confirm a delete, with the owner's impact (the task and its run records).
-    function askDelete(row) {
-      return act(row.primaryKey, async () => {
-        const rev = await ready(row.primaryKey);
-        const outcome = outcomeOf(await opDelete.run({ revision: rev }));
+    const opDelete = usePanelOperation("opDelete", "delete", {
+      available: canOperateSelected,
+      busy: () => isSelectedBusy("delete"),
+      onSettled(receipt) {
+        const outcome = outcomeOf(receipt);
         if (outcome.kind !== "success") return refused(outcome);
         setMode("view");
         instance.state.setState({ selectedTask: null, runId: null });
         notify({ kind: "success", text: outcome.message });
-      });
+      },
+      onError: notifyActionError,
+    });
+    const busy = computed(() => {
+      const ids = new Set(preparingBusy.value);
+      if (selectedId.value && (opEnable.running.value || opRunNow.running.value || opDelete.running.value)) {
+        ids.add(selectedId.value);
+      }
+      return ids;
+    });
+    async function act(id, prepareWork, runWork) {
+      if (busy.value.has(id)) return;
+      preparingBusy.value = new Set(preparingBusy.value).add(id);
+      let prepared;
+      try {
+        prepared = await prepareWork();
+      } catch (error) {
+        notifyActionError(error);
+        return;
+      } finally {
+        const next = new Set(preparingBusy.value);
+        next.delete(id);
+        preparingBusy.value = next;
+      }
+      await runWork(prepared);
+    }
+    function toggle(row, enabled) {
+      return act(
+        row.primaryKey,
+        () => ready(row.primaryKey),
+        (rev) => opEnable.run({ enabled, revision: rev }),
+      );
+    }
+    function runNow(row) {
+      return act(
+        row.primaryKey,
+        () => ready(row.primaryKey),
+        () => opRunNow.run({}),
+      );
+    }
+    function askDelete(row) {
+      return act(
+        row.primaryKey,
+        () => ready(row.primaryKey),
+        (rev) => opDelete.run({ revision: rev }),
+      );
     }
     function edit(row) {
       select(row.primaryKey);
@@ -404,11 +461,6 @@ await mountPanel({
       cancelForm();
       void nextTick(() => schedulePage.value?.querySelector(".card.is-selected .card-select")?.focus());
     }
-    // A draft an agent prepared opens in the form that took it; the reader saves or discards it there.
-    watch(instance.draft, (draft) => {
-      if (!draft) return;
-      setMode(draft.slot === "newForm" ? "create" : "edit");
-    }, { immediate: true });
 
     const selectedRow = computed(() => rows.value.find((row) => row.primaryKey === selectedId.value) ?? detailRow.value);
 

@@ -15,7 +15,8 @@ export type SkillPackage = z.infer<typeof runtimeRegisterSkillRequestSchema>;
 
 /** Entry facts verified by the host for this publication. */
 export interface SkillPackageContext {
-  readonly entryInputKeys: readonly string[];
+  readonly entryInputKeys?: readonly string[];
+  readonly admittedEntrances?: readonly PageSkillEntrance[];
 }
 
 /** The verified domain and reader for provider-owned content. */

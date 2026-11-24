@@ -40,7 +40,7 @@ const description = {
   fields: [field("/title", "Title", { kind: "text" }), field("/frequency", "Frequency", { kind: "frequency" })],
   values: { title: "Weekly knowledge check", frequency: { kind: "daily", time: "09:00" } },
   errors: [], revision: 1,
-  save: { method: "PUT", path: "/schedules/tasks/:id", bodySchema: {}, draftOperation: "schedule.update" },
+  save: { method: "PUT", path: "/schedules/tasks/:id", bodySchema: {} },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 const saveDescriptor = {
@@ -75,7 +75,7 @@ async function pick(scope: Element, list: string, label: string) {
 it("edits an owner's frequency as the scheduled task page does, each kind with its own values", async () => {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "schedules", url: () => "/schedules", label: () => "Schedules", initial: { task },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready(description)),
   });

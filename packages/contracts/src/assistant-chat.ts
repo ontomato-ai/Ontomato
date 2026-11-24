@@ -11,7 +11,6 @@ import {
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
 import { defaultAgentSchema } from "./default-agent";
-import { pageDraftTargetSchema } from "./page-draft";
 import { AGENT_DEFINITION } from "./platform-object-types";
 import { skillCatalogDiagnosticsSchema } from "./skills";
 export const assistantAgentDefinitionSchema = agentHostAgentSchema.extend({
@@ -69,10 +68,10 @@ export const assistantAgentPanelValuesSchema = assistantAgentInputSchema.omit({ 
   enabledMcpServiceIds: assistantAgentInputSchema.shape.enabledMcpServiceIds.removeDefault(),
 });
 export const assistantAgentPanelUpdateValuesSchema = assistantAgentPanelValuesSchema.partial({ skills: true });
-const agentDraftTargetSchema = pageDraftTargetSchema.extend({ objectType: z.literal(AGENT_DEFINITION) });
+const agentValidationTargetSchema = z.object({ objectType: z.literal(AGENT_DEFINITION) }).strict();
 export const assistantAgentValidationSchema = z.union([
-  z.object({ target: agentDraftTargetSchema.extend({ id: z.string().uuid() }), form: assistantAgentUpdateInputSchema }).strict(),
-  z.object({ target: agentDraftTargetSchema.omit({ id: true }), form: assistantAgentInputSchema }).strict(),
+  z.object({ target: agentValidationTargetSchema.extend({ id: z.string().uuid() }), form: assistantAgentUpdateInputSchema }).strict(),
+  z.object({ target: agentValidationTargetSchema, form: assistantAgentInputSchema }).strict(),
 ]);
 export type AssistantAgentValidation = z.infer<typeof assistantAgentValidationSchema>;
 export const agentExecutionOptionsSchema = z.object({

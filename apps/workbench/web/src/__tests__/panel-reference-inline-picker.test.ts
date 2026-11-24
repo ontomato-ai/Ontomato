@@ -67,7 +67,6 @@ function mountPanel(
     url: () => "/picker",
     label: () => "Picker",
     initial: options.initial as never,
-    recordDraftCreated: async () => {},
     text: createPanelText(options.messages ?? {}, localeRef, "en"),
     ...noOperations,
     readProjection: async (id) => projections[id]!,
@@ -188,7 +187,7 @@ it("keeps form field mode intact when formField is declared and renders nothing 
         values: { model: "openai/gpt" },
         errors: [],
         revision: 1,
-        save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: "agent.update" },
+        save: { method: "PUT", path: "/agents/:id", bodySchema: {} },
       });
     },
     {
@@ -423,6 +422,58 @@ it("inline options mode supports remote search, resolves held unavailable items,
   });
 });
 
+it.each([1, 21])("initially displays the owner's label for option %i", async (index) => {
+  const picker: DirectProjection = {
+    ...meta,
+    id: "user-picker",
+    name: "User picker",
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: {},
+    outputs: { selected: { kind: "object", objectType: USER } },
+    config: {},
+    data: {
+      options: { source: { type: { kind: "PlatformObjectType", id: USER } }, read: "options", params: {} },
+      selected: { source: { type: { kind: "PlatformObjectType", id: USER } }, read: "resolve", params: {} },
+    },
+  };
+  const manifest: DirectPanelManifest = {
+    state: {
+      user: { type: { kind: "object", objectType: USER }, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      picker: { target: { projectionId: picker.id }, outputs: { selected: { state: "user" } } },
+    },
+  };
+  const users = Array.from({ length: 21 }, (_, i) => ({
+    primaryKey: `u-${i + 1}`,
+    value: `u-${i + 1}`,
+    label: `User ${i + 1}`,
+  }));
+  const selected = users[index - 1]!;
+  const { container, reads } = mountPanel(
+    manifest,
+    { [picker.id]: picker },
+    (request) => {
+      if (request.dataName === "options") return ready({ options: users.slice(0, 20) });
+      if (request.dataName === "selected") {
+        const values = request.runtimeParams?.values as string[];
+        return ready({
+          options: users.filter((user) => values.includes(user.value)).map((user) =>
+            user === users[0] ? { ...user, label: "Different resolved label" } : user,
+          ),
+        });
+      }
+      return { status: "empty" };
+    },
+    { initial: { user: { className: USER, primaryKey: selected.primaryKey } } },
+  );
+
+  await vi.waitFor(() => {
+    expect(container.querySelector(".sdk-inline-reference-picker .el-select__selected-item:not(.is-hidden)")?.textContent?.trim()).toBe(selected.label);
+  });
+  if (index === 1) expect(reads.some((request) => request.dataName === "selected")).toBe(false);
+});
+
 it("disables inline picker with readable tooltip when rows or options data is forbidden or errors", async () => {
   const rowsProjection: DirectProjection = {
     ...meta,
@@ -494,5 +545,169 @@ it("disables inline picker with readable tooltip when rows or options data is fo
     expect(root?.getAttribute("data-state")).toBe("error");
     expect(root?.getAttribute("title")).toBe("Option catalogue offline");
     expect(root?.querySelector(".el-select__wrapper")?.classList.contains("is-disabled")).toBe(true);
+  });
+});
+
+it("inline paged rows mode resolves a selection outside page 1 and forwards search to the owner", async () => {
+  const teacherPicker: DirectProjection = {
+    ...meta,
+    id: "teacher-picker",
+    name: "Teacher picker",
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: { selected: { kind: "object", objectType: "Teacher" } },
+    outputs: { selected: { kind: "object", objectType: "Teacher" } },
+    config: { placeholder: "Pick teacher", clearable: true },
+    data: {
+      rows: { source: { type: { kind: "ObjectType", id: "Teacher" } }, read: "query", params: {} },
+      selected: { source: { object: { input: "selected" } }, read: "record", params: {} },
+    },
+  };
+  const manifest: DirectPanelManifest = {
+    state: {
+      teacher: { type: { kind: "object", objectType: "Teacher" }, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      teacherPicker: {
+        target: { projectionId: teacherPicker.id },
+        inputs: { selected: { state: "teacher" } },
+        outputs: { selected: { state: "teacher" } },
+      },
+    },
+  };
+
+  const allTeachers = Array.from({ length: 25 }, (_, i) => ({
+    primaryKey: `t-${i + 1}`,
+    className: "Teacher",
+    label: `Teacher ${i + 1}`,
+    subtitle: `Dept ${(i % 3) + 1}`,
+    fields: {},
+  }));
+
+  const { container, reads, instance } = mountPanel(
+    manifest,
+    { [teacherPicker.id]: teacherPicker },
+    (request) => {
+      if (request.dataName === "selected") {
+        const selected = request.inputs.selected as { primaryKey: string };
+        return ready(allTeachers.find((row) => row.primaryKey === selected.primaryKey));
+      }
+      const search = String((request.runtimeParams as Record<string, unknown> | undefined)?.search ?? "").trim();
+      const matched = search
+        ? allTeachers.filter((row) => row.label.toLowerCase().includes(search.toLowerCase()))
+        : allTeachers;
+      return ready({ rows: matched.slice(0, 20), total: matched.length });
+    },
+    { initial: { teacher: { className: "Teacher", primaryKey: "t-21" } } },
+  );
+
+  await vi.waitFor(() => {
+    expect(container.querySelector(".sdk-inline-reference-picker .el-select__selected-item:not(.is-hidden)")?.textContent?.trim()).toBe("Teacher 21");
+  });
+  instance.state.set("teacher", null);
+
+  // Open dropdown and type "Teacher 21" -> must forward `search` to the owner's paged query read.
+  const wrapper = container.querySelector<HTMLElement>(".sdk-inline-reference-picker .el-select__wrapper")!;
+  wrapper.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  const input = await vi.waitFor(() => {
+    const el = container.querySelector<HTMLInputElement>(".sdk-inline-reference-picker input.el-select__input");
+    if (!el) throw new Error("Filter input not found");
+    return el;
+  });
+  input.value = "Teacher 21";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+
+  await vi.waitFor(() => {
+    const searchRead = reads.find(
+      (r) => "dataName" in r && r.dataName === "rows" && (r.runtimeParams as Record<string, unknown> | undefined)?.search === "Teacher 21",
+    );
+    expect(searchRead).toBeTruthy();
+  });
+
+  // Teacher 21 returned by owner appears in dropdown and can be selected.
+  const teacher21Option = await vi.waitFor(() => {
+    const found = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+      .find((el) => el.textContent?.includes("Teacher 21"));
+    if (!found) throw new Error("Teacher 21 option not found");
+    return found;
+  });
+  teacher21Option.click();
+
+  await vi.waitFor(() => {
+    expect(instance.state.values.value.teacher).toEqual({ className: "Teacher", primaryKey: "t-21" });
+    expect(container.querySelector(".sdk-inline-reference-picker .el-select__selected-item:not(.is-hidden)")?.textContent?.trim()).toBe("Teacher 21");
+  });
+});
+
+it("groups inline rows by a generic record field (groupBy) preserving owner order and local filtering", async () => {
+  const groupedProjection: DirectProjection = {
+    ...meta,
+    id: "grouped-object-picker",
+    name: "Grouped object picker",
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: {},
+    outputs: { selected: { kind: "object", objectType: OBJECT_TYPE } },
+    config: { placeholder: "Pick subject", groupBy: "department" },
+    data: {
+      rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} },
+    },
+  };
+  const manifest: DirectPanelManifest = {
+    state: {
+      subject: { type: { kind: "object", objectType: OBJECT_TYPE }, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      picker: {
+        target: { projectionId: groupedProjection.id },
+        outputs: { selected: { state: "subject" } },
+      },
+    },
+  };
+
+  const { container, reads, instance } = mountPanel(manifest, { [groupedProjection.id]: groupedProjection }, () =>
+    ready([
+      { className: OBJECT_TYPE, primaryKey: "t-1", label: "Alice", fields: { department: "Mathematics" } },
+      { className: OBJECT_TYPE, primaryKey: "t-2", label: "Bob", fields: { department: "Physics" } },
+      { className: OBJECT_TYPE, primaryKey: "t-3", label: "Carol", fields: { department: "Mathematics" } },
+    ]),
+  );
+
+  await vi.waitFor(() => {
+    expect(container.querySelector(".sdk-inline-reference-picker")?.getAttribute("data-state")).toBe("ready");
+  });
+  expect(reads).toHaveLength(1);
+
+  const wrapper = container.querySelector<HTMLElement>(".sdk-inline-reference-picker .el-select__wrapper")!;
+  wrapper.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+  await vi.waitFor(() => {
+    const groupTitles = [...document.querySelectorAll<HTMLElement>(".el-select-group__title")].map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(groupTitles).toEqual(["Mathematics", "Physics"]);
+  });
+
+  const groups = [...document.querySelectorAll<HTMLElement>(".el-select-group__wrap")];
+  expect(groups[0]?.textContent).toContain("Alice");
+  expect(groups[0]?.textContent).toContain("Carol");
+  expect(groups[1]?.textContent).toContain("Bob");
+
+  // Local filter narrows visible groups and items without issuing extra reads.
+  const input = container.querySelector<HTMLInputElement>(".sdk-inline-reference-picker input.el-select__input")!;
+  input.value = "Bob";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => {
+    const visibleTitles = [...document.querySelectorAll<HTMLElement>(".el-select-group__title")].map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(visibleTitles).toEqual(["Physics"]);
+  });
+  expect(reads).toHaveLength(1);
+
+  const bobItem = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")].find((el) =>
+    el.textContent?.includes("Bob"),
+  )!;
+  bobItem.click();
+  await vi.waitFor(() => {
+    expect(instance.state.values.value.subject).toEqual({ className: OBJECT_TYPE, primaryKey: "t-2" });
   });
 });

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { installedPanelSdk } from "./current-sdk.mjs";
 import { panelRegistrationRecords, requireApplicationId, requireDomainProductId } from "./panel-registration.mjs";
 
 function parseJson(file, source) {
@@ -280,10 +282,14 @@ async function workspaceDefinition(
 function checkOperations(id, projection, typeTable, placements, state, checks) {
   for (const [name, binding] of Object.entries(projection.operations ?? {})) {
     const { id: operationId, kind } = binding.operation;
-    const declarations = Object.entries(typeTable.objectTypes).flatMap(([type, owner]) => {
+    const typedDeclarations = Object.entries(typeTable.objectTypes).flatMap(([type, owner]) => {
       if (kind !== (type.startsWith("platform:") ? "PlatformOperation" : "Action")) return [];
       return (owner.operations ?? []).filter(operation => operation.id === operationId).map(operation => [type, operation]);
     });
+    const globalDeclarations = kind === "Action"
+      ? (typeTable.operations ?? []).filter(operation => operation.id === operationId).map(operation => [undefined, operation])
+      : [];
+    const declarations = [...typedDeclarations, ...globalDeclarations];
     const label = `operation ${name} (${operationId})`;
     if (declarations.length === 0) throw new Error(`projection ${id}: ${label} is not declared in the type table`);
     const matched = declarations.filter(([type, operation]) => checks.projectionOperationTargetMatches(projection, binding, operation, type));
@@ -533,4 +539,48 @@ export async function checkPanelWorkspace(directory, {
     }
   }
   return { status: "valid", version, ...(digest && { digest }), unchecked };
+}
+
+export function describePanelType(typeTable, id, readName = null) {
+  const { objectTypes, resultSchemas, operations: topLevelOperations = [] } = typeTable;
+  if (!Object.hasOwn(objectTypes, id)) {
+    throw new Error(`Type ${id} is not listed in the author's type table`);
+  }
+  const { reads = {}, ...metadata } = objectTypes[id];
+  const describe = read => ({ ...read, resultSchema: resultSchemas[read.result] });
+  if (readName !== null) {
+    if (!Object.hasOwn(reads, readName)) {
+      throw new Error(`Type ${id} has no read '${readName}'`);
+    }
+    return { id, read: readName, ...describe(reads[readName]) };
+  }
+  const targetlessOperations = topLevelOperations
+    .filter(operation => Array.isArray(operation.affects) && operation.affects.includes(id))
+    .map(operation => ({ ...operation, targetless: true, callTarget: null }));
+  const result = {
+    id,
+    reads: Object.fromEntries(Object.entries(reads).map(([name, read]) => [name, describe(read)])),
+    ...metadata,
+  };
+  if (targetlessOperations.length > 0 || !id.startsWith("platform:") || topLevelOperations.length > 0) {
+    result.targetlessOperations = targetlessOperations;
+    result.targetlessOperationsHint = targetlessOperations.length > 0
+      ? 'Targetless operations (target.source: "none", call with target: null) whose affects include this type. Run `panel type --all` to list all top-level targetless operations.'
+      : "No top-level targetless operations declare this type in affects. Run `panel type --all` to list all top-level targetless operations.";
+  }
+  return result;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const [, , directory, sdkFlag, sdkDirectory, typeFlag, typeTableFile, ...extra] = process.argv;
+  if (!directory || sdkFlag !== "--sdk-dir" || !sdkDirectory || typeFlag !== "--type-table" || !typeTableFile || extra.length) {
+    throw new Error("Usage: node panel-check.mjs <panel-directory> --sdk-dir <installed-release> --type-table <type-table.json>");
+  }
+  const sdk = await installedPanelSdk(sdkDirectory);
+  const typeTable = sdk.checks.platformTypeTableResponseSchema.parse(await readJson(typeTableFile));
+  const { unchecked } = await checkPanelWorkspace(directory, { ...sdk, typeTable });
+  if (unchecked.length) {
+    throw new Error(`${directory}: unchecked references: ${JSON.stringify(unchecked)}`);
+  }
+  console.log(`${directory}: valid (0 errors, 0 unchecked references)`);
 }

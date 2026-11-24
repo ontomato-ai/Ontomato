@@ -29,7 +29,6 @@ it("clears child selection atomically when switching parent and carries child-ob
     url: () => "/applications/app-test/skills",
     label: () => "Skills",
     initial: { selectedSkill: skill("skill-1"), selectedFile: file },
-    recordDraftCreated: async () => {},
     readProjection: async () => { throw new Error("The instance declares no projection"); },
   });
   instance.nameObjects(SKILL, [{ primaryKey: "skill-1", label: "Skill 1" }]);

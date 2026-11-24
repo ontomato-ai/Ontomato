@@ -25,7 +25,6 @@ import type {PanelObjectChange} from './panel-host';
 import type {CandidatePanelSource,ProductPanelReadSource} from '@ontomato/contracts/panel-host';
 import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
 import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
-import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
 import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
 import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema,type PanelHumanOperationConfirmation,type PanelUseRef} from '@ontomato/contracts/panel-agent';
 import type {PanelOperationImpact} from '@ontomato/contracts/panel-operations';
@@ -41,8 +40,8 @@ const publishedFrames=new WeakMap<object,string>();
  * One panel instance's frame, in a panel application (`entry.renderer` is `panels`) or in an author's candidate preview.
  * Such an application has no published record and no build of its own: its pages are use relations of shared panels. Its
  * frame is narrowed by what the panel declares, as a published application's frame is by its publication: the
- * projections its declaration names, the requests the SDK clients their bindings reach send
- * (`@ontomato/contracts/panel-client-requests`), and the drafts written for its page. Nothing else leaves it.
+ * projections its declaration names and the requests the SDK clients their bindings reach send
+ * (`@ontomato/contracts/panel-client-requests`). Nothing else leaves it.
  */
 interface PanelFrame {
   /**
@@ -55,7 +54,7 @@ interface PanelFrame {
    * refuses its requests, navigations and mounts and closes its streams, until its host has checked the page again.
    */
   open: boolean;
-  /** The use relation's page key: a draft this frame reads must have been written for it. */
+  /** The use relation's page key. */
   pageKey: string;
   /**
    * For a registered panel, the application use the frame shows and the page's port for what changed; an author's
@@ -76,11 +75,6 @@ interface PanelFrame {
    */
   bindings: Map<string,readonly string[]|null>;
   /**
-   * The create drafts this frame has read for its page, as `<session>/<run>/<path>`: the only drafts whose created object
-   * it may record after the reader's first save.
-   */
-  createDrafts: Set<string>;
-  /**
    * The projections this frame has read as MetricCharts, by ID. Only their chart sources are this frame's to read or
    * redraw; the owner still checks use and edit.
    */
@@ -99,9 +93,6 @@ interface PanelFrame {
 const panelFrames=new WeakMap<object,PanelFrame>();
 const PANEL_READ='/product-panels/read';
 const PROJECTION_READ=/^\/product-projections\/([^/?]+)$/;
-const DRAFT_READ=/^\/assistant\/sessions\/([^/?]+)\/runs\/([^/?]+)\/page-draft\?([^#]*)$/;
-const DRAFT_CREATED=/^\/assistant\/sessions\/([^/?]+)\/runs\/([^/?]+)\/page-draft\/created$/;
-const draftKey=(session:string,run:string,path:string)=>`${decodeURIComponent(session)}/${decodeURIComponent(run)}/${path}`;
 const executionListeners = new WeakMap<object, Set<(context: AppExecutionContext) => void>>();
 const frameInsets = new WeakMap<object, AppFrameInsets>();
 const insetListeners = new WeakMap<object, Set<(insets: AppFrameInsets) => void>>();
@@ -184,7 +175,7 @@ type PanelDeclaration = { pageKey: string; manifest: PanelManifest };
 
 function registerDeclaredFrame(source: object, bridgeIdentity: string, panel: PanelDeclaration, context: AppExecutionContext, open: boolean, readSource: ProductPanelReadSource, registered?: PanelFrame["registered"]) {
   const memberProjections=new Map(Object.entries(panel.manifest.members).flatMap(([member,{target}])=>'projectionId' in target?[[member,target.projectionId] as const]:[]));
-  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,registered,memberProjections,conversationEntries:new Map(),bindings:new Map([...memberProjections.values()].map(id=>[id,null])),createDrafts:new Set(),charts:new Set(),readSource};
+  const frame:PanelFrame={bridgeIdentity,open,pageKey:panel.pageKey,registered,memberProjections,conversationEntries:new Map(),bindings:new Map([...memberProjections.values()].map(id=>[id,null])),charts:new Set(),readSource};
   panelFrames.set(source,frame);
   const binding=registerFrame(source,context);
   return {
@@ -222,15 +213,10 @@ function admitPanelRequest(panel:PanelFrame,method:string,path:string,service:st
   if(service===''&&method==='GET'){
     const projection=PROJECTION_READ.exec(path);
     if(projection&&panel.bindings.has(decodeURIComponent(projection[1]!)))return;
-    if(DRAFT_READ.test(path))return;
   }
   if(chartProjectionSourceSends(panel.charts,method,service,path))return;
   // A request about one object of a binding (the metric a MetricView binding names) is checked against its JSON body.
   const decoded:unknown=typeof body==='string'&&body?JSON.parse(body):undefined;
-  // The reader's first save of a create draft this frame read for its page records the object it created on that draft.
-  const created=service===''&&method==='POST'?DRAFT_CREATED.exec(path):null;
-  const record=created?pageDraftCreatedSchema.safeParse(decoded):null;
-  if(record?.success&&panel.createDrafts.has(draftKey(created![1]!,created![2]!,record.data.path)))return;
   const bindings=[...panel.bindings.values()].flatMap(keys=>keys??[]);
   if(!clientSends(bindings,method,service,path,decoded))throw new Error("Outside what this panel's projections declare");
 }
@@ -244,7 +230,7 @@ function readAsFrame(panel:PanelFrame,body:BodyInit|null|undefined){
 
 /**
  * What a panel's frame learns from a read it made: a projection's current binding, which admits the requests of the
- * client it reaches, and a draft, which is handed over only when it was written for this frame's page.
+ * client it reaches.
  */
 async function relayToPanel(panel:PanelFrame,method:string,path:string,service:string,response:Response){
   if(!response.ok||service!==''||method!=='GET')return response;
@@ -260,11 +246,6 @@ async function relayToPanel(panel:PanelFrame,method:string,path:string,service:s
     else panel.conversationEntries.delete(id);
     return response;
   }
-  const read=DRAFT_READ.exec(path);
-  if(!read)return response;
-  const draft=pageDraftReadSchema.parse(await response.clone().json());
-  if(draft.pageKey!==panel.pageKey)throw new Error('This draft was written for another page');
-  if(draft.target.id===undefined)panel.createDrafts.add(draftKey(read[1]!,read[2]!,new URLSearchParams(read[3]).get('path')!));
   return response;
 }
 /** The composers shown now, in the order they were shown; the last one is the page's. */
@@ -363,7 +344,7 @@ function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirma
   const file=confirmation.kind==='impact'&&confirmation.upload
     ?[h('p',t('platform.confirmUploadFile',{name:confirmation.upload.name,size:panelUploadSize(confirmation.upload.size,locale.value)}))]:[];
   const message=h('div',confirmation.kind==='impact'?[...file,...impact(confirmation.impact)]
-    :[...names(confirmation.targets),...(confirmation.impact?impact(confirmation.impact):[])]);
+    :[...names(confirmation.targets),...(confirmation.skippedSummary?[h('p',confirmation.skippedSummary)]:[]),...(confirmation.impact?impact(confirmation.impact):[])]);
   return confirmDanger(message,label,{confirmButtonText:label,cancelButtonText:t('common.cancel')});
 }
 function executionContext(source: object) {

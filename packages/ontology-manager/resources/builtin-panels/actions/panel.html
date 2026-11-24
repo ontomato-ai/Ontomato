@@ -1,8 +1,8 @@
 <!--
   Actions: catalog table and selected action details (definition form, derived definition, and code explanation)
   composed purely from official SDK projections.
-  There is no blank manual creation: the new-action ConversationEntry opens this page's agent input; once the owner
-  adopts the agent's definition it arrives as a page draft in ObjectForm for the reader to check and save.
+  There is no blank manual creation: the new-action ConversationEntry opens this page's agent input; the agent opens
+  create mode via `present`, fills the live `ObjectForm` via `fill_form`, and submits via `page_action` when requested.
 -->
 <style>
   [v-cloak] { display: none; }
@@ -92,13 +92,13 @@
           <projection slot="newAction"></projection>
         </template>
         <template #batch-actions>
-          <projection slot="setStatus" @done="onStatusDone"></projection>
+          <projection slot="setStatus"></projection>
         </template>
       </projection>
     </section>
 
     <!-- Details: selected action header, definition form, derived definition tables, and annotated code explanation. -->
-    <section class="ac-detail" v-show="detailVisible">
+    <section class="ac-detail" v-if="detailVisible">
       <div class="ac-detail-head">
         <sdk-button size="small" text @click="back">{{ t("back") }}</sdk-button>
         <projection v-if="selected" slot="header" class="ac-detail-header">
@@ -123,8 +123,8 @@
         </button>
       </div>
 
-      <!-- Definition tab: owner-declared ObjectForm for viewing/editing or accepting an agent draft. -->
-      <projection slot="form" v-show="activeTab === 'definition'" @saved="onFormSaved"></projection>
+      <!-- Definition tab: owner-declared ObjectForm for viewing, editing, or agent-driven creation via fill_form. -->
+      <projection slot="form" v-show="activeTab === 'definition'" @saved="onFormSaved" @discarded="onFormDiscarded" @cancel="onFormDiscarded"></projection>
 
       <!-- Derived definition tab: summary, grouped effects, selectable parameters, and submission conditions. -->
       <section class="ac-section" v-show="activeTab === 'derived'">
@@ -132,13 +132,13 @@
         <projection slot="derivedSummary"></projection>
 
         <h3>{{ t("effects") }}</h3>
-        <projection slot="derivedEffects"></projection>
+        <projection slot="derivedEffects" @navigate-child="onNavigateChild"></projection>
 
         <h3>{{ t("parameters") }}</h3>
-        <projection slot="derivedParameters"></projection>
+        <projection slot="derivedParameters" @navigate-child="onNavigateChild"></projection>
 
         <h3>{{ t("conditions") }}</h3>
-        <projection slot="derivedConditions"></projection>
+        <projection slot="derivedConditions" @navigate-child="onNavigateChild"></projection>
       </section>
 
       <!-- Code explanation tab: generic AnnotatedCode bound to owner-projected annotatedExplanation. -->

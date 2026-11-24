@@ -152,7 +152,6 @@ function mountDirect(
     url: () => "/direct-graph",
     label: () => "Direct Graph",
     initial: options.initial as never,
-    recordDraftCreated: async () => {},
     text: createPanelText({}, ref("en"), "en"),
     ...noOperations,
     readProjection: async (id) => projections[id]!,
@@ -252,7 +251,7 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
           ],
           values: { classNames: ["Customer"] },
           errors: [],
-          save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: `${AGENT_DEFINITION}.save` },
+          save: { method: "PUT", path: "/agents/:id", bodySchema: {} },
         });
       }
       if (request.dataName === "nodes") {
@@ -310,7 +309,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
         ],
         values: { classNames: ["Customer"] },
         errors: [],
-        save: { method: "PUT" as const, path: "/agents/:id", bodySchema: {}, draftOperation: `${AGENT_DEFINITION}.save` },
+        save: { method: "PUT" as const, path: "/agents/:id", bodySchema: {} },
       }),
       save: vi.fn(async () => ({ primaryKey: "agent-1", label: "Agent", fields: {} })),
     },
@@ -373,7 +372,6 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
     label: () => "Agents",
     initial: { selectedAgent: { className: AGENT_DEFINITION, primaryKey: "agent-1" } },
     ...noOperations,
-    recordDraftCreated: async () => {},
     readProjection: async (id) => projections[id]!,
   });
 
@@ -388,7 +386,6 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
         projectionsChanged: () => () => {},
-        draft: instance.draft,
         holdUnsaved: () => () => {},
         t: (key: string) => key,
         resources: async () => {},
@@ -475,7 +472,6 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
     url: () => "/agents",
     label: () => "Agents",
     ...noOperations,
-    recordDraftCreated: async () => {},
     readProjection: async () => scopeProjection,
   });
   const chooseScope = vi.fn();
@@ -503,7 +499,6 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
       submit: async () => ({}),
       reset: async () => true,
     },
-    receive: async () => null,
     submit: async () => ({}),
     dirty: () => false,
     discard: () => {},
@@ -522,7 +517,6 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
         projection: () => Promise.reject(new Error("unused")),
         invoke: () => Promise.reject(new Error("unused")),
         projectionsChanged: () => () => {},
-        draft: instance.draft,
         holdUnsaved: () => () => {},
         t: (key: string) => key,
         resources: async () => {},
@@ -917,18 +911,18 @@ it("drives direct ObjectRelations through useMemberData with complete identities
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-relations-error")?.textContent).toContain("Upstream graph failed"));
 });
 
-it("marks truncated customer Relationship neighbors (panelRelationNeighbors) on direct ObjectRelations", async () => {
+it("shows truncated edges alongside a refused direction and hides an unbound start action", async () => {
   const relationProjection: ProductProjection = {
     ...meta,
     id: "customer-relations",
     name: "Customer relations",
     componentId: "@ontomato/sdk:ObjectRelations",
     inputs: { selected: { kind: "object", objectType: "Customer" } },
-    outputs: { selected: { kind: "object", objectType: "Order" } },
-    config: {},
+    outputs: { start: { kind: "object", objectType: "Customer" } },
+    config: { showSummary: true, allowSetStart: false },
     data: {
       neighbors: {
-        source: { type: { kind: "Relationship", id: "places" } },
+        source: { type: { kind: "Relationship", id: "refers" } },
         read: "neighbors",
         params: { node: { input: "selected" } },
       },
@@ -945,28 +939,96 @@ it("marks truncated customer Relationship neighbors (panelRelationNeighbors) on 
       },
     },
   };
-  const { element } = mountDirect(
+  const { instance, element } = mountDirect(
     manifest,
     { "customer-relations": relationProjection },
-    () => ready({
-      node: { className: "Customer", primaryKey: "cust-1", label: "Acme", layer: "fact" },
-      neighbors: [{ className: "Order", primaryKey: "ord-1", label: "Order #1", layer: "fact" }],
-      edges: [
-        {
-          id: "rel-edge-1",
-          relationKind: "places",
-          from: { className: "Customer", primaryKey: "cust-1" },
-          to: { className: "Order", primaryKey: "ord-1" },
-          direction: "outgoing",
-          derived: false,
-        },
-      ],
-      relations: [{ relationKind: "places", status: "ok", edgeCount: 1, truncated: true }],
-    }),
-    { initial: { selected: { className: "Customer", primaryKey: "cust-1" } } },
+    ({ inputs }) => {
+      const node = inputs.selected as { className: string; primaryKey: string };
+      return ready({
+        node: { ...node, label: "Acme", typeLabel: "Customer account", layer: "fact" },
+        neighbors: [{ className: "Customer", primaryKey: "cust-2", label: "Globex", typeLabel: "Customer account", layer: "fact" }],
+        edges: [
+          {
+            id: "rel-edge-1",
+            relationKind: "refers",
+            label: "Referral edge",
+            from: node,
+            to: { className: "Customer", primaryKey: "cust-2" },
+            direction: "outgoing",
+            derived: false,
+          },
+        ],
+        relations: [{
+          relationKind: "refers", label: "Referrals", status: "refused",
+          reason: "Incoming referrals require permission", edgeCount: 1, truncated: node.primaryKey === "cust-1",
+        }],
+      });
+    },
+    { initial: { selected: { className: "Customer", primaryKey: "cust-0" } } },
   );
-  await vi.waitFor(() => expect(element.querySelector(".sdk-object-relations-peer-name")?.textContent).toBe("Order #1"));
-  expect(element.querySelector("[data-relation-kind='places']")?.getAttribute("data-truncated")).toBe("true");
+  await vi.waitFor(() => expect(instance.outputs.relations?.edgeCount).toBe(1));
+  instance.state.set("selected", { className: "Customer", primaryKey: "cust-1" });
+  await vi.waitFor(() => expect(instance.outputs.relations.edgeCount).toBeNull());
+  const group = element.querySelector('[data-relation-kind="refers"][data-status="refused"][data-truncated="true"]')!;
+  expect(group.querySelector(".sdk-object-relations-peer-name")?.textContent).toBe("Globex");
+  expect(group.querySelector(".sdk-object-relations-reason")?.textContent).toBe("Incoming referrals require permission");
+  expect(group.querySelector(".sdk-object-relations-kind")?.textContent).toBe("Referrals");
+  expect(group.querySelector(".sdk-object-relations-peer-type")?.textContent).toBe("Customer account");
+  expect(element.querySelector(".sdk-object-relations-type")?.textContent).toBe("Customer account");
+  expect(group.querySelector(".sdk-object-relations-count")?.textContent?.trim())
+    .toBe(publicEn.platform.relationsGroupTruncated.replace("{count}", "1"));
+  expect(element.querySelector(".sdk-object-relations-summary-count")?.textContent?.trim())
+    .toBe(publicEn.platform.relationsSummaryTruncated.replace("{count}", "1"));
+  expect(instance.outputs.relations.edgeCount).toBeNull();
+  expect(group.querySelector(".sdk-object-relations-set-start")).toBeNull();
+});
+
+it("syncs string relation kinds from education panel state to ObjectRelations and back", async () => {
+  const selection = { kind: "object-union", objectTypes: ["Student", "Class", "Course"] } satisfies ProductProjection["inputs"][string];
+  const kinds = { kind: "list", items: { kind: "scalar", type: "string" } } as const;
+  const projection: ProductProjection = {
+    ...meta, id: "class-relations", name: "Class Relations", componentId: "@ontomato/sdk:ObjectRelations",
+    inputs: { selected: selection, visibleRelationKinds: kinds },
+    outputs: { visibleRelationKinds: kinds },
+    config: { showRelationFilter: true },
+    data: { neighbors: {
+      source: { type: { kind: "Relationship", id: "covers" } }, read: "neighbors",
+      params: { node: { input: "selected" } },
+    } },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: selection },
+      kinds: { type: kinds },
+    },
+    members: {
+      relations: {
+        target: { projectionId: projection.id },
+        inputs: { selected: { state: "selected" }, visibleRelationKinds: { state: "kinds" } },
+        outputs: { visibleRelationKinds: { state: "kinds" } },
+      },
+    },
+  });
+  const node = { className: "Class", primaryKey: "class-1" };
+  const course = { className: "Course", primaryKey: "course-1" };
+  const { instance, element } = mountDirect(manifest, { [projection.id]: projection }, () => ready({
+    node: { ...node, label: "Class 1", layer: "fact" },
+    neighbors: [{ ...course, label: "Course 1", layer: "fact" }],
+    edges: [{ id: "class-1-covers-course-1", relationKind: "covers", from: node, to: course, direction: "outgoing", derived: false }],
+    relations: [{ relationKind: "covers", status: "ok", edgeCount: 1, truncated: false }],
+  }), { initial: { selected: node } });
+
+  const group = '[data-relation-kind="covers"]';
+  await vi.waitFor(() => expect(element.querySelector(group)).not.toBeNull());
+  expect(instance.outputs.relations.edgeCount).toBe(1);
+  instance.state.set("kinds", ["enrolledIn"]);
+  await vi.waitFor(() => expect(element.querySelector('[data-status="filtered-empty"]')).not.toBeNull());
+  element.querySelector<HTMLElement>(".sdk-object-relations-filter-select .el-select__wrapper")!.click();
+  await vi.waitFor(() => expect(document.querySelectorAll(".el-select-dropdown__item")).toHaveLength(2));
+  const options = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")];
+  options.find(option => option.textContent?.trim() === "covers")!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.kinds).toEqual(["enrolledIn", "covers"]));
+  expect(element.querySelector(group)).not.toBeNull();
 });
 
 it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberData and platformOntologyAdapters", async () => {
@@ -1073,7 +1135,6 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
     url: () => "/capability",
     label: () => "Capability",
     ...noOperations,
-    recordDraftCreated: async () => {},
     readProjection: async (id) => projections[id]!,
   });
 
@@ -1088,7 +1149,6 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
         projectionsChanged: () => () => {},
-        draft: instance.draft,
         holdUnsaved: () => () => {},
         t: (key: string) => key,
         resources: async () => {},
@@ -1390,4 +1450,194 @@ it("syncs visibleRelationKinds bidirectionally between direct ObjectRelations an
   await vi.waitFor(() => expect(instance.state.values.value.kinds).toBeNull());
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-relations-group")).toHaveLength(2));
   await vi.waitFor(() => expect(canvasRecorder.edges.map((edge) => edge.id).sort()).toEqual(["e-1", "e-2"]));
+});
+
+it("syncs visibleLayers and expandedNodes bidirectionally and publishes startLabel, startDetail, and visibleRelationKindLabels read-only outputs", async () => {
+  const nodeUnion = { kind: "object-union" as const, layers: allLayers, objectTypes: [ONTOLOGY_TYPE] };
+  const stringList = { kind: "list" as const, items: { kind: "scalar" as const, type: "string" as const } };
+  const nodeList = { kind: "list" as const, items: nodeUnion };
+  const kindsType = { kind: "list" as const, items: { kind: "object" as const, objectType: ONTOLOGY_RELATION_KIND } };
+
+  const graphProjection: ProductProjection = {
+    ...meta,
+    id: "stateful-graph",
+    name: "Stateful Graph",
+    componentId: "@ontomato/sdk:OntologyGraph",
+    inputs: {
+      mode: { kind: "scalar", type: "string" },
+      start: nodeUnion,
+      selected: nodeUnion,
+      visibleLayers: stringList,
+      expandedNodes: nodeList,
+    },
+    outputs: {
+      selected: nodeUnion,
+      visibleRelationKinds: kindsType,
+      visibleLayers: stringList,
+      expandedNodes: nodeList,
+    },
+    config: { showLayerFilter: true },
+    data: {
+      schema: { source: typeSource(ONTOLOGY_TYPE), read: "schema", params: {} },
+      counts: { source: typeSource(ONTOLOGY_TYPE), read: "counts", params: {} },
+      start: { source: typeSource(ONTOLOGY_TYPE), read: "start", params: {} },
+      neighbors: { source: typeSource(ONTOLOGY_TYPE), read: "neighbors", params: {} },
+    },
+  };
+
+  const manifest: PanelManifest = {
+    state: {
+      mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false, default: "instance" },
+      start: { type: nodeUnion, personal: false, deepLink: false, external: false },
+      selected: { type: nodeUnion, personal: false, deepLink: false, external: false },
+      kinds: { type: kindsType, personal: false, deepLink: false, external: false },
+      visibleLayers: { type: stringList, personal: false, deepLink: false, external: false },
+      expandedNodes: { type: nodeList, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      graph: {
+        target: { projectionId: "stateful-graph" },
+        inputs: {
+          mode: { state: "mode" },
+          start: { state: "start" },
+          selected: { state: "selected" },
+          visibleLayers: { state: "visibleLayers" },
+          expandedNodes: { state: "expandedNodes" },
+        },
+        outputs: {
+          selected: { state: "selected" },
+          visibleRelationKinds: { state: "kinds" },
+          visibleLayers: { state: "visibleLayers" },
+          expandedNodes: { state: "expandedNodes" },
+        },
+      },
+    },
+  };
+
+  const userNode = { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" as const };
+  const actionOne = { className: ACTION, primaryKey: "act-1", label: "Approve Order", layer: "capability" as const };
+  const actionTwo = { className: ACTION, primaryKey: "act-2", label: "Approve Order", layer: "capability" as const };
+  const orderType = { className: OBJECT_TYPE, primaryKey: "Order", label: "Order", layer: "fact" as const };
+  const neighborReads: Array<{ node: { className: string; primaryKey: string }; layers?: string[] }> = [];
+
+  const { instance, element } = mountDirect(
+    manifest,
+    { "stateful-graph": graphProjection },
+    (request) => {
+      if (request.dataName === "schema") {
+        return ready({
+          layers: ["fact", "capability", "governance", "product"],
+          objectTypes: [
+            { id: OBJECT_TYPE, layer: "fact", labelKey: "platformOntology.types.objectType" },
+            { id: ACTION, layer: "capability", labelKey: "platformOntology.types.action" },
+            { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
+          ],
+          relationKinds: [
+            { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java", labelKey: "Owned by user" },
+            { id: "action.targetsObject", from: ACTION, to: OBJECT_TYPE, derived: false, owner: "java", labelKey: "platformOntology.relations.action.targets-object-type" },
+          ],
+        });
+      }
+      if (request.dataName === "counts") return ready({ counts: [] });
+      if (request.dataName === "start") return ready({ node: userNode });
+      const node = (request.runtimeParams?.node ?? request.inputs.node) as { className: string; primaryKey: string };
+      const layers = (request.runtimeParams?.layers ?? request.inputs.layers) as string[] | undefined;
+      neighborReads.push({ node, layers });
+      if (node.className === USER && node.primaryKey === "u-1") {
+        const allowCapability = !layers || layers.includes("capability");
+        return ready({
+          node: userNode,
+          neighbors: allowCapability ? [actionOne] : [],
+          edges: allowCapability
+            ? [{ id: "e-u-act", relationKind: "action.hasOwner", from: { className: ACTION, primaryKey: "act-1" }, to: { className: USER, primaryKey: "u-1" }, direction: "incoming", derived: false }]
+            : [],
+          relations: [{ relationKind: "action.hasOwner", status: "ok", edgeCount: allowCapability ? 1 : 0 }],
+        });
+      }
+      if (node.className === ACTION && node.primaryKey === "act-1") {
+        return ready({
+          node: actionOne,
+          neighbors: [userNode, orderType],
+          edges: [
+            { id: "e-act-order", relationKind: "action.targetsObject", from: { className: ACTION, primaryKey: "act-1" }, to: { className: OBJECT_TYPE, primaryKey: "Order" }, direction: "outgoing", derived: false },
+          ],
+          relations: [{ relationKind: "action.targetsObject", status: "ok", edgeCount: 1 }],
+        });
+      }
+      return ready({
+        node: actionTwo,
+        neighbors: [],
+        edges: [],
+        relations: [],
+      });
+    },
+    { initial: { visibleLayers: ["governance"] } },
+  );
+
+  // 1) Initial visibleLayers=["governance"] restricts initial neighbor fetch and hides capability layer.
+  await vi.waitFor(() => {
+    expect(instance.outputs.graph?.startLabel).toBe("Alice");
+    expect(instance.outputs.graph?.startDetail).toContain("u-1");
+    expect(canvasRecorder.nodes.map((n) => n.id)).toEqual([encodeGraphNodeId(userNode)]);
+  });
+
+  // 2) Agent updating visibleLayers adds "capability" -> backfills neighbors for already expanded root.
+  instance.state.set("visibleLayers", ["fact", "capability", "governance"]);
+  await vi.waitFor(() => {
+    expect(canvasRecorder.nodes.map((n) => n.id).sort()).toEqual([
+      encodeGraphNodeId(actionOne),
+      encodeGraphNodeId(userNode),
+    ].sort());
+  });
+  expect(neighborReads.some((entry) => entry.layers?.includes("capability"))).toBe(true);
+
+  // 3) Human toggling a layer pill writes back to visibleLayers state.
+  const productPill = element.querySelector<HTMLButtonElement>('[data-graph-layer="product"]')!;
+  expect(productPill).not.toBeNull();
+  productPill.click();
+  await vi.waitFor(() => expect(instance.state.values.value.visibleLayers).toBeNull());
+
+  // 4) Human clicking a neighbor expands 1 hop and writes it to expandedNodes state.
+  canvasRecorder.emitSelect?.([encodeGraphNodeId(actionOne)]);
+  await vi.waitFor(() => {
+    expect(instance.state.values.value.expandedNodes).toEqual([{ className: ACTION, primaryKey: "act-1" }]);
+    expect(canvasRecorder.nodes.map((n) => n.id)).toContain(encodeGraphNodeId(orderType));
+  });
+
+  // 5) Agent clearing expandedNodes rebuilds subgraph back to start only; agent setting expandedNodes reproduces it.
+  instance.state.set("expandedNodes", null);
+  await vi.waitFor(() => {
+    expect(canvasRecorder.nodes.map((n) => n.id)).not.toContain(encodeGraphNodeId(orderType));
+  });
+  instance.state.set("expandedNodes", [{ className: ACTION, primaryKey: "act-1" }]);
+  await vi.waitFor(() => {
+    expect(canvasRecorder.nodes.map((n) => n.id)).toContain(encodeGraphNodeId(orderType));
+  });
+
+  // 6) Two same-name custom start nodes publish distinct startDetail outputs.
+  instance.state.setState({ start: { className: ACTION, primaryKey: "act-1" }, expandedNodes: null });
+  await vi.waitFor(() => {
+    expect(instance.outputs.graph?.startLabel).toBe("Approve Order");
+    expect(instance.outputs.graph?.startDetail).toBe("Action · act-1");
+  });
+  instance.state.setState({ start: { className: ACTION, primaryKey: "act-2" }, expandedNodes: null });
+  await vi.waitFor(() => {
+    expect(instance.outputs.graph?.startLabel).toBe("Approve Order");
+    expect(instance.outputs.graph?.startDetail).toBe("Action · act-2");
+  });
+
+  // 7) Type mode publishes localized visibleRelationKindLabels from schema.relationKinds.
+  instance.state.setState({
+    mode: "type",
+    kinds: [{ className: ONTOLOGY_RELATION_KIND, primaryKey: "action.targetsObject" }],
+  });
+  await vi.waitFor(() => {
+    expect(instance.outputs.graph?.visibleRelationKindLabels).toEqual(["Targets object type"]);
+    expect(instance.outputs.graph?.startLabel).toBeNull();
+    expect(instance.outputs.graph?.startDetail).toBeNull();
+  });
+  instance.state.set("kinds", null);
+  await vi.waitFor(() => {
+    expect(instance.outputs.graph?.visibleRelationKindLabels).toEqual([]);
+  });
 });

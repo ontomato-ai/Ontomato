@@ -3,9 +3,10 @@ import { computed, effectScope, inject, onBeforeUnmount, onErrorCaptured, provid
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
+import { declaredComponentProps, pickProjectionPlacementAttrs } from "./projection-attrs";
 import { frameMemberData } from "./frame-member";
 import { panelMemberKey, type PanelMemberContext } from "./member";
-import { portsOf, readsOwnerForm } from "./ports-of";
+import { portsOf } from "./ports-of";
 import { admittedOperations, watchMemberOperations } from "./member-operations";
 import { slotInputValues } from "./ports";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
@@ -36,15 +37,16 @@ const panel = inject(panelContextKey, null);
 if (!panel) throw new Error("<Projection> runs inside a panel, which provides its context");
 
 const attrs = useAttrs();
-/** What the panel's template listens to on the component; an attribute written here configures nothing. */
-const listeners = computed(() => Object.fromEntries(Object.entries(attrs).filter(([name]) => /^on[A-Z]/.test(name))));
 const placementClass = computed(() => attrs.class);
 const placementStyle = computed(() => attrs.style as StyleValue);
 const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ projection: ProductProjection; component: Component; member: PanelMemberContext } | null>(null);
-const resolvedInputs = ref<Record<string, unknown>>({});
-/** A member's inputs are JSON as the state holds them. */
+const resolvedInputs = computed(() => ({
+  ...slotInputValues(panel.instance, props.slot),
+  ...props.inputs,
+}));
+/** A member's inputs as supplied by its placement. */
 const memberInputs = computed(() => resolvedInputs.value as MemberInputs);
 let registered: (() => void) | undefined;
 /** What the member's operations are read in, for the projection drawn now. */
@@ -84,7 +86,6 @@ function start(revision = 0) {
       ports: portsOf(projection),
       get operations() { return admittedOperations(operations.value); },
       ...(projection.operations ? { operationBindings: projection.operations } : {}),
-      takesDrafts: readsOwnerForm(projection),
     });
     requestedRevision = 0;
     loaded.value = {
@@ -120,19 +121,6 @@ onBeforeUnmount(() => {
   stop();
   registered?.();
 });
-
-// The slot's inputs follow the instance's state: the panel's own values, never a copy.
-watch(
-  [() => panel.instance.state.values.value, () => props.inputs],
-  () => {
-    resolvedInputs.value = {
-      ...slotInputValues(panel.manifest, props.slot, panel.instance.state.values.value),
-      ...(props.inputs ?? {}),
-    };
-  },
-  { immediate: true, deep: true },
-);
-
 provide(projectionKey, {
   slot: props.slot,
   get projection() {
@@ -143,13 +131,19 @@ provide(projectionKey, {
   },
 } as ProjectionSlot);
 provide(panelMemberKey, () => loaded.value!.member);
+const bound = computed(() => {
+  const { component, projection } = loaded.value!;
+  const declared = declaredComponentProps(component);
+  const { listeners, props: placementProps } = pickProjectionPlacementAttrs(attrs, declared);
+  return { ...projection.config, ...resolvedInputs.value, ...placementProps, ...listeners };
+});
 </script>
 
 <template>
   <div class="sdk-panel-member" :data-member="slot" :class="placementClass" :style="placementStyle">
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
-    <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...listeners, ...resolvedInputs }">
+    <component :is="loaded.component" v-else v-bind="bound">
       <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">
         <slot :name="name" v-bind="slotProps ?? {}"></slot>
       </template>

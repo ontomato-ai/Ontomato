@@ -14,7 +14,10 @@ export interface PlatformPage {
   descriptionKey?: string;
   /** 16px navigation icon. */
   icon?: Component;
-  /** Count shown at the end of the navigation row; null or absent shows none. */
+  /**
+   * Legacy count source strictly for native pages not yet converted to panels (e.g. enterprise permission center);
+   * removed together with host-built menus once those pages migrate to panels + ObjectCount. Do not add new callers.
+   */
   count?: () => number | null;
   /** The page draws its own page header (the Manager pages); otherwise the layout draws title and description. */
   ownHeader?: boolean;
@@ -42,7 +45,7 @@ export interface PlatformNavigation {
   /**
    * How a menu row looks where an application's menu table lists one of its panel entries instead of a page. The entry
    * itself (its name, and whether the reader may open it) is the application catalog's; these rows give only what a page
-   * declaration would have: the icon and the count.
+   * declaration would have: the icon.
    */
   entries?: readonly PlatformEntryRow[];
 }
@@ -52,8 +55,6 @@ export interface PlatformEntryRow {
   path: string;
   /** 16px navigation icon. */
   icon: Component;
-  /** Count shown at the end of the navigation row; null or absent shows none. */
-  count?: () => number | null;
 }
 
 /** A navigation group; shown when at least one of its pages is available. */

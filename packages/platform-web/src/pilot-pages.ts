@@ -13,7 +13,7 @@ import { panelEntryApplication } from "./catalog";
  * The pages here are the dashboards, the agents' settings, a panel application's page and a built-in application's panel
  * entry, each shown by the same page the platform shows it with, so one address has one page and one panel instance.
  *
- * A page's own navigation (another board, another agent, the list, a saved draft's handoff) is the callback it is given
+ * A page's own navigation (another board, another agent, the list) is the callback it is given
  * here. The callback changes the parameter the conversation carries, never the browser's address, so the conversation
  * stays where it is and the page keeps its own address and its own state.
  *
@@ -58,6 +58,7 @@ export function pilotPageResolver(
     return {
       id: "dashboards",
       component: DashboardsPage,
+      instance: path,
       props: {
         paired: true,
         dashboardId: query.get("dashboardId") ?? undefined,

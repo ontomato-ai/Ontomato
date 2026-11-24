@@ -61,7 +61,7 @@ const option = (name: string, more = {}) => ({ primaryKey: name, value: skill(na
 const agentForm = {
   fields: [{ path: "/skills", label: "Skills", control: { kind: "reference", objectType: SKILL, multiple: true }, valueSchema: {}, required: false, readOnly: false }],
   values: { skills: [skill("sql"), skill("vendor")] }, errors: [], revision: 1,
-  save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: "agent.save" },
+  save: { method: "PUT", path: "/agents/:id", bodySchema: {} },
 };
 
 const unchecked = { unavailable: { reason: "Its source did not answer" } };
@@ -80,7 +80,7 @@ function answer(request: PanelMemberReadRequest, none: boolean): ProductPanelRea
 function open(members: string[], none = false, incompatible?: string) {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "p", url: () => "/p", label: () => "P", initial: { agent },
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async (id) => {
       if (id === incompatible) throw new Error("field 'data.form' is not declared by the current SDK component");
       return projections[id]!;

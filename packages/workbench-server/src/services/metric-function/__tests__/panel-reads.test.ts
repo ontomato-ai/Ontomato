@@ -119,7 +119,7 @@ const functionAsset = { id: "f1", name: "revenue_query", description: "", operat
 const formDescription = {
   fields: [{ path: "/name", label: "名称", control: { kind: "text" }, valueSchema: { type: "string" }, required: true, readOnly: false }],
   values: { name: "Revenue by customer" }, errors: [],
-  save: { method: "POST", path: "/metricView/save", bodySchema: {}, draftOperation: "metric-view.update" },
+  save: { method: "POST", path: "/metricView/save", bodySchema: {} },
 };
 
 /** A data-query owner answering in its envelope; `answer` gives the data for a path, or a whole envelope to send. */

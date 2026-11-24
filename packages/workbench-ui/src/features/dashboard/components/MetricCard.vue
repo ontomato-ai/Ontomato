@@ -27,6 +27,8 @@
         <DropdownMenu
           scene="metric"
           trigger-class="metric-more"
+          :board-locked="boardLocked"
+          :lock-reason="lockReason"
           @command="(cmd) => emit('command', cmd)"
         />
       </div>
@@ -44,13 +46,18 @@
           <div v-if="unit" class="unit">{{ unit }}</div>
         </template>
       </div>
-      <span class="resize-handle" :title="t('dashboard.dragToResize')" />
+      <span
+        class="resize-handle"
+        :class="{ 'is-disabled': boardLocked }"
+        :aria-disabled="boardLocked ? 'true' : undefined"
+        :title="boardLocked ? lockReason : t('dashboard.dragToResize')"
+      />
     </div>
   </el-card>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import interact from "interactjs";
 import { TriangleAlert } from "lucide-vue-next";
 import DropdownMenu from "./DropdownMenu.vue";
@@ -67,6 +74,8 @@ const { t } = useI18n();
 const props = defineProps({
   /** Whether this card is the one the reader chose: a message sent from beside the page asks about it. */
   selected: { type: Boolean, default: false },
+  boardLocked: { type: Boolean, default: false },
+  lockReason: { type: String, default: "" },
   metric: {
     type: Object,
     default: () => ({
@@ -113,13 +122,16 @@ function setupResize() {
   if (!el) return;
 
   interactable = interact(el).resizable({
+    enabled: !props.boardLocked,
     allowFrom: ".resize-handle",
     edges: { right: true, bottom: false, left: false, top: false },
     listeners: {
       start() {
+        if (props.boardLocked) return;
         emit("resize-active", true);
       },
       move(event) {
+        if (props.boardLocked) return;
         const target = event.target;
         const parent = target?.parentElement; // .el-card__body
         const grid = parent?.parentElement; // the grid container of metrics-section (usually two levels)
@@ -153,6 +165,13 @@ function setupResize() {
 }
 
 onMounted(() => setupResize());
+
+watch(
+  () => props.boardLocked,
+  (locked) => {
+    interactable?.resizable?.({ enabled: !locked });
+  },
+);
 
 onBeforeUnmount(() => {
   if (interactable) {

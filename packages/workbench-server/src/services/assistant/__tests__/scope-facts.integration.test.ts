@@ -6,12 +6,16 @@ const state=vi.hoisted(()=>({pool:undefined as pg.Pool|undefined,schema:""}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>state.pool,qualifiedTable:(name:string)=>`"${state.schema}"."${name}"`}));
 import { ensureAssistantSchema } from "../../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { assistantStore } from "../store";
+import { initializeDomainPresetAgents } from "../preset-initialization";
+import { ensureAssistantPresetUpgradesSchema } from "../../../infrastructure/postgres-migrations/20261121-assistant-preset-upgrades/schema";
+import { ensureProductPanelsSchema } from "../../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 const database=process.env.RUNTIME_TEST_DATABASE_URL;
 if(!database)throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
 const owner={domainId:"domain",userId:"user"},agent=randomUUID(),session=randomUUID(),legacy=randomUUID();
 beforeAll(async()=>{
   state.schema="scope_facts_"+randomUUID().replaceAll("-","");state.pool=new pg.Pool({connectionString:database});
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);await ensureAssistantSchema(state.pool);await ensureAssistantDefaultPromptSchema(state.pool);
+  await ensureAssistantPresetUpgradesSchema(state.pool);await ensureProductPanelsSchema(state.pool);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_agents(id,domain_id,kind,name,system_prompt) VALUES($1,'domain','custom','Agent','')`,[agent]);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_sessions(id,domain_id,owner_id,agent_id) VALUES($1,'domain','user',$2)`,[session,agent]);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_turns(id,session_id,retrieval_scope_id,request_seq,input_hash) VALUES($1,$2,$1,0,'old')`,[legacy,session]);
@@ -33,10 +37,13 @@ it("keeps old references and records new retrieval/governance references only wh
 });
 
 it("seeds a stable governance preset in both existing and new domains",async()=>{
+  await initializeDomainPresetAgents(owner.domainId);
   const first=(await assistantStore.agents(owner.domainId)).find(agent=>agent.kind==="knowledge-governance")!;
   expect(first.enabled).toBe(true);expect(first.skills).toContainEqual({namespace:{kind:"provider",provider:"ontology"},name:"knowledge-governance"});
   expect(first.skills).toContainEqual({namespace:{kind:"provider",provider:"workbench"},name:"assistant-report"});
+  await initializeDomainPresetAgents(owner.domainId);
   expect((await assistantStore.agents(owner.domainId)).find(agent=>agent.kind==="knowledge-governance")?.id).toBe(first.id);
+  await initializeDomainPresetAgents("new-domain");
   const second=(await assistantStore.agents("new-domain")).find(agent=>agent.kind==="knowledge-governance")!;
   expect(second.domain_id).toBe("new-domain");expect(second.id).not.toBe(first.id);
 });

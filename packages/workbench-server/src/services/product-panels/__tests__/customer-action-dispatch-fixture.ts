@@ -1,7 +1,6 @@
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, expect, vi } from "vitest";
-import { isPanelHumanOperationIntent, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
-import { EXECUTE_OBJECT_ACTION } from "@ontomato/contracts/platform-object-types";
+import { type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
@@ -22,7 +21,6 @@ const mocks = vi.hoisted(() => ({
   loadedMember: vi.fn(),
   restore: vi.fn(),
   sessionActor: vi.fn(),
-  notify: vi.fn(),
 }));
 
 vi.mock("../../../infrastructure/postgres", () => ({
@@ -51,16 +49,6 @@ vi.mock("../../agent-host/caller", () => ({
   restoreAgentCaller: mocks.restore,
   readAgentSessionActor: mocks.sessionActor,
 }));
-vi.mock("../../agent-host/presentation", async (original) => {
-  const presentation = await original<typeof import("../../agent-host/presentation")>();
-  return {
-    ...presentation,
-    publishObjectChanged: (input: Parameters<typeof presentation.publishObjectChanged>[0]) => {
-      mocks.notify(input);
-      presentation.publishObjectChanged(input);
-    },
-  };
-});
 vi.mock("../../../utils/request-identity", async (original) => ({
   ...await original<typeof import("../../../utils/request-identity")>(),
   requireDomainId: (request: { domainId: string }) => request.domainId,
@@ -193,16 +181,9 @@ afterEach(() => {
 /** Runtime, Action owner and intent storage boundaries for customer panel operation tests. */
 export function customerActionDispatchFixture() {
   let intents: Map<string, PanelOperationIntent>;
-  let humanAnswer: object | null;
-
-  const approve = (intentId: string) => {
-    const { questionId } = intents.get(intentId) as { questionId: string };
-    humanAnswer = { role: "notification", kind: "agent-answer", source: { kind: "user" }, replyTo: questionId, answerId: uuid(11) };
-  };
 
   beforeEach(() => {
     intents = new Map();
-    humanAnswer = null;
     mocks.panel.mockResolvedValue(orderPanel);
     mocks.projection.mockResolvedValue(orderFormProjection);
     mocks.pages.mockResolvedValue({ byId: new Map() });
@@ -225,7 +206,7 @@ export function customerActionDispatchFixture() {
         },
       },
     });
-    mocks.session.mockImplementation(async () => ({ messages: humanAnswer ? [{ message: humanAnswer }] : [] }));
+    mocks.session.mockResolvedValue({ messages: [] });
     mocks.request.mockImplementation(async (path: string, _method: string, body: { source: unknown }) =>
       path === "/v1/channel/user-questions"
         ? {
@@ -253,32 +234,15 @@ export function customerActionDispatchFixture() {
         return { rows: [] };
       }
       if (sql.includes("jsonb_set(intent,'{invalidated}'")) {
-        const reason = JSON.parse(String(args[2]));
-        let count = 0;
-        for (const [k, v] of intents.entries()) {
-          if (v.dispatched || isPanelHumanOperationIntent(v) || v.invalidated || !("call" in v)) continue;
-          const isTargetlessAction = v.operation.handlerRef === EXECUTE_OBJECT_ACTION && v.call.target === null;
-          const isTargetedAction = v.operation.handlerRef === EXECUTE_OBJECT_ACTION && v.call.target?.kind === "object";
-          if (!isTargetlessAction && !isTargetedAction) continue;
-          if (isTargetedAction) {
-            const target = v.call.target!;
-            if (target.kind !== "object" || !args.includes(target.objectType) || !args.includes(target.primaryKey)) continue;
-          } else {
-            const matchesSlot = args.includes(v.operation.slot);
-            const matchesAction = v.binding && args.includes(v.binding.id);
-            const matchesAffects = (v.operation.action?.affects ?? []).some(type =>
-              args.includes(type) || args.some(arg => Array.isArray(arg) && arg.includes(type)));
-            if (!matchesSlot && !matchesAction && !matchesAffects) continue;
-          }
-          intents.set(k, { ...v, invalidated: reason });
-          count++;
-        }
-        return { rowCount: count };
+        const value = intents.get(id)!;
+        if (value.dispatched || value.invalidated) return { rowCount: 0, rows: [] };
+        intents.set(id, { ...value, invalidated: JSON.parse(String(args[3])) });
+        return { rowCount: 1, rows: [{ id }] };
       }
       if (sql.includes("AND intent->>'dispatched'='false'")) {
         expect(sql).toContain("AND intent->'invalidated' IS NULL");
         const value = intents.get(id)!;
-        if (value.dispatched || (!isPanelHumanOperationIntent(value) && value.invalidated)) return { rowCount: 0 };
+        if (value.dispatched || value.invalidated) return { rowCount: 0 };
         intents.set(id, structuredClone(args[3] as PanelOperationIntent));
         return { rowCount: 1 };
       }
@@ -317,19 +281,16 @@ export function customerActionDispatchFixture() {
   });
 
   return {
-    approve,
     intent: (id: string) => intents.get(id)!,
     invalidateAtClaim: (intentId: string) => {
       const query = mocks.query.getMockImplementation()!;
       mocks.query.mockImplementation(async (sql: string, args: unknown[]) => {
         if (sql.includes("AND intent->>'dispatched'='false'")) {
           const current = intents.get(intentId)!;
-          if (!isPanelHumanOperationIntent(current)) {
-            intents.set(intentId, {
-              ...current,
-              invalidated: { code: "FORM_CONFIRMATION_STALE", message: "The form changed before claim." },
-            });
-          }
+          intents.set(intentId, {
+            ...current,
+            invalidated: { code: "FORM_CONFIRMATION_STALE", message: "The form changed before claim." },
+          });
         }
         return query(sql, args);
       });
@@ -341,15 +302,13 @@ export function customerActionDispatchFixture() {
 /** Run the Express route with an authenticated request at the middleware boundary, without opening a port. */
 export async function customerActionRequest(path: string, body: unknown) {
   installContentLayout({ runtimeRoot: tmpdir(), publicSkillsRoot: tmpdir(), prompts: [], runtimeResources: [] });
-  const router = path.startsWith("/panel-operations/")
-    ? (await import("../../../api/routes/product-panels")).panelOperationsRouter
-    : (await import("../../../api/routes/assistant-execution")).assistantExecutionRouter;
+  const { panelOperationsRouter: router } = await import("../../../api/routes/product-panels");
   return new Promise<unknown>((resolve, reject) => {
     const request = {
       ...owner, ...credentials, userName: "Alice", header: () => undefined, method: "POST", url: path, body,
     };
     const response = {
-      locals: { runtimeCallback: { runId: uuid(2) } },
+      locals: {},
       json: resolve,
       status(status: number) {
         return { json: (answer: unknown) => reject(new Error(`POST ${path}: ${status} ${JSON.stringify(answer)}`)) };
