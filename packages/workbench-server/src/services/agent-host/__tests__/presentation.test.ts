@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
-import { presentationResultSchema } from "@ontomato/contracts/agent-presentation";
+import { presentationResultSchema, type ObservedPageTarget, type PresentationFrame } from "@ontomato/contracts/agent-presentation";
 import { GENERAL_SETTINGS } from "@ontomato/contracts/platform-object-types";
 import { panelOperationStore } from "../../product-panels/operation-store";
 import {
@@ -400,6 +400,85 @@ it("forwards fill_form and recovers page_action intent status when receipt is lo
   } finally {
     findSpy.mockRestore();
     view.abort();
+  }
+});
+
+it.each([
+  { action: { mode: "fill_form", member: "form", values: { "/name": "Updated" } }, refresh: { mode: "observe" } },
+  { action: { mode: "page_action", operation: "form.save" }, refresh: { target: "/contacts" } },
+] as const)("binds the first $action.mode to the sent page and replaces the basis after $refresh", async ({ action, refresh }) => {
+  vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "presentation-test-only");
+  const view = new AbortController();
+  const viewId = "44444444-4444-4444-8444-444444444444";
+  const initialPage: ObservedPageTarget = {
+    kind: "page", url: "/contacts", label: "Contacts", selection: [],
+    pageInstanceId: "page-at-send", panelInstanceId: "panel-at-send",
+    entryInstances: { "form.save": "save-at-send" },
+    forms: [{
+      member: "form", formInstanceId: "form-at-send", dirty: false, values: { name: "Alice" },
+      target: { kind: "object", objectType: "crm:Contact", primaryKey: "alice" },
+    }],
+  };
+  const latest: ObservedPageTarget = {
+    ...initialPage,
+    pageInstanceId: "page-latest",
+    forms: [{ ...initialPage.forms![0]!, formInstanceId: "form-latest" }],
+    entryInstances: { "form.save": "save-latest" },
+  };
+  const targets: PresentationFrame["target"][] = [];
+  const connectionId = openPresentationView("workbench", owner, viewId, (frame) => {
+    if (frame.type !== "presentation") return;
+    targets.push(frame.target);
+    const current = {
+      known: true as const, observedAt: new Date().toISOString(), placement: "side" as const,
+      target: frame.target.kind === "observe" || frame.target.kind === "page" ? latest : initialPage,
+      load: { status: "ready" as const },
+    };
+    const target = frame.target;
+    receivePresentation("workbench", owner, session.sessionId, runId, {
+      connectionId, toolCallId: frame.toolCallId,
+      result: target.kind === "observe" ? { status: "observed", reason: "current_display", current }
+        : target.kind === "page" ? { status: "opened", reason: "target_selected", current }
+        : target.kind === "fill_form" ? { status: "filled", reason: "form_updated", member: "form", filledFields: ["/name"], current }
+        : { status: "executed", reason: "action_completed", operation: "form.save", current },
+    });
+  }, view.signal);
+  const service = { ownRun: vi.fn(async () => {}) } as unknown as Parameters<typeof requestPresentation>[0];
+  const request = (toolCallId: string, input: Parameters<typeof requestPresentation>[3]["input"]) =>
+    requestPresentation(service, "workbench", owner, { viewId, sessionId: session.sessionId, runId, toolCallId, input }, view.signal);
+  const bind = (presentationBinding: AgentPrepareRequest["presentationBinding"]) =>
+    presentationCallback("workbench", { ...direct, presentationBinding }, owner, { token: "fixture" }, Date.now() + 60_000);
+
+  try {
+    expect(bind({ viewId, initialPage })).toBeDefined();
+    expect(await request("first", action)).toMatchObject({
+      status: action.mode === "fill_form" ? "filled" : "executed",
+    });
+    expect(targets[0]).toMatchObject({
+      kind: action.mode,
+      expectedPageInstanceId: "page-at-send",
+      expectedPanelInstanceId: "panel-at-send",
+      expectedTarget: { kind: "object", objectType: "crm:Contact", primaryKey: "alice" },
+      ...(action.mode === "fill_form" ? { expectedFormInstanceId: "form-at-send" } : { expectedEntryInstanceId: "save-at-send" }),
+    });
+
+    await request("refresh", refresh);
+    await request("after-refresh", action);
+    expect(targets[2]).toMatchObject({
+      expectedPageInstanceId: "page-latest",
+      ...(action.mode === "fill_form" ? { expectedFormInstanceId: "form-latest" } : { expectedEntryInstanceId: "save-latest" }),
+    });
+
+    expect(bind({ viewId })).toBeDefined();
+    expect(await request("unobserved", action)).toMatchObject({
+      status: action.mode === "fill_form" ? "not_filled" : "not_executed",
+      reason: "stale", current: { known: false, reason: "no_prior_observation" },
+    });
+    expect(targets).toHaveLength(3);
+  } finally {
+    view.abort();
+    releasePresentationRun("workbench", owner, runId);
+    vi.unstubAllEnvs();
   }
 });
 

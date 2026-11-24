@@ -1,4 +1,4 @@
-import type { PresentationBinding } from "@ontomato/contracts/agent-presentation";
+import type { ObservedPageTarget, PresentationBinding } from "@ontomato/contracts/agent-presentation";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { historyCursor } from "@ontomato/contracts/session-history";
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
@@ -280,7 +280,7 @@ export function useAgentConversation(
   async function send(
     agentId: string,
     text: string,
-    reply?: { replyTo: string; selectedOption?: number },
+    { initialPage, ...reply }: { initialPage?: ObservedPageTarget; replyTo?: string; selectedOption?: number } = {},
   ): Promise<
     | ({ createdSession: AgentHostSession | null } & AgentHostSendResult)
     | { createdSession: AgentHostSession; snapshot: null; delivery: null }
@@ -301,7 +301,8 @@ export function useAgentConversation(
       createdSession = state.sessionId ? null : await client.createSession(agentId);
       if (current !== token) return null;
       if (createdSession) state.sessionId = createdSession.id;
-      const binding = presentation();
+      const view = presentation();
+      const binding = view && { viewId: view.viewId, ...(initialPage === undefined ? {} : { initialPage }) };
       const page = pageSkill();
       const result = await client.send(state.sessionId!, {
         message: text, ...reply, ...(binding ? { presentationBinding: binding } : {}), ...(page ? { pageSkillContext: page } : {}),

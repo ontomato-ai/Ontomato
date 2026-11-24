@@ -548,7 +548,8 @@ it("describes row-scoped operations declared on a list projection, bound operati
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain("Row-scoped operation on list rows.");
   expect(markdown).toContain('Bound params: {"note":{"rowField":"schedule"},"source":{"literal":"row-action"}}.');
-  expect(markdown).toContain("pass `rowKey` set to the loaded row's primary key");
+  expect(markdown).toContain("`<className>:<primaryKey>`");
+  expect(markdown).toContain("verbatim from the corresponding row in the page snapshot");
   expect(markdown).toContain("per-row availability and bound parameters");
   expect(markdown).not.toContain("rowContext");
 });

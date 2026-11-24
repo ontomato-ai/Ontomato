@@ -3,7 +3,7 @@ import type { AgentPrepareRequest, AgentRunContext } from "@ontomato/contracts/a
 import type { AgentHostSessionLiveFrame } from "@ontomato/contracts/agent-host";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
-  DisplaySnapshot, ExpectedPageTarget, FillFormRequest, ObserveDisplayRequest, PageActionRequest,
+  ExpectedPageTarget, FillFormRequest, ObservedPageTarget, ObserveDisplayRequest, PageActionRequest,
   PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
   PresentRequest, RuntimePresentationCallback,
 } from "@ontomato/contracts/agent-presentation";
@@ -39,8 +39,6 @@ interface AuthorizedRunView {
 const views = new Map<string, Connection>();
 const pendingCalls = new Map<string, Pending>();
 const runViews = new Map<string, AuthorizedRunView>();
-type SelectedDisplaySnapshot = Extract<DisplaySnapshot, { known: true; placement: string }>;
-type ObservedPageTarget = Extract<SelectedDisplaySnapshot["target"], { kind: "page" }>;
 const lastPageSnapshots = new Map<string, ObservedPageTarget>();
 const MAX_TRACKED_RUN_SNAPSHOTS = 1000;
 const viewKey = (host: AgentPresentationHost, owner: AgentHostOwner, viewId: string) =>
@@ -123,17 +121,21 @@ export function releasePresentationRun(
   lastPageSnapshots.delete(key);
 }
 
+function storePageSnapshot(key: string, page: ObservedPageTarget): void {
+  lastPageSnapshots.delete(key);
+  lastPageSnapshots.set(key, page);
+  while (lastPageSnapshots.size > MAX_TRACKED_RUN_SNAPSHOTS) {
+    const oldest = lastPageSnapshots.keys().next().value;
+    if (oldest === undefined) break;
+    lastPageSnapshots.delete(oldest);
+  }
+}
+
 function recordDeliveredSnapshot(key: string, result: PresentationResult): void {
   const current = result.current;
   if (!current.known) return;
   if (current.target?.kind === "page") {
-    lastPageSnapshots.delete(key);
-    lastPageSnapshots.set(key, current.target);
-    while (lastPageSnapshots.size > MAX_TRACKED_RUN_SNAPSHOTS) {
-      const oldest = lastPageSnapshots.keys().next().value;
-      if (oldest === undefined) break;
-      lastPageSnapshots.delete(oldest);
-    }
+    storePageSnapshot(key, current.target);
     return;
   }
   lastPageSnapshots.delete(key);
@@ -291,11 +293,15 @@ export function presentationCallback(
   host: AgentPresentationHost, body: AgentPrepareRequest, owner: AgentHostOwner,
   credentials: AssistantCredentials, expiresAt: number,
 ): RuntimePresentationCallback | undefined {
-  const viewId = body.presentationBinding?.viewId;
-  if (!viewId || body.mode !== "run" || body.input.role !== "user" ||
+  const binding = body.presentationBinding;
+  if (!binding || body.mode !== "run" || body.input.role !== "user" ||
       !isLivePresentationEligibleRun({ host, owner, runId: body.runId, sessionId: body.sessionId, channel: body }) ||
-      !views.has(viewKey(host, owner, viewId))) return;
+      !views.has(viewKey(host, owner, binding.viewId))) return;
+  const { viewId, initialPage } = binding;
   runViews.set(runViewKey(host, owner, body.runId), { viewId, expiresAt });
+  const snapshotKey = runSnapshotKey(host, owner, body.runId);
+  if (initialPage) storePageSnapshot(snapshotKey, initialPage);
+  else lastPageSnapshots.delete(snapshotKey);
   const path = `${hostPaths[host]}/sessions/${body.sessionId}/runs/${body.runId}/presentation-call/${viewId}`;
   return {
     url: environment.agentRuntime().callbackUrl.replace(/\/$/, "") + path,

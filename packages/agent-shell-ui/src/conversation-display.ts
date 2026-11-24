@@ -5,6 +5,7 @@ import type {
   DisplaySnapshot,
   FormFillOutcome,
   FormFillRequestInput,
+  ObservedPageTarget,
   PageActionOutcome,
   PageActionRequestInput,
   PendingPageActionConfirmation,
@@ -279,8 +280,15 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       const { runId, path } = current.open.artifact;
       return { known: true, observedAt, placement: where, target: { kind: "artifact", runId, path, title: current.open.title }, load: load.value };
     }
-    const meta = controllers.get(current.instance)?.snapshotMeta?.();
-    const currentPageInstanceId = effectivePageInstanceId(current.instance);
+    return {
+      known: true, observedAt, placement: where, target: pageSnapshot(pageContext.value!), load: load.value,
+    };
+  }
+
+  function pageSnapshot(context: PageContext): ObservedPageTarget {
+    const instance = page.value!.instance;
+    const meta = controllers.get(instance)?.snapshotMeta?.();
+    const currentPageInstanceId = effectivePageInstanceId(instance);
     const panelInstanceId = meta?.panelInstanceId;
     const memberInstances = meta?.memberInstances && Object.keys(meta.memberInstances).length
       ? { ...meta.memberInstances }
@@ -294,21 +302,15 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     const dashboardId = meta?.dashboardId;
     const cardId = meta?.cardId;
     return {
-      known: true,
-      observedAt,
-      placement: where,
-      target: {
-        kind: "page",
-        ...pageContext.value!,
-        ...(currentPageInstanceId ? { pageInstanceId: currentPageInstanceId } : {}),
-        ...(panelInstanceId ? { panelInstanceId } : {}),
-        ...(memberInstances ? { memberInstances } : {}),
-        ...(entryInstances ? { entryInstances } : {}),
-        ...(checkedKeys ? { checkedKeys } : {}),
-        ...(dashboardId ? { dashboardId } : {}),
-        ...(cardId ? { cardId } : {}),
-      },
-      load: load.value,
+      kind: "page",
+      ...context,
+      ...(currentPageInstanceId ? { pageInstanceId: currentPageInstanceId } : {}),
+      ...(panelInstanceId ? { panelInstanceId } : {}),
+      ...(memberInstances ? { memberInstances } : {}),
+      ...(entryInstances ? { entryInstances } : {}),
+      ...(checkedKeys ? { checkedKeys } : {}),
+      ...(dashboardId ? { dashboardId } : {}),
+      ...(cardId ? { cardId } : {}),
     };
   }
 
@@ -596,6 +598,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     },
 
     snapshot,
+    pageSnapshot,
 
     /** Removes and returns the live-bound page confirmation for a conversation question, if this page instance holds it. */
     takePendingActionConfirmation(questionId: string): BoundPageActionConfirmation | null {

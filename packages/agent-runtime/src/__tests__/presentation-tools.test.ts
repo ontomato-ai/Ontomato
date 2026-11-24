@@ -142,6 +142,49 @@ describe("presentation tools schema & same-batch sequential early-stop", () => {
     expect(JSON.parse((r4.content[0] as { text: string }).text)).toMatchObject({ status: "filled" });
   });
 
+  it.each([
+    { outcome: "partially rejected", rejectedFields: [{ path: "/phoen", reason: "unknown_field", message: "Unknown field" }] },
+    { outcome: "fully filled", rejectedFields: undefined },
+    { outcome: "fully filled with an empty rejection list", rejectedFields: [] },
+  ])("handles save in the same batch after a $outcome form fill", async ({ rejectedFields }) => {
+    const receipt = {
+      status: "filled",
+      reason: "form_updated",
+      member: "form",
+      filledFields: ["/name"],
+      ...(rejectedFields === undefined ? {} : { rejectedFields }),
+      current: samplePageSnapshot,
+    };
+    const fetchMock = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(jsonResponse(receipt))
+      .mockResolvedValueOnce(jsonResponse({
+        status: "executed", reason: "action_completed", operation: "form.save", current: samplePageSnapshot,
+      }));
+    const tools = createPresentationTools("r1", callback, createPresentationBatchController(), fetchMock);
+    const fillForm = tools.find((tool) => tool.name === "fill_form")!;
+    const pageAction = tools.find((tool) => tool.name === "page_action")!;
+    const values = rejectedFields?.length ? { "/name": "Bob", "/phoen": "123" } : { "/name": "Bob" };
+    const [fill, save] = await Promise.all([
+      fillForm.execute("fill", { member: "form", values }, undefined),
+      pageAction.execute("save", { operation: "form.save" }, undefined),
+    ]);
+
+    expect(JSON.parse((fill.content[0] as { text: string }).text)).toEqual(receipt);
+    const saveReceipt = JSON.parse((save.content[0] as { text: string }).text);
+    if (rejectedFields?.length) {
+      expect(saveReceipt).toMatchObject({
+        status: "not_executed",
+        reason: "previous_step_failed",
+        error: { code: "PREVIOUS_STEP_FAILED", message: expect.stringContaining("/phoen") },
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } else {
+      expect(saveReceipt).toMatchObject({ status: "executed", operation: "form.save" });
+      expect(fetchMock.mock.calls.map(([, request]) => JSON.parse(request!.body as string).toolCallId))
+        .toEqual(["fill", "save"]);
+    }
+  });
+
   it("stops the batch when page_action returns awaiting_confirmation, unknown, or throws", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
