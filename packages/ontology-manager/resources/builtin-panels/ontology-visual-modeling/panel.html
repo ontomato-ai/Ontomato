@@ -234,11 +234,7 @@
               <sdk-button text size="small" @click="newAttribute">{{ t("visualModeling.newAttribute") }}</sdk-button>
             </div>
             <div class="vm-attributes">
-              <projection
-                slot="attributes"
-                :inputs="{ className: selectedNodeKey }"
-                @update:listed="onAttributesListed"
-              ></projection>
+              <projection slot="attributes"></projection>
             </div>
           </div>
 
