@@ -1,16 +1,19 @@
-# Skill library
+# Skill library catalog
 
-This page browses the platform's skills (`platform:Skill`), inspects the selected skill's package files, and runs owner operations to import, export, or delete domain-owned skills.
+This page displays the domain's visible skills (`platform:Skill`) as a full-width card grid with search, diagnostics, per-card export and delete actions, and a ZIP import dialog. Clicking a skill card opens the full-width read-only detail page at `/ontology/skills/detail`.
 
 ## Page state and reads
 
-- `search` (deep-linkable): current filter text for the skill list (`list` member reading `query`).
-- `selected` (deep-linkable): currently selected skill (`{className: "platform:Skill", primaryKey: "<skillId>"}`).
-- `filePath` (deep-linkable): currently open file path inside the selected skill's package (defaults to `SKILL.md` when present).
-- Read `detail` (`ObjectHeader`, reading `record`) for the selected skill's title, description, source, and write restriction; read `tree` (`ObjectTree`, reading `files`) for the package file list and `content` (`ObjectTextReader`, reading `file` with `path`) for a file's UTF-8 content.
+- `search` (deep-linkable): current search keyword passed to `list` (`ObjectList`, reading `query`).
+- `importing` (not deep-linkable): `true` when the centered ZIP import dialog is open.
+- Read `list` (`ObjectList`, reading `query`) for the visible skills (`primaryKey`, `label`, `subtitle` / `description`, `source`, `writeRestriction`), total count, and any owner `diagnostics`.
 
 ## Operations
 
-- **Import (`import.import` / `skills.import`)**: requires a `.zip` skill package uploaded by the reader via the page's import control. Do not fabricate an upload ID; ask the reader to upload the `.zip` archive.
-- **Export (`detail.export` / `skills.export`)**: read-only operation declared on `detail` targeting `selected`, returning the skill package `.zip` for download.
-- **Delete (`detail.remove` / `skills.delete`)**: write operation declared on `detail` targeting `selected`, guarded by `skill-management`. Built-in and provider skills are read-only and unavailable for deletion. For domain-owned skills, confirm with the reader (the host confirmation lists affected agents) before deleting.
+- **Import (`import.import` / `skills.import`)**: uploading a `.zip` skill package from the reader's device is strictly human-operated. You may bring the reader to the import entry with `present({ importing: true })`, but never fabricate an upload ID, pick files, or submit the upload on the reader's behalf.
+- **Export (`list.export` / `skills.export`)**: per-card read-only operation declared on `list`, returning the chosen skill's `.zip` archive for download.
+- **Delete (`list.remove` / `skills.delete`)**: per-card write operation declared on `list`, guarded by `skill-management`. Built-in and provider skills are read-only and reported as unavailable by the owner. For domain-owned skills, confirm with the reader (the host confirmation lists affected agents) before deleting.
+
+## Navigation
+
+- Inspect a skill's package files and contents: open `/ontology/skills/detail?selected=<skillId>` (optionally with `&filePath=<path>`).

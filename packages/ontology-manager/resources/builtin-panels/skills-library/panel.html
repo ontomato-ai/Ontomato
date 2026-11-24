@@ -8,153 +8,75 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    container-type: inline-size;
+    container: skills-page / inline-size;
   }
-  .skills {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    min-height: 0;
-    min-width: 0;
-    padding: var(--spacing-md) var(--page-gutter) var(--spacing-lg);
-    box-sizing: border-box;
-    overflow: hidden;
-  }
-  .skills-bar {
-    display: flex;
-    flex: 0 0 auto;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: flex-end;
-    gap: var(--spacing-sm);
-  }
-  .skills-body {
-    display: grid;
-    flex: 1 1 auto;
-    grid-template-columns: clamp(15rem, 30%, 22rem) minmax(0, 1fr);
-    min-height: 0;
-    overflow: hidden;
-    border: 1px solid var(--ui-divider);
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-  }
-  .skills-list {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-    overflow: hidden;
-    padding: var(--spacing-md);
-    border-right: 1px solid var(--ui-divider);
-  }
-  .skills-fill {
-    flex: 1 1 auto;
-    min-height: 0;
-  }
-  .skills-detail {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-    overflow: hidden;
-  }
-  .skills-hint {
-    margin: auto;
-    padding: var(--spacing-xl) var(--spacing-lg);
-    color: var(--sdk-text-color-secondary);
-    font-size: var(--text-sm);
-    text-align: center;
-  }
-  .detail-head {
-    padding: var(--spacing-md) var(--spacing-lg);
+  .skills-btn-icon {
+    margin-inline-end: 6px;
     flex-shrink: 0;
   }
-  .detail-head.is-ready {
-    border-bottom: 1px solid var(--ui-divider);
-  }
-  .detail-head .sdk-object-header-title {
-    font-size: var(--text-base);
-    line-height: var(--leading-base);
-  }
-  .detail-head .sdk-object-header-subtitle {
-    font-family: var(--font-sans);
-    font-size: var(--text-sm);
-    line-height: var(--leading-sm);
-    white-space: normal;
-    overflow: visible;
-    text-overflow: clip;
-  }
-  .package {
-    display: grid;
-    grid-template-columns: clamp(9.5rem, 26%, 14rem) minmax(0, 1fr);
+  .skills-catalog {
+    display: flex;
     flex: 1 1 auto;
-    min-height: 0;
-    overflow: hidden;
-  }
-  .package-tree {
-    display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    padding: var(--spacing-sm);
     overflow: hidden;
-    border-right: 1px solid var(--ui-divider);
+    padding: var(--spacing-md) var(--page-gutter) var(--spacing-lg);
+    box-sizing: border-box;
   }
-  .package-viewer {
+  .skills-list-fill {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    padding: var(--spacing-md) var(--spacing-lg);
-    overflow: hidden;
   }
-  @container (max-width: 45rem) {
-    .skills { overflow-y: auto; }
-    .skills-body { grid-template-columns: minmax(0, 1fr); flex: 0 0 auto; overflow: visible; }
-    .skills-list { max-height: 22rem; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
-    .skills-detail { min-height: 24rem; overflow: visible; }
-  }
-  @container (max-width: 36rem) {
-    .package { grid-template-columns: minmax(0, 1fr); overflow: visible; }
-    .package-tree { max-height: 12rem; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
-    .package-viewer { min-height: 16rem; }
+  @container skills-page (max-width: 34rem) {
+    .skills-catalog {
+      padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
+    }
   }
 </style>
 <div id="app" v-cloak>
-  <div class="skills-page">
-    <page-header title="技能" description="管理智能体可用的技能包与文件">
+  <section class="skills-page">
+    <page-header :title="t('panel.title')" :description="t('panel.description')">
       <template #actions>
-        <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
+        <sdk-button text :aria-label="t('panel.refresh')" :title="t('panel.refresh')" @click="refresh">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+        </sdk-button>
+        <sdk-button type="primary" :disabled="importing" @click="openImport">
+          <svg class="skills-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+          <span>{{ t("panel.import") }}</span>
         </sdk-button>
       </template>
     </page-header>
-    <section class="skills">
-      <div class="skills-bar">
-        <projection slot="import" @uploaded="onImported"></projection>
-      </div>
-      <div class="skills-body">
-        <div class="skills-list">
-          <projection slot="list" class="skills-fill"></projection>
+    <div class="skills-catalog">
+      <projection slot="list" class="skills-list-fill" @choose="open"></projection>
+    </div>
+
+    <!-- Centered ZIP import dialog: file selection and submission remain human-operated per standard 2.4.2. -->
+    <sdk-dialog
+      v-model="importDialog"
+      :title="t('panel.import')"
+      width="520px"
+      append-to-body
+      destroy-on-close
+    >
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p style="margin: 0; font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--sdk-text-color-primary);">
+          {{ t("panel.importIntro") }}
+        </p>
+        <ul style="margin: 0; padding-inline-start: 1.25rem; display: flex; flex-direction: column; gap: 6px; font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--sdk-text-color-secondary);">
+          <li>{{ t("panel.importRuleRoot") }}</li>
+          <li>{{ t("panel.importRuleFrontmatter") }}</li>
+          <li>{{ t("panel.importRuleText") }}</li>
+          <li>{{ t("panel.importRuleOverwrite") }}</li>
+        </ul>
+        <div style="display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; padding-top: 8px;">
+          <sdk-button @click="closeImport">{{ t("panel.cancel") }}</sdk-button>
+          <projection v-if="importDialog" slot="import" @uploaded="onImported"></projection>
         </div>
-        <div class="skills-detail">
-          <p v-if="!selected" class="skills-hint">{{ t("panel.select") }}</p>
-          <template v-else>
-            <div class="detail-head" :class="{ 'is-ready': detailReady }">
-              <projection slot="detail" @done="onHeaderOperationDone"></projection>
-            </div>
-            <div v-show="detailReady" class="package">
-              <div class="package-tree">
-                <projection slot="tree" class="skills-fill"></projection>
-              </div>
-              <div class="package-viewer">
-                <projection slot="content" class="skills-fill"></projection>
-              </div>
-            </div>
-          </template>
-        </div>
       </div>
-    </section>
-  </div>
+    </sdk-dialog>
+  </section>
 </div>

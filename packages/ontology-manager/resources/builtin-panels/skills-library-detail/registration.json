@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-skills-library-detail",
+      "input": {
+        "name": "Skill Detail",
+        "description": "Inspect a skill's metadata, package file tree, and file contents, or export and delete it."
+      }
+    }
+  ]
+}

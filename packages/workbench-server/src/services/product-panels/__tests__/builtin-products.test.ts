@@ -74,6 +74,8 @@ describe("readBuiltinProducts", () => {
       expect(functionDetail.manifest.members).toHaveProperty("definition");
       expect(functionDetail.manifest.members).toHaveProperty("remove");
       expect(functionDetail.content.html).not.toContain('v-if="detailReady" #actions');
+      expect(panels.has("builtin-product-skills-library")).toBe(true);
+      expect(panels.has("builtin-product-skills-library-detail")).toBe(true);
 
       const frame = panels.get("builtin-product-ontology-frame");
       expect(frame).toBeDefined();
