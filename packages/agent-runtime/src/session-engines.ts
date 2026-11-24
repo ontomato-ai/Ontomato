@@ -202,7 +202,7 @@ export class SessionEngines {
   }
 
   async remove(scope: Scope, id: string) {
-    await this.release(scope, id);
+    await this.store.deleteSession(scope, id, () => this.release(scope, id));
     await removeWorkerFiles(sessionSandboxDirectory(this.root, scope, id));
   }
 

@@ -786,8 +786,8 @@ export class AgentRuntime {
         skills: skills.map(skill => ({ name: skill.skill.name, directory: skill.directory })),
         language: run.language,
         limits: request.definition.sandbox.limits,
-        tools: bound.tools.map(tool => tool.declaration),
-        engineTools,
+        tools: bound.declarations,
+        engineTools: bound.engineTools,
         signal,
         previousContext: () => this.previousContext(scope, run.sessionId),
         prompt: () => ({
@@ -1332,7 +1332,6 @@ export class AgentRuntime {
             [scope.hostId, scope.domainId, id],
           )
         ).rows;
-        await this.store.deleteSession(scope, id, () => this.sessionEngines.release(scope, id));
         await this.sessionEngines.remove(scope, id);
         for (const { sha256 } of hashes) {
           const referenced = (

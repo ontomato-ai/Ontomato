@@ -8,12 +8,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
 import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
 import type {
   HarnessEvent, HarnessOpenRequest, HarnessProcess, HarnessSession, HarnessTurnHost, HarnessTurnInput,
 } from "../adapters/contract";
+import { randomUUID } from "node:crypto";
+import { HarnessRegistry } from "../adapters/registry";
+import type { ModelGatewayClient } from "../gateway-client";
+import { resolvedModel } from "../model";
+import { SessionEngines } from "../session-engines";
+import type { RuntimeStore } from "../store";
 import { piPlugin } from "../adapters/pi";
 import { PiEvents } from "../adapters/pi/events";
 import { deferred } from "../adapters/pi/transport";
@@ -109,6 +115,32 @@ describe("PI 1.4.0 RPC plugin", () => {
     return result.requests;
   }
 
+  function fixtureSandbox(): HarnessOpenRequest["sandbox"] {
+    return {
+      spawn(command, args, env) {
+        expect(command).toBe("/usr/local/bin/node");
+        expect(args).toEqual(["/usr/local/lib/ontomato-pi/import.mjs"]);
+        expect(JSON.stringify(env)).not.toContain("test-lease");
+        const child = spawn(process.execPath, [program], {
+          cwd: directories.workspace,
+          env: { PATH: process.env.PATH, TMPDIR: root, ...env },
+          stdio: ["pipe", "pipe", "pipe", "pipe"],
+        });
+        const handle = {
+          stdin: child.stdin, stdout: child.stdout, stderr: child.stderr,
+          channel: child.stdio[3] as Duplex,
+          exited: new Promise<number | null>((resolve, reject) => {
+            child.once("error", reject);
+            child.once("close", resolve);
+          }),
+          kill() { child.kill(); },
+        };
+        processes.push(handle);
+        return handle;
+    },
+    };
+  }
+
   async function open(overrides: Partial<HarnessOpenRequest> = {}) {
     const session = await piPlugin.open({
       sessionId: "platform-session", domainId: "domain", engineRef: null, previousContext: null,
@@ -119,29 +151,7 @@ describe("PI 1.4.0 RPC plugin", () => {
       prompt: { system: "Only use platform resources." },
       tools: [declaration], engineTools: true, limits: codeLimitsSchema.parse({}), language: "en",
       signal: new AbortController().signal,
-      sandbox: {
-        spawn(command, args, env) {
-          expect(command).toBe("/usr/local/bin/node");
-          expect(args).toEqual(["/usr/local/lib/ontomato-pi/import.mjs"]);
-          expect(JSON.stringify(env)).not.toContain("test-lease");
-          const child = spawn(process.execPath, [program], {
-            cwd: directories.workspace,
-            env: { PATH: process.env.PATH, TMPDIR: root, ...env },
-            stdio: ["pipe", "pipe", "pipe", "pipe"],
-          });
-          const handle = {
-            stdin: child.stdin, stdout: child.stdout, stderr: child.stderr,
-            channel: child.stdio[3] as Duplex,
-            exited: new Promise<number | null>((resolve, reject) => {
-              child.once("error", reject);
-              child.once("close", resolve);
-            }),
-            kill() { child.kill(); },
-          };
-          processes.push(handle);
-          return handle;
-        },
-      },
+      sandbox: fixtureSandbox(),
       ...overrides,
     });
     return session;
@@ -166,6 +176,68 @@ describe("PI 1.4.0 RPC plugin", () => {
       runId: "run", inputs, context: "Initial host context", host: target.callbacks,
     }, new AbortController().signal);
   }
+
+  it("runs through the session owner, releases the lease after idle and resumes the real PI reference", async () => {
+    const requests = await configure(() => ({ status: "answer", text: "From the model" }));
+    const gatewayBaseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const id = randomUUID();
+    const scope = { hostId: "host", domainId: "domain" };
+    const refs: string[] = [];
+    const store = {
+      session: async () => ({ workspaceId: null }),
+      saveEngineRef: async (_scope: unknown, _id: string, ref: string) => { refs.push(ref); },
+    } as unknown as RuntimeStore;
+    const released = deferred<void>();
+    const gateway = {
+      lease: async () => ({ id: "lease", token: "test-lease", url: gatewayBaseUrl }),
+      release: async () => { released.resolve(); },
+    } as unknown as ModelGatewayClient;
+    const owner = new SessionEngines(store, root, gateway, new HarnessRegistry([piPlugin]),
+      async ({ callback }) => ({
+        ...fixtureSandbox(), directories, hostWorkspace: directories.workspace,
+        gatewayBaseUrl: gatewayBaseUrl + "/v1", callbackBaseUrl: `http://${callback.host}:${callback.port}`,
+        async stop() {},
+      }), async (_scope, _id, operation) => operation(), {
+        async sessionChannelCommand() {},
+        async withBusinessCallback() {},
+      }, error => { throw error; });
+    const options = {
+      config: async () => resolvedModel("public-model", "fixture",
+        { apiBase: gatewayBaseUrl, apiKey: "host-only-key", provider: "custom_openai" },
+        { type: "chat", connection: "fixture", model: "native-model" }),
+      plugin: owner.plugin("pi"),
+      skills: [], tools: [declaration],
+      prompt: () => ({ system: "Use the test model." }), previousContext: async () => null,
+      limits: codeLimitsSchema.parse({}), language: "en", engineTools: false,
+      signal: new AbortController().signal,
+    };
+
+    try {
+      const opened = await owner.open(scope, id, { ...options, engineRef: null });
+      expect(refs).toEqual([opened.handle.engineRef]);
+      const first = host();
+      expect(await turn(opened.handle, first, input("first", "Keep this context"))).toMatchObject({ stopReason: "stop" });
+      expect(first.consumed).toEqual(["first"]);
+
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      owner.idle(scope, id);
+      owner.admitted(scope, id);
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      expect(owner.needsOpen(scope, id)).toBe(false);
+      owner.idle(scope, id);
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      vi.useRealTimers();
+      await released.promise;
+
+      const resumed = await owner.open(scope, id, { ...options, engineRef: refs[0] });
+      expect(resumed.handle.engineRef).toBe(opened.handle.engineRef);
+      expect(await turn(resumed.handle, host(), input("second", "Use earlier context"))).toMatchObject({ stopReason: "stop" });
+      expect(JSON.stringify(requests.at(-1)?.messages)).toContain("Keep this context");
+    } finally {
+      vi.useRealTimers();
+      await owner.close();
+    }
+  });
 
   it("opens persisted native state, resumes the same ref and declarations, and rejects missing state", async () => {
     const requests = await configure(() => ({ status: "answer", text: "Done" }));
