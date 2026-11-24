@@ -12,7 +12,7 @@ import { authoredReadParameterSource, directReadDeclaration, panelReadParameterI
 import {
   AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, EXTERNAL_MCP_SERVICE, GENERAL_SETTINGS,
   MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, OPS_KNOWLEDGE, PUBLISHED_MCP_SERVICE, TURN_EVIDENCE,
-  ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, METRIC_VIEW, OBJECT_TYPE,
+  ACTION, APPLICATION, ATTRIBUTE, DASHBOARD, DASHBOARD_CARD, FUNCTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
   PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
   type PlatformReadDeclaration,
@@ -36,6 +36,7 @@ import { createExternalMcpReads } from "../mcp/external-mcp-panel";
 import { readPublishedMcpService, readPublishedMcpServices, readPublishedMcpServiceTools } from "../mcp/panel-reads";
 import type { McpRequestLocation } from "../mcp/catalog";
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
+import { createDashboardCardOwnerReadAdapter, createDashboardReadAdapter } from "../dashboard/panel-reads";
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
 import { createInstanceGraphReadAdapter } from "../ontology-model/instance-graph-reads";
 import { createObjectDetailReadAdapter } from "./object-detail-reads";
@@ -137,7 +138,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
   const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
   const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
+  const dashboards = createDashboardReadAdapter(owner, viewer);
   const cards = createDashboardCardReadAdapter(owner, viewer);
+  const cardOwnerReads = createDashboardCardOwnerReadAdapter(owner, viewer);
   const modelReads: Record<string, ReadAdapter> = {
     count: selection => model.count(selection.typeId),
     list: (selection, params) => model.list(selection.typeId, {
@@ -317,13 +320,23 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       form: (selection, params) => functions.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => functions.createForm(formParams(params)),
     },
+    [DASHBOARD]: {
+      list: () => dashboards.list(),
+      record: selection => dashboards.record(selection.primaryKey!),
+      cards: selection => dashboards.cards(selection.primaryKey!),
+    },
     [DASHBOARD_CARD]: {
-      chartTemplate: ({ primaryKey }, _params, projection) => cards.chartTemplate(
-        primaryKey!, requireChartReadRegistration(projection, primaryKey!),
-      ),
-      result: ({ primaryKey }, params, projection) => cards.result(
-        primaryKey!, requireChartReadRegistration(projection, primaryKey!), runtimeJsonObjectSchema.parse(params),
-      ),
+      chartTemplate: ({ primaryKey }, _params, projection) =>
+        "metricId" in projection && projection.metricId !== undefined
+          ? cards.chartTemplate(primaryKey!, requireChartReadRegistration(projection, primaryKey!))
+          : cards.ownedChartTemplate(primaryKey!),
+      result: ({ primaryKey }, params, projection) =>
+        "metricId" in projection && projection.metricId !== undefined
+          ? cards.result(primaryKey!, requireChartReadRegistration(projection, primaryKey!), runtimeJsonObjectSchema.parse(params))
+          : cards.ownedResult(primaryKey!, runtimeJsonObjectSchema.parse(params)),
+      record: ({ primaryKey }) => cardOwnerReads.record(primaryKey!),
+      form: ({ primaryKey }, params) => cardOwnerReads.form(primaryKey!, formParams(params)),
+      metricSource: ({ primaryKey }) => cardOwnerReads.metricSource(primaryKey!),
     },
     [AGENT_DEFINITION]: {
       count: async () => (await definitions()).count(),

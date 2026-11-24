@@ -30,6 +30,7 @@ import { ontologyModelServerOperations } from "../ontology-model/model-operation
 import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
 import { governanceServerOperations } from "../governance/panel-operations";
 import { opsDiagnosisServerOperations } from "../ops-diagnosis/panel-operations";
+import { dashboardServerOperations } from "../dashboard/panel-operations";
 import { skillExportOperation, skillServerOperations } from "../skills/panel-operations";
 import { productCatalogServerOperations } from "./catalog-operations";
 import { HttpError } from "../../utils/errors";
@@ -173,6 +174,7 @@ const registrations: readonly PanelServerOperation[] = [
   ...productCatalogServerOperations,
   ...governanceServerOperations,
   ...opsDiagnosisServerOperations,
+  ...dashboardServerOperations,
 ];
 const jsonSchema = (schema: z.ZodTypeAny) => cachedZodToJsonSchema(schema, { effectStrategy: "input" });
 const runtimeJsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(schema, { effectStrategy: "input" });

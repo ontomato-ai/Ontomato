@@ -3679,3 +3679,82 @@ test("text variables admit empty groups and require meaningful labels and insert
     assert.equal(parsesControl({ ...text, variables: [{ ...group, items: [{ ...item, [key]: "" }] }] }), false);
   }
 });
+
+test("panel form revision accepts both positive integers and non-empty opaque strings", () => {
+  const ownerSave = { method: "POST" as const, path: "/api/dashboards/save-card-parameters", bodySchema: { type: "object" } };
+  const field = {
+    path: "/region", label: "Region", valueSchema: { type: "string" }, required: false, readOnly: false,
+    control: { kind: "text" as const },
+  };
+  for (const revision of [1, "rev-abc-123"]) {
+    assert.equal(panelFormDescriptionSchema.parse({ fields: [field], values: { region: "APAC" }, errors: [], revision, save: ownerSave }).revision, revision);
+    assert.equal(panelFormSaveInputSchema.parse({ values: { region: "APAC" }, revision }).revision, revision);
+  }
+  for (const invalid of ["", 0, -1, 1.5]) {
+    assert.equal(panelFormDescriptionSchema.safeParse({ fields: [field], values: {}, errors: [], revision: invalid, save: ownerSave }).success, false);
+    assert.equal(panelFormSaveInputSchema.safeParse({ values: {}, revision: invalid }).success, false);
+  }
+});
+
+test("parent-scoped objects and child-objects use short URL query keys when a unique sibling parent deep-link exists", async () => {
+  const {
+    applicationPanelAddress, panelAddress, panelAddressState, parseApplicationPanelAddress,
+    validateApplicationPanelAddressState,
+  } = await import("./panel-host");
+  const dashboardManifest = {
+    state: {
+      dashboardId: { type: { kind: "object" as const, objectType: "platform:Dashboard" }, deepLink: true, personal: false, external: false },
+      cardId: { type: { kind: "object" as const, objectType: "platform:DashboardCard" }, deepLink: true, personal: false, external: false },
+    },
+  };
+  const dashRef = { className: "platform:Dashboard", primaryKey: "dash-1" };
+  const cardRef = { className: "platform:DashboardCard", primaryKey: dashboardCardPrimaryKey({ dashboardId: "dash-1", cardId: "card-1" }) };
+  const encoded = panelAddress("/dashboards", { dashboardId: dashRef, cardId: cardRef }, dashboardManifest);
+  assert.equal(encoded, "/dashboards?dashboardId=dash-1&cardId=card-1");
+  assert.deepEqual(panelAddressState(encoded, dashboardManifest), { dashboardId: dashRef, cardId: cardRef });
+
+  // A card belonging to a different dashboard keeps its full composite primaryKey losslessly.
+  const otherCard = { className: "platform:DashboardCard", primaryKey: dashboardCardPrimaryKey({ dashboardId: "dash-2", cardId: "card-9" }) };
+  const crossEncoded = panelAddress("/dashboards", { dashboardId: dashRef, cardId: otherCard }, dashboardManifest);
+  assert.equal(crossEncoded, "/dashboards?dashboardId=dash-1&cardId=dash-2%2Fcard-9");
+  assert.deepEqual(panelAddressState(crossEncoded, dashboardManifest), { dashboardId: dashRef, cardId: otherCard });
+
+  // Orphan bare cardId without a sibling dashboardId is safely ignored rather than creating a broken composite key.
+  assert.deepEqual(panelAddressState("/dashboards?cardId=card-1", dashboardManifest), {});
+
+  // Application-level address encoding and validation follow the exact same shorthand rule.
+  const appAddr = applicationPanelAddress("/dashboards", {
+    state: { dashboardId: dashRef, cardId: cardRef },
+    stateManifest: dashboardManifest,
+  });
+  assert.equal(appAddr, "/dashboards?dashboardId=dash-1&cardId=card-1");
+  const parsedApp = parseApplicationPanelAddress(appAddr, { stateManifest: dashboardManifest });
+  assert.deepEqual(parsedApp.state, { dashboardId: dashRef, cardId: cardRef });
+  assert.deepEqual(
+    validateApplicationPanelAddressState("state", { dashboardId: "dash-1", cardId: "card-1" }, dashboardManifest),
+    { dashboardId: dashRef, cardId: cardRef },
+  );
+
+  // Child-object state also uses short URL query keys when a unique sibling parent deep-link exists.
+  const childManifest = {
+    state: {
+      dashboardId: { type: { kind: "object" as const, objectType: "platform:Dashboard" }, deepLink: true, personal: false, external: false },
+      item: { type: { kind: "child-object" as const, parentType: "platform:Dashboard", collection: "cards" }, deepLink: true, personal: false, external: false },
+    },
+  };
+  const childIdentity = { parent: { objectType: "platform:Dashboard", primaryKey: "dash-1" }, primaryKey: "card-1" };
+  const childAddr = panelAddress("/dashboards", { dashboardId: dashRef, item: childIdentity }, childManifest);
+  assert.equal(childAddr, "/dashboards?dashboardId=dash-1&item=card-1");
+  assert.deepEqual(panelAddressState(childAddr, childManifest), { dashboardId: dashRef, item: childIdentity });
+});
+
+test("inline MetricChart without sourceCard accepts explicit slot-supplied card data bindings", async () => {
+  const { panelAuthoringMemberSchema } = await import("./panel-check");
+  const slotChart = {
+    component: "MetricChart",
+    type: DASHBOARD_CARD,
+    target: { fromSlot: true },
+    data: { template: "chartTemplate", result: "result" },
+  };
+  assert.deepEqual(panelAuthoringMemberSchema.parse(slotChart), slotChart);
+});

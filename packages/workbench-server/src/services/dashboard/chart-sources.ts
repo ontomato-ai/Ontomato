@@ -8,6 +8,7 @@ import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { getOwnedDashboard } from "./access";
 import { DashboardMetricClient } from "./metric-client";
+import { requireMatchingOutput } from "./metric-data";
 import { getDashboard, saveDashboard } from "./store";
 import { validateDashboardChartDrawing } from "./validation";
 
@@ -67,7 +68,12 @@ export const dashboardChartSources = {
 
 type ChartRegistration = Pick<RegisteredSource, "dashboardOwnerId" | "metricId">;
 
-export function createDashboardCardReadAdapter({ domainId }: DashboardOwner, viewer: AssistantCredentials) {
+function findAnyCard(detail: DashboardDetail, cardId: string) {
+  return detail.groups.flatMap(group => [...group.charts, ...group.metrics]).find(card => card.id === cardId);
+}
+
+export function createDashboardCardReadAdapter(owner: DashboardOwner, viewer: AssistantCredentials) {
+  const { domainId } = owner;
   const association = (primaryKey: string, registration: ChartRegistration): RegisteredSource => ({
     ...registration,
     source: parseDashboardCardPrimaryKey(primaryKey),
@@ -82,6 +88,24 @@ export function createDashboardCardReadAdapter({ domainId }: DashboardOwner, vie
       const metric = new DashboardMetricClient(domainId, viewer);
       const { revision, sourceObjectTypes } = await metric.describe(registration.metricId);
       const executed = await metric.execute({ ...card.query, parameters: { ...card.query.parameters, ...parameters } }, revision);
+      return sourceObjectTypes !== undefined ? { ...executed, sourceObjectTypes } : executed;
+    },
+    /** Direct owner read for a chart card's template inside the owner's own dashboard panel. */
+    async ownedChartTemplate(primaryKey: string) {
+      const source = parseDashboardCardPrimaryKey(primaryKey);
+      const card = await ownChart(owner, source);
+      return { chartFile: card.chartFile, parameters: card.query.parameters };
+    },
+    /** Direct owner read for any chart or metric card's executed metric output inside the owner's own dashboard panel. */
+    async ownedResult(primaryKey: string, parameters: DashboardMetricReference["parameters"]) {
+      const { dashboardId, cardId } = parseDashboardCardPrimaryKey(primaryKey);
+      const detail = await getOwnedDashboard(owner.userId, domainId, dashboardId);
+      const card = findAnyCard(detail, cardId);
+      if (!card) throw new HttpError(404, "Dashboard card not found", "NOT_FOUND");
+      const metric = new DashboardMetricClient(domainId, viewer);
+      const { revision, sourceObjectTypes } = await metric.describe(card.query.metricId);
+      const executed = await metric.execute({ ...card.query, parameters: { ...card.query.parameters, ...parameters } }, revision);
+      requireMatchingOutput(card, executed);
       return sourceObjectTypes !== undefined ? { ...executed, sourceObjectTypes } : executed;
     },
   };

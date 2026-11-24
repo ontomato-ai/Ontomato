@@ -100,14 +100,15 @@ const inlineMemberSchema = z.object({
   description: z.string().optional().describe("Projection description. Defaults to the member name."),
 }).strict().superRefine((member, ctx) => {
   const issue = (field: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: field, message });
-  if (isOfficialComponent(member.component, "MetricChart")) {
-    if (member.sourceCard === undefined) issue(["sourceCard"], "MetricChart needs a source card");
+  if (isOfficialComponent(member.component, "MetricChart") && member.sourceCard !== undefined) {
     for (const field of ["id", "type", "target", "data", "operation", "operationParams", "operations", "draft", "parameters", "bindingId", "inputs", "config", "agent", "prefill", "prefillKey", "name", "description"] as const) {
       if (member[field] !== undefined) issue([field], "MetricChart takes its projection definition from the source card");
     }
     return;
   }
-  if (member.sourceCard !== undefined) issue(["sourceCard"], "This field is only for MetricChart");
+  if (!isOfficialComponent(member.component, "MetricChart") && member.sourceCard !== undefined) {
+    issue(["sourceCard"], "This field is only for MetricChart");
+  }
 
   if (isOfficialComponent(member.component, "ConversationEntry")) {
     if (member.agent === undefined) issue(["agent"], "ConversationEntry needs an agent target");

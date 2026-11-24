@@ -7,9 +7,11 @@ import {
   normalizePanelDeepLinkState, normalizeExternalPanelValue, panelChildObjectIdentitySchema,
   panelMemberPathSchema, panelMemberPathSegmentSchema,
   panelObjectIdentitySchema, panelObjectRefSchema, panelOpenRequestSchema, panelOperationSchema,
-  panelOperationUnavailableSchema, type DirectPanelPortType, type PanelDeepLinkStateValue,
+  panelOperationUnavailableSchema, parentScopedObjectType, resolveSiblingParentKey,
+  type DirectPanelPortType, type PanelDeepLinkStateValue,
   type PanelManifest, type PanelObjectIdentity, type PanelStateField,
 } from "./panel-manifest";
+import { platformObjectTypes } from "./platform-object-types";
 import { domainComponentIdSchema, domainComponentRuntimeSchema } from "./domain-component-runtime";
 import { panelCompletedOperationSchema, panelOperationAffectedSchema, panelOwnerOperationDescriptorSchema } from "./panel-operations";
 import { panelLocalOperationNameSchema } from "./panel-projection";
@@ -336,7 +338,11 @@ function isPlainDeepEqual(a: unknown, b: unknown): boolean {
       && isPlainDeepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
 }
 
-function encodeFlatItem(value: PanelDeepLinkStateValue, type?: DirectPanelPortType): string {
+function encodeFlatItem(
+  value: PanelDeepLinkStateValue,
+  type?: DirectPanelPortType,
+  siblingParentKey?: string,
+): string {
   if (typeof value === "string") return value;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new Error("Panel address number state must be finite");
@@ -346,18 +352,39 @@ function encodeFlatItem(value: PanelDeepLinkStateValue, type?: DirectPanelPortTy
   const ref = panelObjectRefSchema.safeParse(value);
   if (ref.success) {
     if (type?.kind === "object" && type.objectType === ref.data.className && !ref.data.primaryKey.includes("~")) {
+      if (siblingParentKey !== undefined && platformObjectTypes[type.objectType]?.parentKeyType) {
+        const prefix = `${encodeURIComponent(siblingParentKey)}/`;
+        if (ref.data.primaryKey.startsWith(prefix)) {
+          const encodedLocal = ref.data.primaryKey.slice(prefix.length);
+          if (encodedLocal.length > 0 && !encodedLocal.includes("/")) {
+            try {
+              const localKey = decodeURIComponent(encodedLocal);
+              if (localKey.length > 0 && !localKey.includes("/") && !localKey.includes("~")) {
+                return localKey;
+              }
+            } catch {
+              // Fall back to the full composite primary key when not valid URI encoding.
+            }
+          }
+        }
+      }
       return ref.data.primaryKey;
     }
     return `${ref.data.className}~${ref.data.primaryKey}`;
   }
   const child = panelChildObjectIdentitySchema.safeParse(value);
   if (child.success) {
-    if (
-      type?.kind === "child-object"
-      && type.parentType === child.data.parent.objectType
-      && !child.data.parent.primaryKey.includes("~")
-    ) {
-      return `${child.data.parent.primaryKey}~${child.data.primaryKey}`;
+    if (type?.kind === "child-object" && type.parentType === child.data.parent.objectType) {
+      if (
+        siblingParentKey !== undefined
+        && child.data.parent.primaryKey === siblingParentKey
+        && !child.data.primaryKey.includes("~")
+      ) {
+        return child.data.primaryKey;
+      }
+      if (!child.data.parent.primaryKey.includes("~")) {
+        return `${child.data.parent.primaryKey}~${child.data.primaryKey}`;
+      }
     }
     return `${child.data.parent.objectType}~${child.data.parent.primaryKey}~${child.data.primaryKey}`;
   }
@@ -380,7 +407,11 @@ function hasNonEmptyDefault(field: PanelStateField): boolean {
  * instead of snapping back to the default. For `list<string>`, an empty list writes `?name=` and restores as `[]`;
  * empty-string list items are not restored separately without auxiliary parameters.
  */
-function encodeFlatStateValues(value: PanelDeepLinkStateValue, field?: PanelStateField): string[] {
+function encodeFlatStateValues(
+  value: PanelDeepLinkStateValue,
+  field?: PanelStateField,
+  siblingParentKey?: string,
+): string[] {
   if (value === undefined) return [];
   if (field) {
     if (!field.deepLink) return [];
@@ -402,15 +433,19 @@ function encodeFlatStateValues(value: PanelDeepLinkStateValue, field?: PanelStat
   }
   if (Array.isArray(value)) {
     const itemType = field?.type.kind === "list" ? field.type.items : undefined;
-    return value.map((item) => encodeFlatItem(item, itemType));
+    return value.map((item) => encodeFlatItem(item, itemType, siblingParentKey));
   }
-  return [encodeFlatItem(value, field?.type)];
+  return [encodeFlatItem(value, field?.type, siblingParentKey)];
 }
 
 function appendFlatState(
-  params: URLSearchParams, name: string, value: PanelDeepLinkStateValue, field?: PanelStateField,
+  params: URLSearchParams,
+  name: string,
+  value: PanelDeepLinkStateValue,
+  field?: PanelStateField,
+  siblingParentKey?: string,
 ) {
-  for (const item of encodeFlatStateValues(value, field)) params.append(name, item);
+  for (const item of encodeFlatStateValues(value, field, siblingParentKey)) params.append(name, item);
 }
 
 function collapseBucket(
@@ -499,12 +534,16 @@ export function applicationPanelAddress(path: string, {
   for (const [name, value] of Object.entries(values.frame)) {
     const key = `${PANEL_FRAME_QUERY_PREFIX}${name}`;
     params.delete(key);
-    appendFlatState(params, key, value, frameManifest?.state[name]);
+    const field = frameManifest?.state[name];
+    const siblingParentKey = field ? resolveSiblingParentKey(frameManifest, field.type, values.frame) : undefined;
+    appendFlatState(params, key, value, field, siblingParentKey);
   }
   for (const [name, value] of Object.entries(values.state)) {
     if (isReservedOrFrameKey(name)) continue;
     params.delete(name);
-    appendFlatState(params, name, value, stateManifest?.state[name]);
+    const field = stateManifest?.state[name];
+    const siblingParentKey = field ? resolveSiblingParentKey(stateManifest, field.type, values.state) : undefined;
+    appendFlatState(params, name, value, field, siblingParentKey);
   }
   return joinAddress(route, params);
 }
@@ -517,12 +556,25 @@ export function validateApplicationPanelAddressState(
   controlled: readonly string[] = [],
 ): PanelAddressState {
   const result: PanelAddressState = {};
+  const deferred: [string, PanelDeepLinkStateValue, PanelStateField][] = [];
   for (const [name, value] of Object.entries(values)) {
     if (controlled.includes(name)) continue;
     const fields = manifest?.state;
     const field = fields && Object.hasOwn(fields, name) ? fields[name] : undefined;
     if (!field?.deepLink) throw new Error(`Panel address field '${section}.${name}' is not declared for deep linking`);
+    if (parentScopedObjectType(field.type) !== undefined) {
+      deferred.push([name, value, field]);
+      continue;
+    }
     const normalized = normalizeExternalPanelValue(field.type, value);
+    if (!normalized.ok) {
+      throw new Error(`Panel address field '${section}.${name}' does not match its declared type`);
+    }
+    result[name] = normalized.value;
+  }
+  for (const [name, value, field] of deferred) {
+    const siblingParentKey = resolveSiblingParentKey(manifest, field.type, result);
+    const normalized = normalizeExternalPanelValue(field.type, value, siblingParentKey);
     if (!normalized.ok) {
       throw new Error(`Panel address field '${section}.${name}' does not match its declared type`);
     }
@@ -566,7 +618,9 @@ export function panelAddress(
     if (isReservedOrFrameKey(name)) continue;
     if (manifest && !manifest.state[name]?.deepLink) continue;
     params.delete(name);
-    appendFlatState(params, name, value, manifest?.state[name]);
+    const field = manifest?.state[name];
+    const siblingParentKey = field ? resolveSiblingParentKey(manifest, field.type, values) : undefined;
+    appendFlatState(params, name, value, field, siblingParentKey);
   }
   return joinAddress(route, params);
 }
