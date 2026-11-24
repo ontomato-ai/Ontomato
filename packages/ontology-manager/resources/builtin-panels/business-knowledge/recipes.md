@@ -18,4 +18,5 @@
 
 - 单条操作走 `selected`，且单条审核（`approve.approve`）和单条删除（`remove.delete`）只在查看态（`mode === "view"`）且条目详情就绪时挂载可用，编辑态或新建态不可用。先用 `present` 切到查看态并选中条目，待条目详情就绪后再调用 `page_action({ operation: "approve.approve" })` 或 `page_action({ operation: "remove.delete" })`。
 - 批量操作走 `checked`。用 `present` 把 `checked` 设为目标条目的对象引用数组，再调用 `page_action({ operation: "approveAll.approve" })` 或 `page_action({ operation: "deleteAll.delete" })`。
-- 写入操作由页面按会话确认设置走对话确认（默认）或全自动执行；执行失败要如实报告失败条数。
+- 批量审核（`approveAll.approve`）仅审核待审核条目：勾选批次里混有已通过条目时，属主会在派发前跳过已通过条目（不重复改写），并在批量回执中以 `skipped` 附原因说明；若勾选的条目全部已通过，批量审核按钮不可用。
+- 写入操作由页面按会话确认设置走对话确认（默认）或全自动执行；汇报批量结果时需如实说明成功、跳过（含原因）和失败条数。
