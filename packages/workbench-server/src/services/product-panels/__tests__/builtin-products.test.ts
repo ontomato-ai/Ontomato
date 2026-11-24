@@ -77,9 +77,18 @@ describe("readBuiltinProducts", () => {
       const agentDetail = panels.get("builtin-product-agent-detail")!;
       expect(agentDetail.manifest.state).toHaveProperty("selected");
       expect(agentDetail.manifest.state).toHaveProperty("catalogPath");
+      expect(agentDetail.manifest.state.tab?.deepLink).toBe(true);
+      expect(agentDetail.manifest.state.grantDialog?.deepLink).toBe(false);
       expect(agentDetail.manifest.members).toHaveProperty("header");
       expect(agentDetail.manifest.members).toHaveProperty("form");
       expect(agentDetail.manifest.members).toHaveProperty("remove");
+      expect(agentDetail.manifest.members).toHaveProperty("grantsList");
+      expect(agentDetail.manifest.members).toHaveProperty("shareStatusDesc");
+      expect(agentDetail.manifest.members).toHaveProperty("shareEnable");
+      expect(agentDetail.manifest.members).toHaveProperty("shareDisable");
+      expect(agentDetail.manifest.members).toHaveProperty("userPicker");
+      expect(agentDetail.manifest.members).toHaveProperty("rolePicker");
+      expect(agentDetail.manifest.members).toHaveProperty("grantSubmit");
       expect(agentDetail.content.html).not.toContain('v-if="detailReady" #actions');
 
       const functionsCatalog = panels.get("builtin-product-ontology-functions")!;
@@ -189,6 +198,10 @@ describe("readBuiltinProducts", () => {
       );
       await checkBuiltinPanelSource(
         path.join(packagesRoot, "ontology-manager/resources/builtin-panels/projection-detail"),
+        { ...panelCheck, draftReadOperationIds: [] },
+      );
+      await checkBuiltinPanelSource(
+        path.join(packagesRoot, "ontology-manager/resources/builtin-panels/agent-detail"),
         { ...panelCheck, draftReadOperationIds: [] },
       );
       expect(projectionsCatalogPanel!.content.module).not.toContain("usePanelData");

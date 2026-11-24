@@ -16,6 +16,58 @@
         "deepLink": false,
         "external": true,
         "default": "/ontology/agents"
+      },
+      "tab": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "config"
+      },
+      "grantDialog": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false
+      },
+      "grantPrincipalKind": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "default": "principal"
+      },
+      "grantUser": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:User"
+        },
+        "deepLink": false
+      },
+      "grantRole": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Role"
+        },
+        "deepLink": false
+      },
+      "grantPrincipalId": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false
+      },
+      "grantVerb": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "default": "use"
       }
     },
     "members": {
@@ -31,7 +83,7 @@
           "statusField": "category"
         },
         "name": "智能体页头",
-        "description": "展示当前智能体名称与分类标签，并透出记录加载状态与分类输出。",
+        "description": "展示当前智能体名称与分类标签，并透出记录加载状态、分类及编辑授权输出。",
         "id": "builtin-product-0a349e62-965d-485b-b72a-86005fc4d0dc"
       },
       "form": {
@@ -61,7 +113,7 @@
           "hideWhenUnavailable": true
         },
         "name": "删除智能体",
-        "description": "删除当前自建智能体；预置与系统内置智能体由属主标为不可用并隐藏。",
+        "description": "删除当前自建智能体；预置、系统内置及只读权限下由属主标为不可用并隐藏。",
         "id": "builtin-product-8a1b2e98-239b-4c0b-878a-5cfa141eeed1"
       },
       "model": {
@@ -129,6 +181,196 @@
         "name": "数据范围图谱",
         "description": "在对象类型与关系图上圈选智能体可见的本体范围。",
         "id": "builtin-product-4476e525-bcc6-47a8-9cfa-ae78ecabb8d6"
+      },
+      "grantsList": {
+        "component": "ObjectList",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "data": {
+          "rows": "grantRows"
+        },
+        "operations": {
+          "revoke": {
+            "operation": "agents.revoke",
+            "target": {
+              "state": "selected"
+            },
+            "params": {
+              "principalKind": {
+                "rowField": "principalKind"
+              },
+              "principalId": {
+                "rowField": "principalId"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "grants.none",
+          "columns": [
+            {
+              "key": "principalKindLabel",
+              "labelKey": "grants.kind",
+              "kind": "tag",
+              "width": 130
+            },
+            {
+              "key": "label",
+              "labelKey": "grants.principalCol",
+              "subtitleKey": "subtitle",
+              "minWidth": 220
+            },
+            {
+              "key": "levelLabel",
+              "labelKey": "grants.level",
+              "kind": "tag",
+              "width": 120
+            }
+          ],
+          "rowActions": {
+            "labelKey": "grants.actions",
+            "width": 100,
+            "align": "right",
+            "maxVisible": 1,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "revoke",
+                "labelKey": "grants.revoke",
+                "danger": true,
+                "when": {
+                  "field": "revocable",
+                  "equals": true
+                }
+              }
+            ]
+          }
+        },
+        "name": "智能体授权列表",
+        "description": "展示当前智能体按主体合并后的最高权限档位（使用、查看或编辑），并支持撤销成员或角色授权。",
+        "id": "builtin-product-9c27906f-2fdf-4191-aa89-f9552da51179"
+      },
+      "shareStatusDesc": {
+        "component": "TypedValue",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "domainShared",
+          "kind": "text",
+          "valueMap": {
+            "true": {
+              "labelKey": "grants.sharedDesc"
+            },
+            "false": {
+              "labelKey": "grants.privateDesc"
+            }
+          }
+        },
+        "name": "域内共享状态说明",
+        "description": "根据智能体记录中的域内共享字段展示当前全本域可用状态说明。",
+        "id": "builtin-product-a95e01c7-5167-4a99-a2a3-15457a420e51"
+      },
+      "shareEnable": {
+        "component": "OperationButton",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "operation": "agents.share",
+        "operationParams": {
+          "shared": {
+            "literal": true
+          }
+        },
+        "config": {
+          "size": "small",
+          "labelKey": "grants.enableShare"
+        },
+        "name": "开启全本域可用",
+        "description": "向当前域内所有成员开放该智能体的使用权限。",
+        "id": "builtin-product-e6d87648-5c54-41ae-b198-0d30b5a16d31"
+      },
+      "shareDisable": {
+        "component": "OperationButton",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "operation": "agents.share",
+        "operationParams": {
+          "shared": {
+            "literal": false
+          }
+        },
+        "config": {
+          "size": "small",
+          "labelKey": "grants.disableShare"
+        },
+        "name": "关闭全本域可用",
+        "description": "收回当前域内全员共享的使用权限，仅保留显式授权的成员与角色。",
+        "id": "builtin-product-905d0ec9-f2b6-4d7e-881e-157afba366fe"
+      },
+      "userPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:User",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "state": {
+          "selected": "grantUser"
+        },
+        "config": {
+          "size": "default",
+          "placeholderKey": "grants.selectMember"
+        },
+        "name": "授权成员选择",
+        "description": "选择要授予智能体权限的域成员。",
+        "id": "builtin-product-8cd89b7c-6713-4457-b0e3-330c99f12ba3"
+      },
+      "rolePicker": {
+        "component": "ReferencePicker",
+        "type": "platform:Role",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "state": {
+          "selected": "grantRole"
+        },
+        "config": {
+          "size": "default",
+          "placeholderKey": "grants.selectRole"
+        },
+        "name": "授权角色选择",
+        "description": "选择要授予智能体权限的角色。",
+        "id": "builtin-product-9d7e868b-f8c4-424e-ab59-196ef88e9a81"
+      },
+      "grantSubmit": {
+        "component": "OperationButton",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "operation": "agents.grant",
+        "operationParams": {
+          "principalKind": {
+            "state": "grantPrincipalKind"
+          },
+          "principalId": {
+            "state": "grantPrincipalId"
+          },
+          "verb": {
+            "state": "grantVerb"
+          }
+        },
+        "config": {
+          "type": "primary",
+          "labelKey": "grants.submit"
+        },
+        "name": "提交智能体授权",
+        "description": "为选定成员或角色原子写入单选三档之一（使用、查看或编辑）的智能体授权。",
+        "id": "builtin-product-716368b3-d65b-40b7-8951-74fa65259873"
       }
     }
   },
@@ -142,9 +384,40 @@
         "detail.loadError": "Failed to load agent.",
         "detail.missing": "This agent does not exist or has been deleted.",
         "detail.saved": "Agent saved.",
+        "detail.readonly": "Your account has read-only access to this agent's configuration and cannot modify it or manage grants.",
         "detail.systemNotice": "System built-in agents only support changing their model configuration and cannot be deleted.",
         "action.retry": "Retry",
-        "agents.viewType": "View class"
+        "action.cancel": "Cancel",
+        "agents.viewType": "View class",
+        "tab.config": "Configuration",
+        "tab.grants": "Permissions & sharing",
+        "grants.none": "No individual grants yet.",
+        "grants.kind": "Principal type",
+        "grants.principalCol": "Principal",
+        "grants.level": "Access level",
+        "grants.actions": "Actions",
+        "grants.principal": "Member",
+        "grants.role": "Role",
+        "grants.use": "Use",
+        "grants.view": "View",
+        "grants.edit": "Edit",
+        "grants.levelDesc.use": "Can chat with and invoke this agent, without seeing its internal configuration.",
+        "grants.levelDesc.view": "Includes Use, and can view this agent's configuration in read-only mode.",
+        "grants.levelDesc.edit": "Includes Use and View, and can edit this agent and manage its grants.",
+        "grants.overwriteHint": "Granting to an already authorized member or role replaces their current access level.",
+        "grants.revoke": "Revoke",
+        "grants.add": "Add grant",
+        "grants.dialogTitle": "Grant access",
+        "grants.shareTitle": "Available to all domain members",
+        "grants.sharedDesc": "All members in this domain can use this agent.",
+        "grants.privateDesc": "Only the members and roles explicitly granted below can access this agent.",
+        "grants.enableShare": "Enable domain-wide use",
+        "grants.disableShare": "Disable domain-wide use",
+        "grants.selectMember": "Search or select a member",
+        "grants.selectRole": "Search or select a role",
+        "grants.submit": "Grant",
+        "grants.updated": "Permissions updated.",
+        "grants.systemNote": "Using a system built-in agent still requires its own feature access gate; object grants can only narrow who can see or use it."
       },
       "zh-CN": {
         "panel.name": "智能体",
@@ -154,9 +427,40 @@
         "detail.loadError": "读取智能体失败。",
         "detail.missing": "智能体不存在或已删除。",
         "detail.saved": "智能体已保存。",
+        "detail.readonly": "当前账号仅可只读查看该智能体配置，无法修改配置或管理授权。",
         "detail.systemNotice": "系统内置智能体仅支持修改模型配置，不可删除。",
         "action.retry": "重试",
-        "agents.viewType": "查看所属类"
+        "action.cancel": "取消",
+        "agents.viewType": "查看所属类",
+        "tab.config": "配置",
+        "tab.grants": "权限与共享",
+        "grants.none": "暂无单独授权记录。",
+        "grants.kind": "主体类型",
+        "grants.principalCol": "主体",
+        "grants.level": "权限档位",
+        "grants.actions": "操作",
+        "grants.principal": "成员",
+        "grants.role": "角色",
+        "grants.use": "使用",
+        "grants.view": "查看",
+        "grants.edit": "编辑",
+        "grants.levelDesc.use": "可在对话和调用中使用该智能体，不可查看其内部配置。",
+        "grants.levelDesc.view": "包含使用权限，且可在设置中只读查看该智能体的完整配置。",
+        "grants.levelDesc.edit": "包含使用与查看权限，且可修改配置并管理该智能体的授权。",
+        "grants.overwriteHint": "对已授权成员或角色再次授予时，将直接更新为其新的权限档位。",
+        "grants.revoke": "撤销",
+        "grants.add": "添加授权",
+        "grants.dialogTitle": "添加授权",
+        "grants.shareTitle": "全本域可用",
+        "grants.sharedDesc": "已向本域所有成员开放该智能体的使用权限。",
+        "grants.privateDesc": "当前仅对下方显式授权的成员与角色开放。",
+        "grants.enableShare": "开启全本域可用",
+        "grants.disableShare": "关闭全本域可用",
+        "grants.selectMember": "搜索或选择成员",
+        "grants.selectRole": "搜索或选择角色",
+        "grants.submit": "授予",
+        "grants.updated": "权限已更新。",
+        "grants.systemNote": "系统内置智能体的「使用」仍受各自业务门禁约束，对象授权仅用于进一步收窄可见与使用范围。"
       },
       "zh-TW": {
         "panel.name": "智慧體",
@@ -166,9 +470,40 @@
         "detail.loadError": "讀取智慧體失敗。",
         "detail.missing": "智慧體不存在或已刪除。",
         "detail.saved": "智慧體已儲存。",
+        "detail.readonly": "目前帳號僅可唯讀檢視此智慧體設定，無法修改設定或管理授權。",
         "detail.systemNotice": "系統內建智慧體僅支援修改模型設定，不可刪除。",
         "action.retry": "重試",
-        "agents.viewType": "查看所屬類"
+        "action.cancel": "取消",
+        "agents.viewType": "查看所屬類",
+        "tab.config": "設定",
+        "tab.grants": "權限與共享",
+        "grants.none": "暫無單獨授權紀錄。",
+        "grants.kind": "主體類型",
+        "grants.principalCol": "主體",
+        "grants.level": "權限層級",
+        "grants.actions": "操作",
+        "grants.principal": "成員",
+        "grants.role": "角色",
+        "grants.use": "使用",
+        "grants.view": "檢視",
+        "grants.edit": "編輯",
+        "grants.levelDesc.use": "可在對話與呼叫中使用此智慧體，無法檢視內部設定。",
+        "grants.levelDesc.view": "包含使用權限，並可在設定中唯讀檢視此智慧體的完整設定。",
+        "grants.levelDesc.edit": "包含使用與檢視權限，並可修改設定及管理此智慧體的授權。",
+        "grants.overwriteHint": "對已授權的成員或角色重新授予時，會直接更新為新的權限層級。",
+        "grants.revoke": "撤銷",
+        "grants.add": "新增授權",
+        "grants.dialogTitle": "新增授權",
+        "grants.shareTitle": "全本域可用",
+        "grants.sharedDesc": "已向本域所有成員開放此智慧體的使用權限。",
+        "grants.privateDesc": "目前僅對下方明確授權的成員與角色開放。",
+        "grants.enableShare": "開啟全本域可用",
+        "grants.disableShare": "關閉全本域可用",
+        "grants.selectMember": "搜尋或選擇成員",
+        "grants.selectRole": "搜尋或選擇角色",
+        "grants.submit": "授予",
+        "grants.updated": "權限已更新。",
+        "grants.systemNote": "系統內建智慧體的「使用」仍受各自業務門禁約束，物件授權僅用於進一步收窄可見與使用範圍。"
       },
       "ja": {
         "panel.name": "エージェント",
@@ -178,9 +513,40 @@
         "detail.loadError": "エージェントの読み込みに失敗しました。",
         "detail.missing": "エージェントは存在しないか、削除されました。",
         "detail.saved": "エージェントを保存しました。",
+        "detail.readonly": "このアカウントはこのエージェント設定の読み取り専用権限のみを持っており、編集や権限管理はできません。",
         "detail.systemNotice": "システム内蔵エージェントはモデル設定のみ変更でき、削除できません。",
         "action.retry": "再試行",
-        "agents.viewType": "所属クラスを表示"
+        "action.cancel": "キャンセル",
+        "agents.viewType": "所属クラスを表示",
+        "tab.config": "設定",
+        "tab.grants": "権限と共有",
+        "grants.none": "個別の付与はまだありません。",
+        "grants.kind": "対象種別",
+        "grants.principalCol": "対象",
+        "grants.level": "権限レベル",
+        "grants.actions": "操作",
+        "grants.principal": "メンバー",
+        "grants.role": "ロール",
+        "grants.use": "使用",
+        "grants.view": "閲覧",
+        "grants.edit": "編集",
+        "grants.levelDesc.use": "内部設定を見ずに、このエージェントと会話および呼び出しができます。",
+        "grants.levelDesc.view": "使用権限を含み、このエージェントの設定を読み取り専用で閲覧できます。",
+        "grants.levelDesc.edit": "使用および閲覧権限を含み、設定の編集と権限管理ができます。",
+        "grants.overwriteHint": "既に付与済みのメンバーまたはロールに再度付与すると、現在の権限レベルが置き換わります。",
+        "grants.revoke": "取り消す",
+        "grants.add": "権限を追加",
+        "grants.dialogTitle": "アクセス権を付与",
+        "grants.shareTitle": "ドメイン全員に公開",
+        "grants.sharedDesc": "このドメインのすべてのメンバーがこのエージェントを使用できます。",
+        "grants.privateDesc": "現在、下で明示的に付与されたメンバーとロールのみがアクセスできます。",
+        "grants.enableShare": "ドメイン全員に公開",
+        "grants.disableShare": "ドメイン全員公開を無効化",
+        "grants.selectMember": "メンバーを検索または選択",
+        "grants.selectRole": "ロールを検索または選択",
+        "grants.submit": "付与",
+        "grants.updated": "権限を更新しました。",
+        "grants.systemNote": "システム内蔵エージェントの使用にはそれぞれの機能ゲートも必要です。オブジェクト権限は可視範囲と使用範囲を絞り込むためにのみ機能します。"
       },
       "ar": {
         "panel.name": "الوكيل",
@@ -190,9 +556,40 @@
         "detail.loadError": "تعذر تحميل الوكيل.",
         "detail.missing": "هذا الوكيل غير موجود أو تم حذفه.",
         "detail.saved": "تم حفظ الوكيل.",
+        "detail.readonly": "يملك حسابك صلاحية عرض إعدادات هذا الوكيل للقراءة فقط ولا يمكنه التعديل أو إدارة الصلاحيات.",
         "detail.systemNotice": "لا تدعم الوكلاء المضمنة في النظام سوى تعديل إعداد النموذج ولا يمكن حذفها.",
         "action.retry": "إعادة المحاولة",
-        "agents.viewType": "عرض الفئة"
+        "action.cancel": "إلغاء",
+        "agents.viewType": "عرض الفئة",
+        "tab.config": "الإعدادات",
+        "tab.grants": "الصلاحيات والمشاركة",
+        "grants.none": "لا توجد صلاحيات فردية بعد.",
+        "grants.kind": "نوع الجهة",
+        "grants.principalCol": "الجهة",
+        "grants.level": "مستوى الصلاحية",
+        "grants.actions": "إجراءات",
+        "grants.principal": "عضو",
+        "grants.role": "دور",
+        "grants.use": "استخدام",
+        "grants.view": "عرض",
+        "grants.edit": "تحرير",
+        "grants.levelDesc.use": "يمكنه التحدث مع هذا الوكيل واستدعاؤه دون الاطلاع على إعداداته الداخلية.",
+        "grants.levelDesc.view": "يشمل الاستخدام، ويمكنه عرض إعدادات هذا الوكيل بوضع القراءة فقط.",
+        "grants.levelDesc.edit": "يشمل الاستخدام والعرض، ويمكنه تعديل الإعدادات وإدارة صلاحيات هذا الوكيل.",
+        "grants.overwriteHint": "يؤدي منح الصلاحية لعضو أو دور مخوّل مسبقًا إلى استبدال مستوى صلاحيته الحالي.",
+        "grants.revoke": "إلغاء",
+        "grants.add": "إضافة صلاحية",
+        "grants.dialogTitle": "منح صلاحية",
+        "grants.shareTitle": "متاح لجميع أعضاء النطاق",
+        "grants.sharedDesc": "يمكن لجميع أعضاء هذا النطاق استخدام هذا الوكيل.",
+        "grants.privateDesc": "يقتصر الوصول حاليًا على الأعضاء والأدوار المخوّلة صراحةً أدناه.",
+        "grants.enableShare": "تفعيل الإتاحة لجميع أعضاء النطاق",
+        "grants.disableShare": "إيقاف الإتاحة لجميع أعضاء النطاق",
+        "grants.selectMember": "ابحث عن عضو أو اختره",
+        "grants.selectRole": "ابحث عن دور أو اختره",
+        "grants.submit": "منح",
+        "grants.updated": "تم تحديث الصلاحيات.",
+        "grants.systemNote": "لا يزال استخدام الوكلاء المضمنة في النظام يتطلب صلاحية الميزة الخاصة بها؛ وتقتصر صلاحيات الكائن على تضييق نطاق الظهور والاستخدام."
       },
       "fr": {
         "panel.name": "Agent",
@@ -202,9 +599,40 @@
         "detail.loadError": "Échec du chargement de l'agent.",
         "detail.missing": "Cet agent n'existe pas ou a été supprimé.",
         "detail.saved": "Agent enregistré.",
+        "detail.readonly": "Votre compte dispose d'un accès en lecture seule à la configuration de cet agent et ne peut pas la modifier ni gérer ses autorisations.",
         "detail.systemNotice": "Les agents système intégrés permettent uniquement de modifier le modèle et ne peuvent pas être supprimés.",
         "action.retry": "Réessayer",
-        "agents.viewType": "Voir la classe"
+        "action.cancel": "Annuler",
+        "agents.viewType": "Voir la classe",
+        "tab.config": "Configuration",
+        "tab.grants": "Autorisations et partage",
+        "grants.none": "Aucune autorisation individuelle pour le moment.",
+        "grants.kind": "Type de sujet",
+        "grants.principalCol": "Sujet",
+        "grants.level": "Niveau d'accès",
+        "grants.actions": "Actions",
+        "grants.principal": "Membre",
+        "grants.role": "Rôle",
+        "grants.use": "Utiliser",
+        "grants.view": "Consulter",
+        "grants.edit": "Modifier",
+        "grants.levelDesc.use": "Peut discuter avec cet agent et l'invoquer sans voir sa configuration interne.",
+        "grants.levelDesc.view": "Inclut Utiliser et permet de consulter la configuration en lecture seule.",
+        "grants.levelDesc.edit": "Inclut Utiliser et Consulter, et permet de modifier cet agent et de gérer ses autorisations.",
+        "grants.overwriteHint": "Accorder un accès à un membre ou rôle déjà autorisé remplace son niveau actuel.",
+        "grants.revoke": "Révoquer",
+        "grants.add": "Ajouter une autorisation",
+        "grants.dialogTitle": "Accorder un accès",
+        "grants.shareTitle": "Disponible pour tout le domaine",
+        "grants.sharedDesc": "Tous les membres de ce domaine peuvent utiliser cet agent.",
+        "grants.privateDesc": "Seuls les membres et rôles explicitement autorisés ci-dessous peuvent accéder à cet agent.",
+        "grants.enableShare": "Activer pour tout le domaine",
+        "grants.disableShare": "Désactiver pour tout le domaine",
+        "grants.selectMember": "Rechercher ou sélectionner un membre",
+        "grants.selectRole": "Rechercher ou sélectionner un rôle",
+        "grants.submit": "Accorder",
+        "grants.updated": "Autorisations mises à jour.",
+        "grants.systemNote": "L'utilisation d'un agent système intégré reste soumise à son contrôle d'accès métier ; les autorisations d'objet servent uniquement à restreindre la visibilité et l'usage."
       },
       "de": {
         "panel.name": "Agent",
@@ -214,9 +642,40 @@
         "detail.loadError": "Agent konnte nicht geladen werden.",
         "detail.missing": "Dieser Agent existiert nicht oder wurde gelöscht.",
         "detail.saved": "Agent gespeichert.",
+        "detail.readonly": "Ihr Konto hat nur Lesezugriff auf die Konfiguration dieses Agenten und kann weder Änderungen vornehmen noch Berechtigungen verwalten.",
         "detail.systemNotice": "Systemintegrierte Agenten erlauben nur das Ändern der Modellkonfiguration und können nicht gelöscht werden.",
         "action.retry": "Erneut versuchen",
-        "agents.viewType": "Klasse anzeigen"
+        "action.cancel": "Abbrechen",
+        "agents.viewType": "Klasse anzeigen",
+        "tab.config": "Konfiguration",
+        "tab.grants": "Berechtigungen & Freigabe",
+        "grants.none": "Noch keine einzelnen Freigaben vorhanden.",
+        "grants.kind": "Subjekttyp",
+        "grants.principalCol": "Subjekt",
+        "grants.level": "Berechtigungsstufe",
+        "grants.actions": "Aktionen",
+        "grants.principal": "Mitglied",
+        "grants.role": "Rolle",
+        "grants.use": "Verwenden",
+        "grants.view": "Anzeigen",
+        "grants.edit": "Bearbeiten",
+        "grants.levelDesc.use": "Kann diesen Agenten nutzen und aufrufen, ohne dessen interne Konfiguration zu sehen.",
+        "grants.levelDesc.view": "Enthält Verwenden und erlaubt den schreibgeschützten Einblick in die Konfiguration.",
+        "grants.levelDesc.edit": "Enthält Verwenden und Anzeigen und erlaubt das Bearbeiten sowie Verwalten von Berechtigungen.",
+        "grants.overwriteHint": "Bei erneuter Zuweisung an ein bereits berechtigtes Mitglied oder eine Rolle wird die bisherige Stufe ersetzt.",
+        "grants.revoke": "Entziehen",
+        "grants.add": "Berechtigung hinzufügen",
+        "grants.dialogTitle": "Zugriff gewähren",
+        "grants.shareTitle": "Für alle Domänenmitglieder verfügbar",
+        "grants.sharedDesc": "Alle Mitglieder dieser Domäne können diesen Agenten verwenden.",
+        "grants.privateDesc": "Derzeit haben nur die unten ausdrücklich berechtigten Mitglieder und Rollen Zugriff.",
+        "grants.enableShare": "Domänenweite Nutzung aktivieren",
+        "grants.disableShare": "Domänenweite Nutzung deaktivieren",
+        "grants.selectMember": "Mitglied suchen oder auswählen",
+        "grants.selectRole": "Rolle suchen oder auswählen",
+        "grants.submit": "Gewähren",
+        "grants.updated": "Berechtigungen aktualisiert.",
+        "grants.systemNote": "Die Nutzung eines systemintegrierten Agenten unterliegt weiterhin dessen fachlicher Zugangsprüfung; Objektberechtigungen können den Zugriff nur weiter einschränken."
       },
       "it": {
         "panel.name": "Agente",
@@ -226,9 +685,40 @@
         "detail.loadError": "Impossibile caricare l'agente.",
         "detail.missing": "Questo agente non esiste o è stato eliminato.",
         "detail.saved": "Agente salvato.",
+        "detail.readonly": "Il tuo account dispone solo dell'accesso in sola lettura alla configurazione di questo agente e non può modificarlo né gestire le autorizzazioni.",
         "detail.systemNotice": "Gli agenti di sistema integrati consentono solo di modificare la configurazione del modello e non possono essere eliminati.",
         "action.retry": "Riprova",
-        "agents.viewType": "Visualizza classe"
+        "action.cancel": "Annulla",
+        "agents.viewType": "Visualizza classe",
+        "tab.config": "Configurazione",
+        "tab.grants": "Autorizzazioni e condivisione",
+        "grants.none": "Nessuna autorizzazione individuale presente.",
+        "grants.kind": "Tipo di soggetto",
+        "grants.principalCol": "Soggetto",
+        "grants.level": "Livello di accesso",
+        "grants.actions": "Azioni",
+        "grants.principal": "Membro",
+        "grants.role": "Ruolo",
+        "grants.use": "Usa",
+        "grants.view": "Visualizza",
+        "grants.edit": "Modifica",
+        "grants.levelDesc.use": "Può dialogare con questo agente e invocarlo senza vederne la configurazione interna.",
+        "grants.levelDesc.view": "Include Usa e consente di consultare la configurazione dell'agente in sola lettura.",
+        "grants.levelDesc.edit": "Include Usa e Visualizza, e consente di modificare la configurazione e gestire le autorizzazioni.",
+        "grants.overwriteHint": "Assegnare un livello a un membro o ruolo già autorizzato sostituisce quello precedente.",
+        "grants.revoke": "Revoca",
+        "grants.add": "Aggiungi autorizzazione",
+        "grants.dialogTitle": "Concedi accesso",
+        "grants.shareTitle": "Disponibile per tutto il dominio",
+        "grants.sharedDesc": "Tutti i membri di questo dominio possono usare questo agente.",
+        "grants.privateDesc": "Attualmente solo i membri e i ruoli autorizzati esplicitamente di seguito possono accedere a questo agente.",
+        "grants.enableShare": "Abilita uso per tutto il dominio",
+        "grants.disableShare": "Disabilita uso per tutto il dominio",
+        "grants.selectMember": "Cerca o seleziona un membro",
+        "grants.selectRole": "Cerca o seleziona un ruolo",
+        "grants.submit": "Concedi",
+        "grants.updated": "Autorizzazioni aggiornate.",
+        "grants.systemNote": "L'uso di un agente di sistema integrato resta soggetto al proprio controllo di accesso funzionale; le autorizzazioni sull'oggetto servono solo a restringerne la visibilità e l'uso."
       }
     }
   }
