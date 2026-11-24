@@ -83,6 +83,12 @@
     justify-content: center;
     padding: var(--spacing-2xl) var(--page-gutter) calc(var(--page-content-gap) + 56px);
   }
+  .ot-error-state {
+    padding: var(--page-content-gap) var(--page-gutter);
+  }
+  .ot-detail-error {
+    grid-column: 1 / -1;
+  }
   .ot-detail-body {
     display: grid;
     grid-template-columns: minmax(280px, 0.85fr) minmax(440px, 1.5fr);
@@ -243,7 +249,7 @@
           <h1 v-if="detailStatus !== 'ready'">{{ selectedKey }}</h1>
         </template>
         <template #actions>
-          <template v-if="detailStatus === 'ready'">
+          <template v-if="showDetailBody">
             <sdk-button @click="configureView">
               <svg class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
               <span>{{ t("ot.configureView") }}</span>
@@ -257,13 +263,22 @@
         </template>
       </page-header>
 
-      <p v-if="detailStatus === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
-      <p v-else-if="detailStatus === 'forbidden'" class="ot-status ot-failure">{{ t("ot.forbidden") }}</p>
-      <div v-else-if="detailStatus !== 'ready'" class="ot-missing">
+      <p v-if="detailStatus === 'forbidden'" class="ot-status ot-failure" role="alert">{{ t("ot.forbidden") }}</p>
+      <div v-else-if="detailStatus === 'empty' || detailStatus === 'missing'" class="ot-missing">
         <sdk-empty :description="t('ot.missing')"></sdk-empty>
       </div>
+      <div v-else-if="!detailEverReady && detailStatus === 'error'" class="ot-error-state">
+        <info-banner tone="danger" :text="detailError || t('ot.loadError')"></info-banner>
+      </div>
+      <p v-else-if="!showDetailBody" class="ot-status" role="status">{{ t("ot.loading") }}</p>
 
       <div v-else class="ot-detail-body">
+        <info-banner
+          v-if="detailStatus === 'error'"
+          class="ot-detail-error"
+          tone="danger"
+          :text="detailError || t('ot.loadError')"
+        ></info-banner>
         <section class="ot-card">
           <div class="ot-card-title">
             <h2>{{ t("ot.basicInfo") }}</h2>
@@ -279,7 +294,7 @@
             class="ot-pk-alert"
             compact
             tone="success"
-            :text="t('ot.pkOk', { name: primaryKeyName || '-' })"
+            :text="t('ot.pkOk', { name: primaryKeyShowName || primaryKeyName || '-' })"
           ></info-banner>
           <info-banner
             v-else-if="primaryKeyStatus === 'missing'"
@@ -293,7 +308,7 @@
             class="ot-pk-alert"
             compact
             tone="danger"
-            :text="t('ot.pkMultiple')"
+            :text="typeof primaryKeyCount === 'number' && primaryKeyCount > 0 ? t('ot.pkMultiple', { count: primaryKeyCount }) : t('ot.pkMultipleFallback')"
           ></info-banner>
           <info-banner
             v-else-if="primaryKeyStatus === 'disabled'"
@@ -324,7 +339,7 @@
               </sdk-button>
             </div>
             <div class="ot-detail-list-host">
-              <projection slot="attributes">
+              <projection v-if="detailClassName" slot="attributes">
                 <template #empty>
                   <sdk-empty :description="t('ot.noAttributes')" :image-size="72"></sdk-empty>
                 </template>
@@ -340,7 +355,7 @@
               </div>
             </div>
             <div class="ot-detail-list-host">
-              <projection slot="relations" @choose="openRelation">
+              <projection v-if="detailClassName" slot="relations" @choose="openRelation">
                 <template #empty>
                   <sdk-empty :description="t('ot.noRelations')" :image-size="72"></sdk-empty>
                 </template>
@@ -363,12 +378,29 @@
         <projection v-if="editAttributeDrawer" slot="attributeDetail"></projection>
       </template>
       <div class="ot-drawer-body">
-        <projection v-if="editAttributeDrawer" slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute"></projection>
+        <p v-if="attributeDetailStatus === 'forbidden'" class="ot-status ot-failure" role="alert">{{ t("ot.forbidden") }}</p>
+        <div v-else-if="attributeDetailStatus === 'empty' || attributeDetailStatus === 'missing'" class="ot-missing">
+          <sdk-empty :description="t('ot.missing')"></sdk-empty>
+        </div>
+        <info-banner
+          v-else-if="!attributeDetailEverReady && attributeDetailStatus === 'error'"
+          tone="danger"
+          :text="attributeDetailError || t('ot.loadError')"
+        ></info-banner>
+        <p v-else-if="!showAttributeBody" class="ot-status" role="status">{{ t("ot.loading") }}</p>
+        <template v-else>
+          <info-banner
+            v-if="attributeDetailStatus === 'error'"
+            tone="danger"
+            :text="attributeDetailError || t('ot.loadError')"
+          ></info-banner>
+          <projection v-if="editAttributeDrawer" slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute"></projection>
+        </template>
       </div>
-      <template v-if="editAttributeDrawer && attributeDetailStatus === 'ready'" #footer>
+      <template v-if="showAttributeBody" #footer>
         <div class="ot-drawer-footer">
           <div class="ot-drawer-footer-group">
-            <projection v-if="isPrimaryKey === false" slot="setPrimaryKey" @done="onSetPrimaryKeyDone"></projection>
+            <projection slot="setPrimaryKey"></projection>
             <projection slot="deleteAttribute" @done="onDeleteAttributeDone"></projection>
           </div>
           <div class="ot-drawer-footer-group">
