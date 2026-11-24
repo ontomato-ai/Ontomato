@@ -1,6 +1,6 @@
 ---
 name: ontology-generation
-description: Generate or explain ontology Actions, Functions, knowledge and dashboards; instantiate MetricView candidates; describe and quality-check query programs using ontology-owned validation.
+description: Generate or explain ontology Actions and describe or quality-check query programs using ontology-owned validation.
 ---
 
 # Ontology generation
@@ -31,13 +31,8 @@ Write **one JSON object** to `outputs/result.json`, with the following fields fo
 | Kind | Result fields |
 | --- | --- |
 | action | `sourcePath`, `parameterDefs` (array), `classNames` (nonempty array), `name`, `logic`, optional `target` ({className, keyParameter}) and optional `submissionCriteria` (`operator`, `conditions`, `unrepresentable`) |
-| function | `packagePath`, `columnLabels`, `name`, `logic`; preserve the supplied output keys |
-| dashboard | `packagePath`, `columnLabels`, `title`; parameter definitions belong to the package |
 | explain | `segs`, `operations`, `negativeEffect`, exactly following the explanation schema in the task definition; read source first |
-| instantiate | `instances`: array of `{id,question,parameters}` matching only the supplied MetricView candidates |
-| name | `name` |
-| knowledge | `knowledge`: array of `{title,knowledge}`; empty means no replacement |
 | describe | `meaning` (the complete program logic), `summary` |
 | quality | `conclusion`, numeric `score`, `fittedQuestion`; preserve the scoring rules in the definition |
 
-Quality checking and Function candidates run as ontology definitions on this runtime. Java owns their asynchronous records, score thresholds, candidate/publication rules and cancellation. Do not publish an asset or fabricate a check receipt yourself. Finish with a brief description after writing the result.
+Quality checking runs as an ontology definition on this runtime. Java owns its asynchronous records, score thresholds and cancellation. Do not publish an asset or fabricate a check receipt yourself. Finish with a brief description after writing the result.

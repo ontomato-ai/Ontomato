@@ -114,13 +114,13 @@ class QueryPackageContractTest {
     assertEquals(120, QueryPermissions.mask(JSONArray.of(JSONObject.of("total", 120)), graph, permission()).getJSONObject(0).get("total"));
     var altered = QueryPackage.copy(pkg);
     altered.getJSONArray("files").getJSONObject(0).put("content", altered.getJSONArray("files").getJSONObject(0).getString("content").replace(">=", ">"));
-    assertNotEquals(GenerationOperations.packageTestDigest("function", pkg), GenerationOperations.packageTestDigest("function", altered));
+    assertNotEquals(GenerationOperations.packageTestDigest("metric", pkg), GenerationOperations.packageTestDigest("metric", altered));
     var renamed = QueryPackage.copy(pkg);
     renamed.getJSONObject("manifest").getJSONArray("parameterDefs").getJSONObject(0).put("description", "A new description");
-    assertEquals(GenerationOperations.packageTestDigest("function", pkg), GenerationOperations.packageTestDigest("function", renamed));
+    assertEquals(GenerationOperations.packageTestDigest("metric", pkg), GenerationOperations.packageTestDigest("metric", renamed));
     altered = QueryPackage.copy(pkg);
     altered.getJSONObject("manifest").getJSONObject("computation").getJSONArray("operations").getJSONObject(0).put("operation", "project");
-    assertNotEquals(GenerationOperations.packageTestDigest("function", pkg), GenerationOperations.packageTestDigest("function", altered));
+    assertNotEquals(GenerationOperations.packageTestDigest("metric", pkg), GenerationOperations.packageTestDigest("metric", altered));
   }
 
   @Test

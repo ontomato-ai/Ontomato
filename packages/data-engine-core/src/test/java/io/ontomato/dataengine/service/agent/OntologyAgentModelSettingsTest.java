@@ -15,6 +15,8 @@ class OntologyAgentModelSettingsTest {
 
   @Test void catalogCoversConcreteAgentsAndUnknownIdsCannotBeConfigured() {
     var catalog=models.catalog();
+    assertEquals(List.of("retrieval", "actionCreation", "action", "describe", "explain", "metric", "quality"),
+        catalog.stream().map(OntologyAgentModelSettings.Agent::kind).toList());
     assertEquals(catalog.size(),catalog.stream().map(OntologyAgentModelSettings.Agent::id).distinct().count(),
         "every catalog id is unique");
     assertThrows(AgentHttpException.class,()->models.save("d","unknown",new JSONObject()));

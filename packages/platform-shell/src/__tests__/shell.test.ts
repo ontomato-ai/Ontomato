@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, type App } from "vue";
 import { PlatformShell, PlatformRail, PlatformAccountMenu, AppMenu, AppPanelPages } from "..";
+import { agentModelPage, ontologyAgentModelPages } from "../agent-models";
 import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLabels } from "../types";
 
 const labels: PlatformShellLabels = {
@@ -70,6 +71,16 @@ async function mount(component: unknown, props: Record<string, unknown>, slots: 
   await nextTick();
   return root;
 }
+
+it("lists only active ontology service agents on the transition model pages", () => {
+  expect(ontologyAgentModelPages).toEqual([
+    { app: "agents", kinds: ["retrieval", "quality", "describe", "explain", "metric"] },
+    { app: "ontology", kinds: ["actionCreation", "action"] },
+  ]);
+  for (const kind of ["dashboard", "function", "instantiate", "name", "knowledge"]) {
+    expect(agentModelPage(kind)).toBeNull();
+  }
+});
 
 describe("platform rail", () => {
   it.each([false, true])("identifies published builder applications when collapsed is %s", async (collapsed) => {

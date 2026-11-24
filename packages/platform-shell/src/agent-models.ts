@@ -14,15 +14,15 @@ import {
  */
 export const ontologyAgentModelPages = [
   // The data retrieval chain of the conversation: the retriever, the check of its questions, the description of a
-  // program the answer runs and the dashboard generated when an answer is added to a board; then the explanation of
+  // program the answer runs; then the explanation of
   // an action's code and the generation of a metric view, which stay with the platform's models.
   {
     app: "agents",
-    kinds: ["retrieval", "quality", "describe", "dashboard", "explain", "metric"],
+    kinds: ["retrieval", "quality", "describe", "explain", "metric"],
   },
   {
     app: "ontology",
-    kinds: ["actionCreation", "action", "function", "instantiate", "name"],
+    kinds: ["actionCreation", "action"],
   },
 ] as const;
 

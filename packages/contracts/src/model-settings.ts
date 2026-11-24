@@ -32,9 +32,10 @@ export const DEFAULT_CHAT_CONTEXT_WINDOW = 262144;
 export const DEFAULT_MODEL_TIMEOUT_SECONDS = 300;
 export const DEFAULT_MODEL_MAX_RETRIES = 2;
 
-/** Anthropic serves no embeddings API; every other provider prefix here does. */
+/** Providers whose gateway route supports text embeddings with a configured output dimension. */
 export function supportsEmbeddings(provider: ModelProvider): boolean {
-  return provider !== "anthropic";
+  return provider === "openai" || provider === "custom_openai" || provider === "azure"
+    || provider === "dashscope" || provider === "gemini" || provider === "bigmodel";
 }
 
 /** Azure and generic OpenAI-compatible connections have no default upstream URL. */
