@@ -262,7 +262,8 @@ it("blocks agent-supplied read secrets and forwards the run when a custom read h
       expect(button?.disabled).toBe(false);
       return button!;
     });
-    for (const input of [{ password: "agent" }, { token: "agent" }]) {
+    const secretInputs: readonly Record<string, string>[] = [{ password: "agent" }, { token: "agent" }];
+    for (const input of secretInputs) {
       expect(await context.instance.executeAction({ operation: "run.runNow", input, agentRun })).toMatchObject({
         ok: false, code: "PANEL_SECRET_HUMAN_INPUT_REQUIRED",
       });
