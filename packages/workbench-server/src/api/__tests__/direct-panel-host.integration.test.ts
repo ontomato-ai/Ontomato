@@ -407,7 +407,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
   const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
   const bundle = path.join(contentRoot, "ontology-catalogues");
   const catalogues = ["projections", "panels", "applications"];
-  const shipped = [...catalogues, "panel-detail", "application-detail", "agent-settings"];
+  const shipped = [...catalogues, "projection-detail", "panel-detail", "application-detail", "agent-settings"];
   await mkdir(bundle);
   await writeFile(path.join(bundle, "index.json"), JSON.stringify(shipped));
   const sources = new URL("../../../../ontology-manager/resources/builtin-panels/", import.meta.url);
@@ -465,7 +465,17 @@ it("registers the shipped ontology catalogues with addressable creation, preview
     expect(panel.manifest.state.creating).toMatchObject({ type: { kind: "scalar", type: "boolean" }, deepLink: false });
     definitions.set(catalogue, panel.manifest.members);
   }
-  expect(definitions.get("projections")?.preview?.target).toEqual({ fromState: "selected", candidates: { rule: "usable" } });
+  const projectionDetailResponse = await request("GET", "product-panels/builtin-product-ontology-projection-detail");
+  expect(projectionDetailResponse.status).toBe(200);
+  const { panel: projectionDetail } = productPanelResponseSchema.parse(await projectionDetailResponse.json());
+  expect(projectionDetail).toMatchObject({ visibility: "platform", ownerId: null, editable: false });
+  expect(projectionDetail.manifest.state.selected).toMatchObject({
+    type: { kind: "object", objectType: "platform:ProductProjection" }, deepLink: true,
+  });
+  expect(projectionDetail.manifest.state.detailMode).toMatchObject({
+    type: { kind: "scalar", type: "string" }, deepLink: false,
+  });
+  expect(projectionDetail.manifest.members.preview?.target).toEqual({ fromState: "selected", candidates: { rule: "usable" } });
   const panelDetailResponse = await request("GET", "product-panels/builtin-product-ontology-panel-detail");
   expect(panelDetailResponse.status).toBe(200);
   const { panel: panelDetail } = productPanelResponseSchema.parse(await panelDetailResponse.json());
