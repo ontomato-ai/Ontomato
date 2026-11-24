@@ -138,6 +138,35 @@ function mountShell(client: AgentHostClient) {
   return { root, conversation };
 }
 
+const runningSnapshot: AgentHostRunSnapshot = {
+  run: {
+    id: queuedRunId,
+    sessionId,
+    status: "running",
+    stopReason: null,
+    errorMessage: null,
+    answerMessageId: null,
+    workspaceCommit: null,
+    createdAt: new Date(30).toISOString(),
+    finishedAt: null,
+    resolvedSkills: [],
+  },
+  cursor: { seq: 3, streamId: "stream-1", runId: queuedRunId },
+  messages: [
+    {
+      id: firstInputId,
+      runId: queuedRunId,
+      messageSeq: 2,
+      contextSeq: 2,
+      message: { role: "user", content: "Check monthly revenue", timestamp: 10 },
+    },
+  ],
+  pendingMessages: [],
+  toolExecutions: [],
+  artifacts: [],
+  pendingQuestions: [],
+};
+
 it("shows a queued waiting indicator on delivery status 'starting' and transitions cleanly through running to completed", async () => {
   const { client, send, readRun, emitRunEvent } = createClient();
   const { root, conversation } = mountShell(client);
@@ -203,35 +232,7 @@ it("shows a queued waiting indicator on delivery status 'starting' and transitio
   expect(root.querySelectorAll(".user-queued")).toHaveLength(2);
 
   // When the queued run starts running, queued indicators clear and active run takes over.
-  const startedSnapshot: AgentHostRunSnapshot = {
-    run: {
-      id: queuedRunId,
-      sessionId,
-      status: "running",
-      stopReason: null,
-      errorMessage: null,
-      answerMessageId: null,
-      workspaceCommit: null,
-      createdAt: new Date(30).toISOString(),
-      finishedAt: null,
-      resolvedSkills: [],
-    },
-    cursor: { seq: 3, streamId: "stream-1", runId: queuedRunId },
-    messages: [
-      {
-        id: firstInputId,
-        runId: queuedRunId,
-        messageSeq: 2,
-        contextSeq: 2,
-        message: { role: "user", content: "Check monthly revenue", timestamp: 10 },
-      },
-    ],
-    pendingMessages: [],
-    toolExecutions: [],
-    artifacts: [],
-    pendingQuestions: [],
-  };
-  readRun.mockResolvedValueOnce(startedSnapshot);
+  readRun.mockResolvedValueOnce(runningSnapshot);
   await conversation.followRun(queuedRunId);
   await nextTick();
 
@@ -260,6 +261,52 @@ it("shows a queued waiting indicator on delivery status 'starting' and transitio
 
   expect(conversation.activeRunId.value).toBeNull();
   expect(conversation.busy.value).toBe(false);
+});
+
+it("releases the task connection during a steer POST and resumes it after the receipt", async () => {
+  const { client, send, readRun } = createClient();
+  let tasksConnected = false;
+  client.tasks!.subscribe = () => {
+    tasksConnected = true;
+    return () => { tasksConnected = false; };
+  };
+  const { conversation } = mountShell(client);
+  await conversation.open(sessionId);
+  readRun.mockResolvedValueOnce(runningSnapshot);
+  await conversation.followRun(queuedRunId);
+  expect(tasksConnected).toBe(true);
+
+  const receipt: AgentHostSendResult = {
+    delivery: {
+      messageId: secondInputId,
+      sessionRef: { providerId: "workbench", sessionId },
+      runId: queuedRunId,
+      delivery: "steer",
+      status: "running",
+    },
+    input: {
+      id: secondInputId, runId: null, messageSeq: 3, contextSeq: null,
+      message: { role: "user", content: "Use ultramarine", timestamp: 35 },
+    },
+    pendingQuestions: [],
+    replayed: false,
+    snapshot: null,
+  };
+  let finishSend!: (result: AgentHostSendResult) => void;
+  const pendingReceipt = new Promise<AgentHostSendResult>(resolve => { finishSend = resolve; });
+  let connectedAtPost: boolean | undefined;
+  send.mockImplementationOnce(() => {
+    connectedAtPost = tasksConnected;
+    return pendingReceipt;
+  });
+
+  const sending = conversation.send("agent-1", "Use ultramarine");
+  expect(connectedAtPost).toBe(false);
+  expect(tasksConnected).toBe(false);
+  expect(conversation.activeRunId.value).toBe(queuedRunId);
+  finishSend(receipt);
+  expect((await sending)?.delivery).toEqual(receipt.delivery);
+  expect(tasksConnected).toBe(true);
 });
 
 it("projects server-reported queuedRuns on session open and clears when the task stream removes them", async () => {
