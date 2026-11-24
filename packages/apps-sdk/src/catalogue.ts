@@ -167,13 +167,6 @@ export const components: readonly ComponentMetadata[] = [
     meaning: "An agent's avatar, from its stored image or colour and its initial.",
   }),
   defineComponentMeta({
-    componentId: "DatasetSelectionButton",
-    module: "@ontomato/sdk/chat",
-    exportName: "DatasetSelectionButton",
-    role: "control",
-    meaning: "Chooses a dataset to name in the conversation; it reads nothing and writes nothing.",
-  }),
-  defineComponentMeta({
     componentId: "ToolStep",
     module: "@ontomato/sdk/chat",
     exportName: "ToolStep",

@@ -170,14 +170,6 @@ export interface MessageActionContext {
 
 /** Fixed shell text supplied by the host's i18n. */
 export interface ShellLabels {
-  selectRow?: (row: number) => string;
-  selectedRows?: (count: number) => string;
-  analyzeSelection?: string;
-  compareSelection?: string;
-  clearSelection?: string;
-  /** The ordinary user message that continues from selected records; `rows` are 1-based positions in the source file. */
-  analyzeSelectionMessage?: (file: { title: string; path: string }, rows: number[]) => string;
-  compareSelectionMessage?: (file: { title: string; path: string }, rows: number[]) => string;
   newConversation: string;
   agent: string;
   sessions: string;
@@ -306,14 +298,18 @@ export interface ShellLabels {
   activityCompute: string;
   /** Heading of how a dataset was obtained, under its table: each query with its conditions, and the graph. */
   datasetLineage: string;
-  graphZoom?: { in: string; out: string; fit: string };
   showLineage: string;
   hideLineage: string;
-  /** The graph's columns: the objects the data comes from, the fields used, the calculations and the result columns. */
-  lineageSources: string;
+  /** Labels for the ABC ontology query path graph, class detail popover, calculations and result columns. */
+  lineageFilters?: string;
   lineageFields: string;
   lineageOperations: string;
   lineageOutputs: string;
+  lineageFilterCount?: (count: number) => string;
+  lineageFieldCount?: (count: number) => string;
+  lineagePathOnly?: string;
+  lineageOperationKinds?: Record<string, string>;
+  lineageRoles?: Record<string, string>;
   /** A dataset holds only the first `limit` rows of its result. */
   truncatedRows: (limit: number) => string;
   datasetUncheckedConditions?: (conditions: string[]) => string;
@@ -348,6 +344,10 @@ export interface ShellLabels {
 export interface ShellTaskLabels {
   /** The retrieval task's executor, the retriever agent. */
   retriever: string;
+  /** Generic role label for non-retrieval delegated/sub-agent tasks. */
+  delegatedAgent?: string;
+  /** Folded header label for a reply that handed off work to delegated tasks before the final answer turn. */
+  delegated?: string;
   status: Record<"starting" | "running" | "completed" | "failed" | "cancelled", string>;
   rows: (count: number) => string;
   /** The quality review's own name, beside the reply. */

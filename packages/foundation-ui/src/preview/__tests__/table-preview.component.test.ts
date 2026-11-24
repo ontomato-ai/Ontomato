@@ -8,9 +8,9 @@ import { jsonTable } from "../table-data";
 
 const labels = { filter: (column: string) => `Filter ${column}`, search: "Search", all: "All", empty: "(empty)" };
 
-// A conversation continues from chosen rows by their numbers in the immutable source file, so sorting and filtering
-// what the reader sees must never change which records a choice names. Numbers sort by the file's own values.
-it("keeps choosing rows by their index in the source after the reader sorts and filters", async () => {
+// Numbers sort by the file's own values, filtering narrows the visible rows without altering the source table,
+// and the pager only renders when the filtered rows span more than one page.
+it("sorts by numeric values, filters columns, and hides pagination when rows fit on one page", async () => {
   const table = jsonTable({
     columns: [
       { key: "name", label: "Name" },
@@ -24,22 +24,23 @@ it("keeps choosing rows by their index in the source after the reader sorts and 
     ],
   })!;
   const wrapper = mount(TablePreview, {
-    props: { table, pageSize: 10, selected: [], arrange: labels },
+    props: { table, pageSize: 3, arrange: labels },
     global: { plugins: [ElementPlus] },
   });
   try {
     await flushPromises();
-    const shown = () => wrapper.findAll(".el-table__body tr").map((row) => row.findAll("td").map((cell) => cell.text()).slice(1));
+    const shown = () => wrapper.findAll(".el-table__body tr").map((row) => row.findAll("td").map((cell) => cell.text()));
 
-    await wrapper.findAll(".el-table__header th")[2]!.get(".caret-wrapper .descending").trigger("click");
-    expect(shown().map((row) => row[1])).toEqual(["100", "10", "9", ""]);
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false);
+    expect(wrapper.find(".table-preview-pager").exists()).toBe(true);
+
+    await wrapper.findAll(".el-table__header th")[1]!.get(".caret-wrapper .descending").trigger("click");
+    expect(shown().map((row) => row[1])).toEqual(["100", "10", "9"]);
 
     wrapper.findAllComponents(ColumnFilter)[0]!.vm.$emit("change", new Set(["B"]));
     await nextTick();
     expect(shown()).toEqual([["B", "100"], ["B", "10"]]);
-
-    await wrapper.findAll(".el-table__body tr")[0]!.get("input[type=checkbox]").setValue(true);
-    expect(wrapper.emitted("update:selected")?.at(-1)).toEqual([[2]]);
+    expect(wrapper.find(".table-preview-pager").exists()).toBe(false);
   } finally {
     wrapper.unmount();
   }

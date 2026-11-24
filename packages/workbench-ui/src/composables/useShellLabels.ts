@@ -3,17 +3,8 @@ import { useI18n } from "vue-i18n";
 import type { ShellLabels } from "@ontomato/agent-shell-ui";
 export function useShellLabels() {
 const { t, locale } = useI18n();
-const selectionMessage = (key: string, file: { title: string; path: string }, rows: number[]) =>
-  t(key, { rows: new Intl.ListFormat(locale.value).format(rows.map(String)), file: t("assistant.continuation.file", file) });
 const formatCount = (count: number) => new Intl.NumberFormat(locale.value).format(count);
 return computed<ShellLabels>(() => ({
-  selectRow: (row) => t("assistant.selectRow", { row }),
-  selectedRows: (count) => t("assistant.selectedRows", { count }),
-  analyzeSelection: t("assistant.analyzeSelection"),
-  compareSelection: t("assistant.compareSelection"),
-  clearSelection: t("assistant.clearSelection"),
-  analyzeSelectionMessage: (file, rows) => selectionMessage("assistant.continuation.analyzeRows", file, rows),
-  compareSelectionMessage: (file, rows) => selectionMessage("assistant.continuation.compareRows", file, rows),
   newConversation: t("assistant.newConversation"),
   agent: t("assistant.agent"),
   sessions: t("assistant.sessions"),
@@ -116,10 +107,29 @@ return computed<ShellLabels>(() => ({
   datasetLineage: t("assistant.datasetLineage"),
   showLineage: t("assistant.datasetShowLineage"),
   hideLineage: t("assistant.datasetHideLineage"),
-  lineageSources: t("assistant.lineageSources"),
+  lineageFilters: t("assistant.lineageFilters"),
   lineageFields: t("assistant.lineageFields"),
   lineageOperations: t("assistant.lineageOperations"),
   lineageOutputs: t("assistant.lineageOutputs"),
+  lineageFilterCount: (count) => t("assistant.lineageFilterCount", { n: count }, count),
+  lineageFieldCount: (count) => t("assistant.lineageFieldCount", { n: count }, count),
+  lineagePathOnly: t("assistant.lineagePathOnly"),
+  lineageOperationKinds: {
+    project: t("assistant.lineageOpProject"),
+    filter: t("assistant.lineageOpFilter"),
+    group: t("assistant.lineageOpGroup"),
+    aggregate: t("assistant.lineageOpAggregate"),
+    join: t("assistant.lineageOpJoin"),
+    calculate: t("assistant.lineageOpCalculate"),
+    constant: t("assistant.lineageOpConstant"),
+    unknown: t("assistant.lineageOpUnknown"),
+  },
+  lineageRoles: {
+    value: t("assistant.lineageRoleValue"),
+    group: t("assistant.lineageRoleGroup"),
+    filter: t("assistant.lineageRoleFilter"),
+    join: t("assistant.lineageRoleJoin"),
+  },
   truncatedRows: (limit) => t("assistant.datasetTruncatedRows", { limit }),
   datasetUncheckedConditions: (conditions) => t("assistant.datasetUncheckedConditions", { conditions: conditions.join(" / ") }),
   filterColumn: (column) => t("assistant.datasetFilterColumn", { column }),
@@ -133,7 +143,6 @@ return computed<ShellLabels>(() => ({
     datasetReady: t("assistant.progressDatasetReady"),
     answering: t("assistant.progressAnswering"),
   },
-  graphZoom: { in: t("assistant.graphZoomIn"), out: t("assistant.graphZoomOut"), fit: t("assistant.graphZoomFit") },
   questionsWaiting: (count) => t("assistant.questionsWaiting", { n: count }, count),
   questionOptionDefault: t("assistant.questionOptionDefault"),
   questionOptionOther: t("assistant.questionOptionOther"),
@@ -144,6 +153,8 @@ return computed<ShellLabels>(() => ({
   answered: (text) => t("assistant.answered", { text }),
   tasks: {
     retriever: t("assistant.taskRetriever"),
+    delegatedAgent: t("assistant.taskDelegatedAgent"),
+    delegated: t("assistant.taskDelegated"),
     status: {
       starting: t("assistant.taskStarting"),
       running: t("assistant.taskRunning"),

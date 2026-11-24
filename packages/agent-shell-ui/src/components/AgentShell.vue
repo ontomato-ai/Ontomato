@@ -224,9 +224,6 @@ provide(shellContextKey, {
   artifactRenderers: toRef(props, "artifactRenderers"),
   toolRenderers: toRef(props, "toolRenderers"),
   slots: {
-    get datasetSelectionActions() {
-      return slots["dataset-selection-actions"];
-    },
     get artifactActions() {
       return slots["artifact-actions"];
     },

@@ -8,7 +8,6 @@ import { requirePermission } from "../../identity/installed";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
 import { readAnalysisScope } from "../../services/assistant/analysis-scope";
-import { readDrilldown } from "../../services/assistant/drilldown";
 import {
   agentDefinitionPermissions,
   readAgentDefinition,
@@ -85,10 +84,6 @@ router.get("/sessions/:sessionId/runs/:runId/authoring/:kind/tests/:executionId"
   const result = await executeAuthoring(owner, credentials, id(req, "runId"), kind, "read-test",
     { executionId: id(req, "executionId") }, id(req, "sessionId"));
   res.json(authoringTestRecordSchema.parse(result));
-}));
-router.get("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (req, res) => {
-  const rowIndex = z.coerce.number().int().nonnegative().safe().parse(req.query.rowIndex);
-  res.json(await readDrilldown(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, rowIndex));
 }));
 router.get("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
   res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, z.string().max(35).optional().parse(req.query.locale)));

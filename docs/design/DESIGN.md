@@ -361,9 +361,8 @@ nothing is left behind. Pages that scroll in the pane need neither: the pane kee
 the composer, adds a second value or scans the DOM for it.
 
 Read-only continuation suggestions show at most three short business-labelled buttons after an answer. They retain
-source run and dataset references, scope and decisions. Dataset selections persist across pagination and continue with
-raw selected rows, never reformatted cell strings for JSON datasets. Only selected rows are in scope unless the user
-asks to expand it. Analysis and comparison never authorize a write; mutations still require a separate Action confirmation.
+source run and dataset references, scope and decisions. Analysis and comparison never authorize a write; mutations still
+require a separate Action confirmation.
 
 Markdown renderer slots own answer spacing: 12px between paragraphs, lists, datasets and charts; 24px before a new
 heading and 8px from a heading to its content; no outer gap on the first or last block. List items use 4px separation.
@@ -373,13 +372,17 @@ heading-to-table is 8px, ordinary blocks 12px,
 major sections 24px, subsections 20px, and the report title-to-introduction gap is 16px. Table cells use 8px vertical
 and 12px horizontal padding with 13px/20px text. Code, diagrams and callouts do not add a second outer margin to slots.
 Embedded artifacts own their internal caption, table and footer spacing; prose margins must not cascade into
-them. A dataset's table can be sorted from its headers and filtered by a column's values; that changes only what is
-shown, and chosen rows stay the source file's rows. A partial result says so under the table. How the data was obtained
-stands under the table as each query's own label and its conditions, with the lineage graph opening in place (open by
-default in the docked panel), never behind a tab. Docked artifact panels have square edges and only a left separator; artifact cards use an 8px radius and
+them. A dataset's table can be sorted from its headers and filtered by a column's values (header controls reveal on
+hover, focus or active state, and pagination hides when all rows fit on one page); that changes only what is shown.
+Partial-result warnings appear above the table. How the data was obtained stands in a compact bar under the table with
+each query's label and its conditions, expanding in place into an ABC-style HTML+SVG object-path lineage graph (open by
+default in the docked panel) where clicking an object class opens a popover with its filters and extracted fields.
+Docked artifact panels have square edges and only a left separator; artifact cards use an 8px radius and
 a light border that stays unchanged on hover. Hover uses only a quiet neutral fill, without elevation or movement.
 Process disclosures use
-8px before expanded details and 4px between steps. There is no universal chat spacing standard; these relationships
+8px before expanded details and 4px between steps; delegated agent tasks sit inside a light bordered card with a
+semantic left accent bar and role/status badges so they stay visually distinct from the main agent's flat process
+stream. There is no universal chat spacing standard; these relationships
 apply the shared 4px scale and proximity hierarchy consistently across text, evidence and execution state.
 
 ## 10. Technical workspaces

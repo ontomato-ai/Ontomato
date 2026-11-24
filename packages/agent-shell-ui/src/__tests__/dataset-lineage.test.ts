@@ -7,7 +7,7 @@ vi.mock("../renderers/SubgraphView.vue", () => ({ default: { template: '<div cla
 
 const labels = {
   datasetLineage: "Lineage", showLineage: "Show graph", hideLineage: "Hide graph",
-  lineageSources: "Objects", lineageFields: "Fields", lineageOperations: "Calculations", lineageOutputs: "Result columns",
+  lineageFields: "Fields", lineageOperations: "Calculations", lineageOutputs: "Result columns",
   truncatedRows: (limit: number) => `First ${limit} rows only`,
   datasetUncheckedConditions: (conditions: string[]) => `Unverified: ${conditions.join(", ")}`,
   filterColumn: (column: string) => `Filter ${column}`, filterSearch: "Search", filterAll: "All", filterEmpty: "(Empty)",
@@ -52,6 +52,8 @@ it("states a dataset's queries and conditions under its table and opens the grap
     await new Promise((resolve) => setTimeout(resolve, 0));
     await nextTick();
     expect(root.querySelector("table")).not.toBeNull();
+    expect(root.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(root.querySelector(".table-preview-pager")).toBeNull();
     expect(root.querySelector('[title="2024-12-30T00:00:00+08:00"]')?.textContent).toBe("2024-12-30");
     expect(root.querySelector('[title="2024-12-30T14:35:12+08:00"]')?.textContent).toBe("2024-12-30 14:35:12");
     const notes = [...root.querySelectorAll(".partial")];

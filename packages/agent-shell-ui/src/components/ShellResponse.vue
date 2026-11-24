@@ -115,7 +115,7 @@ const status = computed(() => {
     const stage = retrievalStatus.value ?? labels.value.working;
     return startedAt === null ? stage : `${stage} · ${labels.value.elapsed(clock(now.value - startedAt))}`;
   }
-  if (handoff) return labels.value.tasks?.retriever ?? labels.value.thinking;
+  if (handoff) return labels.value.tasks?.delegated ?? labels.value.thinking;
   if (startedAt === null || finishedAt === null) return null;
   return labels.value.elapsed(clock(finishedAt - startedAt));
 });

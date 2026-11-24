@@ -9,8 +9,6 @@ import type { QuerySubgraph } from "@ontomato/contracts/query-subgraph";
 import { queryCoverageSchema, queryIntentSchema } from "@ontomato/contracts/query-intent";
 import { useArtifactText } from "./useArtifactBlob";
 import SubgraphView from "./SubgraphView.vue";
-import SlotOutlet from "../components/SlotOutlet.vue";
-import DatasetSelectionButton from "../components/DatasetSelectionButton.vue";
 import AttachmentCell from "./AttachmentCell.vue";
 import { cellAttachments } from "./cell-attachments";
 
@@ -18,11 +16,9 @@ import { cellAttachments } from "./cell-attachments";
  * .csv and .json datasets in the shared table, a page at a time, which the reader can sort and filter without changing
  * the file; JSON that is not a table shows as its formatted source. Result limits appear before the table. A dataset
  * carrying its source analysis states it under the table, each query with its conditions, and opens the graph in place.
- * Its rows can be chosen to continue the analysis.
  */
 const props = defineProps<ArtifactRendererProps>();
 const shell = inject(shellContextKey)!;
-const continueConversation = computed(() => props.continueConversation ?? shell.continueConversation);
 const labels = computed(() => shell.labels.value);
 const arrange = computed<TableArrangeLabels>(() => ({
   filter: labels.value.filterColumn,
@@ -30,32 +26,8 @@ const arrange = computed<TableArrangeLabels>(() => ({
   all: labels.value.filterAll,
   empty: labels.value.filterEmpty,
 }));
-const lineageColumns = computed(() => ({
-  class: labels.value.lineageSources,
-  field: labels.value.lineageFields,
-  operation: labels.value.lineageOperations,
-  output: labels.value.lineageOutputs,
-}));
 const { text, error } = useArtifactText(props);
 const pageSize = computed(() => (props.presentation === "inline" ? 8 : 50));
-const selected = ref<number[]>([]);
-const continuing = ref(false);
-const continuationError = ref("");
-const selectRowLabel = (row: number) => labels.value.selectRow?.(row) ?? `Select row ${row}`;
-async function analyzeSelection(compare = false) {
-  if (!continueConversation.value || !selected.value.length || continuing.value) return;
-  continuing.value = true; continuationError.value = "";
-  // Selected indices are positions in the immutable source file, so the row numbers name the same records whatever the table shows.
-  const file = { title: props.title, path: props.artifact.path };
-  const rows = [...selected.value].sort((left, right) => left - right).map((index) => index + 1);
-  const message = compare
-    ? labels.value.compareSelectionMessage?.(file, rows) ?? `Compare rows ${rows.join(", ")} of the data file "${file.title}" (${file.path}).`
-    : labels.value.analyzeSelectionMessage?.(file, rows) ?? `Analyze rows ${rows.join(", ")} of the data file "${file.title}" (${file.path}).`;
-  try {
-    await continueConversation.value(message);
-  } catch (e) { continuationError.value = e instanceof Error ? e.message : labels.value.failed; }
-  finally { continuing.value = false; }
-}
 
 type Parsed = {
   table: TableData | null;
@@ -111,8 +83,6 @@ const lineage = computed(() => {
 const lineageOpen = ref(props.presentation === "panel");
 watch(() => props.artifact.id, () => {
   lineageOpen.value = props.presentation === "panel";
-  selected.value = [];
-  continuationError.value = "";
 });
 </script>
 
@@ -125,23 +95,11 @@ watch(() => props.artifact.id, () => {
         {{ labels.datasetUncheckedConditions(parsed.uncheckedConditions) }}
       </p>
       <p v-if="parsed.rowLimit !== null" class="partial" role="note">{{ labels.truncatedRows(parsed.rowLimit) }}</p>
-      <div v-if="continueConversation && selected.length" class="selection-actions">
-        <span>{{ labels.selectedRows?.(selected.length) ?? `${selected.length} selected` }}</span>
-        <SlotOutlet :content="shell.slots?.datasetSelectionActions" :scope="{ artifact, title, selectedRowIndices: selected }" />
-        <DatasetSelectionButton :disabled="continuing" @click="analyzeSelection()">{{ labels.analyzeSelection ?? 'Analyze selection' }}</DatasetSelectionButton>
-        <DatasetSelectionButton v-if="selected.length > 1" :disabled="continuing" @click="analyzeSelection(true)">{{ labels.compareSelection ?? 'Compare selection' }}</DatasetSelectionButton>
-        <DatasetSelectionButton :disabled="continuing" @click="selected = []">{{ labels.clearSelection ?? 'Clear selection' }}</DatasetSelectionButton>
-      </div>
-      <p v-if="continuationError" class="selection-error" role="alert">{{ continuationError }}</p>
       <TablePreview
         :table="table"
         :page-size="pageSize"
         :max-height="presentation === 'inline' ? 360 : undefined"
-        :selected="continueConversation ? selected : undefined"
-        :select-row-label="selectRowLabel"
-        :selection-disabled="continuing"
         :arrange="arrange"
-        @update:selected="selected = $event"
       >
         <template #cell="{ text: cellText, rowIndex }">
           <span v-if="displayDate(cellText)" :title="cellText">{{ displayDate(cellText) }}</span>
@@ -149,20 +107,22 @@ watch(() => props.artifact.id, () => {
         </template>
       </TablePreview>
       <section v-if="parsed.graph" class="lineage" :aria-label="labels.datasetLineage">
-        <div class="lineage-head">
-          <span class="lineage-title">{{ labels.datasetLineage }}</span>
+        <div class="lineage-bar">
+          <div class="lineage-summary">
+            <span class="lineage-title">{{ labels.datasetLineage }}</span>
+            <ul v-if="lineage.length" class="lineage-queries">
+              <li v-for="query in lineage" :key="query.id">
+                <span class="lineage-query">{{ query.label }}</span>
+                <span v-for="filter in query.filters" :key="filter.id" class="lineage-filter" :title="filter.expression">{{ filter.label }}</span>
+              </li>
+            </ul>
+          </div>
           <button type="button" class="lineage-toggle" :aria-expanded="lineageOpen" @click="lineageOpen = !lineageOpen">
             {{ lineageOpen ? labels.hideLineage : labels.showLineage }}
             <component :is="lineageOpen ? ChevronUp : ChevronDown" :size="14" aria-hidden="true" />
           </button>
         </div>
-        <ul class="lineage-queries">
-          <li v-for="query in lineage" :key="query.id">
-            <span class="lineage-query">{{ query.label }}</span>
-            <span v-for="filter in query.filters" :key="filter.id" class="lineage-filter" :title="filter.expression">{{ filter.label }}</span>
-          </li>
-        </ul>
-        <SubgraphView v-if="lineageOpen" :graph="parsed.graph" :columns="lineageColumns" />
+        <SubgraphView v-if="lineageOpen" :graph="parsed.graph" />
       </section>
     </template>
     <div v-else-if="parsed.raw !== null && parsed.raw.trim() === ''" class="state">{{ labels.emptyFile }}</div>
@@ -176,8 +136,6 @@ watch(() => props.artifact.id, () => {
 .table-renderer {
   min-width: 0;
 }
-.selection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-bottom: 1px solid var(--el-border-color-light); font-size: var(--text-xs); }
-.selection-error { margin: 0; padding: var(--spacing-sm) var(--spacing-md); color: var(--el-color-danger); }
 .partial {
   margin: 0;
   padding: var(--spacing-xs) var(--spacing-md);
@@ -188,61 +146,75 @@ watch(() => props.artifact.id, () => {
 .lineage {
   border-top: 1px solid var(--el-border-color-lighter);
 }
-.lineage-head {
+.lineage-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 6px var(--spacing-md);
+  background: var(--el-fill-color-lighter);
+}
+.lineage-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 .lineage-title {
-  color: var(--el-text-color-primary);
+  flex-shrink: 0;
+  color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold, 600);
+  line-height: 1.6;
 }
 .lineage-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   flex-shrink: 0;
-  padding: 4px 6px;
+  padding: 2px 6px;
   border-radius: var(--radius-sm);
   border: 0;
   background: transparent;
   color: var(--el-color-primary);
   font: inherit;
   font-size: var(--text-xs);
+  line-height: 1.6;
   cursor: pointer;
 }
 .lineage-toggle:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 1px;
 }
-.lineage-toggle:hover { background: var(--el-fill-color-light); }
+.lineage-toggle:hover { background: var(--el-fill-color); }
 .lineage-queries {
   list-style: none;
   margin: 0;
-  padding: var(--spacing-xs) var(--spacing-md) var(--spacing-sm);
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: 3px;
+  min-width: 0;
 }
 .lineage-queries li {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: 4px 6px;
   color: var(--el-text-color-regular);
   font-size: var(--text-xs);
-  line-height: var(--leading-xs, 1.5);
+  line-height: 1.5;
 }
 .lineage-query {
-  margin-right: var(--spacing-xs);
+  color: var(--el-text-color-primary);
 }
 .lineage-filter {
   padding: 0 6px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--radius-xs, 4px);
+  background: var(--el-bg-color);
   color: var(--el-text-color-secondary);
 }
 .state {
