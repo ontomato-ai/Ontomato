@@ -13,9 +13,9 @@ it('uses the app-builder selected model and declares run-scoped business callbac
  expect(mocks.definition.mock.calls[0][1]).toBe('provider/model');
  expect(run.environment).toEqual({values:{ONTOMATO_WORKSPACE_ID:'workspace',ONTOMATO_EXECUTION_KIND:'build-test'},secrets:{}});
  expect(run.businessCallbacks).toEqual({
-   workbench:{baseUrl:'http://workbench.test/api/assistant/executions/turn/workbench',credential:'wbc1.sealed'},
-   ontology:{baseUrl:'http://workbench.test/api/assistant/executions/turn/ontology',credential:'wbc1.sealed'},
-   authoring:{baseUrl:'http://workbench.test/api/assistant/executions/turn/authoring',credential:'wbc1.sealed'},
+   workbench:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/turn/workbench').pathname, baseUrl:'http://workbench.test/api/assistant/executions/turn/workbench',credential:'wbc1.sealed'},
+   ontology:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/turn/ontology').pathname, baseUrl:'http://workbench.test/api/assistant/executions/turn/ontology',credential:'wbc1.sealed'},
+   authoring:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/turn/authoring').pathname, baseUrl:'http://workbench.test/api/assistant/executions/turn/authoring',credential:'wbc1.sealed'},
  });
  expect(JSON.stringify(run)).not.toContain('human-secret');
 });

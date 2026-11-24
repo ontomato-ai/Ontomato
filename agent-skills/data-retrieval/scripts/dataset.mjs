@@ -5,7 +5,9 @@ import { collectPackage, relatedCountPackage, relatedEntityQuery, uniqueRelatedK
 
 const base = process.env.ONTOMATO_ONTOLOGY_URL?.replace(/\/$/, "");
 if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL (see SKILL.md)");
-const [command, entry, ...args] = process.argv.slice(2);
+const [command, entry, ...flags] = process.argv.slice(2);
+const active = flags.includes("--active");
+const args = flags.filter(flag => flag !== "--active");
 if (!["deliver", "related-count", "preview", "begin", "close"].includes(command))
   throw new Error("Use deliver @query or related-count @spec, with --meta @delivery.json [--out outputs/result.dataset.json]");
 const json = async (file) => JSON.parse(await readFile(file.replace(/^@/, ""), "utf8"));
@@ -17,13 +19,12 @@ for (let i = 0; i < args.length; i += 2) {
 }
 if (options["--schema"] && command !== "related-count") throw new Error("--schema belongs to related-count");
 const headers = {
-  ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK, "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
+  ...(process.env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": process.env.ONTOMATO_EXECUTION_CALLBACK } : {}),
   "content-type": "application/json", tk: process.env.ONTOMATO_TK ?? "",
   ...(process.env.ONTOMATO_RETRIEVAL_CALLER_ID ? { "X-Ontomato-Retrieval-Caller-Id": process.env.ONTOMATO_RETRIEVAL_CALLER_ID } : {}),
   ...(process.env.ONTOMATO_API_KEY ? { "X-API-Key": process.env.ONTOMATO_API_KEY } : {}),
   "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
   "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID ?? randomUUID(),
-  ...(process.env.ONTOMATO_RUN_ID ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
   ...(process.env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": process.env.ONTOMATO_SESSION_ID } : {}),
 };
 let input = {};
@@ -69,7 +70,7 @@ else if (command !== "close") {
   } };
 }
 async function call(route, body, extra = {}, raw = false) {
-  const callback=process.env.ONTOMATO_RETRIEVAL_CALLBACK_URL;
+  const callback = active ? undefined : process.env.ONTOMATO_RETRIEVAL_CALLBACK_URL;
   let operation;
   if(callback) {
     const match=route.match(/^\/([^/]+)\/runs\/([^/]+)\/outputs(?:\/([^/]+)(\/content)?)?$/);
@@ -80,7 +81,7 @@ async function call(route, body, extra = {}, raw = false) {
     else throw new Error("Unsupported host retrieval operation");
   }
   const response = await fetch(callback || base + "/ontology/retrievals" + route, {
-    method: callback ? "POST" : body === undefined ? "GET" : "POST", headers: { ...headers, ...extra, ...(callback ? {"X-Ontomato-Run-Id":process.env.ONTOMATO_RUN_ID}: {}) },
+    method: callback ? "POST" : body === undefined ? "GET" : "POST", headers: { ...headers, ...extra },
     body: callback ? JSON.stringify(operation) : body === undefined ? undefined : JSON.stringify(body), redirect: "error",
   });
   const value = response.status === 204 ? null : raw ? await response.text() : await response.json();
@@ -91,10 +92,14 @@ await mkdir("work", { recursive: true }).catch((error) => {
   if (!["EACCES", "EROFS", "EPERM"].includes(error.code)) throw error;
   throw new Error(`Cannot write work/ in ${process.cwd()}; run this command from the workspace root`);
 });
-let state = process.env.ONTOMATO_RUN_ID ? {
-  id: process.env.ONTOMATO_RETRIEVAL_ID, sessionId: process.env.ONTOMATO_SESSION_ID, runId: process.env.ONTOMATO_RUN_ID,
-} : null;
-if (!state) {
+let state;
+if (active) {
+  if (command === "begin" || command === "close")
+    throw new Error("The active retrieval's lifecycle is owned by the platform");
+  const response = await fetch(process.env.ONTOMATO_RETRIEVAL_CALLBACK_URL, { headers, redirect: "error" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+  state = await response.json();
+} else {
   try { state = await json("work/.retrieval-run.json"); }
   catch (error) { if (error.code !== "ENOENT") throw error; }
 }
@@ -129,7 +134,7 @@ catch (error) {
   if (error.code !== "ENOENT") throw error;
   key = randomUUID(); await writeFile(keyFile, JSON.stringify({ key }));
 }
-const extra = { "X-Ontomato-Run-Id": state.runId, "X-Ontomato-Session-Id": state.sessionId };
+const extra = active ? {} : { "X-Ontomato-Run-Id": state.runId, "X-Ontomato-Session-Id": state.sessionId };
 await call(`/${state.id}/runs/${state.runId}/outputs`, input, { ...extra, "Idempotency-Key": key });
 let result;
 do {

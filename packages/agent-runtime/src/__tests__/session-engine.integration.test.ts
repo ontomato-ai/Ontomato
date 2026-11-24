@@ -119,7 +119,7 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
         ...(engine ? { engine } : {}), systemPrompt: "Use the fixture tool when requested.",
         modelId: null, skills: [], externalMcp: [], sandbox: { limits: codeLimitsSchema.parse({}) },
       },
-      businessCallbacks: { workbench: { baseUrl: `${base}/api/assistant/executions/${id}/workbench`, credential: "wbc1.fixture" } },
+      businessCallbacks: { workbench: { owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL(`${base}/api/assistant/executions/${id}/workbench`).pathname, baseUrl: `${base}/api/assistant/executions/${id}/workbench`, credential: "wbc1.fixture" } },
     };
     await runtime.start(host, scope, targetSession, id, id, request);
     const stopped = await runtime.runStatus(scope, id, { timeoutMs: 15000, signal: new AbortController().signal });

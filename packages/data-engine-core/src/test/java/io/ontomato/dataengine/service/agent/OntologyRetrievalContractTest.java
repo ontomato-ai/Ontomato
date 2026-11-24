@@ -341,7 +341,7 @@ class OntologyRetrievalContractTest {
   }
 
   private JSONObject explorationClaims(JSONObject prepared, String run) {
-    return grants.verify(prepared.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK"),
+    return grants.verify(prepared.getJSONObject("businessCallbacks").getJSONObject("ontology").getString("credential"),
         run, "/ontology/query/overview");
   }
 
@@ -456,7 +456,7 @@ class OntologyRetrievalContractTest {
     String caller = classScopeCaller(classes, true);
     String session = id(), run = id();
     var prepared = prepareChannel(channelRequest(caller, session, run, classes, classes, true), 200);
-    String grant = prepared.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK");
+    String grant = prepared.getJSONObject("businessCallbacks").getJSONObject("ontology").getString("credential");
 
     // Output deliberately reauthorizes the whole admitted scope. Returning a partial result would change its meaning.
     executorPermission = visibleClasses("person");
@@ -533,14 +533,27 @@ class OntologyRetrievalContractTest {
     String run = first.getString("runtimeRunId");
     assertEquals(first.getString("runtimeSessionId"), retrievalId);
     assertEquals(1, requests.size());
-    var environment = requests.get(run).getJSONObject("environment");
-    assertNotEquals("fixture-user", environment.getJSONObject("secrets").getString("ONTOMATO_TK"));
-    assertFalse(environment.getJSONObject("values").containsKey("ONTOMATO_WORKBENCH_URL"));
-    var claims =
-        grants.verify(
-            environment.getJSONObject("secrets").getString("ONTOMATO_TK"),
-            run,
-            "/ontology/query/overview");
+    var prepared = requests.get(run);
+    var environment = prepared.getJSONObject("environment");
+    assertTrue(environment.getJSONObject("values").isEmpty());
+    assertTrue(environment.getJSONObject("secrets").isEmpty());
+    var callbacks = prepared.getJSONObject("businessCallbacks");
+    var contextCallback = callbacks.getJSONObject("retrieval");
+    assertEquals("ontology", contextCallback.getString("owner"));
+    assertEquals("tk", contextCallback.getString("credentialHeader"));
+    assertEquals("/ontology/retrievals/runtime-context", contextCallback.getString("pathPrefix"));
+    String grant = contextCallback.getString("credential");
+    var contextResponse = http.perform(get("/ontology/retrievals/runtime-context")
+            .header("tk", grant).header("X-Ontomato-Run-Id", run))
+        .andExpect(status().isOk()).andReturn().getResponse();
+    var active = JSON.parseObject(contextResponse.getContentAsString());
+    assertEquals(retrievalId, active.getString("id"));
+    assertEquals(retrievalId, active.getString("sessionId"));
+    assertEquals(run, active.getString("runId"));
+    http.perform(get("/ontology/retrievals/runtime-context")
+            .header("tk", grant).header("X-Ontomato-Run-Id", id()))
+        .andExpect(status().isUnauthorized());
+    var claims = explorationClaims(prepared, run);
     assertEquals("ontology", claims.getString("servicePrincipal"));
     assertEquals(owner.userId(), claims.getString("userId"));
     assertEquals(owner.domainId(), claims.getString("domainId"));
@@ -946,7 +959,7 @@ class OntologyRetrievalContractTest {
     assertEquals(List.of("U original words"), steered.getList("userQuotes", String.class));
     assertEquals(List.of("U confirmed decision"), OntologyRetrievalService.confirmedDecisions(steered.getJSONArray("decisions")));
     String decision = store.retrieval(session, owner).getJSONArray("decisions").getJSONObject(0).getString("id");
-    String grant = prepared.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK");
+    String grant = prepared.getJSONObject("businessCallbacks").getJSONObject("ontology").getString("credential");
     String route = "/ontology/retrievals/" + session + "/runs/" + run + "/outputs";
     var query = JSON.parseObject("{\"answer\":{\"steps\":[{\"graph\":{\"patterns\":[{\"objects\":[{\"idx\":0,\"variable\":\"s\",\"class\":\"/sales\"}]}]},\"output\":{\"to_user\":true,\"fields\":[{\"variable\":\"s\",\"field\":\"value\",\"as\":\"value\"}]}}]}}");
     var preparation = JSONObject.of("title", "Sales", "question", "V private question", "decisionIds", JSONArray.of(vDecision),

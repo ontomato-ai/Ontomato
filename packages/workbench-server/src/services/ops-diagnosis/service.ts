@@ -220,6 +220,7 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
     throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
   await db().query(`UPDATE ${table("ops_sessions")} SET title=CASE WHEN title='' THEN $2 ELSE title END,updated_at=now() WHERE id=$1`, [session, message]);
   const evidencePath = "/api/observe/evidence";
+  const baseUrl = environment.agentRuntime().callbackUrl.replace(/\/$/, "") + evidencePath;
   return {
     language: intent.language,
     input,
@@ -227,7 +228,8 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
     environment: { values: {}, secrets: {} },
     businessCallbacks: {
       workbench: {
-        baseUrl: environment.agentRuntime().callbackUrl.replace(/\/$/, "") + evidencePath,
+        owner: "workbench", baseUrl, pathPrefix: new URL(baseUrl).pathname,
+        credentialHeader: "X-Ontomato-Callback-Credential",
         credential: callbackCredential({
           pathPrefix: `${evidencePath}/`,
           runId: run,

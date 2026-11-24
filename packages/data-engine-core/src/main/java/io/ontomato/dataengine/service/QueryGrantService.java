@@ -220,7 +220,7 @@ public class QueryGrantService {
     if (purpose == null) return false;
     return switch (purpose) {
       case "retrieval-exploration" ->
-          read(path)
+          path.equals("/ontology/retrievals/runtime-context") || read(path)
               || (claims.getString("retrievalId") != null
                   && path.matches("/ontology/retrievals/" + claims.getString("retrievalId")
                       + "/runs/" + runId + "/outputs(?:/[^/]+(?:/content)?)?"));
