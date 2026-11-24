@@ -1,17 +1,25 @@
 import {
   panelRecordFieldText,
+  type PanelRecordChildReferenceFieldValue,
   type PanelRecordFieldArrayItem,
   type PanelRecordFieldScalar,
   type PanelRecordFieldValue,
   type PanelRecordReferenceFieldValue,
 } from "@ontomato/contracts/panel-projection";
-import type { PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
+import type { PlatformChildFieldReference, PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
 
 /** Type guard for a clickable object reference stored in `PlatformObjectRecord.fields`. */
 export function isRecordReference(
   value: PanelRecordFieldValue | PanelRecordFieldArrayItem | undefined,
 ): value is PanelRecordReferenceFieldValue {
   return typeof value === "object" && value !== null && !Array.isArray(value) && value.kind === "reference";
+}
+
+/** Type guard for a clickable parent-scoped child reference stored in `PlatformObjectRecord.fields`. */
+export function isRecordChildReference(
+  value: PanelRecordFieldValue | PanelRecordFieldArrayItem | undefined,
+): value is PanelRecordChildReferenceFieldValue {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && value.kind === "child-reference";
 }
 
 /** Extract the navigation payload carried by a reference field value. */
@@ -23,8 +31,26 @@ export function toFieldReference(reference: PanelRecordReferenceFieldValue): Pla
   };
 }
 
+/** Extract the navigation payload carried by a child-reference field value. */
+export function toChildFieldReference(reference: PanelRecordChildReferenceFieldValue): PlatformChildFieldReference {
+  return {
+    parent: {
+      objectType: reference.parent.objectType,
+      primaryKey: reference.parent.primaryKey,
+    },
+    collection: reference.collection,
+    primaryKey: reference.primaryKey,
+    label: reference.label,
+  };
+}
+
 /** Readable label for a reference field value, falling back to its primary key when label is empty. */
 export function referenceDisplayLabel(reference: PanelRecordReferenceFieldValue): string {
+  return reference.label || reference.primaryKey;
+}
+
+/** Readable label for a child-reference field value, falling back to its primary key when label is empty. */
+export function childReferenceDisplayLabel(reference: PanelRecordChildReferenceFieldValue): string {
   return reference.label || reference.primaryKey;
 }
 
@@ -45,22 +71,30 @@ export function scalarFieldText(value: PanelRecordFieldScalar, translate: (key: 
  * Format any `PanelRecordFieldValue` into plain display text in the reader's locale:
  * - booleans localize via `platform.booleanTrue` / `platform.booleanFalse`;
  * - localized maps resolve by the reader's active locale via `panelRecordFieldText`;
- * - references return `label || primaryKey`;
- * - arrays join formatted element texts with `", "`;
+ * - references and child references return `label || primaryKey`;
+ * - arrays join formatted element texts with `listSeparator` (default `", "`);
  * - json payloads summarize via `panelRecordFieldText`.
  */
 export function displayFieldText(
   value: PanelRecordFieldValue | undefined,
   locale: string,
   translate: (key: string) => string,
+  listSeparator = ", ",
 ): string {
   if (value === undefined) return "";
   if (typeof value === "boolean") return scalarFieldText(value, translate);
+  if (isRecordChildReference(value)) return childReferenceDisplayLabel(value);
   if (Array.isArray(value)) {
     return value
-      .map((item) => (isRecordReference(item) ? referenceDisplayLabel(item) : scalarFieldText(item, translate)))
+      .map((item) =>
+        isRecordReference(item)
+          ? referenceDisplayLabel(item)
+          : isRecordChildReference(item)
+            ? childReferenceDisplayLabel(item)
+            : scalarFieldText(item, translate),
+      )
       .filter((part) => part.length > 0)
-      .join(", ");
+      .join(listSeparator);
   }
   return panelRecordFieldText(value, locale);
 }

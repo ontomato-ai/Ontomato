@@ -331,6 +331,26 @@ export function expandPanelAuthoringMember(
       let offered: DirectPanelPortType;
       if (usesOntologyNodes) {
         offered = ontologyNode;
+      } else if (
+        componentId === "@ontomato/sdk:ObjectList"
+        && port === "selected"
+        && actual.kind === "child-object"
+      ) {
+        const rowsDatum = data.rows;
+        const rowsParentType = dataTypes.get("rows");
+        const hasDeclaredCollection = rowsParentType !== undefined
+          && objectTypes[rowsParentType]?.childCollections?.includes(actual.collection) === true;
+        if (
+          rowsDatum !== undefined
+          && "object" in rowsDatum.source
+          && rowsParentType === actual.parentType
+          && dataRowTypes.get("rows") === rowsParentType
+          && hasDeclaredCollection
+        ) {
+          offered = actual;
+        } else {
+          offered = boundComponentPort(port, output, actual, path);
+        }
       } else if (componentId === "@ontomato/sdk:ObjectRefCard" && port === "navigate") {
         const targetClassName = typeof member.config?.targetClassName === "string" ? member.config.targetClassName.trim() : "";
         if (targetClassName) {

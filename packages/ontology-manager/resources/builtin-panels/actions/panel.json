@@ -42,13 +42,6 @@
         "deepLink": false,
         "default": false
       },
-      "draftCode": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "deepLink": false
-      },
       "activeSegmentId": {
         "type": {
           "kind": "scalar",
@@ -58,8 +51,9 @@
       },
       "selectedParameter": {
         "type": {
-          "kind": "object",
-          "objectType": "platform:Action"
+          "kind": "child-object",
+          "parentType": "platform:Action",
+          "collection": "parameters"
         },
         "deepLink": false
       }
@@ -234,16 +228,19 @@
             },
             {
               "key": "target",
+              "listSeparator": "",
               "minWidth": 180,
               "wrap": true
             },
             {
               "key": "fields",
+              "listSeparator": "",
               "minWidth": 200,
               "wrap": true
             },
             {
               "key": "guards",
+              "listSeparator": "",
               "minWidth": 160,
               "wrap": true
             }
@@ -297,6 +294,12 @@
               "key": "constraints",
               "minWidth": 140,
               "wrap": true
+            },
+            {
+              "key": "codeLocations",
+              "listStyle": "tags",
+              "minWidth": 180,
+              "wrap": true
             }
           ]
         },
@@ -326,13 +329,15 @@
               "width": 96
             },
             {
-              "key": "label",
+              "key": "expression",
               "labelKey": "condition",
+              "listSeparator": "",
               "minWidth": 220,
               "wrap": true
             },
             {
               "key": "detail",
+              "listSeparator": "",
               "minWidth": 200,
               "wrap": true
             }
@@ -349,7 +354,11 @@
         },
         "inputs": {
           "currentCode": {
-            "state": "draftCode"
+            "output": {
+              "member": "form",
+              "name": "draft",
+              "path": "/function/code"
+            }
           }
         },
         "state": {

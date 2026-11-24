@@ -45,6 +45,14 @@ export interface PlatformFieldReference {
   readonly label: string;
 }
 
+/** Clickable reference to a parent-scoped child object carried by a record field or inline array item. */
+export interface PlatformChildFieldReference {
+  readonly parent: PanelObjectIdentity;
+  readonly collection: string;
+  readonly primaryKey: string;
+  readonly label: string;
+}
+
 /** One object of a registered platform type, as its owner's list, query and read return it. */
 export interface PlatformObjectRecord {
   /** The primary key the object's own service uses, as text. */

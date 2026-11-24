@@ -80,6 +80,7 @@ function mountDirect(
     members?: readonly string[];
     locale?: string;
     i18nMessages?: Record<string, Record<string, unknown>>;
+    memberProps?: Record<string, Record<string, unknown>>;
   } = {},
 ) {
   const activeLocale = options.locale ?? "en";
@@ -101,7 +102,12 @@ function mountDirect(
   const element = document.createElement("div");
   document.body.appendChild(element);
   const app = createApp({
-    setup: () => () => h("div", memberKeys.map((member) => h(PanelMember, { instance, member, key: member }))),
+    setup: () => () => h("div", memberKeys.map((member) => h(PanelMember, {
+      instance,
+      member,
+      key: member,
+      ...(options.memberProps?.[member] ?? {}),
+    }))),
   }).use(createI18n({ legacy: false, locale: activeLocale, messages: (options.i18nMessages ?? { en: publicEn }) as never })).use(ElementPlus);
   app.mount(element);
   cleanup = () => {
@@ -2852,4 +2858,181 @@ it("supports showHeader/showFooter suppression, searchFields allowlist, compact 
   instance.state.set("search", "order_code");
   await nextTick();
   expect(instance.outputs.compact?.filteredCount).toBe(1);
+});
+
+it("supports child-object selection, inline child-reference cells with listSeparator/listStyle, navigate-child, and local search", async () => {
+  const parentAction = { className: "platform:Action", primaryKey: "act-1" };
+  const parentIdentity = { objectType: "platform:Action", primaryKey: "act-1" };
+  const paramChildRef = {
+    kind: "child-reference" as const,
+    parent: parentIdentity,
+    collection: "parameters",
+    primaryKey: "order_id",
+    label: "order_id",
+  };
+  const segChildRef = {
+    kind: "child-reference" as const,
+    parent: parentIdentity,
+    collection: "codeSegments",
+    primaryKey: "seg-2",
+    label: "Update order (L4–9)",
+  };
+
+  const projections: Record<string, DirectProjection> = {
+    "child-params": {
+      ...meta,
+      id: "child-params",
+      name: "Derived parameters",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {
+        target: { kind: "object", objectType: "platform:Action" },
+      },
+      outputs: {
+        selected: { kind: "child-object", parentType: "platform:Action", collection: "parameters" },
+      },
+      config: {
+        layout: "table",
+        searchable: true,
+        showFooter: false,
+        toggleable: true,
+        columns: [
+          { key: "label", labelKey: "name" },
+          { key: "usage", listSeparator: "" },
+          { key: "codeLocations", listStyle: "tags" },
+        ],
+      },
+      data: {
+        rows: {
+          source: { object: { input: "target" } },
+          read: "derivedParameters",
+          params: {},
+        },
+      },
+    },
+  };
+
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: "platform:Action" } },
+      selectedParam: { type: { kind: "child-object", parentType: "platform:Action", collection: "parameters" } },
+    },
+    members: {
+      params: {
+        target: { projectionId: "child-params" },
+        inputs: { target: { state: "selected" } },
+        outputs: { selected: { state: "selectedParam" } },
+      },
+    },
+  });
+
+  const rows = [
+    {
+      primaryKey: "order_id",
+      label: "order_id",
+      fields: {
+        usage: ["Order · Object ← ", paramChildRef],
+        codeLocations: [segChildRef],
+      },
+    },
+    {
+      primaryKey: "note",
+      label: "note",
+      fields: {
+        usage: "Plain text",
+      },
+    },
+  ];
+
+  const navigated: Array<[unknown, string]> = [];
+  const { instance, element } = mountDirect(
+    manifest,
+    projections,
+    () => ready(rows),
+    {
+      initial: { selected: parentAction },
+      memberProps: {
+        params: {
+          onNavigateChild: (ref: unknown, columnKey: string) => {
+            navigated.push([ref, columnKey]);
+          },
+        },
+      },
+    },
+  );
+
+  await vi.waitFor(() => {
+    expect(element.querySelectorAll("tbody tr")).toHaveLength(2);
+  });
+
+  const trs = [...element.querySelectorAll<HTMLTableRowElement>("tbody tr")];
+  const usageCell = trs[0]!.querySelector<HTMLElement>("td:nth-child(2)")!;
+  expect(usageCell.textContent?.replace(/\s+/g, " ").trim()).toBe("Order · Object ← order_id");
+  expect(usageCell.textContent).not.toContain(",");
+
+  // Clicking an inline child-reference button emits navigate-child and stops propagation (does NOT select the row).
+  const inlineBtn = usageCell.querySelector<HTMLButtonElement>("button.is-child-ref")!;
+  inlineBtn.click();
+  await nextTick();
+  expect(navigated).toEqual([
+    [
+      {
+        parent: parentIdentity,
+        collection: "parameters",
+        primaryKey: "order_id",
+        label: "order_id",
+      },
+      "usage",
+    ],
+  ]);
+  expect(instance.state.values.value.selectedParam).toBeNull();
+
+  // Clicking a tag-styled child-reference emits navigate-child with columnKey "codeLocations" and stops propagation.
+  const tagBtn = trs[0]!.querySelector<HTMLButtonElement>("td:nth-child(3) button.is-child-ref")!;
+  expect(tagBtn.textContent?.trim()).toBe("Update order (L4–9)");
+  tagBtn.click();
+  await nextTick();
+  expect(navigated).toHaveLength(2);
+  expect(navigated[1]).toEqual([
+    {
+      parent: parentIdentity,
+      collection: "codeSegments",
+      primaryKey: "seg-2",
+      label: "Update order (L4–9)",
+    },
+    "codeLocations",
+  ]);
+  expect(instance.state.values.value.selectedParam).toBeNull();
+
+  // Clicking the row itself selects PanelChildObjectIdentity; clicking again toggles it off.
+  trs[0]!.click();
+  await vi.waitFor(() => {
+    expect(instance.state.values.value.selectedParam).toEqual({
+      parent: parentIdentity,
+      primaryKey: "order_id",
+    });
+    expect(trs[0]!.classList.contains("chosen")).toBe(true);
+  });
+  trs[0]!.click();
+  await vi.waitFor(() => {
+    expect(instance.state.values.value.selectedParam).toBeNull();
+    expect(trs[0]!.classList.contains("chosen")).toBe(false);
+  });
+
+  // External child-object selection highlights and scrolls to the matching row.
+  const scrollSpy = vi.fn();
+  trs[1]!.scrollIntoView = scrollSpy;
+  instance.state.set("selectedParam", { parent: parentIdentity, primaryKey: "note" });
+  await vi.waitFor(() => {
+    expect(trs[1]!.classList.contains("chosen")).toBe(true);
+    expect(scrollSpy).toHaveBeenCalled();
+  });
+
+  // Local search matches child-reference labels without rendering [object Object].
+  const searchInput = element.querySelector<HTMLInputElement>('input[type="search"]')!;
+  searchInput.value = "Update order";
+  searchInput.dispatchEvent(new Event("input"));
+  await vi.waitFor(() => {
+    expect(element.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(element.querySelector("tbody tr")?.textContent).toContain("order_id");
+  });
 });
