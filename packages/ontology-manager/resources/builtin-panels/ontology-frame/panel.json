@@ -220,17 +220,6 @@
         },
         "id": "builtin-product-om-frame-applications"
       },
-      "productAssets": {
-        "component": "ObjectCount",
-        "type": "platform:ProductAsset",
-        "data": {
-          "rows": "count"
-        },
-        "config": {
-          "appearance": "badge"
-        },
-        "id": "builtin-product-om-frame-products"
-      },
       "agents": {
         "component": "ObjectCount",
         "type": "platform:AgentDefinition",

@@ -62,10 +62,9 @@ describe("open-source Ontology Service page", () => {
     window.__APP_CONFIG__ = { API_BASE: "/custom-base/api/", INITIAL_ROUTE: "" };
     vi.stubGlobal("fetch", async (url: string, init: { headers?: unknown } = {}) => {
       requests.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
-      // The platform's own answers: the catalog, the assets' counts, and the agent platform's agent list, which the
+      // The platform's own answers: the catalog and the agent platform's agent list, which the
       // pages' composer reads (a page at its own address shows it).
-      const body=url.endsWith('/product-assets/counts')?{counts:{}}
-        : url.includes('/assistant/agents')?{ agents: [] }
+      const body = url.includes("/assistant/agents") ? { agents: [] }
         : { success: true, data: url.includes("/platform/applications") ? catalogFixture() : [] };
       return new Response(JSON.stringify(body), { status: statusFor(url) });
     });
@@ -128,7 +127,7 @@ describe("open-source Ontology Service page", () => {
       // The catalog and the pages read the data engine; entering an application records its opening with the workbench; a
       // page the ontology manager serves as a built-in panel (object types) reads its panel and the SDK release.
       expect(path.startsWith("/custom-base/api/data-query/") || path.startsWith("/custom-base/api/product-panels/") ||
-        path.startsWith("/custom-base/api/apps-sdk/") || path === "/custom-base/api/skills" || path === '/custom-base/api/product-assets/counts' || path === '/custom-base/api/platform/home' || path.startsWith("/custom-base/api/platform/home/") || request.url.startsWith("/api/data-query/platform/applications"),request.url).toBe(true);
+        path.startsWith("/custom-base/api/apps-sdk/") || path === "/custom-base/api/skills" || path === "/custom-base/api/platform/home" || path.startsWith("/custom-base/api/platform/home/") || request.url.startsWith("/api/data-query/platform/applications"),request.url).toBe(true);
       expect(request.headers).not.toHaveProperty("tk");
       expect(request.headers).not.toHaveProperty("x-api-key");
     }
@@ -155,11 +154,11 @@ describe("open-source Ontology Service page", () => {
   });
 
   it("a 401 stops the page with its status; a 402 keeps it", async () => {
-    statusFor = (url) => (url.endsWith("/product-assets/counts") ? 402 : 200);
-    await start("/#/ontology/products");
+    statusFor = (url) => (url.endsWith("/workflow/query") ? 402 : 200);
+    await start("/#/ontology/assets/workflows");
     expect(document.querySelector(".platform-shell")).not.toBeNull();
-    statusFor = (url) => (url.endsWith("/product-assets/counts") ? 401 : 200);
-    await start("/#/ontology/products");
+    statusFor = (url) => (url.endsWith("/workflow/query") ? 401 : 200);
+    await start("/#/ontology/assets/workflows");
     expect(document.querySelector(".platform-shell")).toBeNull();
   });
 });

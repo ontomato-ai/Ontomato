@@ -20,7 +20,6 @@ import {
   Tags,
   Workflow as WorkflowIcon,
   GitBranch,
-  Shapes,
 } from "lucide-vue-next";
 
 /** A navigation group of the Manager pages; the service shell lists it with the platform groups. */
@@ -68,7 +67,6 @@ export const managerPaths = {
   functions: routes.functions.path,
   triggers: routes.triggers.path,
   knowledge: routes.knowledge.path,
-  products: routes.products.path,
 } as const;
 
 export const managerGroups = {
@@ -105,7 +103,6 @@ const pages: readonly ManagerNavigationPage[] = [
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
   // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
-  page(managerPaths.products, "platform.productAssets", Shapes, "assets", MODELING),
 ];
 
 /**

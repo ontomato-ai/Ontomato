@@ -38,7 +38,6 @@ export const ORG_MEMBERSHIP = "platform:OrgMembership";
 export const ORG_POSITION = "platform:OrgPosition";
 export const ORG_GRANT = "platform:OrgGrant";
 export const SDK_COMPONENT = "platform:SDKComponent";
-export const PRODUCT_ASSET = "platform:ProductAsset";
 export const PRODUCT_PROJECTION = "platform:ProductProjection";
 export const PRODUCT_PANEL = "platform:ProductPanel";
 export const APPLICATION = "platform:Application";
@@ -431,10 +430,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       outputRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       operationRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
     },
-  },
-  [PRODUCT_ASSET]: {
-    ...describeType("productAsset", "product"),
-    reads: { count: countRead },
   },
   [PRODUCT_PROJECTION]: {
     ...describeType("productProjection", "product"),

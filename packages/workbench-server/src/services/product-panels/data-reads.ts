@@ -13,7 +13,7 @@ import {
   AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
-  PRODUCT_ASSET, PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
+  PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
   type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -360,13 +360,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [OBJECT_TYPE]: modelReads,
     [ATTRIBUTE]: modelReads,
     [RELATIONSHIP]: modelReads,
-    [PRODUCT_ASSET]: {
-      async count() {
-        const { countProductTypes } = await import("../product-assets/store");
-        const counts = await countProductTypes(owner);
-        return { rows: [], total: Object.values(counts).reduce((sum, count) => sum + count, 0) };
-      },
-    },
     [PRODUCT_PROJECTION]: {
       ...catalogueReads(projectionCatalogue),
       usedByRows: selection => projectionCatalogue.usedByRows(selection.primaryKey!),

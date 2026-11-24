@@ -61,7 +61,7 @@ describe("readBuiltinProducts", () => {
       const frame = panels.get("builtin-product-ontology-frame");
       expect(frame).toBeDefined();
       const countMembers = Object.entries(frame!.manifest.members).filter(([, member]) => "projectionId" in member.target);
-      expect(countMembers).toHaveLength(16);
+      expect(countMembers).toHaveLength(15);
 
       const expectedCountReads: Record<string, string> = {
         objectTypes: "platform:ObjectType",
@@ -70,7 +70,6 @@ describe("readBuiltinProducts", () => {
         actions: "platform:Action",
         workflows: "platform:Workflow",
         sdkComponents: "platform:SDKComponent",
-        productAssets: "platform:ProductAsset",
         agents: "platform:AgentDefinition",
       };
       for (const [memberKey, member] of countMembers) {

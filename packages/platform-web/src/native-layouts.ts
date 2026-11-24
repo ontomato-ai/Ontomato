@@ -45,11 +45,10 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
         key: "ontology:products",
         titleKey: "platform.layers.products",
         // The product layer in its own order — base components, projections, panels, applications, agents — each a panel
-        // entry the ontology manager declares. The old products catalogue stays until its page is taken out, before the
-        // agents' settings: what a product page is given to run on.
+        // entry the ontology manager declares.
         paths: [
           "/ontology/components", "/ontology/projections", "/ontology/panels", "/ontology/applications",
-          managerPaths.products, platformRoutes.ontologyAgents.path,
+          platformRoutes.ontologyAgents.path,
         ],
       },
     ],

@@ -17,7 +17,6 @@ const COUNT_MEMBERS = {
   "/ontology/projections": "projections",
   "/ontology/panels": "panels",
   "/ontology/applications": "applications",
-  "/ontology/products": "productAssets",
   "/ontology/agents": "agents",
 };
 
@@ -44,7 +43,6 @@ const ENTRY_ICONS = {
   "/ontology/projections": "layers",
   "/ontology/panels": "panels-top-left",
   "/ontology/applications": "app-window",
-  "/ontology/products": "shapes",
   "/ontology/agents": "bot",
 };
 
