@@ -25,9 +25,6 @@ import {
   RESET_USER_PASSWORD,
   REVOKE_USER_API_KEY,
   ROLE,
-  SAVE_POLICY_API_PERMISSIONS,
-  SAVE_POLICY_DATA_PERMISSIONS,
-  SAVE_POLICY_MENU_PERMISSIONS,
   SET_ORG_MEMBERSHIP_LOCKED,
   USER,
   platformObjectTypes,
@@ -185,10 +182,15 @@ describe("governance panel read adapter", () => {
           },
         };
       }
-      if (path === "/panel/governance/policies/api-permissions") {
+      if (path === "/panel/governance/policies/form") {
         return {
           success: true,
-          data: { primaryKey: "p-1", label: "Analyst", fields: { totalCount: 3 } },
+          data: {
+            fields: [],
+            values: { postName: "Draft", menuIds: ["m1"], apiIds: ["a1"] },
+            errors: [],
+            save: { method: "POST", path: "/panel/governance/policies/save", bodySchema: { type: "object" } },
+          },
         };
       }
       if (path === "/panel/governance/users/record") {
@@ -218,11 +220,12 @@ describe("governance panel read adapter", () => {
       body: { parentId: "org-root", changedField: null },
     });
 
-    const apiPerms = await adapter.policies.apiPermissions("p-1", "query");
-    expect(apiPerms.fields.totalCount).toBe(3);
+    const values = { postName: "Draft", menuIds: ["m1"], apiIds: ["a1"] };
+    const policyForm = await adapter.policies.form("p-1", { values });
+    expect(policyForm.values).toEqual(values);
     expect(requests[2]).toEqual({
-      path: "/panel/governance/policies/api-permissions",
-      body: { id: "p-1", search: "query" },
+      path: "/panel/governance/policies/form",
+      body: { id: "p-1", values, changedField: null },
     });
 
     await expect(adapter.users.record("missing")).rejects.toMatchObject({
@@ -393,26 +396,30 @@ describe("governance panel server operations", () => {
     expect(batchReceipt).toMatchObject({ kind: "success", secretGenerated: true, message: expect.any(String) });
     expect(batchReceipt).not.toHaveProperty("secret");
     expect(JSON.stringify(batchReceipt)).not.toContain("otm_1");
+
+    const { host: nonAdminHost } = hostWith(path => {
+      if (path === "/api/data-query/panel/governance/users/api-key/batch/unavailable") {
+        return Response.json({ success: true, data: { reason: "Domain administrators only" } });
+      }
+      return Response.json({ success: true, data: {} });
+    });
+    const batchHandler = registeredPanelOperation(ISSUE_USER_API_KEY_BATCH)!.handler;
+    if (batchHandler.effect !== "write") throw new Error("Expected write handler");
+    expect(await batchHandler.unavailable?.(nonAdminHost, null)).toEqual({ reason: "Domain administrators only" });
   });
 
   it("handles policy permission mutations and organization membership/grant mutations", async () => {
-    const { host } = hostWith((path, body) => {
+    const { host, sent } = hostWith((path, body) => {
       if (path === "/api/data-query/panel/governance/users/remove" && body.id === "u-admin") {
         return Response.json({
           success: false, code: "USER_BUILTIN_ADMIN_PROTECTED", message: "Built-in administrator cannot be removed",
         });
       }
-      if (path === "/api/data-query/panel/governance/policies/menu-permissions/save") {
-        return Response.json({ success: true, data: { id: "p-1", count: 4 } });
+      if (path === "/api/data-query/panel/governance/policies/save") {
+        return Response.json({ success: true, data: { id: "p-1" } });
       }
-      if (path === "/api/data-query/panel/governance/policies/api-permissions/save") {
-        return Response.json({ success: true, data: { id: "p-1", count: 10 } });
-      }
-      if (path === "/api/data-query/panel/governance/policies/api-catalog/refresh") {
+      if (path === "/api/data-query/panel/governance/policies/api-permissions/refresh") {
         return Response.json({ success: true, data: { refreshed: true } });
-      }
-      if (path === "/api/data-query/panel/governance/policies/data-permissions/save") {
-        return Response.json({ success: true, data: { id: "p-1", savedRuleCount: 2 } });
       }
       if (path === "/api/data-query/panel/governance/org-units/add-member") {
         return Response.json({
@@ -433,25 +440,27 @@ describe("governance panel server operations", () => {
     });
 
     const policyTarget = { kind: "object" as const, objectType: PERMISSION_POLICY, primaryKey: "p-1" };
-    expect(await targetedActionOp(SAVE_POLICY_MENU_PERMISSIONS).execute(host, policyTarget, { menuIds: ["m1"] }, "intent-1")).toMatchObject({
+    const values = { postName: "New name", dataPermissions: { Order: { fieldPermissions: { amount: 1 } } } };
+    const submittedFields = ["/postName", "/dataPermissions/Order/fieldPermissions"];
+    const savePolicy = anyWriteOp(`${PERMISSION_POLICY}.save`);
+    if (savePolicy.kind !== "form.save") throw new Error("Permission policy must use its owner form");
+    expect(await savePolicy.execute(host, policyTarget, {
+      values, submittedFields,
+    }, "intent-1")).toMatchObject({
       kind: "success",
-      data: { id: "p-1", count: 4 },
-    });
-    expect(await targetedActionOp(SAVE_POLICY_API_PERMISSIONS).execute(host, policyTarget, { apiIds: ["a1"] }, "intent-2")).toMatchObject({
-      kind: "success",
-      data: { id: "p-1", count: 10 },
+      data: { id: "p-1" },
+      affected: { objectTypes: expect.arrayContaining([PERMISSION_POLICY, ROLE, USER]) },
     });
     expect(await untargetedActionOp(REFRESH_POLICY_API_CATALOG).execute(host, null, {}, "intent-3")).toMatchObject({
       kind: "success",
       data: { refreshed: true },
+      affected: { objects: [], objectTypes: [PERMISSION_POLICY] },
     });
-    expect(await targetedActionOp(SAVE_POLICY_DATA_PERMISSIONS).execute(host, policyTarget, {
-      items: [{ className: "Order", fieldPermissions: { amount: { readable: true } } }],
-    }, "intent-4")).toMatchObject({
-      kind: "success",
-      data: { id: "p-1", savedRuleCount: 2 },
-      affected: { objectTypes: [PERMISSION_POLICY, USER] },
+    expect(sent).toContainEqual({
+      path: "/api/data-query/panel/governance/policies/save",
+      body: { ...values, id: "p-1", submittedFields },
     });
+    expect(sent).toContainEqual({ path: "/api/data-query/panel/governance/policies/api-permissions/refresh", body: {} });
 
     const remove = anyWriteOp(REMOVE_USER);
     if (!remove.batch) throw new Error("User removal must support batches");

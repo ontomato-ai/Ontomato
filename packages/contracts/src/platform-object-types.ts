@@ -131,10 +131,7 @@ export const REVOKE_USER_API_KEY = "users.revokeApiKey";
 export const ISSUE_USER_API_KEY_BATCH = "users.issueApiKeyBatch";
 export const DELETE_ROLE = "roles.delete";
 export const DELETE_PERMISSION_POLICY = "permissionPolicies.delete";
-export const SAVE_POLICY_MENU_PERMISSIONS = "permissionPolicies.saveMenuPermissions";
-export const SAVE_POLICY_API_PERMISSIONS = "permissionPolicies.saveApiPermissions";
 export const REFRESH_POLICY_API_CATALOG = "permissionPolicies.refreshApiCatalog";
-export const SAVE_POLICY_DATA_PERMISSIONS = "permissionPolicies.saveDataPermissions";
 export const DELETE_ORG_UNIT = "orgUnits.delete";
 export const ADD_ORG_UNIT_MEMBER = "orgUnits.addMember";
 export const SET_ORG_MEMBERSHIP_LOCKED = "orgMemberships.setLocked";
@@ -418,13 +415,10 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...referenceReads,
       ...governancePageQuery,
       ...modelReads,
-      menuPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
-      apiPermissions: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
-      dataPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
     },
     operations: [
       `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,
-      SAVE_POLICY_MENU_PERMISSIONS, SAVE_POLICY_API_PERMISSIONS, REFRESH_POLICY_API_CATALOG, SAVE_POLICY_DATA_PERMISSIONS,
+      REFRESH_POLICY_API_CATALOG,
     ],
   },
   [ORG_UNIT]: {

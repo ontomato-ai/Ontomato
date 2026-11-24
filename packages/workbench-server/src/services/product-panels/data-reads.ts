@@ -332,11 +332,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       record: selection => governance.policies.record(selection.primaryKey!),
       form: (selection, params) => governance.policies.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => governance.policies.createForm(formParams(params)),
-      menuPermissions: selection => governance.policies.menuPermissions(selection.primaryKey!),
-      apiPermissions: (selection, params) => governance.policies.apiPermissions(
-        selection.primaryKey!, panelReadParameterSchemas.keyword.optional().parse(params.search),
-      ),
-      dataPermissions: selection => governance.policies.dataPermissions(selection.primaryKey!),
     },
     [ORG_UNIT]: {
       list: () => governance.orgUnits.list(),
