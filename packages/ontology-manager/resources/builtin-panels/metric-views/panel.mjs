@@ -83,8 +83,6 @@ await mountPanel({
     const testJson = ref("");
     const truncation = ref(null);
     const testFailure = ref("");
-    const testingMarkdown = ref(false);
-    const testingJson = ref(false);
 
     function errorText(reason) {
       return reason instanceof Error ? reason.message : String(reason);
@@ -147,7 +145,6 @@ await mountPanel({
     const canRunTrial = computed(() => Boolean(detailVisible.value && formValues.value?.function));
     const trial = usePanelOperation("definition", "test", {
       available: canRunTrial,
-      busy: () => testingMarkdown.value,
       prepareInput(provided) {
         return {
           draft: draftValues(),
@@ -168,7 +165,6 @@ await mountPanel({
     });
     const trialJson = usePanelOperation("definition", "testExecute", {
       available: canRunTrial,
-      busy: () => testingJson.value,
       prepareInput(provided) {
         // Pass the form's current draft parameters (never bindingId) so unsaved edits to a binding's values are tested.
         return {
@@ -193,25 +189,17 @@ await mountPanel({
     });
     const trialReady = computed(() => Boolean(trial.operation.value));
     const trialJsonReady = computed(() => Boolean(trialJson.operation.value));
+    const testingMarkdown = trial.running;
+    const testingJson = trialJson.running;
 
     async function runMarkdown() {
       testFailure.value = "";
-      testingMarkdown.value = true;
-      try {
-        await trial.run({});
-      } finally {
-        testingMarkdown.value = false;
-      }
+      await trial.run({});
     }
 
     async function runJson() {
       testFailure.value = "";
-      testingJson.value = true;
-      try {
-        await trialJson.run({});
-      } finally {
-        testingJson.value = false;
-      }
+      await trialJson.run({});
     }
 
     return {

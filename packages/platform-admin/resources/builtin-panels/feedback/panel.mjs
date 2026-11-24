@@ -5,10 +5,8 @@ await mountPanel({
   setup() {
     const { instance, notify, t } = usePanelContext();
     const selected = computed(() => instance.state.values.value.selected);
-    const exporting = ref(false);
     const exportError = ref("");
     const exportCsv = usePanelOperation("exportCsv", "export", {
-      busy: () => exporting.value,
       prepareInput(provided) {
         const { search, sourceType, rating } = instance.state.values.value;
         const input = {
@@ -28,14 +26,10 @@ await mountPanel({
         exportError.value = error instanceof Error && error.message ? error.message : String(error);
       },
     });
+    const exporting = exportCsv.running;
     const runExport = async () => {
-      exporting.value = true;
       exportError.value = "";
-      try {
-        await exportCsv.run({});
-      } finally {
-        exporting.value = false;
-      }
+      await exportCsv.run({});
     };
     return { selected, exporting, exportError, runExport, refresh: () => instance.refreshObjects() };
   },
