@@ -78,10 +78,6 @@ services:
     platform: linux/${ARCH:?ARCH not set}
     pull_policy: missing
     restart: unless-stopped
-    cap_add: [SYS_ADMIN, NET_ADMIN]
-    security_opt:
-      - seccomp=./sandbox-policy/seccomp.json
-      - ${AGENT_RUNTIME_LSM:-no-new-privileges=true}
     environment:
       <<: *database-environment
       AGENT_RUNTIME_DATABASE: ontomato
@@ -93,7 +89,7 @@ services:
       LLM_MODEL: ${LLM_MODEL:-}
       ONTOMATO_MODEL_RUNTIME_TOKEN: ${ONTOMATO_MODEL_RUNTIME_TOKEN:?ONTOMATO_MODEL_RUNTIME_TOKEN not set}
     volumes:
-      - ./agent_runtime_data:/data:Z
+      - ./agent_runtime_data:/data
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 5s
