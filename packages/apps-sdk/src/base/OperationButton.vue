@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
+import { computed, inject, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -25,6 +25,8 @@ import {
 import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
+import SecretDeliveryDialog from "./SecretDeliveryDialog.vue";
+import type { PanelSecretDelivery } from "@ontomato/contracts/panel-agent";
 
 /**
  * The button of one operation a projection names, run as the reader the way an agent's call runs: the platform's
@@ -88,6 +90,7 @@ const emit = defineEmits<{
   read: [result: PanelReadOperationResult];
 }>();
 
+const deliveries = shallowRef<readonly PanelSecretDelivery[]>([]);
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
@@ -142,6 +145,7 @@ const {
     }
     return { ok: true };
   },
+  onSecretDelivery: value => { deliveries.value = value; },
   onDone: (_name, answered) => {
     if (answered.kind === "batch") publishBatchReceipt?.({ items: answered.items, named: named.value });
     emit("done", answered);
@@ -316,74 +320,77 @@ onBeforeUnmount(unregisterAction);
 </script>
 
 <template>
-  <div v-if="!hiddenByAvailability" class="sdk-operation-button">
-    <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
-    <!-- A removal is drawn quiet unless `plain` requests a tinted bordered button; the owner still decides and confirms it. -->
-    <el-button
-      v-else
-      :type="type"
-      :size="size"
-      :plain="plain"
-      :text="text || (type === 'danger' && !plain)"
-      :loading="dispatching"
-      :disabled="!ready"
-      @click="onTriggerClick"
-    >
-      <svg
-        v-if="icon === 'trash' && !dispatching"
-        class="sdk-operation-icon"
-        viewBox="0 0 24 24"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+  <div v-if="!hiddenByAvailability || deliveries.length" class="sdk-operation-button">
+    <template v-if="!hiddenByAvailability">
+      <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
+      <!-- A removal is drawn quiet unless `plain` requests a tinted bordered button; the owner still decides and confirms it. -->
+      <el-button
+        v-else
+        :type="type"
+        :size="size"
+        :plain="plain"
+        :text="text || (type === 'danger' && !plain)"
+        :loading="dispatching"
+        :disabled="!ready"
+        @click="onTriggerClick"
       >
-        <path d="M3 6h18" />
-        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-        <line x1="10" x2="10" y1="11" y2="17" />
-        <line x1="14" x2="14" y1="11" y2="17" />
-      </svg>
-      <svg
-        v-else-if="icon === 'check' && !dispatching"
-        class="sdk-operation-icon"
-        viewBox="0 0 24 24"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M20 6 9 17l-5-5" />
-      </svg>
-      <span>{{ label }}</span>
-    </el-button>
-    <operation-input-dialog
-      v-if="inputFields.length > 0"
-      v-model="inputDialogOpen"
-      :title="descriptor?.label"
-      :fields="inputFields"
-      :busy="running"
-      @confirm="confirmInput"
-    ></operation-input-dialog>
-    <p v-if="!pending && descriptor?.unavailable" class="sdk-operation-unavailable">{{ descriptor.unavailable.reason }}</p>
-    <p v-if="failure" role="alert">{{ failure.message }}</p>
-    <operation-result v-if="read" :result="read"></operation-result>
-    <template v-if="receipt">
-      <p v-if="receipt.kind === 'not-dispatched'" role="alert">{{ receipt.message }}</p>
-      <p v-else-if="outcome === null" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
-      <template v-else-if="outcome.kind === 'batch'">
-        <OperationBatchReceipt v-if="!publishBatchReceipt" class="sdk-operation-batch" :items="outcome.items" :named="named" />
+        <svg
+          v-if="icon === 'trash' && !dispatching"
+          class="sdk-operation-icon"
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 6h18" />
+          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+          <line x1="10" x2="10" y1="11" y2="17" />
+          <line x1="14" x2="14" y1="11" y2="17" />
+        </svg>
+        <svg
+          v-else-if="icon === 'check' && !dispatching"
+          class="sdk-operation-icon"
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+        <span>{{ label }}</span>
+      </el-button>
+      <operation-input-dialog
+        v-if="inputFields.length > 0"
+        v-model="inputDialogOpen"
+        :title="descriptor?.label"
+        :fields="inputFields"
+        :busy="running"
+        @confirm="confirmInput"
+      ></operation-input-dialog>
+      <p v-if="!pending && descriptor?.unavailable" class="sdk-operation-unavailable">{{ descriptor.unavailable.reason }}</p>
+      <p v-if="failure" role="alert">{{ failure.message }}</p>
+      <operation-result v-if="read" :result="read"></operation-result>
+      <template v-if="receipt">
+        <p v-if="receipt.kind === 'not-dispatched'" role="alert">{{ receipt.message }}</p>
+        <p v-else-if="outcome === null" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
+        <template v-else-if="outcome.kind === 'batch'">
+          <OperationBatchReceipt v-if="!publishBatchReceipt" class="sdk-operation-batch" :items="outcome.items" :named="named" />
+        </template>
+        <p v-else role="alert" :data-outcome="outcome.kind">{{ said(outcome) }}</p>
       </template>
-      <p v-else role="alert" :data-outcome="outcome.kind">{{ said(outcome) }}</p>
     </template>
+    <secret-delivery-dialog v-if="deliveries.length" :deliveries="deliveries" @close="deliveries = []" />
   </div>
 </template>
 

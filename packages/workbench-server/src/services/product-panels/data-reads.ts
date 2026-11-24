@@ -627,7 +627,7 @@ export async function readProductPanelData(
       const { readAdmittedProjectionOperations } = await import("./direct-operations");
       const value = await readAdmittedProjectionOperations({ owner, credentials: readViewer },
         { panel, projection, member, slot }, inputs);
-      return { status: "ready", value };
+      return { status: "ready", value: runtimeJsonObjectSchema.parse(value) };
     }
     const outcome = await executeProjectionDataRead(
       owner, readViewer, { member, projection, slot }, request.dataName, submittedInputs, request.runtimeParams, callerUserName, location,

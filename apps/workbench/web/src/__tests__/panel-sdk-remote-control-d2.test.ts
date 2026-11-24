@@ -11,7 +11,6 @@ import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authorin
 import { definePanel, type DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationDispatchResponse, PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type {
-  ProductPanelOperationsReadResponse,
   ProductPanelReadRequest,
   ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
@@ -70,10 +69,6 @@ const baseProjection = {
 };
 
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
-const readyOps = (value: Record<string, PanelOwnerOperationDescriptor>): ProductPanelOperationsReadResponse => ({
-  status: "ready",
-  value,
-});
 
 function createI18nPlugin() {
   return createI18n({
@@ -293,8 +288,8 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
         inputSchema: {},
         resultSchema: {},
       };
-      let resolveDescription!: (result: ProductPanelOperationsReadResponse) => void;
-      const description = new Promise<ProductPanelOperationsReadResponse>((resolve) => { resolveDescription = resolve; });
+      let resolveDescription!: (result: ProductPanelReadResponse) => void;
+      const description = new Promise<ProductPanelReadResponse>((resolve) => { resolveDescription = resolve; });
       const readDescription = vi.fn(() => description);
       type Prepare = typeof noOperations.operations.prepare;
       const prepare = vi.fn<Parameters<Prepare>, ReturnType<Prepare>>(async (operationId) => ({
@@ -377,7 +372,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
           expect(await executeFromFirstSnapshot()).toMatchObject({ ok: false, reason: "stale" });
         }
 
-        resolveDescription(readyOps({ runNow: descriptor }));
+        resolveDescription(ready({ runNow: descriptor }));
         await vi.waitFor(() => expect(button().disabled).toBe(false));
 
         if (selection === "unchanged") {
@@ -468,7 +463,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       initial: { selected: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
       text: createPanelText({}, ref("en"), "en"),
       read: async (req: PanelMemberReadRequest) => {
-        if (req.operations) return readyOps({ save: saveDescriptor });
+        if (req.operations) return ready({ save: saveDescriptor });
         const pk = (req.inputs?.task as { primaryKey?: string } | undefined)?.primaryKey
           ?? (instance.state.values.value.selected as { primaryKey?: string } | null)?.primaryKey
           ?? "t-1";
@@ -786,8 +781,8 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       read: async (req: PanelMemberReadRequest) => {
         if (req.operations) {
           return req.memberPath[0]?.member === "batchBtn"
-            ? readyOps({ batchRemove: batchDeleteDescriptor })
-            : readyOps({ remove: rowDeleteDescriptor });
+            ? ready({ batchRemove: batchDeleteDescriptor })
+            : ready({ remove: rowDeleteDescriptor });
         }
         await initialReadGate;
         return {

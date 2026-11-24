@@ -202,7 +202,7 @@ const observedDisplayResultSchema = z.object({
 }).strict();
 export const formFieldRejectionSchema = z.object({
   path: runtimeKeySchema,
-  reason: z.enum(["unknown_field", "read_only", "fixed", "invalid_value"]),
+  reason: z.enum(["unknown_field", "read_only", "fixed", "invalid_value", "secret"]),
   message: runtimeKeySchema,
 }).strict();
 export type FormFieldRejection = z.infer<typeof formFieldRejectionSchema>;

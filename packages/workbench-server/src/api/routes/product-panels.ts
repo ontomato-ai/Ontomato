@@ -357,7 +357,7 @@ panelOperationsRouter.post("/panel-operations/intents/:intentId/dispatch", wrap(
   const { owner, credentials } = context(req);
   const { intentId } = panelHumanOperationIntentParamsSchema.parse(req.params);
   dispatchPanelHumanOperationIntentRequestSchema.parse(req.body);
-  res.json(panelHumanOperationDispatchResponseSchema.parse(await dispatchHumanPanelOperation(owner, credentials, intentId)));
+  res.set("Cache-Control", "no-store").json(panelHumanOperationDispatchResponseSchema.parse(await dispatchHumanPanelOperation(owner, credentials, intentId)));
 }));
 panelOperationsRouter.post("/panel-operations/intents/:intentId/cancel", wrap(async (req, res) => {
   const { owner } = context(req);

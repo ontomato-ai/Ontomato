@@ -68,6 +68,7 @@ interface ServerOperation extends OperationInputDescription {
   binding: OntologyElementRef;
   labelKey?: string;
   effect: "write";
+  secretFields?: readonly string[];
   inspectImpact?: PanelImpactInspector;
   /** The current reader's display reason, only looked up for a concrete record on the operations read. */
   unavailable?(host: PanelOperationHost, target: PanelRecordTarget): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
@@ -209,6 +210,7 @@ export function operationDeclaration(handler: PanelServerOperation): PanelOperat
         ? handler.targetInput === undefined ? { source: "none" } : { source: "input", input: handler.targetInput }
       : { source: "draft" },
     inputSchema: jsonSchema(handler.inputSchema),
+    ...(handler.effect === "write" && handler.secretFields && { secretFields: handler.secretFields }),
     ...(panelOperationUpload(handler) && { upload: panelOperationUpload(handler) }),
   }));
   declarationCache.set(handler, declaration);

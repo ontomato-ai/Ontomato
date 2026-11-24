@@ -10,6 +10,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { FUNCTION } from "@ontomato/contracts/platform-object-types";
+import type { PanelSecretDelivery } from "@ontomato/contracts/panel-agent";
 import { randomId } from "@ontomato/contracts/random-id";
 import { operationInputFields } from "../../../../../packages/apps-sdk/src/base/operation-input-schema";
 import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
@@ -378,6 +379,7 @@ describe("P3 ObjectForm save bar paradigm rules", () => {
 function mountOperationHarness(options: {
   descriptor: PanelOwnerOperationDescriptor;
   batch?: boolean;
+  secret?: PanelSecretDelivery;
   boundParams?: Record<string, { literal: string }>;
 }) {
   const batch = options.batch ?? false;
@@ -438,8 +440,12 @@ function mountOperationHarness(options: {
     requests: {
       request: async (path, init) => {
         if (path === "/panel-operations/intents") {
-          intentBodies.push(JSON.parse(String(init?.body)));
-          return Response.json({ intentId, operationId: "action.run", label: options.descriptor.label, confirmation: { kind: "none" } });
+          const body = JSON.parse(String(init?.body));
+          intentBodies.push(body);
+          return Response.json({
+            intentId, operationId: "action.run", label: options.descriptor.label, confirmation: { kind: "none" },
+            ...(body.agentRun && { autoMode: false, questionId: randomId() }),
+          });
         }
         if (path === "/panel-operations/read") {
           readCalls.push(JSON.parse(String(init?.body)));
@@ -465,7 +471,7 @@ function mountOperationHarness(options: {
                 { target: { objectType: FUNCTION, primaryKey: "fn-2" }, outcome: { kind: "success", data: {} } },
               ],
             }
-          : { kind: "success", data: {}, message: "Executed", affected: { objects: [], objectTypes: [] } },
+          : { kind: "success", data: {}, ...(options.secret ? { secret: options.secret } : { message: "Executed" }), affected: { objects: [], objectTypes: [] } },
       },
     }),
     read: async (): Promise<ProductPanelReadResponse> => ({
@@ -480,6 +486,7 @@ function mountOperationHarness(options: {
   app.use(i18n("en")).use(ElementPlus).mount(element);
   return {
     element,
+    instance: mount.instance,
     intentBodies,
     readCalls,
     dispose: () => {
@@ -490,6 +497,81 @@ function mountOperationHarness(options: {
 }
 
 describe("P3 OperationButton parameter dialog", () => {
+  it("renders owner-marked password inputs", async () => {
+    const harness = mountOperationHarness({
+      descriptor: {
+        kind: "action", handlerRef: `${FUNCTION}.run`, label: "Connect", effect: "write",
+        target: { source: "none" }, batch: false, resultSchema: {}, secretFields: ["password"],
+        inputSchema: { type: "object", properties: {
+          password: { type: "string" }, token: { type: "string", format: "password" }, pin: { type: "string", "x-secret": true },
+        } },
+      },
+    });
+    try {
+      await vi.waitFor(() => expect(harness.element.querySelector<HTMLButtonElement>(".sdk-operation-button button")?.disabled).toBe(false));
+      harness.element.querySelector<HTMLButtonElement>(".sdk-operation-button button")!.click();
+      await vi.waitFor(() => {
+        for (const field of ["password", "token", "pin"]) {
+          expect(document.querySelector(`[data-input-field="${field}"] input[type="password"]`)).not.toBeNull();
+        }
+      });
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it("delivers a confirmed page action secret only through the operator dialog", async () => {
+    const secret = {
+      items: [{ label: "Access key", value: "generated-fixture-key" }],
+      download: { filename: "key.txt", contentType: "text/plain", content: "a2V5", encoding: "base64" as const },
+    };
+    const harness = mountOperationHarness({
+      descriptor: {
+        kind: "action", handlerRef: `${FUNCTION}.run`, label: "Generate", effect: "write",
+        target: { source: "none" }, batch: false, resultSchema: {}, inputSchema: {},
+      },
+      secret,
+    });
+    const downloads: string[] = [];
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download);
+    });
+    const createUrl = vi.fn(() => "blob:secret");
+    const revokeUrl = vi.fn();
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = createUrl;
+      static revokeObjectURL = revokeUrl;
+    });
+    try {
+      await vi.waitFor(() => expect(harness.element.querySelector<HTMLButtonElement>(".sdk-operation-button button")?.disabled).toBe(false));
+      const pending = await harness.instance.executeAction({
+        operation: "action.run", agentRun: { sessionId: randomId(), runId: randomId(), toolCallId: "fixture" },
+      });
+      if (!pending.ok || pending.kind !== "awaiting_confirmation") throw new Error("Expected confirmation");
+      expect(document.querySelector(".sdk-secret-delivery-dialog")).toBeNull();
+      const confirmed = await pending.confirmation.dispatch();
+      expect(confirmed).toMatchObject({ ok: true, outcome: { secretGenerated: true, message: expect.any(String) } });
+      expect(JSON.stringify(confirmed)).not.toContain(secret.items[0]!.value);
+      expect(JSON.stringify(confirmed)).not.toContain(secret.download.content);
+      const dialog = await vi.waitFor(() => {
+        const shown = document.querySelector(".sdk-secret-delivery-dialog");
+        if (!shown) throw new Error("Expected one-time delivery");
+        return shown;
+      });
+      expect(dialog.querySelector<HTMLInputElement>("input[type=password]")?.value).toBe(secret.items[0]!.value);
+      expect(clicked).not.toHaveBeenCalled();
+      [...dialog.querySelectorAll("button")].find(button => button.textContent?.includes(secret.download.filename))!.click();
+      expect(createUrl).toHaveBeenCalledWith(expect.any(Blob));
+      expect(downloads).toEqual([secret.download.filename]);
+      expect(revokeUrl).toHaveBeenCalledWith("blob:secret");
+      dialog.querySelector<HTMLButtonElement>("button.el-dialog__headerbtn")!.click();
+      await vi.waitFor(() => expect(document.querySelector(".sdk-secret-delivery-dialog")).toBeNull());
+    } finally {
+      vi.unstubAllGlobals();
+      harness.dispose();
+    }
+  });
+
   it("reads enum labels and trimmed field titles from the owner schema", () => {
     const published = { const: "PUBLISHED", title: "已发布" };
     const fields = operationInputFields({

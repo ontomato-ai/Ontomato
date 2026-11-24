@@ -310,6 +310,7 @@ export async function customerActionRequest(path: string, body: unknown) {
     const response = {
       locals: {},
       json: resolve,
+      set() { return this; },
       status(status: number) {
         return { json: (answer: unknown) => reject(new Error(`POST ${path}: ${status} ${JSON.stringify(answer)}`)) };
       },

@@ -21,7 +21,8 @@ import { attachmentName, savePanelFile } from "./save-file";
 
 export type PanelOperationDescriptor = ReturnType<typeof panelOperationDescriptorResponseSchema.parse>;
 export type PanelSingleWriteCall = Omit<PanelOperationCall, "draft">;
-export type PanelWriteInvocation = { call: PanelSingleWriteCall } | { calls: [WriteCall, ...WriteCall[]] };
+export type PanelWriteInvocation = ({ call: PanelSingleWriteCall } | { calls: [WriteCall, ...WriteCall[]] })
+  & { secretFields?: readonly string[] };
 type WriteCall = { target: { kind: "object"; objectType: string; primaryKey: string }; input: Record<string, unknown> };
 
 /** A read's call: the object or draft it acts on, if any, and its input — a trial run's, or a caller's own values. */
