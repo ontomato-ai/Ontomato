@@ -19,7 +19,7 @@ import {
   panelOperationDescriptorResponseSchema, panelOperationRefSchema,
   panelWriteOperationSnapshotSchema, readPanelOperationRequestSchema, readPanelOperationResponseSchema, readStoredPanelOperationIntent,
 } from "./panel-agent";
-import { panelOperationImpactSchema, panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
+import { panelCompletedOperationSchema, panelOperationImpactSchema, panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
 import {
   appBridgeConfirmPanelOperationResultSchema, appBridgeConfirmPanelOperationSchema,
   appBridgeExpandPageComposerSchema, appBridgeRequestSchema, APP_BRIDGE_CHANNEL,
@@ -79,6 +79,36 @@ import { platformTypeTableEntrySchema } from "./platform-type-table";
 const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id });
 const platformOperation = (id: string) => ({ kind: "PlatformOperation" as const, id });
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
+
+test("member inputs allow only identity fields on declared single-object state", () => {
+  const input = { state: "selection", field: "primaryKey" } as const;
+  assert.deepEqual(panelMemberInputSchema.parse(input), input);
+  assert.equal(panelMemberInputSchema.safeParse({ ...input, field: "label" }).success, false);
+  assert.equal(panelMemberInputSchema.safeParse({ ...input, path: [] }).success, false);
+
+  const members = { list: { target: { projectionId: "list" }, inputs: { className: input } } };
+  for (const type of [
+    { kind: "object", objectType: "Order" },
+    { kind: "object-union", objectTypes: ["Order", "Customer"] },
+    { kind: "child-object", parentType: "Order", collection: "lines" },
+  ]) {
+    assert.equal(panelManifestSchema.safeParse({ state: { selection: { type } }, members }).success, true);
+  }
+  for (const type of [
+    { kind: "scalar", type: "string" },
+    { kind: "list", items: { kind: "object", objectType: "Order" } },
+  ]) {
+    const parsed = panelManifestSchema.safeParse({ state: { selection: { type } }, members });
+    assert.equal(parsed.success, false);
+    if (!parsed.success)
+      assert.deepEqual(parsed.error.issues[0]?.path, ["members", "list", "inputs", "className", "field"]);
+  }
+  assert.equal(panelManifestSchema.safeParse({ state: {}, members }).success, false);
+  assert.equal(panelManifestSchema.safeParse({
+    state: { selection: { type: { kind: "object", objectType: "Order" } } },
+    members: { list: { target: { projectionId: "list" }, outputs: { selected: input } } },
+  }).success, false);
+});
 
 test("member inputs reference a sibling's read-only output and optional JSON Pointer", () => {
   const target = { projectionId: "projection" };
@@ -1337,6 +1367,30 @@ test("a dispatched success carries the owner's message alongside the result data
   assert.deepEqual(panelHumanOperationDispatchResponseSchema.parse(reply), reply);
   assert.deepEqual(panelOperationOutcomeSchema.parse({ kind: "success", data: {} }), { kind: "success", data: {} });
   assert.equal(panelOperationOutcomeSchema.safeParse({ ...reply.outcome, message: { key: "started" } }).success, false);
+});
+
+test("success receipts carry a strictly shaped created object identity", () => {
+  const created = { objectType: ATTRIBUTE, primaryKey: "Order.code" };
+  const outcome = { kind: "success", data: {}, created };
+  assert.deepEqual(panelOperationOutcomeSchema.parse(outcome), outcome);
+  const dispatch = { kind: "dispatched", intentId: "eeb5fc31-8ecf-46a9-882f-728ce4ba3fff", outcome };
+  assert.deepEqual(panelHumanOperationDispatchResponseSchema.parse(dispatch), dispatch);
+  for (const invalid of [null, { objectType: ATTRIBUTE }, { ...created, primaryKey: "" }, { ...created, objectType: "" }, { ...created, extra: true }]) {
+    assert.equal(panelOperationOutcomeSchema.safeParse({ ...outcome, created: invalid }).success, false);
+  }
+});
+
+test("completed operations preserve and validate the created identity through the panel host message", () => {
+  const operation = { operationId: "form.save", panelId: "attributes", target: null };
+  const created = { objectType: ATTRIBUTE, primaryKey: "Order.code" };
+  const completed = { ...operation, created };
+  assert.deepEqual(panelCompletedOperationSchema.parse(operation), operation);
+  assert.deepEqual(panelCompletedOperationSchema.parse(completed), completed);
+  const event = { kind: "object-changed", target: null, operation: completed };
+  assert.deepEqual(panelHostFrameMessageSchema.parse(event), event);
+  for (const invalid of [null, { objectType: ATTRIBUTE }, { ...created, primaryKey: "" }, { ...created, extra: true }]) {
+    assert.equal(panelCompletedOperationSchema.safeParse({ ...operation, created: invalid }).success, false);
+  }
 });
 
 test("legacy formField member attachments are rejected in favour of ObjectForm Vue slots", () => {

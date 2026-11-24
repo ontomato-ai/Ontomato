@@ -2,7 +2,7 @@ import { z } from "zod";
 import { missingEntryMessageKeys } from "@ontomato/contracts/panel-conversation-entry";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import {
-  matchesDirectPanelValue, matchesObjectType, panelManifestSchema, panelPlacementSchema, panelPortAccepts, type PanelMember,
+  matchesDirectPanelValue, matchesObjectType, panelManifestSchema, panelPlacementSchema, panelPortAccepts, panelStateInputType, type PanelMember,
   type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
@@ -323,7 +323,7 @@ async function incompatiblePort(
       const binding = authoredReadParameterSource(datum.params, name, normalizedWiring);
       const parameter = panelReadParameterId(declaration, name);
       if (!binding || !parameter || (!("state" in binding) && !("output" in binding))) continue;
-      if ("state" in binding && !panelReadInputMatches(parameter, source.state[binding.state]?.type))
+      if ("state" in binding && !panelReadInputMatches(parameter, panelStateInputType(binding, source.state[binding.state]?.type)))
         return `read parameter '${name}' does not accept its connected state field`;
       implicit.add(name);
     }
@@ -333,7 +333,7 @@ async function incompatiblePort(
     if (!type && ("state" in value || "output" in value) && implicit.has(name)) continue;
     if (!type) return `input '${name}' was removed or is not exposed`;
     if ("item" in value || "output" in value) continue;
-    const offered = "state" in value ? source.state[value.state]?.type : undefined;
+    const offered = "state" in value ? panelStateInputType(value, source.state[value.state]?.type) : undefined;
     if (!("literal" in value) && offered === undefined) return `input '${name}' has no declared value source`;
     const accepts = "literal" in value ? type.kind === "json" || matchesDirectPanelValue(type, value.literal)
       : offered !== undefined && directProjectionInputAccepts(type, offered);

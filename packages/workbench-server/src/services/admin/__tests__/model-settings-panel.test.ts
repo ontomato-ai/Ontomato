@@ -17,6 +17,7 @@ import {
   TEST_MODEL_CONNECTION,
 } from "@ontomato/contracts/platform-object-types";
 import type { ModelSettingsData } from "@ontomato/contracts/model-settings";
+import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en } from "../../../i18n/locales/en";
 import {
@@ -158,7 +159,10 @@ beforeEach(() => {
     if (path === "/api/data-query/model-settings/save" && init?.method === "POST") {
       const body = JSON.parse(String(init.body));
       savedBodies.push(body);
-      storedSettings = body;
+      storedSettings = structuredClone(body) as ModelSettingsData;
+      for (const connection of Object.values(storedSettings.connections)) {
+        if (connection.apiKey) connection.apiKey = `******${connection.apiKey.slice(-4)}`;
+      }
       return Response.json({ success: true, data: storedSettings });
     }
     if (path === "/api/data-query/model-settings/discover" && init?.method === "POST") {
@@ -198,7 +202,9 @@ describe("model settings owner reads & forms", () => {
     const azureKey = azureForm.fields.find((f) => f.path === "/apiKey")!;
     expect(azureBase.required).toBe(true);
     expect(azureBase.control).toMatchObject({ kind: "text", placeholder: PROVIDER_SPECS.azure.apiBasePlaceholder });
+    expect(azureKey.required).toBe(true);
     expect(azureKey.control).toMatchObject({ kind: "text", secret: true });
+    expect(azureForm.errors).toContainEqual(expect.objectContaining({ field: "/apiKey" }));
     expect(azureForm.errors.some((e) => e.field === "/apiBase" && e.code === "required")).toBe(true);
 
     const customForm = await reads.createForm({ values: { provider: "custom_openai" } });
@@ -215,11 +221,26 @@ describe("model settings owner reads & forms", () => {
       placeholder: PROVIDER_SPECS.deepseek.apiBasePlaceholder,
     });
 
-    // Editing preserves the masked key directly as returned by the server.
-    const editForm = await reads.form("openai-main", {});
-    expect(editForm.values.apiKey).toBe("******1234");
-    expect(editForm.fields.find((f) => f.path === "/name")!.readOnly).toBe(true);
     expect(assertPermission).toHaveBeenCalledWith(actor.credentials, ["system-config"]);
+  });
+
+  it("keeps the saved key out of connection list, detail, and edit form responses", async () => {
+    const reads = createModelConnectionReads(actor);
+    const editForm = await reads.form("openai-main", {});
+    expect(editForm.values.apiKey).toBe("");
+    const editKey = editForm.fields.find((f) => f.path === "/apiKey")!;
+    expect(editKey).toMatchObject({
+      required: false,
+      valueSchema: { type: "string" },
+      control: { kind: "text", secret: true },
+    });
+    expect(editKey.valueSchema).not.toHaveProperty("minLength");
+    expect(editForm.fields.find((f) => f.path === "/name")!.readOnly).toBe(true);
+    const refreshed = await reads.form("openai-main", { values: { provider: "deepseek" } });
+    expect(refreshed.values.apiKey).toBe("");
+    expect(refreshed.errors).toEqual([]);
+    expect(JSON.stringify([await reads.list(), await reads.record("openai-main"), editForm, refreshed]))
+      .not.toContain(storedSettings.connections["openai-main"]!.apiKey);
   });
 
   it("shows chat fields vs embedding dimensions by model type and disables embedding for anthropic", async () => {
@@ -263,20 +284,46 @@ describe("model settings owner reads & forms", () => {
 });
 
 describe("model settings owner writes, impact confirmation, and draft reads", () => {
-  it("saves connection edits with masked key untouched through Java ModelSettingsController", async () => {
+  it("reports the identity of a newly created model connection", async () => {
+    const save = writeOp(`${MODEL_CONNECTION}.save`);
+    const outcome = await save.execute(makeHost(), { kind: "draft" }, {
+      values: { name: "openai-backup", provider: "openai", apiKey: "sk-backup" },
+    }, "intent-1");
+    expect(outcome).toMatchObject({ kind: "success", created: { objectType: MODEL_CONNECTION, primaryKey: "openai-backup" } });
+  });
+
+  it("refuses to create a connection with a blank API key", async () => {
+    const save = writeOp(`${MODEL_CONNECTION}.save`);
+    const outcome = await save.execute(makeHost(), { kind: "draft" }, {
+      values: { name: "openai-backup", provider: "openai", apiKey: "" },
+    }, "intent-1");
+    expect(outcome).toMatchObject({
+      kind: "refusal",
+      code: "INVALID_CONNECTION",
+      errors: [expect.objectContaining({ field: "/apiKey", message: expect.stringMatching(/API key.*required/i) })],
+    });
+    expect(savedBodies).toHaveLength(0);
+  });
+
+  it.each([
+    { input: "omitted", values: {}, apiKey: "******1234" },
+    { input: "blank", values: { apiKey: "" }, apiKey: "******1234" },
+    { input: "replaced", values: { apiKey: "sk-replacement" }, apiKey: "sk-replacement" },
+  ])("saves connection edits with the API key $input", async ({ values, apiKey }) => {
     const saveConn = writeOp(`${MODEL_CONNECTION}.save`);
     const outcome = await saveConn.execute(
       makeHost(),
       { kind: "object", objectType: MODEL_CONNECTION, primaryKey: "openai-main" },
-      { values: { apiBase: "https://proxy.example.com/v1" } },
+      { values: { ...values, apiBase: "https://proxy.example.com/v1" } },
       "intent-1",
     );
-    expect(outcome.kind).toBe("success");
+    expect(outcome).toMatchObject({ kind: "success", data: { id: "openai-main" } });
+    expect(JSON.stringify(outcome)).not.toContain(apiKey);
     expect(savedBodies).toHaveLength(1);
     expect((savedBodies[0] as ModelSettingsData).connections["openai-main"]).toMatchObject({
       provider: "openai",
       apiBase: "https://proxy.example.com/v1",
-      apiKey: "******1234",
+      apiKey,
     });
   });
 
@@ -310,7 +357,7 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
       { values: { name: "gpt-4.1", model: "gpt-4.1", type: "chat", contextWindow: 262144 } },
       "intent-3",
     );
-    expect(added.kind).toBe("success");
+    expect(added).toMatchObject({ kind: "success", created: { objectType: MODEL_ENTRY, primaryKey: "gpt-4.1" } });
     expect(storedSettings.models["gpt-4.1"]).toMatchObject({ connection: "openai-main", type: "chat", contextWindow: 262144 });
 
     const editModel = writeOp(`${MODEL_ENTRY}.save`);
@@ -372,29 +419,37 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
     expect((await pause.execute(makeHost(), { kind: "object", objectType: MODEL_USAGE, primaryKey: "domain" }, {}, "intent-8")).kind).toBe("success");
   });
 
-  it("discovers models and tests a model against the live unsaved connection form draft", async () => {
+  it.each<{ input: string; values: PanelFormValues; apiKey: string }>([
+    { input: "omitted", values: {}, apiKey: "******1234" },
+    { input: "blank", values: { apiKey: "" }, apiKey: "******1234" },
+    { input: "replaced", values: { apiKey: "sk-unsaved" }, apiKey: "sk-unsaved" },
+  ])("discovers and tests models with the draft API key $input", async ({ values, apiKey }) => {
+    const draft = { name: "openai-main", provider: "openai", apiBase: "https://proxy.example.com/v1", ...values };
     const discover = readOp(DISCOVER_MODEL_CONNECTION);
     const discovered = await discover.execute(makeHost(), {
       target: undefined,
-      input: {
-        draft: { name: "openai-main", provider: "openai", apiBase: "https://api.openai.com/v1", apiKey: "******1234", extraHeaders: [] },
-        parameters: {},
-      },
+      input: { draft, parameters: {} },
     });
     expect(discovered).toEqual({ kind: "json", value: { models: [{ id: "gpt-4o" }, { id: "gpt-4.1" }] } });
+    const discoveryCall = mockFetch.mock.calls.at(-1)!;
+    expect(discoveryCall[0]).toBe("/api/data-query/model-settings/discover");
+    expect(JSON.parse(String((discoveryCall[1] as FetchInit).body))).toMatchObject({
+      connectionName: draft.name,
+      connection: { apiKey, apiBase: draft.apiBase },
+    });
 
     const test = readOp(TEST_MODEL_CONNECTION);
     const tested = await test.execute(makeHost(), {
       target: undefined,
-      input: {
-        draft: { name: "openai-main", provider: "openai", apiBase: "https://api.openai.com/v1", apiKey: "sk-unsaved", extraHeaders: [] },
-        parameters: { modelName: "gpt-4o" },
-      },
+      input: { draft, parameters: { modelName: "gpt-4o" } },
     });
     expect(tested).toEqual({ kind: "json", value: { type: "chat", content: "pong" } });
     const lastCall = mockFetch.mock.calls.at(-1)!;
     expect(lastCall[0]).toBe("/api/data-query/model-settings/test");
-    expect(JSON.parse(String((lastCall[1] as FetchInit).body)).connection.apiKey).toBe("sk-unsaved");
+    expect(JSON.parse(String((lastCall[1] as FetchInit).body))).toMatchObject({
+      connectionName: draft.name,
+      connection: { apiKey, apiBase: draft.apiBase },
+    });
   });
 });
 

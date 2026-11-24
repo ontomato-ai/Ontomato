@@ -28,6 +28,7 @@ import { runForOwner } from "../assistant/execution";
 import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource, type AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
+import { publishObjectChanged } from "../agent-host/presentation";
 import { mergeObjectActionBoundParams } from "../action/object-actions";
 import { readCurrentPanelRecord } from "./current";
 import {
@@ -462,6 +463,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
         sessionId: input.agentRun.sessionId,
         runId: input.agentRun.runId,
         toolCallId: input.agentRun.toolCallId,
+        rootSession: root,
         autoMode,
         questionId,
       },
@@ -593,6 +595,26 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   const view = current.handler.projectResult && await readAssistantSkillView(owner.domainId, credentials);
   const host = operationHost({ owner, credentials }, view);
   const result = await claimAndExecutePanel(owner, host, claimedIntent, current.handler, staged.invocation);
+  const outcome = result?.outcome;
+  if (outcome?.kind === "success" && intent.source.kind === "agent-page" && intent.source.rootSession && "call" in staged.invocation) {
+    const { target: preparedTarget } = staged.invocation;
+    const target = preparedTarget?.kind === "object"
+      ? { objectType: preparedTarget.objectType, primaryKey: preparedTarget.primaryKey }
+      : null;
+    publishObjectChanged(intent.initiator, {
+      type: "object-changed",
+      session: intent.source.rootSession,
+      target,
+      operation: {
+        operationId: intent.operation.id,
+        panelId: intent.panelId,
+        target,
+        ...(outcome.message !== undefined && { message: outcome.message }),
+        ...(outcome.created && { created: outcome.created }),
+      },
+      ...(outcome.affected && { affected: outcome.affected }),
+    });
+  }
   // A refused call keeps its file for the reader's retry, such as confirming an overwrite.
   if (result?.outcome.kind === "success" && staged.upload) await uploads.remove(owner, staged.upload.id);
   return result

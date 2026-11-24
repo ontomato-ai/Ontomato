@@ -61,6 +61,7 @@ async function open(state: Record<string, unknown>, held?: Promise<void>) {
     agents.push(definition(CREATED, String((input as PanelFormSaveInput).values.name)));
     return {
       kind: "success", data: {},
+      created: { objectType: AGENT_DEFINITION, primaryKey: CREATED },
       affected: { objects: [{ objectType: AGENT_DEFINITION, primaryKey: CREATED }], objectTypes: [AGENT_DEFINITION] },
     };
   }, { source: "input", input: "agent" }, { creates: true });

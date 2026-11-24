@@ -18,7 +18,7 @@ await mountPanel({
     const { back: cancel } = usePanelBack(() => Boolean(editing.value), close, { forms: "form" });
     const dialog = computed({
       get: () => Boolean(editing.value),
-      set: (open) => { if (!open) void cancel(); },
+      set: (open) => { if (!open) close(); },
     });
 
     function rowAction({ id, ref }) {

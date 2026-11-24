@@ -94,7 +94,9 @@ describe("metric and function panel server operations", () => {
     expect(JSON.parse(String(updated.sent[0]?.init.body))).toEqual({ name: "Revenue", id: "m1" });
 
     const created = hostWith(() => Response.json({ success: true, data: { id: "m-new", name: "Revenue" } }));
-    await operation.execute(created.host, { kind: "draft" }, { values: { name: "Revenue" } });
+    await expect(operation.execute(created.host, { kind: "draft" }, { values: { name: "Revenue" } })).resolves.toMatchObject({
+      kind: "success", created: { objectType: METRIC_VIEW, primaryKey: "m-new" },
+    });
     expect(JSON.parse(String(created.sent[0]?.init.body))).toEqual({ name: "Revenue" });
   });
 
@@ -358,7 +360,9 @@ describe("metric and function panel server operations", () => {
     expect(JSON.parse(String(updated.sent[0]?.init.body))).toEqual({ name: "Revenue query", id: "f1" });
 
     const created = hostWith(() => Response.json({ success: true, data: { id: "f-new", name: "Revenue query" } }));
-    await operation.execute(created.host, { kind: "draft" }, { values: { name: "Revenue query" } });
+    await expect(operation.execute(created.host, { kind: "draft" }, { values: { name: "Revenue query" } })).resolves.toMatchObject({
+      kind: "success", created: { objectType: FUNCTION, primaryKey: "f-new" },
+    });
     expect(JSON.parse(String(created.sent[0]?.init.body))).toEqual({ name: "Revenue query" });
   });
 

@@ -131,6 +131,28 @@ export type PanelStateValue = z.infer<typeof panelStateValueSchema>;
 export const panelStateRefSchema = z.object({ state: key }).strict();
 export type PanelStateRef = z.infer<typeof panelStateRefSchema>;
 
+export const panelStateFieldRefSchema = z.object({
+  state: key,
+  field: z.enum(["primaryKey", "objectType"]),
+}).strict();
+export type PanelStateFieldRef = z.infer<typeof panelStateFieldRefSchema>;
+
+export function panelStateInputType(
+  ref: PanelStateRef | PanelStateFieldRef, type: DirectPanelPortType | undefined,
+): DirectPanelPortType | undefined {
+  if (!("field" in ref)) return type;
+  if (type?.kind === "object" || type?.kind === "object-union" || type?.kind === "child-object")
+    return { kind: "scalar", type: "string" };
+}
+
+export function panelStateIdentityField(
+  field: PanelStateFieldRef["field"], value: PanelObjectRef | PanelChildObjectIdentity | null | undefined,
+): string | undefined {
+  if (value == null) return undefined;
+  if (field === "primaryKey") return value.primaryKey;
+  return "parent" in value ? value.parent.objectType : value.className;
+}
+
 const panelReadOperationFormFieldRefSchema = z.object({
   slot: key,
   path: formFieldErrorSchema.shape.field,
@@ -300,6 +322,7 @@ const commandInputSchema = z.union([literalValue, panelStateRefSchema, itemValue
 export const panelMemberInputSchema = z.union([
   literalValue,
   panelStateRefSchema,
+  panelStateFieldRefSchema,
   z.object({
     output: z.object({ member: key, name: key, path: formFieldErrorSchema.shape.field.optional() }).strict(),
   }).strict(),
@@ -613,7 +636,12 @@ export const panelManifestSchema = z.object({
       issue([...path, "inputs"], "The application entry supplies the inputs for this member");
     }
     for (const [name, input] of Object.entries(declaration.inputs ?? {})) {
-      if ("state" in input) requireName(state, input.state, [...path, "inputs", name, "state"]);
+      if ("state" in input) {
+        const inputPath = [...path, "inputs", name];
+        requireName(state, input.state, [...inputPath, "state"]);
+        if ("field" in input && Object.hasOwn(state, input.state) && !panelStateInputType(input, state[input.state].type))
+          issue([...inputPath, "field"], `State '${input.state}' must be an object, object-union, or child-object to expose '${input.field}'`);
+      }
       if ("output" in input) {
         const outputPath = [...path, "inputs", name, "output", "member"];
         requireName(members, input.output.member, outputPath);

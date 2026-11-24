@@ -2,11 +2,15 @@
 
 | Page shape | Template |
 | --- | --- |
-| Compact list with detail, create and edit in the right pane | [List and detail editor](list-detail-edit/README.md) |
+| Full-width catalog and a separate full-width detail entry | [Two-entry catalog and detail](two-entry-catalog-detail/README.md) |
+| Compact list with detail, create and edit in the right workspace, as in Business Knowledge | [List and detail editor](list-detail-edit/README.md) |
 | Full-width table with row actions and a tabbed editor dialog | [Table and modal editor](table-inline-modal-edit/README.md) |
 | Shared term selector, authorized menu and trailing counts | [Application frame](app-frame/README.md) |
-| Full-width catalog and a separate detail entry | [Two-entry catalog and detail](two-entry-catalog-detail/README.md) |
-| Full-width catalog, detail and create dialog in one entry | [Catalog, detail and create dialog](catalog-detail-dialog/README.md) |
+
+For a full-width catalog, use the two-entry template. Place the primary New button at the top right of the
+catalog header. Open a centered dialog with only the required fields, then navigate to the new object's
+full-width detail after save. The detail header links back with `navigate(CATALOG_PATH)`. The platform
+retains catalog state and refreshes the list on return.
 
 Ask for confirmation before leaving a dirty form, including on row switches, Back, Escape and dialog close.
 Keep lists and tabs mounted with `v-show` when they are merely off-screen. Use `v-if` for forms and actions

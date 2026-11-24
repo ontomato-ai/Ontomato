@@ -97,7 +97,8 @@ function open(
     operations: { ...noOperations.operations, prepare },
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: {
-      kind: "success", data: {}, affected: { objects: [{ objectType: ATTRIBUTE, primaryKey: "Device.site_id" }], objectTypes: [ATTRIBUTE] },
+      kind: "success", data: {}, created: { objectType: ATTRIBUTE, primaryKey: "Device.site_id" },
+      affected: { objects: [{ objectType: ATTRIBUTE, primaryKey: "Device.site_id" }], objectTypes: [ATTRIBUTE] },
     } as never } }),
     readProjection: async () => options.fixedFields
       ? { ...projection, config: { fixedFields: options.fixedFields } }

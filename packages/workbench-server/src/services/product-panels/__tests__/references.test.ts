@@ -97,3 +97,26 @@ it.each(["app-ops-model", "sample-ontology-graph-panel", "missing-manifest"])("r
   await expect(validateObjectDetailPanelMapping(owner.domainId, "Example", panelId, client)).rejects.toMatchObject(unavailable);
   await expect(validatePersonalPlacement(owner, viewer, parent, new Set(), "child", { id: "placement", target }, client)).rejects.toMatchObject(unavailable);
 });
+
+
+it("checks object identity fields against read parameters when a connected projection is updated", async () => {
+  const attributes = productProjectionInputSchema.parse({
+    ...projection, componentId: "@ontomato/sdk:ObjectList",
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: "platform:Attribute" } }, read: "list", params: {} } },
+  });
+  const connected = (type: object) => storedClient([{
+    id: "parent", definition: { ...leaf, manifest: {
+      state: { selectedNode: { type } },
+      members: { rows: {
+        target: { projectionId: "attributes" },
+        inputs: { className: { state: "selectedNode", field: "primaryKey" } },
+      } },
+    } },
+  }]);
+  await expect(validateCurrentProductReferences(owner, viewer, "projection", "attributes", attributes,
+    connected({ kind: "object", objectType: "platform:ObjectType" }),
+  )).resolves.toBeUndefined();
+  await expect(validateCurrentProductReferences(owner, viewer, "projection", "attributes", attributes,
+    connected({ kind: "scalar", type: "string" }),
+  )).rejects.toMatchObject({ status: 409, code: "PRODUCT_PORT_IN_USE" });
+});

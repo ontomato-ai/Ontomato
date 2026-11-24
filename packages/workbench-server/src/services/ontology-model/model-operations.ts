@@ -331,11 +331,13 @@ export const ontologyModelServerOperations = [
         objectTypeViewSchema,
       );
       if (!result.ok) return result.outcome;
+      const identity = { objectType: OBJECT_TYPE, primaryKey: result.data.className };
       return {
         kind: "success",
         data: runtimeJsonObjectSchema.parse(result.data),
+        ...(target.kind === "draft" && { created: identity }),
         affected: {
-          objects: [{ objectType: OBJECT_TYPE, primaryKey: result.data.className }],
+          objects: [identity],
           objectTypes: target.kind === "draft" ? [OBJECT_TYPE, ATTRIBUTE] : [OBJECT_TYPE],
         },
       };
@@ -410,11 +412,13 @@ export const ontologyModelServerOperations = [
         attributeViewSchema,
       );
       if (!result.ok) return result.outcome;
+      const identity = attributeIdentity(result.data);
       return {
         kind: "success",
         data: runtimeJsonObjectSchema.parse(result.data),
+        ...(target.kind === "draft" && { created: identity }),
         affected: {
-          objects: [attributeIdentity(result.data), objectTypeIdentity(result.data.className), ...replaced],
+          objects: [identity, objectTypeIdentity(result.data.className), ...replaced],
           objectTypes: [ATTRIBUTE, OBJECT_TYPE],
         },
       };
@@ -469,11 +473,13 @@ export const ontologyModelServerOperations = [
         relationshipViewSchema,
       );
       if (!result.ok) return result.outcome;
+      const identity = { objectType: RELATIONSHIP, primaryKey: result.data.relationship };
       return {
         kind: "success",
         data: runtimeJsonObjectSchema.parse(result.data),
+        ...(target.kind === "draft" && { created: identity }),
         affected: {
-          objects: [{ objectType: RELATIONSHIP, primaryKey: result.data.relationship }, ...relationshipEndpoints(result.data)],
+          objects: [identity, ...relationshipEndpoints(result.data)],
           objectTypes: target.kind === "draft" ? [RELATIONSHIP, OBJECT_TYPE] : [RELATIONSHIP],
         },
       };

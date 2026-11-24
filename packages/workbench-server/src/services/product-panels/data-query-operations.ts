@@ -100,12 +100,18 @@ export function ownerWriteFailure(
 }
 
 export async function save(
-  host: DataQueryOperationHost, path: string, values: unknown, failureCode: string, objectType: string, objectTypes: string[],
+  host: DataQueryOperationHost, path: string, target: PanelOperationTarget, values: unknown,
+  failureCode: string, objectType: string, objectTypes: string[],
 ): Promise<SinglePanelOperationOutcome> {
   const envelope = await ownerPost(host, path, values, ownerEnvelopeSchema);
   if (!envelope.success) return ownerWriteFailure(envelope, failureCode, "The owner could not save the record");
   const data = runtimeJsonObjectSchema.parse(envelope.data);
-  return { kind: "success", data, affected: affected(objectType, savedIdSchema.parse(data).id, objectTypes) };
+  const primaryKey = savedIdSchema.parse(data).id;
+  return {
+    kind: "success", data,
+    ...(target.kind === "draft" && { created: { objectType, primaryKey } }),
+    affected: affected(objectType, primaryKey, objectTypes),
+  };
 }
 
 export async function remove(

@@ -17,6 +17,10 @@ owner form and operation button.
    read state and field errors in the shared result shape.
 3. Declare the operation's ID, input/result shape, target, effect and batch support. Connect it to the same owner
    write and authorization for the browser and assistant. Report affected objects or types so relevant reads refresh.
+   A create owner must return explicit `created: { objectType, primaryKey }` on its `kind: "success"` receipt
+   when it creates an identifiable object. The platform forwards that identity as `operation.created` in the
+   completion event. Consumers use it to open the new object. Success without `created` closes the create flow
+   without an identity. `affected.objects` is for refresh.
 4. Test actual registration, read, confirmation and dispatch through the platform. Cover an admitted target and an
    owner denial. Check the user-visible result and any field error or affected-object receipt.
 

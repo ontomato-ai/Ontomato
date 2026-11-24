@@ -179,6 +179,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   const datum = (...results) => ({ results, required: false });
   const catalogue = { version: sdkVersion, components: [
     { componentId: "ObjectList", data: { rows: datum("panelRecordList", "panelRecordQuery") } },
+    { componentId: "ObjectHeader", data: { record: datum("panelRecord") } },
     { componentId: "ObjectSummary", data: { record: datum("panelRecord") } },
     { componentId: "ObjectForm", data: { form: datum("panelFormDescription"), createForm: datum("panelFormDescription") } },
     { componentId: "SegmentedControl", data: { counts: datum("panelGroupCounts") } },
@@ -219,7 +220,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const appsSdkComponentCatalogSchema = { parse };
     export const domainApplicationIconKeys = ["app-window", "folder", "calendar"];
     export const applicationCatalogueRecordSchema = { parse };
-    export const applicationIdentityUpdateSchema = { parse, partial: () => ({ parse }) };
+    export const applicationIdentityUpdateSchema = { parse, partial: () => ({ strict: () => ({ parse }) }) };
     export async function panelModuleImports(source) {
       if (source.includes("element-plus")) throw new Error("A panel's module imports element-plus, which the platform does not give it");
     }
@@ -252,6 +253,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       if (member.operation) {
         const operation = owner.operations.find(operation => operation.id === member.operation);
         if (!operation) throw new Error("member " + key + ": operation " + member.operation + " is not declared");
+        if (operation.target.source === "draft") return { projection, placement };
         const name = operation.id.split(".").at(-1);
         const input = operation.target.input;
         projection.inputs = { [input]: target };
@@ -391,7 +393,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const preview = JSON.parse((await run("panel", "preview", ref)).stdout);
     assert.deepEqual(preview, source);
     const input = { ...preview.panel, name: "Acceptance", description: "", visibility: "private" };
-    const application = { entry: { path: "/acceptance", renderer: "panels" }, panelUses: [] };
+    const application = { entry: { path: "/applications/app-acceptance/manage", renderer: "panels" }, panelUses: [] };
     const result = await run("panel", "register", JSON.stringify({
       panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input }],
       applications: [{ id: "app-acceptance", mode: "update", input: application }],
@@ -410,7 +412,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       panels: [{ id: "acceptance-panel", mode: "update", revision: 7, input }],
       applications: [{ id: "acceptance", mode: "create", input: application }],
     })), error => error.stderr.includes("Application ID must start with app-"));
-    assert.deepEqual(requests, []);
+    assert.equal(requests.splice(0).filter(([method]) => method === "PUT").length, 0);
     const renamed = { applications: [{ id: "app-acceptance", mode: "update", input: {
       ...application, declaration: { names: { en: "Renamed" } },
     } }] };
@@ -554,6 +556,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await assert.rejects(run("panel", "register", JSON.stringify(badIcon)), error =>
       error.stderr.includes("application app-acceptance: declaration.icon 'graph' is not available"));
     badIcon.applications[0].mode = "create";
+    badIcon.applications[0].input.entryAccess = ["domain-member"];
     badIcon.applications[0].input.declaration.icon = "settings";
     await writeFile(badIconFile, JSON.stringify(badIcon));
     await assert.rejects(run("panel", "check", directory, "--material", badIconFile), error =>
@@ -568,50 +571,99 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.equal(requests.some(([method]) => method !== "GET"), false);
     requests.length = 0;
     const draft = join(directory, "manager");
-    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "app-template-catalog-detail", "--operation", "platform:AgentDefinition.save");
-    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/app-template-catalog-detail/manage");
-    for (const name of ["panel.html", "panel.mjs", "panel.json", "registration.json"]) {
-      const sample = await readFile(join("agent-skills/ontomato-app-builder/references/templates/catalog-detail-dialog", name), "utf8");
-      assert.equal(await readFile(join(draft, name), "utf8"), sample);
-    }
+    const catalogDir = join(draft, "catalog");
+    const detailDir = join(draft, "detail");
+    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "app-template-two-entry", "--operation", "platform:AgentDefinition.save");
+    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/app-template-two-entry/catalog");
     assert.deepEqual(requests.map(([method, url]) => [method, url]), [
       ["GET", "/api/apps-sdk/current"], ["GET", `${sdkPath}/node/panel-check.mjs`], ["GET", "/api/app-builder/type-table"],
     ]);
+    const template = "agent-skills/ontomato-app-builder/references/templates/two-entry-catalog-detail";
+    for (const [name, entryDir] of [["catalog", catalogDir], ["detail", detailDir]]) {
+      assert.equal(await readFile(join(entryDir, "panel.mjs"), "utf8"), await readFile(join(template, name, "panel.mjs"), "utf8"));
+      assert.equal(JSON.parse((await run("panel", "check", entryDir)).stdout).status, "valid");
+    }
+
     const review = join(directory, "review");
+    const reviewCatalog = join(review, "catalog");
+    const reviewDetail = join(review, "detail");
     await run("panel", "scaffold", "platform:ReviewQueue", review, "--operation", "reviews.approve", "--batch", "reviews.approve");
-    const { manifest: reviewManifest } = JSON.parse(await readFile(join(review, "panel.json"), "utf8"));
-    const reviewMaterial = join(review, "registration.json");
+    const { manifest: reviewManifest } = JSON.parse(await readFile(join(reviewCatalog, "panel.json"), "utf8"));
+    const { manifest: detailManifest } = JSON.parse(await readFile(join(reviewDetail, "panel.json"), "utf8"));
+    const reviewMaterial = join(reviewCatalog, "registration.json");
     const generatedRegistration = JSON.parse(await readFile(reviewMaterial, "utf8"));
     assert.equal(generatedRegistration.projections, undefined);
     assert.equal(generatedRegistration.panels[0].input.content, undefined);
     assert.deepEqual(reviewManifest.members.list, {
       component: "ObjectList", type: "platform:ReviewQueue", data: { rows: "query" },
-      state: { selected: "selected", checked: "checked", search: "search", status: "status" },
+      state: { checked: "checked", search: "search", status: "status" },
     });
     assert.deepEqual(reviewManifest.members.tabs.data.counts, { read: "counts", params: { by: { literal: "status" } } });
     assert.equal(reviewManifest.members.tabs.state.value, "status");
-    assert.equal(reviewManifest.members.detail.state.search, "search");
-    assert.deepEqual(reviewManifest.members.action1, {
+    assert.equal(detailManifest.members.detail.state.search, "search");
+    assert.deepEqual(detailManifest.members.action1, {
       component: "OperationButton", operation: "reviews.approve", target: "selected",
     });
     assert.deepEqual(reviewManifest.members.batch2, { component: "OperationButton", operation: "reviews.approve", target: "checked" });
-    const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
+    const reviewLayout = await readFile(join(reviewCatalog, "panel.html"), "utf8");
     assert(reviewLayout.indexOf('slot="batch2"') < reviewLayout.indexOf('slot="list"'));
-    await run("panel", "check", review, "--material", reviewMaterial);
-    const reviewPanel = join(review, "panel.json");
+    await run("panel", "check", reviewCatalog, "--material", reviewMaterial);
+    await run("panel", "check", reviewDetail);
+    const reviewPanel = join(reviewCatalog, "panel.json");
     const rejected = structuredClone(reviewManifest);
     rejected.members.batch2.target = "search";
     await writeFile(reviewPanel, JSON.stringify({ manifest: rejected }));
-    await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
+    await assert.rejects(run("panel", "check", reviewCatalog, "--material", reviewMaterial), error =>
       error.stderr.includes("member batch2: invalid target search"));
-    await assert.rejects(run("panel", "register", review), error =>
+    await assert.rejects(run("panel", "register", reviewCatalog), error =>
       error.stderr.includes("member batch2: invalid target search"));
     assert.equal(requests.some(([method]) => method !== "GET"), false);
     rejected.members.batch2.target = "checked";
     rejected.members.batch2.operation = "reviews.undeclared";
     await writeFile(reviewPanel, JSON.stringify({ manifest: rejected }));
-    await assert.rejects(run("panel", "check", review, "--material", reviewMaterial), error =>
+    await assert.rejects(run("panel", "check", reviewCatalog, "--material", reviewMaterial), error =>
       error.stderr.includes("member batch2: operation reviews.undeclared is not declared"));
+
+    const detailMaterialFile = join(detailDir, "registration.json");
+    const detailMaterial = JSON.parse(await readFile(detailMaterialFile, "utf8"));
+    const [app] = detailMaterial.applications;
+    const { declaration, entryAccess, ...updateInput } = app.input;
+    app.mode = "update";
+    app.input = updateInput;
+    requests.length = 0;
+    for (const [key, value] of Object.entries({ entryAccess, groups: declaration.groups, permissions: declaration.permissions })) {
+      await writeFile(detailMaterialFile, JSON.stringify({
+        ...detailMaterial, applications: [{ ...app, input: { ...updateInput, [key]: value } }],
+      }));
+      for (const command of ["check", "register"]) {
+        await assert.rejects(run("panel", command, detailDir), error =>
+          error.stderr.includes(`Application update does not accept ${key}`) && error.stderr.includes("optional framePanelId"));
+      }
+    }
+    assert.equal(requests.filter(([method]) => method === "PUT").length, 0);
+
+    const detailPanelFile = join(detailDir, "panel.json");
+    const detailPanel = JSON.parse(await readFile(detailPanelFile, "utf8"));
+    const frameState = { type: { kind: "scalar", type: "string" } };
+    detailPanel.manifest.state.term = frameState;
+    app.input.framePanelId = detailMaterial.panels[0].id;
+    app.input.panelUses[0].inputs = { term: { frameState: "term" } };
+    await writeFile(detailMaterialFile, JSON.stringify(detailMaterial));
+    await writeFile(detailPanelFile, JSON.stringify(detailPanel));
+    const frameError = error => error.stderr.includes('references frameState "term"') && error.stderr.includes('"external": true');
+    await assert.rejects(run("panel", "check", detailDir), frameError);
+    frameState.external = true;
+    await writeFile(detailPanelFile, JSON.stringify(detailPanel));
+    assert.equal(JSON.parse((await run("panel", "check", detailDir)).stdout).status, "valid");
+
+    app.input.framePanelId = "inline-panel";
+    await writeFile(detailMaterialFile, JSON.stringify(detailMaterial));
+    inlineRecords.set(inlinePanelPath, { manifest: { state: { term: { type: frameState.type } }, members: {} } });
+    await assert.rejects(run("panel", "check", detailDir), frameError);
+    inlineRecords.get(inlinePanelPath).manifest.state.term.external = true;
+    assert.equal(JSON.parse((await run("panel", "check", detailDir)).stdout).status, "valid");
+    inlineRecords.delete(inlinePanelPath);
+
     requests.length = 0;
     await writeFile(layout, tasksTemplate);
     const reference = async id => {

@@ -876,16 +876,18 @@ function reread() {
     },
   );
 }
-onBeforeUnmount(panel.instance.onOperationCompleted(async ({ operation, affected }) => {
+onBeforeUnmount(panel.instance.onOperationCompleted(async ({ operation }) => {
   const into = target.value;
   if (!into || !canSettle.value || saving.value) return;
   const save = admittedSave.value;
   if (!save || panel.instance.operationIdOf(slot.slot, save.name) !== operation.operationId) return;
   if (into.kind === "object" && (!operation.target || targetKey(into) !== targetKey({ kind: "object", ...operation.target }))) return;
   if (into.kind === "draft" && operation.target) return;
-  const created = affected?.objects.filter((object) => object.objectType === objectType) ?? [];
+  const created = operation.created;
   await settleSave(into, prunedValues.value)({
-    primaryKey: into.kind === "object" ? into.primaryKey : created.length === 1 ? created[0]!.primaryKey : null,
+    primaryKey: into.kind === "object"
+      ? into.primaryKey
+      : created?.objectType === objectType ? created.primaryKey : null,
     message: operation.message,
   });
 }));
@@ -1762,7 +1764,6 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
   const capturedTargetKey = targetKey(into);
   const capturedOpened = ownerOpened.value;
   const capturedLabel = formObjectLabel.value;
-  const descriptorKind = override?.descriptor.kind ?? admittedSave.value?.descriptor.kind ?? "form.save";
   const saveActionLabel = override?.descriptor.label ?? admittedSave.value?.descriptor.label
     ?? (into.kind === "draft" ? t("platform.create") : t("platform.save"));
   const isStillSameForm = () =>
@@ -1870,13 +1871,13 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
             const classified = classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
             if (!classified.ok) {
               try {
-                resolveFormSaveAnswer(confirmed, into, descriptorKind, objectType);
+                resolveFormSaveAnswer(confirmed, into, objectType);
               } catch (refusalReason) {
                 handleSaveRefusal(refusalReason);
               }
               return classified;
             }
-            const saved = resolveFormSaveAnswer(confirmed, into, descriptorKind, objectType);
+            const saved = resolveFormSaveAnswer(confirmed, into, objectType);
             await finishSave(saved);
             return classified;
           } catch (dispatchReason) {

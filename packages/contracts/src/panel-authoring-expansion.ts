@@ -4,8 +4,8 @@ import { dashboardCardPrimaryKey } from "./dashboard";
 import type { PanelAuthoringMember } from "./panel-authoring";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
-  matchesDirectPanelValue, matchesObjectType, panelPortAccepts,
-  type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelStateRef,
+  matchesDirectPanelValue, matchesObjectType, panelPortAccepts, panelStateInputType,
+  type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelStateFieldRef, type PanelStateRef,
 } from "./panel-manifest";
 import {
   directProjectionInputAccepts, missingRequiredReadParameters, panelLocalOperationNameSchema, panelReadInputMatches, panelReadParameterId, panelReadParameterSchemas,
@@ -70,6 +70,11 @@ export function expandPanelAuthoringMember(
 
   const stateType = (name: string, field: string): DirectPanelPortType =>
     Object.hasOwn(state, name) ? state[name].type : fail(field, `State '${name}' is not declared`);
+  function stateInputType(ref: PanelStateRef | PanelStateFieldRef, path: string): DirectPanelPortType {
+    return panelStateInputType(ref, stateType(ref.state, path))
+      ?? fail(path, `State '${ref.state}' must be an object, object-union, or child-object to expose an identity field`);
+  }
+
   const targetIsFromSlot = typeof member.target === "object" && member.target !== null && "fromSlot" in member.target;
   const targetStateName = typeof member.target === "string" ? member.target : undefined;
   const targetStatePort = targetStateName === undefined ? undefined : stateType(targetStateName, "target");
@@ -129,18 +134,13 @@ export function expandPanelAuthoringMember(
   };
 
   function sameBinding(a: PanelMemberInput, b: PanelMemberInput): boolean {
+    if ("state" in a && "state" in b)
+      return a.state === b.state && ("field" in a ? a.field : undefined) === ("field" in b ? b.field : undefined);
     return JSON.stringify(a) === JSON.stringify(b);
   }
 
   function bindInput(name: string, fieldName: string, path: string) {
-    const port = stateType(fieldName, path);
-    const binding: PanelMemberInput = { state: fieldName };
-    const existing = inputBindings.get(name);
-    if (existing && !sameBinding(existing, binding))
-      fail(path, `Input '${name}' already has a different binding`);
-    inputTypes.set(name, port);
-    inputBindings.set(name, binding);
-    return { input: name };
+    return bindMemberInput(name, { state: fieldName }, path);
   }
 
   function bindMemberInput(
@@ -161,7 +161,7 @@ export function expandPanelAuthoringMember(
       fail(path, `Input '${name}' already has a different binding`);
     }
     if ("state" in source) {
-      const actual = stateType(source.state, path);
+      const actual = stateInputType(source, path);
       if (expected && !directProjectionInputAccepts(expected, actual)) {
         fail(path, `State '${source.state}' has an incompatible type for input '${name}'`);
       }
@@ -253,9 +253,9 @@ export function expandPanelAuthoringMember(
         inputTypes.set(param, parameterPortType(parameterId));
         return [param, { input: param }] as const;
       }
-      if (!panelReadInputMatches(parameterId, stateType(supplied.state, paramPath)))
+      if (!panelReadInputMatches(parameterId, stateInputType(supplied, paramPath)))
         fail(paramPath, `State '${supplied.state}' has an incompatible type for '${parameterId}'`);
-      return [param, bindInput(param, supplied.state, paramPath)] as const;
+      return [param, bindMemberInput(param, supplied, paramPath)] as const;
     }));
     const [missing] = missingRequiredReadParameters(declaration, params, datum.runtimeParams);
     if (missing !== undefined) fail(`${path}.params.${missing}`, "Required parameter has no binding or component runtime source");
@@ -308,7 +308,7 @@ export function expandPanelAuthoringMember(
   for (const [port, source] of Object.entries(member.inputs ?? {})) {
     const path = `inputs.${port}`;
     const declared = component.inputs && Object.hasOwn(component.inputs, port) ? component.inputs[port] : undefined;
-    const actual = "state" in source ? stateType(source.state, path) : undefined;
+    const actual = "state" in source ? stateInputType(source, path) : undefined;
     const expected = declared ? boundComponentPort(port, declared, actual, path) : undefined;
     bindMemberInput(port, source, path, expected, bindingType);
   }

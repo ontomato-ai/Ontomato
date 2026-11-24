@@ -163,11 +163,16 @@ function checkDefaultAgentShapes(values: Record<string, unknown>) {
 }
 
 async function write(
-  type: string, run: () => Promise<{ primaryKey: string; data: OutcomeData }>, locale?: string,
+  type: string, run: () => Promise<{ primaryKey: string; data: OutcomeData; created?: boolean }>, locale?: string,
 ): Promise<SinglePanelOperationOutcome> {
   try {
-    const { primaryKey, data } = await run();
-    return { kind: "success", data, affected: { objects: [{ objectType: type, primaryKey }], objectTypes: [type] } };
+    const { primaryKey, data, created } = await run();
+    const identity = { objectType: type, primaryKey };
+    return {
+      kind: "success", data,
+      ...(created && { created: identity }),
+      affected: { objects: [identity], objectTypes: [type] },
+    };
   } catch (error) {
     if (error instanceof FieldRefusal) return error.outcome;
     if (error instanceof InputRefusal) return await inputRefusal(error, locale);
@@ -262,7 +267,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
           }, fields);
           await saveCurrentPanel(owner, credentials, primaryKey, definition, parsedRevision);
         }
-        return { primaryKey, data: { id: primaryKey } };
+        return { primaryKey, data: { id: primaryKey }, created: target.kind === "draft" };
       }, locale ?? credentials.locale);
     },
   };
@@ -371,7 +376,7 @@ const applicationSave: PanelWriteServerOperation = {
         const id = writeInput(applicationDraftIdSchema,
           target.id ?? formId ?? writeInput(applicationDraftPath, body.entry.path).slice("/applications/".length));
         await java.create(id, body);
-        return { primaryKey: id, data: { id } };
+        return { primaryKey: id, data: { id }, created: true };
       }
 
       const id = target.primaryKey;

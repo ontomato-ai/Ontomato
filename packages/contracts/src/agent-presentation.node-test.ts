@@ -174,6 +174,11 @@ test("one live invalidation carries the batch's owner-reported objects and types
   const typesOnly = { ...batch, affected: { ...affected, objects: [] } };
   assert.deepEqual(agentHostSessionLiveFrameSchema.parse(typesOnly), typesOnly);
   assert.equal(agentHostSessionLiveFrameSchema.safeParse({ ...batch, affected: undefined }).success, false);
+  const completion = {
+    type: "object-changed", session, target: null,
+    operation: { operationId: "form.save", panelId: "metrics", target: null, created: objects[0] },
+  };
+  assert.deepEqual(agentHostSessionLiveFrameSchema.parse(completion), completion);
 });
 
 test("a receipt reports an observed outcome, keeping an empty view distinct from a missing observation", () => {

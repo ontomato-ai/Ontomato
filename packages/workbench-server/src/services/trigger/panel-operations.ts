@@ -70,7 +70,7 @@ export const triggerServerOperations = [
 
     create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, "/trigger/save", saveBody(target, input), "TRIGGER_SAVE_FAILED", TRIGGER, [TRIGGER]);
+      return save(host, "/trigger/save", target, saveBody(target, input), "TRIGGER_SAVE_FAILED", TRIGGER, [TRIGGER]);
     },
   },
   {

@@ -597,6 +597,7 @@ function mountKnowledgeRoute(options: {
           kind: "success",
           message: "Saved",
           data: {},
+          ...(!targetPrimaryKey && { created: { objectType: BUSINESS_KNOWLEDGE, primaryKey: savedKey } }),
           affected: {
             objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: savedKey }],
             objectTypes: [BUSINESS_KNOWLEDGE],

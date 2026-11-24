@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { installedPanelSdk } from "./current-sdk.mjs";
-import { panelRegistrationRecords, requireApplicationId, requireDomainProductId } from "./panel-registration.mjs";
+import { panelRegistrationRecords, requireDomainProductId } from "./panel-registration.mjs";
 
 function parseJson(file, source) {
   try {
@@ -419,9 +419,6 @@ export async function registerPanelWorkspace(directory, materialPath, checks, cl
   const material = await workspaceRegistration(workspace, client, checks);
   const { document, descriptorFile, source, inline, charts } = workspace;
   if (charts.size) {
-    for (const { id, mode } of material.applications ?? []) {
-      if (mode === "create") requireApplicationId(id);
-    }
     panelRegistrationRecords(material, checks);
     const { members, state } = material.panels[0].input.manifest;
     for (const [member, declaration] of charts) {
@@ -459,13 +456,32 @@ export async function checkPanelWorkspace(directory, {
     directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent,
   );
   const { manifest } = workspace.definition;
-  const material = workspace.inline.length || workspace.charts.size ? await workspaceRegistration(workspace) : workspace.material;
+  const material = workspace.panel ? await workspaceRegistration(workspace) : workspace.material;
   const records = new Map(
     panelRegistrationRecords(material, checks).map(([kind, items]) => [
       kind, new Map(items.map(({ id, body }) => [id, body])),
     ]),
   );
   const unchecked = [];
+  for (const { id, input: { framePanelId, panelUses } } of material.applications ?? []) {
+    if (!framePanelId) continue;
+    const bindings = panelUses.flatMap(({ pageKey, inputs }) =>
+      Object.entries(inputs ?? {}).filter(([, source]) => "frameState" in source)
+        .map(([name, { frameState }]) => [pageKey, name, frameState]));
+    if (!bindings.length) continue;
+    const frame = framePanelId === workspace.panel?.id
+      ? manifest
+      : (records.get("panel").get(framePanelId) ?? await lookup?.("panel", framePanelId))?.manifest;
+    if (!frame) {
+      unchecked.push({ kind: "panel", id: framePanelId, reason: "Frame state bindings require the frame manifest" });
+      continue;
+    }
+    for (const [pageKey, name, stateKey] of bindings) {
+      if (!Object.hasOwn(frame.state, stateKey) || frame.state[stateKey].external !== true) {
+        throw new Error(`application ${id}: ${pageKey}.inputs.${name} references frameState "${stateKey}" on ${framePanelId}. Declare state.${stateKey} with "external": true in the frame panel.json`);
+      }
+    }
+  }
   const unregisteredCharts = new Set();
   for (const [member, declaration] of workspace.charts) {
     const projection = await findChartSource?.(declaration.sourceCard);

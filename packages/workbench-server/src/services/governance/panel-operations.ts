@@ -273,7 +273,7 @@ export const governanceServerOperations = [
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
 
     execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, "/panel/governance/users/save", saveBody(target, input), "USER_SAVE_FAILED", USER, [USER, ROLE]);
+      return save(host, "/panel/governance/users/save", target, saveBody(target, input), "USER_SAVE_FAILED", USER, [USER, ROLE]);
     },
   },
   {
@@ -395,7 +395,7 @@ export const governanceServerOperations = [
 
     create: true,
     execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, "/panel/governance/roles/save", saveBody(target, input), "ROLE_SAVE_FAILED", ROLE, [ROLE, USER, ORG_GRANT]);
+      return save(host, "/panel/governance/roles/save", target, saveBody(target, input), "ROLE_SAVE_FAILED", ROLE, [ROLE, USER, ORG_GRANT]);
     },
   },
   {
@@ -448,6 +448,7 @@ export const governanceServerOperations = [
       return save(
         host,
         "/panel/governance/policies/save",
+        target,
         saveBody(target, input),
         "PERMISSION_POLICY_SAVE_FAILED",
         PERMISSION_POLICY,
@@ -648,7 +649,7 @@ export const governanceServerOperations = [
 
     create: true,
     execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, "/panel/governance/org-units/save", saveBody(target, input), "ORG_UNIT_SAVE_FAILED", ORG_UNIT, [ORG_UNIT]);
+      return save(host, "/panel/governance/org-units/save", target, saveBody(target, input), "ORG_UNIT_SAVE_FAILED", ORG_UNIT, [ORG_UNIT]);
     },
   },
   {
@@ -820,6 +821,7 @@ export const governanceServerOperations = [
       return save(
         host,
         "/panel/governance/org-positions/save",
+        target,
         saveBody(target, input),
         "ORG_POSITION_SAVE_FAILED",
         ORG_POSITION,

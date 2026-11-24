@@ -46,8 +46,8 @@ baseline recovery and state retention. `build` never publishes images.
 
 After `pnpm install`, one root command starts three processes:
 
-- `pnpm dev`: starts the agent runtime, then concurrently runs the two scripts below in the foreground and forwards
-  SIGINT/SIGTERM to the child processes;
+- `pnpm dev`: starts the agent runtime, then runs the two scripts below in the foreground;
+  Vite waits for the workbench service to be ready. Signals are forwarded to the child processes;
 - `pnpm dev:server`: the Node service (`tsx watch src/index.ts` in `apps/workbench`,
   default port 3000);
 - `pnpm dev:web`: the main web app's Vite dev server (internal port 5173; use the gateway on 8080);

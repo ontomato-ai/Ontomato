@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter, once } from "node:events";
+import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildWorkbenchPanels, configuration, holdForeground, start } from "./dev-command.mjs";
+import { buildWorkbenchPanels, configuration, holdForeground, start, waitForWorkbench } from "./dev-command.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ENTRY = fileURLToPath(import.meta.url).replace(/\.node-test\.mjs$/, ".mjs");
@@ -17,8 +18,27 @@ test("dev starts both the server and web processes with the open-source defaults
     assert.ok(settings.args.includes(script), script);
   assert.equal(settings.cwd, ROOT);
   assert.equal(settings.env.NODE_ENV, "development");
+  assert.equal(settings.env.ONTOMATO_DEV_WAIT_FOR_SERVER, "1");
+  assert.ok(settings.args.includes("--kill-others-on-fail"));
   assert.equal(settings.env.ONTOLOGY_MANAGER_URL, undefined);
   assert.equal(settings.env.DATARAG_ORIGIN, undefined);
+});
+
+test("web readiness waits until the workbench health endpoint succeeds", async () => {
+  let ready = false;
+  const server = createServer((req, res) => {
+    assert.equal(req.url, "/api/health");
+    res.writeHead(ready ? 200 : 503).end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}`;
+    await assert.rejects(waitForWorkbench(url, 50), /did not become ready/);
+    ready = true;
+    await waitForWorkbench(url, 1000);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("server, web and manager keep their own cwd and pass this checkout's absolute entry", () => {

@@ -337,7 +337,7 @@ export const en = {
   "panels.modelSettings.fields.apiBaseHelpOptional": "Optional. Leave blank to use the provider's default endpoint.",
   "panels.modelSettings.fields.apiKey": "API key",
   "panels.modelSettings.fields.apiKeyHelpCreate": "Stored encrypted in the runtime and shared by every model on this connection.",
-  "panels.modelSettings.fields.apiKeyHelpEdit": "Displayed masked. Leave unchanged to keep the saved key, or enter a new key to replace it.",
+  "panels.modelSettings.fields.apiKeyHelpEdit": "Leave blank to keep the saved key. Enter a new key to replace it.",
   "panels.modelSettings.fields.extraHeaders": "Extra request headers",
   "panels.modelSettings.fields.extraHeadersHelp": "Optional HTTP headers sent with every upstream request on this connection.",
   "panels.modelSettings.fields.headerName": "Header name",
