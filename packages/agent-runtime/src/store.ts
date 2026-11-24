@@ -1,3 +1,4 @@
+import { storedRuntimeAgentDefinitionSchema } from "@ontomato/contracts/agent-runtime";
 import { defaultEngineId } from "./adapters/registry";
 import { historyCursor, historyPosition, type SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { runtimeRunViewSchema, type RuntimeRunView } from "@ontomato/contracts/agent-runtime";
@@ -545,16 +546,15 @@ export class RuntimeStore {
       )
     ).rows[0];
     if (!row) missing();
-    // Older stored runs keep their original definition on disk.
-    const { compaction: _legacyCompaction, ...definition } = row.run.definition as RuntimeRun["definition"] & { compaction?: unknown };
-    const run: RuntimeRun = { ...row.run, definition };
-    const legacySkills = runtimeSkillRefSchema.array().safeParse(run.definition.skills);
+    const definition = { ...row.run.definition };
+    const legacySkills = runtimeSkillRefSchema.array().safeParse(definition.skills);
     if (legacySkills.success && legacySkills.data.length) {
-      const versions = run.resolvedSkills.map(({ skill, digest }: RuntimeRegisteredSkill) => ({ skill, digest }));
+      const versions = row.run.resolvedSkills.map(({ skill, digest }: RuntimeRegisteredSkill) => ({ skill, digest }));
       if (canonical(legacySkills.data) !== canonical(versions.map(({ skill }) => skill)))
         throw new Error("Stored run has no matching resolved skill versions");
-      run.definition.skills = versions;
+      definition.skills = versions;
     }
+    const run: RuntimeRun = { ...row.run, definition: storedRuntimeAgentDefinitionSchema.parse(definition) };
     updateServiceLogContext({ runId: run.id, sessionId: run.sessionId, domainId: scope.domainId });
     return { run, seq: Number(row.seq), streamId: row.stream_id };
   }

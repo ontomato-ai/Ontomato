@@ -76,6 +76,13 @@ export const runtimeAgentDefinitionSchema = z
     if(definition.toolSurface==='product'&&(definition.skills.length||definition.externalMcp.length))context.addIssue({code:'custom',message:'Product tool surfaces cannot include inherited skills or MCP tools'});
   });
 
+/** Stored definitions predate the engine's ownership of context compaction. */
+export const storedRuntimeAgentDefinitionSchema = z.preprocess(value => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const { compaction: _legacyCompaction, ...definition } = value as Record<string, unknown>;
+  return definition;
+}, runtimeAgentDefinitionSchema);
+
 export const runtimeCreateSessionRequestSchema = z.object({ workspaceId: runtimeIdSchema.optional() }).strict();
 export const runtimeStartRunRequestSchema = z
   .object({

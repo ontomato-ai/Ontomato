@@ -103,7 +103,9 @@ it("declares narrowed observe-evidence businessCallback and strips addresses/cre
     if (sql.includes("FROM ops_sessions")) {
       return { rows: [{ id: sessionId, domain_id: "domain", owner_id: "user", title: "", target: null, created_at: new Date(), updated_at: new Date() }] };
     }
-    if (sql.includes("SELECT * FROM ops_run_intents")) return { rows: [] };
+    if (sql.includes("SELECT * FROM ops_run_intents")) return { rows: storedDefinition
+      ? [{ id: runId, session_id: sessionId, fingerprint: storedFingerprint, definition: storedDefinition, language: "en" }]
+      : [] };
     if (sql.includes("INSERT INTO ops_run_intents")) {
       storedFingerprint = String(params?.[2] ?? "");
       storedDefinition = JSON.parse(String(params?.[3] ?? "{}"));
@@ -112,15 +114,14 @@ it("declares narrowed observe-evidence businessCallback and strips addresses/cre
     return { rows: [] };
   });
 
-  const prepared = runtimeStartRunRequestSchema.parse(
-    await prepareDiagnosis(
+  const prepare = () => prepareDiagnosis(
       sessionId,
       runId,
       { role: "user", content: "Check logs", timestamp: 1 },
       { domainId: "domain", userId: "user" },
       { token: "diagnosis-secret", locale: "en" },
-    ),
-  );
+    );
+  const prepared = runtimeStartRunRequestSchema.parse(await prepare());
 
   expect(prepared.definition.agentId).toBe(DIAGNOSIS_AGENT_ID);
   expect(prepared.environment).toEqual({ values: {}, secrets: {} });
@@ -134,6 +135,9 @@ it("declares narrowed observe-evidence businessCallback and strips addresses/cre
       credential: expect.stringMatching(/^wbc1\./),
     },
   });
+
+  storedDefinition = { ...prepared.definition, compaction: { systemPrompt: "Legacy prompt" } };
+  expect(runtimeStartRunRequestSchema.parse(await prepare()).definition).toEqual(prepared.definition);
 
   // Verify the sealed credential works on /api/observe/evidence/* and rejects /api/observe/evidence or other routes.
   const app = express();
@@ -190,6 +194,7 @@ it("ops.mjs uses forwarded path and callback credential in platform mode, and /a
     ONTOMATO_SKILL_SCENARIO: "platform",
     ONTOMATO_WORKBENCH_URL: `${base}/workbench`,
     ONTOMATO_EXECUTION_CALLBACK: "session-callback-placeholder",
+    ONTOMATO_TK: "session-callback-placeholder",
     ONTOMATO_SESSION_ID: sessionId,
     ONTOMATO_LANGUAGE: "zh-CN",
   });

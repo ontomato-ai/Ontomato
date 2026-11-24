@@ -11,7 +11,7 @@ import { z } from "zod";
 import { DIAGNOSIS_AGENT_ID, diagnosisTargetSchema, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
 import { ARTIFACT_CHART_SKILLS, ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
-import { runtimeAgentDefinitionSchema, type RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
+import { storedRuntimeAgentDefinitionSchema, type RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import type { RuntimeSkillVersion } from "@ontomato/contracts/agent-runtime-skills";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
@@ -208,7 +208,7 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
     intent = inserted.rows[0] ?? await readIntent();
   }
   if (intent.session_id !== session) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
-  const definition = runtimeAgentDefinitionSchema.safeParse(intent.definition);
+  const definition = storedRuntimeAgentDefinitionSchema.safeParse(intent.definition);
   if (!definition.success)
     throw new HttpError(422, "Stored diagnosis intent has no usable skill versions", "SKILL_NOT_FOUND");
   if (intent.fingerprint !== fingerprint(definition.data.skills))

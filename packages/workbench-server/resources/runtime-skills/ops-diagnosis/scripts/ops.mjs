@@ -7,11 +7,13 @@ try {
   const input = JSON.parse(raw);
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Expected a JSON object");
   if (!e.ONTOMATO_WORKBENCH_URL) throw new Error("ONTOMATO_WORKBENCH_URL is required");
+  // The sandbox exports the same session credential under the standard and legacy names.
+  const legacyAlias = e.ONTOMATO_SKILL_SCENARIO === "platform" && e.ONTOMATO_TK === e.ONTOMATO_EXECUTION_CALLBACK;
   const credentials = [
     ["ONTOMATO_EXECUTION_CALLBACK", "X-Ontomato-Callback-Credential"],
     ["ONTOMATO_TK", "tk"],
     ["ONTOMATO_API_KEY", "X-API-Key"],
-  ].filter(([variable]) => e[variable]);
+  ].filter(([variable]) => e[variable] && !(legacyAlias && variable === "ONTOMATO_TK"));
   if (credentials.length > 1) throw new Error("Set only one of ONTOMATO_EXECUTION_CALLBACK, ONTOMATO_TK or ONTOMATO_API_KEY");
   const headers = { "Content-Type": "application/json" };
   if (credentials.length) headers[credentials[0][1]] = e[credentials[0][0]];
