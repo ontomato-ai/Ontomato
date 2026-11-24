@@ -396,7 +396,12 @@ describe("governance panel server operations", () => {
   });
 
   it("handles policy permission mutations and organization membership/grant mutations", async () => {
-    const { host } = hostWith((path) => {
+    const { host } = hostWith((path, body) => {
+      if (path === "/api/data-query/panel/governance/users/remove" && body.id === "u-admin") {
+        return Response.json({
+          success: false, code: "USER_BUILTIN_ADMIN_PROTECTED", message: "Built-in administrator cannot be removed",
+        });
+      }
       if (path === "/api/data-query/panel/governance/policies/menu-permissions/save") {
         return Response.json({ success: true, data: { id: "p-1", count: 4 } });
       }
@@ -448,18 +453,31 @@ describe("governance panel server operations", () => {
       affected: { objectTypes: [PERMISSION_POLICY, USER] },
     });
 
-    const removedUser = await targetedActionOp(REMOVE_USER).execute(
-      host,
-      { kind: "object", objectType: USER, primaryKey: "u-2" },
-      {},
-      "intent-remove-user",
-    );
-    expect(removedUser).toMatchObject({
-      kind: "success",
-      affected: {
-        objectTypes: [USER, ROLE, ORG_UNIT, ORG_MEMBERSHIP, ORG_POSITION, ORG_GRANT],
-        removed: [{ objectType: USER, primaryKey: "u-2" }],
-      },
+    const remove = anyWriteOp(REMOVE_USER);
+    if (!remove.batch) throw new Error("User removal must support batches");
+    const removedUser = { kind: "object", objectType: USER, primaryKey: "u-2" } as const;
+    const protectedUser = { kind: "object", objectType: USER, primaryKey: "u-admin" } as const;
+    expect(await remove.executeBatch(host, [
+      { target: removedUser, input: {} },
+      { target: protectedUser, input: {} },
+    ], "intent-remove-users")).toMatchObject({
+      kind: "batch",
+      items: [
+        {
+          target: { objectType: USER, primaryKey: "u-2" },
+          outcome: {
+            kind: "success",
+            affected: {
+              objectTypes: [USER, ROLE, ORG_UNIT, ORG_MEMBERSHIP, ORG_POSITION, ORG_GRANT],
+              removed: [{ objectType: USER, primaryKey: "u-2" }],
+            },
+          },
+        },
+        {
+          target: { objectType: USER, primaryKey: "u-admin" },
+          outcome: { kind: "refusal", code: "USER_BUILTIN_ADMIN_PROTECTED" },
+        },
+      ],
     });
 
     const deletedRole = await targetedActionOp(DELETE_ROLE).execute(
