@@ -350,13 +350,13 @@ function presentationCalls(viewId: string) {
     pathPrefix: "/api/agent-host" + callbackPath, runId, expiresAt: Date.now() + 60_000,
     token: "fixture-initiator", apiKey: "",
   }).value;
-  const callback = (toolCallId: string) => fetch(url + callbackPath, {
+  const callback = (toolCallId: string, input: unknown = { target: "/fixture/page" }) => fetch(url + callbackPath, {
     method: "POST",
     headers: {
       "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential,
       "X-Ontomato-Run-Id": runId,
     },
-    body: JSON.stringify({ toolCallId, input: { target: "/fixture/page" } }),
+    body: JSON.stringify({ toolCallId, input }),
   });
   const result: PresentationResult = {
     status: "opened", reason: "target_selected", current: {
@@ -372,6 +372,32 @@ function presentationCalls(viewId: string) {
     });
   return { callback, receipt, result };
 }
+
+it.each(["app-ops-model", "outputs/"])("explains the legal present targets after rejecting %s", async target => {
+  const { callback } = presentationCalls(randomUUID());
+  const response = await callback("invalid-target", { target });
+  expect(response.status).toBe(400);
+  const { error } = await response.json();
+  expect(error.code).toBe("INVALID_REQUEST");
+  expect(error.message).toContain("input.target");
+  expect(error.message).toContain("page path starting with '/'");
+  expect(error.message).toContain("Available entrances");
+  expect(error.message).toContain("outputs/<relative-path>");
+});
+
+it.each([
+  [{ target: "/fixture/page?state=old", state: { tab: "current" } }, "input.state:", "?state="],
+  [{ mode: "fill_form" }, "input.values:", "Required"],
+  [{ mode: "page_action" }, "input.operation:", "Required"],
+])("returns the presentation request's validation issue for %j", async (input, path, message) => {
+  const { callback } = presentationCalls(randomUUID());
+  const response = await callback("invalid-input", input);
+  expect(response.status).toBe(400);
+  const { error } = await response.json();
+  expect(error.code).toBe("INVALID_REQUEST");
+  expect(error.message).toContain(path);
+  expect(error.message).toContain(message);
+});
 
 async function expectPresentation(stream: Awaited<ReturnType<typeof openPresentationStream>>, toolCallId: string) {
   const frame = await stream.nextFrame();

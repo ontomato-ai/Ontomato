@@ -35,6 +35,10 @@ function fingerprint(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
+function entranceKey(entrance: PageSkillEntrance): string {
+  return JSON.stringify(["permissionCode" in entrance ? entrance.permissionCode : null, entrance.pageKey]);
+}
+
 function panelSkillManifest(skill: RuntimeSkillRef, panel: PanelDescription, sourceFingerprint: string): StandardSkillFrontmatter {
   const actions = [
     ...(panel.reads ? ["read current data"] : []),
@@ -97,12 +101,11 @@ const panelDependencies = z.object({
 export async function panelSkillSources(
   domainId: string, sources: readonly PanelSkillSource[], reader: AssistantCredentials,
 ): Promise<(ProtectedSkillOffering | SkillSourceFailure)[]> {
-  const panels = new Map<string, Map<string, PageSkillEntrance>>();
-  for (const { panelId, entrance } of sources) {
-    const entrances = panels.get(panelId) ?? new Map<string, PageSkillEntrance>();
-    const key = JSON.stringify(["permissionCode" in entrance ? entrance.permissionCode : null, entrance.pageKey]);
-    entrances.set(key, entrance);
-    panels.set(panelId, entrances);
+  const panels = new Map<string, PanelSkillSource[]>();
+  for (const source of sources) {
+    const panelSources = panels.get(source.panelId) ?? [];
+    panelSources.push(source);
+    panels.set(source.panelId, panelSources);
   }
   const projections = new Map<string, ReturnType<typeof findCurrentProduct>>();
   function projectionRow(id: string) {
@@ -114,10 +117,10 @@ export async function panelSkillSources(
   }
   let release: ReturnType<typeof readPanelComponentCatalogue> | undefined;
   let actionCatalog: Promise<ReadonlyMap<string, { name: string; declaration: PanelOperationDeclaration }>> | undefined;
-  return Promise.all([...panels].map(async ([id, byEntrance]): Promise<ProtectedSkillOffering | SkillSourceFailure> => {
+  return Promise.all([...panels].map(async ([id, panelSources]): Promise<ProtectedSkillOffering | SkillSourceFailure> => {
     const scope = panelSkillScope(id);
     const row = await findCurrentProduct(domainId, "panel", id);
-    const entrances = [...byEntrance.values()];
+    const entrances = [...new Map(panelSources.map(({ entrance }) => [entranceKey(entrance), entrance])).values()];
     let dependencies: z.infer<typeof panelDependencies>;
     try {
       dependencies = parseDefinition(panelDependencies, row, id);
@@ -155,7 +158,7 @@ export async function panelSkillSources(
       const description = describePanel(panel, new Map(entries), components, locale, actions);
       const operationLabels = description.operations.map(({ id, label }) => [id, label]);
       return {
-        description, markdown: describeSkill(description),
+        description, locale,
         fingerprint: fingerprint([id, panel, entries, sdk.version, sdk.digest, locale, operationLabels, ...installed]),
       };
     }
@@ -172,18 +175,18 @@ export async function panelSkillSources(
         return panelSkillManifest(skill, description, fingerprint);
       },
       async provide(skill, context) {
-        const { description, markdown, fingerprint: sourceFingerprint } = await read();
+        const { description, locale, fingerprint: sourceFingerprint } = await read();
         const fixedKeys = (context?.entryInputKeys ?? []).filter(key => Object.hasOwn(description.state, key));
-        if (!fixedKeys.length) {
-          const manifest = panelSkillManifest(skill, description, sourceFingerprint);
-          return { skill, files: [{ path: "SKILL.md", content: `---\n${stringify(manifest)}---\n\n${markdown}\n` }] };
-        }
+        const admitted = context?.admittedEntrances && new Set(context.admittedEntrances.map(entranceKey));
+        const available = panelSources.filter(({ entrance }) => !admitted || admitted.has(entranceKey(entrance)))
+          .sort((a, b) => a.path.localeCompare(b.path, "en") || a.applicationId.localeCompare(b.applicationId, "en")
+            || a.useId.localeCompare(b.useId, "en"));
         const fixed = new Set(fixedKeys);
         const scopedState = Object.fromEntries(Object.entries(description.state).filter(([key]) => !fixed.has(key)));
         const scoped = { ...description, state: scopedState };
-        const scopedFingerprint = fingerprint([sourceFingerprint, [...fixed].sort()]);
+        const scopedFingerprint = fingerprint([sourceFingerprint, [...fixed].sort(), available]);
         const manifest = panelSkillManifest(skill, scoped, scopedFingerprint);
-        return { skill, files: [{ path: "SKILL.md", content: `---\n${stringify(manifest)}---\n\n${describeSkill(scoped)}\n` }] };
+        return { skill, files: [{ path: "SKILL.md", content: `---\n${stringify(manifest)}---\n\n${describeSkill(scoped, available, locale)}\n` }] };
       },
     };
   }));
@@ -284,7 +287,30 @@ function describePanel(
   };
 }
 
-function describeSkill({ name, description, content, state, projections, operations, forms, reads, hasPlacedMembers }: PanelDescription): string {
+function localizedName(names: PanelSkillSource["names"], locale: string) {
+  return names && (names[locale] ?? names.en ?? Object.values(names)[0]);
+}
+
+function describeEntrances(sources: readonly PanelSkillSource[], locale: string): string {
+  const heading = "### Available entrances";
+  if (!sources.length) return `${heading}\nThe initiating user has no registered entrance for this panel.`;
+  return [
+    heading,
+    'Even when no page is open beside the conversation, call `present({ target: "<path>" })` with a target below to open that entrance beside the conversation.',
+    ...sources.map(({ names, applicationNames, path, applicationId, useId }) => {
+      const name = localizedName(names, locale) ?? useId;
+      const applicationName = localizedName(applicationNames, locale);
+      const label = applicationName && applicationName !== name ? `${name} (${applicationName})` : name;
+      const source = { kind: "registered", applicationId, useId };
+      return `- ${label} · target: \`${path}\` · /read source: \`${JSON.stringify(source)}\``;
+    }),
+  ].join("\n");
+}
+
+function describeSkill(
+  { name, description, content, state, projections, operations, forms, reads, hasPlacedMembers }: PanelDescription,
+  available: readonly PanelSkillSource[], locale: string,
+): string {
   const { recipes } = content;
   return [
     `## ${name}`,
@@ -295,6 +321,7 @@ function describeSkill({ name, description, content, state, projections, operati
       `The instance declares ${JSON.stringify(state)}. Member inputs above identify the state field they read.`,
       "Declared public state covers every state field that decides which business content the user sees (tabs, filters, selections, view modes). The user message's page context line, `present` receipts, and `observe_display` receipts carry the current values of all declared public state fields, the current live contents and unsaved status of open forms (`forms`, including unsaved user edits), together with selected object references (each carrying object type and ID) and highlights. Use those values directly without asking the user to repeat which tab, filter, view mode, item, or form input is open. When `observe_display` is available, you can call it mid-round at any time to re-read the latest live page state and form contents (including edits the user made during the round).",
     ].join("\n"),
+    describeEntrances(available, locale),
     reads,
     ...(hasPlacedMembers ? [[
       "### Address a nested panel",
@@ -307,7 +334,7 @@ function describeSkill({ name, description, content, state, projections, operati
       "When this run has the `present` tool, call `present({ target, state })` immediately in this round to navigate to the panel or update its live state — do not merely put a link in your reply and wait for the user to click.",
       "`present` navigates to the target entry as a real navigation (written to the browser address and preserved on refresh) without changing the user's side-by-side or full-page layout (opening side-by-side if no page is open). Passing `state` updates any declared public state field above in place — including fields not marked `deepLink` (such as tabs, filters, view modes, or checked lists) — without reloading the page or triggering any business write. The `present` receipt reports the actual view, all declared public state values, and any open form contents afterwards; if the initiating user lacks access to the target entry, the page does not open and the receipt returns the refusal reason.",
       "Write every platform page link in your reply as a site-relative path starting with one slash (only as a reference for the user to return to that view later). Never put a scheme, hostname, or port in a platform page link. Do not use `http://`, `https://`, `//host`, or `localhost`.",
-      "Use the canonical path from the current page context. When building a reply link with deep-link state, pass each field marked `deepLink: true` as its own flat named query parameter (e.g. `?selected=my-app&tab=entries&search=foo`; omit null/default values and never serialize JSON into `?state=` or `?frame=`). Pass a single-type `object` field as its `primaryKey` directly, a multi-type `object-union` field as `className~primaryKey`, a `list` field as repeated parameters (`?tag=a&tag=b`), and application frame state as `frame.<name>=...`.",
+      "Use a canonical `target` under Available entrances, or reuse the path from the current page context when that entrance is already open. When building a reply link with deep-link state, pass each field marked `deepLink: true` as its own flat named query parameter (e.g. `?selected=my-app&tab=entries&search=foo`; omit null/default values and never serialize JSON into `?state=` or `?frame=`). Pass a single-type `object` field as its `primaryKey` directly, a multi-type `object-union` field as `className~primaryKey`, a `list` field as repeated parameters (`?tag=a&tag=b`), and application frame state as `frame.<name>=...`.",
     ].join("\n"),
     describeLiveForms(forms),
     [
@@ -373,7 +400,7 @@ function describeReads(reads: readonly { member: string; dataName: string; read:
     "### Read current data",
     "Before answering what is on this page or what is selected, read the relevant named data below and answer from the result. Use the page context to identify the entry and selected object, then read its current data.",
     "POST to `$ONTOMATO_PANEL_OPERATIONS_URL/read` with `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. This calls the same named read as the panel.",
-    "Send JSON `{source:{kind:\"registered\",applicationId,useId},memberPath:[{member}],dataName,inputs}`. Use the registered application and use from the page context. Use the exact key under the projection's Named data as `dataName`, without a member prefix. Supply the projection's declared inputs from that context or the requested selection. Use an empty object when no inputs are needed.",
+    "Send JSON `{source:{kind:\"registered\",applicationId,useId},memberPath:[{member}],dataName,inputs}`. Use the registered `source` under Available entrances, or reuse the corresponding source from the current page context when that entrance is already open. Use the exact key under the projection's Named data as `dataName`, without a member prefix. Supply the projection's declared inputs from that context or the requested selection. Use an empty object when no inputs are needed.",
     "A ready result carries the current owner data in `value`. If the result is forbidden, check the current entry and member path. For an error, use its message to correct the request.",
     ...(hasPlacedMembers ? [
       "A selection's `memberPath` identifies the child panel that supplied it. To inspect the mounted child's declared state and members, POST `{source,memberPath}` to `$ONTOMATO_PANEL_OPERATIONS_URL/nested` with the same callback headers.",

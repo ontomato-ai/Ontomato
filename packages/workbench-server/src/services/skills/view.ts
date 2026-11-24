@@ -14,7 +14,7 @@ import {
 } from "../../core/skills/providers";
 import { skillRegistryManager, type ListedProtectedSkill, type ListedSourceFailure } from "../../core/skills/registry/manager";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { BackendResponseError, backendGet, buildBackendHeaders } from "../../utils/backend-client";
+import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requirePanelEntry } from "../product-panels/application-use";
 import { PANEL_SKILL_PROVIDER_ID } from "../product-panels/skill-identity";
@@ -85,7 +85,7 @@ async function currentApplicationPanel(caller: PageSkillViewCaller, entrance: Pa
   try {
     entry = await requirePanelEntry(caller.initiatorCredentials, source);
   } catch (error) {
-    if (error instanceof BackendResponseError && [400, 403, 404].includes(error.status)) return null;
+    if (error instanceof HttpError && [400, 403, 404].includes(error.status)) return null;
     if (error instanceof HttpError && error.code === "PANEL_ENTRY_SOURCE_MISMATCH")
       throw new HttpError(502, error.message, "SKILL_SOURCE_UNAVAILABLE");
     throw error;
@@ -247,6 +247,7 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
     return {
       public: skill => !pages.registered.has(runtimeSkillKey(skill)) || pages.allowedPageKeys.has(runtimeSkillKey(skill)),
       protected: skill => pages.admitted.has(runtimeSkillKey(skill)),
+      admittedEntrances: skill => pages.admitted.get(runtimeSkillKey(skill))?.entrances,
     };
   }, initiatorCredentials);
   const items = [...registry.failedManifests.values()];

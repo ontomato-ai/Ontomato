@@ -157,14 +157,49 @@ it("provides a single protected source for all uses of the same panel and lists 
   await summary!.readManifest(skill("captured-summary-skill"));
   expect(manifest.name).toBe(taskRef.name);
   expect(pkg.skill).toEqual(taskRef);
-  expect(parseSkillMarkdown(pkg.files[0]!.content)?.manifest).toEqual(manifest);
-  expect(pkg.files[0]!.content).not.toContain(uses[1]!.path);
+  expect(parseSkillMarkdown(pkg.files[0]!.content)?.manifest).toMatchObject({
+    name: manifest.name, description: manifest.description,
+  });
   expect(pkg.files[0]!.content).toContain("run.runNow");
   const reads = vi.mocked(findCurrentProduct).mock.calls;
   expect(reads).toHaveLength(trial.panels.length + trial.projections.length);
   expect(backendGet).toHaveBeenNthCalledWith(1, "panel-skill-sources",
     "http://java.test/platform/applications/panel-skill-sources?domainId=trial-domain",
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
+});
+
+it("lists only the admitted registered entrances and fingerprints each entrance set", async () => {
+  const first = { ...uses[0]!, names: { en: "Scheduled tasks", "zh-CN": "计划任务" },
+    applicationNames: { en: "Operations" } };
+  const second = { ...uses[1]!, names: { en: "Task administration" }, applicationNames: { en: "Administration" } };
+  javaSources([second, first]);
+  const [offering] = await panelSkillProvider.list({ domainId, reader: { ...skillReader, locale: "zh-CN" }, reportSourceFailure });
+  assert(offering);
+  async function provide(...sources: PanelSkillSource[]) {
+    const pkg = await offering!.provide(taskRef, { admittedEntrances: sources.map(source => source.entrance) });
+    return pkg.files[0]!.content;
+  }
+  const sourceJson = ({ applicationId, useId }: PanelSkillSource) =>
+    JSON.stringify({ kind: "registered", applicationId, useId });
+  const firstOnly = await provide(first);
+  const secondOnly = await provide(second);
+  const both = await provide(first, second);
+  expect(firstOnly).toContain("### Available entrances");
+  for (const fact of ["计划任务", "Operations", first.path, sourceJson(first)]) expect(firstOnly).toContain(fact);
+  for (const fact of ["Task administration", second.path, sourceJson(second)]) expect(firstOnly).not.toContain(fact);
+  expect(secondOnly).toContain(second.path);
+  expect(secondOnly).not.toContain(first.path);
+  for (const fact of ["计划任务", first.path, sourceJson(first), "Task administration", second.path, sourceJson(second)])
+    expect(both).toContain(fact);
+  const fingerprints = [firstOnly, secondOnly, both].map(content =>
+    parseSkillMarkdown(content)?.manifest.metadata?.["ontomato-panel-fingerprint"]);
+  expect(fingerprints).not.toContain(undefined);
+  expect(new Set(fingerprints).size).toBe(3);
+  expect(await provide(second, first)).toBe(both);
+  expect((await offering.provide(taskRef)).files[0]!.content).toBe(both);
+  const none = await provide();
+  expect(none).not.toContain(first.path);
+  expect(none).not.toContain(second.path);
 });
 
 it("describes member reads and declared operations in the generated skill", async () => {
@@ -306,10 +341,9 @@ it("uses owner operation names and fingerprints the names and language visible t
 
   const readPackage = async (reader: typeof skillReader) => {
     const [offering] = await panelSkillProvider.list({ domainId, reader, reportSourceFailure });
-    const manifest = await offering!.readManifest(taskRef);
     const { files } = await offering!.provide(taskRef);
     const markdown = files[0]!.content;
-    expect(parseSkillMarkdown(markdown)?.manifest).toEqual(manifest);
+    const manifest = parseSkillMarkdown(markdown)!.manifest;
     return { markdown, fingerprint: manifest.metadata?.["ontomato-panel-fingerprint"] };
   };
   const first = await readPackage(skillReader);
@@ -379,7 +413,7 @@ it("binds the current SDK digest to the supplied panel bytes for the lifetime of
   expect(updated.files[0]!.content).not.toBe(original.files[0]!.content);
 });
 
-it("keeps the package and recipes for a panel independent of its entrance", async () => {
+it("keeps the shared panel recipes when the entry list changes", async () => {
   extraProjections.set("legacy-form", trialProjections.get("projection-schedules-form")!);
   extraProjections.set("legacy-run", runProjection);
   extraProjections.set("projection-editor", {
@@ -402,18 +436,16 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
   );
   javaSources([uses[1]!]);
   const [otherEntrance] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
-  expect(await otherEntrance!.provide(ref)).toEqual(await offering!.provide(ref));
+  const recipes = await readFile(new URL("p/recipes.md", example), "utf8");
+  expect((await otherEntrance!.provide(ref)).files[0]!.content).toContain(recipes);
   const originalName = panel.name;
   panel.name = "Renamed independently of the locator";
   try {
     const pkg = await offering!.provide(taskRef);
     expect(pkg.skill).toEqual(ref);
     const markdown = pkg.files[0]!.content;
-    expect(parseSkillMarkdown(markdown)?.manifest).toEqual(await offering!.readManifest(taskRef));
     expect(markdown).toContain(originalName);
-    expect(markdown).toContain(await readFile(new URL("p/recipes.md", example), "utf8"));
-    expect(markdown).not.toContain("/applications/app-panels-trial-a/tasks");
-    expect(markdown).not.toContain("/applications/app-panels-trial-b/tasks");
+    expect(markdown).toContain(recipes);
     expect(markdown).toContain('"objectType":"platform:ScheduledTask"');
     expect(markdown).toContain("platform:ScheduledTask.save");
     expect(markdown).toContain("handlerRef schedules.runNow");
@@ -444,7 +476,7 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(renamedManifest.description).toContain(panel.name);
     const updatedMarkdown = (await renamed!.provide(taskRef)).files[0]!.content;
     expect(updatedMarkdown).toContain(`## ${panel.name}`);
-    expect(parseSkillMarkdown(updatedMarkdown)?.manifest).toEqual(renamedManifest);
+    expect(parseSkillMarkdown(updatedMarkdown)?.manifest.description).toBe(renamedManifest.description);
     expect(findCurrentProduct).toHaveBeenCalledWith(domainId, "panel", uses[0]!.panelId);
   } finally {
     panel.name = originalName;
@@ -457,7 +489,6 @@ it("describes B's direct summary data without adding agent operations", async ()
   expect((await offering!.readManifest(taskRef)).description).toBe(`Read current data and open the panel for ${trial.panels[1]!.name}.`);
   const { files } = await offering!.provide(taskRef);
   const markdown = files[0]!.content;
-  expect(parseSkillMarkdown(markdown)?.manifest).toEqual(await offering!.readManifest(taskRef));
   expect(markdown).toContain('Named data: {"record":');
   expect(markdown).toContain("### Open the panel");
   expect(markdown).toContain("No operations.");

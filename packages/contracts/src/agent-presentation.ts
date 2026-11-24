@@ -15,7 +15,10 @@ const outputPathSchema = runtimeRelativePathSchema.refine(
   (path) => path.startsWith("outputs/"),
   "Expected a workspace path inside outputs/",
 );
-const pageAddressSchema = z.string().regex(/^\/(?!\/)[^\\\s\p{Cc}]*$/u, "Expected a site-relative page address");
+const pageAddressSchema = z.string().regex(
+  /^\/(?!\/)[^\\\s\p{Cc}]*$/u,
+  "Expected a site-relative page path starting with a single '/'",
+);
 
 function hasStateQuery(address: string): boolean {
   const search = /^[^?#]*\?([^#]*)/.exec(address)?.[1];
@@ -23,14 +26,20 @@ function hasStateQuery(address: string): boolean {
 }
 
 /** Route registration, access and declared page state belong to the page resolver. */
-export const presentRequestSchema = z.object({
-  target: z.union([outputPathSchema, pageAddressSchema]),
+const presentTargetMessage = "Invalid present target: target must be either a registered site-relative page path starting with '/' "
+  + "(such as an entrance path listed under Available entrances in the panel skill, e.g. '/ontology/assets/actions') "
+  + "or an artifact file path under 'outputs/<relative-path>'.";
+const presentFields = z.object({
+  target: z.string({ required_error: presentTargetMessage, invalid_type_error: presentTargetMessage }).refine(
+    target => pageAddressSchema.safeParse(target).success || outputPathSchema.safeParse(target).success,
+    presentTargetMessage,
+  ),
   state: runtimeJsonObjectSchema.optional(),
-}).strict().refine(
-  ({ target, state }) => state === undefined ||
-    (target.startsWith("/") && !hasStateQuery(target)),
-  { path: ["state"], message: "State requires a page address that provides no state query" },
-);
+}).strict();
+const validPresentState = ({ target, state }: z.infer<typeof presentFields>) =>
+  state === undefined || (target.startsWith("/") && !hasStateQuery(target));
+const presentStateIssue = { path: ["state"], message: "State requires a page path without a '?state=' query parameter" };
+export const presentRequestSchema = presentFields.refine(validPresentState, presentStateIssue);
 export type PresentRequest = z.infer<typeof presentRequestSchema>;
 
 /** Read-only mid-round observation request for the user's current conversation display. */
@@ -90,7 +99,12 @@ export type PageActionRequest = z.infer<typeof pageActionRequestSchema>;
 /** Private transport from the runtime display tools to the host bound to this call. */
 export const presentationCallRequestSchema = z.object({
   toolCallId: runtimeKeySchema,
-  input: z.union([presentRequestSchema, observeDisplayRequestSchema, fillFormRequestSchema, pageActionRequestSchema]),
+  input: z.discriminatedUnion("mode", [
+    presentFields.extend({ mode: z.undefined() }),
+    observeDisplayRequestSchema,
+    fillFormRequestSchema,
+    pageActionRequestSchema,
+  ]).refine(input => input.mode !== undefined || validPresentState(input), presentStateIssue),
 }).strict();
 
 /** Private to admission and the active runtime tool, outside the definition and sandbox environment. */
