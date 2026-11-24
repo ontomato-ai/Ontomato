@@ -414,7 +414,7 @@ function setFrequency(next: FrequencyDraft) {
 .sdk-form-avatar-icon.active,
 .sdk-form-avatar-color.active {
   border-color: var(--brand-link);
-  box-shadow: 0 0 0 1px var(--brand-link);
+  box-shadow: inset 0 0 0 1px var(--brand-link);
 }
 .sdk-form-avatar-icon:disabled,
 .sdk-form-avatar-color:disabled {
