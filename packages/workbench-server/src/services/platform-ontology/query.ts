@@ -456,8 +456,8 @@ async function readObjectsOfType(
       return {
         ok: true,
         data: res.data.roles.map((role) => ({
-          node: { className: ROLE, primaryKey: role.code },
-          label: role.code,
+          node: { className: ROLE, primaryKey: role.id },
+          label: role.code ?? role.id,
         })),
       };
     }
@@ -870,35 +870,23 @@ async function evaluateRelationKind(
       if (node.className === USER) {
         const subject = subjectsRes.data.find((s) => s.id === node.primaryKey);
         if (!subject || subject.roleIds.length === 0) return { status: "ok", edges: [] };
-        const rolesRes = await readers.roles();
-        if (!rolesRes.ok) return { status: rolesRes.status, reason: rolesRes.reason, edges: [] };
-        const edges: RawEdgeCandidate[] = [];
-        for (const roleId of subject.roleIds) {
-          const roleCode = rolesRes.data.codeById.get(roleId);
-          if (roleCode) {
-            edges.push({
-              from: { className: USER, primaryKey: subject.id },
-              to: { className: ROLE, primaryKey: roleCode },
-              fromLabel: subject.displayName || subject.loginCode || subject.id,
-              toLabel: roleCode,
-            });
-          }
-        }
-        return { status: "ok", edges };
+        return {
+          status: "ok",
+          edges: subject.roleIds.map((roleId) => ({
+            from: { className: USER, primaryKey: subject.id },
+            to: { className: ROLE, primaryKey: roleId },
+            fromLabel: subject.displayName || subject.loginCode || subject.id,
+          })),
+        };
       }
       if (node.className === ROLE) {
-        const rolesRes = await readers.roles();
-        if (!rolesRes.ok) return { status: rolesRes.status, reason: rolesRes.reason, edges: [] };
-        const role = rolesRes.data.byCode.get(node.primaryKey);
-        if (!role?.id) return { status: "ok", edges: [] };
         const edges: RawEdgeCandidate[] = [];
         for (const subject of subjectsRes.data) {
-          if (subject.roleIds.includes(role.id)) {
+          if (subject.roleIds.includes(node.primaryKey)) {
             edges.push({
               from: { className: USER, primaryKey: subject.id },
-              to: { className: ROLE, primaryKey: role.code },
+              to: { className: ROLE, primaryKey: node.primaryKey },
               fromLabel: subject.displayName || subject.loginCode || subject.id,
-              toLabel: role.code,
             });
           }
         }
@@ -912,15 +900,15 @@ async function evaluateRelationKind(
       if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
       const edges: RawEdgeCandidate[] = [];
       for (const grant of res.data) {
-        if (!grant.inForce || grant.capabilityKind !== "ACTION" || !grant.capabilityId || !grant.roleCode) continue;
+        if (!grant.inForce || grant.capabilityKind !== "ACTION" || !grant.capabilityId || !grant.roleId) continue;
         if (
-          (node.className === ROLE && grant.roleCode === node.primaryKey) ||
+          (node.className === ROLE && grant.roleId === node.primaryKey) ||
           (node.className === ACTION && grant.capabilityId === node.primaryKey)
         ) {
           edges.push({
-            from: { className: ROLE, primaryKey: grant.roleCode },
+            from: { className: ROLE, primaryKey: grant.roleId },
             to: { className: ACTION, primaryKey: grant.capabilityId },
-            fromLabel: grant.roleCode,
+            fromLabel: grant.roleCode ?? undefined,
           });
         }
       }
@@ -931,11 +919,11 @@ async function evaluateRelationKind(
       const accessRes = await readers.platformAccess();
       if (!accessRes.ok) return { status: accessRes.status, reason: accessRes.reason, edges: [] };
       const authoringRoles = accessRes.data.filter(
-        (a) => a.roleCode && (a.managementRole || a.apiPermissions.includes(WORKFLOW_SAVE_API)),
+        (a) => a.roleId && (a.managementRole || a.apiPermissions.includes(WORKFLOW_SAVE_API)),
       );
       if (node.className === ROLE) {
-        const canAuthor = authoringRoles.some((a) => a.roleCode === node.primaryKey);
-        if (!canAuthor) return { status: "ok", edges: [] };
+        const roleAccess = authoringRoles.find((a) => a.roleId === node.primaryKey);
+        if (!roleAccess) return { status: "ok", edges: [] };
         const wfRes = await readers.workflows();
         if (!wfRes.ok) return { status: wfRes.status, reason: wfRes.reason, edges: [] };
         return {
@@ -943,7 +931,7 @@ async function evaluateRelationKind(
           edges: wfRes.data.map((wf) => ({
             from: { className: ROLE, primaryKey: node.primaryKey },
             to: { className: WORKFLOW, primaryKey: wf.id },
-            fromLabel: node.primaryKey,
+            fromLabel: roleAccess.roleCode ?? undefined,
             toLabel: wf.name,
           })),
         };
@@ -956,9 +944,9 @@ async function evaluateRelationKind(
         return {
           status: "ok",
           edges: authoringRoles.map((a) => ({
-            from: { className: ROLE, primaryKey: a.roleCode! },
+            from: { className: ROLE, primaryKey: a.roleId! },
             to: { className: WORKFLOW, primaryKey: wf.id },
-            fromLabel: a.roleCode!,
+            fromLabel: a.roleCode ?? undefined,
             toLabel: wf.name,
           })),
         };
@@ -967,20 +955,26 @@ async function evaluateRelationKind(
     }
 
     case "role.owns-workflow-step": {
-      const res = await readers.workflows();
-      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const [wfRes, rolesRes] = await Promise.all([
+        readers.workflows(),
+        readers.roles(),
+      ]);
+      if (!wfRes.ok) return { status: wfRes.status, reason: wfRes.reason, edges: [] };
+      if (!rolesRes.ok) return { status: rolesRes.status, reason: rolesRes.reason, edges: [] };
       const edges: RawEdgeCandidate[] = [];
-      for (const wf of res.data) {
+      for (const wf of wfRes.data) {
         const roleCodes = new Set(wf.steps.map((s) => s.roleCode).filter((c): c is string => Boolean(c)));
         for (const roleCode of roleCodes) {
+          const role = rolesRes.data.byCode.get(roleCode);
+          if (!role) continue;
           if (
-            (node.className === ROLE && roleCode === node.primaryKey) ||
+            (node.className === ROLE && role.id === node.primaryKey) ||
             (node.className === WORKFLOW && wf.id === node.primaryKey)
           ) {
             edges.push({
-              from: { className: ROLE, primaryKey: roleCode },
+              from: { className: ROLE, primaryKey: role.id },
               to: { className: WORKFLOW, primaryKey: wf.id },
-              fromLabel: roleCode,
+              fromLabel: role.code ?? undefined,
               toLabel: wf.name,
             });
           }

@@ -178,14 +178,14 @@ export interface RawApplication {
 }
 
 export interface ResolvedRole {
-  code: string;
-  id?: string;
+  id: string;
+  code?: string;
 }
 
 export interface ResolvedRoles {
   roles: ResolvedRole[];
+  byId: Map<string, ResolvedRole>;
   byCode: Map<string, ResolvedRole>;
-  codeById: Map<string, string>;
 }
 
 function asString(value: unknown): string | undefined {
@@ -580,24 +580,27 @@ export class PlatformOntologyOwnerReaders {
   }
 
   /**
-   * Resolves roles across platform-access (authoritative directory), grants, and workflow steps.
-   * If platform-access is refused and no readable source provides roles, reports refusal.
+   * Resolves roles across platform-access (authoritative directory) and grants with a valid roleId.
+   * Workflow step roleCode text is not a platform:Role reference and never synthesizes role nodes.
+   * If platform-access fails or is refused and no readable source provides roles, reports its status.
    */
   async roles(): Promise<OwnerReadResult<ResolvedRoles>> {
-    const [accessRes, grantsRes, workflowsRes] = await Promise.all([
+    const [accessRes, grantsRes] = await Promise.all([
       this.platformAccess(),
       this.grants(),
-      this.workflows(),
     ]);
 
+    const byId = new Map<string, ResolvedRole>();
     const byCode = new Map<string, ResolvedRole>();
-    const codeById = new Map<string, string>();
     const add = (id?: string | null, code?: string | null) => {
-      if (!code) return;
-      const existing = byCode.get(code);
-      const resolvedId = id ?? existing?.id;
-      byCode.set(code, { code, id: resolvedId });
-      if (resolvedId) codeById.set(resolvedId, code);
+      if (!id) return;
+      const existing = byId.get(id);
+      const resolvedCode = existing?.code ?? code ?? undefined;
+      const entry: ResolvedRole = resolvedCode ? { id, code: resolvedCode } : { id };
+      byId.set(id, entry);
+      if (resolvedCode && !byCode.has(resolvedCode)) {
+        byCode.set(resolvedCode, entry);
+      }
     };
 
     if (accessRes.ok) {
@@ -606,19 +609,16 @@ export class PlatformOntologyOwnerReaders {
     if (grantsRes.ok) {
       for (const grant of grantsRes.data) add(grant.roleId, grant.roleCode);
     }
-    if (workflowsRes.ok) {
-      for (const workflow of workflowsRes.data) {
-        for (const step of workflow.steps) add(null, step.roleCode);
-      }
-    }
 
-    if (!accessRes.ok && byCode.size === 0) {
+    if (!accessRes.ok && byId.size === 0) {
       // If platform-access was refused or failed and nothing else yielded roles, surface its status.
       return accessRes;
     }
 
-    const roles = [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code));
-    return { ok: true, data: { roles, byCode, codeById } };
+    const roles = [...byId.values()].sort(
+      (a, b) => (a.code ?? a.id).localeCompare(b.code ?? b.id) || a.id.localeCompare(b.id),
+    );
+    return { ok: true, data: { roles, byId, byCode } };
   }
 
   sdkComponents(): Promise<OwnerReadResult<RawSdkComponent[]>> {
