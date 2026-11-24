@@ -1,6 +1,6 @@
 import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import { computed, reactive, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
+import { computed, nextTick, reactive, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext, PageFormSnapshot, PageHighlight } from "@ontomato/contracts/page-context";
 import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
@@ -279,6 +279,7 @@ export function classifyDispatchResponseForConfirmation(
 /** What a panel placed in one of an instance's members publishes into it: its operations, its unsaved changes. */
 export interface NestedPublisher {
   readonly instanceId: string;
+  formRegistries(): PanelFormAdapters[];
   readonly operations: readonly PanelOperationBinding[];
   dirty(): boolean;
   readonly context: PageContext | null;
@@ -322,6 +323,9 @@ export interface PanelInstance {
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
   /** The mounted form adapters its projections registered for live filling, submission, and visibility. */
   readonly forms: PanelFormAdapters;
+  blocksFormInputChange(fields: ReadonlySet<string>): boolean;
+  applyStatePreservingDrafts(patch: Readonly<Record<string, RuntimeJsonValue>>): Promise<boolean>;
+  formRegistries(): PanelFormAdapters[];
   /** True while an external address update changing deep-link state is held pending reactivation. */
   readonly addressPending?: Readonly<Ref<boolean>>;
   register(registration: PanelProjectionRegistration): () => void;
@@ -894,6 +898,59 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   }
   const topLevelMemberKeys = Object.keys(manifest.members);
   const forms = new PanelFormAdapters(topLevelMemberKeys);
+  function memberStateInputs(member: string, visited: Set<string>, fields: Set<string>) {
+    if (visited.has(member)) return;
+    visited.add(member);
+    const declaration = manifest.members[member]!;
+    if ("fromState" in declaration.target) fields.add(declaration.target.fromState);
+    for (const input of Object.values(declaration.inputs ?? {})) {
+      if ("state" in input) fields.add(input.state);
+      if ("output" in input) {
+        const { member, name } = input.output;
+        const source = manifest.members[member]!;
+        const output = source.outputs?.[name];
+        if (output && !source.inputs?.[name]) fields.add(output.state);
+        memberStateInputs(member, visited, fields);
+      }
+    }
+  }
+  function blocksFormInputChange(changed: ReadonlySet<string>): boolean {
+    const fields = new Set<string>();
+    const visited = new Set<string>();
+    for (const { member, fields: bound } of forms.dirtyInputs()) {
+      memberStateInputs(member, visited, fields);
+      for (const field of bound) fields.add(field);
+    }
+    for (const [member, publisher] of publishers) {
+      if (publisher.value.dirty()) memberStateInputs(member, visited, fields);
+    }
+    return [...fields].some((field) => changed.has(field));
+  }
+
+  const formRegistries = (): PanelFormAdapters[] => [
+    forms,
+    ...[...publishers.values()].flatMap((publisher) => publisher.value.formRegistries()),
+  ];
+  async function applyStatePreservingDrafts(patch: Readonly<Record<string, RuntimeJsonValue>>): Promise<boolean> {
+    const registries = formRegistries();
+    const drafts = registries.flatMap((registry) => registry.captureDirtyDrafts());
+    const previous = state.values.value;
+    for (const registry of registries) registry.probing = true;
+    try {
+      state.setState(patch);
+      await nextTick();
+      if (drafts.every((draft) => draft.stillMounted())) return true;
+      const restored = drafts.map((draft) => draft.restoreOnRemount());
+      state.setState(previous);
+      await nextTick();
+      // Projection components can resolve asynchronously even when their definitions are already held.
+      await Promise.all(restored);
+      await nextTick();
+      return false;
+    } finally {
+      for (const registry of registries) registry.probing = false;
+    }
+  }
   const memberOutputStore = reactive<Record<string, Record<string, RuntimeJsonValue | null>>>({});
   function setMemberOutput(member: string, name: string, value: RuntimeJsonValue | null) {
     let bucket = memberOutputStore[member];
@@ -1081,7 +1138,10 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     outputs: memberOutputStore,
     setMemberOutput,
-    dirty: () => forms.dirty() || [...publishers.values()].some((publisher) => publisher.value.dirty()),
+    dirty: () => forms.probing || forms.dirty() || [...publishers.values()].some((publisher) => publisher.value.dirty()),
+    blocksFormInputChange,
+    applyStatePreservingDrafts,
+    formRegistries,
     memberPathOf,
     operationIdOf,
     operationPath,

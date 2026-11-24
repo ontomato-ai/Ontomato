@@ -1629,7 +1629,7 @@ describe("business-knowledge builtin panel batch approve skipped receipt", () =>
 });
 
 describe("business-knowledge builtin panel same-page unsaved navigation guard", () => {
-  it("blocks same-page state changes such as mode: view via host blocksNavigation while preserving the unsaved draft", { timeout: 20000 }, async () => {
+  it("guards selection before mutation and rolls back mode changes that would discard the draft", { timeout: 20000 }, async () => {
     const route = mountKnowledgeRoute({ initialState: { selected: knowledgeRef(ENTRY_A) } });
     const { app, element } = await route.open();
     try {
@@ -1664,9 +1664,6 @@ describe("business-knowledge builtin panel same-page unsaved navigation guard", 
       const formEl = element.querySelector('[data-field="/knowledgeTitle"]');
       const currentAddress = `${use.path}?selected=${ENTRY_A}`;
       const blockedCases = [
-        { address: use.path, state: { mode: "view" } },
-        { address: currentAddress, state: { mode: "view" } },
-        { address: use.path, state: { mode: "create" } },
         { address: `${use.path}?selected=${ENTRY_B}` },
         { address: use.path, state: { selected: knowledgeRef(ENTRY_B) } },
         { address: use.path },
@@ -1686,13 +1683,20 @@ describe("business-knowledge builtin panel same-page unsaved navigation guard", 
         expect(controller.blocksNavigation!(next)).toBe(false);
       }
 
-      // Guarded same-page mode: "view" leaves the mounted form and unsaved draft untouched.
-      if (!controller.blocksNavigation!({ address: use.path, state: { mode: "view" } })) {
-        controller.applyState({ mode: "view" });
-      }
-      expect(formHeading(element)).toBe("Edit Knowledge");
+      const listPatch = { address: use.path, state: { search: "Refund", status: "pending", checked: [knowledgeRef(ENTRY_B)] } };
+      expect(controller.blocksNavigation!(listPatch)).toBe(false);
+      expect(await controller.probePresentation!(listPatch)).toBe(true);
       expect(element.querySelector('[data-field="/knowledgeTitle"]')).toBe(formEl);
       expect(titleInput(element)?.value).toBe("Order Cutoff Rule Unsaved Draft");
+
+      for (const mode of ["create", "view"]) {
+        const next = { address: currentAddress, state: { mode } };
+        expect(controller.blocksNavigation!(next)).toBe(false);
+        expect(await controller.probePresentation!(next)).toBe(false);
+        expect(formHeading(element)).toBe("Edit Knowledge");
+        expect(titleInput(element)?.value).toBe("Order Cutoff Rule Unsaved Draft");
+      }
+      expect(route.confirmLeaveUnsaved).not.toHaveBeenCalled();
       expect(element.querySelector(".sdk-owner-form-changed")).not.toBeNull();
       expect(route.onDisplayDirty).toHaveBeenLastCalledWith(true);
 

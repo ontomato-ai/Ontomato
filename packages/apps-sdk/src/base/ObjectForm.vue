@@ -18,7 +18,7 @@ import {
   type PanelFormValues,
 } from "@ontomato/contracts/panel-projection";
 import { slotInputState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
-import type { FormSubmitOverride } from "../panel/forms";
+import type { FormSubmitOverride, InvalidFormText, PanelFormDraft } from "../panel/forms";
 import type { PanelFieldValue } from "../panel/state";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
@@ -251,6 +251,7 @@ const effectiveTarget = computed<
   return current.kind === "object" ? current : { kind: "draft", objectType };
 });
 const targetKey = formTargetKey;
+const draftIdentity = () => JSON.stringify([panel.instance.memberPathOf(slot.slot), target.value]);
 /** Unique mounted instance ID for this form; rotates on remount, target switch, fixed-field change, or member input change. */
 const formInstanceId = ref(randomId());
 
@@ -271,7 +272,7 @@ const values = shallowRef<PanelFormValues>({});
 const changed = shallowRef<ReadonlySet<string>>(new Set());
 const errors = shallowRef<Readonly<Record<string, string>>>({});
 /** Fields holding text that is not a value of the owner's (JSON that does not parse), by absolute path. */
-const invalid = shallowRef<Readonly<Record<string, string>>>({});
+const invalid = shallowRef<Readonly<Record<string, InvalidFormText>>>({});
 const loading = ref(true);
 const saving = ref(false);
 const failure = shallowRef<{ reason: Error; retry: () => void } | null>(null);
@@ -390,7 +391,8 @@ const prunedOpenedValues = computed(() => (
 const activeInvalid = computed<Readonly<Record<string, string>>>(() => {
   if (!Object.keys(invalid.value).length) return {};
   return Object.fromEntries(
-    Object.entries(invalid.value).filter(([path]) => activeFieldAt(fields.value, values.value, path) !== undefined),
+    Object.entries(invalid.value).flatMap(([path, { message }]) =>
+      activeFieldAt(fields.value, values.value, path) === undefined ? [] : [[path, message]]),
   );
 });
 /** Top-level fields whose effective (pruned) values differ from the opened baseline. */
@@ -489,6 +491,17 @@ function adopt(
  */
 let latestRead = 0;
 
+function restoreDraft(draft: PanelFormDraft) {
+  adopt(draft.ownerOpened, draft.ownerShown, draft.changed, draft.submitted);
+  values.value = draft.values;
+  invalid.value = draft.invalid;
+  errors.value = draft.errors;
+  refusal.value = draft.refusal;
+  editedPaths.value = draft.editedPaths;
+  userEditedPaths.value = draft.userEditedPaths;
+  agentFilledPaths.value = draft.agentFilledPaths;
+}
+
 function load(next: PanelFormTarget | null) {
   const nextKey = targetKey(next);
   const reading = ++latestRead;
@@ -498,6 +511,11 @@ function load(next: PanelFormTarget | null) {
   loaded = nextKey;
   failure.value = null;
   askNext = null;
+  const rollback = panel.instance.forms.takeRollback(draftIdentity());
+  if (rollback) {
+    restoreDraft(rollback);
+    return;
+  }
   if (next === null) {
     description.value = opened.value = ownerShown.value = ownerOpened.value = null;
     values.value = {};
@@ -525,6 +543,8 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   unmounted = true;
+  latestRead += 1;
+  askNext = null;
   unregisterDiscard?.();
   unregisterReset?.();
   unregisterSave?.();
@@ -749,6 +769,7 @@ watch(target, async (next, previous) => {
   if (unmounted) return;
   pendingRefresh = false;
   if (targetKey(next) === loaded) return;
+  if (canSettle.value && panel.instance.forms.probing) return;
   if (canSettle.value && !saving.value && previous !== null && targetKey(previous) === loaded) {
     const leave = panel.confirmLeaveUnsaved
       ? await panel.confirmLeaveUnsaved()
@@ -945,7 +966,7 @@ function askOwner(changedField: string) {
  */
 function reorder(path: string, order: readonly number[]) {
   const rows = valueAt(values.value, path) as RuntimeJsonValue[];
-  const moved = (byPath: Readonly<Record<string, string>>) => Object.fromEntries(Object.entries(byPath).flatMap(([at, message]) => {
+  const moved = <T,>(byPath: Readonly<Record<string, T>>) => Object.fromEntries(Object.entries(byPath).flatMap(([at, message]) => {
     const next = movedPath(at, path, order);
     return next === null ? [] : [[next, message]];
   }));
@@ -955,16 +976,16 @@ function reorder(path: string, order: readonly number[]) {
   set(path, order.map((index) => rows[index]!));
 }
 
-function markInvalid(path: string, message: string | null) {
+function markInvalid(path: string, text: InvalidFormText | null) {
   editGeneration += 1;
-  if (message === null) {
+  if (text === null) {
     invalid.value = Object.fromEntries(
       Object.entries(invalid.value).filter(([at]) => at !== path && !at.startsWith(`${path}/`)),
     );
     return;
   }
   userEditedPaths.value = new Set([...userEditedPaths.value, path]);
-  invalid.value = { ...invalid.value, [path]: message };
+  invalid.value = { ...invalid.value, [path]: text };
 }
 
 /**
@@ -1188,6 +1209,7 @@ provide(formControlsKey, {
   sharedReadOnlyReasons,
   isTopLevel: (path) => topLevelPaths.value.has(path),
   hasInvalid: (path) => Object.keys(activeInvalid.value).some((at) => at === path || at.startsWith(`${path}/`)),
+  invalidText: (path) => invalid.value[path]?.source,
   set,
   remove,
   reorder,
@@ -1459,6 +1481,27 @@ useProjectionForm({
   submit: (override) => write(override),
   dirty: () => dirty.value,
   discard,
+  draft: {
+    identity: draftIdentity,
+    inputStateKeys: () => [
+      ...(state.value === null ? [] : [state.value]),
+      ...Object.values(props.fixedFields).flatMap((from) => "state" in from ? [from.state] : []),
+    ],
+    capture: () => ({
+      ownerOpened: ownerOpened.value!,
+      ownerShown: ownerShown.value!,
+      values: values.value,
+      changed: changed.value,
+      submitted: submitted.value,
+      invalid: invalid.value,
+      errors: errors.value,
+      refusal: refusal.value,
+      editedPaths: editedPaths.value,
+      userEditedPaths: userEditedPaths.value,
+      agentFilledPaths: agentFilledPaths.value,
+    }),
+    restore: restoreDraft,
+  },
   snapshot() {
     if (!opened.value) return null;
     const currentTarget = target.value;

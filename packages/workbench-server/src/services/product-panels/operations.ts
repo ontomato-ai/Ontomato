@@ -284,8 +284,8 @@ function concreteCalls(invocation: CheckedInvocation): readonly PanelOperationCa
   return "calls" in invocation ? invocation.calls : [invocation.call];
 }
 
-async function ownerImpact(inspector: PanelImpactInspector, host: PanelOperationHost, invocation: CheckedInvocation) {
-  const impact = await inspector.inspect(host, concreteCalls(invocation));
+async function ownerImpact(inspector: PanelImpactInspector, host: PanelOperationHost, calls: readonly PanelOperationCall[]) {
+  const impact = await inspector.inspect(host, calls);
   return impact && panelOperationImpactSchema.parse(impact);
 }
 
@@ -341,7 +341,7 @@ export async function inspectPanelOperationImpact(owner: AssistantOwner, credent
   const { handler, fixedTarget } = current;
   const staged = handler.inspectImpact &&
     await withStagedFile(owner, input, handler, validateInvocation(handler, concrete, fixedTarget), credentials.locale);
-  const impact = staged && await ownerImpact(handler.inspectImpact!, operationHost({ owner, credentials }), staged.invocation);
+  const impact = staged && await ownerImpact(handler.inspectImpact!, operationHost({ owner, credentials }), concreteCalls(staged.invocation));
   if (!impact) throw new HttpError(422, "The owner has no impact description for this operation", "OPERATION_IMPACT_UNAVAILABLE");
   return impact;
 }
@@ -376,20 +376,30 @@ export async function projectPanelOperationIntent(owner: AssistantOwner, id: str
 async function humanConfirmation(
   handler: PanelWriteServerOperation, host: PanelOperationHost, invocation: CheckedInvocation, upload?: PanelUploadFile,
 ): Promise<PanelHumanOperationConfirmation> {
-  const impact = handler.inspectImpact && ownerImpact(handler.inspectImpact, host, invocation);
   if ("call" in invocation) {
     // A call whose owner finds nothing to confirm goes ahead; an inspected upload also names the file it hands over.
-    const details = await impact;
+    const details = handler.inspectImpact && await ownerImpact(handler.inspectImpact, host, [invocation.call]);
     return details ? { kind: "impact", impact: details, ...(upload && { upload }) } : { kind: "none" };
   }
+  const { executable } = await partitionBatch(host, invocation);
+  const skippedCount = invocation.calls.length - executable.length;
   const [objects, details] = await Promise.all([
-    Promise.all(invocation.calls.map(async ({ target, input }) => ({
+    Promise.all(executable.map(async ({ target, input }) => ({
       target: { objectType: target.objectType, primaryKey: target.primaryKey },
       label: await invocation.owner.targetLabel(host, target, input),
     }))),
-    impact,
+    executable.length > 0 && handler.inspectImpact && ownerImpact(handler.inspectImpact, host, executable),
   ]);
-  return { kind: "batch", targets: { objects, total: invocation.calls.length }, ...(details && { impact: details }) };
+  return {
+    kind: "batch",
+    targets: { objects, total: executable.length },
+    ...(details && { impact: details }),
+    ...(skippedCount > 0 && {
+      skippedSummary: tForLocale(host.locale, "panels.confirmation.skipped", {
+        count: new Intl.NumberFormat(host.locale).format(skippedCount),
+      }),
+    }),
+  };
 }
 
 export async function prepareHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials,
@@ -427,12 +437,16 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
         : confirmation.kind === "batch"
           ? confirmation.impact
           : undefined;
-      const target = impact
-        ? namedTargets(impact.objects.map((object) => object.label), impact.total, credentials.locale)
-        : confirmation.kind === "batch"
-          ? namedTargets(confirmation.targets.objects.map((object) => object.label), confirmation.targets.total, credentials.locale)
-          : await confirmationTarget(current.handler, host, prepared, current.operation.label);
-      const impactSummary = impact?.summary ?? confirmationInputSummary(current.handler, prepared);
+      const targets = confirmation.kind === "batch" && (!impact || confirmation.skippedSummary)
+        ? confirmation.targets
+        : impact;
+      const target = targets
+        ? namedTargets(targets.objects.map((object) => object.label), targets.total, credentials.locale)
+        : await confirmationTarget(current.handler, host, prepared, current.operation.label);
+      const impactSummary = [
+        impact?.summary ?? confirmationInputSummary(current.handler, prepared),
+        confirmation.kind === "batch" ? confirmation.skippedSummary : undefined,
+      ].filter(Boolean).join("\n");
       questionPrompt = await panelConfirmation(credentials, {
         operation: current.operation.label,
         target,
@@ -587,6 +601,7 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
 }
 
 function namedTargets(labels: string[], total: number, locale?: string) {
+  if (total === 0) return tForLocale(locale, "panels.confirmation.noExecutableTargets");
   const names = new Intl.ListFormat(locale).format(labels);
   return `${names} (${new Intl.NumberFormat(locale).format(total)})`.trim();
 }
@@ -611,15 +626,20 @@ function batchOutcome(value: unknown, calls: readonly PanelBatchCalls[number][])
   return { kind: "batch", items, affected: { objects, objectTypes: [...objectTypes], ...(removed.length && { removed }) } };
 }
 
-async function executeAvailableBatch(
-  host: PanelOperationHost, { owner, calls }: Extract<CheckedInvocation, { calls: PanelBatchCalls }>, id: string,
-): Promise<PanelOperationOutcome> {
-  if (!owner.unavailableBatch && !owner.unavailable) {
-    return batchOutcome(await owner.executeBatch(host, calls, id), calls);
-  }
+async function partitionBatch(
+  host: PanelOperationHost, { owner, calls }: Extract<CheckedInvocation, { calls: PanelBatchCalls }>,
+) {
   const reasons = await resolveBatchUnavailableReasons(host, owner, calls.map(({ target }, index) =>
     ({ target, rowKey: String(index) })));
   const executable = calls.filter((_, index) => !reasons.get(String(index)));
+  return { executable, reasons };
+}
+
+async function executeAvailableBatch(
+  host: PanelOperationHost, invocation: Extract<CheckedInvocation, { calls: PanelBatchCalls }>, id: string,
+): Promise<PanelOperationOutcome> {
+  const { owner, calls } = invocation;
+  const { executable, reasons } = await partitionBatch(host, invocation);
   const executed = executable.length > 0
     ? batchOutcome(await owner.executeBatch(host, executable, id), executable)
     : null;
@@ -660,11 +680,9 @@ async function confirmationTarget(handler: PanelWriteServerOperation,
     return operationLabel;
   }
   // An action without a target is named by the operation itself.
-  if (!handler.targetLabel) return operationLabel;
-  if ("call" in invocation) return handler.targetLabel(host, invocation.target as PanelRecordTarget, invocation.call.input);
-  const { targetLabel } = handler;
-  const labels = await Promise.all(invocation.calls.map(call => targetLabel(host, call.target, call.input)));
-  return namedTargets(labels, invocation.calls.length, host.locale);
+  return handler.targetLabel && "call" in invocation
+    ? handler.targetLabel(host, invocation.target as PanelRecordTarget, invocation.call.input)
+    : operationLabel;
 }
 
 async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationHost, intent: PanelOperationIntent,

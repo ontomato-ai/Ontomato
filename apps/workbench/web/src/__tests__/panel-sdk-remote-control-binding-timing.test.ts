@@ -821,6 +821,7 @@ describe("Item 1.1 & 1.4: Nested panel expectedMemberInstanceId and disposal inv
 
       const unpublishA = parent.instance.publish("detail", computed(() => ({
         instanceId: childA.instance.instanceId,
+        formRegistries: childA.instance.formRegistries,
         operations: childA.instance.operations.value,
         dirty: () => childA.instance.dirty(),
         context: childA.instance.pageContext.value,
@@ -846,6 +847,7 @@ describe("Item 1.1 & 1.4: Nested panel expectedMemberInstanceId and disposal inv
       childA.instance.markDisposed();
       const unpublishB = parent.instance.publish("detail", computed(() => ({
         instanceId: childB.instance.instanceId,
+        formRegistries: childB.instance.formRegistries,
         operations: childB.instance.operations.value,
         dirty: () => childB.instance.dirty(),
         context: childB.instance.pageContext.value,

@@ -514,6 +514,12 @@ describe("business knowledge batch approval through panel dispatch", () => {
       operationId: "approveAll.approve",
       calls: [...calls],
     });
+    expect(prepared.confirmation).toMatchObject({
+      kind: "batch",
+      targets: { total: 1, objects: [{ label: pending.knowledgeTitle }] },
+      skippedSummary: expect.stringMatching(/\b1\b.*will be skipped/i),
+    });
+    expect(JSON.stringify(prepared.confirmation)).not.toContain(approved.knowledgeTitle);
     const dispatched = await dispatchHumanPanelOperation(actor.owner, actor.credentials, prepared.intentId);
 
     expect(dispatched).toEqual({
@@ -564,6 +570,12 @@ describe("business knowledge batch approval through panel dispatch", () => {
         { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, input: {} },
       ],
     });
+    expect(prepared.confirmation).toMatchObject({
+      kind: "batch",
+      targets: { total: 0, objects: [] },
+      skippedSummary: expect.stringMatching(/\b2\b.*will be skipped/i),
+    });
+    expect(prepared.confirmation).not.toHaveProperty("impact");
     const dispatched = await dispatchHumanPanelOperation(actor.owner, actor.credentials, prepared.intentId);
 
     expect(dispatched).toEqual({

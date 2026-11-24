@@ -110,6 +110,7 @@ export const panelHumanOperationConfirmationSchema = z.discriminatedUnion("kind"
     kind: z.literal("batch"),
     targets: panelOperationImpactSchema.omit({ summary: true }),
     impact: panelOperationImpactSchema.optional(),
+    skippedSummary: z.string().min(1).optional(),
   }).strict(),
 ]);
 export type PanelHumanOperationConfirmation = z.infer<typeof panelHumanOperationConfirmationSchema>;
