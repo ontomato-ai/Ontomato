@@ -849,13 +849,12 @@ public class ApplicationCatalog {
 
     private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed) {
         boolean panels = panelManaged(app);
-        var named = allowed.stream().filter(entry -> entry.names() != null)
-            .map(entry -> panels ? entry : entry.withoutInputs()).toList();
+        var named = allowed.stream().filter(entry -> entry.names() != null).toList();
         var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
         var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
             .sorted(Comparator.comparingInt(Group::sort)).toList();
         var appNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
-        var result = JSONObject.of("applicationId", app.getString("id"), "use", panels ? use : use.withoutInputs(),
+        var result = JSONObject.of("applicationId", app.getString("id"), "use", use,
             "menu", new EntryMenu(appNames, groups, named));
         var settings = app.getJSONObject("panelSettings");
         String resolvedFrame = null;

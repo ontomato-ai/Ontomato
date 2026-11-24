@@ -868,7 +868,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.rows[?(@.id=='" + zhId + "')].names['zh-CN']").value("中文应用"));
     }
 
-    @Test void resolvesNativePanelEntriesAndTheirMenusWithDefaultPlatformFrameWithoutThemeOrInputs() throws Exception {
+    @Test void resolvesNativePanelEntriesAndTheirMenusWithDefaultPlatformFrameAndInputsWithoutTheme() throws Exception {
         var declared = builtin("native-frame-demo", "native");
         var use = new ApplicationPanelUse("overview", "native-frame-demo-overview", "builtin-product-overview",
             "/native-frame-demo/overview", new ApplicationPanelUse.Access(null, "domain-member"), null,
@@ -893,12 +893,12 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.framePanelId").value(ApplicationCatalog.DEFAULT_FRAME_PANEL_ID))
             .andExpect(jsonPath("$.data.theme").doesNotHaveJsonPath())
-            .andExpect(jsonPath("$.data.use.inputs").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.use.inputs.term.literal").value("autumn"))
             .andExpect(jsonPath("$.data.use.descriptions.en").value("Explain the overview"))
             .andExpect(jsonPath("$.data.menu.names.en").value("Native example"))
             .andExpect(jsonPath("$.data.menu.groups[0].key").value("main"))
             .andExpect(jsonPath("$.data.menu.panelUses[0].id").value("overview"))
-            .andExpect(jsonPath("$.data.menu.panelUses[0].inputs").doesNotHaveJsonPath())
+            .andExpect(jsonPath("$.data.menu.panelUses[0].inputs.term.literal").value("autumn"))
             .andReturn().getResponse().getContentAsString();
         var byUse = http.perform(get(route).param("applicationId", declared.id()).param("useId", use.id()))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
