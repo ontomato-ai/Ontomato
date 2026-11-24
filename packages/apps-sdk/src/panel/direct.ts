@@ -150,6 +150,8 @@ export interface MemberData {
    * shown datum.
    */
   read(name: string, params: MemberInputs, inputs?: MemberInputs): Promise<MemberDataState>;
+  /** Re-read one named datum (or all active data of this member when `name` is omitted) without reloading other members. */
+  refresh?(name?: string): void;
 }
 
 export interface DirectPanelInstance extends PanelInstance {
@@ -702,6 +704,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       const placement = direct.members[member]!;
       const answer = (name: string, values: MemberInputs, ownRun: MemberInputs = own()) =>
         readMemberDatum(options.read, projection, instance.memberPathOf(member), placement, name, values, ownRun);
+      const readers = new Map<string, Set<() => void>>();
 
       return {
         use(name) {
@@ -764,6 +767,12 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             reread,
           };
           shown.add(entry);
+          let namedReaders = readers.get(name);
+          if (!namedReaders) {
+            namedReaders = new Set();
+            readers.set(name, namedReaders);
+          }
+          namedReaders.add(reread);
           watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), reread, { immediate: true });
           const effectiveState = computed<MemberDataState>(() => {
             if (addressPending.value && hasTarget) return { status: "loading" };
@@ -799,6 +808,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           }
           onScopeDispose(() => {
             shown.delete(entry);
+            const set = readers.get(name);
+            if (set) {
+              set.delete(reread);
+              if (set.size === 0) readers.delete(name);
+            }
             for (const [outputName] of declaredReadOutputs) instance.setMemberOutput(member, outputName, null);
           });
           return effectiveState;
@@ -806,6 +820,14 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         read: (name, params, overrides = {}) => {
           const { inputs: run, own: ownRun } = runValues(projection, name, params);
           return answer(name, { ...inputs(), ...overrides, ...run }, { ...own(), ...ownRun });
+        },
+        refresh: (name) => {
+          if (name !== undefined) {
+            const set = readers.get(name);
+            if (set) for (const fn of set) fn();
+            return;
+          }
+          for (const set of readers.values()) for (const fn of set) fn();
         },
       };
     },

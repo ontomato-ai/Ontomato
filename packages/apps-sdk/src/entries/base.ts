@@ -7,6 +7,18 @@ export type {
   ObjectListColumn,
   ObjectListRef,
 } from "../base/object-list-types";
+export { default as GroupedGrid } from "../base/GroupedGrid.vue";
+export type {
+  GroupedGridGroup,
+  GroupedGridGroupSlotScope,
+  GroupedGridGroupSummary,
+  GroupedGridItem,
+  GroupedGridItemSlotScope,
+  GroupedGridLayoutChange,
+  GroupedGridLayoutGroup,
+  GroupedGridLayoutItem,
+  GroupedGridSection,
+} from "../base/grouped-grid-types";
 export { default as ObjectCount } from "../base/ObjectCount.vue";
 export type { ObjectCountItem } from "../base/object-count-types";
 export { default as ObjectRelations } from "../base/ObjectRelations.vue";

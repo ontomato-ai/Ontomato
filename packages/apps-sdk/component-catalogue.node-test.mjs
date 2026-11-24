@@ -41,6 +41,7 @@ const EDITION = join(HERE, "../../apps/workbench/web/src/sdk-edition.ts");
 /** Every directly rendered component's data names, and the read results each may hold. */
 const DECLARED_DATA = {
   ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"], supplement: ["panelRecordList"] },
+  GroupedGrid: { record: ["panelRecord"], rows: ["panelRecordList"] },
   ObjectCount: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
   ObjectSummary: { record: ["panelRecord"] },
   ObjectHeader: { record: ["panelRecord"] },
@@ -330,7 +331,18 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(summaryShowTitle?.default, "true");
     assert.match(summaryShowTitle?.description ?? "", /record\.label/);
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
-    assert.equal(declared.get("MetricChart").config, undefined, "a component with no configuration declares none");
+    assert.equal(declared.get("PanelData").config, undefined, "a component with no configuration declares none");
+    const metricChartConfigNames = (declared.get("MetricChart").config ?? []).map((prop) => prop.name);
+    assert.ok(metricChartConfigNames.includes("file-override"), "MetricChart exposes file-override for live draft preview");
+    assert.ok(metricChartConfigNames.includes("min-height"), "MetricChart exposes min-height for grid cell sizing");
+    const groupedGrid = declared.get("GroupedGrid");
+    assert.ok(groupedGrid, "GroupedGrid is published in the SDK component catalogue");
+    assert.deepEqual(groupedGrid.inputs, { selected: { kind: "object", objectType: "@data:rows" } });
+    assert.deepEqual(groupedGrid.outputs, { selected: { kind: "object", objectType: "@data:rows" } });
+    const groupedGridConfigNames = (groupedGrid.config ?? []).map((prop) => prop.name);
+    for (const expectedProp of ["columns", "row-height", "gap", "group-key-field", "groups-field", "section-field", "editable", "row-actions"]) {
+      assert.ok(groupedGridConfigNames.includes(expectedProp), `GroupedGrid config includes ${expectedProp}`);
+    }
 
     // Official components declare read-only outputs separately from writable public state.
     assert.deepEqual(Object.keys(declared.get("ObjectList").readOnlyOutputs ?? {}).sort(), [

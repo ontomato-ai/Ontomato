@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject } from "vue";
 import { useI18n } from "vue-i18n";
+import type { ChartDisplay, ChartFormat } from "@ontomato/contracts/chart-data";
 import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import type { PanelFieldTone, PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
@@ -58,6 +59,8 @@ const props = withDefaults(
     tone?: PanelFieldTone;
     /** Optional `Intl.NumberFormat` options for numeric values. */
     numberFormat?: TypedNumberFormat;
+    /** Optional per-field display format map (matching `ChartDisplay["formats"]`) applied when formatting bound fields or columns. */
+    formats?: ChartDisplay["formats"];
     /** Multiple KPI entries evaluated from one datum read (or standalone values) without duplicating backend requests. */
     items?: readonly MetricCardItem[];
     /** Visual presentation: `"card"` (bordered KPI cards), `"compact"` (dense tiles), or `"inline"` (horizontal strip). */
@@ -82,6 +85,7 @@ const props = withDefaults(
     descriptions: undefined,
     tone: undefined,
     numberFormat: undefined,
+    formats: undefined,
     items: undefined,
     variant: "card",
     columns: undefined,
@@ -222,7 +226,44 @@ const parsedSource = computed<ParsedSource>(() => {
   return { state: "ready", total: hasTotal ? query.total! : undefined, hasTotal };
 });
 
-function formatMetricDisplay(raw: unknown, format?: TypedNumberFormat): string {
+const effectiveFormats = computed<ChartDisplay["formats"] | undefined>(() => {
+  if (props.formats && typeof props.formats === "object" && !Array.isArray(props.formats)) return props.formats;
+  const fromConfig = rawConfig.value?.formats;
+  if (fromConfig && typeof fromConfig === "object" && !Array.isArray(fromConfig)) {
+    return fromConfig as ChartDisplay["formats"];
+  }
+  return undefined;
+});
+
+function formatWithChartFormat(raw: unknown, format: ChartFormat): string {
+  if (raw === undefined || raw === null || raw === "") return props.emptyText;
+  const unwrapped = unwrapJsonField(raw);
+  if (format.kind === "text") {
+    return typeof unwrapped === "object" ? JSON.stringify(unwrapped) : String(unwrapped);
+  }
+  if (format.kind === "date") {
+    const date = new Date(unwrapped as string | number);
+    return Number.isNaN(date.getTime()) ? String(unwrapped) : date.toLocaleDateString(locale.value);
+  }
+  const num = Number(unwrapped);
+  if (typeof unwrapped === "boolean" || typeof unwrapped === "object" || !Number.isFinite(num)) {
+    return String(unwrapped);
+  }
+  const digits = format.decimals === undefined
+    ? {}
+    : { minimumFractionDigits: format.decimals, maximumFractionDigits: format.decimals };
+  if (format.kind === "percent") {
+    const scaled = format.scale === 100 ? num * 100 : num;
+    return `${scaled.toLocaleString(locale.value, digits)}%`;
+  }
+  if (format.kind === "currency" && format.currency) {
+    return num.toLocaleString(locale.value, { style: "currency", currency: format.currency, ...digits });
+  }
+  return num.toLocaleString(locale.value, digits);
+}
+
+function formatMetricDisplay(raw: unknown, format?: TypedNumberFormat, chartFormat?: ChartFormat): string {
+  if (chartFormat) return formatWithChartFormat(raw, chartFormat);
   if (raw === undefined || raw === null || raw === "") return props.emptyText;
   const unwrapped = unwrapJsonField(raw);
   if (typeof unwrapped === "number") return formatTypedNumber(unwrapped, locale.value, format);
@@ -279,7 +320,8 @@ const renderedItems = computed<readonly RenderedMetricItem[]>(() => {
     let tone: PanelFieldTone = item.tone ?? "default";
 
     if (src.state === "standalone" || item.value !== undefined) {
-      display = formatMetricDisplay(item.value, item.numberFormat);
+      const chartFmt = item.field ? effectiveFormats.value?.[item.field] : undefined;
+      display = formatMetricDisplay(item.value, item.numberFormat, chartFmt);
     } else if (src.state === "loading") {
       display = "…";
     } else if (src.state === "forbidden" || src.state === "error" || src.state === "awaiting") {
@@ -297,13 +339,16 @@ const renderedItems = computed<readonly RenderedMetricItem[]>(() => {
     } else if (boundDatum?.name === "result" && src.metricOutput) {
       const cell = extractMetricCell(src.metricOutput, item.field, item.rowIndex ?? 0);
       if (!label) label = cell.column?.label || cell.column?.key || "";
-      display = formatMetricDisplay(cell.value, item.numberFormat);
+      const formatKey = item.field ?? cell.column?.key;
+      const chartFmt = formatKey ? effectiveFormats.value?.[formatKey] : undefined;
+      display = formatMetricDisplay(cell.value, item.numberFormat, chartFmt);
     } else if (boundDatum?.name === "record" && src.record) {
       const key = item.field ?? "label";
       const raw = rawRecordField(src.record, key);
       if (!label) label = src.record.fieldLabels?.[key] ?? "";
       if (!item.tone && src.record.tones?.[key]) tone = asTone(src.record.tones[key]) ?? "default";
-      display = formatMetricDisplay(raw, item.numberFormat);
+      const chartFmt = effectiveFormats.value?.[key];
+      display = formatMetricDisplay(raw, item.numberFormat, chartFmt);
     } else {
       display = src.hasTotal && src.total !== undefined
         ? formatTypedNumber(src.total, locale.value, item.numberFormat)
@@ -333,6 +378,16 @@ const accessibleSummary = computed<string | undefined>(() => {
   if (parsedSource.value.notice) return text ? `${text} (${parsedSource.value.notice})` : parsedSource.value.notice;
   return text || undefined;
 });
+
+function refresh() {
+  if (member?.data.refresh) {
+    member.data.refresh();
+  } else {
+    panel?.instance.refreshObjects();
+  }
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>
@@ -387,6 +442,7 @@ const accessibleSummary = computed<string | undefined>(() => {
 
 .sdk-metric-card-group.is-single {
   grid-template-columns: minmax(0, 1fr);
+  height: 100%;
 }
 
 .sdk-metric-card-group.has-fixed-cols {
@@ -404,8 +460,10 @@ const accessibleSummary = computed<string | undefined>(() => {
 .sdk-metric-card {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: var(--spacing-xs);
   min-width: 0;
+  height: 100%;
   padding: var(--spacing-lg);
   border: 1px solid var(--ui-divider);
   border-radius: var(--radius-md);
