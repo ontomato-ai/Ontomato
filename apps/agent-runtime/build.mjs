@@ -36,6 +36,7 @@ export function prepareContext(destination) {
     join(destination, "requirements-py310.txt"),
   );
   cpSync(join(root, "apps/agent-runtime/sandbox-policy"), join(destination, "sandbox-policy"), { recursive: true });
+  cpSync(join(root, "apps/agent-runtime/codex"), join(destination, "codex"), { recursive: true });
   record.yamlProvider = "@ontomato/agent-runtime";
   record.web = false;
   writeFileSync(join(destination, "inputs.json"), JSON.stringify(record));

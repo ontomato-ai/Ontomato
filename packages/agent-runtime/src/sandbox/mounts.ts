@@ -78,5 +78,5 @@ export async function prepareSandboxMounts(files: SandboxFiles, temporary: strin
     ...(files.projectTree ? [bind(files.projectTree, "/workspace/work", true)] : []),
     ...files.skills.map(({ directory }, index) => bind(directory, directories.skills[index]!.directory)),
   ];
-  return { directories, workspace, mounts };
+  return { directories, workspace, state, mounts };
 }

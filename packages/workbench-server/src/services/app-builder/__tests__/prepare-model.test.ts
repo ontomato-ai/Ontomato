@@ -1,12 +1,21 @@
 import {expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({definition:vi.fn((..._args:unknown[])=>({})),authorize:vi.fn()}));
+const mocks=vi.hoisted(()=>({definition:vi.fn((..._args:unknown[])=>({})),authorize:vi.fn(),callback:vi.fn(()=>({value:'wbc1.sealed'}))}));
 vi.mock('../build-tests',()=>({WorkspaceBuildTests:class{authorize=mocks.authorize;}}));
 vi.mock('../sdk',()=>({currentAppSdk:async()=>({version:'sdk'})}));
-vi.mock('../../../platform/agent-runtime/runtime',()=>({runDefinition:mocks.definition,userSkillEnvironment:()=>({values:{},secrets:{}})}));
+vi.mock('../../../platform/agent-runtime/runtime',()=>({runDefinition:mocks.definition}));
 vi.mock('../../agent-runtime/skills',()=>({workbenchBuiltinSkillRoot:()=>'/skills',publishSkill:async(_root:string,skill:unknown)=>({skill,digest:'a'.repeat(64)})}));
 vi.mock('../../assistant/prompts',()=>({effectiveSystemPrompt:()=>''}));
+vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({callbackUrl:'http://workbench.test'})}}));
+vi.mock('../../agent-runtime/callback-credential',()=>({callbackCredential:mocks.callback}));
 import {prepareAppBuilderRun} from '../prepare';
-it('uses a builder variants selected model when preparing its runtime definition',async()=>{
- await prepareAppBuilderRun({a:{id:'builder',kind:'app-builder:variant',model_selection:{modelId:'provider/model'}},session:{id:'session',workspace_id:'workspace'},turn:{id:'turn',created_at:new Date()},message:'Build',owner:{domainId:'domain',userId:'user'},credentials:{locale:'en'}} as Parameters<typeof prepareAppBuilderRun>[0]);
+it('uses a builder variants selected model and declares run-scoped business callbacks',async()=>{
+ const run=await prepareAppBuilderRun({a:{id:'builder',kind:'app-builder:variant',model_selection:{modelId:'provider/model'}},session:{id:'session',workspace_id:'workspace'},turn:{id:'turn',created_at:new Date()},message:'Build',owner:{domainId:'domain',userId:'user'},credentials:{locale:'en',token:'human-secret'}} as Parameters<typeof prepareAppBuilderRun>[0]);
  expect(mocks.definition.mock.calls[0][1]).toBe('provider/model');
+ expect(run.environment).toEqual({values:{ONTOMATO_WORKSPACE_ID:'workspace',ONTOMATO_EXECUTION_KIND:'build-test'},secrets:{}});
+ expect(run.businessCallbacks).toEqual({
+   workbench:{baseUrl:'http://workbench.test/api/assistant/executions/turn/workbench',credential:'wbc1.sealed'},
+   ontology:{baseUrl:'http://workbench.test/api/assistant/executions/turn/ontology',credential:'wbc1.sealed'},
+   authoring:{baseUrl:'http://workbench.test/api/assistant/executions/turn/authoring',credential:'wbc1.sealed'},
+ });
+ expect(JSON.stringify(run)).not.toContain('human-secret');
 });

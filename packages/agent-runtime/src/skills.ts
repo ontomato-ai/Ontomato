@@ -12,10 +12,6 @@ import {
 import path from "node:path";
 import { parse } from "yaml";
 import {
-  loadSkills,
-  formatSkillsForPrompt,
-} from "@earendil-works/pi-coding-agent";
-import {
   runtimeRegisterSkillRequestSchema,
   standardSkillFrontmatterSchema,
   type RuntimeSkillRef,
@@ -156,16 +152,4 @@ async function makeSkillReadable(directory: string): Promise<void> {
     else throw new Error(`Unexpected file in published skill: ${file}`);
   }
   await chmod(directory, 0o755);
-}
-
-export function skillCatalog(workspace: string, skills: InstalledSkill[]) {
-  const loaded = loadSkills({
-    cwd: workspace,
-    agentDir: workspace,
-    includeDefaults: false,
-    skillPaths: skills.map((s) => path.join(workspace, "skills", s.skill.name)),
-  });
-  if (loaded.skills.length !== skills.length)
-    throw new Error("Installed skill catalog is incomplete");
-  return formatSkillsForPrompt(loaded.skills);
 }

@@ -45,6 +45,8 @@ export function callbackCredential(input: z.infer<typeof claimsSchema>) {
 }
 export interface RuntimeCallback { runId: string; businessGrant?: string }
 
+const ALLOWED_CALLBACK_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
+
 /** Installed before ordinary authentication, which still verifies the delegated user. */
 export const unwrapCallbackCredential: RequestHandler = (req, res, next) => {
   const auth = req.header("X-Ontomato-Callback-Credential") ?? (typeof req.headers.tk === "string" ? req.headers.tk : "");
@@ -62,7 +64,7 @@ export const unwrapCallbackCredential: RequestHandler = (req, res, next) => {
       ),
     );
     if (
-      !["POST", "GET"].includes(req.method) ||
+      !ALLOWED_CALLBACK_METHODS.has(req.method) ||
       !req.path.startsWith(claims.pathPrefix) ||
       claims.expiresAt <= Date.now() ||
       req.header("X-Ontomato-Run-Id") !== claims.runId

@@ -1,3 +1,5 @@
+import { storedRuntimeAgentDefinitionSchema } from "@ontomato/contracts/agent-runtime";
+import { defaultEngineId } from "./adapters/registry";
 import { historyCursor, historyPosition, type SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { runtimeRunViewSchema, type RuntimeRunView } from "@ontomato/contracts/agent-runtime";
 import { runtimeSkillRefSchema, type RuntimeRegisteredSkill } from "@ontomato/contracts/agent-runtime-skills";
@@ -16,7 +18,7 @@ import type {
   RuntimeEventEnvelope,
 } from "@ontomato/contracts/agent-runtime-events";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
+import type { RuntimeMessage, RuntimeRunInput } from "@ontomato/contracts/agent-runtime-messages";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeError, missing } from "./errors";
 import { answerMessageId } from "./answer";
@@ -45,6 +47,8 @@ export const digest = (value: unknown) =>
   createHash("sha256").update(canonical(value)).digest("hex");
 const values = (scope: Scope) => [scope.hostId, scope.domainId];
 const HISTORY_MIN_MESSAGES = 50, HISTORY_MIN_RUNS = 2, HISTORY_MAX_MESSAGES = 500;
+const openingInputUnconfirmed = "The engine did not confirm receipt of the opening input. You can send it again.";
+const unknownToolMessage = "Execution ended before its result was recorded. Its external outcome is unknown. Do not repeat this action automatically.";
 
 /** This schema belongs only to the runtime. No host table or business record is accessed. */
 export class RuntimeStore {
@@ -152,6 +156,8 @@ export class RuntimeStore {
       }
       // Additive changes to version 2, applied to fresh and existing schemas alike.
       await c.query(`ALTER TABLE ${this.table("runs")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
+      await c.query(`ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS engine text,
+        ADD COLUMN IF NOT EXISTS engine_ref text`);
       await c.query(`CREATE TABLE IF NOT EXISTS ${this.table("code_executions")} (
         host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
         fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
@@ -432,7 +438,8 @@ export class RuntimeStore {
     scope: Scope,
     run: RuntimeRun,
     fingerprint: string,
-    input: RuntimeMessage,
+    input: RuntimeRunInput,
+    engine: string,
     reserved = false,
   ) {
     return this.transaction(async (c) => {
@@ -471,28 +478,26 @@ export class RuntimeStore {
           "Session already has an active run",
         );
       if (!reserved && session.preparing_run_id) throw new RuntimeError(409,"SESSION_BUSY","Session has a preparing execution intent");
-      const contextSeq = Number(session.context_seq) + 1;
       const streamId = randomUUID();
       const received = reserved ? (await c.query(`SELECT id,seq FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND id=(SELECT (intent->>'inputId')::uuid FROM ${this.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$4) AND run_id IS NULL`, [...values(scope), run.sessionId, run.id])).rows[0] : null;
       const messageId = received ? received.id : randomUUID();
       const messageSeq = received ? Number(received.seq) : Number(session.message_seq) + 1;
       await c.query(
-        `INSERT INTO ${this.table("runs")} (host_id,domain_id,id,session_id,run,stream_id,seq,log_context) VALUES ($1,$2,$3,$4,$5,$6,3,$7)`,
+        `INSERT INTO ${this.table("runs")} (host_id,domain_id,id,session_id,run,stream_id,seq,log_context) VALUES ($1,$2,$3,$4,$5,$6,2,$7)`,
         [...values(scope), run.id, run.sessionId, run, streamId, { userId: getServiceLogContext().userId ?? null }],
       );
       await c.query(
-        `UPDATE ${this.table("sessions")} SET active_run_id=$4,latest_run_id=$4,preparing_run_id=NULL,message_seq=GREATEST(message_seq,$5),context_seq=$6,updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
-        [...values(scope), run.sessionId, run.id, messageSeq, contextSeq],
+        `UPDATE ${this.table("sessions")} SET active_run_id=$4,latest_run_id=$4,preparing_run_id=NULL,message_seq=GREATEST(message_seq,$5),engine=COALESCE(engine,$6),updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+        [...values(scope), run.sessionId, run.id, messageSeq, engine],
       );
-      if (received) await c.query(`UPDATE ${this.table("messages")} SET run_id=$4,context_seq=$5 WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), messageId, run.id, contextSeq]);
+      if (received) await c.query(`UPDATE ${this.table("messages")} SET run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), messageId, run.id]);
       else await c.query(
-        `INSERT INTO ${this.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message,context_seq) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [...values(scope), messageId, run.sessionId, run.id, messageSeq, input, contextSeq],
+        `INSERT INTO ${this.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+        [...values(scope), messageId, run.sessionId, run.id, messageSeq, input],
       );
       const events: RuntimeAgentEvent[] = [
         { type: "agent_start" },
-        { type: "message_start", messageId, message: input },
-        { type: "message_end", messageId, messageSeq, contextSeq, message: input },
+        { type: "input_received", messageId, messageSeq, message: input },
       ];
       for (const [index, event] of events.entries())
         await c.query(
@@ -509,8 +514,25 @@ export class RuntimeStore {
             },
           ],
         );
-      return { run, replayed: false };
+      return { run, replayed: false, inputId: messageId };
     });
+  }
+  async sessionEngine(scope: Scope, id: string) {
+    const { rows: [row] } = await this.pool.query(
+      `SELECT engine,engine_ref,latest_run_id FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+      [...values(scope), id],
+    );
+    if (!row) missing();
+    return {
+      engine: (row.engine ?? (row.latest_run_id ? defaultEngineId : null)) as string | null,
+      engineRef: row.engine_ref as string | null,
+    };
+  }
+  async saveEngineRef(scope: Scope, id: string, engineRef: string) {
+    await this.pool.query(
+      `UPDATE ${this.table("sessions")} SET engine_ref=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+      [...values(scope), id, engineRef],
+    );
   }
   async run(
     scope: Scope,
@@ -524,14 +546,16 @@ export class RuntimeStore {
       )
     ).rows[0];
     if (!row) missing();
-    const run: RuntimeRun = row.run;
-    const legacySkills = runtimeSkillRefSchema.array().safeParse(run.definition.skills);
+    const stored: RuntimeRun = row.run;
+    const definition = { ...stored.definition };
+    const legacySkills = runtimeSkillRefSchema.array().safeParse(definition.skills);
     if (legacySkills.success && legacySkills.data.length) {
-      const versions = run.resolvedSkills.map(({ skill, digest }: RuntimeRegisteredSkill) => ({ skill, digest }));
+      const versions = stored.resolvedSkills.map(({ skill, digest }: RuntimeRegisteredSkill) => ({ skill, digest }));
       if (canonical(legacySkills.data) !== canonical(versions.map(({ skill }) => skill)))
         throw new Error("Stored run has no matching resolved skill versions");
-      run.definition.skills = versions;
+      definition.skills = versions;
     }
+    const run: RuntimeRun = { ...stored, definition: storedRuntimeAgentDefinitionSchema.parse(definition) };
     updateServiceLogContext({ runId: run.id, sessionId: run.sessionId, domainId: scope.domainId });
     return { run, seq: Number(row.seq), streamId: row.stream_id };
   }
@@ -651,6 +675,36 @@ export class RuntimeStore {
          AND m.message->>'role'='toolResult' AND m.message->>'toolCallId'=e.envelope->'event'->>'toolCallId'
        )) ORDER BY e.seq`, [...values(scope), runId, unsettledOnly],
     )).rows.map(row => row.envelope as RuntimeEventEnvelope);
+  }
+  async runPresentation(scope: Scope, ids: string[]) {
+    type Detail = Extract<RuntimeAgentEvent, { type: "run_detail" }>["detail"];
+    type Usage = Extract<RuntimeAgentEvent, { type: "usage_updated" }>["usage"];
+    const presentation = new Map(ids.map(id => [id, {
+      details: new Map<string, { detail: Detail; timestamp: number }>(),
+      usageUpdate: null as Usage | null,
+    }]));
+    if (ids.length) {
+      const { rows } = await this.pool.query(`
+        SELECT envelope FROM ${this.table("events")}
+        WHERE host_id=$1 AND domain_id=$2 AND run_id=ANY($3::uuid[])
+          AND envelope->'event'->>'type' IN ('run_detail','usage_updated')
+        ORDER BY run_id,seq`, [...values(scope), ids]);
+      for (const { envelope } of rows as { envelope: RuntimeEventEnvelope }[]) {
+        const { event, cursor, timestamp } = envelope;
+        const run = presentation.get(cursor.runId)!;
+        if (event.type === "run_detail") {
+          const first = run.details.get(event.detail.key);
+          run.details.set(event.detail.key, {
+            detail: event.detail,
+            timestamp: first?.timestamp ?? Date.parse(timestamp),
+          });
+        } else if (event.type === "usage_updated") run.usageUpdate = event.usage;
+      }
+    }
+    return new Map([...presentation].map(([id, run]) => [id, {
+      details: [...run.details.values()],
+      usageUpdate: run.usageUpdate,
+    }]));
   }
   async events(scope: Scope, runId: string) {
     return (
@@ -797,7 +851,7 @@ export class RuntimeStore {
     };
     return this.append(scope, runId, { type: "artifact_registered", artifact });
   }
-  async append(scope: Scope, runId: string, event: RuntimeAgentEvent) {
+  async append(scope: Scope, runId: string, event: RuntimeAgentEvent, consumedInput = false) {
     return this.transaction(async (c) => {
       const row = (
         await c.query(
@@ -811,11 +865,20 @@ export class RuntimeStore {
         throw new RuntimeError(409, "RUN_CLOSED", "Run is no longer active");
       const seq = Number(row.seq) + 1;
       if (event.type === "message_end") {
-        const received = (await c.query(`SELECT seq,context_seq FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), event.messageId])).rows[0];
+        const received = (await c.query(`SELECT seq,context_seq,run_id FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND session_id=$4`, [...values(scope), event.messageId, run.sessionId])).rows[0];
+        if (consumedInput) {
+          if (!received || received.context_seq !== null || (received.run_id && received.run_id !== runId))
+            throw new Error("Input was not awaiting consumption in this run");
+          const { rows: [session] } = await c.query(
+            `UPDATE ${this.table("sessions")} SET context_seq=context_seq+1 WHERE host_id=$1 AND domain_id=$2 AND id=$3 RETURNING context_seq`,
+            [...values(scope), run.sessionId],
+          );
+          received.context_seq = session.context_seq;
+        }
         if (received) {
           event.messageSeq = Number(received.seq);
           event.contextSeq = received.context_seq === null ? null : Number(received.context_seq);
-          await c.query(`UPDATE ${this.table("messages")} SET run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), event.messageId, runId]);
+          await c.query(`UPDATE ${this.table("messages")} SET run_id=$4,context_seq=$5 WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), event.messageId, runId, event.contextSeq]);
         } else {
         const session = (
           await c.query(
@@ -930,23 +993,36 @@ export class RuntimeStore {
     workspaceCommit?: string | null,
   ) {
     const { run } = await this.run(scope, id);
-    let messages = (await this.messages(scope, run.sessionId, this.pool, id)).map((m) => m.message);
-    // Settle dispatched calls before closing the run, including restart recovery.
-    const answered = new Set(messages.flatMap(m => m.role === "toolResult" ? [m.toolCallId] : []));
-    for (const message of messages) {
-      if (message.role !== "assistant") continue;
-      for (const part of message.content) {
-        if (part.type !== "toolCall" || answered.has(part.id)) continue;
-        await this.append(scope, id, {
-          type: "message_end", messageId: randomUUID(), messageSeq: 0, contextSeq: null,
-          message: { role: "toolResult", toolCallId: part.id, toolName: part.name,
-            isError: true, outcome: "unknown", timestamp: Date.now(), content: [{ type: "text",
-              text: "Execution ended before its result was recorded. Its external outcome is unknown. Do not repeat this action automatically." }] },
-        });
-      }
+    const unsaved = new Map<string, Extract<RuntimeAgentEvent, { type: "tool_execution_start" | "tool_execution_end" }>>();
+    for (const { event } of await this.toolEvents(scope, id, true)) {
+      if (event.type === "tool_execution_start" || event.type === "tool_execution_end")
+        unsaved.set(event.toolCallId, event);
+    }
+    // Persisted starts are the authority both at live stop and after a process restart.
+    for (const event of unsaved.values()) {
+      const { toolCallId, toolName } = event;
+      const result = event.type === "tool_execution_end" ? event : {
+        type: "tool_execution_end" as const,
+        toolCallId, toolName, isError: true, outcome: "unknown" as const,
+        result: { content: [{ type: "text" as const, text: unknownToolMessage }], details: { artifactIds: [] } },
+      };
+      if (event.type === "tool_execution_start") await this.append(scope, id, result);
+      await this.append(scope, id, {
+        type: "message_end", messageId: randomUUID(), messageSeq: 0, contextSeq: null,
+        message: {
+          role: "toolResult", toolCallId, toolName, isError: result.isError,
+          outcome: result.outcome ?? (result.isError ? "failure" : "success"),
+          content: result.result.content, details: result.result.details, timestamp: Date.now(),
+        },
+      });
     }
     let rows = await this.messages(scope, run.sessionId, this.pool, id);
-    messages = rows.map(m => m.message);
+    const opening = rows.find(row => row.message.role === "user" || row.message.role === "notification");
+    if (opening && opening.contextSeq === null) {
+      if (reason !== "aborted") reason = "error";
+      errorMessage = [errorMessage, openingInputUnconfirmed].filter(Boolean).join(" ");
+    }
+    let messages = rows.map(m => m.message);
     const last = [...messages].reverse().find((m) => m.role === "assistant");
     if (
       reason &&
@@ -995,7 +1071,7 @@ export class RuntimeStore {
     });
     return envelope;
   }
-  async deleteSession(scope: Scope, id: string) {
+  async deleteSession(scope: Scope, id: string, release?: () => Promise<void>) {
     await this.transaction(async (c) => {
       const row = (
         await c.query(
@@ -1010,6 +1086,7 @@ export class RuntimeStore {
           "SESSION_BUSY",
           "Cancel the active run before deleting the session",
         );
+      await release?.();
       await c.query(
         `UPDATE ${this.table("admissions")} SET deleted=true, intent=NULL WHERE host_id=$1 AND domain_id=$2 AND session_id=$3`,
         [...values(scope), id],

@@ -1,3 +1,4 @@
+import type { AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import { APP_BUILDER_KIND, isAppBuilderKind } from "../app-builder/definition";
 import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
@@ -50,6 +51,7 @@ export interface AgentRow {
   icon: string | null;
   enabled: boolean;
   system_prompt: string | null;
+  engine?: AssistantAgentDefinition["engine"];
   model_selection: ModelSelection;
   skills: RuntimeSkillRef[];
   class_names: string[];

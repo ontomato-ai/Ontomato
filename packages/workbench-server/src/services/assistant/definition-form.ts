@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { assistantAgentInputSchema, assistantAgentPanelValuesSchema as inputSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
+import { assistantEngineSchema, assistantAgentInputSchema, assistantAgentPanelValuesSchema as inputSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import type { PanelFormDescription, PanelFormField, PanelFormRequest } from "@ontomato/contracts/panel-projection";
 import type { FormFieldError } from "@ontomato/contracts/form-fields";
 import { AGENT_DEFINITION, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
@@ -17,7 +17,7 @@ import type { AssistantOwner } from "./store";
 type CurrentValues = Omit<AssistantAgentDefinition, "id" | "sortOrder">;
 const initialValues: CurrentValues = {
   name: "", description: "", icon: null, enabled: true, systemPrompt: "",
-  ...assistantAgentInputSchema.pick({ modelSelection: true, classNames: true, enabledMcpServiceIds: true }).parse({}),
+  ...assistantAgentInputSchema.pick({ engine: true, modelSelection: true, classNames: true, enabledMcpServiceIds: true }).parse({}),
   skills: [], executionUserId: null,
 };
 type Control = PanelFormField["control"];
@@ -31,6 +31,8 @@ const fields = [
   { key: "description", path: "/description", schema: inputSchema.shape.description, control: { kind: "text", multiline: true }, section: "basics", placeholder: true },
   { key: "icon", path: "/icon", schema: inputSchema.shape.icon, control: { kind: "avatar" }, section: "basics" },
   { key: "enabled", path: "/enabled", schema: inputSchema.shape.enabled, control: { kind: "switch" }, section: "basics", help: true },
+  { key: "engine", path: "/engine", schema: inputSchema.shape.engine,
+    control: { kind: "select", options: assistantEngineSchema.options.map(value => ({ value, label: value === "pi" ? "PI" : "Codex", description: null, disabled: false, disabledReason: null })) }, section: "model" },
   { key: "modelSelection", path: "/modelSelection/modelId",
     schema: inputSchema.shape.modelSelection.removeDefault().shape.modelId, control: reference(MODEL_OPTION), section: "model" },
   { key: "systemPrompt", path: "/systemPrompt", schema: inputSchema.shape.systemPrompt, control: { kind: "markdown" }, section: "prompt" },

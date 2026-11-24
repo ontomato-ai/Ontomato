@@ -19,12 +19,17 @@ export function executionActor(executionUserId: string | null, domainId: string)
 
 /** Callback ownership is checked before reading the fixed, non-secret runtime fact. */
 export async function credentialsForRun(owner: AssistantOwner, runId: string, initiatorCredentials: AssistantCredentials, sessionId?: string) {
-  const run = await runForOwner(owner,runId);
+  const { turn, run } = await ownedRun(owner, runId);
   if (!run.channel || run.status !== "running") throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
   if(sessionId!==undefined && run.sessionId!==sessionId)throw new HttpError(403,"Callback session does not match the run","PROFILE_CONTEXT_REQUIRED");
   const executionUserId = run.executionUserId ?? null;
   const credentials = await agentExecutionCredentials(run.channel.agent.agentId, executionUserId, owner, initiatorCredentials);
-  return { executionUserId, credentials: executionCallerCredentials(credentials,run.id) };
+  const retrievalScopeId = turn?.retrieval_scope_id ?? null;
+  return {
+    executionUserId,
+    retrievalScopeId,
+    credentials: retrievalScopeId ? executionCallerCredentials(credentials, retrievalScopeId) : credentials,
+  };
 }
 
 export async function credentialsForDefinition(owner: AssistantOwner, agentId: string, credentials: AssistantCredentials) {

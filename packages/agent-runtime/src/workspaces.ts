@@ -7,9 +7,12 @@ import { RuntimeStore, digest, type Scope } from "./store";
 import { allocateUid, type WorkerPolicy } from "./worker";
 import { RuntimeError, missing } from "./errors";
 import { WorkspaceGit } from "./workspace-git";
+export function workspaceDirectory(root: string, scope: Scope, id: string) {
+  return path.join(root, "workspaces", digest([scope, id]));
+}
 export class Workspaces {
   constructor(private store: RuntimeStore, private root: string, private policy: WorkerPolicy) {}
-  git(scope: Scope, id: string) { return new WorkspaceGit(path.join(this.root, "workspaces", digest([scope, id]))); }
+  git(scope: Scope, id: string) { return new WorkspaceGit(workspaceDirectory(this.root, scope, id)); }
   async row(scope: Scope, owner: string, id: string, c: pg.Pool | pg.PoolClient = this.store.pool, lock = false) {
     const row = (await c.query(`SELECT * FROM ${this.store.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND owner_id=$4${lock ? " FOR UPDATE NOWAIT" : ""}`, [scope.hostId, scope.domainId, id, owner])).rows[0];
     if (!row) missing();

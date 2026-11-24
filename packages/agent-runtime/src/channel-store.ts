@@ -18,7 +18,7 @@ export class ChannelStore {
     if (!rows[0].channel) throw new RuntimeError(409, "CHANNEL_UNAVAILABLE", "Session has no registered agent provider");
     return rows[0].channel;
   }
-  async receive(scope: Scope, sessionId: string, message: AgentInput, options: { mode?: "followup" | "steer"; outputRunId?: string; id?: string; intentId?: string } = {}): Promise<MessageRow> {
+  async receive(scope: Scope, sessionId: string, message: AgentInput, options: { mode?: "followup" | "steer"; outputRunId?: string; id?: string; intentId?: string } = {}): Promise<MessageRow & { message: AgentInput }> {
     return this.store.transaction(async c => {
       const row = (await c.query(`UPDATE ${this.store.table("sessions")} SET message_seq=message_seq+1,updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3 RETURNING message_seq`, [...this.key(scope), sessionId])).rows[0];
       const record = { id: options.id ?? randomUUID(), contextSeq: null, runId: options.outputRunId ?? null, messageSeq: Number(row.message_seq), message };
@@ -191,13 +191,5 @@ export class ChannelStore {
   }
   async closePending(scope:Scope,sessionId:string,runId:string) {
     await this.store.pool.query(`UPDATE ${this.store.table("messages")} SET intent_id=$4 WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND run_id IS NULL AND intent_id IS NULL`,[...this.key(scope),sessionId,runId]);
-  }
-  async consume(scope: Scope, sessionId: string, runId: string, ids: string[]) {
-    await this.store.transaction(async c => {
-      for (const id of ids) {
-        const current = (await c.query(`UPDATE ${this.store.table("sessions")} SET context_seq=context_seq+1 WHERE host_id=$1 AND domain_id=$2 AND id=$3 RETURNING context_seq`, [...this.key(scope),sessionId])).rows[0];
-        await c.query(`UPDATE ${this.store.table("messages")} SET run_id=$4,context_seq=$5 WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND id=$6 AND run_id IS NULL`, [...this.key(scope),sessionId,runId,current.context_seq,id]);
-      }
-    });
   }
 }

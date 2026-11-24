@@ -88,6 +88,7 @@ export const en = {
   "panels.agentForm.enabledOn": "Enabled",
   "panels.agentForm.enabledOff": "Disabled",
   "panels.agentForm.systemPrompt": "System prompt",
+  "panels.agentForm.engine": "Execution engine",
   "panels.agentForm.modelSelection": "Model",
   "panels.agentForm.skills": "Skills",
   "panels.agentForm.classNames": "Data scope",

@@ -356,7 +356,7 @@ export async function sendAgentCommand(command, { cfg = {}, headers = {}, signal
         "content-type": "application/json",
         "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
         "X-Ontomato-Callback-Credential": callback,
-        "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID,
+        ...(process.env.ONTOMATO_RUN_ID ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
         ...(process.env.ONTOMATO_CORRELATION_ID ? { "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID } : {}),
       },
       body: JSON.stringify(command),

@@ -1322,6 +1322,7 @@ export default {
           "icon": "The agent's icon reference, when one is configured.",
           "enabled": "Whether the agent is enabled for use.",
           "systemPrompt": "The instructions supplied to the agent as its system prompt.",
+          "engine": "The execution engine selected for new sessions.",
           "modelSelection": "The selected model, with a null model ID using the domain default.",
           "skills": "The skill references selected for the agent.",
           "classNames": "The ontology class names in the agent's configured data scope.",

@@ -1,6 +1,8 @@
 import type { HarnessEngineId, HarnessPlugin } from "./contract";
 import { RuntimeError } from "../errors";
 
+export const defaultEngineId = "pi";
+
 /**
  * The installed execution engines, by id. The process assembles them at startup; a session's stored engine
  * id is looked up here every time that session runs.

@@ -1,3 +1,4 @@
+import type { RuntimeRunPresentation } from "@ontomato/contracts/agent-runtime";
 import type { AgentPendingQuestion } from "@ontomato/contracts/agent-channel";
 import type { AgentHostRunSnapshot, AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
@@ -138,6 +139,11 @@ function toolOutput(content: { type: string; text?: string }[]): string {
 }
 
 /** Replaces one run's live projection with an authoritative snapshot. */
+function applyRunPresentation(run: RunView, presentation: RuntimeRunPresentation) {
+  if (presentation.details) run.details = Object.fromEntries(presentation.details.map(entry => [entry.detail.key, entry]));
+  if (presentation.usageUpdate !== undefined) run.usageUpdate = presentation.usageUpdate;
+}
+
 export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRunSnapshot) {
   state.pendingQuestions=snapshot.pendingQuestions;
   const run = ensureRun(state, snapshot.run.id);
@@ -149,6 +155,7 @@ export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRu
   run.createdAt = snapshot.run.createdAt;
   run.finishedAt = snapshot.run.finishedAt;
   run.cursor = { seq: snapshot.cursor.seq, streamId: snapshot.cursor.streamId };
+  applyRunPresentation(run, snapshot);
   run.artifacts = [...snapshot.artifacts];
   run.tools = {};
   for (const tool of snapshot.toolExecutions) {
@@ -187,6 +194,7 @@ export function applyHistoryPage(state: ConversationState, page: AgentHostSessio
       run.workspaceCommit = value.workspaceCommit;
       run.createdAt = value.createdAt;
       run.finishedAt = value.finishedAt;
+      applyRunPresentation(run, value);
     }
   }
   for (const record of page.messages) {

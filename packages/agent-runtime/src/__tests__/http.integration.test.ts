@@ -82,11 +82,6 @@ describe("standard runtime real HTTP/PG/processes", () => {
           wallTimeMs: 15000,
         }),
       },
-      compaction: {
-        systemPrompt: "COMPACT",
-        summarizePrompt: "Summary",
-        updatePrompt: "Update",
-      },
     },
     environment: {
       values: { FIXTURE_URL: base },
@@ -107,7 +102,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       [
         "--import",
         createRequire(import.meta.url).resolve("tsx"),
-        path.join(repo, "apps/agent-runtime/src/index.ts"),
+        path.join(repo, "apps/agent-runtime/src/__tests__/fixtures/runtime-process.ts"),
       ],
       {
         cwd: repo,
@@ -284,7 +279,6 @@ describe("standard runtime real HTTP/PG/processes", () => {
               skills: [],
               externalMcp: [],
               sandbox: { limits: codeLimitsSchema.parse({ memoryBytes: codeExecutionVirtualAddressSpaceBytes, wallTimeMs: 15000 }) },
-              compaction: { systemPrompt: "COMPACT", summarizePrompt: "Summary", updatePrompt: "Update" },
             },
             environment: { values: {}, secrets: {} },
           }));
@@ -323,32 +317,34 @@ describe("standard runtime real HTTP/PG/processes", () => {
         user = [...request.messages]
           .reverse()
           .find((m: any) => m.role === "user");
+      const userText = typeof user.content === "string" ? user.content
+        : user.content.map((part: { text?: string }) => part.text ?? "").join("");
       const toolResults = request.messages.filter((m: any) => m.role === "tool").length;
-      if (String(user.content).includes("vary") && toolResults < 4) {
+      if (userText.includes("vary") && toolResults < 4) {
         const command = `echo ${["alpha", "beta", "gamma", "delta"][toolResults]}`;
         frame({ role: "assistant", tool_calls: [{ index: 0, id: "vary-" + modelCalls, type: "function", function: { name: "bash", arguments: JSON.stringify({ command }) } }] });
         frame({}, "tool_calls");
-      } else if (last.role === "tool" && !String(user.content).includes("loop")) {
+      } else if (last.role === "tool" && !userText.includes("loop")) {
         frame({
           role: "assistant",
           reasoning_content: "Checked the actual output.",
         });
         frame({ content: "Result [file](outputs/result.txt)" });
         frame({}, "stop");
-      } else if (String(user.content).includes("MCP")) {
+      } else if (userText.includes("MCP")) {
         if (request.tools.some((tool: any) => tool.function.name === "fixture_mcp")) {
           frame({ role: "assistant", tool_calls: [{ index: 0, id: "mcp-" + modelCalls, type: "function", function: { name: "fixture_mcp", arguments: "{}" } }] });
           frame({}, "tool_calls");
         } else { frame({ role: "assistant", content: "No external tools" }); frame({}, "stop"); }
       } else {
-        const command = String(user.content).includes("overwrite")
+        const command = userText.includes("overwrite")
           ? "printf changed > outputs/result.txt"
-          : String(user.content).includes("hang")
+          : userText.includes("hang")
             ? "sleep 60"
-            : String(user.content).includes("loop")
+            : userText.includes("loop")
               ? `printf ${modelCalls}`
-              : String(user.content).includes("channel-script")
-                ? "node -e 'import(\"node:fs/promises\").then(async({writeFile})=>{const r=await fetch(process.env.ONTOMATO_AGENT_COMMAND_URL,{method:\"POST\",headers:{\"content-type\":\"application/json\",\"X-Ontomato-Callback-Credential\":process.env.ONTOMATO_AGENT_CALLBACK,\"X-Ontomato-Run-Id\":process.env.ONTOMATO_RUN_ID},body:JSON.stringify({op:\"start\",agent:{providerId:\"workbench\",agentId:\"fixture-agent\"},message:\"Child question\"})});await writeFile(\"outputs/channel-env.json\",JSON.stringify({scenario:process.env.ONTOMATO_SKILL_SCENARIO,url:process.env.ONTOMATO_AGENT_COMMAND_URL,secret:process.env.ONTOMATO_AGENT_CALLBACK,runId:process.env.ONTOMATO_RUN_ID,status:r.status,body:await r.json()}));})'"
+              : userText.includes("channel-script")
+                ? "node -e 'import(\"node:fs/promises\").then(async({writeFile})=>{const r=await fetch(process.env.ONTOMATO_AGENT_COMMAND_URL,{method:\"POST\",headers:{\"content-type\":\"application/json\",\"X-Ontomato-Callback-Credential\":process.env.ONTOMATO_AGENT_CALLBACK},body:JSON.stringify({op:\"start\",agent:{providerId:\"workbench\",agentId:\"fixture-agent\"},message:\"Child question\"})});await writeFile(\"outputs/channel-env.json\",JSON.stringify({scenario:process.env.ONTOMATO_SKILL_SCENARIO,url:process.env.ONTOMATO_AGENT_COMMAND_URL,secret:process.env.ONTOMATO_AGENT_CALLBACK,runId:process.env.ONTOMATO_RUN_ID,status:r.status,body:await r.json()}));})'"
             : "node skills/fixture-skill/scripts/run.mjs";
         frame({
           role: "assistant",
@@ -720,15 +716,27 @@ describe("standard runtime real HTTP/PG/processes", () => {
       ).toBe(false);
     }
   });
+  async function waitFor(expected: string, check: () => boolean | Promise<boolean>) {
+    for (let i = 0; i < 200; i++) {
+      if (await check()) return;
+      await pause(25);
+    }
+    throw new Error(`Timed out waiting for ${expected}:
+${logs}`);
+  }
+
   it("cancels a real shell tree and recovers killed runtime work as aborted without replay", async () => {
     const s = await session(),
       r = await run(s, "hang");
-    await pause(600);
+    await waitFor("native bash to start", async () => (await api(`/v1/runs/${r.id}`)).body.toolExecutions.some(
+      (tool: { toolName: string; status: string }) => tool.toolName === "bash" && tool.status === "running",
+    ));
     const cancelled = await api(`/v1/runs/${r.id}/cancel`, {});
     expect(cancelled.body.run.stopReason).toBe("aborted");
     hold = true;
+    const callsBefore = modelCalls;
     const pending = await run(s, "unanswered");
-    await pause(200);
+    await waitFor("the gateway request before restart", () => modelCalls > callsBefore);
     const calls = modelCalls;
     await stop("SIGKILL");
     hold = false;
@@ -739,7 +747,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     expect(modelCalls).toBe(calls);
     const next = await run(s, "overwrite");
     expect((await settle(next.id)).run.stopReason).toBe("stop");
-  });
+  }, 20000);
   async function stoppedCodeExecution(id: string) {
     for (let i = 0; i < 200; i++) {
       const result = codeExecutionSchema.parse((await api(`/v1/code-executions/${id}`)).body);
@@ -822,7 +830,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     expect(output.status).toBe(200);
     expect(await output.text()).toBe("first version\n");
   });
-  it("injects per-run channel credentials into worker bash and rejects late calls with 409 RUN_CLOSED", async () => {
+  it("injects session credentials into native bash and rejects late calls with 409 RUN_CLOSED", async () => {
     const sessionId = await session();
     const runId = randomUUID();
     const agent = { providerId: "workbench", agentId: "fixture-agent" };
@@ -857,7 +865,6 @@ describe("standard runtime real HTTP/PG/processes", () => {
       headers: {
         "content-type": "application/json",
         "X-Ontomato-Callback-Credential": captured.secret,
-        "X-Ontomato-Run-Id": captured.runId,
       },
       body: JSON.stringify({ op: "list" }),
     });

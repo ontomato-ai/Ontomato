@@ -35,7 +35,10 @@ export interface HarnessPlugin {
   readonly id: HarnessEngineId;
   /** The rows of `CAPABILITIES.md` this engine answers, with the program version they were verified on. */
   readonly capabilities: HarnessCapabilities;
-  /** Open or resume this session's native state. Throws rather than silently starting a new native session. */
+  /**
+   * Open or resume native state without running a prompt. The runtime commits the returned reference
+   * before it calls startTurn. Throws rather than silently replacing a referenced session.
+   */
   open(request: HarnessOpenRequest): Promise<HarnessSession>;
 }
 export type HarnessEngineId = string;

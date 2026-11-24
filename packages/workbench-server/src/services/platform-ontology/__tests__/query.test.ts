@@ -188,6 +188,7 @@ beforeEach(() => {
         description: "",
         icon: null,
         enabled: true,
+        engine: "pi",
         modelSelection: { modelId: null },
         skills: [{ namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" }],
         classNames: [],

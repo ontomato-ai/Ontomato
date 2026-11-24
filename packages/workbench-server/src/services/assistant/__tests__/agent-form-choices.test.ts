@@ -57,9 +57,15 @@ it("groups the form into the agent page's sections, each field under its own, wi
   expect(form.sections?.map(({ key }) => key)).toEqual(["basics", "model", "prompt", "capabilities", "execution", "data"]);
   expect(form.sections?.find(({ key }) => key === "model")?.hint).toBe("The model this agent uses. Following the domain default, it changes when the default does.");
   const sectionOf = Object.fromEntries(form.fields.map((field) => [field.path, field.section]));
+  expect(form.fields.find(field => field.path === "/engine")).toMatchObject({
+    defaultValue: "pi",
+    control: { kind: "select", options: [
+      expect.objectContaining({ value: "pi" }), expect.objectContaining({ value: "codex" }),
+    ] },
+  });
   expect(sectionOf).toEqual({
     "/name": "basics", "/description": "basics", "/icon": "basics", "/enabled": "basics",
-    "/modelSelection/modelId": "model", "/systemPrompt": "prompt",
+    "/engine": "model", "/modelSelection/modelId": "model", "/systemPrompt": "prompt",
     "/skills": "capabilities", "/enabledMcpServiceIds": "capabilities",
     "/executionUserId": "execution", "/classNames": "data",
   });

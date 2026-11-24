@@ -1,22 +1,24 @@
 import { AgentChannel, type AgentProvider } from "./channel";
 import { processLanguageInstruction } from "./process-language";
-import { agentChannelCommandSchema, agentNotificationSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
+import { agentChannelCommandSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
 import type { RuntimePresentationCallback } from "@ontomato/contracts/agent-presentation";
-import type { TSchema } from "typebox";
 import { Workspaces } from "./workspaces";
 import type { RuntimeSessionHistory, SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { ServiceLogStore, withServiceLogContext, getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
 import { runtimeLogging, runtimeLogger, runtimeDiagnostic } from "./logging";
 import { ArtifactFiles } from "./files";
-import { SessionSandbox } from "./sandbox";
+import type { BusinessCallbackDispatcher } from "./business-callback";
+import type { RuntimeBusinessCallbacks } from "@ontomato/contracts/agent-runtime-business-callbacks";
+import { SessionEngines, type SessionEngineSandboxFactory } from "./session-engines";
+import { defaultEngineId, type HarnessRegistry } from "./adapters/registry";
+import type { HarnessEvent, HarnessPlugin, HarnessSession } from "./adapters/contract";
 import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
 import { CodeExecutor } from "./code";
-import { signalUid, assertWorkerPolicy, type WorkerPolicy } from "./worker";
-import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { bindPlatformTools, usesEngineTools, type BoundPlatformTools } from "./platform-tools";
+import { type WorkerPolicy } from "./worker";
+import { randomUUID } from "node:crypto";
+import { bindPlatformTools, usesEngineTools } from "./platform-tools";
 import path from "node:path";
-import { normalizeContext, type Message } from "@earendil-works/pi-ai";
 import {
   runtimeStartRunRequestSchema,
   type RuntimeStartRunRequest,
@@ -25,42 +27,30 @@ import {
   type RuntimeRun,
 } from "@ontomato/contracts/agent-runtime";
 import {
-  runtimeMessageSchema,
-  runtimeAssistantMessageSchema,
-  runtimeSystemMessageSchema,
-  runtimeUserMessageSchema,
-  runtimeToolResultMessageSchema,
-  runtimeToolCallSchema,
+  runtimeAssistantStreamEventSchema,
+  runtimeSettledMessageSchema,
   type RuntimeMessage,
+  type RuntimeRunInput,
+  type RuntimeToolResultMessage,
 } from "@ontomato/contracts/agent-runtime-messages";
-import { runtimeAssistantStreamEventSchema } from "@ontomato/contracts/agent-runtime-messages";
+import { runtimeRunDetailSchema } from "@ontomato/contracts/agent-runtime-details";
 import type {
   RuntimeAgentEvent,
   RuntimeEventEnvelope,
   RuntimeSessionRunFrame,
   RuntimeStreamFrame,
+  RuntimeToolResult,
 } from "@ontomato/contracts/agent-runtime-events";
-import type { RuntimeJsonObject, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
-import { runAgentLoopContinue } from "./core/pi/agent-loop";
-import type { AgentEvent, AgentTool } from "./core/pi/types";
+import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeStore, digest, canonical, type Scope } from "./store";
 import {
   SkillRegistry,
-  skillCatalog,
   type RuntimeHost,
   type InstalledSkill,
 } from "./skills";
-import {
-  piModel,
-  litellmEntry,
-  modelStream,
-  completeSummary,
-  recoverContext,
-  type ResolvedChatModel,
-} from "./model";
+import type { ResolvedChatModel } from "./model";
 import type { ModelGatewayClient } from "./gateway-client";
 import { RuntimeError, safeMessage } from "./errors";
-import { contextTokens, cutPoint, serializeConversation } from "./compaction";
 import { connectMcp } from "./tools";
 import { RuntimeMcpServices } from "./mcp";
 import { RuntimeModelSettings } from "./model-settings";
@@ -76,17 +66,27 @@ interface Active {
   frames: RuntimeEventEnvelope[];
   lostThrough: number;
   pending: Map<string, RuntimeMessage>;
-  currentMessageId?: string;
+  messageIds: Map<string, string>;
+  turnMessage?: RuntimeMessage;
+  turnToolResults: RuntimeToolResultMessage[];
+  toolResults: Map<string, RuntimeToolResult>;
+  sentInputs: Map<string, { message: RuntimeMessage; context: string | null }>;
+  engine?: HarnessSession;
+  inputPump?: Promise<void>;
+  inputPending: boolean;
+  readonly steering: AbortController;
+  inputError?: Error;
+  skillCommands: Set<Promise<unknown>>;
+  businessCallbacks: RuntimeBusinessCallbacks | undefined;
   turnIndex: number;
   subscribers: Set<Subscriber>;
-  sandbox?: SessionSandbox;
+  workspace?: string;
   outputBaseline: Map<string, string>;
   toolCalls: number;
   toolShapes: Map<string, number>;
   // Arguments of the tool calls in progress: the end event does not carry them.
   toolArgs: Map<string, unknown>;
   sealed: boolean;
-  channelSecret?: string;
 }
 /** Aborts a run on its own behalf with the reason the stop notice reports. */
 class RunStop extends Error {}
@@ -95,41 +95,6 @@ const stopMessage = (signal: AbortSignal) =>
 /** Digits and whitespace are noise for a command that only drifts a line number or an ID. */
 const shape = (value: string) => value.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
 
-/** Adapts engine-neutral bound platform tools to the legacy in-process PI agent loop. */
-function toPiAgentTools(bound: BoundPlatformTools): AgentTool[] {
-  return bound.tools.map((tool) => ({
-    name: tool.declaration.name,
-    label: tool.label,
-    description: tool.declaration.description,
-    parameters: tool.declaration.parameters as unknown as TSchema,
-    ...(tool.executionMode ? { executionMode: tool.executionMode } : {}),
-    ...(tool.replay ? { replay: tool.replay } : {}),
-    async execute(toolCallId, args, signal, onUpdate) {
-      const outcome = await bound.invoke({
-        toolCallId,
-        toolName: tool.declaration.name,
-        args: (args ?? {}) as RuntimeJsonObject,
-        signal: signal ?? new AbortController().signal,
-        onUpdate: (partial) => {
-          onUpdate?.({
-            content: [{ type: "text", text: partial.text }],
-            details: {},
-            ...(partial.data !== undefined ? { structuredContent: partial.data } : {}),
-          });
-        },
-      });
-      return {
-        content: outcome.result.content,
-        details: outcome.result.details,
-        ...(outcome.result.details.data !== undefined
-          ? { structuredContent: outcome.result.details.data }
-          : {}),
-        isError: outcome.isError,
-      };
-    },
-  }));
-}
-
 export interface RuntimeOptions {
   store: RuntimeStore;
   /** Every model call goes through this gateway; its leases are the only credentials the loop holds. */
@@ -137,34 +102,14 @@ export interface RuntimeOptions {
   worker?: WorkerPolicy;
   root: string;
   hosts: RuntimeHost[];
-  channelCommandBaseUrl: string;
   modelRuntimeToken?: string;
   modelSeed?: { baseUrl?: string; apiKey?: string; modelName?: string };
   eventBufferSize?: number;
   agentProviders?: AgentProvider[];
+  engineRegistry: HarnessRegistry;
+  openEngineSandbox: SessionEngineSandboxFactory;
 }
 
-/** Only the wire profile is persisted; provider diagnostics are deliberately not part of it. */
-function projectMessage(message: Message | RuntimeMessage): RuntimeMessage {
-  if (message.role === "notification") return agentNotificationSchema.parse(message);
-  const shape =
-    message.role === "assistant"
-      ? runtimeAssistantMessageSchema.shape
-      : message.role === "system"
-        ? runtimeSystemMessageSchema.shape
-        : message.role === "user"
-          ? runtimeUserMessageSchema.shape
-          : runtimeToolResultMessageSchema.shape;
-  return runtimeMessageSchema.parse(
-    JSON.parse(
-      JSON.stringify(
-        Object.fromEntries(
-          Object.entries(message).filter(([key]) => key in shape),
-        ),
-      ),
-    ),
-  );
-}
 function key(scope: Scope, id: string) {
   return canonical([scope.hostId, scope.domainId, id]);
 }
@@ -181,6 +126,7 @@ export class AgentRuntime {
   readonly mcp: RuntimeMcpServices;
   readonly models: RuntimeModelSettings;
   readonly gateway: ModelGatewayClient;
+  private readonly sessionEngines: SessionEngines;
   private active = new Map<string, Active>();
   private locks = new Map<string, Promise<unknown>>();
   private waiters = new Map<string, Set<() => void>>();
@@ -193,6 +139,11 @@ export class AgentRuntime {
     this.mcp = new RuntimeMcpServices(this.store);
     this.models = new RuntimeModelSettings(this.store, options.modelRuntimeToken, options.modelSeed);
     this.gateway = options.gateway;
+    this.sessionEngines = new SessionEngines(
+      this.store, options.root, this.gateway, options.engineRegistry,
+      options.openEngineSandbox, this.locked.bind(this), this,
+      error => runtimeLogger.error("Session engine release failed", runtimeDiagnostic(error)),
+    );
     this.worker = {
       ...(options.worker ?? {
         development: process.env.NODE_ENV === "test",
@@ -249,7 +200,6 @@ export class AgentRuntime {
           throw new Error(
             "Session UID allocation state is missing or inconsistent",
           );
-        for (const row of rows) signalUid(Number(row.worker_uid), "SIGKILL");
       }
     }
     await this.workspaces.recover();
@@ -271,6 +221,9 @@ export class AgentRuntime {
     const fingerprint = digest({
       sessionId,
       ...request,
+      businessCallbacks: request.businessCallbacks && Object.fromEntries(
+        Object.entries(request.businessCallbacks).map(([name, callback]) => [name, callback.baseUrl]),
+      ),
       environment: {
         values: request.environment.values,
         secretNames: Object.keys(request.environment.secrets).sort(),
@@ -283,12 +236,15 @@ export class AgentRuntime {
         [scope.hostId, scope.domainId, runId],
       );
       let config: ResolvedChatModel | undefined;
+      let plugin: HarnessPlugin | undefined;
       let skills: InstalledSkill[] = [];
       // Read-only checks for unusable dependencies belong before admission, so a new run fails with
       // 422/503 instead of starting and reporting the same problem as a stopped run.
       if (!admitted.rowCount || reserved) {
-        config = await this.models.resolve(scope.domainId, request.definition.modelId);
-        assertWorkerPolicy(this.worker);
+        const binding = await this.store.sessionEngine(scope, sessionId);
+        plugin = this.sessionEngines.plugin(binding.engine ?? request.definition.engine ?? defaultEngineId);
+        if (this.sessionEngines.needsOpen(scope, sessionId))
+          config = await this.models.resolve(scope.domainId, request.definition.modelId);
         skills = await Promise.all(
           request.definition.skills.map((version) =>
             this.registry.resolve(host, scope.domainId, version),
@@ -330,6 +286,7 @@ export class AgentRuntime {
         run,
         fingerprint,
         request.input,
+        plugin?.id ?? defaultEngineId,
         reserved,
       );
       if (accepted.replayed) {
@@ -338,6 +295,7 @@ export class AgentRuntime {
         updateServiceLogContext({ correlationId: accepted.run.correlationId, runId: accepted.run.id, sessionId: accepted.run.sessionId });
         return accepted;
       }
+      this.sessionEngines.admitted(scope, sessionId);
       // The admission is committed and this is not a retry: the session has a new run.
       this.publishSessionRun(scope, { type: "run_started", sessionId, runId });
       const logContext = { correlationId: run.correlationId, domainId: scope.domainId,
@@ -351,6 +309,14 @@ export class AgentRuntime {
         frames: [],
         lostThrough: 0,
         pending: new Map(),
+        messageIds: new Map(),
+        turnToolResults: [],
+        toolResults: new Map(),
+        sentInputs: new Map(),
+        inputPending: false,
+        steering: new AbortController(),
+        skillCommands: new Set(),
+        businessCallbacks: request.businessCallbacks,
         turnIndex: -1,
         subscribers: new Set(),
         outputBaseline: new Map(),
@@ -370,8 +336,9 @@ export class AgentRuntime {
       // The first execution begins after this admission lock is released, never on a read/retry.
       active.done = (async () => {
         await loading;
-        await withServiceLogContext(logContext, () => this.execute(active, config!, request, skills,
-          reserved ? presentationCallback : undefined));
+        const presentation = reserved ? presentationCallback : undefined;
+        await withServiceLogContext(logContext, () =>
+          this.execute(active, plugin!, config, accepted.inputId!, request, skills, presentation));
       })().finally(() => this.active.delete(key(scope, runId)));
       void active.done.catch(() =>
         withServiceLogContext(logContext, () => runtimeLogger.error("Runtime execution finalization failed")),
@@ -382,12 +349,12 @@ export class AgentRuntime {
         this.active.delete(key(scope, runId));
         throw error;
       }
-      return accepted;
+      return { run: accepted.run, replayed: false };
     });
   }
   async importAgentFile(scope:Scope,runId:string,taskId:string,file:{id:string;name:string},data:Buffer) {
-    const sandbox=this.active.get(key(scope,runId))!.sandbox!;
-    const relative=path.posix.join("outputs","agents",taskId,`${file.id}-${file.name}`),destination=path.join(sandbox.workspace,relative),temporary=destination+`.${randomUUID()}.download`;
+    const workspace=this.active.get(key(scope,runId))!.workspace!;
+    const relative=path.posix.join("outputs","agents",taskId,`${file.id}-${file.name}`),destination=path.join(workspace,relative),temporary=destination+`.${randomUUID()}.download`;
     await mkdir(path.dirname(destination),{recursive:true});
     await writeFile(temporary,data);await rename(temporary,destination);
     return relative;
@@ -397,34 +364,43 @@ export class AgentRuntime {
     active.run.definition.context=context;
     await this.store.pool.query(`UPDATE ${this.store.table("runs")} SET run=jsonb_set(run,'{definition,context}',$4::jsonb) WHERE host_id=$1 AND domain_id=$2 AND id=$3`,[scope.hostId,scope.domainId,runId,JSON.stringify(context)]);
   }
-  seal(scope: Scope, runId: string) { this.active.get(key(scope, runId))!.sealed = true; }
   acceptsInput(scope: Scope, runId: string) { const active=this.active.get(key(scope,runId));return !!active && !active.sealed; }
-  private channelCommandUrl(scope: Scope, runId: string): string {
-    return `${this.options.channelCommandBaseUrl.replace(/\/$/, "")}/v1/channel/hosts/${encodeURIComponent(scope.hostId)}/domains/${encodeURIComponent(scope.domainId)}/runs/${encodeURIComponent(runId)}/commands`;
+  private activeForSkillCallback(scope: Scope, sessionId: string, credential: string | undefined) {
+    const runId = this.sessionEngines.callbackRun(scope, sessionId, credential);
+    const active = this.active.get(key(scope, runId))!;
+    if (active.sealed || active.controller.signal.aborted)
+      throw new RuntimeError(409, "RUN_CLOSED", "No active run accepts skill commands");
+    updateServiceLogContext({ domainId: scope.domainId, runId, sessionId, userId: active.run.executionUserId ?? null });
+    return active;
   }
-  async runChannelCommand(
-    scope: Scope,
-    runId: string,
-    credential: string | undefined,
-    runHeader: string | undefined,
-    executionContextHeader: string | undefined,
-    body: unknown,
-  ) {
-    if (!credential || runHeader !== runId)
-      throw new RuntimeError(401, "UNAUTHENTICATED", "Valid run callback credential and run ID are required");
-    const active = this.active.get(key(scope, runId));
-    if (!active)
-      throw new RuntimeError(409, "RUN_CLOSED", "Run is closed");
-    const expected = active.channelSecret ? Buffer.from(active.channelSecret) : null;
-    const supplied = Buffer.from(credential);
-    if (!expected || expected.length !== supplied.length || !timingSafeEqual(expected, supplied))
-      throw new RuntimeError(401, "UNAUTHENTICATED", "Invalid run callback credential");
-    if (active.sealed || active.controller.signal.aborted || active.run.status !== "running")
-      throw new RuntimeError(409, "RUN_CLOSED", "Run is closed");
-    if (executionContextHeader !== undefined)
+
+  private async trackSkillCommand<T>(active: Active, command: Promise<T>): Promise<T> {
+    active.skillCommands.add(command);
+    try {
+      return await command;
+    } finally {
+      active.skillCommands.delete(command);
+    }
+  }
+
+  async sessionChannelCommand(scope: Scope, sessionId: string, credential: string | undefined, executionContext: string | undefined, body: unknown) {
+    const active = this.activeForSkillCallback(scope, sessionId, credential);
+    const { run, controller } = active;
+    if (executionContext !== undefined || run.channel?.authority.executionKind === "build-test")
       throw new RuntimeError(422, BUILD_TEST_UNSUPPORTED, "The agent channel is not available in a build-test execution");
-    return this.channel.execute(active.scope, active.run, agentChannelCommandSchema.parse(body));
+    if (!run.channel || !usesEngineTools(run.definition))
+      throw new RuntimeError(403, "FORBIDDEN", "Skill commands are not authorized for this run");
+    return this.trackSkillCommand(active, this.channel.execute(scope, run, agentChannelCommandSchema.parse(body), controller.signal));
   }
+
+  readonly withBusinessCallback: BusinessCallbackDispatcher["withBusinessCallback"] = async (scope, sessionId, kind, credential, forward) => {
+    const active = this.activeForSkillCallback(scope, sessionId, credential);
+    const target = active.businessCallbacks?.[kind];
+    if (!target || !usesEngineTools(active.run.definition))
+      throw new RuntimeError(403, "FORBIDDEN", "Business callback is not authorized for this run");
+    await this.trackSkillCommand(active, forward(target, active.run.id, active.controller.signal));
+  };
+
   async questionsChanged(scope: Scope, sessionId: string) {
     await this.locked(scope,sessionId,async()=>{
       const session=await this.store.session(scope,sessionId);
@@ -434,11 +410,12 @@ export class AgentRuntime {
       this.publish(active,envelope);
     });
   }
-  async inputReceived(scope: Scope, runId: string, row: import("./store").MessageRow) {
+  async inputReceived(scope: Scope, runId: string, row: Pick<import("./store").MessageRow, "id" | "messageSeq"> & { message: RuntimeRunInput }) {
     const active = this.active.get(key(scope, runId));
     if (!active || active.sealed) return;
-    const envelope = await this.store.append(scope, runId, { type: "input_received", messageId: row.id, messageSeq: row.messageSeq, message: row.message as import("@ontomato/contracts/agent-channel").AgentInput });
+    const envelope = await this.store.append(scope, runId, { type: "input_received", messageId: row.id, messageSeq: row.messageSeq, message: row.message });
     this.publish(active, envelope);
+    this.pushInputs(active);
   }
   private publish(active: Active, envelope: RuntimeEventEnvelope) {
     active.frames.push(envelope);
@@ -470,145 +447,185 @@ export class AgentRuntime {
       return envelope;
     });
   }
-  private async receive(active: Active, event: AgentEvent) {
-    if (event.type === "agent_end" || event.type === "agent_start") return;
+  private async receive(active: Active, event: HarnessEvent, beginTurn: (turn: number) => void) {
     if (event.type === "turn_start") {
       active.turnIndex++;
-      return this.emit(active, {
-        type: "turn_start",
-        turnIndex: active.turnIndex,
-      });
+      active.turnMessage = undefined;
+      active.turnToolResults = [];
+      beginTurn(active.turnIndex);
+      await this.emit(active, { type: "turn_start", turnIndex: active.turnIndex });
+      return;
     }
-    if (event.type === "turn_end")
-      return this.emit(active, {
-        type: "turn_end",
-        turnIndex: active.turnIndex,
-        message: projectMessage(event.message as Message),
-        toolResults: event.toolResults.map(
-          (m) =>
-            projectMessage(m) as Extract<
-              RuntimeMessage,
-              { role: "toolResult" }
-            >,
-        ),
+    if (event.type === "turn_end") {
+      if (active.turnMessage) await this.emit(active, {
+        type: "turn_end", turnIndex: active.turnIndex,
+        message: active.turnMessage, toolResults: active.turnToolResults,
       });
+      return;
+    }
     if (event.type === "message_start") {
-      const id = this.channel.inputIds.get(event.message) ?? randomUUID();
-      active.currentMessageId = id;
-      const message = projectMessage(event.message as Message);
-      if (message.role === "assistant" && message.stopReason === "pending")
-        message.content = [];
-      return this.locked(active.scope, active.run.sessionId, async () => {
-        const envelope = await this.store.append(active.scope, active.run.id, {
-          type: "message_start",
-          messageId: id,
-          message,
-        });
+      const id = randomUUID();
+      active.messageIds.set(event.nativeId, id);
+      const message = structuredClone(event.message);
+      if (message.role === "assistant" && message.stopReason === "pending") message.content = [];
+      await this.locked(active.scope, active.run.sessionId, async () => {
+        const envelope = await this.store.append(active.scope, active.run.id, { type: "message_start", messageId: id, message });
         active.pending.set(id, structuredClone(message));
         this.publish(active, envelope);
       });
+      return;
     }
     if (event.type === "message_update") {
-      const id = active.currentMessageId!;
-      const original = event.assistantMessageEvent;
-      const wire = runtimeAssistantStreamEventSchema.parse(
-        Object.fromEntries(
-          Object.entries(original).filter(([k]) =>
-            ["type", "contentIndex", "delta", "reason"].includes(k),
-          ),
-        ),
-      );
-      return this.locked(active.scope, active.run.sessionId, async () => {
+      const id = this.platformMessageId(active, event.nativeId);
+      const change = event.assistantMessageEvent;
+      const { type } = change;
+      const wire = runtimeAssistantStreamEventSchema.parse({
+        type,
+        ...("contentIndex" in change ? { contentIndex: change.contentIndex } : {}),
+        ...("delta" in change ? { delta: change.delta } : {}),
+        ...("reason" in change ? { reason: change.reason } : {}),
+      });
+      await this.locked(active.scope, active.run.sessionId, async () => {
         const envelope = await this.store.append(active.scope, active.run.id, {
-          type: "message_update",
-          messageId: id,
-          assistantMessageEvent: wire,
+          type: "message_update", messageId: id, assistantMessageEvent: wire,
         });
         const partial = active.pending.get(id);
-        if (partial?.role === "assistant" && "contentIndex" in original) {
-          const index = original.contentIndex;
-          if (original.type === "text_start")
-            partial.content[index] = { type: "text", text: "" };
-          if (original.type === "thinking_start")
-            partial.content[index] = { type: "thinking", thinking: "" };
+        if (partial?.role === "assistant" && "contentIndex" in change) {
+          const index = change.contentIndex;
           const block = partial.content[index];
-          if (original.type === "text_delta" && block?.type === "text")
-            block.text += original.delta;
-          if (original.type === "thinking_delta" && block?.type === "thinking")
-            block.thinking += original.delta;
-          if (original.type === "toolcall_start") {
-            const call = original.partial.content[index];
-            if (call?.type === "toolCall")
-              partial.content[index] = {
-                type: "toolCall",
-                id: call.id,
-                name: call.name,
-                arguments: {},
-              };
+          switch (change.type) {
+            case "text_start": partial.content[index] = { type: "text", text: "" }; break;
+            case "thinking_start": partial.content[index] = { type: "thinking", thinking: "" }; break;
+            case "text_delta": if (block?.type === "text") block.text += change.delta; break;
+            case "thinking_delta": if (block?.type === "thinking") block.thinking += change.delta; break;
+            case "text_end": partial.content[index] = { type: "text", text: change.content }; break;
+            case "thinking_end": partial.content[index] = { type: "thinking", thinking: change.content }; break;
+            case "toolcall_start":
+              partial.content[index] = { type: "toolCall", id: change.id, name: change.toolName, arguments: {} };
+              break;
+            case "toolcall_end": partial.content[index] = change.toolCall; break;
           }
-          if (original.type === "toolcall_end")
-            partial.content[index] = runtimeToolCallSchema.parse(
-              structuredClone(original.toolCall),
-            );
         }
         this.publish(active, envelope);
       });
+      return;
     }
-    if (event.type === "message_end")
-      return this.emit(active, {
-        type: "message_end",
-        messageId: active.currentMessageId!,
-        messageSeq: 0,
-        contextSeq: null,
-        message: projectMessage(event.message as Message),
-      });
+    if (event.type === "message_end") {
+      const id = this.platformMessageId(active, event.nativeId);
+      const source = event.message;
+      const message = runtimeSettledMessageSchema.parse(source.role === "toolResult"
+        ? { ...source, details: active.toolResults.get(source.toolCallId)?.details, outcome: source.isError ? "failure" : "success" }
+        : source);
+      if (message.role === "assistant") active.turnMessage = message;
+      if (message.role === "toolResult") active.turnToolResults.push(message);
+      await this.emit(active, { type: "message_end", messageId: id, messageSeq: 0, contextSeq: null, message });
+      return;
+    }
     if (event.type === "tool_execution_end") {
-      if (process.env.NODE_ENV === "development" && event.durationMs !== undefined) {
-        runtimeLogger.info("Query timing tool execution", {
-          kind: "downstream", target: event.toolName,
-          durationMs: event.durationMs, outcome: event.isError ? "failure" : "success",
-        });
-      }
       const result = {
         content: event.result.content,
-        details: {
-          artifactIds: [] as string[],
-          ...(event.result.structuredContent === undefined
-            ? {}
-            : { data: event.result.structuredContent }),
-        },
+        details: { ...event.result.details, artifactIds: await this.collect(active, event.toolCallId) },
       };
-      const collectionStarted = performance.now();
-      result.details.artifactIds = await this.collect(active, event.toolCallId);
-      if (process.env.NODE_ENV === "development") {
-        runtimeLogger.info("Query timing tool artifact collection", {
-          kind: "downstream", target: event.toolName,
-          durationMs: Math.round(performance.now() - collectionStarted), outcome: "success",
-        });
-      }
-      const envelope = await this.emit(active, { ...event, result });
-      event.result.details = result.details;
+      if (!active.toolArgs.has(event.toolCallId)) throw new Error("Tool ended without a recorded start");
+      await this.emit(active, { ...event, result, outcome: event.isError ? "failure" : "success" });
+      active.toolResults.set(event.toolCallId, result);
       const args = active.toolArgs.get(event.toolCallId);
       active.toolArgs.delete(event.toolCallId);
       this.enforceToolCallPolicy(active, event.toolName, args);
-      return envelope;
+      return;
     }
     if (event.type === "tool_execution_start") active.toolArgs.set(event.toolCallId, event.args);
-    if (event.type === "tool_execution_update")
-      return this.emit(active, {
-        type: "tool_execution_update",
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        args: event.args,
-        partialResult: {
-          text:
-            event.partialResult.content
-              ?.map((p: { text?: string }) => p.text ?? "")
-              .join("") ?? "",
-        },
+    if (event.type === "run_detail") {
+      const detail = event.detail.scope === "message"
+        ? { ...event.detail, ref: this.platformMessageId(active, event.detail.ref!) }
+        : event.detail;
+      await this.emit(active, { type: "run_detail", detail: runtimeRunDetailSchema.parse(detail) });
+      return;
+    }
+    if (event.type === "usage_updated") {
+      const { nativeId, ...usage } = event.usage;
+      await this.emit(active, {
+        type: "usage_updated",
+        usage: { ...usage, messageId: nativeId === null ? null : this.platformMessageId(active, nativeId) },
       });
-    return this.emit(active, event as RuntimeAgentEvent);
+      return;
+    }
+    await this.emit(active, event);
   }
+
+  private platformMessageId(active: Active, nativeId: string) {
+    const id = active.messageIds.get(nativeId);
+    if (!id) throw new Error("Engine referenced a message before its start");
+    return id;
+  }
+
+  private pushInputs(active: Active) {
+    active.inputPending = true;
+    if (!active.engine || active.inputPump || active.sealed) return;
+    active.inputPump = this.sendInputs(active).catch(error => {
+      if (!active.sealed && !active.controller.signal.aborted) {
+        active.inputError = new Error(safeMessage(error));
+        active.controller.abort(active.inputError);
+      }
+    }).finally(() => { active.inputPump = undefined; });
+  }
+
+  private async sendInputs(active: Active) {
+    const { scope, run } = active;
+    const signal = AbortSignal.any([active.controller.signal, active.steering.signal]);
+    while (active.inputPending && !active.sealed && !signal.aborted) {
+      active.inputPending = false;
+      const pending = await this.locked(scope, run.sessionId, async () => {
+        if ((await this.channel.facts.intent(scope, run.id)).cancelled) return [];
+        return this.channel.facts.pending(scope, run.sessionId, undefined, run.id);
+      });
+      for (const row of pending) {
+        if (active.sealed || signal.aborted) return;
+        if (active.sentInputs.has(row.id)) continue;
+        const input = await this.channel.prepareSteer(scope, run, row, signal);
+        if (active.sealed || signal.aborted) return;
+        active.sentInputs.set(row.id, { message: row.message, context: input.context });
+        const receipt = await active.engine!.steer(input);
+        if (!receipt.accepted) {
+          active.sentInputs.delete(row.id);
+          active.sealed = true;
+          return;
+        }
+      }
+    }
+  }
+
+  private async consumed(active: Active, inputId: string) {
+    const { scope, run } = active;
+    await this.locked(scope, run.sessionId, async () => {
+      const input = active.sentInputs.get(inputId);
+      if (!input) throw new Error("Engine acknowledged an input that was not sent");
+      const envelope = await this.store.append(scope, run.id, {
+        type: "message_end", messageId: inputId, messageSeq: 0, contextSeq: null, message: input.message,
+      }, true);
+      active.sentInputs.delete(inputId);
+      if (input.context !== null) await this.updateHostContext(scope, run.id, input.context);
+      this.publish(active, envelope);
+    });
+  }
+
+  private async previousContext(scope: Scope, sessionId: string) {
+    const rows = await this.store.contextMessages(scope, sessionId);
+    if (!rows.length) return null;
+    const { rows: [summary] } = await this.store.pool.query(
+      `SELECT covered_seq,summary FROM ${this.store.table("compactions")}
+       WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 ORDER BY covered_seq DESC LIMIT 1`,
+      [scope.hostId, scope.domainId, sessionId],
+    );
+    const messages = await Promise.all(rows
+      .filter(row => row.contextSeq! > Number(summary?.covered_seq ?? 0) && row.message.role !== "system")
+      .map(row => this.channel.modelMessage(scope.domainId, row.message)));
+    if (summary) messages.unshift({
+      role: "user", timestamp: Date.now(), content: `Previous conversation summary:\n${summary.summary}`,
+    });
+    return messages;
+  }
+
   /** Counted after the call is recorded; aborting from the event sink lets the loop end and settle normally. */
   private enforceToolCallPolicy(active: Active, toolName: string, args: unknown) {
     const policy = active.run.definition.toolCallPolicy;
@@ -624,274 +641,104 @@ export class AgentRuntime {
   }
   private async execute(
     active: Active,
-    config: ResolvedChatModel,
+    plugin: HarnessPlugin,
+    config: ResolvedChatModel | undefined,
+    openingInputId: string,
     request: RuntimeStartRunRequest,
     skills: InstalledSkill[],
     presentationCallback?: RuntimePresentationCallback,
   ) {
     const { scope, run, controller } = active;
     const signal = controller.signal;
-    if (signal.aborted) {
-      await this.settle(active, "aborted", stopMessage(signal));
-      return;
-    }
-    runtimeLogger.info("run started");
-    let reason: RuntimeStopReason | undefined;
-    let failure: string | null = null;
-    let closeMcp = async () => {};
-    const lease = await this.gateway.lease({ [config.name]: litellmEntry(config) });
+    let reason: RuntimeStopReason = "error";
+    let failure: string | null;
+    let closeMcp: (() => Promise<void>) | undefined;
     try {
+      signal.throwIfAborted();
+      runtimeLogger.info("run started");
       const engineTools = usesEngineTools(request.definition);
-      const mcpConfigs = engineTools
-        ? await this.mcp.resolve(scope, request.definition.externalMcp.map((ref) => ref.id))
-        : [];
-      const rows = await this.store.contextMessages(scope, run.sessionId);
-      // Admission commits the opening input first in context order, before any safe-boundary consumption.
-      const openingMessageId = rows.find(row => row.runId === run.id)!.id;
-      const summaryRow = (
-        await this.store.pool.query(
-          `SELECT * FROM ${this.store.table("compactions")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 ORDER BY covered_seq DESC LIMIT 1`,
-          [scope.hostId, scope.domainId, run.sessionId],
-        )
-      ).rows[0];
-      let summary: string | undefined = summaryRow?.summary;
-      let covered = Number(summaryRow?.covered_seq ?? 0);
-      let usageResetAt = summaryRow
-        ? new Date(summaryRow.created_at).getTime()
-        : 0;
-      const previous = await Promise.all(rows
-        .filter((r) => r.messageSeq > covered && r.runId !== null)
-        .map((r) => this.channel.modelMessage(scope.domainId,r.message)));
-      const messages = recoverContext(previous);
-      if (summary)
-        messages.unshift({
-          role: "user",
-          content: `Previous conversation summary:\n${summary}`,
-          timestamp: Date.now(),
-        });
-      const sandbox = new SessionSandbox(
-        this.store,
-        this.options.root,
-        this.worker,
-        scope,
-        run.sessionId,
-      );
-      const uid = await sandbox.prepare(skills);
-      active.sandbox = sandbox;
-      for (const file of await this.files.scan(sandbox.workspace))
-        active.outputBaseline.set(file.path, file.sha256);
-      let channelEnv: { commandUrl: string; callbackSecret: string } | undefined;
-      if (engineTools && run.channel) {
-        active.channelSecret = randomBytes(32).toString("base64url");
-        channelEnv = {
-          commandUrl: this.channelCommandUrl(scope, run.id),
-          callbackSecret: active.channelSecret,
-        };
-      }
-      const engineToolList = !engineTools ? [] : await sandbox.start(
-        uid,
-        run.id,
-        run.correlationId,
-        request,
-        skills,
-        channelEnv,
-      );
-      const mcp = await connectMcp(
-        engineTools ? mcpConfigs : [],
-        run.correlationId,
-        signal,
-      );
+      const mcp = await connectMcp(engineTools
+        ? await this.mcp.resolve(scope, request.definition.externalMcp.map(ref => ref.id))
+        : [], run.correlationId, signal);
       closeMcp = mcp.close;
-      const boundTools = bindPlatformTools({
+      const bound = bindPlatformTools({
         runId: run.id,
         request,
         mcpTools: mcp.tools,
         channelTool: run.channel ? this.channel.tool(scope, run) : undefined,
         presentationCallback,
-        authorize: () => {
-          signal.throwIfAborted();
-        },
+        authorize: () => signal.throwIfAborted(),
         onClose: mcp.close,
       });
-      closeMcp = () => boundTools.close();
-      const tools: AgentTool[] = [
-        ...engineToolList,
-        ...toPiAgentTools(boundTools),
-      ];
-      if (new Set(tools.map((t) => t.name)).size !== tools.length)
-        throw new Error("Exposed tool names must be unique");
-      const model = piModel(config, lease);
-      await runAgentLoopContinue(
-        { messages, tools },
-        {
-          model,
-          toolExecution: "sequential",
-          beforeToolCall: presentationCallback
-            ? async ({ assistantMessage }) => {
-                boundTools.beginTurn(assistantMessage);
-                return undefined;
-              }
-            : undefined,
-          convertToLlm: (m) => Promise.all(m.map(message => this.channel.modelMessage(scope.domainId,message as RuntimeMessage))),
-          getFollowUpMessages: run.channel ? () => this.channel.followUp(scope, run) : undefined,
-          getSteeringMessages: run.channel ? () => this.channel.steering(scope,run) : undefined,
-          prepareRequest: async ({ context }) => {
-            signal.throwIfAborted();
-            const system = [
-              request.definition.systemPrompt,
-              request.definition.context,
-              skillCatalog(sandbox.workspace, skills),
-              processLanguageInstruction(request.language),
-            ]
-              .filter(Boolean)
-              .join("\n\n");
-            const raw = (
-              await this.store.contextMessages(scope, run.sessionId)
-            ).filter(
-              (r) => r.messageSeq > covered && r.runId !== null && r.message.role !== "system",
-            );
-            const projected = await this.channel.modelMessagesForRun(scope, run, openingMessageId, raw);
-            let effective = recoverContext(projected);
-            if (summary)
-              effective.unshift({
-                role: "user",
-                content: `Previous conversation summary:\n${summary}`,
-                timestamp: Date.now(),
-              });
-            const estimate = contextTokens(
-              effective,
-              system,
-              tools.map((t) => ({
-                name: t.name,
-                description: t.description,
-                parameters: t.parameters,
-              })),
-              usageResetAt,
-            );
-            if (estimate >= config.contextWindow * 0.8) {
-              const cut = cutPoint(
-                projected,
-                config.contextWindow,
-              );
-              if (cut > 0) {
-                try {
-                  const source = raw.slice(0, cut);
-                  // Summaries survive the round. Use the original delivery text as their source.
-                  const summaryMessages = await Promise.all(source.map((row, index) =>
-                    row.message.role === "notification" && row.message.kind === "agent-result"
-                      ? this.channel.modelMessage(scope.domainId, row.message)
-                      : projected[index]!,
-                  ));
-                  const prompt = `<conversation>\n${serializeConversation(summaryMessages)}\n</conversation>\n${summary ? `<previous-summary>\n${summary}\n</previous-summary>\n` : ""}${summary ? request.definition.compaction.updatePrompt : request.definition.compaction.summarizePrompt}`;
-                  const next = await completeSummary(
-                    modelStream(
-                      config,
-                      lease,
-                      this.store,
-                      scope,
-                      run.id,
-                      run.correlationId,
-                      "compaction",
-                      request.language,
-                    ),
-                    model,
-                    normalizeContext({
-                      systemPrompt: request.definition.compaction.systemPrompt,
-                      messages: [
-                        {
-                          role: "user",
-                          content: prompt,
-                          timestamp: Date.now(),
-                        },
-                      ],
-                    }),
-                    signal,
-                    Math.floor(
-                      0.8 *
-                        Math.min(
-                          16384,
-                          Math.max(1, Math.floor(config.contextWindow * 0.2)),
-                        ),
-                    ),
-                  );
-                  const nextCovered = source.at(-1)!.messageSeq;
-                  await this.store.pool.query(
-                    `INSERT INTO ${this.store.table("compactions")} (host_id,domain_id,session_id,covered_seq,summary) VALUES($1,$2,$3,$4,$5)`,
-                    [
-                      scope.hostId,
-                      scope.domainId,
-                      run.sessionId,
-                      nextCovered,
-                      next,
-                    ],
-                  );
-                  covered = nextCovered;
-                  summary = next;
-                  usageResetAt = Date.now();
-                  effective = [
-                    {
-                      role: "user",
-                      content: `Previous conversation summary:\n${summary}`,
-                      timestamp: Date.now(),
-                    },
-                    ...recoverContext(
-                      projected.slice(cut),
-                    ),
-                  ];
-                } catch {
-                  signal.throwIfAborted();
-                }
-              }
-            }
-            const prepared: Message = {
-              role: "system",
-              content: system,
-              toolsAdded: tools.map((t) => ({
-                name: t.name,
-                description: t.description,
-                parameters: t.parameters,
-              })),
-              timestamp: Date.now(),
-            };
-            return {
-              context: { ...context, messages: [prepared, ...effective] },
-            };
-          },
-        },
-        async (event) => {
-          await this.receive(active, event);
-        },
+      closeMcp = () => bound.close();
+      const engine = await this.sessionEngines.open(scope, run.sessionId, {
+        plugin,
+        config: () => config ? Promise.resolve(config) : this.models.resolve(scope.domainId, request.definition.modelId),
+        skills: skills.map(skill => ({ name: skill.skill.name, directory: skill.directory })),
+        language: run.language,
+        limits: request.definition.sandbox.limits,
+        tools: bound.declarations,
+        engineTools: bound.engineTools,
         signal,
-        modelStream(
-          config,
-          lease,
-          this.store,
-          scope,
-          run.id,
-          run.correlationId,
-          "conversation",
-          request.language,
-        ),
-      );
-      if (signal.aborted) {
-        reason = "aborted";
-        failure = stopMessage(signal);
-      }
+        previousContext: () => this.previousContext(scope, run.sessionId),
+        prompt: () => ({
+          system: [request.definition.systemPrompt, processLanguageInstruction(run.language)].filter(Boolean).join("\n\n"),
+        }),
+      });
+      active.workspace = engine.sandbox.hostWorkspace;
+      for (const file of await this.files.scan(active.workspace))
+        active.outputBaseline.set(file.path, file.sha256);
+      signal.throwIfAborted();
+      const input = await this.channel.modelMessage(scope.domainId, request.input);
+      active.sentInputs.set(openingInputId, { message: request.input, context: null });
+      this.sessionEngines.beginRun(scope, run.sessionId, run.id);
+      const pending = engine.handle.startTurn({
+        runId: run.id,
+        context: run.definition.context ?? null,
+        inputs: [{ id: openingInputId, message: input, context: null }],
+        host: {
+          emit: event => this.receive(active, event, turn => bound.beginTurn(turn)),
+          invokeTool: call => bound.invoke({ ...call, signal: AbortSignal.any([signal, call.signal]) }),
+          consumed: id => this.consumed(active, id),
+        },
+      }, signal);
+      active.engine = engine.handle;
+      if (run.channel) this.pushInputs(active);
+      const result = await pending;
+      reason = active.inputError ? "error" : signal.aborted ? "aborted" : result.stopReason;
+      failure = active.inputError?.message ?? (signal.aborted ? stopMessage(signal) : result.errorMessage);
     } catch (error) {
       if (!signal.aborted) runtimeLogger.error("run execution failed", runtimeDiagnostic(error));
       reason = signal.aborted ? "aborted" : "error";
       failure = signal.aborted ? stopMessage(signal) : safeMessage(error);
+    } finally {
+      active.sealed = true;
+      active.steering.abort();
+      this.sessionEngines.endRun(scope, run.sessionId);
     }
-    await closeMcp();
-    await active.sandbox?.stop();
+    const cleanup = async () => {
+      try {
+        await active.inputPump;
+        await Promise.allSettled(active.skillCommands);
+        await closeMcp?.();
+      } finally {
+        if (reason === "aborted" || reason === "error")
+          await this.sessionEngines.release(scope, run.sessionId);
+      }
+    };
+    try {
+      await cleanup();
+    } catch (error) {
+      runtimeLogger.error("Run resource release failed", runtimeDiagnostic(error));
+    }
     try {
       await this.collect(active, null);
     } catch (error) {
-      reason = "error";
-      failure = safeMessage(error);
+      if (reason !== "aborted") {
+        reason = "error";
+        failure = safeMessage(error);
+      }
     }
-    // The run's model calls are over: revoke the lease before the run's stop is committed, cancelled runs included.
-    await this.gateway.release(lease);
     await this.settle(active, reason, failure);
   }
   private async settle(
@@ -914,6 +761,7 @@ export class AgentRuntime {
       active.pending.clear();
       const before = (await this.store.run(scope, run.id)).seq;
       await this.store.finish(scope, run.id, reason, failure, workspaceCommit);
+      this.sessionEngines.idle(scope, run.sessionId);
       // The lifecycle notice follows the finish commit, independently of subsequent intent preparation.
       this.publishSessionRun(scope, { type: "run_stopped", sessionId: run.sessionId, runId: run.id });
       const stopped = (await this.store.run(scope, run.id)).run;
@@ -926,11 +774,11 @@ export class AgentRuntime {
     for (const wake of this.waiters.get(key(scope, run.id)) ?? []) wake();
   }
   private async collect(active: Active, toolCallId: string | null) {
-    const sandbox = active.sandbox;
-    if (!sandbox) return [];
+    if (!active.workspace) return [];
+    const workspace = active.workspace;
     return this.files.withLock(async () => {
       const ids: string[] = [];
-      const current = await this.files.scan(sandbox.workspace);
+      const current = await this.files.scan(workspace);
       const paths = new Set(current.map((f) => f.path));
       for (const name of active.outputBaseline.keys())
         if (!paths.has(name)) active.outputBaseline.delete(name);
@@ -962,14 +810,7 @@ export class AgentRuntime {
             [scope.hostId, scope.domainId, id],
           )
         ).rows;
-        await this.store.deleteSession(scope, id);
-        await new SessionSandbox(
-          this.store,
-          this.options.root,
-          this.worker,
-          scope,
-          id,
-        ).remove();
+        await this.sessionEngines.remove(scope, id);
         for (const { sha256 } of hashes) {
           const referenced = (
             await this.store.pool.query(
@@ -990,6 +831,7 @@ export class AgentRuntime {
     const state = await this.store.run(scope, runId);
     const active = this.active.get(key(scope, runId));
     const events = await this.store.toolEvents(scope, runId, !includeHistory);
+    const presentation = (await this.store.runPresentation(scope, [runId])).get(runId);
     const tools = new Map<
       string,
       RuntimeRunSnapshot["toolExecutions"][number]
@@ -1037,6 +879,7 @@ export class AgentRuntime {
         : [],
       toolExecutions: [...tools.values()],
       artifacts: includeHistory ? await this.store.artifacts(scope, runId) : [],
+      ...presentation,
     };
   }
   /**
@@ -1111,7 +954,13 @@ export class AgentRuntime {
           pendingMessages: snapshot.pendingMessages.filter(entry => entry.message.role !== "system"),
         };
       }
-      return { pendingQuestions:await this.channel.facts.pendingQuestions(scope,sessionId), session: { ...session, latestRun: currentRun }, ...window, runs: runs.filter(run => ids.has(run.id)), latestRun };
+      const presentation = await this.store.runPresentation(scope, [...ids].filter(id => id !== latestRun?.run.id));
+      return {
+        pendingQuestions: await this.channel.facts.pendingQuestions(scope,sessionId),
+        session: { ...session, latestRun: currentRun }, ...window,
+        runs: runs.filter(run => ids.has(run.id)).map(run => ({ ...run, ...presentation.get(run.id) })),
+        latestRun,
+      };
     });
   }
   /**
@@ -1193,6 +1042,7 @@ export class AgentRuntime {
   async close() {
     for (const active of this.active.values()) active.controller.abort();
     await Promise.allSettled([...this.active.values()].map((a) => a.done));
+    await this.sessionEngines.close();
     await this.code.close();
     await runtimeLogging.close();
     await this.store.close();

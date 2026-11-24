@@ -1,6 +1,5 @@
 import { closeGovernanceWindow } from "./governance";
 import { closeAuthoringRun } from "./authoring";
-import { executionSkillEnvironment } from "./execution-callback";
 import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
 import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
@@ -300,13 +299,6 @@ export const assistantService = {
       return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader });
     });
     await assistantStore.admitted(id,message);
-    if (isAppBuilderKind(a.kind)) {
-      const authoring = executionSkillEnvironment(owner, credentials, id, true);
-      request.environment = {
-        values: { ...request.environment.values, ...authoring.values },
-        secrets: { ...request.environment.secrets, ...authoring.secrets },
-      };
-    }
     return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
   },
   async admitAgent(id: string, owner: AssistantOwner, credentials: AssistantCredentials, authority?: AgentRunContext["authority"]) {

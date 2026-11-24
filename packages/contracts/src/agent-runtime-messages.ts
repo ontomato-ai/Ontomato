@@ -107,6 +107,9 @@ export const runtimeUserMessageSchema = z
     timestamp: runtimeSequenceSchema,
   })
   .strict();
+export const runtimeRunInputSchema = z.union([runtimeUserMessageSchema, agentNotificationSchema]);
+export type RuntimeRunInput = z.infer<typeof runtimeRunInputSchema>;
+
 export const runtimeAssistantMessageSchema = z
   .object({
     role: z.literal("assistant"),

@@ -95,7 +95,6 @@ type StartRun = {
     modelId?: string | null;
     skills: RuntimeSkillVersion[];
     externalMcp: {id:string}[];
-    compaction: {systemPrompt:string; summarizePrompt:string; updatePrompt:string};
     sandbox: {limits: CodeLimits};
     toolCallPolicy?: {maxCalls: number; maxSameShape: number};
   };

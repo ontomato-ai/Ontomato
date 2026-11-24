@@ -18,33 +18,36 @@ export function productToolDeclarations(
 export function productTools(request: RuntimeStartRunRequest, runId: string): PlatformTool[] {
   const definitions = request.definition.productTools ?? [];
   if (!definitions.length) return [];
-  const root = request.environment.values.ONTOMATO_WORKBENCH_URL;
-  const credential = request.environment.secrets.ONTOMATO_PRODUCT_CALLBACK;
-  if (!root || !credential) throw new Error("Product tool callback delegation is missing");
-  const base = new URL(root);
-  if (!["http:", "https:"].includes(base.protocol) || base.search || base.hash || base.username || base.password) {
-    throw new Error("Invalid product callback origin");
-  }
-  return definitions.map((definition) => ({
-    declaration: {
-      name: definition.name,
-      description: definition.description,
-      parameters: definition.inputSchema as RuntimeJsonObject,
-    },
-    label: definition.name,
-    async execute(call) {
-      const response = await fetch(new URL(base.toString().replace(/\/$/, "") + definition.path), {
-        method: "POST",
-        redirect: "error",
-        headers: { "Content-Type": "application/json", tk: credential, "X-Ontomato-Run-Id": runId },
-        body: JSON.stringify({ parameters: call.args }),
-        signal: call.signal,
-      });
-      const result = await response.json();
-      return {
-        result: { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} },
-        isError: !response.ok,
-      };
-    },
-  }));
+  const callback = request.businessCallbacks?.product;
+  if (!callback) throw new Error("Product tool callback delegation is missing");
+  const base = new URL(callback.baseUrl);
+  const prefix = base.pathname.replace(/\/$/, "");
+  const deploymentPath = prefix.slice(0, prefix.lastIndexOf("/api/product-assets/"));
+  return definitions.map((definition) => {
+    const target = new URL(deploymentPath + definition.path, base.origin);
+    if (!target.pathname.startsWith(prefix + "/"))
+      throw new Error("Product tool is outside its declared callback path");
+    return {
+      declaration: {
+        name: definition.name,
+        description: definition.description,
+        parameters: definition.inputSchema as RuntimeJsonObject,
+      },
+      label: definition.name,
+      async execute(call) {
+        const response = await fetch(target, {
+          method: "POST",
+          redirect: "error",
+          headers: { "Content-Type": "application/json", tk: callback.credential, "X-Ontomato-Run-Id": runId },
+          body: JSON.stringify({ parameters: call.args }),
+          signal: call.signal,
+        });
+        const result = await response.json();
+        return {
+          result: { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} },
+          isError: !response.ok,
+        };
+      },
+    };
+  });
 }
