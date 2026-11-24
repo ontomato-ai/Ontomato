@@ -394,11 +394,30 @@ test("panel records carry optional className and strongly typed field values", a
       enabled: true,
       title: { kind: "localized" as const, values: { "zh-CN": "订单服务", en: "Order Service" } },
       owner: { kind: "reference" as const, className: "platform:User", primaryKey: "u-1", label: "Alice" },
+      paramRef: {
+        kind: "child-reference" as const,
+        parent: { objectType: "platform:Action", primaryKey: "act-1" },
+        collection: "parameters",
+        primaryKey: "order_id",
+        label: "order_id",
+      },
       tools: {
         kind: "json" as const,
         value: [{ name: "query_order", inputSchema: { type: "object", required: ["id"] } }],
       },
-      tags: ["production", 2, false, { kind: "reference" as const, className: "platform:Action", primaryKey: "a-1", label: "Sync" }],
+      tags: [
+        "production",
+        2,
+        false,
+        { kind: "reference" as const, className: "platform:Action", primaryKey: "a-1", label: "Sync" },
+        {
+          kind: "child-reference" as const,
+          parent: { objectType: "platform:Action", primaryKey: "act-1" },
+          collection: "codeSegments",
+          primaryKey: "seg-1",
+          label: "Update order (L2–5)",
+        },
+      ],
     },
   };
   assert.deepEqual(panelRecordSchema.parse(record), record);
@@ -418,6 +437,21 @@ test("panel records carry optional className and strongly typed field values", a
   assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "localized", values: { en: "ok" }, extra: true }).success, false);
   assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "reference", className: "", primaryKey: "p-1", label: "x" }).success, false);
   assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "reference", className: "platform:User", primaryKey: "u-1", label: "Alice", extra: 1 }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse({
+    kind: "child-reference",
+    parent: { objectType: "platform:Action", primaryKey: "act-1" },
+    collection: "",
+    primaryKey: "order_id",
+    label: "order_id",
+  }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse({
+    kind: "child-reference",
+    parent: { objectType: "platform:Action", primaryKey: "act-1" },
+    collection: "parameters",
+    primaryKey: "order_id",
+    label: "order_id",
+    extra: 1,
+  }).success, false);
   assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "json", value: { ok: true }, extra: 1 }).success, false);
   assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "json", value: Number.POSITIVE_INFINITY }).success, false);
   assert.equal(panelRecordFieldValueSchema.safeParse([{ kind: "localized", values: { en: "nested" } }]).success, false);
@@ -454,6 +488,39 @@ test("panelRecordFieldText formats scalars, localized maps, references, arrays a
   assert.equal(panelRecordFieldText(0, "zh-CN"), "0");
   assert.equal(panelRecordFieldText(true, "zh-CN"), "true");
   assert.equal(panelRecordFieldText(false, "zh-CN"), "false");
+  assert.equal(
+    panelRecordFieldText({
+      kind: "child-reference",
+      parent: { objectType: "platform:Action", primaryKey: "act-1" },
+      collection: "parameters",
+      primaryKey: "order_id",
+      label: "order_id",
+    }),
+    "order_id",
+  );
+  assert.equal(
+    panelRecordFieldText({
+      kind: "child-reference",
+      parent: { objectType: "platform:Action", primaryKey: "act-1" },
+      collection: "parameters",
+      primaryKey: "order_id",
+      label: "",
+    }),
+    "order_id",
+  );
+  assert.equal(
+    panelRecordFieldText([
+      "Target:",
+      {
+        kind: "child-reference",
+        parent: { objectType: "platform:Action", primaryKey: "act-1" },
+        collection: "parameters",
+        primaryKey: "order_id",
+        label: "order_id",
+      },
+    ]),
+    "Target:, order_id",
+  );
 
   // Localized fallback chain: zh-CN -> zh -> fallbackLocale -> first non-empty entry.
   assert.equal(
@@ -2086,10 +2153,27 @@ test("a read-only trial carries the current draft and parameters without a write
   };
   assert.deepEqual(panelReadOperationDescriptorSchema.parse(owner), owner);
   assert.equal(panelReadOperationDescriptorSchema.safeParse({ ...owner, effect: "write" }).success, false);
-  for (const result of [{ kind: "markdown", markdown: "Preview" }, { kind: "json", value: [{ count: 1 }] }]) {
+  for (const result of [
+    { kind: "markdown", markdown: "Preview" },
+    { kind: "json", value: [{ count: 1 }] },
+    { kind: "json", value: [{ count: 1 }], truncation: { rowLimit: 20000, hint: "Narrow the range" } },
+    { kind: "json", value: null, truncation: { rowLimit: null, hint: null } },
+  ]) {
     assert.deepEqual(panelReadOperationResultSchema.parse(result), result);
     assert.equal(panelReadOperationResultSchema.safeParse({ ...result, affected: { objects: [] } }).success, false);
   }
+  assert.equal(
+    panelReadOperationResultSchema.safeParse({
+      kind: "json", value: [], truncation: { rowLimit: 100, hint: null, extra: true },
+    }).success,
+    false,
+  );
+  assert.equal(
+    panelReadOperationResultSchema.safeParse({
+      kind: "markdown", markdown: "Preview", truncation: { rowLimit: 10, hint: null },
+    }).success,
+    false,
+  );
 });
 
 test("the author type table and live descriptions share operation declarations", async () => {

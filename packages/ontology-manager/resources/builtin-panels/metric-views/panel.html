@@ -77,17 +77,6 @@
   .mv-test-select { width: 18rem; max-width: 100%; }
   .mv-test-params { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0 var(--spacing-md); }
   .mv-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); }
-  .mv-md-toggle { margin-bottom: var(--spacing-sm); }
-  .mv-markdown {
-    min-height: 18rem;
-    max-height: 55vh;
-    overflow: auto;
-    padding: var(--spacing-md);
-    border: 1px solid var(--ui-divider);
-    border-radius: var(--radius-sm);
-    background: var(--sdk-bg-color);
-  }
-  .mv-json-wrap { display: flex; flex-direction: column; gap: var(--spacing-sm); }
 </style>
 <div id="app" v-cloak>
   <div class="mv-page">
@@ -130,16 +119,17 @@
         <projection slot="definition" @saved="onSaved" @discarded="onDiscarded"></projection>
       </div>
 
-      <sdk-dialog v-model="testOpen" :title="t('metricViews.testTitle')" width="min(920px, 94vw)">
-        <div class="mv-test-body">
+      <sdk-dialog v-model="dialogOpen" :title="t('metricViews.testTitle')" width="min(920px, calc(100% - 24px))">
+        <div v-if="detailVisible && testOpen" class="mv-test-body">
           <sdk-alert type="info" :closable="false" :title="t('metricViews.testHint')"></sdk-alert>
+          <sdk-alert v-if="!hasFunctionDraft" type="warning" :closable="false" :title="t('metricViews.testNoDraft')"></sdk-alert>
           <div class="mv-test-source">
             <sdk-select v-model="testSource" class="mv-test-select" :aria-label="t('metricViews.testSource')">
               <sdk-option value="explicit" :label="t('metricViews.testExplicit')"></sdk-option>
               <sdk-option
                 v-for="(row, index) in bindingRows"
                 :key="row.id || index"
-                :value="index"
+                :value="bindingSourceValue(index)"
                 :label="bindingLabel(row, index)"
               ></sdk-option>
             </sdk-select>
@@ -147,57 +137,32 @@
           </div>
 
           <sdk-form v-if="testSource === 'explicit' && parameterDefs.length" label-position="top" class="mv-test-params">
-            <sdk-form-item v-for="parameter in parameterDefs" :key="parameter.name" :label="parameterLabel(parameter)">
-              <sdk-input v-model="testValues[parameter.name]" :placeholder="parameter.description || ''"></sdk-input>
+            <sdk-form-item
+              v-for="parameter in parameterDefs"
+              :key="parameter.name"
+              :label="parameterLabel(parameter)"
+              :error="testErrors[parameter.name] || ''"
+            >
+              <sdk-input
+                :model-value="testValues[parameter.name] ?? ''"
+                :placeholder="parameter.description || ''"
+                @update:model-value="(value) => onParamInput(parameter.name, value)"
+              ></sdk-input>
             </sdk-form-item>
           </sdk-form>
           <p v-else-if="testSource === 'explicit'" class="mv-hint">{{ t("metricViews.testNoParameters") }}</p>
 
           <sdk-tabs v-model="testTab">
             <sdk-tab-pane :label="t('metricViews.testMarkdownTab')" name="markdown">
-              <sdk-radio-group v-model="markdownView" size="small" class="mv-md-toggle">
-                <sdk-radio value="preview">{{ t("metricViews.testPreview") }}</sdk-radio>
-                <sdk-radio value="source">{{ t("metricViews.testSourceTab") }}</sdk-radio>
-              </sdk-radio-group>
-              <div v-if="markdownView === 'preview'" class="mv-markdown">
-                <markdown-view v-if="testMarkdown" :content="testMarkdown"></markdown-view>
-                <p v-else class="mv-hint">{{ t("metricViews.testPlaceholder") }}</p>
-              </div>
-              <code-editor
-                v-else
-                :model-value="testMarkdown"
-                language="markdown"
-                readonly
-                :min-height="300"
-                :placeholder="t('metricViews.testPlaceholder')"
-              ></code-editor>
+              <projection slot="testMarkdown" :disabled="trialDisabled" @read="onMarkdownRead"></projection>
             </sdk-tab-pane>
             <sdk-tab-pane :label="t('metricViews.testJsonTab')" name="json">
-              <div class="mv-json-wrap">
-                <sdk-alert
-                  v-if="truncation"
-                  type="warning"
-                  :closable="false"
-                  :title="t('metricViews.testTruncated', { rows: truncation.rowLimit === null ? '—' : truncation.rowLimit })"
-                  :description="truncation.hint || ''"
-                ></sdk-alert>
-                <code-editor
-                  :model-value="testJson"
-                  language="json"
-                  readonly
-                  :min-height="300"
-                  :placeholder="t('metricViews.testJsonPlaceholder')"
-                ></code-editor>
-              </div>
+              <projection slot="testJson" :disabled="trialDisabled" @read="onJsonRead"></projection>
             </sdk-tab-pane>
           </sdk-tabs>
-
-          <sdk-alert v-if="testFailure" type="error" :closable="false" :title="testFailure"></sdk-alert>
         </div>
         <template #footer>
           <sdk-button @click="testOpen = false">{{ t("metricViews.close") }}</sdk-button>
-          <sdk-button type="primary" :loading="testingMarkdown" :disabled="!trialReady" @click="runMarkdown">{{ t("metricViews.testMarkdown") }}</sdk-button>
-          <sdk-button :loading="testingJson" :disabled="!trialJsonReady" @click="runJson">{{ t("metricViews.testJson") }}</sdk-button>
         </template>
       </sdk-dialog>
     </section>

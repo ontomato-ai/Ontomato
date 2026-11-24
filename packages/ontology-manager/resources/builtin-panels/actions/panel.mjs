@@ -1,13 +1,14 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelBack, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelBack, usePanelContext } from "@ontomato/sdk/panel";
 
 /*
  * Built-in actions catalog panel: lists domain actions through ObjectList (with local search, batch status updates via
  * OperationButton, and ConversationEntry creation) and displays the selected action's header, ObjectForm definition,
  * owner-projected derived definition (ObjectSummary + ObjectList tables), and AnnotatedCode explanation.
  *
- * The panel coordinates only declared state, tab navigation, cross-tab parameter highlighting, and forwarding the
- * unsaved form draft's code text to AnnotatedCode; it performs no business calculations and reads no record fields.
+ * The panel coordinates only declared state, tab navigation, and bidirectional parameter <-> code-segment highlighting;
+ * form draft code flows straight to AnnotatedCode via member output binding without any extra state field, and the
+ * panel performs no business calculations and reads no record fields.
  */
 
 const ACTION_TYPE = "platform:Action";
@@ -42,22 +43,6 @@ const ActionsCatalog = {
       { immediate: true },
     );
 
-    // Forward the unsaved form draft's code text to AnnotatedCode's currentCode input without comparing code here.
-    const formDraft = usePanelOutput("form", "draft");
-    watch(
-      formDraft,
-      (draft) => {
-        const fn = draft && typeof draft === "object" && !Array.isArray(draft) ? draft.function : null;
-        const nextCode = fn && typeof fn === "object" && !Array.isArray(fn) && typeof fn.code === "string"
-          ? fn.code
-          : null;
-        if ((values.value.draftCode ?? null) !== nextCode) {
-          instance.state.set("draftCode", nextCode);
-        }
-      },
-      { immediate: true },
-    );
-
     // Clear ephemeral detail coordination state whenever the selected action changes or clears.
     watch(selectedKey, (next, prev) => {
       if (next === prev) return;
@@ -65,7 +50,6 @@ const ActionsCatalog = {
         ...(next !== null && creating.value ? { creating: false } : {}),
         selectedParameter: null,
         activeSegmentId: null,
-        draftCode: null,
       });
     });
 
@@ -76,7 +60,6 @@ const ActionsCatalog = {
         activeTab: "definition",
         selectedParameter: null,
         activeSegmentId: null,
-        draftCode: null,
       });
     }
 
@@ -96,7 +79,6 @@ const ActionsCatalog = {
         activeTab: "definition",
         selectedParameter: null,
         activeSegmentId: null,
-        draftCode: null,
       });
     }
 
@@ -125,20 +107,39 @@ const ActionsCatalog = {
           activeTab: "definition",
           selectedParameter: null,
           activeSegmentId: null,
-          draftCode: null,
         });
-      } else if (values.value.draftCode != null) {
-        instance.state.set("draftCode", null);
       }
     }
 
     // Clicking a parameter reference inside AnnotatedCode switches to Derived definition and highlights that parameter row.
     function onSelectRef(refKey) {
-      if (typeof refKey !== "string" || !refKey) return;
+      if (typeof refKey !== "string" || !refKey || !selected.value) return;
       instance.state.setState({
         activeTab: "derived",
-        selectedParameter: { className: ACTION_TYPE, primaryKey: refKey },
+        selectedParameter: {
+          parent: { objectType: selected.value.className, primaryKey: selected.value.primaryKey },
+          primaryKey: refKey,
+        },
       });
+    }
+
+    // Clicking an inline child reference in derived tables locates either the parameter row or its code segment.
+    function onNavigateChild(ref) {
+      if (!ref || typeof ref !== "object" || typeof ref.primaryKey !== "string" || !ref.primaryKey) return;
+      if (ref.collection === "parameters" && ref.parent?.objectType && ref.parent?.primaryKey) {
+        instance.state.setState({
+          activeTab: "derived",
+          selectedParameter: {
+            parent: { objectType: ref.parent.objectType, primaryKey: ref.parent.primaryKey },
+            primaryKey: ref.primaryKey,
+          },
+        });
+      } else if (ref.collection === "codeSegments") {
+        instance.state.setState({
+          activeTab: "code",
+          activeSegmentId: ref.primaryKey,
+        });
+      }
     }
 
     return {
@@ -153,6 +154,7 @@ const ActionsCatalog = {
       onFormSaved,
       onFormDiscarded,
       onSelectRef,
+      onNavigateChild,
       refresh: () => instance.refreshObjects(),
     };
   },

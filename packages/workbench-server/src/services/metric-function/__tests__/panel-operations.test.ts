@@ -458,7 +458,7 @@ describe("metric and function panel server operations", () => {
       .toEqual({ kind: "markdown", markdown: "ok" });
     const ran = hostWith(() => Response.json({ success: true, data: [] }));
     expect(await read(TEST_EXECUTE_METRIC_VIEW).execute(ran.host, { input: { draft, parameters: { year: 2026 }, bindingId: "b1" } }))
-      .toEqual({ kind: "json", value: { result: [] } });
+      .toEqual({ kind: "json", value: [] });
     expect(JSON.parse(String(ran.sent[0]?.init.body))).toEqual({ metricView: draft, param: { year: 2026 }, bindingId: "b1" });
 
     const unread = hostWith(() => Response.json({ success: true, data: { md: "never" } }));
@@ -471,7 +471,7 @@ describe("metric and function panel server operations", () => {
     const draft = { id: "m1", name: "Revenue", function: { queryPackage: { manifest: { parameterDefs: [] } } } };
     const complete = hostWith(() => Response.json({ success: true, data: [{ total: 9 }] }));
     expect(await operation.execute(complete.host, { target: metricTarget, input: { draft, parameters: { year: 2026 }, bindingId: "b1" } }))
-      .toEqual({ kind: "json", value: { result: [{ total: 9 }] } });
+      .toEqual({ kind: "json", value: [{ total: 9 }] });
     expect(complete.sent[0]?.path).toBe("/api/data-query/metricView/testExecute");
     expect(JSON.parse(String(complete.sent[0]?.init.body))).toEqual({ metricView: draft, param: { year: 2026 }, bindingId: "b1" });
 
@@ -479,7 +479,7 @@ describe("metric and function panel server operations", () => {
       success: true, data: [{ total: 9 }], truncated: true, rowLimit: 20000, truncationHint: "Narrow the time range",
     }));
     expect(await operation.execute(truncated.host, { target: metricTarget, input: { draft, parameters: {} } })).toEqual({
-      kind: "json", value: { result: [{ total: 9 }], truncated: true, rowLimit: 20000, truncationHint: "Narrow the time range" },
+      kind: "json", value: [{ total: 9 }], truncation: { rowLimit: 20000, hint: "Narrow the time range" },
     });
     expect(JSON.parse(String(truncated.sent[0]?.init.body))).toEqual({ metricView: draft, param: {} });
 

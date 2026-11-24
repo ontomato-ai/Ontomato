@@ -4,7 +4,9 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { BatchItemOperationOutcome, PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelManifest, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
+import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { slotInputState, type PanelContext, type ProjectionSlot } from "../panel/context";
+import type { PanelFormAdapters } from "../panel/forms";
 import {
   classifyDispatchResponseForConfirmation,
   PanelConfirmationDeferred,
@@ -97,9 +99,13 @@ export function isOperationReady(
   descriptor: PanelOwnerOperationDescriptor | null,
   targetInfo: OperationTargetInfo,
   running: boolean,
+  forms?: Pick<PanelFormAdapters, "handle"> | null,
 ): boolean {
   if (!descriptor || running || descriptor.unavailable) return false;
   if (targetInfo.checkedState !== null) return targetInfo.checkedTargets.length > 0;
+  if (descriptor.target.source === "draft") {
+    return forms ? Boolean(forms.handle(descriptor.target.slot)) : true;
+  }
   return descriptor.target.source !== "input" || targetInfo.target !== null;
 }
 
@@ -219,6 +225,7 @@ export function useOperationRunner(options: {
   /** Checks whether the mounted UI entry (button or overflow item) is still visible and enabled. */
   isEntryAvailable?: (operationName: string) => { readonly ok: true } | { readonly ok: false; readonly message: string };
   onDone?: (operationName: string, outcome: OperationOutcome) => void;
+  onRead?: (operationName: string, result: PanelReadOperationResult) => void;
 }): OperationRunner {
   let runnerDisposed = false;
   onScopeDispose(() => {
@@ -308,15 +315,20 @@ export function useOperationRunner(options: {
       if (descriptor.effect === "read") {
         const { target: owned } = descriptor;
         const hasDeclaredReadInputs = panel.manifest.members[slot.slot]?.readOperationInputs?.[operationName] !== undefined;
+        let draftValues: PanelFormValues = {};
+        if (owned.source === "draft") {
+          const formHandle = panel.instance.forms.handle(owned.slot);
+          if (!formHandle) {
+            throw new Error(`Form '${owned.slot}' is not ready for operation '${operationName}'.`);
+          }
+          draftValues = formHandle.values.value;
+        }
         const input = owned.source === "draft" || hasDeclaredReadInputs
-          ? readOperationInput(
-              panel.instance,
-              slot.slot,
-              operationName,
-              owned.source === "draft" ? panel.instance.forms.handle(owned.slot)!.values.value : {},
-            )
+          ? readOperationInput(panel.instance, slot.slot, operationName, draftValues)
           : effectiveInput;
-        read.value = await panel.instance.readOperation(operationId, { target: targetInfo.target, input });
+        const result = await panel.instance.readOperation(operationId, { target: targetInfo.target, input });
+        read.value = result;
+        options.onRead?.(operationName, result);
         return "executed";
       }
 
@@ -413,7 +425,7 @@ export function useOperationRunner(options: {
           liveDescriptor,
           currentPanel.instance.state.values.value,
         );
-        if (!isOperationReady(liveDescriptor, currentInfo, phase === "confirm" ? running.value : false)) {
+        if (!isOperationReady(liveDescriptor, currentInfo, phase === "confirm" ? running.value : false, currentPanel.instance.forms)) {
           return { ok: false, message: "This operation is no longer available." };
         }
         const liveBoundInput = resolveBoundOperationParams(currentSlot, currentMember, operationName);

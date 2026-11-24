@@ -3,6 +3,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import { useAppTheme } from "@ontomato/platform-shell";
 import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import type { DirectPanelMount } from "./direct-mount";
+import { forwardDirectProjectionAttrs } from "./projection-attrs";
 
 /** The run a panel's component mounted in the platform's document draws its members from. */
 export const directMountKey: InjectionKey<DirectPanelMount> = Symbol("ontomato.panel.directMount");
@@ -41,7 +42,7 @@ export default defineComponent({
       };
       if (attrs.style !== undefined) containerProps.style = attrs.style;
       return h("div", containerProps, [
-        cloneVNode(mount.member(props.slot, slots, props.inputs), Object.fromEntries(Object.entries(attrs).filter(([name]) => /^on[A-Z]/.test(name)))),
+        cloneVNode(mount.member(props.slot, slots, props.inputs), forwardDirectProjectionAttrs(attrs)),
       ]);
     };
   },

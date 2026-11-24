@@ -719,6 +719,118 @@ test("cross-type collection reads declare rowType so ObjectList state.selected b
   );
 });
 
+test("ObjectList binds selected output to child-object state when rows reads from a parent object with that collection", async () => {
+  const { ACTION, platformObjectTypes } = await import("./platform-object-types");
+  const { platformTypeTableEntrySchema } = await import("./platform-type-table");
+  const listComponent = appsSdkComponentCatalogEntrySchema.parse({
+    componentId: "ObjectList",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectList",
+    role: "control",
+    meaning: "Lists child records.",
+    effects: "Reads rows.",
+    data: { rows: { results: ["panelRecordList", "panelRecordQuery"], required: false } },
+    outputs: {
+      selected: { kind: "object", objectType: "@binding" },
+      checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+    },
+    ports: { props: [], events: [], slots: [] },
+  });
+  const actionState = panelManifestSchema.parse({
+    state: {
+      selected: { type: { kind: "object", objectType: ACTION } },
+      selectedParameter: { type: { kind: "child-object", parentType: ACTION, collection: "parameters" } },
+      undeclaredChild: { type: { kind: "child-object", parentType: ACTION, collection: "unknown" } },
+      otherParentChild: { type: { kind: "child-object", parentType: "platform:Skill", collection: "parameters" } },
+    },
+    members: {},
+  }).state;
+  const actionTable = {
+    objectTypes: {
+      [ACTION]: platformTypeTableEntrySchema.parse({
+        reads: platformObjectTypes[ACTION].reads,
+        childCollections: platformObjectTypes[ACTION].childCollections,
+      }),
+    },
+  };
+
+  assert.deepEqual(platformObjectTypes[ACTION].childCollections, ["parameters", "codeSegments"]);
+
+  const derivedParametersMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectList",
+    type: ACTION,
+    target: "selected",
+    data: { rows: "derivedParameters" },
+    state: { selected: "selectedParameter" },
+  });
+  assert("component" in derivedParametersMember);
+  const expanded = expandPanelAuthoringMember("derivedParameters", derivedParametersMember, {
+    state: actionState,
+    components: [listComponent],
+    typeTable: actionTable,
+  });
+  assert.deepEqual(expanded.projection.inputs.target, { kind: "object", objectType: ACTION });
+  assert.deepEqual(expanded.projection.outputs.selected, {
+    kind: "child-object",
+    parentType: ACTION,
+    collection: "parameters",
+  });
+  assert.deepEqual(expanded.placement.outputs, { selected: { state: "selectedParameter" } });
+
+  // Undeclared collection on the parent type must be rejected.
+  const undeclaredMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectList",
+    type: ACTION,
+    target: "selected",
+    data: { rows: "derivedParameters" },
+    state: { selected: "undeclaredChild" },
+  });
+  assert("component" in undeclaredMember);
+  assert.throws(
+    () => expandPanelAuthoringMember("derivedParameters", undeclaredMember, {
+      state: actionState,
+      components: [listComponent],
+      typeTable: actionTable,
+    }),
+    /State 'undeclaredChild' cannot receive component output 'selected'/,
+  );
+
+  // Mismatched parentType must be rejected.
+  const wrongParentMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectList",
+    type: ACTION,
+    target: "selected",
+    data: { rows: "derivedParameters" },
+    state: { selected: "otherParentChild" },
+  });
+  assert("component" in wrongParentMember);
+  assert.throws(
+    () => expandPanelAuthoringMember("derivedParameters", wrongParentMember, {
+      state: actionState,
+      components: [listComponent],
+      typeTable: actionTable,
+    }),
+    /State 'otherParentChild' cannot receive component output 'selected'/,
+  );
+
+  // Type-level list reads cannot bind selected to a child-object state.
+  const typeLevelListMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectList",
+    type: ACTION,
+    data: { rows: "list" },
+    state: { selected: "selectedParameter" },
+  });
+  assert("component" in typeLevelListMember);
+  assert.throws(
+    () => expandPanelAuthoringMember("catalog", typeLevelListMember, {
+      state: actionState,
+      components: [listComponent],
+      typeTable: actionTable,
+    }),
+    /State 'selectedParameter' cannot receive component output 'selected'/,
+  );
+});
+
 test("operation params support declarative formField and formFields wiring for customer Action saves", async () => {
   const { customerOntologyReads } = await import("./platform-object-types");
   const { platformTypeTableResponseSchema } = await import("./platform-type-table");
