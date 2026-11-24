@@ -25,7 +25,7 @@ function description(name: string): PanelFormDescription {
       path: `/${key}`, label: key, valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" },
     })),
     errors: [],
-    save: { method: "POST", path: "/save", bodySchema: {}, draftOperation: "save-customer" },
+    save: { method: "POST", path: "/save", bodySchema: {} },
   };
 }
 
@@ -594,7 +594,7 @@ describe("ObjectForm save", () => {
         },
       ],
       errors: [],
-      save: { method: "POST", path: "/knowledge", bodySchema: {}, draftOperation: "knowledge.save" },
+      save: { method: "POST", path: "/knowledge", bodySchema: {} },
     };
 
     const { wrapper, form, operations, write } = openForm({

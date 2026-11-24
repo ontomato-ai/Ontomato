@@ -63,7 +63,7 @@ function read(request: Sent) {
     values: { name: inputs.task?.primaryKey === secondTask.id ? "Second form" : "Nightly" },
     errors: [],
     revision: 3,
-    save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+    save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {} },
   };
 }
 

@@ -7,7 +7,7 @@ import { localizedApplicationText } from "@ontomato/contracts/application-metada
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelFormTargetSchema, panelObjectIdentitySchema } from "@ontomato/contracts/panel-manifest";
 import {
-  panelFormObjectAllFields, panelFormSaveInputSchema, panelFormValuesSchema,
+  panelFormObjectAllFields, panelFormSaveInputSchema,
   type PanelFormDescription, type PanelFormField,
 } from "@ontomato/contracts/panel-projection";
 import {
@@ -233,13 +233,9 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     targetSchema: z.discriminatedUnion("kind", [objectTarget, panelFormTargetSchema.options[1]]),
     inputSchema: panelFormSaveInputSchema,
     resultSchema: savedId,
-    draftOperation: target => target.kind === "draft" ? `${kind}.create` : `${kind}.update`,
     draftInput: input => panelFormSaveInputSchema.parse(input).values,
 
-    create: {
-      draftValues: values => panelFormValuesSchema.parse(values),
-      createdObject: data => ({ objectType: type, primaryKey: savedId.parse(data).id }),
-    },
+    create: true,
     async execute({ locale, executor: { owner, credentials } }, target, input) {
       return write(type, async () => {
         const { values: { id, ...submitted }, revision, submittedFields } = writeInput(panelFormSaveInputSchema, input);
@@ -360,13 +356,9 @@ const applicationSave: PanelWriteServerOperation = {
   targetSchema: z.discriminatedUnion("kind", [applicationTarget, panelFormTargetSchema.options[1]]),
   inputSchema: panelFormSaveInputSchema,
   resultSchema: savedId,
-  draftOperation: target => target.kind === "draft" ? "create" : "saveIdentity",
   draftInput: input => panelFormSaveInputSchema.parse(input).values,
 
-  create: {
-    draftValues: values => panelFormValuesSchema.parse(values),
-    createdObject: data => ({ objectType: APPLICATION, primaryKey: savedId.parse(data).id }),
-  },
+  create: true,
   async execute({ locale, executor: { credentials } }, target, input) {
     return write(APPLICATION, async () => {
       const { values, submittedFields } = writeInput(panelFormSaveInputSchema, input);

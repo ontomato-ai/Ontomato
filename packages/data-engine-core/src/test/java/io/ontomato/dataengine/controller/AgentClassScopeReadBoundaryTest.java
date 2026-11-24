@@ -359,7 +359,7 @@ class AgentClassScopeReadBoundaryTest {
 		RelationshipView crossScope = new RelationshipView(
 				"order_customer", "Order", "Customer", "", "customer_id", "id", "Order", "Customer");
 		FormDescription emptyForm = new FormDescription(
-				List.of(), Map.of(), new FormSave("POST", "/ontology/model/object-type/update", object("type", "object"), "update"));
+				List.of(), Map.of(), new FormSave("POST", "/ontology/model/object-type/update", object("type", "object")));
 
 		when(modelService.relationships(eq("Order"), eq(user), eq("en"))).thenReturn(List.of(inScope, crossScope));
 		when(modelService.relationships(eq(null), eq(user), eq("en"))).thenReturn(List.of(inScope, crossScope));

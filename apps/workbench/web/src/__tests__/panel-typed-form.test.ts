@@ -50,7 +50,7 @@ const fields: PanelFormDescription["fields"] = [
 const AGENT = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a01";
 const CREATED = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a09";
 const revision = 7;
-const save = (operation: string) => ({ method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {}, draftOperation: operation });
+const save = { method: "PUT" as const, path: "/assistant/agent-definitions/:id", bodySchema: {} };
 
 const current = {
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
@@ -139,7 +139,7 @@ function owner(request: Sent, valuesById: ReadonlyMap<string, PanelFormValues>):
         { field: "/executionUserId", code: "target_unavailable", message: "Only a domain governance administrator changes it" },
       ] } }, { status: 422 });
     const shown = values ? { ...values, name: String(values.name).trim() } : base;
-    return Response.json({ fields, values: shown, revision, errors: [], save: save(create ? "agent.create" : "agent.update") });
+    return Response.json({ fields, values: shown, revision, errors: [], save });
   }
   const agent = /^\/api\/assistant\/agent-definitions\/([^/]+)$/.exec(request.path);
   if (agent && request.method === "GET") return Response.json(definition(agent[1]!, valuesById.get(agent[1]!)!));

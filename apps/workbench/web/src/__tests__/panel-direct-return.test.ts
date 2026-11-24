@@ -42,7 +42,7 @@ const manifest: DirectPanelManifest = {
 const description = {
   fields: [{ path: "/instruction", label: "Instruction", control: { kind: "text" as const, multiline: true }, valueSchema: {}, required: false, readOnly: false }],
   values: { instruction: "Inspect last night's failures" }, errors: [], revision: 2,
-  save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+  save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {} },
 };
 const ready = (): ProductPanelReadResponse => ({ status: "ready", value: description as never });
 

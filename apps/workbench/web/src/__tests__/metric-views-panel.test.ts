@@ -200,7 +200,6 @@ function metricFormDescription(mode: "create" | "edit", key: string) {
       method: mode === "create" ? "POST" : "PUT",
       path: `/api/data-query/metricView/${key || "create"}`,
       bodySchema: {},
-      draftOperation: mode === "create" ? "create" : "save",
     },
   };
 }

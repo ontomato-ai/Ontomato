@@ -12,9 +12,6 @@ import java.util.Map;
 public final class FunctionForm {
   private FunctionForm() {}
 
-  public static final String CREATE_OPERATION = "function.create";
-  public static final String UPDATE_OPERATION = "function.update";
-
   private static final List<String> PARAMETER_TYPES =
       List.of(
           Parameter.TYPE_STRING,
@@ -188,7 +185,7 @@ public final class FunctionForm {
               readOnlyReason,
               null,
               false));
-    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save(existing));
+    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save());
   }
 
   /** The field errors of an incoming draft, empty when the owner accepts it; nothing is saved. */
@@ -365,7 +362,7 @@ public final class FunctionForm {
     return function.get("queryPackage") == null && code instanceof String text && !text.isBlank();
   }
 
-  private static JSONObject save(boolean existing) {
+  private static JSONObject save() {
     JSONObject properties = new JSONObject();
     properties.put("id", PanelFormFields.schema("string"));
     properties.put("name", JSONObject.of("type", "string", "minLength", 1));
@@ -381,8 +378,7 @@ public final class FunctionForm {
     return JSONObject.of(
         "method", "POST",
         "path", "/function/save",
-        "bodySchema", JSONObject.of("type", "object", "properties", properties, "required", JSONArray.of("name", "operation")),
-        "draftOperation", existing ? UPDATE_OPERATION : CREATE_OPERATION);
+        "bodySchema", JSONObject.of("type", "object", "properties", properties, "required", JSONArray.of("name", "operation")));
   }
 
   private static String text(LangService langService, String lang, String key) {

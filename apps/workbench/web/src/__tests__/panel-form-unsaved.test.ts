@@ -59,7 +59,7 @@ function open(errors: { field: string; code: string; message: string }[]) {
     read: async (request): Promise<ProductPanelReadResponse> => request.operations
       ? { status: "ready", value: { save } as never }
       : { status: "ready", value: { fields, values: { name: "Orders", slug: "orders", entries: [{ title: "Home", inputs: "{}" }] }, errors, revision: 1,
-        save: { method: "PUT", path: "/apps/:id", bodySchema: {}, draftOperation: "app.update" } } as never },
+        save: { method: "PUT", path: "/apps/:id", bodySchema: {} } } as never },
   });
   const element = document.createElement("div");
   document.body.append(element);
@@ -159,7 +159,7 @@ it("returns to list cleanly when confirming leave on a dirty form with createFor
     read: async (request): Promise<ProductPanelReadResponse> => request.operations
       ? { status: "ready", value: { save } as never }
       : { status: "ready", value: { fields, values: { name: "Orders", slug: "orders", entries: [] }, errors: [], revision: 1,
-        save: { method: "PUT", path: "/apps/:id", bodySchema: {}, draftOperation: "app.update" } } as never },
+        save: { method: "PUT", path: "/apps/:id", bodySchema: {} } } as never },
   });
   let backHandle!: ReturnType<typeof usePanelBack>;
   const element = document.createElement("div");

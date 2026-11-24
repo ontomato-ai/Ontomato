@@ -199,7 +199,6 @@ class FunctionFormTest {
     assertEquals("code", field(form, "/returnDef/columnLabels").getJSONObject("control").getString("kind"));
     assertNull(optionalField(form, "/parameters"));
     assertEquals("/function/save", form.getJSONObject("save").getString("path"));
-    assertEquals("function.update", form.getJSONObject("save").getString("draftOperation"));
   }
 
   @Test
@@ -250,7 +249,6 @@ class FunctionFormTest {
     JSONObject values = form.getJSONObject("values");
     assertEquals("OPERATION_READ", values.getString("operation"));
     assertEquals("USER", values.getString("origin"));
-    assertEquals("function.create", form.getJSONObject("save").getString("draftOperation"));
     assertFalse(form.getJSONObject("values").containsKey("id"));
     assertFalse(field(form, "/operation").getBooleanValue("readOnly"));
     assertEquals("code", field(form, "/queryPackage").getJSONObject("control").getString("kind"));

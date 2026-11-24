@@ -38,12 +38,10 @@ function hostWith(answer: (path: string, init: NonNullable<Parameters<typeof fet
 const triggerTarget = { kind: "object" as const, objectType: TRIGGER, primaryKey: "tr-1" };
 
 describe("trigger panel server operations", () => {
-  it("declares save, draft operations, and forwards complete or partial submittedFields saves", async () => {
+  it("forwards complete and partial trigger form saves", async () => {
     const operation = write(`${TRIGGER}.save`);
     expect(operation.kind).toBe("form.save");
     if (operation.kind !== "form.save") throw new Error("not a form save");
-    expect(operation.draftOperation({ kind: "draft" })).toBe("trigger.create");
-    expect(operation.draftOperation(triggerTarget)).toBe("trigger.update");
 
     const { host, sent } = hostWith(() => Response.json({ success: true, data: { id: "tr-1", name: "Nightly check" } }));
     const outcome = await operation.execute(host, triggerTarget, {

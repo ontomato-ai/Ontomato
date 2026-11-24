@@ -51,7 +51,6 @@ const formSaveMeta = {
   method: "PUT" as const,
   path: "/functions/:id",
   bodySchema: {},
-  draftOperation: "function.update",
 };
 
 const sampleFields: PanelFormField[] = [

@@ -64,7 +64,7 @@ const publicUse = { id: "shown", pageKey: "shown", path: `${entry.path}/shown`,
 const hiddenUse = { ...publicUse, id: "hidden", pageKey: "hidden", path: `${entry.path}/hidden`, panelId: "hidden" };
 const draftId = "app-14d40829-d7d4-4b14-94bf-11c4c8b12e1b";
 const declaration = { names: { en: "Application" }, descriptions: {}, icon: "pages", groups: [], permissions: [] };
-const draftValues = { declaration, entry: { ...entry, path: `/applications/${draftId}` },
+const initialCreateValues = { declaration, entry: { ...entry, path: `/applications/${draftId}` },
   entryAccess: ["domain-member"], panelUses: [] };
 const entryValues = { entry, panelUses: [publicUse, hiddenUse], framePanelId: "catalogue-panel" };
 const identityValues = { names: { en: "Application", fr: "Application française" }, descriptions: { en: "Kept description" }, icon: "pages" };
@@ -178,10 +178,10 @@ beforeAll(async () => {
     expect(req.body.target.kind).toBe(draft ? "draft" : "object");
     formReads.push(req.body);
     res.json({ success: true, data: {
-      fields: [], values: req.body.values ?? (draft ? draftValues : identity ? identityValues : entryValues), errors: [],
+      fields: [], values: req.body.values ?? (draft ? initialCreateValues : identity ? identityValues : entryValues), errors: [],
       save: { method: "PUT",
         path: `/platform/applications/${draft ? draftId : applicationId}/${identity ? "identity" : "panel-uses"}${draft ? "?create=true" : ""}`,
-        bodySchema: {}, draftOperation: draft ? "create" : identity ? "saveIdentity" : "saveEntries" },
+        bodySchema: {} },
     } });
   });
   app.put(["/java/platform/applications/:id/panel-uses", "/java/platform/applications/:id/identity"], (req, res) => {
@@ -434,7 +434,7 @@ it("reuses the allocated draft ID and dispatches a create-only application save 
   expect(formReads.at(-1)).not.toHaveProperty("target.id");
   expect(initial.values.id).toBe(draftId);
 
-  const values = { ...initial.values, entry: { ...draftValues.entry, path: `${entry.path}/edited` } };
+  const values = { ...initial.values, entry: { ...initialCreateValues.entry, path: `${entry.path}/edited` } };
   const refreshed = panelReadResultSchemas.panelFormDescription.parse(
     await readCatalogue("appDraft", { values, changedField: "/entry/path" }),
   );
@@ -446,7 +446,7 @@ it("reuses the allocated draft ID and dispatches a create-only application save 
   expect(await submitApplicationForm({ kind: "draft" }, args))
     .toMatchObject({ kind: "dispatched", outcome: { kind: "success", data: { id: draftId } } });
   expect(writes.at(-1)).toEqual({
-    path: `/java/platform/applications/${draftId}/panel-uses?create=true`, actor: viewer.token, body: draftValues,
+    path: `/java/platform/applications/${draftId}/panel-uses?create=true`, actor: viewer.token, body: initialCreateValues,
   });
   const writesAfterCreation = writes.length;
   expect(await submitApplicationForm({ kind: "draft" }, args)).toMatchObject({ outcome: { kind: "refusal" } });

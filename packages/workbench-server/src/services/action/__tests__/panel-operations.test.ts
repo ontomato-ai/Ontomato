@@ -68,7 +68,7 @@ describe("action panel server operations", () => {
       }],
       errors: [],
       values: {},
-      save: { method: "POST", path: "/api/data-query/action/save", bodySchema: {}, draftOperation: "action.create" },
+      save: { method: "POST", path: "/api/data-query/action/save", bodySchema: {} },
     } }));
 
     const descriptor = await describeServerOperation(operation, { ...host, locale });
@@ -89,7 +89,7 @@ describe("action panel server operations", () => {
     }
   });
 
-  it("declares the action save target, draft operations and create identity", () => {
+  it("accepts action and draft targets for form saves", () => {
     const operation = write(`${ACTION}.save`);
     expect(operation.kind).toBe("form.save");
     if (operation.kind !== "form.save") throw new Error("not a form save");
@@ -97,9 +97,6 @@ describe("action panel server operations", () => {
     expect(operation.targetSchema.safeParse(actionTarget).success).toBe(true);
     expect(operation.targetSchema.safeParse({ ...actionTarget, objectType: FUNCTION }).success).toBe(false);
     expect(operation.targetSchema.safeParse({ kind: "draft" }).success).toBe(true);
-    expect(operation.draftOperation(actionTarget)).toBe("action.update");
-    expect(operation.draftOperation({ kind: "draft" })).toBe("action.create");
-    expect(operation.create?.createdObject({ id: "created" })).toEqual({ objectType: ACTION, primaryKey: "created" });
   });
 
   it("sends the complete action values and reports both the action and its function as changed", async () => {

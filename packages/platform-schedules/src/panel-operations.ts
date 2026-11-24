@@ -4,16 +4,12 @@ import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-value
 import { platformSchedulesPath, platformTaskInputSchema, platformTaskUpdateSchema } from "@ontomato/contracts/platform-schedules";
 import { panelFormSaveInputSchema, type PanelFormDescription, type PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { formFieldPointer, formValuesSchema } from "@ontomato/contracts/form-fields";
-import {
-  CREATE_SCHEDULED_TASK, SCHEDULED_TASK,
-} from "@ontomato/contracts/platform-object-types";
 import { createSchedulesApi, ScheduleRequestError, type SchedulesApi } from "./api";
 import type { PlatformSchedulesHost } from "./host";
 import { scheduledTaskPanelSettings, scheduledTaskPanelSubmission, scheduledTaskPanelValues, type ScheduledTaskPanelSettings } from "./panel-task-values";
 
 export const scheduledTaskPanelSaveSchema = panelFormSaveInputSchema
   .extend({ values: formValuesSchema, revision: z.number().int().positive() }).strict();
-export const scheduledTaskDraftOperation = `${SCHEDULED_TASK}.save`;
 
 const taskCreateBody = runtimeJsonObjectSchema.parse(zodToJsonSchema(platformTaskInputSchema, { $refStrategy: "none" }));
 const taskUpdateBody = runtimeJsonObjectSchema.parse(zodToJsonSchema(platformTaskUpdateSchema, { $refStrategy: "none" }));
@@ -22,7 +18,6 @@ export function scheduledTaskSaveDescription(id: string): PanelFormDescription["
     method: "PUT",
     path: `${platformSchedulesPath}/${encodeURIComponent(id)}`,
     bodySchema: taskUpdateBody,
-    draftOperation: scheduledTaskDraftOperation,
   };
 }
 
@@ -30,7 +25,6 @@ export const scheduledTaskCreateDescription: PanelFormDescription["save"] = {
   method: "POST",
   path: platformSchedulesPath,
   bodySchema: taskCreateBody,
-  draftOperation: CREATE_SCHEDULED_TASK,
 };
 
 const taskSettingsSubmission = platformTaskInputSchema.omit({ content: true, formRevision: true });

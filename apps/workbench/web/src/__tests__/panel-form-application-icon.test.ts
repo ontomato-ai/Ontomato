@@ -36,7 +36,7 @@ const description = {
   fields: [{ path: "/icon", label: "Icon", help: "Tells the application apart in the navigation.", control: { kind: "application-icon" }, valueSchema: {}, required: true, readOnly: false }],
   values: { icon: "retired-key" },
   errors: [], revision: 1,
-  save: { method: "PUT", path: "/applications/:id", bodySchema: {}, draftOperation: "application.save" },
+  save: { method: "PUT", path: "/applications/:id", bodySchema: {} },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 const saveDescriptor = {

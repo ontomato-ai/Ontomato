@@ -259,7 +259,7 @@ async function admitBoundOperation(
     throw new HttpError(422, `Member '${slot}', operation '${bound.name}' references undeclared form member '${writeDraftSlot}'`, "PANEL_OPERATION_DRAFT_UNBOUND");
   }
   const draft = handler.kind === "form.save" && selected?.kind !== "object";
-  if (draft && !allowsOperationDraft(projection, handler) && !(handler.create && writeDraftSlot)) return undefined;
+  if (draft && !allowsOperationDraft(projection, handler) && !(handler.create === true && writeDraftSlot)) return undefined;
   return {
     effect: "write" as const,
     handler,

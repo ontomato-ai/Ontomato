@@ -360,7 +360,7 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
           values: structuredClone(vals),
           errors: [],
           revision: 1,
-          save: { method: "PUT", path: `/tasks/${pk}`, bodySchema: {}, draftOperation: "task.save" },
+          save: { method: "PUT", path: `/tasks/${pk}`, bodySchema: {} },
         });
       },
       readProjection: async () => projection,

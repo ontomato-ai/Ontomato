@@ -36,7 +36,7 @@ const field = (path: string, label: string, control: Record<string, unknown>) =>
 const description = {
   fields: [field("/name", "Name", { kind: "text" }), field("/icon", "Avatar", { kind: "avatar" }), field("/skills", "Skills", { kind: "reference", objectType: SKILL, multiple: true })],
   values: { name: "Analyst", icon: null, skills: [] }, errors: [], revision: 1,
-  save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: "agent.save" },
+  save: { method: "PUT", path: "/agents/:id", bodySchema: {} },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 const saveDescriptor = {

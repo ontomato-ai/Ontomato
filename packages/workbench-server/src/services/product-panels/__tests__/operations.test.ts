@@ -825,13 +825,9 @@ it("admits a cross-member form.save write operation bound to another form member
     ]),
     inputSchema: z.object({ values: z.record(z.unknown()) }),
     resultSchema: z.object({}),
-    draftOperation: () => "relationship.create",
     draftInput: input => input,
 
-    create: {
-      draftValues: values => (values as Record<string, unknown>) ?? {},
-      createdObject: () => ({ primaryKey: "rel-1", objectType: "platform:Relationship" }),
-    },
+    create: true,
     execute: async () => ({ kind: "success", data: {}, affected: { objects: [], objectTypes: ["platform:Relationship"] } }),
   });
 
@@ -1038,12 +1034,8 @@ it.each([
     ]),
     inputSchema: z.object({ values: z.record(z.unknown()), submittedFields: z.array(z.string()).optional() }),
     resultSchema: z.object({}),
-    draftOperation: () => "task.save",
     draftInput: input => input,
-    create: {
-      draftValues: values => z.record(z.unknown()).parse(values),
-      createdObject: () => ({ objectType, primaryKey: uuid(11) }),
-    },
+    create: true,
     execute,
   });
   if (targetKind === "draft") {

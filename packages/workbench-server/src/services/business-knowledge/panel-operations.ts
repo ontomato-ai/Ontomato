@@ -210,17 +210,9 @@ export const m7ServerOperations = [
     targetSchema: saveTarget,
     inputSchema: saveInputSchema,
     resultSchema: savedResultSchema,
-    draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "knowledge.create" : "knowledge.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
 
-    create: {
-      draftValues(values: unknown) {
-        return runtimeJsonObjectSchema.parse(values);
-      },
-      createdObject(data: unknown) {
-        return { objectType: BUSINESS_KNOWLEDGE, primaryKey: savedIdSchema.parse(data).id };
-      },
-    },
+    create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, target, valuesForTarget(target, submittedValues(saveInputSchema.parse(input))));
     },

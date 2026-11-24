@@ -42,7 +42,7 @@ const description = {
   ],
   values: { name: "Adjust age", description: "Sets an age", parameters: [{ name: "personId" }], code: "pass" },
   errors: [], revision: 1,
-  save: { method: "PUT", path: "/functions/:id", bodySchema: {}, draftOperation: "function.save" },
+  save: { method: "PUT", path: "/functions/:id", bodySchema: {} },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 

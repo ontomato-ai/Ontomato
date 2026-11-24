@@ -162,7 +162,7 @@ it("reads a reference's choices and held values, and a type's create form, as a 
   registerPlatformObjectAdapter({ objectType: MODEL_OPTION, options: { list, resolve } });
   const description = {
     fields: [], values: { name: "" }, errors: [], revision: 1,
-    save: { method: "POST" as const, path: "/agents", bodySchema: {}, draftOperation: `${AGENT_DEFINITION}.save` },
+    save: { method: "POST" as const, path: "/agents", bodySchema: {} },
   };
   const describe = vi.fn(async () => description);
   registerPlatformObjectAdapter({ objectType: AGENT_DEFINITION, forms: { describe, save: vi.fn() } });

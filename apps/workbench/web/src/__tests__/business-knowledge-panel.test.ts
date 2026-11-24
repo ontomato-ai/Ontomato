@@ -181,8 +181,8 @@ function formDescription(primaryKey: string | null, values: PanelFormValues): Pa
     errors: [],
     revision: 1,
     save: primaryKey
-      ? { method: "PUT", path: `/knowledge/${primaryKey}`, bodySchema: {}, draftOperation: "knowledge.update" }
-      : { method: "POST", path: "/knowledge", bodySchema: {}, draftOperation: "knowledge.create" },
+      ? { method: "PUT", path: `/knowledge/${primaryKey}`, bodySchema: {} }
+      : { method: "POST", path: "/knowledge", bodySchema: {} },
   };
 }
 

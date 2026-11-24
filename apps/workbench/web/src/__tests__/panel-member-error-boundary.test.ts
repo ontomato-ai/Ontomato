@@ -194,7 +194,7 @@ it("reads the object from slot.inputs when ObjectForm binds a literal input inst
           values: { name: cls.primaryKey },
           errors: [],
           revision: 1,
-          save: { method: "PUT", path: "/classes/:id", bodySchema: {}, draftOperation: `${OBJECT_TYPE}.save` },
+          save: { method: "PUT", path: "/classes/:id", bodySchema: {} },
         } as never,
       };
     },

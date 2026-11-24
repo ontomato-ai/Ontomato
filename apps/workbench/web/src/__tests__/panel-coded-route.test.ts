@@ -55,7 +55,7 @@ function answer(request: Sent) {
         ? { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false }
         : {
           fields: [field("/name", "Name")], values: runtimeParams?.values ?? { name: "Nightly" }, errors: [], revision: 3,
-          save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+          save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {} },
         };
     return Response.json({ status: "ready", value });
   }

@@ -677,7 +677,7 @@ await mountPanel({
           ] },
         }],
         values, errors: [], revision: task.revision,
-        save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+        save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {} },
       } });
     }
     return nothingAt(request);

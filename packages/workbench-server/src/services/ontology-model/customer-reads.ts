@@ -393,7 +393,6 @@ function buildCustomerFormDescription(
       method: mode === "edit" ? "PUT" : "POST",
       path: `/ontology/objects/${encodeURIComponent(typeId)}`,
       bodySchema,
-      draftOperation: `${typeId}.${mode === "edit" ? "update" : "create"}`,
     },
   });
 }

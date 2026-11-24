@@ -14,7 +14,6 @@ import {
 import type { AssistantSkillView } from "./skills";
 import type { PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
 import { AgentDefinitionFieldError, agentDefinitionSave, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
-import { resolveAssistantSkillReferences } from "./skill-references";
 
 const targetSchema = panelFormTargetSchema.options[0].extend({
   objectType: z.literal(AGENT_DEFINITION),
@@ -82,19 +81,12 @@ export const agentDefinitionOperations = [
     targetSchema: z.discriminatedUnion("kind", [targetSchema, panelFormTargetSchema.options[1]]),
     inputSchema,
     resultSchema: assistantAgentDefinitionSchema,
-    draftOperation: (target: PanelOperationTarget) => agentDefinitionSave(target).draftOperation,
     draftInput,
 
     projectResult(data: unknown, view: AssistantSkillView) {
       return projectAgentDefinitionSkills(assistantAgentDefinitionSchema.parse(data), view);
     },
-    create: {
-      draftValues(values: unknown, domainId: string) {
-        const input = parseAgentDefinitionForm(values);
-        return { ...input, skills: resolveAssistantSkillReferences(input.skills, domainId), executionUserId: input.executionUserId ?? null };
-      },
-      createdObject: (data: unknown) => ({ objectType: AGENT_DEFINITION, primaryKey: assistantAgentDefinitionSchema.parse(data).id }),
-    },
+    create: true,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome> {
       const { owner, credentials } = host.executor;
       const selection = { credentials: host.initiator.credentials, view: host.skillView! };

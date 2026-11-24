@@ -14,9 +14,6 @@ import java.util.Map;
 public final class MetricViewForm {
   private MetricViewForm() {}
 
-  public static final String CREATE_OPERATION = "metric-view.create";
-  public static final String UPDATE_OPERATION = "metric-view.update";
-
   private static final List<String> STATUSES =
       List.of(MetricView.STATUS_PENDING_REVIEW, MetricView.STATUS_PUBLISHED, MetricView.STATUS_UNUSED);
 
@@ -39,7 +36,6 @@ public final class MetricViewForm {
   public static JSONObject describe(
       JSONObject values,
       List<ObjectNode> errors,
-      boolean existing,
       String readOnlyReason,
       String lang,
       LangService langService) {
@@ -109,7 +105,7 @@ public final class MetricViewForm {
               false));
     fields.add(textField("/function/logic", text(langService, lang, "PanelForm.logic"), true, false, readOnlyReason, null));
     fields.add(bindingsField(parameterDefs, readOnlyReason, lang, langService));
-    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save(existing));
+    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save());
   }
 
   private static JSONObject bindingsField(
@@ -313,7 +309,7 @@ public final class MetricViewForm {
         false);
   }
 
-  private static JSONObject save(boolean existing) {
+  private static JSONObject save() {
     JSONObject properties = new JSONObject();
     properties.put("id", PanelFormFields.schema("string"));
     properties.put("name", JSONObject.of("type", "string", "minLength", 1));
@@ -325,8 +321,7 @@ public final class MetricViewForm {
     return JSONObject.of(
         "method", "POST",
         "path", "/metricView/save",
-        "bodySchema", JSONObject.of("type", "object", "properties", properties, "required", JSONArray.of("name", "function")),
-        "draftOperation", existing ? UPDATE_OPERATION : CREATE_OPERATION);
+        "bodySchema", JSONObject.of("type", "object", "properties", properties, "required", JSONArray.of("name", "function")));
   }
 
   private static String text(LangService langService, String lang, String key) {

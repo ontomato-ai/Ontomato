@@ -30,8 +30,8 @@ export class AgentDefinitionFieldError extends HttpError {
 
 export function agentDefinitionSave(target: PanelFormTarget): PanelFormDescription["save"] {
   return target.kind === "draft"
-    ? { method: "POST", path: formPath, draftOperation: "agent.create", bodySchema: createBody }
-    : { method: "PUT", path: `${formPath}/${target.primaryKey}`, draftOperation: "agent.update", bodySchema: updateBody };
+    ? { method: "POST", path: formPath, bodySchema: createBody }
+    : { method: "PUT", path: `${formPath}/${target.primaryKey}`, bodySchema: updateBody };
 }
 
 export function parseAgentDefinitionForm(values: unknown) {

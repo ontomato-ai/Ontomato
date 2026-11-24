@@ -90,7 +90,7 @@ function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutc
     values,
     revision: 7,
     errors: [],
-    save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+    save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {} },
   });
   const form = vi.fn(async (_primaryKey: string) => typed("autotest", { operation: "autotest", caseSetId: "cases-1" }));
   const changed = vi.fn(async (values: Record<string, string>) =>

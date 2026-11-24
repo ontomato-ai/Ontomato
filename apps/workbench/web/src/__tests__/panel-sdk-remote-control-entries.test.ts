@@ -410,7 +410,7 @@ describe("Item 2.1, 2.2 & 2.6: ObjectForm save gates, no binding.invoke fallback
           values: { name: "Task 1" },
           errors: [],
           revision: 1,
-          save: { method: "PUT", path: "/tasks/t-1", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+          save: { method: "PUT", path: "/tasks/t-1", bodySchema: {} },
         });
       },
       prepare: async () => {
@@ -472,7 +472,7 @@ describe("Item 2.1, 2.2 & 2.6: ObjectForm save gates, no binding.invoke fallback
           ],
           values: { name: "Alice" },
           errors: [],
-          save: { method: "PUT", path: "/customers/c-1", bodySchema: {}, draftOperation: "Customer.save" },
+          save: { method: "PUT", path: "/customers/c-1", bodySchema: {} },
         });
       },
     });
@@ -544,7 +544,7 @@ describe("Item 2.1, 2.2 & 2.6: ObjectForm save gates, no binding.invoke fallback
           values: { name: "Task 1" },
           errors: [],
           revision: 1,
-          save: { method: "PUT", path: "/tasks/t-1", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+          save: { method: "PUT", path: "/tasks/t-1", bodySchema: {} },
         });
       },
       prepare: async (operationId, _invocation, _memberPath, agentRun) => {
@@ -715,7 +715,7 @@ describe("Item 2.3: Agent input cannot override form, fixed literal, or state-wi
           ],
           values: { name: "Alice" },
           errors: [],
-          save: { method: "PUT", path: "/customers/c-1", bodySchema: {}, draftOperation: "Customer.save" },
+          save: { method: "PUT", path: "/customers/c-1", bodySchema: {} },
         });
       },
     });
@@ -893,7 +893,7 @@ describe("Item 2.5 & 3.3: fillForm control restrictions and early-exit rejectedF
           },
           errors: [],
           revision: 1,
-          save: { method: "PUT", path: "/tasks/t-1", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+          save: { method: "PUT", path: "/tasks/t-1", bodySchema: {} },
         });
       },
     });
@@ -985,7 +985,7 @@ describe("Item 2.5 & 3.3: fillForm control restrictions and early-exit rejectedF
       values: { category, detail: "", note: "" },
       errors: [],
       revision: 1,
-      save: { method: "PUT", path: "/tasks/t-1", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+      save: { method: "PUT", path: "/tasks/t-1", bodySchema: {} },
     });
 
     const formProjection: DirectProjection = {
@@ -1140,7 +1140,7 @@ describe("Item 2.5 & 3.3: fillForm control restrictions and early-exit rejectedF
           },
           errors: [],
           revision: 1,
-          save: { method: "PUT", path: "/tasks/t-1", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+          save: { method: "PUT", path: "/tasks/t-1", bodySchema: {} },
         });
       },
     });
@@ -1204,7 +1204,7 @@ describe("Item 2.5 & 3.3: fillForm control restrictions and early-exit rejectedF
       values: { category, detail: `Detail ${key}` },
       errors: [],
       revision: 1,
-      save: { method: "PUT", path: `/tasks/${key}`, bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+      save: { method: "PUT", path: `/tasks/${key}`, bodySchema: {} },
     });
 
     const formProjection: DirectProjection = {
@@ -1363,7 +1363,7 @@ describe("Item 3.4: Distinguish loading (action_not_ready) from unauthorized mis
           values: { name: "Task 1" },
           errors: [],
           revision: 1,
-          save: { method: "PUT", path: "/tasks/t-1", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+          save: { method: "PUT", path: "/tasks/t-1", bodySchema: {} },
         });
       },
     });

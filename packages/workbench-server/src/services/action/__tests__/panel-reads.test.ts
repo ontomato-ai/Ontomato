@@ -41,7 +41,7 @@ const form = {
   }],
   values: { name: "Approve order" },
   errors: [],
-  save: { method: "POST", path: "/api/data-query/action/save", bodySchema: {}, draftOperation: "action.update" },
+  save: { method: "POST", path: "/api/data-query/action/save", bodySchema: {} },
 };
 
 afterEach(() => {
@@ -420,11 +420,10 @@ describe("action catalog reads", () => {
   });
 
   it("asks the owner for the form of a new action an agent drafts into", async () => {
-    const sent = ownerAnswering({ "/action/definitionForm": ok({ ...form, save: { ...form.save, draftOperation: "action.create" } }) });
+    const sent = ownerAnswering({ "/action/definitionForm": ok(form) });
 
-    const created = await createActionReadAdapter(owner, viewer).createForm({ values: { name: "Approve" }, changedField: null });
+    await createActionReadAdapter(owner, viewer).createForm({ values: { name: "Approve" }, changedField: null });
 
-    expect(created.save.draftOperation).toBe("action.create");
     expect(sent.map(request => request.body)).toEqual([
       { target: { kind: "draft" }, values: { name: "Approve" }, changedField: null },
     ]);

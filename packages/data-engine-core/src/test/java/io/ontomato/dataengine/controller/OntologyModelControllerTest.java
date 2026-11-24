@@ -219,8 +219,7 @@ class OntologyModelControllerTest {
 				List.of(object("path", "/className", "label", "API name", "control", object("kind", "text"),
 						"valueSchema", object("type", "string"), "required", true, "readOnly", true)),
 				Map.of("className", "Device"),
-				new FormSave("POST", "/ontology/model/object-type/update", object("type", "object"),
-						"objectType.update")));
+				new FormSave("POST", "/ontology/model/object-type/update", object("type", "object"))));
 
 		var response = mvc().perform(post("/ontology/model/object-type/form")
 				.header("Accept-Language", "en")
@@ -234,7 +233,6 @@ class OntologyModelControllerTest {
 		var body = JSON.parseObject(response.getContentAsString());
 		assertEquals("/className", body.getJSONArray("fields").getJSONObject(0).getString("path"));
 		assertEquals("Device", body.getJSONObject("values").getString("className"));
-		assertEquals("objectType.update", body.getJSONObject("save").getString("draftOperation"));
 		assertFalse(body.containsKey("revision"));
 		// The real converter binds the nested objects of the body as Maps, never as fastjson objects.
 		var bound = ArgumentCaptor.forClass(FormRequest.class);

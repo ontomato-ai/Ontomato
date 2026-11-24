@@ -543,7 +543,7 @@ it("renders ObjectForm with a scrollable body and sibling pinned actions bar", a
           values: { name: "Nightly" },
           revision: 1,
           errors: [],
-          save: { method: "PUT", path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+          save: { method: "PUT", path: "/tasks/:id", bodySchema: {} },
         } as never,
       };
     },

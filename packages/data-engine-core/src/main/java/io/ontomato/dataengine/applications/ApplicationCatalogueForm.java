@@ -75,7 +75,7 @@ final class ApplicationCatalogueForm {
         var fields = identityFields();
         fields.add(allowStandaloneField());
         return describe(fields, values, draft == null ? List.of() : identityErrors(draft),
-            APPLICATIONS + app.getString("id") + "/identity", "saveIdentity", IDENTITY_SCHEMA);
+            APPLICATIONS + app.getString("id") + "/identity", IDENTITY_SCHEMA);
     }
 
     JSONObject entries(JSONObject app, JSONObject draft, Function<String, String> conflicts) {
@@ -94,7 +94,7 @@ final class ApplicationCatalogueForm {
             errors = entryErrors(id, draft, app, conflicts);
         }
         return describe(entryFields(id, entryAccessOptions(id, app.get("permissions"))), values, errors,
-            APPLICATIONS + id + "/panel-uses", "saveEntries", registrationSchema(false));
+            APPLICATIONS + id + "/panel-uses", registrationSchema(false));
     }
 
     JSONObject entry(JSONObject app, String entryId, JSONObject draft, Function<String, String> conflicts) {
@@ -123,7 +123,7 @@ final class ApplicationCatalogueForm {
             errors = singleEntryErrors(id, draft, app, conflicts);
         }
         var itemFields = singleEntryFields(entryAccessOptions(id, app.get("permissions")), !isNew);
-        return describe(itemFields, values, errors, APPLICATIONS + id + "/panel-uses", "saveEntry", USE_SCHEMA);
+        return describe(itemFields, values, errors, APPLICATIONS + id + "/panel-uses", USE_SCHEMA);
     }
 
     JSONObject create(String id, JSONObject draft, Function<String, String> conflicts) {
@@ -147,7 +147,7 @@ final class ApplicationCatalogueForm {
             BOOLEAN, false, "initialGrant.help"));
         fields.add(allowStandaloneField());
         return describe(fields, values, draft == null ? List.of() : entryErrors(id, draft, null, conflicts),
-            APPLICATIONS + id + "/panel-uses?create=true", "create", registrationSchema(true));
+            APPLICATIONS + id + "/panel-uses?create=true", registrationSchema(true));
     }
 
     private JSONObject allowStandaloneField() {
@@ -276,9 +276,9 @@ final class ApplicationCatalogueForm {
     }
 
     private static JSONObject describe(JSONArray fields, JSONObject values, List<ObjectNode> errors,
-            String path, String operation, JSONObject schema) {
+            String path, JSONObject schema) {
         return JSONObject.of("fields", fields, "values", values, "errors", errors, "save",
-            JSONObject.of("method", "PUT", "path", path, "bodySchema", schema, "draftOperation", operation));
+            JSONObject.of("method", "PUT", "path", path, "bodySchema", schema));
     }
 
     static List<ObjectNode> identityErrors(JSONObject values) {

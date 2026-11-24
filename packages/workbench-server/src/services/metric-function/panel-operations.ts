@@ -184,17 +184,9 @@ export const m5ServerOperations = [
     targetSchema: metricSaveTarget,
     inputSchema: saveInputSchema,
     resultSchema: savedIdSchema,
-    draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "metric-view.create" : "metric-view.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
 
-    create: {
-      draftValues(values: unknown) {
-        return runtimeJsonObjectSchema.parse(values);
-      },
-      createdObject(data: unknown) {
-        return { objectType: METRIC_VIEW, primaryKey: savedIdSchema.parse(data).id };
-      },
-    },
+    create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/metricView/save", ownerSaveBody(target, input), "METRIC_VIEW_SAVE_FAILED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
     },
@@ -275,17 +267,9 @@ export const m5ServerOperations = [
     targetSchema: functionSaveTarget,
     inputSchema: saveInputSchema,
     resultSchema: savedIdSchema,
-    draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "function.create" : "function.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
 
-    create: {
-      draftValues(values: unknown) {
-        return runtimeJsonObjectSchema.parse(values);
-      },
-      createdObject(data: unknown) {
-        return { objectType: FUNCTION, primaryKey: savedIdSchema.parse(data).id };
-      },
-    },
+    create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/function/save", ownerSaveBody(target, input), "FUNCTION_SAVE_FAILED", FUNCTION, [FUNCTION]);
     },

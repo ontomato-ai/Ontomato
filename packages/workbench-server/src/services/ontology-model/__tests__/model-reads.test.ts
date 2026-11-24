@@ -105,7 +105,7 @@ const objectTypeForm = {
     textField("/classDesc", "Description", false),
   ],
   values: { className: "", primaryKeyName: "", showName: "", classDesc: "" },
-  save: { method: "POST", path: "/ontology/model/object-type/create", bodySchema: { type: "object" }, draftOperation: "objectType.create" },
+  save: { method: "POST", path: "/ontology/model/object-type/create", bodySchema: { type: "object" } },
 };
 
 const attributeForm = {
@@ -120,7 +120,7 @@ const attributeForm = {
     switchField("/primaryKey", "Primary key"),
   ],
   values: { className: "", name: "", type: "", showName: "", attrDesc: "", enable: true, businessKey: false, primaryKey: false },
-  save: { method: "POST", path: "/ontology/model/attribute/create", bodySchema: { type: "object" }, draftOperation: "attribute.create" },
+  save: { method: "POST", path: "/ontology/model/attribute/create", bodySchema: { type: "object" } },
 };
 
 const relationshipForm = {
@@ -133,7 +133,7 @@ const relationshipForm = {
     textField("/desc", "Description", true),
   ],
   values: { relationship: "", fromclass: "", fromField: "", toclass: "", toField: "", desc: "" },
-  save: { method: "POST", path: "/ontology/model/relationship/create", bodySchema: { type: "object" }, draftOperation: "relationship.create" },
+  save: { method: "POST", path: "/ontology/model/relationship/create", bodySchema: { type: "object" } },
 };
 
 /** The owner labels its fields the same in the field-label read as in its forms. */
@@ -484,11 +484,9 @@ describe("ontology model read adapter", () => {
     expect(formRequests.at(-1)).toEqual({ target: { kind: "draft" }, changedField: null });
     expect(create.errors).toEqual([]);
     expect(create.fields.map(field => field.path)).toContain("/primaryKeyName");
-    expect(create.save.draftOperation).toBe("objectType.create");
 
-    const attrCreate = panelFormDescriptionSchema.parse(await adapter.createForm(ATTRIBUTE));
+    panelFormDescriptionSchema.parse(await adapter.createForm(ATTRIBUTE));
     expect(formRequests.at(-1)).toEqual({ target: { kind: "draft" }, changedField: null });
-    expect(attrCreate.save.draftOperation).toBe("attribute.create");
 
     await adapter.form(OBJECT_TYPE, "Device", {});
     expect(formRequests.at(-1)).toEqual({
@@ -535,7 +533,6 @@ describe("ontology model read adapter", () => {
     expect(createResult).toMatchObject({
       values: createDraft,
       errors: [{ field: "/showName", code: "required", message: "A display name is required" }],
-      save: { draftOperation: "objectType.create" },
     });
     expect(createResult.fields.map(field => field.path)).toContain("/primaryKeyName");
     // The form is re-described around the refused draft, not the empty opening form.

@@ -9,9 +9,7 @@ import {
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import type { PlatformSchedulesHost } from "./host";
 import { createSchedulesApi, ScheduleRequestError } from "./api";
-import {
-  scheduledTaskDraftOperation, scheduledTaskPanelOperations,
-} from "./panel-operations";
+import { scheduledTaskPanelOperations } from "./panel-operations";
 import { scheduledTaskPanelSubmission } from "./panel-task-values";
 
 type Host = Pick<PlatformSchedulesHost, "request"> & { locale?: string };
@@ -91,7 +89,6 @@ const scheduledTaskSaveOperation = {
   inputSchema: saveInput,
   resultSchema: platformTaskSchema,
   targetLabel,
-  draftOperation: () => scheduledTaskDraftOperation,
   draftInput(input: Record<string, unknown>) {
     const { values, submittedFields } = saveInput.parse(input);
     return scheduledTaskPanelSubmission(values, submittedFields);
@@ -117,13 +114,9 @@ const scheduledTaskCreate = {
   targetSchema: panelFormTargetSchema.options[1],
   inputSchema: createInput,
   resultSchema: platformTaskSchema,
-  draftOperation: () => CREATE_SCHEDULED_TASK,
   draftInput: (input: Record<string, unknown>) => createInput.parse(input).values,
   formInstructions: "Use the owner create form. Task settings are under task; application fields remain at the root.",
-  create: {
-    draftValues: (values: unknown) => createInput.shape.values.parse(values),
-    createdObject: (data: unknown) => ({ objectType: SCHEDULED_TASK, primaryKey: platformTaskSchema.parse(data).id }),
-  },
+  create: true,
   execute(host: Host, _target: Extract<PanelOperationCall["target"], { kind: "draft" }>, input: Record<string, unknown>, intentId: string) {
     const { values } = createInput.parse(input);
     return outcome(async () => {

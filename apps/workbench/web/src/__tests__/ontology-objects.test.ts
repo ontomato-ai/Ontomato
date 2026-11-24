@@ -221,13 +221,13 @@ const sampleRelationships = [
   },
 ];
 
-function emptyForm(draftOperation: string) {
+function emptyForm() {
   return {
     fields: [],
     values: {},
     errors: [],
     revision: 1,
-    save: { method: "PUT", path: "/ontology/model", bodySchema: {}, draftOperation },
+    save: { method: "PUT", path: "/ontology/model", bodySchema: {} },
   };
 }
 
@@ -263,7 +263,7 @@ function createAttributeForm(classes: Array<{ primaryKey: string; label: string 
     values: { className: "", name: "" },
     errors: [],
     revision: 1,
-    save: { method: "POST", path: "/ontology/model/attribute/create", bodySchema: {}, draftOperation: `${ATTRIBUTE}.save` },
+    save: { method: "POST", path: "/ontology/model/attribute/create", bodySchema: {} },
   };
 }
 
@@ -282,7 +282,7 @@ function editAttributeForm(attr: { primaryKey: string; fields: { name: string } 
     values: { name: attr.fields.name },
     errors: [],
     revision: 1,
-    save: { method: "PUT", path: `/ontology/model/attribute/${attr.primaryKey}`, bodySchema: {}, draftOperation: `${ATTRIBUTE}.save` },
+    save: { method: "PUT", path: `/ontology/model/attribute/${attr.primaryKey}`, bodySchema: {} },
   };
 }
 
@@ -434,7 +434,7 @@ function mountObjectsRoute(
         return Response.json(found ? { status: "ready", value: found } : { status: "empty" });
       }
       if (member === "objectForm") {
-        return Response.json({ status: "ready", value: emptyForm("objectType.update") });
+        return Response.json({ status: "ready", value: emptyForm() });
       }
       if (member === "attributes") {
         const className = body.inputs?.className;
@@ -454,7 +454,7 @@ function mountObjectsRoute(
         const found = attributesList.find((item) => item.primaryKey === key);
         return Response.json({
           status: "ready",
-          value: found ? editAttributeForm(found) : emptyForm("attribute.update"),
+          value: found ? editAttributeForm(found) : emptyForm(),
         });
       }
       if (member === "relations") {

@@ -383,7 +383,6 @@ it("reads an ordinary customer class edit form from attribute metadata and curre
   });
   expect(form.errors).toEqual([]);
   expect(form.save.method).toBe("PUT");
-  expect(form.save.draftOperation).toBe("student.update");
 
   // Draft validation merges editable values, keeps read-only PK, and reports type/option violations.
   const checked = await createCustomerOntologyReadAdapter(owner, viewer).form("student", "s-1", {
@@ -408,7 +407,6 @@ it("reads an ordinary customer class createForm with editable primary key and va
   expect(form.values).toEqual({ id: "", name: "", age: null });
   expect(form.errors).toEqual([]);
   expect(form.save.method).toBe("POST");
-  expect(form.save.draftOperation).toBe("person.create");
 
   const missingPk = await createCustomerOntologyReadAdapter(owner, viewer).createForm("person", {
     values: { id: "", name: "Bob", age: 25 },
