@@ -775,10 +775,10 @@ describe("Manager pages in the service router", () => {
 
   it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
-      path === "/workflow/query" ? 402 : path === "/trigger/queryList" ? 401 : 200;
+      path === "/workflow/query" ? 402 : path === "/admin/getMetas" ? 401 : 200;
     const { host, failures } = mountHost({ ...base, view: "/ontology/assets/workflows" });
     await settle();
-    host.view = "/ontology/assets/triggers";
+    host.view = "/browser/data/Order";
     await settle();
     expect([...new Set(failures)].sort()).toEqual([401, 402]);
 

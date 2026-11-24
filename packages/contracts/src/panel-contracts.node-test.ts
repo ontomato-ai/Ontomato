@@ -1965,6 +1965,8 @@ test("Trigger definition reads and writes use exact binding requests", () => {
   assert.ok(clientSends([deletion], "POST", "/data-query", "/trigger/delete", { id: "tr-1" }));
   assert.ok(clientSends([status], "POST", "/data-query", "/trigger/status", { id: "tr-1", status: "PUBLISHED" }));
   assert.ok(!clientSends([status], "POST", "", "/trigger/status"));
+  assert.equal(platformObjectTypes[TRIGGER].reads?.count.result, "panelRecordQuery");
+  assert.equal(platformObjectTypes[TRIGGER].reads?.armedCount.result, "panelRecordQuery");
   assert.deepEqual(platformObjectTypes[TRIGGER].operations, [`${TRIGGER}.save`, SET_TRIGGER_STATUS, DELETE_TRIGGER]);
 });
 

@@ -151,6 +151,14 @@ export function createTriggerReadAdapter(reader: ProductOwner, viewer: Assistant
   }
   return {
     list,
+    async count(): Promise<PanelRecordQuery> {
+      const all = await list();
+      return { rows: [], total: all.length };
+    },
+    async armedCount(): Promise<PanelRecordQuery> {
+      const all = await list();
+      return { rows: [], total: all.filter(record => record.fields.enabled === true).length };
+    },
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       return queried(await list(), params);
     },

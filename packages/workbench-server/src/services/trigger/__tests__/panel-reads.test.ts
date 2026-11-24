@@ -119,6 +119,9 @@ describe("trigger catalog reads", () => {
     const paged = await adapter.query({ size: 1 });
     expect(paged.total).toBe(2);
     expect(paged.nextCursor).toBe("1");
+
+    expect(await adapter.count()).toEqual({ rows: [], total: 2 });
+    expect(await adapter.armedCount()).toEqual({ rows: [], total: 1 });
   });
 
   it("reads one record, edit form, create form, and operation descriptors", async () => {

@@ -92,6 +92,11 @@
       "id": "ontology-action-detail", "pageKey": "action-detail", "panelId": "builtin-product-ontology-action-detail",
       "path": "/ontology/assets/actions/detail", "access": {"permissionCode": "action-management"}
     }, {
+      "id": "ontology-triggers", "pageKey": "ontology-triggers", "panelId": "builtin-product-ontology-triggers",
+      "path": "/ontology/assets/triggers", "access": {"permissionCode": "action-management"},
+      "descriptions": {"en": "Define when workflows start", "zh-CN": "配置流程的启动时机"},
+      "names": {"en": "Triggers", "zh-CN": "触发"}, "groupKey": "capabilities"
+    }, {
       "id": "ontology-skills", "pageKey": "skills-library", "panelId": "builtin-product-skills-library",
       "path": "/ontology/skills", "access": {"permissionCode": "skill-management"},
       "descriptions": {
