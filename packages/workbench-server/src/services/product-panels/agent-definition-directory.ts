@@ -30,7 +30,7 @@ export function createSystemAgentOwners(owner: AssistantOwner, viewer: Assistant
   const builder = createAppBuilderDefinition(owner, viewer);
   const diagnosis = createOpsDiagnosisDefinition(owner.domainId, viewer);
   const host = operationHost({ owner, credentials: viewer });
-  async function callRetrieval<T>(path: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, init: RequestInit) {
+  async function callRetrieval<T>(path: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, init: NonNullable<Parameters<typeof fetch>[1]>) {
     const response = await host.request(path, init);
     const envelope = ownerEnvelopeSchema.parse(await response.json());
     if (!response.ok || !envelope.success) {
@@ -42,7 +42,9 @@ export function createSystemAgentOwners(owner: AssistantOwner, viewer: Assistant
   const retrieval: SystemOwner = {
     async read() {
       const { agents } = await callRetrieval(retrievalPath, ontologyAgentModelsSchema, { method: "GET" });
-      const { id, modelSelection } = agents.find(agent => agent.kind === "retrieval")!;
+      const found = agents.find(agent => agent.kind === "retrieval");
+      if (!found) throw new HttpError(404, "Retrieval agent not found", "NOT_FOUND");
+      const { id, modelSelection } = found;
       return {
         id, modelSelection,
         name: tForLocale(viewer.locale, "panels.agentDefinition.retrievalName"),
@@ -94,13 +96,22 @@ async function visibleSources<T>(reads: readonly (() => Promise<T>)[]): Promise<
 
 function systemAgentForm(agent: SystemAgent, inputs: Pick<PanelFormRequest, "values">, locale?: string): PanelFormDescription {
   const { name, description, modelSelection } = agent;
+  const text = (key: string) => tForLocale(locale, `panels.agentForm.${key}`);
   const readOnlyField = (key: "name" | "description") => ({
-    path: `/${key}`, label: tForLocale(locale, `panels.agentForm.${key}`),
+    path: `/${key}`, label: text(key), section: "basics",
     valueSchema: formJsonSchema(z.string()), readOnly: true, required: false,
-    control: { kind: "text" as const },
+    control: { kind: "text" as const, ...(key === "description" ? { multiline: true } : {}) },
   });
   return {
-    fields: [readOnlyField("name"), readOnlyField("description"), modelPanelField(locale)],
+    sections: [
+      { key: "basics", title: text("sections.basics") },
+      { key: "model", title: text("sections.model"), hint: text("sections.modelHint") },
+    ],
+    fields: [
+      readOnlyField("name"),
+      readOnlyField("description"),
+      { ...modelPanelField(locale), section: "model" },
+    ],
     values: { name, description, modelSelection: inputs.values?.modelSelection ?? modelSelection },
     errors: [],
     save: {

@@ -59,7 +59,7 @@ export interface AgentRow {
   sort_order: number;
 }
 const db = () => getPostgresPool();
-const agentDefinitionScope = "domain_id=$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%'";
+const agentDefinitionScope = "domain_id=$1 AND kind<>'app-builder'";
 
 export const assistantStore = {
   async countAgentDefinitions(domainId: string): Promise<number> {

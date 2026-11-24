@@ -160,7 +160,7 @@ export const agentDefinitionOperations = [
     },
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const restriction = await systemDeletionRestriction(host, target);
-      if (restriction) throw new HttpError(403, restriction.reason, "SYSTEM_AGENT_READ_ONLY");
+      if (restriction) return { kind: "refusal", code: "SYSTEM_AGENT_READ_ONLY", message: restriction.reason };
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "DELETE" });
       return response.ok
         ? { kind: "success", data: {}, affected: { ...affectedDefinition(target.primaryKey), removed: affectedDefinition(target.primaryKey).objects } }

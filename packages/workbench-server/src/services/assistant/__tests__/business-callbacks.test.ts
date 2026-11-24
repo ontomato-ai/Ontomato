@@ -253,7 +253,7 @@ it("declares only the product callback for product-profile runs and keeps absolu
 
 it("declares workbench, ontology and authoring callbacks for app-builder runs without credentials in environment", async () => {
   const prep = basePreparation(null);
-  prep.a.kind = "app-builder:variant";
+  prep.a.kind = "app-builder";
   const run = runtimeStartRunRequestSchema.parse(await prepareAppBuilderRun(prep));
   assertCleanEnvironment(run.environment);
   expect(run.environment.values).toEqual({
@@ -284,7 +284,7 @@ it("supports authoringOnly callback scoping narrowed strictly to authoring/", as
 it("keeps platform-mode URLs from page.mjs, dashboard-skill and app-builder inside declared prefixes", async () => {
   const prep = basePreparation(null);
   const analystRun = runtimeStartRunRequestSchema.parse(await prepareAnalystRun(prep));
-  prep.a.kind = "app-builder:variant";
+  prep.a.kind = "app-builder";
   const builderRun = runtimeStartRunRequestSchema.parse(await prepareAppBuilderRun(prep));
 
   const seen: { kind: string; method: string; targetPath: string; tk: unknown }[] = [];

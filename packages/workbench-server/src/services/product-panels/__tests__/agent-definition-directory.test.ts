@@ -100,13 +100,16 @@ it("hides each inaccessible source and returns forbidden only when all sources d
 
 it.each([builderId, DIAGNOSIS_AGENT_ID, retrievalId])("exposes only the model as an editable field for %s", async id => {
   const form = panelFormDescriptionSchema.parse(await createAgentDefinitionDirectory(owner, credentials).form(id, { changedField: null }));
-  expect(form.fields.map(field => [field.path, field.readOnly])).toEqual([
-    ["/name", true], ["/description", true], ["/modelSelection/modelId", false],
+  expect(form.sections?.map(section => section.key)).toEqual(["basics", "model"]);
+  expect(form.fields.map(field => [field.path, field.readOnly, field.section])).toEqual([
+    ["/name", true, "basics"], ["/description", true, "basics"], ["/modelSelection/modelId", false, "model"],
   ]);
   expect(form.fields[2].control).toMatchObject({ kind: "reference", objectType: "platform:ModelOption" });
   const host = operationHost(requester);
   await expect(remove.unavailable(host, target(id))).resolves.toEqual({ reason: "Built-in system agents cannot be deleted." });
-  await expect(remove.execute(host, target(id))).rejects.toMatchObject({ status: 403, code: "SYSTEM_AGENT_READ_ONLY" });
+  await expect(remove.execute(host, target(id))).resolves.toEqual({
+    kind: "refusal", code: "SYSTEM_AGENT_READ_ONLY", message: "Built-in system agents cannot be deleted.",
+  });
 });
 
 it("routes model saves to the three owners with the initiator's credentials", async () => {

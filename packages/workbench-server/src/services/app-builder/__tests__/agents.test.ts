@@ -6,8 +6,9 @@ vi.mock('../../../platform/agent-runtime/model-selection',()=>({validateModelSel
 import {saveBuilderModel} from '../agents';
 import {isAppBuilderKind} from '../definition';
 beforeEach(()=>{vi.resetAllMocks();});
-it('keeps builder variants on the workspace execution boundary',()=>{
- expect(isAppBuilderKind('app-builder:variant')).toBe(true);
+it('matches only the single domain app-builder kind',()=>{
+ expect(isAppBuilderKind('app-builder')).toBe(true);
+ expect(isAppBuilderKind('app-builder:variant')).toBe(false);
  expect(isAppBuilderKind('app-builder-unrelated')).toBe(false);
 });
 it('does not configure an ordinary agent through builder administration',async()=>{

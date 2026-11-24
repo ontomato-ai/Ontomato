@@ -175,7 +175,7 @@ describe("platform count reads", () => {
     await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 13 } });
     expect(mocks.assertPermission).toHaveBeenCalledWith(viewer, ["analysis-agent"]);
     expect(mocks.query).toHaveBeenCalledWith(expect.stringMatching(
-      /SELECT COUNT\(\*\).*WHERE domain_id=\$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%'/i,
+      /SELECT COUNT\(\*\).*WHERE domain_id=\$1 AND kind<>'app-builder'/i,
     ), [owner.domainId]);
   });
 

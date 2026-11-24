@@ -27,6 +27,7 @@ import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrati
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
+import { ensureOpsDiagnosisSchema } from "../../infrastructure/postgres-migrations/20261029-ops-diagnosis/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { HttpError } from "../../utils/errors";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
@@ -160,6 +161,7 @@ beforeAll(async () => {
   await ensureProductPanelsSchema(state.pool);
   await ensureDomainComponentsSchema(state.pool);
   await ensureAssistantSchema(state.pool);
+  await ensureOpsDiagnosisSchema(state.pool);
   await ensureAssistantDefaultPromptSchema(state.pool);
   await ensureAssistantPresetUpgradesSchema(state.pool);
   await ensureAgentExecutionSchema(state.pool);
@@ -450,6 +452,11 @@ beforeAll(async () => {
     res.json({ tasks: ownerTasks, timeZone: task.timeZone });
   });
   app.get("/platform/applications", (req, res, next) => {
+    if (req.query.purpose === "navigation") {
+      expect(req.header("tk")).toBe("pilot-reader");
+      res.json({ success: true, data: [] });
+      return;
+    }
     if (req.query.purpose !== "schedules") { next(); return; }
     expect(req.header("tk")).toBe("pilot-reader");
     res.json({
@@ -460,6 +467,10 @@ beforeAll(async () => {
         entry: { path: `/${id}` }, entryAccess: ["domain-member"], scheduleAdapter: `java:${id}`, releaseId: null,
       })),
     });
+  });
+  app.get("/ontology/ai/agent-models", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.status(403).json({ success: false, message: "System config denied" });
   });
   app.post("/platform/scheduled-tasks/credential/renew", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -1047,10 +1058,10 @@ it("reads agent settings and reference options with the panel viewer", async () 
     status: "ready", value: { save: { kind: "form.save", target: { source: "draft", slot: "definition" } } },
   });
   const disabled = { primaryKey: agentId, label: "Inventory analyst",
-    fields: { name: "Inventory analyst", description: "Inventory summary", enabled: "Disabled" }, tones: { enabled: "default" } };
+    fields: { name: "Inventory analyst", description: "Inventory summary", enabled: "Disabled", category: "Custom" }, tones: { enabled: "default" } };
   expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining(disabled));
   expect(await ready("summary", "record", { agent })).toMatchObject({
-    ...disabled, fieldLabels: { description: "Description", enabled: "Enabled" },
+    ...disabled, fieldLabels: { description: "Description", enabled: "Enabled", category: "Category" },
   });
   const setEnabled = (enabled: boolean) => state.pool!.query(
     `UPDATE "${state.schema}".assistant_agents SET enabled=$2 WHERE id=$1`, [agentId, enabled],

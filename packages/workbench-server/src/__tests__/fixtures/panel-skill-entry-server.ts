@@ -154,6 +154,15 @@ export async function startPanelSkillEntryServer(options: {
       registeredSkills: native ? [native.skill] : [], admittedEntrances: options.admittedEntrances?.() ?? entries.map(use => use.entrance),
     } });
   });
+  app.get("/platform/applications", (req, res, next) => {
+    if (req.query.purpose !== "navigation") { next(); return; }
+    expect(req.header("tk")).toBe("editor");
+    res.json({ success: true, data: [] });
+  });
+  app.get("/ontology/ai/agent-models", (req, res) => {
+    expect(req.header("tk")).toBe("editor");
+    res.status(403).json({ success: false, message: "System config denied" });
+  });
   app.get("/platform/applications/resolve-entry", (req, res) => {
     expect(req.header("tk")).toBe("editor");
     const entry = entries.find(use => req.query.applicationId === use.applicationId && req.query.useId === use.useId)!;
