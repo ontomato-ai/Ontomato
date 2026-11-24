@@ -31,7 +31,8 @@ const props = withDefaults(defineProps<{
 }>(), { editable: undefined, highlightBanner: undefined, showFocusButton: undefined });
 
 const { t } = useI18n();
-const { instance } = usePanelContext();
+const panel = usePanelContext();
+const { instance } = panel;
 const member = useMember();
 const nodeCategory = props.nodeCategory ?? member.projection.config.nodeCategory;
 if (nodeCategory !== undefined && typeof nodeCategory !== "string") throw new Error(`The projection in member '${member.key}' names nodeCategory with no JSON Pointer`);
@@ -351,11 +352,73 @@ const drawnNodes = computed(() => resolved.value.nodes.map((node) => ({
 })));
 const drawnEdges = computed(() => resolved.value.links.map((edge) => ({ ...edge, tone: edgeToneOf(edge.id) })));
 
-const choose = (param: typeof selectedNode, type: string, ids: readonly string[]) =>
-  param.set(ids.length ? { className: type, primaryKey: ids[0]! } as unknown as RuntimeJsonValue : null);
+let selectionGuarding = false;
+/**
+ * Guards canvas selection changes when the panel holds unsaved edits: synchronous when clean, otherwise confirms with
+ * the host before discarding dirty drafts and applying the new selection.
+ */
+function guardSelectionChange(apply: () => void): void {
+  if (!panel.instance.dirty()) {
+    apply();
+    return;
+  }
+  if (selectionGuarding) return;
+  if (!panel.confirmLeaveUnsaved) {
+    panel.instance.forms.discardAll();
+    apply();
+    return;
+  }
+  selectionGuarding = true;
+  void (async () => {
+    try {
+      const allowed = await panel.confirmLeaveUnsaved!();
+      if (!allowed) return;
+      panel.instance.forms.discardAll();
+      apply();
+    } finally {
+      selectionGuarding = false;
+    }
+  })();
+}
+
+function chooseNode(ids: readonly string[]) {
+  const nextId = ids[0] ?? null;
+  if (nextId === null) {
+    if (selectedNode.value.value === null) return;
+    guardSelectionChange(() => {
+      selectedNode.set(null);
+    });
+    return;
+  }
+  if (selectedNodes.value.length === 1 && selectedNodes.value[0] === nextId && selectedEdge.value.value === null) return;
+  guardSelectionChange(() => {
+    if (selectedEdge.value.value !== null) selectedEdge.set(null);
+    selectedNode.set({ className: nodeType, primaryKey: nextId } as unknown as RuntimeJsonValue);
+  });
+}
+
+function chooseEdge(ids: readonly string[]) {
+  const nextId = ids[0] ?? null;
+  if (nextId === null) {
+    if (selectedEdge.value.value === null) return;
+    guardSelectionChange(() => {
+      selectedEdge.set(null);
+    });
+    return;
+  }
+  if (selectedEdges.value.length === 1 && selectedEdges.value[0] === nextId && selectedNode.value.value === null) return;
+  guardSelectionChange(() => {
+    if (selectedNode.value.value !== null) selectedNode.set(null);
+    selectedEdge.set({ className: edgeType, primaryKey: nextId } as unknown as RuntimeJsonValue);
+  });
+}
+
 function letGo() {
-  selectedNode.set(null);
-  selectedEdge.set(null);
+  if (selectedNode.value.value === null && selectedEdge.value.value === null) return;
+  guardSelectionChange(() => {
+    selectedNode.set(null);
+    selectedEdge.set(null);
+  });
 }
 function connect(source: string, target: string) {
   connectFrom.set(source);
@@ -474,8 +537,8 @@ async function download() {
           :label-size="look.labelSize"
           readable-labels
           :editable="editable"
-          @update:selected="choose(selectedNode, nodeType, $event)"
-          @update:selected-edges="choose(selectedEdge, edgeType, $event)"
+          @update:selected="chooseNode($event)"
+          @update:selected-edges="chooseEdge($event)"
           @blank="letGo"
           @connect="connect"
           @move="move"

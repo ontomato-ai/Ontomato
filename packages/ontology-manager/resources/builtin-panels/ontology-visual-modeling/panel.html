@@ -134,10 +134,21 @@
   }
   .vm-attributes .sdk-panel-member,
   .vm-attributes .sdk-object-list,
-  .vm-attributes .sdk-object-list-items {
+  .vm-attributes .sdk-object-list-cards {
     flex: 0 0 auto;
     height: auto;
     overflow: visible;
+  }
+  .vm-attributes .sdk-object-list-cards {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-sm);
+  }
+  .vm-attributes .sdk-object-list-card {
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+  .vm-attributes .sdk-object-list-card-fields {
+    gap: 2px var(--spacing-sm);
   }
   .vm-state {
     font-size: var(--text-sm);
@@ -205,7 +216,7 @@
           </div>
           <sdk-button text size="small" @click="requestCloseSide">{{ t("visualModeling.close") }}</sdk-button>
         </div>
-        <template v-if="!nodeMissing">
+        <template v-if="nodeEverReady || !nodeMissing">
           <projection slot="classForm"></projection>
           <div class="vm-side-actions">
             <sdk-button size="small" @click="browseData">{{ t("visualModeling.openData") }}</sdk-button>
@@ -223,7 +234,11 @@
               <sdk-button text size="small" @click="newAttribute">{{ t("visualModeling.newAttribute") }}</sdk-button>
             </div>
             <div class="vm-attributes">
-              <projection slot="attributes"></projection>
+              <projection
+                slot="attributes"
+                :inputs="{ className: selectedNodeKey }"
+                @update:listed="onAttributesListed"
+              ></projection>
             </div>
           </div>
 
@@ -247,7 +262,7 @@
           </div>
           <sdk-button text size="small" @click="requestCloseSide">{{ t("visualModeling.close") }}</sdk-button>
         </div>
-        <template v-if="!edgeMissing">
+        <template v-if="edgeEverReady || !edgeMissing">
           <projection slot="relationForm"></projection>
           <div class="vm-side-actions">
             <projection slot="relationDelete" @done="onRelationDeleted"></projection>
@@ -258,9 +273,10 @@
   </div>
 
   <sdk-dialog
-    v-model="classDialog"
+    :model-value="classDialog"
     :title="t('visualModeling.createClassTitle')"
     :width="narrow ? '94%' : '540px'"
+    :before-close="handleDialogClose"
     append-to-body
     destroy-on-close
   >
@@ -276,9 +292,10 @@
   </sdk-dialog>
 
   <sdk-dialog
-    v-model="relationDialog"
+    :model-value="relationDialog"
     :title="t('visualModeling.createRelationTitle')"
     :width="narrow ? '94%' : '540px'"
+    :before-close="handleDialogClose"
     append-to-body
     destroy-on-close
   >
