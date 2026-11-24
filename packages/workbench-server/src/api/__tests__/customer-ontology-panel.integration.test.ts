@@ -211,14 +211,14 @@ it("reads a customer class page and single objects with the owner's labels, tota
   ownerCalls.length = 0;
   expect(await read("people", "rows")).toEqual({ status: "ready", value: {
     total: 7,
-    fieldLabels: { id: "ID", name: "Name", team: "Team", note: "Note" },
+    fieldLabels: { id: "ID", name: "Name", team: "Team", tags: "Tags", note: "Note" },
     rows: [
       {
         className: "person", primaryKey: "p1", label: "Alice / Ops",
         fields: { id: "p1", name: "Alice", team: "Ops", tags: '["lead","oncall"]', note: "" },
-        fieldLabels: { id: "ID", name: "Name", team: "Team", note: "Note" },
+        fieldLabels: { id: "ID", name: "Name", team: "Team", tags: "Tags", note: "Note" },
       },
-      { className: "person", primaryKey: "p3", label: "p3", fields: { id: "p3", name: "", team: "" }, fieldLabels: { id: "ID", name: "Name", team: "Team", note: "Note" } },
+      { className: "person", primaryKey: "p3", label: "p3", fields: { id: "p3", name: "", team: "" }, fieldLabels: { id: "ID", name: "Name", team: "Team", tags: "Tags", note: "Note" } },
     ],
   } });
   expect(ownerCalls).toEqual([`page ${JSON.stringify({ classname: "person", pagenum: 1, pagecount: 2, search: "a" })}`]);

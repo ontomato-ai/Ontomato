@@ -20,7 +20,7 @@ const customer = { class: to.className, primaryKey: to.primaryKey, name: "Custom
 const group = { class: from.className, classLabel: "Orders", instanceCount: 20, sampleCount: 1 };
 
 function javaReply(operation: string, data: unknown, request?: unknown) {
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: globalThis.RequestInit) => {
     expect(new URL(url).pathname).toBe(`/data/instanceGraph/${operation}`);
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
     expect(init.body ? JSON.parse(String(init.body)) : undefined).toEqual(request);
