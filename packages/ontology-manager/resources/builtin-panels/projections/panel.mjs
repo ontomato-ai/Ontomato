@@ -1,17 +1,13 @@
 import { computed } from "vue";
-import { mountPanel, panelAddress, usePanelContext } from "@ontomato/sdk/panel";
+import {
+  mountPanel,
+  panelAddress,
+  usePanelBack,
+  usePanelContext,
+  usePanelFormDraft,
+} from "@ontomato/sdk/panel";
 
 const DETAIL_PATH = "/ontology/projections/detail";
-const OPEN_EDIT_KEY_PREFIX = "ontomato:open-edit:builtin-product-ontology-projection-detail:";
-
-function markOpenDetailInEdit(primaryKey) {
-  if (!primaryKey) return;
-  try {
-    globalThis.window?.sessionStorage?.setItem(`${OPEN_EDIT_KEY_PREFIX}${primaryKey}`, "1");
-  } catch {
-    // Ignore storage unavailability (e.g. private browsing or restricted storage).
-  }
-}
 
 const ProjectionsCatalogPanel = {
   setup() {
@@ -34,37 +30,33 @@ const ProjectionsCatalogPanel = {
       { value: "shared", label: t("scope.shared") },
     ]);
 
-    let closingCreatePromise = null;
-    async function requestCloseCreate() {
-      if (!creating.value || closingCreatePromise) return;
-      const run = (async () => {
-        if (instance.forms.dirty("createForm")) {
-          const allowed = ctx.confirmLeaveUnsaved
-            ? await ctx.confirmLeaveUnsaved()
-            : await instance.forms.reset("createForm", { confirm: true });
-          if (!allowed) return;
-          instance.forms.discard("createForm");
-        }
+    const createDraft = usePanelFormDraft("createForm", {
+      when: () => creating.value,
+    });
+
+    function exitCreate() {
+      if (creating.value) {
         instance.state.set("creating", false);
-      })();
-      closingCreatePromise = run;
-      try {
-        await run;
-      } finally {
-        closingCreatePromise = null;
       }
     }
 
-    const createDialog = computed({
-      get: () => creating.value,
-      set: (open) => {
-        if (!open && creating.value) {
-          void requestCloseCreate();
-        } else if (open && !creating.value) {
-          startCreate();
-        }
-      },
+    const createBack = usePanelBack(() => creating.value, exitCreate, {
+      pushHistory: false,
+      forms: "createForm",
     });
+
+    async function cancelCreate() {
+      if (!creating.value) return;
+      if (ctx.confirmLeaveUnsaved) {
+        await createBack.back();
+        return;
+      }
+      if (instance.forms.dirty("createForm")) {
+        const allowed = await instance.forms.reset("createForm", { confirm: true });
+        if (!allowed) return;
+      }
+      exitCreate();
+    }
 
     function startCreate() {
       instance.state.set("creating", true);
@@ -93,8 +85,6 @@ const ProjectionsCatalogPanel = {
       instance.refreshObjects();
       notify({ kind: "success", text: t("notify.created") });
       if (saved?.primaryKey) {
-        // One-time handoff so the newly created projection opens directly in edit mode without polluting the URL.
-        markOpenDetailInEdit(saved.primaryKey);
         void navigateToDetail(saved.primaryKey);
       }
     }
@@ -102,12 +92,12 @@ const ProjectionsCatalogPanel = {
     return {
       t,
       creating,
-      createDialog,
+      createDraft,
       scopeModel,
       scopeOptions,
       sortModel,
       startCreate,
-      requestCloseCreate,
+      cancelCreate,
       openDetail,
       onCreated,
       refresh: () => instance.refreshObjects(),

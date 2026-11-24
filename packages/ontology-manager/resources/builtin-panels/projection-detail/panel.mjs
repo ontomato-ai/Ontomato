@@ -1,4 +1,4 @@
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, watch } from "vue";
 import {
   mountPanel,
   panelAddress,
@@ -27,24 +27,9 @@ const RELATIONS_PAGE = "/ontology/relations";
 const ACTIONS_PAGE = "/ontology/assets/actions";
 const METRICS_PAGE = "/ontology/assets/metrics";
 
-const OPEN_EDIT_KEY_PREFIX = "ontomato:open-edit:builtin-product-ontology-projection-detail:";
 const VALID_TABS = new Set(["overview", "definition", "usage", "grants"]);
 
 const newProjectionId = () => `projection-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-
-function consumeOpenEditFlag(primaryKey) {
-  if (!primaryKey) return false;
-  try {
-    const storage = globalThis.window?.sessionStorage;
-    if (!storage) return false;
-    const key = `${OPEN_EDIT_KEY_PREFIX}${primaryKey}`;
-    if (storage.getItem(key) === null) return false;
-    storage.removeItem(key);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 const CLOSED_DIALOGS_PATCH = {
   copyDialog: false,
@@ -121,19 +106,10 @@ const ProjectionDetailPanel = {
       when: () => Boolean(selectedKey.value) && recordReady.value && isEditMode.value && canEdit.value,
     });
 
-    const pendingAutoEditKey = ref("");
-
     // Registered first so `lastPatchedKeys` reflects the incoming `selected` update before sibling watchers run.
-    // Consumes any one-time post-create edit-mode handoff flag immediately so reloads/shared links stay in view mode.
     watch(
       selectedKey,
       (nextKey, prevKey) => {
-        if (nextKey && consumeOpenEditFlag(nextKey)) {
-          pendingAutoEditKey.value = nextKey;
-        } else if (pendingAutoEditKey.value && pendingAutoEditKey.value !== nextKey) {
-          pendingAutoEditKey.value = "";
-        }
-
         if (prevKey === undefined || nextKey === prevKey) return;
 
         const patched = instance.state.lastPatchedKeys;
@@ -156,24 +132,7 @@ const ProjectionDetailPanel = {
           instance.state.setState(resetPatch);
         }
       },
-      { immediate: true, flush: "sync" },
-    );
-
-    // Enter edit mode once the newly created projection finishes loading and proves editable.
-    watch(
-      [selectedKey, recordStatus, recordReady, canEdit, pendingAutoEditKey],
-      ([key, status, ready, editable, pending]) => {
-        if (!pending || pending !== key) return;
-        if (ready) {
-          pendingAutoEditKey.value = "";
-          if (editable && detailMode.value !== "edit") {
-            instance.state.set("detailMode", "edit");
-          }
-        } else if (status === "forbidden" || status === "error" || status === "empty") {
-          pendingAutoEditKey.value = "";
-        }
-      },
-      { immediate: true },
+      { flush: "sync" },
     );
 
     // Prevent non-editable projections from staying in edit mode.

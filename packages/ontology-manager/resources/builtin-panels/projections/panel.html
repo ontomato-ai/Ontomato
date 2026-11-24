@@ -1,4 +1,4 @@
-<!-- Projections catalog panel: opens projection details on /ontology/projections/detail and creates in a centered dialog. -->
+<!-- Projections catalog panel: opens projection details on /ontology/projections/detail and creates via a full-width form. -->
 <style>
   [v-cloak] { display: none; }
   .proj-page {
@@ -30,11 +30,32 @@
     flex-shrink: 0;
   }
 
-  .proj-create-body :deep(.sdk-owner-form),
-  .proj-create-body :deep(.sdk-owner-form-inner) {
+  .proj-create-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 64px);
+    min-width: 0;
+  }
+  .proj-create-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .proj-form-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .proj-form-wrap .sdk-owner-form,
+  .proj-form-wrap .sdk-owner-form-inner {
     height: auto;
   }
-  .proj-create-body :deep(.sdk-owner-form-body) {
+  .proj-form-wrap .sdk-owner-form-body {
     overflow: visible;
   }
 
@@ -47,7 +68,29 @@
 
 <div id="app" v-cloak>
   <section class="proj-page">
-    <page-header :title="t('panel.name')" :description="t('panel.description')">
+    <template v-if="creating">
+      <page-header
+        key="create-header"
+        :back-label="t('action.back')"
+        :title="t('form.createTitle')"
+        :draft="createDraft"
+        @back="cancelCreate"
+      >
+        <template #actions>
+          <sdk-button :disabled="Boolean(createDraft?.saving)" @click="cancelCreate">{{ t('action.cancel') }}</sdk-button>
+        </template>
+      </page-header>
+
+      <div class="proj-create-body">
+        <section class="proj-create-card">
+          <div class="proj-form-wrap">
+            <projection slot="createForm" @saved="onCreated"></projection>
+          </div>
+        </section>
+      </div>
+    </template>
+
+    <page-header v-else key="catalog-header" :title="t('panel.name')" :description="t('panel.description')">
       <template #actions>
         <sdk-button text :aria-label="t('action.refresh')" :title="t('action.refresh')" @click="refresh">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -67,7 +110,7 @@
       </template>
     </page-header>
 
-    <div class="proj-catalog">
+    <div v-show="!creating" class="proj-catalog">
       <projection slot="catalogue" class="proj-list-slot" @choose="openDetail">
         <template #filters>
           <sdk-segmented v-model="scopeModel" :options="scopeOptions" size="default"></sdk-segmented>
@@ -78,30 +121,5 @@
         </template>
       </projection>
     </div>
-
-    <sdk-dialog
-      v-model="createDialog"
-      :title="t('form.createTitle')"
-      width="640px"
-      append-to-body
-      destroy-on-close
-    >
-      <div class="proj-create-body">
-        <projection
-          v-if="creating"
-          slot="createForm"
-          @saved="onCreated"
-          @cancel="requestCloseCreate"
-        >
-          <template #default>
-            <object-form-fields :fields="['/name', '/id', '/description', '/visibility', '/componentId', '/data']"></object-form-fields>
-          </template>
-          <template #actions="{ saving, asking, save }">
-            <sdk-button text :disabled="saving" @click="requestCloseCreate">{{ t('action.cancel') }}</sdk-button>
-            <sdk-button type="primary" :disabled="asking" :loading="saving" @click="save">{{ t('action.createSubmit') }}</sdk-button>
-          </template>
-        </projection>
-      </div>
-    </sdk-dialog>
   </section>
 </div>

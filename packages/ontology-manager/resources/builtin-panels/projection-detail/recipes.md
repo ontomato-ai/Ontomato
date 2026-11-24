@@ -1,6 +1,6 @@
 # 投影详情：这个页面怎么用
 
-独立整宽详情入口（`/ontology/projections/detail?selected=<id>`），不进应用菜单，通过投影目录（`/ontology/projections`）点行或深链进入。默认以**查看态**打开，点页头「编辑」切入整宽编辑态；从目录弹窗新建完成后会通过一次性 `sessionStorage` 标记自动进入编辑态（地址不携带编辑态参数，刷新或分享链接仍打开查看态）。
+独立整宽详情入口（`/ontology/projections/detail?selected=<id>`），不进应用菜单，通过投影目录（`/ontology/projections`）点行、整宽新建保存后跳转或深链进入。默认以**查看态**打开，点页头「编辑」切入整宽编辑态（地址不携带编辑态参数）。
 
 ## 页面在看什么
 

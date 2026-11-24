@@ -39,7 +39,6 @@ const RUN = "22222222-2222-4222-8222-222222222222";
 const APP_ID = "ontology";
 const CATALOG_PATH = "/ontology/projections";
 const DETAIL_PATH = "/ontology/projections/detail";
-const OPEN_EDIT_KEY_PREFIX = "ontomato:open-edit:builtin-product-ontology-projection-detail:";
 
 const catalogUse = panelUse(
   "use-ontology-projections",
@@ -831,15 +830,19 @@ afterEach(() => {
 });
 
 describe("projections two-entry catalog & detail panels", () => {
-  it("avoids usePanelData, third-party element names, and direct /api/ calls, and keeps creating/detailMode off deepLink URLs", () => {
+  it("avoids usePanelData, third-party element names, direct /api/ calls, and sessionStorage handoff, and keeps creating/detailMode off deepLink URLs", () => {
     for (const [html, mod] of [
       [catalogHtml, catalogModule],
       [detailHtml, detailModule],
     ]) {
       expect(mod).not.toContain("usePanelData");
       expect(mod).not.toContain("/api/");
+      expect(mod).not.toContain("sessionStorage");
       expect(html).not.toMatch(/<el-[a-z]|--el-/i);
     }
+    expect(catalogHtml).not.toContain("<sdk-dialog");
+    expect(catalogHtml).not.toContain("<object-form-fields");
+    expect(catalogSource.manifest.members.createForm.config.actions).toBe("none");
     expect(catalogSource.manifest.state.creating.deepLink).toBe(false);
     expect(detailSource.manifest.state.detailMode.deepLink).toBe(false);
     expect(catalogSource.manifest.members.catalogue.config.showChevron).toBe(true);
@@ -873,7 +876,7 @@ describe("projections two-entry catalog & detail panels", () => {
     }
   });
 
-  it("opens centered create dialog with minimal fields, guards unsaved close via confirmLeaveUnsaved, and hands off created projection to detail edit mode once", { timeout: 20000 }, async () => {
+  it("switches to full-width create form with all owner fields, guards unsaved Back/Cancel via confirmLeaveUnsaved, and opens created projection in default detail view mode without sessionStorage", { timeout: 20000 }, async () => {
     let resolveConfirm: ((ok: boolean) => void) | null = null;
     const harness = await mountProjectionsApp({
       confirmLeave: () =>
@@ -883,75 +886,77 @@ describe("projections two-entry catalog & detail panels", () => {
     });
     const { mounted, observed, navigated, savedRequests, dispatchedIntents, confirmLeaveUnsaved } = harness;
     try {
-      // Open create dialog from header primary button.
+      // Open full-width create form from header primary button (no modal dialog).
       findButton(mounted.element, "New projection")!.click();
       await waitFor(
-        () => Boolean(document.querySelector(".el-dialog")) && Boolean(document.querySelector('.el-dialog [data-field="/name"] input')),
-        "centered create dialog mounted with minimal fields",
+        () =>
+          observed.context?.state?.creating === true
+          && Boolean(mounted.element.querySelector('.proj-create-body .proj-form-wrap [data-field="/name"] input')),
+        "full-width create form mounted",
       );
-      const dialog = document.querySelector<HTMLElement>(".el-dialog")!;
+      expect(document.querySelector(".el-dialog")).toBeNull();
+      expect((mounted.element.querySelector<HTMLElement>(".proj-catalog")?.style.display)).toBe("none");
 
-      // Only the 6 minimal required/core fields render; advanced fields stay out of the create dialog.
-      for (const path of ["/name", "/id", "/description", "/visibility", "/componentId", "/data"]) {
-        expect(dialog.querySelector(`[data-field="${path}"]`)).not.toBeNull();
-      }
-      for (const excluded of ["/config", "/inputs", "/outputs", "/operations"]) {
-        expect(dialog.querySelector(`[data-field="${excluded}"]`)).toBeNull();
+      // Header renders Back to projections, Cancel, and disabled Save driven by usePanelFormDraft("createForm").
+      expect(Boolean(findButton(mounted.element, "Back to projections"))).toBe(true);
+      expect(Boolean(findButton(mounted.element, "Cancel"))).toBe(true);
+      expect(findButton(mounted.element, "Save")?.disabled).toBe(true);
+
+      // All owner-declared fields render in full without field slicing.
+      for (const path of ["/name", "/id", "/description", "/visibility", "/componentId", "/data", "/config", "/inputs", "/outputs", "/operations"]) {
+        expect(mounted.element.querySelector(`.proj-create-body [data-field="${path}"]`)).not.toBeNull();
       }
 
-      // Edit name -> form becomes dirty.
-      setFieldInput(dialog, "/name", "Draft Projection");
+      // Edit name -> form becomes dirty and header Save becomes enabled.
+      setFieldInput(mounted.element, "/name", "Draft Projection");
       await waitFor(
-        () => dialog.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value === "Draft Projection",
-        "create form name typed",
+        () =>
+          mounted.element.querySelector<HTMLInputElement>('.proj-create-body [data-field="/name"] input')?.value === "Draft Projection"
+          && findButton(mounted.element, "Save")?.disabled === false,
+        "create form name typed and header Save enabled",
       );
 
-      // 1. Clicking Cancel while dirty asks confirmLeaveUnsaved; declining keeps dialog & draft intact.
-      findButton(dialog, "Cancel")!.click();
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 1 && resolveConfirm !== null, "confirmLeaveUnsaved on Cancel");
+      // 1. Clicking Back to projections while dirty asks confirmLeaveUnsaved; declining keeps create form & draft intact.
+      findButton(mounted.element, "Back to projections")!.click();
+      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 1 && resolveConfirm !== null, "confirmLeaveUnsaved on Back");
       resolveConfirm!(false);
       resolveConfirm = null;
       await new Promise((resolve) => setTimeout(resolve, 40));
       expect(observed.context?.state?.creating).toBe(true);
-      expect(document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input')?.value).toBe("Draft Projection");
+      expect(mounted.element.querySelector<HTMLInputElement>('.proj-create-body [data-field="/name"] input')?.value).toBe("Draft Projection");
 
-      // 2. Clicking dialog close (X) while dirty asks confirmLeaveUnsaved; declining keeps dialog & draft intact.
-      const closeBtn = dialog.querySelector<HTMLButtonElement>(".el-dialog__headerbtn");
-      expect(closeBtn).toBeTruthy();
-      closeBtn!.click();
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 2 && resolveConfirm !== null, "confirmLeaveUnsaved on X");
+      // 2. Clicking Cancel while dirty asks confirmLeaveUnsaved; declining keeps create form & draft intact.
+      findButton(mounted.element, "Cancel")!.click();
+      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 2 && resolveConfirm !== null, "confirmLeaveUnsaved on Cancel");
       resolveConfirm!(false);
       resolveConfirm = null;
       await new Promise((resolve) => setTimeout(resolve, 40));
       expect(observed.context?.state?.creating).toBe(true);
-      expect(document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input')?.value).toBe("Draft Projection");
+      expect(mounted.element.querySelector<HTMLInputElement>('.proj-create-body [data-field="/name"] input')?.value).toBe("Draft Projection");
 
-      // 3. Pressing Escape while dirty asks confirmLeaveUnsaved; declining keeps dialog & draft intact.
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 3 && resolveConfirm !== null, "confirmLeaveUnsaved on Escape");
-      resolveConfirm!(false);
-      resolveConfirm = null;
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      expect(observed.context?.state?.creating).toBe(true);
-      expect(document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input')?.value).toBe("Draft Projection");
-
-      // 4. Clicking Cancel again and confirming discards and closes dialog.
-      findButton(dialog, "Cancel")!.click();
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 4 && resolveConfirm !== null, "confirmLeaveUnsaved on Cancel confirm");
+      // 3. Clicking Cancel again and confirming discards draft and returns to catalog.
+      findButton(mounted.element, "Cancel")!.click();
+      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 3 && resolveConfirm !== null, "confirmLeaveUnsaved on Cancel confirm");
       resolveConfirm!(true);
       resolveConfirm = null;
-      await waitFor(() => observed.context?.state?.creating === false && !document.querySelector(".el-dialog"), "dialog closed after confirming discard");
+      await waitFor(
+        () =>
+          observed.context?.state?.creating === false
+          && !mounted.element.querySelector(".proj-create-body")
+          && mounted.element.querySelector<HTMLElement>(".proj-catalog")?.style.display !== "none",
+        "returned to catalog after confirming discard",
+      );
 
-      // 5. Assistant remote control `present({ creating: true })` opens the dialog, fill name, and submit Create ->
-      // writes one-time sessionStorage handoff and opens detail in edit mode!
+      // 4. Assistant remote control `present({ creating: true })` opens full-width create form;
+      // filling name and clicking header Save dispatches createForm.save and navigates to detail view mode with zero sessionStorage writes.
       await harness.present({ creating: true });
       await waitFor(
-        () => Boolean(document.querySelector('.el-dialog [data-field="/name"] input')),
-        "re-opened create dialog",
+        () => Boolean(mounted.element.querySelector('.proj-create-body [data-field="/name"] input')),
+        "re-opened full-width create form via present",
       );
-      const dialog2 = document.querySelector<HTMLElement>(".el-dialog")!;
-      setFieldInput(dialog2, "/name", "Created Projection");
-      findButton(dialog2, "Create")!.click();
+      setFieldInput(mounted.element, "/name", "Created Projection");
+      await waitFor(() => findButton(mounted.element, "Save")?.disabled === false, "header Save enabled for create");
+      findButton(mounted.element, "Save")!.click();
 
       await waitFor(
         () => savedRequests.length === 1,
@@ -961,30 +966,18 @@ describe("projections two-entry catalog & detail panels", () => {
         () => navigated.includes(`${DETAIL_PATH}?selected=proj-created`),
         () => `expected detail navigation, got ${JSON.stringify(navigated)}`,
       );
-      // Detail entry consumes the one-time sessionStorage key and automatically enters full-width edit mode.
       await waitFor(
         () =>
-          Boolean(mounted.element.querySelector(".proj-detail-page .proj-form-wrap"))
-          && observed.context?.state?.detailMode === "edit",
-        "created projection opened automatically in detail edit mode",
+          Boolean(mounted.element.querySelector(".proj-detail-page"))
+          && observed.context?.state?.detailMode === "view"
+          && Boolean(findButton(mounted.element, "Edit")),
+        "created projection opened directly in detail default view mode",
       );
-      // The one-time sessionStorage key is already consumed and URL never carries detailMode.
-      expect(window.sessionStorage.getItem(`${OPEN_EDIT_KEY_PREFIX}proj-created`)).toBeNull();
+      expect(mounted.element.querySelector(".proj-form-wrap")).toBeNull();
+      expect(window.sessionStorage.length).toBe(0);
       expect(displayUrlOf(harness)).toBe(`${DETAIL_PATH}?selected=proj-created`);
     } finally {
       mounted.app.unmount();
-    }
-
-    // 5. Remounting the exact same detail URL (simulating reload/shared link without sessionStorage key) stays in view mode.
-    const reloaded = await mountProjectionsApp({ initialAddress: `${DETAIL_PATH}?selected=proj-created` });
-    try {
-      await waitFor(
-        () => Boolean(reloaded.mounted.element.querySelector(".proj-detail-page")) && reloaded.observed.context?.state?.detailMode === "view",
-        "reloaded detail page stays in view mode",
-      );
-      expect(reloaded.mounted.element.querySelector(".proj-form-wrap")).toBeNull();
-    } finally {
-      reloaded.mounted.app.unmount();
     }
   });
 
@@ -1181,15 +1174,12 @@ describe("projections two-entry catalog & detail panels", () => {
   });
 
   it("handles readonly, chart, forbidden, error, missing states and atomic remote-control edit switches cleanly", { timeout: 20000 }, async () => {
-    // Even if sessionStorage has an edit handoff flag for a readonly projection, it must NOT enter edit mode.
-    window.sessionStorage.setItem(`${OPEN_EDIT_KEY_PREFIX}proj-readonly`, "1");
     const harness = await mountProjectionsApp({ initialAddress: `${DETAIL_PATH}?selected=proj-readonly` });
     const { mounted, observed, present } = harness;
     try {
       await waitFor(() => mounted.element.querySelectorAll(".proj-tab-panel").length === 3, "readonly projection unmounts grants tab");
       expect(observed.context?.state?.detailMode).toBe("view");
       expect(findButton(mounted.element, "Edit")).toBeUndefined();
-      expect(window.sessionStorage.getItem(`${OPEN_EDIT_KEY_PREFIX}proj-readonly`)).toBeNull();
 
       // Chart projection shows chart hint and hides Copy in More menu.
       await present({ selected: projRef("proj-chart") });

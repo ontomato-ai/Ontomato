@@ -4,7 +4,7 @@
       "id": "builtin-product-ontology-projections",
       "input": {
         "name": "投影",
-        "description": "本体管理器产品层的投影目录：检索、筛选、排序投影，点击进入整宽详情，并通过居中弹窗新建投影。"
+        "description": "本体管理器产品层的投影目录：检索、筛选、排序投影，点击进入整宽详情，并支持整宽表单新建投影。"
       }
     }
   ]

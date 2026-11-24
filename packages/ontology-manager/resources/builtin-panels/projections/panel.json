@@ -110,10 +110,10 @@
         },
         "operation": "platform:ProductProjection.save",
         "config": {
-          "actions": "create-only"
+          "actions": "none"
         },
         "name": "投影目录 · 新建表单",
-        "description": "属主的投影创建表单：填写最小必填字段新建一条普通投影。",
+        "description": "属主的投影创建表单：按所选组件填写完整字段新建一条普通投影。",
         "id": "builtin-product-f6a07193-d8c8-4cf0-a0dd-febe9945ed80"
       }
     }
@@ -141,8 +141,8 @@
         "list.empty": "没有符合条件的投影",
         "form.createTitle": "新建投影",
         "notify.saved": "已保存",
-        "action.createSubmit": "新建",
-        "notify.created": "已创建投影"
+        "notify.created": "已创建投影",
+        "action.back": "返回投影"
       },
       "en": {
         "panel.name": "Projections",
@@ -165,8 +165,8 @@
         "list.empty": "No matching projections",
         "form.createTitle": "New projection",
         "notify.saved": "Saved.",
-        "action.createSubmit": "Create",
-        "notify.created": "Projection created."
+        "notify.created": "Projection created.",
+        "action.back": "Back to projections"
       },
       "zh-TW": {
         "panel.name": "投影",
@@ -189,8 +189,8 @@
         "list.empty": "沒有符合條件的投影",
         "form.createTitle": "新建投影",
         "notify.saved": "已儲存",
-        "action.createSubmit": "新建",
-        "notify.created": "已建立投影"
+        "notify.created": "已建立投影",
+        "action.back": "返回投影"
       },
       "ja": {
         "panel.name": "プロジェクション",
@@ -213,8 +213,8 @@
         "list.empty": "一致するプロジェクションがありません",
         "form.createTitle": "新規プロジェクション",
         "notify.saved": "保存しました。",
-        "action.createSubmit": "作成",
-        "notify.created": "プロジェクションを作成しました。"
+        "notify.created": "プロジェクションを作成しました。",
+        "action.back": "プロジェクション一覧へ"
       },
       "ar": {
         "panel.name": "الإسقاطات",
@@ -237,8 +237,8 @@
         "list.empty": "لا توجد إسقاطات مطابقة",
         "form.createTitle": "إسقاط جديد",
         "notify.saved": "تم الحفظ.",
-        "action.createSubmit": "إنشاء",
-        "notify.created": "تم إنشاء الإسقاط."
+        "notify.created": "تم إنشاء الإسقاط.",
+        "action.back": "العودة إلى الإسقاطات"
       },
       "fr": {
         "panel.name": "Projections",
@@ -261,8 +261,8 @@
         "list.empty": "Aucune projection correspondante",
         "form.createTitle": "Nouvelle projection",
         "notify.saved": "Enregistré.",
-        "action.createSubmit": "Créer",
-        "notify.created": "Projection créée."
+        "notify.created": "Projection créée.",
+        "action.back": "Retour aux projections"
       },
       "de": {
         "panel.name": "Projektionen",
@@ -285,8 +285,8 @@
         "list.empty": "Keine passenden Projektionen",
         "form.createTitle": "Neue Projektion",
         "notify.saved": "Gespeichert.",
-        "action.createSubmit": "Erstellen",
-        "notify.created": "Projektion erstellt."
+        "notify.created": "Projektion erstellt.",
+        "action.back": "Zurück zu Projektionen"
       },
       "it": {
         "panel.name": "Proiezioni",
@@ -309,8 +309,8 @@
         "list.empty": "Nessuna proiezione corrispondente",
         "form.createTitle": "Nuova proiezione",
         "notify.saved": "Salvato.",
-        "action.createSubmit": "Crea",
-        "notify.created": "Proiezione creata."
+        "notify.created": "Proiezione creata.",
+        "action.back": "Torna alle proiezioni"
       }
     }
   }
