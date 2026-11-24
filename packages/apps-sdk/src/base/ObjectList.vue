@@ -50,11 +50,13 @@ import type {
   TextHighlightRange,
 } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
+import { savePanelFile } from "../panel/save-file";
 import type { ListRowSlotOperation } from "../panel/slot-context";
 import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
 import { resolveValueMapEntry, type ResolvedValueMapEntry } from "./display-value";
 import ListRowSlotHost from "./ListRowSlotHost.vue";
 import ObjectListBatchActions from "./ObjectListBatchActions.vue";
+import ObjectListColumnToggle from "./ObjectListColumnToggle.vue";
 import ObjectListRowActions, { type ResolvedRowActionItem } from "./ObjectListRowActions.vue";
 import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
@@ -83,6 +85,15 @@ import {
   resolveRowOperationParams,
   resolveRowOperationTarget,
 } from "./object-list-actions";
+import {
+  buildCsvContent,
+  collectDynamicFieldLabels,
+  columnSchemaKey,
+  deriveDynamicColumns,
+  filterVisibleColumns,
+  resolveCsvFileName,
+  toggleColumnKeyVisibility,
+} from "./object-list-dynamic";
 import {
   buildObjectListGroups,
   findLocalHighlightRanges,
@@ -174,6 +185,10 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "leadingIconField",
   "leadingIconKind",
   "openOutput",
+  "dynamicColumns",
+  "showColumnToggle",
+  "exportable",
+  "exportFileName",
 ]);
 
 interface ParsedListData {
@@ -292,6 +307,24 @@ const props = withDefaults(
     leadingIconKind?: "application" | "agent";
     /** Optional owner-declared string output key on each record (`row.outputs[openOutput]`) opened via host navigation when clicking a row or card. */
     openOutput?: string;
+    /**
+     * Derive multi-column table definitions automatically from returned records (`fieldLabels` key order, then `fields`
+     * key order, excluding array-valued fields) when no static `columns` are configured. Preserves the last derived
+     * headers during an empty state within the same scope. Defaults to `false`.
+     */
+    dynamicColumns?: boolean;
+    /**
+     * Show a toolbar column-visibility popover (`Columns`) in table mode so readers can hide or show columns locally
+     * without issuing reads or writes. Automatically resets when the underlying column set changes. Defaults to `false`.
+     */
+    showColumnToggle?: boolean;
+    /**
+     * Show a toolbar button (`Export current page (CSV)`) that downloads the currently loaded rows using the visible
+     * columns and display headers as a UTF-8 BOM RFC 4180 CSV file. Disabled when no rows are loaded. Defaults to `false`.
+     */
+    exportable?: boolean;
+    /** Optional base file name (`.csv` added if omitted) for current-page CSV export; defaults to `records-YYYY-MM-DD.csv`. */
+    exportFileName?: string;
   }>(),
   {
     layout: "auto",
@@ -321,6 +354,10 @@ const props = withDefaults(
     leadingIconField: undefined,
     leadingIconKind: "application",
     openOutput: undefined,
+    dynamicColumns: false,
+    showColumnToggle: false,
+    exportable: false,
+    exportFileName: undefined,
   },
 );
 
@@ -623,7 +660,7 @@ const tableColumnCount = computed(
   () =>
     (hasRowDetailSlot.value ? 1 : 0)
     + (canCheck ? 1 : 0)
-    + (props.columns?.length ?? 0)
+    + visibleColumns.value.length
     + (hasActionColumn.value ? 1 : 0)
     + (showRowChevron.value ? 1 : 0),
 );
@@ -1087,10 +1124,96 @@ const someVisibleChecked = computed(
   () => !allVisibleChecked.value && rows.value.some((row) => checkedIdentityKeys.value.has(rowCheckKey(row))),
 );
 
+const lastDynamicColumns = ref<readonly ObjectListColumn[]>([]);
+const lastDynamicFieldLabels = ref<Readonly<Record<string, string>>>({});
+const hiddenColumnKeys = ref<ReadonlySet<string>>(new Set());
+const columnToggleOpen = ref(false);
+
+const dynamicColumnScopeKey = computed(() =>
+  JSON.stringify({
+    activeType: activeType.value,
+    typeParam: currentParams.value.type ?? null,
+    classNameParam: currentParams.value.className ?? null,
+    parent: "object" in datum.source
+      ? ("literal" in datum.source.object
+        ? datum.source.object.literal
+        : (member.inputs.value[datum.source.object.input] ?? null))
+      : null,
+  }),
+);
+
+watch(
+  dynamicColumnScopeKey,
+  (next, prev) => {
+    if (next === prev) return;
+    lastDynamicColumns.value = [];
+    lastDynamicFieldLabels.value = {};
+    hiddenColumnKeys.value = new Set();
+    columnToggleOpen.value = false;
+  },
+  { flush: "sync" },
+);
+
+watch(
+  [() => props.dynamicColumns, () => Boolean(props.columns?.length), mergedRows] as const,
+  ([dynamicEnabled, hasStaticColumns, currentRows]) => {
+    if (!dynamicEnabled || hasStaticColumns) {
+      if (lastDynamicColumns.value.length > 0) lastDynamicColumns.value = [];
+      if (Object.keys(lastDynamicFieldLabels.value).length > 0) lastDynamicFieldLabels.value = {};
+      return;
+    }
+    if (currentRows.length > 0) {
+      lastDynamicColumns.value = deriveDynamicColumns(currentRows);
+      lastDynamicFieldLabels.value = collectDynamicFieldLabels(currentRows);
+    }
+  },
+  { immediate: true, flush: "sync" },
+);
+
+const allColumns = computed<readonly ObjectListColumn[]>(() => {
+  if (props.columns?.length) return props.columns;
+  if (!props.dynamicColumns) return [];
+  if (mergedRows.value.length > 0) return deriveDynamicColumns(mergedRows.value);
+  return lastDynamicColumns.value;
+});
+
+const currentColumnSchemaKey = computed(() => columnSchemaKey(allColumns.value));
+
+watch(
+  currentColumnSchemaKey,
+  (next, prev) => {
+    if (next !== prev) {
+      hiddenColumnKeys.value = new Set();
+      columnToggleOpen.value = false;
+    }
+  },
+  { flush: "sync" },
+);
+
+const visibleColumns = computed<readonly ObjectListColumn[]>(() =>
+  filterVisibleColumns(allColumns.value, hiddenColumnKeys.value),
+);
+
+function setColumnVisible(key: string, visible: boolean) {
+  hiddenColumnKeys.value = toggleColumnKeyVisibility(allColumns.value, hiddenColumnKeys.value, key, visible);
+}
+
+function resetColumnVisibility() {
+  if (hiddenColumnKeys.value.size > 0) hiddenColumnKeys.value = new Set();
+}
+
+function openColumnToggle() {
+  if (allColumns.value.length > 0) columnToggleOpen.value = true;
+}
+
+function closeColumnToggle() {
+  columnToggleOpen.value = false;
+}
+
 const effectiveLayout = computed<"list" | "table" | "cards">(() => {
   if (props.layout === "cards") return "cards";
   if (props.layout === "list") return "list";
-  return props.columns?.length ? "table" : "list";
+  return props.columns?.length || props.dynamicColumns ? "table" : "list";
 });
 const isTable = computed(() => effectiveLayout.value === "table");
 const isCards = computed(() => effectiveLayout.value === "cards");
@@ -1114,7 +1237,7 @@ function columnSubtitleText(row: PlatformObjectRecord, column: ObjectListColumn)
  * ends in an ellipsis; a column the panel marks `wrap` runs onto several lines. A table wider than its frame scrolls
  * inside it.
  */
-const columnFit = computed(() => new Map((props.columns ?? []).map((column) => [column.key,
+const columnFit = computed(() => new Map(visibleColumns.value.map((column) => [column.key,
   columnCellSlot(column.key) ? (column.wrap ? "sdk-object-list-col-wrap" : "")
     : column.wrap ? "sdk-object-list-col-wrap"
       : (column.kind === undefined || column.kind === "text" || column.kind === "reference")
@@ -1238,11 +1361,16 @@ const showCheckRow = computed(
   () => canCheck && !isTable.value && (rows.value.length > 0 || checkedRefs.value.length > 0),
 );
 
+const showBuiltInColumnToggle = computed(() => Boolean(props.showColumnToggle) && isTable.value);
+const showBuiltInExport = computed(() => Boolean(props.exportable));
+const hasBuiltInToolbarActions = computed(() => showBuiltInColumnToggle.value || showBuiltInExport.value);
+
 const showToolbar = computed(
   () =>
     canSearch.value
     || Boolean(slots.filters)
     || Boolean(slots["toolbar-actions"])
+    || hasBuiltInToolbarActions.value
     || showCheckRow.value
     || (canCheck && checkedRefs.value.length > 0),
 );
@@ -1345,13 +1473,67 @@ const dataStateLabels = useDataStateLabels(
 );
 const isStickyCheckBar = computed(() => !isTable.value && !isCards.value && !canSearch.value && canCheck);
 
-const ownerFieldLabels = computed<Readonly<Record<string, string>>>(
-  () => mergedRows.value[0]?.fieldLabels ?? rows.value[0]?.fieldLabels ?? {},
-);
+const ownerFieldLabels = computed<Readonly<Record<string, string>>>(() => {
+  const live = collectDynamicFieldLabels(mergedRows.value.length > 0 ? mergedRows.value : rows.value);
+  if (Object.keys(lastDynamicFieldLabels.value).length === 0) return live;
+  return { ...lastDynamicFieldLabels.value, ...live };
+});
 
 function columnLabel(column: ObjectListColumn): string {
   if (column.labelKey) return panel.t(column.labelKey);
   return ownerFieldLabels.value[column.key] ?? column.key;
+}
+
+const columnToggleItems = computed(() =>
+  allColumns.value.map((column) => ({ key: column.key, label: columnLabel(column) })),
+);
+
+const exportColumns = computed<readonly ObjectListColumn[]>(() => {
+  if (visibleColumns.value.length > 0) return visibleColumns.value;
+  return deriveDynamicColumns(rows.value);
+});
+
+const canExportCsv = computed(() => rows.value.length > 0 && exportColumns.value.length > 0);
+
+function csvCellText(row: PlatformObjectRecord, column: ObjectListColumn): string {
+  if (column.key === "primaryKey" && rawRecordField(row, column.key) === undefined) {
+    return row.primaryKey;
+  }
+  const mappedLabel = columnMapped(row, column)?.label;
+  if (mappedLabel) return mappedLabel;
+  if (column.kind === "time") {
+    const value = fieldValue(row, column.key);
+    return value !== "" ? timeText(value, column.timeFormat) : "";
+  }
+  if (column.kind === "tags") {
+    const items = recordFieldArrayItems(row, column.key);
+    if (items.length > 0) {
+      return items
+        .map((item) =>
+          isRecordReference(item)
+            ? referenceDisplayLabel(item)
+            : isRecordChildReference(item)
+              ? childReferenceDisplayLabel(item)
+              : scalarFieldText(item, t),
+        )
+        .filter((part) => part.length > 0)
+        .join(column.listSeparator ?? ", ");
+    }
+  }
+  return columnText(row, column);
+}
+
+function exportCurrentPageCsv() {
+  if (!canExportCsv.value) return;
+  const cols = exportColumns.value;
+  const headers = cols.map((column) => columnLabel(column));
+  const dataRows = rows.value.map((row) => cols.map((column) => csvCellText(row, column)));
+  const csv = buildCsvContent(headers, dataRows);
+  savePanelFile({
+    bytes: new TextEncoder().encode(csv),
+    mime: "text/csv",
+    suggestedName: resolveCsvFileName(props.exportFileName),
+  });
 }
 
 function columnEmpty(column: ObjectListColumn): string {
@@ -1493,7 +1675,9 @@ function goPage(nextPage: number) {
 const searchPlaceholderText = computed(() =>
   props.searchPlaceholder ? panel.t(props.searchPlaceholder) : t("platform.listSearchPlaceholder"),
 );
-const tablePreservesEmpty = computed(() => isTable.value && listResult.value.status === "empty");
+const tablePreservesEmpty = computed(
+  () => isTable.value && visibleColumns.value.length > 0 && listResult.value.status === "empty",
+);
 const tableDataResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(() =>
   tablePreservesEmpty.value ? { status: "ready", value: [] } : listResult.value,
 );
@@ -2768,6 +2952,13 @@ useMemberOutput("filteredCount", () => {
 useMemberOutput("checkedCount", () => checkedRefs.value.length);
 useMemberOutput("selectedLabel", () => selectedRowLabel.value);
 useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.value);
+
+defineExpose({
+  openColumnToggle,
+  closeColumnToggle,
+  resetColumnVisibility,
+  exportCurrentPageCsv,
+});
 </script>
 
 <template>
@@ -2815,8 +3006,32 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
           {{ t("platform.listClearSelection") }}
         </button>
       </ObjectListBatchActions>
-      <div v-if="$slots['toolbar-actions']" class="sdk-object-list-toolbar-actions">
+      <div v-if="$slots['toolbar-actions'] || hasBuiltInToolbarActions" class="sdk-object-list-toolbar-actions">
         <slot name="toolbar-actions"></slot>
+        <ObjectListColumnToggle
+          v-if="showBuiltInColumnToggle"
+          v-model:open="columnToggleOpen"
+          :columns="columnToggleItems"
+          :hidden-keys="hiddenColumnKeys"
+          @toggle="setColumnVisible"
+          @reset="resetColumnVisibility"
+        />
+        <button
+          v-if="showBuiltInExport"
+          type="button"
+          class="sdk-object-list-btn sdk-object-list-toolbar-btn"
+          data-testid="object-list-export-csv"
+          :disabled="!canExportCsv"
+          :title="canExportCsv ? t('platform.listExportCurrentPageCsv') : t('platform.listExportEmptyHint')"
+          @click="exportCurrentPageCsv"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          <span>{{ t("platform.listExportCurrentPageCsv") }}</span>
+        </button>
       </div>
     </div>
 
@@ -2875,7 +3090,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                 />
               </th>
               <th
-                v-for="column in columns"
+                v-for="column in visibleColumns"
                 :key="column.key"
                 :class="columnFit.get(column.key)"
                 :style="columnStyle(column)"
@@ -2951,7 +3166,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     />
                   </td>
                   <td
-                    v-for="column in columns"
+                    v-for="column in visibleColumns"
                     :key="column.key"
                     :class="columnFit.get(column.key)"
                     :style="columnStyle(column)"
@@ -3365,8 +3580,8 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                 </template>
               </p>
-              <dl v-if="columns?.length" class="sdk-object-list-card-fields">
-                <template v-for="column in columns" :key="column.key">
+              <dl v-if="visibleColumns.length" class="sdk-object-list-card-fields">
+                <template v-for="column in visibleColumns" :key="column.key">
                   <dt class="sdk-object-list-card-field-label">{{ columnLabel(column) }}</dt>
                   <dd class="sdk-object-list-card-field-value" :title="columnCellSlot(column.key) ? undefined : cellTitle(entry.row, column)">
                     <list-row-slot-host
@@ -3987,6 +4202,13 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
 .sdk-object-list-btn:disabled {
   color: var(--el-disabled-text-color);
   cursor: not-allowed;
+}
+.sdk-object-list-toolbar-btn {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--spacing-xs);
+  padding: 0 var(--spacing-sm);
+  white-space: nowrap;
 }
 .sdk-object-list-count,
 .sdk-object-list-selected-count,
