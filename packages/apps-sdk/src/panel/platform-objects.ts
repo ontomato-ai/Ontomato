@@ -17,7 +17,12 @@ import { registerHandler, type RegisteredHandler } from "./handlers";
 import { stateChildObject, stateObject, type PanelFieldValue } from "./state";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { projectionReadReferences, type PanelFieldTone, type PanelOptionList } from "@ontomato/contracts/panel-projection";
-import type { PlatformOntologyObjectsRequest, PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
+import type {
+  PanelGraphConnections,
+  PanelGraphOverview,
+  PlatformOntologyObjectsRequest,
+  PlatformOntologyObjectsResponse,
+} from "@ontomato/contracts/platform-ontology";
 
 /*
  * How the SDK reads and writes one platform object type (overall design 3.2): a projection binds
@@ -238,6 +243,7 @@ export interface PlatformGraphNode {
   readonly className: string;
   readonly primaryKey: string;
   readonly label: string;
+  readonly typeLabel?: string;
   /** Optional layer key (for example `"fact" | "capability" | "governance" | "product"`). */
   readonly layer?: string;
   readonly detail?: string;
@@ -258,9 +264,11 @@ export interface PlatformGraphEdge {
 /** Outcome of querying one relation kind for a node's neighbors. */
 export interface PlatformGraphRelationStatus {
   readonly relationKind: string;
+  readonly label?: string;
   readonly status: PlatformGraphStatus;
   readonly edgeCount: number;
   readonly reason?: string;
+  readonly truncated?: boolean;
 }
 
 /** One object type declared in a graph's type-mode schema. */
@@ -302,6 +310,10 @@ export interface PlatformGraphNeighborsQuery {
   readonly node: PanelObjectValue;
   readonly relationKinds?: readonly string[];
   readonly layers?: readonly string[];
+  readonly targetClass?: string;
+  readonly direction?: "incoming" | "outgoing" | "both";
+  readonly limit?: number;
+  readonly offset?: number;
 }
 
 /** Result of expanding one hop of neighbors around a node. */
@@ -310,16 +322,23 @@ export interface PlatformGraphNeighborsResult {
   readonly neighbors: readonly PlatformGraphNode[];
   readonly edges: readonly PlatformGraphEdge[];
   readonly relations: readonly PlatformGraphRelationStatus[];
+  readonly nextOffset?: number | null;
+  readonly total?: number | null;
+  readonly version?: string;
 }
 
-/** Graph source port implemented by a resource adapter bound to a graph projection (M3 capability map, M4 instance graph). */
+/** Graph source port implemented by a resource adapter bound to a graph projection. */
 export interface PlatformObjectGraph {
-  /** Schema of types and relation kinds for type mode (optional for instance-only graphs such as M4). */
+  /** Schema of types and relation kinds for type mode (optional for instance/overview graphs). */
   schema?(): Promise<PlatformGraphSchema>;
-  /** Per-type readable counts and access status for type mode (optional for instance-only graphs). */
+  /** Per-type readable counts and access status for type mode (optional for instance/overview graphs). */
   counts?(): Promise<readonly PlatformGraphTypeCount[]>;
   /** Default starting node for instance mode when no explicit `start` input is provided. */
   start?(): Promise<PlatformGraphNode | null>;
+  /** Sampled graph overview grouped by node category (optional). */
+  overview?(): Promise<PanelGraphOverview>;
+  /** Deferred overview connections for a sampled overview version/token (optional). */
+  connections?(query: { readonly version: string; readonly sampleToken?: string }): Promise<PanelGraphConnections>;
   /** One-hop neighbors, edges and per-relation-kind outcome statuses for one node. */
   neighbors(query: PlatformGraphNeighborsQuery): Promise<PlatformGraphNeighborsResult>;
   /** One page of the objects of one type the reader may see, as the owner answers it (the ontology's objects read). */

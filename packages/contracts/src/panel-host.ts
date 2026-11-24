@@ -165,7 +165,7 @@ const panelReadResults = [
     rowOperations: panelRowOperationsMapSchema.optional(),
   }).strict(),
   z.object({ status: z.literal("empty") }).strict(),
-  z.object({ status: z.literal("error"), message: z.string().min(1) }).strict(),
+  z.object({ status: z.literal("error"), message: z.string().min(1), code: z.string().min(1).optional() }).strict(),
   z.object({ status: z.literal("forbidden"), reason: z.string().min(1).optional() }).strict(),
 ] as const;
 export const productPanelReadResponseSchema = z.discriminatedUnion("status", panelReadResults);

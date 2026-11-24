@@ -106,11 +106,24 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
       case "panelGraphStart":
         value = { node: await graphOf(type!).start!() };
         break;
+      case "panelGraphOverview":
+        value = await graphOf(type!).overview!();
+        break;
+      case "panelGraphConnections":
+        value = await graphOf(type!).connections!({
+          version: params.version as string,
+          ...(params.sampleToken ? { sampleToken: params.sampleToken as string } : {}),
+        });
+        break;
       case "panelGraphNeighbors":
         value = await graphOf(type!).neighbors({
           node: params.node as unknown as PanelObjectValue,
           ...(params.relationKinds ? { relationKinds: params.relationKinds as string[] } : {}),
           ...(params.layers ? { layers: params.layers as PlatformGraphNeighborsQuery["layers"] } : {}),
+          ...(params.targetClass ? { targetClass: params.targetClass as string } : {}),
+          ...(params.direction ? { direction: params.direction as PlatformGraphNeighborsQuery["direction"] } : {}),
+          ...(typeof params.limit === "number" ? { limit: params.limit } : {}),
+          ...(typeof params.offset === "number" ? { offset: params.offset } : {}),
         });
         break;
       case "panelOntologyObjects": {
@@ -178,7 +191,14 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
           (reason: unknown) => {
             if (reading !== sequence) return;
             loadedTargetKey.value = nextTargetKey;
-            state.value = { status: "error", message: reason instanceof Error ? reason.message : String(reason) };
+            const code = reason && typeof reason === "object" && typeof (reason as { code?: unknown }).code === "string"
+              ? (reason as { code: string }).code
+              : undefined;
+            state.value = {
+              status: "error",
+              message: reason instanceof Error ? reason.message : String(reason),
+              ...(code ? { code } : {}),
+            };
           },
         );
       };

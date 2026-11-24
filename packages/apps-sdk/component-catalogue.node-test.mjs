@@ -63,7 +63,14 @@ const DECLARED_DATA = {
     rows: ["panelRecordList", "panelRecordQuery"],
   },
   ObjectGraph: { nodes: ["panelRecordList"], edges: ["panelRecordList"] },
-  OntologyGraph: { schema: ["panelGraphSchema"], counts: ["panelGraphCounts"], start: ["panelGraphStart"], neighbors: ["panelGraphNeighbors"] },
+  OntologyGraph: {
+    schema: ["panelGraphSchema"],
+    counts: ["panelGraphCounts"],
+    start: ["panelGraphStart"],
+    overview: ["panelGraphOverview"],
+    connections: ["panelGraphConnections"],
+    neighbors: ["panelGraphNeighbors"],
+  },
   ObjectRelations: { neighbors: ["panelGraphNeighbors", "panelRelationNeighbors"] },
   MetricChart: { template: ["chartTemplate"], result: ["metricOutput"] },
   SegmentedControl: { counts: ["panelGroupCounts"] },
@@ -241,7 +248,12 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       visibleRelationKinds: platformRelationKindList,
       visibleLayers: stringList,
       expandedNodes: ontologyNodeList,
+      positions: { kind: "json" },
     });
+    assert.deepEqual(declared.get("OntologyGraph").data.connections.runtimeParams, ["version", "sampleToken"]);
+    assert.deepEqual(declared.get("OntologyGraph").data.neighbors.runtimeParams, [
+      "node", "layers", "relationKinds", "targetClass", "direction", "limit", "offset",
+    ]);
     const relationKindList = { kind: "list", items: { kind: "scalar", type: "string" } };
     const anyObject = { kind: "object", objectType: "@any" };
     const objectRelations = declared.get("ObjectRelations");
@@ -337,7 +349,17 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       "edgeCount", "error", "nodeCount", "pathHops", "pathMessage", "pathStatus", "status",
     ]);
     assert.deepEqual(Object.keys(declared.get("OntologyGraph").readOnlyOutputs ?? {}).sort(), [
-      "startDetail", "startLabel", "visibleRelationKindLabels",
+      "activeMode",
+      "edgeCount",
+      "graphStatus",
+      "graphVersion",
+      "hasMoreNeighbors",
+      "nodeCount",
+      "sampleToken",
+      "startDetail",
+      "startLabel",
+      "versionChanged",
+      "visibleRelationKindLabels",
     ]);
     assert.deepEqual(Object.keys(declared.get("ObjectRelations").readOnlyOutputs ?? {}).sort(), [
       "edgeCount", "label", "status",

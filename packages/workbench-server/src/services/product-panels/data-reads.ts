@@ -785,6 +785,8 @@ export async function readProductPanelData(
     return { status: "ready", value: outcome.value, ...(rowOperations && { rowOperations }) };
   } catch (error) {
     if (error instanceof HttpError && (error.status === 401 || error.status === 403)) return { status: "forbidden" };
+    if (error instanceof HttpError && error.code === "GRAPH_VERSION_CHANGED")
+      return { status: "error", message: error.message, code: error.code };
     if (error instanceof HttpError || error instanceof BackendUnavailableError || error instanceof z.ZodError || error instanceof SyntaxError)
       return { status: "error", message: error.message };
     if (batchCache) {
