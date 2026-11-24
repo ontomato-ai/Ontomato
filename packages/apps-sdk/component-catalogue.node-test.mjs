@@ -40,7 +40,7 @@ const EDITION = join(HERE, "../../apps/workbench/web/src/sdk-edition.ts");
 
 /** Every directly rendered component's data names, and the read results each may hold. */
 const DECLARED_DATA = {
-  ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
+  ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"], supplement: ["panelRecordList"] },
   ObjectCount: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
   ObjectSummary: { record: ["panelRecord"] },
   ObjectHeader: { record: ["panelRecord"] },

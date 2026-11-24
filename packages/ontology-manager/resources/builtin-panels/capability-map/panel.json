@@ -179,7 +179,8 @@
         "description": "Declared four-layer platform ontology types grouped by layer with distinct readable, refused, failed, and unavailable counts.",
         "type": "platform:OntologyType",
         "data": {
-          "rows": "list"
+          "rows": "list",
+          "supplement": "countRows"
         },
         "state": {
           "selected": "selectedTypeRef",

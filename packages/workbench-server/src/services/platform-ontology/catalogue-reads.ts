@@ -1,5 +1,5 @@
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
-import type { PlatformOntologyTypeCount } from "@ontomato/contracts/platform-ontology";
+import type { PlatformOntologyType, PlatformOntologyTypeCount } from "@ontomato/contracts/platform-ontology";
 import { ONTOLOGY_RELATION_KIND, platformObjectTypes, type PlatformRelationKindDeclaration } from "@ontomato/contracts/platform-object-types";
 import { platformTypeDetails } from "@ontomato/contracts/platform-type-details";
 import { tForLocale } from "../../i18n";
@@ -13,6 +13,7 @@ import {
   ONTOLOGY_TYPE,
   PLATFORM_ONTOLOGY_LAYERS,
   PLATFORM_ONTOLOGY_RELATION_KINDS,
+  PLATFORM_ONTOLOGY_TYPES,
   PLATFORM_ONTOLOGY_TYPE_MAP,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
@@ -48,8 +49,25 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
   const text = (key: string) => tForLocale(viewer.locale, key);
   const word = (key: string) => text(`panels.platformOntology.${key}`);
 
-  function typeRow(entry: PlatformOntologyTypeCount): PanelRecord {
-    const { type, layer, status, count, reason } = entry;
+  function typeCatalogRow(spec: PlatformOntologyType): PanelRecord {
+    return {
+      className: ONTOLOGY_TYPE,
+      primaryKey: spec.id,
+      label: text(spec.labelKey),
+      fields: {
+        typeId: spec.id,
+        layer: text(`platformOntology.layers.${spec.layer}`),
+        layerId: spec.layer,
+      },
+      fieldLabels: {
+        typeId: word("typeId"),
+        layer: word("layer"),
+      },
+    };
+  }
+
+  function typeCountRow(entry: PlatformOntologyTypeCount): PanelRecord {
+    const { type, status, count, reason } = entry;
     const tone = countTones[status];
     const countStatusLabel = word(`countStatus.${status}`);
     return {
@@ -57,9 +75,6 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
       primaryKey: type,
       label: text(PLATFORM_ONTOLOGY_TYPE_MAP.get(type)!.labelKey),
       fields: {
-        typeId: type,
-        layer: text(`platformOntology.layers.${layer}`),
-        layerId: layer,
         countStatus: status,
         countStatusLabel,
         countDisplay: status === "ok" ? String(count) : countStatusLabel,
@@ -67,8 +82,6 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
         ...(reason !== undefined && { countReason: reason }),
       },
       fieldLabels: {
-        typeId: word("typeId"),
-        layer: word("layer"),
         count: word("count"),
         countDisplay: word("count"),
         countStatusLabel: word("countStatus"),
@@ -93,39 +106,52 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
   }
 
   return {
-    async list(): Promise<PanelRecord[]> {
+    list(): PanelRecord[] {
+      return PLATFORM_ONTOLOGY_LAYERS.flatMap(layer =>
+        PLATFORM_ONTOLOGY_TYPES
+          .filter(spec => spec.layer === layer)
+          .sort((left, right) => left.labelKey.localeCompare(right.labelKey))
+          .map(typeCatalogRow),
+      );
+    },
+
+    async countRows(): Promise<PanelRecord[]> {
       const { counts } = await readPlatformOntologyCounts(owner, viewer);
       return PLATFORM_ONTOLOGY_LAYERS.flatMap(layer =>
         counts
           .filter(entry => entry.layer === layer)
           .sort((left, right) => PLATFORM_ONTOLOGY_TYPE_MAP.get(left.type)!.labelKey
             .localeCompare(PLATFORM_ONTOLOGY_TYPE_MAP.get(right.type)!.labelKey))
-          .map(typeRow),
+          .map(typeCountRow),
       );
     },
 
     async record(type: string): Promise<PanelRecord> {
       const spec = requireType(type);
       const { counts: [count] } = await readPlatformOntologyCounts(owner, viewer, [spec]);
-      const row = typeRow(count);
+      const catalogRow = typeCatalogRow(spec);
+      const countRow = typeCountRow(count);
       const detail = detailKey(spec.labelKey);
       const hasDetails = Boolean(platformTypeDetails[type]);
       const directory = instanceDirectories[type];
       const outputs = directory && { directoryPath: directory.path, directoryName: word(directory.name) };
       return {
-        ...row,
+        ...catalogRow,
         fields: {
-          ...row.fields,
+          ...catalogRow.fields,
+          ...countRow.fields,
           definition: hasDetails ? text(`${detail}.definition`) : word("noDefinition"),
           rules: hasDetails ? text(`${detail}.rules`) : word("noRules"),
           ...outputs,
         },
         fieldLabels: {
-          ...row.fieldLabels,
+          ...catalogRow.fieldLabels,
+          ...countRow.fieldLabels,
           definition: word("definition"),
           rules: word("rules"),
           directoryPath: word("directoryPath"),
         },
+        tones: countRow.tones,
         ...(outputs && { outputs }),
       };
     },

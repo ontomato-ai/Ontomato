@@ -556,6 +556,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       schema: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphSchema" },
       counts: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphCounts" },
+      countRows: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       start: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphStart" },
       neighbors: {
         source: "type", parameterMode: "fixed", params: { node: "graphNode", relationKinds: "relationKinds", layers: "layers" },

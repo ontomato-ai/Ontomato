@@ -752,6 +752,25 @@ if (pageMode === "page") {
 }
 
 const datumState = useMemberData(datumName);
+const hasSupplement = Object.hasOwn(member.projection.data, "supplement");
+const supplementState = hasSupplement ? useMemberData("supplement") : null;
+
+const supplementLoading = computed(() => Boolean(supplementState && supplementState.value.status === "loading"));
+const supplementError = computed<string | null>(() => {
+  if (!supplementState) return null;
+  const state = supplementState.value;
+  if (state.status === "error") return state.message || t("platform.dataUnreachable");
+  if (state.status === "forbidden") return state.reason || t("platform.dataForbidden");
+  return null;
+});
+
+function isCellAwaitingSupplement(row: PlatformObjectRecord, key: string): boolean {
+  return supplementLoading.value
+    && key !== "label"
+    && key !== "primaryKey"
+    && rawRecordField(row, key) === undefined
+    && row.tags?.[key] === undefined;
+}
 
 const isCompleteList = computed<boolean>(() => {
   if (datumName !== "rows" || pageMode !== "none" || hasServerSearch) return false;
@@ -860,6 +879,62 @@ const rawRows = computed<readonly PlatformObjectRecord[]>(() => {
   return parsedData.value.rows;
 });
 
+const supplementLookup = computed<{
+  readonly byIdentity: ReadonlyMap<string, PlatformObjectRecord>;
+  readonly byPrimaryKey: ReadonlyMap<string, PlatformObjectRecord>;
+} | null>(() => {
+  if (!supplementState || supplementState.value.status !== "ready" || !Array.isArray(supplementState.value.value)) {
+    return null;
+  }
+  const items = supplementState.value.value as unknown as readonly PlatformObjectRecord[];
+  if (items.length === 0) return null;
+  const byIdentity = new Map<string, PlatformObjectRecord>();
+  const byPrimaryKey = new Map<string, PlatformObjectRecord>();
+  const ambiguousPrimaryKeys = new Set<string>();
+  for (const item of items) {
+    byIdentity.set(rowIdentityKey(item), item);
+    if (!item.className) {
+      if (ambiguousPrimaryKeys.has(item.primaryKey)) continue;
+      if (byPrimaryKey.has(item.primaryKey)) {
+        byPrimaryKey.delete(item.primaryKey);
+        ambiguousPrimaryKeys.add(item.primaryKey);
+      } else {
+        byPrimaryKey.set(item.primaryKey, item);
+      }
+    }
+  }
+  return { byIdentity, byPrimaryKey };
+});
+
+const mergedRows = computed<readonly PlatformObjectRecord[]>(() => {
+  const lookup = supplementLookup.value;
+  if (!lookup || rawRows.value.length === 0) return rawRows.value;
+  const primaryKeyCounts = new Map<string, number>();
+  for (const row of rawRows.value) {
+    primaryKeyCounts.set(row.primaryKey, (primaryKeyCounts.get(row.primaryKey) ?? 0) + 1);
+  }
+  return rawRows.value.map((row) => {
+    const sup = lookup.byIdentity.get(rowIdentityKey(row))
+      ?? (primaryKeyCounts.get(row.primaryKey) === 1 ? lookup.byPrimaryKey.get(row.primaryKey) : undefined);
+    if (!sup) return row;
+    const fieldLabels = row.fieldLabels || sup.fieldLabels
+      ? { ...(row.fieldLabels ?? {}), ...(sup.fieldLabels ?? {}) }
+      : undefined;
+    const tones = row.tones || sup.tones
+      ? { ...(row.tones ?? {}), ...(sup.tones ?? {}) }
+      : undefined;
+    const tags = row.tags ?? sup.tags;
+    return {
+      ...row,
+      ...(row.subtitle === undefined && sup.subtitle !== undefined ? { subtitle: sup.subtitle } : {}),
+      fields: { ...(row.fields ?? {}), ...(sup.fields ?? {}) },
+      ...(fieldLabels ? { fieldLabels } : {}),
+      ...(tones ? { tones } : {}),
+      ...(tags ? { tags } : {}),
+    };
+  });
+});
+
 const searchText = computed<string>(() => {
   const raw = searchParam?.value.value;
   return typeof raw === "string" ? raw : "";
@@ -892,11 +967,11 @@ const hasActiveLocalFilter = computed(
 );
 
 const rows = computed<readonly PlatformObjectRecord[]>(() => {
-  if (!hasActiveLocalFilter.value) return rawRows.value;
+  if (!hasActiveLocalFilter.value) return mergedRows.value;
   const query = normalizedLocalQuery.value;
   const filters = activeLocalFieldFilters.value;
   const fallbackClassName = activeType.value ?? rowObjectType;
-  return rawRows.value.filter((row) => {
+  return mergedRows.value.filter((row) => {
     if (query !== "" && !matchesLocalSearch(row, query, locale.value, t, props.searchFields)) return false;
     for (const [fieldKey, expected] of filters) {
       if (!matchesLocalFieldFilter(row, fieldKey, expected, fallbackClassName, locale.value, t)) return false;
@@ -1039,8 +1114,17 @@ function timeText(value: string, timeFormat?: ObjectListColumn["timeFormat"]): s
   }
   return formatListTime(value) || value;
 }
-/** The text a cell's title gives in full: a long text column's whole text, or a time column's whole local time. */
+/** The text a cell's title gives in full: a supplement error for an unpopulated column, a long text column's whole text, or a time column's whole local time. */
 function cellTitle(row: PlatformObjectRecord, column: ObjectListColumn): string | undefined {
+  if (
+    supplementError.value
+    && column.key !== "label"
+    && column.key !== "primaryKey"
+    && rawRecordField(row, column.key) === undefined
+    && row.tags?.[column.key] === undefined
+  ) {
+    return supplementError.value;
+  }
   if (column.kind === "time") {
     const value = fieldValue(row, column.key);
     return value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString(locale.value) : undefined;
@@ -1225,7 +1309,7 @@ const dataStateLabels = useDataStateLabels(
 const isStickyCheckBar = computed(() => !isTable.value && !isCards.value && !canSearch.value && canCheck);
 
 const ownerFieldLabels = computed<Readonly<Record<string, string>>>(
-  () => rawRows.value[0]?.fieldLabels ?? rows.value[0]?.fieldLabels ?? {},
+  () => mergedRows.value[0]?.fieldLabels ?? rows.value[0]?.fieldLabels ?? {},
 );
 
 function columnLabel(column: ObjectListColumn): string {
@@ -1330,6 +1414,14 @@ const localFilterSignature = computed(() => {
     props.localFilters ?? null,
   ]);
 });
+
+if (hasSupplement) {
+  watch(listedRefs, (refs) => {
+    if (datumState.value.status === "ready" && parsedData.value.status === "ok") {
+      publishListed(refs);
+    }
+  });
+}
 
 if (pageMode === "none") {
   watch(
@@ -2816,8 +2908,13 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                       :slot-props="cellSlotProps(entry.row, entry.rowIndex, column)"
                       :fallback-to-default="true"
                     >
+                      <span
+                        v-if="isCellAwaitingSupplement(entry.row, column.key)"
+                        class="sdk-object-list-cell-pending"
+                        aria-busy="true"
+                      >…</span>
                       <TypedValue
-                        v-if="usesTypedValueCell(entry.row, column)"
+                        v-else-if="usesTypedValueCell(entry.row, column)"
                         :value="rawRecordField(entry.row, column.key)"
                         :field="column.key"
                         :kind="Array.isArray(rawRecordField(entry.row, column.key)) ? (column.kind === 'tags' ? 'tags' : 'list') : 'reference'"
@@ -2896,6 +2993,11 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                         </div>
                       </div>
                     </list-row-slot-host>
+                    <span
+                      v-else-if="isCellAwaitingSupplement(entry.row, column.key)"
+                      class="sdk-object-list-cell-pending"
+                      aria-busy="true"
+                    >…</span>
                     <TypedValue
                       v-else-if="usesTypedValueCell(entry.row, column)"
                       :value="rawRecordField(entry.row, column.key)"
@@ -3205,10 +3307,22 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                       :slot-props="cellSlotProps(entry.row, entry.rowIndex, column)"
                       :fallback-to-default="true"
                     >
-                      <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
-                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      <span
+                        v-if="isCellAwaitingSupplement(entry.row, column.key)"
+                        class="sdk-object-list-cell-pending"
+                        aria-busy="true"
+                      >…</span>
+                      <template v-else>
+                        <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                          <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                        </template>
                       </template>
                     </list-row-slot-host>
+                    <span
+                      v-else-if="isCellAwaitingSupplement(entry.row, column.key)"
+                      class="sdk-object-list-cell-pending"
+                      aria-busy="true"
+                    >…</span>
                     <TypedValue
                       v-else-if="usesTypedValueCell(entry.row, column)"
                       :value="rawRecordField(entry.row, column.key)"
@@ -4251,6 +4365,10 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
   align-items: center;
   display: inline-flex;
   gap: 4px;
+}
+.sdk-object-list-cell-pending {
+  color: var(--sdk-text-color-secondary, var(--el-text-color-placeholder));
+  font-variant-numeric: tabular-nums;
 }
 .sdk-object-list-tag[data-tone="info"] {
   background: var(--el-color-info-light-9);

@@ -673,21 +673,68 @@ describe("builtin capability-map panel (PanelData-free)", () => {
           className: ONTOLOGY_TYPE,
           primaryKey: OBJECT_TYPE,
           label: "Object type",
-          fields: { typeId: OBJECT_TYPE, layer: "Fact", layerId: "fact", countStatus: "ok", countStatusLabel: "Readable", countDisplay: "8", count: 8 },
+          fields: { typeId: OBJECT_TYPE, layer: "Fact", layerId: "fact" },
+        },
+        {
+          className: ONTOLOGY_TYPE,
+          primaryKey: FUNCTION,
+          label: "Function",
+          fields: { typeId: FUNCTION, layer: "Capability", layerId: "capability" },
+        },
+        {
+          className: ONTOLOGY_TYPE,
+          primaryKey: ACTION,
+          label: "Action",
+          fields: { typeId: ACTION, layer: "Capability", layerId: "capability" },
+        },
+        {
+          className: ONTOLOGY_TYPE,
+          primaryKey: WORKFLOW,
+          label: "Workflow",
+          fields: { typeId: WORKFLOW, layer: "Capability", layerId: "capability" },
+        },
+        {
+          className: ONTOLOGY_TYPE,
+          primaryKey: USER,
+          label: "User",
+          fields: { typeId: USER, layer: "Governance", layerId: "governance" },
+        },
+        {
+          className: ONTOLOGY_TYPE,
+          primaryKey: SCHEDULED_TASK,
+          label: "Scheduled task",
+          fields: { typeId: SCHEDULED_TASK, layer: "Governance", layerId: "governance" },
+        },
+        {
+          className: ONTOLOGY_TYPE,
+          primaryKey: SDK_COMPONENT,
+          label: "SDK component",
+          fields: { typeId: SDK_COMPONENT, layer: "Product", layerId: "product" },
+        },
+      ];
+    }
+
+    if (dataName === "supplement" && member === "typeList") {
+      return [
+        {
+          className: ONTOLOGY_TYPE,
+          primaryKey: OBJECT_TYPE,
+          label: "Object type",
+          fields: { countStatus: "ok", countStatusLabel: "Readable", countDisplay: "8", count: 8 },
           tones: { countStatus: "success", countStatusLabel: "success", countDisplay: "success" },
         },
         {
           className: ONTOLOGY_TYPE,
           primaryKey: FUNCTION,
           label: "Function",
-          fields: { typeId: FUNCTION, layer: "Capability", layerId: "capability", countStatus: "ok", countStatusLabel: "Readable", countDisplay: "0", count: 0 },
+          fields: { countStatus: "ok", countStatusLabel: "Readable", countDisplay: "0", count: 0 },
           tones: { countStatus: "success", countStatusLabel: "success", countDisplay: "success" },
         },
         {
           className: ONTOLOGY_TYPE,
           primaryKey: ACTION,
           label: "Action",
-          fields: { typeId: ACTION, layer: "Capability", layerId: "capability", countStatus: "ok", countStatusLabel: "Readable", countDisplay: "3", count: 3 },
+          fields: { countStatus: "ok", countStatusLabel: "Readable", countDisplay: "3", count: 3 },
           tones: { countStatus: "success", countStatusLabel: "success", countDisplay: "success" },
         },
         {
@@ -695,9 +742,6 @@ describe("builtin capability-map panel (PanelData-free)", () => {
           primaryKey: WORKFLOW,
           label: "Workflow",
           fields: {
-            typeId: WORKFLOW,
-            layer: "Capability",
-            layerId: "capability",
             countStatus: "refused",
             countStatusLabel: "No permission",
             countDisplay: "No permission",
@@ -710,9 +754,6 @@ describe("builtin capability-map panel (PanelData-free)", () => {
           primaryKey: USER,
           label: "User",
           fields: {
-            typeId: USER,
-            layer: "Governance",
-            layerId: "governance",
             countStatus: "failed",
             countStatusLabel: "Read failed",
             countDisplay: "Read failed",
@@ -725,9 +766,6 @@ describe("builtin capability-map panel (PanelData-free)", () => {
           primaryKey: SCHEDULED_TASK,
           label: "Scheduled task",
           fields: {
-            typeId: SCHEDULED_TASK,
-            layer: "Governance",
-            layerId: "governance",
             countStatus: "unavailable",
             countStatusLabel: "Not connected",
             countDisplay: "Not connected",
@@ -739,7 +777,7 @@ describe("builtin capability-map panel (PanelData-free)", () => {
           className: ONTOLOGY_TYPE,
           primaryKey: SDK_COMPONENT,
           label: "SDK component",
-          fields: { typeId: SDK_COMPONENT, layer: "Product", layerId: "product", countStatus: "ok", countStatusLabel: "Readable", countDisplay: "14", count: 14 },
+          fields: { countStatus: "ok", countStatusLabel: "Readable", countDisplay: "14", count: 14 },
           tones: { countStatus: "success", countStatusLabel: "success", countDisplay: "success" },
         },
       ];
@@ -982,7 +1020,11 @@ describe("builtin capability-map panel (PanelData-free)", () => {
     return memberData(read);
   }
 
-  async function mountBuiltin(state: Record<string, unknown>, extraRoutes: RouteRecordRaw[] = []) {
+  async function mountBuiltin(
+    state: Record<string, unknown>,
+    extraRoutes: RouteRecordRaw[] = [],
+    onRead?: (read: Read) => Response | Promise<Response> | undefined,
+  ) {
     const bundle = loadBuiltinBundle();
     const routes: RouteRecordRaw[] = [
       ...appBuilderPages().map((route) =>
@@ -1003,7 +1045,10 @@ describe("builtin capability-map panel (PanelData-free)", () => {
         return Response.json({ projection: bundle.projections[projected[1]!] });
       }
       if (request.path === "/api/product-panels/read") {
-        return Response.json({ status: "ready", value: builtinMemberData(request.body as Read) });
+        const read = request.body as Read;
+        const custom = onRead?.(read);
+        if (custom) return custom;
+        return Response.json({ status: "ready", value: builtinMemberData(read) });
       }
       return nothingAt(request);
     }, router);
@@ -1177,6 +1222,90 @@ describe("builtin capability-map panel (PanelData-free)", () => {
       await vi.waitFor(() => {
         expect(router.currentRoute.value.path).toBe("/ontology/components");
       }, { timeout: 5000 });
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("renders four-layer type names immediately while supplement countRows is loading, allows clicking into class detail, and merges counts in-place without losing selection", { timeout: 30000 }, async () => {
+    let resolveSupplement!: (response: Response) => void;
+    const supplementDeferred = new Promise<Response>((resolve) => {
+      resolveSupplement = resolve;
+    });
+
+    const { app, router, sent } = await mountBuiltin(
+      { mode: "type", view: "list" },
+      [],
+      (read) => {
+        if (read.memberPath[0]?.member === "typeList" && read.dataName === "supplement") {
+          return supplementDeferred;
+        }
+        return undefined;
+      },
+    );
+    try {
+      // 1) Catalogue rows render immediately across all four layers while countRows supplement is still pending.
+      await vi.waitFor(() => {
+        const container = document.querySelector(".panel-host-coded .capmap-types");
+        const text = container?.textContent ?? "";
+        expect(text).toContain("Fact");
+        expect(text).toContain("Capability");
+        expect(text).toContain("Governance");
+        expect(text).toContain("Product");
+        expect(text).toContain("Object type");
+        expect(text).toContain("Action");
+        expect(text).toContain("Workflow");
+        expect(text).toContain("SDK component");
+      }, { timeout: 5000 });
+
+      const pendingCells = [...document.querySelectorAll(".panel-host-coded .capmap-types .sdk-object-list-cell-pending")];
+      expect(pendingCells.length).toBeGreaterThanOrEqual(14);
+      expect(pendingCells.every((el) => el.textContent === "…" && el.getAttribute("aria-busy") === "true")).toBe(true);
+      expect(document.querySelectorAll(".panel-host-coded .capmap-types .sdk-object-list-tag")).toHaveLength(0);
+      expect(reads(sent).some((r) => r.memberPath[0].member === "typeList" && r.dataName === "rows")).toBe(true);
+      expect(reads(sent).some((r) => r.memberPath[0].member === "typeList" && r.dataName === "supplement")).toBe(true);
+
+      // 2) Clicking a row while counts are still loading immediately selects it and drives right-hand class detail.
+      const actionRow = [...document.querySelectorAll<HTMLTableRowElement>(".panel-host-coded .capmap-types tbody tr")].find((row) =>
+        row.textContent?.includes("platform:Action"),
+      )!;
+      actionRow.click();
+      await vi.waitFor(() => {
+        expect(router.currentRoute.value.query.selectedType).toBe(ACTION);
+        expect(actionRow.classList.contains("chosen")).toBe(true);
+        expect(document.querySelector(".panel-host-coded .capmap-class-detail")?.textContent).toContain("Registered business write capability");
+      }, { timeout: 5000 });
+
+      // 3) Supplement arrives: four count statuses and reasons merge in-place without losing the selected row.
+      resolveSupplement(
+        Response.json({
+          status: "ready",
+          value: builtinMemberData({ memberPath: [{ member: "typeList" }], dataName: "supplement", inputs: {} }),
+        }),
+      );
+
+      await vi.waitFor(() => {
+        expect(document.querySelectorAll(".panel-host-coded .capmap-types .sdk-object-list-cell-pending")).toHaveLength(0);
+        const text = document.querySelector(".panel-host-coded .capmap-types")?.textContent ?? "";
+        expect(text).toContain("No permission");
+        expect(text).toContain("Missing workflow read grant");
+        expect(text).toContain("Read failed");
+        expect(text).toContain("Identity backend timeout");
+        expect(text).toContain("Not connected");
+        expect(text).toContain("Scheduler module disabled");
+      }, { timeout: 5000 });
+
+      const countTags = [...document.querySelectorAll(".panel-host-coded .capmap-types .sdk-object-list-tag")];
+      expect(countTags.some((el) => el.textContent?.trim() === "0" && el.getAttribute("data-tone") === "success")).toBe(true);
+      expect(countTags.some((el) => el.textContent?.trim() === "No permission" && el.getAttribute("data-tone") === "warning")).toBe(true);
+      expect(countTags.some((el) => el.textContent?.trim() === "Read failed" && el.getAttribute("data-tone") === "danger")).toBe(true);
+      expect(countTags.some((el) => el.textContent?.trim() === "Not connected" && el.getAttribute("data-tone") === "info")).toBe(true);
+
+      const selectedActionRow = [...document.querySelectorAll<HTMLTableRowElement>(".panel-host-coded .capmap-types tbody tr")].find((row) =>
+        row.textContent?.includes("platform:Action"),
+      )!;
+      expect(selectedActionRow.classList.contains("chosen")).toBe(true);
+      expect(router.currentRoute.value.query.selectedType).toBe(ACTION);
     } finally {
       app.unmount();
     }

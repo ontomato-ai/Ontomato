@@ -3036,3 +3036,327 @@ it("supports child-object selection, inline child-reference cells with listSepar
     expect(element.querySelector("tbody tr")?.textContent).toContain("order_id");
   });
 });
+
+it("renders primary rows immediately while async supplement loads, merges fields and tones in-place, and preserves selection and collapsed groups", async () => {
+  let resolveSupplement!: (response: ProductPanelReadResponse) => void;
+  const supplementPromise = new Promise<ProductPanelReadResponse>((resolve) => {
+    resolveSupplement = resolve;
+  });
+
+  const projections: Record<string, DirectProjection> = {
+    "classrooms-list": {
+      ...meta,
+      id: "classrooms-list",
+      name: "Classrooms",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: "ClassRoom" } },
+      data: {
+        rows: { source: { type: { kind: "ObjectType", id: "ClassRoom" } }, read: "query", params: {} },
+        supplement: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+      },
+      config: {
+        layout: "table",
+        groupBy: "grade",
+        searchable: false,
+        showFooter: false,
+        columns: [
+          { key: "label", labelKey: "cls.name", subtitleKey: "homeroom" },
+          { key: "enrolledDisplay", kind: "tag" },
+          { key: "attendanceNote", labelKey: "cls.note", emptyKey: "cls.none" },
+        ],
+      },
+    },
+  };
+
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: "ClassRoom" }, deepLink: false },
+    },
+    members: {
+      classrooms: {
+        target: { projectionId: "classrooms-list" },
+        outputs: { selected: { state: "selected" } },
+      },
+    },
+  });
+
+  const { instance, element, reads } = mountDirect(
+    manifest,
+    projections,
+    (request) => {
+      if (request.dataName === "rows") {
+        return ready({
+          rows: [
+            { className: "ClassRoom", primaryKey: "cls-101", label: "Class 101", fields: { homeroom: "Room A", grade: "Grade 1" } },
+            { className: "ClassRoom", primaryKey: "cls-102", label: "Class 102", fields: { homeroom: "Room B", grade: "Grade 1" } },
+            { className: "ClassRoom", primaryKey: "cls-201", label: "Class 201", fields: { homeroom: "Room C", grade: "Grade 2" } },
+          ],
+          total: 3,
+        });
+      }
+      if (request.dataName === "supplement") return supplementPromise;
+      return { status: "empty" };
+    },
+    {
+      messages: {
+        en: {
+          "cls.name": "Classroom",
+          "cls.note": "Attendance note",
+          "cls.none": "None",
+        },
+      },
+    },
+  );
+
+  // Primary rows render immediately while supplement is still pending; missing cells show quiet ellipsis placeholders.
+  await vi.waitFor(() => {
+    expect(element.querySelectorAll('tbody tr[data-row-item="true"]')).toHaveLength(3);
+  });
+  expect(reads.map((r) => r.dataName).sort()).toEqual(["rows", "supplement"]);
+  const pendingCells = [...element.querySelectorAll<HTMLElement>(".sdk-object-list-cell-pending")];
+  expect(pendingCells).toHaveLength(6);
+  expect(pendingCells.every((el) => el.textContent === "…" && el.getAttribute("aria-busy") === "true")).toBe(true);
+  expect(element.querySelectorAll(".sdk-object-list-tag")).toHaveLength(0);
+  expect(element.textContent).toContain("Class 101");
+  expect(element.textContent).toContain("Room A");
+
+  // Selection and group collapse work immediately while supplement is loading.
+  const firstRow = [...element.querySelectorAll<HTMLTableRowElement>('tbody tr[data-row-item="true"]')].find((tr) =>
+    tr.textContent?.includes("Class 101"),
+  )!;
+  firstRow.click();
+  await vi.waitFor(() => {
+    expect(instance.state.values.value.selected).toEqual({ className: "ClassRoom", primaryKey: "cls-101" });
+    expect(firstRow.classList.contains("chosen")).toBe(true);
+  });
+
+  const grade2Toggle = [...element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-group-btn")].find((btn) =>
+    btn.textContent?.includes("Grade 2"),
+  )!;
+  grade2Toggle.click();
+  await vi.waitFor(() => {
+    expect(grade2Toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(element.querySelectorAll('tbody tr[data-row-item="true"]')).toHaveLength(2);
+  });
+
+  // Resolve supplement (cls-102 omits className to verify primaryKey fallback matching) and verify in-place merge.
+  resolveSupplement(
+    ready([
+      {
+        className: "ClassRoom",
+        primaryKey: "cls-101",
+        label: "Ignored label override",
+        fields: { enrolledDisplay: "32 students", attendanceNote: "100% present" },
+        fieldLabels: { enrolledDisplay: "Enrolled" },
+        tones: { enrolledDisplay: "success" },
+      },
+      {
+        primaryKey: "cls-102",
+        label: "Class 102",
+        fields: { enrolledDisplay: "Unavailable" },
+        fieldLabels: { enrolledDisplay: "Enrolled" },
+        tones: { enrolledDisplay: "warning" },
+      },
+      {
+        className: "ClassRoom",
+        primaryKey: "cls-201",
+        label: "Class 201",
+        fields: { enrolledDisplay: "28 students" },
+        fieldLabels: { enrolledDisplay: "Enrolled" },
+        tones: { enrolledDisplay: "success" },
+      },
+    ]),
+  );
+
+  await vi.waitFor(() => {
+    expect(element.querySelectorAll(".sdk-object-list-cell-pending")).toHaveLength(0);
+    const tags = [...element.querySelectorAll<HTMLElement>(".sdk-object-list-tag")];
+    expect(tags.map((el) => [el.textContent?.trim(), el.getAttribute("data-tone")])).toEqual([
+      ["32 students", "success"],
+      ["Unavailable", "warning"],
+    ]);
+  });
+
+  // Column header adopts owner fieldLabels from supplement, primary labels stay authoritative, and truly empty fields use emptyKey.
+  const headers = [...element.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
+  expect(headers).toEqual(["Classroom", "Enrolled", "Attendance note"]);
+  const visibleRows = [...element.querySelectorAll<HTMLTableRowElement>('tbody tr[data-row-item="true"]')];
+  expect(visibleRows[0]!.textContent).toContain("Class 101");
+  expect(visibleRows[0]!.textContent).not.toContain("Ignored label override");
+  expect(visibleRows[0]!.textContent).toContain("100% present");
+  expect(visibleRows[1]!.querySelector("td:nth-child(3)")?.textContent?.trim()).toBe("None");
+
+  // Selection and collapsed group state remain intact after supplement arrives.
+  expect(instance.state.values.value.selected).toEqual({ className: "ClassRoom", primaryKey: "cls-101" });
+  expect(visibleRows[0]!.classList.contains("chosen")).toBe(true);
+  expect(grade2Toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(visibleRows).toHaveLength(2);
+});
+
+it("keeps primary rows usable when supplement errors or is forbidden and exposes the failure reason on missing-cell hover", async () => {
+  const buildScenario = (supplementResponse: ProductPanelReadResponse) => {
+    const projections: Record<string, DirectProjection> = {
+      "classrooms-err": {
+        ...meta,
+        id: "classrooms-err",
+        name: "Classrooms",
+        componentId: "@ontomato/sdk:ObjectList",
+        inputs: {},
+        outputs: { selected: { kind: "object", objectType: "ClassRoom" } },
+        data: {
+          rows: { source: { type: { kind: "ObjectType", id: "ClassRoom" } }, read: "query", params: {} },
+          supplement: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+        },
+        config: {
+          layout: "table",
+          searchable: false,
+          showFooter: false,
+          columns: [
+            { key: "label", labelKey: "cls.name" },
+            { key: "enrolledDisplay", labelKey: "cls.enrolled", kind: "tag" },
+          ],
+        },
+      },
+    };
+    const manifest = definePanel({
+      state: { selected: { type: { kind: "object", objectType: "ClassRoom" }, deepLink: false } },
+      members: {
+        classrooms: { target: { projectionId: "classrooms-err" }, outputs: { selected: { state: "selected" } } },
+      },
+    });
+    return mountDirect(
+      manifest,
+      projections,
+      (request) =>
+        request.dataName === "rows"
+          ? ready({ rows: [{ className: "ClassRoom", primaryKey: "cls-101", label: "Class 101", fields: {} }], total: 1 })
+          : supplementResponse,
+      { messages: { en: { "cls.name": "Classroom", "cls.enrolled": "Enrolled" } } },
+    );
+  };
+
+  // Error case: primary rows remain clickable, missing cell shows dash with error tooltip, never fabricated "0".
+  const errMount = buildScenario({ status: "error", message: "Enrollment metrics service timed out" });
+  await vi.waitFor(() => {
+    expect(errMount.element.querySelectorAll('tbody tr[data-row-item="true"]')).toHaveLength(1);
+    expect(errMount.element.querySelectorAll(".sdk-object-list-cell-pending")).toHaveLength(0);
+  });
+  const errRow = errMount.element.querySelector<HTMLTableRowElement>('tbody tr[data-row-item="true"]')!;
+  const nameCell = errRow.querySelector<HTMLTableCellElement>("td:nth-child(1)")!;
+  const metricCell = errRow.querySelector<HTMLTableCellElement>("td:nth-child(2)")!;
+  expect(nameCell.getAttribute("title")).toBeNull();
+  expect(metricCell.textContent?.trim()).toBe("—");
+  expect(metricCell.textContent).not.toContain("0");
+  expect(metricCell.getAttribute("title")).toBe("Enrollment metrics service timed out");
+  errRow.click();
+  await vi.waitFor(() => {
+    expect(errMount.instance.state.values.value.selected).toEqual({ className: "ClassRoom", primaryKey: "cls-101" });
+  });
+  cleanup?.();
+  cleanup = null;
+
+  // Forbidden case: primary rows remain usable and missing cell carries refusal reason on hover.
+  const forbiddenMount = buildScenario({ status: "forbidden", reason: "Missing enrollment statistics permission" });
+  await vi.waitFor(() => {
+    expect(forbiddenMount.element.querySelectorAll('tbody tr[data-row-item="true"]')).toHaveLength(1);
+  });
+  const forbiddenCell = forbiddenMount.element.querySelector<HTMLTableCellElement>('tbody tr[data-row-item="true"] td:nth-child(2)')!;
+  expect(forbiddenCell.textContent?.trim()).toBe("—");
+  expect(forbiddenCell.getAttribute("title")).toBe("Missing enrollment statistics permission");
+});
+
+it("renders pending ellipsis in #cell slot fallback while supplement is loading", async () => {
+  let resolveSupplement!: (response: ProductPanelReadResponse) => void;
+  const supplementPromise = new Promise<ProductPanelReadResponse>((resolve) => {
+    resolveSupplement = resolve;
+  });
+
+  const projections: Record<string, DirectProjection> = {
+    "classrooms-slot": {
+      ...meta,
+      id: "classrooms-slot",
+      name: "Classrooms",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      data: {
+        rows: { source: { type: { kind: "ObjectType", id: "ClassRoom" } }, read: "query", params: {} },
+        supplement: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+      },
+      config: {
+        layout: "table",
+        searchable: false,
+        showFooter: false,
+        columns: [
+          { key: "label", labelKey: "cls.name" },
+          { key: "enrolledDisplay", labelKey: "cls.enrolled", kind: "tag" },
+        ],
+      },
+    },
+  };
+  const manifest = definePanel({
+    state: {},
+    members: { classrooms: { target: { projectionId: "classrooms-slot" } } },
+  });
+
+  const reads: Read[] = [];
+  const instance = createDirectPanelInstance(manifest, {
+    pageKey: "object-list-slot-supplement",
+    url: () => "/panels/object-list-slot-supplement",
+    label: () => "Object list slot supplement",
+    text: createPanelText({ en: { "cls.name": "Classroom", "cls.enrolled": "Enrolled" } }, ref("en"), "en"),
+    ...noOperations,
+    readProjection: async (id) => projections[id]!,
+    read: async (request) => {
+      reads.push(request);
+      if (request.dataName === "rows") {
+        return ready({ rows: [{ className: "ClassRoom", primaryKey: "cls-101", label: "Class 101", fields: {} }], total: 1 });
+      }
+      return supplementPromise;
+    },
+  });
+  const element = document.createElement("div");
+  document.body.appendChild(element);
+  const app = createApp({
+    setup: () => () =>
+      h(
+        PanelMember,
+        { instance, member: "classrooms" },
+        {
+          // Empty slot return exercises ListRowSlotHost fallback-to-default rendering.
+          cell: () => [],
+        },
+      ),
+  })
+    .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } as never }))
+    .use(ElementPlus);
+  app.mount(element);
+  cleanup = () => {
+    app.unmount();
+    element.remove();
+  };
+
+  await vi.waitFor(() => {
+    const pending = element.querySelector<HTMLElement>(".sdk-object-list-cell-pending");
+    expect(pending?.textContent).toBe("…");
+    expect(pending?.getAttribute("aria-busy")).toBe("true");
+  });
+
+  resolveSupplement(
+    ready([
+      {
+        className: "ClassRoom",
+        primaryKey: "cls-101",
+        label: "Class 101",
+        fields: { enrolledDisplay: "24 students" },
+        tones: { enrolledDisplay: "success" },
+      },
+    ]),
+  );
+
+  await vi.waitFor(() => {
+    expect(element.querySelector(".sdk-object-list-cell-pending")).toBeNull();
+    expect(element.querySelector(".sdk-object-list-tag")?.textContent?.trim()).toBe("24 students");
+  });
+});
