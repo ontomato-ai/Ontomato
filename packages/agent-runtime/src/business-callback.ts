@@ -29,22 +29,22 @@ export function businessCallbackEnvironment(sessionUrl: string, token: string) {
     ONTOMATO_AUTHORING_URL: base + "/authoring",
     ONTOMATO_RETRIEVAL_CALLBACK_URL: base + "/retrieval",
     ONTOMATO_GOVERNANCE_WINDOW_URL: base + "/governance",
+    // Published skills use this name for their callback header. It carries the session credential.
+    ONTOMATO_TK: token,
     ONTOMATO_EXECUTION_CALLBACK: token,
     ONTOMATO_GOVERNANCE_CALLBACK: token,
   };
 }
 
-/** A GET/POST relay can extend only the path already authorized for the active run. */
+/** Extend only the declared path; Workbench authorizes the operation and method. */
 export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispatcher, req: Request, res: Response) {
-  if (req.method !== "GET" && req.method !== "POST")
-    throw new RuntimeError(405, "METHOD_NOT_ALLOWED", "Skill callbacks accept GET and POST");
   const kind = callbackName.parse(req.params.kind);
   const scope = {
     hostId: runtimeKeySchema.parse(req.params.hostId),
     domainId: runtimeKeySchema.parse(req.params.domainId),
   };
   const sessionId = runtimeIdSchema.parse(req.params.sessionId);
-  const token = req.header("X-Ontomato-Callback-Credential") ?? (kind === "governance" ? req.header("tk") : undefined);
+  const token = req.header("X-Ontomato-Callback-Credential") ?? req.header("tk");
   const suffix = req.params[0] as string | undefined;
   const segments = suffix?.split("/") ?? [];
   if (segments.some(part => part === "." || part === ".." || part.includes("%") || part.includes("\\")))
@@ -72,7 +72,7 @@ export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispat
     try {
       const upstream = await fetch(target, {
         method: req.method, headers, redirect: "error",
-        body: req.method === "POST" && Buffer.isBuffer(req.body) ? req.body as Uint8Array<ArrayBuffer> : undefined,
+        body: req.method !== "GET" && Buffer.isBuffer(req.body) ? req.body as Uint8Array<ArrayBuffer> : undefined,
         signal: AbortSignal.any([signal, client.signal]),
       });
       res.status(upstream.status);

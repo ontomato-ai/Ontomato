@@ -8,6 +8,8 @@ import { RuntimeError } from "./errors";
 import { runtimeDiagnostic, runtimeLogger } from "./logging";
 import { registerSkillCallbackRoutes, type SessionSkillCallbackDispatcher } from "./platform-tools";
 
+const businessMethods = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
+
 export async function openSkillCallback(dispatcher: SessionSkillCallbackDispatcher & BusinessCallbackDispatcher) {
   const app = express();
   const host = "127.0.0.1";
@@ -17,8 +19,13 @@ export async function openSkillCallback(dispatcher: SessionSkillCallbackDispatch
   const forward = (req: Request, res: Response, next: NextFunction) => {
     void forwardBusinessCallback(dispatcher, req, res).catch(next);
   };
-  app.get(paths, forward);
-  app.post(paths, express.raw({ type: () => true, limit: "32mb" }), forward);
+  app.all(paths, (req, _res, next) => {
+    if (!businessMethods.has(req.method)) {
+      next(new RuntimeError(405, "METHOD_NOT_ALLOWED", "Unsupported skill callback method"));
+      return;
+    }
+    next();
+  }, express.raw({ type: () => true, limit: "32mb" }), forward);
   app.use(express.json({ limit: "32mb" }));
   registerSkillCallbackRoutes(app, { sessionChannelCommand: (...args) => dispatcher.sessionChannelCommand(...args) });
   app.use((_req, _res, next) => next(new RuntimeError(404, "NOT_FOUND", "Skill callback endpoint not found")));

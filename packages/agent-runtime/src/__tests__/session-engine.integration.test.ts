@@ -81,7 +81,8 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
       directories: { workspace, state, skills: [] }, hostWorkspace: workspace, hostState: state,
       gatewayBaseUrl: base + "/v1", callbackBaseUrl: `http://${callback.host}:${callback.port}`,
       spawn(_command, _args, env) {
-        expect(env).not.toHaveProperty("ONTOMATO_TK");
+        expect(env.ONTOMATO_TK).toBe(env.ONTOMATO_EXECUTION_CALLBACK);
+        expect(env).not.toHaveProperty("ONTOMATO_API_KEY");
         expect(env).not.toHaveProperty("ONTOMATO_RUN_ID");
         expect(env.ONTOMATO_EXECUTION_CALLBACK).not.toBe("wbc1.fixture");
         launches.push({ callback: env.ONTOMATO_WORKBENCH_URL!, credential: env.ONTOMATO_EXECUTION_CALLBACK!, workspace });
