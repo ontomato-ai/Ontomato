@@ -214,13 +214,23 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
   if (intent.fingerprint !== fingerprint(definition.data.skills))
     throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
   await db().query(`UPDATE ${table("ops_sessions")} SET title=CASE WHEN title='' THEN $2 ELSE title END,updated_at=now() WHERE id=$1`, [session, message]);
+  const evidencePath = "/api/observe/evidence";
   return {
     language: intent.language,
     input,
     definition: definition.data,
-    environment: {
-      values: { ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, "") },
-      secrets: { ONTOMATO_TK: callbackCredential({ pathPrefix: "/api/observe/evidence/", runId: run, expiresAt: Date.now() + definition.data.sandbox.limits.wallTimeMs, token: credentials.token ?? "", apiKey: credentials.apiKey ?? "" }).value },
+    environment: { values: {}, secrets: {} },
+    businessCallbacks: {
+      workbench: {
+        baseUrl: environment.agentRuntime().callbackUrl.replace(/\/$/, "") + evidencePath,
+        credential: callbackCredential({
+          pathPrefix: `${evidencePath}/`,
+          runId: run,
+          expiresAt: Date.now() + definition.data.sandbox.limits.wallTimeMs,
+          token: credentials.token ?? "",
+          apiKey: credentials.apiKey ?? "",
+        }).value,
+      },
     },
   };
 }

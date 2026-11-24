@@ -20,7 +20,7 @@ import { buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import {assistantRetrievalOperationSchema} from "@ontomato/contracts/assistant-retrieval";
 import {OntologyRetrievalClient} from "../../services/assistant/ontology-retrieval";
-import { credentialsForRun, runForOwner } from "../../services/assistant/execution";
+import { credentialsForRun, ownedRun, runForOwner } from "../../services/assistant/execution";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { adoptAppBuilderDefinition, executeAuthoring, type AuthoringOperation } from "../../services/assistant/authoring";
 import { authoringAdoptionRequestSchema, authoringKindSchema, authoringOperations } from "@ontomato/contracts/authoring";
@@ -135,12 +135,18 @@ assistantExecutionRouter.post("/:runId/retrieval",wrap(async(req,res)=>{
   const operation=assistantRetrievalOperationSchema.parse(req.body);
   const {owner,credentials:initiator}=context(req);
   let credentials:AssistantCredentials=initiator;
-  if(operation.operation==="begin" || operation.operation==="submit" || operation.operation==="submit-metric")credentials=(await credentialsForRun(owner,runId,initiator)).credentials;
-  else {
-    const run=await runForOwner(owner,runId);
+  let retrievalScopeId: string | null;
+  if(operation.operation==="begin" || operation.operation==="submit" || operation.operation==="submit-metric") {
+    const resolved = await credentialsForRun(owner,runId,initiator);
+    credentials = resolved.credentials;
+    retrievalScopeId = resolved.retrievalScopeId ?? resolved.credentials.headers?.["X-Ontomato-Retrieval-Caller-Id"] ?? null;
+  } else {
+    const { turn, run } = await ownedRun(owner,runId);
     if(run.status!=="running")throw new HttpError(409,"Execution is closed","RUN_CLOSED");
+    retrievalScopeId = turn?.retrieval_scope_id ?? null;
   }
-  const value=await new OntologyRetrievalClient(owner,runId,credentials).executeOperation(operation);
+  if (!retrievalScopeId) throw new HttpError(403, "Retrieval scope is unavailable for this run", "FORBIDDEN");
+  const value=await new OntologyRetrievalClient(owner,retrievalScopeId,credentials).executeOperation(operation);
   if(operation.operation==="close")res.status(204).end();else res.json(value);
 }));
 
@@ -204,13 +210,24 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
   const grantAction=target==="ontology" && callback.businessGrant && governanceAction.test(path);
   const ownership = assistantDirectory || target === "workbench" && /^\/api\/(?:panel-operation-intents|feedback|query-history|product-assets|memories|preferences|personal-workspace)(?:\/|$)/u.test(path);
   let credentials: AssistantCredentials = initiatorCredentials;
+  let retrievalScopeId: string | null = null;
   if (initiatorResourceRead || ownership || grantAction) {
-    const run = await runForOwner(owner, runId);
-    if (initiatorResourceRead && (!run.channel || run.status !== "running")) {
-      throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+    if (target === "ontology") {
+      const { turn, run } = await ownedRun(owner, runId);
+      if (initiatorResourceRead && (!run.channel || run.status !== "running")) {
+        throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+      }
+      retrievalScopeId = turn?.retrieval_scope_id ?? null;
+    } else {
+      const run = await runForOwner(owner, runId);
+      if (initiatorResourceRead && (!run.channel || run.status !== "running")) {
+        throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+      }
     }
   } else {
-    credentials = (await credentialsForRun(owner, runId, initiatorCredentials)).credentials;
+    const resolved = await credentialsForRun(owner, runId, initiatorCredentials);
+    credentials = resolved.credentials;
+    retrievalScopeId = resolved.retrievalScopeId ?? resolved.credentials.headers?.["X-Ontomato-Retrieval-Caller-Id"] ?? null;
   }
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
   if (callback.businessGrant && !resourceRead && !assistantDirectory) {
@@ -218,7 +235,8 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
     delete headers["X-API-Key"];
   }
   headers["X-Ontomato-Run-Id"] = runId;
-  headers["X-Ontomato-Retrieval-Caller-Id"] = runId;
+  if (retrievalScopeId) headers["X-Ontomato-Retrieval-Caller-Id"] = retrievalScopeId;
+  else delete headers["X-Ontomato-Retrieval-Caller-Id"];
   const origin = target === "ontology" ? config.dataQuery.baseUrl : environment.agentRuntime().callbackUrl;
   const query = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
   let body: string | ReadableStream<Uint8Array> | undefined;

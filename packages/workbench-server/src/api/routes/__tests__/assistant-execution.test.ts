@@ -2,11 +2,11 @@ import express from 'express';
 import type {Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {afterAll,afterEach,beforeAll,beforeEach,expect,it,vi} from 'vitest';
-const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),authoring:vi.fn(),adopt:vi.fn()}));
+const mocks=vi.hoisted(()=>({restore:vi.fn(),run:vi.fn(),ownedRun:vi.fn(),authoring:vi.fn(),adopt:vi.fn()}));
 vi.mock('../../../services/assistant/authoring',()=>({executeAuthoring:mocks.authoring,adoptAppBuilderDefinition:mocks.adopt}));
 vi.mock('../../../core/skills/registry/manager',()=>({skillRegistryManager:{}}));
-vi.mock('../../../services/assistant/execution',()=>({credentialsForRun:mocks.restore,runForOwner:mocks.run}));
-vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({token:'test-callback-secret',callbackUrl:'http://workbench.test'})}}));
+vi.mock('../../../services/assistant/execution',()=>({credentialsForRun:mocks.restore,runForOwner:mocks.run,ownedRun:mocks.ownedRun}));
+vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({token:'test-callback-secret',callbackUrl:'http://workbench.test',queryServiceToken:'host-service'}),queryBase:()=>'http://ontology.test',queryTimeout:()=>30000,queryKey:()=>''}}));
 vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://ontology.test'}}}));
 vi.mock('../../../utils/request-identity',async original=>({...await original<typeof import('../../../utils/request-identity')>(),requireDomainId:(req:{domainId:string})=>req.domainId}));
 import {assistantExecutionRouter} from '../assistant-execution';
@@ -23,7 +23,7 @@ beforeAll(async()=>{
 });
 afterAll(async()=>{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
 afterEach(()=>{vi.unstubAllGlobals();});
-beforeEach(()=>{vi.clearAllMocks();mocks.run.mockResolvedValue({status:"running"});mocks.restore.mockResolvedValue({executionUserId:'V',credentials:{apiKey:'selected-user-key',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':run}}});});
+beforeEach(()=>{vi.clearAllMocks();mocks.run.mockResolvedValue({status:"running"});mocks.ownedRun.mockResolvedValue({turn:{id:run,retrieval_scope_id:run},run:{status:"running",channel:{agent:{agentId:"agent"}}}});mocks.restore.mockResolvedValue({executionUserId:'V',retrievalScopeId:run,credentials:{apiKey:'selected-user-key',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':run}}});});
 function credential() {return callbackCredential({pathPrefix:`/api/assistant/executions/${run}/`,runId:run,expiresAt:Date.now()+60000,token:'initiator-token',apiKey:''}).value;}
 async function call(path:string,extra:Record<string,string>={},method='POST',token=credential()) {
  return nativeFetch(base+`/api/assistant/executions/${run}/`+path,{method,headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':token,'X-Ontomato-Run-Id':run,...extra},...(method==='GET'?{}:{body:'{}'})});
@@ -302,4 +302,27 @@ it("lets only the current callback submit the App Builder definition for adoptio
    expect((await nativeFetch(url,{method:"POST",headers:auth,body:JSON.stringify(body)})).status).toBe(expected);
  }
  expect(mocks.adopt).not.toHaveBeenCalled();
+});
+
+it("resolves retrieval_scope_id from the server turn on retrieval and ontology calls instead of trusting caller headers",async()=>{
+ const scope="33333333-3333-4333-8333-333333333333";
+ const upstream=vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1])=>Response.json({ok:true}));vi.stubGlobal('fetch',upstream);
+ mocks.ownedRun.mockResolvedValue({turn:{id:run,retrieval_scope_id:scope},run:{status:"running",channel:{agent:{agentId:"agent"}}}});
+ mocks.restore.mockResolvedValue({executionUserId:null,retrievalScopeId:scope,credentials:{token:'initiator-token',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':scope}}});
+
+ // Status/close retrieval operations look up the turn's retrieval_scope_id via ownedRun.
+ const statusRes=await nativeFetch(base+`/api/assistant/executions/${run}/retrieval`,{method:'POST',headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':credential(),'X-Ontomato-Run-Id':run,'X-Ontomato-Retrieval-Caller-Id':other},body:JSON.stringify({operation:'status',retrievalId:other,retrievalRunId:other,key:other})});
+ expect(statusRes.status).toBe(200);
+ expect(upstream.mock.calls[0]![1]?.headers).toMatchObject({'X-Ontomato-Retrieval-Caller-Id':scope});
+
+ // Ontology proxy forwards the resolved retrievalScopeId and never caller-supplied IDs.
+ const ontoRes=await call('ontology/ontology/query/execute-dsl',{'X-Ontomato-Retrieval-Caller-Id':other});
+ expect(ontoRes.status).toBe(200);
+ expect(upstream.mock.calls[1]![1]?.headers).toMatchObject({'X-Ontomato-Retrieval-Caller-Id':scope});
+
+ // When the turn has no retrieval scope (e.g. app-builder), no X-Ontomato-Retrieval-Caller-Id header is sent.
+ mocks.restore.mockResolvedValue({executionUserId:null,retrievalScopeId:null,credentials:{token:'initiator-token',locale:'en'}});
+ const appBuilderRes=await call('ontology/ontology/query/overview',{},'GET');
+ expect(appBuilderRes.status).toBe(200);
+ expect(upstream.mock.calls[2]![1]?.headers).not.toHaveProperty('X-Ontomato-Retrieval-Caller-Id');
 });

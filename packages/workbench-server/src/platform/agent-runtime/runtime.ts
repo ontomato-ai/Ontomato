@@ -7,8 +7,6 @@ import type {
 } from "@ontomato/contracts/agent-runtime";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { RuntimeEnvironment } from "@ontomato/contracts/agent-runtime-skills";
-import { environment } from "../../config/environment";
-import { getApiConfig } from "../../config/data-query-api";
 import { getQueryTimeoutMs } from "../../config/query-settings";
 import { renderPrompt } from "../../core/prompts/loader";
 import { getLogContext } from "../../logging/log-context";
@@ -28,18 +26,6 @@ const PAGE_CONTROL_RULE = [
   "Use `fill_form` for edits and let the page supply its current form values when saving. In default confirmation mode, `page_action` prepares the intent and returns `awaiting_confirmation` immediately while the confirmation prompt appears in the conversation; do not wait or poll. When the user confirms in the conversation, the page verifies that the instance, target, and form contents have not changed before dispatching. In full-auto sessions, `page_action` executes immediately.",
   "Everything else — reading, retrieval, charts, reports, and data no page skill covers — keeps its own commands.",
 ].join("\n");
-export function userSkillEnvironment(credentials: AssistantCredentials): RuntimeEnvironment {
-  return {
-    values: {
-      ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, ""),
-      ONTOMATO_ONTOLOGY_URL: getApiConfig().baseUrl!.replace(/\/$/, ""),
-    },
-    secrets: {
-      ...(credentials.apiKey ? { ONTOMATO_API_KEY: credentials.apiKey }
-        : credentials.token ? { ONTOMATO_TK: credentials.token } : {}),
-    },
-  };
-}
 export function runDefinition(
   systemPrompt: string,
   modelId: string | null,

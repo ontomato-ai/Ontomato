@@ -23,7 +23,7 @@ vi.mock("../../../config/query-settings",()=>({getQueryTimeoutMs:()=>900_000}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench"})}}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class {request=mocks.request;run=mocks.run;status=mocks.status;finalReply=async()=>null;session=async()=>({messages:[{id:"22222222-2222-4222-8222-222222222222",messageSeq:1,message:{role:"user",content:"Review knowledge",timestamp:1}}]});}}));
-vi.mock("../../../platform/agent-runtime/runtime",()=>({messageText:(message:{content:string})=>message.content,answerText:()=>"",userSkillEnvironment:()=>({values:{ONTOMATO_ONTOLOGY_URL:"http://ontology"},secrets:{ONTOMATO_TK:"user"}}),runDefinition:(systemPrompt:string,modelId:string,skills:unknown[])=>({systemPrompt,modelId,skills})}));
+vi.mock("../../../platform/agent-runtime/runtime",()=>({messageText:(message:{content:string})=>message.content,answerText:()=>"",runDefinition:(systemPrompt:string,modelId:string,skills:unknown[])=>({systemPrompt,modelId,skills})}));
 import { assistantService } from "../service";
 import { assistantScheduleApplication } from "../scheduling";
 import { agentChannelService } from "../../agent-host/channel";
@@ -42,7 +42,7 @@ beforeEach(()=>{
   mocks.create.mockResolvedValue({row:session});mocks.reserve.mockResolvedValue({row:turn});
   mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue({skills:[{skill,digest}],pageControl:false});mocks.overview.mockResolvedValue("overview");
   mocks.status.mockResolvedValue({resolvedSkills:[{skill}]});mocks.open.mockResolvedValue({id:runId});mocks.links.mockResolvedValue([]);mocks.record.mockResolvedValue(null);
-  mocks.callback.mockReturnValue({value:"callback"});
+  mocks.callback.mockReturnValue({value:"wbc1.callback"});
   mocks.close.mockResolvedValue(undefined);mocks.admitted.mockResolvedValue(undefined);mocks.settled.mockResolvedValue(undefined);
 });
 function preparation(): AgentPrepareRequest {return {mode:"run",agent:{providerId:"workbench",agentId},sessionId,runId,inputId:runId,input:{role:"user",content:"Review knowledge",timestamp:1},language:"en",authority:{classNames:[],executionKind:"live"},requestedBy:null,root:{session:{providerId:"workbench",sessionId},runId},actor:{id:runId,domainId:"domain"}};}
@@ -50,7 +50,11 @@ it("governance-only preparation registers caller bounds without query preparatio
   mocks.overview.mockRejectedValue(new Error("Query permission denied"));
   const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
   expect(prepared.definition).toMatchObject({agentId,modelId:"provider/model",skills:[{skill,digest}]});
-  expect(prepared.environment.values).toMatchObject({ONTOMATO_ASSISTANT_SESSION_ID:sessionId,ONTOMATO_ONTOLOGY_URL:"http://ontology"});
+  expect(prepared.environment).toEqual({values:{ONTOMATO_ASSISTANT_SESSION_ID:sessionId},secrets:{}});
+  expect(prepared.businessCallbacks).toMatchObject({
+    ontology:{baseUrl:`http://workbench/api/assistant/executions/${runId}/ontology`,credential:"wbc1.callback"},
+    governance:{baseUrl:`http://workbench/api/assistant/sessions/${sessionId}/governance-window`,credential:"wbc1.callback"},
+  });
   expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_SKILL_SCENARIO");
   expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_RETRIEVAL_CALLER_ID");
   expect(mocks.callback.mock.calls.find(([claim])=>claim.pathPrefix.endsWith("/governance-window"))![0].expiresAt).toBe(new Date((await mocks.turn()).created_at).getTime()+900_000);
@@ -105,7 +109,7 @@ it("the selected query skill opens and records its actual scope regardless of pr
   const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageControl:false});
   const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
   expect(mocks.overview).toHaveBeenCalled();expect(mocks.scope).toHaveBeenCalledWith(runId,owner,runId);
-  expect(prepared.environment.values.ONTOMATO_RETRIEVAL_CALLER_ID).toBe(runId);
+  expect(prepared.environment.values).not.toHaveProperty("ONTOMATO_RETRIEVAL_CALLER_ID");
 });
 it("a failed scope opening never records an opened scope",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
