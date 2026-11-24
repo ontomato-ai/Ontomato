@@ -189,6 +189,7 @@ export const panelOperationTargetSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("state"), state: key }).strict(),
   z.object({ source: z.literal("draft"), slot: key }).strict(),
   z.object({ source: z.literal("literal"), literal: panelObjectRefSchema }).strict(),
+  z.object({ source: z.literal("row") }).strict(),
   z.object({ source: z.literal("none") }).strict(),
 ]);
 export type PanelOperationTarget = z.infer<typeof panelOperationTargetSchema>;

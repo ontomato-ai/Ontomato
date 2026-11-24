@@ -21,11 +21,6 @@ public class OntologyGenerationService {
           "action",
           "explain",
           "metric",
-          "function",
-          "instantiate",
-          "name",
-          "knowledge",
-          "dashboard",
           "describe",
           "quality");
   private static final ThreadLocal<QueryAccessService.Access> CURRENT_ACCESS = new ThreadLocal<>();
@@ -278,7 +273,7 @@ public class OntologyGenerationService {
             throw AgentHttpException.invalid("Metric creation requires output labels");
         } else throw AgentHttpException.invalid("Metric settlement must reuse or create");
       }
-      if (!reuse && Set.of("action", "metric", "function", "dashboard").contains(kind)) {
+      if (!reuse && (kind.equals("action") || kind.equals("metric"))) {
         if (result.containsKey("code")) throw AgentHttpException.invalid("Use a source file path");
         if (kind.equals("action")) {
           String code = file(domain, session, run, AgentJson.text(result, "sourcePath"));

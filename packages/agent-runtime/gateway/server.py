@@ -123,13 +123,16 @@ def call_params(model: Model, body: dict, stream: bool, output_limits: tuple[str
 def embedding_params(model: Model, body: dict) -> dict:
     params = {key: value for key, value in model.litellm_params.items() if value is not None}
     prefix, _, upstream = str(params["model"]).partition("/")
-    # LiteLLM maps no embedding handler for custom_openai; those connections are OpenAI-compatible servers.
-    params["model"] = f"openai/{upstream}" if prefix == "custom_openai" else params["model"]
+    # LiteLLM routes these providers' embedding endpoints through the OpenAI-compatible handler.
+    if prefix in ("custom_openai", "bigmodel"):
+        params["model"] = f"openai/{upstream}"
+        if prefix == "bigmodel":
+            params.setdefault("api_base", "https://open.bigmodel.cn/api/paas/v4")
     params["input"] = body.get("input")
     if model.model_info.get("dimensions") is not None:
         params["dimensions"] = model.model_info["dimensions"]
         # LiteLLM's OpenAI path drops dimensions for arbitrary model IDs unless explicitly allowed.
-        if prefix in ("openai", "custom_openai"):
+        if prefix in ("openai", "custom_openai", "bigmodel"):
             params["allowed_openai_params"] = ["dimensions"]
     return params
 

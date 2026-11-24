@@ -1,21 +1,15 @@
 package io.ontomato.dataengine.service.impl;
 
 import io.ontomato.dataengine.service.QueryPackage;
-import io.ontomato.dataengine.service.QuerySourceSnapshot;
 
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram;
-import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgramOutKeyRef;
 import io.ontomato.dataengine.bean.function.Function;
-import io.ontomato.dataengine.bean.function.Parameter;
-import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
 import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
 import org.springframework.transaction.annotation.Transactional;
 import io.ontomato.dataengine.service.AdminService;
-import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.FunctionForm;
 import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.LangService;
@@ -23,8 +17,6 @@ import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.service.PanelFormFields;
-import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
-import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.util.DBSchemaUtil;
 import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
@@ -42,8 +34,6 @@ public class FunctionServiceImpl implements FunctionService {
 
   @Autowired private AdminService adminService;
 
-  @Autowired private BusinessConfigService businessConfigService;
-
   @Autowired private LangService langService;
 
   @Autowired private FunctionDao functionDao;
@@ -53,8 +43,6 @@ public class FunctionServiceImpl implements FunctionService {
   @Autowired private ActionDao actionDao;
 
   @Autowired private OntologyScheduleReferences scheduledTasks;
-
-  @Autowired private OntologyGenerationService generationService;
 
   @PostConstruct
 	public void initService() {
@@ -120,72 +108,6 @@ public class FunctionServiceImpl implements FunctionService {
 			}
     	}).start();
     }
-
-  @Override
-  public Function generateFromABCProgram(
-      String question,
-      ABCHarnessProgram abcProgram,
-      String lang,
-      String domainId,
-      String sessionId) {
-    Function function = new Function();
-    function.setOrigin(Function.ORIGIN_USER);
-    function.setOperation(Function.OPERATION_READ);
-    function.setDomainId(domainId);
-
-    Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
-    List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
-    var queryLogic = QuerySourceSnapshot.input(abcProgram);
-
-    String userMessage =
-        OntologyGenerationPrompts.getReadFunctionMakerUserMessage(
-            question, queryLogic, lang, langService, jsonRule);
-    try (var generation =
-        generationService.generate("function", sessionId, userMessage, lang, domainId)) {
-      JSONObject envelope = generation.result();
-      if (!(envelope.get("queryPackage") instanceof JSONObject)) throw new IllegalArgumentException("queryPackage: expected JSONObject; supply this field with its declared JSON type");
-      if (!(envelope.get("name") instanceof String)) throw new IllegalArgumentException("name: expected String; supply this field with its declared JSON type");
-      if (!(envelope.get("logic") instanceof String)) throw new IllegalArgumentException("logic: expected String; supply this field with its declared JSON type");
-      JSONObject bundle = envelope.getJSONObject("queryPackage");
-      String name = envelope.getString("name");
-      String logic = envelope.getString("logic");
-
-      function.setName(name);
-      function.setQueryPackage(bundle);
-      function.setLogic(logic);
-
-      ReturnDef returnDef = new ReturnDef();
-      returnDef.setIsVoid(false);
-      returnDef.setColumnLabels(envelope.getJSONObject("columnLabels"));
-      function.setReturnDef(returnDef);
-      QueryPackage.prepareReadFunction(function, classDefs);
-
-      return generation.settle(() -> function);
-    }
-  }
-
-  @Override
-  public String generateBindingName(
-      String question,
-      List<Parameter> parameters,
-      Function generalFunction,
-      String lang,
-      String sessionId) {
-    if (generalFunction.getParameters().size() > 0) {
-      String userMessage =
-          OntologyGenerationPrompts.getStaticReadFunctionNameMakerUserMessage(
-              generalFunction, parameters, lang, langService);
-      try (var generation =
-          generationService.generate(
-              "name", sessionId, userMessage, lang, generalFunction.getDomainId())) {
-        String name = generation.result().getString("name");
-        if (name == null || name.isBlank()) return null;
-        return generation.settle(() -> name);
-      }
-    }
-
-    return null;
-  }
 
   @Override
 	@Transactional(rollbackFor = Exception.class)

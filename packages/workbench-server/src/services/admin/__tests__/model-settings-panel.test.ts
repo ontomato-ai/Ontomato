@@ -238,7 +238,9 @@ describe("model settings owner reads & forms", () => {
     expect(editForm.fields.find((f) => f.path === "/name")!.readOnly).toBe(true);
     const refreshed = await reads.form("openai-main", { values: { provider: "deepseek" } });
     expect(refreshed.values.apiKey).toBe("");
-    expect(refreshed.errors).toEqual([]);
+    expect(refreshed.errors).toEqual([{
+      field: "/provider", code: "invalid_option", message: "This provider does not support embedding models.",
+    }]);
     expect(JSON.stringify([await reads.list(), await reads.record("openai-main"), editForm, refreshed]))
       .not.toContain(storedSettings.connections["openai-main"]!.apiKey);
   });

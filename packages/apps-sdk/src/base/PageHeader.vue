@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useSlots } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { PageHeaderDraft, PageHeaderLabels } from "./page-header-types";
 
@@ -57,8 +57,6 @@ defineSlots<{
   default(): unknown;
 }>();
 
-const slots = useSlots();
-
 const i18n = (() => {
   try {
     return useI18n();
@@ -77,12 +75,6 @@ const resolvedLabels = computed<PageHeaderLabels>(() => ({
   discard: props.labels?.discard ?? translate("platform.discard", "Discard"),
   unsavedChanges: props.labels?.unsavedChanges ?? translate("platform.unsavedChanges", "Unsaved changes"),
 }));
-
-const hasTitle = computed(() => Boolean(slots.title || props.title));
-const hasDescription = computed(() => Boolean(slots.description || props.description));
-const hasHeading = computed(() => Boolean(slots.leading || props.backLabel || hasTitle.value));
-const hasActions = computed(() => Boolean(slots.actions || slots.default || props.draft));
-const hasContent = computed(() => hasHeading.value || hasDescription.value || hasActions.value);
 
 const draftSaving = computed(() => Boolean(props.draft?.saving));
 const draftDirty = computed(() => Boolean(props.draft?.dirty));
@@ -106,9 +98,12 @@ function handleSave() {
 
 <template>
   <header class="sdk-page-header" :class="{ compact }">
-    <div v-if="hasContent" class="sdk-page-header-row">
-      <div v-if="hasHeading || hasDescription" class="sdk-page-header-text">
-        <div v-if="hasHeading" class="sdk-page-header-heading">
+    <div
+      v-if="$slots.leading || backLabel || $slots.title || title || $slots.description || description || $slots.actions || $slots.default || draft"
+      class="sdk-page-header-row"
+    >
+      <div v-if="$slots.leading || backLabel || $slots.title || title || $slots.description || description" class="sdk-page-header-text">
+        <div v-if="$slots.leading || backLabel || $slots.title || title" class="sdk-page-header-heading">
           <span v-if="$slots.leading" class="sdk-page-header-leading"><slot name="leading" /></span>
           <button v-if="backLabel" type="button" class="sdk-page-header-back" @click="emit('back')">
             <svg
@@ -128,14 +123,14 @@ function handleSave() {
             </svg>
             <span>{{ backLabel }}</span>
           </button>
-          <span v-if="backLabel && hasTitle" class="sdk-page-header-back-divider" aria-hidden="true" />
+          <span v-if="backLabel && ($slots.title || title)" class="sdk-page-header-back-divider" aria-hidden="true" />
           <div v-if="$slots.title" class="sdk-page-header-title-slot"><slot name="title" /></div>
           <h1 v-else-if="title" class="sdk-page-header-title">{{ title }}</h1>
         </div>
         <div v-if="$slots.description" class="sdk-page-header-description"><slot name="description" /></div>
         <p v-else-if="description" class="sdk-page-header-description">{{ description }}</p>
       </div>
-      <div v-if="hasActions" class="sdk-page-header-actions">
+      <div v-if="$slots.actions || $slots.default || draft" class="sdk-page-header-actions">
         <slot name="actions" />
         <slot />
         <div v-if="draft" class="sdk-page-header-draft">

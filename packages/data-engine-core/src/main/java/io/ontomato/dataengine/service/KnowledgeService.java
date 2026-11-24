@@ -21,6 +21,4 @@ public interface KnowledgeService {
 
     public String getBussinessKnowledgeMarkdown(String domainId);
 
-    public List<Map<String,String>> generateBussinessKnowledgeAI(List<Map<String,String>> userTalkJson, Map<String, Object> jsonRule, String lang, String domainId);
-
 }

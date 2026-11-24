@@ -11,6 +11,21 @@ const viewOf = (wrapper: ReturnType<typeof mount>) =>
 
 afterEach(() => document.documentElement.classList.remove("dark"));
 
+it("updates the document on external resets and emits editor edits", async () => {
+  const wrapper = mount(CodeEditor, { props: { modelValue: "draft" } });
+  try {
+    const view = viewOf(wrapper);
+    await wrapper.setProps({ modelValue: "saved" });
+    expect(view.state.doc.toString()).toBe("saved");
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+
+    view.dispatch({ changes: { from: view.state.doc.length, insert: " edit" } });
+    expect(wrapper.emitted("update:modelValue")).toEqual([["saved edit"]]);
+  } finally {
+    wrapper.unmount();
+  }
+});
+
 it.each(["markdown", "javascript"] as const)("keeps %s hints out of edited content", (language) => {
   const hint = "## Title\nWrite content here";
   const wrapper = mount(CodeEditor, { props: { modelValue: "", placeholder: hint, language } });
