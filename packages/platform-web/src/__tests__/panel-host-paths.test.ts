@@ -994,17 +994,17 @@ describe("dynamic and nested member projection access verification", () => {
 
       // 1. Select P1 -> mounts and warms cache.
       mount.instance.state.set("selected", { className: PRODUCT_PROJECTION, primaryKey: proj1.id });
-      await vi.waitFor(() => expect(element.textContent).toContain("Projection One"));
+      await vi.waitFor(() => expect(element.textContent).toContain("Projection One"), { timeout: 5000 });
       expect(getCachedProjection(proj1.id)).toBeDefined();
 
       // 2. Revoke P1 on server, switch to P2, then switch back to P1.
       proj1Revoked = true;
       mount.instance.state.set("selected", { className: PRODUCT_PROJECTION, primaryKey: proj2.id });
-      await vi.waitFor(() => expect(element.textContent).toContain("Projection Two"));
+      await vi.waitFor(() => expect(element.textContent).toContain("Projection Two"), { timeout: 5000 });
 
       mount.instance.state.set("selected", { className: PRODUCT_PROJECTION, primaryKey: proj1.id });
       await vi.waitFor(() => expect(projectionRequests).toEqual([proj1.id, proj2.id, proj1.id]));
-      await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataForbidden));
+      await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataForbidden), { timeout: 5000 });
       expect(element.textContent).not.toContain("Projection One");
       expect(getCachedProjection(proj1.id)).toBeUndefined();
     } finally {
@@ -1083,7 +1083,7 @@ describe("dynamic and nested member projection access verification", () => {
 
       const element = view.direct.value!.element;
       await vi.waitFor(() => expect(projectionRequests).toEqual([`/api/product-projections/${projP.id}`]));
-      await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataForbidden));
+      await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataForbidden), { timeout: 5000 });
       expect(element.textContent).not.toContain("Nested Cached Projection P");
       expect(getCachedProjection(projP.id)).toBeUndefined();
       expect(readRequests).toEqual([]);

@@ -422,6 +422,58 @@ it("inline options mode supports remote search, resolves held unavailable items,
   });
 });
 
+it.each([1, 21])("initially displays the owner's label for option %i", async (index) => {
+  const picker: DirectProjection = {
+    ...meta,
+    id: "user-picker",
+    name: "User picker",
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: {},
+    outputs: { selected: { kind: "object", objectType: USER } },
+    config: {},
+    data: {
+      options: { source: { type: { kind: "PlatformObjectType", id: USER } }, read: "options", params: {} },
+      selected: { source: { type: { kind: "PlatformObjectType", id: USER } }, read: "resolve", params: {} },
+    },
+  };
+  const manifest: DirectPanelManifest = {
+    state: {
+      user: { type: { kind: "object", objectType: USER }, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      picker: { target: { projectionId: picker.id }, outputs: { selected: { state: "user" } } },
+    },
+  };
+  const users = Array.from({ length: 21 }, (_, i) => ({
+    primaryKey: `u-${i + 1}`,
+    value: `u-${i + 1}`,
+    label: `User ${i + 1}`,
+  }));
+  const selected = users[index - 1]!;
+  const { container, reads } = mountPanel(
+    manifest,
+    { [picker.id]: picker },
+    (request) => {
+      if (request.dataName === "options") return ready({ options: users.slice(0, 20) });
+      if (request.dataName === "selected") {
+        const values = request.runtimeParams?.values as string[];
+        return ready({
+          options: users.filter((user) => values.includes(user.value)).map((user) =>
+            user === users[0] ? { ...user, label: "Different resolved label" } : user,
+          ),
+        });
+      }
+      return { status: "empty" };
+    },
+    { initial: { user: { className: USER, primaryKey: selected.primaryKey } } },
+  );
+
+  await vi.waitFor(() => {
+    expect(container.querySelector(".sdk-inline-reference-picker .el-select__selected-item:not(.is-hidden)")?.textContent?.trim()).toBe(selected.label);
+  });
+  if (index === 1) expect(reads.some((request) => request.dataName === "selected")).toBe(false);
+});
+
 it("disables inline picker with readable tooltip when rows or options data is forbidden or errors", async () => {
   const rowsProjection: DirectProjection = {
     ...meta,
@@ -496,17 +548,18 @@ it("disables inline picker with readable tooltip when rows or options data is fo
   });
 });
 
-it("inline paged rows mode (panelRecordQuery) forwards search to the owner's read and retains selected label beyond page 1", async () => {
+it("inline paged rows mode resolves a selection outside page 1 and forwards search to the owner", async () => {
   const teacherPicker: DirectProjection = {
     ...meta,
     id: "teacher-picker",
     name: "Teacher picker",
     componentId: "@ontomato/sdk:ReferencePicker",
-    inputs: {},
+    inputs: { selected: { kind: "object", objectType: "Teacher" } },
     outputs: { selected: { kind: "object", objectType: "Teacher" } },
     config: { placeholder: "Pick teacher", clearable: true },
     data: {
       rows: { source: { type: { kind: "ObjectType", id: "Teacher" } }, read: "query", params: {} },
+      selected: { source: { object: { input: "selected" } }, read: "record", params: {} },
     },
   };
   const manifest: DirectPanelManifest = {
@@ -534,19 +587,23 @@ it("inline paged rows mode (panelRecordQuery) forwards search to the owner's rea
     manifest,
     { [teacherPicker.id]: teacherPicker },
     (request) => {
+      if (request.dataName === "selected") {
+        const selected = request.inputs.selected as { primaryKey: string };
+        return ready(allTeachers.find((row) => row.primaryKey === selected.primaryKey));
+      }
       const search = String((request.runtimeParams as Record<string, unknown> | undefined)?.search ?? "").trim();
       const matched = search
         ? allTeachers.filter((row) => row.label.toLowerCase().includes(search.toLowerCase()))
         : allTeachers;
       return ready({ rows: matched.slice(0, 20), total: matched.length });
     },
+    { initial: { teacher: { className: "Teacher", primaryKey: "t-21" } } },
   );
 
-  // Initial page 1 loads 20 rows (Teacher 21 is not in page 1).
   await vi.waitFor(() => {
-    expect(container.querySelector(".sdk-inline-reference-picker")?.getAttribute("data-state")).toBe("ready");
+    expect(container.querySelector(".sdk-inline-reference-picker .el-select__selected-item:not(.is-hidden)")?.textContent?.trim()).toBe("Teacher 21");
   });
-  expect(reads).toHaveLength(1);
+  instance.state.set("teacher", null);
 
   // Open dropdown and type "Teacher 21" -> must forward `search` to the owner's paged query read.
   const wrapper = container.querySelector<HTMLElement>(".sdk-inline-reference-picker .el-select__wrapper")!;
