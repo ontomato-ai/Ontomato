@@ -60,11 +60,6 @@ export interface PlatformPanelPage {
   id: string;
   label: string;
   icon?: PlatformIcon;
-  /**
-   * Shell-internal legacy count strictly for native pages not yet converted to panels; removed together with host-built
-   * menus once those pages migrate to panels + ObjectCount. Never exposed on SDK AppMenuItem; do not add new callers.
-   */
-  count?: number | null;
   /** Shown disabled with this hint (a page the application has not taken over yet). */
   unavailableHint?: string;
 }

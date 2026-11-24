@@ -57,7 +57,6 @@ export function appDeclarations(
   access: PlatformAccess,
   partition: readonly AppPartition[],
   t: (key: string) => string,
-  readCounts: (appId: string) => boolean = () => true,
 ): PlatformAppDeclaration[] {
   const pages = availablePages(navigation, access);
   // A page's address may carry a parameter (`/browser/data/:className?`); the column lists the address up to it, which is
@@ -66,16 +65,13 @@ export function appDeclarations(
   const byPath = new Map(pages.map((page) => [base(page.path), page]));
   const allEntries = new Map(partition.flatMap(app => [...app.entries ?? []]));
   const entryRows = new Map((navigation.entries ?? []).map((row) => [row.path, row]));
-  const panelPage = (page: PlatformPage, countsActive: boolean): PlatformPanelPage => ({
+  const panelPage = (page: PlatformPage): PlatformPanelPage => ({
     id: base(page.path),
     label: t(page.titleKey),
     icon: page.icon ?? "pages",
-    // Legacy count strictly for unconverted native pages; panel entries use #item-trailing + ObjectCount instead.
-    ...(countsActive && page.count ? { count: page.count() ?? null } : {}),
   });
 
   return partition.map((app): PlatformAppDeclaration => {
-    const countsActive = readCounts(app.id);
     const groups: PlatformPanelGroup[] = app.sections
       .map((section) => "pages" in section ? section : ({
         key: section.key,
@@ -84,8 +80,8 @@ export function appDeclarations(
           .map((path) => {
             const entry = app.entries?.get(path) ?? allEntries.get(path);
             const listed = byPath.get(base(path));
-            if (!entry) return listed ? panelPage(listed, countsActive) : undefined;
-            // The entry stands where a native page stood: its row keeps only that page's icon (never legacy counts).
+            if (!entry) return listed ? panelPage(listed) : undefined;
+            // The entry stands where a native page stood: its row keeps only that page's icon.
             const row = listed ?? entryRows.get(path);
             return {
               ...entry,
@@ -123,7 +119,7 @@ export function appDeclarations(
       // opens an address no route serves.
       home: base(home ?? groups[0]?.pages[0]?.id ?? footPage?.path ?? app.entryHome ?? firstPath ?? app.prefix),
       groups,
-      foot: footPage ? panelPage(footPage, countsActive) : null,
+      foot: footPage ? panelPage(footPage) : null,
     };
   });
 }

@@ -47,8 +47,6 @@ defineSlots<{
           <span v-if="$slots['item-trailing']" class="page-trailing">
             <slot name="item-trailing" :item="page" />
           </span>
-          <!-- Legacy fallback count strictly for unconverted native pages (PlatformPage.count); removed together with host-built menus once those pages migrate to panels + ObjectCount. Do not add new callers. -->
-          <span v-else-if="page.count !== null && page.count !== undefined" class="page-count">{{ page.count }}</span>
         </button>
       </template>
     </section>
@@ -175,13 +173,6 @@ defineSlots<{
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-}
-.page-count {
-  flex-shrink: 0;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  font-variant-numeric: tabular-nums;
 }
 .page-trailing:empty,
 .page-trailing:has(> :only-child:empty:not(img, svg, input)) {

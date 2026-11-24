@@ -47,31 +47,16 @@ defineSlots<{
 }>();
 
 function optionLabel(page: PlatformPanelPage): string {
-  if (props.itemTrailingText !== undefined) {
-    const trailing = props.itemTrailingText[page.id]?.trim();
-    return trailing ? `${page.label} ${trailing}` : page.label;
-  }
-  // Shell-internal bridge strictly for unconverted native pages supplied by hostMenu (PlatformPanelPage.count);
-  // removed together with host-built menus once those pages migrate to panels + ObjectCount. Do not add new callers.
-  return page.count !== null && page.count !== undefined ? `${page.label} (${page.count})` : page.label;
-}
-
-function nativePageCount(item: AppMenuItem): number | null | undefined {
-  // Shell-internal bridge strictly for unconverted native pages supplied by hostMenu (PlatformPanelPage.count);
-  // removed together with host-built menus once those pages migrate to panels + ObjectCount. Do not add new callers.
-  if (!("count" in item)) return undefined;
-  const value = (item as PlatformPanelPage).count;
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  const trailing = props.itemTrailingText?.[page.id]?.trim();
+  return trailing ? `${page.label} ${trailing}` : page.label;
 }
 
 function toPanelPage(item: AppMenuItem): PlatformPanelPage {
   const icon = props.icons && Object.hasOwn(props.icons, item.id) ? props.icons[item.id] : item.icon;
-  const count = nativePageCount(item);
   return {
     id: item.id,
     label: item.label,
     ...(icon !== undefined ? { icon } : {}),
-    ...(count !== undefined ? { count } : {}),
     ...(item.unavailableHint ? { unavailableHint: item.unavailableHint } : {}),
   };
 }

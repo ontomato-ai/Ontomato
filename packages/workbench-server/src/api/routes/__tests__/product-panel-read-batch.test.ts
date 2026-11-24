@@ -31,7 +31,7 @@ vi.mock("../../../services/ontology-model/model-reads", () => ({
 }));
 
 const root = "ontology-frame";
-const projectionIds = Array.from({ length: 14 }, (_, i) => `projection-${i}`);
+const projectionIds = Array.from({ length: 19 }, (_, i) => `projection-${i}`);
 const source = { kind: "frame", applicationId: "ontology", useId: "use-list" } as const;
 const record = { primaryKey: "sample", label: "Sample", fields: {} };
 const reads: ProductPanelReadRequest[] = projectionIds.map((_, i) => ({
@@ -113,14 +113,14 @@ beforeEach(() => {
   });
 });
 
-it("reads a 14-member frame with one entry lookup, two grant calls and isolated results", async () => {
+it("reads a 19-member frame with one entry lookup, two grant calls and isolated results", async () => {
   const response = await postBatch({ reads }, JSON.stringify({ kind: "build-test", contextId: null }));
   expect(response).toEqual({ status: 200, body: { results: [
     { status: "ready", value: [record] },
     { status: "empty" },
     { status: "forbidden" },
     { status: "error", message: "Could not read relationships" },
-    ...Array.from({ length: 10 }, () => ({ status: "ready", value: [record] })),
+    ...Array.from({ length: projectionIds.length - 4 }, () => ({ status: "ready", value: [record] })),
   ] } });
   expect(mocks.get).toHaveBeenCalledTimes(1);
   expect(mocks.get).toHaveBeenCalledWith(
