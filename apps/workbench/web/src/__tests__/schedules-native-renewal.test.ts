@@ -34,24 +34,108 @@ const olderRun = {
   ...run, id: "20000000-0000-4000-8000-000000000002", result: "Earlier run result",
   executionDetails: { source: "owner snapshot" },
 };
+function toRunRecord(item: {
+  id: string;
+  trigger: string;
+  status: string;
+  startedAt: string;
+  resultSummary: string | null;
+  result: string | null;
+  executionDetails: Record<string, unknown> | null;
+  resultLink: { path: string } | null;
+}) {
+  return {
+    primaryKey: item.id,
+    label: `Scheduled · ${item.status}`,
+    subtitle: item.resultSummary ?? "",
+    fields: {
+      status: item.status,
+      trigger: item.trigger,
+      startedAt: item.startedAt,
+      ...(item.resultSummary ? { resultSummary: item.resultSummary } : {}),
+      ...(item.result !== null ? { result: item.result } : {}),
+      ...(item.executionDetails !== null ? { executionDetails: { kind: "json" as const, value: item.executionDetails } } : {}),
+    },
+    tones: { status: "success" as const },
+    outputs: {
+      resultPath: item.resultLink?.path ?? "",
+      isRunning: item.status === "running",
+    },
+  };
+}
 const row = {
-  primaryKey: taskId, label: "Nightly test", fields: {
-    application: "agents", frequency: "Every Monday", state: "off", nextRun: "", timeZone: "UTC",
-    lastRun: "completed", lastRunAt: "2026-11-21T00:00:00Z", lastRunSummary: "**Finished**",
+  primaryKey: taskId,
+  label: "Nightly test",
+  fields: {
+    application: "agents",
+    applicationName: "Agents",
+    settings: "Agent: Daily helper",
+    frequency: "Every Monday",
+    state: "off",
+    stateLabel: "Switched off",
+    enabled: false,
+    revision: 1,
+    pauseCode: "",
+    nextRun: "",
+    timeZone: "UTC",
+    notifyEmail: "",
+    lastRun: "completed",
+    lastRunAt: "2026-11-21T00:00:00Z",
+    lastRunSummary: "Finished",
+    latestResultPath: "",
+  },
+  tones: { state: "info" as const, stateLabel: "info" as const, lastRun: "success" as const },
+  outputs: {
+    revision: 1,
+    enabled: false,
+    paused: false,
+    pauseCode: "",
+    latestResultPath: "",
+    isRunning: false,
   },
 };
 const operationsRow = {
-  ...row, primaryKey: "10000000-0000-4000-8000-000000000002", label: "Operations test",
-  fields: { ...row.fields, application: "operations", lastRunSummary: "" },
+  ...row,
+  primaryKey: "10000000-0000-4000-8000-000000000002",
+  label: "Operations test",
+  fields: { ...row.fields, application: "operations", applicationName: "Operations", lastRunSummary: "" },
 };
 const pausedRow = {
   ...operationsRow,
-  fields: { ...operationsRow.fields, state: "paused: The application form changed.", pauseCode: "definition_changed" },
+  fields: {
+    ...operationsRow.fields,
+    state: "paused: The application form changed.",
+    stateLabel: "Paused",
+    enabled: true,
+    pauseCode: "definition_changed",
+    pauseReason: "The application form changed.",
+  },
+  tones: { ...operationsRow.tones, state: "warning" as const, stateLabel: "warning" as const },
+  outputs: {
+    ...operationsRow.outputs,
+    enabled: true,
+    paused: true,
+    pauseCode: "definition_changed",
+  },
 };
 const otherApplications = Array.from({ length: 4 }, (_, index) => ({
-  ...row, primaryKey: `10000000-0000-4000-8000-00000000000${index + 3}`, label: `Application ${index + 1} task`,
-  fields: { ...row.fields, application: `app-schedule-fixture-${index + 1}`, lastRunSummary: "" },
+  ...row,
+  primaryKey: `10000000-0000-4000-8000-00000000000${index + 3}`,
+  label: `Application ${index + 1} task`,
+  fields: {
+    ...row.fields,
+    application: `app-schedule-fixture-${index + 1}`,
+    applicationName: `app-schedule-fixture-${index + 1}`,
+    lastRunSummary: "",
+  },
 }));
+const allTaskRows = [row, pausedRow, ...otherApplications];
+const countsFixture = [
+  { key: "", label: "All", count: allTaskRows.length },
+  { key: "agents", label: "Agents", count: 1 },
+  { key: "operations", label: "Operations", count: 1 },
+  ...otherApplications.map(item => ({ key: item.fields.application, label: item.fields.applicationName, count: 1 })),
+];
 const target = { kind: "object", objectType: "platform:Application", primaryKey: "schedules" };
 const objectTypes = Object.fromEntries(Object.entries(platformObjectTypes).map(([type, entry]) => [
   type,
@@ -87,6 +171,16 @@ const panel = {
 afterEach(() => {
   leaveFrame();
   useApplicationCatalog().applications.value = [];
+});
+
+it("removes usePanelData and business-data PanelData members from the schedules builtin panel", () => {
+  expect(module).not.toContain("usePanelData");
+  for (const [name, definition] of Object.entries(authoring)) {
+    if ("component" in definition && definition.component === "PanelData") {
+      expect(name).toBe("renew");
+      expect(definition.data).toBeUndefined();
+    }
+  }
 });
 
 it.each([["normalizes a legacy address and renews", false], ["keeps the schedule panel open when renewal is refused", true]])("%s", async (_scenario, refused) => {
@@ -126,26 +220,39 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
           effect: "write", batch: false, target: { source: "input", input: "application" }, inputSchema: {}, resultSchema: {},
         },
       } : {} });
-      switch (body.dataName) {
-        case "rows": return Response.json({ status: "ready", value: [row, pausedRow, ...otherApplications] });
-        case "record": return Response.json({ status: "ready", value: row });
-        case "form": return Response.json({ status: "ready", value: {
+      const member = body.memberPath[0].member;
+      if (member === "appFilter" && body.dataName === "counts") {
+        return Response.json({ status: "ready", value: countsFixture });
+      }
+      if (member === "tasks" && body.dataName === "rows") {
+        return Response.json({ status: "ready", value: allTaskRows });
+      }
+      if (member === "focus" && body.dataName === "record") {
+        return Response.json({ status: "ready", value: toRunRecord(body.inputs.runId === olderRun.id ? olderRun : run) });
+      }
+      if (member === "history" && body.dataName === "rows") {
+        if (!checkHistory) return Response.json({ status: "ready", value: { rows: [toRunRecord(run)] } });
+        const cursor = body.runtimeParams?.cursor === "older" ? "older" : null;
+        const firstAttempt = !historyReads.includes(cursor);
+        historyReads.push(cursor);
+        if (firstAttempt) return Response.json({ status: "error", message: "Run records unavailable" });
+        return Response.json({
+          status: "ready",
+          value: { rows: [toRunRecord(cursor ? olderRun : run)], ...(cursor ? {} : { nextCursor: "older" }) },
+        });
+      }
+      if (body.dataName === "record") {
+        const targetId = (body.inputs.target as { primaryKey?: string } | undefined)?.primaryKey;
+        const found = allTaskRows.find(item => item.primaryKey === targetId) ?? row;
+        return Response.json({ status: "ready", value: found });
+      }
+      if (body.dataName === "form") {
+        return Response.json({ status: "ready", value: {
           fields: [], values: {}, errors: [], revision: 1,
           save: { method: "PUT", path: `/scheduled-tasks/${taskId}`, bodySchema: {} },
         } });
-        case "runs": {
-          if (!checkHistory) return Response.json({ status: "ready", value: { runs: [run], nextCursor: null } });
-          const cursor = body.runtimeParams?.cursor === "older" ? "older" : null;
-          const firstAttempt = !historyReads.includes(cursor);
-          historyReads.push(cursor);
-          if (firstAttempt) return Response.json({ status: "error", message: "Run records unavailable" });
-          return Response.json({
-            status: "ready", value: { runs: cursor ? [olderRun] : [run], nextCursor: cursor ? null : "older" },
-          });
-        }
-        case "run": return Response.json({ status: "ready", value: body.inputs.runId === olderRun.id ? olderRun : run });
-        default: return Response.json({ status: "empty" });
       }
+      return Response.json({ status: "empty" });
     }
     if (path === "/api/panel-operations/intents") {
       if (refused) return Response.json({ error: { code: "DEPENDENCY_UNAVAILABLE", message: "Credential service unavailable" } }, { status: 503 });
@@ -169,13 +276,13 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       path: "/api/panel-operations/intents",
       body: { applicationId: "schedules", useId: use.id, operationId, call: { target, input: {} } },
     })), { timeout: 5000 });
-    if (refused)
+    if (refused) {
       await vi.waitFor(() => expect(element.querySelector(".schedules [role=alert]")?.textContent).toContain("Credential service unavailable"));
-    else {
+    } else {
       await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({ path: `/api/panel-operations/intents/${id}/dispatch` })));
       await vi.waitFor(() => expect(sentPanelReadItems(sent)).toContainEqual(expect.objectContaining({
         body: expect.objectContaining({
-          memberPath: [{ member: "focus" }], dataName: "run",
+          memberPath: [{ member: "focus" }], dataName: "record",
           inputs: { target: { className: "platform:ScheduledTask", primaryKey: taskId }, runId },
         }),
       })));
@@ -183,26 +290,34 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       expect(router.currentRoute.value.query).toEqual({
         app: "agents", selectedTask: taskId, runId,
       });
-      await vi.waitFor(() => expect(element.querySelector(".schedules [data-run].focused")).not.toBeNull());
+      await vi.waitFor(() => expect(element.querySelector(`.schedules-focus[data-run="${runId}"]`)).not.toBeNull());
     }
-    await vi.waitFor(() => expect(element.querySelector('.schedules [data-task] [title="Finished"]')?.textContent).toBe("Finished"));
+    await vi.waitFor(() => expect(element.querySelector(".schedules-list-col .sdk-object-list-card")?.textContent).toContain("Finished"));
     if (!refused) {
       const list = element.querySelector(".schedules");
       await router.push("/schedules?app=operations");
       expect(router.currentRoute.value.query).toEqual({ app: "operations" });
-      await vi.waitFor(() => expect(element.querySelector('.schedules [data-app="operations"]')?.getAttribute("aria-pressed")).toBe("true"));
-      expect(Array.from(element.querySelectorAll(".schedules [data-task]"), item => item.getAttribute("data-task"))).toEqual([operationsRow.primaryKey]);
+      await vi.waitFor(() => expect(element.querySelector('.sdk-segmented-option[data-value="operations"]')?.getAttribute("aria-checked")).toBe("true"));
+      await vi.waitFor(() => {
+        const cards = element.querySelectorAll(".schedules-list-col .sdk-object-list-card");
+        expect(cards).toHaveLength(1);
+        expect(cards[0]?.textContent).toContain("Operations test");
+        expect(cards[0]?.textContent).toContain("The application form changed.");
+      });
       expect(element.querySelector(".schedules")).toBe(list);
-      const pause = element.querySelector<HTMLDetailsElement>(".schedules [data-task] details");
-      expect(pause?.open).toBe(false);
-      expect(pause?.querySelector("p")?.textContent).toBe("The application form changed.");
+
       const focus = HTMLElement.prototype.focus;
       const browserFocus = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement, options) {
         if (this.getAttribute("data-form") === "edit" && this.style.display === "none") return;
         focus.call(this, options);
       });
       try {
-        element.querySelector<HTMLButtonElement>(".schedules [data-task] .pause-review")!.click();
+        const reviewButton = await vi.waitFor(() => {
+          const btn = element.querySelector<HTMLButtonElement>('.schedules-list-col [data-local-action="review"]');
+          expect(btn).not.toBeNull();
+          return btn!;
+        });
+        reviewButton.click();
         await vi.waitFor(() => expect(document.activeElement).toBe(element.querySelector('[data-form="edit"]')));
       } finally {
         browserFocus.mockRestore();
@@ -216,40 +331,44 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       expect(document.activeElement).toBe(editor);
       editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       await vi.waitFor(() => expect(editor.style.display).toBe("none"));
-      expect(document.activeElement).toBe(element.querySelector(".card.is-selected button.card-select"));
+      expect(document.activeElement).toBe(element.querySelector(".schedules-list-col .sdk-object-list-card.chosen"));
+
       const other = otherApplications.at(-1)!;
       await router.push(`/schedules?app=${other.fields.application}`);
-      await vi.waitFor(() => expect(element.querySelector(".filter-more")?.textContent).toContain(other.fields.application));
-      expect(element.querySelectorAll(".schedules .chips > button")).toHaveLength(6);
-      expect(element.querySelector(".filter-more [aria-pressed]")?.getAttribute("aria-pressed")).toBe("true");
-      expect(element.querySelector(".schedules [data-task]")?.getAttribute("data-task")).toBe(other.primaryKey);
+      await vi.waitFor(() => expect(element.querySelector(`.sdk-segmented-option[data-value="${other.fields.application}"]`)?.getAttribute("aria-checked")).toBe("true"));
+      await vi.waitFor(() => {
+        const cards = element.querySelectorAll(".schedules-list-col .sdk-object-list-card");
+        expect(cards).toHaveLength(1);
+        expect(cards[0]?.textContent).toContain(other.label);
+      });
 
       checkHistory = true;
       await router.push(`/schedules?taskId=${taskId}&runId=${olderRun.id}`);
-      const linked = `[data-run="${olderRun.id}"]`;
-      await vi.waitFor(() => expect(element.querySelector(`${linked} .details`)?.textContent ?? "").toContain("Earlier run result"));
-      expect(element.querySelector(`${linked} .details`)?.textContent).toContain("owner snapshot");
+      const linked = `.schedules-focus[data-run="${olderRun.id}"]`;
+      await vi.waitFor(() => expect(element.querySelector(linked)?.textContent ?? "").toContain("Earlier run result"));
+      expect(element.querySelector(linked)?.textContent).toContain("owner snapshot");
       expect(element.querySelector(`${linked} .result-link`)).not.toBeNull();
+
       const retryHistory = async () => {
         const retry = await vi.waitFor(() => {
-          const button = element.querySelector<HTMLButtonElement>('[data-action="retry-history"]');
-          expect(button).not.toBeNull();
+          const button = [...element.querySelectorAll<HTMLButtonElement>(".schedules-runs button")]
+            .find(item => item.textContent?.trim() === "Retry");
+          expect(button).toBeDefined();
           return button!;
         });
         retry.click();
       };
       await retryHistory();
       const more = await vi.waitFor(() => {
-        const button = element.querySelector<HTMLButtonElement>('[data-action="more-history"]');
+        const button = element.querySelector<HTMLButtonElement>(".schedules-runs .sdk-object-list-load-more");
         expect(button).not.toBeNull();
         return button!;
       });
       more.click();
       await retryHistory();
       await vi.waitFor(() => expect(historyReads).toEqual([null, null, "older", "older"]));
-      await vi.waitFor(() => expect(element.querySelectorAll(`.runs ${linked}`)).toHaveLength(1));
-      expect(element.querySelectorAll(".runs [data-run]")).toHaveLength(2);
-      expect(element.querySelector(`${linked} .details`)?.textContent).toContain("Earlier run result");
+      await vi.waitFor(() => expect(element.querySelectorAll(".schedules-runs .sdk-object-list-card")).toHaveLength(2));
+
       element.querySelector<HTMLButtonElement>('[data-action="delete"]')!.click();
       await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
         path: "/api/panel-operations/intents",

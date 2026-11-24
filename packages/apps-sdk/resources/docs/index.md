@@ -100,24 +100,24 @@ read-only, keeps them synced with state, and submits them on save for owner vali
 { "config": { "fixedFields": { "/className": { "state": "selected", "path": "/primaryKey" } } } }
 ```
 
-### Coordinate with declared data and operations
+### Coordinate with declared outputs and operations
 
-Prefer component outputs and events (`@saved`, `@navigate`, `usePanelFormDraft`, `state` bindings) whenever available.
-When a panel needs a non-rendering member to check declared state for coordination (visibility, navigation, or follow-up
-state) or to declare operations without rendering content, use `@ontomato/sdk:PanelData` and read it via
-`usePanelData(member, name)` and `usePanelOperation(member, name)` in synchronous `setup()`. Do not use `PanelData` or
-`usePanelData` to render business record fields in `panel.html`.
+Prefer component outputs and events (`@saved`, `@navigate`, `usePanelOutput`, `usePanelOutputs`, `usePanelFormDraft`,
+`state` bindings) to coordinate visibility, selection, navigation, and text-only slots. When a panel needs a
+non-rendering member strictly to declare non-UI operations invoked through `usePanelOperation(member, name, options?)`
+in synchronous `setup()`, use `@ontomato/sdk:PanelData`. Do not use `PanelData` to render business record fields in
+`panel.html`.
 
 ```js
 import { watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData, usePanelOperation } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelContext, usePanelOperation, usePanelOutput } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
     const { instance } = usePanelContext();
-    const summary = usePanelData("statusCheck", "record");
-    watch(summary, (state) => {
-      if (state.status === "empty") instance.state.set("selected", null);
+    const detailStatus = usePanelOutput("detail", "status");
+    watch(detailStatus, (status) => {
+      if (status === "empty") instance.state.set("selected", null);
     });
     const approve = usePanelOperation("review", "approve");
     return { approve };
@@ -125,10 +125,9 @@ await mountPanel({
 });
 ```
 
-`usePanelData` reads through the platform as the current reader and returns `loading`, `awaiting` (a required input or
-target is empty), `ready` with `value`, `empty`, `forbidden`, or `error` with `message` and `retry()`. It refreshes
-automatically when bound panel state changes, when `runtimeParams` change, or when an operation reports affected objects
-or types.
+`usePanelOutput(member, name)` and `usePanelOutputs(member)` subscribe to declared read-only outputs published by a
+projection's component or owner read (such as `status`, `label`, `total`, `filteredCount`, `dirty`, or owner-declared
+scalar outputs).
 
 `usePanelOperation(member, name, options?)` returns `{ operation, state, running, dispatching, run }`. `operation` is the
 owner's description while currently admitted (otherwise `null`), and `run(input?)` runs the operation through the

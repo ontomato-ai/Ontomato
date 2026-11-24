@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { computed, createApp, h, ref } from "vue";
+import { createApp, h, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -16,7 +16,8 @@ import { noOperations, directRun } from "./panel-frame";
 /*
  * A read the platform never answered (the page reached nothing: the network dropped, the service was being replaced —
  * 2026-11-21 acceptance, a relation list showing "Failed to fetch") is said in the reader's language, with a way to read
- * again, in the SDK's lists and in a panel's own code alike; a reason the owner or the platform gave is still its own.
+ * again, in standalone `PanelMember` mounts and mounted panel `<Projection>`s alike; a reason the owner or the platform
+ * gave is still its own.
  */
 
 const base = { domainId: "d", ownerId: "o", createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "", revision: 1 };
@@ -25,10 +26,9 @@ const relations: DirectProjection = {
   inputs: {}, outputs: {}, config: {},
   data: { rows: { source: { type: { kind: "PlatformObjectType", id: RELATIONSHIP } }, read: "list", params: {} } },
 };
-const relationData: DirectProjection = { ...relations, id: "relation-data", componentId: "@ontomato/sdk:PanelData" };
 const manifest: DirectPanelManifest = {
   state: {},
-  members: { list: { target: { projectionId: relations.id } }, data: { target: { projectionId: relationData.id } } },
+  members: { list: { target: { projectionId: relations.id } } },
 };
 const rows = [{ primaryKey: "holds", label: "Holds role", fields: {} }];
 const unreachable = publicEn.platform.dataUnreachable;
@@ -53,7 +53,7 @@ it("says in the reader's language that a list could not be read, and reads it ag
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "relations", url: () => "/relations", label: () => "Relations", initial: {},
     text: createPanelText({}, ref("en"), "en"), ...noOperations,
-    readProjection: async (id) => (id === relations.id ? relations : relationData), read,
+    readProjection: async () => relations, read,
   });
   const element = document.createElement("div");
   document.body.append(element);
@@ -68,7 +68,7 @@ it("says in the reader's language that a list could not be read, and reads it ag
   await vi.waitFor(() => expect(element.textContent).toContain("Holds role"));
 });
 
-it("hands a panel's own code the same words and a way to read again", async () => {
+it("shows the same localized unreachable notice and retry action inside a mounted panel projection", async () => {
   const { state, read } = port();
   const element = document.createElement("div");
   document.body.append(element);
@@ -76,15 +76,15 @@ it("hands a panel's own code the same words and a way to read again", async () =
   const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
   const module = panelModuleFor({
     mounted, element,
-    template: `<p class="shown">{{ shown }}</p><button class="again" @click="again">again</button>`,
-    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    template: `<Projection slot="list" /><p class="status">{{ status }}</p>`,
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus); },
     manifest,
     run: directRun({
       pageKey: "relations", url: () => "/relations", label: () => "Relations", initial: {},
       failed: (reason) => { throw reason; },
     }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
-    requests: { request: async (path: string) => Response.json({ projection: path.endsWith(relations.id) ? relations : relationData }) },
+    requests: { request: async () => Response.json({ projection: relations }) },
     use: { applicationId: "app-relations", useId: "relations" },
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: noOperations.confirmOperation,
@@ -92,16 +92,18 @@ it("hands a panel's own code the same words and a way to read again", async () =
   });
   await module.mountPanel({
     setup() {
-      const data = module.usePanelData("data", "rows");
-      return {
-        shown: computed(() => (data.value.status === "error" ? data.value.message : data.value.status)),
-        again: () => { if (data.value.status === "error") data.value.retry?.(); },
-      };
+      const status = module.usePanelOutput("list", "status");
+      return { status };
     },
   });
-  await mount;
-  await vi.waitFor(() => expect(element.querySelector(".shown")?.textContent).toBe(unreachable));
+  const run = await mount;
+  await vi.waitFor(() => expect(element.textContent).toContain(unreachable));
+  expect(element.textContent).not.toContain("Failed to fetch");
+  expect(element.querySelector(".status")?.textContent).toBe("error");
+  const retry = [...element.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === publicEn.common.retry)!;
   state.reachable = true;
-  element.querySelector<HTMLButtonElement>(".again")!.click();
-  await vi.waitFor(() => expect(element.querySelector(".shown")?.textContent).toBe("ready"));
+  retry.click();
+  await vi.waitFor(() => expect(element.textContent).toContain("Holds role"));
+  await vi.waitFor(() => expect(element.querySelector(".status")?.textContent).toBe("ready"));
+  run.dispose();
 });

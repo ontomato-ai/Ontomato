@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * A non-rendering member: nothing is drawn here. Its projection declares data the panel's own code reads with
- * `usePanelData(member, name)` for coordination (when no component output carries it), or operations invoked with
- * `usePanelOperation(member, name)`. Business fields are rendered by components, not in the panel template.
+ * A non-rendering member: nothing is drawn here. Its projection declares non-UI operations invoked through
+ * `usePanelOperation(member, name, options?)`. Business data and fields are always read and rendered by official or
+ * domain components, never in panel scripts or templates.
  */
 defineOptions({ name: "PanelData" });
 </script>

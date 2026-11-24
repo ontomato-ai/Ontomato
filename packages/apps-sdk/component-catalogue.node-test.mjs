@@ -329,7 +329,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       total: { kind: "scalar", type: "number" },
     });
     assert.deepEqual(Object.keys(declared.get("ObjectForm").readOnlyOutputs ?? {}).sort(), ["dirty", "draft", "label"]);
-    assert.deepEqual(Object.keys(declared.get("ObjectSummary").readOnlyOutputs ?? {}), ["label"]);
+    assert.deepEqual(Object.keys(declared.get("ObjectSummary").readOnlyOutputs ?? {}).sort(), ["label", "status"]);
     assert.deepEqual(Object.keys(declared.get("ObjectHeader").readOnlyOutputs ?? {}).sort(), [
       "errorMessage", "label", "status",
     ]);

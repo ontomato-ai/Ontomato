@@ -465,9 +465,12 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),
+      counts: () => schedules.counts(),
       record: selection => schedules.record(selection.primaryKey!),
       runs: (selection, params) => schedules.runs(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
       run: (selection, params) => schedules.run(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),
+      runRecords: (selection, params) => schedules.runRecords(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
+      runRecord: (selection, params) => schedules.runRecord(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),
       form: (selection, params) => schedules.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => schedules.createForm({
         ...formParams(params), defaultAppId: panelReadParameterSchemas.keyword.optional().parse(params.defaultAppId),

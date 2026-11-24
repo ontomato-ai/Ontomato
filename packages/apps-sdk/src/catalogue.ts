@@ -248,12 +248,13 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectSummary",
     role: "presentation",
     meaning:
-      "Shows the few facts of one object a reader recognises it by, including owner-supplied highlight ranges, status tags, clickable object references, and optional one-click copy buttons (`config.copyableFields`, resolving `#/...` hash links against the current browser origin and pathname). Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object. Exposes `label` as a read-only output.",
+      "Shows the few facts of one object a reader recognises it by, including owner-supplied highlight ranges, status tags, clickable object references, and optional one-click copy buttons (`config.copyableFields`, resolving `#/...` hash links against the current browser origin and pathname). Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object. Exposes `label` and `status` as read-only outputs.",
     effects: "Reads one object of the type the projection binds, as the reader.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: { record: { results: ["panelRecord"], required: true } },
     readOnlyOutputs: {
       label: { kind: "scalar", type: "string" },
+      status: { kind: "scalar", type: "string" },
     },
   }),
   defineComponentMeta({
@@ -718,7 +719,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "PanelData",
     role: "presentation",
     meaning:
-      "Draws nothing: a non-rendering member for reading declared data through usePanelData(member, name) to coordinate panel state, visibility or navigation (prefer a component's own output when available), or for declaring operations invoked through usePanelOperation(member, name, options?) (which registers a mounted page action entry by default; pass { entry: false } for non-UI background flows). Do not use PanelData to render business fields in a panel template; use an official component, configure it, or write a component for that slot.",
+      "Draws nothing: a non-rendering member strictly for declaring non-UI operations invoked through usePanelOperation(member, name, options?) (which registers a mounted page action entry by default; pass { entry: false } for non-UI background flows). Do not use PanelData to read or render business fields in a panel; use an official component, configure it, or write a component for that slot.",
     // Any datum the projection names, under the author's own name, with any read result and the run-time values the
     // other components give; the read's own signature still bounds them. The catalogue test keeps these lists whole.
     data: {

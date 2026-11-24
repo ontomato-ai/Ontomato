@@ -4,21 +4,21 @@
 
 ## 页面上有什么
 
-- `tasks.rows`：本人的全部任务。每行 `fields` 有 `application`（应用 ID）、`settings`（应用给出的配置摘要）、`state`（`on`、`off` 或 `paused: 原因`）、`nextRun`（下次运行时间）、`lastRun`（最近一次运行的状态）、`frequency`、`timeZone`、`lastRunAt`、`lastRunSummary` 和 `latestResultPath`。
+- `appFilter.counts`：按应用分组的定时任务数量与本地化应用名（`platform:ScheduledTask.counts`）。
+- `tasks.rows`：本人的全部任务（`ObjectList` 卡片列表）。每行 `fields` 有 `application`（应用 ID）、`applicationName`（应用名）、`settings`（应用给出的配置摘要）、`state`（`on`、`off` 或 `paused: 原因`）、`stateLabel`、`pauseReason`、`pauseCode`、`nextRun`（下次运行时间）、`lastRun`（最近一次运行的状态）、`frequency`、`timeZone`、`notifyEmail`、`lastRunAt`、`lastRunSummary` 和 `latestResultPath`。
 - 状态 `app`：按应用筛选（应用 ID，空为全部）。
-- 状态 `search`：按标题搜索（字符串，空字符串为全部标题）。
+- 状态 `search`：按标题、配置、应用名或频率搜索（字符串，空字符串为全部）。
 - 状态 `selectedTask`：选中的任务。选中后：
-  - `detail.record`：任务记录；`detail.form`：属主表单，`values.task` 里是标题、应用、频率、时区、通知邮箱，根上是应用自己的参数；`revision` 是当前修订号。
-  - `history.runs`：执行记录，新到旧，一页一页（`cursor` 取上一页的 `nextCursor`）。每条有状态、触发方式、开始时间、耗时（毫秒）、失败原因 `error`、结果摘要、结果链接 `resultLink`、执行详情 `executionDetails` 和运行时的配置 `snapshot`。
-- 状态 `runId`：定位到一条运行（`focus.run`）。
+  - `detailHeader.record` / `detailSummary.record` / `detailPause.record`：任务记录（`platform:ScheduledTask.record`），并在 `outputs` 上提供 `revision`、`enabled`、`paused`、`pauseCode`、`latestResultPath`、`isRunning`。
+  - `history.rows`：执行记录分页列表（`platform:ScheduledTask.runRecords`，新到旧，`cursor` 取上一页的 `nextCursor`）。
+- 状态 `runId`：定位到一条运行，由 `focus.record`（`platform:ScheduledTask.runRecord`）展示完整状态、触发方式、耗时、失败原因、结果摘要、运行时配置、结果与执行详情，并在 `outputs` 上提供 `resultPath` 与 `isRunning`。
 - 状态 `compose`：`"new"` 打开新建表单（`newForm`），`"edit"` 打开选中任务的编辑表单（`editForm`）。用 `present` 设置这一公开状态。
-- 应用名来自 `apps.catalog`；可选应用、是否可用及不可用原因来自 `choices.form` 里 `/task/appId` 字段的选项。
 
 打开某个状态的地址：使用扁平具名参数，例如 `/schedules?app=agents`、`/schedules?selectedTask=<任务ID>`，或再加 `&runId=<运行ID>` 打开某条运行。
 
 ## 回答问题
 
-先读 `tasks.rows`；问到某个任务的频率、时区、通知邮箱或最近的结果时，读选中任务的 `detail.form` 和 `history.runs`，不要猜。时间按任务时区说。
+先读 `tasks.rows`；问到某个任务的详细配置、修订号或最近执行记录时，读选中任务的 `detailSummary.record` / `editForm.form` 和 `history.rows`（或 `focus.record`），不要猜。
 
 ## 填写定时任务
 
@@ -34,8 +34,8 @@
 
 对选中任务（`target` 为该任务）调用已声明的操作，等用户确认：
 
-- 启用/停用：`opEnable.setEnabled`，输入 `{"enabled":true|false,"revision":<detail.form 的 revision>}`。启用后若仍暂停，告诉用户原因。
+- 启用/停用：`opEnable.setEnabled`，输入 `{"enabled":true|false,"revision":<detailHeader.record 的 outputs.revision>}`。启用后若仍暂停，告诉用户原因。
 - 立即运行：`opRunNow.runNow`，输入 `{}`。只多跑一次，原定时计划照旧。结果是运行记录：`running` 已开始、`completed` 完成、`skipped` 跳过、`failed` 失败（说出原因）。被拒绝码 `TASK_RUNNING` 表示已在运行，给出带 `runId` 的地址让用户看那条记录。
 - 删除：`opDelete.delete`，输入 `{"revision":<revision>}`。删除不可恢复，执行记录也一并删除；确认时说清任务标题。
 
-修订号冲突（`REVISION_CONFLICT`）时重新读 `detail.form` 取最新修订号，并把变化告诉用户后再做。
+修订号冲突（`REVISION_CONFLICT`）时重新读 `detailHeader.record` 或 `editForm.form` 取最新修订号，并把变化告诉用户后再做。

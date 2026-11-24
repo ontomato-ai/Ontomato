@@ -62,29 +62,51 @@ async function loadComponentFor(member: PanelMemberContext): Promise<Component> 
   return component;
 }
 
-if (isScoped) {
-  void props.instance.placingScoped(props.member, () => props.inputs ?? {}, listRowSlot?.itemKey.value).then(async ({ context, dispose }) => {
-    disposeScoped = dispose;
-    const component = await loadComponentFor(context);
-    loaded.value = { component, slot: { slot: props.member, projection: context.projection, get inputs() { return context.inputs.value; } }, member: context };
-  }).catch((reason: unknown) => {
-    failure.value = reason instanceof Error ? reason : new Error(String(reason));
-  });
-} else {
-  // The member as the instance holds it — read, registered and kept current there, drawn here.
-  void props.instance.placing(props.member).then(async (placing) => {
-    if (placing.kind === "awaiting") awaiting.value = true;
-    else if (placing.kind === "outsideFrame") outsideFrame.value = true;
-    else if (placing.kind === "panel") nested.value = placing;
-    else {
-      const member = placing.context;
-      const component = await loadComponentFor(member);
-      loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
-    }
-  }).catch((reason: unknown) => {
-    failure.value = reason instanceof Error ? reason : new Error(String(reason));
-  });
+let loadSeq = 0;
+
+function load() {
+  const seq = ++loadSeq;
+  disposeScoped?.();
+  disposeScoped = undefined;
+  failure.value = null;
+  loaded.value = null;
+  nested.value = null;
+  awaiting.value = false;
+  outsideFrame.value = false;
+  if (isScoped) {
+    void props.instance.placingScoped(props.member, () => props.inputs ?? {}, listRowSlot?.itemKey.value).then(async ({ context, dispose }) => {
+      if (seq !== loadSeq) {
+        dispose();
+        return;
+      }
+      disposeScoped = dispose;
+      const component = await loadComponentFor(context);
+      if (seq !== loadSeq) return;
+      loaded.value = { component, slot: { slot: props.member, projection: context.projection, get inputs() { return context.inputs.value; } }, member: context };
+    }).catch((reason: unknown) => {
+      if (seq !== loadSeq) return;
+      failure.value = reason instanceof Error ? reason : new Error(String(reason));
+    });
+  } else {
+    // The member as the instance holds it — read, registered and kept current there, drawn here.
+    void props.instance.placing(props.member).then(async (placing) => {
+      if (seq !== loadSeq) return;
+      if (placing.kind === "awaiting") awaiting.value = true;
+      else if (placing.kind === "outsideFrame") outsideFrame.value = true;
+      else if (placing.kind === "panel") nested.value = placing;
+      else {
+        const member = placing.context;
+        const component = await loadComponentFor(member);
+        if (seq !== loadSeq) return;
+        loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
+      }
+    }).catch((reason: unknown) => {
+      if (seq !== loadSeq) return;
+      failure.value = reason instanceof Error ? reason : new Error(String(reason));
+    });
+  }
 }
+load();
 function placeNested() {
   if (nested.value && container.value && nested.value.element.parentElement !== container.value) container.value.append(nested.value.element);
 }
@@ -95,8 +117,8 @@ const refused = computed(() => {
   const reason = failure.value ?? nested.value?.failure.value ?? null;
   if (!reason) return null;
   if (reason instanceof PanelMemberUnavailable)
-    return reason.status === 403 ? { status: "forbidden" as const } : { status: "error" as const, message: t("platform.memberUnavailable") };
-  return { status: "error" as const, message: reason.message };
+    return reason.status === 403 ? { status: "forbidden" as const } : { status: "error" as const, message: t("platform.memberUnavailable"), retry: load };
+  return { status: "error" as const, message: reason.message, retry: load };
 });
 
 provide(panelContextKey, directPanelContext(props.instance));

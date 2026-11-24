@@ -34,7 +34,6 @@ import { directMountKey } from "../../../../../packages/apps-sdk/src/panel/direc
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { usePanelOperation } from "../../../../../packages/apps-sdk/src/panel/panel-operation";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
-import examples from "../../../../../packages/contracts/examples/platform-schedules.json";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "../../../../../packages/platform-web/src/detail-selection";
 import { panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
@@ -462,13 +461,30 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       label: "Nightly test",
       fields: {
         application: "agents",
+        applicationName: "Agents",
+        settings: "Agent: Nightly",
         frequency: "Every Monday",
         state: "off",
+        stateLabel: "Switched off",
+        enabled: false,
+        revision: 1,
+        pauseCode: "",
         nextRun: "",
         timeZone: "UTC",
+        notifyEmail: "",
         lastRun: "completed",
         lastRunAt: "2026-11-21T00:00:00Z",
         lastRunSummary: "",
+        latestResultPath: "",
+      },
+      tones: { state: "info" as const, stateLabel: "info" as const, lastRun: "success" as const },
+      outputs: {
+        revision: 1,
+        enabled: false,
+        paused: false,
+        pauseCode: "",
+        latestResultPath: "",
+        isRunning: false,
       },
     };
     const row2 = {
@@ -476,6 +492,8 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       primaryKey: taskId2,
       label: "Backup job",
     };
+
+    expect(schedulesModule).not.toContain("usePanelData");
 
     const objectTypes = Object.fromEntries(Object.entries(platformObjectTypes).map(([type, entry]) => [
       type,
@@ -642,10 +660,37 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
       if (path === "/api/product-panels/read") {
         const body = request.body as ProductPanelReadRequest;
         if ("operations" in body) return writes(request)!;
+        const member = body.memberPath[0]!.member;
+        if (member === "appFilter" && body.dataName === "counts") {
+          return Response.json({
+            status: "ready",
+            value: [
+              { key: "", label: "All", count: 2 },
+              { key: "agents", label: "Agents", count: 2 },
+            ],
+          });
+        }
+        if (member === "tasks" && body.dataName === "rows") {
+          return Response.json({ status: "ready", value: [row1, row2] });
+        }
+        if (member === "history" && body.dataName === "rows") {
+          return Response.json({ status: "ready", value: { rows: [] } });
+        }
+        if (member === "focus" && body.dataName === "record") {
+          return Response.json({
+            status: "ready",
+            value: {
+              primaryKey: activeRunId,
+              label: "Manual · Running",
+              fields: { status: "Running", trigger: "Manual", startedAt: "2026-11-21T00:00:00Z" },
+              tones: { status: "info" },
+              outputs: { resultPath: "", isRunning: true },
+            },
+          });
+        }
         switch (body.dataName) {
-          case "rows": return Response.json({ status: "ready", value: [row1, row2] });
           case "record": {
-            const pk = (body.inputs?.task as { primaryKey?: string } | undefined)?.primaryKey;
+            const pk = (body.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
             return Response.json({ status: "ready", value: pk === taskId2 ? row2 : row1 });
           }
           case "form": return Response.json({
@@ -658,9 +703,6 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
               save: { method: "PUT", path: `/scheduled-tasks/${taskId}`, bodySchema: {} },
             },
           });
-          case "runs": return Response.json({ status: "ready", value: { runs: [], nextCursor: null } });
-          case "run": return Response.json({ status: "ready", value: { ...examples.runs[0]!.response, id: activeRunId, taskId } });
-          case "catalog": return Response.json({ status: "ready", value: { rows: [] } });
           case "createForm": return Response.json({
             status: "ready",
             value: {
@@ -708,7 +750,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
 
     try {
       await vi.waitFor(() => expect(controller?.executeAction).toBeTypeOf("function"));
-      await vi.waitFor(() => expect(mounted.element.querySelectorAll(".schedules [data-task]")).toHaveLength(2));
+      await vi.waitFor(() => expect(mounted.element.querySelectorAll(".schedules-list-col .sdk-object-list-card")).toHaveLength(2));
 
       // 1. With no task selected, all three custom operations are rejected as action_unavailable (not action_not_found).
       for (const operation of ["opEnable.setEnabled", "opRunNow.runNow", "opDelete.delete"]) {

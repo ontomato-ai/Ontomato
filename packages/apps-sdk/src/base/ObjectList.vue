@@ -834,6 +834,10 @@ watch(
   (state) => {
     if (state.status === "loading") return;
     if (state.status !== "ready" || parsedData.value.status !== "ok") {
+      if (state.status === "error" && pendingAppendCursor !== null && cursorBatches.value.length > 0) {
+        loadingMore.value = false;
+        return;
+      }
       cursorBatches.value = [];
       loadingMore.value = false;
       pendingAppendCursor = null;
