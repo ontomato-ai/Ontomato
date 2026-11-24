@@ -9,6 +9,7 @@ import { listCaseSets } from "../../platform/diagnosis/autotest/cases/repository
 import { getActiveRun, isRunActive, startRun } from "../../platform/diagnosis/autotest/runner/run-controller";
 import { loadRunMeta, scheduledRunSource } from "../../platform/diagnosis/autotest/results/store";
 import { workbenchIdentity } from "../../identity/installed";
+import { productGrantAllowed } from "../product-governance/grants";
 import { HttpError } from "../../utils/errors";
 
 function fingerprint(input: PlatformScheduleExecutionRequest): string {
@@ -71,9 +72,10 @@ export const operationsScheduleApplication: ScheduleApplication = {
   async form(input, { owner, credentials }) {
     const zh = credentials.locale?.startsWith("zh");
     const operation = input.values.operation || "autotest";
+    const canInspect = await productGrantAllowed(DIAGNOSIS_AGENT_ID, "use", credentials);
     const fields = [select("operation", zh ? "做什么" : "Operation", [
       option("autotest", zh ? "跑自动测试" : "Run automated tests"),
-      option("inspection", zh ? "巡检" : "Inspection"),
+      option("inspection", zh ? "巡检" : "Inspection", canInspect ? null : zh ? "无权使用运维诊断智能体" : "Operations diagnosis use permission required"),
     ], true, "autotest")];
     if (operation === "inspection") fields.push(instruction(zh ? "指令" : "Instruction"));
     else {
@@ -94,7 +96,7 @@ export const operationsScheduleApplication: ScheduleApplication = {
     return withScheduledUserActivity(context.owner.userId, async () => {
       if (input.content.operation === "autotest") return startBatch(input, context);
       const sessionId = scheduledSessionId(input.runId);
-      await diagnosisService.create(sessionId, context.owner, { agentId: DIAGNOSIS_AGENT_ID });
+      await diagnosisService.create(sessionId, context.owner, { agentId: DIAGNOSIS_AGENT_ID }, context.credentials);
       await diagnosisService.send(sessionId, input.runId, {message:input.content.instruction}, context.owner, context.credentials, "background");
       return { ...emptyExecution(), handle: { sessionId }, resultLink: { appId: "operations", path: `/ops/diagnosis?sessionId=${sessionId}` } };
     });

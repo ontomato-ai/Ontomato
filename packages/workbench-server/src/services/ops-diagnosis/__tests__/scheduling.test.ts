@@ -5,9 +5,10 @@ import { platformScheduleExecutionStateSchema, platformScheduleFormSchema, type 
 
 const mocks = vi.hoisted(() => ({
   active: vi.fn(), busy: vi.fn(), start: vi.fn(), meta: vi.fn(), source: vi.fn(), cases: vi.fn(),
-  access: vi.fn(), actor: vi.fn(), create: vi.fn(), run: vi.fn(), status: vi.fn(),
+  access: vi.fn(), actor: vi.fn(), create: vi.fn(), run: vi.fn(), status: vi.fn(), grantAllowed: vi.fn(),
 }));
 vi.mock("../service", () => ({ diagnosisService: { create: mocks.create, send: mocks.run } }));
+vi.mock("../../product-governance/grants", () => ({ productGrantAllowed: mocks.grantAllowed }));
 vi.mock("../../scheduling/conversation", () => ({ scheduledConversationStatus: mocks.status }));
 vi.mock("../../../platform/diagnosis/autotest/runner/run-controller", () => ({ getActiveRun: mocks.active, isRunActive: mocks.busy, startRun: mocks.start }));
 vi.mock("../../../platform/diagnosis/autotest/results/store", () => ({ loadRunMeta: mocks.meta, scheduledRunSource: mocks.source }));
@@ -19,7 +20,7 @@ function input():PlatformScheduleExecutionRequest {
 }
 beforeEach(() => {
   mocks.meta.mockReturnValue(null); mocks.source.mockReturnValue(null); mocks.busy.mockReturnValue(false); mocks.active.mockReturnValue(null);
-  mocks.actor.mockResolvedValue(owner); mocks.access.mockResolvedValue(undefined);
+  mocks.actor.mockResolvedValue(owner); mocks.access.mockResolvedValue(undefined); mocks.grantAllowed.mockResolvedValue(true);
   mocks.cases.mockReturnValue([{id:"set",name:"Regression",caseCount:2}]); mocks.create.mockResolvedValue({}); mocks.run.mockResolvedValue({});
 });
 afterEach(() => {vi.resetAllMocks();});
@@ -56,4 +57,11 @@ it("starts an inspection in the diagnosis host and applies the same observer aut
   expect(result.resultLink?.path).toContain("/ops/diagnosis?sessionId=");
   expect(mocks.create.mock.calls[0][1]).toEqual(owner);expect(mocks.run.mock.calls[0]).toEqual(expect.arrayContaining([request.runId,{message:"Check failures"},owner,context.credentials]));
   expect(mocks.access).toHaveBeenCalledWith({domainId:"sales",apiKey:"internal",token:undefined});
+});
+it("blocks scheduled inspection when diagnosis use grant is missing", async () => {
+  mocks.grantAllowed.mockResolvedValue(false);
+  const request={...input(),content:{operation:"inspection",instruction:"Check failures"},formRevision:"inspection-v1"};
+  await expect(application.validate(request,context)).rejects.toMatchObject({status:422});
+  await expect(application.start(request,context)).rejects.toMatchObject({status:422});
+  expect(mocks.create).not.toHaveBeenCalled();
 });

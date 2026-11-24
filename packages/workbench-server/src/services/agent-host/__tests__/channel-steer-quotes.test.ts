@@ -11,8 +11,9 @@ vi.mock("../caller", () => ({ restoreAgentCaller: vi.fn() }));
 vi.mock("../../assistant/service", () => ({
   assistantService: { ownRun: vi.fn() },
 }));
+vi.mock("../../product-governance/grants", () => ({ requireProductGrant: vi.fn() }));
 vi.mock("../../assistant/store", () => ({
-  assistantStore: { turn: vi.fn() },
+  assistantStore: { turn: vi.fn(), session: vi.fn() },
 }));
 
 it("excludes queued unclaimed unattended messages when updating retrieval user quotes on steer prepare", async () => {
@@ -30,6 +31,7 @@ it("excludes queued unclaimed unattended messages when updating retrieval user q
     expiresAt: Date.now() + 60_000,
   });
   vi.mocked(assistantService.ownRun).mockResolvedValue(undefined as never);
+  vi.mocked(assistantStore.session).mockResolvedValue({ agent_id: "analyst" } as Awaited<ReturnType<typeof assistantStore.session>>);
   vi.mocked(assistantStore.turn).mockResolvedValue({
     id: runId,
     session_id: sessionId,

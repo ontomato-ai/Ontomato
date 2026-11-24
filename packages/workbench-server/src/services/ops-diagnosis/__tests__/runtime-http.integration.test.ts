@@ -29,6 +29,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
   const callers = new Map<string, { userId: string; domainId: string; expiresAt: number }>();
   const pool = new pg.Pool({ connectionString: database });
   let logs = "", modelCalls = 0;
+  let revokeDiagnosisUse = false;
   let blockNextReadOnlyRestore: (() => void) | undefined;
   async function freePort() { const s = createServer(); await new Promise<void>((r) => s.listen(0, "127.0.0.1", r)); const port = (s.address() as { port: number }).port; await new Promise<void>((r) => s.close(() => r())); return port; }
   async function launch(kind: "host" | "runtime") {
@@ -113,6 +114,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
   }
   beforeAll(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "ops-diagnosis-test-"));
+    const assistantResources = new Map<string, Set<string>>();
     model = createServer(async (req, res) => {
       let raw = ""; for await (const c of req) raw += c;
       const json = (status: number, body: object) => {
@@ -147,6 +149,24 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
       }
       if (req.method === "GET" && req.url === "/platform/page-skills")
         return json(200, { success: true, data: { pageSkills: [], registeredSkills: [] } });
+      if (req.method === "POST" && req.url === "/product-governance/register") {
+        if (req.headers["x-ontomato-query-service-token"] !== queryServiceToken)
+          return json(403, { error: { code: "FORBIDDEN", message: "Platform service authorization required" } });
+        const { id, domainId } = JSON.parse(raw);
+        const ids = assistantResources.get(domainId) ?? new Set<string>();
+        assistantResources.set(domainId, ids.add(id));
+        return json(200, { success: true });
+      }
+      if (req.method === "POST" && req.url === "/product-governance/resources") {
+        const domainId = String(req.headers.tk).split(":")[1];
+        return json(200, { ids: [...(assistantResources.get(domainId) ?? [])] });
+      }
+      if (req.method === "POST" && req.url === "/product-governance/check") {
+        const domainId = String(req.headers.tk).split(":")[1];
+        const { id, verb } = JSON.parse(raw);
+        if (revokeDiagnosisUse && id === DIAGNOSIS_AGENT_ID && verb === "use") return json(200, { allowed: false });
+        return json(200, { allowed: assistantResources.get(domainId)?.has(id) ?? false });
+      }
       if (req.method === "POST" && req.url === "/product-governance/service-resources") {
         if (req.headers["x-ontomato-query-service-token"] !== queryServiceToken)
           return json(403, { error: { code: "FORBIDDEN", message: "Platform service authorization required" } });
@@ -225,6 +245,27 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     expect((await api(`/api/observe/agent/sessions/${session}`, undefined, "alice:a", undefined, "DELETE")).status).toBe(409);
     const cancelled = await api(`/api/observe/agent/sessions/${session}/runs/${active}/cancel`, {}); expect(cancelled.body.run.status).toBe("stopped"); expect(cancelled.body.run.stopReason).toBe("aborted");
   }, 30000);
+  it("requires observe access and a diagnosis grant to write, while revoked users can read history", async () => {
+    const sessions = "/api/observe/agent/sessions";
+    const session = randomUUID(), run = randomUUID();
+    const input = { agentId: DIAGNOSIS_AGENT_ID };
+    expect((await api(sessions, input, "denied:a", session)).status).toBe(403);
+    expect((await api(sessions, input, "alice:a", session)).status).toBe(201);
+    expect((await api(`${sessions}/${session}/runs`, { message: "inspect logs" }, "alice:a", run)).status).toBe(202);
+    await stopped(session, run);
+    revokeDiagnosisUse = true;
+    try {
+      expect(await api("/api/observe/agent/agents")).toEqual({ status: 200, body: { agents: [] } });
+      expect((await api(sessions, input, "alice:a", randomUUID())).status).toBe(403);
+      expect((await api(`${sessions}/${session}/runs`, { message: "continue" }, "alice:a", randomUUID())).status).toBe(403);
+      expect((await api(`${sessions}/${session}`)).status).toBe(200);
+      expect((await api(`${sessions}/${session}/history`)).status).toBe(200);
+      expect((await api(`${sessions}/${session}/runs/${run}`)).status).toBe(200);
+    } finally {
+      revokeDiagnosisUse = false;
+    }
+  });
+
   it("forwards lifecycle notices and light status for the caller's diagnosis sessions", async () => {
     const session = randomUUID(), run = randomUUID();
     expect((await api("/api/observe/agent/sessions", { agentId: DIAGNOSIS_AGENT_ID }, "alice:a", session)).status).toBe(201);

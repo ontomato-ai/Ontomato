@@ -594,11 +594,21 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("agentDefinition", "product"),
     reads: {
       ...metadataList, count: countRead,
-      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord", outputs: { category: { kind: "scalar", type: "string" } } },
+      record: {
+        ...catalogueRecord, result: "panelRecord",
+        outputs: {
+          category: { kind: "scalar", type: "string" },
+          canEdit: { kind: "scalar", type: "boolean" },
+          canGrant: { kind: "scalar", type: "boolean" },
+          domainShared: { kind: "scalar", type: "boolean" },
+        },
+      },
+      grants: { ...catalogueRecord, result: "productCatalogueGrants" },
+      grantRows: { ...catalogueRecord, result: "panelRecordList" },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
     },
-    operations: [`${AGENT_DEFINITION}.save`, DELETE_AGENT],
+    operations: [`${AGENT_DEFINITION}.save`, DELETE_AGENT, "agents.grant", "agents.revoke", "agents.share"],
   },
   [ONTOLOGY_TYPE]: {
     ...describeType("ontologyType"),

@@ -302,6 +302,8 @@ beforeAll(async () => {
     [regularAgentId, domainId, agentIds.readable, JSON.stringify([domainSkillRef]), agentIds.appBuilder],
   );
 
+  resourceIds.add(regularAgentId).add(agentIds.readable).add(agentIds.appBuilder);
+
   const qaSession = randomUUID();
   const taskSession = randomUUID();
   await state.pool.query(
@@ -341,8 +343,8 @@ beforeAll(async () => {
   app.post("/product-governance/check", (req, res) => {
     res.json({ allowed: req.header("tk") === "m7-reader" && resourceIds.has(req.body.id) });
   });
-  app.post("/product-governance/resources", (_req, res) => {
-    res.json({ ids: [...resourceIds] });
+  app.post("/product-governance/resources", (req, res) => {
+    res.json({ ids: req.header("tk") === "m7-reader" ? [...resourceIds] : [] });
   });
   app.get("/platform/applications/resolve-entry", (_req, res) => {
     res.json({

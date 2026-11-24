@@ -35,7 +35,7 @@ class BuildTestEndpointBoundaryTest {
     var settings = mock(AgentExecutionSettings.class);
     when(settings.options(any(), eq(""), eq(1), eq(20), eq("saved-user")))
         .thenReturn(new AgentExecutionSettings.Options(false, List.of(), null));
-    var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(runtime, access, mock(OntologyAgentModelSettings.class)),
+    var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(runtime, access, mock(OntologyAgentModelSettings.class), mock(io.ontomato.dataengine.service.ProductGrantService.class)),
             new AgentExecutionController(mock(WorkbenchServiceAuthentication.class), settings))
         .addInterceptors(new BuildTestAccessInterceptor())
         .build();

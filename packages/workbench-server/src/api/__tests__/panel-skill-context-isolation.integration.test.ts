@@ -487,6 +487,7 @@ async function seedAgent(skills: RuntimeSkillRef[]) {
   await state.pool!.query(`INSERT INTO "${state.schema}".assistant_agents
     (id, domain_id, kind, name, system_prompt, skills) VALUES ($1::uuid, $2, ($1::uuid)::text, 'Initial', 'Prompt', $3::jsonb)`,
   [id, domainId, JSON.stringify(skills)]);
+  registered.add(id);
   return id;
 }
 

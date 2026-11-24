@@ -14,6 +14,7 @@ import {
 import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 import { HttpError } from "../../utils/errors";
 import { assertPermission } from "../../identity/installed";
+import { grantedProductIds, registerProductResource, requireProductGrant, unregisterProductResource } from "../product-governance/grants";
 import { agentDefinitionPermissions } from "./definition-permissions";
 import { resolveAssistantSkillReferences } from "./skill-references";
 import { AgentDefinitionFieldError, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
@@ -59,15 +60,10 @@ const isReadableDefinition = (kind: string) => !isAppBuilderKind(kind);
 export async function filterReadableAgentDefinitions(
   owner: AssistantOwner, credentials: AssistantCredentials, ids: readonly string[],
 ): Promise<ReadonlySet<string>> {
-  try {
-    await assertPermission(credentials, agentDefinitionPermissions);
-  } catch (error) {
-    if (error instanceof HttpError && error.status === 403) return new Set();
-    throw error;
-  }
+  const visible = new Set(await grantedProductIds("view", credentials));
   const { rows } = await getPostgresPool().query<Pick<AgentRow, "id" | "kind">>(
     `SELECT id,kind FROM ${t("assistant_agents")} WHERE domain_id=$1 AND id=ANY($2::uuid[])`,
-    [owner.domainId, ids],
+    [owner.domainId, ids.filter(id => visible.has(id))],
   );
   return new Set(rows.filter(({ kind }) => isReadableDefinition(kind)).map(({ id }) => id));
 }
@@ -89,6 +85,7 @@ export function projectAgentDefinitionSkills(
 }
 
 export async function readAgentDefinition(id: string, owner: AssistantOwner, credentials: AssistantCredentials) {
+  await requireProductGrant(id, "view", credentials);
   const definition = await readStoredAgentDefinition(id, owner, credentials.locale);
   return projectAgentDefinitionSkills(definition, await readAssistantSkillView(owner.domainId, credentials));
 }
@@ -144,6 +141,8 @@ export async function validateAgentDefinition(
   owner: AssistantOwner,
   credentials: AssistantCredentials,
 ) {
+  if ("id" in draft.target) await requireProductGrant(draft.target.id, "edit", credentials);
+  else await assertPermission(credentials, agentDefinitionPermissions);
   const old = "id" in draft.target ? await readAgentDefinitionRow(draft.target.id, owner) : null;
   await checkedDefinition(draft.form, owner, credentials, old?.execution_user_id ?? null, old?.skills ?? []);
 }
@@ -163,6 +162,7 @@ export async function saveAgentDefinitionSnapshot(
   credentials: AssistantCredentials,
   selection?: AgentDefinitionSkillSelection,
 ) {
+  await requireProductGrant(id, "edit", credentials);
   const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
     const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
@@ -236,6 +236,7 @@ export async function createAgentDefinitionSnapshot(
   credentials: AssistantCredentials,
   selection?: AgentDefinitionSkillSelection,
 ) {
+  await assertPermission(credentials, agentDefinitionPermissions);
   return withDomainSkills(owner.domainId, async () => {
     const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
     const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null, [], access);
@@ -287,15 +288,21 @@ export async function createAgentDefinitionSnapshot(
           "IDEMPOTENCY_CONFLICT",
         );
     }
+    await registerProductResource(owner, id, false, { ownerId: owner.userId, verbs: ["use", "view", "edit"], grantAdmin: true });
     return { definition: actual, skillView: access.view };
   });
 }
 
 export async function listAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
   const skillView = await readAssistantSkillView(owner.domainId, credentials);
-  const agents = await assistantStore.agents(owner.domainId);
+  const agents = await visibleAgentDefinitions(owner, credentials);
   return { agents: agents.map(agent => projectAgentDefinitionSkills(view(agent, credentials.locale), skillView)) };
 }
+export async function visibleAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
+  const visible = new Set(await grantedProductIds("view", credentials));
+  return (await assistantStore.agents(owner.domainId)).filter(agent => visible.has(agent.id));
+}
+
 function presetDeletionRestriction(kind: string, locale?: string) {
   if (isPresetAgentKind(kind)) return { reason: tForLocale(locale, "panels.agentDefinition.presetCannotDelete") };
 }
@@ -305,12 +312,14 @@ export async function agentDefinitionDeletionRestriction(id: string, owner: Assi
   if (agent) return presetDeletionRestriction(agent.kind, locale);
 }
 
-export async function deleteAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
+export async function deleteAgentDefinition(id: string, owner: AssistantOwner, credentials: AssistantCredentials) {
+  await requireProductGrant(id, "edit", credentials);
   const agent = await readAgentDefinitionRow(id, owner);
-  const restriction = presetDeletionRestriction(agent.kind, locale);
+  const restriction = presetDeletionRestriction(agent.kind, credentials.locale);
   if (restriction) throw new HttpError(403, restriction.reason, "PRESET_AGENT_READ_ONLY");
   await getPostgresPool().query(
     `DELETE FROM ${t("assistant_agents")} WHERE id=$1 AND domain_id=$2`,
     [id, owner.domainId],
   );
+  await unregisterProductResource(owner.domainId, id);
 }

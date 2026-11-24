@@ -64,7 +64,7 @@ export function createOpsAgentMcpServer(
           try {
             let targetSessionId = trimmedSessionId;
             if (trimmedMessage) {
-              if (!targetSessionId) targetSessionId = (await createDiagnosis(randomUUID(), identity)).session.id;
+              if (!targetSessionId) targetSessionId = (await createDiagnosis(randomUUID(), identity, identity)).session.id;
               await diagnosisService.send(targetSessionId, randomUUID(), {message:trimmedMessage}, identity, identity, "external");
             }
             if (!targetSessionId) return textJson({ success: false, code: "INVALID_CHAT_INPUT", error: tApp("diag.observe.agent.mcp.error.messageRequired") });

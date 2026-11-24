@@ -1346,7 +1346,7 @@ export default {
     "typeDetails": {
       "agentDefinition": {
         "definition": "A reusable agent configuration that defines its instructions, model, skills, tools, data scope, and execution identity.",
-        "rules": "Reading, creating, or maintaining definitions in the current domain requires the analysis-agent permission. The definition service exposes only skill references the reader may use, and the execution identity service validates changes to the execution user.",
+        "rules": "Creating an agent requires the analysis-agent permission. Listing agents and viewing configurations require the object view grant. Editing, deleting, and managing grants require the object edit grant. Chatting with or invoking an agent requires the object use grant. The definition service exposes only skill references the reader may use, and the execution identity service validates changes to the execution user.",
         "properties": {
           "id": "The stable identifier of the agent definition.",
           "name": "The name shown in agent lists and selectors.",

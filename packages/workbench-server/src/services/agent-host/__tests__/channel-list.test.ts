@@ -52,5 +52,11 @@ it("uses the caller locale with the workbench's existing default label owner",as
 });
 it("passes the caller locale to the diagnosis provider's own labels",async()=>{
   await agentChannelService.list({providerId:"observe",actor,language:"zh-CN"},"a");
-  expect(diagnosisService.agents).toHaveBeenCalledWith({userId:"user",domainId:"a"},"zh-CN");
+  expect(diagnosisService.agents).toHaveBeenCalledWith({userId:"user",domainId:"a"},{apiKey:"initiating-key",locale:"zh-CN"});
+});
+
+it("keeps the observe directory empty when the caller lacks the diagnosis grant", async () => {
+  vi.mocked(diagnosisService.agents).mockResolvedValue({ agents: [] });
+  await expect(agentChannelService.list({ providerId: "observe", actor, language: "en" }, "a"))
+    .resolves.toEqual({ agents: [] });
 });

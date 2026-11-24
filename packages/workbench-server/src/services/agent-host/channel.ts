@@ -3,6 +3,7 @@ import { recentUserMessages } from "../assistant/user-quotes";
 import { OntologyRetrievalClient } from "../assistant/ontology-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import path from "node:path";
+import { assertAppBuilderAccess } from "../app-builder/access";
 import { isAppBuilderKind } from "../app-builder/definition";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { agentPrepareRequestSchema, agentProviderExecutionSchema, agentProviderListRequestSchema, type AgentRunContext } from "@ontomato/contracts/agent-channel";
@@ -11,6 +12,7 @@ import { assistantService } from "../assistant/service";
 import { assistantName,assistantDescription } from "../assistant/labels";
 import { assistantStore } from "../assistant/store";
 import { diagnosisService, createDiagnosis, prepareDiagnosis } from "../ops-diagnosis/service";
+import { requireProductGrant } from "../product-governance/grants";
 import { restoreAgentCaller } from "./caller";
 import { workbenchIdentity } from "../../identity/installed";
 import { answerText } from "../../platform/agent-runtime/runtime";
@@ -27,8 +29,8 @@ export const agentChannelService = {
     const body = agentProviderListRequestSchema.parse(raw);
     if (!["workbench","observe"].includes(body.providerId)) throw new HttpError(404,"Agent provider not found","NOT_FOUND");
     const { owner, credentials } = await caller(body, domain, undefined, false, supplied);
-    const agents = [];
     if (body.providerId === "workbench") {
+      const agents = [];
       for (const agent of await assistantStore.channelAgents(domain)) {
         if (!agent.enabled) continue;
         try { await assistantService.admitAgent(agent.id, owner, credentials); }
@@ -40,10 +42,12 @@ export const agentChannelService = {
     }
     try {
       await workbenchIdentity().assertObserveAccess({ domainId: domain, ...credentials });
-      const agent = (await diagnosisService.agents(owner,body.language)).agents[0];
-      agents.push({ ref: { providerId: "observe", agentId: agent.id }, name: agent.name, description: agent.description });
+      const { agents: diagnosisAgents } = await diagnosisService.agents(owner, { ...credentials, locale: body.language });
+      return { agents: diagnosisAgents.map(({ id, name, description }) => ({
+        ref: { providerId: "observe", agentId: id }, name, description,
+      })) };
     } catch (error) { if (!(error instanceof HttpError && error.status === 403)) throw error; }
-    return { agents };
+    return { agents: [] };
   },
   async prepare(raw: unknown, domain: string, supplied: AssistantCredentials = {}) {
     const body = agentPrepareRequestSchema.parse(raw), restored = await caller(body, domain, body.agent.providerId, false, supplied);
@@ -54,6 +58,13 @@ export const agentChannelService = {
     if (body.mode === "steer") {
       const service = body.agent.providerId === "observe" ? diagnosisService : assistantService;
       await service.ownRun(body.sessionId, body.runId, owner);
+      if (provider === "observe") {
+        await requireProductGrant(DIAGNOSIS_AGENT_ID, "use", credentials);
+      } else {
+        const session = await assistantStore.session(body.sessionId, owner);
+        if (body.authority.executionKind === "build-test") await assertAppBuilderAccess(credentials);
+        await requireProductGrant(session.agent_id, "use", credentials);
+      }
       if (body.agent.providerId === "workbench" &&
         (body.input.role === "user" || (body.input.kind === "agent-answer" && "kind" in body.input.source && body.input.source.kind === "user"))) {
         const turn=await assistantStore.turn(body.runId,owner);
@@ -69,7 +80,7 @@ export const agentChannelService = {
     let prepared;
     if (provider === "observe") {
       if (body.agent.agentId !== DIAGNOSIS_AGENT_ID || body.authority.executionKind !== "live") throw new HttpError(403, "Diagnosis requires live execution authority", "BUILD_TEST_FORBIDDEN");
-      await createDiagnosis(body.sessionId, owner, null, true);
+      await createDiagnosis(body.sessionId, owner, credentials, null, true);
       prepared = await prepareDiagnosis(body.sessionId, body.runId, body.input, owner, credentials, visibilityReader(body));
     } else {
       prepared = await assistantService.prepare(body,owner,credentials);

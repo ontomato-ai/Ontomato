@@ -12,7 +12,8 @@ import type { AgentHostService } from "../../services/agent-host/types";
 import { openPresentationView, PRESENTATION_CALL_PATH, receivePresentation, requestPresentation } from "../../services/agent-host/presentation";
 import type { RuntimeCallback } from "../../services/agent-runtime/callback-credential";
 import { HttpError } from "../../utils/errors";
-export function createAgentHostRouter(service: AgentHostService, workspaces = false) {
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+export function createAgentHostRouter(service: AgentHostService<[AssistantCredentials]>, workspaces = false) {
 const router: ReturnType<typeof Router> = Router(), uuid = z.string().uuid();
 const host = service.presentationHost;
 router.get(
@@ -30,13 +31,15 @@ router.get(
 router.post(
   "/sessions",
   wrap(async (req, res) => {
+    const { owner, credentials } = context(req);
     res
       .status(201)
       .json(
         await service.create(
           uuid.parse(req.header("Idempotency-Key")),
-          context(req).owner,
+          owner,
           (workspaces ? agentHostCreateSessionSchema : agentHostCreateSessionSchema.omit({ workspaceId: true })).parse(req.body),
+          credentials,
         ),
       );
   }),

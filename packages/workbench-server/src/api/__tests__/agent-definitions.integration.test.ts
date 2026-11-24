@@ -9,6 +9,14 @@ import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 
 const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", assertPermission: vi.fn(), skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
+const grants = vi.hoisted(() => ({ ids: vi.fn(), register: vi.fn(), unregister: vi.fn(), require: vi.fn(), allowed: vi.fn() }));
+vi.mock("../../services/product-governance/grants", () => ({
+  grantedProductIds: grants.ids,
+  registerProductResource: grants.register,
+  unregisterProductResource: grants.unregister,
+  requireProductGrant: grants.require,
+  productGrantAllowed: grants.allowed,
+}));
 const certainSkillView = { requireCertainStoredSkill: () => undefined };
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
@@ -80,6 +88,7 @@ describe("agent definitions on PostgreSQL", () => {
         BEGIN INSERT INTO "${state.schema}".skill_writes VALUES (NEW.id); RETURN NEW; END $$;
       CREATE TRIGGER record_skill_write AFTER UPDATE OF skills ON "${state.schema}".assistant_agents
         FOR EACH ROW EXECUTE FUNCTION "${state.schema}".record_skill_write()`);
+    grants.allowed.mockResolvedValue(true);
     state.skillView.mockResolvedValue(certainSkillView);
     state.hiddenSkills.mockImplementation((_refs, skillView: { hidden?: boolean }) => skillView.hidden === true);
     state.visibleSkills.mockImplementation((refs, skillView: { hidden?: boolean }) => skillView.hidden ? [] : refs);
@@ -356,16 +365,16 @@ describe("agent definitions on PostgreSQL", () => {
     await state.pool!.query(`INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind)
       VALUES ($1,$2,'custom'), ($3,$2,'app-builder'), ($4,'foreign','custom')`,
       [readable, owner.domainId, builder, foreign]);
-    state.assertPermission.mockResolvedValueOnce(undefined);
+    grants.ids.mockResolvedValueOnce([readable, builder, foreign]);
     const candidates = [readable, builder, foreign, randomUUID()];
     const credentials = { token: "editor" };
     expect(await filterReadableAgentDefinitions(owner, credentials, candidates)).toEqual(new Set([readable]));
-    expect(state.assertPermission).toHaveBeenLastCalledWith(credentials, ["analysis-agent"]);
+    expect(grants.ids).toHaveBeenLastCalledWith("view", credentials);
 
-    state.assertPermission.mockRejectedValueOnce(new HttpError(403, "Denied"));
+    grants.ids.mockResolvedValueOnce([]);
     expect(await filterReadableAgentDefinitions(owner, credentials, candidates)).toEqual(new Set());
     const unavailable = new HttpError(502, "Permission service unavailable");
-    state.assertPermission.mockRejectedValueOnce(unavailable);
+    grants.ids.mockRejectedValueOnce(unavailable);
     await expect(filterReadableAgentDefinitions(owner, credentials, candidates)).rejects.toBe(unavailable);
   });
   it("keeps diagnosis selection domain-owned and validates changes", async () => {

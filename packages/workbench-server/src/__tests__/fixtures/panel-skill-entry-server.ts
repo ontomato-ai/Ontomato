@@ -106,6 +106,7 @@ export async function startPanelSkillEntryServer(options: {
   await ensureProductPanelsSchema(pool);
   await pool.query(`INSERT INTO ${store.table("assistant_agents")} (id,domain_id,kind,name,system_prompt,skills)
     VALUES($1,$2,'regular','Assistant',NULL,'[]')`, [regularAgentId, domainId]);
+  grants.add(regularAgentId);
   await pool.query(`INSERT INTO ${store.table("product_projections")} (id,domain_id,owner_id,definition)
     VALUES('records',$1,'editor',$2)`, [domainId, {
     name: "Records", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {},
@@ -184,6 +185,22 @@ export async function startPanelSkillEntryServer(options: {
   app.get("/api/data-query/platform/applications/:id/panel-uses", (req, res) => {
     res.json({ success: true, data: { applicationId: req.params.id, entry: { path: `/applications/${req.params.id}`, renderer: "panels" },
       panelUses: entries.filter(use => use.applicationId === req.params.id).map(javaUse) } });
+  });
+  app.post("/product-governance/register", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");
+    expect(req.body.domainId).toBe(domainId);
+    grants.add(req.body.id);
+    res.json({ success: true });
+  });
+  app.post("/product-governance/unregister", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");
+    expect(req.body.domainId).toBe(domainId);
+    grants.delete(req.body.id);
+    res.json({ success: true });
+  });
+  app.post("/product-governance/grants", (req, res) => {
+    expect(req.header("tk")).toBe("editor");
+    res.json({ grants: [] });
   });
   app.post("/product-governance/check", (req, res) => res.json({ allowed: req.header("tk") === "editor" && grants.has(req.body.id) }));
   app.post("/product-governance/resources", (req, res) => {

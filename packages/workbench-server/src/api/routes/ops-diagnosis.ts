@@ -21,14 +21,14 @@ import { HttpError } from "../../utils/errors";
 const router: ReturnType<typeof Router> = Router();
 router.get("/agent/agents", wrap(async (req, res) => {
   const c = context(req);
-  res.json(await diagnosisService.agents(c.owner, c.credentials.locale));
+  res.json(await diagnosisService.agents(c.owner, c.credentials));
 }));
 router.use("/agent", createAgentHostRouter(diagnosisService));
 router.use("/agent/knowledge", knowledgeRouter);
 router.post("/diagnoses", wrap(async (req, res) => {
   const { owner, credentials } = context(req), { target } = z.object({ target: diagnosisTargetSchema }).strict().parse(req.body);
   await resolveDiagnosisEvidence(target, { ...owner, ...credentials });
-  res.status(201).json(await createDiagnosis(z.string().uuid().parse(req.header("Idempotency-Key")), owner, target));
+  res.status(201).json(await createDiagnosis(z.string().uuid().parse(req.header("Idempotency-Key")), owner, credentials, target));
 }));
 const evidence: ReturnType<typeof Router> = Router();
 const provider = (value: unknown) => z.enum(["workbench", "ontology"]).parse(value);

@@ -241,7 +241,7 @@ beforeEach(() => {
         return Response.json({ success: true, data: projection });
       }
       if (url.endsWith("/product-governance/resources")) {
-        return Response.json({ ids: grantedIds });
+        return Response.json({ ids: [...grantedIds, ...Object.values(agentIds)] });
       }
       if (url.includes("/resolve-entry?")) {
         const response = panelUsesHandler(url);

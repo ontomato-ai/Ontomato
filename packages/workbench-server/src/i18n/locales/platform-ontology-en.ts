@@ -86,7 +86,7 @@ export const platformOntologyEn = {
   "platformOntology.orgGrantScope.subtree": "Organization & sub-units",
   "platformOntology.orgGrantScope.position": "Position",
   "platformOntology.typeDetails.agentDefinition.definition": "A reusable agent configuration that defines its instructions, model, skills, tools, data scope, and execution identity.",
-  "platformOntology.typeDetails.agentDefinition.rules": "Reading, creating, or maintaining definitions in the current domain requires the analysis-agent permission. The definition service exposes only skill references the reader may use, and the execution identity service validates changes to the execution user.",
+  "platformOntology.typeDetails.agentDefinition.rules": "Creating an agent requires the analysis-agent permission. Listing agents and viewing configurations require the object view grant. Editing, deleting, and managing grants require the object edit grant. Chatting with or invoking an agent requires the object use grant. The definition service exposes only skill references the reader may use, and the execution identity service validates changes to the execution user.",
   "platformOntology.typeDetails.agentDefinition.properties.id": "The stable identifier of the agent definition.",
   "platformOntology.typeDetails.agentDefinition.properties.name": "The name shown in agent lists and selectors.",
   "platformOntology.typeDetails.agentDefinition.properties.description": "A short description of what the agent is for.",

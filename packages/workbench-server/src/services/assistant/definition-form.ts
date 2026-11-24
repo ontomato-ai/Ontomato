@@ -9,7 +9,9 @@ import { HttpError } from "../../utils/errors";
 import {
   AgentDefinitionFieldError, agentDefinitionSave, agentFormJsonSchema, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm,
 } from "./definition-form-schema";
-import { checkedDefinition, projectAgentDefinitionSkills, readStoredAgentDefinition } from "./definitions";
+import { productGrantAllowed, requireProductGrant } from "../product-governance/grants";
+import { assertPermission } from "../../identity/installed";
+import { agentDefinitionPermissions, checkedDefinition, projectAgentDefinitionSkills, readStoredAgentDefinition } from "./definitions";
 import { readAssistantSkillView } from "./skills";
 import { readExecutionOptions } from "./execution-setting";
 import type { AssistantOwner } from "./store";
@@ -60,12 +62,17 @@ export async function describeAgentDefinitionForm(
 ): Promise<PanelFormDescription> {
   const { target, values: submittedValues, changedField } = request;
   const checkDraft = submittedValues !== undefined && changedField === null;
+  let canEdit = true;
   let definitionRead: Promise<AssistantAgentDefinition> | undefined;
   if (target.kind === "object") {
     const { primaryKey } = target;
     if (target.objectType !== AGENT_DEFINITION || !z.string().uuid().safeParse(primaryKey).success)
       throw new HttpError(400, "Invalid agent definition target", "INVALID_REQUEST");
+    await requireProductGrant(primaryKey, "view", credentials);
+    canEdit = await productGrantAllowed(primaryKey, "edit", credentials);
     definitionRead = readStoredAgentDefinition(primaryKey, owner, credentials.locale);
+  } else {
+    await assertPermission(credentials, agentDefinitionPermissions);
   }
   // The form uses the caller's capability. The user picker resolves the selected member separately.
   const [definition, openOptions, skillView] = await Promise.all([
@@ -112,11 +119,11 @@ export async function describeAgentDefinitionForm(
       key, title: text(`sections.${key}`), ...(SECTION_HINTS.has(key) ? { hint: text(`sections.${key}Hint`) } : {}),
     })),
     fields: fieldSchemas.map(({ key, ...field }) => {
-      const readOnly = key === "executionUserId" && !canSetExecutionUser;
+      const readOnly = !canEdit || (key === "executionUserId" && !canSetExecutionUser);
       return {
         ...field,
         ...(suggested.has(key) && field.control.kind === "text" ? { control: { ...field.control, placeholder: text(`placeholder.${key}`) } } : {}),
-        label: text(key), readOnly, ...(readOnly ? { readOnlyReason: text("executionReadOnly") } : {}),
+        label: text(key), readOnly, ...(readOnly ? { readOnlyReason: text(canEdit ? "executionReadOnly" : "editReadOnly") } : {}),
         ...(helped.has(key) ? { help: text(`help.${key}`) } : {}),
       };
     }),

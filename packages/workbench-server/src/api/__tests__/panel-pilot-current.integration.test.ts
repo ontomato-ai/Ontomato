@@ -188,13 +188,14 @@ beforeAll(async () => {
     resourceIds.add(req.body.id);
     res.json({ success: true });
   });
+  app.post("/product-governance/grants", (_req, res) => res.json({ grants: [] }));
   app.post("/product-governance/check", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    res.json({ allowed: resourceIds.has(req.body.id) || (req.body.verb === "use" && req.body.id.startsWith("builtin-product-")) });
+    res.json({ allowed: req.body.id === agentId || resourceIds.has(req.body.id) || (req.body.verb === "use" && req.body.id.startsWith("builtin-product-")) });
   });
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    res.json({ ids: [...resourceIds] });
+    res.json({ ids: [...resourceIds, agentId] });
   });
   app.get("/platform/applications/resolve-entry", (req, res, next) => {
     if (req.query.applicationId !== "schedules") { next(); return; }

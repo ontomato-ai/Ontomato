@@ -6,7 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { HttpError } from "../../../utils/errors";
+import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
 import { readProductPanelData } from "../data-reads";
 
 const mocks = vi.hoisted(() => ({
@@ -17,9 +17,6 @@ const mocks = vi.hoisted(() => ({
   listVisibleDomainComponents: vi.fn(),
 }));
 
-vi.mock("../../app-builder/access", () => ({
-  assertAppBuilderAccess: async () => { throw new HttpError(403, "App builder denied"); },
-}));
 vi.mock("../member-path", () => ({
   requireRegisteredPanelRoot: mocks.resolveRoot,
   resolvePanelMemberPath: mocks.resolveMember,
@@ -188,33 +185,29 @@ describe("platform count reads", () => {
     expect(mocks.listVisibleDomainComponents).toHaveBeenCalledWith(owner.domainId, owner.userId);
   });
 
-  it("counts stored agent definitions within the admitted domain", async () => {
-    vi.stubGlobal("fetch", async () => Response.json({ success: false, message: "System config denied" }, { status: 403 }));
-    mocks.query.mockImplementation(async sql => ({ rows: sql.includes("COUNT(") ? [{ total: 12 }] : [] }));
-    await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 13 } });
-    expect(mocks.assertPermission).toHaveBeenCalledWith(viewer, ["analysis-agent"]);
-    expect(mocks.query).toHaveBeenCalledWith(expect.stringMatching(
-      /SELECT COUNT\(\*\).*WHERE domain_id=\$1 AND kind<>'app-builder'/i,
-    ), [owner.domainId]);
+  it("counts only definitions with view, including visible system agents", async () => {
+    mocks.query.mockResolvedValue({ rows: [
+      { id: "visible", kind: "regular" }, { id: "hidden", kind: "analysis" }, { id: "builder", kind: "app-builder" },
+    ] });
+    vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      expect(new URL(url).pathname).toBe("/product-governance/resources");
+      expect(JSON.parse(String(init.body))).toEqual({ verb: "view" });
+      expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
+      return Response.json({ ids: ["visible", "builder", RETRIEVAL_AGENT_ID] });
+    });
+    await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
+    expect(mocks.assertPermission).not.toHaveBeenCalled();
   });
 
-  it("keeps a successful zero total ready", async () => {
-    vi.stubGlobal("fetch", async () => Response.json({ success: false, message: "System config denied" }, { status: 403 }));
-    mocks.assertPermission.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new HttpError(403, "Diagnosis denied"));
-    mocks.query.mockResolvedValue({ rows: [{ total: 0 }] });
+  it("returns zero when the viewer has no agent view grants", async () => {
+    vi.stubGlobal("fetch", async () => Response.json({ ids: [] }));
+    mocks.query.mockResolvedValue({ rows: [{ id: "private-agent", kind: "custom" }] });
     await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 0 } });
   });
 
   it("returns forbidden when Java denies the viewer", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { code: "FORBIDDEN" } }, { status: 403 })));
     await expect(readCount(OBJECT_TYPE)).resolves.toEqual({ status: "forbidden" });
-  });
-
-  it("denies the agent count before querying storage without admission", async () => {
-    vi.stubGlobal("fetch", async () => Response.json({ success: false, message: "System config denied" }, { status: 403 }));
-    mocks.assertPermission.mockRejectedValue(new HttpError(403, "Permission denied"));
-    await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "forbidden" });
-    expect(mocks.query).not.toHaveBeenCalled();
   });
 
   it("returns an error when the workflow owner cannot read the count", async () => {

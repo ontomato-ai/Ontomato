@@ -134,14 +134,10 @@ export async function startAnalysis(
       [owner.domainId, owner.userId, threadId, randomUUID()],
     );
     sessionId = result.rows[0].session_id;
-    await assistantService.create(sessionId, owner, {
-      agentId,
-    });
+    await assistantService.create(sessionId, owner, { agentId }, credentials);
   } else if (!sessionId) {
     sessionId = randomUUID();
-    await assistantService.create(sessionId, owner, {
-      agentId,
-    });
+    await assistantService.create(sessionId, owner, { agentId }, credentials);
   }
   const runId = randomUUID();
   const { delivery } = await assistantService.send(sessionId, runId, {message}, owner, credentials, "external");

@@ -1,3 +1,4 @@
+import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
 import { randomUUID } from "node:crypto";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -59,6 +60,8 @@ let server: Server | undefined;
 let contentRoot: string;
 
 const panelSourcesByDomain = new Map<string, PanelSkillSource[]>();
+const registrations: { domainId: string; id: string; shared: boolean; legacyMenuPermission?: string }[] = [];
+let failRegistrationFor: string | undefined;
 const startupDomain = "domain-enumerated-by-java";
 const presetKinds = ["regular", "analysis", GOVERNANCE_KIND].sort();
 
@@ -192,8 +195,17 @@ beforeAll(async () => {
 
   const app = express();
   app.use(express.json());
-  app.post("/product-governance/resources", (_req, res) => {
-    res.json({ ids: [] });
+  app.post("/product-governance/register", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    registrations.push(req.body);
+    if (req.body.domainId === failRegistrationFor) {
+      failRegistrationFor = undefined;
+      return res.status(422).json({ error: { code: "FIXTURE_FAILURE", message: "Registration failed" } });
+    }
+    return res.json({ success: true });
+  });
+  app.post("/product-governance/resources", (req, res) => {
+    res.json({ ids: registrations.filter(row => row.domainId === req.header("tk")).map(row => row.id) });
   });
   app.post("/product-governance/service-resources", (_req, res) => {
     res.json({ ids: [] });
@@ -250,6 +262,48 @@ afterAll(async () => {
     await state.pool.end();
   }
   if (contentRoot) await rm(contentRoot, { recursive: true, force: true });
+});
+
+it("migrates legacy roles once and keeps new domains and later custom agents out of the migration", async () => {
+  const legacyDomain = "legacy-grants";
+  const newDomain = "new-grants";
+  const addAgent = async (domainId: string, kind: string) => {
+    const id = randomUUID();
+    await state.pool!.query(
+      `INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind, name) VALUES ($1,$2,$3,'Agent')`,
+      [id, domainId, kind],
+    );
+    return id;
+  };
+  const oldCustom = await addAgent(legacyDomain, "custom-legacy");
+  const builderCopy = await addAgent(legacyDomain, "app-builder:copy");
+  await initializeDomainPresetAgents(legacyDomain);
+  const legacyRows = registrations.filter(row => row.domainId === legacyDomain);
+  const legacyBuilder = await assistantStore.appBuilder(legacyDomain);
+  const systemIds = new Set([legacyBuilder.id, DIAGNOSIS_AGENT_ID]);
+  const migratedIds = (await assistantStore.agents(legacyDomain)).filter(agent => agent.id !== builderCopy).map(agent => agent.id);
+  expect(legacyRows.map(row => row.id).sort()).toEqual([...migratedIds, ...systemIds].sort());
+  for (const row of legacyRows) {
+    expect(row).toMatchObject({ shared: true, ownerId: null, grantAdmin: true, verbs: ["use", "view", "edit"] });
+    if (systemIds.has(row.id)) expect(row).not.toHaveProperty("legacyMenuPermission");
+    else expect(row.legacyMenuPermission).toBe("analysis-agent");
+  }
+
+  const newCustom = await addAgent(legacyDomain, "custom-after-upgrade");
+  const before = registrations.length;
+  await initializeDomainPresetAgents(legacyDomain);
+  const later = registrations.slice(before);
+  expect(later.map(row => row.id)).toEqual(expect.arrayContaining([...systemIds]));
+  const excluded = new Set<string>([oldCustom, newCustom, builderCopy]);
+  expect(later.some(row => excluded.has(row.id) || row.legacyMenuPermission)).toBe(false);
+
+  failRegistrationFor = newDomain;
+  await expect(initializeDomainPresetAgents(newDomain)).rejects.toMatchObject({ code: "FIXTURE_FAILURE" });
+  await initializeDomainPresetAgents(newDomain);
+  const newRows = registrations.filter(row => row.domainId === newDomain);
+  const newBuilder = await assistantStore.appBuilder(newDomain);
+  expect(newRows.map(row => row.id)).toEqual(expect.arrayContaining([newBuilder.id, DIAGNOSIS_AGENT_ID]));
+  expect(newRows.some(row => row.legacyMenuPermission)).toBe(false);
 });
 
 it("upgrades existing domains at startup once the registered governance panel is exposed", async () => {

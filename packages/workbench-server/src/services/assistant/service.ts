@@ -1,3 +1,4 @@
+import { requireProductGrant } from "../product-governance/grants";
 import { closeGovernanceWindow } from "./governance";
 import { closeAuthoringRun } from "./authoring";
 import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
@@ -76,7 +77,8 @@ export const assistantService = {
   },
   agents: listAssistantAgents,
   /** Scheduled tasks start their conversations here too, marked with their origin. */
-  async create(id: string, owner: AssistantOwner, input: { agentId: string; workspaceId?: string }, origin: SessionRow["origin"] = "user") {
+  async create(id: string, owner: AssistantOwner, input: { agentId: string; workspaceId?: string }, credentials: AssistantCredentials, origin: SessionRow["origin"] = "user") {
+    await this.admitAgent(input.agentId, owner, credentials);
     const { row, replayed } = await assistantStore.create(
       id,
       owner,
@@ -316,10 +318,12 @@ export const assistantService = {
       if (!a.class_names.length) throw new HttpError(403,"No authorized classes in the delegated scope","FORBIDDEN");
     }
     if (isAppBuilderKind(a.kind)) await assertAppBuilderAccess(credentials);
+    await requireProductGrant(a.id, "use", credentials);
     return { agent: a };
   },
   async send(sessionId: string, id: string, input: AgentHostSendRequest, owner: AssistantOwner, credentials: AssistantCredentials, entry: "human" | "background" | "external") {
-    const session = await assistantStore.session(sessionId, owner), a = await assistantStore.agent(session.agent_id, owner);
+    const session = await assistantStore.session(sessionId, owner);
+    const { agent: a } = await this.admitAgent(session.agent_id, owner, credentials);
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
