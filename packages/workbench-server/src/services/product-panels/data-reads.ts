@@ -401,6 +401,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [ONTOLOGY_TYPE]: {
       schema: async () => (await ontology()).schema(),
       counts: async () => (await ontology()).counts(),
+      countRows: async () => (await ontology()).countRows(),
       start: async () => (await ontology()).start(),
       neighbors: async (_selection, params) => (await ontology()).neighbors(params),
       objects: async (_selection, params) => (await ontology()).objects(params),

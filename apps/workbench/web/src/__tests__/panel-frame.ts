@@ -27,6 +27,7 @@ import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import ElementPlus from "element-plus";
+import { messageConfig } from "element-plus/es/components/config-provider/index";
 import type { Router } from "vue-router";
 import elementEn from "element-plus/es/locale/lang/en";
 import { installAppHost, installProductEmbedding, servePageComposer } from "../../../../../packages/platform-web/src/app-host";
@@ -35,6 +36,10 @@ import { servePageComposerKey } from "../../../../../packages/agent-shell-ui/src
 
 import type { ConfirmPanelOperation, PanelHumanOperations } from "../../../../../packages/apps-sdk/src/panel/human-operations";
 import { randomId } from "@ontomato/contracts/random-id";
+
+// Disable ElMessage auto-close timers in frame tests so their 3s timeout cannot fire after
+// happy-dom tears down requestAnimationFrame and trigger Vue transition onLeave errors.
+messageConfig.duration = 0;
 /*
  * A panel's frame inside the platform, for tests that run both ends for real: the platform's own app host and message
  * bridge, as the shell installs them, and on the frame's side the SDK's own modules. Only the browser is stood in for —

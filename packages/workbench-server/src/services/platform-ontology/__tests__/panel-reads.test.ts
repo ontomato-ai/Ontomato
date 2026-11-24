@@ -369,34 +369,49 @@ describe("createPlatformOntologyReadAdapter", () => {
 });
 
 describe("platform ontology catalogue reads", () => {
-  it("groups translated type labels by layer and keeps zero, refusal, failure and unavailable counts distinct", async () => {
-    stubOwnerHttp({
+  it("lists declared four-layer types synchronously without fetching counts and serves distinct count statuses in countRows", async () => {
+    const { seenRequests } = stubOwnerHttp({
       "/action/queryList": () => Response.json({ message: "No action permission" }, { status: 403 }),
       "/workflow/subjects": () => Response.json({ message: "Subjects unavailable" }, { status: 500 }),
     });
     const reads = createPlatformOntologyReadAdapter(owner, viewer);
-    const rows = panelReadResultSchemas.panelRecordList.parse(await reads.list());
+    const rows = panelReadResultSchemas.panelRecordList.parse(reads.list());
+    expect(seenRequests).toHaveLength(0);
     const row = (type: string) => rows.find(entry => entry.primaryKey === type)!;
     expect([...new Set(rows.map(entry => entry.fields.layerId))]).toEqual(["fact", "capability", "governance", "product"]);
     expect(row(OBJECT_TYPE)).toMatchObject({
       className: ONTOLOGY_TYPE, label: "Object type",
-      fields: { typeId: OBJECT_TYPE, layer: "Fact", count: 2, countStatus: "ok", countDisplay: "2" },
+      fields: { typeId: OBJECT_TYPE, layer: "Fact", layerId: "fact" },
+      fieldLabels: { typeId: "Type ID", layer: "Layer" },
     });
-    expect(row(FUNCTION).fields).toMatchObject({ count: 0, countStatus: "ok", countDisplay: "0" });
+    expect(row(OBJECT_TYPE).fields).not.toHaveProperty("count");
+    expect(row(OBJECT_TYPE).fields).not.toHaveProperty("countDisplay");
+    expect(row(OBJECT_TYPE).fields).not.toHaveProperty("countStatus");
+
+    const countRows = panelReadResultSchemas.panelRecordList.parse(await reads.countRows());
+    expect(seenRequests.length).toBeGreaterThan(0);
+    expect(countRows.map(entry => entry.primaryKey)).toEqual(rows.map(entry => entry.primaryKey));
+    const countRow = (type: string) => countRows.find(entry => entry.primaryKey === type)!;
+    expect(countRow(OBJECT_TYPE)).toMatchObject({
+      className: ONTOLOGY_TYPE, label: "Object type",
+      fields: { count: 2, countStatus: "ok", countDisplay: "2" },
+      tones: { countStatus: "success", countStatusLabel: "success", countDisplay: "success" },
+    });
+    expect(countRow(FUNCTION).fields).toMatchObject({ count: 0, countStatus: "ok", countDisplay: "0" });
     for (const [type, status, tone] of [
       [ACTION, "refused", "warning"], [USER, "failed", "danger"], [SCHEDULED_TASK, "unavailable", "info"],
     ]) {
       const record = panelReadResultSchemas.panelRecord.parse(await reads.record(type));
-      for (const fields of [row(type).fields, record.fields]) {
+      for (const fields of [countRow(type).fields, record.fields]) {
         expect(fields.countStatus).toBe(status);
         expect(fields.countDisplay).toBe(fields.countStatusLabel);
         expect(fields.countReason).toEqual(expect.any(String));
         expect(fields).not.toHaveProperty("count");
       }
       expect(record.tones?.countDisplay).toBe(tone);
-      expect(row(type).tones?.countDisplay).toBe(tone);
+      expect(countRow(type).tones?.countDisplay).toBe(tone);
     }
-    expect(row(ACTION).fields.countStatusLabel).toBe("No permission");
+    expect(countRow(ACTION).fields.countStatusLabel).toBe("No permission");
   });
 
   it.each([
