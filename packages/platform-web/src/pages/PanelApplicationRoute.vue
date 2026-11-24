@@ -169,13 +169,12 @@ watch(() => props.objectRefresh?.seq, () => {
 }, { flush: "post" });
 
 /**
- * How many of the application's pages keep their instance at once (design 7.2.1): the one shown and the one the reader
- * left last, which covers going back and forth between two pages of one application. Only a page left with nothing
- * unsaved is kept; a page left with unsaved changes is left through the platform's unsaved-changes question, and its
- * changes go with it. It is the prototype's number until the memory each kept frame holds has been measured
- * (`notes/keepalive.md`).
+ * How many of the application's pages keep their instance at once (design 7.2.1): the shown page and the five most
+ * recently left clean pages, covering frequent switching across an application's core pages without rebuilding. Only a
+ * page left with nothing unsaved is kept; a page left with unsaved changes is left through the platform's
+ * unsaved-changes question, and its changes go with it.
  */
-const KEPT_PAGES = 2;
+const KEPT_PAGES = 6;
 /** How long the previous clean page stays visible during a same-application switch before showing the loading placeholder. */
 const TRANSITION_PLACEHOLDER_DELAY_MS = 150;
 /** Periodic silent refresh interval for the current application's entry table while the tab is visible. */
