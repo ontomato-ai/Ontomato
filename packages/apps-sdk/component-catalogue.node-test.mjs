@@ -307,7 +307,9 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const formGroups = declared.get("ObjectForm").config.find(prop => prop.name === "groups");
     assert.equal(formGroups?.required, false);
     assert.match(formGroups?.type ?? "", /ObjectFormGroup/);
-    assert.ok(declared.has("ObjectFormFields"), "ObjectFormFields is published in the catalogue");
+    const formFieldsParent = declared.get("ObjectFormFields").config.find(prop => prop.name === "parent");
+    assert.equal(formFieldsParent?.required, false);
+    assert.match(formFieldsParent?.description ?? "", /JSON Pointer/);
     const pickerPlaceholder = declared.get("ReferencePicker").config.find(prop => prop.name === "placeholder");
     assert.equal(pickerPlaceholder?.required, false);
     assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "clearable")?.required, false);

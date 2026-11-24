@@ -15,7 +15,8 @@ import {
   type PlatformObjectQuery,
   type PlatformObjectQueryResult,
 } from "./platform-objects";
-import { fieldAt, valueAt } from "./form-values";
+import { valueAt } from "./form-values";
+import { resolveActiveField } from "../base/form-placement";
 import { formFieldSlotKey } from "./slot-context";
 import { projectionElement } from "./projection-element";
 import type { PanelReadPort } from "./direct";
@@ -233,19 +234,19 @@ export function useFormField(): ProjectionFormField {
  */
 export function formFieldAt(instance: PanelInstance, formSlot: string, path: () => string): ProjectionFormField {
   const handle = computed<PanelFormHandle | undefined>(() => instance.forms.handle(formSlot));
-  const field = computed(() => {
+  const resolved = computed(() => {
     const form = handle.value;
     if (!form || !form.fields.value.length) return undefined;
-    const found = fieldAt(form.fields.value, path());
+    const found = resolveActiveField(form.fields.value, form.values.value, path());
     if (!found) throw new Error(`The form in slot '${formSlot}' has no field ${path()}`);
     return found;
   });
   return {
-    field,
+    field: computed(() => resolved.value?.field),
     value: computed(() => (handle.value ? valueAt(handle.value.values.value, path()) : undefined)),
     error: computed(() => handle.value?.errors.value[path()]),
     changed: computed(() => handle.value?.changed.value.has(path()) === true),
-    disabled: computed(() => !field.value || field.value.readOnly || handle.value!.busy.value),
+    disabled: computed(() => !resolved.value || resolved.value.readOnly || handle.value!.busy.value),
     set(value) {
       if (!handle.value) throw new Error(`Slot '${formSlot}' holds no form yet`);
       handle.value.set(path(), value);

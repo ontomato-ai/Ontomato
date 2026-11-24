@@ -496,6 +496,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
       submitting: ref(false),
       canSubmit: ref(false),
       set: chooseScope,
+      refreshDraft: async () => {},
       submit: async () => ({}),
       reset: async () => true,
     },

@@ -80,10 +80,18 @@ export interface ObjectFormSlotScope {
   readonly cancel: () => Promise<void>;
 }
 
+export interface FormFieldPlacement {
+  readonly field: PanelFormField;
+  readonly path: string;
+  readonly disabled: boolean;
+}
+
 /** Internal context provided by `ObjectForm` to child `<object-form-fields>` slices. */
 export interface FormFieldsContext {
   readonly drawn: ComputedRef<readonly PanelFormField[]>;
   readonly groups: ComputedRef<readonly ObjectFormResolvedGroup[]>;
+  resolveField(path: string): FormFieldPlacement | undefined;
+  childFields(parent: string): readonly FormFieldPlacement[];
   registerClaim(token: symbol, paths: ReadonlySet<string>): void;
   unregisterClaim(token: symbol): void;
   readonly claimedPaths: ComputedRef<ReadonlySet<string>>;
