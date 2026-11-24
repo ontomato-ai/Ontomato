@@ -15,10 +15,10 @@ public class EmbeddingService {
     public EmbeddingSelection selection(String domain) {
         try {
             var options = runtime.json(domain, "embedding-selection", "/v1/models/options", "GET", null, null);
-            String ref = options.getString("embeddingModelId");
+            String ref = options.getString("embeddingModel");
             for (Object item : options.getJSONArray("models")) {
                 var model = (JSONObject) item;
-                if (ref != null && ref.equals(model.getString("ref")) && "embedding".equals(model.getString("type")))
+                if (ref != null && ref.equals(model.getString("name")) && "embedding".equals(model.getString("type")))
                     return new EmbeddingSelection(ref, model.getInteger("dimensions"));
             }
             throw new AgentHttpException(422, "MODEL_NOT_CONFIGURED", "No embedding model is configured");

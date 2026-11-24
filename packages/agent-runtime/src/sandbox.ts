@@ -16,6 +16,10 @@ import {
 } from "./worker";
 import type { InstalledSkill } from "./skills";
 
+export function sessionSandboxDirectory(root: string, scope: Scope, sessionId: string) {
+  return path.join(root, "sessions", digest([scope, sessionId]));
+}
+
 export class SessionSandbox {
   readonly workspace: string;
   private source?: string;
@@ -28,12 +32,7 @@ export class SessionSandbox {
     private scope: Scope,
     readonly sessionId: string,
   ) {
-    this.workspace = path.join(
-      root,
-      "sessions",
-      digest([scope, sessionId]),
-      "workspace",
-    );
+    this.workspace = path.join(sessionSandboxDirectory(root, scope, sessionId), "workspace");
   }
   async prepare(skills: InstalledSkill[]) {
     assertWorkerPolicy(this.policy);
@@ -231,3 +230,6 @@ export class SessionSandbox {
     await removeWorkerFiles(path.dirname(this.workspace));
   }
 }
+
+export { destroySessionSandbox, openSessionSandbox } from "./sandbox/launch";
+export type { OpenSessionSandbox, SessionSandboxOptions } from "./sandbox/launch";

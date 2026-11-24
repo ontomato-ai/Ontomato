@@ -33,6 +33,7 @@ test("build prepares an empty context before adding Python requirements and invo
     "NOTICE",
     "apps/agent-runtime/build.mjs",
     "apps/agent-runtime/Dockerfile",
+    "apps/agent-runtime/sandbox-policy",
     "apps/agent-runtime/package.json",
     "apps/agent-runtime/src/index.ts",
     "packages/agent-runtime/package.json",
@@ -52,7 +53,7 @@ test("build prepares an empty context before adding Python requirements and invo
   ];
   for (const file of files) {
     mkdirSync(dirname(join(root, file)), { recursive: true });
-    cpSync(join(app.repoRoot, file), join(root, file));
+    cpSync(join(app.repoRoot, file), join(root, file), { recursive: true });
   }
   writeFileSync(join(root, ".gitignore"), ".build/\n");
   const git = (...args) =>

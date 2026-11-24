@@ -1,27 +1,9 @@
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import {
-  modelSettingsSchema,
-  ontologyAgentModelSchema,
-  ontologyAgentModelsSchema,
-  type ModelSelection,
-  type ModelSettingsData,
-  type ModelSettingsWrite,
-  type OntologyAgentModel,
-} from "@ontomato/contracts/model-settings";
-import {
-  runtimeModelDiscoveryResponseSchema,
-  runtimeModelTestResponseSchema,
-  type RuntimeModelDiscoveryRequest,
-  type RuntimeModelDiscoveryResponse,
-  type RuntimeModelTestRequest,
-  type RuntimeModelTestResponse,
-} from "@ontomato/contracts/runtime-model-test";
-import {
   generalConfigSaveEndpoints,
   ontologyOutlineSchema,
   type GeneralConfigKey,
 } from "./config/types";
-import { vectorRebuildStatusSchema } from "./models/types";
 
 /**
  * Platform area requests. The platform pages live next to the Ontology Manager and call the Java service through the
@@ -160,26 +142,6 @@ export function platformApi(client: PlatformClient) {
       client.post(generalConfigSaveEndpoints[key], { [key]: value }),
     getOntologyOutline: async () =>
       ontologyOutlineSchema.parse((await client.get("/admin/getSchema")).data),
-    // The domain's model settings, replaced as a whole on save; keys are read masked.
-    getModelSettings: async (): Promise<ModelSettingsData> =>
-      modelSettingsSchema.parse((await client.get("/model-settings")).data),
-    saveModelSettings: async (settings: ModelSettingsWrite): Promise<ModelSettingsData> =>
-      modelSettingsSchema.parse((await client.post("/model-settings/save", settings)).data),
-    // One minimal call (or the provider's model list) with an unsaved draft; a masked key resolves by provider ID.
-    testModel: async (request: RuntimeModelTestRequest): Promise<RuntimeModelTestResponse> =>
-      runtimeModelTestResponseSchema.parse((await client.post("/model-settings/test", request)).data),
-    discoverModels: async (request: RuntimeModelDiscoveryRequest): Promise<RuntimeModelDiscoveryResponse> =>
-      runtimeModelDiscoveryResponseSchema.parse((await client.post("/model-settings/discover", request)).data),
-    listOntologyAgentModels: async (): Promise<OntologyAgentModel[]> =>
-      ontologyAgentModelsSchema.parse((await client.get("/ontology/ai/agent-models")).data).agents,
-    saveOntologyAgentModel: async (id: string, modelSelection: ModelSelection): Promise<OntologyAgentModel> =>
-      ontologyAgentModelSchema.parse(
-        (await client.put(`/ontology/ai/agent-models/${encodeURIComponent(id)}`, { modelSelection })).data
-      ),
-    getVectorRebuildStatus: async () =>
-      vectorRebuildStatusSchema.parse((await client.get("/businessConfig/vectorRebuildStatus")).data),
-    rebuildVectors: () => client.post("/businessConfig/rebuildVectors"),
-    pauseVectorRebuild: () => client.post("/businessConfig/pauseVectorRebuild"),
   };
 }
 

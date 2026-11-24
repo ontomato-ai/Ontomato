@@ -3,6 +3,12 @@ ARG NODE_RUNTIME_IMAGE=docker.io/library/node:24.21.0-bookworm-slim@sha256:d6aa7
 ARG NODE_BUILDER_IMAGE=docker.io/library/node:24.21.0@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
 ARG PYTHON_RUNTIME_IMAGE=docker.io/library/python:3.10-slim-bookworm@sha256:2559be987fd64d61badbdafd303ea58a9ccab36d6c3c08bce219e762177d2eca
 FROM ${NODE_RUNTIME_IMAGE} AS node-runtime
+FROM ${NODE_BUILDER_IMAGE} AS sandbox-builder
+COPY sandbox-policy/build-nsjail.sh sandbox-policy/sources.lock /sandbox-policy/
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      bison flex libprotobuf-dev protobuf-compiler libnl-route-3-dev pkg-config \
+ && /bin/sh /sandbox-policy/build-nsjail.sh
+
 FROM ${NODE_RUNTIME_IMAGE} AS dependencies
 RUN npm install -g pnpm@9.15.9
 ENV npm_config_store_dir=/pnpm/store
@@ -22,6 +28,15 @@ COPY workspace/ /build/workspace/
 COPY inputs.json /inputs.json
 COPY tools/ /tmp/tools/
 RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
+# Keep the frozen PI CLI and the image-resize worker's external package under
+# /usr, which is visible inside the sandbox. PI's CLI and SDK are bundled.
+RUN pi=packages/agent-runtime/node_modules/@earendil-works/pi-coding-agent \
+ && photon="$(cd packages/agent-runtime && node --input-type=module -e 'import { createRequire } from "node:module"; import { dirname } from "node:path"; console.log(dirname(createRequire(import.meta.resolve("@earendil-works/pi-coding-agent")).resolve("@silvia-odwyer/photon-node")))' )" \
+ && mkdir -p /pi/node_modules/@earendil-works /pi/node_modules/@silvia-odwyer \
+ && cp -LR "$pi" /pi/node_modules/@earendil-works/ \
+ && cp -LR "$photon" /pi/node_modules/@silvia-odwyer/ \
+ && cp packages/agent-runtime/src/adapters/pi/import.mjs packages/agent-runtime/src/adapters/pi/extension.mjs /pi/ \
+ && node /pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --version | grep -Fx 1.4.0
 COPY LICENSE NOTICE /stage/licenses/
 FROM ${PYTHON_RUNTIME_IMAGE} AS python-runtime
 ARG PIP_INDEX_URL=https://pypi.org/simple
@@ -34,7 +49,7 @@ RUN --mount=type=bind,source=tools/apt-install.sh,target=/tmp/apt-install.sh \
     /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" libstdc++6 git \
  && rm -rf /var/lib/apt/lists/* \
  && pip install --no-cache-dir --no-deps -i "${PIP_INDEX_URL}" -r /tmp/requirements-py310.txt \
- && pip check && python -c "import requests, numpy, pandas, sympy"
+ && pip check && python -c "import requests, numpy, pandas, sympy, litellm, starlette, uvicorn"
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-runtime /usr/local/LICENSE /usr/local/share/node/LICENSE
 COPY --from=dependencies /tmp/npm-licenses.json /tmp/npm-licenses.json
@@ -45,10 +60,11 @@ RUN --mount=type=bind,from=dependencies,source=/opt/runtime,target=/opt/runtime 
 Node.js: /usr/local/share/node/LICENSE
 Python interpreter and standard library: /usr/local/lib/python3.10/LICENSE.txt
 Debian packages: /usr/share/doc/<package>/copyright
+PI CLI 1.4.0 (https://github.com/earendil-works/pi/releases/tag/v1.4.0): /app/licenses/pi-MIT.txt
 The pi-agent-core fork retains its MIT license in /app/packages/agent-runtime/src/core/pi/LICENSE
 EOF
 RUN rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.10/site-packages/setuptools* /usr/local/lib/python3.10/site-packages/pkg_resources /usr/local/bin/pip* \
- && node --version && python -c "import requests, numpy, pandas, sympy" \
+ && node --version && python -c "import requests, numpy, pandas, sympy, litellm, starlette, uvicorn" \
  && ! python -m pip --version
 
 FROM python-runtime AS final
@@ -57,23 +73,37 @@ ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
 # Install from the optional Debian mirror, restore the base sources afterwards,
 # and retry once from those original sources if the mirror install fails.
 RUN --mount=type=bind,source=tools/apt-install.sh,target=/tmp/apt-install.sh \
-    /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" fonts-wqy-microhei fonts-dejavu-core \
+    /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" fonts-wqy-microhei fonts-dejavu-core socat=1.7.4.4-2 iproute2=6.1.0-3 \
  && rm -rf /var/lib/apt/lists/*
-ENV NODE_ENV=production AGENT_RUNTIME_HOST=0.0.0.0 AGENT_RUNTIME_ROOT=/data
+# LiteLLM reads its own bundled model metadata instead of fetching it: startup never needs the network.
+ENV NODE_ENV=production AGENT_RUNTIME_HOST=0.0.0.0 AGENT_RUNTIME_ROOT=/data LITELLM_LOCAL_MODEL_COST_MAP=true
 COPY --from=dependencies /opt/runtime/node_modules /opt/runtime/node_modules
 COPY --from=payload /stage/ /app/
+COPY --from=payload /pi/ /usr/local/lib/ontomato-pi/
+COPY --from=payload /stage/packages/agent-runtime/src/adapters/pi/UPSTREAM-LICENSE /app/licenses/pi-MIT.txt
 COPY --from=python-runtime /runtime-notices.txt /app/licenses/THIRD_PARTY_NOTICES.txt
 COPY requirements-py310.txt /app/licenses/python-requirements.txt
+COPY --from=sandbox-builder /output/nsjail /usr/local/sbin/nsjail
+COPY --from=sandbox-builder /output/licenses/ /app/licenses/
+COPY sandbox-policy/sources.lock /app/licenses/sandbox-sources.lock
+COPY sandbox-policy/debian-packages.lock /app/licenses/sandbox-debian-sources.lock
+COPY sandbox-policy/seccomp.json sandbox-policy/apparmor sandbox-policy/ontomato-agent-runtime.cil \
+     sandbox-policy/entrypoint.sh sandbox-policy/engine.py sandbox-policy/preflight.mjs sandbox-policy/probe.py /usr/local/lib/ontomato-sandbox/
+RUN sha256sum /usr/local/sbin/nsjail /usr/bin/socat /usr/sbin/ip > /app/licenses/sandbox-binaries.sha256 \
+ && dpkg-query -W socat iproute2 > /app/licenses/sandbox-debian-packages.txt \
+ && cp /usr/share/doc/socat/copyright /app/licenses/socat.txt \
+ && cp /usr/share/doc/iproute2/copyright /app/licenses/iproute2.txt
 COPY tools/workbench/runtime-layout.mjs /tmp/runtime-layout.mjs
 RUN node -e 'import("/tmp/runtime-layout.mjs").then(m => m.checkNoBrokenSymlinks("/app"))' && rm /tmp/runtime-layout.mjs && mkdir /data
 LABEL org.opencontainers.image.source="https://github.com/ontomato-ai/Ontomato"
 WORKDIR /app/apps/agent-runtime
 # Import the assembled production graph without starting the service or contacting PostgreSQL.
 RUN node --import tsx --input-type=module -e 'await import("@ontomato/agent-runtime")' \
- && python -c "import requests, numpy, pandas, sympy" \
+ && python -c "import requests, numpy, pandas, sympy, litellm" \
  && ! command -v chromium && ! command -v chromium-browser
 # Root is the supervisor only; worker-launch.py drops each worker to a distinct non-root UID.
 RUN rm -f /runtime-notices.txt /tmp/npm-licenses.json /tmp/third_party_notices.py /tmp/requirements-py310.txt
 USER 0:0
 EXPOSE 3001
+ENTRYPOINT ["/bin/sh", "/usr/local/lib/ontomato-sandbox/entrypoint.sh"]
 CMD ["node", "--import", "tsx", "src/index.ts"]

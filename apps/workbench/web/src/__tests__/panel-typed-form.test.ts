@@ -26,7 +26,7 @@ const sql = { namespace: { kind: "domain", domainId: "domain-1" }, name: "sql" }
 const chart = { namespace: { kind: "domain", domainId: "domain-1" }, name: "chart" };
 const stored: PanelFormValues = {
   name: "Analyst", description: "", icon: null, enabled: false, systemPrompt: "Be brief",
-  modelSelection: { modelId: "openai/gpt-4o" }, skills: [sql], classNames: ["Order"],
+  modelSelection: { modelId: "gpt-4o" }, skills: [sql], classNames: ["Order"],
   enabledMcpServiceIds: [], executionUserId: "user-1",
 };
 const defaults: PanelFormValues = {
@@ -147,8 +147,8 @@ function owner(request: Sent, valuesById: ReadonlyMap<string, PanelFormValues>):
     return Response.json({ skills: [{ skill: sql, title: "SQL", description: "" }, { skill: chart, title: "Charts", description: "" }] });
   if (request.path === "/api/data-query/model-options")
     return Response.json({ data: {
-      models: [{ ref: "openai/gpt-4o", name: "GPT-4o", type: "chat" }, { ref: "openai/gpt-4o-mini", name: "GPT-4o mini", type: "chat" }],
-      defaultModelId: "openai/gpt-4o-mini", embeddingModelId: null,
+      models: [{ name: "gpt-4o", type: "chat" }, { name: "gpt-4o-mini", type: "chat" }],
+      defaultModel: "gpt-4o-mini", embeddingModel: null,
     } });
   if (request.path === "/api/data-query/admin/getMetas")
     return Response.json({ success: true, data: {
@@ -374,7 +374,7 @@ async function clearPicker(path: string) {
 it("clears a single reference to the owner's null and a multiple one to an empty list, and saves them so", async () => {
   const { context, sent, failed } = await open("/ontology/agents", { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } });
   await vi.waitFor(() => {
-    expect(fieldItem("/modelSelection/modelId")?.textContent).toContain("GPT-4o");
+    expect(fieldItem("/modelSelection/modelId")?.textContent).toContain("gpt-4o");
     expect(fieldItem("/skills")?.textContent).toContain("SQL");
   }, { timeout: 5000 });
 

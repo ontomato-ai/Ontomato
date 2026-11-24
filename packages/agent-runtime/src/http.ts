@@ -33,8 +33,7 @@ import type {
 import { AgentRuntime } from "./runtime";
 import { RuntimeError } from "./errors";
 import { runtimeEmbeddingsRequestSchema } from "@ontomato/contracts/runtime-embeddings";
-import { embedTexts, discoverModels } from "./model-provider";
-import { testModel } from "./model";
+import { litellmEntry } from "./model";
 
 function readEventSubscription(query: Request["query"]) {
   const { afterSeq } = query;
@@ -119,15 +118,22 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
   app.get("/health", (_req, res) => {
     res.json({ status: "ready" });
   });
+  /** One unsaved connection and model, tried once: the lease lasts this call, and a cancelled call revokes it too. */
   app.post("/v1/models/test", route(async (req, res) => {
     const ctx = scope(req);
     const controller = new AbortController();
     res.on("close", () => controller.abort());
     const { config, prompt } = await runtime.models.testDraft(ctx.scope.domainId, req.body);
-    const result = config.kind === "embedding"
-      ? { type: "embedding", dimensions: (await embedTexts(config, [prompt], controller.signal, true)).dimensions }
-      : await testModel(config, prompt, ctx.correlationId, controller.signal);
-    if (!controller.signal.aborted) res.json(result);
+    const lease = await runtime.gateway.lease({ [config.name]: litellmEntry(config) });
+    try {
+      const result = config.type === "embedding"
+        ? { type: "embedding" as const, dimensions: (await runtime.gateway.embeddings(lease, config.name, [prompt],
+          config.dimensions!, controller.signal, "MODEL_TEST_FAILED")).dimensions }
+        : await runtime.gateway.chat(lease, config.name, prompt, ctx.correlationId, controller.signal);
+      if (!controller.signal.aborted) res.json(result);
+    } finally {
+      await runtime.gateway.release(lease);
+    }
   }));
   app.get("/v1/models/migration-map", route(async (req, res) => {
     res.json(await runtime.models.migrationMap(scope(req).scope.domainId));
@@ -139,14 +145,20 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     const draft = await runtime.models.discoveryDraft(scope(req).scope.domainId, req.body);
     const controller = new AbortController();
     res.on("close", () => controller.abort());
-    res.json(await discoverModels(draft, controller.signal));
+    res.json(await runtime.gateway.discover(draft, controller.signal));
   }));
+  /** A vector rebuild has no session: its lease lasts the batch, and is revoked when the batch ends or is cancelled. */
   app.post("/v1/models/embeddings", route(async (req, res) => {
     const config = await runtime.models.resolve(scope(req).scope.domainId, null, "embedding");
     const { texts } = runtimeEmbeddingsRequestSchema.parse(req.body);
     const controller = new AbortController();
     res.on("close", () => controller.abort());
-    res.json(await embedTexts(config, texts, controller.signal));
+    const lease = await runtime.gateway.lease({ [config.name]: litellmEntry(config) });
+    try {
+      res.json(await runtime.gateway.embeddings(lease, config.name, texts, config.dimensions!, controller.signal));
+    } finally {
+      await runtime.gateway.release(lease);
+    }
   }));
   app.get("/v1/models/options", route(async (req, res) => {
     res.json(await runtime.models.options(scope(req).scope.domainId));

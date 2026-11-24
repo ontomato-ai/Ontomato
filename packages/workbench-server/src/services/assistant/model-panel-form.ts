@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { modelLabel } from "@ontomato/contracts/model-selection";
-import { modelOptionsSchema, modelReferenceSchema } from "@ontomato/contracts/model-settings";
+import { modelOptionsSchema, modelNameSchema } from "@ontomato/contracts/model-settings";
 import { MODEL_OPTION } from "@ontomato/contracts/platform-object-types";
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
 import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelOption } from "@ontomato/contracts/panel-projection";
@@ -14,29 +13,29 @@ import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 
 export const DOMAIN_DEFAULT_MODEL_OPTION = "@default";
 
-export const modelPanelValues = z.object({ modelId: modelReferenceSchema.nullable() }).strict();
+export const modelPanelValues = z.object({ modelId: modelNameSchema.nullable() }).strict();
 export const modelSelectionWrite = z.object({ modelSelection: modelPanelValues }).strict();
 const modelOptionsResponse = z.object({ success: z.literal(true), data: modelOptionsSchema });
 
 /**
- * The domain's chat models, headed by the empty choice (follow the domain default, named by its current model) and
- * formatted with `modelLabel` so each option carries its full provider/model reference when it differs from the name.
+ * The domain's chat models, headed by the empty choice, which follows the domain default and names its current model.
+ * A model is offered by its public name, which is what every caller stores.
  */
 export async function readDomainModelOptions(viewer: AssistantCredentials): Promise<PanelOption[]> {
   const response = await backendGet("agent-model-options", `${config.dataQuery.baseUrl}/model-options`, {
     headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
   });
-  const { data: { models, defaultModelId } } = modelOptionsResponse.parse(JSON.parse(response.text));
+  const { data: { models, defaultModel } } = modelOptionsResponse.parse(JSON.parse(response.text));
   const chat = models.filter(model => model.type === "chat");
-  const current = chat.find(model => model.ref === defaultModelId);
+  const current = chat.find(model => model.name === defaultModel);
   const following: PanelOption = {
     primaryKey: DOMAIN_DEFAULT_MODEL_OPTION,
     value: null,
     label: current
-      ? tForLocale(viewer.locale, "panels.agentOptions.domainDefaultModel", { model: modelLabel(current) })
+      ? tForLocale(viewer.locale, "panels.agentOptions.domainDefaultModel", { model: current.name })
       : tForLocale(viewer.locale, "panels.agentOptions.domainDefault"),
   };
-  return [following, ...chat.map((model): PanelOption => ({ primaryKey: model.ref, value: model.ref, label: modelLabel(model) }))];
+  return [following, ...chat.map((model): PanelOption => ({ primaryKey: model.name, value: model.name, label: model.name }))];
 }
 
 export async function tryReadDomainModelOptions(viewer: AssistantCredentials): Promise<PanelOption[] | null> {

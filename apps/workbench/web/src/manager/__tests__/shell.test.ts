@@ -14,11 +14,6 @@ vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowse
   }),
 }));
 
-// Model configuration reads a structured settings response; its own package tests it.
-vi.mock("../../../../../../packages/platform-admin/src/pages/ModelConfigPage.vue", () => ({
-  __esModule: true,
-  default: defineComponent({ name: "ModelConfigDouble", setup: () => () => h("p", { class: "page-double" }, "models") }),
-}));
 vi.mock("../../../../../../packages/workbench-ui/src/features/workbench/components/BusinessWorkbench.vue", () => ({
   default: defineComponent({ name: "BusinessDouble", setup: () => () => h("p", { class: "page-double" }, "agents") }),
 }));
@@ -81,7 +76,7 @@ describe("open-source Ontology Service page", () => {
     ["/?view=assets", "#/ontology/assets/metrics", null],
     ["/#/data/Order", "#/browser/data/Order", "data Order"],
     ["/#/objects", "#/ontology/objects", null],
-    ["/#/admin", "#/settings/model-config/usage", "models"],
+    ["/#/admin", "#/settings/system-config/general", null],
     ["/#/admin/audit-log", "#/settings/records/audit-log", null],
     ["/#/no-such-page", "#/home", null],
   ])("old address %s lands on %s", async (url, landed, page) => {

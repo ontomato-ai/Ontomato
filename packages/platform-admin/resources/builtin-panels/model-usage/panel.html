@@ -1,0 +1,116 @@
+<style>
+  [v-cloak] { display: none; }
+  .mu-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: mu-page / inline-size;
+  }
+  .mu-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    max-width: 960px;
+    width: 100%;
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 64px);
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  .mu-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .mu-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .mu-section-title {
+    margin: 0;
+    font-size: var(--text-base, var(--text-sm));
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .mu-form-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .mu-form-wrap :deep(.sdk-owner-form),
+  .mu-form-wrap :deep(.sdk-owner-form-inner) {
+    height: auto;
+  }
+  .mu-form-wrap :deep(.sdk-owner-form-body) {
+    overflow: visible;
+  }
+  .mu-vector-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+</style>
+
+<div id="app" v-cloak>
+  <section class="mu-page">
+    <page-header
+      :title="t('panel.name')"
+      :description="t('panel.description')"
+      :draft="usageDraft"
+    >
+      <template #actions>
+        <sdk-button @click="openConnections">{{ t('action.openConnections') }}</sdk-button>
+      </template>
+    </page-header>
+
+    <div class="mu-body">
+      <section class="mu-card">
+        <div class="mu-card-head">
+          <h2 class="mu-section-title">{{ t('defaults.title') }}</h2>
+        </div>
+        <div class="mu-form-wrap">
+          <projection slot="usageForm" @saved="onUsageSaved"></projection>
+        </div>
+      </section>
+
+      <section class="mu-card">
+        <div class="mu-card-head">
+          <h2 class="mu-section-title">{{ t('vector.title') }}</h2>
+          <div class="mu-vector-actions">
+            <projection
+              v-if="rebuildAlive"
+              slot="pauseVectorRebuild"
+              :disabled="!canPause"
+              :label="t('vector.pause')"
+              @done="onRebuildPaused"
+            ></projection>
+            <projection
+              v-else-if="canRebuild || canResume"
+              slot="rebuildVectors"
+              :label="canResume ? t('vector.resume') : t('vector.rebuild')"
+              @done="onRebuildStarted"
+            ></projection>
+          </div>
+        </div>
+        <projection slot="vectorStatus"></projection>
+      </section>
+
+      <section class="mu-card">
+        <div class="mu-card-head">
+          <h2 class="mu-section-title">{{ t('agents.title') }}</h2>
+          <sdk-button size="small" @click="openAgentModels">{{ t('agents.manage') }}</sdk-button>
+        </div>
+        <projection slot="agentUsages"></projection>
+      </section>
+    </div>
+  </section>
+</div>

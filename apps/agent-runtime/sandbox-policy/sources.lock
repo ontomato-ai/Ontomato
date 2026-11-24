@@ -1,0 +1,3 @@
+# Name version SHA256 source license
+nsjail 3.6 9731a07dc9f019b01b67292a96a4dd879873f6456e0ef6d51b1cdb553aa7e1cd https://codeload.github.com/google/nsjail/tar.gz/refs/tags/3.6 Apache-2.0
+kafel 76d0f41bf3eb5c4008713d64b9767b461a9129a3 b9a99b91af7abc84664803709072ee7f6a787dd3f39686484503154d93ef8f33 https://codeload.github.com/google/kafel/tar.gz/76d0f41bf3eb5c4008713d64b9767b461a9129a3 Apache-2.0

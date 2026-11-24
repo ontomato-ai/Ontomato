@@ -25,8 +25,9 @@ const INPUTS = "/inputs.json";
 
 // Payload allowlist per member: manifest, sources, and the package-owned
 // default resources the content layouts read. Web sources, tests, configs and
-// installed node_modules never enter the image.
-const KEEP_DIRS = ["src", "prompts", "skills", "data", "resources"];
+// installed node_modules never enter the image. `gateway` is the model
+// gateway's Python sources, spawned from this package at startup.
+const KEEP_DIRS = ["src", "gateway", "prompts", "skills", "data", "resources"];
 
 // pnpm reports members relative to the workspace root, which is also how the
 // lock importers and the graph link targets are keyed. Duplicated from the

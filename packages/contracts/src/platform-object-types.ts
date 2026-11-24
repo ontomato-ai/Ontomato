@@ -14,6 +14,9 @@ export const MODEL_OPTION = "platform:ModelOption";
 export const PUBLISHED_MCP_SERVICE = "platform:PublishedMcpService";
 export const AUDIT_LOG = "platform:AuditLog";
 export const GENERAL_SETTINGS = "platform:GeneralSettings";
+export const MODEL_CONNECTION = "platform:ModelConnection";
+export const MODEL_ENTRY = "platform:ModelEntry";
+export const MODEL_USAGE = "platform:ModelUsage";
 export const DIAGNOSIS_MODEL = "platform:DiagnosisModel";
 export const BUILDER_AGENT = "platform:BuilderAgent";
 export const MCP_SERVICE_OPTION = "platform:McpServiceOption";
@@ -106,6 +109,13 @@ export const DELETE_SKILL = "skills.delete";
 export const IMPORT_SKILL = "skills.import";
 export const EXPORT_SKILL = "skills.export";
 export const EXPORT_FEEDBACK = "feedback.export";
+export const DELETE_MODEL_CONNECTION = "modelConnections.delete";
+export const DISCOVER_MODEL_CONNECTION = "modelConnections.discover";
+export const TEST_MODEL_CONNECTION = "modelConnections.test";
+export const ADD_MODEL_ENTRY = "modelConnections.addModel";
+export const DELETE_MODEL_ENTRY = "modelEntries.delete";
+export const REBUILD_VECTORS = "modelUsage.rebuildVectors";
+export const PAUSE_VECTOR_REBUILD = "modelUsage.pauseVectorRebuild";
 export const DELETE_OBJECT_TYPE = "objectTypes.delete";
 export const DELETE_ATTRIBUTE = "attributes.delete";
 export const DELETE_RELATIONSHIP = "relationships.delete";
@@ -599,12 +609,69 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [EXPORT_FEEDBACK],
   },
+  [MODEL_CONNECTION]: {
+    ...describeType("modelConnection"),
+    reads: {
+      ...metadataList,
+      record: {
+        ...modelReads.record,
+        outputs: {
+          provider: { kind: "scalar", type: "string" },
+          supportsEmbeddings: { kind: "scalar", type: "boolean" },
+          modelCount: { kind: "scalar", type: "number" },
+        },
+      },
+      form: modelReads.form,
+      createForm: modelReads.createForm,
+      createModelForm: modelReads.form,
+      models: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: MODEL_ENTRY },
+      usages: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+    },
+    operations: [
+      `${MODEL_CONNECTION}.save`,
+      DELETE_MODEL_CONNECTION,
+      DISCOVER_MODEL_CONNECTION,
+      TEST_MODEL_CONNECTION,
+      ADD_MODEL_ENTRY,
+    ],
+  },
+  [MODEL_ENTRY]: {
+    ...describeType("modelEntry"),
+    reads: {
+      record: modelReads.record,
+      form: modelReads.form,
+    },
+    operations: [`${MODEL_ENTRY}.save`, DELETE_MODEL_ENTRY],
+  },
+  [MODEL_USAGE]: {
+    ...describeType("modelUsage"),
+    reads: {
+      form: modelReads.form,
+      vectorRebuild: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          configured: { kind: "scalar", type: "boolean" },
+          state: { kind: "scalar", type: "string" },
+          tone: { kind: "scalar", type: "string" },
+          alive: { kind: "scalar", type: "boolean" },
+          canRebuild: { kind: "scalar", type: "boolean" },
+          canResume: { kind: "scalar", type: "boolean" },
+          canPause: { kind: "scalar", type: "boolean" },
+        },
+      },
+      agentUsages: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+    },
+    operations: [`${MODEL_USAGE}.save`, REBUILD_VECTORS, PAUSE_VECTOR_REBUILD],
+  },
 };
+
+/** Form saves that create a new object rather than edit the selected one's `${typeId}.save`. */
+const platformCreateFormSaves: ReadonlySet<string> = new Set([CREATE_SCHEDULED_TASK, ADD_MODEL_ENTRY]);
 
 /** Platform operation IDs whose server handler is a `form.save` rather than an action. */
 export const platformFormSaveOperations: ReadonlySet<string> = new Set(
   Object.entries(platformObjectTypes).flatMap(([typeId, declaration]) =>
-    (declaration.operations ?? []).filter(id => id === `${typeId}.save` || id === CREATE_SCHEDULED_TASK),
+    (declaration.operations ?? []).filter(id => id === `${typeId}.save` || platformCreateFormSaves.has(id)),
   ),
 );
 

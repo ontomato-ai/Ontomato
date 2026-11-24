@@ -17,13 +17,13 @@ vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: vi.fn(async
 const saveBuilderModelMock = vi.fn();
 const listBuilderAgentsMock = vi.fn(async (): Promise<{ id: string; name: string; modelSelection: { modelId: string | null } }[]> => [
   { id: "11111111-1111-4111-8111-111111111111", name: "App builder", modelSelection: { modelId: null } },
-  { id: "22222222-2222-4222-8222-222222222222", name: "Custom builder", modelSelection: { modelId: "api.deepseek.com/deepseek-flash" } },
+  { id: "22222222-2222-4222-8222-222222222222", name: "Custom builder", modelSelection: { modelId: "deepseek-flash" } },
 ]);
 vi.mock("../../app-builder/agents", () => ({
   builderAgentName: { parse: (v: unknown) => v, safeParse: (v: unknown) => ({ success: true, data: v }) },
   listBuilderAgents: listBuilderAgentsMock,
   readBuilderAgent: vi.fn(async (_owner: unknown, id: string) => ({
-    id, name: "App builder", modelSelection: { modelId: "api.deepseek.com/deepseek-flash" },
+    id, name: "App builder", modelSelection: { modelId: "deepseek-flash" },
   })),
   createBuilderAgent: vi.fn(),
   saveBuilderModel: saveBuilderModelMock,
@@ -134,9 +134,9 @@ describe("simple pages owner reads", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({
       success: true,
       data: {
-        models: [{ ref: "api.deepseek.com/deepseek-flash", name: "dev-model", type: "chat" }],
-        defaultModelId: "api.deepseek.com/deepseek-flash",
-        embeddingModelId: null,
+        models: [{ name: "deepseek-flash", type: "chat" }],
+        defaultModel: "deepseek-flash",
+        embeddingModel: null,
       },
     })));
     readDiagnosisModelMock.mockResolvedValueOnce({ modelSelection: { modelId: null } });
@@ -152,18 +152,18 @@ describe("simple pages owner reads", () => {
     ]);
     expect(form.fields[0]!.warning).toBeUndefined();
 
-    readDiagnosisModelMock.mockResolvedValueOnce({ modelSelection: { modelId: "retired/model" } });
+    readDiagnosisModelMock.mockResolvedValueOnce({ modelSelection: { modelId: "retired-model" } });
     const missingForm = await reads.form(DIAGNOSIS_AGENT_ID, {});
-    expect(missingForm.fields[0]!.warning).toBe("模型“retired/model”已不存在，请重新选择；在此之前该智能体无法运行。");
+    expect(missingForm.fields[0]!.warning).toBe("模型“retired-model”已不存在，请重新选择；在此之前该智能体无法运行。");
   });
 
   it("localizes BuilderAgent list, exposes per-agent row form under 'all', and saves changed agents individually", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({
       success: true,
       data: {
-        models: [{ ref: "api.deepseek.com/deepseek-flash", name: "dev-model", type: "chat" }],
-        defaultModelId: "api.deepseek.com/deepseek-flash",
-        embeddingModelId: null,
+        models: [{ name: "deepseek-flash", type: "chat" }],
+        defaultModel: "deepseek-flash",
+        embeddingModel: null,
       },
     })));
     const owner = { domainId: "d", userId: "u" };
@@ -174,11 +174,11 @@ describe("simple pages owner reads", () => {
       expect.objectContaining({
         label: "应用构建",
         subtitle: "应用设计、代码生成与发布对话",
-        fields: { name: "应用构建", modelId: "域默认（dev-model (api.deepseek.com/deepseek-flash)）" },
+        fields: { name: "应用构建", modelId: "域默认（deepseek-flash）" },
       }),
       expect.objectContaining({
         label: "Custom builder",
-        fields: { name: "Custom builder", modelId: "dev-model (api.deepseek.com/deepseek-flash)" },
+        fields: { name: "Custom builder", modelId: "deepseek-flash" },
       }),
     ]);
 
@@ -189,7 +189,7 @@ describe("simple pages owner reads", () => {
     ]);
     expect(batchForm.values).toEqual({
       "11111111-1111-4111-8111-111111111111": "@default",
-      "22222222-2222-4222-8222-222222222222": "api.deepseek.com/deepseek-flash",
+      "22222222-2222-4222-8222-222222222222": "deepseek-flash",
     });
 
     const invalidDraft = await reads.form(BUILDER_MODELS_FORM_KEY, {
@@ -209,7 +209,7 @@ describe("simple pages owner reads", () => {
     // Partial save: agent 1 succeeds, agent 2 fails with 400; savedFields records agent 1 while errors reports agent 2.
     saveBuilderModelMock.mockImplementation(async (_owner: unknown, agentId: string) => {
       if (agentId === "22222222-2222-4222-8222-222222222222") throw new HttpError(400, "bad model", "INVALID_MODEL");
-      return { modelSelection: { modelId: "api.deepseek.com/deepseek-flash" } };
+      return { modelSelection: { modelId: "deepseek-flash" } };
     });
     const saveOp = builderModelOperations[0]!;
     const outcome = await saveOp.execute(
@@ -217,7 +217,7 @@ describe("simple pages owner reads", () => {
       { kind: "object", objectType: BUILDER_AGENT, primaryKey: BUILDER_MODELS_FORM_KEY },
       {
         values: {
-          "11111111-1111-4111-8111-111111111111": "api.deepseek.com/deepseek-flash",
+          "11111111-1111-4111-8111-111111111111": "deepseek-flash",
           "22222222-2222-4222-8222-222222222222": "@default",
         },
         submittedFields: ["/11111111-1111-4111-8111-111111111111", "/22222222-2222-4222-8222-222222222222"],
@@ -227,7 +227,7 @@ describe("simple pages owner reads", () => {
     expect(outcome).toMatchObject({
       kind: "refusal",
       code: "BUILDER_MODELS_SAVE_FAILED",
-      savedFields: { "/11111111-1111-4111-8111-111111111111": "api.deepseek.com/deepseek-flash" },
+      savedFields: { "/11111111-1111-4111-8111-111111111111": "deepseek-flash" },
       errors: [expect.objectContaining({ field: "/22222222-2222-4222-8222-222222222222", code: "invalid_option" })],
     });
   });

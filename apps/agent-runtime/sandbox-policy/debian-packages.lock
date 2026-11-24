@@ -1,0 +1,5 @@
+# Package version architecture SHA256 Debian package URL
+socat 1.7.4.4-2 amd64 2bf3094e16ce0aab245193eb6b7cb6b6e086f68d321b757e2090901b4cd7f826 https://deb.debian.org/debian/pool/main/s/socat/socat_1.7.4.4-2_amd64.deb
+socat 1.7.4.4-2 arm64 068a29cfeefee80d5b96b13049d15f7e76e1ff86db39e55a33cbcdf7fff543b3 https://deb.debian.org/debian/pool/main/s/socat/socat_1.7.4.4-2_arm64.deb
+iproute2 6.1.0-3 amd64 1204b29e916e836267096d0b9d778106752f821ebde0d281539008b4386d9070 https://deb.debian.org/debian/pool/main/i/iproute2/iproute2_6.1.0-3_amd64.deb
+iproute2 6.1.0-3 arm64 58fad55c5a29be6c1e6301d0c572f2ac5e5962ff244e7da3784c1b29ffc6c6bf https://deb.debian.org/debian/pool/main/i/iproute2/iproute2_6.1.0-3_arm64.deb

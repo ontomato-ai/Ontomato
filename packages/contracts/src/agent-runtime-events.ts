@@ -1,6 +1,7 @@
 import { agentInputSchema, agentPendingQuestionSchema } from "./agent-channel";
 import { workspaceCommitSchema } from "./workspaces";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
+import { runtimeRunDetailSchema } from "./agent-runtime-details";
 import { z } from "zod";
 import {
   runtimeAssistantStreamEventSchema,
@@ -9,6 +10,7 @@ import {
   runtimeSettledMessageSchema,
   runtimeTextSchema,
   runtimeToolResultMessageSchema,
+  runtimeUsageCountSchema,
 } from "./agent-runtime-messages";
 import {
   runtimeIdSchema,
@@ -31,6 +33,27 @@ export const runtimeToolResultSchema = z
   .object({
     content: z.array(z.union([runtimeTextSchema, runtimeImageSchema])),
     details: runtimeToolResultDetailsSchema,
+  })
+  .strict();
+
+/**
+ * How a tool call ended. `unknown` means the call was dispatched and no result came back (interrupted, engine
+ * lost), so its external effect is not known; it is neither success nor failure and must not be retried
+ * automatically. Events stored before this field existed carry no outcome and are read from `isError`.
+ */
+export const runtimeToolOutcomeSchema = z.enum(["success", "failure", "unknown"]);
+
+/**
+ * The usage an engine reports for one logical call and, when it reports one, its own running total. `turn` is
+ * the engine's native turn association, null for an engine that has none; `messageId` is set only when the
+ * report can be attributed to one message of this run. A repeat replaces the previous report.
+ */
+export const runtimeUsageUpdateSchema = z
+  .object({
+    last: runtimeUsageCountSchema,
+    total: runtimeUsageCountSchema.nullable(),
+    turn: z.string().nullable(),
+    messageId: runtimeIdSchema.nullable(),
   })
   .strict();
 
@@ -117,8 +140,19 @@ export const runtimeAgentEventSchema = z.discriminatedUnion("type", [
       toolName: runtimeKeySchema,
       result: runtimeToolResultSchema,
       isError: z.boolean(),
+      /** Absent only on events stored before the field existed; then `isError` gives success or failure. */
+      outcome: runtimeToolOutcomeSchema.optional(),
       durationMs: z.number().nonnegative().finite().optional(),
     })
+    .strict(),
+  z
+    .object({
+      type: z.literal("run_detail"),
+      detail: runtimeRunDetailSchema,
+    })
+    .strict(),
+  z
+    .object({ type: z.literal("usage_updated"), usage: runtimeUsageUpdateSchema })
     .strict(),
 ]);
 
@@ -196,3 +230,6 @@ export type RuntimeStreamFrame = z.infer<typeof runtimeStreamFrameSchema>;
 export type RuntimeSessionRunFrame = z.infer<
   typeof runtimeSessionRunFrameSchema
 >;
+export type RuntimeToolOutcome = z.infer<typeof runtimeToolOutcomeSchema>;
+export type RuntimeToolResult = z.infer<typeof runtimeToolResultSchema>;
+export type RuntimeUsageUpdate = z.infer<typeof runtimeUsageUpdateSchema>;

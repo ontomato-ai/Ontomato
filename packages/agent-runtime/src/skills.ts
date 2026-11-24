@@ -1,6 +1,9 @@
 import {
+  chmod,
+  lstat,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rename,
   rm,
@@ -92,8 +95,9 @@ export class SkillRegistry {
       for (const file of files) {
         const target = path.join(temp, file.path);
         await mkdir(path.dirname(target), { recursive: true });
-        await writeFile(target, file.content, { mode: 0o400 });
+        await writeFile(target, file.content, { mode: 0o444 });
       }
+      await makeSkillReadable(temp);
       try {
         await rename(temp, directory);
       } catch (e) {
@@ -138,10 +142,22 @@ export class SkillRegistry {
       skill.name,
       hash,
     );
+    // Stored versions published before bind mounts were readable only by the runtime.
+    if (((await lstat(directory)).mode & 0o005) !== 0o005) await makeSkillReadable(directory);
     await readFile(path.join(directory, "SKILL.md"));
     return { ...version, description: row.description, directory };
   }
 }
+async function makeSkillReadable(directory: string): Promise<void> {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) await makeSkillReadable(file);
+    else if (entry.isFile()) await chmod(file, 0o444);
+    else throw new Error(`Unexpected file in published skill: ${file}`);
+  }
+  await chmod(directory, 0o755);
+}
+
 export function skillCatalog(workspace: string, skills: InstalledSkill[]) {
   const loaded = loadSkills({
     cwd: workspace,

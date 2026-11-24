@@ -1227,7 +1227,10 @@ export default {
       "agentDefinition": "Agent",
       "ontologyType": "Ontology type",
       "ontologyRelationKind": "Relation kind",
-      "feedbackRecord": "Feedback"
+      "feedbackRecord": "Feedback",
+      "modelConnection": "Model connection",
+      "modelEntry": "Configured model",
+      "modelUsage": "Model usage"
     },
     "relations": {
       "object-type": {

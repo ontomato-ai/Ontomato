@@ -287,10 +287,10 @@ beforeAll(async () => {
     expect(req.header("Accept-Language")).toBe("zh-CN");
     res.json({ success: true, data: {
       models: [
-        { type: "chat", ref: "demo/chat", name: "Demo Chat" },
-        { type: "embedding", ref: "demo/embed", name: "Demo Embedding", dimensions: 3 },
+        { type: "chat", name: "demo-chat" },
+        { type: "embedding", name: "demo-embed", dimensions: 3 },
       ],
-      defaultModelId: "demo/chat", embeddingModelId: "demo/embed",
+      defaultModel: "demo-chat", embeddingModel: "demo-embed",
     } });
   });
   app.post("/internal/agent-execution/validate-setting", (req, res) => {
@@ -1076,9 +1076,9 @@ it("reads agent settings and reference options with the panel viewer", async () 
     name: "", enabled: true, modelSelection: { modelId: null }, skills: [],
   });
   // The empty choice, following the domain's default model, comes first (原页面对照《智能体设置》, f3468a825).
-  expect(panelOptionListSchema.parse(await ready("models", "options")).options.map(option => option.value)).toEqual([null, "demo/chat"]);
-  const models = panelOptionListSchema.parse(await ready("models", "selected", { values: ["demo/missing", "demo/chat", null] }));
-  expect(models.options.map(option => option.value)).toEqual(["demo/missing", "demo/chat", null]);
+  expect(panelOptionListSchema.parse(await ready("models", "options")).options.map(option => option.value)).toEqual([null, "demo-chat"]);
+  const models = panelOptionListSchema.parse(await ready("models", "selected", { values: ["missing", "demo-chat", null] }));
+  expect(models.options.map(option => option.value)).toEqual(["missing", "demo-chat", null]);
   expect(models.options[0]?.unavailable?.reason).toEqual(expect.any(String));
   const service = { primaryKey: mcpServiceId, value: mcpServiceId, label: "Inventory tools" };
   expect(panelOptionListSchema.parse(await ready("tools", "options")).options).toEqual([service]);

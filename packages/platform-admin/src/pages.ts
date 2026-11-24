@@ -1,7 +1,7 @@
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { Activity, Cpu, Database, ScrollText, Server, SlidersHorizontal } from "lucide-vue-next";
 import type { RouteRecordRaw } from "vue-router";
-import type { PlatformGroup, PlatformPage } from "./navigation";
+import type { PlatformEntryRow, PlatformGroup, PlatformPage } from "./navigation";
 
 /**
  * Platform administration pages this package ships: the system settings' pages beside the permissions. Each page is one
@@ -13,27 +13,13 @@ export const platformGroups = {
   platform: { key: "platform", titleKey: "platform.title" },
 } satisfies Record<string, PlatformGroup>;
 
+/** Menu row icons for built-in settings panel entries whose native Vue routes have been replaced. */
+export const platformEntryRows: readonly PlatformEntryRow[] = [
+  { path: platformRoutes.usage.path, icon: Cpu },
+  { path: platformRoutes.providers.path, icon: Server },
+];
+
 export const platformPages = {
-  /**
-   * How the domain's models are used and where they come from: two pages of one model library, edited as one draft and
-   * saved together from either.
-   */
-  modelUsage: {
-    path: platformRoutes.usage.path,
-    titleKey: "nav.modelUsage",
-    descriptionKey: "platform.descriptions.modelUsage",
-    icon: Cpu,
-    permissions: ["system-config"],
-    group: "platform",
-  },
-  modelProviders: {
-    path: platformRoutes.providers.path,
-    titleKey: "nav.modelProviders",
-    descriptionKey: "platform.descriptions.modelProviders",
-    icon: Server,
-    permissions: ["system-config"],
-    group: "platform",
-  },
   general: {
     path: platformRoutes.general.path,
     // Not "System settings": that is the application's own name, and a page that repeats it says nothing.
@@ -69,11 +55,8 @@ export const platformPages = {
   },
 } satisfies Record<string, PlatformPage>;
 
-/** Lazily loaded components of the shared pages, keyed by path; the two model pages are one screen of one draft. */
-const modelConfigPage = () => import("./pages/ModelConfigPage.vue");
+/** Lazily loaded components of the shared native pages, keyed by path. */
 export const platformPageComponents: Readonly<Record<string, () => Promise<unknown>>> = {
-  [platformPages.modelUsage.path]: modelConfigPage,
-  [platformPages.modelProviders.path]: modelConfigPage,
   [platformPages.general.path]: () => import("./pages/GeneralSettingsPage.vue"),
   [platformPages.dataAdapters.path]: () => import("./pages/DataAdaptersPage.vue"),
   [platformPages.auditLog.path]: () => import("./pages/AuditLogPage.vue"),
@@ -109,10 +92,8 @@ export const formerParentRoutes: RouteRecordRaw[] = [
 /** Screens other editions show on their own: the service status is the super admin console's services section too. */
 export const systemMonitorPanel = () => import("./pages/SystemMonitorPage.vue");
 
-/** The shared settings pages, in the order of the system settings' column. */
+/** The shared native settings pages, in the order of the system settings' column. */
 export const ossPlatformPages: readonly PlatformPage[] = [
-  platformPages.modelUsage,
-  platformPages.modelProviders,
   platformPages.general,
   platformPages.dataAdapters,
   platformPages.auditLog,

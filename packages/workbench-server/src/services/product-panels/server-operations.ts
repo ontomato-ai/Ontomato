@@ -15,6 +15,7 @@ import type { AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
 import { generalSettingsOperations } from "../admin/general-settings-panel";
+import { modelSettingsServerOperations } from "../admin/model-settings-panel";
 import { builderModelOperations } from "../app-builder/panel-model";
 import { diagnosisModelOperations } from "../ops-diagnosis/panel-model";
 import { feedbackExportOperation } from "../admin/feedback-panel-reads";
@@ -151,6 +152,7 @@ const registrations: readonly PanelServerOperation[] = [
   ...scheduledTaskServerOperations,
   ...agentDefinitionOperations,
   ...generalSettingsOperations,
+  ...modelSettingsServerOperations,
   ...builderModelOperations,
   ...diagnosisModelOperations,
   ...m5ServerOperations,

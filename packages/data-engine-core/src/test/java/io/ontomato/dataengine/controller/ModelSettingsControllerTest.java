@@ -33,7 +33,7 @@ class ModelSettingsControllerTest {
         .thenThrow(new AgentHttpException(400, "INVALID_REQUEST", "Default references a missing model"));
     var mvc = MockMvcBuilders.standaloneSetup(controller).build();
     mvc.perform(post("/model-settings/save").header("X-Domain-Id", "attacker-domain")
-        .contentType(MediaType.APPLICATION_JSON).content("{\"models\":[],\"defaultModelId\":\"missing\"}"))
+        .contentType(MediaType.APPLICATION_JSON).content("{\"models\":{},\"connections\":{},\"defaultModel\":\"missing\"}"))
         .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     verify(runtime).json(eq("verified-domain"), anyString(), eq("/v1/models/settings"), eq("PUT"), any(), isNull());
   }
@@ -41,9 +41,9 @@ class ModelSettingsControllerTest {
   @Test void optionsUseOnlyTheOwnersMinimalProjection() throws Exception {
     identity();
     when(runtime.json(eq("verified-domain"), anyString(), eq("/v1/models/options"), eq("GET"), isNull(), isNull()))
-        .thenReturn(JSONObject.of("models", java.util.List.of(JSONObject.of("ref", "gateway/m", "name", "Model", "type", "chat")), "defaultModelId", "gateway/m", "embeddingModelId", null));
+        .thenReturn(JSONObject.of("models", java.util.List.of(JSONObject.of("name", "qwen-main", "type", "chat")), "defaultModel", "qwen-main", "embeddingModel", null));
     MockMvcBuilders.standaloneSetup(controller).build().perform(get("/model-options"))
-        .andExpect(status().isOk()).andExpect(jsonPath("$.data.models[0].ref").value("gateway/m"))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.models[0].name").value("qwen-main"))
         .andExpect(jsonPath("$.data.models[0].apiKeys").doesNotExist());
   }
 
@@ -80,7 +80,7 @@ class ModelSettingsControllerTest {
   private MockMvc selectionMvc(String storedSelection) throws Exception {
     identity();
     when(runtime.json(eq("verified-domain"), anyString(), eq("/v1/models/options"), eq("GET"), isNull(), isNull()))
-        .thenReturn(JSONObject.parseObject("{\"models\":[{\"ref\":\"gateway/alt1\",\"name\":\"Alternative\",\"type\":\"chat\"}]}"));
+        .thenReturn(JSONObject.parseObject("{\"models\":[{\"name\":\"alt1\",\"type\":\"chat\"}]}"));
     when(jdbc.queryForList(anyString(), eq("verified-domain"), eq(OntologyAgentStore.RETRIEVER)))
         .thenReturn(java.util.List.of(java.util.Map.of("model_selection", storedSelection)));
     // Exercise MVC deserialization and the real selection service, mocking only its dependencies.
@@ -89,14 +89,14 @@ class ModelSettingsControllerTest {
   }
 
   @Test void mvcSavesAnExistingModelUsingTheVerifiedDomain() throws Exception {
-    selectionMvc("{\"modelId\":\"gateway/alt1\"}")
+    selectionMvc("{\"modelId\":\"alt1\"}")
         .perform(put("/ontology/ai/agent-models/" + OntologyAgentStore.RETRIEVER)
             .header("X-Domain-Id", "untrusted-domain")
-            .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":\"gateway/alt1\"}}"))
-        .andExpect(status().isOk()).andExpect(jsonPath("$.data.modelSelection.modelId").value("gateway/alt1"));
+            .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":\"alt1\"}}"))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.modelSelection.modelId").value("alt1"));
     var saved = ArgumentCaptor.forClass(String.class);
     verify(jdbc).update(anyString(), eq("verified-domain"), eq(OntologyAgentStore.RETRIEVER), saved.capture());
-    assertEquals("gateway/alt1", JSONObject.parseObject(saved.getValue()).getString("modelId"));
+    assertEquals("alt1", JSONObject.parseObject(saved.getValue()).getString("modelId"));
   }
 
   @Test void mvcSavesNullAsTheDomainDefault() throws Exception {
@@ -122,7 +122,7 @@ class ModelSettingsControllerTest {
   @Test void mvcRejectsAnUnknownAgentBeforeReadingModels() throws Exception {
     selectionMvc("{\"modelId\":null}")
         .perform(put("/ontology/ai/agent-models/00000000-0000-4000-8000-000000000000")
-            .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":\"gateway/alt1\"}}"))
+            .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":\"alt1\"}}"))
         .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("NOT_FOUND"));
     verifyNoInteractions(jdbc, runtime);
   }
@@ -140,7 +140,7 @@ class ModelSettingsControllerTest {
     ReflectionTestUtils.setField(client, "http", transport);
     var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(client, access, agents)).build();
     var result = mvc.perform(post("/model-settings/test").contentType(MediaType.APPLICATION_JSON)
-        .content("{\"retry\":{\"provider\":{\"timeoutMs\":25000,\"maxRetries\":0,\"maxRetryDelayMs\":60000}}}"))
+        .content("{\"model\":{\"type\":\"chat\",\"timeoutSeconds\":25,\"maxRetries\":0}}"))
         .andExpect(request().asyncStarted()).andReturn();
     mvc.perform(asyncDispatch(result)).andExpect(status().isOk()).andExpect(jsonPath("$.data.content").value("connected"));
     var sent = org.mockito.ArgumentCaptor.forClass(java.net.http.HttpRequest.class);

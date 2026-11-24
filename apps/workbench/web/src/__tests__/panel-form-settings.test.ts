@@ -532,4 +532,53 @@ describe("ObjectForm settings parity", () => {
       mount.dispose();
     }
   });
+
+  it("renders single-line text fields with secret: true as password inputs with reveal toggle", async () => {
+    const projection = makeFormProjection();
+    const mount = mountDirectPanel({
+      manifest: formManifest,
+      run: directRun({
+        pageKey: "settings",
+        url: () => "/settings",
+        label: () => "Settings",
+        initial: { app: { className: FUNCTION, primaryKey: "sys-1" } },
+      }),
+      messages: {},
+      locale: ref("en"),
+      defaultLocale: "en",
+      requests: { request: async () => Response.json({ projection }) },
+      use: { applicationId: "app", useId: "settings" },
+      expandPageComposer: noOperations.expandPageComposer,
+      navigate: noOperations.navigate,
+      nested: noOperations.nested,
+      confirmOperation: noOperations.confirmOperation,
+      read: async (request): Promise<ProductPanelReadResponse> => {
+        if (request.operations) return { status: "ready", value: { save: saveDescriptor } as never };
+        return {
+          status: "ready",
+          value: {
+            fields: [
+              { path: "/apiKey", label: "API Key", required: true, readOnly: false, valueSchema: { type: "string" }, control: { kind: "text", secret: true } },
+            ],
+            values: { apiKey: "******1234" },
+            errors: [],
+            revision: 1,
+            save: formSaveMeta,
+          } as never,
+        };
+      },
+    });
+
+    const element = document.createElement("div");
+    document.body.append(element);
+    const app = createApp({ render: () => mount.member("form") });
+    app.use(i18n()).use(ElementPlus).mount(element);
+
+    await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/apiKey"] input')?.type).toBe("password"));
+    expect(element.querySelector<HTMLInputElement>('[data-field="/apiKey"] input')?.value).toBe("******1234");
+    expect(element.querySelector('[data-field="/apiKey"] .el-input__password')).not.toBeNull();
+
+    app.unmount();
+    mount.dispose();
+  });
 });
