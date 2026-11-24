@@ -2086,10 +2086,27 @@ test("a read-only trial carries the current draft and parameters without a write
   };
   assert.deepEqual(panelReadOperationDescriptorSchema.parse(owner), owner);
   assert.equal(panelReadOperationDescriptorSchema.safeParse({ ...owner, effect: "write" }).success, false);
-  for (const result of [{ kind: "markdown", markdown: "Preview" }, { kind: "json", value: [{ count: 1 }] }]) {
+  for (const result of [
+    { kind: "markdown", markdown: "Preview" },
+    { kind: "json", value: [{ count: 1 }] },
+    { kind: "json", value: [{ count: 1 }], truncation: { rowLimit: 20000, hint: "Narrow the range" } },
+    { kind: "json", value: null, truncation: { rowLimit: null, hint: null } },
+  ]) {
     assert.deepEqual(panelReadOperationResultSchema.parse(result), result);
     assert.equal(panelReadOperationResultSchema.safeParse({ ...result, affected: { objects: [] } }).success, false);
   }
+  assert.equal(
+    panelReadOperationResultSchema.safeParse({
+      kind: "json", value: [], truncation: { rowLimit: 100, hint: null, extra: true },
+    }).success,
+    false,
+  );
+  assert.equal(
+    panelReadOperationResultSchema.safeParse({
+      kind: "markdown", markdown: "Preview", truncation: { rowLimit: 10, hint: null },
+    }).success,
+    false,
+  );
 });
 
 test("the author type table and live descriptions share operation declarations", async () => {

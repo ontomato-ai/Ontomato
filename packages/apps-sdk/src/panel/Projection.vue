@@ -3,6 +3,7 @@ import { computed, effectScope, inject, onBeforeUnmount, onErrorCaptured, provid
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
+import { declaredComponentProps, pickProjectionPlacementAttrs } from "./projection-attrs";
 import { frameMemberData } from "./frame-member";
 import { panelMemberKey, type PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
@@ -36,8 +37,6 @@ const panel = inject(panelContextKey, null);
 if (!panel) throw new Error("<Projection> runs inside a panel, which provides its context");
 
 const attrs = useAttrs();
-/** What the panel's template listens to on the component; an attribute written here configures nothing. */
-const listeners = computed(() => Object.fromEntries(Object.entries(attrs).filter(([name]) => /^on[A-Z]/.test(name))));
 const placementClass = computed(() => attrs.class);
 const placementStyle = computed(() => attrs.style as StyleValue);
 const loading = ref(true);
@@ -132,13 +131,19 @@ provide(projectionKey, {
   },
 } as ProjectionSlot);
 provide(panelMemberKey, () => loaded.value!.member);
+const bound = computed(() => {
+  const { component, projection } = loaded.value!;
+  const declared = declaredComponentProps(component);
+  const { listeners, props: placementProps } = pickProjectionPlacementAttrs(attrs, declared);
+  return { ...projection.config, ...resolvedInputs.value, ...placementProps, ...listeners };
+});
 </script>
 
 <template>
   <div class="sdk-panel-member" :data-member="slot" :class="placementClass" :style="placementStyle">
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
-    <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...listeners, ...resolvedInputs }">
+    <component :is="loaded.component" v-else v-bind="bound">
       <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">
         <slot :name="name" v-bind="slotProps ?? {}"></slot>
       </template>

@@ -236,7 +236,7 @@ const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
     if (!descriptor) continue;
     const targetInfo = resolveOperationTarget(panel, slot, currentMember, descriptor, stateValues.value);
     const label = spec.label?.trim() || formatOperationLabel(descriptor, targetInfo, t);
-    const ready = isOperationReady(descriptor, targetInfo, false);
+    const ready = isOperationReady(descriptor, targetInfo, false, panel?.instance.forms);
     items.push({
       name: spec.name,
       descriptor,
