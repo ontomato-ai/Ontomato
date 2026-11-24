@@ -130,8 +130,8 @@ describe("open-source Ontology Service page", () => {
 
   it("with one locale there is no language control; the theme control switches the whole page and is stored under the Ontology Service key", async () => {
     localStorage.setItem("theme-preference", "light");
-    // A page the Manager still draws itself, whose frame follows the theme (object types is a built-in panel now).
-    await start("/?theme=dark#/ontology/assets/workflows");
+    // A page the Manager still draws itself, whose frame follows the theme (object types and workflows are built-in panels now).
+    await start("/?theme=dark#/browser/data/Order");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     // The theme and language live in the rail's account menu now.
     document.querySelector<HTMLButtonElement>(".account-trigger")!.click();
@@ -149,11 +149,11 @@ describe("open-source Ontology Service page", () => {
   });
 
   it("a 401 stops the page with its status; a 402 keeps it", async () => {
-    statusFor = (url) => (url.endsWith("/workflow/query") ? 402 : 200);
-    await start("/#/ontology/assets/workflows");
+    statusFor = (url) => (url.endsWith("/product-assets/object-views/read") ? 402 : 200);
+    await start("/#/browser/views/Order?key=1");
     expect(document.querySelector(".platform-shell")).not.toBeNull();
-    statusFor = (url) => (url.endsWith("/workflow/query") ? 401 : 200);
-    await start("/#/ontology/assets/workflows");
+    statusFor = (url) => (url.endsWith("/product-assets/object-views/read") ? 401 : 200);
+    await start("/#/browser/views/Order?key=1");
     expect(document.querySelector(".platform-shell")).toBeNull();
   });
 });

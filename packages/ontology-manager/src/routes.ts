@@ -4,7 +4,6 @@ import { defineAsyncComponent, defineComponent, h, onBeforeUnmount, watch } from
 import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import ManagerFrame from "./ManagerFrame.vue";
-import WorkflowCatalog from "./components/WorkflowCatalog.vue";
 import { useManagerClient } from "./context";
 import {
   legacyProductAssetTarget,
@@ -79,13 +78,6 @@ function dataBrowserPage(memory: DataBrowserMemory) {
     },
   });
 }
-
-const WorkflowPage = defineComponent({
-  name: "ManagerWorkflowPage",
-  setup() {
-    return () => h("section", { class: "asset-surface" }, [h(WorkflowCatalog)]);
-  },
-});
 
 /**
  * Redirect-only route component for retired `/ontology/products` and `/ontology/products/:productId` URLs.
@@ -167,7 +159,6 @@ export function managerRoutes(): RouteRecordRaw[] {
               ? { name: "manager-data", params: { className: dataBrowser.className } }
               : true,
         },
-        { ...routes.workflows, component: WorkflowPage, meta: { page: managerPaths.workflows } },
       ],
     },
   ];

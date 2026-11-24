@@ -1,0 +1,246 @@
+<!--
+  Workflows catalog panel: full-width table with inline row actions and three modals
+  (read-only definition view, create workflow draft form, and effective capability grants audit).
+  All reads and writes flow through declared platform:Workflow projections and operations.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .wf-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    container: wf-page / inline-size;
+  }
+  .wf-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+    padding: var(--spacing-md) var(--page-gutter) var(--page-content-gap);
+  }
+  .wf-catalog {
+    min-width: 0;
+  }
+  .wf-catalog .sdk-object-list-table {
+    table-layout: fixed;
+  }
+  .wf-catalog .sdk-object-list-table th,
+  .wf-catalog .sdk-object-list-table td {
+    padding-inline: var(--spacing-sm);
+  }
+  .wf-catalog .sdk-object-list-table .sdk-object-list-col-shrink {
+    min-width: 0;
+    max-width: none;
+  }
+  .wf-catalog .sdk-object-list-cell {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .wf-catalog .sdk-object-list-cell-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .wf-catalog .sdk-object-list-cell-main,
+  .wf-catalog .sdk-object-list-cell-sub {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .wf-grant-link {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--brand-link, var(--sdk-color-primary));
+    font: inherit;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    text-align: start;
+    cursor: pointer;
+  }
+  .wf-grant-link:hover {
+    text-decoration: underline;
+  }
+  .wf-grant-link.is-warning {
+    color: var(--sdk-color-warning);
+  }
+  .wf-dialog-body {
+    max-height: min(68vh, 42rem);
+    overflow-y: auto;
+    padding-inline-end: 4px;
+    min-width: 0;
+  }
+  .wf-dialog-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+  }
+  .wf-grants-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    max-height: min(68vh, 42rem);
+    overflow-y: auto;
+    padding-inline-end: 4px;
+    min-width: 0;
+  }
+  .wf-grants-desc {
+    margin: 0;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+  }
+  .wf-grants-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    min-width: 0;
+  }
+  .wf-grants-group h4 {
+    margin: 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+  }
+  .wf-grants-hint {
+    margin: 0;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+  }
+</style>
+<div id="app" v-cloak>
+  <div class="wf-page">
+    <page-header :title="t('pageTitle')" :description="t('pageDescription')">
+      <template #actions>
+        <sdk-button text :aria-label="t('action.refresh')" :title="t('action.refresh')" @click="refresh">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+        </sdk-button>
+        <sdk-button type="primary" @click="startCreate">{{ t('action.newWorkflow') }}</sdk-button>
+      </template>
+    </page-header>
+
+    <section class="wf-body">
+      <div class="wf-catalog">
+        <projection slot="catalog" @row-action="onRowAction">
+          <template #cell-grantsSummary="{ ref, displayText, tone }">
+            <button
+              type="button"
+              class="wf-grant-link"
+              :class="{ 'is-warning': tone === 'warning' }"
+              :title="displayText"
+              @click.stop="openGrants(ref)"
+            >
+              {{ displayText }}
+            </button>
+          </template>
+        </projection>
+      </div>
+    </section>
+
+    <!-- Read-only workflow definition modal -->
+    <sdk-dialog
+      v-model="viewDialogOpen"
+      :title="viewDialogTitle"
+      width="min(880px, calc(100% - 2rem))"
+      append-to-body
+      destroy-on-close
+    >
+      <div v-if="viewDialogOpen" :key="viewingKey" class="wf-dialog-body">
+        <projection slot="viewForm"></projection>
+      </div>
+      <template #footer>
+        <div class="wf-dialog-footer">
+          <sdk-button @click="closeView">{{ t('action.close') }}</sdk-button>
+        </div>
+      </template>
+    </sdk-dialog>
+
+    <!-- Create workflow draft modal -->
+    <sdk-dialog
+      v-model="createDialogOpen"
+      :before-close="beforeCloseCreate"
+      :title="t('create.title')"
+      width="min(880px, calc(100% - 2rem))"
+      append-to-body
+      destroy-on-close
+    >
+      <div v-if="createDialogOpen" class="wf-dialog-body">
+        <projection
+          slot="createForm"
+          @saved="onCreateSaved"
+          @cancel="requestCloseCreate"
+          @discarded="closeCreateImmediate"
+        ></projection>
+      </div>
+      <template #footer>
+        <div class="wf-dialog-footer">
+          <sdk-button @click="requestCloseCreate">{{ t('action.cancel') }}</sdk-button>
+          <sdk-button
+            type="primary"
+            :disabled="!createDraft?.canSave"
+            :loading="Boolean(createDraft?.saving)"
+            @click="saveCreate"
+          >
+            {{ t('action.saveDraft') }}
+          </sdk-button>
+        </div>
+      </template>
+    </sdk-dialog>
+
+    <!-- Effective capability grants modal -->
+    <sdk-dialog
+      v-model="grantsDialogOpen"
+      :title="grantsDialogTitle"
+      width="min(760px, calc(100% - 2rem))"
+      append-to-body
+      destroy-on-close
+    >
+      <div v-if="grantsDialogOpen" :key="inspectingGrantsKey" class="wf-grants-body">
+        <projection slot="grantsHeader"></projection>
+        <p class="wf-grants-desc">{{ t('grants.desc') }}</p>
+
+        <section class="wf-grants-group">
+          <h4>{{ t('grants.caseScopedTitle') }}</h4>
+          <p class="wf-grants-hint">{{ t('grants.caseScopedHint') }}</p>
+          <projection slot="grantCaseScopedSteps"></projection>
+        </section>
+
+        <section class="wf-grants-group">
+          <h4>{{ t('grants.inForceTitle') }}</h4>
+          <p class="wf-grants-hint">{{ t('grants.inForceHint') }}</p>
+          <projection slot="grantInForce"></projection>
+        </section>
+
+        <section class="wf-grants-group">
+          <h4>{{ t('grants.supersededTitle') }}</h4>
+          <p class="wf-grants-hint">{{ t('grants.supersededHint') }}</p>
+          <projection slot="grantSuperseded"></projection>
+        </section>
+
+        <section class="wf-grants-group">
+          <h4>{{ t('grants.directTitle') }}</h4>
+          <p class="wf-grants-hint">{{ t('grants.directHint') }}</p>
+          <projection slot="grantDirect"></projection>
+        </section>
+      </div>
+      <template #footer>
+        <div class="wf-dialog-footer">
+          <sdk-button @click="refresh">{{ t('grants.refresh') }}</sdk-button>
+          <sdk-button type="primary" @click="closeGrants">{{ t('action.close') }}</sdk-button>
+        </div>
+      </template>
+    </sdk-dialog>
+  </div>
+</div>

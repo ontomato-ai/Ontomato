@@ -98,7 +98,6 @@ const pages: readonly ManagerNavigationPage[] = [
   page(managerPaths.objects, "nav.objectTypes", Boxes, "ontology", MODELING),
   page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING),
   page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING),
-  page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"]),
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
   // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
@@ -114,6 +113,7 @@ const entries: readonly ManagerEntryRow[] = [
   { path: managerPaths.metrics, icon: ChartColumn },
   { path: managerPaths.functions, icon: SquareFunction },
   { path: managerPaths.actions, icon: MousePointerClick },
+  { path: managerPaths.workflows, icon: GitBranch },
   { path: managerPaths.triggers, icon: AlarmClock },
   { path: routes.ontologySkills.path, icon: Puzzle },
   { path: managerPaths.capabilityMap, icon: Share2 },

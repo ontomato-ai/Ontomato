@@ -257,34 +257,6 @@ export interface WorkflowRecord {
   reviewedBy?: string | null;
 }
 
-/** A capability grant and its current publication status. */
-export interface CapabilityGrantRecord {
-  roleId?: string | null;
-  roleCode?: string | null;
-  capabilityKind?: string | null;
-  capabilityId?: string | null;
-  capabilityVersion?: string | null;
-  /**
-   * The workflow whose activation wrote this row; null for a grant made directly.
-   *
-   * Without it a revision number alone says nothing: "version 1" is a different revision in every
-   * workflow, so a page that groups grants by revision has to group by workflow first.
-   */
-  workflowId?: string | null;
-  activatedByWorkflowVersion?: string | null;
-  inForce: boolean;
-  scope: { kind: WorkflowScope; field?: string; className?: string };
-  stepNo?: number | null;
-}
-
-/** One subject of the domain and the roles in effect for them here. */
-export interface SubjectRecord {
-  id: string;
-  loginCode?: string | null;
-  displayName?: string | null;
-  roleIds?: string[];
-}
-
 export type ManagerClient = ReturnType<typeof createManagerClient>;
 export type ManagerRequest = ReturnType<typeof createManagerRequest>;
 
@@ -690,44 +662,6 @@ export function createManagerClient(
     return source as WorkflowRecord[];
   }
 
-  /** Create (no id) or edit a draft workflow. A draft grants nothing until it is activated. */
-  function saveWorkflow(workflow: WorkflowRecord) {
-    return post("/workflow/save", { ...workflow });
-  }
-
-  /** Activation freezes a numbered revision and writes the grants its steps name. */
-  function activateWorkflow(id: string) {
-    return post("/workflow/activate", { id });
-  }
-
-  /** Deactivation withdraws only the grants the active revision wrote. */
-  function deactivateWorkflow(id: string) {
-    return post("/workflow/deactivate", { id });
-  }
-
-  function deleteWorkflow(id: string) {
-    return post("/workflow/delete", { id });
-  }
-
-  /**
-   * The capability grants in force in this domain.
-   *
-   * The executor only ever asks "may this subject run this action", so without this the stored grants
-   * are write-only from the product's side and a published revision cannot be audited from the UI.
-   */
-  async function loadCapabilityGrants(): Promise<CapabilityGrantRecord[]> {
-    const response = await post("/workflow/grants", {});
-    const source = Array.isArray(response.data) ? response.data : [];
-    return source as CapabilityGrantRecord[];
-  }
-
-  /** The domain's subjects with their effective roles; provenance ids resolve to names through this. */
-  async function loadSubjects(): Promise<SubjectRecord[]> {
-    const response = await post("/workflow/subjects", {});
-    const source = Array.isArray(response.data) ? response.data : [];
-    return source as SubjectRecord[];
-  }
-
   /**
    * The domain's triggers, from the capability controller that owns them.
    *
@@ -777,11 +711,5 @@ export function createManagerClient(
     queryInstanceInfo,
     listDataAdapters,
     loadWorkflows,
-    saveWorkflow,
-    activateWorkflow,
-    deactivateWorkflow,
-    deleteWorkflow,
-    loadCapabilityGrants,
-    loadSubjects,
   };
 }
