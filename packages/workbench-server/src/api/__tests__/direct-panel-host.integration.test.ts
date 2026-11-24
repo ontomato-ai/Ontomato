@@ -407,7 +407,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
   const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
   const bundle = path.join(contentRoot, "ontology-catalogues");
   const catalogues = ["projections", "panels", "applications"];
-  const shipped = [...catalogues, "projection-detail", "panel-detail", "application-detail", "agent-settings"];
+  const shipped = [...catalogues, "projection-detail", "panel-detail", "application-detail", "agent-settings", "agent-detail"];
   await mkdir(bundle);
   await writeFile(path.join(bundle, "index.json"), JSON.stringify(shipped));
   const sources = new URL("../../../../ontology-manager/resources/builtin-panels/", import.meta.url);
@@ -418,13 +418,29 @@ it("registers the shipped ontology catalogues with addressable creation, preview
   const settingsResponse = await request("GET", "product-panels/builtin-product-agent-settings");
   expect(settingsResponse.status).toBe(200);
   const { panel: settings } = productPanelResponseSchema.parse(await settingsResponse.json());
-  expect(settings.manifest.state.mode).toMatchObject({ type: { kind: "scalar", type: "string" }, deepLink: true });
-  const formTarget = settings.manifest.members.form!.target;
+  expect(settings.manifest.state.search).toMatchObject({ type: { kind: "scalar", type: "string" }, deepLink: true });
+  expect(settings.manifest.state.creating).toMatchObject({ type: { kind: "scalar", type: "boolean" }, deepLink: false });
+  expect(settings.manifest.state.detailPath).toMatchObject({ type: { kind: "scalar", type: "string" }, external: true });
+  const createFormTarget = settings.manifest.members.createForm!.target;
+  expect(createFormTarget).toHaveProperty("projectionId");
+  if (!("projectionId" in createFormTarget)) throw new Error("Agent catalog must publish its createForm projection");
+  const createFormResponse = await request("GET", `product-projections/${createFormTarget.projectionId}`);
+  expect(productProjectionResponseSchema.parse(await createFormResponse.json()).projection).toMatchObject({
+    visibility: "platform", data: { createForm: { read: "createForm" } },
+    operations: { save: { operation: { id: "platform:AgentDefinition.save" } } },
+  });
+
+  const agentDetailResponse = await request("GET", "product-panels/builtin-product-agent-detail");
+  expect(agentDetailResponse.status).toBe(200);
+  const { panel: agentDetail } = productPanelResponseSchema.parse(await agentDetailResponse.json());
+  expect(agentDetail.manifest.state.selected).toMatchObject({ type: { kind: "object", objectType: "platform:AgentDefinition" }, deepLink: true });
+  expect(agentDetail.manifest.state.catalogPath).toMatchObject({ type: { kind: "scalar", type: "string" }, external: true });
+  const formTarget = agentDetail.manifest.members.form!.target;
   expect(formTarget).toHaveProperty("projectionId");
-  if (!("projectionId" in formTarget)) throw new Error("Agent settings must publish its form projection");
+  if (!("projectionId" in formTarget)) throw new Error("Agent detail must publish its form projection");
   const formResponse = await request("GET", `product-projections/${formTarget.projectionId}`);
   expect(productProjectionResponseSchema.parse(await formResponse.json()).projection).toMatchObject({
-    visibility: "platform", data: { form: { read: "form" }, createForm: { read: "createForm" } },
+    visibility: "platform", data: { form: { read: "form" } },
     operations: { save: { operation: { id: "platform:AgentDefinition.save" } } },
   });
   for (const [slot, slotName, ownerType] of [
@@ -433,8 +449,8 @@ it("registers the shipped ontology catalogues with addressable creation, preview
     ["tools", "#field-enabledMcpServiceIds", "platform:McpServiceOption"],
     ["executor", "#field-executionUserId", "platform:User"],
   ]) {
-    const member = settings.manifest.members[slot];
-    expect(settings.content.html).toContain(slotName);
+    const member = agentDetail.manifest.members[slot];
+    expect(agentDetail.content.html).toContain(slotName);
     if (!member || !("projectionId" in member.target)) throw new Error(`Expected a projection for ${slot}`);
     const response = await request("GET", `product-projections/${member.target.projectionId}`);
     expect(productProjectionResponseSchema.parse(await response.json()).projection).toMatchObject({
@@ -445,8 +461,8 @@ it("registers the shipped ontology catalogues with addressable creation, preview
       },
     });
   }
-  const scope = settings.manifest.members.scope;
-  expect(settings.content.html).toContain("#field-classNames");
+  const scope = agentDetail.manifest.members.scope;
+  expect(agentDetail.content.html).toContain("#field-classNames");
   if (!scope || !("projectionId" in scope.target)) throw new Error("Expected a data-scope projection");
   const scopeResponse = await request("GET", `product-projections/${scope.target.projectionId}`);
   expect(productProjectionResponseSchema.parse(await scopeResponse.json()).projection).toMatchObject({

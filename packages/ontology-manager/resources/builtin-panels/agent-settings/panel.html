@@ -1,61 +1,107 @@
+<!--
+  Agents catalog panel: full-width searchable ObjectList table backed by platform:AgentDefinition.list,
+  plus a centered creation dialog for minimal required fields (/name and optional /description).
+  Shared by Ontology Manager (/ontology/agents -> /ontology/agents/detail) and
+  Agent Platform (/agents/settings -> /agents/settings/detail) via the entry-wired `detailPath` input.
+-->
 <style>
   [v-cloak] { display: none; }
-  .agent-settings-empty { color: var(--sdk-text-color-secondary); margin: 0; }
-  .agent-settings-detail { display: flex; flex-direction: column; gap: var(--page-content-gap); }
-  .agent-settings-head {
+  .agents-page {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--spacing-lg);
-    flex-wrap: wrap;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: agents-page / inline-size;
   }
-  .agent-settings-summary { flex: 1 1 auto; min-width: 0; }
-  .agent-settings-aside-head {
+  .agents-catalog {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-sm);
-    margin-bottom: var(--spacing-sm);
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + 56px);
   }
-  .agent-settings-aside-head h3 {
+  .agents-list-slot {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .agents-btn-icon {
+    margin-inline-end: 6px;
+    flex-shrink: 0;
+  }
+  .agents-forbidden {
     margin: 0;
-    font-size: var(--text-base);
-    font-weight: var(--font-semibold);
-    color: var(--sdk-text-color-primary);
+    padding: var(--spacing-lg) var(--page-gutter);
+    color: var(--sdk-color-danger-text);
+    font-size: var(--text-sm);
   }
-  .agent-settings-actions { display: flex; align-items: center; gap: var(--spacing-sm); flex: 0 0 auto; }
+  .agents-create-body .sdk-owner-form,
+  .agents-create-body .sdk-owner-form-inner {
+    height: auto;
+  }
+  .agents-create-body .sdk-owner-form-body {
+    overflow: visible;
+  }
+  .agents-create-body .sdk-owner-form-actions {
+    border-top: 0;
+    margin-block-start: var(--spacing-sm);
+    padding-block: var(--spacing-xs) 0;
+  }
+
+  @container agents-page (max-width: 560px) {
+    .agents-catalog {
+      padding-block: var(--spacing-md) calc(var(--page-content-gap) + 56px);
+    }
+  }
 </style>
 <div id="app" v-cloak>
-  <p v-if="listStatus === 'forbidden'" class="agent-settings-empty" role="alert">{{ t('agents.accessDenied') }}</p>
-  <two-pane-layout v-show="listVisible">
-    <template #aside>
-      <div v-if="listVisible" class="agent-settings-aside-head">
-        <h3>{{ t('agents.title') }}</h3>
-        <sdk-button type="primary" size="small" :disabled="mode === 'create'" @click="startCreate">{{ t('agents.new') }}</sdk-button>
+  <section class="agents-page">
+    <page-header :title="t('panel.name')" :description="t('panel.description')">
+      <template #actions>
+        <sdk-button text :aria-label="t('action.refresh')" :title="t('action.refresh')" @click="refresh">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+            <path d="M8 16H3v5" />
+          </svg>
+        </sdk-button>
+        <sdk-button v-if="listStatus !== 'forbidden'" type="primary" :disabled="creating" @click="startCreate">
+          <svg class="agents-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
+          </svg>
+          <span>{{ t("agents.new") }}</span>
+        </sdk-button>
+      </template>
+    </page-header>
+
+    <p v-if="listStatus === 'forbidden'" class="agents-forbidden" role="alert">{{ t("agents.accessDenied") }}</p>
+    <div v-show="listStatus !== 'forbidden'" class="agents-catalog">
+      <projection slot="list" class="agents-list-slot" @choose="openDetail"></projection>
+    </div>
+
+    <sdk-dialog
+      v-model="createDialog"
+      :title="t('agents.new')"
+      width="540px"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="agents-create-body">
+        <projection
+          v-if="createDialog"
+          slot="createForm"
+          @saved="onCreated"
+          @discarded="cancelCreate"
+          @cancel="cancelCreate"
+        >
+          <template #default>
+            <object-form-fields :fields="['/name', '/description']"></object-form-fields>
+          </template>
+        </projection>
       </div>
-      <projection slot="list"></projection>
-    </template>
-    <template v-if="listVisible">
-      <p v-if="mode === 'list'" class="agent-settings-empty">{{ t('agents.choose') }}</p>
-      <div v-show="mode !== 'list'" class="agent-settings-detail">
-        <div class="agent-settings-head">
-          <projection v-if="mode === 'edit'" slot="summary" class="agent-settings-summary"></projection>
-          <span v-else class="agent-settings-summary"></span>
-          <div class="agent-settings-actions">
-            <sdk-button text size="small" @click="viewType">{{ t('agents.viewType') }}</sdk-button>
-            <projection v-if="selectedReady" slot="remove"></projection>
-          </div>
-        </div>
-        <section-group v-if="formMounted" :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
-          <projection slot="form">
-            <template #field-modelSelection.modelId><projection slot="model"></projection></template>
-            <template #field-skills><projection slot="skills"></projection></template>
-            <template #field-enabledMcpServiceIds><projection slot="tools"></projection></template>
-            <template #field-executionUserId><projection slot="executor"></projection></template>
-            <template #field-classNames><projection slot="scope"></projection></template>
-          </projection>
-        </section-group>
-      </div>
-    </template>
-  </two-pane-layout>
+    </sdk-dialog>
+  </section>
 </div>

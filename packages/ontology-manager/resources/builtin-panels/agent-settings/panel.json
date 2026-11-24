@@ -1,19 +1,30 @@
 {
   "manifest": {
     "state": {
-      "selected": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:AgentDefinition"
-        },
-        "deepLink": true
-      },
-      "mode": {
+      "search": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": true
+        "deepLink": true,
+        "default": ""
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false,
+        "default": false
+      },
+      "detailPath": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "external": true,
+        "default": "/ontology/agents/detail"
       }
     },
     "members": {
@@ -24,133 +35,190 @@
           "rows": "list"
         },
         "state": {
-          "selected": "selected"
+          "search": "search"
         },
         "config": {
-          "subtitleField": "description",
-          "statusField": "enabled",
-          "emptyText": "agents.empty"
-        },
-        "id": "builtin-product-06a3a7cc-6f27-4edf-9095-a01e34861c57"
-      },
-      "summary": {
-        "component": "ObjectSummary",
-        "type": "platform:AgentDefinition",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
-        "config": {
-          "fields": [
-            "description",
-            "enabled",
-            "category"
+          "layout": "table",
+          "showChevron": true,
+          "fallbackToFirst": false,
+          "searchPlaceholder": "search.placeholder",
+          "emptyText": "agents.empty",
+          "noMatchText": "agents.noMatch",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "col.name",
+              "minWidth": 200
+            },
+            {
+              "key": "category",
+              "labelKey": "col.category",
+              "kind": "tag",
+              "width": 120
+            },
+            {
+              "key": "enabled",
+              "labelKey": "col.enabled",
+              "kind": "tag",
+              "width": 100
+            },
+            {
+              "key": "description",
+              "labelKey": "col.description",
+              "emptyKey": "col.emptyDash",
+              "minWidth": 240
+            }
           ]
         },
-        "id": "builtin-product-0a349e62-965d-485b-b72a-86005fc4d0dc"
+        "name": "智能体目录",
+        "description": "按名称、分类或说明搜索的整宽智能体表格，点行进入智能体详情。",
+        "id": "builtin-product-06a3a7cc-6f27-4edf-9095-a01e34861c57"
       },
-      "form": {
+      "createForm": {
         "component": "ObjectForm",
         "type": "platform:AgentDefinition",
-        "target": "selected",
         "data": {
-          "form": "form",
           "createForm": "createForm"
         },
         "operation": "platform:AgentDefinition.save",
-        "id": "builtin-product-798632e2-0ae8-4b4b-9dfe-602940dd6ef5"
-      },
-      "remove": {
-        "component": "OperationButton",
-        "type": "platform:AgentDefinition",
-        "target": "selected",
-        "operation": "agents.delete",
         "config": {
-          "type": "danger"
+          "actions": "create-only"
         },
-        "id": "builtin-product-8a1b2e98-239b-4c0b-878a-5cfa141eeed1"
-      },
-      "model": {
-        "component": "ReferencePicker",
-        "type": "platform:ModelOption",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "id": "builtin-product-cc37f7cd-0a61-4b15-a2a1-64b2d571dc08"
-      },
-      "skills": {
-        "component": "ReferencePicker",
-        "type": "platform:Skill",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "id": "builtin-product-b79c7ca3-8287-4fd7-97d5-94c27a818455"
-      },
-      "tools": {
-        "component": "ReferencePicker",
-        "type": "platform:McpServiceOption",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "id": "builtin-product-733252d6-8534-4654-944a-a1f5f8ce0a27"
-      },
-      "executor": {
-        "component": "ReferencePicker",
-        "type": "platform:User",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "id": "builtin-product-cddb5180-ef56-46cc-a1b1-f933d08f904a"
-      },
-      "scope": {
-        "component": "ObjectGraph",
-        "data": {
-          "nodes": {
-            "type": "platform:ObjectType",
-            "read": "list"
-          },
-          "edges": {
-            "type": "platform:Relationship",
-            "read": "list"
-          }
-        },
-        "config": {
-          "edgeEnds": {
-            "source": "/fromclass",
-            "target": "/toclass"
-          }
-        },
-        "id": "builtin-product-4476e525-bcc6-47a8-9cfa-ae78ecabb8d6"
+        "name": "新建智能体表单",
+        "description": "新建智能体弹窗表单，按属主校验仅收集名称与可选说明，创建成功后跳转详情继续配置。",
+        "id": "builtin-product-6e8b9d31-42c5-4a8e-9b71-2d4f8c1e3a59"
       }
     }
   },
   "content": {
     "messages": {
       "en": {
-        "panel.name": "Agent settings",
-        "agents.title": "Agents",
+        "panel.name": "Agents",
+        "panel.description": "Browse, search and create domain agents, or select one to configure its instructions, model, skills and data scope.",
+        "action.refresh": "Refresh",
         "agents.new": "New agent",
-        "agents.choose": "Select an agent on the left, or create one.",
         "agents.empty": "No agents yet.",
-        "agents.creating": "New agent",
-        "agents.definition": "Agent definition",
-        "agents.viewType": "View class",
-        "agents.accessDenied": "Reading and changing agent definitions requires the analysis-agent permission."
+        "agents.noMatch": "No matching agents.",
+        "agents.created": "Agent created.",
+        "agents.accessDenied": "Reading and changing agent definitions requires the analysis-agent permission.",
+        "search.placeholder": "Search agents by name, category or description",
+        "col.name": "Name",
+        "col.category": "Category",
+        "col.enabled": "Status",
+        "col.description": "Description",
+        "col.emptyDash": "-"
       },
       "zh-CN": {
-        "panel.name": "智能体设置",
-        "agents.title": "智能体",
+        "panel.name": "智能体",
+        "panel.description": "浏览、搜索并新建域内智能体，点击条目进入详情配置提示词、模型、技能与数据范围。",
+        "action.refresh": "刷新",
         "agents.new": "新建智能体",
-        "agents.choose": "在左侧选择一个智能体，或新建一个。",
-        "agents.empty": "还没有智能体。",
-        "agents.creating": "新建智能体",
-        "agents.definition": "智能体定义",
-        "agents.viewType": "查看所属类",
-        "agents.accessDenied": "读取和修改智能体定义需要 analysis-agent（业务智能体）权限。"
+        "agents.empty": "暂无智能体。",
+        "agents.noMatch": "未找到匹配的智能体。",
+        "agents.created": "智能体已创建。",
+        "agents.accessDenied": "读取和修改智能体定义需要 analysis-agent（业务智能体）权限。",
+        "search.placeholder": "按名称、分类或说明搜索智能体",
+        "col.name": "名称",
+        "col.category": "分类",
+        "col.enabled": "状态",
+        "col.description": "说明",
+        "col.emptyDash": "-"
+      },
+      "zh-TW": {
+        "panel.name": "智慧體",
+        "panel.description": "瀏覽、搜尋並建立域內智慧體，點擊條目進入詳情設定提示詞、模型、技能與資料範圍。",
+        "action.refresh": "重新整理",
+        "agents.new": "新建智慧體",
+        "agents.empty": "尚無智慧體。",
+        "agents.noMatch": "未找到相符的智慧體。",
+        "agents.created": "已建立智慧體。",
+        "agents.accessDenied": "讀取與修改智慧體定義需要 analysis-agent 權限。",
+        "search.placeholder": "依名稱、分類或說明搜尋智慧體",
+        "col.name": "名稱",
+        "col.category": "分類",
+        "col.enabled": "狀態",
+        "col.description": "說明",
+        "col.emptyDash": "-"
+      },
+      "ja": {
+        "panel.name": "エージェント",
+        "panel.description": "ドメイン内のエージェントを検索・作成し、選択して指示・モデル・スキル・データ範囲を設定します。",
+        "action.refresh": "更新",
+        "agents.new": "新規エージェント",
+        "agents.empty": "エージェントはまだありません。",
+        "agents.noMatch": "一致するエージェントはありません。",
+        "agents.created": "エージェントを作成しました。",
+        "agents.accessDenied": "エージェント定義の参照・変更には analysis-agent 権限が必要です。",
+        "search.placeholder": "名前・分類・説明でエージェントを検索",
+        "col.name": "名前",
+        "col.category": "分類",
+        "col.enabled": "状態",
+        "col.description": "説明",
+        "col.emptyDash": "-"
+      },
+      "ar": {
+        "panel.name": "الوكلاء",
+        "panel.description": "استعرض الوكلاء وابحث عنها وأنشئ وكلاء جددًا، أو اختر وكيلًا لضبط تعليماته ونموذجه ومهاراته ونطاق بياناته.",
+        "action.refresh": "تحديث",
+        "agents.new": "وكيل جديد",
+        "agents.empty": "لا يوجد وكلاء بعد.",
+        "agents.noMatch": "لا يوجد وكلاء مطابقون.",
+        "agents.created": "تم إنشاء الوكيل.",
+        "agents.accessDenied": "تتطلب قراءة تعريفات الوكلاء وتعديلها صلاحية analysis-agent.",
+        "search.placeholder": "ابحث عن الوكلاء بالاسم أو الفئة أو الوصف",
+        "col.name": "الاسم",
+        "col.category": "الفئة",
+        "col.enabled": "الحالة",
+        "col.description": "الوصف",
+        "col.emptyDash": "-"
+      },
+      "fr": {
+        "panel.name": "Agents",
+        "panel.description": "Parcourez, recherchez et créez les agents du domaine, ou ouvrez-en un pour configurer ses instructions, son modèle, ses compétences et sa portée.",
+        "action.refresh": "Actualiser",
+        "agents.new": "Nouvel agent",
+        "agents.empty": "Aucun agent pour le moment.",
+        "agents.noMatch": "Aucun agent correspondant.",
+        "agents.created": "Agent créé.",
+        "agents.accessDenied": "La lecture et la modification des définitions d'agents nécessitent l'autorisation analysis-agent.",
+        "search.placeholder": "Rechercher par nom, catégorie ou description",
+        "col.name": "Nom",
+        "col.category": "Catégorie",
+        "col.enabled": "Statut",
+        "col.description": "Description",
+        "col.emptyDash": "-"
+      },
+      "de": {
+        "panel.name": "Agenten",
+        "panel.description": "Domänen-Agenten durchsuchen, anlegen oder öffnen, um Anweisungen, Modell, Skills und Datenbereich zu konfigurieren.",
+        "action.refresh": "Aktualisieren",
+        "agents.new": "Neuer Agent",
+        "agents.empty": "Noch keine Agenten.",
+        "agents.noMatch": "Keine passenden Agenten.",
+        "agents.created": "Agent erstellt.",
+        "agents.accessDenied": "Zum Lesen und Ändern von Agentendefinitionen ist die Berechtigung analysis-agent erforderlich.",
+        "search.placeholder": "Agenten nach Name, Kategorie oder Beschreibung suchen",
+        "col.name": "Name",
+        "col.category": "Kategorie",
+        "col.enabled": "Status",
+        "col.description": "Beschreibung",
+        "col.emptyDash": "-"
+      },
+      "it": {
+        "panel.name": "Agenti",
+        "panel.description": "Esplora, cerca e crea gli agenti del dominio, oppure aprine uno per configurare istruzioni, modello, skill e ambito dati.",
+        "action.refresh": "Aggiorna",
+        "agents.new": "Nuovo agente",
+        "agents.empty": "Nessun agente presente.",
+        "agents.noMatch": "Nessun agente corrispondente.",
+        "agents.created": "Agente creato.",
+        "agents.accessDenied": "La lettura e la modifica delle definizioni degli agenti richiedono l'autorizzazione analysis-agent.",
+        "search.placeholder": "Cerca agenti per nome, categoria o descrizione",
+        "col.name": "Nome",
+        "col.category": "Categoria",
+        "col.enabled": "Stato",
+        "col.description": "Descrizione",
+        "col.emptyDash": "-"
       }
     }
   }

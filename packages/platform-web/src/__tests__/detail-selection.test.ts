@@ -128,11 +128,23 @@ it("opens a skill's detail address and selected catalog links at the non-menu sk
   expect(open("/ontology/skills/detail?selected=code-review")).toBeNull();
 });
 
-it.each(["/ontology/agents", "/agents/settings"])("routes the settings detail at %s to the shared panel state", (prefix) => {
-  expect(open(`${prefix}/new`)).toEqual({ path: prefix, state: { mode: "create" } });
+it.each(["/ontology/agents", "/agents/settings"])("routes agent detail, legacy selected links, and /new at %s to the two-entry catalog and detail panels", (prefix) => {
+  expect(open(`${prefix}/new`)).toEqual({ path: prefix, state: {} });
   expect(open(`${prefix}/agent-1`)).toEqual({
-    path: prefix, state: { mode: "edit", selected: "agent-1" },
+    path: `${prefix}/detail`, state: { selected: "agent-1" },
   });
+  expect(open(`${prefix}?selected=agent-1`)).toEqual({
+    path: `${prefix}/detail`, state: { selected: "agent-1" },
+  });
+  expect(open(`${prefix}?selected=platform%3AAgentDefinition~agent-2`)).toEqual({
+    path: `${prefix}/detail`, state: { selected: "agent-2" },
+  });
+  expect(open(`${prefix}?selected=platform%3AAgentDefinition~`)).toBeNull();
+  // The catalog itself (bare or searching) and the detail entry itself are not redirected.
+  expect(open(prefix)).toBeNull();
+  expect(open(`${prefix}?search=ops`)).toBeNull();
+  expect(open(`${prefix}/detail`)).toBeNull();
+  expect(open(`${prefix}/detail?selected=agent-1`)).toBeNull();
 });
 
 it.each(["capabilities", "skills", "mcp", "models"])("leaves the separate agent platform %s page address alone", (page) => {

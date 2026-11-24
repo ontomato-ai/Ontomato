@@ -105,13 +105,13 @@ async function openAddress(
 
 describe("the agent platform's settings addresses", () => {
   it.each([
-    ["/agent-builder/new", { mode: "create" }],
-    ["/agent-builder/agent-42", { mode: "edit", selected: "agent-42" }],
-    ["/agents/settings/new", { mode: "create" }],
-    ["/agents/settings/agent-42", { mode: "edit", selected: "agent-42" }],
-  ])("opens %s on the settings panel with its state", async (path, state) => {
+    ["/agent-builder/new", "/agents/settings", {}],
+    ["/agent-builder/agent-42", "/agents/settings/detail", { selected: "agent-42" }],
+    ["/agents/settings/new", "/agents/settings", {}],
+    ["/agents/settings/agent-42", "/agents/settings/detail", { selected: "agent-42" }],
+  ])("opens %s on %s with state %o", async (path, expectedPath, state) => {
     const { router } = await openAddress(path);
-    expect(router.currentRoute.value.path).toBe("/agents/settings");
+    expect(router.currentRoute.value.path).toBe(expectedPath);
     expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual(state);
   });
 

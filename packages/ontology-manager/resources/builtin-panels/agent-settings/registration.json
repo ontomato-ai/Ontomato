@@ -3,8 +3,8 @@
     {
       "id": "builtin-product-agent-settings",
       "input": {
-        "name": "智能体设置",
-        "description": "列出并编辑域内的智能体定义"
+        "name": "智能体",
+        "description": "域内全部智能体的目录：搜索、新建或点选进入详情配置"
       }
     }
   ]

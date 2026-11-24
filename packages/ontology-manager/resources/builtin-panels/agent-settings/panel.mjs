@@ -1,124 +1,71 @@
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
 import { mountPanel, panelAddress, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
-const AGENT = "platform:AgentDefinition";
-const CAPABILITY_MAP = "/ontology/assets/capability-map";
+const DEFAULT_DETAIL_PATH = "/ontology/agents/detail";
 
+/*
+ * Agents catalog: full-width searchable table without default row selection, plus a centered
+ * creation dialog collecting only what the owner requires (/name, plus optional /description).
+ * Navigating to detail uses the application-entry-wired `detailPath` input so the same panel
+ * serves both /ontology/agents and /agents/settings under their own entry permissions.
+ */
 await mountPanel({
   setup() {
-    const { instance, navigate } = usePanelContext();
-    const state = instance.state;
-    const selected = computed(() => state.values.value.selected);
-    const mode = computed(() => state.values.value.mode ?? "list");
+    const { instance, navigate, notify, t } = usePanelContext();
+    const values = instance.state.values;
+
     const listStatus = usePanelOutput("list", "status");
-    const listedAgents = usePanelOutput("list", "listed");
-    const summaryLabel = usePanelOutput("summary", "label");
-    const listVersion = ref(0);
-
-    const listVisible = computed(
-      () => listStatus.value !== null && listStatus.value !== "loading" && listStatus.value !== "forbidden",
-    );
-    const selectedReady = computed(() => mode.value === "edit" && Boolean(summaryLabel.value));
-    const formDirty = computed(() => Boolean(instance.forms.handle("form")?.dirty.value));
-    const formMounted = computed(
-      () => mode.value === "create" || (mode.value === "edit" && (selectedReady.value || formDirty.value)),
-    );
-
-    let pendingLeaveCreate = false;
-    let pendingLeaveEditKey = null;
-    let pendingFallbackRemovedKey = null;
-    let fallbackStartVersion = 0;
-    let fallbackSawLoading = false;
-
-    watch(formDirty, (dirty) => {
-      if (!dirty) {
-        pendingLeaveCreate = false;
-        pendingLeaveEditKey = null;
-      }
+    const detailPath = computed(() => {
+      const configured = values.value.detailPath;
+      return typeof configured === "string" && configured.startsWith("/") ? configured : DEFAULT_DETAIL_PATH;
     });
 
-    watch(selected, (agent, prev) => {
-      if (agent) {
-        pendingFallbackRemovedKey = null;
-        fallbackSawLoading = false;
-        if (pendingLeaveEditKey !== null && agent.primaryKey === pendingLeaveEditKey) {
-          pendingLeaveEditKey = null;
-        } else if (state.values.value.mode === "create" && formDirty.value) {
-          pendingLeaveCreate = true;
-        }
-        state.set("mode", "edit");
-      } else if (pendingLeaveCreate && formDirty.value) {
-        pendingLeaveCreate = false;
-        state.set("mode", "create");
-      } else if (state.values.value.mode === "edit") {
-        // When the host clears `selected` after `remove.delete` (`affected.removed`),
-        // remember the removed key and wait for the refreshed list before selecting the first remaining agent.
-        if (prev?.primaryKey) {
-          pendingFallbackRemovedKey = prev.primaryKey;
-          fallbackStartVersion = listVersion.value;
-          fallbackSawLoading = listStatus.value === "loading" || listedAgents.value === null;
-        }
-        state.set("mode", "list");
-      }
-    }, { immediate: true });
+    const creating = computed(() => values.value.creating === true);
+    const setCreating = (open) => instance.state.set("creating", Boolean(open));
 
-    watch(listedAgents, (listed) => {
-      if (Array.isArray(listed)) {
-        listVersion.value += 1;
-      } else if (pendingFallbackRemovedKey !== null) {
-        fallbackSawLoading = true;
-      }
-    }, { immediate: true });
+    const createDialog = computed({
+      get: () => creating.value,
+      set: (open) => {
+        if (Boolean(open) !== creating.value) setCreating(Boolean(open));
+      },
+    });
 
-    watch([listStatus, listedAgents, listVersion], ([status, listed]) => {
-      if (status === "loading") {
-        if (pendingFallbackRemovedKey !== null) fallbackSawLoading = true;
-        return;
-      }
-      if (status !== "ready" && status !== "empty") return;
-      // Never replace an explicit selection (e.g. a deep link to a deleted or forbidden agent)
-      // with another agent; let the summary projection report the owner's reason in place.
-      if (state.values.value.selected) return;
+    function detailAddress(primaryKey) {
+      return panelAddress(detailPath.value, { selected: primaryKey });
+    }
 
-      if (status === "ready" && !Array.isArray(listed)) return;
-      const agents = status === "empty" ? [] : listed;
-      if (state.values.value.mode == null) {
-        if (status === "ready" && agents.length) {
-          state.set("selected", { className: AGENT, primaryKey: agents[0].primaryKey });
-        }
-        return;
-      }
-
-      if (pendingFallbackRemovedKey !== null && state.values.value.mode === "list") {
-        if (status === "empty") {
-          pendingFallbackRemovedKey = null;
-          fallbackSawLoading = false;
-          return;
-        }
-        const containsRemoved = agents.some((item) => item?.primaryKey === pendingFallbackRemovedKey);
-        if (containsRemoved) return;
-        const refreshed = listVersion.value > fallbackStartVersion || fallbackSawLoading;
-        if (!refreshed) return;
-        pendingFallbackRemovedKey = null;
-        fallbackSawLoading = false;
-        if (agents.length) {
-          state.set("selected", { className: AGENT, primaryKey: agents[0].primaryKey });
-        }
-      }
-    }, { immediate: true });
-
-    function viewType() {
-      const address = panelAddress(CAPABILITY_MAP, { mode: "type", selectedType: AGENT });
-      void navigate(address);
+    function openDetail(item) {
+      if (!item?.primaryKey) return;
+      if (creating.value) setCreating(false);
+      void navigate(detailAddress(item.primaryKey)).catch(() => undefined);
     }
 
     function startCreate() {
-      pendingFallbackRemovedKey = null;
-      fallbackSawLoading = false;
-      pendingLeaveEditKey = selected.value?.primaryKey && formDirty.value ? selected.value.primaryKey : null;
-      state.setState({ selected: null, mode: "create" });
+      setCreating(true);
     }
 
-    return { mode, listStatus, listVisible, selectedReady, formMounted, viewType, startCreate };
+    function cancelCreate() {
+      setCreating(false);
+    }
+
+    function onCreated(saved) {
+      setCreating(false);
+      notify({ kind: "success", text: t("agents.created") });
+      if (saved?.primaryKey) {
+        void navigate(detailAddress(saved.primaryKey)).catch(() => undefined);
+      }
+    }
+
+    return {
+      t,
+      listStatus,
+      creating,
+      createDialog,
+      openDetail,
+      startCreate,
+      cancelCreate,
+      onCreated,
+      refresh: () => instance.refreshObjects(),
+    };
   },
 });
