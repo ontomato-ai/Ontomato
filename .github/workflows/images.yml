@@ -186,6 +186,7 @@ jobs:
           grep -Fq 'Docker capability/seccomp: missing effective CAP_SYS_ADMIN' <<< "$diagnostic"
           docker compose up -d --wait --wait-timeout 300
           docker compose logs --no-log-prefix agent-runtime | grep -F 'private channel: fd 3 exchanged data in both directions'
+          docker compose exec -T agent-runtime node --import tsx --input-type=module < ../scripts/agent-runtime-pi-smoke.mjs
           for path in / /ontology-manager/ /api/data-query/health; do
             curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors \
               --output /dev/null "http://127.0.0.1:3000$path"
