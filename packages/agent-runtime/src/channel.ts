@@ -1,21 +1,85 @@
 import { randomUUID } from "node:crypto";
-import { Type } from "typebox";
 import { z } from "zod";
 import { agentChannelCommandSchema, agentDeliverySchema, agentProviderAcknowledgementSchema, agentSteerPreparationSchema, agentDirectorySchema, type AgentRunIntent, type AgentRunContext, type AgentExecutionRef, type AgentSessionRef, type AgentInput, type AgentNotification, type AgentPrepareRequest, type AgentActorRef, type AgentCredential, type AgentInputDelivery } from "@ontomato/contracts/agent-channel";
 import type { AgentUserQuestionRequest } from "@ontomato/contracts/agent-user-questions";
 import { isDirectUserRun, MID_ROUND_RESULT_NOTIFICATION_FACT } from "@ontomato/contracts/agent-visibility";
 import type { PresentationBinding } from "@ontomato/contracts/agent-presentation";
 import { runtimeStartRunRequestSchema, type RuntimeRun } from "@ontomato/contracts/agent-runtime";
-import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
+import type { RuntimeMessage, RuntimeToolDeclaration } from "@ontomato/contracts/agent-runtime-messages";
+import type { RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
 import type { AgentTask } from "@ontomato/contracts/agent-tasks";
 import type { Message } from "@earendil-works/pi-ai";
-import type { AgentTool } from "./core/pi/types";
+import type { PlatformTool } from "./platform-tools";
 import type { AgentRuntime } from "./runtime";
 import type { Scope, MessageRow } from "./store";
 import { ChannelStore } from "./channel-store";
 import { RuntimeError, safeMessage } from "./errors";
 import { runtimeLogger, runtimeDiagnostic } from "./logging";
 import { datasetPayloadSchema } from "@ontomato/contracts/data-retrieval";
+
+const CHANNEL_TOOL_DESCRIPTION =
+  "Communicate with authorized agents. Each op accepts only its own fields, and the server rejects any other. list: query. start: agent, message, title, context; creates an independent child session, returns only acceptance (taskId, sessionRef, status), and runs asynchronously—context is passed only as the target's contextSchema declares. Its result will wake you with a notification when finished; if you need to wait for the child task, end this turn instead of polling with read or sleeping. send: session, message, steer, needsInput, replyTo, defaultAssumption, options; agent belongs to start only and must not be sent here. send addresses your creator or a child; any addressed input wakes an idle session or is consumed at a safe boundary. To add an ordinary message to a running recipient, set steer:true. replyTo is the id of a question the other party asked you, never a task id; it steers the answer into a running asker. Questions use needsInput with a default assumption and do not stop your work; options are allowed only with needsInput and mark exactly one isDefault, and session:\"parent\" in a conversation nobody delegated asks your user. read: taskId, files, view, cursor, limit; inspects an execution or downloads its delivered files after completion, not for polling progress. cancel: taskId; cancels the execution and its delegated descendants.";
+
+const CHANNEL_TOOL_PARAMETERS: RuntimeJsonObject = {
+  type: "object",
+  required: ["op"],
+  properties: {
+    op: { type: "string" },
+    agent: {
+      type: "object",
+      required: ["providerId", "agentId"],
+      properties: { providerId: { type: "string" }, agentId: { type: "string" } },
+    },
+    session: {
+      anyOf: [
+        {
+          type: "object",
+          required: ["providerId", "sessionId"],
+          properties: { providerId: { type: "string" }, sessionId: { type: "string" } },
+        },
+        { type: "string", const: "parent" },
+      ],
+    },
+    message: { type: "string" },
+    taskId: { type: "string" },
+    query: { type: "string" },
+    title: { type: "string" },
+    context: { type: "object", patternProperties: { "^.*$": {} } },
+    view: { type: "string" },
+    cursor: { type: "number" },
+    limit: { type: "number" },
+    steer: { type: "boolean" },
+    needsInput: { type: "boolean" },
+    files: { type: "boolean" },
+    replyTo: { type: "string" },
+    defaultAssumption: { type: "string" },
+    options: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["label"],
+        properties: {
+          label: { type: "string" },
+          description: { type: "string" },
+          isDefault: { type: "boolean" },
+        },
+      },
+    },
+  },
+};
+
+/** Returns the engine-neutral declaration for the agent delegation channel tool. */
+export function channelToolDeclaration(): RuntimeToolDeclaration {
+  return {
+    name: "agent",
+    description: CHANNEL_TOOL_DESCRIPTION,
+    parameters: CHANNEL_TOOL_PARAMETERS,
+  };
+}
+
+function requestSignal(signal?: AbortSignal): AbortSignal {
+  return signal ? AbortSignal.any([AbortSignal.timeout(30000), signal]) : AbortSignal.timeout(30000);
+}
 
 /** Include a small, complete dataset in the tool result so its consumer needs no second read. */
 function smallDataset(name: string, bytes: Buffer) {
@@ -83,9 +147,9 @@ export class AgentChannel {
     return provider;
   }
   scope(ref: AgentSessionRef, domainId: string): Scope { return { hostId: this.provider(ref.providerId).hostId, domainId }; }
-  private async post(port: { url: string; token: string }, path: string, body: unknown, domainId: string, credential?: AgentCredential) {
+  private async post(port: { url: string; token: string }, path: string, body: unknown, domainId: string, credential?: AgentCredential, signal?: AbortSignal) {
     const response = await fetch(port.url.replace(/\/$/, "") + path, {
-      method: "POST", redirect: "error", signal: AbortSignal.timeout(30000), headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": port.token, "X-Domain-Id": domainId, ...(credential?.token ? {tk:credential.token} : {}), ...(credential?.apiKey ? {"X-API-Key":credential.apiKey} : {}) },
+      method: "POST", redirect: "error", signal: requestSignal(signal), headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": port.token, "X-Domain-Id": domainId, ...(credential?.token ? {tk:credential.token} : {}), ...(credential?.apiKey ? {"X-API-Key":credential.apiKey} : {}) },
       body: JSON.stringify(body),
     });
     if (response.status === 401) throw new RuntimeError(401,"CALLER_CREDENTIAL_INVALID","The initiating credential is invalid or expired; please start again");
@@ -99,14 +163,14 @@ export class AgentChannel {
   private executionActor(intent: AgentRunIntent) {
     return intent.executionUserId ? {userId:intent.executionUserId,domainId:intent.channel.actor.domainId} : null;
   }
-  async file(intent:AgentRunIntent,fileId:string) {
+  async file(intent:AgentRunIntent,fileId:string,signal?:AbortSignal) {
     const provider=this.provider(intent.session.providerId);
-    const response=await fetch(provider.url.replace(/\/$/u,"")+"/read",{method:"POST",redirect:"error",signal:AbortSignal.timeout(30000),headers:{"Content-Type":"application/json",Accept:"application/octet-stream","X-Ontomato-Query-Service-Token":provider.token,"X-Domain-Id":intent.channel.actor.domainId},body:JSON.stringify({execution:{session:intent.session,runId:intent.id},actor:intent.channel.actor,executionActor:this.executionActor(intent),fileId})});
+    const response=await fetch(provider.url.replace(/\/$/u,"")+"/read",{method:"POST",redirect:"error",signal:requestSignal(signal),headers:{"Content-Type":"application/json",Accept:"application/octet-stream","X-Ontomato-Query-Service-Token":provider.token,"X-Domain-Id":intent.channel.actor.domainId},body:JSON.stringify({execution:{session:intent.session,runId:intent.id},actor:intent.channel.actor,executionActor:this.executionActor(intent),fileId})});
     if(!response.ok) { const failure=z.object({error:z.object({code:z.string(),message:z.string()})}).parse(await response.json());throw new RuntimeError(response.status,failure.error.code,failure.error.message); }
     return response;
   }
-  async callback(intent: AgentRunIntent, action: "settle" | "read" | "cancel") {
-    const value = await this.post(this.provider(intent.session.providerId), "/" + action, { execution: { session: intent.session, runId: intent.id }, actor: intent.channel.actor, executionActor: this.executionActor(intent) }, intent.channel.actor.domainId);
+  async callback(intent: AgentRunIntent, action: "settle" | "read" | "cancel", signal?: AbortSignal) {
+    const value = await this.post(this.provider(intent.session.providerId), "/" + action, { execution: { session: intent.session, runId: intent.id }, actor: intent.channel.actor, executionActor: this.executionActor(intent) }, intent.channel.actor.domainId, undefined, signal);
     return action === "read" ? value : agentProviderAcknowledgementSchema.parse(value);
   }
   private emitChange(scope: Scope, sessionId: string) { for (const listener of this.listeners.get(JSON.stringify([scope,sessionId])) ?? []) listener(); }
@@ -449,14 +513,21 @@ export class AgentChannel {
     return { role:"user", timestamp:message.timestamp,
       content:`[Agent notification: ${JSON.stringify({kind:message.kind,source:message.source,replyTo:message.replyTo,selectedOption:message.selectedOption,answerId:message.answerId,outcome:message.outcome})}]\n${content}${message.defaultAssumption ? `\nDefault assumption: ${message.defaultAssumption}` : ""}${fact}` };
   }
-  tool(scope: Scope, run: RuntimeRun): AgentTool {
+  tool(scope: Scope, run: RuntimeRun): PlatformTool {
     return {
-      name: "agent", label: "Agent", description: "Communicate with authorized agents. Each op accepts only its own fields, and the server rejects any other. list: query. start: agent, message, title, context; creates an independent child session, returns only acceptance (taskId, sessionRef, status), and runs asynchronously—context is passed only as the target's contextSchema declares. Its result will wake you with a notification when finished; if you need to wait for the child task, end this turn instead of polling with read or sleeping. send: session, message, steer, needsInput, replyTo, defaultAssumption, options; agent belongs to start only and must not be sent here. send addresses your creator or a child; any addressed input wakes an idle session or is consumed at a safe boundary. To add an ordinary message to a running recipient, set steer:true. replyTo is the id of a question the other party asked you, never a task id; it steers the answer into a running asker. Questions use needsInput with a default assumption and do not stop your work; options are allowed only with needsInput and mark exactly one isDefault, and session:\"parent\" in a conversation nobody delegated asks your user. read: taskId, files, view, cursor, limit; inspects an execution or downloads its delivered files after completion, not for polling progress. cancel: taskId; cancels the execution and its delegated descendants.",
-      parameters: Type.Object({ op: Type.String(), agent: Type.Optional(Type.Object({ providerId: Type.String(), agentId: Type.String() })), session: Type.Optional(Type.Union([Type.Object({ providerId: Type.String(), sessionId: Type.String() }),Type.Literal("parent")])), message: Type.Optional(Type.String()), taskId: Type.Optional(Type.String()), query: Type.Optional(Type.String()), title: Type.Optional(Type.String()), context: Type.Optional(Type.Record(Type.String(), Type.Unknown())), view: Type.Optional(Type.String()), cursor: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number()), steer: Type.Optional(Type.Boolean()), needsInput: Type.Optional(Type.Boolean()), files: Type.Optional(Type.Boolean()), replyTo: Type.Optional(Type.String()), defaultAssumption: Type.Optional(Type.String()), options: Type.Optional(Type.Array(Type.Object({label:Type.String(),description:Type.Optional(Type.String()),isDefault:Type.Optional(Type.Boolean())}))) }),
-      execute: async (_id, raw) => { const value = await this.execute(scope, run, raw); return { content: [{ type: "text", text: JSON.stringify(value) }], details: {} }; },
+      declaration: channelToolDeclaration(),
+      label: "Agent",
+      execute: async (call) => {
+        const value = await this.execute(scope, run, call.args, call.signal);
+        return {
+          result: { content: [{ type: "text", text: JSON.stringify(value) }], details: {} },
+          isError: false,
+        };
+      },
     };
   }
-  async execute(scope: Scope, run: RuntimeRun | ExternalAgentCaller, raw: unknown): Promise<unknown> {
+  async execute(scope: Scope, run: RuntimeRun | ExternalAgentCaller, raw: unknown, signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted();
     const command = agentChannelCommandSchema.parse(raw);
     const external="kind" in run?run:null;
     const current=external?null:run as RuntimeRun;
@@ -466,7 +537,7 @@ export class AgentChannel {
     const source:AgentExecutionRef|undefined=current?{session:{providerId:channel.agent!.providerId,sessionId:current.sessionId},runId:current.id}:undefined;
     if (command.op === "list") {
       const directories = await Promise.all((this.runtime.options.agentProviders ?? []).map(async provider => {
-        const result = agentDirectorySchema.parse(await this.post(provider,"/list",{ providerId: provider.id,actor: channel.actor,executionActor:current?.executionUserId ? {userId:current.executionUserId,domainId:scope.domainId} : null,language:run.language },scope.domainId, external?.credential ?? this.credential(current!.channel!)));
+        const result = agentDirectorySchema.parse(await this.post(provider,"/list",{ providerId: provider.id,actor: channel.actor,executionActor:current?.executionUserId ? {userId:current.executionUserId,domainId:scope.domainId} : null,language:run.language },scope.domainId, external?.credential ?? this.credential(current!.channel!), signal));
         if (result.agents.some(entry => entry.ref.providerId !== provider.id)) throw new RuntimeError(502,"INVALID_PROVIDER_DIRECTORY","A provider must list only its own agents");
         return result.agents;
       }));
@@ -515,10 +586,10 @@ export class AgentChannel {
     const intent = entry.intent;
     const questions=await this.facts.questions(entry.scope,{session:intent.session,runId:intent.id});
     if (intent.status === "starting" || ((intent.status === "failed" || intent.status === "cancelled") && intent.cancelMode!=="model" && !await this.facts.hasRun(entry.scope,intent.id))) return { taskId:intent.id,sessionRef:intent.session,status:intent.status,error:intent.error,questions,files:[] };
-    const result = agentDeliverySchema.parse(await this.callback(intent,"read"));
+    const result = agentDeliverySchema.parse(await this.callback(intent,"read",signal));
     const downloaded=[];
     if(command.files && source) for(const file of result.files) {
-      const response=await this.file(intent,file.id);
+      const response=await this.file(intent,file.id,signal);
       const bytes = Buffer.from(await response.arrayBuffer());
       const path = await this.runtime.importAgentFile(scope, source.runId, intent.id, file, bytes);
       const dataset = result.retrieval?.datasets.some(dataset => dataset.id === file.id)

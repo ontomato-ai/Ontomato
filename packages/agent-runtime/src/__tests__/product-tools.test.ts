@@ -7,7 +7,7 @@ it('calls the frozen host tool endpoint with its run-scoped delegation and repor
   const request={definition:{productTools:[{name:'product_count',description:'Count',inputSchema:{type:'object'},path:'/api/product-assets/profile/releases/12345678-1234-1234-1234-123456789012/tools/count'}]},environment:{values:{ONTOMATO_WORKBENCH_URL:'http://workbench.test'},secrets:{ONTOMATO_PRODUCT_CALLBACK:'sealed-callback'}}} as unknown as RuntimeStartRunRequest;
   const fetch=vi.fn(async(_url:URL,_init:Parameters<typeof globalThis.fetch>[1])=>Response.json({error:{code:'PRODUCT_FORBIDDEN'}},{status:403}));vi.stubGlobal('fetch',fetch);
   const tool=productTools(request,'run-id')[0];
-  const result=await tool.execute('call',{year:2026},new AbortController().signal);
+  const result=await tool.execute({toolCallId:'call',toolName:'product_count',args:{year:2026},signal:new AbortController().signal});
   expect(result.isError).toBe(true);
   expect(fetch.mock.calls[0][0]).toBeInstanceOf(URL);
   const init=fetch.mock.calls[0][1]!;
@@ -16,7 +16,7 @@ it('calls the frozen host tool endpoint with its run-scoped delegation and repor
   expect(JSON.parse(String(init.body))).toEqual({parameters:{year:2026}});
   expect(fetch).toHaveBeenCalledTimes(1);
   request.environment.values.ONTOMATO_WORKBENCH_URL='http://workbench.test/deployment';
-  await productTools(request,'run-id')[0].execute('call',{},new AbortController().signal);
+  await productTools(request,'run-id')[0].execute({toolCallId:'call',toolName:'product_count',args:{},signal:new AbortController().signal});
   expect(String(fetch.mock.calls[1][0])).toContain('/deployment/api/product-assets/');
 });
 it('rejects inherited execution tools on an explicitly product-only tool surface',()=>{

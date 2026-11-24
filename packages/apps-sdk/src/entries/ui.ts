@@ -27,9 +27,9 @@ export { ElCountdown as SdkCountdown } from "element-plus/es/components/countdow
 export { ElDatePicker as SdkDatePicker } from "element-plus/es/components/date-picker/index";
 export { ElDatePickerPanel as SdkDatePickerPanel } from "element-plus/es/components/date-picker-panel/index";
 export { ElDescriptions as SdkDescriptions, ElDescriptionsItem as SdkDescriptionsItem } from "element-plus/es/components/descriptions/index";
-export { ElDialog as SdkDialog } from "element-plus/es/components/dialog/index";
+export { SdkDialog } from "../ui/SdkDialog";
 export { ElDivider as SdkDivider } from "element-plus/es/components/divider/index";
-export { ElDrawer as SdkDrawer } from "element-plus/es/components/drawer/index";
+export { SdkDrawer } from "../ui/SdkDrawer";
 export { ElDropdown as SdkDropdown, ElDropdownItem as SdkDropdownItem, ElDropdownMenu as SdkDropdownMenu } from "element-plus/es/components/dropdown/index";
 export { ElEmpty as SdkEmpty } from "element-plus/es/components/empty/index";
 export { ElForm as SdkForm, ElFormItem as SdkFormItem } from "element-plus/es/components/form/index";

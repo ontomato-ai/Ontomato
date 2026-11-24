@@ -43,10 +43,10 @@ afterEach(() => {
   leaveFrame();
 });
 
-async function openDirtyForm() {
+async function openDirtyForm(fixedScope = false) {
   window.dispatchEvent(new Event("pageshow"));
   host.stream = noticeStreamDouble();
-  const scenario = liveFormScenario();
+  const scenario = liveFormScenario(fixedScope);
   installPlatform(scenario.answer);
   // The conversation the reader is in, by its address, with the panel beside it.
   const router = createRouter({ history: createMemoryHistory(), routes: [{ ...platformRoutes.chat, component: { render: () => null } }] });
@@ -118,6 +118,15 @@ async function present(target: Omit<Extract<PresentationFrame["target"], { kind:
 const blockedUnsaved = { status: "not_opened", reason: "blocked_unsaved", error: { code: "UNSAVED_CHANGES" } };
 
 describe("an agent's presentation over a panel's unsaved form", () => {
+  it("returns blocked_unsaved when a state patch would change a fixed field", { timeout: 20000 }, async () => {
+    const { scenario, assertDirty } = await openDirtyForm(true);
+    const reads = scenario.formReads();
+    expect(await present({ address: scenario.address, state: { scope: "local" } })).toMatchObject(blockedUnsaved);
+    expect(scenario.formReads()).toBe(reads);
+    assertDirty();
+    expect(document.querySelector(".el-message-box")).toBeNull();
+  });
+
   it("blocks address and state target changes before unmounting or reading the form", { timeout: 20000 }, async () => {
     const { router, scenario, form, assertDirty } = await openDirtyForm();
     const address = router.currentRoute.value.fullPath;

@@ -23,6 +23,7 @@ import { ontologyServiceAccessKey, type OntologyServiceAccess } from "@ontomato/
 import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
 import { installWorkbenchBrand } from "@ontomato/workbench-ui/brand";
 import { installPanelBackPopStateListener } from "@ontomato/platform-shell";
+import { resetApplicationCatalog } from "./catalog";
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "./detail-selection";
 import { addressLandingGuard, panelEntryGuard } from "./panel-entries";
 import { legacyAgentSettingsTab } from "./workbench-routes";
@@ -52,6 +53,7 @@ export interface WorkbenchWebOptions {
  * install everything into the app and mount; the router's first navigation happens after Pinia is installed.
  */
 export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
+  resetApplicationCatalog();
   initializePlatformTheme();
   installBrandTheme(options.brand);
   installWorkbenchBrand(options.brand);

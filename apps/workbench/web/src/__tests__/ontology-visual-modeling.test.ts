@@ -19,6 +19,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { provideUnsavedChanges } from "@ontomato/platform-shell";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
@@ -160,30 +161,45 @@ const sampleAttributes = [
   {
     primaryKey: JSON.stringify(["Order", "id"]),
     label: "订单编号",
-    fields: { className: "Order", name: "id", type: "STRING", primaryKey: "true", businessKey: "false", enable: "true" },
+    fields: {
+      className: "Order",
+      name: "id",
+      type: "STRING",
+      attrDesc: "销售订单唯一标识",
+      primaryKey: "true",
+      businessKey: "false",
+      enable: "true",
+    },
   },
   {
     primaryKey: JSON.stringify(["Order", "amount"]),
     label: "金额",
-    fields: { className: "Order", name: "amount", type: "DOUBLE", primaryKey: "false", businessKey: "false", enable: "true" },
+    fields: {
+      className: "Order",
+      name: "amount",
+      type: "DOUBLE",
+      attrDesc: "",
+      primaryKey: "false",
+      businessKey: "true",
+      enable: "false",
+    },
   },
 ];
 
 function simpleForm(objectType: string, values: Record<string, RuntimeJsonValue>) {
   return {
-    title: objectType,
-    revision: "1",
+    revision: 1,
     fields: Object.keys(values).map((key) => ({
-      name: key,
       path: `/${key}`,
       label: key,
-      kind: "string",
       required: false,
       readOnly: false,
+      valueSchema: { type: "string" },
+      control: { kind: "text" },
     })),
     values,
     errors: [],
-    save: { submit: "save" },
+    save: { method: "POST", path: `/mock/${objectType}`, bodySchema: {} },
   };
 }
 
@@ -195,8 +211,10 @@ type PageControllerHandle = {
 function mountVisualModeling(options: {
   initialState?: Record<string, unknown>;
   onRead?: (body: DataReadRequest) => Response | undefined;
+  confirmLeave?: () => boolean | Promise<boolean>;
 } = {}) {
   let controller: PageControllerHandle | null = null;
+  const confirmLeaveUnsaved = vi.fn(async () => (options.confirmLeave ? await options.confirmLeave() : true));
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -248,11 +266,28 @@ function mountVisualModeling(options: {
           inputSchema: { type: "object" },
           resultSchema: { type: "object" },
         });
+        const describeFormSave = (handlerRef: string, slot: string, isDraft: boolean) => ({
+          kind: "form.save",
+          handlerRef,
+          label: "Save",
+          effect: "write",
+          batch: false,
+          target: isDraft ? { source: "draft", slot } : { source: "input", input: "target" },
+          inputSchema: { type: "object" },
+          resultSchema: { type: "object" },
+        });
         const map: Record<string, unknown> = {};
         if (member === "classDelete") map.delete = describeOp(DELETE_OBJECT_TYPE, "Delete object type");
         if (member === "relationDelete") map.delete = describeOp(DELETE_RELATIONSHIP, "Delete relationship");
         if (member === "attributeDelete") map.delete = describeOp(DELETE_ATTRIBUTE, "Delete attribute");
         if (member === "attributePrimaryKey") map.setPrimaryKey = describeOp(SET_PRIMARY_KEY, "Set primary key");
+        if (member === "classCreate") map.save = describeFormSave(`${OBJECT_TYPE}.save`, "classCreate", true);
+        if (member === "relationCreate") map.save = describeFormSave(`${RELATIONSHIP}.save`, "relationCreate", true);
+        if (member === "classForm") map.save = describeFormSave(`${OBJECT_TYPE}.save`, "classForm", false);
+        if (member === "relationForm") map.save = describeFormSave(`${RELATIONSHIP}.save`, "relationForm", false);
+        if (member === "attributeForm") {
+          map.save = describeFormSave(`${ATTRIBUTE}.save`, "attributeForm", !body.inputs.target);
+        }
         return Response.json({ status: "ready", value: map });
       }
       const custom = options.onRead?.(body);
@@ -334,6 +369,7 @@ function mountVisualModeling(options: {
   return {
     router,
     sent,
+    confirmLeaveUnsaved,
     controller: () => controller,
     async open() {
       useApplicationCatalog().applications.value = [
@@ -354,7 +390,13 @@ function mountVisualModeling(options: {
         },
       ];
       await router.push(panelAddress(use.path, options.initialState ?? {}, visualModelingPanel.manifest));
-      return mountPlatformPage(() => h(RouterView), router);
+      const Shell = defineComponent({
+        setup() {
+          provideUnsavedChanges(confirmLeaveUnsaved);
+          return () => h(RouterView);
+        },
+      });
+      return mountPlatformPage(() => h(Shell), router);
     },
   };
 }
@@ -380,10 +422,12 @@ describe("ontology-visual-modeling builtin panel", () => {
     expect(source.manifest.state.selectedEdge.deepLink).toBe(true);
     expect(source.manifest.state.selectedAttribute.deepLink).toBe(true);
     expect("deepLink" in source.manifest.state.dialog).toBe(false);
-    expect("deepLink" in source.manifest.state.className).toBe(false);
+    expect("className" in source.manifest.state).toBe(false);
+    expect(source.manifest.members.attributes.data.rows.params.className).toEqual({ fromSlot: true });
+    expect("toggleable" in source.manifest.members.attributes.config).toBe(false);
   });
 
-  it("renders ObjectHeader and ObjectList for a deep-linked node and preserves deep-linked attribute selection", async () => {
+  it("renders ObjectHeader and attribute cards with all metadata fields and keeps selection on repeated card click", async () => {
     const harness = mountVisualModeling({
       initialState: {
         selectedNode: objectRef("Order"),
@@ -395,12 +439,26 @@ describe("ontology-visual-modeling builtin panel", () => {
       await vi.waitFor(() => {
         expect(element.querySelector(".vm-side")?.textContent).toContain("订单");
         expect(element.querySelector(".vm-side")?.textContent).toContain("Order");
-        expect(element.querySelector(".vm-attributes")?.textContent).toContain("订单编号");
-        expect(element.querySelector(".vm-attributes")?.textContent).toContain("金额");
+        const attrsText = element.querySelector(".vm-attributes")?.textContent ?? "";
+        expect(attrsText).toContain("订单编号");
+        expect(attrsText).toContain("销售订单唯一标识");
+        expect(attrsText).toContain("金额");
+        expect(attrsText).toContain("STRING");
+        expect(attrsText).toContain("DOUBLE");
+        expect(attrsText).toContain("Disabled");
+        expect(attrsText).toContain("Enabled");
         expect(element.querySelector(".vm-section-head")?.textContent).toMatch(/2/);
-      });
+      }, { timeout: 5000 });
       // Deep-linked attribute stayed selected instead of being wiped on initial mount.
       expect(element.querySelector("[data-member='attributeDelete']")).not.toBeNull();
+
+      // Clicking the already-selected attribute card again keeps it selected (no toggle back to new-attribute mode).
+      const cards = element.querySelectorAll<HTMLElement>(".vm-attributes .sdk-object-list-card");
+      expect(cards).toHaveLength(2);
+      cards[0]!.click();
+      await vi.waitFor(() => {
+        expect(element.querySelector("[data-member='attributeDelete']")).not.toBeNull();
+      });
 
       // Clicking "Browse data" navigates to /browser/data/Order.
       const browseBtn = Array.from(element.querySelectorAll<HTMLButtonElement>(".vm-side-actions button"))
@@ -462,13 +520,13 @@ describe("ontology-visual-modeling builtin panel", () => {
     }
   });
 
-  it("clears selectedNode when nodeHeader transitions from ready to error after external deletion", async () => {
-    let deleted = false;
+  it("keeps selectedNode and forms mounted when a refresh read fails, showing the error in place", async () => {
+    let failing = false;
     const harness = mountVisualModeling({
       initialState: { selectedNode: objectRef("Order") },
       onRead: (body) => {
-        if (body.memberPath[0]?.member === "nodeHeader" && body.dataName === "record" && deleted) {
-          return Response.json({ status: "error", message: "Not found" });
+        if (body.memberPath[0]?.member === "nodeHeader" && body.dataName === "record" && failing) {
+          return Response.json({ status: "error", message: "Temporary read failure" });
         }
         return undefined;
       },
@@ -477,14 +535,94 @@ describe("ontology-visual-modeling builtin panel", () => {
     try {
       await vi.waitFor(() => {
         expect(element.querySelector(".vm-side")?.textContent).toContain("订单");
+        expect(element.querySelector("[data-member='classForm']")).not.toBeNull();
       });
 
-      deleted = true;
+      failing = true;
       const refreshBtn = element.querySelector<HTMLButtonElement>(".sdk-page-header button");
       expect(refreshBtn).not.toBeNull();
       refreshBtn!.click();
       await vi.waitFor(() => {
-        expect(element.querySelector(".vm-side")).toBeNull();
+        expect(element.querySelector("[data-member='nodeHeader']")?.textContent).toContain("Temporary read failure");
+      });
+      // Selection, side panel, and edit form remain mounted instead of being silently closed.
+      expect(element.querySelector(".vm-side")).not.toBeNull();
+      expect(element.querySelector("[data-member='classForm']")).not.toBeNull();
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("hides edit forms while showing the real error when opening a missing object directly", async () => {
+    const harness = mountVisualModeling({
+      initialState: { selectedNode: objectRef("MissingClass") },
+    });
+    const { app, element } = await harness.open();
+    try {
+      await vi.waitFor(() => {
+        expect(element.querySelector("[data-member='nodeHeader']")?.textContent).toContain("Not found");
+      });
+      expect(element.querySelector("[data-member='classForm']")).toBeNull();
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("enforces node/edge mutual exclusion on agent present patches and cleans stale connect endpoints for relation dialog", async () => {
+    const harness = mountVisualModeling({
+      initialState: {
+        selectedNode: objectRef("Order"),
+        selectedAttribute: attrRef("Order", "id"),
+      },
+    });
+    const { app, element } = await harness.open();
+    try {
+      await vi.waitFor(() => {
+        expect(element.querySelector(".vm-side")?.textContent).toContain("订单");
+      });
+
+      // Patching selectedEdge while selectedNode is active switches to the edge and clears selectedNode/selectedAttribute.
+      harness.controller()!.applyState({ selectedEdge: relationRef("placedBy") });
+      await vi.waitFor(() => {
+        expect(element.querySelector(".vm-side")?.textContent).toContain("下单客户");
+        expect(element.querySelector("[data-member='relationForm']")).not.toBeNull();
+        expect(element.querySelector("[data-member='classForm']")).toBeNull();
+      });
+
+      // Patching selectedNode while selectedEdge is active switches back to the node and clears selectedEdge.
+      harness.controller()!.applyState({ selectedNode: objectRef("Customer") });
+      await vi.waitFor(() => {
+        expect(element.querySelector(".vm-side")?.textContent).toContain("客户");
+        expect(element.querySelector("[data-member='classForm']")).not.toBeNull();
+        expect(element.querySelector("[data-member='relationForm']")).toBeNull();
+      });
+
+      // Shift-connect opens relationCreate with endpoints; closing dialog via present({ dialog: null }) clears them,
+      // and directly presenting dialog: "relation" without endpoints clears any stale connectFrom/connectTo.
+      harness.controller()!.applyState({ connectFrom: "Order", connectTo: "Customer" });
+      await vi.waitFor(() => {
+        expect(document.body.querySelector("[data-member='relationCreate']")).not.toBeNull();
+      });
+
+      harness.controller()!.applyState({ dialog: null });
+      await vi.waitFor(() => {
+        expect(document.body.querySelector("[data-member='relationCreate']")).toBeNull();
+      });
+
+      // Leave a stale single endpoint, then open dialog: "relation" cleanly via present.
+      harness.controller()!.applyState({ connectFrom: "Order" });
+      harness.controller()!.applyState({ dialog: "relation" });
+      await vi.waitFor(() => {
+        expect(document.body.querySelector("[data-member='relationCreate']")).not.toBeNull();
+      });
+      // Re-triggering Shift-connect with the same pair still opens the dialog after closing (proves endpoints were cleared).
+      harness.controller()!.applyState({ dialog: null });
+      await vi.waitFor(() => {
+        expect(document.body.querySelector("[data-member='relationCreate']")).toBeNull();
+      });
+      harness.controller()!.applyState({ connectFrom: "Order", connectTo: "Customer" });
+      await vi.waitFor(() => {
+        expect(document.body.querySelector("[data-member='relationCreate']")).not.toBeNull();
       });
     } finally {
       app.unmount();
@@ -507,6 +645,61 @@ describe("ontology-visual-modeling builtin panel", () => {
       delBtn.click();
       await vi.waitFor(() => {
         expect(element.querySelector(".vm-side")).toBeNull();
+      });
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("guards create dialog close via before-close so cancelling keeps unsaved fields intact", async () => {
+    let allowLeave = false;
+    const harness = mountVisualModeling({
+      confirmLeave: () => allowLeave,
+    });
+    const { app, element } = await harness.open();
+    try {
+      let addClassBtn: HTMLButtonElement | undefined;
+      await vi.waitFor(() => {
+        addClassBtn = Array.from(element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button"))
+          .find((btn) => btn.textContent?.includes("Add object type") || btn.textContent?.includes("添加对象类型"));
+        expect(addClassBtn).toBeDefined();
+      });
+      addClassBtn!.click();
+
+      let input: HTMLInputElement | null = null;
+      await vi.waitFor(() => {
+        input = document.body.querySelector<HTMLInputElement>("[data-member='classCreate'] input");
+        expect(input).not.toBeNull();
+      });
+
+      input!.value = "Invoice";
+      input!.dispatchEvent(new Event("input", { bubbles: true }));
+      await vi.waitFor(() => {
+        const createBtn = Array.from(document.body.querySelectorAll<HTMLButtonElement>("[data-member='classCreate'] button"))
+          .find((btn) => btn.classList.contains("el-button--primary"));
+        expect(createBtn).toBeDefined();
+        expect(createBtn?.disabled).toBe(false);
+      });
+
+      // Clicking the dialog header close button (X) prompts before hiding; cancelling keeps dialog and draft intact.
+      const closeBtn = document.body.querySelector<HTMLButtonElement>(".el-dialog__headerbtn");
+      expect(closeBtn).not.toBeNull();
+      closeBtn!.click();
+
+      await vi.waitFor(() => {
+        expect(harness.confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const keptInput = document.body.querySelector<HTMLInputElement>("[data-member='classCreate'] input");
+      expect(keptInput).not.toBeNull();
+      expect(keptInput?.value).toBe("Invoice");
+
+      // Confirming discard closes the dialog and removes the form.
+      allowLeave = true;
+      closeBtn!.click();
+      await vi.waitFor(() => {
+        expect(harness.confirmLeaveUnsaved).toHaveBeenCalledTimes(2);
+        expect(document.body.querySelector("[data-member='classCreate']")).toBeNull();
       });
     } finally {
       app.unmount();
