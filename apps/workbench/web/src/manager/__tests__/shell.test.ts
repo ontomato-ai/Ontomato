@@ -18,6 +18,10 @@ vi.mock("../../../../../../packages/workbench-ui/src/features/workbench/componen
   default: defineComponent({ name: "BusinessDouble", setup: () => () => h("p", { class: "page-double" }, "agents") }),
 }));
 
+vi.mock("../../../../../../packages/platform-admin/src/pages/SystemMonitorPage.vue", () => ({
+  default: defineComponent({ name: "SystemMonitorDouble", setup: () => () => h("p", { class: "page-double" }, "monitor") }),
+}));
+
 const { isolateShellPerTest } = await import("./isolation");
 const { startPlatform } = await import("../../platform");
 
@@ -78,7 +82,7 @@ describe("open-source Ontology Service page", () => {
     ["/?view=assets", "#/ontology/assets/metrics", null],
     ["/#/data/Order", "#/browser/data/Order", "data Order"],
     ["/#/objects", "#/ontology/objects", null],
-    ["/#/admin", "#/settings/system-config/data-adapters", null],
+    ["/#/admin", "#/settings/records/system-monitor", null],
     ["/#/admin/audit-log", "#/settings/records/audit-log", null],
     ["/#/no-such-page", "#/home", null],
   ])("old address %s lands on %s", async (url, landed, page) => {
