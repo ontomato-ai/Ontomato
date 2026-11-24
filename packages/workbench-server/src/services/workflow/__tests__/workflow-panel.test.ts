@@ -52,6 +52,15 @@ describe("built-in workflows panel validation", () => {
     expect(desc.manifest.state.viewing.deepLink).toBe(false);
     expect(desc.manifest.state.creating.deepLink).toBe(false);
     expect(desc.manifest.state.inspectingGrants.deepLink).toBe(false);
+    expect(desc.manifest.members.viewForm.operation).toBe("platform:Workflow.save");
+    for (const tableSlot of ["catalog", "grantCaseScopedSteps", "grantInForce", "grantSuperseded", "grantDirect"] as const) {
+      const columns = desc.manifest.members[tableSlot].config.columns as Array<{ key: string; labelKey?: string }>;
+      for (const column of columns) {
+        expect(column.labelKey, `${tableSlot}.${column.key} must declare labelKey for empty headers`).toBeTruthy();
+        expect(desc.content.messages.en[column.labelKey!]).toBeTruthy();
+        expect(desc.content.messages["zh-CN"][column.labelKey!]).toBeTruthy();
+      }
+    }
 
     const typeTable = {
       objectTypes: z.record(platformTypeTableEntrySchema).parse(Object.fromEntries(typeMap)),

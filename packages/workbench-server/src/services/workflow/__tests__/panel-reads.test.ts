@@ -129,6 +129,11 @@ it("describes a fully read-only existing form and an editable draft that preserv
   const create = panelFormDescriptionSchema.parse(await adapter.createForm({}));
   const fields = walkFields(create.fields);
   expect(fields.some(field => field.readOnly)).toBe(false);
+  const actorPolicyField = fields.find(field => field.path === "/actorPolicy");
+  const modeField = fields.find(field => field.path === "/mode");
+  expect(actorPolicyField?.required).toBe(true);
+  expect(modeField?.label).toBe("Policy mode");
+  expect(modeField?.label).not.toBe(actorPolicyField?.label);
   expect(fields.find(field => field.path === "/actionId")?.control).toMatchObject({ allowCreate: true, options: [{ value: "act-1", label: "Buy", description: null, disabled: false, disabledReason: null }] });
   expect(fields.find(field => field.path === "/executionPrincipalId")?.control).toMatchObject({
     allowCreate: true, options: [

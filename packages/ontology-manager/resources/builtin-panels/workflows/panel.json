@@ -78,28 +78,34 @@
             },
             {
               "key": "status",
+              "labelKey": "col.status",
               "kind": "tag",
               "width": 82
             },
             {
               "key": "version",
+              "labelKey": "col.version",
               "subtitleKey": "hasDraftLabel",
               "width": 68
             },
             {
               "key": "stepsSummary",
+              "labelKey": "col.steps",
               "minWidth": 160
             },
             {
               "key": "grantsSummary",
+              "labelKey": "col.grants",
               "width": 150
             },
             {
               "key": "createdBy",
+              "labelKey": "col.createdBy",
               "width": 84
             },
             {
               "key": "reviewedBy",
+              "labelKey": "col.reviewedBy",
               "width": 96
             }
           ],
@@ -162,6 +168,7 @@
         "data": {
           "form": "form"
         },
+        "operation": "platform:Workflow.save",
         "config": {
           "actions": "none"
         },
@@ -213,14 +220,17 @@
           "columns": [
             {
               "key": "roleCode",
+              "labelKey": "col.roleCode",
               "width": 160
             },
             {
               "key": "stepName",
+              "labelKey": "col.stepName",
               "minWidth": 160
             },
             {
               "key": "actionName",
+              "labelKey": "col.actionName",
               "minWidth": 160
             }
           ]
@@ -244,10 +254,12 @@
           "columns": [
             {
               "key": "roleCode",
+              "labelKey": "col.roleCode",
               "width": 180
             },
             {
               "key": "capabilities",
+              "labelKey": "col.capabilities",
               "kind": "tags",
               "wrap": true,
               "minWidth": 260
@@ -273,10 +285,12 @@
           "columns": [
             {
               "key": "roleCode",
+              "labelKey": "col.roleCode",
               "width": 180
             },
             {
               "key": "capabilities",
+              "labelKey": "col.capabilities",
               "kind": "tags",
               "wrap": true,
               "minWidth": 260
@@ -302,10 +316,12 @@
           "columns": [
             {
               "key": "roleCode",
+              "labelKey": "col.roleCode",
               "width": 180
             },
             {
               "key": "capabilities",
+              "labelKey": "col.capabilities",
               "kind": "tags",
               "wrap": true,
               "minWidth": 260
@@ -327,7 +343,17 @@
         "empty": "No workflows yet.",
         "noMatch": "No matching workflows.",
         "col.name": "Workflow",
+        "col.status": "Status",
+        "col.version": "Version",
+        "col.steps": "Steps",
+        "col.grants": "Grants",
+        "col.createdBy": "Created by",
+        "col.reviewedBy": "Last activated by",
         "col.actions": "Actions",
+        "col.roleCode": "Role code",
+        "col.stepName": "Step name",
+        "col.actionName": "Action",
+        "col.capabilities": "Capabilities",
         "action.refresh": "Refresh",
         "action.newWorkflow": "New workflow",
         "action.view": "View",
@@ -366,7 +392,17 @@
         "empty": "暂无工作流",
         "noMatch": "无匹配结果",
         "col.name": "名称",
+        "col.status": "状态",
+        "col.version": "版本",
+        "col.steps": "步骤",
+        "col.grants": "授权",
+        "col.createdBy": "创建人",
+        "col.reviewedBy": "最近激活人",
         "col.actions": "操作",
+        "col.roleCode": "角色编码",
+        "col.stepName": "步骤名",
+        "col.actionName": "动作",
+        "col.capabilities": "能力",
         "action.refresh": "刷新",
         "action.newWorkflow": "新建工作流",
         "action.view": "查看",
