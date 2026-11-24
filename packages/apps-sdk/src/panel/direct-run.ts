@@ -1,4 +1,5 @@
 import { createApp, h, provide, type App } from "vue";
+import { ID_INJECTION_KEY } from "element-plus/es/hooks/use-id/index.mjs";
 import * as panelEntry from "../entries/panel";
 import { baseComponents } from "../base-components";
 import { panelContextKey } from "./context";
@@ -51,6 +52,9 @@ export function panelModuleFor(port: DirectPanelComponentPort): DirectPanelModul
   };
 }
 
+// Keep panel IDs apart from Element Plus defaults and the Manager's IDs.
+let nextPopperPrefix = 100000;
+
 /** Mounts a panel's component into the host's element, as the run of a directly rendered panel. */
 async function mountDirectPanelComponent(component: PanelComponent, port: DirectPanelComponentPort): Promise<PanelMount> {
   // Vue takes the panel's HTML for its root, as a frame takes its document's `#app`.
@@ -68,6 +72,8 @@ async function mountDirectPanelComponent(component: PanelComponent, port: Direct
       return [localName, await port.loadDomainComponent(runtime)] as const;
     })),
   ]);
+  const overlayRoot = port.run.overlayRoot;
+  if (overlayRoot && !overlayRoot.isConnected) throw new Error("The panel was removed before its component mounted");
   const mount = mountDirectPanel(port);
   const context = directPanelContext(mount.instance);
   const app = createApp({
@@ -91,11 +97,20 @@ async function mountDirectPanelComponent(component: PanelComponent, port: Direct
   app.config.errorHandler = port.run.failed;
   installTemplateComponents(app);
   port.install(app);
+  let popperContainer: HTMLElement | undefined;
+  if (overlayRoot) {
+    const prefix = nextPopperPrefix++;
+    popperContainer = overlayRoot.ownerDocument.createElement("div");
+    popperContainer.id = `el-popper-container-${prefix}`;
+    overlayRoot.append(popperContainer);
+    app.provide(ID_INJECTION_KEY, { prefix, current: 0 });
+  }
   app.mount(port.element);
   port.mounted({
     ...mount,
     dispose() {
       app.unmount();
+      popperContainer?.remove();
       mount.dispose();
     },
   });

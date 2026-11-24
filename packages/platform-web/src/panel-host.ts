@@ -25,7 +25,7 @@ import { readSseData, sseReconnectDelay } from "@ontomato/contracts/sse";
 import { confirmPanelIntent, expandDeclaredComposer, hostThemeMode, platformRouter, registerCandidateFrame, registerPanelFrame } from "./app-host";
 import { panelNavigator } from "./panel-navigate";
 import {
-  adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, newPanelInstanceName, scopedPanelStyle,
+  adoptPanelStyle, applyTheme, codedPanelTarget, composeThemes, createPanelOverlayRoot, newPanelInstanceName, scopedPanelStyle,
   type CodedPanelTarget, type DirectPanelMount, type DirectPanelRun, type PanelHostPort, type PanelHostState, type PanelSdkRelease,
 } from "@ontomato/platform-shell";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
@@ -672,6 +672,8 @@ async function mountNested(
   const dropStyle = css ? adoptPanelStyle(scopedPanelStyle(css, instance)) : undefined;
   // The placed panel's own theme with this placement's laid over it (default → … → the panel → this placement).
   const dropTheme = applyTheme(element, () => composeThemes(panel.theme, run.theme), hostThemeMode);
+  const shown = () => outer.run.shown?.() ?? true;
+  const overlay = createPanelOverlayRoot(instance, shown);
   try {
     const nestedReadProjection = source.kind === "candidate"
       ? (id: string) => readPlatformProjection(id)
@@ -683,14 +685,26 @@ async function mountNested(
         readProjection: nestedReadProjection,
         manifest: panel.manifest,
         messages: panel.content.messages ?? {},
-        run: opened,
+        run: { ...opened, overlayRoot: overlay.element, shown },
         memberPath: placedAt,
         panelDomainComponents: domainComponents,
       }, source),
       { element, template }, panel.content.module,
     ), new Set(Object.keys(last ? outer.manifest.members[last.member]?.inputs ?? {} : {})));
-    return { element, mount: { ...mount, dispose() { mount.dispose(); dropStyle?.(); dropTheme(); } } };
+    return {
+      element,
+      mount: {
+        ...mount,
+        dispose() {
+          mount.dispose();
+          overlay.dispose();
+          dropStyle?.();
+          dropTheme();
+        },
+      },
+    };
   } catch (failure) {
+    overlay.dispose();
     dropStyle?.();
     dropTheme();
     throw failure;

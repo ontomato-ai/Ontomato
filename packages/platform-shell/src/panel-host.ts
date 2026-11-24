@@ -124,6 +124,8 @@ function projectionIdsOf(shown: HostedPanelSource): string[] {
 
 /** What the host hands a panel's instance: where it is, what its address asks for, and where it reports. */
 export interface DirectPanelRun {
+  overlayRoot?: HTMLElement;
+  shown?: () => boolean;
   /** The page's registration key. */
   pageKey: string;
   /** The instance's address, with its state, as the reader and a message see it. */
@@ -317,6 +319,26 @@ export function newPanelInstanceName(): string {
   return `panel-${++instances}`;
 }
 
+export function createPanelOverlayRoot(instance: string, shown: () => boolean) {
+  const element = document.createElement("div");
+  element.className = "panel-host-overlay-root";
+  element.dataset.panelInstance = instance;
+  element.dataset.panelOverlayRoot = "";
+  const stop = watch(shown, (visible) => {
+    element.hidden = !visible;
+    element.style.display = visible ? "" : "none";
+    element.inert = !visible;
+  }, { immediate: true, flush: "sync" });
+  document.body.append(element);
+  return {
+    element,
+    dispose() {
+      stop();
+      element.remove();
+    },
+  };
+}
+
 /**
  * Where a panel's component mounts in this document: an element carrying its `#app`'s own attributes, the template
  * `#app` holds, and the panel's CSS, which its host scopes to the instance.
@@ -403,6 +425,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const notice = shallowRef("");
   /** Takes the drawn panel's CSS away again. */
   let dropStyle: (() => void) | undefined;
+  let dropOverlay: (() => void) | undefined;
   const pageContext = shallowRef<PageContext | null>(null);
   const document = shallowRef("");
   const error = shallowRef("");
@@ -557,7 +580,16 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (!replaceDirect(next, deepLinkInitial, effectiveAddress)) return;
     const { element, template, css } = codedPanelTarget(next.panel.content.html);
     adoptStyle(css);
-    const mount = await port.coded(next, directRun(next, mergedInitial), { element, template });
+    const overlay = createPanelOverlayRoot(instance, shownToReader);
+    dropOverlay = overlay.dispose;
+    let mount: DirectPanelMount;
+    try {
+      mount = await port.coded(next, directRun(next, mergedInitial, overlay.element), { element, template });
+    } catch (failure) {
+      overlay.dispose();
+      if (!active || source.value !== next) return;
+      throw failure;
+    }
     if (!active || source.value !== next) {
       mount.dispose();
       return;
@@ -615,8 +647,10 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let presentationProbe: { state?: [PanelHostState, string]; context?: PageContext } | undefined;
 
   /** What an instance in this document reports to its host, as a frame would in its messages. */
-  function directRun(next: HostedPanelSource, requested: PanelHostState): DirectPanelRun {
+  function directRun(next: HostedPanelSource, requested: PanelHostState, overlayRoot: HTMLElement): DirectPanelRun {
     return {
+      overlayRoot,
+      shown: shownToReader,
       pageKey: port.pageKey,
       url: () => address.value,
       label: () => options.label(next),
@@ -642,6 +676,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function endDirect() {
     direct.value?.mount.dispose();
     direct.value = null;
+    dropOverlay?.();
+    dropOverlay = undefined;
     appliedExternalEntry = {};
     dropStyle?.();
     dropStyle = undefined;

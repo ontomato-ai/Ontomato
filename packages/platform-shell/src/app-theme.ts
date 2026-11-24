@@ -70,6 +70,17 @@ let lastInteraction: { area: HTMLElement; trigger: HTMLElement } | null = null;
 let observer: MutationObserver | null = null;
 let interactionListenersAttached = false;
 
+const panelHostSelector = "[data-panel-instance]:not([data-panel-overlay-root])";
+const panelOverlaySelector = "[data-panel-overlay-root][data-panel-instance]";
+const panelThemeScopeSelector = `${panelHostSelector}, ${panelOverlaySelector}`;
+
+function panelOverlayOwner(element: Element) {
+  const root = element.closest<HTMLElement>(panelOverlaySelector);
+  return root && document.querySelector<HTMLElement>(
+    `[data-panel-instance="${CSS.escape(root.dataset.panelInstance!)}"]:not([data-panel-overlay-root])`,
+  );
+}
+
 function assign(element: HTMLElement, properties: Record<string, string>, previous: Record<string, string> = {}) {
   for (const name of Object.keys(previous)) {
     if (!(name in properties)) element.style.removeProperty(name);
@@ -104,6 +115,10 @@ function resolveAreaFor(element: Element | null): { area: HTMLElement; propertie
         seen.add(current);
         chain.push(current);
       }
+      if (current.matches(panelOverlaySelector)) {
+        current = panelOverlayOwner(current);
+        continue;
+      }
       const tracked = trackedLayers.get(current);
       if (tracked && tracked.area.isConnected && !seen.has(tracked.area)) {
         current = tracked.area;
@@ -127,7 +142,7 @@ function areaOpening(popup: HTMLElement): { area: HTMLElement; trigger: HTMLElem
   const escaped = CSS.escape(id);
   const trigger = document.querySelector<HTMLElement>(`[aria-controls~="${escaped}"], [aria-describedby~="${escaped}"]`);
   if (!trigger) return undefined;
-  const resolved = resolveAreaFor(trigger);
+  const resolved = resolveAreaFor(popup.closest(panelOverlaySelector) ? popup : trigger);
   return resolved ? { ...resolved, trigger } : undefined;
 }
 
@@ -155,6 +170,13 @@ function trackLayer(layer: HTMLElement, area: HTMLElement, properties: Record<st
 
 /** Resolve the owning area and trigger for a newly opened dialog/drawer overlay. */
 function resolveOverlayOwner(overlay: HTMLElement): { area: HTMLElement; trigger: HTMLElement | null; properties: Record<string, string> } | undefined {
+  if (overlay.closest(panelOverlaySelector)) {
+    const panel = panelOverlayOwner(overlay);
+    if (!panel) return undefined;
+    const resolved = resolveAreaFor(panel);
+    const trigger = lastInteraction?.trigger;
+    return resolved ? { area: panel, properties: resolved.properties, trigger: trigger && panel.contains(trigger) ? trigger : null } : undefined;
+  }
   const linked = areaOpening(overlay);
   if (linked) return linked;
   const active = document.activeElement;
@@ -185,8 +207,8 @@ function restoreOverlayFocus(overlay: HTMLElement, entry: TrackedLayer) {
     entry.trigger.focus({ preventScroll: true });
     return;
   }
-  const container = entry.area.closest<HTMLElement>("[data-panel-instance]")
-    ?? entry.area.querySelector<HTMLElement>("[data-panel-instance]")
+  const container = entry.area.closest<HTMLElement>(panelHostSelector)
+    ?? entry.area.querySelector<HTMLElement>(panelHostSelector)
     ?? entry.area;
   if (!container.isConnected) return;
   if (container.tabIndex < 0 && !container.hasAttribute("tabindex")) container.setAttribute("tabindex", "-1");
@@ -207,18 +229,30 @@ function closeOverlay(overlay: HTMLElement, removed: boolean) {
   if (wasVisible) restoreOverlayFocus(overlay, entry);
 }
 
+function syncPanelOverlayRoots() {
+  // Cover poppers without an ARIA-linked trigger, including ones that opened before the host entered the document.
+  for (const root of document.querySelectorAll<HTMLElement>(panelOverlaySelector)) {
+    const resolved = resolveAreaFor(root);
+    if (resolved) trackLayer(root, resolved.area, resolved.properties, null, false);
+  }
+}
+
 /** Keep already-open poppers and overlays in step whenever an area's theme changes or goes away. */
 function syncTrackedLayers() {
+  syncPanelOverlayRoots();
   for (const [layer, entry] of trackedLayers) {
     if (!layer.isConnected) {
       trackedLayers.delete(layer);
       continue;
     }
     if (entry.isOverlay && !entry.wasVisible) continue;
-    const resolved = entry.area.isConnected ? resolveAreaFor(entry.area) : undefined;
+    const scoped = layer.closest(panelOverlaySelector);
+    const resolved = scoped
+      ? resolveAreaFor(layer)
+      : entry.area.isConnected ? resolveAreaFor(entry.area) : undefined;
     if (resolved) {
       assign(layer, resolved.properties, entry.shown);
-      entry.area = resolved.area;
+      if (!scoped) entry.area = resolved.area;
       entry.shown = { ...resolved.properties };
     } else {
       assign(layer, {}, entry.shown);
@@ -253,6 +287,7 @@ function followPopups() {
   }
   if (observer || typeof MutationObserver !== "function") return;
   observer = new MutationObserver((records) => {
+    let addedPanel = false;
     for (const record of records) {
       if (record.type === "attributes" && record.target instanceof Element) {
         const attr = record.attributeName ?? "";
@@ -282,6 +317,7 @@ function followPopups() {
       }
       for (const node of record.addedNodes) {
         if (!(node instanceof HTMLElement)) continue;
+        addedPanel ||= node.matches(panelThemeScopeSelector) || node.querySelector(panelThemeScopeSelector) !== null;
         const overlays = isOverlay(node) ? [node] : [...node.querySelectorAll<HTMLElement>(".el-overlay")];
         for (const overlay of overlays) {
           if (!isOverlayVisible(overlay)) continue;
@@ -296,6 +332,7 @@ function followPopups() {
         }
       }
     }
+    if (addedPanel) syncPanelOverlayRoots();
   });
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: OBSERVED_ATTRIBUTES });
 }

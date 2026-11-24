@@ -77,6 +77,30 @@ it("gives a pop-up opened inside the area the area's theme, and one opened from 
   expect((await popup("account-menu")).style.getPropertyValue("--el-color-primary")).toBe("");
 });
 
+it("resolves a modal and an unlinked popper by panel ownership when focus is outside the panel", async () => {
+  const mode = ref<ThemeMode>("light");
+  const area = mountArea(mode, ref(theme));
+  await nextTick();
+  document.querySelector<HTMLElement>(".account")!.focus();
+  const root = document.createElement("div");
+  root.dataset.panelOverlayRoot = "";
+  root.dataset.panelInstance = "theme-panel";
+  root.innerHTML = `
+    <div class="el-overlay" role="dialog" style="color: var(--el-color-primary)"></div>
+    <div class="el-popper" style="color: var(--el-color-primary)"></div>`;
+  document.body.append(root);
+
+  const host = document.createElement("div");
+  host.dataset.panelInstance = "theme-panel";
+  area().append(host);
+  const popup = root.querySelector<HTMLElement>(".el-popper")!;
+  await vi.waitFor(() => expect(getComputedStyle(popup).color).toBe("#0f7b6c"));
+  mode.value = "dark";
+  await nextTick();
+  const dialog = root.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(getComputedStyle(dialog).color).toBe("#3cc4ad");
+});
+
 it("takes the theme away when the application has none any more or goes", async () => {
   const assigned = ref<PanelThemeOverrides | null>(theme);
   const area = mountArea(ref("light"), assigned);

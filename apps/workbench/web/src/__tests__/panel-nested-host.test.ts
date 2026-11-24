@@ -31,14 +31,37 @@ const outer = panelRecord("panel-catalog", "Panel catalog", definePanel({
   state: { detailPanel: { type: { kind: "object", objectType: PRODUCT_PANEL }, personal: false, deepLink: true, external: false } },
   members: { detail: { target: { fromState: "detailPanel", candidates: { rule: "usable" } } } },
 }));
-outer.content = { html: '<div id="app" class="catalog"><projection slot="detail"></projection></div>', module: PLACE_DETAIL };
+outer.content = {
+  html: `
+    <style>.overlay-sample { color: red; }</style>
+    <div id="app" class="catalog">
+      <sdk-drawer :model-value="true" append-to-body><span class="overlay-sample outer-drawer">Drawer</span></sdk-drawer>
+      <sdk-dialog :model-value="true" append-to-body><span class="overlay-sample outer-dialog">Dialog</span></sdk-dialog>
+      <sdk-popover :visible="true">
+        <template #reference><button>Show popover</button></template>
+        <span class="overlay-sample outer-popover">Popover</span>
+      </sdk-popover>
+      <projection slot="detail"></projection>
+    </div>`,
+  module: PLACE_DETAIL,
+};
 const use = panelUse("use-catalog", "catalog", outer.id, `/applications/${application}/panels`);
+const secondUse = panelUse("use-catalog-second", "catalog-second", outer.id, `/applications/${application}/second`);
 
 /** A panel the catalog may preview: its own words, and CSS that would paint anything it reached. */
 function previewed(id: string, words: string): Pick<ProductPanel, "id" | "revision" | "content" | "manifest"> {
   return {
     id, revision: 1, manifest: definePanel({ state: {}, members: {} }),
-    content: { html: `<style>p { outline: 3px solid red; }</style><div id="app"><p class="previewed">${words}</p></div>`, module: PLACE_DETAIL },
+    content: {
+      html: `<style>p { outline: 3px solid red; }</style>
+        <div id="app">
+          <p class="previewed overlay-sample">${words}</p>
+          <sdk-dialog :model-value="true" append-to-body>
+            <p class="nested-overlay overlay-sample">${words}</p>
+          </sdk-dialog>
+        </div>`,
+      module: PLACE_DETAIL,
+    },
   };
 }
 const previews: Record<string, Pick<ProductPanel, "id" | "revision" | "content" | "manifest">> = {
@@ -49,7 +72,7 @@ const chosen = (primaryKey: string) => ({ detailPanel: { className: PRODUCT_PANE
 type NestedRead = { source: unknown; memberPath: { member: string; selection?: { target: { panelId: string } } }[] };
 function answer(request: Sent) {
   if (request.path === `/api/data-query/platform/applications/${application}/panel-uses`)
-    return Response.json({ data: { applicationId: application, entry: { path: `/applications/${application}`, renderer: "panels" }, panelUses: [use] } });
+    return Response.json({ data: { applicationId: application, entry: { path: `/applications/${application}`, renderer: "panels" }, panelUses: [use, secondUse] } });
   if (request.path === `/api/product-panels/${outer.id}`) return panelAnswer(outer, request);
   if (request.path === `/api/product-panels/${outer.id}/snapshot`) return panelSnapshot(outer, {}, request);
   if (request.path === "/api/product-panels/nested") {
@@ -63,6 +86,8 @@ function answer(request: Sent) {
 
 const nestedReads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/nested").map(request => request.body as NestedRead);
 const placedSheets = () => document.adoptedStyleSheets.map(sheet => [...sheet.cssRules].map(rule => rule.cssText).join("\n"));
+const overlayRootFor = (instance: string) =>
+  document.body.querySelector<HTMLElement>(`[data-panel-overlay-root][data-panel-instance="${instance}"]`)!;
 
 afterEach(leaveFrame);
 
@@ -105,6 +130,60 @@ it("mounts the panel the outer panel's state chooses, in its place, and lets it 
   } finally {
     app.unmount();
   }
+});
+
+it("styles each instance's overlays and hides both page and nested overlays when another entry is shown", async () => {
+  installPlatform(answer);
+  const router = createRouter({ history: createMemoryHistory(), routes: [{
+    path: "/applications/:applicationId/:panelPath", component: PanelApplicationRoute,
+    props: route => ({ applicationId: String(route.params.applicationId) }),
+  }] });
+  const firstAddress = panelAddress(use.path, chosen("panel-a"));
+  await router.push(firstAddress);
+  const { app, element } = mountPlatformPage(() => h(RouterView), router);
+  try {
+    const nested = await vi.waitFor(() => {
+      const panel = element.querySelector<HTMLElement>('[data-member="detail"] [data-panel-instance]')!;
+      expect(overlayRootFor(panel.dataset.panelInstance!).querySelector(".nested-overlay")).not.toBeNull();
+      return panel;
+    });
+    const inline = element.querySelector<HTMLElement>(".panel-host-direct")!;
+    const first = overlayRootFor(inline.dataset.panelInstance!);
+    const nestedRoot = overlayRootFor(nested.dataset.panelInstance!);
+    for (const selector of [".outer-drawer", ".outer-dialog", ".outer-popover"]) {
+      expect(getComputedStyle(first.querySelector(selector)!).color).toBe("red");
+    }
+    expect(getComputedStyle(nested.querySelector(".previewed")!).color).not.toBe("red");
+    expect(getComputedStyle(nestedRoot.querySelector(".nested-overlay")!).color).not.toBe("red");
+
+    // Identical content at a second entry uses a separate mount and scopes its own overlays there.
+    await router.push(secondUse.path);
+    const second = await vi.waitFor(() => {
+      const host = [...element.querySelectorAll<HTMLElement>(".panel-host-direct")].find(candidate => candidate !== inline)!;
+      const root = overlayRootFor(host.dataset.panelInstance!);
+      expect(root.querySelector(".outer-popover")).not.toBeNull();
+      return root;
+    });
+    expect(second.dataset.panelInstance).not.toBe(first.dataset.panelInstance);
+    expect(getComputedStyle(second.querySelector(".outer-popover")!).color).toBe("red");
+    for (const root of [first, nestedRoot]) {
+      expect(root.hidden).toBe(true);
+      expect(root.inert).toBe(true);
+      expect(root.style.display).toBe("none");
+    }
+    expect(second.hidden).toBe(false);
+
+    await router.push(firstAddress);
+    await vi.waitFor(() => {
+      expect(first.hidden).toBe(false);
+      expect(nestedRoot.hidden).toBe(false);
+      expect(second.hidden).toBe(true);
+    });
+    expect(nestedRoot.querySelector(".nested-overlay")).not.toBeNull();
+  } finally {
+    app.unmount();
+  }
+  expect(document.body.querySelector("[data-panel-overlay-root]")).toBeNull();
 });
 
 it("asks Node for an object's detail panel by the object alone, and reads inside it along the panel Node named", async () => {

@@ -56,6 +56,8 @@ export interface DirectProjectionReadOptions {
 }
 
 export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "readProjection"> {
+  overlayRoot?: DirectPanelRun["overlayRoot"];
+  shown?: DirectPanelRun["shown"];
   /** Only for an application's frame: the entry the platform resolved, its menu, and where its content goes. */
   currentEntry?: DirectPanelRun["currentEntry"];
   /** Current application frame state when this panel runs inside a framed application entry. */
@@ -151,6 +153,8 @@ export interface MemberData {
 }
 
 export interface DirectPanelInstance extends PanelInstance {
+  readonly overlayRoot?: PanelContext["overlayRoot"];
+  readonly overlayShown?: PanelContext["overlayShown"];
   readonly direct: PanelManifest;
   /** In an application's frame, the entry shown now; null elsewhere. It follows the reader to another entry. */
   readonly currentEntry: ComputedRef<CurrentApplicationEntry | null>;
@@ -555,6 +559,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
 
   const notifyOperationCompleted = instance.operationCompleted;
   const directInstance: DirectPanelInstance = Object.assign(instance, {
+    overlayRoot: options.overlayRoot,
+    overlayShown: computed(() => options.shown?.() ?? true),
     currentEntry: computed(() => options.currentEntry?.entry.value ?? null),
     entryMenu: computed(() => options.currentEntry?.menu.value ?? null),
     hostMenu: computed(() => options.currentEntry?.hostMenu?.value ?? null),
@@ -895,6 +901,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
 export function directPanelContext(instance: DirectPanelInstance): PanelContext {
   const frameOnly = (what: string) => () => { throw new Error(`${what} is a panel frame's; a directly rendered panel has none`); };
   return {
+    overlayRoot: instance.overlayRoot,
+    overlayShown: instance.overlayShown,
     get panel(): never { return frameOnly("The handed-over definition")(); },
     manifest: instance.manifest,
     instance,

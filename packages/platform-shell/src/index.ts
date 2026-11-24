@@ -54,6 +54,7 @@ export {
 } from "./pilot-pages";
 export {
   codedPanelTarget,
+  createPanelOverlayRoot,
   newPanelInstanceName,
   panelHostKey,
   panelFrameDocument,
