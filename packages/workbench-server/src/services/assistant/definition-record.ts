@@ -16,6 +16,7 @@ export function agentDefinitionRecord(
       name, description,
       enabled: tForLocale(locale, enabled ? "panels.agentForm.enabledOn" : "panels.agentForm.enabledOff"),
       category: tForLocale(locale, `panels.agentDefinition.category.${category}`),
+      ...(domainShared !== undefined && { domainShared }),
     },
     fieldLabels: {
       name: tForLocale(locale, "panels.agentForm.name"),

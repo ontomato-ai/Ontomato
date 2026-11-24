@@ -89,7 +89,9 @@ it("combines four sources with localized category fields and stable outputs", as
     [builderId, "system", "System"], [DIAGNOSIS_AGENT_ID, "system", "System"], [retrievalId, "system", "System"],
   ]);
   expect(rows.slice(2).every(row => row.tones?.enabled === "success")).toBe(true);
-  expect((await directory.record(customId)).outputs).toMatchObject({ category: "custom", canEdit: true, canGrant: true, domainShared: true });
+  const customRecord = await directory.record(customId);
+  expect(customRecord.outputs).toMatchObject({ category: "custom", canEdit: true, canGrant: true, domainShared: true });
+  expect(customRecord.fields?.domainShared).toBe(true);
   expect((await directory.record(retrievalId)).fieldLabels?.category).toBe("Category");
   await expect(directory.count()).resolves.toEqual({ rows: [], total: 5 });
 });
@@ -113,6 +115,7 @@ it.each(systemIds)("checks view and edit separately for system agent %s", async 
   mocks.allowed.mockImplementation(async (_id: string, verb: string) => verb === "view");
   const record = await directory.record(id);
   expect(record.outputs).toEqual({ category: "system", canEdit: false, canGrant: false });
+  expect(record.fields?.domainShared).toBeUndefined();
   const form = await directory.form(id, { changedField: null });
   expect(form.fields.find(field => field.path === "/modelSelection/modelId")).toMatchObject({
     readOnly: true, readOnlyReason: expect.any(String),

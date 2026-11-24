@@ -1,7 +1,9 @@
 <!--
-  Agent detail panel: full-width edit entry for a single platform:AgentDefinition.
+  Agent detail panel: full-width edit-on-open detail entry for a single platform:AgentDefinition.
   PageHeader owns Back, ObjectHeader (with category badge), optional "View class" (ontology manager),
-  Delete (hidden when unavailable for preset/system agents), and the Save/Discard draft bar wired to `form`.
+  Delete (hidden when unavailable for preset, system, or view-only readers), and the Save/Discard draft bar.
+  Editors (canGrant) also get a Permissions & sharing tab for domain-wide sharing and single-select
+  3-level (use / view / edit) principal & role grants.
   Shared by /ontology/agents/detail and /agents/settings/detail via entry-wired `catalogPath`.
 -->
 <style>
@@ -25,6 +27,15 @@
     min-width: 0;
     padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px);
   }
+  .agent-detail-tabs {
+    margin-bottom: calc(var(--spacing-sm) * -1);
+  }
+  .agent-detail-tab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-content-gap);
+    min-width: 0;
+  }
   .agent-detail-card {
     display: flex;
     flex-direction: column;
@@ -43,6 +54,53 @@
   }
   .agent-detail-form .sdk-owner-form-body {
     overflow: visible;
+  }
+  .agent-detail-share-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+  .agent-detail-share-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .agent-detail-section-title {
+    margin: 0;
+    font-size: var(--text-base, var(--text-sm));
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .agent-detail-share-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .agent-detail-muted {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .agent-detail-level-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    width: 100%;
+    min-width: 0;
+  }
+  .agent-detail-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--spacing-sm);
   }
   .agent-detail-state {
     display: flex;
@@ -74,7 +132,8 @@
     .agent-detail-body {
       padding-block: var(--spacing-md) calc(var(--page-content-gap) + 56px);
     }
-    .agent-detail-card {
+    .agent-detail-card,
+    .agent-detail-share-bar {
       padding: var(--spacing-md);
     }
   }
@@ -96,22 +155,54 @@
     </page-header>
 
     <div v-if="detailReady" class="agent-detail-body">
-      <info-banner
-        v-if="agentCategory === 'system'"
-        tone="info"
-        :text="t('detail.systemNotice')"
-      ></info-banner>
-      <section class="agent-detail-card">
-        <div class="agent-detail-form">
-          <projection slot="form" @saved="onSaved">
-            <template #field-modelSelection.modelId><projection slot="model"></projection></template>
-            <template #field-skills><projection slot="skills"></projection></template>
-            <template #field-enabledMcpServiceIds><projection slot="tools"></projection></template>
-            <template #field-executionUserId><projection slot="executor"></projection></template>
-            <template #field-classNames><projection slot="scope"></projection></template>
-          </projection>
+      <sdk-tabs v-if="canGrant" v-model="tabModel" class="agent-detail-tabs">
+        <sdk-tab-pane name="config" :label="t('tab.config')"></sdk-tab-pane>
+        <sdk-tab-pane name="grants" :label="t('tab.grants')"></sdk-tab-pane>
+      </sdk-tabs>
+
+      <div v-show="tabModel === 'config' || !canGrant" class="agent-detail-tab-panel" data-tab="config">
+        <info-banner
+          v-if="!canEdit"
+          tone="info"
+          :text="t('detail.readonly')"
+        ></info-banner>
+        <info-banner
+          v-else-if="agentCategory === 'system'"
+          tone="info"
+          :text="t('detail.systemNotice')"
+        ></info-banner>
+        <section class="agent-detail-card">
+          <div class="agent-detail-form">
+            <projection slot="form" @saved="onSaved">
+              <template #field-modelSelection.modelId><projection slot="model"></projection></template>
+              <template #field-skills><projection slot="skills"></projection></template>
+              <template #field-enabledMcpServiceIds><projection slot="tools"></projection></template>
+              <template #field-executionUserId><projection slot="executor"></projection></template>
+              <template #field-classNames><projection slot="scope"></projection></template>
+            </projection>
+          </div>
+        </section>
+      </div>
+
+      <div v-if="canGrant && tabModel === 'grants'" class="agent-detail-tab-panel" data-tab="grants">
+        <info-banner
+          v-if="agentCategory === 'system'"
+          tone="info"
+          :text="t('grants.systemNote')"
+        ></info-banner>
+        <div class="agent-detail-share-bar">
+          <div class="agent-detail-share-left">
+            <strong class="agent-detail-section-title">{{ t("grants.shareTitle") }}</strong>
+            <span class="agent-detail-muted"><projection slot="shareStatusDesc"></projection></span>
+          </div>
+          <div class="agent-detail-share-actions">
+            <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
+            <projection v-else slot="shareEnable" @done="onShareDone"></projection>
+            <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t("grants.add") }}</sdk-button>
+          </div>
         </div>
-      </section>
+        <projection slot="grantsList"></projection>
+      </div>
     </div>
     <div v-else-if="!selectedKey" class="agent-detail-state">
       <sdk-empty :description="t('detail.missing')"></sdk-empty>
@@ -135,5 +226,42 @@
       <sdk-empty :description="t('detail.missing')"></sdk-empty>
       <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
     </div>
+
+    <!-- Single-select 3-level grant dialog backed by ReferencePicker & bound OperationButton -->
+    <sdk-dialog
+      v-if="grantEntryAllowed"
+      v-model="grantDialogOpen"
+      :title="t('grants.dialogTitle')"
+      width="480px"
+      append-to-body
+      destroy-on-close
+    >
+      <sdk-form v-if="grantDialogOpen && grantEntryAllowed" label-position="top">
+        <sdk-form-item :label="t('grants.kind')">
+          <sdk-segmented v-model="grantPrincipalKindModel" :options="grantKindOptions" size="default"></sdk-segmented>
+        </sdk-form-item>
+        <sdk-form-item :label="grantPrincipalKindModel === 'role' ? t('grants.role') : t('grants.principal')">
+          <projection v-if="grantPrincipalKindModel === 'role'" slot="rolePicker"></projection>
+          <projection v-else slot="userPicker"></projection>
+        </sdk-form-item>
+        <sdk-form-item :label="t('grants.level')">
+          <div class="agent-detail-level-field">
+            <sdk-segmented v-model="grantVerbModel" :options="grantVerbOptions" size="default"></sdk-segmented>
+            <p class="agent-detail-muted">{{ grantVerbDescription }}</p>
+            <p class="agent-detail-muted">{{ t("grants.overwriteHint") }}</p>
+          </div>
+        </sdk-form-item>
+      </sdk-form>
+      <template #footer>
+        <div v-if="grantDialogOpen && grantEntryAllowed" class="agent-detail-dialog-footer">
+          <sdk-button @click="grantDialogOpen = false">{{ t("action.cancel") }}</sdk-button>
+          <projection
+            slot="grantSubmit"
+            :disabled="!canSubmitGrant"
+            @done="onGrantAdded"
+          ></projection>
+        </div>
+      </template>
+    </sdk-dialog>
   </section>
 </div>
