@@ -18,6 +18,7 @@ export const CREATE_EXTERNAL_MCP_SERVICE = `${EXTERNAL_MCP_SERVICE}.create`;
 export const DELETE_EXTERNAL_MCP_SERVICE = "externalMcp.delete";
 export const AUDIT_LOG = "platform:AuditLog";
 export const GENERAL_SETTINGS = "platform:GeneralSettings";
+export const DATA_ADAPTER_CONFIG = "platform:DataAdapterConfig";
 export const MODEL_CONNECTION = "platform:ModelConnection";
 export const MODEL_ENTRY = "platform:ModelEntry";
 export const MODEL_USAGE = "platform:ModelUsage";
@@ -124,6 +125,7 @@ export const ADD_MODEL_ENTRY = "modelConnections.addModel";
 export const DELETE_MODEL_ENTRY = "modelEntries.delete";
 export const REBUILD_VECTORS = "modelUsage.rebuildVectors";
 export const PAUSE_VECTOR_REBUILD = "modelUsage.pauseVectorRebuild";
+export const TEST_DATA_ADAPTER_CONNECTION = "dataAdapters.testConnection";
 export const DELETE_OBJECT_TYPE = "objectTypes.delete";
 export const DELETE_ATTRIBUTE = "attributes.delete";
 export const DELETE_RELATIONSHIP = "relationships.delete";
@@ -739,6 +741,21 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       },
     },
     operations: [`${MODEL_USAGE}.save`, REBUILD_VECTORS, PAUSE_VECTOR_REBUILD],
+  },
+  [DATA_ADAPTER_CONFIG]: {
+    ...describeType("dataAdapterConfig"),
+    reads: {
+      record: {
+        ...modelReads.record,
+        outputs: {
+          currentType: { kind: "scalar", type: "string" },
+          mode: { kind: "scalar", type: "string" },
+          configured: { kind: "scalar", type: "boolean" },
+        },
+      },
+      form: modelReads.form,
+    },
+    operations: [`${DATA_ADAPTER_CONFIG}.save`, TEST_DATA_ADAPTER_CONNECTION],
   },
 };
 

@@ -48,10 +48,11 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   ...pageRoutes(adminPages, components),
-  // Model usage, connections, general settings and audit log are served by built-in panel entries at their original paths.
+  // Model usage, connections, general settings, data adapters, and audit log are served by built-in panel entries at their original paths.
   { path: platformRoutes.usage.path, component: page },
   { path: platformRoutes.providers.path, component: page },
   { path: platformRoutes.general.path, component: page },
+  { path: platformRoutes.adapters.path, component: page },
   { path: platformRoutes.audit.path, component: page },
   ...formerParentRoutes,
   { ...platformRoutes.ontology, component: page },
@@ -111,7 +112,7 @@ describe("the service router", () => {
   });
 
   it("sends a page the account cannot open to the first available page of its group, then of any group", async () => {
-    expect(await land("/settings/system-config/data-adapters", access(["data-browser", "system-monitoring"]))).toBe(
+    expect(await land("/permissions", access(["data-browser", "system-monitoring"]))).toBe(
       "/settings/records/system-monitor"
     );
     expect(await land("/objects/Order", access(["data-browser", "system-monitoring"]))).toBe("/data");

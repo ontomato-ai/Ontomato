@@ -1,0 +1,142 @@
+<style>
+  [v-cloak] { display: none; }
+  .da-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: da-page / inline-size;
+  }
+  .da-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    max-width: 960px;
+    width: 100%;
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 64px);
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  .da-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .da-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+  }
+  .da-card-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    min-width: 0;
+    flex: 1 1 240px;
+  }
+  .da-section-title {
+    margin: 0;
+    font-size: var(--text-base, var(--text-sm));
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .da-section-hint {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--sdk-text-color-secondary);
+  }
+  .da-source-picker {
+    flex: 0 1 260px;
+    min-width: 200px;
+  }
+  .da-source-select {
+    width: 100%;
+  }
+  .da-form-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .da-form-wrap .sdk-owner-form,
+  .da-form-wrap .sdk-owner-form-inner {
+    height: auto;
+  }
+  .da-form-wrap .sdk-owner-form-body {
+    overflow: visible;
+  }
+  .da-test-action {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .da-muted {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--sdk-text-color-secondary);
+  }
+</style>
+
+<div id="app" v-cloak>
+  <section class="da-page">
+    <page-header
+      :title="t('panel.name')"
+      :description="t('panel.description')"
+      :draft="adapterDraft"
+    ></page-header>
+
+    <div class="da-body">
+      <section class="da-card">
+        <div class="da-form-wrap">
+          <projection slot="adapterForm" @saved="onSaved"></projection>
+        </div>
+      </section>
+
+      <section class="da-card">
+        <div class="da-card-head">
+          <div class="da-card-title-group">
+            <h2 class="da-section-title">{{ t('test.title') }}</h2>
+            <p class="da-section-hint">
+              {{ isMultiMode ? t('test.multiDescription') : t('test.description') }}
+            </p>
+          </div>
+          <div v-if="isMultiMode" class="da-source-picker">
+            <sdk-select
+              v-model="selectedTestSource"
+              class="da-source-select"
+              :placeholder="t('test.sourcePlaceholder')"
+              :disabled="multiSources.length === 0"
+              :aria-label="t('test.sourceLabel')"
+              clearable
+            >
+              <sdk-option
+                v-for="source in multiSources"
+                :key="source.id"
+                :value="source.id"
+                :label="source.optionLabel"
+              ></sdk-option>
+            </sdk-select>
+          </div>
+        </div>
+        <p v-if="isMultiMode && multiSources.length === 0" class="da-muted">
+          {{ t('test.noSources') }}
+        </p>
+        <div class="da-test-action" @click.capture="onTestTrigger">
+          <projection
+            slot="testConnection"
+            :key="testResetKey"
+            :disabled="testDisabled"
+            @read="onTestRead"
+          ></projection>
+        </div>
+      </section>
+    </div>
+  </section>
+</div>

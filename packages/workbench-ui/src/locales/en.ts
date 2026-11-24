@@ -1230,6 +1230,7 @@ export default {
       "publishedMcpService": "Published MCP service",
       "auditLog": "Audit log",
       "generalSettings": "General settings",
+      "dataAdapterConfig": "Data adapter configuration",
       "scheduledTask": "Scheduled task",
       "modelOption": "Model",
       "externalMcpService": "External MCP service",

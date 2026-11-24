@@ -14,6 +14,7 @@ import type { AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
+import { dataAdaptersServerOperations } from "../admin/data-adapters-panel";
 import { generalSettingsOperations } from "../admin/general-settings-panel";
 import { modelSettingsServerOperations } from "../admin/model-settings-panel";
 import { externalMcpServerOperations } from "../mcp/external-mcp-panel";
@@ -152,6 +153,7 @@ export type PanelServerOperation = PanelWriteServerOperation | PanelReadServerOp
 const registrations: readonly PanelServerOperation[] = [
   ...scheduledTaskServerOperations,
   ...agentDefinitionOperations,
+  ...dataAdaptersServerOperations,
   ...generalSettingsOperations,
   ...modelSettingsServerOperations,
   ...externalMcpServerOperations,

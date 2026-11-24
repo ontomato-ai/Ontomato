@@ -102,6 +102,31 @@
         }
       },
       {
+        "id": "data-adapters",
+        "pageKey": "data-adapters",
+        "panelId": "builtin-product-data-adapters",
+        "path": "/settings/system-config/data-adapters",
+        "icon": "database",
+        "access": { "permissionCode": "system-config" },
+        "inputs": {
+          "domain": { "literal": { "className": "platform:DataAdapterConfig", "primaryKey": "domain" } }
+        },
+        "names": {
+          "en": "Data adapters",
+          "zh-CN": "数据适配器",
+          "zh-TW": "資料轉接器",
+          "ja": "データアダプター",
+          "de": "Datenadapter",
+          "fr": "Adaptateurs de données",
+          "it": "Adattatori dati",
+          "ar": "محولات البيانات"
+        },
+        "descriptions": {
+          "en": "Configure the domain data adapter, multi-source routing, and connection tests",
+          "zh-CN": "配置域数据适配器、多源路由规则及连接测试"
+        }
+      },
+      {
         "id": "external-mcp",
         "pageKey": "external-mcp",
         "panelId": "builtin-product-external-mcp",

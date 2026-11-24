@@ -1,5 +1,4 @@
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
-import { ontologyOutlineSchema } from "./config/types";
 
 /**
  * Platform area requests. The platform pages live next to the Ontology Manager and call the Java service through the
@@ -128,13 +127,6 @@ export function platformApi(client: PlatformClient) {
   return {
     getServiceInfo: () => client.get("/maintenance/getserviceinfo"),
     getBusinessConfig: () => client.get("/businessConfig/getConfig"),
-    listDataAdapters: () => client.get("/businessConfig/dataAdapters"),
-    useDataAdapter: (payload: unknown) => client.post("/businessConfig/useDataAdapter", payload),
-    useMultiDataSource: (definition: unknown) =>
-      client.post("/businessConfig/useMultiDataSource", definition),
-    testDataAdapter: (payload: unknown) => client.post("/businessConfig/testDataAdapter", payload),
-    getOntologyOutline: async () =>
-      ontologyOutlineSchema.parse((await client.get("/admin/getSchema")).data),
   };
 }
 

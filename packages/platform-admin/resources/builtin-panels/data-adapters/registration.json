@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-data-adapters",
+      "input": {
+        "name": "Data adapters",
+        "description": "Configure the domain data adapter, multi-source routing, and connection tests"
+      }
+    }
+  ]
+}

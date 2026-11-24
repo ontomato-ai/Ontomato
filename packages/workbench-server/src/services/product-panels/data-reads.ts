@@ -10,7 +10,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AUDIT_LOG, EXTERNAL_MCP_SERVICE, GENERAL_SETTINGS, MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, PUBLISHED_MCP_SERVICE,
+  AUDIT_LOG, DATA_ADAPTER_CONFIG, EXTERNAL_MCP_SERVICE, GENERAL_SETTINGS, MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
   PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
@@ -26,6 +26,7 @@ import { requireFormFieldNames } from "../../utils/form-field-names";
 import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
 
 import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
+import { createDataAdapterConfigReads } from "../admin/data-adapters-panel";
 import { createGeneralSettingsReads } from "../admin/general-settings-panel";
 import {
   createModelConnectionReads, createModelEntryReads, createModelUsageReads,
@@ -160,6 +161,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
   const audit = createAuditLogPanelReads(viewer);
   const general = createGeneralSettingsReads({ owner, credentials: viewer });
+  const dataAdapters = createDataAdapterConfigReads({ owner, credentials: viewer });
   const modelConnections = createModelConnectionReads({ owner, credentials: viewer });
   const modelEntries = createModelEntryReads({ owner, credentials: viewer });
   const modelUsage = createModelUsageReads({ owner, credentials: viewer });
@@ -187,6 +189,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       list: () => general.list(),
       record: selection => general.record(selection.primaryKey!),
       form: (selection, params) => general.form(selection.primaryKey!, formParams(params)),
+    },
+    [DATA_ADAPTER_CONFIG]: {
+      record: selection => dataAdapters.record(selection.primaryKey!),
+      form: (selection, params) => dataAdapters.form(selection.primaryKey!, formParams(params)),
     },
     [MODEL_CONNECTION]: {
       list: () => modelConnections.list(),
