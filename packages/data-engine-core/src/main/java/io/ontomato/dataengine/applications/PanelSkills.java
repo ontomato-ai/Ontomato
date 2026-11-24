@@ -1,17 +1,21 @@
 package io.ontomato.dataengine.applications;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class PanelSkills {
     private PanelSkills() {}
 
     /** A registered application use with its complete canonical route. */
-    public record Use(String applicationId, String useId, String panelId, String path, PageSkills.Entrance entrance) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Use(String applicationId, String useId, String panelId, String path, PageSkills.Entrance entrance,
+                      Map<String, String> names, Map<String, String> applicationNames) {}
 
-    static Use source(String applicationId, ApplicationPanelUse use) {
-        return new Use(applicationId, use.id(), use.panelId(), use.path(), entrance(use));
+    static Use source(String applicationId, ApplicationPanelUse use, Map<String, String> applicationNames) {
+        return new Use(applicationId, use.id(), use.panelId(), use.path(), entrance(use), use.names(), applicationNames);
     }
 
     static PageSkills.Entrance entrance(ApplicationPanelUse use) {
