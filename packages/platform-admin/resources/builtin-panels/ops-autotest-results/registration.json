@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ops-autotest-results",
+      "input": {
+        "name": "Autotest results",
+        "description": "Inspect automatic test runs, review summary metrics, filter case verdicts, manage retention, export archives, and open case artifacts."
+      }
+    }
+  ]
+}

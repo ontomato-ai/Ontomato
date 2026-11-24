@@ -222,6 +222,55 @@ export const workbenchApplications: BuiltinApplication[] = [
       "groups": [],
       "permissions": [],
       "panelUses": [{
+        "id": "ops-turn-evidence",
+        "pageKey": "ops-turn-evidence",
+        "panelId": "builtin-product-ops-turn-evidence",
+        "path": "/ops/turn",
+        "access": { "permissionCode": "observer" },
+        "icon": "microscope",
+        "names": {
+          "en": "Turn evidence",
+          "zh-CN": "Turn 取证",
+          "zh-TW": "Turn 取證",
+          "ja": "Turn エビデンス",
+          "de": "Turn-Belege",
+          "fr": "Preuves de tour",
+          "it": "Evidenze turno",
+          "ar": "أدلة الجولة"
+        },
+        "descriptions": {
+          "en": "Inspect captured turn evidence workspaces, artifacts, retention, and downloads",
+          "zh-CN": "查看已采集的 Turn 取证工作区、产物文件、保留状态与导出下载"
+        }
+      }, {
+        "id": "ops-autotest-results",
+        "pageKey": "ops-autotest-results",
+        "panelId": "builtin-product-ops-autotest-results",
+        "path": "/ops/results",
+        "access": { "permissionCode": "observer" },
+        "icon": "clipboard-list",
+        "inputs": { "caseDetailPath": { "literal": "/ops/autotest/case" } },
+        "names": {
+          "en": "Test results",
+          "zh-CN": "测试结果",
+          "zh-TW": "測試結果",
+          "ja": "テスト結果",
+          "de": "Testergebnisse",
+          "fr": "Résultats de test",
+          "it": "Risultati test",
+          "ar": "نتائج الاختبار"
+        },
+        "descriptions": {
+          "en": "Review autotest runs, accuracy summaries, case verdicts, retention, and downloads",
+          "zh-CN": "查看自动测试批次汇总、用例评估结论、保留状态与导出下载"
+        }
+      }, {
+        "id": "ops-autotest-case-artifact",
+        "pageKey": "ops-autotest-case-artifact",
+        "panelId": "builtin-product-ops-autotest-case-artifact",
+        "path": "/ops/autotest/case",
+        "access": { "permissionCode": "observer" }
+      }, {
         "id": "ops-knowledge",
         "pageKey": "ops-knowledge",
         "panelId": "builtin-product-ops-knowledge",

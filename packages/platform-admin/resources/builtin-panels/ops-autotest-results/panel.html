@@ -1,0 +1,225 @@
+<style>
+  [v-cloak] { display: none; }
+  .ops-results-page {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    container: ops-results-page / inline-size;
+  }
+  .ops-results-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    box-sizing: border-box;
+  }
+  .ops-results-layout {
+    --pane-list-width: clamp(18rem, 29%, 22rem);
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+  .ops-results-aside {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+    min-height: 0;
+  }
+  .ops-results-aside-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .ops-results-aside-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .ops-results-fill {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+  .ops-results-header-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .ops-results-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--spacing-xs);
+  }
+  .ops-results-meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm) var(--spacing-lg);
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .ops-results-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    min-width: 0;
+  }
+  .ops-results-meta-label {
+    color: var(--sdk-text-color-secondary);
+    white-space: nowrap;
+  }
+  .ops-results-detail-stack {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+    min-height: 0;
+  }
+  .ops-results-table-section {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+    min-height: 16rem;
+  }
+  .ops-results-table-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm) var(--spacing-md);
+  }
+  .ops-results-section-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .ops-results-table-wrap {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  @container ops-results-page (max-width: 45rem) {
+    .ops-results-body {
+      padding: var(--spacing-sm) var(--spacing-md) calc(var(--page-content-gap) + 56px);
+    }
+    .ops-results-actions {
+      width: 100%;
+    }
+  }
+</style>
+
+<div id="app" v-cloak class="ops-results-page">
+  <page-header :title="t('panel.title')" :description="t('panel.description')">
+    <template #actions>
+      <sdk-button :aria-label="t('panel.refresh')" @click="refresh">
+        {{ t("panel.refresh") }}
+      </sdk-button>
+    </template>
+  </page-header>
+
+  <div class="ops-results-body">
+    <two-pane-layout
+      class="ops-results-layout"
+      mode="split"
+      :selected="Boolean(selectedKey)"
+      :selection-key="selectedKey"
+      :back-label="t('panel.back')"
+      :empty-label="t('panel.selectHint')"
+      @back="clearSelection"
+    >
+      <template #aside>
+        <div class="ops-results-aside">
+          <div class="ops-results-aside-head">
+            <h3 class="ops-results-aside-title">{{ t("runs.title") }}</h3>
+          </div>
+          <projection slot="runs" class="ops-results-fill"></projection>
+        </div>
+      </template>
+
+      <template #header>
+        <div v-if="selectedKey" class="ops-results-header-stack">
+          <projection slot="runHeader">
+            <template #actions>
+              <div class="ops-results-actions">
+                <projection slot="keepRun" @done="onKeepDone"></projection>
+                <projection slot="unkeepRun" @done="onUnkeepDone"></projection>
+                <projection slot="downloadRun"></projection>
+                <projection slot="deleteRun" @done="onDeleteDone"></projection>
+              </div>
+            </template>
+          </projection>
+
+          <div class="ops-results-meta-strip">
+            <div v-if="runKept" class="ops-results-meta-item">
+              <projection slot="runKept"></projection>
+            </div>
+            <div class="ops-results-meta-item">
+              <span class="ops-results-meta-label">{{ t("detail.startedAt") }}:</span>
+              <projection slot="runStartedAt"></projection>
+            </div>
+            <div class="ops-results-meta-item">
+              <span class="ops-results-meta-label">{{ t("detail.finishedAt") }}:</span>
+              <projection slot="runFinishedAt"></projection>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <div v-if="selectedKey" class="ops-results-detail-stack">
+        <info-banner
+          v-if="runActive"
+          tone="info"
+          :text="t('detail.activeNotice')"
+        >
+          <template #actions>
+            <sdk-button size="small" @click="refresh">{{ t("panel.refresh") }}</sdk-button>
+          </template>
+        </info-banner>
+
+        <projection slot="runMetrics"></projection>
+
+        <section class="ops-results-table-section">
+          <div class="ops-results-table-toolbar">
+            <h3 class="ops-results-section-title">{{ t("results.title") }}</h3>
+            <segmented-control
+              state="verdict"
+              default-value="all"
+              :options="verdictOptions"
+              :aria-label="t('filter.verdict')"
+            ></segmented-control>
+          </div>
+          <div class="ops-results-table-wrap">
+            <projection
+              slot="results"
+              class="ops-results-fill"
+              @choose="openCaseArtifact"
+              @row-action="onResultRowAction"
+            ></projection>
+          </div>
+        </section>
+      </div>
+
+      <template #empty>
+        <sdk-empty :description="t('panel.selectHint')"></sdk-empty>
+      </template>
+    </two-pane-layout>
+  </div>
+</div>
