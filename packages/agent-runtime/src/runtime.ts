@@ -1221,7 +1221,16 @@ export class AgentRuntime {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           args: tools.get(event.toolCallId)?.args ?? {},
-          status: event.isError ? "failed" : "completed",
+          status:
+            event.outcome === "unknown"
+              ? "unknown"
+              : event.outcome === "failure"
+                ? "failed"
+                : event.outcome === "success"
+                  ? "completed"
+                  : event.isError
+                    ? "failed"
+                    : "completed",
           result: event.result,
         });
     }

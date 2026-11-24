@@ -20,6 +20,8 @@ import {
   runtimeSequenceSchema,
   runtimeStopReasonSchema,
   runtimeTimestampSchema,
+  runtimeToolOutcomeSchema,
+  type RuntimeToolOutcome,
 } from "./agent-runtime-values";
 
 /** Also stored in the PI toolResult message's details, so live and history reference the same IDs. */
@@ -36,12 +38,7 @@ export const runtimeToolResultSchema = z
   })
   .strict();
 
-/**
- * How a tool call ended. `unknown` means the call was dispatched and no result came back (interrupted, engine
- * lost), so its external effect is not known; it is neither success nor failure and must not be retried
- * automatically. Events stored before this field existed carry no outcome and are read from `isError`.
- */
-export const runtimeToolOutcomeSchema = z.enum(["success", "failure", "unknown"]);
+export { runtimeToolOutcomeSchema };
 
 /**
  * The usage an engine reports for one logical call and, when it reports one, its own running total. `turn` is
@@ -230,6 +227,6 @@ export type RuntimeStreamFrame = z.infer<typeof runtimeStreamFrameSchema>;
 export type RuntimeSessionRunFrame = z.infer<
   typeof runtimeSessionRunFrameSchema
 >;
-export type RuntimeToolOutcome = z.infer<typeof runtimeToolOutcomeSchema>;
+export type { RuntimeToolOutcome };
 export type RuntimeToolResult = z.infer<typeof runtimeToolResultSchema>;
 export type RuntimeUsageUpdate = z.infer<typeof runtimeUsageUpdateSchema>;

@@ -58,5 +58,12 @@ export const runtimeStopReasonSchema = z.enum([
   "error",
   "aborted",
 ]);
+/**
+ * How a tool call ended. `unknown` means the call was dispatched and no result came back (interrupted, engine
+ * lost), so its external effect is not known; it is neither success nor failure and must not be retried
+ * automatically. Records stored before this field existed carry no outcome and are read from `isError`.
+ */
+export const runtimeToolOutcomeSchema = z.enum(["success", "failure", "unknown"]);
 export type RuntimeRunStatus = z.infer<typeof runtimeRunStatusSchema>;
 export type RuntimeStopReason = z.infer<typeof runtimeStopReasonSchema>;
+export type RuntimeToolOutcome = z.infer<typeof runtimeToolOutcomeSchema>;

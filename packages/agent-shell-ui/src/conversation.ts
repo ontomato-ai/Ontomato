@@ -207,7 +207,7 @@ export function applyHistoryPage(state: ConversationState, page: AgentHostSessio
       run.tools[message.toolCallId] = {
         toolCallId: message.toolCallId, toolName: message.toolName,
         args: run.tools[message.toolCallId]?.args ?? {},
-        status: message.isError ? "failed" : "completed", output: toolOutput(message.content),
+        status: toolEndStatus(message.outcome, message.isError), output: toolOutput(message.content),
       };
     }
   }

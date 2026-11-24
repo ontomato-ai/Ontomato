@@ -230,7 +230,7 @@ describe("tool outcome tri-state", () => {
       "failed",
     ]);
 
-    // 3. History replay (settled messages without a toolResult for the unsettled call) matches live statuses.
+    // 3. History replay (unsettled tool call with no toolResult) matches live statuses.
     const hist = emptyConversation(sessionId);
     applyHistoryPage(hist, makeHistory([
       { id: userId, runId, messageSeq: 0, contextSeq: 0, message: { role: "user", content: "Run check", timestamp: 1 } },
@@ -242,6 +242,39 @@ describe("tool outcome tri-state", () => {
     const histResponse = conversationItems(hist).find((item): item is ResponseItem => item.kind === "response")!;
     const histSteps = histResponse.process.find((block) => block.kind === "steps")!;
     expect(histSteps.kind === "steps" && histSteps.steps.map((s) => s.status)).toEqual([
+      "completed",
+      "failed",
+      "unknown",
+      "failed",
+    ]);
+
+    // 4. History replay with runtime-settled toolResult (isError=true, outcome="unknown") matches live snapshot.
+    const settledHist = emptyConversation(sessionId);
+    applyHistoryPage(settledHist, makeHistory([
+      { id: userId, runId, messageSeq: 0, contextSeq: 0, message: { role: "user", content: "Run check", timestamp: 1 } },
+      { id: replyId, runId, messageSeq: 1, contextSeq: 1, message: assistantTools },
+      { id: "77777777-7777-4777-8777-777777777771", runId, messageSeq: 2, contextSeq: 2, message: { role: "toolResult", toolCallId: "call-ok", toolName: "read", content: [{ type: "text", text: "ok" }], isError: false, timestamp: 4000 } },
+      { id: "77777777-7777-4777-8777-777777777772", runId, messageSeq: 3, contextSeq: 3, message: { role: "toolResult", toolCallId: "call-fail", toolName: "bash", content: [{ type: "text", text: "exit 1" }], isError: true, timestamp: 6000 } },
+      {
+        id: "77777777-7777-4777-8777-777777777774",
+        runId,
+        messageSeq: 4,
+        contextSeq: null,
+        message: {
+          role: "toolResult",
+          toolCallId: "call-unknown",
+          toolName: "bash",
+          content: [{ type: "text", text: "Execution ended before its result was recorded. Its external outcome is unknown. Do not repeat this action automatically." }],
+          isError: true,
+          outcome: "unknown",
+          timestamp: 8000,
+        },
+      },
+      { id: "77777777-7777-4777-8777-777777777773", runId, messageSeq: 5, contextSeq: 5, message: { role: "toolResult", toolCallId: "call-legacy", toolName: "bash", content: [{ type: "text", text: "boom" }], isError: true, timestamp: 10000 } },
+    ], [makeRun({ status: "stopped", stopReason: "aborted", finishedAt: new Date(11000).toISOString() })]));
+    const settledHistResponse = conversationItems(settledHist).find((item): item is ResponseItem => item.kind === "response")!;
+    const settledHistSteps = settledHistResponse.process.find((block) => block.kind === "steps")!;
+    expect(settledHistSteps.kind === "steps" && settledHistSteps.steps.map((s) => s.status)).toEqual([
       "completed",
       "failed",
       "unknown",

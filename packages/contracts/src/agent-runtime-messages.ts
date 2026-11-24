@@ -5,6 +5,7 @@ import {
   runtimeJsonValueSchema,
   runtimeKeySchema,
   runtimeSequenceSchema,
+  runtimeToolOutcomeSchema,
 } from "./agent-runtime-values";
 
 /** PI 1.4 conversation wire profile. Provider extensions are admitted explicitly. */
@@ -157,6 +158,8 @@ export const runtimeToolResultMessageSchema = z
     details: runtimeJsonValueSchema.optional(),
     usage: runtimeUsageSchema.optional(),
     isError: z.boolean(),
+    /** Present when the runtime settles an unfinished tool call whose external effect is unknown. */
+    outcome: runtimeToolOutcomeSchema.optional(),
     timestamp: runtimeSequenceSchema,
     durationMs: z.number().nonnegative().finite().optional(),
   })

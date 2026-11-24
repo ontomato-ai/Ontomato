@@ -1,6 +1,6 @@
 import type { RuntimeRunDetail } from "@ontomato/contracts/agent-runtime-details";
 import type { RuntimeUsageCount } from "@ontomato/contracts/agent-runtime-messages";
-import type { RuntimeJsonValue, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeJsonValue, RuntimeStopReason, RuntimeToolOutcome } from "@ontomato/contracts/agent-runtime-values";
 import type { AgentTasksSnapshot, QualityResult, QualityTask,ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
 import { orderedMessages, type ConversationState, type RunDetailEntry } from "./conversation";
 import { skillOfCommand } from "./tools";
@@ -225,11 +225,15 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
   };
   let response: ResponseItem | null = null;
   const responses=new Map<string,ResponseItem>();
-  const toolResults = new Map<string, { output: string; isError: boolean }>();
+  const toolResults = new Map<string, { output: string; isError: boolean; outcome?: RuntimeToolOutcome }>();
   for (const entry of Object.values(state.messages)) {
     const message = entry.message;
     if (message.role === "toolResult")
-      toolResults.set(message.toolCallId, { output: userText(message.content), isError: message.isError });
+      toolResults.set(message.toolCallId, {
+        output: userText(message.content),
+        isError: message.isError,
+        outcome: message.outcome,
+      });
   }
 
   const openResponse = (runId: string): ResponseItem => {
@@ -362,7 +366,19 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
         args,
         status:
           tool?.status ??
-          (result ? (result.isError ? "failed" : "completed") : run?.status === "stopped" ? "unknown" : "streaming"),
+          (result
+            ? result.outcome === "unknown"
+              ? "unknown"
+              : result.outcome === "failure"
+                ? "failed"
+                : result.outcome === "success"
+                  ? "completed"
+                  : result.isError
+                    ? "failed"
+                    : "completed"
+            : run?.status === "stopped"
+              ? "unknown"
+              : "streaming"),
         output: tool?.output || result?.output || "",
       });
     });
