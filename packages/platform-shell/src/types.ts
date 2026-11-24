@@ -60,7 +60,10 @@ export interface PlatformPanelPage {
   id: string;
   label: string;
   icon?: PlatformIcon;
-  /** Count shown at the end of the row; null or absent shows none. */
+  /**
+   * Shell-internal legacy count strictly for native pages not yet converted to panels; removed together with host-built
+   * menus once those pages migrate to panels + ObjectCount. Never exposed on SDK AppMenuItem; do not add new callers.
+   */
   count?: number | null;
   /** Shown disabled with this hint (a page the application has not taken over yet). */
   unavailableHint?: string;
@@ -84,8 +87,6 @@ export interface AppMenuItem {
   label: string;
   /** Optional icon key from the platform's curated icon set or a Vue icon component. */
   icon?: AppMenuIcon;
-  /** Optional directory count shown right-aligned; null or undefined hides the badge. */
-  count?: number | null;
   /** When set, renders the row disabled with this tooltip hint instead of clickable. */
   unavailableHint?: string;
 }

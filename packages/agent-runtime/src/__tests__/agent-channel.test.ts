@@ -3,10 +3,11 @@ import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
 import { MID_ROUND_RESULT_NOTIFICATION_FACT } from "@ontomato/contracts/agent-visibility";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentChannel } from "../channel";
+import { ChannelStore } from "../channel-store";
 import { AgentRuntime } from "../runtime";
 import { createRuntimeHttp } from "../http";
 import { ArtifactFiles } from "../files";
-import { canonical, type MessageRow } from "../store";
+import { canonical, RuntimeStore, type MessageRow } from "../store";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -34,7 +35,9 @@ function channel() {
   vi.spyOn(port.facts,"intent").mockResolvedValue({ id: runId, session: source.session, channel: context, inputId, status: "running", language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false });
   vi.spyOn(port.facts,"questions").mockResolvedValue([]);
   vi.spyOn(port.facts,"pendingQuestions").mockResolvedValue([]);
-  vi.spyOn(port.facts,"preparing").mockResolvedValue(null);
+  vi.spyOn(port.facts,"queuedRuns").mockResolvedValue([]);
+  vi.spyOn(port.facts,"waiting").mockResolvedValue(null);
+  vi.spyOn(port.facts,"claimNext").mockResolvedValue(undefined);
   return { runtime, channel: port, locked: () => locked };
 }
 
@@ -56,13 +59,20 @@ function presentationAdmission(activeRunId: string | null = null) {
   runtime.start = starts;
   vi.spyOn(port.facts, "receipt").mockImplementation(async (_scope, id) => receipts.get(id) ?? null);
   vi.spyOn(port.facts, "binding").mockResolvedValue({ agent: context.agent, actor: context.actor, parent: null });
+  let seq = 0;
   vi.spyOn(port.facts, "receive").mockImplementation(async (_scope, sessionId, message, options) => {
     const id = options?.id ?? inputId;
-    const receipt = { id, sessionId, intentId: options?.intentId ?? null, runId: null, messageSeq: 1, contextSeq: null, message };
+    const receipt = { id, sessionId, intentId: options?.intentId ?? null, runId: null, messageSeq: ++seq, contextSeq: null, message };
     receipts.set(id, receipt);
     return receipt;
   });
-  vi.spyOn(port.facts, "pending").mockImplementation(async () => [...receipts.values()]);
+  vi.spyOn(port.facts, "pending").mockImplementation(async (_scope, _sessionId, _mode, runId) =>
+    [...receipts.values()]
+      .filter(row => row.runId === null && (!runId || !row.intentId || row.intentId === runId))
+      .sort((a, b) => a.messageSeq - b.messageSeq));
+  vi.spyOn(port.facts, "consume").mockImplementation(async (_scope, _sessionId, runId, ids) => {
+    for (const id of ids) receipts.get(id)!.runId = runId;
+  });
   vi.spyOn(port.facts, "reserve").mockImplementation(async (_scope, sessionId, id, inputId, channel, options) => {
     const intent: AgentRunIntent = {
       id, session: { providerId: channel.agent.providerId, sessionId }, channel, inputId,
@@ -74,6 +84,10 @@ function presentationAdmission(activeRunId: string | null = null) {
     return intent;
   });
   vi.mocked(port.facts.intent).mockImplementation(async (_scope, id) => intents.get(id)!);
+  const nextIntent = () => [...intents.values()].find(intent => intent.status === "starting");
+  const tailIntent = () => [...intents.values()].filter(intent => intent.status === "starting").at(-1);
+  vi.mocked(port.facts.waiting).mockImplementation(async () => tailIntent()?.id ?? null);
+  vi.mocked(port.facts.claimNext).mockImplementation(async () => nextIntent());
   vi.spyOn(port.facts, "update").mockResolvedValue();
   vi.spyOn(port.facts, "closePending").mockResolvedValue();
   vi.spyOn(port.facts, "children").mockResolvedValue([]);
@@ -94,7 +108,7 @@ function presentationAdmission(activeRunId: string | null = null) {
   const submit = (input: AgentInput = userInput, channel: AgentRunContext = humanChannel) =>
     port.request(scope, sessionId, runId, channel, input, "en", { workspaceId: sessionId },
       initiatingCredential, undefined, browserBinding);
-  return { runtime, port, prepares, starts, callback, intents, submit };
+  return { runtime, port, prepares, starts, callback, intents, receipts, submit };
 }
 
 it("passes the direct root binding to prepare once and keeps it out of intent context and later preparation", async () => {
@@ -531,7 +545,7 @@ it.each(["running","preparing"])("web input joins the %s execution and reaches t
   runtime.acceptsInput=vi.fn(()=>phase==="running");runtime.inputReceived=vi.fn();
   vi.spyOn(port.facts,"binding").mockResolvedValue({agent:context.agent,actor:context.actor,parent:null});
   vi.spyOn(port.facts,"receipt").mockResolvedValue(null);
-  vi.mocked(port.facts.preparing).mockResolvedValue(phase==="preparing"?runId:null);
+  vi.mocked(port.facts.waiting).mockResolvedValue(phase==="preparing"?runId:null);
   vi.spyOn(port.facts,"receive").mockResolvedValue(record);
   const reserve=vi.spyOn(port.facts,"reserve");
   const result=await port.request(scope,sessionId,inputId,context,message,"en",undefined,{token:"initiating-token",apiKey:null});
@@ -553,8 +567,8 @@ it("web input after sealing reserves one next intent without preparing against t
   const reserve=vi.spyOn(port.facts,"reserve").mockResolvedValue(next),prepare=vi.spyOn(port,"prepare").mockResolvedValue();
   const result=await port.request(scope,sessionId,inputId,next.channel,{role:"user",content:"New period",timestamp:2},"en",undefined,{token:"initiating-token",apiKey:null});
   expect(result.delivery).toMatchObject({delivery:"run",runId:inputId,status:"starting"});
-  expect(reserve.mock.calls[0][5]).toMatchObject({afterRunId:runId});expect(prepare).not.toHaveBeenCalled();
-  vi.spyOn(port.facts,"update").mockResolvedValue();vi.mocked(port.facts.preparing).mockResolvedValue(inputId);
+  expect(prepare).not.toHaveBeenCalled();
+  vi.spyOn(port.facts,"update").mockResolvedValue();vi.mocked(port.facts.claimNext).mockResolvedValue(next);
   vi.mocked(port.facts.intent).mockImplementation(async(_scope,id)=>id===inputId?next:{...next,id:runId,channel:context,status:"running"});
   expect(await port.nextLocked(scope,{...run,stopReason:"stop",errorMessage:null})).toBe(next);
   expect(reserve).toHaveBeenCalledTimes(1);
@@ -804,140 +818,234 @@ it("enforces run-scoped channel command authentication, rejection order, build-t
   }
 });
 
-it("seals an active background run and queues a fresh human run instead of steering human input into default execution identity", async () => {
-  const bgRunId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-  const humanRunId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-  const { runtime, port, prepares, intents } = presentationAdmission(bgRunId);
-  const bgIntent: AgentRunIntent = {
-    id: bgRunId,
-    session: source.session,
-    channel: { ...context, root: { session: source.session, runId: bgRunId }, userRecipient: null },
-    inputId,
-    language: "en",
-    status: "running",
-    createdAt: new Date(0).toISOString(),
-    error: null,
-    cancelled: false,
-    executionUserId: "default-service-user",
-  };
-  intents.set(bgRunId, bgIntent);
-  runtime.acceptsInput = vi.fn().mockReturnValue(true);
-  const inputReceived = vi.fn(async () => {});
-  Object.assign(runtime, { inputReceived });
+const nextRunId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const followUpId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
-  const humanRunChannel: AgentRunContext = {
-    ...humanChannel,
-    root: { session: source.session, runId: humanRunId },
-  };
-  const result = await port.request(
-    scope,
-    sessionId,
-    humanRunId,
-    humanRunChannel,
-    userInput,
-    "en",
-    undefined,
-    initiatingCredential,
-    undefined,
-    browserBinding,
-  );
+function currentRun(channel: AgentRunContext, status: "starting" | "running") {
+  const fixture = presentationAdmission(status === "running" ? runId : null);
+  const { runtime, port, intents } = fixture;
+  const activeRun = { ...run, status: "running" as const, channel };
+  intents.set(runId, {
+    id: runId, session: source.session, channel, inputId, status, language: "en",
+    createdAt: new Date(0).toISOString(), error: null, cancelled: false,
+  });
+  const active = { scope, run: activeRun, sealed: false, controller: new AbortController(), channelSecret: "callback-secret" };
+  Object.assign(runtime, {
+    active: new Map(status === "running" ? [[canonical([scope.hostId, scope.domainId, runId]), active]] : []),
+    acceptsInput: AgentRuntime.prototype.acceptsInput,
+    seal: AgentRuntime.prototype.seal,
+    inputReceived: vi.fn(),
+  });
+  const send = (id: string, channel: AgentRunContext, input: AgentInput) =>
+    port.request(scope, sessionId, id, { ...channel, root: { session: source.session, runId: id } },
+      input, "en", undefined, initiatingCredential, undefined, browserBinding);
+  const finish = () => port.nextLocked(scope, { ...activeRun, status: "stopped", stopReason: "stop", errorMessage: null });
+  return { ...fixture, runtime, port, send, finish, activeRun };
+}
 
-  // Must NOT steer into the running background run
-  expect(result.delivery).toMatchObject({ delivery: "run", runId: humanRunId, status: "starting" });
-  expect(runtime.seal).toHaveBeenCalledWith(scope, bgRunId);
-  expect(inputReceived).not.toHaveBeenCalled();
-  expect(prepares).toHaveLength(0);
+it("runs a channel command after queuing human input and keeps that input out of the background run", async () => {
+  const { runtime, port, send, finish, activeRun, prepares } = currentRun(context, "running");
 
-  // When the closing background run checks pending inputs, it passes its own run.id so it cannot steal humanRunId's message
-  const pendingSpy = vi.mocked(port.facts.pending);
-  pendingSpy.mockClear();
-  pendingSpy.mockResolvedValueOnce([]);
-  await port.steering(scope, { ...run, id: bgRunId, channel: bgIntent.channel, executionUserId: "default-service-user" } as RuntimeRun);
-  expect(pendingSpy).toHaveBeenCalledWith(scope, sessionId, "steer", bgRunId);
+  expect((await send(nextRunId, humanChannel, userInput)).delivery).toMatchObject({
+    runId: nextRunId, delivery: "run", status: "starting",
+  });
+  expect(prepares).toEqual([]);
 
-  // When the background run finishes (even if cancelled), nextLocked launches the queued human run with userRecipient + browserBinding
-  vi.mocked(port.facts.preparing).mockResolvedValue(humanRunId);
-  const next = await port.nextLocked(scope, { ...run, id: bgRunId, channel: bgIntent.channel, stopReason: "aborted", errorMessage: null } as RuntimeRun);
-  expect(next?.id).toBe(humanRunId);
-  expect(next?.channel.userRecipient).toEqual(humanRunChannel.userRecipient);
+  const directory = { agents: [{ ref: context.agent, name: "Reviewer", description: "Reviews results" }] };
+  const prepare = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init: Parameters<typeof fetch>[1]) =>
+    url.endsWith("/list") ? Response.json(directory) : prepare(url, init));
+  await expect(AgentRuntime.prototype.runChannelCommand.call(
+    runtime, scope, runId, "callback-secret", runId, undefined, { op: "list" },
+  )).resolves.toMatchObject(directory);
+  expect(await port.followUp(scope, activeRun)).toEqual([]);
 
-  await port.prepare(next!);
-  expect(prepares).toHaveLength(1);
+  await port.prepare((await finish())!);
   expect(prepares[0]).toMatchObject({
-    runId: humanRunId,
-    userRecipient: humanRunChannel.userRecipient,
-    presentationBinding: browserBinding,
+    runId: nextRunId, input: userInput, userRecipient: humanChannel.userRecipient, presentationBinding: browserBinding,
   });
 });
 
-it("refuses a human message with SESSION_BUSY while a background run is still starting", async () => {
-  const bgRunId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-  const humanRunId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-  const { port, intents } = presentationAdmission(null);
-  intents.set(bgRunId, {
-    id: bgRunId,
-    session: source.session,
-    channel: { ...context, root: { session: source.session, runId: bgRunId }, userRecipient: null },
-    inputId,
-    language: "en",
-    status: "starting",
-    createdAt: new Date(0).toISOString(),
-    error: null,
-    cancelled: false,
-    executionUserId: "default-service-user",
+it("queues unattended requests and keeps subsequent human input in the running human turn", async () => {
+  const { port, send, finish, activeRun, prepares } = currentRun(humanChannel, "running");
+  const unattended = { ...userInput, content: "Run the external analysis" };
+  expect((await send(nextRunId, context, unattended)).delivery).toMatchObject({
+    runId: nextRunId, delivery: "run", status: "starting",
   });
-  vi.mocked(port.facts.preparing).mockResolvedValue(bgRunId);
-  const receiveSpy = vi.mocked(port.facts.receive);
 
-  await expect(
-    port.request(
-      scope,
-      sessionId,
-      humanRunId,
-      { ...humanChannel, root: { session: source.session, runId: humanRunId } },
-      userInput,
-      "en",
-      undefined,
-      initiatingCredential,
-      undefined,
-      browserBinding,
-    ),
-  ).rejects.toMatchObject({ status: 409, code: "SESSION_BUSY" });
-  expect(receiveSpy).not.toHaveBeenCalled();
+  expect((await send(followUpId, humanChannel, userInput)).delivery).toMatchObject({
+    runId, delivery: "steer", status: "running",
+  });
+  const prepare = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) =>
+    JSON.parse(String(init.body)).mode === "steer" ? Response.json({ accepted: true }) : prepare(url, init));
+  expect(await port.followUp(scope, activeRun)).toEqual([userInput]);
+
+  await port.prepare((await finish())!);
+  expect(prepares[0]).toMatchObject({ runId: nextRunId, input: unattended, userRecipient: null });
 });
 
-it("continues steering a human message into an already running human run", async () => {
-  const activeHumanId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
-  const followUpId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
-  const { runtime, port, intents } = presentationAdmission(activeHumanId);
-  intents.set(activeHumanId, {
-    id: activeHumanId,
-    session: source.session,
-    channel: { ...humanChannel, root: { session: source.session, runId: activeHumanId } },
-    inputId,
-    language: "en",
-    status: "running",
-    createdAt: new Date(0).toISOString(),
-    error: null,
-    cancelled: false,
-    executionUserId: null,
-  });
-  runtime.acceptsInput = vi.fn().mockReturnValue(true);
-  const inputReceived = vi.fn(async () => {});
-  Object.assign(runtime, { inputReceived });
+it("keeps the original human message when the background turn is still preparing", async () => {
+  const { port, send, finish, prepares } = currentRun(context, "starting");
+  const message = { ...userInput, content: "Keep both lines\n  and this indentation." };
+  const accepted = await send(nextRunId, humanChannel, message);
+  expect(accepted.delivery).toMatchObject({ runId: nextRunId, delivery: "run", status: "starting" });
+  expect(accepted.input.message).toEqual(message);
+  expect(prepares).toEqual([]);
 
-  const result = await port.request(
-    scope,
-    sessionId,
-    followUpId,
-    { ...humanChannel, root: { session: source.session, runId: followUpId } },
-    userInput,
-    "en",
-    undefined,
-    initiatingCredential,
+  await port.prepare((await finish())!);
+  expect(prepares[0]).toMatchObject({ runId: nextRunId, input: message, userRecipient: humanChannel.userRecipient });
+});
+
+it("coalesces consecutive human messages at the queue tail across background preparation and execution in 1 -> 2 -> 3 order", async () => {
+  const thirdId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const { runtime, port, send, finish, prepares, intents, receipts, starts } = currentRun(context, "starting");
+  const msg1 = { ...userInput, content: "first human message", timestamp: 10 };
+  const msg2 = { ...userInput, content: "second human message", timestamp: 20 };
+  const msg3 = { ...userInput, content: "third human message", timestamp: 30 };
+
+  // Two human messages arrive while the background turn is still preparing.
+  const first = await send(nextRunId, humanChannel, msg1);
+  const second = await send(followUpId, humanChannel, msg2);
+  expect(first.delivery).toMatchObject({ runId: nextRunId, delivery: "run", status: "starting" });
+  expect(second.delivery).toMatchObject({ runId: nextRunId, delivery: "steer", status: "starting" });
+
+  // Background turn transitions from preparing to running, then a third human message arrives.
+  intents.get(runId)!.status = "running";
+  vi.mocked(runtime.store.session).mockResolvedValue({ activeRunId: runId } as never);
+  (runtime as unknown as { active: Map<string, unknown> }).active.set(
+    canonical([scope.hostId, scope.domainId, runId]),
+    { scope, run: { ...run, status: "running", channel: context }, sealed: false, controller: new AbortController(), channelSecret: "secret" },
   );
-  expect(result.delivery).toMatchObject({ delivery: "steer", runId: activeHumanId, status: "running" });
-  expect(runtime.seal).not.toHaveBeenCalled();
-  expect(inputReceived).toHaveBeenCalledTimes(1);
+  const third = await send(thirdId, humanChannel, msg3);
+  expect(third.delivery).toMatchObject({ runId: nextRunId, delivery: "steer", status: "starting" });
+
+  // Background finishes; the single merged human round is claimed and consumes 1 -> 2 -> 3 in strict order.
+  const claimed = await finish();
+  expect(claimed?.id).toBe(nextRunId);
+  starts.mockImplementation(async (_host, _scope, _sessionId, id) => {
+    const intent = intents.get(id)!;
+    intent.status = "running";
+    receipts.get(intent.inputId)!.runId = id;
+    return {} as never;
+  });
+  await port.prepare(claimed!);
+  expect(prepares[0]).toMatchObject({ runId: nextRunId, input: msg1, userRecipient: humanChannel.userRecipient });
+
+  const prepare = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) =>
+    JSON.parse(String(init.body)).mode === "steer" ? Response.json({ accepted: true }) : prepare(url, init));
+  const consumed = await port.followUp(scope, { ...run, id: nextRunId, status: "running", channel: humanChannel });
+  expect(consumed).toEqual([msg2, msg3]);
+
+  // No second out-of-order human round remains in the queue.
+  const afterHuman = await port.nextLocked(scope, { ...run, id: nextRunId, status: "stopped", stopReason: "stop", errorMessage: null, channel: humanChannel });
+  expect(afterHuman).toBeUndefined();
 });
 
+it("does not coalesce a new human message ahead of an intervening unattended queued reservation", async () => {
+  const unattendedQueuedId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const secondHumanId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const { runtime, send, intents } = currentRun(context, "running");
+  // Seal the running background turn so a new unattended request queues behind H1 instead of steering B.
+  (runtime as unknown as { active: Map<string, { sealed: boolean }> }).active.get(
+    canonical([scope.hostId, scope.domainId, runId]),
+  )!.sealed = true;
+
+  expect((await send(nextRunId, humanChannel, { ...userInput, content: "human 1" })).delivery).toMatchObject({
+    runId: nextRunId, delivery: "run", status: "starting",
+  });
+  expect((await send(unattendedQueuedId, context, { ...userInput, content: "unattended 1" })).delivery).toMatchObject({
+    runId: unattendedQueuedId, delivery: "run", status: "starting",
+  });
+  expect((await send(secondHumanId, humanChannel, { ...userInput, content: "human 2" })).delivery).toMatchObject({
+    runId: secondHumanId, delivery: "run", status: "starting",
+  });
+  expect([...intents.values()].filter(i => i.status === "starting").map(i => i.id)).toEqual([
+    nextRunId,
+    unattendedQueuedId,
+    secondHumanId,
+  ]);
+});
+
+it("ChannelStore.waiting queries tail starting intent (DESC) while claimNext queries head (ASC) and skips deleted rows", async () => {
+  const queries: string[] = [];
+  const store = {
+    table: (name: string) => `"agent_runtime".${name}`,
+    pool: {
+      query: vi.fn(async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes("ORDER BY m.seq DESC")) return { rows: [{ key: followUpId }] };
+        if (sql.includes("SET preparing_run_id=")) return { rows: [{ preparing_run_id: nextRunId }] };
+        return { rows: [{ intent: { id: nextRunId, session: source.session, channel: humanChannel, inputId, language: "en", status: "starting", createdAt: new Date(0).toISOString(), error: null, cancelled: false } }] };
+      }),
+    },
+  } as unknown as RuntimeStore;
+  const facts = new ChannelStore(store);
+
+  await expect(facts.waiting(scope, sessionId)).resolves.toBe(followUpId);
+  const claimed = await facts.claimNext(scope, sessionId);
+  expect(claimed?.id).toBe(nextRunId);
+  expect(queries[0]).toContain("NOT a.deleted");
+  expect(queries[0]).toContain("ORDER BY m.seq DESC LIMIT 1");
+  expect(queries[1]).toContain("NOT a.deleted");
+  expect(queries[1]).toContain("ORDER BY m.seq ASC LIMIT 1");
+});
+
+it("exposes GET /v1/channel/intents/:runId scoped to host and domain and releases session chains on DELETE /v1/sessions/:sessionId", async () => {
+  const { runtime, channel: port } = channel();
+  const intent: AgentRunIntent = {
+    id: nextRunId, session: source.session, channel: { ...context, root: { session: source.session, runId: nextRunId } },
+    inputId, language: "en", status: "starting", createdAt: new Date(0).toISOString(), error: null, cancelled: false,
+  };
+  port.remember(intent.channel, initiatingCredential);
+  vi.spyOn(port.facts, "intent").mockImplementation(async (reqScope, id) => {
+    if (reqScope.hostId === scope.hostId && reqScope.domainId === scope.domainId && id === nextRunId) return intent;
+    throw Object.assign(new Error("Not found"), { status: 404, code: "NOT_FOUND" });
+  });
+  runtime.deleteSession = vi.fn(async () => {});
+  runtime.options.hosts = [{ id: scope.hostId, token: "fixture-host-token", providers: [context.agent.providerId] }];
+  Object.assign(runtime, { channel: port });
+  const server = createRuntimeHttp(runtime).listen(0);
+  try {
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const headers = { authorization: "Bearer fixture-host-token", "x-domain-id": scope.domainId, "x-correlation-id": "fixture" };
+    const found = await fetch(`${base}/v1/channel/intents/${nextRunId}`, { headers });
+    expect(found.status).toBe(200);
+    expect(await found.json()).toMatchObject({ id: nextRunId, status: "starting" });
+
+    const del = await fetch(`${base}/v1/sessions/${sessionId}`, { method: "DELETE", headers });
+    expect(del.status).toBe(204);
+    expect(runtime.deleteSession).toHaveBeenCalledWith(scope, sessionId);
+    expect(() => port.credential(intent.channel)).toThrow("initiating credential is no longer available");
+  } finally {
+    await new Promise<void>((done) => server.close(() => done()));
+  }
+});
+
+it("RuntimeStore.deleteSession rejects a preparing session and purges unclaimed starting intents and queued messages when idle", async () => {
+  const executed: Array<{ sql: string; params: unknown[] }> = [];
+  let sessionRow: Record<string, unknown> = { id: sessionId, active_run_id: null, preparing_run_id: nextRunId };
+  const fakeStore = Object.create(RuntimeStore.prototype) as RuntimeStore;
+  Object.assign(fakeStore, {
+    table: (name: string) => `"agent_runtime".${name}`,
+    transaction: async <T>(fn: (c: { query: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }> }) => Promise<T>) =>
+      fn({
+        query: async (sql: string, params: unknown[]) => {
+          executed.push({ sql, params });
+          if (sql.startsWith("SELECT * FROM")) return { rows: [sessionRow] };
+          return { rows: [] };
+        },
+      }),
+  });
+
+  await expect(fakeStore.deleteSession(scope, sessionId)).rejects.toMatchObject({ status: 409, code: "SESSION_BUSY" });
+  expect(executed).toHaveLength(1);
+
+  executed.length = 0;
+  sessionRow = { id: sessionId, active_run_id: null, preparing_run_id: null };
+  await fakeStore.deleteSession(scope, sessionId);
+  expect(executed.some(q => q.sql.includes("UPDATE") && q.sql.includes("admissions") && q.sql.includes("deleted=true, intent=NULL"))).toBe(true);
+  expect(executed.some(q => q.sql.includes("DELETE FROM") && q.sql.includes("messages"))).toBe(true);
+  expect(executed.some(q => q.sql.includes("DELETE FROM") && q.sql.includes("sessions"))).toBe(true);
+});

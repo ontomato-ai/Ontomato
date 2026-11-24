@@ -7,7 +7,7 @@ import { localizedApplicationText } from "@ontomato/contracts/application-metada
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelFormTargetSchema, panelObjectIdentitySchema } from "@ontomato/contracts/panel-manifest";
 import {
-  panelFormObjectAllFields, panelFormSaveInputSchema, panelFormValuesSchema,
+  panelFormObjectAllFields, panelFormSaveInputSchema,
   type PanelFormDescription, type PanelFormField,
 } from "@ontomato/contracts/panel-projection";
 import {
@@ -16,10 +16,10 @@ import {
 } from "@ontomato/contracts/product-governance";
 import {
   METRIC_CHART_COMPONENT, applicationPanelUseSchema, copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, deleteProductCurrentResponseSchema,
-  deleteProductPanelResponseSchema, productCurrentIdParamsSchema,
+  deleteProductPanelQuerySchema, deleteProductPanelResponseSchema, productCurrentIdParamsSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
-import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, APPLICATION_PANEL_USE, OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
 import { createLogger } from "../../logging/logger";
@@ -28,13 +28,13 @@ import { changeProductDomainGrant, changeProductGrant } from "../product-governa
 import { defaultAgentSchema } from "@ontomato/contracts/default-agent";
 import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
 import {
-  changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, deleteCurrentProduct,
+  changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, currentProductUsedBy, deleteCurrentProduct, readCataloguePanel,
 } from "./catalog";
 import { readCurrentPanel, readCurrentPanelLabel, readCurrentProjection, requireCurrentProduct, saveCurrentPanel, saveCurrentProjection } from "./current";
 import { applySubmittedFields } from "./submitted-form-values";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "./data-query-operations";
-import type { PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
+import type { PanelImpactInspector, PanelOperationHost, PanelRecordTarget, PanelWriteServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 
 const savedId = productCurrentIdParamsSchema;
 const noData = z.object({}).strict();
@@ -178,6 +178,47 @@ async function write(
   }
 }
 
+function deleteProductImpact(kind: "panel" | "projection", collection: string): PanelImpactInspector {
+  return {
+    handlerRef: `${collection}.delete.inspect-impact`,
+    async inspect({ locale, initiator: { owner, credentials } }, calls) {
+      const { objectType, primaryKey } = calls[0]!.target as PanelRecordTarget;
+      const label = kind === "panel"
+        ? await readCurrentPanelLabel(owner, credentials, primaryKey)
+        : (await readCurrentProjection(owner, credentials, primaryKey)).name;
+      const usage = await currentProductUsedBy(owner, credentials, kind, primaryKey);
+      const objects = usage.panels.map(({ id, name }) => ({ target: { objectType: PRODUCT_PANEL, primaryKey: id }, label: name }));
+      if ("applicationEntries" in usage) {
+        for (const entry of usage.applicationEntries) {
+          objects.push({
+            target: { objectType: APPLICATION_PANEL_USE, primaryKey: entry.entryId },
+            label: `${entry.applicationName} (${entry.path})`,
+          });
+        }
+        for (const className of usage.classNames) {
+          objects.push({ target: { objectType: OBJECT_TYPE, primaryKey: className }, label: className });
+        }
+      }
+      const word = (key: string, params: Record<string, string | number>) =>
+        tForLocale(locale ?? credentials.locale, `panels.productCatalog.${key}`, params);
+      const total = objects.length + usage.hiddenCount;
+      if (!total) {
+        return {
+          objects: [{ target: { objectType, primaryKey }, label }],
+          total: 1,
+          summary: word(`${kind}.deleteImpact`, { name: label }),
+        };
+      }
+      const summary = word(`${kind}.deleteInUse`, { name: label });
+      return {
+        objects,
+        total,
+        summary: usage.hiddenCount ? `${summary} ${word("deleteHiddenReferences", { count: usage.hiddenCount })}` : summary,
+      };
+    },
+  };
+}
+
 function productOperations(kind: "panel" | "projection", type: string, collection: string): PanelWriteServerOperation[] {
   const objectTarget = panelObjectIdentitySchema.extend({ kind: z.literal("object"), objectType: z.literal(type) });
   const { revision: updateRevision } = deleteProductCurrentQuerySchema.shape;
@@ -192,13 +233,9 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     targetSchema: z.discriminatedUnion("kind", [objectTarget, panelFormTargetSchema.options[1]]),
     inputSchema: panelFormSaveInputSchema,
     resultSchema: savedId,
-    draftOperation: target => target.kind === "draft" ? `${kind}.create` : `${kind}.update`,
     draftInput: input => panelFormSaveInputSchema.parse(input).values,
-    formInstructions: "Read the owner form. For edits, send the current revision and the JSON Pointers of the fields you changed.",
-    create: {
-      draftValues: values => panelFormValuesSchema.parse(values),
-      createdObject: data => ({ objectType: type, primaryKey: savedId.parse(data).id }),
-    },
+
+    create: true,
     async execute({ locale, executor: { owner, credentials } }, target, input) {
       return write(type, async () => {
         const { values: { id, ...submitted }, revision, submittedFields } = writeInput(panelFormSaveInputSchema, input);
@@ -235,6 +272,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     inputSchema: z.ZodType<Input, z.ZodTypeDef, unknown>,
     resultSchema: z.ZodTypeAny,
     run: (actor: PanelOperationHost["executor"], primaryKey: string, input: Input) => Promise<{ primaryKey: string; data: OutcomeData }>,
+    extra?: Pick<PanelWriteServerOperation, "unavailable" | "inspectImpact">,
   ): PanelWriteServerOperation {
     const handlerRef = `${collection}.${name}`;
     return {
@@ -249,6 +287,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
       targetSchema: objectTarget,
       inputSchema: inputSchema as z.ZodType<Input>,
       resultSchema,
+      ...extra,
       async targetLabel({ initiator: { owner, credentials } }, target) {
         if (kind === "panel" && name === "delete") return readCurrentPanelLabel(owner, credentials, target.primaryKey);
         const read = kind === "panel" ? readCurrentPanel : readCurrentProjection;
@@ -261,17 +300,35 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     };
   }
 
+  const panelCopyInputSchema = copyProductCurrentRequestSchema.extend({ template: z.boolean().optional() }).strict();
+  const panelDeleteUnavailable: PanelWriteServerOperation["unavailable"] | undefined = kind === "panel"
+    ? async (host, { primaryKey }) => {
+        const locale = host.locale ?? host.initiator.credentials.locale;
+        try {
+          const { panel, unavailable } = await readCataloguePanel(host.initiator.owner, host.initiator.credentials, primaryKey);
+          if (unavailable ? unavailable.revision !== undefined : panel.editable) return undefined;
+          return { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") };
+        } catch (error) {
+          if (!(error instanceof HttpError && (error.status === 403 || error.status === 404))) throw error;
+          return { reason: tForLocale(locale, "panels.productCatalog.application.availabilityUnavailable") };
+        }
+      }
+    : undefined;
+
   return [
     save,
-    action("copy", copyProductCurrentRequestSchema, savedId, async ({ owner, credentials }, sourceId, input) => {
-      const copied = await copyCurrentProduct(owner, credentials, kind, sourceId, input);
-      return { primaryKey: copied.id, data: { id: copied.id } };
-    }),
-    action("delete", deleteProductCurrentQuerySchema, kind === "panel" ? deleteProductPanelResponseSchema : deleteProductCurrentResponseSchema,
+    action("copy", kind === "panel" ? panelCopyInputSchema : copyProductCurrentRequestSchema, savedId,
+      async ({ owner, credentials }, sourceId, input) => {
+        const copied = await copyCurrentProduct(owner, credentials, kind, sourceId, input);
+        return { primaryKey: copied.id, data: { id: copied.id } };
+      }),
+    action("delete", kind === "panel" ? deleteProductPanelQuerySchema : deleteProductCurrentQuerySchema,
+      kind === "panel" ? deleteProductPanelResponseSchema : deleteProductCurrentResponseSchema,
       async ({ owner, credentials }, primaryKey, { revision }) => {
         const result = await deleteCurrentProduct(owner, credentials, kind, primaryKey, revision);
         return { primaryKey, data: runtimeJsonObjectSchema.parse(result) };
-      }),
+      },
+      { unavailable: panelDeleteUnavailable, inspectImpact: deleteProductImpact(kind, collection) }),
     ...(["grant", "revoke"] as const).map(name => action(name, grantInput, noData,
       async ({ owner, credentials }, primaryKey, input) => {
         await changeCurrentProductGrant(owner, credentials, kind, primaryKey, { ...input, remove: name === "revoke" });
@@ -299,13 +356,9 @@ const applicationSave: PanelWriteServerOperation = {
   targetSchema: z.discriminatedUnion("kind", [applicationTarget, panelFormTargetSchema.options[1]]),
   inputSchema: panelFormSaveInputSchema,
   resultSchema: savedId,
-  draftOperation: target => target.kind === "draft" ? "create" : "saveIdentity",
   draftInput: input => panelFormSaveInputSchema.parse(input).values,
-  formInstructions: "Read the application owner's form for the required section and send the JSON Pointers of the fields you changed.",
-  create: {
-    draftValues: values => panelFormValuesSchema.parse(values),
-    createdObject: data => ({ objectType: APPLICATION, primaryKey: savedId.parse(data).id }),
-  },
+
+  create: true,
   async execute({ locale, executor: { credentials } }, target, input) {
     return write(APPLICATION, async () => {
       const { values, submittedFields } = writeInput(panelFormSaveInputSchema, input);
@@ -383,9 +436,21 @@ function applicationAction<Input extends Record<string, unknown>>(
     inputSchema,
     resultSchema: noData,
     ...(extra?.unavailable && { unavailable: extra.unavailable }),
-    async targetLabel(host, { primaryKey }) {
+    async targetLabel(host, { primaryKey }, input) {
+      const locale = host.locale ?? "en";
       const record = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
-      return localizedApplicationText(record.names, host.locale ?? "en") ?? record.id;
+      const appLabel = localizedApplicationText(record.names, locale) ?? record.id;
+      if (name === "deleteEntry" || name === "updateEntry") {
+        const entryId = typeof input?.entryId === "string" ? input.entryId : undefined;
+        const entry = entryId ? record.panelUses.find(item => item.id === entryId) : undefined;
+        const entryLabel = (entry?.names && localizedApplicationText(entry.names, locale)) ?? entry?.path ?? entryId;
+        if (entryLabel) return `${appLabel} / ${entryLabel}`;
+      } else if (name === "addEntry") {
+        const entry = input?.entry as z.infer<typeof applicationPanelUseSchema> | undefined;
+        const entryLabel = (entry?.names && localizedApplicationText(entry.names, locale)) ?? entry?.path ?? entry?.id;
+        if (entryLabel) return `${appLabel} / ${entryLabel}`;
+      }
+      return appLabel;
     },
     async execute({ locale, executor }, target, input) {
       return write(APPLICATION, async () => {

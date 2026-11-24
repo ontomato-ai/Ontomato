@@ -22,6 +22,7 @@ vi.mock("../../assistant/skills", () => ({}));
 import {
   describeServerOperation, operationDeclaration, registeredPanelOperation,
 } from "../server-operations";
+import { operationHost } from "../operation-host";
 
 configureI18n({
   defaultLocale: "en",
@@ -42,7 +43,7 @@ describe("server-operations schema caching", () => {
     zodToJsonSchemaSpy.mockClear();
   });
 
-  it("caches operation declarations and descriptions without altering JSON Schema output", () => {
+  it("caches operation declarations and descriptions without altering JSON Schema output", async () => {
     const operationId = `${AGENT_DEFINITION}.save`;
     const first = registeredPanelOperation(operationId);
     expect(first).toBeDefined();
@@ -58,9 +59,10 @@ describe("server-operations schema caching", () => {
     expect(first!.declaration.inputSchema).toEqual(expectedInputSchema);
     expect(zodToJsonSchemaSpy).not.toHaveBeenCalled();
 
-    const firstDescription = describeServerOperation(first!.handler, "en", "editor");
+    const host = operationHost({ owner: { domainId: "d", userId: "reader" }, credentials: { locale: "en" } });
+    const firstDescription = await describeServerOperation(first!.handler, host, "editor");
     const callsAfterFirstDescribe = zodToJsonSchemaSpy.mock.calls.length;
-    const secondDescription = describeServerOperation(first!.handler, "en", "editor");
+    const secondDescription = await describeServerOperation(first!.handler, host, "editor");
 
     expect(callsAfterFirstDescribe).toBeLessThanOrEqual(1);
     expect(zodToJsonSchemaSpy).toHaveBeenCalledTimes(callsAfterFirstDescribe);

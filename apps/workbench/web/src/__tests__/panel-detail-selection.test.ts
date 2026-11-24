@@ -17,16 +17,15 @@ import { panelAnswer,
  * and the page beside a conversation — make the one conversion. Real router, real panel route and host; the network is
  * a stand-in.
  *
- * What this rules out: a detail address that lands on the panel with nothing selected; one that drops a draft's query,
- * or carries the old page's own parameters (`from`, `back`) onto the panel; one that stays in the reader's history as a
- * page of its own; and a deeper page under the detail address (M2's `/:className/view`) taken for a detail address.
+ * What this rules out: a detail address that lands on the panel with nothing selected; one that carries the old page's
+ * own parameters (`from`, `back`) onto the panel; one that stays in the reader's history as a page of its own; and a
+ * deeper page under the detail address (M2's `/:className/view`) taken for a detail address.
  */
 
 const application = "app-panels-trial-a";
 const panel = panelRecord("panel-schedules-trial", "Trial panel P", manifestP);
 const use = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panel.id, `/applications/${application}/tasks`);
 const selected = { selectedTask: task.id };
-const draft = { draftSessionId: "session-1", draftRunId: "run-1", draftPath: use.path };
 const selectedBy = (key: string) => ({ selectedTask: key });
 
 function answer(request: Sent) {
@@ -65,7 +64,7 @@ async function open(address: { path: string; query: Record<string, string> }) {
 
 async function expectPanelSelected({ router, sent }: Awaited<ReturnType<typeof open>>) {
   const { path, query } = router.currentRoute.value;
-  expect({ path, query }).toEqual({ path: use.path, query: { ...draft, ...selected } });
+  expect({ path, query }).toEqual({ path: use.path, query: selected });
   // The panel opens on the selection as on any address of its own.
   await vi.waitFor(() => expect(sent.some(request => request.path === "/api/product-panels/read"
     && JSON.stringify((request.body as { inputs: unknown }).inputs).includes(task.id))).toBe(true));
@@ -77,8 +76,8 @@ async function expectPanelSelected({ router, sent }: Awaited<ReturnType<typeof o
 
 afterEach(leaveFrame);
 
-it("opens a detail address of its own as the panel's address with its object selected, a draft's query kept", async () => {
-  const opened = await open({ path: `/applications/${application}/tasks/${task.id}`, query: { ...draft, from: "graph" } });
+it("opens a detail address of its own as the panel's address with its object selected", async () => {
+  const opened = await open({ path: `/applications/${application}/tasks/${task.id}`, query: { from: "graph" } });
   try {
     await expectPanelSelected(opened);
   } finally {
@@ -87,7 +86,7 @@ it("opens a detail address of its own as the panel's address with its object sel
 });
 
 it("opens the panel's own path naming a selection in its query with that object selected", async () => {
-  const opened = await open({ path: use.path, query: { focus: "task", id: task.id, back: "playground", ...draft } });
+  const opened = await open({ path: use.path, query: { focus: "task", id: task.id, back: "playground" } });
   try {
     await expectPanelSelected(opened);
   } finally {
@@ -102,9 +101,9 @@ it("leaves a deeper page under a detail address, and the panel's own address sel
   } finally {
     deeper.app.unmount();
   }
-  const plain = await open({ path: use.path, query: draft });
+  const plain = await open({ path: use.path, query: { keep: "1" } });
   try {
-    expect(plain.router.currentRoute.value.query).toEqual(draft);
+    expect(plain.router.currentRoute.value.query).toEqual({ keep: "1" });
   } finally {
     plain.app.unmount();
   }
@@ -112,10 +111,10 @@ it("leaves a deeper page under a detail address, and the panel's own address sel
 
 it("opens a detail address beside a conversation as the panel's address with its object selected", () => {
   const resolve = pilotPageResolver(() => {}, selections);
-  const asked = new URLSearchParams({ ...draft, from: "graph" });
+  const asked = new URLSearchParams({ from: "graph" });
   const page = resolve(`${use.path}/${encodeURIComponent(task.id)}?${asked}`)!;
   expect(page).toMatchObject({ id: "panel-application", instance: use.path, props: { applicationId: application } });
   const opened = new URL(page.props!.address as string, "http://page.invalid");
   expect({ path: opened.pathname, query: Object.fromEntries(opened.searchParams) })
-    .toEqual({ path: use.path, query: { ...draft, ...selected } });
+    .toEqual({ path: use.path, query: selected });
 });

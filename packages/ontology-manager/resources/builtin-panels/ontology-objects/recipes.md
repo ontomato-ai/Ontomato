@@ -5,19 +5,20 @@
 - 面板状态 `selected` 为空时是**目录**：通过 `catalog`（`ObjectList`）列出全部对象类型（`platform:ObjectType.list`），可按 `search` 里的关键词在显示名、API 名、业务说明与属性名里筛选。
 - `selected` 指向一个 `platform:ObjectType`（主键就是类的 API 名）时是这个类的**详情**：页头与摘要由 `detail`（`ObjectHeader`）和 `summary`（`MetricCard`）读取 `platform:ObjectType.record`（属性数、业务键数、关系数、主键状态 `primaryKeyStatus` 与主键名 `primaryKeyName`），右侧展示属性列表 `attributes`（`ObjectList`，读取 `platform:Attribute.list`）与关联关系列表 `relations`（`ObjectList`，读取 `platform:Relationship.list`）。
 - 新建对象类型通过页头「新建对象类型」触发，将公开状态 `creating` 置为 `true` 并打开 `objectForm` 创建弹窗；填完保存后进入新类的详情。
+- 公开状态 `creatingAttribute`（不写地址）为 `true` 时，在当前选中类（`selected`）下打开 `attributeForm` 新建属性弹窗（与属性编辑抽屉 `selectedAttribute` 互斥）；填完保存后关闭弹窗并打开新属性的编辑抽屉。
 - 目录、类详情、属性编辑抽屉都在同一张面板；直接打开某个类用本页地址 `<页地址>?selected=<类 API 名>`。
 - `selectedAttribute` 指向一个 `platform:Attribute`（主键是 JSON 文本 `["<类 API 名>","<属性名>"]`）时，详情页会打开该属性的编辑抽屉（由 `attributeDetail` 展示标题与主键状态，由 `attributeForm` 编辑字段）。
 
 回答“这是哪一页、选中了什么”时，先看 `selected` 和 `selectedAttribute`，再用上面的读取取当前字段，不要凭记忆。要让读者看到某个类，给出本页地址并带上 `?selected=<类 API 名>`（需要时连同 `&selectedAttribute=<属性主键>`）。
 
-## 起草表单（读者保存后才写入）
+## 填写表单（经确认或读者点击保存后才写入）
 
-起草前先读对应属主的表单（`objectForm` 的 `form`/`createForm`、`attributeForm` 的 `form`/`createForm`），`operation` 用它返回的 `save.draftOperation`，`form` 里只放要改的字段，字段路径以属主表单为准。草稿怎么写（草稿信封、链接参数）见本页生成的技能。把草稿链接交给读者，由读者在表单里检查并保存；不要替读者保存。
+填写前先读对应属主的表单（`objectForm` 的 `form`/`createForm`、`attributeForm` 的 `form`/`createForm`），字段路径以属主表单为准。先用 `present` 打开对应视图或弹窗，再用 `fill_form` 直接填入实时表单；需要保存时调用对应表单的 `page_action`（默认在对话中请读者确认后才提交）。
 
-- 新建对象类型：用 `objectForm` 的 `createForm`，字段是 API 名、主键名、显示名、业务描述；链接里不带 `selected`。格式和重名由属主校验，原因显示在字段旁。
-- 修改对象类型：用 `objectForm` 的 `form`，只有显示名和业务描述可改，API 名只读；链接带 `?selected=<类 API 名>`（属性编辑抽屉开着也不用管，草稿按类型给到对应的表单）。
-- 新建属性：用 `attributeForm` 的 `createForm`；链接里必须带 `?selected=<类 API 名>`（所属类），所属对象类型由页面固定为当前类，读者不能改。
-- 修改属性：用 `attributeForm` 的 `form`，可改显示名、描述、启用、业务键，主键不在表单里改；链接带上 `?selected=<类 API 名>&selectedAttribute=<属性主键>`。
+- 新建对象类型：用 `present` 设 `creating: true` 打开 `objectForm` 创建弹窗，再对 `objectForm` 调 `fill_form` 填 API 名、主键名、显示名、业务描述。格式和重名由属主校验，原因显示在字段旁。
+- 修改对象类型：用 `present` 选中类（`selected: { className: "platform:ObjectType", primaryKey: "<类 API 名>" }`），对 `objectForm` 调 `fill_form`（只有显示名和业务描述可改，API 名只读）。
+- 新建属性：用 `present` 选中所属类（`selected`）并设 `creatingAttribute: true`（同时确保 `selectedAttribute: null`）打开新建属性弹窗，所属对象类型由页面固定为当前类，读者不能改；再对 `attributeForm` 调 `fill_form`。
+- 修改属性：用 `present` 选中类与属性（`selected` 与 `selectedAttribute`），对 `attributeForm` 调 `fill_form`（可改显示名、描述、启用、业务键，主键不在表单里改）。
 
 ## 需要确认才执行的操作
 

@@ -89,7 +89,13 @@ if (host) {
     const runId = id(req, "runId");
     const callback = res.locals.runtimeCallback as RuntimeCallback | undefined;
     if (callback?.runId !== runId) throw new HttpError(403, "A presentation callback credential is required", "FORBIDDEN");
-    const { input, toolCallId } = presentationCallRequestSchema.parse(req.body);
+    const parsed = presentationCallRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const message = parsed.error.issues.map(({ path, message }) =>
+        path.length ? `${path.join(".")}: ${message}` : message).join("\n");
+      throw new HttpError(400, message, "INVALID_REQUEST");
+    }
+    const { input, toolCallId } = parsed.data;
     const abort = new AbortController();
     res.once("close", () => abort.abort());
     res.json(await requestPresentation(service, host, context(req).owner, {

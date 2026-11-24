@@ -382,7 +382,20 @@ public class KnowledgeGovernanceService {
       if(old!=null&&(!Objects.equals(old.getKnowledgeTitle(),item.getString("title"))||!Objects.equals(old.getKnowledgeText(),item.getString("text"))))throw conflict("Knowledge ID already contains different content");
       records.add(item);
     }
-    for(var item:records)if(!existing.containsKey(item.getString("id")))knowledge.addBussinessKnowledge(item.getString("id"),item.getString("title"),item.getString("text"),0,item.containsKey("tags")?item.getList("tags",String.class):List.of(),identity);
-    return JSONObject.of("imported",records.stream().map(item->item.getString("id")).toList(),"status","pending");
+    var imported = new ArrayList<String>();
+    var skipped = new ArrayList<String>();
+    for (var item : records) {
+      var itemId = item.getString("id");
+      if (existing.containsKey(itemId)) {
+        skipped.add(itemId);
+      } else {
+        knowledge.addBussinessKnowledge(itemId, item.getString("title"), item.getString("text"), 0,
+            item.containsKey("tags") ? item.getList("tags", String.class) : List.of(), identity);
+        imported.add(itemId);
+      }
+    }
+    var receipt = JSONObject.of("imported", imported, "skipped", skipped);
+    if (!imported.isEmpty()) receipt.put("status", "pending");
+    return receipt;
   }
 }

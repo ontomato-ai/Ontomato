@@ -63,7 +63,7 @@ function read(request: Sent) {
     values: { name: inputs.task?.primaryKey === secondTask.id ? "Second form" : "Nightly" },
     errors: [],
     revision: 3,
-    save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+    save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {} },
   };
 }
 
@@ -174,7 +174,7 @@ it("shows a page kept within its application as it was left: its module not run 
     release();
     await vi.waitFor(() => expect(reopened()).toBe(1));
     await vi.waitFor(() => expect(recordReads()).toBeGreaterThan(readsBefore));
-    expect(sent.filter(request => request.path === `/api/product-panels/${p.id}/snapshot`)).toHaveLength(2);
+    expect(sent.filter(request => request.path === `/api/product-panels/${p.id}/snapshot`)).toHaveLength(1);
     expect(sent.filter(request => request.path === `/api/product-panels/${p.id}`)).toHaveLength(1);
     expect(panels(element)).toEqual([tasks, summary]);
     expect(moved.some(node => node.contains(tasks))).toBe(false);

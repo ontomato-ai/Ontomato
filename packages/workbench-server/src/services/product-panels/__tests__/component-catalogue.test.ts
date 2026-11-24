@@ -51,6 +51,22 @@ vi.mock("../../app-builder/sdk", () => ({
           },
         },
         {
+          componentId: "ObjectRelations",
+          module: "@ontomato/sdk/base",
+          exportName: "ObjectRelations",
+          role: "control",
+          meaning: "Shows an object's relations.",
+          inputs: {
+            selected: { kind: "object", objectType: "@any" },
+            visibleRelationKinds: { kind: "list", items: { kind: "scalar", type: "string" } },
+          },
+          outputs: {
+            start: { kind: "object", objectType: "@any" },
+            visibleRelationKinds: { kind: "list", items: { kind: "scalar", type: "string" } },
+          },
+          ports: { props: [], slots: [], events: [] },
+        },
+        {
           componentId: "WildcardBox",
           module: "@ontomato/sdk/panel",
           exportName: "WildcardBox",
@@ -192,4 +208,17 @@ it("formats wildcard data entries, declared package operations, and throws 404 f
   await expect(readSdkComponentRecord(owner, "@ontomato/sdk:Missing", "en")).rejects.toThrow(
     "SDK component '@ontomato/sdk:Missing' is not in the current release.",
   );
+});
+
+it("describes the two ObjectRelations wiring choices in the reader's locale", async () => {
+  const component = "@ontomato/sdk:ObjectRelations";
+  const [inputs, outputs] = await Promise.all([
+    readSdkComponentInputRows(owner, component, "en"),
+    readSdkComponentOutputRows(owner, component, "en"),
+  ]);
+  expect(inputs.find(row => row.label === "selected")?.fields.type).toBe(en["panels.sdkComponent.portAnyOntologyObject"]);
+  expect(outputs.find(row => row.label === "start")?.fields.type).toBe(en["panels.sdkComponent.portAnyOntologyObject"]);
+  for (const rows of [inputs, outputs]) {
+    expect(rows.find(row => row.label === "visibleRelationKinds")?.fields.type).toBe(en["panels.sdkComponent.portRelationKinds"]);
+  }
 });

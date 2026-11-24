@@ -42,7 +42,7 @@ const description = {
   ],
   values: { name: "Adjust age", description: "Sets an age", parameters: [{ name: "personId" }], code: "pass" },
   errors: [], revision: 1,
-  save: { method: "PUT", path: "/functions/:id", bodySchema: {}, draftOperation: "function.save" },
+  save: { method: "PUT", path: "/functions/:id", bodySchema: {} },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 
@@ -53,7 +53,7 @@ afterEach(() => {
 it("says a reason the owner gives several fields once for the form, and a field's own reason beside it", async () => {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "functions", url: () => "/functions", label: () => "Functions", initial: { fn },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => (request.operations ? ready({}) : ready(description)),
   });

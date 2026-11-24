@@ -1,0 +1,13 @@
+{
+  "panels": [
+    {
+      "id": "template-academic-enrollments",
+      "mode": "create",
+      "input": {
+        "name": "Enrollments",
+        "description": "Enrollments for the selected term",
+        "visibility": "domain"
+      }
+    }
+  ]
+}

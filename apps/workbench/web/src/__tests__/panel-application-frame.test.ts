@@ -2,12 +2,23 @@ import { afterEach, expect, it, vi } from "vitest";
 import { defineComponent, h, type Ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
+import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-check";
 import { parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
+import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
+import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import { provideApplicationFrame } from "@ontomato/platform-shell";
+import { components as sdkCatalogueComponents } from "../../../../../packages/apps-sdk/src/catalogue";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
+import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
+import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
 import platformFrameSource from "../../../../../packages/platform-shell/resources/builtin-panels/platform-frame/panel.json";
 import platformFrameHtml from "../../../../../packages/platform-shell/resources/builtin-panels/platform-frame/panel.html?raw";
 import platformFrameModule from "../../../../../packages/platform-shell/resources/builtin-panels/platform-frame/panel.mjs?raw";
+import ontologyFrameSource from "../../../../../packages/ontology-manager/resources/builtin-panels/ontology-frame/panel.json";
+import ontologyFrameHtml from "../../../../../packages/ontology-manager/resources/builtin-panels/ontology-frame/panel.html?raw";
+import ontologyFrameModule from "../../../../../packages/ontology-manager/resources/builtin-panels/ontology-frame/panel.mjs?raw";
 import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, panelUse, projections, type Sent } from "./panel-frame";
 
 /*
@@ -294,5 +305,226 @@ it("supplies the frame's declared deepLink defaults on first unframed (beside-co
     expect(clearedMount.element.querySelector(".term")?.textContent).toBe("");
   } finally {
     clearedMount.app.unmount();
+  }
+});
+
+it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads only visible count members, populates mobile select, and preserves navigationContext routing", async () => {
+  expect(ontologyFrameModule).not.toContain("usePanelData");
+  expect(JSON.stringify(ontologyFrameSource)).not.toContain("PanelData");
+
+  const parsedManifest = panelAuthoringManifestSchema.parse(ontologyFrameSource.manifest);
+  const typeTable = {
+    objectTypes: Object.fromEntries(
+      Object.entries(platformObjectTypes).map(([typeId, spec]) => [
+        typeId,
+        platformTypeTableEntrySchema.parse({ reads: spec.reads ?? {} }),
+      ]),
+    ),
+  };
+  const authoringComponents = sdkCatalogueComponents.map((entry) => ({
+    ...entry,
+    ports: { props: [], events: [], slots: [] },
+  })) as unknown as Parameters<typeof expandPanelAuthoringMember>[2]["components"];
+  const frameMembers: Record<string, unknown> = {};
+  const frameProjections: Record<string, DirectProjection> = {};
+  for (const [key, declaration] of Object.entries(parsedManifest.members)) {
+    if ("component" in declaration) {
+      const id = declaration.id!;
+      const expanded = expandPanelAuthoringMember(key, declaration, {
+        state: parsedManifest.state,
+        components: authoringComponents,
+        typeTable,
+      });
+      frameMembers[key] = { ...expanded.placement, target: { projectionId: id } };
+      frameProjections[id] = {
+        ...expanded.projection,
+        id,
+        name: key,
+        domainId: null,
+        ownerId: null,
+        revision: 1,
+        createdAt: "",
+        updatedAt: "",
+        editable: false,
+        visibility: "platform",
+        description: "",
+      } as DirectProjection;
+    } else {
+      frameMembers[key] = declaration;
+    }
+  }
+
+  // All 15 count projections use ObjectCount with badge appearance;
+  // 7 use count-only reads (no params) and 8 paged queries keep size: 1.
+  const countProjectionList = Object.values(frameProjections);
+  expect(countProjectionList).toHaveLength(15);
+  const countReadMembers = [
+    "builtin-product-om-frame-objects",
+    "builtin-product-om-frame-attributes",
+    "builtin-product-om-frame-relations",
+    "builtin-product-om-frame-actions",
+    "builtin-product-om-frame-workflows",
+    "builtin-product-om-frame-components",
+    "builtin-product-om-frame-agents",
+  ];
+  for (const projection of countProjectionList) {
+    expect(projection.componentId).toBe("@ontomato/sdk:ObjectCount");
+    expect(projection.config).toEqual({ appearance: "badge" });
+    if (countReadMembers.includes(projection.id)) {
+      expect(projection.data.rows?.read).toBe("count");
+      expect(projection.data.rows?.params).toEqual({});
+    } else {
+      expect(projection.data.rows?.read).toBe("query");
+      expect(projection.data.rows?.params?.size).toEqual({ literal: 1 });
+    }
+  }
+
+  const ontologyFrame = {
+    ...panelRecord("builtin-product-ontology-frame", "Ontology manager", definePanel({
+      state: parsedManifest.state as never,
+      members: frameMembers as never,
+    })),
+    content: {
+      html: ontologyFrameHtml,
+      module: ontologyFrameModule,
+      messages: ontologyFrameSource.content.messages,
+    },
+    visibility: "platform" as const,
+    domainId: null,
+    ownerId: null,
+    editable: false as const,
+  };
+
+  // Expose only a subset of menu entries (omitting agents/applications/panels/workflows/etc.)
+  // to verify unmounted count members issue zero data reads even though usePanelOutput wires all 15.
+  const ontologyUses = [
+    { ...panelUse("use-playground", "om-playground", content.id, "/ontology/playground"), names: { en: "Ontology graph" }, groupKey: "facts" },
+    { ...panelUse("use-objects", "om-objects", content.id, "/ontology/objects"), names: { en: "Object types" }, groupKey: "facts" },
+    { ...panelUse("use-knowledge", "om-knowledge", content.id, "/ontology/knowledge"), names: { en: "Business knowledge" }, groupKey: "facts" },
+    { ...panelUse("use-skills", "om-skills", content.id, "/ontology/skills"), names: { en: "Skills" }, groupKey: "capabilities" },
+    { ...panelUse("use-members", "om-members", content.id, "/permissions/members"), names: { en: "Members" }, groupKey: "governance" },
+  ];
+
+  const readMembers: string[] = [];
+  const responder = async (request: Sent) => {
+    if (request.path === `/api/product-panels/${ontologyFrame.id}/snapshot`) {
+      const { pageSkillContext: _none, ...snapshot } = await (await panelSnapshot(ontologyFrame, frameProjections, request)).json();
+      return Response.json(snapshot);
+    }
+    if (request.path === "/api/data-query/platform/applications/ontology/panel-uses") {
+      return Response.json({
+        data: {
+          applicationId: "ontology",
+          names: { en: "Ontology manager" },
+          groups: [
+            { key: "facts", names: { en: "Facts" }, sort: 1 },
+            { key: "capabilities", names: { en: "Capabilities" }, sort: 2 },
+            { key: "products", names: { en: "Product layer" }, sort: 3 },
+            { key: "governance", names: { en: "Governance" }, sort: 4 },
+          ],
+          entry: { path: "/ontology", renderer: "panels" },
+          panelUses: ontologyUses,
+          framePanelId: ontologyFrame.id,
+        },
+      });
+    }
+    if (request.path === "/api/product-panels/read") {
+      const payload = request.body as { memberPath?: readonly { member?: string }[]; operations?: unknown };
+      if ("operations" in payload) {
+        return Response.json({ status: "ready", value: {} });
+      }
+      const member = payload.memberPath?.[0]?.member ?? "";
+      readMembers.push(member);
+      if (member === "objectTypes") {
+        return Response.json({
+          status: "ready",
+          value: { rows: [], total: 3 },
+        });
+      }
+      if (member === "knowledge") {
+        return Response.json({
+          status: "ready",
+          value: { total: 42, rows: [{ primaryKey: "k-1", label: "Rule 1", fields: {} }] },
+        });
+      }
+      if (member === "skills") {
+        return Response.json({ status: "forbidden" });
+      }
+      return Response.json({ status: "ready", value: { rows: [], total: 0 } });
+    }
+    for (const [id, projection] of Object.entries(frameProjections)) {
+      if (request.path === `/api/product-projections/${id}`) return Response.json({ projection });
+    }
+    for (const panel of [content, ontologyFrame]) {
+      if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+      if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, projections, request);
+    }
+    return nothingAt(request);
+  };
+
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      {
+        path: "/ontology/:panelPath(.*)?",
+        component: PanelApplicationRoute,
+        props: () => ({ applicationId: "ontology" }),
+      },
+      {
+        path: "/permissions/:panelPath(.*)?",
+        component: { template: "<div class='permissions-page' />" },
+      },
+    ],
+  });
+  const catalog = useApplicationCatalog();
+  const previousApplications = catalog.applications.value;
+  catalog.applications.value = catalogFixture().map((app) =>
+    app.id === "ontology"
+      ? { ...app, panelUses: ontologyUses, framePanelId: ontologyFrame.id }
+      : app,
+  );
+  installPlatform(responder, router);
+
+  await router.push("/ontology/playground");
+  const mounted = mountPlatformPage(() => h(defineComponent({
+    setup() {
+      provideApplicationFrame();
+      return () => h(RouterView);
+    },
+  })), router);
+
+  try {
+    await vi.waitFor(() => {
+      const objectsBadge = mounted.element.querySelector('[data-member="objectTypes"] .sdk-object-count-badge');
+      const knowledgeBadge = mounted.element.querySelector('[data-member="knowledge"] .sdk-object-count-badge');
+      expect(objectsBadge?.textContent?.trim()).toBe("3");
+      expect(knowledgeBadge?.textContent?.trim()).toBe("42");
+    });
+
+    // Only visible count members issued data reads; unauthorized/omitted members issued zero reads.
+    expect([...new Set(readMembers)].sort()).toEqual(["knowledge", "objectTypes", "skills"]);
+
+    // Forbidden count member renders zero ObjectCount DOM nodes; non-count entry renders zero trailing projection.
+    expect(mounted.element.querySelector('[data-member="skills"] .sdk-object-count')).toBeNull();
+    const playgroundRow = [...mounted.element.querySelectorAll(".page-row")].find((row) => row.textContent?.includes("Ontology graph"));
+    expect(playgroundRow?.querySelector(".ontology-frame-trailing")).toBeNull();
+
+    // Mobile <select> receives (${total}) only for valid totals and plain labels for the rest.
+    const optionTexts = [...mounted.element.querySelectorAll(".mobile-page-select option")].map((opt) => opt.textContent?.trim());
+    expect(optionTexts).toEqual([
+      "Ontology graph",
+      "Object types (3)",
+      "Business knowledge (42)",
+      "Skills",
+      "Members",
+    ]);
+
+    // Non-/ontology/ menu entries still append ?navigationContext=ontology on navigation.
+    const membersRow = [...mounted.element.querySelectorAll<HTMLButtonElement>(".page-row")].find((row) => row.textContent?.includes("Members"));
+    membersRow?.click();
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe("/permissions/members?navigationContext=ontology"));
+  } finally {
+    mounted.app.unmount();
+    catalog.applications.value = previousApplications;
   }
 });

@@ -34,7 +34,6 @@ import {
 const modelPath = `${DATA_QUERY_GATEWAY}/ontology/model`;
 
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
-const formValues = panelFormSaveInputSchema.shape.values;
 const emptyResultSchema = z.object({}).strict();
 const classDeletionSchema = z.object({ relationships: z.array(z.string()) }).strict();
 const deletionImpactSchema = z.object({ relationships: z.array(relationshipViewSchema) }).strict();
@@ -232,13 +231,9 @@ export const ontologyModelServerOperations = [
     targetSchema: targets(OBJECT_TYPE),
     inputSchema: saveInputSchema,
     resultSchema: objectTypeViewSchema,
-    draftOperation: (target: PanelOperationTarget) => (target.kind === "draft" ? "objectType.create" : "objectType.update"),
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions: "Read the object type's form for the intended target. Use its fields and option sources, save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.",
-    create: {
-      draftValues: (values: unknown, _domainId: string) => formValues.parse(values),
-      createdObject: (data: unknown) => ({ objectType: OBJECT_TYPE, primaryKey: objectTypeViewSchema.parse(data).className }),
-    },
+
+    create: true,
     async execute(
       host: PanelOperationHost,
       target: PanelOperationTarget,
@@ -286,13 +281,9 @@ export const ontologyModelServerOperations = [
     targetSchema: targets(ATTRIBUTE),
     inputSchema: saveInputSchema,
     resultSchema: attributeViewSchema,
-    draftOperation: (target: PanelOperationTarget) => (target.kind === "draft" ? "attribute.create" : "attribute.update"),
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions: "Read the attribute's form for the intended target. Use its fields and option sources, save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.",
-    create: {
-      draftValues: (values: unknown, _domainId: string) => formValues.parse(values),
-      createdObject: (data: unknown) => attributeIdentity(attributeViewSchema.parse(data)),
-    },
+
+    create: true,
     async execute(
       host: PanelOperationHost,
       target: PanelOperationTarget,
@@ -363,13 +354,9 @@ export const ontologyModelServerOperations = [
     targetSchema: targets(RELATIONSHIP),
     inputSchema: saveInputSchema,
     resultSchema: relationshipViewSchema,
-    draftOperation: (target: PanelOperationTarget) => (target.kind === "draft" ? "relationship.create" : "relationship.update"),
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions: "Read the relationship's form for the intended target. Use its fields and the options its ends offer, save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.",
-    create: {
-      draftValues: (values: unknown, _domainId: string) => formValues.parse(values),
-      createdObject: (data: unknown) => ({ objectType: RELATIONSHIP, primaryKey: relationshipViewSchema.parse(data).relationship }),
-    },
+
+    create: true,
     async execute(
       host: PanelOperationHost,
       target: PanelOperationTarget,

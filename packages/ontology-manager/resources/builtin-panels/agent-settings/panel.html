@@ -1,18 +1,5 @@
 <style>
   [v-cloak] { display: none; }
-  .agent-settings-button {
-    min-height: var(--control-height-sm);
-    width: fit-content;
-    padding: 0 var(--spacing-sm);
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--sdk-text-color-secondary);
-    font: inherit;
-    cursor: pointer;
-  }
-  .agent-settings-button:hover { background: var(--ui-fill-tertiary); color: var(--sdk-text-color-primary); }
-  .agent-settings-button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
   .agent-settings-empty { color: var(--sdk-text-color-secondary); margin: 0; }
   .agent-settings-detail { display: flex; flex-direction: column; gap: var(--page-content-gap); }
   .agent-settings-head {
@@ -39,34 +26,36 @@
   .agent-settings-actions { display: flex; align-items: center; gap: var(--spacing-sm); flex: 0 0 auto; }
 </style>
 <div id="app" v-cloak>
-  <p v-if="rows.status === 'forbidden'" class="agent-settings-empty" role="alert">{{ t('agents.accessDenied') }}</p>
-  <two-pane-layout v-else-if="rows.status !== 'loading'">
+  <p v-if="listStatus === 'forbidden'" class="agent-settings-empty" role="alert">{{ t('agents.accessDenied') }}</p>
+  <two-pane-layout v-show="listVisible">
     <template #aside>
-      <div class="agent-settings-aside-head">
+      <div v-if="listVisible" class="agent-settings-aside-head">
         <h3>{{ t('agents.title') }}</h3>
         <sdk-button type="primary" size="small" :disabled="mode === 'create'" @click="startCreate">{{ t('agents.new') }}</sdk-button>
       </div>
       <projection slot="list"></projection>
     </template>
-    <p v-if="mode === 'list'" class="agent-settings-empty">{{ t('agents.choose') }}</p>
-    <div v-show="mode !== 'list'" class="agent-settings-detail">
-      <div class="agent-settings-head">
-        <projection v-if="mode === 'edit'" slot="summary" class="agent-settings-summary"></projection>
-        <span v-else class="agent-settings-summary"></span>
-        <div class="agent-settings-actions">
-          <button type="button" class="agent-settings-button" @click="viewType">{{ t('agents.viewType') }}</button>
-          <projection v-if="mode === 'edit'" slot="remove"></projection>
+    <template v-if="listVisible">
+      <p v-if="mode === 'list'" class="agent-settings-empty">{{ t('agents.choose') }}</p>
+      <div v-show="mode !== 'list'" class="agent-settings-detail">
+        <div class="agent-settings-head">
+          <projection v-if="mode === 'edit'" slot="summary" class="agent-settings-summary"></projection>
+          <span v-else class="agent-settings-summary"></span>
+          <div class="agent-settings-actions">
+            <sdk-button text size="small" @click="viewType">{{ t('agents.viewType') }}</sdk-button>
+            <projection v-if="selectedReady" slot="remove"></projection>
+          </div>
         </div>
+        <section-group v-if="formMounted" :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
+          <projection slot="form">
+            <template #field-modelSelection.modelId><projection slot="model"></projection></template>
+            <template #field-skills><projection slot="skills"></projection></template>
+            <template #field-enabledMcpServiceIds><projection slot="tools"></projection></template>
+            <template #field-executionUserId><projection slot="executor"></projection></template>
+            <template #field-classNames><projection slot="scope"></projection></template>
+          </projection>
+        </section-group>
       </div>
-      <section-group :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
-        <projection slot="form">
-          <template #field-modelSelection.modelId><projection slot="model"></projection></template>
-          <template #field-skills><projection slot="skills"></projection></template>
-          <template #field-enabledMcpServiceIds><projection slot="tools"></projection></template>
-          <template #field-executionUserId><projection slot="executor"></projection></template>
-          <template #field-classNames><projection slot="scope"></projection></template>
-        </projection>
-      </section-group>
-    </div>
+    </template>
   </two-pane-layout>
 </div>

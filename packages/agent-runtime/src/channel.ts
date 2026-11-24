@@ -64,6 +64,18 @@ export class AgentChannel {
     chain.executions.delete(intent.id);
     if (!chain.executions.size) this.chains.delete(key);
   }
+  /** Drop in-memory credentials and bindings rooted at a deleted session. */
+  releaseSession(scope: Scope, sessionId: string) {
+    const providerIds = new Set(
+      (this.runtime.options.agentProviders ?? []).filter(p => p.hostId === scope.hostId).map(p => p.id),
+    );
+    for (const key of this.chains.keys()) {
+      const [domainId, providerId, rootSessionId] = JSON.parse(key) as [string, string, string, string];
+      if (domainId === scope.domainId && rootSessionId === sessionId && providerIds.has(providerId)) {
+        this.chains.delete(key);
+      }
+    }
+  }
   constructor(readonly runtime: AgentRuntime) { this.facts = new ChannelStore(runtime.store); }
   provider(id: string) {
     const provider = this.runtime.options.agentProviders?.find(p => p.id === id);
@@ -218,25 +230,35 @@ export class AgentChannel {
       }, true);
       await this.announce(intent);
     } catch (error) {
-      const modelOnly=await this.runtime.locked(scope,intent.session.sessionId,async()=>{
-        const current=await this.facts.intent(scope,intent.id);
-        if(!current.cancelled || current.cancelMode!=="model") return false;
-        current.status="cancelled";current.error=null;await this.facts.update(scope,current);return true;
+      const modelOnly = await this.runtime.locked(scope, intent.session.sessionId, async () => {
+        const current = await this.facts.intent(scope, intent.id);
+        if (!current.cancelled || current.cancelMode !== "model") return null;
+        current.status = "cancelled";
+        current.error = null;
+        await this.facts.update(scope, current);
+        return { next: await this.facts.claimNext(scope, intent.session.sessionId) };
       });
-      if(modelOnly) { await this.notify(scope,intent.id);return; }
+      if (modelOnly) {
+        try { await this.notify(scope, intent.id); }
+        finally { if (modelOnly.next) this.launch(modelOnly.next); }
+        return;
+      }
       let failure = safeMessage(error);
       if (hostPrepared) {
         try { await this.callback(intent,"cancel"); }
         catch (closing) { failure += `; host cancellation failed: ${safeMessage(closing)}`; }
       }
-      await this.runtime.locked(scope, intent.session.sessionId, async () => {
+      const next = await this.runtime.locked(scope, intent.session.sessionId, async () => {
         const current = await this.facts.intent(scope, intent.id);
         current.status = current.cancelled ? "cancelled" : "failed";
         current.error = failure;
         await this.facts.update(scope, current);
+        return this.facts.claimNext(scope, intent.session.sessionId);
       });
-      await this.announce(intent);
-      await this.notify(scope,intent.id,true);
+      try {
+        await this.announce(intent);
+        await this.notify(scope,intent.id,true);
+      } finally { if (next) this.launch(next); }
       throw error;
     }
   }
@@ -272,25 +294,36 @@ export class AgentChannel {
       const binding=await this.facts.binding(scope,target.sessionId);
       if(binding.actor.domainId!==actor.domainId) throw new RuntimeError(403,"CROSS_DOMAIN","Cross-domain messages are forbidden");
       if(web && binding.agent.agentId!==web.channel.agent.agentId) throw new RuntimeError(409,"AGENT_CHANGED","Session belongs to another agent");
-      const session=await this.runtime.store.session(scope,target.sessionId), preparing=await this.facts.preparing(scope,target.sessionId);
-      if((session.activeRunId || preparing) && input.role==="notification" && input.kind==="agent-message" && !steer) throw new RuntimeError(409,"SESSION_BUSY","Use steer to insert an ordinary message into a running session");
+      const session=await this.runtime.store.session(scope,target.sessionId), waiting=await this.facts.waiting(scope,target.sessionId);
+      const queued = Boolean(session.activeRunId || waiting);
+      if(queued && input.role==="notification" && input.kind==="agent-message" && !steer) throw new RuntimeError(409,"SESSION_BUSY","Use steer to insert an ordinary message into a running session");
       if(web && input.role==="notification" && input.replyTo && !(await this.facts.pendingQuestions(scope,target.sessionId)).some(question=>question.requestId===input.replyTo)) throw new RuntimeError(400,"INVALID_REPLY","replyTo must identify a pending question for this conversation's user");
       const openRun=session.activeRunId && this.runtime.acceptsInput(scope,session.activeRunId) ? session.activeRunId : null;
-      let existingRun=openRun ?? preparing;
-      if (existingRun && web) {
-        const existingIntent = await this.facts.intent(scope, existingRun);
-        // Never steer a human message into an unattended background run (which uses the agent's
-        // default execution identity) or vice versa; seal the active run and queue a fresh run instead.
-        if (Boolean(web.channel.userRecipient) !== Boolean(existingIntent.channel.userRecipient)) {
-          if (preparing) throw new RuntimeError(409, "SESSION_BUSY", "Session is starting a run with a different execution context; retry shortly");
-          this.runtime.seal(scope, openRun!);
-          existingRun = null;
+      const sameSource = (candidate: AgentRunIntent) => {
+        if (web) {
+          return Boolean(web.channel.userRecipient) === Boolean(candidate.channel.userRecipient)
+            && Boolean(web.channel.requestedBy) === Boolean(candidate.channel.requestedBy)
+            && web.channel.actor.domainId === candidate.channel.actor.domainId;
+        }
+        if (external) {
+          return !candidate.channel.userRecipient
+            && !candidate.channel.requestedBy
+            && external.actor.domainId === candidate.channel.actor.domainId;
+        }
+        return true;
+      };
+      let existingRun: string | null = null;
+      for (const candidate of [openRun, waiting]) {
+        if (candidate && ((!web && !external) || sameSource(await this.facts.intent(scope, candidate)))) {
+          existingRun = candidate;
+          break;
         }
       }
       const received=await this.facts.receive(scope,target.sessionId,input,{mode:steer || (input.role==="notification" && input.replyTo)?"steer":"followup",...(web?{id:web.runId}:{}),intentId:existingRun ?? undefined});
       if(existingRun) {
-        if(openRun) await this.runtime.inputReceived(scope,openRun,received);
-        return {input:received,replayed:false,delivery:{messageId:received.id,sessionRef:target,runId:existingRun,delivery:"steer",status:openRun?"running":"starting"}};
+        const running = existingRun === openRun;
+        if(running) await this.runtime.inputReceived(scope,existingRun,received);
+        return {input:received,replayed:false,delivery:{messageId:received.id,sessionRef:target,runId:existingRun,delivery:"steer",status:running?"running":"starting"}};
       }
       const previous = web ? null : resultRecipientRunId
         ? await this.facts.intent(scope,resultRecipientRunId)
@@ -307,12 +340,12 @@ export class AgentChannel {
         language:web?.language ?? external?.language ?? requesterRun?.language ?? previous!.language,
         context:resultRecipientRunId ? previous!.context : web?.context ?? binding.context,
         executionUserId:web ? web.executionUserId : external ? null : requesterRun ? requesterRun.executionUserId : previous?.executionUserId,
-        afterRunId:session.activeRunId ?? undefined,
+        queued,
       });
       if((web || external) && channel.root.runId===runId)
         this.remember(channel,web?.credential ?? external!.credential,web?.presentationBinding);
       this.retain(intent);
-      if(!session.activeRunId) launch=intent;
+      if(!queued) launch=intent;
       return {input:received,replayed:false,delivery:{messageId:received.id,sessionRef:target,runId,delivery:"run",status:"starting"}};
     });
     this.emitChange(scope,target.sessionId);
@@ -335,13 +368,13 @@ export class AgentChannel {
     intent.status = run.stopReason === "aborted" ? "cancelled" : run.stopReason === "error" ? "failed" : "completed";
     intent.error = run.errorMessage;
     await this.facts.update(scope, intent);
-    const preparing=await this.facts.preparing(scope,run.sessionId);
-    if(preparing && preparing !== run.id) return this.facts.intent(scope,preparing);
+    const next = await this.facts.claimNext(scope, run.sessionId);
+    if (next) return next;
     if (intent.cancelled) return;
     const rows = await this.facts.pending(scope, run.sessionId);
     if (!rows.length) return;
-    const next=await this.facts.reserve(scope, run.sessionId, randomUUID(), rows[0].id, run.channel, { language: intent.language,context: intent.context,executionUserId:run.executionUserId });
-    this.retain(next);return next;
+    const followUp=await this.facts.reserve(scope, run.sessionId, randomUUID(), rows[0].id, run.channel, { language: intent.language,context: intent.context,executionUserId:run.executionUserId });
+    this.retain(followUp);return followUp;
   }
   async stopped(scope: Scope, run: RuntimeRun, next?: AgentRunIntent) {
     if (!run.channel) return;
@@ -388,16 +421,14 @@ export class AgentChannel {
       return rows;
     });
     if (!pending.length) return [];
-    let context: string | undefined;
     for (const row of pending) {
       const channel = run.channel!;
       const prepared = agentSteerPreparationSchema.parse(await this.post(this.provider(channel.agent.providerId), "/prepare", { mode: "steer", executionActor:run.executionUserId ? {userId:run.executionUserId,domainId:scope.domainId} : null, language: run.language, agent: channel.agent, actor: channel.actor, sessionId: run.sessionId, runId: run.id, inputId: row.id, input: row.message, authority: channel.authority, requestedBy: channel.requestedBy, root: channel.root, userRecipient: channel.userRecipient ?? null }, scope.domainId, this.credential(channel)));
-      if (prepared.context !== undefined) context = prepared.context;
+      await this.runtime.locked(scope, run.sessionId, async () => {
+        await this.facts.consume(scope, run.sessionId, run.id, [row.id]);
+        if (prepared.context !== undefined) await this.runtime.updateHostContext(scope, run.id, prepared.context);
+      });
     }
-    await this.runtime.locked(scope,run.sessionId,async () => {
-      await this.facts.consume(scope,run.sessionId,run.id,pending.map(row => row.id));
-      if (context !== undefined) await this.runtime.updateHostContext(scope,run.id,context);
-    });
     return pending.map(row => { const message = row.message as unknown as Message; this.inputIds.set(message, row.id); return message; });
   }
   /** The rebuilt model request has already consumed these queued inputs at a safe boundary. */
@@ -572,6 +603,6 @@ export class AgentChannel {
         createdAt: intent.createdAt, agentRef: intent.channel.agent, sessionRef: intent.session, runId: intent.id, process: delivery?.process ?? { mode: "none" }, results: delivery?.results ?? [],...(delivery?.retrieval?{retrieval:delivery.retrieval}:{}) });
     }
     // Quality checks belong to the host's replies; the host adds them to this projection.
-    return { sessionId, tasks, qualityResults: [], preparationFailures: await this.facts.preparationFailures(scope,sessionId), pendingQuestions: await this.facts.pendingQuestions(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };
+    return { sessionId, tasks, qualityResults: [], preparationFailures: await this.facts.preparationFailures(scope,sessionId), queuedRuns: await this.facts.queuedRuns(scope,sessionId), pendingQuestions: await this.facts.pendingQuestions(scope,sessionId), notifications: (await this.runtime.store.messages(scope, sessionId)).filter(row => row.message.role === "notification") };
   }
 }

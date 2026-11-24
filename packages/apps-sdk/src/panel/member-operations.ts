@@ -28,6 +28,53 @@ export function admittedOperations(state: MemberOperationsState): MemberOperatio
   return state.status === "ready" ? state.value : {};
 }
 
+/**
+ * Classifies why a declared operation has no admitted descriptor:
+ * - `"loading"` reports `action_not_ready` ("not ready yet").
+ * - `"forbidden"` or `"ready"` with a missing descriptor (not admitted/permitted by the owner) reports
+ *   `action_unavailable` with an explicit permission/admission reason rather than a misleading "not ready yet".
+ * - `"error"` reports `failed` with the read error message.
+ * - `"empty"` reports `action_unavailable`.
+ */
+export function missingOperationDescriptorResult(
+  state: MemberOperationsState,
+  operationName: string,
+): { readonly ok: false; readonly reason: "action_not_ready" | "action_unavailable" | "failed"; readonly message: string } {
+  if (state.status === "loading") {
+    return {
+      ok: false,
+      reason: "action_not_ready",
+      message: `Operation '${operationName}' is not ready yet.`,
+    };
+  }
+  if (state.status === "forbidden") {
+    return {
+      ok: false,
+      reason: "action_unavailable",
+      message: state.reason ?? `Operation '${operationName}' is not permitted for the current user.`,
+    };
+  }
+  if (state.status === "error") {
+    return {
+      ok: false,
+      reason: "failed",
+      message: state.message,
+    };
+  }
+  if (state.status === "empty") {
+    return {
+      ok: false,
+      reason: "action_unavailable",
+      message: `Operation '${operationName}' is not currently available.`,
+    };
+  }
+  return {
+    ok: false,
+    reason: "action_unavailable",
+    message: `Operation '${operationName}' is not permitted or admitted by its owner.`,
+  };
+}
+
 /** What an operations read sends: the projection's own inputs, as the member's placement fills them now. */
 function operationInputs(projection: DirectProjection, inputs: MemberInputs): MemberInputs {
   return Object.fromEntries(Object.keys(projection.inputs).filter((name) => Object.hasOwn(inputs, name)).map((name) => [name, inputs[name]!]));
@@ -50,8 +97,11 @@ export function watchMemberOperations(
 ): { state: ComputedRef<MemberOperationsState>; reread(): void } {
   const state = shallowRef<MemberOperationsState>({ status: "loading" });
   let sequence = 0;
+  let lastInputsKey: string | undefined;
+  const keyOf = () => JSON.stringify(operationInputs(projection, inputs()));
   const reread = () => {
     if (!active()) return;
+    lastInputsKey = keyOf();
     const reading = ++sequence;
     // A read that fails is the member's to show, as a datum's is: its buttons say why there is nothing to press.
     void readMemberOperations(read, projection, memberPath(), inputs()).then(
@@ -59,6 +109,10 @@ export function watchMemberOperations(
       (reason: unknown) => { if (reading === sequence) state.value = { status: "error", message: reason instanceof Error ? reason.message : String(reason) }; },
     );
   };
-  watch(() => JSON.stringify(operationInputs(projection, inputs())), reread, { immediate: true });
+  watch(keyOf, (key) => {
+    // Skip redundant watch flushes when an explicit reread already requested the same serialized inputs.
+    if (key === lastInputsKey) return;
+    reread();
+  }, { immediate: true });
   return { state: computed(() => state.value), reread };
 }

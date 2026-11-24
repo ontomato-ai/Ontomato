@@ -149,10 +149,16 @@ export async function renameDashboardChart(
   );
   const chartId = String(body?.chartId || "").trim();
   const name = String(body?.resultSetName || "").trim();
+  let found = false;
   for (const group of detail.groups) {
     const chart = group.charts.find((item) => item.id === chartId);
-    if (chart) chart.name = name;
+    if (chart) {
+      chart.name = name;
+      found = true;
+      break;
+    }
   }
+  if (!found) throw new HttpError(404, "Card not found", "NOT_FOUND");
   await saveDashboard(ownerId, domainId, detail);
 }
 export async function deleteDashboardChart(
@@ -198,10 +204,16 @@ export async function renameDashboardMetric(
   );
   const metricId = String(body?.metricId || "").trim();
   const metricName = String(body?.metricName || "").trim();
+  let found = false;
   for (const group of detail.groups) {
     const metric = group.metrics.find((item) => item.id === metricId);
-    if (metric) metric.name = metricName;
+    if (metric) {
+      metric.name = metricName;
+      found = true;
+      break;
+    }
   }
+  if (!found) throw new HttpError(404, "Card not found", "NOT_FOUND");
   await saveDashboard(ownerId, domainId, detail);
 }
 export async function deleteDashboardMetric(

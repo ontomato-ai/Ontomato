@@ -285,7 +285,7 @@ class MetricViewPanelEndpointTest {
   void aDraftsFieldErrorsAreASuccessfulFormRead() throws Exception {
     JSONObject values = MetricViewForm.defaults();
     JSONObject description = MetricViewForm.describe(values,
-        List.of(FormFields.error("/name", "required", "name is required")), false, null, "en", langService);
+        List.of(FormFields.error("/name", "required", "name is required")), null, "en", langService);
     when(metricViewService.form(any(), eq("en"), eq("domain"))).thenReturn(description);
 
     JSONObject body = perform("/metricView/form", """
@@ -347,7 +347,7 @@ class MetricViewPanelEndpointTest {
     JSONObject values = MetricViewForm.defaults();
     values.getJSONObject("function").put("queryPackage", JSONObject.of("manifest", JSONObject.of(
         "parameterDefs", JSONArray.of(JSONObject.of("name", "amount", "type", "TYPE_NUMBER")))));
-    JSONObject description = MetricViewForm.describe(values, List.of(), false, null, "en", langService);
+    JSONObject description = MetricViewForm.describe(values, List.of(), null, "en", langService);
     when(metricViewService.form(any(), eq("en"), eq("domain"))).thenReturn(description);
 
     JSONObject body = perform("/metricView/form", """

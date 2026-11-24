@@ -36,7 +36,7 @@ function mount(config: Record<string, RuntimeJsonValue>, initial: Record<string,
     members: { tree: { target: { projectionId: tree.id }, inputs: { skill: { state: "skill" } }, outputs: { selected: { state: "file" } } } },
   }), {
     pageKey: "p", url: () => "/p", label: () => "P", initial: { skill, ...initial },
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async () => ({ ...tree, config }),
     read: async (request) => {
       reads.push(request);
@@ -74,24 +74,46 @@ it("selects the first file in tree order when asked to and nothing is selected",
   expect(["SKILL.md", "references/a.md"]).toContain(instance.state.values.value.file);
 });
 
-it("falls to the new package's first file when another skill is chosen and its package lacks the file selected", async () => {
-  const { instance } = mount({ fallbackToFirst: true }, { file: "references/a.md" });
-  await vi.waitFor(() => expect(instance.state.values.value.file).toBe("references/a.md"));
-  instance.state.set("skill", { className: SKILL, primaryKey: "sk-2" });
-  // The first in tree order, folders first.
-  await vi.waitFor(() => expect(instance.state.values.value.file).toBe("scripts/client.mjs"));
+it("selects defaultKey when present and nothing is selected, falling back to the first file when absent", async () => {
+  const withDefault = mount({ defaultKey: "SKILL.md", fallbackToFirst: true });
+  await vi.waitFor(() => expect(withDefault.instance.state.values.value.file).toBe("SKILL.md"));
+
+  const missingDefault = mount({ defaultKey: "README.md", fallbackToFirst: true });
+  await vi.waitFor(() => expect(missingDefault.instance.state.values.value.file).toBe("references/a.md"));
+
+  const noFallback = mount({ defaultKey: "README.md", fallbackToFirst: false });
+  await vi.waitFor(() => expect(noFallback.reads.filter((read) => read.dataName)).toHaveLength(1));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(noFallback.instance.state.values.value.file).toBeNull();
 });
 
-it("keeps the file selected when the new package has it too, and clears it when there is nothing to fall to", async () => {
-  const kept = mount({ fallbackToFirst: true }, { file: "SKILL.md" });
-  await vi.waitFor(() => expect(kept.reads.filter((read) => read.dataName)).toHaveLength(1));
-  kept.instance.state.set("skill", { className: SKILL, primaryKey: "sk-2" });
-  await vi.waitFor(() => expect(kept.reads.filter((read) => read.dataName)).toHaveLength(2));
+it("never overwrites or clears an explicitly specified file even when absent from the loaded package", async () => {
+  const coldMissing = mount({ defaultKey: "SKILL.md", fallbackToFirst: true }, { file: "references/missing.md" });
+  await vi.waitFor(() => expect(coldMissing.reads.filter((read) => read.dataName)).toHaveLength(1));
   await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(kept.instance.state.values.value.file).toBe("SKILL.md");
+  expect(coldMissing.instance.state.values.value.file).toBe("references/missing.md");
 
-  const cleared = mount({}, { file: "references/a.md" });
-  await vi.waitFor(() => expect(cleared.reads.filter((read) => read.dataName)).toHaveLength(1));
-  cleared.instance.state.set("skill", { className: SKILL, primaryKey: "sk-2" });
-  await vi.waitFor(() => expect(cleared.instance.state.values.value.file).toBeNull());
+  const switchedMissing = mount({ defaultKey: "SKILL.md", fallbackToFirst: true }, { file: "references/a.md" });
+  await vi.waitFor(() => expect(switchedMissing.reads.filter((read) => read.dataName)).toHaveLength(1));
+  switchedMissing.instance.state.set("skill", { className: SKILL, primaryKey: "sk-2" });
+  await vi.waitFor(() => expect(switchedMissing.reads.filter((read) => read.dataName)).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(switchedMissing.instance.state.values.value.file).toBe("references/a.md");
+
+  const noFallbackMissing = mount({}, { file: "references/a.md" });
+  await vi.waitFor(() => expect(noFallbackMissing.reads.filter((read) => read.dataName)).toHaveLength(1));
+  noFallbackMissing.instance.state.set("skill", { className: SKILL, primaryKey: "sk-2" });
+  await vi.waitFor(() => expect(noFallbackMissing.reads.filter((read) => read.dataName)).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(noFallbackMissing.instance.state.values.value.file).toBe("references/a.md");
+});
+
+it("auto-selects defaultKey or first file on a new package when the caller clears file to null on switch", async () => {
+  const { instance, reads } = mount({ defaultKey: "SKILL.md", fallbackToFirst: true }, { file: "references/a.md" });
+  await vi.waitFor(() => expect(reads.filter((read) => read.dataName)).toHaveLength(1));
+  expect(instance.state.values.value.file).toBe("references/a.md");
+
+  instance.state.setState({ skill: { className: SKILL, primaryKey: "sk-2" }, file: null });
+  await vi.waitFor(() => expect(reads.filter((read) => read.dataName)).toHaveLength(2));
+  await vi.waitFor(() => expect(instance.state.values.value.file).toBe("SKILL.md"));
 });

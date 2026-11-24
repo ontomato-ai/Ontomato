@@ -194,7 +194,7 @@ it("reads the object from slot.inputs when ObjectForm binds a literal input inst
           values: { name: cls.primaryKey },
           errors: [],
           revision: 1,
-          save: { method: "PUT", path: "/classes/:id", bodySchema: {}, draftOperation: `${OBJECT_TYPE}.save` },
+          save: { method: "PUT", path: "/classes/:id", bodySchema: {} },
         } as never,
       };
     },
@@ -269,7 +269,6 @@ it("contains a projection component error inside Projection without bubbling to 
     text,
     readProjection: async () => brokenForm,
     ...noOperations,
-    recordDraftCreated: async () => {},
   });
   const context: PanelContext = {
     get panel(): never { throw new Error("unused"); },
@@ -280,7 +279,6 @@ it("contains a projection component error inside Projection without bubbling to 
     projection: async () => brokenForm,
     invoke: async () => null,
     projectionsChanged: () => () => {},
-    draft: instance.draft,
     holdUnsaved: () => () => {},
     t: text,
     resources: async () => {},

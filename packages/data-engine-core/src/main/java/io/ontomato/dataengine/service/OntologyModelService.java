@@ -75,8 +75,8 @@ public interface OntologyModelService {
 	record FormRequest(FormTarget target, Map<String, Object> values, String changedField) {
 	}
 
-	/** The request a form's save sends: the owner's own endpoint, its body schema and the draft's operation. */
-	record FormSave(String method, String path, ObjectNode bodySchema, String draftOperation) {
+	/** The request a form's save sends: the owner's endpoint and its body schema. */
+	record FormSave(String method, String path, ObjectNode bodySchema) {
 	}
 
 	/** The whole form for one target: its fields, its current values and how a save writes them. */

@@ -42,6 +42,7 @@ import { createApplicationReadAdapter } from "./application-catalogue";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
 import { requireChartReadRegistration } from "./chart-sources";
 import {
+  countSdkComponents,
   listSdkComponents,
   readProjectionComponent,
   readSdkComponent,
@@ -111,6 +112,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
   const cards = createDashboardCardReadAdapter(owner, viewer);
   const modelReads: Record<string, ReadAdapter> = {
+    count: selection => model.count(selection.typeId),
     list: (selection, params) => model.list(selection.typeId, {
       className: panelReadParameterSchemas.className.optional().parse(params.className),
     }),
@@ -180,12 +182,18 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       createForm: (_selection, params) => builder.createForm(formParams(params)),
     },
     [ACTION]: {
+      count: async () => (await actions()).count(),
       list: async () => (await actions()).list(),
       record: async selection => (await actions()).record(selection.primaryKey!),
       form: async (selection, params) => (await actions()).form(selection.primaryKey!, formParams(params)),
       createForm: async (_selection, params) => (await actions()).createForm(formParams(params)),
       definition: async selection => (await actions()).definition(selection.primaryKey!),
       explanation: async selection => (await actions()).explanation(selection.primaryKey!),
+      derivedSummary: async selection => (await actions()).derivedSummary(selection.primaryKey!),
+      derivedEffects: async selection => (await actions()).derivedEffects(selection.primaryKey!),
+      derivedParameters: async selection => (await actions()).derivedParameters(selection.primaryKey!),
+      derivedConditions: async selection => (await actions()).derivedConditions(selection.primaryKey!),
+      annotatedExplanation: async selection => (await actions()).annotatedExplanation(selection.primaryKey!),
     },
     [TRIGGER]: {
       list: async () => (await triggers()).list(),
@@ -195,6 +203,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       createForm: async (_selection, params) => (await triggers()).createForm(formParams(params)),
     },
     [WORKFLOW]: {
+      count: async () => (await workflows()).count(),
       list: async () => (await workflows()).list(),
     },
     [METRIC_VIEW]: {
@@ -219,6 +228,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       ),
     },
     [AGENT_DEFINITION]: {
+      count: async () => (await definitions()).count(),
       list: async () => (await definitions()).list(),
       record: async selection => (await definitions()).record(selection.primaryKey!),
       form: async (selection, params) => (await definitions()).form(selection.primaryKey!, formParams(params)),
@@ -239,6 +249,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       },
     },
     [SDK_COMPONENT]: {
+      count: () => countSdkComponents(owner),
       catalogue: (_selection, params) => listSdkComponents(owner, viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
       definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer.locale),
       record: selection => readSdkComponentRecord(owner, selection.primaryKey!, viewer.locale),
@@ -361,8 +372,16 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [PRODUCT_PANEL]: {
       ...catalogueReads(panelCatalogue),
+      unavailable: () => panelCatalogue.unavailable(),
+      usedByRows: selection => panelCatalogue.usedByRows(selection.primaryKey!),
+      grantRows: selection => panelCatalogue.grantRows(selection.primaryKey!),
       members: selection => panelCatalogue.members(selection.primaryKey!),
       memberRows: selection => panelCatalogue.memberRows(selection.primaryKey!),
+      sourceFiles: selection => panelCatalogue.sourceFiles(selection.primaryKey!),
+      sourceFile: (selection, params) => panelCatalogue.sourceFile(
+        selection.primaryKey!,
+        panelReadParameterSchemas.skillFilePath.parse(params.path),
+      ),
     },
     [APPLICATION]: {
       query: (_selection, params) => applications.query(params),
@@ -449,7 +468,7 @@ function effectiveInputs(
     if (!Object.hasOwn(projection.inputs, name)) {
       const implicit = Object.values(projection.data).some(datum => {
         const source = authoredReadParameterSource(datum.params, name, member);
-        return source && "state" in source && panelReadParameterId(directReadDeclaration(projection, datum)!, name);
+        return source && ("state" in source || "output" in source) && panelReadParameterId(directReadDeclaration(projection, datum)!, name);
       });
       if (!implicit) throw new HttpError(400, `Unknown projection input: ${name}`, "PANEL_INPUT_UNKNOWN");
       continue;

@@ -52,13 +52,21 @@ export function createWorkflowReadAdapter(_owner: ProductOwner, viewer: Assistan
     ["status", "version", "stepCount"].map(name => [name, translate(`panels.workflow.fields.${name}`)]),
   );
 
+  async function readWorkflows() {
+    const response = await backendPost("workflow-list", `${base}/workflow/query`, {}, options);
+    const envelope = ownerEnvelopeSchema.parse(JSON.parse(response.text));
+    if (!envelope.success) throw readRefusal(envelope, "WORKFLOW_READ_FAILED", "The owner could not read the workflows");
+    return z.array(workflowSchema).parse(envelope.data);
+  }
+
   return {
     async list(): Promise<PanelRecord[]> {
-      const response = await backendPost("workflow-list", `${base}/workflow/query`, {}, options);
-      const envelope = ownerEnvelopeSchema.parse(JSON.parse(response.text));
-      if (!envelope.success) throw readRefusal(envelope, "WORKFLOW_READ_FAILED", "The owner could not read the workflows");
+      const workflows = await readWorkflows();
       const labels = fieldLabels();
-      return z.array(workflowSchema).parse(envelope.data).map(workflow => workflowRecord(workflow, labels));
+      return workflows.map(workflow => workflowRecord(workflow, labels));
+    },
+    async count() {
+      return { rows: [], total: (await readWorkflows()).length };
     },
   };
 }

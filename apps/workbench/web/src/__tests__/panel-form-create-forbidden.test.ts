@@ -36,7 +36,7 @@ it("shows the owner's refusal of the create form instead of an empty form", asyn
     state: {}, members: { form: { target: { projectionId: creating.id } } },
   }), {
     pageKey: "agents", url: () => "/agents", label: () => "Agents", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async () => creating,
     read: async (request) => {
       reads.push(request);

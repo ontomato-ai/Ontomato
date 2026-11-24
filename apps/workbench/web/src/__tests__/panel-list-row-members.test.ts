@@ -72,7 +72,6 @@ function mountPanel(options: {
     url: () => "/panels/tasks",
     label: () => "Tasks",
     initial: options.initial as never,
-    recordDraftCreated: async () => {},
     text: createPanelText(options.messages ?? {}, ref("en"), "en"),
     ...noOperations,
     operations: {
@@ -427,7 +426,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
           values: { name: "Orders App" },
           errors: [],
           revision: 1,
-          save: { method: "PUT", path: "/apps/:id", bodySchema: {}, draftOperation: `${APPLICATION}.save` },
+          save: { method: "PUT", path: "/apps/:id", bodySchema: {} },
         });
       },
     });

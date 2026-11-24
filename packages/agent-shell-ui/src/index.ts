@@ -15,17 +15,6 @@ export {
   storedAgentAvatar,
 } from "./avatar";
 export { default as ShellNavBody } from "./components/ShellNavBody.vue";
-export {
-  PAGE_DRAFT_QUERY_KEYS,
-  changedFields,
-  draftTarget,
-  pageDraftLink,
-  readPageDraft,
-  withoutPageDraftQuery,
-  type PageDraftLink,
-  type PageDraftTarget,
-  type ReceivedPageDraft,
-} from "./page-draft";
 export { default as ShellColumn } from "./components/ShellColumn.vue";
 export { default as ToolStep } from "./components/ToolStep.vue";
 export { pageDockSpaceKey, useConversationContinuation, usePageDockSpace } from "./context";

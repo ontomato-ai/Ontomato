@@ -1,8 +1,11 @@
-import { type PanelManifest, type PanelOperation, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelMemberInput, PanelOperation, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { ProjectionOperationBinding, ProjectionPorts } from "@ontomato/contracts/panel-projection";
 import { stateObject, stateObjects, type PanelFieldValue } from "./state";
 import type { PanelWriteInvocation } from "./human-operations";
 import type { MemberOperations } from "./member-operations";
+import type { PanelInstance } from "./instance";
+import { valueAt } from "./form-values";
 
 export type { ProjectionPorts } from "@ontomato/contracts/panel-projection";
 
@@ -22,8 +25,6 @@ export interface PanelProjectionRegistration {
   readonly operations: MemberOperations;
   /** The projection's authored operation bindings, by local name, carrying parameter wiring where declared. */
   readonly operationBindings?: Readonly<Record<string, ProjectionOperationBinding>>;
-  /** Whether it reads an owner's form, which a draft is offered to. */
-  takesDrafts: boolean;
 }
 
 /** The values a slot passes its projection now, by the parameter each fills; a field with no value passes null. */
@@ -72,20 +73,29 @@ function operationTarget(
   return value && { kind: "object", objectType: value.className, primaryKey: value.primaryKey };
 }
 
+type InputContext = Pick<PanelInstance, "manifest" | "state" | "outputs">;
+
+export function memberInputValue(
+  { state, outputs }: Pick<InputContext, "state" | "outputs">,
+  source: PanelMemberInput,
+): RuntimeJsonValue {
+  if ("state" in source) return state.values.value[source.state] ?? null;
+  if ("literal" in source) return source.literal;
+  const { member, name, path } = source.output;
+  const value = outputs[member]?.[name] ?? null;
+  return path === undefined ? value : valueAt(value, path) ?? null;
+}
+
 export function slotInputValues(
-  manifest: PanelManifest,
+  instance: InputContext,
   slot: string,
-  values: Readonly<Record<string, PanelFieldValue>>,
-): Record<string, PanelFieldValue> {
+): Record<string, RuntimeJsonValue> {
+  const { manifest } = instance;
   const declaration = manifest.members[slot];
   if (!declaration) throw new Error(`The panel declares no member '${slot}'`);
-  const inputs = Object.entries(declaration.inputs ?? {}).map(([input, source]) => {
-    if ("state" in source) return [input, values[source.state] ?? null] as const;
-    if ("literal" in source) return [input, source.literal as PanelFieldValue] as const;
-    throw new Error(`Member '${slot}' fills '${input}' from a repeated item, which this SDK release does not place`);
-  });
+  const inputs = Object.entries(declaration.inputs ?? {}).map(([input, source]) => [input, memberInputValue(instance, source)] as const);
   // An output bound to a state reads that state back as the input of the same name.
   const outputs = Object.entries(declaration.outputs ?? {}).filter(([name]) => !Object.hasOwn(declaration.inputs ?? {}, name))
-    .map(([name, { state }]) => [name, values[state] ?? null] as const);
+    .map(([name, source]) => [name, memberInputValue(instance, source)] as const);
   return Object.fromEntries([...inputs, ...outputs]);
 }

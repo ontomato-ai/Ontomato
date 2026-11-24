@@ -54,7 +54,7 @@ const createForm = {
     { path: "/name", label: "Name", control: { kind: "text" }, valueSchema: {}, required: true, readOnly: false },
   ],
   values: { className: "", name: "" }, errors: [],
-  save: { method: "POST" as const, path: "/ontology/model/attribute/create", bodySchema: {}, draftOperation: "attribute.create" },
+  save: { method: "POST" as const, path: "/ontology/model/attribute/create", bodySchema: {} },
 };
 const save = {
   kind: "form.save", handlerRef: `${ATTRIBUTE}.save`, label: "Save", effect: "write", target: { source: "input", input: "attribute" },
@@ -79,7 +79,6 @@ function open(initial: Record<string, RuntimeJsonValue>) {
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: {
       kind: "success", data: {}, affected: { objects: [{ objectType: ATTRIBUTE, primaryKey: "Device.site_id" }], objectTypes: [ATTRIBUTE] },
     } as never } }),
-    recordDraftCreated: async () => {},
     readProjection: async () => projection,
     read: async (request: PanelMemberReadRequest) => (request.operations ? ready({ save }) : ready(createForm)),
   });

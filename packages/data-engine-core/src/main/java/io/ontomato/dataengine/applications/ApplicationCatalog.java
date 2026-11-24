@@ -180,8 +180,11 @@ public class ApplicationCatalog {
         var apps = applicationsInDomain(domainId);
         var pageKeys = new BuiltinPageKeys(apps);
         return apps.stream().filter(ApplicationCatalog::isPanelSkillApplication)
-            .flatMap(app -> pageKeys.activeUses(app).stream()
-                .map(use -> PanelSkills.source(app.getString("id"), use)))
+            .flatMap(app -> {
+                var applicationNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
+                return pageKeys.activeUses(app).stream()
+                    .map(use -> PanelSkills.source(app.getString("id"), use, applicationNames));
+            })
             .toList();
     }
 

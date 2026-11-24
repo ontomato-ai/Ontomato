@@ -134,6 +134,7 @@ const referenceReads = {
 } as const satisfies NonNullable<PlatformObjectTypeDeclaration["reads"]>;
 
 const metadataList = { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } } as const;
+const countRead = { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordQuery" } as const;
 const ontologyTypeDetailList = {
   source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
   requiredParams: ["type"], result: "panelRecordList",
@@ -205,7 +206,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [OBJECT_TYPE]: {
     ...describeType("objectType", "fact"),
     reads: {
-      ...modelReads, ...metadataList,
+      ...modelReads, ...metadataList, count: countRead,
       record: {
         ...modelReads.record,
         outputs: {
@@ -222,7 +223,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [ATTRIBUTE]: {
     ...describeType("attribute", "fact"),
     reads: {
-      ...modelReads, list: modelListByClass,
+      ...modelReads, list: modelListByClass, count: countRead,
       record: {
         ...modelReads.record,
         outputs: {
@@ -235,7 +236,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [RELATIONSHIP]: {
     ...describeType("relationship", "fact"),
-    reads: { ...modelReads, list: modelListByClass },
+    reads: { ...modelReads, list: modelListByClass, count: countRead },
     operations: [`${RELATIONSHIP}.save`, DELETE_RELATIONSHIP],
   },
   [METRIC_VIEW]: {
@@ -278,19 +279,25 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [ACTION]: {
     ...describeType("action", "capability"),
+    childCollections: ["parameters", "codeSegments"],
     reads: {
-      ...metadataList,
+      ...metadataList, count: countRead,
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       definition: { source: "object", parameterMode: "fixed", params: {}, result: "actionDefinition" },
       explanation: { source: "object", parameterMode: "fixed", params: {}, result: "actionExplanation" },
+      derivedSummary: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      derivedEffects: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      derivedParameters: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      derivedConditions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      annotatedExplanation: { source: "object", parameterMode: "fixed", params: {}, result: "annotatedCode" },
     },
     operations: [`${ACTION}.save`, SET_ACTION_STATUS, DELETE_ACTION],
   },
   [WORKFLOW]: {
     ...describeType("workflow", "capability"),
-    reads: { ...metadataList },
+    reads: { ...metadataList, count: countRead },
   },
   [TRIGGER]: {
     ...describeType("trigger", "capability"),
@@ -414,6 +421,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [SDK_COMPONENT]: {
     ...describeType("sdkComponent", "product"),
     reads: {
+      count: countRead,
       catalogue: { source: "type", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecordList" },
       definition: { source: "object", parameterMode: "fixed", params: {}, result: "sdkComponentDefinition" },
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
@@ -461,12 +469,35 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("productPanel", "product"),
     reads: {
       ...productCatalogueFormReads,
-      query: { ...catalogueQuery, params: { ...catalogueQuery.params, template: "productTemplate" }, result: "productPanelList" },
-      record: { ...catalogueRecord, result: "productPanelRecord" },
+      query: { ...catalogueQuery, params: { ...catalogueQuery.params, template: "productTemplate" }, result: "panelRecordQuery" },
+      unavailable: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      record: {
+        ...catalogueRecord,
+        result: "panelRecord",
+        outputs: {
+          canEdit: { kind: "scalar", type: "boolean" },
+          canGrant: { kind: "scalar", type: "boolean" },
+          canDelete: { kind: "scalar", type: "boolean" },
+          isBuiltin: { kind: "scalar", type: "boolean" },
+          isTemplate: { kind: "scalar", type: "boolean" },
+          domainShared: { kind: "scalar", type: "boolean" },
+          revision: { kind: "scalar", type: "number" },
+          hiddenUsedByCount: { kind: "scalar", type: "number" },
+          unavailable: { kind: "scalar", type: "boolean" },
+          unavailableReason: { kind: "scalar", type: "string" },
+        },
+      },
       usedBy: { ...catalogueRecord, result: "productPanelUsedBy" },
+      usedByRows: { ...catalogueRecord, result: "panelRecordList" },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
+      grantRows: { ...catalogueRecord, result: "panelRecordList" },
       members: { ...catalogueRecord, result: "productPanelMembers" },
       memberRows: { ...catalogueRecord, result: "panelRecordList" },
+      sourceFiles: { ...catalogueRecord, result: "panelRecordList" },
+      sourceFile: {
+        source: "object", parameterMode: "fixed", params: { path: "skillFilePath" },
+        requiredParams: ["path"], result: "panelRecord",
+      },
     },
     operations: productCatalogueOperations(PRODUCT_PANEL, "productPanels"),
   },
@@ -513,7 +544,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [AGENT_DEFINITION]: {
     ...describeType("agentDefinition", "product"),
     reads: {
-      ...metadataList,
+      ...metadataList, count: countRead,
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },

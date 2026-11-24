@@ -209,29 +209,46 @@ export function reconcileDefinitionCacheWithSnapshot(
   return forbidden;
 }
 
+export interface ReadCachedProjectionOptions {
+  readonly mountUnavailable?: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>>;
+  /** Verify reader `use` grant with the server instead of serving a cached definition directly. */
+  readonly verifyAccess?: boolean;
+}
+
 /**
  * Reads a projection render payload using the mount's bundled unavailable results, the revision-checked definition
- * cache, and in-flight request deduplication (cleared immediately on settlement; errors are never cached).
+ * cache, and in-flight request deduplication (cleared immediately on settlement; errors are never cached, and
+ * `PanelMemberUnavailable` evicts any stale cached entry for the same auth/domain scope).
  */
 export async function readCachedProjection(
   projectionId: string,
   fetchProjection: () => Promise<ProductProjectionRenderResponse>,
-  mountUnavailable?: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>>,
+  options?: ReadCachedProjectionOptions,
 ): Promise<ProductProjectionRenderResponse> {
-  const denied = mountUnavailable?.get(projectionId);
-  if (denied) throw new PanelMemberUnavailable(denied.httpStatus, denied.message);
+  if (!options?.verifyAccess) {
+    const denied = options?.mountUnavailable?.get(projectionId);
+    if (denied) throw new PanelMemberUnavailable(denied.httpStatus, denied.message);
 
-  const cached = getCachedProjection(projectionId);
-  if (cached) return cached;
+    const cached = getCachedProjection(projectionId);
+    if (cached) return cached;
+  }
 
   const scope = ensureScope();
   const inFlight = scope ? inFlightProjections.get(projectionId) : undefined;
   if (inFlight) return inFlight;
 
-  const request = fetchProjection().then((result) => {
-    setCachedProjection(result, scope);
-    return result;
-  }).finally(() => {
+  const request = fetchProjection().then(
+    (result) => {
+      setCachedProjection(result, scope);
+      return result;
+    },
+    (error: unknown) => {
+      if (error instanceof PanelMemberUnavailable && sameScope(ensureScope(), scope)) {
+        projections.delete(projectionId);
+      }
+      throw error;
+    },
+  ).finally(() => {
     if (inFlightProjections.get(projectionId) === request) inFlightProjections.delete(projectionId);
   });
   if (scope) inFlightProjections.set(projectionId, request);

@@ -519,7 +519,7 @@ public class MetricViewServiceImpl implements MetricViewService {
     if (metric.isWorkflowPending()) readOnlyReason = langService.get(lang, "PanelForm.readOnly.workflowPending");
     else if (MetricView.ORIGIN_SYSTEM.equals(metric.getOrigin()))
       readOnlyReason = langService.get(lang, "MetricView.cannotModifySystem");
-    return MetricViewForm.describe(values, errors, existing, readOnlyReason, lang, langService);
+    return MetricViewForm.describe(values, errors, readOnlyReason, lang, langService);
   }
 
   @Override

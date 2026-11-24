@@ -9,9 +9,9 @@ import DashboardPanel from "../DashboardPanel.vue";
 import { workbenchI18n } from "../../../../i18n";
 
 /**
- * The board is drawn by its own layout: groups, the card grids, the empty state and a draft's bar. Those rules live in
- * this component's own scoped stylesheet, so each element the layout names carries the component's scope attribute —
- * a layout whose elements lost it reads as loose text on the page.
+ * The board is drawn by its own layout: groups, the card grids and the empty state. Those rules live in this
+ * component's own scoped stylesheet, so each element the layout names carries the component's scope attribute — a
+ * layout whose elements lost it reads as loose text on the page.
  */
 const board = {
   id: "d1",
@@ -62,9 +62,9 @@ function scopeOf(wrapper: Awaited<ReturnType<typeof open>>) {
   return scope!;
 }
 
-async function open(draft: unknown = null) {
+async function open() {
   await router.push("/");
-  const wrapper = mount(DashboardPanel, { props: { dashboardId: "d1", draft }, global: global() });
+  const wrapper = mount(DashboardPanel, { props: { dashboardId: "d1" }, global: global() });
   await flushPromises();
   return wrapper;
 }
@@ -74,7 +74,7 @@ afterEach(() => {
 });
 
 describe("the board's own layout rules", () => {
-  it("give the groups, the card grid, the empty hint and the draft's bar their component's scope", async () => {
+  it("give the groups, the card grid and the empty hint their component's scope", async () => {
     const wrapper = await open();
     const scope = scopeOf(wrapper);
     for (const selector of [".dash-root", ".bi-dashboard", ".block", ".group-header", ".group-drag-handle", ".group-title", ".metrics-section", ".charts-wrapper", ".charts-section", ".charts-empty-overlay", ".charts-empty-hint", ".charts-empty-hint__title", ".charts-empty-hint__desc", ".charts-empty-hint__hl"]) {
@@ -85,30 +85,16 @@ describe("the board's own layout rules", () => {
     wrapper.unmount();
   });
 
-  it("cover a draft's bar too", async () => {
-    const wrapper = await open({
-      pageKey: "dashboard",
-      operation: "dashboard.chart.rename",
-      target: { id: "d1" },
-      form: { id: "d1", chartId: "n1", resultSetName: "Revenue" },
-    });
-    const scope = scopeOf(wrapper);
-    for (const selector of [".draft-bar", ".draft-bar__text", ".draft-bar__actions"]) {
-      expect(wrapper.find(selector).attributes(), selector).toHaveProperty(scope);
-    }
-    wrapper.unmount();
-  });
-
   it("keep the layout's rules in this component's own scoped stylesheet, narrow layout included", () => {
-    // A board whose stylesheet went missing is drawn as loose text: its groups, grids, empty hint and draft bar are
-    // styled here, and only here.
+    // A board whose stylesheet went missing is drawn as loose text: its groups, grids and empty hint are styled here,
+    // and only here.
     const file = resolve(process.cwd(), "src/features/dashboard/components/DashboardPanel.vue");
     const source = readFileSync(file, "utf8");
     const styles = [...source.matchAll(/<style([^>]*)>([\s\S]*?)<\/style>/g)];
     expect(styles).toHaveLength(1);
     expect(styles[0]![1]).toContain("scoped");
     const css = styles[0]![2];
-    for (const selector of [".dash-root", ".empty-state", ".bi-dashboard", ".block", ".group-header", ".group-drag-handle", ".group-title", ".metrics-section", ".charts-wrapper", ".charts-section", ".charts-section--empty", ".charts-empty-overlay", ".charts-empty-hint", ".charts-empty-hint__hl", ".drag-ghost", ".draft-bar", ".draft-bar__text", ".draft-bar__board", ".draft-bar__failure", ".draft-bar__actions", ".empty"]) {
+    for (const selector of [".dash-root", ".empty-state", ".bi-dashboard", ".block", ".group-header", ".group-drag-handle", ".group-title", ".metrics-section", ".charts-wrapper", ".charts-section", ".charts-section--empty", ".charts-empty-overlay", ".charts-empty-hint", ".charts-empty-hint__hl", ".drag-ghost", ".empty"]) {
       expect(css, selector).toContain(selector + " {");
     }
     // The narrow layout is one column of cards, as it was before the page was drawn again.

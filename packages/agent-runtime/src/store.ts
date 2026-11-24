@@ -1004,14 +1004,18 @@ export class RuntimeStore {
         )
       ).rows[0];
       if (!row) missing();
-      if (row.active_run_id)
+      if (row.active_run_id || row.preparing_run_id)
         throw new RuntimeError(
           409,
           "SESSION_BUSY",
           "Cancel the active run before deleting the session",
         );
       await c.query(
-        `UPDATE ${this.table("admissions")} SET deleted=true WHERE host_id=$1 AND domain_id=$2 AND session_id=$3`,
+        `UPDATE ${this.table("admissions")} SET deleted=true, intent=NULL WHERE host_id=$1 AND domain_id=$2 AND session_id=$3`,
+        [...values(scope), id],
+      );
+      await c.query(
+        `DELETE FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3`,
         [...values(scope), id],
       );
       await c.query(

@@ -11,6 +11,7 @@ import type { PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { FUNCTION } from "@ontomato/contracts/platform-object-types";
 import { randomId } from "@ontomato/contracts/random-id";
+import { operationInputFields } from "../../../../../packages/apps-sdk/src/base/operation-input-schema";
 import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 import { directRun, noOperations } from "./panel-frame";
 
@@ -41,7 +42,6 @@ const formSaveMeta = {
   method: "PUT",
   path: "/functions/:id",
   bodySchema: {},
-  draftOperation: "function.save",
 };
 
 const saveDescriptor: PanelOwnerOperationDescriptor = {
@@ -489,6 +489,83 @@ function mountOperationHarness(options: {
 }
 
 describe("P3 OperationButton parameter dialog", () => {
+  it("reads enum labels and trimmed field titles from the owner schema", () => {
+    const published = { const: "PUBLISHED", title: "已发布" };
+    const fields = operationInputFields({
+      properties: {
+        direct: { title: " 状态 ", oneOf: [published, { const: false }] },
+        mixed: { enum: ["UNUSED", "PUBLISHED"], oneOf: [published] },
+        wrapped: { oneOf: [{ title: "可选状态", oneOf: [published] }, { type: "null" }] },
+        nullable: { title: " ", anyOf: [published, { type: "null" }] },
+      },
+    });
+
+    expect(fields).toMatchObject([
+      { name: "direct", label: "状态", kind: "select", options: [
+        { value: published.const, label: published.title }, { value: false, label: "false" },
+      ] },
+      { name: "mixed", kind: "select", options: [
+        { value: "UNUSED", label: "UNUSED" }, { value: published.const, label: published.title },
+      ] },
+      { name: "wrapped", label: "可选状态", kind: "select", options: [
+        { value: published.const, label: published.title },
+      ] },
+      { name: "nullable", label: "nullable", kind: "select", options: [
+        { value: published.const, label: published.title },
+      ] },
+    ]);
+  });
+
+  it("renders the owner's localized choice and submits its raw const value", async () => {
+    const statusTitle = "状态";
+    const published = { const: "PUBLISHED", title: "已发布" };
+    const harness = mountOperationHarness({
+      descriptor: {
+        kind: "action",
+        handlerRef: `${FUNCTION}.import`,
+        label: "Import",
+        effect: "write",
+        target: { source: "none" },
+        inputSchema: {
+          type: "object",
+          properties: { status: { title: statusTitle, oneOf: [published, { const: "UNUSED", title: "已停用" }] } },
+          required: ["status"],
+        },
+        resultSchema: {},
+        batch: false,
+      },
+    });
+    try {
+      const button = await vi.waitFor(() => {
+        const found = harness.element.querySelector<HTMLButtonElement>(".sdk-operation-button button");
+        if (!found || found.disabled) throw new Error("Button not ready");
+        return found;
+      });
+      button.click();
+      const field = await vi.waitFor(() => {
+        const found = document.querySelector<HTMLElement>('.sdk-operation-input-dialog [data-input-field="status"]');
+        if (!found) throw new Error("Status field not visible");
+        return found;
+      });
+      expect(field.querySelector("label")?.textContent).toContain(statusTitle);
+      field.querySelector<HTMLElement>(".el-select__wrapper")!.click();
+      const option = await vi.waitFor(() => {
+        const found = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+          .find(item => item.textContent?.trim() === published.title);
+        if (!found) throw new Error("Owner's option label not visible");
+        return found;
+      });
+      option.click();
+      await nextTick();
+      document.querySelector<HTMLButtonElement>(".sdk-operation-input-footer button.el-button--primary")!.click();
+      await vi.waitFor(() => expect(harness.intentBodies[0]).toMatchObject({
+        call: { input: { status: published.const } },
+      }));
+    } finally {
+      harness.dispose();
+    }
+  });
+
   it("dispatches immediately without opening a dialog when inputSchema has no properties", async () => {
     const harness = mountOperationHarness({
       descriptor: {

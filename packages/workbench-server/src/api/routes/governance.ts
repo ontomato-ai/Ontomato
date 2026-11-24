@@ -13,9 +13,8 @@ governanceWindowsRouter.post("/:sessionId/governance-window", wrap(async (req, r
   const caller = context(req);
   res.json(await openGovernanceWindow(id(req, "sessionId"), callback.runId, body.recordId, caller.owner, caller.credentials));
 }));
-export const assistantInternalRouter = Router();
-assistantInternalRouter.use(platformService);
-assistantInternalRouter.get("/sessions/:sessionId/runs/:runId/status", wrap(async (req, res) => {
+export const governanceStatusRouter = Router();
+governanceStatusRouter.get("/sessions/:sessionId/runs/:runId/status", platformService, wrap(async (req, res) => {
   const domain = z.string().min(1).parse(req.header("X-Domain-Id"));
   res.json(await governanceRunStatus(id(req, "sessionId"), id(req, "runId"), domain));
 }));

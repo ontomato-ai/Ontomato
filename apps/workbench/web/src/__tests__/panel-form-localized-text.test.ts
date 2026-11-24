@@ -45,9 +45,19 @@ const description = {
   values: { names: { en: "Orders", "zh-CN": "订单" } },
   errors: [{ field: "/names/en", code: "already_exists", message: "Another application is named Orders" }],
   revision: 1,
-  save: { method: "PUT", path: "/applications/:id", bodySchema: {}, draftOperation: "application.save" },
+  save: { method: "PUT", path: "/applications/:id", bodySchema: {} },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
+const saveDescriptor = {
+  kind: "form.save",
+  handlerRef: `${FUNCTION}.save`,
+  label: "Save",
+  effect: "write",
+  target: { source: "input", input: "app" },
+  inputSchema: {},
+  resultSchema: {},
+  batch: false,
+};
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -56,9 +66,9 @@ afterEach(() => {
 it("edits a text in the languages the owner keeps: the reader's first, the rest on demand, as the owner stores it", async () => {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready(description)),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready(description)),
   });
   const element = document.createElement("div");
   document.body.append(element);
@@ -113,9 +123,9 @@ it("leaves an optional text out of the values once every language of it is empti
   const optional = { ...names, path: "/note", label: "Note", required: false, control: { ...names.control, requiredLocales: undefined } };
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready({ ...description, fields: [optional], values: { note: { "zh-CN": "备注" } }, errors: [] })),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready({ ...description, fields: [optional], values: { note: { "zh-CN": "备注" } }, errors: [] })),
   });
   const element = document.createElement("div");
   document.body.append(element);
@@ -138,9 +148,9 @@ it("leaves out an optional text that requires a language once no language of it 
   const optional = { ...names, path: "/note", label: "Note", required: false };
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready({ ...description, fields: [optional], values: { note: { en: "Note", "zh-CN": "备注" } }, errors: [] })),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready({ ...description, fields: [optional], values: { note: { en: "Note", "zh-CN": "备注" } }, errors: [] })),
   });
   const element = document.createElement("div");
   document.body.append(element);

@@ -1,6 +1,6 @@
 // The panel a module of this SDK version mounts through (overall design 3.3, 3.4): its declaration, its own context,
-// the projections it composes, the drafts it receives and the operations it offers. A panel's `panel.mjs` imports
-// `definePanel` and `mountPanel` from here and writes nothing about page context, deep links, drafts or buttons.
+// the projections it composes, and the operations it offers. A panel's `panel.mjs` imports
+// `definePanel` and `mountPanel` from here and writes nothing about page context, deep links, or buttons.
 export { panelManifestSchema, definePanel, panelOperationId } from "@ontomato/contracts/panel-manifest";
 /** Build a panel address with flat named query parameters (e.g. `panelAddress("/ontology/objects", { selected: id })`). */
 export { panelAddress } from "@ontomato/contracts/panel-host";
@@ -40,9 +40,7 @@ export type { PanelInstance } from "../panel/instance";
 export { applyPanelRequest } from "../panel/instance";
 export { defineComponentMeta } from "../components";
 export type { ComponentCatalogue, ComponentMetadata, ComponentPort, ComponentPorts, ComponentRole } from "../components";
-export type { PanelFormAdapter, PanelFormHandle, ReceivedPanelDraft } from "../panel/draft";
-/** Whether a received draft creates an object or edits one, and which: `draftTarget(instance.draft.value)`. */
-export { draftTarget, type PageDraftObjectRef, type PageDraftTarget } from "@ontomato/contracts/page-draft";
+export type { PanelFormAdapter, PanelFormHandle } from "../panel/forms";
 export type { PanelOperationBinding } from "../panel/types";
 export type { PanelProjectionRegistration, ProjectionPorts } from "../panel/ports";
 export type { MemberOperations, MemberOperationsState } from "../panel/member-operations";
@@ -50,7 +48,13 @@ export { useMember, useMemberOperations, useMemberOutput, useMemberParam } from 
 export { usePanelData } from "../panel/panel-data";
 export { usePanelOutput, usePanelOutputs } from "../panel/panel-output";
 export { useFormFieldSlot, useListRowSlot, type FormFieldSlotContext, type ListRowSlotContext, type ListRowSlotOperation } from "../panel/slot-context";
-export { usePanelOperation, type PanelOperationHandle } from "../panel/panel-operation";
+export {
+  usePanelOperation,
+  type PanelOperationAvailability,
+  type PanelOperationContext,
+  type PanelOperationHandle,
+  type UsePanelOperationOptions,
+} from "../panel/panel-operation";
 export { ElMessageBox as SdkMessageBox } from "element-plus/es/components/message-box/index";
 export { savePanelFile, type PanelDownloadReceipt } from "../panel/save-file";
 export { usePanelNarrow, type UsePanelNarrowOptions } from "../panel/panel-narrow";

@@ -195,9 +195,9 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists the owner's records of the projection's type (or the read's declared `rowType` when listing child objects of a different ontology type) in a compact list (single-line or two-line row height), multi-column table (`columns`, with optional `width`/`minWidth`, fixed head and row heights, single-line ellipsis unless `wrap: true`, horizontal scroll inside the table), or responsive card grid (`layout: 'cards'`; default `'auto'` draws a table when `columns` is given and a compact list otherwise), from its `rows` datum (an owner's list or query read) or `objects` (ontology objects of a chosen type). Built-in row action column (`rowActions`) renders declared projection row operations (using per-row availability returned with the list read to avoid N+1 requests) alongside local buttons (`kind: 'local'`, emitting `row-action` with `{ id, ref, index }`), per-row visibility conditions (`when`), and overflow into a 'More' dropdown menu beyond `maxVisible`. Customize cells, row actions, expanded row details, decorative leading marks, cards, toolbars, or empty states with standard Vue slots (`#cell-<columnKey>` and `#cell` receiving `{ ref, index, column, value, displayText, tone, operations, runOperation }`, `#actions` receiving `{ ref, index, operations, runOperation }`, `#row-detail` receiving `{ ref, index, collapse }` to drive child projections, `#item-leading` receiving no row data, `#card`, `#filters`, `#batch-actions`, `#toolbar-actions`, `#create-row`, `#empty`); raw row records are never handed to panel slots or events. The top toolbar stays fixed with search on the left (server search when the owner's read declares `search`; zero-request local search across `label`, `primaryKey`, `subtitle`, tags, and all typed/nested field values when the read is unpaged without server `search` and either `searchable: true` or `search` state is bound), optional `#filters`, batch actions (`#batch-actions`) when rows are checked, and `#toolbar-actions` on the right; `#create-row` expands an inline create block at the top of the list. Unpaged reads also support zero-request local field-equality filtering via `localFilters` or non-read panel inputs, optional collapsible grouping (`groupBy` and `groupEmptyLabel`) with live filtered counts per group (omitting empty groups) across list, table, and card layouts, and automatic windowed rendering when more than 60 items are visible. The bottom footer stays fixed with the total count on the left whenever the owner returns `total` or local filtering is enabled on a complete list, numeric page buttons on the right in `page` mode (scrolling the list back to top on page change), and a Load more button that appends the next batch in `cursor` mode. Changing search or any filter resets paging to page 1; when the selected object reference changes and is present in the current list it expands its group if collapsed and scrolls into view (including jumping the virtual window). With `fallbackToFirst`, the first row is selected only on first showing (or after switching parent target) when nothing is selected (and no draft is active), or after server or local search/filters change and the previously selected item is no longer listed (clearing to null when empty); selection cleared elsewhere is never re-selected automatically. Clicking an item or pressing Enter/Space on a focused table row or card selects its full typed object reference (`selected`), and arrow keys move focus between rows or cards without interfering with interactive controls inside; search matches are highlighted, typed record fields render natively, time columns support `timeFormat` (`relative`, `datetime`, `date`), and a reference field is a link the page hears as `navigate`. `listed` outputs the object references of the currently matching batch, while read-only outputs (`status`, `total` — strictly owner-reported total or `null` when unknown, `loadedCount` — rows currently loaded in this batch/page, `filteredCount` — local text-match count only for complete unpaged lists else `null`, `checkedCount`, `selectedLabel`, `activeLabel`) are available to the panel without polluting writable public state. Three empty states distinguish no data (`emptyText` and optional `emptyHint`), narrowed no-match (with a Clear filters action that resets search, server/local filters and paging), and forbidden (showing the owner's reason when supplied). Missing required inputs show the waiting state.",
+      "Lists the owner's records of the projection's type (or the read's declared `rowType` when listing child objects of a different ontology type) in a compact list (single-line or two-line row height), multi-column table (`columns`, with optional `width`/`minWidth`, fixed head and row heights, single-line ellipsis unless `wrap: true`, horizontal scroll inside the table), or responsive card grid (`layout: 'cards'`; default `'auto'` draws a table when `columns` is given and a compact list otherwise), from its `rows` datum (an owner's list or query read) or `objects` (ontology objects of a chosen type). Built-in row action column (`rowActions`) renders declared projection row operations (using per-row availability returned with the list read to avoid N+1 requests) alongside local buttons (`kind: 'local'`, emitting `row-action` with `{ id, ref, index }`), per-row visibility conditions (`when`), and overflow into a 'More' dropdown menu beyond `maxVisible`. Customize cells, row actions, expanded row details, decorative leading marks, cards, toolbars, or empty states with standard Vue slots (`#cell-<columnKey>` and `#cell` receiving `{ ref, index, column, value, displayText, tone, operations, runOperation }`, `#actions` receiving `{ ref, index, operations, runOperation }`, `#row-detail` receiving `{ ref, index, collapse }` to drive child projections, `#item-leading` receiving no row data, `#card`, `#filters`, `#batch-actions`, `#toolbar-actions`, `#create-row`, `#empty`); raw row records are never handed to panel slots or events. The top toolbar stays fixed with search on the left (server search when the owner's read declares `search`; zero-request local search across `label`, `primaryKey`, `subtitle`, tags, and all typed/nested field values when the read is unpaged without server `search` and either `searchable: true` or `search` state is bound), optional `#filters`, batch actions (`#batch-actions`) when rows are checked, and `#toolbar-actions` on the right; `#create-row` expands an inline create block at the top of the list. Unpaged reads also support zero-request local field-equality filtering via `localFilters` or non-read panel inputs, optional collapsible grouping (`groupBy` and `groupEmptyLabel`) with live filtered counts per group (omitting empty groups) across list, table, and card layouts, and automatic windowed rendering when more than 60 items are visible. The bottom footer stays fixed with the total count on the left whenever the owner returns `total` or local filtering is enabled on a complete list, numeric page buttons on the right in `page` mode (scrolling the list back to top on page change), and a Load more button that appends the next batch in `cursor` mode. Changing search or any filter resets paging to page 1; when the selected object reference changes and is present in the current list it expands its group if collapsed and scrolls into view (including jumping the virtual window). With `fallbackToFirst`, the first row is selected only on first showing (or after switching parent target) when nothing is selected, or after server or local search/filters change and the previously selected item is no longer listed (clearing to null when empty); selection cleared elsewhere is never re-selected automatically. Clicking an item or pressing Enter/Space on a focused table row or card selects its full typed object reference (`selected`), and arrow keys move focus between rows or cards without interfering with interactive controls inside; search matches are highlighted, typed record fields render natively, time columns support `timeFormat` (`relative`, `datetime`, `date`), and a reference field is a link the page hears as `navigate`. `listed` outputs the object references of the currently matching batch, both as a bindable output and as a read-only output. Other read-only outputs (`status`, `total` — complete-list length, owner-reported total for a query, or `null` when unknown, `loadedCount` — rows currently loaded in this batch/page, `filteredCount` — local text-match count only for complete unpaged lists else `null`, `checkedCount`, `selectedLabel`, `activeLabel`) are available to the panel without polluting writable public state. Three empty states distinguish no data (`emptyText` and optional `emptyHint`), narrowed no-match (with a Clear filters action that resets search, server/local filters and paging), and forbidden (showing the owner's reason when supplied). Missing required inputs show the waiting state.",
     effects: "Reads the bound type's list, query or ontology objects datum as the reader; runs declared row operations through the platform coordinator and writes only the panel's own state.",
-    bindsElement: ["PlatformObjectType:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
     // is what a placement must declare, so none is required.
     data: {
@@ -214,6 +214,7 @@ export const components: readonly ComponentMetadata[] = [
     },
     readOnlyOutputs: {
       status: { kind: "scalar", type: "string" },
+      listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       total: { kind: "scalar", type: "number" },
       loadedCount: { kind: "scalar", type: "number" },
       filteredCount: { kind: "scalar", type: "number" },
@@ -228,13 +229,16 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectCount",
     role: "presentation",
     meaning:
-      "Draws a compact, inline tabular-numeral count strip from its `rows` (`panelRecordList` or `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum, suitable for canvas headers and workbench toolbars. Configure `label`, `labelKey`, or `labels` (localized label map), or `items` for multiple labels on the same count. Complete unpaged lists (`panelRecordList`) display `rows.length`; paged queries (`panelRecordQuery`) and `panelOntologyObjects` display strictly the owner-returned `total` (never falling back to loaded row counts; shows `—` when unknown). Shows `…` while loading, `0` when empty, and a muted `—` with an explanatory tooltip when forbidden, awaiting inputs, or unreachable.",
-    effects: "Reads the bound type's list, query, or ontology objects datum as the reader; writes nothing.",
-    bindsElement: ["PlatformObjectType:*"],
+      "Draws a compact, inline tabular-numeral count strip from its `rows` (`panelRecordList` or `panelRecordQuery`, including customer ontology class `query` reads) or `objects` (`panelOntologyObjects`) datum, suitable for canvas headers, workbench toolbars, and compact trailing badges. Configure `label`, `labelKey`, or `labels` (localized label map), or `items` for multiple labels on the same count. Set `appearance` to `\"badge\"` for a bare compact numeral that omits rendering any node whenever no finite count is available (`omitWhenUnavailable` defaults to `true` for `\"badge\"` and `false` for `\"default\"`). Complete unpaged lists (`panelRecordList`) display `rows.length` (`0` when empty); paged queries (`panelRecordQuery`) and `panelOntologyObjects` display strictly the owner-returned `total` (never falling back to loaded row counts or inventing `0` on an empty response without `total`; shows `—` when unknown in default appearance). Shows `…` while loading, and a muted `—` with an explanatory tooltip when forbidden, awaiting inputs, or unreachable. Exposes `total` (`number | null`) as a read-only output.",
+    effects: "Reads the bound platform or customer object type's list, query, or ontology objects datum as the reader; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // Either `rows` (list/query) or `objects` (ontology objects) supplies the counted collection; at least one is declared.
     data: {
       rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
       objects: { results: ["panelOntologyObjects"], required: false },
+    },
+    readOnlyOutputs: {
+      total: { kind: "scalar", type: "number" },
     },
   }),
   defineComponentMeta({
@@ -243,9 +247,9 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectSummary",
     role: "presentation",
     meaning:
-      "Shows the few facts of one platform object a reader recognises it by, including owner-supplied highlight ranges, status tags, clickable object references, and optional one-click copy buttons (`config.copyableFields`, resolving `#/...` hash links against the current browser origin and pathname). Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object. Exposes `label` as a read-only output.",
+      "Shows the few facts of one object a reader recognises it by, including owner-supplied highlight ranges, status tags, clickable object references, and optional one-click copy buttons (`config.copyableFields`, resolving `#/...` hash links against the current browser origin and pathname). Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object. Exposes `label` as a read-only output.",
     effects: "Reads one object of the type the projection binds, as the reader.",
-    bindsElement: ["PlatformObjectType:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: { record: { results: ["panelRecord"], required: true } },
     readOnlyOutputs: {
       label: { kind: "scalar", type: "string" },
@@ -259,7 +263,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Draws a detail header with object name (`record.label` or `title`), one-line subtitle (`subtitleField` or `subtitle`), status badge (`statusField` paired with `record.tones`, or `status` + `statusTone`), and right-side actions. When mounted as a projection member with declared `operations`, exposes up to `maxVisibleOperations` (default 2, configurable without upper cap) operations inline via `OperationButton` in declared order (styling destructive operations as plain danger buttons inline when within the visible limit) and moves remaining overflow operations into an SDK dropdown More menu (whose accessible name automatically includes the current record title) using the shared operation dispatch, parameter dialog, and confirmation path. Also works standalone with `title`/`subtitle` and `#actions` (such as create-mode headers). Set `fallbackTitle` to keep a quiet single-line fallback while loading or missing. Exposes `label`, `status`, and `errorMessage` as read-only outputs (plus any named, typed scalar outputs explicitly declared by the bound read's owner).",
     effects: "Reads the bound object's `record` datum when declared and runs projection operations through the platform coordinator.",
-    bindsElement: ["PlatformObjectType:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: { record: { results: ["panelRecord"], required: false } },
     readOnlyOutputs: {
       label: { kind: "scalar", type: "string" },
@@ -273,7 +277,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectForm",
     role: "control",
     meaning:
-      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults, non-blocking warnings), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, offers a retry button when a form read fails, and takes an agent's draft for its object. Hidden owner fields have no control. Fields declaring `defaultValue` (including `null`) show a Reset to default control that restores a deep copy of the default into the draft without saving immediately, disabled while already at default, read-only, or saving. Fields declaring `warning` render non-blocking warning guidance under the control without blocking Save. Set `config.layout` to `rows` (default `stacked`) for a settings-row layout (label and help left, control/error/warning middle, Reset to default right, stacking cleanly in narrow containers). Set `config.presentation` to `cards` (1 or 2 columns via `cardColumns` or group `column: 'main' | 'side' | 'full'`), `tabs`, or `steps` alongside `config.groups` (or owner `sections`), or supply a `#default` slot containing `<object-form-fields>` slices inside arbitrary panel cards, tabs, or steps — all sharing the same single form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and agent draft lifecycle. Set `config.actions` to `header` (default `footer`) to hide the bottom action bar and hand Save, Discard, and the unsaved marker to the enclosing page header (falling back to the footer when no header host is present), `create-only` to show Cancel/Create only in create mode while the panel places its own edit Save button, or `none` to omit the bar in both modes. With footer actions, an edit form hides the save bar while clean or when all non-hidden fields are read-only, and reveals it pinned at the foot once edited with a count of modified fields alongside Discard and Save; a create form keeps Cancel and Create pinned at the foot and emits `cancel` after resetting (confirming first if edited). Customize any field or array row item field by placing a component or nested `<Projection>` (such as `ReferencePicker` or `ObjectGraph`) inside the form's Vue slot `#field-<dotPath>` (e.g. `#field-skills`, `#field-modelSelection.modelId`, `#field-items.*.skillId`) or `#field`: the form draws it in that field's place so the owner's order and sections hold; a reference without a slot is shown as unavailable to edit. Customize footer controls with `#actions` or `#after-fields`. An owner may group its fields into `sections` (each a title and a hint, in order); the form draws them one after another with a list of them beside. It asks before Discard throws unsaved changes away. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It exposes `label`, `dirty`, and `draft` as read-only outputs without requiring writable panel state, tells the page `saved` (with the object), `discarded`, and `cancel`, and asks the reader before the panel moves it off unsaved changes.",
+      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults, non-blocking warnings), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, offers a retry button when a form read fails, and supports live assistant field filling and saving. Hidden owner fields have no control. Fields declaring `defaultValue` (including `null`) show a Reset to default control that restores a deep copy of the default into the draft without saving immediately, disabled while already at default, read-only, or saving. Fields declaring `warning` render non-blocking warning guidance under the control without blocking Save. Set `config.layout` to `rows` (default `stacked`) for a settings-row layout (label and help left, control/error/warning middle, Reset to default right, stacking cleanly in narrow containers). Set `config.presentation` to `cards` (1 or 2 columns via `cardColumns` or group `column: 'main' | 'side' | 'full'`), `tabs`, or `steps` alongside `config.groups` (or owner `sections`), or supply a `#default` slot containing `<object-form-fields>` slices inside arbitrary panel cards, tabs, or steps — all sharing the same single form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and live assistant form filling. Set `config.actions` to `header` (default `footer`) to hide the bottom action bar and hand Save, Discard, and the unsaved marker to the enclosing page header (falling back to the footer when no header host is present), `create-only` to show Cancel/Create only in create mode while the panel places its own edit Save button, or `none` to omit the bar in both modes. With footer actions, an edit form hides the save bar while clean or when all non-hidden fields are read-only, and reveals it pinned at the foot once edited with a count of modified fields alongside Discard and Save; a create form keeps Cancel and Create pinned at the foot and emits `cancel` after resetting (confirming first if edited). Customize any field or array row item field by placing a component or nested `<Projection>` (such as `ReferencePicker` or `ObjectGraph`) inside the form's Vue slot `#field-<dotPath>` (e.g. `#field-skills`, `#field-modelSelection.modelId`, `#field-items.*.skillId`) or `#field`: the form draws it in that field's place so the owner's order and sections hold; a reference without a slot is shown as unavailable to edit. Customize footer controls with `#actions` or `#after-fields`. An owner may group its fields into `sections` (each a title and a hint, in order); the form draws them one after another with a list of them beside. It asks before Discard throws unsaved changes away. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It exposes `label`, `dirty`, and `draft` as read-only outputs without requiring writable panel state, tells the page `saved` (with the object), `discarded`, and `cancel`, and asks the reader before the panel moves it off unsaved changes.",
     effects: "Reads the owner's form and saves through the owner's own interface; it saves through the owner's form save its projection names.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Action:*"],
     // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
@@ -318,16 +322,16 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ReferencePicker",
     role: "control",
     meaning:
-      "Chooses a reference from the bound type's records or option catalogue in either of two modes. In form-field mode (when placed inside an `ObjectForm` field Vue slot such as `#field-skills`, `#field-modelSelection.modelId`, `#field-items.*.skillId`, or `#field`), it connects automatically to the enclosing form field and writes the owner's own value (a skill's whole reference, a model's key) into the form so the choice is saved, discarded and drafted with it; `options` finds choices, `selected` resolves the values already in the form, descriptions and empty defaults are shown, and unavailable values remain listed with the owner's reason. In standalone inline mode (when rendered outside a form field slot), it renders a compact, filterable single-select dropdown directly at the `<Projection>` site (suited for workbench toolbars such as path start/target pickers), reading either `data.rows` (`panelRecordList` or `panelRecordQuery`, filtered locally in memory with zero extra requests) or `data.options` (`panelOptionList`, with optional `data.selected` to resolve held/unavailable values), and syncing the chosen `{ className, primaryKey }` (or `null` when cleared) through the `selected` output/member parameter; when data is forbidden or unreachable, the dropdown is disabled with a readable tooltip. Both modes expose an `#option` Vue slot to customize option rows.",
+      "Chooses a reference from the bound type's records or option catalogue in either of two modes. In form-field mode (when placed inside an `ObjectForm` field Vue slot such as `#field-skills`, `#field-modelSelection.modelId`, `#field-items.*.skillId`, or `#field`), it connects automatically to the enclosing form field and writes the owner's own value (a skill's whole reference, a model's key) into the form so the choice is saved and discarded with it; `options` finds choices, `selected` resolves the values already in the form, descriptions and empty defaults are shown, and unavailable values remain listed with the owner's reason. In standalone inline mode (when rendered outside a form field slot), it renders a compact, filterable single-select dropdown directly at the `<Projection>` site (suited for workbench toolbars such as path start/target pickers), reading either `data.rows` (`panelRecordList` filtered locally in memory with zero extra requests, or paged `panelRecordQuery` whose `search` parameter is forwarded to the owner's read, and optionally grouped by a record field via `groupBy`) or `data.options` (`panelOptionList`), and syncing the chosen `{ className, primaryKey }` (or `null` when cleared) through the `selected` output/member parameter; when the selected object is absent from the loaded choices, `data.selected` can read the owner's `resolve` (`panelOptionList`) or `record` (`panelRecord`, sourced from the selected object input). When the choices are forbidden or unreachable, the dropdown is disabled with a readable tooltip. Both modes expose an `#option` Vue slot to customize option rows.",
     effects: "Reads the bound type's options or records as the reader; writes only the target form field in form-field mode, or the panel's `selected` state in standalone inline mode.",
-    bindsElement: ["PlatformObjectType:*"],
-    // Form-field mode uses `options` + `selected`; standalone inline mode uses either `rows` (local filter) or `options` (with optional `selected`).
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    // A standalone picker can read a selected object outside the current page through the owner's record read.
     data: {
       // The reader's search and page of choices, and the values already held.
       options: { results: ["panelOptionList"], required: false, runtimeParams: ["keyword", "page"] },
-      selected: { results: ["panelOptionList"], required: false, runtimeParams: ["values"] },
-      // Record list/query for standalone inline pickers that filter locally with zero extra requests.
-      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+      selected: { results: ["panelOptionList", "panelRecord"], required: false, runtimeParams: ["values"] },
+      // Complete lists filter locally; paged queries pass search to the owner.
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false, runtimeParams: ["search"] },
     },
     outputs: {
       selected: { kind: "object", objectType: "@binding" },
@@ -412,8 +416,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OntologyGraph",
     role: "control",
     meaning:
-      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, keeping layer filter and viewport as internal view state, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit and relayout controls. The graph fills the height of the box its member is placed in and falls back to a 420px canvas height when that box has no definite height.",
-    effects: "Reads the bound graph source's schema, counts, starting node and one-hop neighbors as the reader; writes only the panel's own selection state.",
+      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, syncing `visibleLayers`, `visibleRelationKinds`, and `expandedNodes` bidirectionally with panel state while keeping dragged coordinates and viewport local, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit and relayout controls. Publishes `startLabel`, `startDetail`, and `visibleRelationKindLabels` as read-only outputs. The graph fills the height of the box its member is placed in and falls back to a 420px canvas height when that box has no definite height.",
+    effects: "Reads the bound graph source's schema, counts, starting node and one-hop neighbors as the reader; writes only the panel's own selection, layer filter, relation-kind filter, and expanded-nodes state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // Expanding from a node is what the graph does; the three overview reads it shows when a placement supplies them.
     data: {
@@ -423,13 +427,16 @@ export const components: readonly ComponentMetadata[] = [
       // The node the reader expands, and the layers and relation kinds the graph shows now.
       neighbors: { results: ["panelGraphNeighbors"], required: true, runtimeParams: ["node", "layers", "relationKinds"] },
     },
-    // What a placement hands the graph: how it draws, where instance mode starts, what is selected and what to highlight.
+    // What a placement hands the graph: how it draws, where instance mode starts, what is selected, what to highlight,
+    // which layers are visible, and which nodes are expanded.
     inputs: {
       mode: { kind: "scalar", type: "string" },
       start: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
       selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
       selectedType: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
+      visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
+      expandedNodes: { kind: "list", items: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
     },
     outputs: {
       selectedNode: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
@@ -437,6 +444,13 @@ export const components: readonly ComponentMetadata[] = [
       selectedType: { kind: "scalar", type: "string" },
       // The relation kinds drawn, read as well as written: a page's own kind filter and the graph follow one choice.
       visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
+      visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
+      expandedNodes: { kind: "list", items: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
+    },
+    readOnlyOutputs: {
+      startLabel: { kind: "scalar", type: "string" },
+      startDetail: { kind: "scalar", type: "string" },
+      visibleRelationKindLabels: { kind: "list", items: { kind: "scalar", type: "string" } },
     },
   }),
   defineComponentMeta({
@@ -445,12 +459,25 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectRelations",
     role: "control",
     meaning:
-      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction and stored/derived line semantics, and moving selection to a clicked peer node with its complete identity.",
-    effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection state.",
-    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction, stored/derived line semantics, and optional edge binding details (`reads`, `operations`, `viaInput`). Supports filtering by relation kind (`visibleRelationKinds` and optional `showRelationFilter` multi-select), optional header summary (`showSummary`) and empty-group collapsing (`collapseEmptyGroups`), moving selection to a clicked peer node (`selected`), and promoting a peer node as graph start (`allowSetStart` / `start`). Exposes `status`, `edgeCount`, and `label` as read-only outputs. `edgeCount` is null when the result is truncated. For a customer relationship, set `data.neighbors.type` to the relationship ID.",
+    effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection, start, and visible relation kinds state.",
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Relationship:*"],
     // The node a reader moved to, when no state the author bound holds it.
     data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true, runtimeParams: ["node"] } },
-    outputs: { selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
+    inputs: {
+      selected: { kind: "object", objectType: "@any" },
+      visibleRelationKinds: { kind: "list", items: { kind: "scalar", type: "string" } },
+    },
+    outputs: {
+      selected: { kind: "object", objectType: "@any" },
+      start: { kind: "object", objectType: "@any" },
+      visibleRelationKinds: { kind: "list", items: { kind: "scalar", type: "string" } },
+    },
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      edgeCount: { kind: "scalar", type: "number" },
+      label: { kind: "scalar", type: "string" },
+    },
   }),
   defineComponentMeta({
     componentId: "SegmentedControl",
@@ -500,7 +527,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AppMenu",
     role: "control",
     meaning:
-      "Official application navigation menu column shared by the platform shell and application frame panels. Inside an application frame panel, `<app-menu>` automatically renders the admitted entries from `usePanelContext().entryMenu`, highlights `usePanelContext().currentEntry.path`, adapts to a compact selector on narrow screens, and navigates via `usePanelContext().navigate(id)` unless a custom `@select` handler is provided. Supply `:counts` (from declared `PanelData` owner reads) and `:icons` (curated platform icon keys) to attach live directory badges and row icons, or supply explicit `:groups` and `:active-id` for custom menus.",
+      "Official application navigation menu column shared by the platform shell and application frame panels. Inside an application frame panel, `<app-menu>` automatically renders the admitted entries from `usePanelContext().entryMenu`, highlights `usePanelContext().currentEntry.path`, adapts to a compact selector on narrow screens, and navigates via `usePanelContext().navigate(id)` unless a custom `@select` handler is provided. Use the `#item-trailing` slot (`{ item }`) to place trailing projections or indicators per row, `:item-trailing-text` for plain-text option suffixes in the compact mobile selector, and `:icons` for curated platform icon keys.",
     effects: "Navigates within the platform through the panel host when the reader selects a menu entry; reads no business data itself.",
   }),
   defineComponentMeta({
@@ -511,7 +538,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Displays one typed field value according to its owner-declared type — text, tabular number (`numberFormat`), localized date/datetime/relative-time, localized boolean, semantic status tag (`tone` or `record.tones`), tag list, clickable object reference (`navigate`), multi-language name, list, or code/JSON — with optional exact-match `valueMap` (`{ [rawValue]: { label?, labelKey?, labels?, tone?, icon? } }`) mapping raw scalar values to localized labels, semantic tones, and platform icons without computing new values or evaluating range/threshold expressions. Reads from its projection's `record` (`panelRecord`) or metric `result` (`metricOutput`, scalar/first-row or named column at `rowIndex`) datum, or renders a direct `value` prop standalone or inside a slot.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
-    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
       record: { results: ["panelRecord"], required: false },
       result: { results: ["metricOutput"], required: false },
@@ -525,7 +552,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Fills already-provided values from one record (`record`) or one metric result row (`result` at `rowIndex`) into a fixed `{fieldKey}` sentence template (`template`, `templateKey`, or locale-keyed `templates`), with optional per-field `fieldFormats` (including exact-match `valueMap`). Pure display with no expressions, calculation, or conditional sentence branching — derived values and business conditions belong in a MetricView, Action, or owner read. Each placeholder renders via `TypedValue`, keeping references clickable (`navigate`), booleans/names localized, tones tinted, and numbers tabular.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
-    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
       record: { results: ["panelRecord"], required: false },
       result: { results: ["metricOutput"], required: false },
@@ -539,7 +566,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Standardized informational, reminder, warning, success, or danger callout banner (`tone`, `toneField`, exact-match `toneMap`/`valueMap`, or platform `icon`) for detail cards and guidance notices. Renders static or localized copy (`title`/`text`, `titleKey`/`textKey`, `titles`/`texts`), custom slot content (`#default`, `#actions`), or already-provided values bound from a `record` (`panelRecord`) or metric `result` (`metricOutput`) datum via `field` or a fixed `{fieldKey}` `template` (with optional `fieldFormats`; no calculation, range thresholds, or conditional branching).",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
-    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
       record: { results: ["panelRecord"], required: false },
       result: { results: ["metricOutput"], required: false },
@@ -574,7 +601,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Displays one or more statistical metric cards (label + tabular numeral + optional unit, description, and semantic tone) in `card`, `compact`, or `inline` variants for ontology headers, dashboards, and catalog summaries. Directly consumes a MetricView's `result` (`metricOutput`, extracting a scalar or named column from the first or `rowIndex` row, and surfacing truncation hints), a single `record` (`panelRecord`), `rows` (`panelRecordList` uses list length; `panelRecordQuery` uses strictly the owner-returned `total`, never loaded row counts), or `objects` (`panelOntologyObjects` owner `total`), or standalone `value`/`items` props. Pure presentation: never computes aggregations on the client.",
     effects: "Reads the bound MetricView `result`, `record`, `rows`, or `objects` datum as the reader when declared; writes nothing.",
-    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
       result: { results: ["metricOutput"], required: false },
       record: { results: ["panelRecord"], required: false },
@@ -588,7 +615,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectFormFields",
     role: "presentation",
     meaning:
-      "Renders a selected subset of an enclosing `ObjectForm`'s fields (`fields`, `section`, `group`, or `rest`) inside panel-authored cards, tabs, or wizard steps while keeping one shared form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and agent draft lifecycle. It reads nothing itself and binds no ontology element.",
+      "Renders a selected subset of an enclosing `ObjectForm`'s fields (`fields`, `section`, `group`, or `rest`) inside panel-authored cards, tabs, or wizard steps while keeping one shared form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and live assistant form filling. It reads nothing itself and binds no ontology element.",
   }),
   defineComponentMeta({
     componentId: "PathTree",
@@ -612,7 +639,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectTree",
     role: "control",
     meaning:
-      "Shows one object's files — a skill package's, say — as a folder/file tree, from its `files` datum (an owner's records, one per file, at the path `pathField` gives, else the record's own key). Clicking a file selects it: `selected` is the file's key, which the placement can bind to the panel's state so another member (an ObjectTextReader's `record`) reads that file. Folders open and close; they are not selected.",
+      "Shows one object's files — a skill package's, say — as a folder/file tree, from its `files` datum (an owner's records, one per file, at the path `pathField` gives, else the record's own key). Clicking a file selects it: `selected` is the file's key, which the placement can bind to the panel's state so another member (an ObjectTextReader's `record`) reads that file. When nothing is selected (`selected` is null), `defaultKey` selects that file if present, otherwise `fallbackToFirst` selects the first file in tree order; an explicit selection is kept intact even if absent from `files` so a paired reader can report it in place. Folders open and close; they are not selected.",
     effects: "Reads the owner's files as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
     data: { files: { results: ["panelRecordList"], required: true } },
@@ -624,9 +651,9 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectTextReader",
     role: "presentation",
     meaning:
-      "Shows an object's text read only, through its owner's reads. Sources read page by page: `sources` lists them as chips (one owner record per source), and `page` reads the chosen source's text one page at a time (an owner's query whose rows are the text's segments, `fields.text`, with `nextCursor` for the next page); the reader opens one source at a time and \"More\" reads the next page. One object's whole text: `record` reads it and the field `textField` names (`content` by default) is shown with its line breaks. Its outputs `activeSourceId` and `activeAnchor`, bound to the panel's state, are read as well as written: the page opens a source by writing it (and, for a reader with an `anchor`, that anchor), and readers sharing them on one page have only one open. Which sources it lists is the `sources` read's: an owner read of one issue's cited sources lists only those.",
+      "Shows an object's text read only, through its owner's reads. Sources read page by page: `sources` lists them as chips (one owner record per source), and `page` reads the chosen source's text one page at a time (an owner's query whose rows are the text's segments, `fields.text`, with `nextCursor` for the next page); the reader opens one source at a time and \"More\" reads the next page. One object's whole text: `record` reads it and the field `textField` names (`content` by default) is shown according to `format` (`auto` by default, inferring Markdown with optional YAML frontmatter separation or a read-only code viewer from `pathField`, `record.label`, or `record.primaryKey`, and falling back to preformatted text when no extension is present; `plain`, `markdown`, and `code` override auto-detection). Its outputs `activeSourceId` and `activeAnchor`, bound to the panel's state, are read as well as written: the page opens a source by writing it (and, for a reader with an `anchor`, that anchor), and readers sharing them on one page have only one open. Which sources it lists is the `sources` read's: an owner read of one issue's cited sources lists only those.",
     effects: "Reads the owner's sources, pages and records as the reader; it writes only the panel's own state.",
-    bindsElement: ["PlatformObjectType:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
       sources: { results: ["panelRecordList"], required: false },
       // The chosen source and the page's cursor are the reader's own, unless the placement binds them.
@@ -644,7 +671,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AnnotatedCode",
     role: "presentation",
     meaning:
-      "Displays line-numbered source code alongside hierarchical line-range annotation segments from its `content` (`annotatedCode`) datum, with bidirectional line/segment highlighting and scrolling, a deduplicated kind legend, expandable structured detail rows with clickable reference buttons (`refKey`), an optional outdated-code notice when the `currentCode` input differs from `content.code`, and optional summary blocks. Emits `select-ref` and `select-segment`, accepts optional `currentCode` and `activeSegmentId` inputs (with `activeSegmentId` also writable to bound panel state), and exposes `status`, `activeSegmentId`, and `selectedRef` as read-only outputs.",
+      "Displays line-numbered source code alongside hierarchical line-range annotation segments from its `content` (`annotatedCode`) datum, with bidirectional line/segment highlighting and scrolling (including automatically scrolling both panes when `activeSegmentId` changes externally and clearing highlights when it is cleared to `null`), a deduplicated kind legend, expandable structured detail rows with clickable reference buttons (`refKey`), an optional outdated-code notice when the `currentCode` input differs from `content.code`, and optional summary blocks. Emits `select-ref` and `select-segment`, accepts optional `currentCode` and `activeSegmentId` inputs (with `activeSegmentId` also writable to bound panel state), and exposes `status`, `activeSegmentId`, and `selectedRef` as read-only outputs.",
     effects: "Reads the bound object's annotatedCode datum as the reader; writes only the panel's own segment selection state and read-only outputs.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -690,7 +717,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "PanelData",
     role: "presentation",
     meaning:
-      "Draws nothing: a non-rendering member for reading declared data through usePanelData(member, name) to coordinate panel state, visibility or navigation (prefer a component's own output when available), or for declaring operations invoked through usePanelOperation(member, name). Do not use PanelData to render business fields in a panel template; use an official component, configure it, or write a component for that slot.",
+      "Draws nothing: a non-rendering member for reading declared data through usePanelData(member, name) to coordinate panel state, visibility or navigation (prefer a component's own output when available), or for declaring operations invoked through usePanelOperation(member, name, options?) (which registers a mounted page action entry by default; pass { entry: false } for non-UI background flows). Do not use PanelData to render business fields in a panel template; use an official component, configure it, or write a component for that slot.",
     // Any datum the projection names, under the author's own name, with any read result and the run-time values the
     // other components give; the read's own signature still bounds them. The catalogue test keeps these lists whole.
     data: {

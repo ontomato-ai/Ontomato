@@ -1,116 +1,262 @@
-<!-- Read-only SDK component catalogue panel: official ObjectHeader, ObjectSummary, and ObjectList projections. -->
+<!-- Read-only SDK component catalogue panel: full-width table catalog switching into full-width component detail. -->
 <style>
   [v-cloak] { display: none; }
-  .sdk-catalogue {
+  .sdk-page {
     display: flex;
     flex-direction: column;
-    gap: var(--page-content-gap);
+    min-width: 0;
     min-height: 100%;
-    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
-    container-type: inline-size;
+    container: sdk-components-page / inline-size;
     overflow-wrap: anywhere;
   }
-  .sdk-catalogue-body {
-    display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr);
-    gap: var(--page-content-gap);
-    align-items: start;
-  }
-  .sdk-catalogue-pane {
-    min-width: 0;
-    padding: var(--spacing-md);
-    border: 1px solid var(--ui-divider);
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-  }
-  .sdk-catalogue-detail {
+  .sdk-catalog-view,
+  .sdk-detail-view {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
+    min-width: 0;
+    min-height: 100%;
+  }
+  .sdk-catalog {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: var(--spacing-lg) var(--page-gutter) var(--page-content-gap);
+  }
+  .sdk-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    min-height: 40px;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .sdk-toolbar .sdk-search {
+    width: 280px;
+    max-width: 100%;
+  }
+  .sdk-search-icon {
+    color: var(--sdk-text-color-placeholder);
+  }
+  .sdk-count {
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+  }
+  .sdk-table-host {
+    margin-top: var(--spacing-lg);
+    min-width: 0;
+  }
+  .sdk-table-host .sdk-object-list,
+  .sdk-detail-card .sdk-object-list {
+    height: auto;
+    gap: 0;
+  }
+  .sdk-table-host .sdk-object-list-table td {
+    min-height: var(--list-row-height, 44px);
+  }
+  .sdk-table-host .sdk-object-list-table td:first-child .sdk-object-list-cell-main {
+    color: var(--sdk-text-color-primary);
+    font-weight: var(--font-semibold);
+  }
+  .sdk-table-host .sdk-object-list-table td:nth-child(2) .sdk-object-list-cell-main {
+    color: var(--sdk-text-color-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .sdk-table-host .sdk-object-list-table td:nth-child(3) .sdk-object-list-cell-main {
+    color: var(--sdk-text-color-secondary);
+    font-weight: var(--font-regular);
+  }
+  .sdk-detail-title-wrap {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .sdk-detail-title-wrap .sdk-object-header-subtitle {
+    min-width: 0;
+  }
+  .sdk-detail-title-fallback {
+    margin: 0;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    color: inherit;
   }
   .sdk-alert {
-    margin: 0;
+    margin: var(--spacing-md) var(--page-gutter) 0;
     padding: var(--spacing-xs) var(--spacing-sm);
     border-radius: var(--radius-sm);
     background: var(--sdk-color-warning-light-9);
     color: var(--sdk-color-warning-dark-2);
     font-size: var(--text-xs);
   }
-  .sdk-empty {
+  .sdk-detail-status {
     margin: 0;
-    padding: var(--spacing-xs) 0;
+    padding: var(--spacing-xl) var(--page-gutter);
     color: var(--sdk-text-color-secondary);
     font-size: var(--text-sm);
-    line-height: 1.7;
+    text-align: center;
   }
-  @container (max-width: 48rem) {
-    .sdk-catalogue-body {
-      grid-template-columns: minmax(0, 1fr);
+  .sdk-detail-failure {
+    color: var(--sdk-color-danger-text);
+  }
+  .sdk-detail-missing {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-2xl) var(--page-gutter);
+  }
+  .sdk-detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-content-gap);
+    min-width: 0;
+    padding: var(--page-content-gap) var(--page-gutter);
+  }
+  .sdk-detail-card {
+    min-width: 0;
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+  @container sdk-components-page (max-width: 560px) {
+    .sdk-toolbar {
+      flex-direction: column;
+      align-items: stretch;
     }
-    .sdk-catalogue-list {
-      max-height: min(45vh, 22rem);
-      overflow-y: auto;
+    .sdk-toolbar .sdk-search {
+      width: 100%;
+    }
+    .sdk-detail-body {
+      padding-block: var(--spacing-md) var(--page-content-gap);
+    }
+    .sdk-detail-card {
+      padding: var(--spacing-md);
     }
   }
 </style>
 
 <div id="app" v-cloak>
-  <page-header :title="t('panel.name')" :description="t('panel.description')">
-    <template #actions>
-      <sdk-button text :aria-label="t('action.refresh')" :title="t('action.refresh')" @click="refresh">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-          <path d="M21 3v5h-5" />
-          <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-          <path d="M8 16H3v5" />
-        </svg>
-      </sdk-button>
-    </template>
-  </page-header>
-  <section class="sdk-catalogue">
-    <div class="sdk-catalogue-body">
-      <div class="sdk-catalogue-pane sdk-catalogue-list">
-        <projection slot="list"></projection>
-      </div>
-
-      <div class="sdk-catalogue-pane sdk-catalogue-detail">
-        <template v-if="selectedKey">
-          <projection slot="header">
-            <template #actions>
-              <sdk-button data-panel-action="open-component-class" @click="openComponentClass">
-                {{ t('components.viewClass') }}
-              </sdk-button>
+  <section ref="rootRef" class="sdk-page">
+    <!-- Full-width catalog view: kept mounted via v-show so ObjectList keeps search results and DOM state. -->
+    <div v-show="!selectedKey" class="sdk-catalog-view">
+      <page-header :title="t('panel.name')" :description="t('panel.description')">
+        <template #actions>
+          <sdk-button text :aria-label="t('action.refresh')" :title="t('action.refresh')" @click="refresh">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+              <path d="M8 16H3v5" />
+            </svg>
+          </sdk-button>
+        </template>
+      </page-header>
+      <div class="sdk-catalog">
+        <div class="sdk-toolbar">
+          <sdk-input
+            v-model="search"
+            class="sdk-search"
+            :placeholder="t('components.search.placeholder')"
+            :aria-label="t('components.search.placeholder')"
+            clearable
+          >
+            <template #prefix>
+              <svg class="sdk-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <circle cx="7" cy="7" r="4.5" />
+                <path d="m10.5 10.5 3 3" />
+              </svg>
+            </template>
+          </sdk-input>
+          <span v-if="countText" class="sdk-count">{{ countText }}</span>
+        </div>
+        <div class="sdk-table-host">
+          <projection slot="list" @choose="open">
+            <template #empty="{ narrowed }">
+              <sdk-empty :description="narrowed ? t('components.list.noMatch') : t('components.list.empty')"></sdk-empty>
             </template>
           </projection>
-          <p v-if="navigateError" class="sdk-alert" role="alert">{{ navigateError }}</p>
+        </div>
+      </div>
+    </div>
 
-          <template v-if="recordReady">
-            <section-group :title="t('components.section.overview')">
-              <projection slot="summary"></projection>
-            </section-group>
-
-            <section-group :title="t('components.section.data')" :description="t('components.section.dataHint')">
-              <projection slot="dataTable"></projection>
-            </section-group>
-
-            <section-group :title="t('components.section.config')" :description="t('components.section.configHint')">
-              <projection slot="configTable"></projection>
-            </section-group>
-
-            <section-group :title="t('components.section.input')" :description="t('components.section.inputHint')">
-              <projection slot="inputTable"></projection>
-            </section-group>
-
-            <section-group :title="t('components.section.output')" :description="t('components.section.outputHint')">
-              <projection slot="outputTable"></projection>
-            </section-group>
-
-            <section-group :title="t('components.section.operations')" :description="t('components.section.operationsHint')">
-              <projection slot="operationTable"></projection>
-            </section-group>
-          </template>
+    <!-- Full-width detail view: mounted while a component is selected. -->
+    <div v-if="selectedKey" class="sdk-detail-view">
+      <page-header :back-label="t('detail.back')" @back="back">
+        <template #title>
+          <span v-show="recordReady" class="sdk-detail-title-wrap">
+            <projection slot="header"></projection>
+          </span>
+          <h1 v-if="!recordReady" class="sdk-detail-title-fallback">{{ selectedKey }}</h1>
         </template>
-        <p v-else class="sdk-empty">{{ t('components.selectPrompt') }}</p>
+        <template #actions>
+          <sdk-button text :aria-label="t('action.refresh')" :title="t('action.refresh')" @click="refresh">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+              <path d="M8 16H3v5" />
+            </svg>
+          </sdk-button>
+          <sdk-button data-panel-action="open-component-class" @click="openComponentClass">
+            {{ t('components.viewClass') }}
+          </sdk-button>
+        </template>
+      </page-header>
+
+      <p v-if="navigateError" class="sdk-alert" role="alert">{{ navigateError }}</p>
+
+      <p v-if="recordStatus === 'loading' || recordStatus === 'awaiting'" class="sdk-detail-status" role="status">
+        {{ t('detail.loading') }}
+      </p>
+      <p v-else-if="recordStatus === 'forbidden'" class="sdk-detail-status sdk-detail-failure" role="alert">
+        {{ t('detail.forbidden') }}
+      </p>
+      <div v-else-if="!recordReady" class="sdk-detail-missing">
+        <sdk-empty :description="missingDescription"></sdk-empty>
+      </div>
+      <div v-else class="sdk-detail-body">
+        <div class="sdk-detail-card">
+          <section-group :title="t('components.section.overview')">
+            <projection slot="summary"></projection>
+          </section-group>
+        </div>
+
+        <div class="sdk-detail-card">
+          <section-group :title="t('components.section.data')" :description="t('components.section.dataHint')">
+            <projection slot="dataTable"></projection>
+          </section-group>
+        </div>
+
+        <div class="sdk-detail-card">
+          <section-group :title="t('components.section.config')" :description="t('components.section.configHint')">
+            <projection slot="configTable"></projection>
+          </section-group>
+        </div>
+
+        <div class="sdk-detail-card">
+          <section-group :title="t('components.section.input')" :description="t('components.section.inputHint')">
+            <projection slot="inputTable"></projection>
+          </section-group>
+        </div>
+
+        <div class="sdk-detail-card">
+          <section-group :title="t('components.section.output')" :description="t('components.section.outputHint')">
+            <projection slot="outputTable"></projection>
+          </section-group>
+        </div>
+
+        <div class="sdk-detail-card">
+          <section-group :title="t('components.section.operations')" :description="t('components.section.operationsHint')">
+            <projection slot="operationTable"></projection>
+          </section-group>
+        </div>
       </div>
     </div>
   </section>

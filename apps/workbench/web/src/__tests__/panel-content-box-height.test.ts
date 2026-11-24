@@ -77,7 +77,6 @@ describe("host content-box height stylesheets", () => {
     expect(css).not.toMatch(/\.panel-host-direct\s*\{[^}]*padding:/s);
     // Host banners stay fixed above the scrolling content box.
     expect(css).toMatch(/\.panel-host-notice\s*\{[^}]*flex-shrink:\s*0;/s);
-    expect(css).toMatch(/\.panel-host-draft\s*\{[^}]*flex-shrink:\s*0;/s);
   });
 
   it("floats PageComposer over the page foot without shortening the content box and keeps non-panel PlatformLayout scrolling intact", () => {

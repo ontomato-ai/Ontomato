@@ -118,6 +118,8 @@ export const pageFormSnapshotSchema = z
     member: z.string().min(1).max(200),
     /** Placed child panel path when the form belongs to a nested panel. */
     memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
+    /** Unique mounted instance ID for this form; rotates when target, parent inputs, fixed fields, or panel definition change. */
+    formInstanceId: z.string().min(1).max(200).optional(),
     /** The object or create-draft this form is currently editing. */
     target: pageFormTargetSchema.optional(),
     /** Whether the form holds unsaved edits relative to its opened baseline. */
@@ -179,13 +181,9 @@ export function pageContextOf(report: {page: string; selection: {className: stri
   };
 }
 
-/** The query parameters a draft's handoff adds to an address; they name no page of their own. */
-const DRAFT_QUERY_KEYS = ["draftSessionId", "draftRunId", "draftPath"];
-
-/** The address without what does not change which page it is: the draft handoff, the fragment and a trailing slash. */
+/** The address without what does not change which page it is: the fragment and a trailing slash. */
 export function samePageAddress(url: string): string {
   const parsed = new URL(url.replace(/^#/, ""), "http://page.invalid");
-  for (const key of DRAFT_QUERY_KEYS) parsed.searchParams.delete(key);
   return (parsed.pathname + parsed.search).replace(/\/+$/, "") || "/";
 }
 

@@ -50,7 +50,6 @@ const formSaveMeta = {
   method: "PUT" as const,
   path: "/objects/:id",
   bodySchema: {},
-  draftOperation: "object.update",
 };
 
 const fields: PanelFormField[] = [

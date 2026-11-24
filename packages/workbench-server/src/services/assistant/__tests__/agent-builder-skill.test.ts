@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -49,50 +49,8 @@ it("refuses to write directly inside the platform before sending any request", a
   for (const args of [["create", "@work/agent.json"], ["update", agentId, "@work/agent.json"], ["delete", agentId]]) {
     const result = await run(args, env, cwd);
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain("draft");
   }
   expect(requested).not.toHaveBeenCalled();
-});
-
-it("writes a draft that keeps the execution user and prints the page link", async () => {
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-draft-"));
-  await writeFile(path.join(cwd, "form.json"), JSON.stringify(form));
-  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_SESSION_ID: "session", ONTOMATO_RUN_ID: "run" };
-  const written = await run(["draft", "update", agentId, "@form.json"], env, cwd);
-  expect(written.code).toBe(0);
-  expect(JSON.parse(await readFile(path.join(cwd, "outputs/drafts/agent.page-draft.json"), "utf8"))).toEqual({
-    pageKey: "agents-agent-settings", operation: "agent.update", target: { objectType: "platform:AgentDefinition", id: agentId }, form,
-  });
-  const linked = await run(["draft-link", "@outputs/drafts/agent.page-draft.json"], env, cwd);
-  expect(linked.code).toBe(0);
-  expect(linked.stdout.trim()).toBe(
-    `#/agents/settings/${agentId}?draftSessionId=session&draftRunId=run&draftPath=outputs%2Fdrafts%2Fagent.page-draft.json`,
-  );
-});
-
-it("writes an object type without an id for create and rejects a legacy target when linking", async () => {
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-typed-create-"));
-  await writeFile(path.join(cwd, "form.json"), JSON.stringify(form));
-  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_SESSION_ID: "session", ONTOMATO_RUN_ID: "run" };
-  expect((await run(["draft", "create", "@form.json"], env, cwd)).code).toBe(0);
-  const artifact = "outputs/drafts/agent.page-draft.json";
-  const draft = JSON.parse(await readFile(path.join(cwd, artifact), "utf8"));
-  expect(draft.target).toEqual({ objectType: "platform:AgentDefinition" });
-
-  await writeFile(path.join(cwd, artifact), JSON.stringify({ ...draft, target: {} }));
-  const refused = await run(["draft-link", "@" + artifact], env, cwd);
-  expect(refused.code).toBe(1);
-  expect(refused.stderr).toContain(artifact + ": target.objectType");
-});
-
-it("writes a draft with only the fields the agent gives it", async () => {
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-partial-draft-"));
-  const changed = { name: "Renamed agent", systemPrompt: "A new prompt" };
-  await writeFile(path.join(cwd, "form.json"), JSON.stringify(changed));
-  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_SESSION_ID: "session", ONTOMATO_RUN_ID: "run" };
-  expect((await run(["draft", "update", agentId, "@form.json"], env, cwd)).code).toBe(0);
-  // A draft keeps the shape the agent gave: it does not fill the skills, or anything else, from the stored agent.
-  expect(JSON.parse(await readFile(path.join(cwd, "outputs/drafts/agent.page-draft.json"), "utf8")).form).toEqual(changed);
 });
 
 it("sends an outside update's own fields, with no skills when the file names none", async () => {
@@ -125,23 +83,6 @@ it("sends an outside update's explicit empty skills as the whole selection", asy
   expect(seen).toEqual([{ body: { skills: [] } }]);
 });
 
-it("validates the draft's target and form together", async () => {
-  const seen: { url: string; body: unknown }[] = [];
-  const base = await serve((url, body, response) => {
-    seen.push({ url, body });
-    response.statusCode = 204;
-    response.end();
-  });
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-validate-"));
-  await writeFile(path.join(cwd, "form.json"), JSON.stringify(form));
-  const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "session-token" };
-  expect((await run(["draft", "update", agentId, "@form.json"], env, cwd)).code).toBe(0);
-  const validated = await run(["validate-draft", "@outputs/drafts/agent.page-draft.json"], env, cwd);
-  expect(validated.code).toBe(0);
-  expect(validated.stdout.trim()).toBe("ok");
-  expect(seen).toEqual([{ url: "/api/assistant/agent-definitions/validate", body: { target: { objectType: "platform:AgentDefinition", id: agentId }, form } }]);
-});
-
 it("lists the users a governance administrator may choose, and reports when none may be set", async () => {
   const seen: string[] = [];
   const base = await serve((url, _body, response) => {
@@ -157,7 +98,7 @@ it("lists the users a governance administrator may choose, and reports when none
   expect(seen).toEqual(["/platform/agent-execution/options?keyword=ali&pageNum=1&pageSize=100"]);
 });
 
-it("uses the execution callback credential instead of tk when the runtime provides one", async () => {
+it.each([false, true])("authenticates agent settings reads for a callback base: %s", async (callback) => {
   const seen: { url: string; headers: IncomingMessage["headers"] }[] = [];
   const base = await serve((url, _body, response, request) => {
     seen.push({ url, headers: request.headers });
@@ -165,14 +106,15 @@ it("uses the execution callback credential instead of tk when the runtime provid
     response.end(JSON.stringify({ agents: [] }));
   });
   const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-callback-"));
+  const prefix = callback ? "/api/assistant/executions/run-id/workbench" : "";
   const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_EXECUTION_CALLBACK: "wbc1-run", ONTOMATO_RUN_ID: "run-id",
-    ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base };
+    ONTOMATO_WORKBENCH_URL: base + prefix, ...(!callback && { ONTOMATO_TK: "session-token" }) };
   const result = await run(["list"], env, cwd);
   expect(result.code).toBe(0);
   expect(seen).toHaveLength(1);
-  expect(seen[0].url).toBe("/api/assistant/agent-definitions");
-  expect(seen[0].headers["x-ontomato-callback-credential"]).toBe("wbc1-run");
+  expect(seen[0].url).toBe(prefix + "/api/assistant/agent-definitions");
+  expect(seen[0].headers["x-ontomato-callback-credential"]).toBe(callback ? "wbc1-run" : undefined);
   expect(seen[0].headers["x-ontomato-run-id"]).toBe("run-id");
-  expect(seen[0].headers.tk).toBeUndefined();
+  expect(seen[0].headers.tk).toBe(callback ? undefined : "session-token");
   expect(seen[0].headers["x-api-key"]).toBeUndefined();
 });

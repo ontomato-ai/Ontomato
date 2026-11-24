@@ -103,12 +103,12 @@ it("runs a read operation the panel offers as a read, never as a write intent", 
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
-    operations: { ...noOperations.operations, read, prepare }, recordDraftCreated: async () => {},
+    operations: { ...noOperations.operations, read, prepare },
     readProjection: async () => { throw new Error("No projection is read here"); },
     read: async () => { throw new Error("No datum is read here"); },
   });
   instance.register({
-    slot: "list", projectionId: "tasks", ports: { binding: "", inputs: {} }, takesDrafts: false,
+    slot: "list", projectionId: "tasks", ports: { binding: "", inputs: {} },
     operations: { export: {
       kind: "action", effect: "read", handlerRef: "tasks.export", label: "Export", batch: false,
       target: { source: "none" }, inputSchema: {}, resultSchema: {},

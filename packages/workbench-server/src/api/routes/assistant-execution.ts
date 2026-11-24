@@ -1,7 +1,5 @@
 import type { AuthenticatedRequest } from "../../utils/request-identity";
-import { createPanelOperationIntentRequestSchema, dispatchPanelOperationIntentRequestSchema } from "@ontomato/contracts/panel-agent";
-import { panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
-import { operatePanel, dispatchPanel, requirePanelSkillForRun } from "../../services/product-panels/operations";
+import { requirePanelSkillForRun } from "../../services/product-panels/operations";
 import {
   directPanelMemberPathSchema, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema, productPanelReadRequestSchema,
   type DirectPanelMemberPath, type ProductPanelReadSource,
@@ -92,37 +90,6 @@ const executorPanelReads = [
   chartProjectionLookupRead,
   chartProjectionSourceRead,
 ];
-
-function requireOperationRequest(body: unknown) {
-  const parsed = createPanelOperationIntentRequestSchema.safeParse(body);
-  if (parsed.success) return parsed.data;
-  if (body !== null && typeof body === "object") {
-    const { call, calls } = body as { call?: { target?: unknown }; calls?: { target?: unknown }[] };
-    const explainReference = (path: string, target: unknown) => {
-      const received = panelObjectRefSchema.safeParse(target);
-      if (!received.success) return;
-      throw new HttpError(400,
-        `Expected ${path} to be {kind:"object", objectType, primaryKey}. Received ${JSON.stringify(received.data)}. Use objectType for the className value.`,
-        "INVALID_REQUEST");
-    };
-    explainReference("call.target", call?.target);
-    if (Array.isArray(calls)) calls.forEach((item, index) => explainReference(`calls[${index}].target`, item?.target));
-  }
-  throw parsed.error;
-}
-
-assistantExecutionRouter.post("/:runId/panels/operate",wrap(async(req,res)=>{
-  const runId = callbackRun(req, res.locals.runtimeCallback);
-  const {owner,credentials}=context(req);
-  res.json(await operatePanel(owner,credentials,runId,requireOperationRequest(req.body),(req as AuthenticatedRequest).userName));
-}));
-assistantExecutionRouter.post("/:runId/panels/intents/:intentId/dispatch",wrap(async(req,res)=>{
-  const runId = callbackRun(req, res.locals.runtimeCallback);
-  const intentId = z.string().uuid().parse(req.params.intentId);
-  dispatchPanelOperationIntentRequestSchema.parse(req.body);
-  const {owner,credentials}=context(req);
-  res.json(await dispatchPanel(owner,credentials,runId,intentId));
-}));
 
 async function panelReader(req: Request, runId: string, source: ProductPanelReadSource, memberPath: DirectPanelMemberPath) {
   if (source.kind === "candidate")

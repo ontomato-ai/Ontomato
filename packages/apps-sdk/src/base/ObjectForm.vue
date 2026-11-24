@@ -5,10 +5,12 @@ import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElForm } from "element-plus/es/components/form/index";
 import { confirmDanger } from "@ontomato/platform-shell";
-import type { FormFieldRejection, PageActionConfirmedDispatchResult, PendingPageActionConfirmation } from "@ontomato/contracts/agent-presentation";
+import type { FormFieldRejection, PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import {
+  declaredCustomerFormSaveName,
   panelFormObjectActiveFields,
   pruneInactivePanelFormVariants,
   type PanelFormDescription,
@@ -16,39 +18,53 @@ import {
   type PanelFormValues,
 } from "@ontomato/contracts/panel-projection";
 import { slotInputState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
-import type { FormSubmitOverride } from "../panel/draft";
+import type { FormSubmitOverride, InvalidFormText, PanelFormDraft } from "../panel/forms";
 import type { PanelFieldValue } from "../panel/state";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember, useMemberOutput } from "../panel/member";
+import { missingOperationDescriptorResult } from "../panel/member-operations";
 import {
+  classifyDispatchResponseForAction,
+  classifyDispatchResponseForConfirmation,
   PanelConfirmationDeferred,
   PanelOperationDeferred,
-  summarizeDispatchResponse,
+  type PanelAgentActionContext,
 } from "../panel/instance";
+import {
+  createDeferredConfirmation,
+  matchesExpectedTarget,
+  PanelSubmissionStaleError,
+  verifySubmissionUnchanged,
+  type SubmissionCheckPhase,
+  type SubmissionEvaluator,
+} from "../panel/operation-binding";
 import {
   applyActionSaveReadOnly,
   editedInput,
   emptyActionSaveWiring,
-  evaluateMemberFormDraft,
   formSave,
   formTargetKey,
   isCustomerActionForm,
-  itemKeysEqual,
   memberFormSource,
   MemberDataUnavailable,
   resolveActionSaveWiring,
   resolveFormSaveAnswer,
-  type ActionSaveWiring,
   type FormSource,
   type FormSaveResult,
-  type HeldMemberDraft,
 } from "../panel/member-forms";
 import { formControlsKey } from "./form-controls";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
 import FormFieldPlace from "./FormFieldPlace.vue";
-import { activeFieldAt, changedFieldPaths, fieldShowing, preserveInactiveVariantValues } from "./form-placement";
+import {
+  activeFieldAt,
+  changedFieldPaths,
+  fieldShowing,
+  preserveInactiveVariantValues,
+  resolveActiveField,
+  validateFormFieldValue,
+} from "./form-placement";
 import { resolveLocalizedText } from "./localized-text";
 import {
   formFieldsContextKey,
@@ -70,11 +86,10 @@ import { useDataStateLabels } from "./data-state-labels";
  * the owner's to judge when it is saved; the panel then holds the object the owner created. The save is the one operation of its
  * projection the owner describes as a form's save, whatever the projection calls it. A header "new" is an event that empties that state.
  * A field another projection draws (a reference chosen from its own catalogue, a data scope on a graph) is edited there,
- * through this form's field port, and is this form's value, dirty state and draft all the same.
+ * through this form's field port, and is this form's value and dirty state all the same.
  *
- * A draft an agent wrote reaches the form whose owner names the draft's operation for its target; the owner checks the
- * whole draft (one it refuses is refused whole, with the fields and the reasons) and the form shows it, the changed
- * fields marked and nothing written, until the reader saves or discards.
+ * An assistant edits this form live through `fill_form` (which calls its editing entry directly, marks the changed
+ * fields, and leaves them unsaved) and submits it through `page_action` using the same save entry as the reader.
  *
  * A page that opens the form under a parent (an attribute created in its class, a relationship from its two ends) fixes
  * the fields that parent decides, through `fixedFields`: the form shows each with the page's value, read-only, and
@@ -148,8 +163,6 @@ const emit = defineEmits<{
   discarded: [];
   /** The reader cancelled creating a new object. */
   cancel: [];
-  /** The owner refused an incoming agent draft; the form is showing the refusal banner. */
-  "draft-refused": [];
   /** Emitted when the active tab or step changes in `"tabs"` or `"steps"` presentation. */
   "update:activeGroup": [groupKey: string];
 }>();
@@ -228,7 +241,19 @@ const target = computed<PanelFormTarget | null>(() => {
   if (key.value) return { kind: "object", objectType, primaryKey: key.value };
   return creates ? { kind: "draft" } : null;
 });
+const effectiveTarget = computed<
+  | { readonly kind: "object"; readonly objectType: string; readonly primaryKey: string }
+  | { readonly kind: "draft"; readonly objectType: string }
+  | null
+>(() => {
+  const current = target.value;
+  if (!current) return null;
+  return current.kind === "object" ? current : { kind: "draft", objectType };
+});
 const targetKey = formTargetKey;
+const draftIdentity = () => JSON.stringify([panel.instance.memberPathOf(slot.slot), target.value]);
+/** Unique mounted instance ID for this form; rotates on remount, target switch, fixed-field change, or member input change. */
+const formInstanceId = ref(randomId());
 
 /** Puts the panel's state where the form shows `next`: an existing object held, or the state emptied for a new one. */
 function moveTo(next: PanelFormTarget) {
@@ -247,7 +272,7 @@ const values = shallowRef<PanelFormValues>({});
 const changed = shallowRef<ReadonlySet<string>>(new Set());
 const errors = shallowRef<Readonly<Record<string, string>>>({});
 /** Fields holding text that is not a value of the owner's (JSON that does not parse), by absolute path. */
-const invalid = shallowRef<Readonly<Record<string, string>>>({});
+const invalid = shallowRef<Readonly<Record<string, InvalidFormText>>>({});
 const loading = ref(true);
 const saving = ref(false);
 const failure = shallowRef<{ reason: Error; retry: () => void } | null>(null);
@@ -281,13 +306,24 @@ const admittedSave = computed(() => {
   return currentTarget ? formSave(member.operations.value, currentTarget, member.projection.operations) : null;
 });
 const saveUnavailable = computed(() => admittedSave.value === null);
-const customerSaveUnavailable = computed(() => isCustomerForm && saveUnavailable.value);
 
-/** Only the form's save Action supplies field wiring. */
-const actionSaveWiring = computed<ActionSaveWiring | null>(() => {
+/**
+ * Field-level read-only overlay derived from the form's admitted save operation:
+ * - Without an admitted save (`admittedSave === null`), every non-hidden field becomes read-only (attaching the
+ *   Action reason only for customer Action forms, never misleadingly for platform `form.save` forms).
+ * - With an admitted customer Action save, only unwired fields become read-only with the Action reason.
+ * - With an admitted platform `form.save`, only `fixedFields` and owner-declared read-only rules apply.
+ */
+const actionSaveReadOnlyOverlay = computed<{ wiredPaths: ReadonlySet<string>; readOnlyReason?: string } | null>(() => {
   const save = admittedSave.value;
-  if (!save) return customerSaveUnavailable.value ? emptyActionSaveWiring() : null;
-  return resolveActionSaveWiring(save.descriptor, member.projection.operations?.[save.name]);
+  if (!save) {
+    return {
+      wiredPaths: emptyActionSaveWiring().wiredPaths,
+      ...(isCustomerForm ? { readOnlyReason: actionFieldReadOnlyReason.value } : {}),
+    };
+  }
+  const wiring = resolveActionSaveWiring(save.descriptor, member.projection.operations?.[save.name]);
+  return wiring ? { wiredPaths: wiring.wiredPaths, readOnlyReason: actionFieldReadOnlyReason.value } : null;
 });
 
 /** Whether a path is a fixed field or inside one. */
@@ -296,13 +332,13 @@ const isFixed = (path: string) => Object.keys(fixedValues.value).some((fixed) =>
 function fixValues(next: PanelFormValues): PanelFormValues {
   return Object.entries(fixedValues.value).reduce((all, [path, value]) => withValueAt(all, path, value) as PanelFormValues, next);
 }
-/** An owner's description with fixed fields and customer Action save-wiring read-only overlays applied. */
+/** An owner's description with fixed fields and save-permission / Action-wiring read-only overlays applied. */
 function fixDescription(next: PanelFormDescription): PanelFormDescription {
   const withFixed = next.fields.map((field) => (field.path in fixedValues.value ? { ...field, readOnly: true } : field));
-  const wiring = actionSaveWiring.value;
-  const effectiveFields = wiring === null
+  const overlay = actionSaveReadOnlyOverlay.value;
+  const effectiveFields = overlay === null
     ? withFixed
-    : applyActionSaveReadOnly(withFixed, wiring.wiredPaths, actionFieldReadOnlyReason.value);
+    : applyActionSaveReadOnly(withFixed, overlay.wiredPaths, overlay.readOnlyReason);
   return {
     ...next,
     fields: effectiveFields,
@@ -355,7 +391,8 @@ const prunedOpenedValues = computed(() => (
 const activeInvalid = computed<Readonly<Record<string, string>>>(() => {
   if (!Object.keys(invalid.value).length) return {};
   return Object.fromEntries(
-    Object.entries(invalid.value).filter(([path]) => activeFieldAt(fields.value, values.value, path) !== undefined),
+    Object.entries(invalid.value).flatMap(([path, { message }]) =>
+      activeFieldAt(fields.value, values.value, path) === undefined ? [] : [[path, message]]),
   );
 });
 /** Top-level fields whose effective (pruned) values differ from the opened baseline. */
@@ -375,15 +412,18 @@ const dirty = computed(() => prunedOpenedValues.value !== null
 const submitted = shallowRef<ReadonlySet<string>>(new Set());
 /** Exact field JSON Pointers edited by the reader (including nested paths set or removed), kept off the `form.save` wire. */
 const editedPaths = shallowRef<ReadonlySet<string>>(new Set());
-/** Whether the panel instance's active received draft belongs to this form (and this exact row when row-attached). */
-const hasActiveDraft = computed(() => {
-  const active = panel.instance.draft.value;
-  if (!active || active.slot !== slot.slot) return false;
-  if (member.rowItemKey === undefined) return active.target.itemKey === undefined;
-  return active.target.itemKey !== undefined && itemKeysEqual(member.rowItemKey, active.target.itemKey);
-});
-/** Whether the form has something to save or discard: changed values, a received draft, or fields set on purpose. */
-const canSettle = computed(() => dirty.value || hasActiveDraft.value || submitted.value.size > 0);
+/** Field JSON Pointers explicitly edited by the human user (separate from fields filled by the agent in this session). */
+const userEditedPaths = shallowRef<ReadonlySet<string>>(new Set());
+/** Field JSON Pointers filled by the agent; subsequent agent fills can refine these without triggering `blocked_unsaved`. */
+const agentFilledPaths = shallowRef<ReadonlySet<string>>(new Set());
+/** Monotonic edit counter incremented on every value edit, invalid text change, baseline adoption, or fixed-field change. */
+let editGeneration = 0;
+
+function pathsOverlap(a: string, b: string): boolean {
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
+/** Whether the form has something to save or discard: changed values or fields set on purpose. */
+const canSettle = computed(() => dirty.value || submitted.value.size > 0);
 /** Whether the form is creating a new object (`createForm`, no existing object selected). */
 const isCreate = computed(() => target.value?.kind === "draft");
 /** Whether every non-hidden field in the owner's form description is read-only. */
@@ -410,10 +450,6 @@ const canSubmit = computed(() =>
   !failure.value && !loading.value && description.value !== null && canSettle.value && !saving.value && !asking.value && !saveUnavailable.value,
 );
 
-/** A draft this form took, for the target it addresses, shown once the form is on that target. */
-let held: HeldMemberDraft | null = null;
-/** A draft refusal received while this form was unmounted, shown on its baseline once mounted. */
-let heldRefusal: { target: string; baseline: PanelFormDescription; reason: unknown } | null = null;
 /** Whether this form component has mounted and performed its initial load. */
 let mounted = false;
 /** The target the form was last read for, so one change of target is one read. */
@@ -423,18 +459,17 @@ let loaded: string | null = null;
 const fieldMessages = (list: readonly { field: string; message: string }[]) =>
   Object.fromEntries(list.map(({ field, message }) => [field, message]));
 
-/** Whether the reader has manually edited any field since the current baseline or received draft was adopted. */
-const userEdited = ref(false);
-
 function adopt(
   baseline: PanelFormDescription,
   shown: PanelFormDescription = baseline,
   marked: ReadonlySet<string> = new Set(),
   written: ReadonlySet<string> = new Set(),
 ) {
-  userEdited.value = false;
   submitted.value = written;
   editedPaths.value = new Set();
+  userEditedPaths.value = new Set();
+  agentFilledPaths.value = new Set();
+  editGeneration += 1;
   ownerOpened.value = baseline;
   ownerShown.value = shown;
   opened.value = fixDescription(baseline);
@@ -456,34 +491,42 @@ function adopt(
  */
 let latestRead = 0;
 
+function restoreDraft(draft: PanelFormDraft) {
+  adopt(draft.ownerOpened, draft.ownerShown, draft.changed, draft.submitted);
+  values.value = draft.values;
+  invalid.value = draft.invalid;
+  errors.value = draft.errors;
+  refusal.value = draft.refusal;
+  editedPaths.value = draft.editedPaths;
+  userEditedPaths.value = draft.userEditedPaths;
+  agentFilledPaths.value = draft.agentFilledPaths;
+}
+
 function load(next: PanelFormTarget | null) {
   const nextKey = targetKey(next);
   const reading = ++latestRead;
+  if (loaded !== null && loaded !== nextKey) {
+    formInstanceId.value = randomId();
+  }
   loaded = nextKey;
   failure.value = null;
   askNext = null;
+  const rollback = panel.instance.forms.takeRollback(draftIdentity());
+  if (rollback) {
+    restoreDraft(rollback);
+    return;
+  }
   if (next === null) {
     description.value = opened.value = ownerShown.value = ownerOpened.value = null;
     values.value = {};
     loading.value = false;
     return;
   }
-  if (held?.target === nextKey) {
-    adopt(held.baseline, held.checked, held.changed, held.submitted);
-    return;
-  }
-  if (heldRefusal?.target === nextKey) {
-    const refused = heldRefusal;
-    heldRefusal = null;
-    adopt(refused.baseline);
-    showRefusal(refused.reason);
-    return;
-  }
   description.value = opened.value = ownerShown.value = ownerOpened.value = null;
   values.value = {};
   loading.value = true;
   void forms.describe({ target: next, changedField: null }).then(
-    (answer) => { if (reading === latestRead && held?.target !== nextKey) adopt(answer); },
+    (answer) => { if (reading === latestRead) adopt(answer); },
     (reason: unknown) => { if (reading === latestRead) fail(reason, () => load(next)); },
   );
 }
@@ -500,50 +543,223 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   unmounted = true;
+  latestRead += 1;
+  askNext = null;
   unregisterDiscard?.();
   unregisterReset?.();
   unregisterSave?.();
 });
 
+function activeUserEditedPaths(): string[] {
+  const invalidPaths = Object.keys(activeInvalid.value);
+  return [...userEditedPaths.value].filter((userPath) =>
+    invalidPaths.some((invalidPath) => pathsOverlap(invalidPath, userPath))
+    || (prunedOpenedValues.value !== null
+      && !jsonValuesEqual(valueAt(prunedValues.value, userPath), valueAt(prunedOpenedValues.value, userPath))),
+  );
+}
+
+async function handleDiscardAction(
+  operationName: "discard" | "reset",
+  request: {
+    readonly expectedTarget?: import("@ontomato/contracts/agent-presentation").ExpectedPageTarget;
+    readonly agentContext?: PanelAgentActionContext;
+  },
+) {
+  if (request.expectedTarget !== undefined && !matchesExpectedTarget(effectiveTarget.value, request.expectedTarget)) {
+    return { ok: false as const, reason: "stale" as const, message: "The form switched to a different target object or draft." };
+  }
+  if (!mounted || unmounted || panel.instance.isDisposed() || !opened.value || loading.value || saving.value || asking.value) {
+    return { ok: false as const, reason: "action_not_ready" as const, message: `The form is not ready to ${operationName}.` };
+  }
+  if (!canSettle.value) {
+    return { ok: false as const, reason: "action_unavailable" as const, message: `The form has no unsaved changes to ${operationName}.` };
+  }
+  if (!request.agentContext) {
+    discard();
+    return { ok: true as const, outcome: { discarded: true } };
+  }
+  if (!panel.instance.requestLocalConfirmation) {
+    return {
+      ok: false as const,
+      reason: "action_unavailable" as const,
+      message: "Conversation confirmation is unavailable for discarding unsaved edits.",
+    };
+  }
+  const evaluateDiscardSubmission: SubmissionEvaluator = (phase) => {
+    if (unmounted || !mounted || panel.instance.isDisposed()) {
+      return { ok: false, message: "The form was closed or unmounted." };
+    }
+    if (!target.value || !opened.value || loading.value || asking.value || failure.value) {
+      return { ok: false, message: "The form is no longer ready." };
+    }
+    if (phase === "confirm" && saving.value) {
+      return { ok: false, message: "The form is currently saving." };
+    }
+    if (!canSettle.value) {
+      return { ok: false, message: "The form no longer has unsaved changes." };
+    }
+    return {
+      ok: true,
+      instanceId: panel.instance.instanceId,
+      operationId: panel.instance.operationIdOf(slot.slot, operationName),
+      target: effectiveTarget.value,
+      payload: {
+        formInstanceId: formInstanceId.value,
+        values: prunedValues.value,
+        baseline: ownerOpened.value?.values ?? null,
+        changed: [...changed.value].sort(),
+        edited: [...editedPaths.value].sort(),
+        activeInvalid: activeInvalid.value,
+        editGeneration,
+      },
+    };
+  };
+  const frozen = evaluateDiscardSubmission("prepare");
+  if (!frozen.ok) {
+    return { ok: false as const, reason: "stale" as const, message: frozen.message };
+  }
+  const currentTarget = target.value!;
+  const targetLabel = currentTarget.kind === "object"
+    ? panel.instance.objectName(currentTarget.objectType, currentTarget.primaryKey) ?? currentTarget.primaryKey
+    : objectType;
+  const hasHumanUnsavedEdits = activeUserEditedPaths().length > 0;
+  const created = await panel.instance.requestLocalConfirmation({
+    agentRun: request.agentContext.agentRun,
+    operationLabel: t("platform.discard"),
+    targetLabel,
+    impactSummary: t("platform.formDiscardConfirm"),
+    ...(hasHumanUnsavedEdits ? { requireConfirmation: true } : {}),
+  });
+  const preCheck = verifySubmissionUnchanged(frozen, evaluateDiscardSubmission, "auto-dispatch");
+  if (!preCheck.ok) {
+    if (created.questionId) {
+      await panel.instance.cancelLocalConfirmation?.(created.questionId, {
+        code: "FORM_CONFIRMATION_STALE",
+        message: preCheck.message,
+      }).catch(() => undefined);
+    }
+    return { ok: false as const, reason: "stale" as const, message: preCheck.message };
+  }
+  if (created.autoMode === true) {
+    discard();
+    return { ok: true as const, outcome: { discarded: true } };
+  }
+  const questionId = created.questionId;
+  if (questionId === null) throw new Error("Discard confirmation did not return a question ID.");
+  const confirmation = createDeferredConfirmation({
+    intentId: created.intentId,
+    questionId,
+    operationId: frozen.operationId,
+    label: created.label,
+    staleCode: "FORM_CONFIRMATION_STALE",
+    isStillValid: () => verifySubmissionUnchanged(frozen, evaluateDiscardSubmission, "confirm"),
+    cancel: async (reason) => {
+      await panel.instance.cancelLocalConfirmation?.(questionId, reason).catch(() => undefined);
+    },
+    async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
+      if (panel.instance.claimLocalConfirmation) {
+        const claimed = await panel.instance.claimLocalConfirmation(questionId);
+        if (!claimed.ok) {
+          return {
+            ok: false,
+            intentId: created.intentId,
+            reason: "stale",
+            message: claimed.message ?? "This discard confirmation was already answered or cancelled.",
+          };
+        }
+        const postClaimCheck = verifySubmissionUnchanged(frozen, evaluateDiscardSubmission, "confirm");
+        if (!postClaimCheck.ok) {
+          return {
+            ok: false,
+            intentId: created.intentId,
+            reason: "stale",
+            message: postClaimCheck.message,
+          };
+        }
+      }
+      discard();
+      return {
+        ok: true,
+        intentId: created.intentId,
+        outcome: { discarded: true },
+        summary: t("platform.discard"),
+      };
+    },
+  });
+  return { ok: true as const, confirmation };
+}
+
 const unregisterDiscard = panel.instance.registerActionHandler(
   panel.instance.operationIdOf(slot.slot, "discard"),
-  async () => {
-    if (!mounted || unmounted || !opened.value || loading.value || saving.value) {
-      return { ok: false, reason: "action_not_ready", message: "The form is not ready to discard." };
-    }
-    discard();
-    return { ok: true, outcome: { discarded: true } };
-  },
+  (request) => handleDiscardAction("discard", request),
+  { entryInstanceId: () => formInstanceId.value },
 );
 const unregisterReset = panel.instance.registerActionHandler(
   panel.instance.operationIdOf(slot.slot, "reset"),
-  async () => {
-    if (!mounted || unmounted || !opened.value || loading.value || saving.value) {
-      return { ok: false, reason: "action_not_ready", message: "The form is not ready to reset." };
-    }
-    discard();
-    return { ok: true, outcome: { discarded: true } };
-  },
+  (request) => handleDiscardAction("reset", request),
+  { entryInstanceId: () => formInstanceId.value },
 );
+const saveOperationName = computed<string | null>(() => {
+  if (admittedSave.value) return admittedSave.value.name;
+  if (isCustomerForm) {
+    return declaredCustomerFormSaveName(member.projection.operations, isCreate.value) ?? null;
+  }
+  const platformSave = Object.entries(member.projection.operations ?? {}).find(
+    ([name, binding]) => binding.operation.kind === "PlatformOperation"
+      && (binding.operation.id.endsWith(".save") || name === "save"),
+  );
+  return platformSave?.[0] ?? null;
+});
+
 let unregisterSave: (() => void) | null = null;
-watch(admittedSave, (save) => {
+watch(saveOperationName, (name) => {
   unregisterSave?.();
   unregisterSave = null;
-  if (!save) return;
+  if (!name) return;
   unregisterSave = panel.instance.registerActionHandler(
-    panel.instance.operationIdOf(slot.slot, save.name),
-    async () => {
-      const outcome = await write();
-      return { ok: true, outcome };
+    panel.instance.operationIdOf(slot.slot, name),
+    async ({ expectedTarget, agentContext }) => {
+      if (expectedTarget !== undefined && !matchesExpectedTarget(effectiveTarget.value, expectedTarget)) {
+        return { ok: false, reason: "stale", message: "The form switched to a different target object or draft." };
+      }
+      if (!mounted || unmounted || panel.instance.isDisposed() || !target.value || !opened.value || loading.value || asking.value) {
+        return { ok: false, reason: "action_not_ready", message: "The form is not ready to save." };
+      }
+      if (failure.value) {
+        return { ok: false, reason: "failed", message: failure.value.reason.message };
+      }
+      if (saving.value) {
+        return { ok: false, reason: "action_unavailable", message: "The form is currently saving." };
+      }
+      if (!admittedSave.value) {
+        return missingOperationDescriptorResult(member.operations.value, name);
+      }
+      if (!isCreate.value && !canSettle.value) {
+        return { ok: false, reason: "action_unavailable", message: "The form has no unsaved changes to save." };
+      }
+      if (Object.keys(activeInvalid.value).length > 0) {
+        return { ok: false, reason: "validation_failed", message: t("platform.formFixInvalid") };
+      }
+      try {
+        const outcome = await write(undefined, agentContext);
+        if (agentContext?.completed) {
+          const classified = classifyDispatchResponseForAction(agentContext.completed.response);
+          if (!classified.ok) return classified;
+        }
+        return { ok: true, outcome };
+      } catch (reason) {
+        if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) throw reason;
+        if (agentContext?.completed) {
+          return classifyDispatchResponseForAction(agentContext.completed.response);
+        }
+        throw reason;
+      }
     },
+    { entryInstanceId: () => formInstanceId.value },
   );
 }, { immediate: true });
 let pendingRefresh = false;
-/**
- * The form is moving itself to show a draft it just took: what it held before is that earlier draft's, not the reader's,
- * so only changes the reader made themselves are asked about.
- */
-let movingForDraft = false;
 /**
  * The panel moved the form to another object (or to a new one) while it held the reader's unsaved changes: the reader is
  * asked first, as the platform asks before leaving a page. Keeping them puts the panel back on the object being edited;
@@ -552,10 +768,9 @@ let movingForDraft = false;
 watch(target, async (next, previous) => {
   if (unmounted) return;
   pendingRefresh = false;
-  const forDraft = movingForDraft;
-  movingForDraft = false;
   if (targetKey(next) === loaded) return;
-  if ((forDraft ? dirty.value : canSettle.value) && !saving.value && previous !== null && targetKey(previous) === loaded) {
+  if (canSettle.value && panel.instance.forms.probing) return;
+  if (canSettle.value && !saving.value && previous !== null && targetKey(previous) === loaded) {
     const leave = panel.confirmLeaveUnsaved
       ? await panel.confirmLeaveUnsaved()
       : await confirmDanger(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
@@ -584,13 +799,12 @@ function refreshWhenClean() {
  */
 function reread() {
   const current = target.value;
-  const currentKey = targetKey(current);
-  if (current === null || held?.target === currentKey || !description.value) return load(current);
+  if (current === null || !description.value) return load(current);
   const reading = ++latestRead;
   failure.value = null;
   void forms.describe({ target: current, changedField: null }).then(
     (answer) => {
-      if (reading !== latestRead || held?.target === currentKey) return;
+      if (reading !== latestRead) return;
       if (canSettle.value || saving.value) {
         pendingRefresh = true;
         return;
@@ -622,23 +836,6 @@ onBeforeUnmount(panel.instance.onOperationCompleted(async ({ operation, affected
 }));
 
 useProjectionObjectRefresh((id) => id === key.value, () => {
-  if (hasActiveDraft.value && !userEdited.value && !saving.value && target.value) {
-    const current = target.value;
-    const reading = ++latestRead;
-    void forms.describe({ target: current, changedField: null }).then((answer) => {
-      if (reading !== latestRead || userEdited.value || saving.value) return;
-      if (jsonValuesEqual(pruneInactivePanelFormVariants(answer.fields, answer.values), pruneInactivePanelFormVariants(fields.value, values.value))) {
-        held = null;
-        adopt(answer);
-        void panel.instance.settleDraft(slot.slot).catch(showRefusal);
-      } else {
-        pendingRefresh = true;
-      }
-    }, () => {
-      pendingRefresh = true;
-    });
-    return;
-  }
   pendingRefresh = true;
   refreshWhenClean();
 });
@@ -647,6 +844,10 @@ watch([canSettle, saving], refreshWhenClean);
 // The page's fixed values follow the state they come from: what the form opened with and what it shows both take them.
 // A field no longer fixed (its state emptied) is the owner's again, with the value the form opened with.
 watch(fixedValues, (next, previous) => {
+  if (JSON.stringify(next) !== JSON.stringify(previous)) {
+    formInstanceId.value = randomId();
+    editGeneration += 1;
+  }
   if (!ownerOpened.value || !ownerShown.value) return;
   const baseline = ownerOpened.value.values;
   const released = Object.keys(previous).filter((path) => !(path in next));
@@ -654,7 +855,16 @@ watch(fixedValues, (next, previous) => {
   description.value = fixDescription(ownerShown.value);
   values.value = fixValues(released.reduce((all, path) => withValueAt(all, path, valueAt(baseline, path) ?? null), values.value));
 });
-watch([actionSaveWiring, actionFieldReadOnlyReason], () => {
+watch(
+  () => JSON.stringify(member.inputs.value),
+  (next, previous) => {
+    if (next !== previous) {
+      formInstanceId.value = randomId();
+      editGeneration += 1;
+    }
+  },
+);
+watch(actionSaveReadOnlyOverlay, () => {
   if (!ownerOpened.value || !ownerShown.value) return;
   opened.value = fixDescription(ownerOpened.value);
   description.value = fixDescription(ownerShown.value);
@@ -662,32 +872,29 @@ watch([actionSaveWiring, actionFieldReadOnlyReason], () => {
 
 /** One field changed: the form holds the value; a field the owner's form depends on has the owner asked again. */
 function set(path: string, value: RuntimeJsonValue) {
-  edit(path, withValueAt(values.value, path, value));
+  edit(path, withValueAt(values.value, path, value), "user");
 }
 function remove(path: string) {
-  edit(path, withoutValueAt(values.value, path));
-}
-function notifyFormChanged() {
-  const currentTarget = target.value;
-  if (!currentTarget) return;
-  panel.instance.notifyFormEdited(
-    currentTarget.kind === "object"
-      ? { kind: "object", objectType: currentTarget.objectType, primaryKey: currentTarget.primaryKey, slot: slot.slot }
-      : { kind: "draft", objectType, slot: slot.slot },
-  );
+  edit(path, withoutValueAt(values.value, path), "user");
 }
 
 /** The reader's edit of one field, as the values it leaves: submitted, and the owner asked again where it says so. */
-function edit(path: string, next: PanelFormValues) {
+function edit(path: string, next: PanelFormValues, source: "user" | "agent" = "user") {
   if (isFixed(path)) throw new Error(`The page fixes the field ${path}; it is not edited in the form`);
   // The described field the edit is in: a row's or an object's field submits the array or object it belongs to.
   const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
   if (described) submitted.value = new Set([...submitted.value, described.path]);
   editedPaths.value = new Set([...editedPaths.value, path]);
+  if (source === "user") {
+    userEditedPaths.value = new Set([...userEditedPaths.value, path]);
+    agentFilledPaths.value = new Set([...agentFilledPaths.value].filter((existing) => !pathsOverlap(existing, path)));
+  } else {
+    agentFilledPaths.value = new Set([...agentFilledPaths.value, path]);
+    userEditedPaths.value = new Set([...userEditedPaths.value].filter((existing) => !pathsOverlap(existing, path)));
+  }
+  editGeneration += 1;
   values.value = next;
-  userEdited.value = true;
   editedAt.set(path, ++edits);
-  notifyFormChanged();
   const field = activeFieldAt(fields.value, next, path);
   if (field?.refreshOnChange) askOwner(path);
 }
@@ -759,7 +966,7 @@ function askOwner(changedField: string) {
  */
 function reorder(path: string, order: readonly number[]) {
   const rows = valueAt(values.value, path) as RuntimeJsonValue[];
-  const moved = (byPath: Readonly<Record<string, string>>) => Object.fromEntries(Object.entries(byPath).flatMap(([at, message]) => {
+  const moved = <T,>(byPath: Readonly<Record<string, T>>) => Object.fromEntries(Object.entries(byPath).flatMap(([at, message]) => {
     const next = movedPath(at, path, order);
     return next === null ? [] : [[next, message]];
   }));
@@ -769,14 +976,16 @@ function reorder(path: string, order: readonly number[]) {
   set(path, order.map((index) => rows[index]!));
 }
 
-function markInvalid(path: string, message: string | null) {
-  if (message === null) {
+function markInvalid(path: string, text: InvalidFormText | null) {
+  editGeneration += 1;
+  if (text === null) {
     invalid.value = Object.fromEntries(
       Object.entries(invalid.value).filter(([at]) => at !== path && !at.startsWith(`${path}/`)),
     );
     return;
   }
-  invalid.value = { ...invalid.value, [path]: message };
+  userEditedPaths.value = new Set([...userEditedPaths.value, path]);
+  invalid.value = { ...invalid.value, [path]: text };
 }
 
 /**
@@ -1000,6 +1209,7 @@ provide(formControlsKey, {
   sharedReadOnlyReasons,
   isTopLevel: (path) => topLevelPaths.value.has(path),
   hasInvalid: (path) => Object.keys(activeInvalid.value).some((at) => at === path || at.startsWith(`${path}/`)),
+  invalidText: (path) => invalid.value[path]?.source,
   set,
   remove,
   reorder,
@@ -1052,32 +1262,6 @@ useMemberOutput("label", () => (description.value ? formObjectLabel.value : null
 useMemberOutput("dirty", () => dirty.value);
 useMemberOutput("draft", () => (description.value ? prunedValues.value : null));
 
-function consumePendingDraft() {
-  const pending = member.formDraft?.takePending();
-  if (!pending) return;
-  if (pending.kind === "accepted") {
-    heldRefusal = null;
-    held = pending.held;
-    if (!mounted) return;
-    if (targetKey(target.value) === pending.held.target) load(target.value);
-    else {
-      movingForDraft = true;
-      moveTo(pending.into);
-    }
-    return;
-  }
-  held = null;
-  if (!mounted) {
-    heldRefusal = { target: pending.target, baseline: pending.baseline, reason: pending.reason };
-    return;
-  }
-  latestRead += 1;
-  if (ownerOpened.value === null) adopt(pending.baseline);
-  showRefusal(pending.reason);
-  emit("draft-refused");
-}
-if (member.formDraft) watch(() => member.formDraft!.pending.value, consumePendingDraft, { immediate: true });
-
 useProjectionForm({
   handle: {
     fields,
@@ -1097,24 +1281,21 @@ useProjectionForm({
       return true;
     },
   },
-  async receive(draft) {
-    const evaluated = await evaluateMemberFormDraft(member, panel.instance, forms, draft);
-    if (!evaluated) return null;
-    if (evaluated.refusal !== null) {
-      showRefusal(evaluated.refusal);
-      emit("draft-refused");
-      return new Set();
-    }
-    heldRefusal = null;
-    held = evaluated.held;
-    if (targetKey(target.value) === targetKey(evaluated.into)) load(evaluated.into);
-    else {
-      movingForDraft = true;
-      moveTo(evaluated.into);
-    }
-    return evaluated.marked;
-  },
   async fill(rawValues, options) {
+    if (options?.expectedFormInstanceId !== undefined && options.expectedFormInstanceId !== formInstanceId.value) {
+      return {
+        ok: false,
+        reason: "stale",
+        message: "The form instance changed or rebound since the last observation.",
+      };
+    }
+    if (options?.expectedTarget !== undefined && !matchesExpectedTarget(effectiveTarget.value, options.expectedTarget)) {
+      return {
+        ok: false,
+        reason: "stale",
+        message: "The form switched to a different target object or draft.",
+      };
+    }
     if (!mounted || unmounted || !target.value || !opened.value || loading.value || saving.value || failure.value) {
       return {
         ok: false,
@@ -1124,6 +1305,20 @@ useProjectionForm({
     }
     if (asking.value || askNext !== null) {
       await waitForOwnerAsk();
+      if (options?.expectedFormInstanceId !== undefined && options.expectedFormInstanceId !== formInstanceId.value) {
+        return {
+          ok: false,
+          reason: "stale",
+          message: "The form instance changed or rebound since the last observation.",
+        };
+      }
+      if (options?.expectedTarget !== undefined && !matchesExpectedTarget(effectiveTarget.value, options.expectedTarget)) {
+        return {
+          ok: false,
+          reason: "stale",
+          message: "The form switched to a different target object or draft.",
+        };
+      }
       const postFailure = failure.value as { reason: Error; retry: () => void } | null;
       if (!mounted || unmounted || !target.value || !opened.value || loading.value || saving.value || postFailure) {
         return {
@@ -1133,26 +1328,36 @@ useProjectionForm({
         };
       }
     }
-    if (dirty.value && !options?.overwriteUnsaved) {
-      return {
-        ok: false,
-        reason: "blocked_unsaved",
-        message: "The form already has unsaved edits. Ask the user before overwriting them with overwriteUnsaved: true.",
-      };
-    }
 
     const pending = new Map<string, RuntimeJsonValue>();
     for (const [rawKey, value] of Object.entries(rawValues)) {
       const pointer = rawKey.startsWith("/") ? rawKey : `/${rawKey}`;
       pending.set(pointer, value);
     }
+
+    // Standard detail 3.8: only block when filling fields that overlap unsaved edits made by the user.
+    // Filling untouched fields or revising fields filled by the agent earlier in this session proceeds directly.
+    if (!options?.overwriteUnsaved) {
+      const activeUserEdited = activeUserEditedPaths();
+      const conflicts = [...pending.keys()].filter((pointer) =>
+        activeUserEdited.some((userPath) => pathsOverlap(pointer, userPath)),
+      );
+      if (conflicts.length > 0) {
+        return {
+          ok: false,
+          reason: "blocked_unsaved",
+          message: `The form has unsaved user edits on ${conflicts.join(", ")}. Ask the user before overwriting them with overwriteUnsaved: true.`,
+        };
+      }
+    }
+
     const startTargetKey = targetKey(target.value);
     const startReading = latestRead;
     const filledFields: string[] = [];
     const rejectedFields: FormFieldRejection[] = [];
 
     const applyField = (pointer: string, value: RuntimeJsonValue) => {
-      edit(pointer, withValueAt(values.value, pointer, value));
+      edit(pointer, withValueAt(values.value, pointer, value), "agent");
       const described = fields.value.find((item) => pointer === item.path || pointer.startsWith(`${item.path}/`));
       const nextChanged = new Set(changed.value);
       nextChanged.add(pointer);
@@ -1162,17 +1367,71 @@ useProjectionForm({
       filledFields.push(pointer);
     };
 
+    const fillableFields = () => (
+      props.groups && props.groups.length > 0 && props.unassignedFields === "omit"
+        ? resolvedGroups.value.flatMap((group) => group.fields)
+        : drawn.value
+    );
+
+    const validateEntry = (
+      pointer: string,
+      value: RuntimeJsonValue,
+    ): { readonly ok: true; readonly field: PanelFormField } | { readonly ok: false; readonly rejection: FormFieldRejection } => {
+      if (isFixed(pointer)) {
+        return { ok: false, rejection: { path: pointer, reason: "fixed", message: `Field ${pointer} is fixed by page state.` } };
+      }
+      const resolved = resolveActiveField(fillableFields(), values.value, pointer);
+      if (!resolved) {
+        return { ok: false, rejection: { path: pointer, reason: "unknown_field", message: `Field ${pointer} is not active or shown in this form.` } };
+      }
+      if (resolved.readOnly) {
+        return {
+          ok: false,
+          rejection: {
+            path: pointer,
+            reason: "read_only",
+            message: resolved.readOnlyReason ?? `Field ${pointer} is read-only.`,
+          },
+        };
+      }
+      const valueRejection = validateFormFieldValue(resolved.field, pointer, value, values.value, fixedValues.value);
+      if (valueRejection) {
+        return { ok: false, rejection: valueRejection };
+      }
+      return { ok: true, field: resolved.field };
+    };
+
+    const rejectRemaining = (
+      reason: FormFieldRejection["reason"],
+      messageFor: (pointer: string) => string,
+    ) => {
+      for (const pointer of pending.keys()) {
+        rejectedFields.push({ path: pointer, reason, message: messageFor(pointer) });
+      }
+      pending.clear();
+    };
+
     while (pending.size > 0) {
-      if (unmounted || latestRead !== startReading || targetKey(target.value) !== startTargetKey || failure.value || saving.value) {
+      if (unmounted || targetKey(target.value) !== startTargetKey) {
+        rejectRemaining("unknown_field", (pointer) => `Field ${pointer} was not applied because the form target changed or closed.`);
         break;
       }
-      // Apply any currently active `refreshOnChange` field first so dependent fields unlock before validation.
+      const loopFailure = failure.value as { reason: Error; retry: () => void } | null;
+      if (latestRead !== startReading || loopFailure || saving.value) {
+        const detail = loopFailure
+          ? `form refresh failed: ${loopFailure.reason.message}`
+          : saving.value
+            ? "the form started saving"
+            : "the form reloaded during fill";
+        rejectRemaining("read_only", (pointer) => `Field ${pointer} was not applied because ${detail}.`);
+        break;
+      }
+      // Apply any currently active, valid `refreshOnChange` field first so dependent fields unlock before validation.
       let refreshEntry: [string, RuntimeJsonValue] | null = null;
       for (const entry of pending) {
-        const [pointer] = entry;
-        if (isFixed(pointer)) continue;
-        const field = activeFieldAt(fields.value, values.value, pointer);
-        if (field && field.control.kind !== "hidden" && !field.readOnly && field.refreshOnChange) {
+        const [pointer, value] = entry;
+        const checked = validateEntry(pointer, value);
+        if (checked.ok && checked.field.refreshOnChange) {
           refreshEntry = entry;
           break;
         }
@@ -1183,22 +1442,21 @@ useProjectionForm({
         applyField(pointer, value);
         const editsAfter = edits;
         await waitForOwnerAsk();
-        if (edits !== editsAfter) break;
+        if (unmounted || targetKey(target.value) !== startTargetKey) {
+          rejectRemaining("unknown_field", (remaining) => `Field ${remaining} was not applied because the form target changed or closed.`);
+          break;
+        }
+        if (edits !== editsAfter) {
+          rejectRemaining("read_only", (remaining) => `Field ${remaining} was not applied because the form was edited during refresh.`);
+          break;
+        }
         continue;
       }
 
       for (const [pointer, value] of pending) {
-        if (isFixed(pointer)) {
-          rejectedFields.push({ path: pointer, reason: "fixed", message: `Field ${pointer} is fixed by page state.` });
-          continue;
-        }
-        const field = activeFieldAt(fields.value, values.value, pointer);
-        if (!field || field.control.kind === "hidden") {
-          rejectedFields.push({ path: pointer, reason: "unknown_field", message: `Field ${pointer} is not active in this form.` });
-          continue;
-        }
-        if (field.readOnly) {
-          rejectedFields.push({ path: pointer, reason: "read_only", message: field.readOnlyReason ?? `Field ${pointer} is read-only.` });
+        const checked = validateEntry(pointer, value);
+        if (!checked.ok) {
+          rejectedFields.push(checked.rejection);
           continue;
         }
         applyField(pointer, value);
@@ -1223,6 +1481,27 @@ useProjectionForm({
   submit: (override) => write(override),
   dirty: () => dirty.value,
   discard,
+  draft: {
+    identity: draftIdentity,
+    inputStateKeys: () => [
+      ...(state.value === null ? [] : [state.value]),
+      ...Object.values(props.fixedFields).flatMap((from) => "state" in from ? [from.state] : []),
+    ],
+    capture: () => ({
+      ownerOpened: ownerOpened.value!,
+      ownerShown: ownerShown.value!,
+      values: values.value,
+      changed: changed.value,
+      submitted: submitted.value,
+      invalid: invalid.value,
+      errors: errors.value,
+      refusal: refusal.value,
+      editedPaths: editedPaths.value,
+      userEditedPaths: userEditedPaths.value,
+      agentFilledPaths: agentFilledPaths.value,
+    }),
+    restore: restoreDraft,
+  },
   snapshot() {
     if (!opened.value) return null;
     const currentTarget = target.value;
@@ -1231,6 +1510,7 @@ useProjectionForm({
       ? forms.prepareActionSave(currentTarget, saveInput(prunedValues.value), saveContext())
       : null;
     return {
+      formInstanceId: formInstanceId.value,
       ...(save ? { save } : {}),
       ...(currentTarget
         ? {
@@ -1250,12 +1530,8 @@ function resetDraft(reopenWhenUnfieldedRefusal: boolean) {
   const refused = refusal.value;
   const reopen = reopenWhenUnfieldedRefusal && refused instanceof PlatformObjectRefusal &&
     Object.keys(refused.fields).length === 0 && Object.keys(refused.savedFields).length === 0;
-  held = null;
-  heldRefusal = null;
   if (ownerOpened.value) adopt(ownerOpened.value);
   if (reopen) load(target.value);
-  if (hasActiveDraft.value) void panel.instance.settleDraft(slot.slot).catch(showRefusal);
-  notifyFormChanged();
 }
 
 function discard() {
@@ -1383,11 +1659,13 @@ function takeSavedFields(receipt: PlatformObjectRefusal) {
   const keep = (path: string) => !savedPaths.has(path) || stillChanged.has(path);
   submitted.value = new Set([...submitted.value].filter(keep));
   changed.value = new Set([...changed.value].filter(keep));
-  editedPaths.value = new Set([...editedPaths.value].filter((path) =>
+  const keepNested = (path: string) =>
     ![...savedPaths].some((savedPath) => path === savedPath || path.startsWith(`${savedPath}/`))
-    || [...stillChanged].some((changedPath) => path === changedPath || path.startsWith(`${changedPath}/`)),
-  ));
-  if (held) held = { ...held, baseline, submitted: submitted.value, changed: changed.value };
+    || [...stillChanged].some((changedPath) => path === changedPath || path.startsWith(`${changedPath}/`));
+  editedPaths.value = new Set([...editedPaths.value].filter(keepNested));
+  userEditedPaths.value = new Set([...userEditedPaths.value].filter(keepNested));
+  agentFilledPaths.value = new Set([...agentFilledPaths.value].filter(keepNested));
+  editGeneration += 1;
 }
 
 function saveInput(payloadValues: PanelFormValues) {
@@ -1399,11 +1677,13 @@ function saveInput(payloadValues: PanelFormValues) {
   };
 }
 
-function saveContext() {
+function saveContext(agentContext?: PanelAgentActionContext, evaluateSubmission?: SubmissionEvaluator) {
   return {
     fixedFieldPaths: Object.keys(fixedValues.value),
     changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
     baselineValues: opened.value!.values,
+    ...(agentContext ? { agentContext } : {}),
+    ...(evaluateSubmission ? { evaluateSubmission } : {}),
     formatUnwiredFieldRefusal: (paths: readonly string[]) => ({
       message: te("platform.formActionUnwiredFields")
         ? t("platform.formActionUnwiredFields", { fields: paths.join(", ") })
@@ -1413,16 +1693,12 @@ function saveContext() {
   };
 }
 
-/** Finish the save for the target and draft it started with. */
+/** Finish the save for the target it started with, whether the page button or the agent requested it. */
 function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
-  const draft = hasActiveDraft.value ? panel.instance.draft.value : null;
-  const savedHeld = held;
   return async (saved: FormSaveResult) => {
-    if (held === savedHeld) held = null;
     const createdWithoutKey = into.kind === "draft" && saved.primaryKey === null;
     const stillShowingTarget = !unmounted && target.value === into;
     if (stillShowingTarget) {
-      heldRefusal = null;
       if (createdWithoutKey) {
         adopt(ownerOpened.value!);
       } else {
@@ -1434,9 +1710,6 @@ function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
       panel.notify({ kind: "success", text: saved.message ?? t("platform.operationDone") });
     }
     emit("saved", { className: objectType, primaryKey: saved.primaryKey });
-    if (draft && panel.instance.draft.value === draft) {
-      await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey ?? undefined : undefined);
-    }
   };
 }
 
@@ -1446,16 +1719,15 @@ function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
  * fields it named; nothing is retried, and the reader's form stays as they left it. A create selects the object the
  * owner created; every projection showing the saved object reads it again, this form included, at its new revision.
  */
-async function write(override?: FormSubmitOverride): Promise<unknown> {
+async function write(override?: FormSubmitOverride, agentContext?: PanelAgentActionContext): Promise<unknown> {
   const into = target.value;
   if (!into) throw new Error("This form edits one object, and none is selected");
   if (failure.value) throw failure.value.reason;
+  if (saving.value) throw new Error("The form is currently saving.");
   if (loading.value || asking.value) throw new Error(t("common.loading"));
   if (Object.keys(activeInvalid.value).length) throw new Error(t("platform.formFixInvalid"));
   const capturedTargetKey = targetKey(into);
-  const capturedEdits = edits;
   const capturedOpened = ownerOpened.value;
-  const capturedDirty = dirty.value;
   const capturedLabel = formObjectLabel.value;
   const descriptorKind = override?.descriptor.kind ?? admittedSave.value?.descriptor.kind ?? "form.save";
   const saveActionLabel = override?.descriptor.label ?? admittedSave.value?.descriptor.label
@@ -1470,45 +1742,87 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
     }
     notifyStaleSaveRefusal(saveActionLabel, capturedLabel, refusalReason);
   };
+  const evaluateSaveSubmission: SubmissionEvaluator = (phase: SubmissionCheckPhase) => {
+    if (unmounted || !mounted || panel.instance.isDisposed()) {
+      return { ok: false, message: "The form was closed or unmounted." };
+    }
+    if (!target.value || !opened.value) {
+      return { ok: false, message: "The form no longer has an active target." };
+    }
+    if (failure.value) {
+      return { ok: false, message: failure.value.reason.message };
+    }
+    if (loading.value || asking.value) {
+      return { ok: false, message: "The form is currently busy loading." };
+    }
+    if (phase === "confirm" && saving.value) {
+      return { ok: false, message: "The form is currently saving." };
+    }
+    if (Object.keys(activeInvalid.value).length > 0) {
+      return { ok: false, message: t("platform.formFixInvalid") };
+    }
+    if (override) {
+      const originCheck = override.evaluateOrigin?.();
+      if (originCheck && !originCheck.ok) return originCheck;
+    } else if (!admittedSave.value) {
+      return { ok: false, message: "The form save operation is no longer available." };
+    }
+    if (!isCreate.value && !canSettle.value) {
+      return { ok: false, message: "The form no longer has unsaved changes to save." };
+    }
+    const liveOperationId = override?.operationId ?? panel.instance.operationIdOf(slot.slot, admittedSave.value!.name);
+    const liveDescriptor = override?.descriptor ?? admittedSave.value!.descriptor;
+    const liveCallTarget = liveDescriptor.target.source === "none" ? null : target.value;
+    const livePayloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
+    const liveMemberInputs = override
+      ? (override.readMemberInputs ? override.readMemberInputs() : override.memberInputs)
+      : member.inputs.value;
+    return {
+      ok: true,
+      instanceId: panel.instance.instanceId,
+      operationId: liveOperationId,
+      target: { formTarget: effectiveTarget.value, callTarget: liveCallTarget },
+      payload: {
+        formInstanceId: formInstanceId.value,
+        values: livePayloadValues,
+        fixedValues: fixedValues.value,
+        submittedFields: [...submitted.value].sort(),
+        activeInvalid: activeInvalid.value,
+        editGeneration,
+        revision: opened.value.revision ?? null,
+        dirty: dirty.value,
+        baseline: ownerOpened.value?.values ?? null,
+        memberInputs: liveMemberInputs ?? null,
+      },
+    };
+  };
   saving.value = true;
   refusal.value = null;
   errors.value = {};
   const payloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
   const finishSave = settleSave(into, payloadValues);
   try {
-    const saved = await forms.save(into, saveInput(payloadValues), override, saveContext());
+    const saved = await forms.save(
+      into,
+      saveInput(payloadValues),
+      override,
+      saveContext(agentContext ?? override?.agentContext, evaluateSaveSubmission),
+    );
     await finishSave(saved);
     return saved;
   } catch (reason) {
     if (reason instanceof PanelOperationDeferred) {
       const deferred = reason;
       const { preparation } = deferred;
-      const isStillValid = () => {
-        if (unmounted) return { ok: false as const, reason: "stale", message: "The form was closed or unmounted." };
-        if (targetKey(target.value) !== capturedTargetKey)
-          return { ok: false as const, reason: "stale", message: "The form switched to a different target." };
-        if (ownerOpened.value !== capturedOpened)
-          return { ok: false as const, reason: "stale", message: "The form was already saved or reloaded." };
-        if (edits !== capturedEdits)
-          return { ok: false as const, reason: "stale", message: "The form contents changed after confirmation was requested." };
-        if (dirty.value !== capturedDirty)
-          return { ok: false as const, reason: "stale", message: "The form unsaved state changed." };
-        if (saving.value || loading.value || asking.value)
-          return { ok: false as const, reason: "stale", message: "The form is currently busy." };
-        return { ok: true as const };
-      };
-      const confirmation: PendingPageActionConfirmation = {
+      const confirmation = createDeferredConfirmation({
         intentId: preparation.intentId,
         questionId: preparation.questionId!,
         operationId: preparation.operationId,
         label: preparation.label,
-        isStillValid,
-        async dispatch(): Promise<PageActionConfirmedDispatchResult> {
-          const check = isStillValid();
-          if (!check.ok) {
-            await deferred.cancelNow({ code: "FORM_CONFIRMATION_STALE", message: check.message }).catch(() => undefined);
-            return { ok: false, intentId: preparation.intentId, reason: "stale", message: check.message };
-          }
+        staleCode: "FORM_CONFIRMATION_STALE",
+        isStillValid: deferred.isStillValid,
+        cancel: deferred.cancelNow,
+        async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
           saving.value = true;
           refusal.value = null;
           errors.value = {};
@@ -1517,18 +1831,27 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
             if (confirmed.decision !== "confirm") {
               return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "The save was cancelled." };
             }
-            if (confirmed.response.kind === "not-dispatched") {
-              return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
+            const classified = classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
+            if (!classified.ok) {
+              try {
+                resolveFormSaveAnswer(confirmed, into, descriptorKind, objectType);
+              } catch (refusalReason) {
+                handleSaveRefusal(refusalReason);
+              }
+              return classified;
             }
             const saved = resolveFormSaveAnswer(confirmed, into, descriptorKind, objectType);
             await finishSave(saved);
-            return {
-              ok: true,
-              intentId: preparation.intentId,
-              outcome: confirmed.response.outcome,
-              summary: summarizeDispatchResponse(confirmed.response),
-            };
+            return classified;
           } catch (dispatchReason) {
+            if (dispatchReason instanceof PanelSubmissionStaleError) {
+              return {
+                ok: false,
+                intentId: preparation.intentId,
+                reason: "stale",
+                message: dispatchReason.message,
+              };
+            }
             handleSaveRefusal(dispatchReason);
             return {
               ok: false,
@@ -1540,11 +1863,10 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
             saving.value = false;
           }
         },
-        cancel: deferred.cancelNow,
-      };
+      });
       throw new PanelConfirmationDeferred(confirmation);
     }
-    if (reason instanceof PanelConfirmationDeferred) throw reason;
+    if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) throw reason;
     handleSaveRefusal(reason);
     throw reason;
   } finally {
@@ -1584,7 +1906,7 @@ const showActionBar = computed(() => {
   return canSettle.value;
 });
 
-/** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
+/** The fields an assistant filled, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
 
 const prevStepLabel = computed(() => (te("platform.formPrevStep") ? t("platform.formPrevStep") : "Previous"));

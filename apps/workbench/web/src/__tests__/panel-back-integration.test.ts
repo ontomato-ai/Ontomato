@@ -153,7 +153,7 @@ function answer(request: Sent) {
         values: { name: body.inputs?.values?.name ?? "Original" },
         errors: [],
         revision: 1,
-        save: { method: "PUT", path: "/items/:id", bodySchema: {}, draftOperation: "item.update" },
+        save: { method: "PUT", path: "/items/:id", bodySchema: {} },
       },
     });
   }

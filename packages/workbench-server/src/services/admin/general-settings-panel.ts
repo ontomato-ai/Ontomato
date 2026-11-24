@@ -93,7 +93,7 @@ export function createGeneralSettingsReads(actor: PanelOperationActor) {
             options: options.map(value => ({ value, label: languageNames[value]!, description: null, disabled: false, disabledReason: null })),
           } : { kind: "number" },
         })),
-        save: { method: "POST", path: "/api" + generalSettingsSavePath, bodySchema: cachedZodToRuntimeJsonSchema(generalSettingsPatch), draftOperation: operation },
+        save: { method: "POST", path: "/api" + generalSettingsSavePath, bodySchema: cachedZodToRuntimeJsonSchema(generalSettingsPatch) },
       };
     },
   };
@@ -151,7 +151,7 @@ export const generalSettingsOperations = [{
   binding: { kind: "PlatformObjectType", id: GENERAL_SETTINGS }, targetType: GENERAL_SETTINGS,
   targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(GENERAL_SETTINGS), primaryKey: z.literal(key) }).strict(),
   inputSchema, resultSchema: valuesSchema,
-  draftOperation: () => operation, draftInput: submittedValues,
-  formInstructions: "Submit the changed general settings. Enter the DSL timeout in whole seconds and choose a language from this edition's form.",
+  draftInput: submittedValues,
+
   execute: (host, _target, input) => saveGeneralSettings(host, host.executor, submittedValues(input)),
 }] satisfies readonly PanelServerOperation[];

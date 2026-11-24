@@ -1264,7 +1264,32 @@ export async function readPlatformOntologyNeighbors(
   callerUserName?: string,
 ): Promise<PlatformOntologyNeighborsResponse> {
   const started = performance.now();
+  const { className, primaryKey } = input.node;
+  if (className === ONTOLOGY_TYPE && !PLATFORM_ONTOLOGY_TYPE_MAP.has(primaryKey)) {
+    throw new HttpError(404, `Unknown platform ontology type: ${primaryKey}`, "OBJECT_NOT_FOUND");
+  }
   const centerLayer = requireNodeLayer(input.node);
+  const readers = new PlatformOntologyOwnerReaders(owner, credentials);
+  if (className !== ONTOLOGY_TYPE) {
+    const isSelfUser = className === USER && primaryKey === owner.userId;
+    const centerRes = await readObjectsOfType(readers, className);
+    if (centerRes.ok) {
+      // The OSS subject directory is empty, but the authenticated user is still the default start.
+      if (!centerRes.data.some((item) => item.node.primaryKey === primaryKey) &&
+          !(isSelfUser && centerRes.data.length === 0)) {
+        throw new HttpError(404, `Object not found: ${className}~${primaryKey}`, "OBJECT_NOT_FOUND");
+      }
+    } else if (!isSelfUser) {
+      switch (centerRes.status) {
+        case "refused":
+          throw new HttpError(403, centerRes.reason ?? `Access refused for ${className}`, "FORBIDDEN");
+        case "unavailable":
+          throw new HttpError(503, centerRes.reason ?? `Owner unavailable for ${className}`, "SERVICE_UNAVAILABLE");
+        case "failed":
+          throw new HttpError(502, centerRes.reason ?? `Failed to read ${className}`, "UPSTREAM_FAILED");
+      }
+    }
+  }
   const centerKey = nodeKey(input.node);
 
   const kindFilter = input.relationKinds?.length ? new Set(input.relationKinds) : null;
@@ -1289,8 +1314,6 @@ export async function readPlatformOntologyNeighbors(
     }
     return true;
   });
-
-  const readers = new PlatformOntologyOwnerReaders(owner, credentials);
 
   const evaluations = await Promise.all(
     applicableRelations.map(async (rel) => ({

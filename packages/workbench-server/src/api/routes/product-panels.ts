@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import {
   cancelPanelOperationIntentRequestSchema, createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
-  inspectPanelOperationImpactRequestSchema, panelFormEditedNotificationSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
+  inspectPanelOperationImpactRequestSchema, localPanelConfirmationRequestSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
   panelOperationDescriptorResponseSchema, panelOperationRefSchema, panelUseRefSchema,
   panelUploadRequestSchema, readPanelOperationRequestSchema, readPanelOperationResponseSchema, updatePanelOperationSettingsRequestSchema,
 } from "@ontomato/contracts/panel-agent";
@@ -13,9 +14,9 @@ import {
   productPanelReadRequestSchema,
 } from "@ontomato/contracts/panel-host";
 import {
-  cancelHumanPanelOperation, cancelPendingAgentPageQuestion,
-  dispatchHumanPanelOperation, inspectPanelOperationImpact, invalidateFormConfirmations, ownPanelSettings, prepareHumanPanelOperation,
-  projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor, stagePanelUpload,
+  cancelHumanPanelOperation, cancelPendingAgentPageQuestion, claimPendingLocalConfirmation,
+  dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings, prepareHumanPanelOperation,
+  projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor, registerPendingLocalConfirmation, stagePanelUpload,
 } from "../../services/product-panels/operations";
 import { panelOperationStore } from "../../services/product-panels/operation-store";
 import { Router, type RequestHandler } from "express";
@@ -52,6 +53,9 @@ import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame
 import { authorizeDefinitionStream, requirePanelDefinitions, snapshotPanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
 import { panelSkillProvider } from "../../services/product-panels/skill-provider";
+import { panelConfirmation } from "../../services/product-panels/confirmation";
+import { runForOwner } from "../../services/assistant/execution";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { readRegisteredPanelPageSkillContext } from "../../services/skills/view";
 
 type FrameRead = Extract<ProductPanelReadQuery, { source: "frame" }>;
@@ -367,10 +371,43 @@ panelOperationsRouter.post("/panel-operations/questions/:questionId/cancel-if-pe
   const reason = cancelPanelOperationIntentRequestSchema.parse(req.body);
   res.json(await cancelPendingAgentPageQuestion(owner, questionId, reason));
 }));
-panelOperationsRouter.post("/panel-operations/form-edited", wrap(async (req, res) => {
+panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const input = localPanelConfirmationRequestSchema.parse(req.body);
+  const run = await runForOwner(owner, input.agentRun.runId);
+  if (!run.channel || run.status !== "running") throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+  if (run.sessionId !== input.agentRun.sessionId) throw new HttpError(403, "Run session mismatch", "FORBIDDEN");
+  const root = run.channel.userRecipient?.session;
+  if (!root) {
+    throw new HttpError(409, "Execution has no authenticated human session", "USER_SESSION_UNAVAILABLE");
+  }
+  if (run.channel.authority.executionKind !== "live") {
+    throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
+  }
+  const settings = await panelOperationStore.settings(owner, root);
+  const autoMode = input.requireConfirmation ? false : !settings.confirmBeforeExecute;
+  const intentId = randomUUID();
+  const questionId = autoMode ? null : randomUUID();
+  if (!autoMode && questionId) {
+    const questionPrompt = await panelConfirmation(credentials, {
+      operation: input.operationLabel,
+      target: input.targetLabel,
+      ...(input.impactSummary ? { impactSummary: input.impactSummary } : {}),
+      executionUserId: null,
+      initiatorName: (req as AuthenticatedRequest).userName ?? owner.userId,
+    });
+    await new RuntimeClient(owner.domainId, undefined, owner.userId).request("/v1/channel/user-questions", "POST", {
+      source: { session: { providerId: run.channel.agent.providerId, sessionId: run.sessionId }, runId: input.agentRun.runId },
+      ...questionPrompt,
+    }, questionId);
+    registerPendingLocalConfirmation(owner, questionId, intentId);
+  }
+  res.json({ intentId, questionId, autoMode, label: input.operationLabel });
+}));
+panelOperationsRouter.post("/panel-operations/local-confirmations/:questionId/claim", wrap(async (req, res) => {
   const { owner } = context(req);
-  const notification = panelFormEditedNotificationSchema.parse(req.body);
-  res.json(await invalidateFormConfirmations(owner, notification));
+  const questionId = z.string().uuid().parse(req.params.questionId);
+  res.json(claimPendingLocalConfirmation(owner, questionId));
 }));
 panelOperationsRouter.get("/panel-operation-settings/:providerId/:sessionId",wrap(async(req,res)=>{
   const c=context(req),root=agentSessionRefSchema.parse(req.params);

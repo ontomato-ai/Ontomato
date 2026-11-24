@@ -21,7 +21,7 @@ export const platformRoutes = {
   dashboards: { name: "Dashboards", path: "/dashboards" },
   /**
    * The agents' settings in the agent platform: the agents, a new one and one agent's editor, shown in the platform's own
-   * shell. The same page is the ontology manager's below, at its own prefix; answers and draft links name this one.
+   * shell. The same page is the ontology manager's below, at its own prefix; answers and page links name this one.
    */
   agents: { name: "AgentSettings", path: "/agents/settings" },
   /** The agents' settings as one page of the ontology manager's product layer: the same page, at the manager's prefix. */

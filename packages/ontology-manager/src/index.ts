@@ -1,11 +1,9 @@
 export type { ManagerAuthFailureStatus, ManagerCredential, ManagerDataFallbacks } from "./api";
 export {
-  countedTypesChangedKey,
   createManager,
   provideManager,
   type Manager,
   type ManagerContext,
-  type ManagerCounts,
   type ManagerOptions,
   type ManagerPresentation,
   type ManagerTheme,

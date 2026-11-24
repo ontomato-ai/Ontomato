@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, inject, ref, type App } from "vue";
+import { createApp, defineComponent, h, ref, type App } from "vue";
 import type { ManagerAuthFailureStatus, ManagerClient, ManagerCredential } from "../api";
-import { FUNCTION, METRIC_VIEW, OBJECT_TYPE, TRIGGER, WORKFLOW } from "@ontomato/contracts/platform-object-types";
-import { managerNavigation, managerPaths } from "../navigation";
-import { countedTypesChangedKey, createManager, useManagerClient, useManagerContext, useManagerCounts, type ManagerTheme } from "../context";
+import { managerNavigation } from "../navigation";
+import { createManager, useManagerClient, useManagerContext, type ManagerTheme } from "../context";
 
 let requests: { url: string; headers: Record<string, string> }[];
 let status: number;
@@ -62,15 +61,11 @@ function mountPage(credential: ManagerCredential = { type: "token", token: "t-1"
   });
   const clients = {} as Record<Page, ManagerClient>;
   let observed: ReturnType<typeof useManagerContext> | undefined;
-  let counts: ReturnType<typeof useManagerCounts> | undefined;
-  let countedTypesChanged: ((objectTypes: readonly string[]) => void) | null = null;
   const children = (Object.keys(pages) as Page[]).map((name) =>
     defineComponent({
       setup() {
         clients[name] = useManagerClient();
         observed = useManagerContext();
-        counts = useManagerCounts();
-        countedTypesChanged = inject(countedTypesChangedKey, null);
         return () => h("div");
       },
     })
@@ -82,7 +77,7 @@ function mountPage(credential: ManagerCredential = { type: "token", token: "t-1"
   app.mount(el);
   mountedApps.push(app);
   const run = (name: Page) => pages[name](clients[name]);
-  return { manager, theme, locale, failures, clients, observed: () => observed!, counts: () => counts!, countedTypesChanged: () => countedTypesChanged!, run };
+  return { manager, theme, locale, failures, clients, observed: () => observed!, run };
 }
 
 describe("the Manager installed in the page", () => {
@@ -133,64 +128,13 @@ describe("the Manager installed in the page", () => {
     expect(localStorage.getItem("data_agent_token")).toBe("host-token");
   });
 
-  it("the navigation counts are read once per page load and again on request", async () => {
-    const page = mountPage();
-    const counts = page.counts();
-    const reads = () => requests.filter((r) => r.url.endsWith("/product-assets/counts")).length;
-    expect(counts.values.products).toBeNull();
-    counts.ensure();
-    counts.ensure();
-    await vi.waitFor(() => expect(counts.values.products).toBe(3));
-    expect(reads()).toBe(1);
-    await counts.refresh();
-    expect(reads()).toBe(2);
-    // Object types, attributes, relation types, functions and metric views are panel entries counting themselves: the
-    // Manager reads none of their lists.
-    expect(requests.filter((r) => /\/(admin\/getMetas|metricView\/queryList|function\/queryList)$/.test(r.url))).toEqual([]);
-  });
-
-  it("the menu's counts are read lazily per row, so an unrendered or unauthorized row never sends a request", async () => {
-    // A panel entry of the ontology manager opened directly: no Manager page mounts, only the menu reads its rows.
-    const page = mountPage();
-    const navigation = managerNavigation(page.counts());
-    const products = navigation.pages.find((entry) => entry.count && entry.path === managerPaths.products)!;
-    const workflows = navigation.pages.find((entry) => entry.count && entry.path === managerPaths.workflows)!;
-    const triggers = navigation.pages.find((entry) => entry.count && entry.path === managerPaths.triggers)!;
-    expect(products.count!()).toBeNull();
-    await vi.waitFor(() => expect(products.count!()).toBe(3));
-    expect(requests.filter((r) => r.url.endsWith("/product-assets/counts"))).toHaveLength(1);
-    expect(requests.filter((r) => /\/(workflow\/query|trigger\/queryList)$/.test(r.url))).toEqual([]);
-
-    expect(workflows.count!()).toBeNull();
-    expect(triggers.count!()).toBeNull();
-    await vi.waitFor(() => {
-      expect(workflows.count!()).toBe(2);
-      expect(triggers.count!()).toBe(1);
-    });
-    navigation.pages.forEach((entry) => entry.count?.());
-    expect(requests.filter((r) => r.url.endsWith("/product-assets/counts"))).toHaveLength(1);
-    expect(requests.filter((r) => r.url.endsWith("/workflow/query"))).toHaveLength(1);
-    expect(requests.filter((r) => r.url.endsWith("/trigger/queryList"))).toHaveLength(1);
-    // The panel entries' rows count themselves from their entries' declarations, not from this tally.
-    expect(navigation.pages.filter((entry) => entry.count).map((entry) => entry.path)).toEqual([
-      managerPaths.workflows,
-      managerPaths.triggers,
-      managerPaths.products,
-    ]);
-  });
-
-  it("reads only started native workflow/trigger counts again when their object types change", async () => {
-    const page = mountPage();
-    // Panel-counted types do not trigger native Manager reads, and unstarted native types are not read either.
-    page.countedTypesChanged()(["Customer", "platform:ScheduledTask", OBJECT_TYPE, FUNCTION, METRIC_VIEW, WORKFLOW, TRIGGER]);
-    await new Promise((resolve) => setTimeout(resolve));
+  it("navigation exposes pages and entry rows without legacy host count callbacks", () => {
+    const navigation = managerNavigation();
+    expect(navigation.pages.length).toBeGreaterThan(0);
+    expect(navigation.entries.length).toBeGreaterThan(0);
+    expect(navigation.pages.every((entry) => !("count" in entry))).toBe(true);
+    expect(navigation.entries.every((row) => !("count" in row))).toBe(true);
     expect(requests).toEqual([]);
-
-    page.counts().ensure("workflows");
-    await vi.waitFor(() => expect(page.counts().values.workflows).toBe(2));
-    page.countedTypesChanged()([WORKFLOW, TRIGGER]);
-    await vi.waitFor(() => expect(requests.filter((r) => r.url.endsWith("/workflow/query"))).toHaveLength(2));
-    expect(requests.filter((r) => r.url.endsWith("/trigger/queryList"))).toEqual([]);
   });
 
   it("reports a clear error when used in an app the Manager is not installed in", () => {

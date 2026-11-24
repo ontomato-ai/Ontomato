@@ -151,7 +151,6 @@ class ActionFormTest {
     assertEquals(Action.STATUS_PENDING_REVIEW, values.getString("status"));
     assertNull(values.get("target"));
     assertEquals(Function.OPERATION_WRITE, values.getJSONObject("function").getString("operation"));
-    assertEquals("action.create", form.getJSONObject("save").getString("draftOperation"));
     assertEquals("/action/save", form.getJSONObject("save").getString("path"));
     assertEquals(List.of(), form.get("errors"));
   }

@@ -1,23 +1,30 @@
 <script setup lang="ts">
-import { computed, inject, watch } from "vue";
+import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { panelContextKey, projectionKey } from "../panel/context";
+import { classifyDispatchResponseForAction } from "../panel/instance";
 import { panelMemberKey, readerDataState, useMemberOutput } from "../panel/member";
+import { missingOperationDescriptorResult } from "../panel/member-operations";
+import { matchesExpectedCheckedKeys, matchesExpectedTarget } from "../panel/operation-binding";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
 import { useDataStateLabels } from "./data-state-labels";
 import {
+  filterAllowedOperationInput,
   formatOperationLabel,
   isOperationReady,
+  resolveOperationInputFields,
   resolveOperationTarget,
   useOperationRunner,
   type OperationOutcome,
 } from "./operation-dispatch";
 import OperationButton from "./OperationButton.vue";
+import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
 import { displayFieldText, rawRecordField } from "./record-field";
@@ -186,21 +193,30 @@ const {
   read: moreRead,
   receipt: moreReceipt,
   outcome: moreOutcome,
-  batchItems: moreBatchItems,
-  batchDone: moreBatchDone,
+  named: moreNamed,
   inputDialogOpen: moreInputDialogOpen,
   pendingDescriptor: morePendingDescriptor,
   pendingInputFields: morePendingInputFields,
   said,
-  nameOf,
   trigger: triggerMoreOperation,
   confirmInput: confirmMoreInput,
+  run: runMoreOperation,
   reset: resetMoreRunner,
 } = useOperationRunner({
   panel: () => panel,
   slot: () => slot,
   member: () => member.value,
   t,
+  isEntryAvailable: (operationName) => {
+    const item = moreOperations.value.find((entry) => entry.name === operationName);
+    if (!item) {
+      return { ok: false, message: `Operation '${operationName}' is no longer shown in the header menu.` };
+    }
+    if (item.disabled) {
+      return { ok: false, message: item.descriptor.unavailable?.reason ?? `Operation '${operationName}' is currently disabled.` };
+    }
+    return { ok: true };
+  },
   onDone: (operationName, answered) => emit("done", operationName, answered),
 });
 
@@ -220,7 +236,7 @@ const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
     if (!descriptor) continue;
     const targetInfo = resolveOperationTarget(panel, slot, currentMember, descriptor, stateValues.value);
     const label = spec.label?.trim() || formatOperationLabel(descriptor, targetInfo, t);
-    const ready = isOperationReady(descriptor, targetInfo, false);
+    const ready = isOperationReady(descriptor, targetInfo, false, panel?.instance.forms);
     items.push({
       name: spec.name,
       descriptor,
@@ -266,6 +282,123 @@ function handleMoreCommand(command: string | number | Record<string, unknown>) {
   if (!item || item.disabled || moreRunning.value) return;
   triggerMoreOperation(item.name, item.descriptor);
 }
+
+const headerOperationSpecs = computed<readonly string[]>(() => {
+  if (!slot) return [];
+  return props.operations
+    ? props.operations.map((entry) => (typeof entry === "string" ? entry : entry.name))
+    : Object.keys(slot.projection.operations ?? {});
+});
+
+// Operations rendered inline already register via their child `<OperationButton>`; register the remaining
+// header operations (overflow "More" menu items and declared operations while loading/unadmitted) here.
+const headerOwnedOperationNames = computed<readonly string[]>(() => {
+  const inlineSet = new Set(inlineOperations.value.map((item) => item.name));
+  return headerOperationSpecs.value.filter((name) => !inlineSet.has(name));
+});
+
+const headerEntryInstanceId = ref(randomId());
+watch(
+  () => JSON.stringify({
+    recordKey: record.value?.primaryKey ?? null,
+    inputs: member.value?.inputs.value ?? null,
+    checked: panel?.instance.checkedKeys() ?? null,
+  }),
+  (next, prev) => {
+    if (next !== prev) headerEntryInstanceId.value = randomId();
+  },
+);
+
+let unregisterHeaderActions: (() => void)[] = [];
+function clearHeaderActionHandlers() {
+  for (const unregister of unregisterHeaderActions) unregister();
+  unregisterHeaderActions = [];
+}
+watch(
+  headerOwnedOperationNames,
+  (names) => {
+    clearHeaderActionHandlers();
+    if (!panel || !slot) return;
+    unregisterHeaderActions = names.map((operationName) =>
+      panel.instance.registerActionHandler(
+        panel.instance.operationIdOf(slot.slot, operationName),
+        async ({ input, expectedTarget, expectedCheckedKeys, agentContext }) => {
+          const currentMember = member.value;
+          if (!currentMember) {
+            return { ok: false, reason: "action_not_ready", message: `Operation '${operationName}' is not ready yet.` };
+          }
+          const item = moreOperations.value.find((entry) => entry.name === operationName);
+          if (!item) {
+            return missingOperationDescriptorResult(currentMember.operations.value, operationName);
+          }
+          const currentTargetInfo = resolveOperationTarget(panel, slot, currentMember, item.descriptor, stateValues.value);
+          if (expectedCheckedKeys !== undefined && currentTargetInfo.checkedState !== null) {
+            if (!matchesExpectedCheckedKeys(currentTargetInfo.checkedTargets, expectedCheckedKeys)) {
+              return {
+                ok: false,
+                reason: "stale",
+                message: "The checked batch selection changed since your last observation.",
+              };
+            }
+          }
+          if (expectedTarget !== undefined) {
+            const declaredDraftSlot = panel.manifest.members[slot.slot]?.operationDrafts?.[operationName]?.slot;
+            const currentTarget = declaredDraftSlot
+              ? (panel.instance.forms.snapshot(declaredDraftSlot)?.target ?? null)
+              : currentTargetInfo.target;
+            if (!matchesExpectedTarget(currentTarget, expectedTarget)) {
+              return {
+                ok: false,
+                reason: "stale",
+                message: "The target object or draft changed since your last observation.",
+              };
+            }
+          }
+          if (item.disabled || moreRunning.value) {
+            return {
+              ok: false,
+              reason: "action_unavailable",
+              message: item.descriptor.unavailable?.reason ?? `Operation '${operationName}' is currently disabled.`,
+            };
+          }
+          const inputFields = resolveOperationInputFields(panel, slot, operationName, item.descriptor);
+          const filteredInput = filterAllowedOperationInput(input, inputFields);
+          const missing = inputFields
+            .filter((field) => field.required && !(field.name in filteredInput))
+            .map((field) => field.name);
+          if (missing.length > 0) {
+            return {
+              ok: false,
+              reason: "input_required",
+              message: `Operation '${operationName}' requires input fields: ${missing.join(", ")}.`,
+            };
+          }
+          const status = await runMoreOperation(operationName, item.descriptor, filteredInput, agentContext);
+          const dispatchedResponse = moreReceipt.value ?? agentContext?.completed?.response;
+          if (dispatchedResponse) {
+            return classifyDispatchResponseForAction(dispatchedResponse);
+          }
+          if (moreFailure.value) {
+            return { ok: false, reason: "failed", message: moreFailure.value.message };
+          }
+          if (status === "cancelled") {
+            return { ok: false, reason: "cancelled", message: `Operation '${operationName}' was cancelled.` };
+          }
+          if (status === "skipped") {
+            return { ok: false, reason: "action_unavailable", message: `Operation '${operationName}' is currently busy.` };
+          }
+          if (moreRead.value) {
+            return { ok: true, outcome: moreRead.value };
+          }
+          return { ok: true, outcome: moreOutcome.value ?? undefined };
+        },
+        { entryInstanceId: () => headerEntryInstanceId.value },
+      ),
+    );
+  },
+  { immediate: true },
+);
+onBeforeUnmount(clearHeaderActionHandlers);
 </script>
 
 <template>
@@ -356,16 +489,7 @@ function handleMoreCommand(command: string | number | Record<string, unknown>) {
         <template v-if="moreReceipt">
           <p v-if="moreReceipt.kind === 'not-dispatched'" class="sdk-object-header-alert" role="alert">{{ moreReceipt.message }}</p>
           <p v-else-if="moreOutcome === null" class="sdk-object-header-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
-          <div v-else-if="moreOutcome.kind === 'batch'" class="sdk-object-header-batch" role="status">
-            <p>{{ t("platform.operationBatchDone", { done: moreBatchDone, total: moreBatchItems.length }) }}</p>
-            <ul>
-              <li
-                v-for="item in moreBatchItems"
-                :key="item.target.objectType + ':' + item.target.primaryKey"
-                :data-outcome="item.outcome.kind"
-              >{{ nameOf(item.target) }}: {{ said(item.outcome) }}</li>
-            </ul>
-          </div>
+          <OperationBatchReceipt v-else-if="moreOutcome.kind === 'batch'" :items="moreOutcome.items" :named="moreNamed" />
           <p v-else class="sdk-object-header-alert" role="alert" :data-outcome="moreOutcome.kind">{{ said(moreOutcome) }}</p>
         </template>
       </div>
@@ -499,16 +623,6 @@ function handleMoreCommand(command: string | number | Record<string, unknown>) {
   color: var(--el-color-danger-text);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
-}
-.sdk-object-header-batch ul {
-  margin: var(--spacing-xs) 0 0;
-  padding-inline-start: var(--spacing-lg);
-}
-.sdk-object-header-batch li[data-outcome="success"] {
-  color: var(--el-text-color-secondary);
-}
-.sdk-object-header-batch li:not([data-outcome="success"]) {
-  color: var(--el-color-danger-text);
 }
 </style>
 

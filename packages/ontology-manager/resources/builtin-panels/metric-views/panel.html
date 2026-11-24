@@ -1,31 +1,24 @@
 <!--
-  Metric views page: full-width catalog table (7 columns matching the original page, search, count and batch status
-  actions when rows are checked) switching to a full-width detail view (back button, test dialog, owner delete button
-  and owner definition form). "New Metric View" is a button in <page-header> that clears
-  selected and sets creating to true.
+  Metric views page: full-width catalog table (7 columns matching the original page, search, count and official
+  batch-status OperationButton when rows are checked) switching to a full-width detail view (back button, official
+  ObjectHeader, test dialog, owner delete OperationButton, and owner definition ObjectForm).
 
-  The definition form stays mounted (toggled with v-show) so an agent draft always lands cleanly for human review.
+  The catalog stays mounted (toggled with v-show) so search, paging, and checked rows persist when returning from detail,
+  while the detail view and its definition form mount only while editing or creating (v-if="detailVisible") so hidden
+  form actions stay unavailable until opened.
 -->
 <style>
   [v-cloak] { display: none; }
+  .mv-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    container: metric-views-page / inline-size;
+  }
   .mv { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px); }
   .mv-catalog { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
   .mv-batch-select { width: 9.5rem; }
-  .mv-report {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-sm) var(--spacing-md);
-    border: 1px solid var(--ui-divider);
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-    font-size: var(--text-sm);
-  }
-  .mv-report-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
-  .mv-report-head p { margin: 0; color: var(--sdk-text-color-primary); font-weight: var(--font-medium); }
-  .mv-report ul { margin: 0; padding-inline-start: var(--spacing-lg); font-size: var(--text-xs); line-height: var(--leading-sm); }
-  .mv-report li[data-outcome="success"] { color: var(--sdk-text-color-secondary); }
-  .mv-report li:not([data-outcome="success"]) { color: var(--sdk-color-danger-text); }
   .mv-detail { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
   .mv-detail-head {
     display: flex;
@@ -36,8 +29,40 @@
     border-bottom: 1px solid var(--ui-divider);
   }
   .mv-divider { width: 1px; height: var(--spacing-lg); background: var(--ui-divider); }
+  .mv-detail-header-slot {
+    flex: 1 1 12rem;
+    min-width: 0;
+    overflow: visible;
+  }
+  .mv-detail-header-slot .sdk-object-header {
+    gap: 0;
+  }
+  .mv-detail-header-slot .sdk-object-header-title {
+    font-size: var(--text-base);
+    line-height: var(--leading-base, 1.5);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .mv-detail-header-slot .fui-data-state {
+    padding: var(--spacing-xs) 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .mv-detail-header-slot .fui-data-state-empty,
+  .mv-detail-header-slot .fui-data-state-forbidden {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) 0;
+    text-align: left;
+  }
+  .mv-detail-header-slot .fui-data-state-icon {
+    width: 18px;
+    height: 18px;
+  }
   .mv-detail-title {
     margin: 0;
+    flex: 1 1 12rem;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -46,155 +71,100 @@
     font-size: var(--text-base);
     font-weight: var(--font-semibold);
   }
-  .mv-spacer { flex: 1 1 auto; }
-  .mv-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
+  .mv-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); margin-inline-start: auto; }
   .mv-test-body { display: flex; flex-direction: column; gap: var(--spacing-md); }
   .mv-test-source { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .mv-test-select { width: 18rem; max-width: 100%; }
   .mv-test-params { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0 var(--spacing-md); }
   .mv-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); }
-  .mv-md-toggle { margin-bottom: var(--spacing-sm); }
-  .mv-markdown {
-    min-height: 18rem;
-    max-height: 55vh;
-    overflow: auto;
-    padding: var(--spacing-md);
-    border: 1px solid var(--ui-divider);
-    border-radius: var(--radius-sm);
-    background: var(--sdk-bg-color);
-  }
-  .mv-json-wrap { display: flex; flex-direction: column; gap: var(--spacing-sm); }
 </style>
 <div id="app" v-cloak>
-  <page-header title="指标视图" description="维护业务指标定义、参数绑定与测试">
-    <template #actions>
-      <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-      </sdk-button>
-      <sdk-button type="primary" :disabled="creating && !selected" @click="startCreate">{{ t("metricViews.new") }}</sdk-button>
-    </template>
-  </page-header>
-  <section class="mv">
-    <div class="mv-catalog" v-show="!detailVisible">
-      <div v-if="batchReport" class="mv-report" role="status">
-        <div class="mv-report-head">
-          <p>{{ batchReport.summary }}</p>
-          <sdk-button text size="small" @click="batchReport = null">{{ t("metricViews.close") }}</sdk-button>
-        </div>
-        <ul v-if="batchReport.items.length">
-          <li v-for="item in batchReport.items" :key="item.id" :data-outcome="item.kind">
-            {{ item.label }}: {{ item.message }}
-          </li>
-        </ul>
-      </div>
-
-      <projection slot="list">
-        <template #batch-actions>
-          <sdk-select v-model="batchStatus" size="small" class="mv-batch-select" :aria-label="t('metricViews.batchStatus')">
-            <sdk-option value="PENDING_REVIEW" :label="t('metricViews.status.PENDING_REVIEW')"></sdk-option>
-            <sdk-option value="PUBLISHED" :label="t('metricViews.status.PUBLISHED')"></sdk-option>
-            <sdk-option value="UNUSED" :label="t('metricViews.status.UNUSED')"></sdk-option>
-          </sdk-select>
-          <sdk-button
-            size="small"
-            type="primary"
-            :loading="batching"
-            :disabled="!checked.length || !publishOperation"
-            @click="applyStatus"
-          >{{ t("metricViews.batchApply") }}</sdk-button>
-        </template>
-      </projection>
-    </div>
-
-    <div class="mv-detail" v-show="detailVisible">
-      <header class="mv-detail-head">
-        <sdk-button text @click="backToCatalog">← {{ t("metricViews.back") }}</sdk-button>
-        <span class="mv-divider" aria-hidden="true"></span>
-        <h2 class="mv-detail-title">{{ detailTitle }}</h2>
-        <span class="mv-spacer"></span>
-        <div class="mv-detail-actions">
-          <sdk-button @click="openTest">{{ t("metricViews.test") }}</sdk-button>
-          <projection v-if="selected" slot="remove"></projection>
-        </div>
-      </header>
-
-      <projection slot="definition" @saved="onSaved" @discarded="onDiscarded"></projection>
-    </div>
-
-    <projection slot="record"></projection>
-    <projection slot="publishStatus"></projection>
-    <projection slot="trial"></projection>
-    <projection slot="trialJson"></projection>
-
-    <sdk-dialog v-model="testOpen" :title="t('metricViews.testTitle')" width="min(920px, 94vw)">
-      <div class="mv-test-body">
-        <sdk-alert type="info" :closable="false" :title="t('metricViews.testHint')"></sdk-alert>
-        <div class="mv-test-source">
-          <sdk-select v-model="testSource" class="mv-test-select" :aria-label="t('metricViews.testSource')">
-            <sdk-option value="explicit" :label="t('metricViews.testExplicit')"></sdk-option>
-            <sdk-option
-              v-for="(row, index) in bindingRows"
-              :key="row.id || index"
-              :value="index"
-              :label="bindingLabel(row, index)"
-            ></sdk-option>
-          </sdk-select>
-          <p class="mv-hint">{{ t("metricViews.testJsonHint") }}</p>
-        </div>
-
-        <sdk-form v-if="testSource === 'explicit' && parameterDefs.length" label-position="top" class="mv-test-params">
-          <sdk-form-item v-for="parameter in parameterDefs" :key="parameter.name" :label="parameterLabel(parameter)">
-            <sdk-input v-model="testValues[parameter.name]" :placeholder="parameter.description || ''"></sdk-input>
-          </sdk-form-item>
-        </sdk-form>
-        <p v-else-if="testSource === 'explicit'" class="mv-hint">{{ t("metricViews.testNoParameters") }}</p>
-
-        <sdk-tabs v-model="testTab">
-          <sdk-tab-pane :label="t('metricViews.testMarkdownTab')" name="markdown">
-            <sdk-radio-group v-model="markdownView" size="small" class="mv-md-toggle">
-              <sdk-radio value="preview">{{ t("metricViews.testPreview") }}</sdk-radio>
-              <sdk-radio value="source">{{ t("metricViews.testSourceTab") }}</sdk-radio>
-            </sdk-radio-group>
-            <div v-if="markdownView === 'preview'" class="mv-markdown">
-              <markdown-view v-if="testMarkdown" :content="testMarkdown"></markdown-view>
-              <p v-else class="mv-hint">{{ t("metricViews.testPlaceholder") }}</p>
-            </div>
-            <code-editor
-              v-else
-              :model-value="testMarkdown"
-              language="markdown"
-              readonly
-              :min-height="300"
-              :placeholder="t('metricViews.testPlaceholder')"
-            ></code-editor>
-          </sdk-tab-pane>
-          <sdk-tab-pane :label="t('metricViews.testJsonTab')" name="json">
-            <div class="mv-json-wrap">
-              <sdk-alert
-                v-if="truncation"
-                type="warning"
-                :closable="false"
-                :title="t('metricViews.testTruncated', { rows: truncation.rowLimit === null ? '—' : truncation.rowLimit })"
-                :description="truncation.hint || ''"
-              ></sdk-alert>
-              <code-editor
-                :model-value="testJson"
-                language="json"
-                readonly
-                :min-height="300"
-                :placeholder="t('metricViews.testJsonPlaceholder')"
-              ></code-editor>
-            </div>
-          </sdk-tab-pane>
-        </sdk-tabs>
-
-        <sdk-alert v-if="testFailure" type="error" :closable="false" :title="testFailure"></sdk-alert>
-      </div>
-      <template #footer>
-        <sdk-button @click="testOpen = false">{{ t("metricViews.close") }}</sdk-button>
-        <sdk-button type="primary" :loading="testingMarkdown" @click="runMarkdown">{{ t("metricViews.testMarkdown") }}</sdk-button>
-        <sdk-button :loading="testingJson" @click="runJson">{{ t("metricViews.testJson") }}</sdk-button>
+  <div class="mv-page">
+    <page-header :title="t('metricViews.title')" :description="t('metricViews.description')">
+      <template #actions>
+        <sdk-button text :aria-label="t('metricViews.refresh')" :title="t('metricViews.refresh')" @click="refresh">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+        </sdk-button>
+        <sdk-button type="primary" :disabled="creating && !selected" @click="startCreate">{{ t("metricViews.new") }}</sdk-button>
       </template>
-    </sdk-dialog>
-  </section>
+    </page-header>
+    <section class="mv">
+      <div class="mv-catalog" v-show="!detailVisible">
+        <projection slot="list">
+          <template #batch-actions>
+            <sdk-select v-model="batchStatus" size="small" class="mv-batch-select" :aria-label="t('metricViews.batchStatus')">
+              <sdk-option value="PENDING_REVIEW" :label="t('metricViews.status.PENDING_REVIEW')"></sdk-option>
+              <sdk-option value="PUBLISHED" :label="t('metricViews.status.PUBLISHED')"></sdk-option>
+              <sdk-option value="UNUSED" :label="t('metricViews.status.UNUSED')"></sdk-option>
+            </sdk-select>
+            <projection slot="publishStatus"></projection>
+          </template>
+        </projection>
+      </div>
+
+      <div class="mv-detail" v-if="detailVisible">
+        <header class="mv-detail-head">
+          <sdk-button text @click="backToCatalog">← {{ t("metricViews.back") }}</sdk-button>
+          <span class="mv-divider" aria-hidden="true"></span>
+          <div v-if="selected" class="mv-detail-header-slot">
+            <projection slot="header"></projection>
+          </div>
+          <h2 v-else class="mv-detail-title">{{ detailTitle }}</h2>
+          <div class="mv-detail-actions">
+            <sdk-button @click="openTest">{{ t("metricViews.test") }}</sdk-button>
+            <projection v-if="selected" slot="remove" @done="onRemoveDone"></projection>
+          </div>
+        </header>
+
+        <projection slot="definition" @saved="onSaved" @discarded="onDiscarded"></projection>
+      </div>
+
+      <sdk-dialog v-model="dialogOpen" :title="t('metricViews.testTitle')" width="min(920px, calc(100% - 24px))">
+        <div v-if="detailVisible && testOpen" class="mv-test-body">
+          <sdk-alert type="info" :closable="false" :title="t('metricViews.testHint')"></sdk-alert>
+          <sdk-alert v-if="!hasFunctionDraft" type="warning" :closable="false" :title="t('metricViews.testNoDraft')"></sdk-alert>
+          <div class="mv-test-source">
+            <sdk-select v-model="testSource" class="mv-test-select" :aria-label="t('metricViews.testSource')">
+              <sdk-option value="explicit" :label="t('metricViews.testExplicit')"></sdk-option>
+              <sdk-option
+                v-for="(row, index) in bindingRows"
+                :key="row.id || index"
+                :value="bindingSourceValue(index)"
+                :label="bindingLabel(row, index)"
+              ></sdk-option>
+            </sdk-select>
+            <p class="mv-hint">{{ t("metricViews.testJsonHint") }}</p>
+          </div>
+
+          <sdk-form v-if="testSource === 'explicit' && parameterDefs.length" label-position="top" class="mv-test-params">
+            <sdk-form-item
+              v-for="parameter in parameterDefs"
+              :key="parameter.name"
+              :label="parameterLabel(parameter)"
+              :error="testErrors[parameter.name] || ''"
+            >
+              <sdk-input
+                :model-value="testValues[parameter.name] ?? ''"
+                :placeholder="parameter.description || ''"
+                @update:model-value="(value) => onParamInput(parameter.name, value)"
+              ></sdk-input>
+            </sdk-form-item>
+          </sdk-form>
+          <p v-else-if="testSource === 'explicit'" class="mv-hint">{{ t("metricViews.testNoParameters") }}</p>
+
+          <sdk-tabs v-model="testTab">
+            <sdk-tab-pane :label="t('metricViews.testMarkdownTab')" name="markdown">
+              <projection slot="testMarkdown" :disabled="trialDisabled" @read="onMarkdownRead"></projection>
+            </sdk-tab-pane>
+            <sdk-tab-pane :label="t('metricViews.testJsonTab')" name="json">
+              <projection slot="testJson" :disabled="trialDisabled" @read="onJsonRead"></projection>
+            </sdk-tab-pane>
+          </sdk-tabs>
+        </div>
+        <template #footer>
+          <sdk-button @click="testOpen = false">{{ t("metricViews.close") }}</sdk-button>
+        </template>
+      </sdk-dialog>
+    </section>
+  </div>
 </div>

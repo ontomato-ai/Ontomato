@@ -383,7 +383,11 @@ it("reads header.record and detail table rows on the real builtin component entr
   const skill = (await offering.provide(ref)).files[0]!.content;
   expect(skill).toContain("Member `header`, dataName `record` — record returns `panelRecord`");
   expect(skill).toContain("Member `dataTable`, dataName `rows` — dataRows returns `panelRecordList`");
-  expect(skill).not.toContain(componentsPage.useId);
+  expect(skill).toContain("### Available entrances");
+  expect(skill).toContain(`target: \`${componentsPage.path}\``);
+  expect(skill).toContain(
+    `/read source: \`${JSON.stringify({ kind: "registered", applicationId: componentsPage.applicationId, useId: componentsPage.useId })}\``,
+  );
 
   const runId = randomUUID();
   const run = { status: "running", sessionId: randomUUID(), channel: { authority: { executionKind: "live" } },

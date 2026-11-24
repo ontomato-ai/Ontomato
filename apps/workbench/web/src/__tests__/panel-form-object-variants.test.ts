@@ -56,7 +56,6 @@ const formSaveMeta = {
   method: "PUT" as const,
   path: "/workflows/:id",
   bodySchema: {},
-  draftOperation: "workflow.update",
 };
 
 const projection: DirectProjection = {

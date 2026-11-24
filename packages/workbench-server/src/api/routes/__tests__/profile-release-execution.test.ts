@@ -138,8 +138,7 @@ it.each(endpoints)("keeps %s in self mode on U credentials without resolving a s
   expect(state.post.mock.calls.some(([name])=>name==="agent-execution-resolve")).toBe(false);
 });
 
-it.each(endpoints)("preserves %s dependency denial when self-mode U cannot access the ontology class",async(path,method)=>{
-  state.executor=null;
+it.each(endpoints)("denies %s when only the default execution identity can access the ontology class",async(path,method)=>{
   const response=await call(path,method);
   expect(response.status).toBe(404);
   expect(await response.json()).toMatchObject({error:{code:"ONTOLOGY_QUERY_FAILED"}});

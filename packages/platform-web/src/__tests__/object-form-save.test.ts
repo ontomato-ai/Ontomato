@@ -8,7 +8,7 @@ import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-op
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import ObjectForm from "../../../apps-sdk/src/base/ObjectForm.vue";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
-import { PanelFormAdapters, type ReceivedPanelDraft } from "../../../apps-sdk/src/panel/draft";
+import { PanelFormAdapters } from "../../../apps-sdk/src/panel/forms";
 import type { PanelInstance, PanelWriteResult } from "../../../apps-sdk/src/panel/instance";
 import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/panel/member";
 import type { MemberOperationsState } from "../../../apps-sdk/src/panel/member-operations";
@@ -25,7 +25,7 @@ function description(name: string): PanelFormDescription {
       path: `/${key}`, label: key, valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" },
     })),
     errors: [],
-    save: { method: "POST", path: "/save", bodySchema: {}, draftOperation: "save-customer" },
+    save: { method: "POST", path: "/save", bodySchema: {} },
   };
 }
 
@@ -114,23 +114,21 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
   const state = createPanelState(manifest, { campus: "North" });
   const forms = new PanelFormAdapters();
   const selectedRead = deferred<PanelFormDescription>();
-  const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const read: PanelMemberContext["data"]["read"] = async name => ({
     status: "ready", value: name === "createForm" ? createForm : await selectedRead.promise,
   });
   const write = vi.fn<Parameters<PanelInstance["writeOperation"]>, ReturnType<PanelInstance["writeOperation"]>>()
     .mockResolvedValue(receipt());
   const instance = {
-    state, forms, draft, writeOperation: write,
-    settleDraft: vi.fn(async () => { draft.value = null; }),
+    state, forms, writeOperation: write,
     onObjectChanged: () => () => {},
     onOperationCompleted: () => () => {},
     operationIdOf: (slot, name) => `${slot}.${name}`,
+    memberPathOf: (member) => [{ member }],
     registerActionHandler: () => () => {},
-    notifyFormEdited: () => {},
     objectName: () => null,
-  } satisfies Pick<PanelInstance, "state" | "forms" | "draft" | "writeOperation" | "settleDraft" | "onObjectChanged"
-    | "onOperationCompleted" | "operationIdOf" | "registerActionHandler" | "notifyFormEdited" | "objectName">;
+  } satisfies Pick<PanelInstance, "state" | "forms" | "writeOperation" | "onObjectChanged"
+    | "onOperationCompleted" | "operationIdOf" | "memberPathOf" | "registerActionHandler" | "objectName">;
   const notify = vi.fn();
   const panel = { instance, manifest, notify } satisfies Pick<PanelContext, "manifest" | "notify"> & { instance: typeof instance };
   const operations = shallowRef<MemberOperationsState>({
@@ -158,7 +156,7 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
       },
     },
   });
-  return { wrapper, state, write, selectedRead, notify, draft, operations, settleDraft: instance.settleDraft, form: forms.handle("form")! };
+  return { wrapper, state, write, selectedRead, notify, operations, form: forms.handle("form")! };
 }
 
 describe("ObjectForm save", () => {
@@ -185,15 +183,10 @@ describe("ObjectForm save", () => {
     wrapper.unmount();
   });
 
-  it("settles the submitted draft without changing the selection after unmount", async () => {
-    const { wrapper, form, state, write, draft, settleDraft } = openForm();
+  it("finishes saving without changing the selection after unmount", async () => {
+    const { wrapper, form, state, write, notify } = openForm();
     await flushPromises();
     form.set("/name", "New customer");
-    draft.value = {
-      slot: "form", target: { objectType: customerType }, operation: "save-customer",
-      changed: new Set(["/name"]), form: { name: "New customer" },
-      link: { sessionId: "session", runId: "run", path: "outputs/drafts/customer.page-draft.json" },
-    };
     const pending = deferred<PanelWriteResult>();
     write.mockReturnValueOnce(pending.promise);
     const saving = form.submit();
@@ -202,7 +195,7 @@ describe("ObjectForm save", () => {
     pending.resolve(receipt("new-customer"));
     await expect(saving).resolves.toMatchObject({ primaryKey: "new-customer" });
     expect(state.values.value.selected).toBeNull();
-    expect(settleDraft).toHaveBeenCalledWith("form", "new-customer");
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "success" }));
   });
 
   it.each([
@@ -552,5 +545,138 @@ describe("ObjectForm save", () => {
       kind: "error",
       text: expect.stringMatching(/Unmounted Alpha.*Server refused/),
     });
+  });
+
+  it("marks all non-hidden platform form fields read-only without Action copy when form.save is not admitted, and unlocks once admitted", async () => {
+    const ownerReason = "Owner locked field";
+    const platformSave: PanelOwnerOperationDescriptor = {
+      kind: "form.save",
+      handlerRef: `${platformType}.save`,
+      effect: "write",
+      target: { source: "draft", slot: "form" },
+      batch: false,
+      label: "Save knowledge",
+      inputSchema: {},
+      resultSchema: {},
+    };
+    const createForm: PanelFormDescription = {
+      values: {
+        locked: "Fixed",
+        secret: "hidden-val",
+        name: "Knowledge A",
+        meta: { summary: "Summary" },
+        items: [{ title: "Row 1" }],
+      },
+      fields: [
+        { path: "/locked", label: "Locked", valueSchema: { type: "string" }, required: false, readOnly: true, readOnlyReason: ownerReason, control: { kind: "text" } },
+        { path: "/secret", label: "Secret", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "hidden" } },
+        { path: "/name", label: "Name", valueSchema: { type: "string" }, required: true, readOnly: false, control: { kind: "text" } },
+        {
+          path: "/meta",
+          label: "Meta",
+          valueSchema: { type: "object" },
+          required: false,
+          readOnly: false,
+          control: {
+            kind: "object",
+            fields: [{ path: "/summary", label: "Summary", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } }],
+          },
+        },
+        {
+          path: "/items",
+          label: "Items",
+          valueSchema: { type: "array" },
+          required: false,
+          readOnly: false,
+          control: {
+            kind: "object-array",
+            itemFields: [{ path: "/title", label: "Title", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } }],
+          },
+        },
+      ],
+      errors: [],
+      save: { method: "POST", path: "/knowledge", bodySchema: {} },
+    };
+
+    const { wrapper, form, operations, write } = openForm({
+      platform: true,
+      createForm,
+      actions: {
+        declared: {
+          review: { operation: { kind: "Action", id: "review-knowledge" } },
+        },
+        admitted: {
+          review: customerAction({ source: "none" }, { name: {} }),
+        },
+      },
+    });
+    // Simulate lacking permission for `persist` (`platform: true` adds `persist` to declared & admitted by default, so strip it from admitted).
+    operations.value = {
+      status: "ready",
+      value: { review: customerAction({ source: "none" }, { name: {} }) },
+    };
+    await flushPromises();
+
+    // Every non-hidden field (including nested object & object-array children) is read-only without Action copy.
+    expect(form.fields.value.find((f) => f.path === "/locked")?.readOnly).toBe(true);
+    expect(form.fields.value.find((f) => f.path === "/locked")?.readOnlyReason).toBe(ownerReason);
+    expect(form.fields.value.find((f) => f.path === "/secret")?.readOnly).toBe(false);
+    const nameField = form.fields.value.find((f) => f.path === "/name")!;
+    expect(nameField.readOnly).toBe(true);
+    expect(nameField.readOnlyReason).toBeUndefined();
+    const metaField = form.fields.value.find((f) => f.path === "/meta")!;
+    expect(metaField.readOnly).toBe(true);
+    expect(metaField.readOnlyReason).toBeUndefined();
+    expect(metaField.control.kind === "object" && metaField.control.fields[0]?.readOnly).toBe(true);
+    const itemsField = form.fields.value.find((f) => f.path === "/items")!;
+    expect(itemsField.readOnly).toBe(true);
+    expect(itemsField.readOnlyReason).toBeUndefined();
+    expect(itemsField.control.kind === "object-array" && itemsField.control.itemFields[0]?.readOnly).toBe(true);
+    expect(wrapper.text()).not.toContain("Not modified by the current save action");
+
+    expect(form.canSubmit.value).toBe(false);
+    const createBtn = wrapper.findAll(".sdk-owner-form-actions button").at(-1)!;
+    expect((createBtn.element as HTMLButtonElement).disabled).toBe(true);
+    await expect(form.submit()).rejects.toThrow("admits no save");
+    expect(write).not.toHaveBeenCalled();
+
+    // Granting platform `form.save` unlocks editable fields while preserving owner-declared read-only reasons.
+    operations.value = {
+      status: "ready",
+      value: { persist: platformSave, review: customerAction({ source: "none" }, { name: {} }) },
+    };
+    await flushPromises();
+
+    expect(form.fields.value.find((f) => f.path === "/locked")?.readOnly).toBe(true);
+    expect(form.fields.value.find((f) => f.path === "/locked")?.readOnlyReason).toBe(ownerReason);
+    expect(form.fields.value.find((f) => f.path === "/name")?.readOnly).toBe(false);
+    const unlockedMeta = form.fields.value.find((f) => f.path === "/meta")!;
+    expect(unlockedMeta.readOnly).toBe(false);
+    expect(unlockedMeta.control.kind === "object" && unlockedMeta.control.fields[0]?.readOnly).toBe(false);
+    const unlockedItems = form.fields.value.find((f) => f.path === "/items")!;
+    expect(unlockedItems.readOnly).toBe(false);
+    expect(unlockedItems.control.kind === "object-array" && unlockedItems.control.itemFields[0]?.readOnly).toBe(false);
+    expect((wrapper.findAll(".sdk-owner-form-actions button").at(-1)!.element as HTMLButtonElement).disabled).toBe(false);
+
+    form.set("/name", "Knowledge B");
+    await nextTick();
+    expect(form.canSubmit.value).toBe(true);
+    write.mockResolvedValueOnce({
+      decision: "confirm",
+      named: [],
+      response: {
+        kind: "dispatched",
+        intentId: "save-intent",
+        outcome: {
+          kind: "success",
+          data: {},
+          message: "Knowledge created",
+          affected: { objects: [{ objectType: platformType, primaryKey: "bk-new" }], objectTypes: [platformType] },
+        },
+      },
+    });
+    await form.submit();
+    expect(write).toHaveBeenCalledWith("form.persist", expect.any(Object));
+    wrapper.unmount();
   });
 });

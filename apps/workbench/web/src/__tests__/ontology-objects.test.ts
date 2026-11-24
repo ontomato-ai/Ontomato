@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { h } from "vue";
+import { h, nextTick } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
@@ -24,6 +25,7 @@ import source from "../../../../../packages/ontology-manager/resources/builtin-p
 import html from "../../../../../packages/ontology-manager/resources/builtin-panels/ontology-objects/panel.html?raw";
 import module from "../../../../../packages/ontology-manager/resources/builtin-panels/ontology-objects/panel.mjs?raw";
 import {
+  humanIntents,
   installPlatform,
   leaveFrame,
   mountPlatformPage,
@@ -219,25 +221,117 @@ const sampleRelationships = [
   },
 ];
 
-function emptyForm(draftOperation: string) {
+function emptyForm() {
   return {
     fields: [],
     values: {},
     errors: [],
     revision: 1,
-    save: { method: "PUT", path: "/ontology/model", bodySchema: {}, draftOperation },
+    save: { method: "PUT", path: "/ontology/model", bodySchema: {} },
   };
 }
 
-function mountObjectsRoute(initialState: Record<string, unknown> = {}) {
+function createAttributeForm(classes: Array<{ primaryKey: string; label: string }>) {
+  return {
+    fields: [
+      {
+        path: "/className",
+        label: "Object type",
+        control: {
+          kind: "select",
+          options: classes.map((item) => ({
+            value: item.primaryKey,
+            label: item.label,
+            description: null,
+            disabled: false,
+            disabledReason: null,
+          })),
+        },
+        valueSchema: {},
+        required: true,
+        readOnly: false,
+      },
+      {
+        path: "/name",
+        label: "Attribute name",
+        control: { kind: "text" },
+        valueSchema: {},
+        required: true,
+        readOnly: false,
+      },
+    ],
+    values: { className: "", name: "" },
+    errors: [],
+    revision: 1,
+    save: { method: "POST", path: "/ontology/model/attribute/create", bodySchema: {} },
+  };
+}
+
+function editAttributeForm(attr: { primaryKey: string; fields: { name: string } }) {
+  return {
+    fields: [
+      {
+        path: "/name",
+        label: "Attribute name",
+        control: { kind: "text" },
+        valueSchema: {},
+        required: true,
+        readOnly: false,
+      },
+    ],
+    values: { name: attr.fields.name },
+    errors: [],
+    revision: 1,
+    save: { method: "PUT", path: `/ontology/model/attribute/${attr.primaryKey}`, bodySchema: {} },
+  };
+}
+
+type PageControllerHandle = {
+  applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
+};
+
+type SampleObjectType = (typeof sampleObjectTypes)[number];
+type SampleAttribute = (typeof sampleAttributes)[number];
+
+function mountObjectsRoute(
+  initialState: Record<string, unknown> = {},
+  options: {
+    objectTypes?: SampleObjectType[];
+    attributes?: SampleAttribute[];
+    onSaveAttribute?: (values: Record<string, unknown>) => unknown;
+  } = {},
+) {
+  const objectTypesList = options.objectTypes ? [...options.objectTypes] : [...sampleObjectTypes];
+  const attributesList = options.attributes ? [...options.attributes] : [...sampleAttributes];
+  let controller: PageControllerHandle | null = null;
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: use.path, component: PanelApplicationRoute, props: { applicationId: appId } },
+      {
+        path: use.path,
+        component: PanelApplicationRoute,
+        props: {
+          applicationId: appId,
+          registerPageController(next: PageControllerHandle) {
+            controller = next;
+            return () => {
+              if (controller === next) controller = null;
+            };
+          },
+        },
+      },
       { path: "/ontology/relations/detail", component: { render: () => h("div", "relation-detail") } },
       { path: "/browser/data/:className", component: { render: () => h("div", "data-browser") } },
       { path: "/ontology/objects/:className/view", component: { render: () => h("div", "view-editor") } },
     ],
+  });
+
+  const intents = humanIntents((operationId, call) => {
+    if (operationId === "attributeForm.save" && options.onSaveAttribute) {
+      const values = ((call.input as { values?: Record<string, unknown> } | undefined)?.values) ?? {};
+      return options.onSaveAttribute(values);
+    }
+    return { kind: "success", data: {} };
   });
 
   installPlatform((request: Sent) => {
@@ -309,31 +403,59 @@ function mountObjectsRoute(initialState: Record<string, unknown> = {}) {
             },
           });
         }
+        if (member === "attributeForm") {
+          const target = body.inputs?.target
+            ? { source: "input", input: "target" }
+            : { source: "draft", slot: "attributeForm" };
+          return Response.json({
+            status: "ready",
+            value: {
+              save: {
+                handlerRef: `${ATTRIBUTE}.save`,
+                kind: "form.save",
+                label: "Save",
+                effect: "write",
+                batch: false,
+                target,
+                inputSchema: {},
+                resultSchema: {},
+              },
+            },
+          });
+        }
         return Response.json({ status: "ready", value: {} });
       }
       if (member === "catalog") {
-        return Response.json({ status: "ready", value: sampleObjectTypes });
+        return Response.json({ status: "ready", value: objectTypesList });
       }
       if (member === "detail" || member === "summary") {
         const key = (body.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
-        const found = sampleObjectTypes.find((item) => item.primaryKey === key);
+        const found = objectTypesList.find((item) => item.primaryKey === key);
         return Response.json(found ? { status: "ready", value: found } : { status: "empty" });
       }
       if (member === "objectForm") {
-        return Response.json({ status: "ready", value: emptyForm("objectType.update") });
+        return Response.json({ status: "ready", value: emptyForm() });
       }
       if (member === "attributes") {
         const className = body.inputs?.className;
-        const matched = sampleAttributes.filter((item) => item.fields.className === className);
+        const matched = attributesList.filter((item) => item.fields.className === className);
         return Response.json(matched.length ? { status: "ready", value: matched } : { status: "empty" });
       }
       if (member === "attributeDetail") {
         const key = (body.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
-        const found = sampleAttributes.find((item) => item.primaryKey === key);
+        const found = attributesList.find((item) => item.primaryKey === key);
         return Response.json(found ? { status: "ready", value: found } : { status: "empty" });
       }
       if (member === "attributeForm") {
-        return Response.json({ status: "ready", value: emptyForm("attribute.update") });
+        if (body.dataName === "createForm") {
+          return Response.json({ status: "ready", value: createAttributeForm(objectTypesList) });
+        }
+        const key = (body.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
+        const found = attributesList.find((item) => item.primaryKey === key);
+        return Response.json({
+          status: "ready",
+          value: found ? editAttributeForm(found) : emptyForm(),
+        });
       }
       if (member === "relations") {
         const className = body.inputs?.className;
@@ -343,11 +465,15 @@ function mountObjectsRoute(initialState: Record<string, unknown> = {}) {
         return Response.json(matched.length ? { status: "ready", value: matched } : { status: "empty" });
       }
     }
+    const intentResponse = intents(request);
+    if (intentResponse) return intentResponse;
     return nothingAt(request);
   }, router);
 
   return {
     router,
+    controller: () => controller,
+    attributes: attributesList,
     async open() {
       useApplicationCatalog().applications.value = [
         {
@@ -485,6 +611,160 @@ describe("ontology-objects cleaned builtin panel", () => {
       expect(document.body.textContent).not.toContain("Set as primary key");
     } finally {
       pkMounted.app.unmount();
+    }
+  });
+
+  it("declares non-deepLink boolean creatingAttribute state and adequate attribute table column widths", () => {
+    const rawState = source.manifest.state as Record<string, { type: unknown; deepLink?: boolean }>;
+    expect(rawState.creatingAttribute).toBeDefined();
+    expect(rawState.creatingAttribute.type).toEqual({ kind: "scalar", type: "boolean" });
+    expect(rawState.creatingAttribute.deepLink).not.toBe(true);
+    expect(objectsPanel.manifest.state.creatingAttribute?.deepLink).toBe(false);
+
+    const attrColumns = (source.manifest.members.attributes.config as { columns: Array<{ key: string; width?: number }> }).columns;
+    expect(attrColumns.find((col) => col.key === "type")?.width).toBe(96);
+    expect(attrColumns.find((col) => col.key === "businessKey")?.width).toBe(112);
+    expect(attrColumns.find((col) => col.key === "primaryKey")?.width).toBe(112);
+  });
+
+  it("opens create-attribute dialog directly from catalog via atomic present without writing creatingAttribute to the address", async () => {
+    const orderType: SampleObjectType = {
+      primaryKey: "Order",
+      className: OBJECT_TYPE,
+      label: "Order",
+      fields: {
+        className: "Order",
+        showName: "Order",
+        classDesc: "Customer order",
+        attributeCount: "0",
+        businessKeyCount: "0",
+        relationshipCount: "0",
+        primaryKey: "missing",
+        primaryKeyName: "",
+        searchableAttributes: [],
+      },
+      tones: { primaryKey: "warning" },
+      outputs: {
+        primaryKeyStatus: "missing",
+        primaryKeyName: "",
+        attributeCount: 0,
+        businessKeyCount: 0,
+        relationshipCount: 0,
+      },
+    };
+    const route = mountObjectsRoute({}, { objectTypes: [...sampleObjectTypes, orderType] });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(element.textContent).toContain("Order");
+        expect(route.controller()).not.toBeNull();
+      });
+
+      // Simulate agent present({ selected: Order, creatingAttribute: true }) directly from catalog.
+      route.controller()!.applyState({
+        selected: { className: OBJECT_TYPE, primaryKey: "Order" },
+        creatingAttribute: true,
+      });
+
+      await vi.waitFor(() => {
+        const classField = document.querySelector<HTMLElement>('.el-dialog [data-field="/className"]');
+        expect(classField).not.toBeNull();
+        expect(classField!.textContent).toContain("Order");
+        expect(classField!.querySelector(".el-select.is-disabled, .el-select__wrapper.is-disabled")).not.toBeNull();
+      });
+
+      expect(document.querySelector(".el-drawer .sdk-owner-form")).toBeNull();
+      expect(route.router.currentRoute.value.fullPath).toContain("selected=Order");
+      expect(route.router.currentRoute.value.fullPath).not.toContain("creatingAttribute");
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("clears selectedAttribute when switching from edit drawer to creatingAttribute and opens edit drawer for newly saved attribute", async () => {
+    const submittedPayloads: Array<Record<string, unknown>> = [];
+    const createdKey = JSON.stringify(["warehouse", "region"]);
+    const route = mountObjectsRoute(
+      {
+        selected: "warehouse",
+        selectedAttribute: JSON.stringify(["warehouse", "code"]),
+      },
+      {
+        onSaveAttribute(values) {
+          submittedPayloads.push(values);
+          route.attributes.push({
+            primaryKey: createdKey,
+            className: ATTRIBUTE,
+            label: "Region",
+            fields: {
+              className: String(values.className ?? "warehouse"),
+              classNameLabel: "Warehouse",
+              name: String(values.name ?? "region"),
+              type: "varchar",
+              attrDesc: "Warehouse region",
+              enable: "true",
+              businessKey: "false",
+              primaryKey: "false",
+            },
+            tones: { primaryKey: "default", businessKey: "default", enable: "success" },
+            outputs: { isPrimaryKey: false, className: "warehouse" },
+          });
+          return {
+            kind: "success",
+            data: {},
+            affected: {
+              objects: [{ objectType: ATTRIBUTE, primaryKey: createdKey }],
+              objectTypes: [ATTRIBUTE],
+            },
+          };
+        },
+      },
+    );
+    const { app } = await route.open();
+    try {
+      // Initially editing "Code" attribute in drawer.
+      await vi.waitFor(() => {
+        expect(document.body.textContent).toContain("Set as primary key");
+        expect(document.querySelector('.el-drawer [data-field="/name"]')).not.toBeNull();
+        expect(route.controller()).not.toBeNull();
+      });
+
+      // Switch to creatingAttribute: true -> clears selectedAttribute and opens create dialog in create mode.
+      route.controller()!.applyState({ creatingAttribute: true });
+
+      await vi.waitFor(() => {
+        const classField = document.querySelector<HTMLElement>('.el-dialog [data-field="/className"]');
+        expect(classField).not.toBeNull();
+        expect(classField!.textContent).toContain("Warehouse");
+        expect(classField!.querySelector(".el-select.is-disabled, .el-select__wrapper.is-disabled")).not.toBeNull();
+        expect(document.querySelector('.el-drawer [data-field="/name"]')).toBeNull();
+      });
+      expect(route.router.currentRoute.value.query.selectedAttribute).toBeUndefined();
+      expect(route.router.currentRoute.value.fullPath).not.toContain("creatingAttribute");
+
+      // Fill attribute name and save from the create dialog.
+      const nameInput = document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input')!;
+      expect(nameInput).not.toBeNull();
+      nameInput.value = "region";
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      await nextTick();
+
+      const saveBtn = Array.from(document.querySelectorAll<HTMLButtonElement>(".el-dialog .sdk-owner-form-actions button"))
+        .find((btn) => btn.classList.contains("el-button--primary") || btn.textContent?.includes("Save") || btn.textContent?.includes("Create"));
+      expect(saveBtn).toBeTruthy();
+      saveBtn!.click();
+
+      // After save: create dialog closes, edit drawer opens for the newly created attribute.
+      await vi.waitFor(() => {
+        expect(submittedPayloads).toEqual([{ className: "warehouse", name: "region" }]);
+        expect(document.querySelector('.el-dialog [data-field="/className"]')).toBeNull();
+        expect(document.querySelector('.el-drawer [data-field="/name"]')).not.toBeNull();
+        expect(document.querySelector(".el-drawer")?.textContent).toContain("Region");
+      });
+      expect(route.router.currentRoute.value.query.selectedAttribute).toBe(createdKey);
+      expect(route.router.currentRoute.value.fullPath).not.toContain("creatingAttribute");
+    } finally {
+      app.unmount();
     }
   });
 });

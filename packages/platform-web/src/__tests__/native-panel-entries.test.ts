@@ -55,11 +55,10 @@ it("draws an entry's row with the look of the native page it replaced: the liste
   const navigation = generatedNavigation();
   const pageGone = { ...navigation, pages: navigation.pages.filter((page) => page.path !== "/ontology/knowledge") };
 
-  // The navigation still lists the page there: its icon (and count) stay on the row.
-  expect(row({ ...navigation, pages: navigation.pages.map((page) => page.path === "/ontology/knowledge" ? { ...page, count: () => 3 } : page) }))
-    .toMatchObject({ label: "Business knowledge", icon: BookOpen, count: 3 });
+  // The navigation still lists the page there: its icon stays on the row.
+  expect(row(navigation)).toMatchObject({ label: "Business knowledge", icon: BookOpen });
   // The page is gone: the row the navigation declares for the entry.
-  expect(row({ ...pageGone, entries: [{ path: "/ontology/knowledge", icon: Network, count: () => 7 }] }))
-    .toMatchObject({ icon: Network, count: 7 });
-  expect(row(pageGone)).toMatchObject({ icon: "pages", count: null });
+  expect(row({ ...pageGone, entries: [{ path: "/ontology/knowledge", icon: Network }] }))
+    .toMatchObject({ icon: Network });
+  expect(row(pageGone)).toMatchObject({ icon: "pages" });
 });

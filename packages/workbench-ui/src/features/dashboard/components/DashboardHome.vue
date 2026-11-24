@@ -1,50 +1,110 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { ElMessageBox } from "element-plus";
 import { dropdownBoundaryOptions } from "@ontomato/foundation-ui/overlay";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-vue-next";
-import { pageDraftLink, readPageDraft, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/agent-shell-ui";
-import { createAssistantClient } from "../../workbench/assistant-host";
+import type { DisplayObjectRefresh, DisplayPageController } from "@ontomato/agent-shell-ui";
+import type { FormFillOutcome, FormFillRequestInput, PageActionOutcome, PageActionRequestInput } from "@ontomato/contracts/agent-presentation";
 import { useDashboardStore } from "../stores/dashboard";
 import DashboardPanel from "./DashboardPanel.vue";
-import { acceptDraft, boardIdentity, changesNothing, DASHBOARD_PAGE_KEY, DraftRejected, type AcceptedDraft } from "../draft";
-import { dashboardOperationSchema, type DashboardAuthoringForm, type DashboardOperation } from "@ontomato/contracts/dashboard";
-import { fetchCardParameterForm, fetchDashboardLocalDetail } from "../api";
-import { cardError, type CardError } from "./utils/metricCard";
 
 /**
- * The dashboard feature page of the workbench shell: dashboard tabs above the selected board. A link an agent wrote
- * may name a page draft: this page reads it, checks it against the board the reader owns, and hands it to the board,
- * which shows its changes and saves nothing until the reader says so.
+ * The dashboard feature page of the workbench shell: dashboard tabs above the selected board.
  *
- * The page is the same at its own address and beside a conversation, so its draft comes from whichever address it is
- * shown at: the page's own query here, the conversation's `?page=` there. Both are the platform's page link, read the
- * one way the platform reads them.
+ * The page is the same at its own address and beside a conversation, so its selection rides in whichever address it is
+ * shown at: the page's own query here, the conversation's `?page=` there. When mounted beside a conversation, it
+ * registers a `DisplayPageController` so live `present` state updates, `fill_form`, and `page_action` operate on the
+ * currently displayed board directly.
  */
+const props = defineProps<{
+  objectRefresh?: DisplayObjectRefresh | null;
+  registerPageController?: (controller: DisplayPageController) => () => void;
+}>();
+const emit = defineEmits<{ "display-dirty": [dirty: boolean] }>();
+
 const { t } = useI18n();
 const store = useDashboardStore();
 const route = useRoute();
 const router = useRouter();
 const openMenuId = ref<string | null>(null);
+const panelDirty = ref(false);
+const boardPreviewActive = ref(false);
+const previewBlockedReason = computed(() => t("dashboard.previewLocksBoardEdits"));
+const panelRef = ref<{
+  reload: () => Promise<void>;
+  snapshotMeta: () => { readonly dashboardId?: string; readonly cardId?: string };
+  selectCardById: (cardId: string) => boolean;
+  fillForm: (request: FormFillRequestInput) => Promise<FormFillOutcome>;
+  executeAction: (request: PageActionRequestInput) => Promise<PageActionOutcome>;
+} | null>(null);
 const { dashboardItems, loadingDashboards, currentDashboardId, editingDashboardId, editingDashboardName } =
   storeToRefs(store);
-const shell = createAssistantClient();
+const currentDashboardName = computed(
+  () => dashboardItems.value.find((item) => item.id === currentDashboardId.value)?.name ?? ""
+);
 
-const draft = ref<AcceptedDraft | null>(null);
-const draftFailure = ref<CardError | null>(null);
+function onPanelDirty(dirty: boolean) {
+  panelDirty.value = dirty;
+  emit("display-dirty", dirty);
+}
+
+function onBoardPreviewActive(active: boolean) {
+  boardPreviewActive.value = active;
+}
+
+watch(currentDashboardId, (next, prev) => {
+  if (next !== prev) {
+    if (boardPreviewActive.value) boardPreviewActive.value = false;
+    if (panelDirty.value) onPanelDirty(false);
+  }
+});
+
+async function confirmDiscardUnsaved(): Promise<boolean> {
+  if (!panelDirty.value) return true;
+  try {
+    await ElMessageBox.confirm(t("platform.formDiscardConfirm"), t("platform.unsavedChanges"), {
+      confirmButtonText: t("platform.discard"),
+      cancelButtonText: t("common.cancel"),
+      type: "warning",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function openDashboardTab(id: string) {
+  if (id === currentDashboardId.value) return;
+  if (!(await confirmDiscardUnsaved())) return;
+  onPanelDirty(false);
+  store.openDashboard(id);
+}
+
+async function createDashboard() {
+  if (!(await confirmDiscardUnsaved())) return;
+  await store.promptCreateDashboard();
+}
+
+function handleDashboardCommand(command: string, item: { id: string; name: string }) {
+  if (boardPreviewActive.value && item.id === currentDashboardId.value) return;
+  store.handleDashboardCommand(command, item);
+}
+
+onBeforeUnmount(() => {
+  if (panelDirty.value) emit("display-dirty", false);
+});
 
 /**
  * The address this page is shown at: its own query at its own address, the page parameter's own address beside a
- * conversation, which is where the platform's page link carries the board and the draft alike.
+ * conversation.
  */
 function pageAddress(): Record<string, unknown> {
   const paired = typeof route.query.page === "string" ? route.query.page : "";
   return paired ? Object.fromEntries(new URLSearchParams(paired.split("?")[1] ?? "")) : route.query;
 }
-
-const link = computed(() => pageDraftLink(pageAddress()));
 
 /**
  * The card chosen in the board, as the page's own address names it. The address carries it because the board is read
@@ -107,34 +167,136 @@ watch(
   { immediate: true },
 );
 
-/**
- * Reads the draft the link names through the platform's own reader, which checks the page it was written for and one of
- * this page's save actions, then hands it to the board only once the board it names is this reader's: every object a
- * draft addresses has to be that board's own.
- *
- * A draft that would save only what is already saved — one the reader saved and opens again — is not handed over: the
- * board opens as itself and its address stops naming the draft.
- */
-async function readDraft(pageLink: PageDraftLink) {
-  const received = await readPageDraft<DashboardAuthoringForm<DashboardOperation>, DashboardOperation>(shell, pageLink, {
-    pageKey: DASHBOARD_PAGE_KEY,
-    operations: dashboardOperationSchema.options,
+if (props.registerPageController) {
+  function currentDashboardMeta() {
+    const panelMeta = panelRef.value?.snapshotMeta?.();
+    const dashboardId = panelMeta?.dashboardId ?? (currentDashboardId.value || undefined);
+    const cardId = panelMeta?.cardId ?? (chosenCardId.value || undefined);
+    return {
+      ...(dashboardId ? { dashboardId } : {}),
+      ...(cardId ? { cardId } : {}),
+    };
+  }
+  const unregister = props.registerPageController({
+    blocksNavigation(next) {
+      if (!panelDirty.value) return false;
+      const currentId = currentDashboardId.value;
+      const query = next.address.split("?")[1]?.split("#")[0] ?? "";
+      const queryId = new URLSearchParams(query).get("dashboardId")?.trim() ?? "";
+      const hasState = Boolean(next.state && Object.keys(next.state).length > 0);
+      const stateHasDashboardId = Boolean(next.state && "dashboardId" in next.state);
+      const stateId = typeof next.state?.dashboardId === "string" ? next.state.dashboardId.trim() : "";
+
+      if (stateHasDashboardId) {
+        if (!stateId || stateId !== currentId) return true;
+        // An address with explicit query/hash omitting dashboardId would still rewrite the URL and drop the board.
+        if ((next.address.includes("?") || next.address.includes("#")) && queryId !== currentId) return true;
+        return false;
+      }
+      if (queryId) {
+        return queryId !== currentId;
+      }
+
+      // Without dashboardId, allow only a bare-path state patch operating on the current board (such as `{ cardId }`),
+      // because the display controller keeps the current address intact for state-only patches.
+      const addressHasParams = next.address.includes("?") || next.address.includes("#");
+      const isSameBoardCardPatch =
+        hasState
+        && !addressHasParams
+        && typeof next.state?.cardId === "string"
+        && next.state.cardId.trim().length > 0
+        && Object.keys(next.state!).every((key) => key === "cardId");
+      return !isSameBoardCardPatch;
+    },
+    validateState(patch) {
+      for (const [key, value] of Object.entries(patch)) {
+        if (key !== "dashboardId" && key !== "cardId") {
+          throw new Error(`Dashboard page has no declared public state field '${key}'.`);
+        }
+        if (value !== null && typeof value !== "string") {
+          throw new TypeError(`Dashboard state '${key}' expects a string or null value.`);
+        }
+      }
+    },
+    applyState(patch) {
+      const nextDashboardId = typeof patch.dashboardId === "string" ? patch.dashboardId.trim() : "";
+      if (nextDashboardId && nextDashboardId !== currentDashboardId.value) {
+        if (panelDirty.value) return;
+        void store.selectDashboard(nextDashboardId);
+      }
+      if (typeof patch.cardId === "string" && patch.cardId.trim()) {
+        panelRef.value?.selectCardById(patch.cardId.trim());
+      }
+    },
+    snapshotMeta() {
+      return currentDashboardMeta();
+    },
+    fillForm(request) {
+      const meta = currentDashboardMeta();
+      if (request.expectedDashboardId !== undefined && request.expectedDashboardId !== (meta.dashboardId ?? null)) {
+        return Promise.resolve({
+          ok: false,
+          reason: "stale",
+          ...(request.member ? { member: request.member } : {}),
+          message: "The displayed dashboard board changed since the last observation.",
+        });
+      }
+      if (
+        request.member !== "board"
+        && request.expectedCardId !== undefined
+        && request.expectedCardId !== (meta.cardId ?? null)
+      ) {
+        return Promise.resolve({
+          ok: false,
+          reason: "stale",
+          ...(request.member ? { member: request.member } : {}),
+          message: "The selected dashboard card changed since the last observation.",
+        });
+      }
+      if (!panelRef.value) {
+        return Promise.resolve({
+          ok: false,
+          reason: "form_not_ready",
+          ...(request.member ? { member: request.member } : {}),
+          message: "No dashboard is currently open.",
+        });
+      }
+      return panelRef.value.fillForm(request);
+    },
+    async executeAction(request) {
+      const meta = currentDashboardMeta();
+      if (request.expectedDashboardId !== undefined && request.expectedDashboardId !== (meta.dashboardId ?? null)) {
+        return {
+          ok: false,
+          reason: "stale",
+          operation: request.operation,
+          message: "The displayed dashboard board changed since the last observation.",
+        };
+      }
+      if (request.operation === "page.refresh") {
+        await store.loadDashboards();
+        await panelRef.value?.reload();
+        return { ok: true, kind: "executed", operation: request.operation };
+      }
+      if (!panelRef.value) {
+        return {
+          ok: false,
+          reason: "action_not_ready",
+          operation: request.operation,
+          message: "No dashboard is currently open.",
+        };
+      }
+      return panelRef.value.executeAction(request);
+    },
   });
-  const form = received.form as { dashboardId?: string; id?: string };
-  const id = String(form.dashboardId ?? form.id ?? "");
-  const detail = await fetchDashboardLocalDetail(id);
-  if (!detail) throw new DraftRejected(t("dashboard.draft.unavailable"));
-  const accepted = acceptDraft({ ...received, pageKey: DASHBOARD_PAGE_KEY, form: received.form }, boardIdentity(detail));
-  // A card's parameters are not part of the board: their draft is compared with that card's own form.
-  const parameters = accepted.operation === "dashboard.card.parameters"
-    ? await fetchCardParameterForm(detail.id, (accepted.form as { cardId: string }).cardId)
-    : null;
-  const unchanged = changesNothing(detail, accepted, parameters);
-  if (!unchanged) draft.value = accepted;
-  await store.selectDashboard(detail.id);
-  // Opening the board writes the address first, so the draft is taken out of the address that write leaves.
-  if (unchanged) discardDraft();
+  onBeforeUnmount(unregister);
 }
+
+watch(() => props.objectRefresh?.seq, () => {
+  if (!props.objectRefresh) return;
+  void store.loadDashboards();
+  void panelRef.value?.reload();
+});
 
 /* ======================== the boards list ======================== */
 
@@ -187,43 +349,11 @@ watch(tabsRef, (element, previous) => {
 });
 onBeforeUnmount(() => resize.disconnect());
 
-/**
- * Dropping the draft only empties this page: the saved board stays as it was, and the address it is shown at — its own,
- * or the conversation's page parameter — stops naming the draft and keeps everything else it names.
- */
-function discardDraft() {
-  draft.value = null;
-  draftFailure.value = null;
-  replaceAddress(withoutPageDraftQuery(pageAddress()) as Record<string, string>);
-}
-
-const failureText = computed(() => draftFailure.value?.message ?? "");
-
 onMounted(async () => {
   await store.loadDashboards({ notifyError: true });
-  if (link.value) {
-    try {
-      await readDraft(link.value);
-      return;
-    } catch (error) {
-      draftFailure.value = cardError(error);
-      // A draft this page cannot fill leaves the reader on their own board.
-    }
-  }
   if (!currentDashboardId.value && dashboardItems.value[0])
     void store.selectDashboard(dashboardItems.value[0].id);
 });
-
-watch(
-  () => pageAddress(),
-  (address, previous) => {
-    const next = pageDraftLink(address);
-    const before = pageDraftLink(previous ?? {});
-    if (next?.sessionId === before?.sessionId && next?.runId === before?.runId && next?.path === before?.path) return;
-    if (next) void readDraft(next).catch((error: unknown) => { draftFailure.value = cardError(error); });
-    else if (draft.value) discardDraft();
-  },
-);
 </script>
 
 <template>
@@ -263,7 +393,7 @@ watch(
               role="tab"
               class="tab-open"
               :aria-selected="item.id === currentDashboardId"
-              @click="store.openDashboard(item.id)"
+              @click="openDashboardTab(item.id)"
             >
               {{ item.name }}
             </button>
@@ -272,15 +402,34 @@ watch(
               placement="bottom-end"
               :popper-options="dropdownBoundaryOptions"
               @visible-change="(visible: boolean) => { if (visible) openMenuId = item.id; else if (openMenuId === item.id) openMenuId = null; }"
-              @command="(command: string) => store.handleDashboardCommand(command, item)"
+              @command="(command: string) => handleDashboardCommand(command, item)"
             >
               <button type="button" class="tab-more" :aria-label="t('common.more')">
                 <MoreHorizontal :size="14" />
               </button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="rename">{{ t("common.rename") }}</el-dropdown-item>
-                  <el-dropdown-item command="delete">{{ t("common.delete") }}</el-dropdown-item>
+                  <li
+                    v-if="boardPreviewActive && item.id === currentDashboardId"
+                    class="tab-preview-lock-hint"
+                    role="note"
+                  >
+                    {{ previewBlockedReason }}
+                  </li>
+                  <el-dropdown-item
+                    command="rename"
+                    :disabled="boardPreviewActive && item.id === currentDashboardId"
+                    :title="boardPreviewActive && item.id === currentDashboardId ? previewBlockedReason : undefined"
+                  >
+                    {{ t("common.rename") }}
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    command="delete"
+                    :disabled="boardPreviewActive && item.id === currentDashboardId"
+                    :title="boardPreviewActive && item.id === currentDashboardId ? previewBlockedReason : undefined"
+                  >
+                    {{ t("common.delete") }}
+                  </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -297,21 +446,25 @@ watch(
       >
         <ChevronRight :size="16" />
       </button>
-      <el-button class="create" @click="store.promptCreateDashboard()">
+      <el-button class="create" @click="createDashboard()">
         <Plus :size="15" />
         <span>{{ t("analysis.createDashboard") }}</span>
       </el-button>
     </div>
-    <p v-if="failureText" class="draft-failure" role="alert">{{ failureText }}</p>
     <div class="home-body">
       <DashboardPanel
         v-if="currentDashboardId"
-        :key="`${currentDashboardId}:${draft ? draft.operation : 'saved'}`"
+        ref="panelRef"
+        :key="currentDashboardId"
         :dashboard-id="currentDashboardId"
-        :draft="draft"
+        :dashboard-name="currentDashboardName"
         :card-id="chosenCardId"
-        @discard-draft="discardDraft"
+        :editing-board-name="Boolean(currentDashboardId && editingDashboardId === currentDashboardId)"
         @select-card="(card: { id: string; name: string } | null) => writeCard(card)"
+        @dirty="onPanelDirty"
+        @preview-active="onBoardPreviewActive"
+        @cancel-board-rename="store.cancelDashboardRename()"
+        @board-saved="() => store.loadDashboards()"
       />
       <el-empty v-else-if="!loadingDashboards" :description="t('analysis.noDashboards')" />
     </div>
@@ -333,11 +486,6 @@ watch(
   flex-wrap: wrap;
   flex-shrink: 0;
   border-bottom: 1px solid var(--el-border-color);
-}
-.draft-failure {
-  margin: var(--spacing-sm) 0 0;
-  color: var(--el-color-danger);
-  font-size: var(--text-sm);
 }
 .home-body {
   flex: 1;
@@ -429,6 +577,15 @@ watch(
 }
 .tab-more:hover {
   color: var(--el-text-color-primary);
+}
+.tab-preview-lock-hint {
+  max-width: 240px;
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  list-style: none;
 }
 .rename {
   width: 160px;

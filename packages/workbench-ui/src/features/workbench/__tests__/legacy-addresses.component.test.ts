@@ -109,10 +109,9 @@ describe("the agent platform's settings addresses", () => {
     ["/agent-builder/agent-42", { mode: "edit", selected: "agent-42" }],
     ["/agents/settings/new", { mode: "create" }],
     ["/agents/settings/agent-42", { mode: "edit", selected: "agent-42" }],
-  ])("opens %s on the settings panel with its state and draft", async (path, state) => {
-    const { router } = await openAddress(`${path}?draftSessionId=session`);
+  ])("opens %s on the settings panel with its state", async (path, state) => {
+    const { router } = await openAddress(path);
     expect(router.currentRoute.value.path).toBe("/agents/settings");
-    expect(router.currentRoute.value.query.draftSessionId).toBe("session");
     expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual(state);
   });
 

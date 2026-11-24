@@ -54,7 +54,7 @@ const triggerForm = {
   ],
   values: { name: "Nightly check", condition: { frequency: { kind: "daily", time: "09:00" }, timeZone: "Asia/Shanghai" } },
   errors: [],
-  save: { method: "POST", path: "/trigger/save", bodySchema: { type: "object" }, draftOperation: "trigger.update" },
+  save: { method: "POST", path: "/trigger/save", bodySchema: { type: "object" } },
 };
 
 afterEach(() => {
@@ -137,8 +137,8 @@ describe("trigger catalog reads", () => {
       { path: "/trigger/form", body: { target: { kind: "draft" }, changedField: null } },
     ]);
 
-    expect(panelOwnerOperationDescriptorSchema.parse(adapter[`${SET_TRIGGER_STATUS}.describe`]()).handlerRef).toBe(SET_TRIGGER_STATUS);
-    expect(panelOwnerOperationDescriptorSchema.parse(adapter[`${DELETE_TRIGGER}.describe`]()).handlerRef).toBe(DELETE_TRIGGER);
+    expect(panelOwnerOperationDescriptorSchema.parse(await adapter[`${SET_TRIGGER_STATUS}.describe`]()).handlerRef).toBe(SET_TRIGGER_STATUS);
+    expect(panelOwnerOperationDescriptorSchema.parse(await adapter[`${DELETE_TRIGGER}.describe`]()).handlerRef).toBe(DELETE_TRIGGER);
   });
 
   it("preserves coded owner refusals on missing trigger reads", async () => {

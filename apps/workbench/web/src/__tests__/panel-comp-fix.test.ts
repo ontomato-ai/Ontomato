@@ -62,7 +62,6 @@ function mountTestPanel(options: {
     url: () => "/comp-fix",
     label: () => "CompFix",
     initial: options.initial,
-    recordDraftCreated: async () => {},
     text: createPanelText(options.messages ?? {}, localeRef, "en"),
     ...noOperations,
     readProjection: async (id) => options.projections[id]!,

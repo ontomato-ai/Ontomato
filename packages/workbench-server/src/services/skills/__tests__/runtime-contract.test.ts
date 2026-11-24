@@ -8,7 +8,7 @@ import { installContentLayout } from "../../../content/layout";
 import { readSkillPackage } from "../../../core/skills/package";
 import { standardSkillFrontmatterSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { parse } from "yaml";
-import type { ProtectedSkillOffering } from "../../../core/skills/providers";
+import type { ProtectedSkillOffering, SkillPackageContext } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
@@ -24,6 +24,7 @@ configureI18n({ defaultLocale: "en", packs: { en: { messages: en, ...enLocaleMet
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "domain-skills-contract-"));
 installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot: path.resolve("skills") });
 const { skillManager } = await import("../skill-manager");
+const { readSkillView } = await import("../view");
 const { assistantSkillCatalog, hasHiddenAssistantSkillRefs, loadedPageSkillVersion, resolveCurrentPageSkillMember, pageSkillMemberContext, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills, visibleAssistantSkillRefs } = await import("../../assistant/skills");
 const { skillRegistryManager } = await import("../../../core/skills/registry/manager");
 const { registerSkillProvider, protectedSkillRef } = await import("../../../core/skills/providers");
@@ -160,15 +161,18 @@ it("derives the same standard domain ref as the three-field identity contract", 
 it("admits protected packages only through the initiator's exact entrance and every dependency", async () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
   const entrance = { permissionCode: "panel-menu", pageKey: "real-use" };
+  const privateEntrance = { permissionCode: "panel-menu", pageKey: "private-use" };
+  const entrances = [entrance, privateEntrance];
   const source = { kind: "application-use", applicationId: "app-test", useId: "primary" } as const;
   const old = panelReference("panel-menu-panel-menu-123456789012345678901234");
   const protectedRef = protectedSkillRef("product-panels", domain, "panel-a");
   const readManifest = vi.fn(async (ref: RuntimeSkillRef) => ({ name: ref.name, description: "Protected member" }));
-  const provide = vi.fn(async (ref: RuntimeSkillRef) => ({
-    skill: ref, files: [{ path: "SKILL.md", content: skillMarkdown(ref.name) }],
+  const provide = vi.fn(async (ref: RuntimeSkillRef, context?: SkillPackageContext) => ({
+    skill: ref, files: [{ path: "SKILL.md",
+      content: skillMarkdown(ref.name) + (context?.admittedEntrances ?? entrances).map(entry => entry.pageKey).join("\n") }],
   }));
   protectedPanelOfferings = [{
-    kind: "protected", sourceKey: "panel-a", entrances: [entrance],
+    kind: "protected", sourceKey: "panel-a", entrances,
     resourceIds: ["panel-a", "projection-a"], readManifest, provide,
   }];
   let admittedEntrance = { ...entrance, pageKey: "sibling-use" };
@@ -221,10 +225,14 @@ it("admits protected packages only through the initiator's exact entrance and ev
     mode: "member", locator: entrance, member: null,
   });
   expect(provide).not.toHaveBeenCalled();
+  const entry = (await readSkillView(domain, credentials)).requireSkillById(protectedRef.name);
+  const body = (await entry.provide()).files[0]!.content;
+  expect(body).toContain(entrance.pageKey);
+  expect(body).not.toContain(privateEntrance.pageKey);
   await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [old] }, credentials, context))
-    .resolves.toEqual({ skills: [], pageDrafts: false, currentPage: null });
+    .resolves.toEqual({ skills: [], pageControl: false, currentPage: null });
   const prepared = await prepareAssistantSkills(domain, { kind: "regular", skills: [old] }, credentials, context);
-  expect(prepared).toEqual({ skills: [{ skill: protectedRef, digest: "b".repeat(64) }], pageDrafts: true, currentPage: actualPage });
+  expect(prepared).toEqual({ skills: [{ skill: protectedRef, digest: "b".repeat(64) }], pageControl: true, currentPage: actualPage });
   expect(loadedPageSkillVersion(protectedRef, prepared.skills)).toEqual(prepared.skills[0]);
   expect(loadedPageSkillVersion(protectedSkillRef("product-panels", domain, "panel-b"), prepared.skills)).toBeNull();
 
@@ -250,7 +258,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
   await expect(validateAssistantSkills(domain, [protectedRef], credentials))
     .rejects.toMatchObject({ code: "SKILL_NOT_FOUND", message: "Skill is not in this domain's catalogue" });
   await expect(prepareAssistantSkills(domain, { kind: "regular", skills: [old] }, credentials))
-    .resolves.toEqual({ skills: [], pageDrafts: false, currentPage: null });
+    .resolves.toEqual({ skills: [], pageControl: false, currentPage: null });
   expect(readManifest).not.toHaveBeenCalled();
   expect(provide).not.toHaveBeenCalled();
 

@@ -69,7 +69,8 @@ export function appDeclarations(
     id: base(page.path),
     label: t(page.titleKey),
     icon: page.icon ?? "pages",
-    count: countsActive ? (page.count?.() ?? null) : null,
+    // Legacy count strictly for unconverted native pages; panel entries use #item-trailing + ObjectCount instead.
+    ...(countsActive && page.count ? { count: page.count() ?? null } : {}),
   });
 
   return partition.map((app): PlatformAppDeclaration => {
@@ -83,13 +84,11 @@ export function appDeclarations(
             const entry = app.entries?.get(path);
             const listed = byPath.get(base(path));
             if (!entry) return listed ? panelPage(listed, countsActive) : undefined;
-            // The entry stands where a native page stood: its row keeps that page's icon and any native count source
-            // from the page the navigation still lists there or the row it declares for an entry whose page is gone.
+            // The entry stands where a native page stood: its row keeps only that page's icon (never legacy counts).
             const row = listed ?? entryRows.get(path);
             return {
               ...entry,
               icon: row?.icon ?? "pages",
-              count: countsActive ? row?.count?.() ?? null : null,
             };
           })
           .filter((page): page is PlatformPanelPage => page !== undefined),

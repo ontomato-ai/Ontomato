@@ -1,11 +1,6 @@
 # Manage records
 
-- Public state `selected` holds the currently open record (`null` while browsing the catalog or creating). Setting
-  `creating: true` with `selected: null` opens the centered create dialog (also triggered by the header's primary
-  `create` command).
-- Before proposing an edit, read the selected record's current fields and owner `form` description. Preserve fields
-  outside the requested change.
-- For creation, read the owner's `createForm` description and omit `target.id` in the page draft so the panel opens the
-  create dialog pre-filled for the reader to review and save.
-- For destructive operations (such as delete), confirm the target record's name with the reader before invoking the
-  declared operation.
+- To open a record, use `present` to set `selected` to its typed object reference and `creating` to false.
+- To create, use `present` to set `selected: null` and `creating: true` so `createForm` mounts.
+- Use `fill_form` on the mounted `form` or `createForm` and leave the changes visible for review.
+- When asked to save, call `page_action` for that member's declared save. The default is conversation confirmation.

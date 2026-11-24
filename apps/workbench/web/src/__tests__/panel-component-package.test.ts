@@ -56,7 +56,7 @@ it("draws an installed package's component from its release, with the platform's
   const readComponentPackage = vi.fn(async () => release);
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "example", url: () => "/example", label: () => "Example", initial: {},
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection, readComponentPackage,
     read: async () => ({ status: "ready", value: {} as never }),
   });

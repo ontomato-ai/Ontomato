@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { agentExecutionRefSchema, agentSessionRefSchema } from "./agent-channel";
-import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "./agent-user-questions";
+import { agentQuestionAnswerReceiptSchema } from "./agent-user-questions";
 import { formFieldErrorSchema } from "./form-fields";
 import {
   panelMemberPathSchema, panelObjectIdentitySchema, panelOperationCallSchema, panelOperationIdSchema,
@@ -13,7 +13,6 @@ import {
 import { ontologyElementRefSchema } from "./ontology-element-ref";
 import { EXECUTE_OBJECT_ACTION } from "./platform-object-types";
 import { applicationFrameSourceSchema, panelUseRefSchema } from "./product-panels";
-import { pageDraftSchema } from "./page-draft";
 import { panelUploadFileSchema } from "./panel-upload";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 
@@ -55,25 +54,13 @@ export type ReadPanelOperationRequest = z.infer<typeof readPanelOperationRequest
 export { panelReadOperationJsonResultSchema as readPanelOperationResponseSchema } from "./panel-operations";
 
 export { panelOwnerOperationDescriptorSchema as panelOperationDescriptorResponseSchema } from "./panel-operations";
-const panelHumanSingleInvocationSchema = z.object({ call: panelOperationCallSchema.omit({ draft: true }) }).strict();
-
-const panelIntentRequestScopeSchema = panelOperationRefSchema.extend({ intentId: runtimeIdSchema });
-
-/** The host supplies session/run/initiator/executor from authenticated context. */
-export const createPanelOperationIntentRequestSchema = z.union([
-  panelIntentRequestScopeSchema.merge(panelSingleInvocationSchema),
-  panelIntentRequestScopeSchema.merge(panelBatchInvocationSchema),
-]);
-export type CreatePanelOperationIntentRequest = z.infer<typeof createPanelOperationIntentRequestSchema>;
+const panelHumanSingleInvocationSchema = panelSingleInvocationSchema;
 
 /** Both human and agent confirmation inspect the exact calls that will be decided together. */
 export const inspectPanelOperationImpactRequestSchema = z.union([
   panelOperationRefSchema.merge(panelSingleInvocationSchema),
   panelOperationRefSchema.merge(panelBatchInvocationSchema),
 ]);
-
-/** Dispatch reads the immutable stored call and channel evidence. No questionId, approval or changed call is accepted. */
-export const dispatchPanelOperationIntentRequestSchema = z.object({}).strict();
 
 /** Identifies the active agent tool call that asked the displayed page to execute an operation. */
 export const panelAgentRunRefSchema = z.object({
@@ -82,6 +69,16 @@ export const panelAgentRunRefSchema = z.object({
   toolCallId: runtimeKeySchema,
 }).strict();
 export type PanelAgentRunRef = z.infer<typeof panelAgentRunRefSchema>;
+
+/** Requests conversation confirmation for a destructive action on the live panel. */
+export const localPanelConfirmationRequestSchema = z.object({
+  agentRun: panelAgentRunRefSchema,
+  operationLabel: z.string().min(1),
+  targetLabel: z.string().min(1),
+  impactSummary: z.string().min(1).optional(),
+  requireConfirmation: z.boolean().optional(),
+}).strict();
+export type PanelLocalConfirmationRequest = z.infer<typeof localPanelConfirmationRequestSchema>;
 
 const panelHumanIntentScopeSchema = panelOperationRefSchema.extend({
   agentRun: panelAgentRunRefSchema.optional(),
@@ -113,6 +110,7 @@ export const panelHumanOperationConfirmationSchema = z.discriminatedUnion("kind"
     kind: z.literal("batch"),
     targets: panelOperationImpactSchema.omit({ summary: true }),
     impact: panelOperationImpactSchema.optional(),
+    skippedSummary: z.string().min(1).optional(),
   }).strict(),
 ]);
 export type PanelHumanOperationConfirmation = z.infer<typeof panelHumanOperationConfirmationSchema>;
@@ -133,8 +131,8 @@ export type PanelHumanOperationPreparation = z.infer<typeof panelHumanOperationP
 /** GET /panel-operation-intents/:intentId and POST /panel-operations/intents/:intentId/dispatch. */
 export const panelHumanOperationIntentParamsSchema = z.object({ intentId: runtimeIdSchema }).strict();
 
-/** The host dispatches the frozen intent once after confirmation. */
-export const dispatchPanelHumanOperationIntentRequestSchema = dispatchPanelOperationIntentRequestSchema;
+/** The host dispatches the stored call by intent ID. */
+export const dispatchPanelHumanOperationIntentRequestSchema = z.object({}).strict();
 
 const rejectedFormFields = {
   errors: z.array(formFieldErrorSchema).optional(),
@@ -164,11 +162,16 @@ const singleOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("unknown"), message: z.string() }).strict(),
 ]);
 
+const batchItemOutcomeSchema = z.discriminatedUnion("kind", [
+  ...singleOutcomeSchema.options,
+  z.object({ kind: z.literal("skipped"), reason: z.string().min(1), code: key.optional() }).strict(),
+]);
+
 export const panelOperationOutcomeSchema = z.discriminatedUnion("kind", [
   ...singleOutcomeSchema.options,
   z.object({
     kind: z.literal("batch"),
-    items: z.array(z.object({ target: panelObjectIdentitySchema, outcome: singleOutcomeSchema }).strict()).nonempty(),
+    items: z.array(z.object({ target: panelObjectIdentitySchema, outcome: batchItemOutcomeSchema }).strict()).nonempty(),
     /** The owner may report the affected objects and types from successful writes once for the batch. */
     affected: panelOperationAffectedSchema.optional(),
   }).strict(),
@@ -215,16 +218,13 @@ const commonIntentFactsSchema = z.object({
   dispatched: z.boolean(),
 }).strict();
 
-const intentFactsSchema = commonIntentFactsSchema.extend({
-  /** Original question execution for provenance; later dispatch binds only its session. */
+const legacyAgentIntentFactsSchema = commonIntentFactsSchema.extend({
   source: agentExecutionRefSchema,
   rootSession: agentSessionRefSchema,
-  /** Null means the original initiator. */
   executionUserId: runtimeKeySchema.nullable(),
   confirmation: z.enum(["required", "automatic"]),
   questionId: runtimeIdSchema.nullable(),
   answer: agentQuestionAnswerReceiptSchema.omit({ text: true }).nullable(),
-  /** Set when an unexecuted form.save confirmation is invalidated by newer form edits before dispatch. */
   invalidated: z.object({ code: key, message: z.string() }).strict().optional(),
 });
 
@@ -232,13 +232,12 @@ const currentOperationFields = {
   operation: panelWriteOperationSnapshotSchema,
   outcome: panelOperationOutcomeSchema.nullable(),
 };
-const currentIntentFactsSchema = intentFactsSchema.extend(currentOperationFields);
-
-export const panelAgentOperationIntentSchema = z.union([
-  currentIntentFactsSchema.merge(panelSingleInvocationSchema),
-  currentIntentFactsSchema.merge(panelBatchInvocationSchema),
+const legacyCallSchema = panelOperationCallSchema.extend({ draft: z.unknown().optional() });
+const legacyCurrentAgentIntentFactsSchema = legacyAgentIntentFactsSchema.extend(currentOperationFields);
+const legacyAgentOperationIntentSchema = z.union([
+  legacyCurrentAgentIntentFactsSchema.extend({ call: legacyCallSchema }),
+  legacyCurrentAgentIntentFactsSchema.merge(panelBatchInvocationSchema),
 ]);
-export type PanelAgentOperationIntent = z.infer<typeof panelAgentOperationIntentSchema>;
 
 const humanIntentFactsSchema = commonIntentFactsSchema.extend({
   ...currentOperationFields,
@@ -266,34 +265,23 @@ export const panelHumanOperationIntentSchema = z.union([
 export type PanelHumanOperationIntent = z.infer<typeof panelHumanOperationIntentSchema>;
 
 /** Node's single immutable intent contains either one call or every item of the batch. */
-export const panelOperationIntentSchema = z.union([panelAgentOperationIntentSchema, panelHumanOperationIntentSchema]);
+export const panelOperationIntentSchema = panelHumanOperationIntentSchema;
 export type PanelOperationIntent = z.infer<typeof panelOperationIntentSchema>;
 
 export function isPanelHumanOperationIntent(intent: PanelOperationIntent): intent is PanelHumanOperationIntent {
   return "kind" in intent.source;
 }
 
-const legacyStoredIntentSchema = intentFactsSchema.extend({
-  operation: panelOperationSchema,
-  call: panelOperationCallSchema,
-  outcome: singleOutcomeSchema.nullable(),
-});
+const legacyStoredIntentSchema = z.union([
+  legacyAgentOperationIntentSchema,
+  legacyAgentIntentFactsSchema.extend({
+    operation: panelOperationSchema,
+    call: legacyCallSchema,
+    outcome: singleOutcomeSchema.nullable(),
+  }),
+]);
 
 export const PANEL_CONFIRMATION_EXPIRED = "PANEL_CONFIRMATION_EXPIRED";
-export const PANEL_FORM_CONFIRMATION_STALE = "FORM_CONFIRMATION_STALE";
-
-/** Human browser notification that an unsaved form was edited, invalidating any pending form confirmation for it. */
-export const panelFormEditedTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("object"), objectType: key, primaryKey: z.string().min(1).max(1000), slot: key.optional() }).strict(),
-  z.object({ kind: z.literal("draft"), objectType: key, slot: key.optional() }).strict(),
-]);
-export type PanelFormEditedTarget = z.infer<typeof panelFormEditedTargetSchema>;
-
-export const panelFormEditedNotificationSchema = z.object({
-  rootSession: agentSessionRefSchema.optional(),
-  target: panelFormEditedTargetSchema,
-}).strict();
-export type PanelFormEditedNotification = z.infer<typeof panelFormEditedNotificationSchema>;
 
 /** At the persisted-data boundary, old records can report historical facts but cannot become current intents. */
 export function readStoredPanelOperationIntent(value: unknown) {
@@ -318,10 +306,175 @@ export const panelHumanOperationDispatchResponseSchema = z.discriminatedUnion("k
 ]);
 export type PanelHumanOperationDispatchResponse = z.infer<typeof panelHumanOperationDispatchResponseSchema>;
 
-export const panelOperateResponseSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("confirmation-required"), intentId: runtimeIdSchema, question: agentUserQuestionReceiptSchema }).strict(),
-  /** Default form.save returns the existing unsaved draft envelope; the CLI writes the existing draft artifact. */
-  z.object({ kind: z.literal("draft"), intentId: runtimeIdSchema, draft: pageDraftSchema }).strict(),
-  dispatchedResponseSchema, notDispatchedResponseSchema,
-]);
-export type PanelOperateResponse = z.infer<typeof panelOperateResponseSchema>;
+export type SinglePanelOperationOutcome = z.infer<typeof singleOutcomeSchema>;
+export type BatchItemOperationOutcome = z.infer<typeof batchItemOutcomeSchema>;
+
+/**
+ * Single authoritative classification of an owner panel operation outcome for agent-facing receipts,
+ * shared by live browser receipts, confirmed-dispatch summaries, and server timeout recovery.
+ *
+ * Strictly distinguishes the 4 real states:
+ * - `executed`: single success or a completed batch with only successful or skipped items.
+ * - `partial`: refusal/failure that still persisted `savedFields` or recorded affected writes, or a batch with both
+ *   recorded writes and explicit refusals/failures (never disguised as full `executed` or clean `failed`).
+ * - `failed`: `not-dispatched`, refusal/failure with no recorded writes, or an all-failed batch — preserving the
+ *   owner's exact error code (e.g. `TASK_RUNNING`) rather than collapsing to a generic code.
+ * - `unknown`: null outcome, `unknown`, or any batch containing an `unknown` item.
+ */
+export type PanelOperationAgentClassification =
+  | {
+      readonly kind: "executed";
+      readonly outcome: PanelOperationOutcome;
+      readonly summary: string;
+    }
+  | {
+      readonly kind: "partial";
+      readonly code: string;
+      readonly message: string;
+      readonly outcome: PanelOperationOutcome;
+      readonly savedFields?: readonly string[];
+      readonly summary: string;
+    }
+  | {
+      readonly kind: "failed";
+      readonly code: string;
+      readonly message: string;
+      readonly outcome?: PanelOperationOutcome;
+    }
+  | {
+      readonly kind: "unknown";
+      readonly code: "ACTION_OUTCOME_UNKNOWN";
+      readonly message: string;
+      readonly outcome?: PanelOperationOutcome | null;
+    };
+
+function hasRecordedSingleWrites(outcome: BatchItemOperationOutcome): boolean {
+  if (outcome.kind === "success") return true;
+  if (outcome.kind === "unknown" || outcome.kind === "skipped") return false;
+  return Object.keys(outcome.savedFields ?? {}).length > 0
+    || Boolean(outcome.affected?.objects.length || outcome.affected?.removed?.length || outcome.affected?.objectTypes.length);
+}
+
+/** Classifies a recorded `PanelOperationOutcome` (or `null` when dispatched without an outcome yet). */
+export function classifyPanelOperationOutcome(
+  outcome: PanelOperationOutcome | null | undefined,
+  intentId?: string,
+): PanelOperationAgentClassification {
+  if (!outcome) {
+    return {
+      kind: "unknown",
+      code: "ACTION_OUTCOME_UNKNOWN",
+      message: intentId
+        ? `Operation was dispatched, but its outcome is not yet recorded. Check /api/panel-operation-intents/${intentId} without retrying.`
+        : "Operation was dispatched, but its outcome is unknown.",
+      outcome: null,
+    };
+  }
+  if (outcome.kind === "unknown") {
+    return {
+      kind: "unknown",
+      code: "ACTION_OUTCOME_UNKNOWN",
+      message: outcome.message || "Operation was dispatched, but its outcome is unknown.",
+      outcome,
+    };
+  }
+  if (outcome.kind === "success") {
+    return {
+      kind: "executed",
+      outcome,
+      summary: outcome.message ?? "Completed successfully.",
+    };
+  }
+  if (outcome.kind === "refusal" || outcome.kind === "failure") {
+    const savedFields = Object.keys(outcome.savedFields ?? {});
+    if (hasRecordedSingleWrites(outcome)) {
+      const summary = savedFields.length
+        ? `Partially completed (saved: ${savedFields.join(", ")}); ${outcome.message}`
+        : `Partially completed: ${outcome.message}`;
+      return {
+        kind: "partial",
+        code: outcome.code,
+        message: outcome.message,
+        outcome,
+        ...(savedFields.length ? { savedFields } : {}),
+        summary,
+      };
+    }
+    return {
+      kind: "failed",
+      code: outcome.code,
+      message: outcome.message,
+      outcome,
+    };
+  }
+  // Batch outcome.
+  const unknownItem = outcome.items.find((item) => item.outcome.kind === "unknown");
+  if (unknownItem) {
+    const detail = unknownItem.outcome.kind === "unknown" && unknownItem.outcome.message
+      ? unknownItem.outcome.message
+      : intentId
+        ? `Batch operation was dispatched with an unknown item outcome. Check /api/panel-operation-intents/${intentId} without retrying.`
+        : "Batch operation was dispatched with an unknown item outcome.";
+    return {
+      kind: "unknown",
+      code: "ACTION_OUTCOME_UNKNOWN",
+      message: detail,
+      outcome,
+    };
+  }
+  const problems = outcome.items
+    .map((item) => item.outcome)
+    .filter((item): item is Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }> =>
+      item.kind === "refusal" || item.kind === "failure",
+    );
+  const succeededCount = outcome.items.filter((item) => item.outcome.kind === "success").length;
+  const skippedCount = outcome.items.filter((item) => item.outcome.kind === "skipped").length;
+  const skipped = skippedCount ? `, ${skippedCount} skipped` : "";
+  if (problems.length === 0) {
+    return {
+      kind: "executed",
+      outcome,
+      summary: `Batch completed: ${succeededCount}/${outcome.items.length} succeeded${skipped}.`,
+    };
+  }
+  const firstProblem = problems[0]!;
+  const anyRecordedWrites = outcome.items.some((item) => hasRecordedSingleWrites(item.outcome));
+  if (!anyRecordedWrites) {
+    return {
+      kind: "failed",
+      code: firstProblem.code,
+      message: firstProblem.message,
+      outcome,
+    };
+  }
+  const savedFields = [...new Set(
+    outcome.items.flatMap((item) =>
+      item.outcome.kind === "refusal" || item.outcome.kind === "failure"
+        ? Object.keys(item.outcome.savedFields ?? {})
+        : [],
+    ),
+  )];
+  return {
+    kind: "partial",
+    code: firstProblem.code,
+    message: firstProblem.message,
+    outcome,
+    ...(savedFields.length ? { savedFields } : {}),
+    summary: `Batch partially completed: ${succeededCount}/${outcome.items.length} succeeded${skipped}, ${problems.length} failed (${firstProblem.code}: ${firstProblem.message}).`,
+  };
+}
+
+/** Classifies a full dispatch response (`not-dispatched` or `dispatched` + outcome) via the single shared classifier. */
+export function classifyPanelOperationDispatch(
+  response: PanelHumanOperationDispatchResponse,
+  intentId?: string,
+): PanelOperationAgentClassification {
+  if (response.kind === "not-dispatched") {
+    return {
+      kind: "failed",
+      code: response.code,
+      message: response.message,
+    };
+  }
+  return classifyPanelOperationOutcome(response.outcome, intentId ?? response.intentId);
+}

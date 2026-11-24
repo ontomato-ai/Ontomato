@@ -22,6 +22,7 @@ import {
 } from "../../services/assistant/definitions";
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { platformService } from "../middleware/platform-service";
+import { initializeDomainPresetAgents } from "../../services/assistant/preset-initialization";
 import { agentHostCreateSessionSchema } from "@ontomato/contracts/agent-host";
 import { z } from "zod";
 import {
@@ -31,9 +32,7 @@ import {
   assistantFeedbackWriteSchema,
 } from "@ontomato/contracts/assistant-chat";
 import { assistantService } from "../../services/assistant/service";
-import { invalidPageDraft } from "../../services/assistant/draft-errors";
 import { agentTasksFrameSchema } from "@ontomato/contracts/agent-tasks";
-import { pageDraftCreatedSchema, pageDraftPathSchema } from "@ontomato/contracts/page-draft";
 import { authoringKindSchema, authoringTestRecordSchema } from "@ontomato/contracts/authoring";
 import { executeAuthoring } from "../../services/assistant/authoring";
 import { publicFrame, publicSnapshot } from "../../platform/agent-runtime/projection";
@@ -76,31 +75,12 @@ router.get("/agents", wrap(async (req, res) => {
   res.json(await assistantService.agents(c.owner, c.credentials, assistantAgentsQuerySchema.parse(req.query)));
 }));
 router.use(createAgentHostRouter(assistantService, true));
-/** The page draft a run wrote, at the run's own path: only the drafts directory, parsed as the shared envelope. */
-router.get("/sessions/:sessionId/runs/:runId/page-draft", wrap(async (req, res) => {
-  const runId = id(req, "runId");
-  const path = pageDraftPathSchema.safeParse(req.query.path);
-  if (!path.success) throw invalidPageDraft(runId, undefined, [{ path: ["path"], message: path.error.issues[0]!.message }]);
-  const { owner, credentials } = context(req);
-  res.json(await assistantService.acceptPageDraft(id(req, "sessionId"), runId, path.data, owner, credentials));
-}));
 router.get("/sessions/:sessionId/runs/:runId/authoring/:kind/tests/:executionId", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const kind = authoringKindSchema.parse(req.params.kind);
   const result = await executeAuthoring(owner, credentials, id(req, "runId"), kind, "read-test",
     { executionId: id(req, "executionId") }, id(req, "sessionId"));
   res.json(authoringTestRecordSchema.parse(result));
-}));
-/** What a create draft's first save created, recorded by the page that saved it; the same reader who may read the draft. */
-router.post("/sessions/:sessionId/runs/:runId/page-draft/created", wrap(async (req, res) => {
-  const runId = id(req, "runId");
-  const created = pageDraftCreatedSchema.safeParse(req.body);
-  if (!created.success) {
-    const path = pageDraftPathSchema.safeParse(req.body?.path);
-    throw invalidPageDraft(runId, path.success ? path.data : undefined, created.error.issues);
-  }
-  await assistantService.recordPageDraftCreated(id(req, "sessionId"), runId, created.data.path, created.data.id, context(req).owner);
-  res.sendStatus(204);
 }));
 router.get("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (req, res) => {
   const rowIndex = z.coerce.number().int().nonnegative().safe().parse(req.query.rowIndex);
@@ -121,6 +101,12 @@ router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
   const c = context(req);
   res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials));
 }));
+export const assistantInternalRouter = Router();
+assistantInternalRouter.post("/domains/:domainId/initialize-presets", platformService, wrap(async (req, res) => {
+  await initializeDomainPresetAgents(z.string().trim().min(1).parse(req.params.domainId));
+  res.sendStatus(204);
+}));
+
 /** The ontology service names a reply whose checks changed; the reply's own host signals its run. */
 export const assistantQualityRouter = Router();
 assistantQualityRouter.post("/runs/:runId/quality-changed", platformService, wrap(async (req, res) => {
@@ -192,7 +178,8 @@ router.delete(
   "/agent-definitions/:agentId",
   agentAdmin,
   wrap(async (req, res) => {
-    await deleteAgentDefinition(id(req, "agentId"), context(req).owner);
+    const { owner, credentials } = context(req);
+    await deleteAgentDefinition(id(req, "agentId"), owner, credentials.locale);
     res.sendStatus(204);
   }),
 );

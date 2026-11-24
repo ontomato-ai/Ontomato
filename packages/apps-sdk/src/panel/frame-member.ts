@@ -140,28 +140,63 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
   return {
     use(name) {
       const state = shallowRef<MemberDataState>({ status: "loading" });
+      const loadedTargetKey = shallowRef<string | null>(null);
       let sequence = 0;
+      const data = projection.data[name]!;
+      const declaration = directReadDeclaration(projection, data);
+      const isObjectDatum = "object" in data.source;
+      const requiredParams = declaration?.parameterMode === "fixed" ? declaration.requiredParams ?? [] : [];
+      const hasTarget = isObjectDatum || requiredParams.length > 0;
+      const datumTargetKeyOf = (): string | null => {
+        if (!hasTarget) return null;
+        const object = isObjectDatum ? (objectOf(data, inputs()) ?? null) : null;
+        if (requiredParams.length === 0) return JSON.stringify(object);
+        const values = paramValues(projection, data, placement, inputs(), own());
+        return JSON.stringify([object, requiredParams.map((param) => values[param] ?? null)]);
+      };
+      let lastTargetKey: string | null = null;
       const reread = () => {
         const reading = ++sequence;
-        // A datum already shown stays on screen until its new answer arrives: rereading replaces what it shows, never
-        // the component drawing it. Only a first read (or one after an empty, refused or failed answer) shows loading.
-        if (state.value.status !== "ready") state.value = { status: "loading" };
+        const nextTargetKey = datumTargetKeyOf();
+        const targetChanged = hasTarget && nextTargetKey !== lastTargetKey;
+        lastTargetKey = nextTargetKey;
+        // Re-reading the same target keeps the shown record on screen until the new answer arrives. Switching targets
+        // clears the previous target's ready state immediately.
+        if (targetChanged) {
+          state.value = awaitsInputs(projection, data, placement, inputs(), own())
+            ? { status: "awaiting" }
+            : { status: "loading" };
+        } else if (state.value.status !== "ready") {
+          state.value = { status: "loading" };
+        }
         answer(name, inputs()).then(
-          (result) => { if (reading === sequence) state.value = result; },
+          (result) => {
+            if (reading !== sequence) return;
+            loadedTargetKey.value = nextTargetKey;
+            state.value = result;
+          },
           (reason: unknown) => {
-            if (reading === sequence) state.value = { status: "error", message: reason instanceof Error ? reason.message : String(reason) };
+            if (reading !== sequence) return;
+            loadedTargetKey.value = nextTargetKey;
+            state.value = { status: "error", message: reason instanceof Error ? reason.message : String(reason) };
           },
         );
       };
       // An object an operation changed is read again where it is shown: its own datum, or a list of its type.
-      const data = projection.data[name]!;
       watch(() => memberReadKey(projection, data, placement, inputs(), own()), reread, { immediate: true });
       onScopeDispose(instance.onObjectChanged((changed) => {
         const object = objectOf(data, inputs());
         if (!changed || (object && object.className === changed.objectType && object.primaryKey === changed.primaryKey)
           || ("type" in data.source && data.source.type.id === changed.objectType)) reread();
       }));
-      return computed(() => state.value);
+      return computed<MemberDataState>(() => {
+        if (hasTarget && state.value.status === "ready" && datumTargetKeyOf() !== loadedTargetKey.value) {
+          return awaitsInputs(projection, data, placement, inputs(), own())
+            ? { status: "awaiting" }
+            : { status: "loading" };
+        }
+        return state.value;
+      });
     },
     // A refusal the module raises (a draft the owner refuses, by field) reaches the form as it was raised.
     read: (name, params, overrides = {}) => {

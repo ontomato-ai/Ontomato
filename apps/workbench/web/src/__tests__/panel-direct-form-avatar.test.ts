@@ -36,9 +36,19 @@ const field = (path: string, label: string, control: Record<string, unknown>) =>
 const description = {
   fields: [field("/name", "Name", { kind: "text" }), field("/icon", "Avatar", { kind: "avatar" }), field("/skills", "Skills", { kind: "reference", objectType: SKILL, multiple: true })],
   values: { name: "Analyst", icon: null, skills: [] }, errors: [], revision: 1,
-  save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: "agent.save" },
+  save: { method: "PUT", path: "/agents/:id", bodySchema: {} },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
+const saveDescriptor = {
+  kind: "form.save",
+  handlerRef: `${AGENT_DEFINITION}.save`,
+  label: "Save",
+  effect: "write",
+  target: { source: "input", input: "agent" },
+  inputSchema: {},
+  resultSchema: {},
+  batch: false,
+};
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -47,9 +57,9 @@ afterEach(() => {
 it("chooses an avatar's icon and swatch as the owner stores it, and names a reference nothing here draws", async () => {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "agents", url: () => "/agents", label: () => "Agents", initial: { agent },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready(description)),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready(description)),
   });
   const element = document.createElement("div");
   document.body.append(element);

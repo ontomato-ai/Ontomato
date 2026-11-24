@@ -201,71 +201,70 @@ async function admitBoundOperation(
   const { slot, projection } = placement;
   const { binding, owner } = bound;
   const { descriptor, fixed, selected } = resolveTarget(placement, bound, selection, pinnedInputs, actor.credentials.locale);
-  const id = panelOperationId(placement.nested?.memberPath.map(segment => segment.member) ?? slot, bound.name);
   if (binding.operation.kind === "Action") {
     if (selected?.kind === "object") {
       const { objectType, primaryKey } = selected;
       const resolved = await resolveObjectAction(operationHost(actor), { actionId: binding.operation.id, object: { objectType, primaryKey } });
       const handler: PanelWriteServerOperation = objectActionOperation(resolved);
-      const described = { ...describeObjectAction(resolved), target: descriptor };
-      const operation = panelWriteOperationSnapshotSchema.parse({
-        ...described,
-        ...placement.nested,
-        id,
-        slot,
+      return {
+        effect: "write" as const,
+        handler,
+        describe: () => ({ ...describeObjectAction(resolved), target: descriptor }),
         action: { actionId: resolved.actionId, codeHash: resolved.codeHash, object: resolved.object! },
-      });
-      return { effect: "write" as const, handler, operation, descriptor: described, fixedTarget: selected, selected };
+        fixedTarget: selected,
+        selected,
+      };
     }
     if (binding.target !== undefined) return undefined;
     const resolved = await resolveObjectAction(operationHost(actor), { actionId: binding.operation.id });
     const handler: PanelWriteServerOperation = objectActionOperation(resolved);
-    const described = { ...describeObjectAction(resolved), target: descriptor };
     const createFormTypes = Object.values(projection.data).flatMap(datum =>
       datum.read === "createForm" && "type" in datum.source ? [datum.source.type.id] : []);
     const affects = [...new Set([...resolved.affects, ...createFormTypes])];
-    const operation = panelWriteOperationSnapshotSchema.parse({
-      ...described,
-      ...placement.nested,
-      id,
-      slot,
+    return {
+      effect: "write" as const,
+      handler,
+      describe: () => ({ ...describeObjectAction(resolved), target: descriptor }),
       action: {
         actionId: resolved.actionId,
         codeHash: resolved.codeHash,
         ...(affects.length > 0 && { affects }),
       },
-    });
-    return { effect: "write" as const, handler, operation, descriptor: described, fixedTarget: null, selected: null };
+      fixedTarget: null,
+      selected: null,
+    };
   }
   if (!owner) throw new HttpError(422, `Operation '${binding.operation.id}' has no server owner client`, "OPERATION_UNAVAILABLE");
   const { handler } = owner;
+  const host = operationHost(actor);
   if (handler.effect === "read") {
     if (handler.target.source === "draft") {
       const draftSlot = placement.member.readOperationInputs?.[bound.name]?.draft?.slot;
       if (!draftSlot || !Object.hasOwn(placement.panel.manifest.members, draftSlot)) {
         throw new HttpError(422, `Member '${slot}', operation '${bound.name}' must declare a form member in readOperationInputs.${bound.name}.draft.slot`, "PANEL_OPERATION_DRAFT_UNBOUND");
       }
-      const described = describeServerOperation(handler, actor.credentials.locale, slot, { source: "draft", slot: draftSlot });
-      return { effect: "read" as const, handler, descriptor: described, fixedTarget: undefined, selected: undefined };
+      return {
+        effect: "read" as const, handler, fixedTarget: undefined, selected: undefined,
+        describe: () => describeServerOperation(handler, host, slot, { source: "draft", slot: draftSlot }),
+      };
     }
     if (handler.target.source === "input" && selected?.kind !== "object") return undefined;
-    const described = describeServerOperation(handler, actor.credentials.locale, slot, descriptor);
-    return { effect: "read" as const, handler, descriptor: described, fixedTarget: fixed, selected };
+    return {
+      effect: "read" as const, handler, fixedTarget: fixed, selected,
+      describe: () => describeServerOperation(handler, host, slot, descriptor),
+    };
   }
   const writeDraftSlot = placement.member.operationDrafts?.[bound.name]?.slot;
   if (writeDraftSlot && !Object.hasOwn(placement.panel.manifest.members, writeDraftSlot)) {
     throw new HttpError(422, `Member '${slot}', operation '${bound.name}' references undeclared form member '${writeDraftSlot}'`, "PANEL_OPERATION_DRAFT_UNBOUND");
   }
   const draft = handler.kind === "form.save" && selected?.kind !== "object";
-  if (draft && !allowsOperationDraft(projection, handler) && !(handler.create && writeDraftSlot)) return undefined;
-  const described = describeServerOperation(handler, actor.credentials.locale, slot,
-    draft ? { source: "draft", slot: writeDraftSlot ?? slot } : descriptor);
-  const operation = panelWriteOperationSnapshotSchema.parse({ ...described, ...placement.nested, id, slot });
+  if (draft && !allowsOperationDraft(projection, handler) && !(handler.create === true && writeDraftSlot)) return undefined;
   return {
     effect: "write" as const,
     handler,
-    operation,
-    descriptor: described,
+    describe: () => describeServerOperation(handler, host, slot,
+      draft ? { source: "draft", slot: writeDraftSlot ?? slot } : descriptor),
     selected,
     fixedTarget: draft ? { kind: "draft" as const } : fixed,
   };
@@ -294,15 +293,46 @@ export async function readAdmittedProjectionOperations(
       continue;
     }
     if (!result) continue;
-    const isRowTarget = bound.binding.target !== undefined && ("row" in bound.binding.target || "rowField" in bound.binding.target);
-    const unavailableReason = !isRowTarget && result.effect === "write" && result.selected?.kind === "object"
-      ? await result.handler.unavailable?.(operationHost(actor), result.selected)
-      : undefined;
-    const descriptor = unavailableReason === undefined ? result.descriptor
-      : { ...result.descriptor, unavailable: panelOperationUnavailableSchema.parse(unavailableReason) };
+    const described = await result.describe();
+    const unavailableReason = await resolveAdmittedOperationUnavailable(actor, bound, result, inputs, pinnedInputs);
+    const descriptor = unavailableReason === undefined ? described
+      : { ...described, unavailable: panelOperationUnavailableSchema.parse(unavailableReason) };
     descriptions.push([bound.name, descriptor]);
   }
   return Object.fromEntries(descriptions);
+}
+
+/** Resolve availability for a single target or a list-input batch target (unavailable only when every item is unavailable). */
+async function resolveAdmittedOperationUnavailable(
+  actor: PanelOperationActor,
+  bound: BoundProjectionOperation,
+  result: NonNullable<Awaited<ReturnType<typeof admitBoundOperation>>>,
+  inputs: Readonly<Record<string, unknown>>,
+  pinnedInputs: ReadonlyMap<string, unknown>,
+): Promise<PanelOwnerOperationDescriptor["unavailable"]> {
+  const isRowTarget = bound.binding.target !== undefined && ("row" in bound.binding.target || "rowField" in bound.binding.target);
+  if (isRowTarget || result.effect !== "write") return undefined;
+  if (result.selected?.kind === "object") {
+    return result.handler.unavailable?.(operationHost(actor), result.selected);
+  }
+  const targetInput = bound.binding.target && "input" in bound.binding.target ? bound.binding.target.input : undefined;
+  if (targetInput === undefined || (!result.handler.unavailableBatch && !result.handler.unavailable)) {
+    return undefined;
+  }
+  const rawInput = pinnedInputs.has(targetInput) ? pinnedInputs.get(targetInput) : inputs[targetInput];
+  if (!Array.isArray(rawInput) || rawInput.length === 0) return undefined;
+
+  const targets = rawInput.map((item, index) => ({
+    target: placedObject(panelObjectRefSchema.parse(item)),
+    rowKey: String(index),
+  }));
+  const reasons = await resolveBatchUnavailableReasons(operationHost(actor), result.handler, targets);
+  let unavailableCount = 0;
+  for (const { rowKey } of targets) {
+    if (reasons.get(rowKey) !== undefined) unavailableCount++;
+  }
+  // Mixed selections stay available because executeBatch processes items independently and reports per-item outcomes.
+  return unavailableCount === targets.length ? reasons.get(targets[0]!.rowKey) : undefined;
 }
 
 function rowTargetForBinding(
@@ -348,6 +378,35 @@ async function runWithConcurrency<T>(items: readonly T[], limit: number, work: (
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
 }
 
+export async function resolveBatchUnavailableReasons(
+  host: ReturnType<typeof operationHost>,
+  handler: PanelWriteServerOperation,
+  targets: readonly { rowKey: string; target: PanelRecordTarget }[],
+): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>> {
+  if (targets.length === 0) return new Map();
+  if (handler.unavailableBatch) {
+    return handler.unavailableBatch(host, targets);
+  }
+  if (!handler.unavailable) return new Map();
+  const unavailable = handler.unavailable.bind(handler);
+  // Deduplicate identical targets (e.g. outer parent target shared across all 50 rows -> 1 check instead of 50).
+  const uniqueTargets = new Map<string, PanelRecordTarget>();
+  for (const { target } of targets) {
+    uniqueTargets.set(`${target.objectType}\u0000${target.primaryKey}`, target);
+  }
+  const reasonsByTarget = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
+  await runWithConcurrency([...uniqueTargets.entries()], ROW_AVAILABILITY_CONCURRENCY, async ([targetKey, target]) => {
+    const reason = await unavailable(host, target);
+    if (reason !== undefined) reasonsByTarget.set(targetKey, reason);
+  });
+  const reasonsByRowKey = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
+  for (const { rowKey, target } of targets) {
+    const reason = reasonsByTarget.get(`${target.objectType}\u0000${target.primaryKey}`);
+    if (reason !== undefined) reasonsByRowKey.set(rowKey, reason);
+  }
+  return reasonsByRowKey;
+}
+
 /**
  * Compute per-row availability for every declared operation on a list projection in a single batch alongside
  * the list read response, eliminating per-row N+1 client requests.
@@ -391,32 +450,10 @@ export async function describeRowOperationsForRows(
     const validTargets = rowEntries.filter((entry): entry is { rowKey: string; target: PanelRecordTarget } =>
       entry.target !== undefined && entry.target !== null);
 
-    if (handler.unavailableBatch && validTargets.length > 0) {
-      const batchReasons = await handler.unavailableBatch(host, validTargets);
-      for (const { rowKey, target } of rowEntries) {
-        if (target === undefined) continue;
-        const reason = target === null ? undefined : batchReasons.get(rowKey);
-        (result[rowKey] ??= {})[bound.name] = reason
-          ? { available: false, unavailable: panelOperationUnavailableSchema.parse(reason) }
-          : { available: true };
-      }
-      continue;
-    }
-
-    // Deduplicate identical targets (e.g. outer parent target shared across all 50 rows -> 1 check instead of 50).
-    const uniqueTargets = new Map<string, PanelRecordTarget>();
-    for (const { target } of validTargets) {
-      uniqueTargets.set(`${target.objectType}\u0000${target.primaryKey}`, target);
-    }
-    const reasonsByTarget = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
-    await runWithConcurrency([...uniqueTargets.entries()], ROW_AVAILABILITY_CONCURRENCY, async ([targetKey, target]) => {
-      const reason = await handler.unavailable?.(host, target);
-      if (reason !== undefined) reasonsByTarget.set(targetKey, reason);
-    });
-
+    const reasonsByRowKey = await resolveBatchUnavailableReasons(host, handler, validTargets);
     for (const { rowKey, target } of rowEntries) {
       if (target === undefined) continue;
-      const reason = target === null ? undefined : reasonsByTarget.get(`${target.objectType}\u0000${target.primaryKey}`);
+      const reason = target === null ? undefined : reasonsByRowKey.get(rowKey);
       (result[rowKey] ??= {})[bound.name] = reason
         ? { available: false, unavailable: panelOperationUnavailableSchema.parse(reason) }
         : { available: true };
@@ -456,11 +493,18 @@ export async function declaredDirectOperation(
 
   const pinnedInputs = resolvePinnedInputs(use, trail, placement.member, options.isFrameRoot === true);
   const boundParams = resolvePinnedBoundParams(bound.binding, pinnedInputs, target);
-  const current = await admitBoundOperation({ owner, credentials }, placement, bound, () => target, pinnedInputs);
-  if (!current) throw new HttpError(400, `Select an eligible target for operation '${id}'`, "PANEL_SELECTION_REQUIRED");
-  if (current.effect === "read") return { ...current, boundParams };
+  const admitted = await admitBoundOperation({ owner, credentials }, placement, bound, () => target, pinnedInputs);
+  if (!admitted) throw new HttpError(400, `Select an eligible target for operation '${id}'`, "PANEL_SELECTION_REQUIRED");
+  const { describe, action, ...current } = admitted;
+  const descriptor = await describe();
+  if (current.effect === "read") return { ...current, descriptor, boundParams };
+  const operation = panelWriteOperationSnapshotSchema.parse({
+    ...descriptor, ...placement.nested, id, slot, ...(action && { action }),
+  });
   return {
     ...current,
+    descriptor,
+    operation,
     boundParams,
     ...(bound.binding.params ? { bindingParams: bound.binding.params } : {}),
     use,

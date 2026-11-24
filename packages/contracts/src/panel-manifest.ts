@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema } from "./form-fields";
-import { pageDraftLinkSchema } from "./page-draft";
 import {
   panelMemberItemKeySchema,
   panelObjectRefSchema,
@@ -222,8 +221,6 @@ export const panelOperationCallSchema = z
     target: panelFormTargetSchema.nullable(),
     /** What the caller supplies, by the operation's `inputSchema`; a form save's is the owner's form values. */
     input: z.record(key, z.unknown()).default({}),
-    /** A create from an existing draft link; the host verifies the artifact and records the new object under its owner. */
-    draft: pageDraftLinkSchema.optional(),
   })
   .strict();
 export type PanelOperationCall = z.infer<typeof panelOperationCallSchema>;
@@ -303,6 +300,9 @@ const commandInputSchema = z.union([literalValue, panelStateRefSchema, itemValue
 export const panelMemberInputSchema = z.union([
   literalValue,
   panelStateRefSchema,
+  z.object({
+    output: z.object({ member: key, name: key, path: formFieldErrorSchema.shape.field.optional() }).strict(),
+  }).strict(),
 ]);
 export type PanelMemberInput = z.infer<typeof panelMemberInputSchema>;
 const placementPorts = {
@@ -614,6 +614,11 @@ export const panelManifestSchema = z.object({
     }
     for (const [name, input] of Object.entries(declaration.inputs ?? {})) {
       if ("state" in input) requireName(state, input.state, [...path, "inputs", name, "state"]);
+      if ("output" in input) {
+        const outputPath = [...path, "inputs", name, "output", "member"];
+        requireName(members, input.output.member, outputPath);
+        if (input.output.member === member) issue(outputPath, "A member cannot read its own output as an input");
+      }
     }
     for (const [name, output] of Object.entries(declaration.outputs ?? {}))
       requireName(state, output.state, [...path, "outputs", name, "state"]);

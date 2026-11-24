@@ -44,6 +44,8 @@ const classRelationshipsSchema = z.array(z.object({
   relationship: z.string(),
   fromclass: z.string(),
   toclass: z.string(),
+  fromShowName: z.string().optional(),
+  toShowName: z.string().optional(),
   desc: z.string(),
   fromField: z.string(),
   toField: z.string(),
@@ -391,7 +393,6 @@ function buildCustomerFormDescription(
       method: mode === "edit" ? "PUT" : "POST",
       path: `/ontology/objects/${encodeURIComponent(typeId)}`,
       bodySchema,
-      draftOperation: `${typeId}.${mode === "edit" ? "update" : "create"}`,
     },
   });
 }
@@ -404,12 +405,13 @@ type NeighborQueryResult =
 
 /** One relation's plan: the directions it offers the anchor, or a declared kind that never matched the class's model. */
 type NeighborRelationPlan =
-  | { relationKind: string; directions: NeighborDirection[] }
+  | { relationKind: string; label: string; directions: NeighborDirection[] }
   | { relationKind: string; unknownReason: string };
 
 /** One relation's executed plan for the assembly. */
 interface NeighborRelationRead {
   relationKind: string;
+  label?: string;
   directions: (NeighborDirection & { result: NeighborQueryResult })[];
   unknownReason?: string;
 }
@@ -426,7 +428,7 @@ function relationDirections(relation: ClassRelationship, anchorClass: string): N
 function planRelation(catalog: readonly ClassRelationship[], relationshipId: string, anchorClass: string): NeighborRelationPlan {
   const relation = catalog.find(item => item.relationship === relationshipId);
   return relation
-    ? { relationKind: relationshipId, directions: relationDirections(relation, anchorClass) }
+    ? { relationKind: relationshipId, label: relation.desc || relation.relationship, directions: relationDirections(relation, anchorClass) }
     : { relationKind: relationshipId, unknownReason: "Relationship does not exist or does not touch this class" };
 }
 
@@ -484,9 +486,11 @@ function assembleCustomerNeighbors(
   limit: number,
   reads: readonly NeighborRelationRead[],
   attributesOf: (className: string) => readonly ClassAttribute[],
+  typeLabels: ReadonlyMap<string, string>,
 ): PanelRelationNeighbors {
   const severity = { ok: 0, refused: 1, failed: 2 } as const;
   const anchorRef = { className: anchor.className, primaryKey: anchor.primaryKey };
+  const anchorTypeLabel = typeLabels.get(anchor.className);
   const edges: PanelRelationNeighbors["edges"] = [];
   const relations: PanelRelationNeighbors["relations"] = [];
   const neighbors = new Map<string, PlatformOntologyNode>();
@@ -520,6 +524,7 @@ function assembleCustomerNeighbors(
         edges.push({
           id,
           relationKind: read.relationKind,
+          ...(read.label && { label: read.label }),
           from: direction === "outgoing" ? anchorRef : neighbor,
           to: direction === "outgoing" ? neighbor : anchorRef,
           direction,
@@ -527,21 +532,30 @@ function assembleCustomerNeighbors(
         });
         const neighborKey = `${targetClass}:${neighborPrimaryKey}`;
         if (!neighbors.has(neighborKey)) {
+          const typeLabel = typeLabels.get(targetClass);
           neighbors.set(neighborKey, {
             className: targetClass,
             primaryKey: neighborPrimaryKey,
             label: recordLabel(attributes, neighborPrimaryKey, row),
+            ...(typeLabel && { typeLabel }),
             layer: "fact",
           });
         }
       }
     }
 
-    relations.push({ relationKind: read.relationKind, status, edgeCount: seenEdges.size, ...(reason ? { reason } : {}), truncated });
+    relations.push({
+      relationKind: read.relationKind,
+      ...(read.label && { label: read.label }),
+      status,
+      edgeCount: seenEdges.size,
+      ...(reason ? { reason } : {}),
+      truncated,
+    });
   }
 
   return {
-    node: { ...anchorRef, label: anchor.label, layer: "fact" },
+    node: { ...anchorRef, label: anchor.label, ...(anchorTypeLabel && { typeLabel: anchorTypeLabel }), layer: "fact" },
     neighbors: [...neighbors.values()],
     edges,
     relations,
@@ -665,6 +679,11 @@ export function createCustomerOntologyReadAdapter(
         classRelationships(node.className),
       ]);
       const plans = [planRelation(catalog, relationshipId, node.className)];
+      const typeLabels = new Map<string, string>();
+      for (const relation of catalog) {
+        if (relation.fromShowName) typeLabels.set(relation.fromclass, relation.fromShowName);
+        if (relation.toShowName) typeLabels.set(relation.toclass, relation.toShowName);
+      }
 
       // The attributes each class needs are read once per call and reused; a self-loop's target is the anchor's own class.
       const attributesByClass = new Map<string, ClassAttribute[]>([[node.className, anchorAttributes]]);
@@ -684,7 +703,7 @@ export function createCustomerOntologyReadAdapter(
             attributesByClass.get(direction.targetClass)!, limit,
           )),
         })));
-        return { relationKind: plan.relationKind, directions };
+        return { relationKind: plan.relationKind, label: plan.label, directions };
       }));
 
       return assembleCustomerNeighbors(
@@ -692,6 +711,7 @@ export function createCustomerOntologyReadAdapter(
         limit,
         reads,
         className => attributesByClass.get(className)!,
+        typeLabels,
       );
     },
   };

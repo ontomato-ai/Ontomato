@@ -36,9 +36,19 @@ const description = {
   fields: [{ path: "/icon", label: "Icon", help: "Tells the application apart in the navigation.", control: { kind: "application-icon" }, valueSchema: {}, required: true, readOnly: false }],
   values: { icon: "retired-key" },
   errors: [], revision: 1,
-  save: { method: "PUT", path: "/applications/:id", bodySchema: {}, draftOperation: "application.save" },
+  save: { method: "PUT", path: "/applications/:id", bodySchema: {} },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
+const saveDescriptor = {
+  kind: "form.save",
+  handlerRef: `${FUNCTION}.save`,
+  label: "Save",
+  effect: "write",
+  target: { source: "input", input: "app" },
+  inputSchema: {},
+  resultSchema: {},
+  batch: false,
+};
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -47,9 +57,9 @@ afterEach(() => {
 it("shows the icons available to a domain application and keeps the key the reader picks", async () => {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app: target },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready(description)),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready(description)),
   });
   const element = document.createElement("div");
   document.body.append(element);

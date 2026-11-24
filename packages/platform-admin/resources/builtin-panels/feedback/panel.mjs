@@ -5,25 +5,31 @@ await mountPanel({
   setup() {
     const { instance, notify, t } = usePanelContext();
     const selected = computed(() => instance.state.values.value.selected);
-    const exporting = ref(false);
     const exportError = ref("");
-    const exportCsv = usePanelOperation("exportCsv", "export");
-    const runExport = async () => {
-      exporting.value = true;
-      exportError.value = "";
-      try {
+    const exportCsv = usePanelOperation("exportCsv", "export", {
+      prepareInput(provided) {
         const { search, sourceType, rating } = instance.state.values.value;
-        const input = { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
-        if (typeof search === "string" && search.trim() !== "") input.search = search;
-        if (typeof sourceType === "string" && sourceType !== "") input.sourceType = sourceType;
-        if (typeof rating === "string" && rating !== "") input.rating = rating;
-        await exportCsv.run(input);
+        const input = {
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          ...provided,
+        };
+        if (input.search === undefined && typeof search === "string" && search.trim() !== "") input.search = search;
+        if (input.sourceType === undefined && typeof sourceType === "string" && sourceType !== "") input.sourceType = sourceType;
+        if (input.rating === undefined && typeof rating === "string" && rating !== "") input.rating = rating;
+        return input;
+      },
+      onSettled() {
+        exportError.value = "";
         notify({ kind: "success", text: t("panel.exportDone") });
-      } catch (error) {
+      },
+      onError(error) {
         exportError.value = error instanceof Error && error.message ? error.message : String(error);
-      } finally {
-        exporting.value = false;
-      }
+      },
+    });
+    const exporting = exportCsv.running;
+    const runExport = async () => {
+      exportError.value = "";
+      await exportCsv.run({});
     };
     return { selected, exporting, exportError, runExport, refresh: () => instance.refreshObjects() };
   },

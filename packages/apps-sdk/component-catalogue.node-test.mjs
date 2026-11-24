@@ -59,7 +59,7 @@ const DECLARED_DATA = {
   FileUploadControl: {},
   ReferencePicker: {
     options: ["panelOptionList"],
-    selected: ["panelOptionList"],
+    selected: ["panelOptionList", "panelRecord"],
     rows: ["panelRecordList", "panelRecordQuery"],
   },
   ObjectGraph: { nodes: ["panelRecordList"], edges: ["panelRecordList"] },
@@ -218,18 +218,51 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(declared.get("ReferencePicker").data.options.required, false);
     assert.equal(declared.get("ReferencePicker").data.selected.required, false);
     assert.equal(declared.get("ReferencePicker").data.rows.required, false);
+    assert.deepEqual(declared.get("ReferencePicker").data.rows.runtimeParams, ["search"]);
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
     const ontologyNode = { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] };
     assert.deepEqual(declared.get("ObjectRefCard").outputs, { navigate: ontologyNode });
     assert.ok(declared.get("ObjectForm").bindsElement.includes("ObjectType:*"), "ObjectForm applies to customer object types");
     // A placement hands a graph its running inputs from the panel's state, which an inline member binds by these names.
+    const stringList = { kind: "list", items: { kind: "scalar", type: "string" } };
+    const ontologyNodeList = { kind: "list", items: ontologyNode };
     assert.deepEqual(declared.get("OntologyGraph").inputs, {
       mode: { kind: "scalar", type: "string" },
       start: ontologyNode,
       selected: ontologyNode,
       selectedType: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
+      visibleLayers: stringList,
+      expandedNodes: ontologyNodeList,
     });
+    const platformRelationKindList = { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } };
+    assert.deepEqual(declared.get("OntologyGraph").outputs, {
+      selectedNode: ontologyNode,
+      selected: ontologyNode,
+      selectedType: { kind: "scalar", type: "string" },
+      visibleRelationKinds: platformRelationKindList,
+      visibleLayers: stringList,
+      expandedNodes: ontologyNodeList,
+    });
+    const relationKindList = { kind: "list", items: { kind: "scalar", type: "string" } };
+    const anyObject = { kind: "object", objectType: "@any" };
+    const objectRelations = declared.get("ObjectRelations");
+    assert.ok(objectRelations.bindsElement.includes("Relationship:*"));
+    assert.deepEqual(objectRelations.inputs, {
+      selected: anyObject,
+      visibleRelationKinds: relationKindList,
+    });
+    assert.deepEqual(objectRelations.outputs, {
+      selected: anyObject,
+      start: anyObject,
+      visibleRelationKinds: relationKindList,
+    });
+    for (const propName of ["show-relation-filter", "allow-set-start", "show-summary", "collapse-empty-groups"]) {
+      const prop = declared.get("ObjectRelations").config.find((entry) => entry.name === propName);
+      assert.equal(prop?.required, false, `ObjectRelations.${propName} is optional`);
+      assert.match(prop?.type ?? "", /boolean/, `ObjectRelations.${propName} is boolean`);
+      assert.equal(prop?.default, "false", `ObjectRelations.${propName} defaults to false`);
+    }
     // The upload control runs its operation through the platform's upload contract, in a frame and in the platform's page.
     assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "overwrite-on")?.required, false);
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
@@ -254,6 +287,17 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const countItems = declared.get("ObjectCount").config.find(prop => prop.name === "items");
     assert.equal(countItems?.required, false);
     assert.match(countItems?.type ?? "", /ObjectCountItem/);
+    const countAppearance = declared.get("ObjectCount").config.find(prop => prop.name === "appearance");
+    assert.equal(countAppearance?.required, false);
+    assert.match(countAppearance?.type ?? "", /badge/);
+    const countOmit = declared.get("ObjectCount").config.find(prop => prop.name === "omit-when-unavailable");
+    assert.equal(countOmit?.required, false);
+    assert.match(countOmit?.type ?? "", /boolean/);
+    const appMenuPorts = declared.get("AppMenu").ports;
+    assert.ok(appMenuPorts.props.some(prop => prop.name === "item-trailing-text"), "AppMenu publishes item-trailing-text prop");
+    assert.ok(!appMenuPorts.props.some(prop => prop.name === "counts"), "AppMenu does not publish legacy counts prop");
+    assert.ok(appMenuPorts.slots.some(slot => slot.name === "item-trailing"), "AppMenu publishes #item-trailing slot");
+    assert.ok(declared.get("ObjectCount").bindsElement.includes("ObjectType:*"), "ObjectCount applies to customer object types");
     const metricCardItems = declared.get("MetricCard").config.find(prop => prop.name === "items");
     assert.equal(metricCardItems?.required, false);
     assert.match(metricCardItems?.type ?? "", /MetricCardItem/);
@@ -267,6 +311,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const pickerPlaceholder = declared.get("ReferencePicker").config.find(prop => prop.name === "placeholder");
     assert.equal(pickerPlaceholder?.required, false);
     assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "clearable")?.required, false);
+    assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "group-by")?.required, false);
     const summaryShowTitle = declared.get("ObjectSummary").config.find(prop => prop.name === "show-title");
     assert.equal(summaryShowTitle?.required, false);
     assert.match(summaryShowTitle?.type ?? "", /boolean/);
@@ -277,8 +322,12 @@ test("the built SDK's components.json is the catalogue its contract declares", (
 
     // Official components declare read-only outputs separately from writable public state.
     assert.deepEqual(Object.keys(declared.get("ObjectList").readOnlyOutputs ?? {}).sort(), [
-      "activeLabel", "checkedCount", "filteredCount", "loadedCount", "selectedLabel", "status", "total",
+      "activeLabel", "checkedCount", "filteredCount", "listed", "loadedCount", "selectedLabel", "status", "total",
     ]);
+    assert.deepEqual(declared.get("ObjectList").readOnlyOutputs.listed, declared.get("ObjectList").outputs.listed);
+    assert.deepEqual(declared.get("ObjectCount").readOnlyOutputs, {
+      total: { kind: "scalar", type: "number" },
+    });
     assert.deepEqual(Object.keys(declared.get("ObjectForm").readOnlyOutputs ?? {}).sort(), ["dirty", "draft", "label"]);
     assert.deepEqual(Object.keys(declared.get("ObjectSummary").readOnlyOutputs ?? {}), ["label"]);
     assert.deepEqual(Object.keys(declared.get("ObjectHeader").readOnlyOutputs ?? {}).sort(), [
@@ -286,6 +335,12 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     ]);
     assert.deepEqual(Object.keys(declared.get("ObjectGraph").readOnlyOutputs ?? {}).sort(), [
       "edgeCount", "error", "nodeCount", "pathHops", "pathMessage", "pathStatus", "status",
+    ]);
+    assert.deepEqual(Object.keys(declared.get("OntologyGraph").readOnlyOutputs ?? {}).sort(), [
+      "startDetail", "startLabel", "visibleRelationKindLabels",
+    ]);
+    assert.deepEqual(Object.keys(declared.get("ObjectRelations").readOnlyOutputs ?? {}).sort(), [
+      "edgeCount", "label", "status",
     ]);
 
     // SDK UI primitives, directives, and theme tokens are published under Ontomato SDK names with zero third-party leaks.
@@ -323,6 +378,12 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(componentsDoc, /`<sdk-button>`/);
     assert.match(componentsDoc, /`v-sdk-loading`/);
     assert.match(componentsDoc, /`--sdk-color-primary`/);
+    const ontologyGraphDoc = componentsDoc.split(/^## /mu).find((section) => section.startsWith("OntologyGraph\n"));
+    assert.match(
+      ontologyGraphDoc,
+      /Inputs:\n\n[\s\S]*?- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n[\s\S]*?Hands over \(bindable to the panel's state\):\n\n[\s\S]*?- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n/u,
+      "docs/components.md must print both layers and objectTypes for object-union ports",
+    );
     assert.match(
       componentsDoc,
       /## ObjectList[\s\S]*?Configuration types:\n\n```ts\n[\s\S]*?type ObjectListColumn = \{[\s\S]*?key: string;[\s\S]*?labelKey\?:[\s\S]*?subtitleKey\?:[\s\S]*?emptyKey\?:[\s\S]*?wrap\?:/u,
@@ -332,6 +393,10 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     for (const kind of ['"text"', '"tag"', '"tags"', '"reference"', '"time"']) {
       assert.ok(columnTypeLine.includes(kind), `ObjectListColumn in docs/components.md must include kind ${kind}: ${columnTypeLine}`);
     }
+    const relationsDoc = componentsDoc.match(/^## ObjectRelations\n([\s\S]*?)(?=^## )/mu)?.[1] ?? "";
+    assert.match(relationsDoc, /`selected`: any ontology object/u);
+    assert.match(relationsDoc, /`visibleRelationKinds`: a list of relation kind IDs or object references/u);
+    assert.doesNotMatch(relationsDoc, /@any/u);
     const referenceDoc = readFileSync(join(out, version, "docs/reference.md"), "utf8");
     assert.doesNotMatch(referenceDoc, /type PanelComponent = PanelComponent;/u);
     assert.equal(

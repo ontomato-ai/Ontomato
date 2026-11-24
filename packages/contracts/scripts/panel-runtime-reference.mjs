@@ -6,10 +6,9 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { referenceMarkdown, componentMetadata } from "../../apps-sdk/reference.mjs";
 import { ENTRIES } from "../../apps-sdk/release-entries.mjs";
 import capabilityMap from "../../apps-sdk/examples/panels/capability-map/declaration.mjs";
-import { panelAddress, panelDataStateSchema } from "../src/panel-host.ts";
+import { panelAddress, PANEL_ADDRESS_RESERVED_QUERY_KEYS, panelDataStateSchema } from "../src/panel-host.ts";
 import { directPanelPortTypeSchema, panelChildObjectIdentitySchema, panelStateFieldSchema } from "../src/panel-manifest.ts";
 import { panelModuleSpecifiers } from "../src/panel-module.ts";
-import { PAGE_DRAFT_QUERY_KEYS } from "../src/page-draft.ts";
 import { SDK_COMPONENT } from "../src/platform-object-types.ts";
 
 const destination = new URL("../../../agent-skills/ontomato-app-builder/references/panel-authoring/RUNTIME.md", import.meta.url);
@@ -80,30 +79,12 @@ assert.ok(Object.keys(graphState).every(name => capabilityMap.state[name].deepLi
 const graphSelection = panelStateFieldSchema.parse(capabilityMap.state.selected);
 const graphAddress = panelAddress("/destination", graphState);
 const graphQuery = new URL(graphAddress, "http://runtime-reference.invalid").search;
-const templateApp = JSON.parse(await readFile(new URL(
-  "../../../agent-skills/ontomato-app-builder/references/templates/catalog-detail-dialog/registration.json", import.meta.url,
-), "utf8"));
-const draftEntryExample = templateApp.applications[0].input.panelUses[0].path;
-const [draftSessionKey, draftRunKey, draftPathKey] = PAGE_DRAFT_QUERY_KEYS;
-const draftQueryExample = new URLSearchParams({
-  [draftSessionKey]: "SESSION_ID",
-  [draftRunKey]: "RUN_ID",
-  [draftPathKey]: "outputs/drafts/edit.page-draft.json",
-});
 
 const mark = "`";
 const asCode = value => mark + value + mark;
 const inline = values => values.map(asCode).join(", ");
 
-const directCode = await readFile(new URL("../../apps-sdk/src/panel/direct.ts", import.meta.url), "utf8");
-const directSource = ts.createSourceFile("direct.ts", directCode, ts.ScriptTarget.ESNext, true);
-const sdkTypes = new Map(directSource.statements.filter(ts.isTypeAliasDeclaration)
-  .map(statement => [statement.name.text, statement.getText(directSource).replace(/^export /u, "")]));
-assert.ok(sdkTypes.has("MemberDataState"));
-const outputRows = panelDataStateSchema.options.map(variant => [
-  asCode(variant.shape.status.value),
-  Object.keys(variant.shape).filter(name => name !== "status").map(asCode).join(", "),
-]);
+const datumStatuses = panelDataStateSchema.options.map(variant => variant.shape.status.value);
 const contents = [
   "<!-- Generated from SDK declarations and panel contracts by pnpm --filter @ontomato/contracts generate:panel-runtime-reference. -->",
   "# Panel runtime reference",
@@ -120,13 +101,18 @@ const contents = [
   "",
   sdkSection("usePanelContext"),
   "",
-  sdkFields("PanelContext", ["instance", "t", "navigate", "notify", "currentEntry", "entryMenu"]),
+  sdkFields("PanelContext", ["instance", "t", "navigate", "notify", "confirmLeaveUnsaved", "currentEntry", "entryMenu"]),
   "",
-  sdkFields("PanelInstance", ["state", "outputs", "pageContext", "forms", "draft", "onObjectChanged", "refreshObjects"]),
+  sdkFields("PanelInstance", ["state", "outputs", "pageContext", "forms", "onObjectChanged", "refreshObjects"]),
   "",
   sdkSection("PanelStateStore"),
   "",
   sdkSection("usePanelOutput"),
+  "",
+  "Outputs are published by mounted projections. Subscribing with `usePanelOutput` alone never mounts a",
+  "member or starts its reads. The component requests its named data when it mounts. An output with no",
+  "published value is `null`. Use an `inputs` binding such as `{ output: { member, name, path } }` to connect",
+  "the output directly to another member. Omit `path` for the whole value or use a JSON Pointer for a nested value.",
   "",
   sdkSection("usePanelOutputs"),
   "",
@@ -142,7 +128,16 @@ const contents = [
   "",
   sdkSection("PanelFormHandle"),
   "",
+  sdkSection("usePanelNarrow"),
+  "",
+  sdkSection("UsePanelNarrowOptions"),
+  "",
   sdkSection("usePanelBack"),
+  "",
+  "Back layers close last-in first-out. For `<sdk-dialog>`, leave Escape handling enabled. The back handler yields",
+  "while the dialog is open. The dialog's `v-model` setter should call the layer's `back()` on close, so clicking",
+  "close and pressing Escape both check unsaved changes.",
+  "",
   "",
   sdkSection("UsePanelBackOptions"),
   "",
@@ -150,38 +145,32 @@ const contents = [
   "",
   sdkSection("savePanelFile"),
   "",
-  "## Reads and operations",
+  "## Projection outputs and operations",
   "",
-  sdkSection("usePanelData"),
+  `A mounted \`ObjectList\` or \`ObjectHeader\` exposes its datum status as ${inline(datumStatuses)}. Before the member`,
+  "publishes, its status output is `null`. Keep the header mounted for a selected record so the component can",
+  "display the owner's missing, forbidden, or error state in place. Owner-declared read outputs pass through to",
+  "`usePanelOutput`, alongside the header's own `label`, `status`, and `errorMessage`.",
   "",
-  `The result type is ${asCode(sdkTypes.get("MemberDataState"))}.`,
-  "",
-  "| Status in PanelDataState | Additional fields |",
-  "| --- | --- |",
-  ...outputRows.map(row => `| ${row.join(" | ")} |`),
-  "",
-  "A datum in `error` also carries `retry()`, which reads it again: offer it beside the message. When the platform never",
-  "answered (the request reached nothing), `unreachable` is `true` and `message` already says so in the reader's language;",
-  "show `message` as it is.",
+  'For the current list batch, read `usePanelOutput("list", "listed")`. It returns typed references when ready,',
+  "`[]` when empty, and `null` when unavailable or before the first result. Keep the output separate from public",
+  "state. Searches, filters, sorting, and paging preserve the selection. Only default-select when there was no",
+  "selection on open. Keep a specified missing or forbidden selection in place.",
   "",
   sdkSection("usePanelOperation"),
+  "",
+  sdkSection("UsePanelOperationOptions"),
   "",
   sdkSection("PanelOperationHandle"),
   "",
   "### Operation IDs and write results",
   "",
   "The member declaration's `operation` is the owner's full ID. Invoke using the member-qualified ID from the page",
-  "skill's Declared operations. For a member `opRunNow` declaring `schedules.runNow`, send `opRunNow.runNow`",
-  "as `operationId` to `/operate`. In Vue, the same binding is `usePanelOperation(\"opRunNow\", \"runNow\")`.",
+  "skill's Declared operations. For a member `opRunNow` declaring `schedules.runNow`, pass `opRunNow.runNow`",
+  "as `operation` to `page_action`. In Vue, the same binding is `usePanelOperation(\"opRunNow\", \"runNow\", options?)`,",
+  "which registers a mounted page action entry automatically (pass `{ entry: false }` only for non-UI background flows).",
   "",
-  "For an assistant call on an existing object, send a typed `call.target`, for example:",
-  "",
-  "```json",
-  '{ "target": { "kind": "object", "objectType": "platform:ScheduledTask", "primaryKey": "<task-id>" }, "input": {} }',
-  "```",
-  "",
-  "The corresponding panel selection stores `{className, primaryKey}`. On the wire, map `className` to `objectType` and add",
-  '`kind: "object"`. In Vue, call the hook’s `run(input)`. The SDK obtains the target from the binding and the host',
+  "In Vue, call the hook’s `run(input)`. The SDK obtains the target from the binding and the host",
   "handles confirmation and requests. For an action write, the hook resolves to a receipt. Read these fields before",
   "updating the editor or announcing a successful write.",
   "",
@@ -199,7 +188,7 @@ const contents = [
   "or `navigate`, right-side controls in `#actions` (such as ordinary `<sdk-button>`, `<OperationButton>`, inline counts,",
   "or search inputs), and optional `:draft` from `usePanelFormDraft` for Save/Discard/unsaved feedback. Buttons in",
   "`<page-header>` change declared panel state or call declared owner operations, so skills continue to produce valid",
-  "deep-link addresses and `/operate` calls.",
+  "deep-link addresses and `page_action` calls.",
   "",
   "For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path",
   "from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.",
@@ -247,27 +236,21 @@ const contents = [
   "than navigating to a separate detail entry), wire `usePanelBack` so browser Back, Escape, and in-page back buttons",
   "share the host's unified unsaved-changes guard.",
   "",
-  "## Draft links and instance state",
+  "## Live remote control by assistants",
   "",
-  "Give readers a site-relative Markdown draft link. Use the registered entry path with its initial slash and keep",
-  "any existing query parameters. Omit the scheme, hostname and port, including `localhost`. The destination",
-  "starts with one slash and contains no `http://`, `https://`, or `//host` prefix.",
-  "Use the producing session and run IDs. Give `draftPath` only the run-relative artifact path",
-  "`outputs/drafts/<name>.page-draft.json`. Encode that value once.",
+  "Assistants beside a displayed panel operate directly through four live tools on the real-time presentation channel:",
+  "- `observe_display`: read the latest live public state and open form values (including unsaved user edits).",
+  "- `present`: navigate to a site-relative entry path or update declared public state in place (including non-`deepLink` state such as dialogs, tabs, and selections).",
+  "- `fill_form`: fill explicit fields into a mounted live `ObjectForm` through its own edit entry, highlighting changed fields and keeping the form unsaved (refuses to overwrite fields with unsaved user edits unless the user confirms and the agent passes `overwriteUnsaved: true`).",
+  "- `page_action`: execute a declared operation (including form save, button actions, row actions with `rowKey` in the exact `<ClassName>:<primaryKey>` format copied verbatim from the snapshot row, batch actions on checked items, nested panel actions, `page.refresh`, or `<form>.discard`) through the exact same UI entry a user clicks, under the logged-in user's permissions.",
   "",
-  `For the catalog-detail template, the reply is ${asCode(`[Open the draft](${draftEntryExample}?${draftQueryExample})`)}.`,
+  "The mounted `ObjectForm` owns its live values and submission. When an agent's same-page `present` would switch",
+  "a dirty form's target or unmount it, the host returns `blocked_unsaved`. Unrelated state updates succeed while",
+  "the dirty form stays mounted on the same target. Human controls that switch, close, or cancel a form use the",
+  "panel's unsaved confirmation.",
   "",
-  "A raw `draftPath` of `/outputs/drafts/edit.page-draft.json` starts with a slash and is invalid.",
-  "The encoded query value `draftPath=%2Foutputs%2Fdrafts%2Fedit.page-draft.json` still starts with that slash after decoding.",
-  "",
-  "The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and evaluates it against the panel's",
-  "declared form members (even before the form mounts). The target identifies the object type and, for an edit, the",
-  "owner's object ID (plus optional `itemKey` for a row-attached form). A form of that type matches `save.draftOperation`",
-  "and gives the owner's form read the proposed field values to check. If the owner accepts changed fields, the SDK sets",
-  "`instance.draft` and fills the form once mounted. Watch `instance.draft` to open the target detail view or create",
-  "dialog. It is null while waiting or when the draft changes nothing.",
-  "Use [`draftTarget(draft)`](CODE.md#save-a-form-or-hand-off-a-draft) to get the accepted draft's effective create or update target.",
-  "The reader saves or discards the proposed change in the form.",
+  "Use `v-if` or operation availability/disabled conditions when an entry cannot be used now. Use `v-show` for",
+  "stateful content the reader could still use after switching a tab, expanding a section, or returning to a list.",
   "",
   "## List paging",
   "",
@@ -284,11 +267,11 @@ const contents = [
   "dialog toggles (such as `creating`, `grantDialog`) and active-edit trackers (such as `editingEntryId`) must remain",
   "public state without `deepLink: true`.",
   "",
-  "Each `deepLink: true` field is written as its own flat named query parameter (default/empty values are omitted; JSON is",
-  "never serialized into `?state=` or `?frame=`). Single-type `object` fields use bare `primaryKey` (`?selected=my-app`),",
-  "`object-union` fields use `className~primaryKey`, `list` fields repeat the parameter (`?tag=a&tag=b`), and application",
-  "frame deep-link fields use the `frame.` prefix (`?frame.term=2026-fall`). Use `panelAddress(path, state)` from",
-  `${asCode("@ontomato/sdk/panel")} to build in-app links cleanly.`,
+  "Each `deepLink: true` field has its own flat query parameter. Single-type `object` fields use bare",
+  "`primaryKey` (`?selected=my-app`), `object-union` fields use `className~primaryKey`, and list fields repeat",
+  "the parameter (`?tag=a&tag=b`). An empty list uses `?tag=`. Frame fields use the `frame.` prefix",
+  "(`?frame.term=2026-fall`). Build in-app links with `panelAddress(path, state)` from `@ontomato/sdk/panel`.",
+  `The shell owns ${inline(PANEL_ADDRESS_RESERVED_QUERY_KEYS)}.`,
   `The capability-map type view uses ${asCode(JSON.stringify(graphState))} as state; the address contract encodes it as ${asCode(graphQuery)}.`,
   "",
   "### Graph selection",
@@ -313,8 +296,6 @@ const contents = [
   "| --- | --- |",
   "| Panel state, `@saved` event | `{ className, primaryKey }` |",
   "| URL query parameter (`deepLink: true`) | `primaryKey` (fixed `object`) or `className~primaryKey` (`object-union`) |",
-  "| Assistant `/operate` `call.target` | `{ kind: \"object\", objectType, primaryKey }` |",
-  "| `page-draft.json` / `instance.draft` / `draftTarget` | `{ objectType, id }` (omit `id` for create) |",
   "| `instance.pageContext.value.selection` item | `{ id, label, ... }` |",
   "",
   "## Application icons",

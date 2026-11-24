@@ -2,7 +2,6 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
-import { PAGE_DRAFT_QUERY_KEYS, pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
 import {
   normalizePanelDeepLinkState, normalizeExternalPanelValue, panelChildObjectIdentitySchema,
@@ -207,11 +206,6 @@ export const panelFrameMessageSchema = z.discriminatedUnion("kind", [
   /** The instance's deep-linkable state, which the host keeps in the address. */
   z.object({ kind: z.literal("state"), fromAddress: z.string().min(1).max(4000), state: runtimeJsonObjectSchema }).strict(),
   /**
-   * The reader saved or discarded this linked draft. The host removes only its draft parameters if its current
-   * address still names that artifact; it reflects the resulting address through the normal address message.
-   */
-  z.object({ kind: z.literal("draft-settled"), draft: pageDraftLinkSchema }).strict(),
-  /**
    * The operations this instance offers, as the header and an agent list them. They are the panel's projections' and its
    * own declaration's; the frame runs one when the host asks it to.
    */
@@ -292,13 +286,16 @@ export const PANEL_FRAME_QUERY_PREFIX = "frame.";
  * interpreted as panel state or overwritten when panel state changes.
  */
 export const PANEL_ADDRESS_RESERVED_QUERY_KEYS = [
-  ...PAGE_DRAFT_QUERY_KEYS,
   "standalone",
   "from",
   "navigationContext",
 ] as const;
 
 const RESERVED_QUERY_KEY_SET: ReadonlySet<string> = new Set(PANEL_ADDRESS_RESERVED_QUERY_KEYS);
+
+function isUnnamedQueryKey(key: string): boolean {
+  return key === "" || key === PANEL_FRAME_QUERY_PREFIX;
+}
 
 function isReservedOrFrameKey(key: string): boolean {
   return RESERVED_QUERY_KEY_SET.has(key) || key.startsWith(PANEL_FRAME_QUERY_PREFIX);
@@ -436,11 +433,13 @@ export function parseApplicationPanelAddress(
   const stateBucket: Record<string, string[]> = {};
 
   for (const [key, value] of rawParams.entries()) {
+    // Ignore unnamed query parameters (`?=x` or `?frame.=x`) so legacy/malformed URLs never produce empty state keys.
+    if (isUnnamedQueryKey(key)) continue;
     if (RESERVED_QUERY_KEY_SET.has(key)) {
       query.append(key, value);
       continue;
     }
-    if (key.startsWith(PANEL_FRAME_QUERY_PREFIX) && key.length > PANEL_FRAME_QUERY_PREFIX.length) {
+    if (key.startsWith(PANEL_FRAME_QUERY_PREFIX)) {
       const name = key.slice(PANEL_FRAME_QUERY_PREFIX.length);
       if (options?.frameManifest && !options.frameManifest.state[name]?.deepLink) {
         query.append(key, value);
@@ -466,7 +465,7 @@ export function parseApplicationPanelAddress(
 
 /**
  * Encode frame (`frame.<name>`) and content (`<name>`) deep-link state as flat named query parameters,
- * omitting null/empty/default values and preserving shell query parameters (such as draft links and `standalone`).
+ * omitting null/empty/default values and preserving shell query parameters (such as `standalone`).
  */
 export function applicationPanelAddress(path: string, {
   frame = {}, state = {}, query, frameManifest, stateManifest,
@@ -482,7 +481,7 @@ export function applicationPanelAddress(path: string, {
   const params = new URLSearchParams();
   if (query) {
     for (const [key, value] of query.entries()) {
-      if (key.startsWith(PANEL_FRAME_QUERY_PREFIX)) continue;
+      if (isUnnamedQueryKey(key) || key.startsWith(PANEL_FRAME_QUERY_PREFIX)) continue;
       params.append(key, value);
     }
   }
@@ -544,6 +543,8 @@ export function panelAddress(
   const separator = path.indexOf("?");
   const route = separator < 0 ? path : path.slice(0, separator);
   const params = new URLSearchParams(separator < 0 ? "" : path.slice(separator + 1));
+  params.delete("");
+  params.delete(PANEL_FRAME_QUERY_PREFIX);
   if (manifest) {
     for (const [name, field] of Object.entries(manifest.state)) {
       if (!field.deepLink || isReservedOrFrameKey(name)) continue;
@@ -571,9 +572,26 @@ export function panelAddressState(
   const params = new URL(address, "http://page.invalid").searchParams;
   const bucket: Record<string, string[]> = {};
   for (const [key, value] of params.entries()) {
-    if (isReservedOrFrameKey(key)) continue;
+    if (isUnnamedQueryKey(key) || isReservedOrFrameKey(key)) continue;
     if (manifest && !manifest.state[key]?.deepLink) continue;
     (bucket[key] ??= []).push(value);
   }
   return collapseBucket(bucket, manifest);
+}
+
+/** The complete deep-link state restored by an address, including defaults for omitted fields. */
+export function restoredPanelAddressState(
+  address: string,
+  manifest: Pick<PanelManifest, "state">,
+): Record<string, PanelDeepLinkStateValue> {
+  const decoded = panelAddressState(address, manifest);
+  return Object.fromEntries(Object.entries(manifest.state)
+    .filter(([, field]) => field.deepLink)
+    .map(([name, field]) => [name, Object.hasOwn(decoded, name) ? decoded[name]! : field.default ?? null]));
+}
+
+/** A live patch on a bare address for the same page preserves its current deep-link state. */
+export function presentationAppliesAddress(current: string, next: string, hasStatePatch: boolean): boolean {
+  return !hasStatePatch || next.includes("?") || next.includes("#")
+    || next.split(/[?#]/, 1)[0] !== current.split(/[?#]/, 1)[0];
 }

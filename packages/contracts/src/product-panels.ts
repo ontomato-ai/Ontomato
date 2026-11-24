@@ -376,6 +376,8 @@ export const panelSkillSourceSchema = panelUseRefSchema.extend({
   panelId: id,
   path: applicationPanelUsePathSchema,
   entrance: pageSkillEntranceSchema,
+  names: z.record(z.string(), z.string()).optional(),
+  applicationNames: z.record(z.string(), z.string()).optional(),
 });
 export type PanelSkillSource = z.infer<typeof panelSkillSourceSchema>;
 export const panelSkillSourcesResponseSchema = z.array(panelSkillSourceSchema);

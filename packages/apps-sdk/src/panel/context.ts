@@ -5,7 +5,7 @@ import type { ApplicationEntryMenu, CurrentApplicationEntry, PanelDefinitionCont
 import type { PanelInstance } from "./instance";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
-import type { PanelFormAdapter, PanelFormHandle, ReceivedPanelDraft } from "./draft";
+import type { PanelFormAdapter, PanelFormHandle } from "./forms";
 import {
   adapterPart,
   platformObjectAdapter,
@@ -28,7 +28,7 @@ export type { PanelBackHandlerRegistration };
  * The panel context the SDK provides to a panel's own module (overall design 3.3, 3.4): the panel's declaration, the
  * instance it is being shown as, and the platform ports the SDK itself uses. A panel author writes the declaration and
  * places its projections; none of what happens here is written per panel — the SDK reads a projection, draws it,
- * registers its ports, dispatches the draft the address names, reports the page context and runs the operations.
+ * registers its ports, reports the page context and runs the operations.
  */
 
 /** The panel context, provided by the host that mounted the panel. */
@@ -46,7 +46,7 @@ export interface ProjectionSlot {
 
 /**
  * What a panel's module gets while it is mounted. Everything here is one instance: the same panel open twice keeps two
- * states, two draft slots and two sets of registered projections.
+ * states and two sets of registered projections.
  */
 export interface PanelContext {
   /**
@@ -72,11 +72,9 @@ export interface PanelContext {
   invoke(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
   /** Hears that a projection's definition changed, by ID; the returned function stops it. */
   projectionsChanged(listener: (projectionId: string, revision?: number) => void): () => void;
-  /** The draft this instance received from its address, once it arrived. */
-  readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
   /**
    * Tells the host whether this instance holds unsaved changes, so a changed definition never replaces the reader's
-   * form. The SDK calls it for a received draft; a form component calls it for its own edits.
+   * form. A form component calls it for its own edits.
    */
   holdUnsaved(flag: Ref<boolean>): () => void;
   /**

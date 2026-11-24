@@ -21,28 +21,65 @@
 
     <template #dropdown>
       <el-dropdown-menu>
+        <li v-if="boardLocked && lockReason" class="preview-lock-hint" role="note">
+          {{ lockReason }}
+        </li>
         <!-- Shown only in the dimension menu -->
         <template v-if="scene === 'dimension'">
-          <el-dropdown-item command="create_above">
+          <el-dropdown-item
+            command="create_above"
+            :disabled="boardLocked"
+            :title="boardLocked ? lockReason : undefined"
+          >
             {{ t("dashboard.createDimensionAbove") }}
           </el-dropdown-item>
-          <el-dropdown-item command="create_below">
+          <el-dropdown-item
+            command="create_below"
+            :disabled="boardLocked"
+            :title="boardLocked ? lockReason : undefined"
+          >
             {{ t("dashboard.createDimensionBelow") }}
           </el-dropdown-item>
-          <el-dropdown-item command="rename" divided>{{ t("common.rename") }}</el-dropdown-item>
-          <el-dropdown-item command="delete">{{ t("common.delete") }}</el-dropdown-item>
+          <el-dropdown-item
+            command="rename"
+            divided
+            :disabled="boardLocked"
+            :title="boardLocked ? lockReason : undefined"
+          >
+            {{ t("common.rename") }}
+          </el-dropdown-item>
+          <el-dropdown-item
+            command="delete"
+            :disabled="boardLocked"
+            :title="boardLocked ? lockReason : undefined"
+          >
+            {{ t("common.delete") }}
+          </el-dropdown-item>
         </template>
 
         <!-- Default chart/metric menu (no create-dimension entry) -->
         <template v-else>
-          <el-dropdown-item command="rename">{{ t("common.rename") }}</el-dropdown-item>
+          <el-dropdown-item
+            command="rename"
+            :disabled="boardLocked"
+            :title="boardLocked ? lockReason : undefined"
+          >
+            {{ t("common.rename") }}
+          </el-dropdown-item>
           <el-dropdown-item v-if="scene === 'metric'" command="parameters">
             {{ t("dashboard.editParameters") }}
           </el-dropdown-item>
           <el-dropdown-item v-if="scene === 'metric'" command="view-query">
             {{ t("dashboard.viewMetric") }}
           </el-dropdown-item>
-          <el-dropdown-item command="delete" divided>{{ t("common.delete") }}</el-dropdown-item>
+          <el-dropdown-item
+            command="delete"
+            divided
+            :disabled="boardLocked"
+            :title="boardLocked ? lockReason : undefined"
+          >
+            {{ t("common.delete") }}
+          </el-dropdown-item>
         </template>
       </el-dropdown-menu>
     </template>
@@ -68,6 +105,8 @@ defineProps({
   iconColor: { type: String, default: "" },
   iconSize: { type: [Number, String], default: undefined },
   scene: { type: String, default: "" }, // 'dimension' | 'metric' | ''(default: chart)
+  boardLocked: { type: Boolean, default: false },
+  lockReason: { type: String, default: "" },
 });
 
 const emit = defineEmits(["command", "visible-change"]);
@@ -81,3 +120,15 @@ function onVisibleChange(v) {
   emit("visible-change", v);
 }
 </script>
+
+<style scoped>
+.preview-lock-hint {
+  max-width: 240px;
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  list-style: none;
+}
+</style>

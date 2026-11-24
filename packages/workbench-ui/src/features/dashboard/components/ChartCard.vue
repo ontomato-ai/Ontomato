@@ -2,7 +2,7 @@
   <div
     ref="rootRef"
     class="chart-container"
-    :class="{ 'chart-container--draft': draft, 'chart-container--selected': selected }"
+    :class="{ 'chart-container--selected': selected }"
     tabindex="0"
     role="group"
     :aria-labelledby="titleId"
@@ -12,7 +12,7 @@
   >
     <div class="chart-header">
       <div class="chart-heading">
-        <h3 :id="titleId" :title="shownTitle">{{ shownTitle }}</h3>
+        <h3 :id="titleId" :title="title">{{ title }}</h3>
         <span
           v-if="partialNotice && state !== 'empty'"
           class="chart-partial"
@@ -24,24 +24,13 @@
         </span>
         <ChartToolbar
           :data-open="dataOpen"
+          :board-locked="boardLocked"
+          :lock-reason="lockReason"
           @edit-parameters="emit('edit-parameters', props.chart)"
           @open-zoom="openZoom"
           @toggle-data="toggleData"
           @command="handleCommand"
         />
-      </div>
-      <!-- A draft's marks sit under the name it gives, so a narrow card still shows that name and the chart's change. -->
-      <div v-if="renamed || chartChanged" class="chart-draft-marks">
-        <del v-if="renamed" class="chart-original-name" :title="title">{{ title }}</del>
-        <span
-          v-if="chartChanged"
-          class="chart-draft-badge"
-          role="note"
-          :title="t('dashboard.draft.chartChanged')"
-          :aria-label="t('dashboard.draft.chartChanged')"
-        >
-          {{ t("dashboard.draft.chartChanged") }}
-        </span>
       </div>
     </div>
     <div
@@ -52,8 +41,8 @@
       <div class="chart-wrapper__canvas">
         <MetricChart
           v-if="state === 'ready'"
-          :key="drawnFile.name"
-          :file="drawnFile.content"
+          :key="chart.chartFile.name"
+          :file="chart.chartFile.content"
           :metric="output"
           height="100%"
           :empty="t('common.noData')"
@@ -77,19 +66,24 @@
     <ChartZoomModal
       :open="modalOpen"
       :mode="modalMode"
-      :title="shownTitle"
-      :file="drawnFile.content"
+      :title="title"
+      :file="chart.chartFile.content"
       :metric="output"
       :table="table"
       @close="closeZoom"
     />
     <!-- Bottom-right resize handle -->
-    <span class="resize-handle" :title="t('dashboard.dragToResize')" />
+    <span
+      class="resize-handle"
+      :class="{ 'is-disabled': boardLocked }"
+      :aria-disabled="boardLocked ? 'true' : undefined"
+      :title="boardLocked ? lockReason : t('dashboard.dragToResize')"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, useId } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import interact from "interactjs";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { TriangleAlert } from "lucide-vue-next";
@@ -110,24 +104,20 @@ const { t } = useI18n();
 
 /**
  * One chart card: the platform's chart draws the card's own `.chart.json` file filled from the metric's current output.
- * A draft may name another file or another name for the same card; it draws that file over this output and touches
- * nothing the card has saved.
  */
 const props = defineProps({
   chart: { type: Object, required: true },
   dashboardId: { type: String, default: "" },
-  /** A draft's chart file for this card, drawn over the saved one. */
-  previewFile: { type: Object, default: null },
-  /** A draft's name for this card. */
-  previewName: { type: String, default: "" },
-  /** Whether the card is shown as a draft: it says so, and does not save its layout while it is one. */
-  draft: { type: Boolean, default: false },
   /** Whether this card is the one the reader chose: a message sent from beside the page asks about it. */
   selected: { type: Boolean, default: false },
+  boardLocked: { type: Boolean, default: false },
+  lockReason: { type: String, default: "" },
+  renameCancelSeq: { type: Number, default: 0 },
 });
 const emit = defineEmits([
   "chart-renamed",
   "chart-deleted",
+  "rename-state",
   "view-metric",
   "edit-parameters",
   "layout-change",
@@ -140,11 +130,6 @@ const titleId = useId();
 let interactable = null;
 const loading = computed(() => props.chart.state === "loading");
 const title = computed(() => String(props.chart?.title || props.chart?.name || ""));
-const renamed = computed(() => Boolean(props.previewName) && props.previewName !== title.value);
-const shownTitle = computed(() => (props.previewName ? props.previewName : title.value));
-const chartChanged = computed(() => Boolean(props.previewFile));
-/** The file this card draws: the draft's when it names one, otherwise the card's saved file. */
-const drawnFile = computed(() => (props.previewFile ? props.previewFile : props.chart.chartFile));
 /** This refresh's output for the card; the platform's chart fills it into the file. */
 const output = computed(() => ({
   columns: props.chart.columns ?? [],
@@ -158,7 +143,7 @@ const TABLE_ROWS = 500;
 /** The data table and the zoomed table read this refresh's rows, written in the formats the card's file states. */
 const table = computed(() => {
   const data = { columns: output.value.columns, rows: output.value.rows, truncation: props.chart.truncation ?? null };
-  const table = chartCardTable(drawnFile.value.content, data);
+  const table = chartCardTable(props.chart.chartFile.content, data);
   return { columns: table.columns, rows: table.rows.slice(0, TABLE_ROWS) };
 });
 
@@ -176,7 +161,7 @@ function handleViewQuery() {
 
 /** The reader asked for this card: one card is chosen at a time, and choosing it again keeps it chosen. */
 function select() {
-  emit("select", { id: props.chart.id, name: shownTitle.value, kind: "chart" });
+  emit("select", { id: props.chart.id, name: title.value, kind: "chart" });
 }
 
 /** A tool or the resize handle acts on the card; choosing it is the reader pointing at the card itself. */
@@ -187,10 +172,13 @@ function selectUnlessControl(event) {
 }
 
 async function handleCommand(cmd) {
+  if (props.boardLocked && (cmd === "rename" || cmd === "delete")) return;
   const dashboardId = String(props.dashboardId || "").trim();
   const chartId = String(props.chart?.id || "").trim();
 
   if (cmd === "rename") {
+    const startCancelSeq = props.renameCancelSeq;
+    emit("rename-state", { chartId, active: true });
     try {
       const ret = await ElMessageBox.prompt(
         t("analysis.enterChartName"),
@@ -201,6 +189,7 @@ async function handleCommand(cmd) {
           inputValue: title.value,
         }
       );
+      if (props.renameCancelSeq !== startCancelSeq) return;
       const nextName = String(ret?.value || "").trim();
       if (!nextName || nextName === title.value) return;
       const ok = await modifyResultSetName(dashboardId, chartId, nextName);
@@ -208,8 +197,10 @@ async function handleCommand(cmd) {
       emit("chart-renamed", { chartId, title: nextName });
       ElMessage.success(t("common.renamed"));
     } catch (e) {
-      if (e === "cancel") return;
+      if (e === "cancel" || e === "close") return;
       ElMessage.error(e instanceof Error ? e.message : t("common.renameFailed"));
+    } finally {
+      emit("rename-state", { chartId, active: false });
     }
     return;
   }
@@ -263,13 +254,16 @@ function setupResize() {
   if (!el) return;
 
   interactable = interact(el).resizable({
+    enabled: !props.boardLocked,
     allowFrom: ".resize-handle",
     edges: { right: true, bottom: true, left: false, top: false },
     listeners: {
       start() {
+        if (props.boardLocked) return;
         emit("resize-active", true);
       },
       move(event) {
+        if (props.boardLocked) return;
         const target = event.target;
         const gridEl = target.closest(".charts-section");
         const { colCount, colWidth, gap } = parseGridColumns(gridEl);
@@ -301,6 +295,13 @@ function setupResize() {
 
 onMounted(setupResize);
 
+watch(
+  () => props.boardLocked,
+  (locked) => {
+    interactable?.resizable?.({ enabled: !locked });
+  },
+);
+
 onBeforeUnmount(() => {
   if (interactable) {
     interactable.unset();
@@ -328,11 +329,6 @@ onBeforeUnmount(() => {
 
 .chart-container:hover {
   border-color: var(--el-border-color-dark);
-}
-
-.chart-container--draft {
-  border-color: var(--el-color-primary);
-  border-style: dashed;
 }
 
 .chart-container--selected {
@@ -363,36 +359,6 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
-}
-
-/*
- * A draft's marks, under its name: the name it replaces, struck out and shortened when the card is narrow, then the
- * chart's own change, which is always whole.
- */
-.chart-draft-marks {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-}
-
-.chart-original-name {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--el-text-color-tertiary);
-  font-size: var(--text-xs);
-  text-decoration: line-through;
-}
-
-.chart-draft-badge {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-  font-size: var(--text-xs);
 }
 
 .chart-wrapper {

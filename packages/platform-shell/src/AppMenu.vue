@@ -6,7 +6,7 @@ import type { AppMenuGroup, AppMenuIcon, AppMenuItem, PlatformPanelGroup, Platfo
 /**
  * Reusable application navigation menu column used both by the platform shell layout and by application frame panels.
  * Draws the application heading, a responsive compact selector on narrow screens, grouped navigation rows with icons,
- * optional directory counts, strictly single-item active highlight, and an optional pinned footer entry.
+ * optional trailing content, strictly single-item active highlight, and an optional pinned footer entry.
  */
 const props = withDefaults(
   defineProps<{
@@ -14,8 +14,8 @@ const props = withDefaults(
     title?: string;
     /** Grouped navigation items in display order. */
     groups?: readonly AppMenuGroup[];
-    /** Optional map of `item.id -> count` overlaid onto matching items; finite numbers override item counts. */
-    counts?: Readonly<Record<string, number | null | undefined>>;
+    /** Optional map of `item.id -> trailing text` appended after the option label in the compact mobile selector. */
+    itemTrailingText?: Readonly<Record<string, string | null | undefined>>;
     /** Optional map of `item.id -> icon` overlaid onto matching items (falls back to `item.icon`). */
     icons?: Readonly<Record<string, AppMenuIcon>>;
     /** Optional single footer entry rendered under a hairline at the bottom of the column. */
@@ -28,7 +28,7 @@ const props = withDefaults(
   {
     title: "",
     groups: () => [],
-    counts: undefined,
+    itemTrailingText: undefined,
     icons: undefined,
     foot: null,
     activeId: null,
@@ -41,22 +41,42 @@ const emit = defineEmits<{
   select: [id: string];
 }>();
 
-function resolveCount(item: AppMenuItem): number | null {
-  if (props.counts && Object.hasOwn(props.counts, item.id)) {
-    const mapped = props.counts[item.id];
-    if (typeof mapped === "number" && Number.isFinite(mapped)) return mapped;
-  }
-  return typeof item.count === "number" && Number.isFinite(item.count) ? item.count : null;
+defineSlots<{
+  /** Optional trailing content rendered at the end of each navigation row. */
+  "item-trailing"?: (props: { item: AppMenuItem }) => unknown;
+}>();
+
+function optionLabel(page: PlatformPanelPage): string {
+  const trailing = props.itemTrailingText?.[page.id]?.trim();
+  return trailing ? `${page.label} ${trailing}` : page.label;
+}
+
+function nativePageCount(item: AppMenuItem): number | null | undefined {
+  // Shell-internal bridge strictly for unconverted native pages supplied by hostMenu (PlatformPanelPage.count);
+  // removed together with host-built menus once those pages migrate to panels + ObjectCount. Do not add new callers.
+  if (!("count" in item)) return undefined;
+  const value = (item as PlatformPanelPage).count;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function toPanelPage(item: AppMenuItem): PlatformPanelPage {
   const icon = props.icons && Object.hasOwn(props.icons, item.id) ? props.icons[item.id] : item.icon;
+  const count = nativePageCount(item);
   return {
     id: item.id,
     label: item.label,
     ...(icon !== undefined ? { icon } : {}),
-    count: resolveCount(item),
+    ...(count !== undefined ? { count } : {}),
     ...(item.unavailableHint ? { unavailableHint: item.unavailableHint } : {}),
+  };
+}
+
+function toMenuItem(page: PlatformPanelPage): AppMenuItem {
+  return {
+    id: page.id,
+    label: page.label,
+    ...(page.icon !== undefined ? { icon: page.icon } : {}),
+    ...(page.unavailableHint ? { unavailableHint: page.unavailableHint } : {}),
   };
 }
 
@@ -107,10 +127,12 @@ const matchedActiveId = computed<string | null>(() => {
     >
       <optgroup v-for="group in panelGroups" :key="group.key" :label="group.label || title || ariaLabel">
         <option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">
-          {{ page.count !== null && page.count !== undefined ? `${page.label} (${page.count})` : page.label }}
+          {{ optionLabel(page) }}
         </option>
       </optgroup>
-      <option v-if="panelFoot" :value="panelFoot.id">{{ panelFoot.label }}</option>
+      <option v-if="panelFoot" :value="panelFoot.id" :disabled="!!panelFoot.unavailableHint">
+        {{ optionLabel(panelFoot) }}
+      </option>
     </select>
     <AppPanelPages
       class="app-menu-pages"
@@ -118,7 +140,11 @@ const matchedActiveId = computed<string | null>(() => {
       :foot="panelFoot"
       :active-page-id="matchedActiveId"
       @select-page="emit('select', $event)"
-    />
+    >
+      <template v-if="$slots['item-trailing']" #item-trailing="slotProps">
+        <slot name="item-trailing" :item="toMenuItem(slotProps.item)" />
+      </template>
+    </AppPanelPages>
   </aside>
 </template>
 

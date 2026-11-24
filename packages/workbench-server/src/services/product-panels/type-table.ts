@@ -89,7 +89,7 @@ function operationTargetCheck(loadActions?: () => ReturnType<ReturnType<typeof c
           ? `operation '${name}' takes a target of type '${type}'`
           : `operation '${name}' takes no target`;
       const hasDraftSlot = Boolean(wiring?.operationDrafts?.[name]?.slot);
-      if (!target && platform?.handler.kind === "form.save" && !allowsOperationDraft(projection, platform.handler) && !(platform.handler.create && hasDraftSlot))
+      if (!target && platform?.handler.kind === "form.save" && !allowsOperationDraft(projection, platform.handler) && !(platform.handler.create === true && hasDraftSlot))
         return `operation '${name}' needs an edit target or the owner's create form`;
       if (wiring && target && "input" in target && !Object.hasOwn(wiring.inputs ?? {}, target.input))
         return `operation '${name}' expects input '${target.input}', but it is not connected`;

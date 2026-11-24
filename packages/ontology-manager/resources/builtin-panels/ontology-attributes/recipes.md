@@ -10,26 +10,21 @@
 - 选中的属性是页面状态 `selected`（扁平参数 `?selected=<属性主键>`），选中后进入属性详情编辑视图。要看它的当前字段，读 `detail` 成员的 `record`；要看某一类的全部属性，读 `attributes` 成员的 `rows`，`className` 参数填类名。
 - 回答时说清：筛选的是哪个类（或全部）、搜索词、选中的是哪条属性（显示名和 `类名.属性名`），以及它的数据类型、是否启用、是否业务键、是否主键。
 
-## 起草修改
+## 填写修改
 
 1. 先读选中属性的属主表单：`form` 成员的 `form`。可改的只有显示名 `showName`、说明 `attrDesc`、启用 `enable`、业务键
    `businessKey`；所属对象类型、属性名、数据类型只读，主键不在表单里改。
-2. 草稿的 `operation` 用表单 `save.draftOperation`（修改是 `attribute.update`），`form` 只放要改的字段。草稿怎么写（草稿信封、链接参数）
-   见本页生成的技能。
-3. 链接要带上这条属性的选中参数（`?selected=<属性主键>`），读者打开时编辑表单才对准它；草稿链接怎么拼、产物放哪，
-   见本页生成的技能。草稿不写入，读者在页面上保存才写入。
+2. 用 `present` 将页面定位到这条属性（`selected: { className: "platform:Attribute", primaryKey: "<属性主键>" }`、`creating: false`），再用 `fill_form` 直接填入需要修改的字段；需要保存时再调用 `page_action({ operation: "form.save" })`（默认经读者确认后提交）。
 
-## 起草新建
+## 填写新建
 
 1. 读 `form` 成员的 `createForm`，数据类型的选项以属主表单给的为准。
-2. 草稿 `operation` 是 `attribute.create`，`form` 填 `className`、`name`、`type`、`showName`，按需填
-   `attrDesc`、`enable`、`businessKey`、`primaryKey`。
-3. 所属对象类型由草稿里的 `className` 决定。链接带上 `?className=<类名>`，让列表停在那个类，不要带 `selected`；
-   草稿链接怎么拼见本页生成的技能。属性名格式、重名由属主在读者保存时判定，原因显示在字段旁；读者保存后页面选中新属性并打开详情。
+2. 用 `present` 打开新建弹窗（`creating: true`、`selected: null`，按需设置 `createIn`），再用 `fill_form` 填 `className`、`name`、`type`、`showName`，按需填
+   `attrDesc`、`enable`、`businessKey`、`primaryKey`；需要保存时调用 `page_action({ operation: "form.save" })`。属性名格式、重名由属主在保存时判定，原因显示在字段旁；保存后页面选中新属性并打开详情。
 
 ## 设主键、删除
 
 - 设主键用 `setPrimaryKey` 成员的操作，删除用 `remove` 成员的操作，目标是那条属性
   （`{"kind":"object","objectType":"platform:Attribute","primaryKey":"<主键>"}`）。这两个都要读者在对话里确认后才执行。
-- 已经是主键的属性不要再设主键；设主键后原来的主键属性不再是主键，确认前告诉读者是哪一条。
+- 已经是主键的属性，「设为主键」（`setPrimaryKey`）操作处于禁用/不可用状态，不要再设主键；对非主键属性设主键后，原来的主键属性不再是主键，确认前告诉读者是哪一条。
 - 主键属性、被关系用作关联字段的属性，属主会拒绝删除：把属主给的原因原样转告读者，不要换别的办法绕过去。

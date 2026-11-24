@@ -1,5 +1,4 @@
-import { computed, createApp, h, nextTick, provide, ref, shallowReactive, watch, type Component, type Ref } from "vue";
-import { useI18n } from "vue-i18n";
+import { computed, createApp, h, nextTick, provide, ref, shallowReactive, type Component, type Ref } from "vue";
 import { contextExpandPageComposer, contextTranslate, contextTransport, panelBridgeHost, type AppContext } from "../context";
 import { connectPanelContext } from "./app-context";
 import { defaultLocale } from "apps-sdk:panel-appearance";
@@ -14,14 +13,13 @@ import {
   type PanelFrameMessage,
   type PanelHostMessage,
 } from "@ontomato/contracts/panel-host";
-import type { PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { panelContextKey, type PanelContext, type ProjectionSlot } from "./context";
 import { applyPanelRequest, createPanelInstance } from "./instance";
 import PanelProjection from "./Projection.vue";
 import { runPanel } from "./lifecycle";
-import { readPageDraft, readProjectionRecord, recordDraftCreated, readPanelData } from "./platform-requests";
+import { readProjectionRecord, readPanelData } from "./platform-requests";
 import { baseComponents } from "../base-components";
 import { prepareTemplateComponents } from "./template-components";
 import { platformResourceLoader } from "./platform-objects";
@@ -93,8 +91,6 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     label: () => message.label,
     initial: message.state,
     translate: contextTranslate(appContext),
-    reportDraftError: failed,
-    recordDraftCreated: (link, id) => recordDraftCreated(transport, link, id),
     readProjection: readProjectionCached,
   });
   const unsaved = shallowReactive(new Set<Ref<boolean>>());
@@ -109,7 +105,6 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       projectionListeners.add(listener);
       return () => projectionListeners.delete(listener);
     },
-    draft: instance.draft,
     holdUnsaved(flag) {
       unsaved.add(flag);
       return () => unsaved.delete(flag);
@@ -130,13 +125,6 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   const app = createApp({
     setup: () => {
       provide(panelContextKey, context);
-      // A draft that none of this panel's forms performs is not this panel's: once every slot has registered and none
-      // takes it, the frame fails with that, where the panel would have been, rather than waiting for a form that will
-      // never come.
-      const { t } = useI18n();
-      watch(instance.unclaimedDraft, (unclaimed) => {
-        if (unclaimed !== null) failed(t("platform.panelDraftUnclaimed", { ...unclaimed }));
-      });
       return () => h(panelComponent);
     },
   });
@@ -156,10 +144,8 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     host.postMessage({ channel: PANEL_HOST_CHANNEL, ...panelFrameMessageSchema.parse(value) }, "*");
   const run = runPanel({
     instance,
-    pageKey: message.pageKey,
     address,
     isDirty: () => instance.dirty() || [...unsaved].some((flag) => flag.value),
-    readPageDraft: (sessionId, runId, path) => readPageDraft(transport, sessionId, runId, path),
     projectionChanged: (id, revision) => {
       projectionPromises.delete(id);
       projectionListeners.forEach((listener) => listener(id, revision));
@@ -173,12 +159,6 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
       context: (context) => send({ kind: "context", context }),
       dirty: (dirty) => send({ kind: "dirty", dirty }),
       operations: (operations) => send({ kind: "operations", operations }),
-      // A draft the reader saved or discarded: the host takes its link out of the address, if the address still names it.
-      draftSettled: (draft) => send({ kind: "draft-settled", draft }),
-      // A panel in a frame has no way to tell its host of a refused draft beside the panel; it fails as it did.
-      draftRefused: (refusal) => failed(refusal),
-      // A frame's host shows its page as it runs: nothing waits for the draft there.
-      draftOpened: () => {},
       failed,
     },
   });
@@ -201,7 +181,6 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
         send({ kind: "invoked", requestId, error: reason instanceof Error ? reason.message : String(reason) }),
     );
   });
-  await run.start();
   return { context, appContext };
 }
 
@@ -218,4 +197,4 @@ function hostMessage(): PanelHostMessage {
   return panelHostMessageSchema.parse(JSON.parse(element.textContent ?? ""));
 }
 
-export { applyPanelRequest, type PageDraft, type PanelDefinitionContent, type PanelStateValue, type ProjectionSlot };
+export { applyPanelRequest, type PanelDefinitionContent, type PanelStateValue, type ProjectionSlot };

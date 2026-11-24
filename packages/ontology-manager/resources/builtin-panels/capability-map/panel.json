@@ -54,6 +54,13 @@
         },
         "deepLink": true
       },
+      "selectedTypeRef": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:OntologyType"
+        },
+        "deepLink": false
+      },
       "query": {
         "type": {
           "kind": "scalar",
@@ -68,6 +75,71 @@
             "kind": "object",
             "objectType": "platform:OntologyRelationKind"
           }
+        },
+        "deepLink": false
+      },
+      "visibleLayers": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        },
+        "deepLink": false
+      },
+      "expandedNodes": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "object-union",
+            "layers": [
+              "fact",
+              "capability",
+              "governance",
+              "product"
+            ],
+            "objectTypes": [
+              "platform:OntologyType"
+            ]
+          }
+        },
+        "deepLink": false
+      },
+      "pickingStart": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false,
+        "default": false
+      },
+      "showUserPicker": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false,
+        "default": false
+      },
+      "typeObjectsSearch": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false
+      },
+      "userPickerSearch": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false
+      },
+      "relationKindsSearch": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
         },
         "deepLink": false
       }
@@ -90,7 +162,9 @@
           "selected": "selected",
           "selectedType": "selectedType",
           "query": "query",
-          "visibleRelationKinds": "relationKinds"
+          "visibleRelationKinds": "relationKinds",
+          "visibleLayers": "visibleLayers",
+          "expandedNodes": "expandedNodes"
         },
         "config": {
           "showLayerFilter": true,
@@ -99,19 +173,310 @@
         },
         "id": "builtin-product-d3cca6a3-6036-49d1-acd5-1c7a82ddb486"
       },
-      "classes": {
-        "component": "PanelData",
-        "name": "Platform ontology catalogue",
-        "description": "Declared four-layer platform types, relation kinds and per-type readable counts.",
+      "typeList": {
+        "component": "ObjectList",
+        "name": "Four-layer ontology types",
+        "description": "Declared four-layer platform ontology types grouped by layer with distinct readable, refused, failed, and unavailable counts.",
         "type": "platform:OntologyType",
         "data": {
-          "schema": "schema",
-          "counts": "counts"
+          "rows": "list"
         },
-        "id": "builtin-product-6bd89039-b492-422a-9b3c-ac893b5466c5"
+        "state": {
+          "selected": "selectedTypeRef",
+          "search": "query"
+        },
+        "config": {
+          "layout": "table",
+          "groupBy": "layer",
+          "searchable": false,
+          "showFooter": false,
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "cm.typeColName",
+              "subtitleKey": "typeId"
+            },
+            {
+              "key": "countDisplay",
+              "labelKey": "cm.readableCount",
+              "kind": "tag",
+              "width": "132px"
+            },
+            {
+              "key": "countReason",
+              "labelKey": "cm.countReason",
+              "emptyKey": "cm.noneDash",
+              "wrap": true
+            }
+          ]
+        },
+        "id": "builtin-product-56cbecff-78f6-4fa2-b077-29888fac5dbd"
+      },
+      "typePicker": {
+        "component": "ReferencePicker",
+        "name": "Ontology type selector",
+        "description": "Filterable selector of declared platform ontology types to pick a starting object.",
+        "type": "platform:OntologyType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "selectedTypeRef"
+        },
+        "config": {
+          "placeholderKey": "cm.chooseType",
+          "clearable": true,
+          "size": "small",
+          "groupBy": "layer"
+        },
+        "id": "builtin-product-ca2a3147-cba6-47aa-8413-bc9d2814856b"
+      },
+      "typeHeader": {
+        "component": "ObjectHeader",
+        "name": "Selected ontology type header",
+        "description": "Header for the selected platform ontology type showing its display name, type identifier, readable count status, and instance directory outputs.",
+        "type": "platform:OntologyType",
+        "target": "selectedTypeRef",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitleField": "typeId",
+          "statusField": "countDisplay"
+        },
+        "id": "builtin-product-9c03a80f-29e2-4f92-b047-bce5b3020168"
+      },
+      "typeSummary": {
+        "component": "ObjectSummary",
+        "name": "Selected ontology type summary",
+        "description": "Read-only summary of the selected platform ontology type including its layer, readable count status, definition, and creation/use rules.",
+        "type": "platform:OntologyType",
+        "target": "selectedTypeRef",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "layer",
+            "countDisplay",
+            "countReason",
+            "definition",
+            "rules"
+          ]
+        },
+        "id": "builtin-product-f56f55ca-ea77-4f0e-8f2d-50e79cc3491b"
+      },
+      "typeProperties": {
+        "component": "ObjectList",
+        "name": "Ontology type public properties",
+        "description": "Declared public properties of the selected platform ontology type.",
+        "type": "platform:OntologyType",
+        "data": {
+          "rows": {
+            "read": "properties",
+            "params": {
+              "type": {
+                "state": "selectedType"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "showFooter": false,
+          "emptyText": "cm.noProperties",
+          "columns": [
+            {
+              "key": "name",
+              "labelKey": "cm.propertyName",
+              "width": "116px"
+            },
+            {
+              "key": "type",
+              "labelKey": "cm.propertyType",
+              "width": "88px"
+            },
+            {
+              "key": "optional",
+              "labelKey": "cm.propertyOptional",
+              "kind": "tag",
+              "width": "76px",
+              "valueMap": {
+                "true": {
+                  "labelKey": "cm.optionalYes",
+                  "tone": "info"
+                },
+                "false": {
+                  "labelKey": "cm.optionalNo",
+                  "tone": "warning"
+                }
+              }
+            },
+            {
+              "key": "description",
+              "labelKey": "cm.propertyDescription",
+              "wrap": true
+            }
+          ]
+        },
+        "id": "builtin-product-c9d2df19-2e69-4fd0-a89a-9f4deacb536d"
+      },
+      "typeRelations": {
+        "component": "ObjectList",
+        "name": "Ontology type relations",
+        "description": "Declared incoming and outgoing relation kinds of the selected platform ontology type.",
+        "type": "platform:OntologyType",
+        "data": {
+          "rows": {
+            "read": "typeRelations",
+            "params": {
+              "type": {
+                "state": "selectedType"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "showFooter": false,
+          "emptyText": "cm.noRelations",
+          "columns": [
+            {
+              "key": "direction",
+              "labelKey": "cm.relationColDirection",
+              "kind": "tag",
+              "width": "76px",
+              "valueMap": {
+                "outgoing": {
+                  "labelKey": "cm.outgoing",
+                  "tone": "info"
+                },
+                "incoming": {
+                  "labelKey": "cm.incoming",
+                  "tone": "default"
+                }
+              }
+            },
+            {
+              "key": "label",
+              "labelKey": "cm.relationColName",
+              "subtitleKey": "relationKind"
+            },
+            {
+              "key": "peerLabel",
+              "labelKey": "cm.relationColPeer",
+              "subtitleKey": "peer"
+            },
+            {
+              "key": "derived",
+              "labelKey": "cm.relationColSource",
+              "kind": "tag",
+              "width": "76px",
+              "valueMap": {
+                "true": {
+                  "labelKey": "cm.derived",
+                  "tone": "info"
+                },
+                "false": {
+                  "labelKey": "cm.stored",
+                  "tone": "success"
+                }
+              }
+            }
+          ]
+        },
+        "id": "builtin-product-2b2b51d3-fda1-4e2f-abea-a457055bae69"
+      },
+      "typeReads": {
+        "component": "ObjectList",
+        "name": "Ontology type named reads",
+        "description": "Registered named reads of the selected platform ontology type.",
+        "type": "platform:OntologyType",
+        "data": {
+          "rows": {
+            "read": "reads",
+            "params": {
+              "type": {
+                "state": "selectedType"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "showFooter": false,
+          "emptyText": "cm.noReads",
+          "columns": [
+            {
+              "key": "name",
+              "labelKey": "cm.readColName",
+              "width": "110px"
+            },
+            {
+              "key": "parameters",
+              "labelKey": "cm.readParameters",
+              "kind": "tags",
+              "emptyKey": "cm.noneDash"
+            },
+            {
+              "key": "result",
+              "labelKey": "cm.readResult",
+              "wrap": true
+            }
+          ]
+        },
+        "id": "builtin-product-7deda7f7-4ac2-4fc2-ac09-fe8b938d6a94"
+      },
+      "typeOperations": {
+        "component": "ObjectList",
+        "name": "Ontology type operations",
+        "description": "Registered operations of the selected platform ontology type.",
+        "type": "platform:OntologyType",
+        "data": {
+          "rows": {
+            "read": "operations",
+            "params": {
+              "type": {
+                "state": "selectedType"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "showFooter": false,
+          "emptyText": "cm.noOperations",
+          "columns": [
+            {
+              "key": "id",
+              "labelKey": "cm.operationColId",
+              "wrap": true
+            },
+            {
+              "key": "kind",
+              "labelKey": "cm.operationKind",
+              "kind": "tag",
+              "width": "84px"
+            },
+            {
+              "key": "effect",
+              "labelKey": "cm.operationEffect",
+              "kind": "tag",
+              "width": "80px"
+            },
+            {
+              "key": "inputs",
+              "labelKey": "cm.operationInputs",
+              "kind": "tags",
+              "emptyKey": "cm.noneDash"
+            }
+          ]
+        },
+        "id": "builtin-product-42c461fc-430d-4cd7-a65b-e22f68cb46c2"
       },
       "relations": {
-        "component": "PanelData",
+        "component": "ObjectRelations",
         "name": "Selected node relations",
         "description": "One-hop incoming and outgoing relations of the selected platform ontology node.",
         "type": "platform:OntologyType",
@@ -125,7 +490,40 @@
             }
           }
         },
+        "state": {
+          "selected": "selected",
+          "start": "start",
+          "visibleRelationKinds": "relationKinds"
+        },
+        "config": {
+          "showSummary": true,
+          "collapseEmptyGroups": true,
+          "allowSetStart": true,
+          "showRelationFilter": true,
+          "emptyText": "cm.relationsPrompt"
+        },
         "id": "builtin-product-64592d46-d739-421f-b88a-8d2801a8ad18"
+      },
+      "relationKindFilter": {
+        "component": "ObjectList",
+        "name": "Relation kind filter",
+        "description": "Declared relation kinds used to filter visible edges on the capability graph.",
+        "type": "platform:OntologyRelationKind",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "checked": "relationKinds",
+          "search": "relationKindsSearch"
+        },
+        "config": {
+          "layout": "list",
+          "showFooter": false,
+          "searchable": true,
+          "searchPlaceholder": "cm.kindFilterSearch",
+          "emptyText": "cm.noRelations"
+        },
+        "id": "builtin-product-d5ff27bd-659c-4010-8475-7fe61369818a"
       },
       "typeObjects": {
         "component": "ObjectList",
@@ -143,7 +541,8 @@
           }
         },
         "state": {
-          "selected": "start"
+          "selected": "start",
+          "search": "typeObjectsSearch"
         },
         "config": {
           "emptyText": "cm.pickEmpty"
@@ -166,7 +565,8 @@
           }
         },
         "state": {
-          "selected": "start"
+          "selected": "start",
+          "search": "userPickerSearch"
         },
         "config": {
           "emptyText": "cm.userEmpty"
@@ -178,34 +578,40 @@
   "content": {
     "messages": {
       "en": {
+        "cm.pageTitle": "Capability map",
+        "cm.pageDescription": "Explore the four-layer platform capability model and object instance relations",
+        "cm.refresh": "Refresh",
         "cm.modeLabel": "Display mode",
+        "cm.modeType": "Type mode",
+        "cm.modeInstance": "Instance mode",
         "cm.viewLabel": "Type view",
         "cm.viewGraph": "Graph",
         "cm.viewList": "By layer",
         "cm.searchType": "Highlight drawn type nodes",
         "cm.searchInstance": "Highlight drawn nodes",
         "cm.clearSearch": "Clear",
+        "cm.kindFilter": "Relation kinds",
+        "cm.kindFilterActive": "Relation kinds ({count})",
+        "cm.kindFilterSearch": "Filter relation kinds…",
+        "cm.clearFilter": "Show all",
         "cm.switchUser": "Switch start user",
-        "cm.closeUserPicker": "Close",
         "cm.useSelectedAsStart": "Use selected as start",
         "cm.resetStart": "Back to current user",
         "cm.startTitle": "Start",
         "cm.startCurrentUser": "Current user",
         "cm.userPickerTitle": "Choose a start user",
         "cm.userPickerHint": "Pick a readable user; the graph restarts from their one-hop neighbors.",
-        "cm.typeListTitle": "Four-layer types",
+        "cm.userEmpty": "No readable user for this reader.",
         "cm.typeListHint": "Click a type to read its details on the right.",
+        "cm.typeColName": "Type",
+        "cm.readableCount": "Readable instances",
+        "cm.countReason": "Reason",
+        "cm.noneDash": "—",
         "cm.classTitle": "Class details",
         "cm.classEmpty": "Select a type on the graph or in the layer list to read its details.",
-        "cm.classLoading": "Reading the type catalogue…",
-        "cm.classFailed": "The type catalogue could not be read: {reason}",
-        "cm.definition": "Definition",
-        "cm.layer": "Layer",
-        "cm.readableCount": "Readable instances",
-        "cm.statusOk": "Readable",
-        "cm.statusRefused": "No permission",
-        "cm.statusFailed": "Read failed",
-        "cm.statusUnavailable": "Not connected",
+        "cm.viewInstances": "View instances",
+        "cm.pickStart": "Pick a starting object",
+        "cm.pickHint": "Choosing an object opens instance mode with it as the start.",
         "cm.properties": "Public properties",
         "cm.propertyName": "Property",
         "cm.propertyType": "Type",
@@ -213,95 +619,74 @@
         "cm.propertyDescription": "Description",
         "cm.optionalYes": "Optional",
         "cm.optionalNo": "Required",
+        "cm.noProperties": "This type declares no public property.",
         "cm.relations": "Relations",
+        "cm.relationColDirection": "Direction",
+        "cm.relationColName": "Relation",
+        "cm.relationColPeer": "Peer type",
+        "cm.relationColSource": "Source",
         "cm.outgoing": "Outgoing",
         "cm.incoming": "Incoming",
         "cm.stored": "Stored",
         "cm.derived": "Derived",
         "cm.noRelations": "This type declares no relation.",
         "cm.reads": "Named reads",
-        "cm.operations": "Operations",
-        "cm.noReads": "This type registers no named read.",
-        "cm.noOperations": "This type registers no operation.",
+        "cm.readColName": "Read",
         "cm.readParameters": "Parameters",
         "cm.readResult": "Result",
+        "cm.noReads": "This type registers no named read.",
+        "cm.operations": "Operations",
+        "cm.operationColId": "Operation",
         "cm.operationKind": "Kind",
         "cm.operationEffect": "Effect",
         "cm.operationInputs": "Inputs",
-        "cm.rules": "Creation and use rules",
-        "cm.noRules": "This type declares no creation or use rule.",
-        "cm.viewInstances": "View instances",
-        "cm.pickStart": "Pick a starting object",
-        "cm.pickHint": "Choosing an object opens instance mode with it as the start.",
+        "cm.noOperations": "This type registers no operation.",
         "cm.pickByTypeTitle": "Pick a start by type",
         "cm.pickByTypeHint": "Choose a type, filter its objects, then pick one as the start.",
         "cm.chooseType": "Type",
+        "cm.pickEmpty": "No readable object for this type, or its list cannot be read here.",
+        "cm.pickChooseType": "Choose a type above to list its objects.",
         "cm.relationsTitle": "Node relations",
         "cm.relationsHint": "Every one-hop relation of the selected node, incoming and outgoing.",
         "cm.relationsPrompt": "Select a node on the graph to inspect all its one-hop relations.",
-        "cm.relationsLoading": "Reading relations…",
-        "cm.relationsForbidden": "You may not read this node's relations.",
-        "cm.relationsFailed": "The relations could not be read: {reason}",
-        "cm.noNeighbors": "No neighbors: every relation of this node was read and has none.",
-        "cm.refusedKinds": "Relations you may not read: {names}",
-        "cm.failedKinds": "Relations that failed to read: {names}",
-        "cm.unavailableKinds": "Relations not connected yet: {names}",
-        "cm.kindFilter": "Relation kind",
-        "cm.allKinds": "All kinds",
-        "cm.selectPeer": "Select",
-        "cm.setAsStart": "Set as start",
-        "cm.boundReads": "Bound reads: {names}",
-        "cm.boundOperations": "Bound operations: {names}",
-        "cm.viaInput": "Bound through an input",
-        "cm.noEdges": "No edge",
         "cm.navUnavailable": "“{name}” has no entry yet, or you may not open it: {reason}",
-        "cm.dirComponents": "Components",
-        "cm.dirProjections": "Projections",
-        "cm.dirPanels": "Panels",
-        "cm.dirApplications": "Applications",
-        "cm.dirAgents": "Agents",
-        "cm.layerFact": "Fact",
-        "cm.layerCapability": "Capability",
-        "cm.layerGovernance": "Governance",
-        "cm.layerProduct": "Product",
-        "cm.modeType": "Type mode",
-        "cm.modeInstance": "Instance mode",
-        "cm.pickEmpty": "No readable object for this type, or its list cannot be read here.",
-        "cm.userEmpty": "No readable user for this reader.",
-        "cm.pickChooseType": "Choose a type above to list its objects.",
-        "cm.emptyKinds": "{count} more declared relations have no object here.",
-        "cm.noProperties": "This type declares no public property.",
-        "cm.noDefinition": "This type registers no one-line definition."
+        "cm.dismiss": "Dismiss"
       },
       "zh-CN": {
+        "cm.pageTitle": "能力图谱",
+        "cm.pageDescription": "浏览平台四层能力模型与对象实例关系",
+        "cm.refresh": "刷新",
         "cm.modeLabel": "显示模式",
+        "cm.modeType": "类型模式",
+        "cm.modeInstance": "实例模式",
         "cm.viewLabel": "类型视图",
         "cm.viewGraph": "图形",
         "cm.viewList": "按层分组",
         "cm.searchType": "高亮已画出的类型节点",
         "cm.searchInstance": "高亮已画出的节点",
         "cm.clearSearch": "清空",
+        "cm.kindFilter": "关系种类",
+        "cm.kindFilterActive": "关系种类（{count}）",
+        "cm.kindFilterSearch": "筛选关系种类…",
+        "cm.clearFilter": "显示全部",
         "cm.switchUser": "切换起点用户",
-        "cm.closeUserPicker": "关闭",
         "cm.useSelectedAsStart": "以选中节点为起点",
         "cm.resetStart": "回到当前用户",
         "cm.startTitle": "起点",
         "cm.startCurrentUser": "当前用户",
         "cm.userPickerTitle": "选择起点用户",
         "cm.userPickerHint": "挑一个可读用户，图谱从该用户的一跳邻居重新展开。",
-        "cm.typeListTitle": "四层类型",
+        "cm.userEmpty": "当前用户没有可读的用户。",
         "cm.typeListHint": "点击类型，在右侧读它的类详情。",
+        "cm.typeColName": "类型",
+        "cm.readableCount": "可读实例",
+        "cm.countReason": "说明",
+        "cm.noneDash": "—",
         "cm.classTitle": "类详情",
         "cm.classEmpty": "在图形或按层列表里选中一个类型，读它的类详情。",
-        "cm.classLoading": "正在读取类型目录…",
-        "cm.classFailed": "类型目录读取失败：{reason}",
-        "cm.definition": "一句话定义",
-        "cm.layer": "所属层",
-        "cm.readableCount": "可读实例",
-        "cm.statusOk": "可读",
-        "cm.statusRefused": "无权限",
-        "cm.statusFailed": "读取失败",
-        "cm.statusUnavailable": "尚未接入",
+        "cm.viewInstances": "看实例",
+        "cm.pickStart": "选一个作图谱起点",
+        "cm.pickHint": "选中一个对象后将以它作为起点打开实例模式。",
         "cm.properties": "公开属性",
         "cm.propertyName": "属性名",
         "cm.propertyType": "类型",
@@ -309,65 +694,38 @@
         "cm.propertyDescription": "说明",
         "cm.optionalYes": "可选",
         "cm.optionalNo": "必填",
+        "cm.noProperties": "该类型没有声明公开属性。",
         "cm.relations": "关系",
+        "cm.relationColDirection": "方向",
+        "cm.relationColName": "关系",
+        "cm.relationColPeer": "对端类型",
+        "cm.relationColSource": "来源",
         "cm.outgoing": "出向",
         "cm.incoming": "入向",
         "cm.stored": "存储",
         "cm.derived": "推导",
         "cm.noRelations": "该类型没有声明关系。",
         "cm.reads": "具名读法",
-        "cm.operations": "可发起的操作",
-        "cm.noReads": "该类型没有登记具名读法。",
-        "cm.noOperations": "该类型没有登记可发起的操作。",
+        "cm.readColName": "读法",
         "cm.readParameters": "参数",
         "cm.readResult": "结果",
+        "cm.noReads": "该类型没有登记具名读法。",
+        "cm.operations": "可发起的操作",
+        "cm.operationColId": "操作",
         "cm.operationKind": "种类",
         "cm.operationEffect": "效果",
         "cm.operationInputs": "输入",
-        "cm.rules": "创建与使用规则",
-        "cm.noRules": "该类型没有声明创建与使用规则。",
-        "cm.viewInstances": "看实例",
-        "cm.pickStart": "选一个作图谱起点",
-        "cm.pickHint": "选中一个对象后将以它作为起点打开实例模式。",
+        "cm.noOperations": "该类型没有登记可发起的操作。",
         "cm.pickByTypeTitle": "按类型挑选起点",
         "cm.pickByTypeHint": "选类型、按关键字过滤，再挑一个对象作为起点。",
         "cm.chooseType": "类型",
+        "cm.pickEmpty": "这个类型没有可读对象，或列表在这里读不到。",
+        "cm.pickChooseType": "先在上面选一个类型，这里会列出它的对象。",
         "cm.relationsTitle": "节点关系",
         "cm.relationsHint": "选中节点的全部入向与出向一跳关系。",
         "cm.relationsPrompt": "在画布上选中一个节点，查看它的全部一跳关系。",
-        "cm.relationsLoading": "正在读取关系…",
-        "cm.relationsForbidden": "无权读取这个节点的关系。",
-        "cm.relationsFailed": "关系读取失败：{reason}",
-        "cm.noNeighbors": "没有邻居：这个节点的每条关系都读过了，都没有对象。",
-        "cm.refusedKinds": "无权读取的关系：{names}",
-        "cm.failedKinds": "读取失败的关系：{names}",
-        "cm.unavailableKinds": "尚未接入的关系：{names}",
-        "cm.kindFilter": "关系种类",
-        "cm.allKinds": "全部种类",
-        "cm.selectPeer": "选中",
-        "cm.setAsStart": "设为起点",
-        "cm.boundReads": "绑定读法：{names}",
-        "cm.boundOperations": "绑定操作：{names}",
-        "cm.viaInput": "经输入绑定",
-        "cm.noEdges": "没有关系",
         "cm.navUnavailable": "“{name}”目录尚未接入或你无入口准入：{reason}",
-        "cm.dirComponents": "基础组件",
-        "cm.dirProjections": "投影",
-        "cm.dirPanels": "面板",
-        "cm.dirApplications": "应用",
-        "cm.dirAgents": "智能体",
-        "cm.layerFact": "事实层",
-        "cm.layerCapability": "能力层",
-        "cm.layerGovernance": "治理层",
-        "cm.layerProduct": "产品层",
-        "cm.modeType": "类型模式",
-        "cm.modeInstance": "实例模式",
-        "cm.pickEmpty": "这个类型没有可读对象，或列表在这里读不到。",
-        "cm.userEmpty": "当前用户没有可读的用户。",
-        "cm.pickChooseType": "先在上面选一个类型，这里会列出它的对象。",
-        "cm.emptyKinds": "另有 {count} 种已声明的关系在这个节点上没有对象。",
-        "cm.noProperties": "该类型没有声明公开属性。",
-        "cm.noDefinition": "该类型没有登记一句话定义。"
+        "cm.dismiss": "关闭"
       }
     }
   }

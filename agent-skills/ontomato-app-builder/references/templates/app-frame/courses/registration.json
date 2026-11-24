@@ -1,0 +1,13 @@
+{
+  "panels": [
+    {
+      "id": "template-academic-courses",
+      "mode": "create",
+      "input": {
+        "name": "Courses",
+        "description": "Courses for the selected term",
+        "visibility": "domain"
+      }
+    }
+  ]
+}

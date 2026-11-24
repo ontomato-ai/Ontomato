@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { PanelDownloadFile } from "@ontomato/contracts/panel-download";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
-import type { PanelFormTarget, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelFormTarget, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import {
   describePanelOperationFromDeclaration, panelOperationDeclarationSchema, type PanelOperationDeclaration,
   type PanelOwnerOperationDescriptor, type PanelReadOperationResult, type panelBatchInvocationSchema,
@@ -57,7 +57,12 @@ export interface PanelOperationHost {
   requestWorkbench(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
   request(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
 }
-interface ServerOperation {
+interface OperationInputDescription {
+  /** The owner's input schema with presentation annotations in the reader's locale. */
+  describeInputSchema?(host: PanelOperationHost, locale?: string):
+    PanelOwnerOperationDescriptor["inputSchema"] | Promise<PanelOwnerOperationDescriptor["inputSchema"]>;
+}
+interface ServerOperation extends OperationInputDescription {
   handlerRef: string;
   binding: OntologyElementRef;
   labelKey?: string;
@@ -90,18 +95,13 @@ export type PanelWriteServerOperation = ServerOperation & (
   TargetedExecution & {
     kind: "form.save";
     batch: false;
-    draftOperation(target: PanelOperationTarget): string;
     draftInput(input: Record<string, unknown>, target: PanelOperationTarget): Record<string, unknown>;
-    formInstructions: string;
-    create?: {
-      draftValues(values: unknown, domainId: string): Record<string, unknown>;
-      createdObject(data: unknown): PanelObjectIdentity;
-    };
+    create?: boolean;
   } |
   ({ kind: "action" } & (
     (TargetedExecution & {
       targetInput: string;
-      targetLabel(host: PanelOperationHost, target: PanelRecordTarget): Promise<string>;
+      targetLabel(host: PanelOperationHost, target: PanelRecordTarget, input?: Record<string, unknown>): Promise<string>;
       /**
        * The owner's sentence for one call it completed, naming what it acted on by the target's `targetLabel`
        * ("Function “Refund” deleted"), in the host's language. The platform reads the name before the call runs (a delete
@@ -129,7 +129,7 @@ type ReadCall = z.infer<typeof panelReadOperationCallSchema>;
 type ReadTarget = Extract<PanelOwnerOperationDescriptor["target"], { source: "input" | "none" }> | { source: "draft" };
 type ReadResult = z.infer<typeof panelReadOperationJsonResultSchema> | ({ kind: "file" } & PanelDownloadFile);
 
-export interface PanelReadServerOperation {
+export interface PanelReadServerOperation extends OperationInputDescription {
   handlerRef: string;
   binding: OntologyElementRef;
   labelKey?: string;
@@ -230,11 +230,12 @@ export function panelServerOperationLabel(handler: PanelServerOperation, locale?
   return label;
 }
 
-export function describeServerOperation(handler: PanelServerOperation, locale: string | undefined, slot?: string,
+export async function describeServerOperation(handler: PanelServerOperation, host: PanelOperationHost, slot?: string,
   target?: PanelOwnerOperationDescriptor["target"],
 ) {
   return describePanelOperationFromDeclaration(operationDeclaration(handler), {
-    label: panelServerOperationLabel(handler, locale), slot, target,
+    label: panelServerOperationLabel(handler, host.locale), slot, target,
+    inputSchema: await handler.describeInputSchema?.(host, host.locale),
     resultSchema: runtimeJsonSchema(handler.resultSchema),
     ...(handler.effect === "write" && handler.inspectImpact && { inspectImpact: { handlerRef: handler.inspectImpact.handlerRef } }),
   });

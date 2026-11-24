@@ -3,7 +3,7 @@ import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
 /*
  * Agent settings. The declaration says what the instance keeps and composes; reading the agents, drawing the owner's
- * form, carrying a draft, saving and selecting the agent a create made are the SDK's.
+ * form, saving and selecting the agent a create made are the SDK's.
  *
  * What this module adds is the instance's mode, kept in step with the selection: choosing an agent edits it, letting go
  * of it returns to the list, and the panel's `newAgent` event clears the selection and creates.

@@ -6,7 +6,7 @@ import { componentIdSchema } from "./product-record-id";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { directPanelPortTypeSchema, matchesObjectType, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
+import { directPanelPortTypeSchema, matchesObjectType, panelFormTargetSchema, panelMessageKeySchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
@@ -50,11 +50,22 @@ export const panelObjectListColumnSchema = z.object({
   timeFormat: z.enum(["relative", "datetime", "date"]).optional().describe(
     "How a time column formats its timestamp: 'relative' (default) shows relative time for recent dates, 'datetime' shows full local date and time, and 'date' shows local date.",
   ),
-  subtitleKey: z.string().min(1).optional(),
+  subtitleKey: z.string().min(1).optional().describe(
+    "Optional field key drawn as a muted second line beneath the column's primary value in table cells.",
+  ),
+  subtitleEmptyKey: z.string().min(1).optional().describe(
+    "Panel message key shown when the subtitle field is empty. Without it, an empty subtitle is omitted.",
+  ),
   iconKey: z.string().min(1).optional(),
   emptyKey: panelMessageKeySchema.optional(),
   valueMap: panelDisplayValueMapSchema.optional().describe(
     "Optional exact raw-value to display label/tone/icon mapping for cells in this column (pure presentation; no calculation or threshold expressions).",
+  ),
+  listSeparator: z.string().optional().describe(
+    "Optional separator inserted between inline array items in this column (defaults to ', '; pass '' for inline sentence fragments).",
+  ),
+  listStyle: z.enum(["inline", "tags"]).optional().describe(
+    "How array-valued cells in this column render: 'inline' joins items inline with listSeparator; 'tags' renders each item as a tag chip.",
   ),
   wrap: z.boolean().optional().describe("Allow text in this column to wrap onto multiple lines. Defaults to false."),
   width: columnWidthSchema.describe("Optional fixed column width in pixels (number) or CSS length string (for example '160px' or '20%')."),
@@ -365,16 +376,16 @@ export function panelReadParameterId(declaration: PlatformReadDeclaration, name:
 
 /**
  * A read parameter without a projection mapping is an input with the same name and the type in the read signature.
- * A member's state binding supplies that input before any component runtime parameter can.
+ * A member's state or output binding supplies that input before any component runtime parameter can.
  */
 export function authoredReadParameterSource(
   params: DirectProjectionData["params"],
   name: string,
   member?: Pick<PanelMember, "inputs" | "outputs">,
-): DirectProjectionData["params"][string] | PanelStateRef | undefined {
+): DirectProjectionData["params"][string] | Exclude<PanelMemberInput, { literal: unknown }> | undefined {
   if (Object.hasOwn(params, name)) return params[name];
   const input = member?.inputs?.[name];
-  return input && "state" in input ? input : member?.outputs?.[name];
+  return input && !("literal" in input) ? input : member?.outputs?.[name];
 }
 
 /** Registration checks the projection, its placement and the active catalogue for a required parameter's source. */
@@ -484,6 +495,16 @@ export const panelRecordReferenceFieldValueSchema = z.object({
 }).strict();
 export type PanelRecordReferenceFieldValue = z.infer<typeof panelRecordReferenceFieldValueSchema>;
 
+/** Clickable reference to a parent-scoped child object carried directly as a record field value or inline array item. */
+export const panelRecordChildReferenceFieldValueSchema = z.object({
+  kind: z.literal("child-reference"),
+  parent: panelObjectIdentitySchema,
+  collection: z.string().min(1).max(200),
+  primaryKey: panelObjectRefSchema.shape.primaryKey,
+  label: z.string(),
+}).strict();
+export type PanelRecordChildReferenceFieldValue = z.infer<typeof panelRecordChildReferenceFieldValueSchema>;
+
 /** Structured JSON payload carried by a record field (for example nested tool lists or schemas). */
 export const panelRecordJsonFieldValueSchema = z.object({
   kind: z.literal("json"),
@@ -495,6 +516,7 @@ export type PanelRecordJsonFieldValue = z.infer<typeof panelRecordJsonFieldValue
 export const panelRecordFieldArrayItemSchema = z.union([
   panelRecordFieldScalarSchema,
   panelRecordReferenceFieldValueSchema,
+  panelRecordChildReferenceFieldValueSchema,
 ]);
 export type PanelRecordFieldArrayItem = z.infer<typeof panelRecordFieldArrayItemSchema>;
 
@@ -506,6 +528,7 @@ export const panelRecordFieldValueSchema = z.union([
   panelRecordFieldScalarSchema,
   panelRecordLocalizedFieldValueSchema,
   panelRecordReferenceFieldValueSchema,
+  panelRecordChildReferenceFieldValueSchema,
   panelRecordJsonFieldValueSchema,
   z.array(panelRecordFieldArrayItemSchema),
 ]);
@@ -650,7 +673,7 @@ export function panelRecordFieldText(
       .filter(part => part.length > 0)
       .join(", ");
   }
-  if (value.kind === "reference") return value.label || value.primaryKey;
+  if (value.kind === "reference" || value.kind === "child-reference") return value.label || value.primaryKey;
   if (value.kind === "localized") {
     for (const tag of [...localeFallbackChain(locale), ...localeFallbackChain(fallbackLocale)]) {
       const matched = lookupLocalizedValue(value.values, tag);
@@ -1090,8 +1113,6 @@ const formSaveRequestSchema = z.object({
   path: z.string().startsWith("/"),
   /** Derived from the native request schema, including any owner-required wrapper or revision. */
   bodySchema: runtimeJsonObjectSchema,
-  /** The operation name used by the existing page-draft envelope for this target. */
-  draftOperation: z.string().min(1),
 }).strict();
 
 /** Values and description returned together by the owner for the current target and caller. */
@@ -1183,7 +1204,7 @@ export function projectionOperation(
   const draftSlot = manifest.members[member]?.operationDrafts?.[name]?.slot;
   let placed: PanelOperation["target"];
   if (kind === "form.save") placed = { source: "draft", slot: draftSlot ?? member };
-  else if (target.source === "literal" || target.source === "none") placed = target;
+  else if (target.source === "literal" || target.source === "none" || target.source === "draft") placed = target;
   else if (target.source === "input") {
     const binding = manifest.members[member]?.inputs?.[target.input];
     if (binding && "state" in binding) placed = { source: "state", state: binding.state };

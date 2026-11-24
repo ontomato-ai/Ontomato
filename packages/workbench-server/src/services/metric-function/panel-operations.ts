@@ -4,7 +4,7 @@ import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contr
 import {
   DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW,
 } from "@ontomato/contracts/panel-client-requests";
-import { panelReadOperationCallSchema, panelReadOperationInputSchema } from "@ontomato/contracts/panel-operations";
+import { panelReadOperationCallSchema, panelReadOperationInputSchema, panelReadOperationJsonResultSchema } from "@ontomato/contracts/panel-operations";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
@@ -131,8 +131,8 @@ const trialDraftSchema = z.object({
     parameters: parameterDefinitionsSchema.nullish(),
   }).passthrough(),
 }).passthrough();
-const markdownResultSchema = z.object({ kind: z.literal("markdown"), markdown: z.string() }).strict();
-const jsonResultSchema = z.object({ kind: z.literal("json"), value: runtimeJsonValueSchema }).strict();
+const markdownResultSchema = panelReadOperationJsonResultSchema.options[0];
+const jsonResultSchema = panelReadOperationJsonResultSchema.options[1];
 const testedContentSchema = z.object({ md: z.string() }).passthrough();
 const trialEnvelopeSchema = ownerEnvelopeSchema.extend({
   code: z.string().nullish(),
@@ -171,7 +171,6 @@ function ownerSaveBody(target: PanelOperationTarget, input: Record<string, unkno
   return { ...valuesForTarget(target, values), ...(submittedFields && { submittedFields }) };
 }
 
-const formInstructions = "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
 
 export const m5ServerOperations = [
   {
@@ -185,17 +184,9 @@ export const m5ServerOperations = [
     targetSchema: metricSaveTarget,
     inputSchema: saveInputSchema,
     resultSchema: savedIdSchema,
-    draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "metric-view.create" : "metric-view.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
-    create: {
-      draftValues(values: unknown) {
-        return runtimeJsonObjectSchema.parse(values);
-      },
-      createdObject(data: unknown) {
-        return { objectType: METRIC_VIEW, primaryKey: savedIdSchema.parse(data).id };
-      },
-    },
+
+    create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/metricView/save", ownerSaveBody(target, input), "METRIC_VIEW_SAVE_FAILED", METRIC_VIEW, [METRIC_VIEW, FUNCTION]);
     },
@@ -276,17 +267,9 @@ export const m5ServerOperations = [
     targetSchema: functionSaveTarget,
     inputSchema: saveInputSchema,
     resultSchema: savedIdSchema,
-    draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "function.create" : "function.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
-    create: {
-      draftValues(values: unknown) {
-        return runtimeJsonObjectSchema.parse(values);
-      },
-      createdObject(data: unknown) {
-        return { objectType: FUNCTION, primaryKey: savedIdSchema.parse(data).id };
-      },
-    },
+
+    create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/function/save", ownerSaveBody(target, input), "FUNCTION_SAVE_FAILED", FUNCTION, [FUNCTION]);
     },
@@ -346,11 +329,13 @@ export const m5ServerOperations = [
       const envelope = await trial(host, "/metricView/testExecute",
         { metricView: draft, param: parameters, ...(bindingId ? { bindingId } : {}) }, "METRIC_VIEW_TEST_EXECUTE_REFUSED");
       // A truncated run is a partial result: the reader sees that it is, and why, beside the rows.
-      const value = runtimeJsonValueSchema.parse({
-        result: envelope.data ?? null,
-        ...(envelope.truncated ? { truncated: true, rowLimit: envelope.rowLimit ?? null, truncationHint: envelope.truncationHint ?? null } : {}),
-      });
-      return { kind: "json" as const, value };
+      return {
+        kind: "json" as const,
+        value: runtimeJsonValueSchema.parse(envelope.data ?? null),
+        ...(envelope.truncated
+          ? { truncation: { rowLimit: envelope.rowLimit ?? null, hint: envelope.truncationHint ?? null } }
+          : {}),
+      };
     },
   },
 ] satisfies readonly PanelServerOperation[];

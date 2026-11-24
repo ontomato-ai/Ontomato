@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ACTION, DELETE_ACTION, FUNCTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import type { PanelOperationHost } from "../../product-panels/server-operations";
+import { describeServerOperation, operationDeclaration, type PanelOperationHost } from "../../product-panels/server-operations";
 import { m6ServerOperations } from "../panel-operations";
+
+vi.mock("../../assistant/skills", () => ({}));
 
 /*
  * The action server operations: the form save and what it changes, the owner's explicit refusals kept apart from
@@ -49,7 +51,45 @@ const actionTarget = { kind: "object" as const, objectType: ACTION, primaryKey: 
 const secondAction = { kind: "object" as const, objectType: ACTION, primaryKey: "a2" };
 
 describe("action panel server operations", () => {
-  it("declares the action save target, draft operations and create identity", () => {
+  it.each([
+    { locale: "en", title: "Status", labels: ["Pending review", "Published", "Disabled"] },
+    { locale: "zh-CN", title: "状态", labels: ["待审核", "已发布", "已停用"] },
+  ])("describes status with the Action form labels for $locale and keeps the accepted codes", async ({ locale, title, labels }) => {
+    const operation = batchAction(SET_ACTION_STATUS);
+    const declaration = operationDeclaration(operation);
+    const options = operation.inputSchema.shape.status.options.map((value, index) => ({
+      value, label: labels[index], description: null, disabled: false, disabledReason: null,
+    }));
+    const { host, sent } = hostWith(() => Response.json({ success: true, data: {
+      fields: [{
+        path: "/status", label: title, required: false, readOnly: false,
+        valueSchema: { type: "string", enum: options.map(option => option.value) },
+        control: { kind: "select", options },
+      }],
+      errors: [],
+      values: {},
+      save: { method: "POST", path: "/api/data-query/action/save", bodySchema: {} },
+    } }));
+
+    const descriptor = await describeServerOperation(operation, { ...host, locale });
+
+    expect(sent[0]?.path).toBe("/api/data-query/action/definitionForm");
+    expect(descriptor.inputSchema).toMatchObject({
+      required: ["status"],
+      properties: { status: {
+        title, enum: options.map(option => option.value),
+        oneOf: options.map(option => ({ const: option.value, title: option.label })),
+      } },
+    });
+    expect(declaration.inputSchema).toMatchObject({ properties: { status: { enum: options.map(option => option.value) } } });
+    expect(declaration.inputSchema).not.toHaveProperty("properties.status.oneOf");
+    for (const option of options) {
+      expect(operation.inputSchema.safeParse({ status: option.value }).success).toBe(true);
+      expect(operation.inputSchema.safeParse({ status: option.label }).success).toBe(false);
+    }
+  });
+
+  it("accepts action and draft targets for form saves", () => {
     const operation = write(`${ACTION}.save`);
     expect(operation.kind).toBe("form.save");
     if (operation.kind !== "form.save") throw new Error("not a form save");
@@ -57,9 +97,6 @@ describe("action panel server operations", () => {
     expect(operation.targetSchema.safeParse(actionTarget).success).toBe(true);
     expect(operation.targetSchema.safeParse({ ...actionTarget, objectType: FUNCTION }).success).toBe(false);
     expect(operation.targetSchema.safeParse({ kind: "draft" }).success).toBe(true);
-    expect(operation.draftOperation(actionTarget)).toBe("action.update");
-    expect(operation.draftOperation({ kind: "draft" })).toBe("action.create");
-    expect(operation.create?.createdObject({ id: "created" })).toEqual({ objectType: ACTION, primaryKey: "created" });
   });
 
   it("sends the complete action values and reports both the action and its function as changed", async () => {

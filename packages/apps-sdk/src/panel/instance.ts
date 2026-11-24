@@ -1,12 +1,13 @@
 import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import { computed, reactive, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
+import { computed, nextTick, reactive, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext, PageFormSnapshot, PageHighlight } from "@ontomato/contracts/page-context";
 import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
   type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
 import type {
+  ExpectedPageTarget,
   FormFillOutcome,
   FormFillRequestInput,
   PageActionConfirmedDispatchResult,
@@ -15,6 +16,7 @@ import type {
   PendingPageActionConfirmation,
 } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import {
   childObjectNameKey, createPanelState, objectNameKey, panelSelection, stateObject, stateObjects, type PanelInitialState, type PanelObjectRef,
@@ -22,20 +24,34 @@ import {
 } from "./state";
 import type { PanelText } from "./text";
 import { panelOperations } from "./operations";
-import type { PanelProjectionRegistration } from "./ports";
-import { PanelFormAdapters, type PageDraftLink, type ReceivedPanelDraft, type UnclaimedDraft } from "./draft";
+import { memberInputValue, type PanelProjectionRegistration } from "./ports";
+import { PanelFormAdapters } from "./forms";
 import { handlerFor } from "./handlers";
-import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PanelOperationBinding } from "./types";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
-import type {
-  PanelAgentRunRef,
-  PanelFormEditedTarget,
-  PanelHumanOperationDispatchResponse,
-  PanelHumanOperationPreparation,
+import {
+  classifyPanelOperationDispatch,
+  type PanelAgentRunRef,
+  type PanelHumanOperationDispatchResponse,
+  type PanelHumanOperationPreparation,
 } from "@ontomato/contracts/panel-agent";
 import type { PanelCompletedOperation, PanelOperationAffected, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
-import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelReadCall, PanelWriteInvocation } from "./human-operations";
+import type {
+  ConfirmPanelOperation,
+  PanelHumanOperations,
+  PanelLocalConfirmationClaimResponse,
+  PanelLocalConfirmationRequest,
+  PanelLocalConfirmationResponse,
+  PanelOperationDescriptor,
+  PanelReadCall,
+  PanelWriteInvocation,
+} from "./human-operations";
+import {
+  PanelSubmissionStaleError,
+  verifySubmissionUnchanged,
+  type SubmissionCheckResult,
+  type SubmissionEvaluator,
+} from "./operation-binding";
 
 /*
  * One panel instance's runtime (overall design 3.4): its state, the projections it registered, the operations it offers,
@@ -48,15 +64,13 @@ import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescrip
 
 /** What an instance needs from the platform: the reader's request path, and the panel's own key and address. */
 export interface PanelInstanceOptions {
-  /** The page's registration key: the application use's pageKey, which a draft names too. */
+  /** The page's registration key: the application use's pageKey. */
   pageKey: string;
   url: () => string;
   label: () => string;
   initial?: PanelInitialState;
   /** Reads a current projection by ID, as the reader. */
   readProjection: (id: string) => Promise<ProductProjection>;
-  /** Records, as the reader, the object a create draft's save created, so the draft addresses it from then on. */
-  recordDraftCreated: (link: PageDraftLink, id: string) => Promise<void>;
   /** Translates platform message keys (such as object-union type display names) in the current locale. */
   translate?: (key: string, params?: Readonly<Record<string, string>>) => string;
   /** The panel's own words (its content's messages) in the current language: what a state operation is called. */
@@ -65,7 +79,6 @@ export interface PanelInstanceOptions {
   operations: PanelHumanOperations;
   /** The host's confirmation and single dispatch of a prepared write. */
   confirmOperation: ConfirmPanelOperation;
-  reportDraftError?: (reason: unknown) => void;
   /**
    * Where this instance sits in the panel the reader opened (a panel placed from another's state), or nothing for the
    * opened panel itself: every member path, operation ID and page-context selection of this instance starts with it.
@@ -78,22 +91,40 @@ export interface PanelInstanceOptions {
 /** A path that names at least one member: a nested publisher's, as the platform finds its operations by. */
 export type PublisherPath = [PanelMemberPath[number], ...PanelMemberPath];
 
-/** Explicit overrides for write operations (`memberPath` and lifecycle hooks). */
+/** Per-invocation agent context passed explicitly down a single `page_action` call chain. */
+export interface PanelAgentActionContext {
+  readonly agentRun: PanelAgentRunRef;
+  completed?: {
+    readonly intentId: string;
+    readonly response: PanelHumanOperationDispatchResponse;
+  };
+}
+
+/** Explicit overrides for write operations (`memberPath`, lifecycle hooks, and per-call agent context). */
 export interface PanelWriteOperationOptions {
   memberPath?: PanelMemberPath;
   /** Called right after confirmation passes (or immediately when no confirmation is required), before dispatch begins. */
   onConfirmed?: () => void;
+  /** Present only when this write was initiated by an agent `page_action` call. */
+  agentContext?: PanelAgentActionContext;
+  /**
+   * Recomputes the live 4-tuple `(instanceId, operationId, target, payload)` for this UI entry so both
+   * default confirmation and full-auto pre-dispatch verify through the single universal check.
+   */
+  evaluateSubmission?: SubmissionEvaluator;
 }
 
 /** Thrown internally by `writeOperation` when an agent-initiated write awaits default conversation confirmation. */
 export class PanelOperationDeferred extends Error {
   readonly preparation: PanelHumanOperationPreparation;
   readonly named: PanelWriteResult["named"];
+  readonly isStillValid: () => SubmissionCheckResult;
   readonly dispatchNow: () => Promise<AppBridgeConfirmPanelOperationResult>;
   readonly cancelNow: (reason: { readonly code: string; readonly message: string }) => Promise<void>;
   constructor(input: {
     preparation: PanelHumanOperationPreparation;
     named: PanelWriteResult["named"];
+    isStillValid: () => SubmissionCheckResult;
     dispatchNow: () => Promise<AppBridgeConfirmPanelOperationResult>;
     cancelNow: (reason: { readonly code: string; readonly message: string }) => Promise<void>;
   }) {
@@ -101,6 +132,7 @@ export class PanelOperationDeferred extends Error {
     this.name = "PanelOperationDeferred";
     this.preparation = input.preparation;
     this.named = input.named;
+    this.isStillValid = input.isStillValid;
     this.dispatchNow = input.dispatchNow;
     this.cancelNow = input.cancelNow;
   }
@@ -122,6 +154,12 @@ export type PanelMountedActionResult =
   | { readonly ok: true; readonly confirmation: PendingPageActionConfirmation }
   | {
       readonly ok: false;
+      readonly reason: "unknown";
+      readonly outcome?: unknown;
+      readonly message?: string;
+    }
+  | {
+      readonly ok: false;
       readonly reason:
         | "action_not_found"
         | "action_unavailable"
@@ -130,44 +168,142 @@ export type PanelMountedActionResult =
         | "validation_failed"
         | "cancelled"
         | "stale"
+        | "partial"
         | "failed";
+      readonly code?: string;
+      readonly savedFields?: readonly string[];
+      readonly outcome?: unknown;
       readonly message?: string;
     };
 
 export type PanelMountedActionHandler = (request: {
   readonly rowKey?: string;
   readonly input?: Readonly<Record<string, RuntimeJsonValue>>;
+  readonly expectedEntryInstanceId?: string;
+  readonly expectedTarget?: ExpectedPageTarget;
+  readonly expectedCheckedKeys?: readonly string[];
+  readonly agentContext?: PanelAgentActionContext;
 }) => Promise<PanelMountedActionResult>;
 
 /** Formats a concise human/agent summary of a dispatched panel operation response. */
 export function summarizeDispatchResponse(response: PanelHumanOperationDispatchResponse): string {
-  if (response.kind === "not-dispatched") return response.message;
-  const { outcome } = response;
-  if (!outcome) return "Execution outcome unknown.";
-  if (outcome.kind === "success") return outcome.message ?? "Completed successfully.";
-  if (outcome.kind === "batch") {
-    const succeeded = outcome.items.filter((item) => item.outcome.kind === "success").length;
-    return `Batch completed: ${succeeded}/${outcome.items.length} succeeded.`;
+  const classified = classifyPanelOperationDispatch(response);
+  if (classified.kind === "executed" || classified.kind === "partial") return classified.summary;
+  return classified.message;
+}
+
+/**
+ * Classifies an authoritative dispatch response for a mounted `page_action` handler using the single
+ * shared `@ontomato/contracts/panel-agent` classifier so live receipts and server timeout recovery match.
+ */
+export function classifyDispatchResponseForAction(
+  response: PanelHumanOperationDispatchResponse,
+): PanelMountedActionResult {
+  const classified = classifyPanelOperationDispatch(response);
+  if (classified.kind === "executed") {
+    return { ok: true, outcome: classified.outcome };
   }
-  return outcome.message;
+  if (classified.kind === "partial") {
+    return {
+      ok: false,
+      reason: "partial",
+      code: classified.code,
+      ...(classified.savedFields?.length ? { savedFields: classified.savedFields } : {}),
+      outcome: classified.outcome,
+      message: classified.message,
+    };
+  }
+  if (classified.kind === "unknown") {
+    return {
+      ok: false,
+      reason: "unknown",
+      ...(classified.outcome !== undefined ? { outcome: classified.outcome } : {}),
+      message: classified.message,
+    };
+  }
+  return {
+    ok: false,
+    reason: "failed",
+    code: classified.code,
+    ...(classified.outcome !== undefined ? { outcome: classified.outcome } : {}),
+    message: classified.message,
+  };
+}
+
+/** Classifies an authoritative dispatch response after the user approves a deferred confirmation in chat. */
+export function classifyDispatchResponseForConfirmation(
+  intentId: string,
+  response: PanelHumanOperationDispatchResponse,
+): PageActionConfirmedDispatchResult {
+  if (response.kind === "not-dispatched") {
+    return { ok: false, intentId, reason: "not_dispatched", code: response.code, message: response.message };
+  }
+  const classified = classifyPanelOperationDispatch(response, intentId);
+  if (classified.kind === "executed") {
+    return {
+      ok: true,
+      intentId,
+      outcome: classified.outcome,
+      summary: classified.summary,
+    };
+  }
+  if (classified.kind === "partial") {
+    return {
+      ok: false,
+      intentId,
+      reason: "partial",
+      code: classified.code,
+      ...(classified.savedFields?.length ? { savedFields: classified.savedFields } : {}),
+      outcome: classified.outcome,
+      message: classified.summary,
+    };
+  }
+  if (classified.kind === "unknown") {
+    return {
+      ok: false,
+      intentId,
+      reason: "unknown",
+      code: classified.code,
+      message: classified.message,
+    };
+  }
+  return {
+    ok: false,
+    intentId,
+    reason: "failed",
+    code: classified.code,
+    message: classified.message,
+  };
 }
 
 /** What a panel placed in one of an instance's members publishes into it: its operations, its unsaved changes. */
 export interface NestedPublisher {
+  readonly instanceId: string;
+  formRegistries(): PanelFormAdapters[];
   readonly operations: readonly PanelOperationBinding[];
   dirty(): boolean;
   readonly context: PageContext | null;
+  memberInstances?(): Readonly<Record<string, string>>;
+  entryInstances?(): Readonly<Record<string, string>>;
+  checkedKeys?(): Readonly<Record<string, readonly string[]>>;
+  isLoading?(): boolean;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
 }
 
-/** A completed panel write operation reported by the host (e.g. an agent `/operate` dispatch). */
+/** A completed panel write operation reported by the host. */
 export interface PanelOperationCompletion {
   readonly operation: PanelCompletedOperation;
   readonly affected?: PanelOperationAffected;
 }
 
 export interface PanelInstance {
+  /** Unique immutable identifier for this mounted panel instance; changes on remount or nested member swap. */
+  readonly instanceId: string;
+  /** True once this panel instance has been disposed/unmounted. */
+  isDisposed(): boolean;
+  /** Marks this panel instance as disposed so any pending confirmation or full-auto dispatch is invalidated. */
+  markDisposed(): void;
   readonly manifest: PanelManifest;
   readonly state: PanelStateStore;
   // A computed context, read only at its top: a deep read-only type of it recurses through the member paths' JSON values
@@ -185,28 +321,11 @@ export interface PanelInstance {
   /** The values a member's component set for parameters bound to no state, by name. */
   ownParams(member: string): Readonly<Record<string, RuntimeJsonValue>>;
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
-  /** The form adapters its projections registered, for the draft its address names. */
+  /** The mounted form adapters its projections registered for live filling, submission, and visibility. */
   readonly forms: PanelFormAdapters;
-  /** Set once a form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
-  readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
-  receiveDraft(value: ReceivedPanelDraft<Record<string, unknown>>): void;
-  /** Clears a draft tentatively claimed by an unmounted member when its form still cannot be drawn on screen. */
-  rollbackDraft(value: ReceivedPanelDraft<Record<string, unknown>>): void;
-  /**
-   * Ends the draft a form in `slot` holds, once the reader saved or discarded it: a saved create draft first records the
-   * object it created (`created`), then whoever listens hears which draft ended. A slot that holds no draft has nothing
-   * to end.
-   */
-  settleDraft(slot: string, created?: string): Promise<void>;
-  /** Hears each draft that ended, by its link; the returned function stops it. */
-  onDraftSettled(listener: (link: PageDraftLink) => void): () => void;
-  /**
-   * What a draft this instance holds is for — its object's type and its operation — when none of its forms takes it:
-   * every slot its declaration names has registered its projection, and every form among them declined the draft (none
-   * binds the type, or none of that type performs the operation). Null otherwise, and while a slot is still to register,
-   * since that may be the form that takes the draft.
-   */
-  readonly unclaimedDraft: Readonly<Ref<UnclaimedDraft | null>>;
+  blocksFormInputChange(fields: ReadonlySet<string>): boolean;
+  applyStatePreservingDrafts(patch: Readonly<Record<string, RuntimeJsonValue>>): Promise<boolean>;
+  formRegistries(): PanelFormAdapters[];
   /** True while an external address update changing deep-link state is held pending reactivation. */
   readonly addressPending?: Readonly<Ref<boolean>>;
   register(registration: PanelProjectionRegistration): () => void;
@@ -259,7 +378,7 @@ export interface PanelInstance {
   readonly outputs: Readonly<Record<string, Readonly<Record<string, RuntimeJsonValue | null>>>>;
   /** Publish or clear one read-only output for a projection member. */
   setMemberOutput(member: string, name: string, value: RuntimeJsonValue | null): void;
-  /** Whether this instance holds unsaved changes: a received draft, a form the reader edited, or a panel placed in it. */
+  /** Whether this instance holds unsaved changes: a form the reader edited, or a panel placed in it. */
   dirty(): boolean;
   /** A member's path in the panel the reader opened: this instance's own, then the member's segment. */
   memberPathOf(member: string): PublisherPath;
@@ -278,6 +397,18 @@ export interface PanelInstance {
   deepLink(): Record<string, PanelDeepLinkStateValue>;
   /** All declared public state fields with their current values. */
   publicState(): Record<string, RuntimeJsonValue>;
+  /** Instance IDs of currently mounted nested panel members keyed by dotted member path. */
+  memberInstances(): Readonly<Record<string, string>>;
+  /** Instance IDs of currently mounted action/form/list entries keyed by full operation ID (or `row:<opId>`). */
+  entryInstances(): Readonly<Record<string, string>>;
+  /** Current checked row keys (`<className>:<primaryKey>`) per object-list state field (including nested panels). */
+  checkedKeys(): Readonly<Record<string, readonly string[]>>;
+  /** Posts a conversation confirmation question for a destructive local UI action (e.g. discarding dirty form edits). */
+  requestLocalConfirmation?(input: PanelLocalConfirmationRequest): Promise<PanelLocalConfirmationResponse>;
+  /** Atomically claims a pending local confirmation question before executing the local UI action. */
+  claimLocalConfirmation?(questionId: string): Promise<PanelLocalConfirmationClaimResponse>;
+  /** Cancels a pending local confirmation question when the form changes, closes, or the user declines. */
+  cancelLocalConfirmation?(questionId: string, reason: { code: string; message: string }): Promise<void>;
   /** Fills explicit fields on a mounted live form (top-level or nested panel) using the form's own edit entry. */
   fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
   /** Executes a declared operation or local semantic action through the mounted component's own UI entry. */
@@ -286,12 +417,9 @@ export interface PanelInstance {
   registerActionHandler(
     id: string,
     handler: PanelMountedActionHandler,
-    options?: { readonly scope?: "default" | "row" },
+    options?: { readonly scope?: "default" | "row"; readonly entryInstanceId?: () => string },
   ): () => void;
-  /** Notifies the host that the user manually edited an unsaved form, invalidating pending agent save confirmations. */
-  notifyFormEdited(target: PanelFormEditedTarget): void;
-  onFormEdited(listener: (target: PanelFormEditedTarget) => void): () => void;
-  /** Notifies mounted members that a panel operation completed remotely (e.g. via agent `/operate`). */
+  /** Notifies mounted members that a panel operation completed. */
   operationCompleted(event: PanelOperationCompletion): void;
   onOperationCompleted(listener: (event: PanelOperationCompletion) => void): () => void;
 }
@@ -311,10 +439,10 @@ function namedTargets(confirmation: PanelHumanOperationPreparation["confirmation
 }
 
 export function createPanelInstance(manifest: PanelManifest, options: PanelInstanceOptions): PanelInstance {
+  const instanceId = randomId();
+  let disposed = false;
   const state = createPanelState(manifest, options.initial);
   const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
-  const settledListeners = new Set<(link: PageDraftLink) => void>();
-  const formEditedListeners = new Set<(target: PanelFormEditedTarget) => void>();
   const operationCompletedListeners = new Set<(event: PanelOperationCompletion) => void>();
   const objectChanged = (object: PanelObjectIdentity | null) => {
     for (const listener of objectListeners) listener(object);
@@ -340,21 +468,21 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   function operationPath(operationId: string): PanelMemberPath | undefined {
     return operations.value.find((operation) => operation.id === operationId)?.memberPath;
   }
-  interface ActiveAgentActionScope {
-    readonly agentRun: PanelAgentRunRef;
-    completed?: { readonly intentId: string; readonly response: PanelHumanOperationDispatchResponse };
-  }
-  let activeAgentAction: ActiveAgentActionScope | null = null;
-  const actionHandlers = new Map<string, { scope: "default" | "row"; handler: PanelMountedActionHandler }[]>();
+  const actionHandlers = new Map<
+    string,
+    { scope: "default" | "row"; handler: PanelMountedActionHandler; entryInstanceId: () => string }[]
+  >();
 
   function registerActionHandler(
     id: string,
     handler: PanelMountedActionHandler,
-    handlerOptions?: { readonly scope?: "default" | "row" },
+    handlerOptions?: { readonly scope?: "default" | "row"; readonly entryInstanceId?: () => string },
   ) {
     const scope = handlerOptions?.scope ?? "default";
+    const defaultEntryId = randomId();
+    const entryInstanceId = handlerOptions?.entryInstanceId ?? (() => defaultEntryId);
     const list = actionHandlers.get(id) ?? [];
-    const entry = { scope, handler };
+    const entry = { scope, handler, entryInstanceId };
     list.push(entry);
     actionHandlers.set(id, list);
     return () => {
@@ -374,25 +502,55 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     // What the owner reports the write changed reaches the instance through the host's one refresh port, as an agent's
     // write does, and is read again from there; the receipt itself rereads nothing.
     const path = writeOptions?.memberPath ?? operationPath(operationId);
-    const agentScope = activeAgentAction;
+    const agentScope = writeOptions?.agentContext;
+    const evaluator = writeOptions?.evaluateSubmission;
+    const frozen = agentScope && evaluator ? evaluator("prepare") : null;
+    if (frozen && !frozen.ok) {
+      throw new PanelSubmissionStaleError(frozen.message);
+    }
     const preparation = agentScope?.agentRun
       ? await options.operations.prepare(operationId, invocation, path, agentScope.agentRun)
       : await options.operations.prepare(operationId, invocation, path);
     const named = namedTargets(preparation.confirmation);
+    const verifyOrCancel = async (phase: "auto-dispatch" | "confirm") => {
+      if (!frozen?.ok || !evaluator) return;
+      const check = verifySubmissionUnchanged(frozen, evaluator, phase);
+      if (!check.ok) {
+        await options.operations.cancel?.(preparation.intentId, {
+          code: "ACTION_CONFIRMATION_STALE",
+          message: check.message,
+        }).catch(() => undefined);
+        throw new PanelSubmissionStaleError(check.message, preparation.intentId);
+      }
+    };
     if (agentScope && preparation.autoMode === false && preparation.questionId) {
+      await verifyOrCancel("auto-dispatch");
+      const isStillValid: () => SubmissionCheckResult = frozen?.ok && evaluator
+        ? () => verifySubmissionUnchanged(frozen, evaluator, "confirm")
+        : () => ({ ok: true as const });
       throw new PanelOperationDeferred({
         preparation,
         named,
+        isStillValid,
         dispatchNow: () => options.confirmOperation(preparation, {
           ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
           skipDialog: true,
+          beforeDispatch: () => verifyOrCancel("confirm"),
         }),
         cancelNow: (reason) => options.operations.cancel?.(preparation.intentId, reason) ?? Promise.resolve(),
       });
     }
+    if (agentScope && preparation.autoMode === true) {
+      // Full-auto skips only the conversation question — never the universal 4-tuple verification before dispatch.
+      await verifyOrCancel("auto-dispatch");
+    }
     const skipDialog = Boolean(agentScope && preparation.autoMode === true);
     const confirmHooks = writeOptions?.onConfirmed || skipDialog
-      ? { ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}), ...(skipDialog ? { skipDialog: true } : {}) }
+      ? {
+          ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
+          ...(skipDialog ? { skipDialog: true } : {}),
+          ...(skipDialog ? { beforeDispatch: () => verifyOrCancel("auto-dispatch") } : {}),
+        }
       : undefined;
     const confirmed = confirmHooks
       ? await options.confirmOperation(preparation, confirmHooks)
@@ -403,7 +561,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     return { ...confirmed, named };
   }
   const operations = computed<PanelOperationBinding[]>(() => [
-    ...panelOperations(manifest, registrations.value, state, forms, writeOperation,
+    ...panelOperations(instance, registrations.value, forms, writeOperation,
       (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
       (member, name) => ({ id: operationIdOf(member, name), memberPath: publisherPath(member) })),
     // A placed panel's operations are published under their own full paths and run by that panel.
@@ -422,20 +580,30 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     return found.invoke(input);
   }
   async function fillForm(request: FormFillRequestInput): Promise<FormFillOutcome> {
+    if (request.expectedPanelInstanceId !== undefined && request.expectedPanelInstanceId !== instanceId) {
+      return {
+        ok: false,
+        reason: "stale",
+        ...(request.member ? { member: request.member } : {}),
+        ...(request.memberPath?.length ? { memberPath: request.memberPath } : {}),
+        message: "The mounted panel definition was replaced or remounted since the last observation.",
+      };
+    }
     if (request.memberPath?.length) {
       const [head, ...rest] = request.memberPath;
       const publisher = publishers.get(head!)?.value;
       if (!publisher?.fillForm) {
         return {
           ok: false,
-          reason: "form_not_found",
+          reason: request.expectedMemberInstanceId !== undefined || request.expectedFormInstanceId !== undefined ? "stale" : "form_not_found",
           ...(request.member ? { member: request.member } : {}),
           memberPath: request.memberPath,
           message: `Nested panel member '${head}' is not mounted.`,
         };
       }
+      const { expectedPanelInstanceId: _checkedRoot, ...childRequest } = request;
       const nested = await publisher.fillForm({
-        ...request,
+        ...childRequest,
         memberPath: rest.length ? rest : undefined,
       });
       return {
@@ -444,7 +612,19 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       };
     }
     if (request.member) {
-      return forms.fill(request.member, request.values, { overwriteUnsaved: request.overwriteUnsaved });
+      if (request.expectedMemberInstanceId !== undefined && request.expectedMemberInstanceId !== instanceId) {
+        return {
+          ok: false,
+          reason: "stale",
+          member: request.member,
+          message: "The target panel member instance was replaced or remounted.",
+        };
+      }
+      return forms.fill(request.member, request.values, {
+        overwriteUnsaved: request.overwriteUnsaved,
+        ...(request.expectedFormInstanceId !== undefined ? { expectedFormInstanceId: request.expectedFormInstanceId } : {}),
+        ...(request.expectedTarget ? { expectedTarget: request.expectedTarget } : {}),
+      });
     }
     const mounted = forms.mountedSlots().map((slot) => ({ member: slot, memberPath: undefined as readonly string[] | undefined }));
     for (const [member, publisher] of publishers.entries()) {
@@ -456,7 +636,11 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       }
     }
     if (mounted.length === 0) {
-      return { ok: false, reason: "form_not_found", message: "No form is currently open on this page." };
+      return {
+        ok: false,
+        reason: request.expectedMemberInstanceId !== undefined || request.expectedFormInstanceId !== undefined ? "stale" : "form_not_found",
+        message: "No form is currently open on this page.",
+      };
     }
     if (mounted.length > 1) {
       return {
@@ -469,23 +653,40 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     return fillForm({ ...request, member: only.member, memberPath: only.memberPath });
   }
   async function executeAction(request: PageActionRequestInput): Promise<PageActionOutcome> {
+    if (request.expectedPanelInstanceId !== undefined && request.expectedPanelInstanceId !== instanceId) {
+      return {
+        ok: false,
+        reason: "stale",
+        operation: request.operation,
+        message: "The mounted panel definition was replaced or remounted since the last observation.",
+      };
+    }
     if (request.memberPath?.length) {
       const [head, ...rest] = request.memberPath;
       const publisher = publishers.get(head!)?.value;
       if (!publisher?.executeAction) {
         return {
           ok: false,
-          reason: "action_not_found",
+          reason: request.expectedMemberInstanceId !== undefined || request.expectedEntryInstanceId !== undefined ? "stale" : "action_not_found",
           operation: request.operation,
           message: `Nested panel member '${head}' is not mounted.`,
         };
       }
+      const { expectedPanelInstanceId: _checkedRoot, ...childRequest } = request;
       return publisher.executeAction({
-        ...request,
+        ...childRequest,
         memberPath: rest.length ? rest : undefined,
       });
     }
     if (request.operation === "page.refresh") {
+      if (request.expectedMemberInstanceId !== undefined && request.expectedMemberInstanceId !== instanceId) {
+        return {
+          ok: false,
+          reason: "stale",
+          operation: request.operation,
+          message: "The target nested panel member was replaced or remounted.",
+        };
+      }
       objectChanged(null);
       return { ok: true, kind: "executed", operation: "page.refresh" };
     }
@@ -495,11 +696,21 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const prefixMember = request.operation.slice(0, dot);
       const nestedPublisher = publishers.get(prefixMember)?.value;
       if (nestedPublisher?.executeAction) {
+        const { expectedPanelInstanceId: _checkedRoot, ...childRequest } = request;
         return nestedPublisher.executeAction({
-          ...request,
+          ...childRequest,
           operation: request.operation.slice(dot + 1),
         });
       }
+    }
+
+    if (request.expectedMemberInstanceId !== undefined && request.expectedMemberInstanceId !== instanceId) {
+      return {
+        ok: false,
+        reason: "stale",
+        operation: request.operation,
+        message: "The target nested panel member was replaced or remounted.",
+      };
     }
 
     const fullOperationId = prefix.length
@@ -507,73 +718,116 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       : request.operation;
     const entries = actionHandlers.get(fullOperationId) ?? actionHandlers.get(request.operation) ?? [];
     const preferredScope = request.rowKey !== undefined ? "row" : "default";
-    const matchedHandler =
-      entries.find((entry) => entry.scope === preferredScope)?.handler
-      ?? (request.rowKey === undefined ? entries[0]?.handler : undefined);
+    const matchedEntry =
+      entries.find((entry) => entry.scope === preferredScope)
+      ?? (request.rowKey === undefined ? entries[0] : undefined);
 
-    const scope: ActiveAgentActionScope = { agentRun: request.agentRun };
-    const previousScope = activeAgentAction;
-    activeAgentAction = scope;
+    if (!matchedEntry) {
+      return {
+        ok: false,
+        reason: request.expectedEntryInstanceId !== undefined ? "stale" : "action_not_found",
+        operation: request.operation,
+        message: request.expectedEntryInstanceId !== undefined
+          ? `Action entry '${request.operation}' was unmounted or replaced since the last observation.`
+          : request.rowKey !== undefined
+            ? `Row action '${request.operation}' is not mounted on a list member.`
+            : `The currently displayed page offers no mounted action '${request.operation}'.`,
+      };
+    }
+
+    if (
+      request.expectedEntryInstanceId !== undefined
+      && matchedEntry.entryInstanceId() !== request.expectedEntryInstanceId
+    ) {
+      return {
+        ok: false,
+        reason: "stale",
+        operation: request.operation,
+        message: `Action entry '${request.operation}' changed its bound target or was remounted since the last observation.`,
+      };
+    }
+
+    const matchedHandler = matchedEntry.handler;
+
+    const agentContext: PanelAgentActionContext = { agentRun: request.agentRun };
     try {
-      if (matchedHandler) {
-        const result = await matchedHandler({
-          ...(request.rowKey !== undefined ? { rowKey: request.rowKey } : {}),
-          ...(request.input !== undefined ? { input: request.input } : {}),
-        });
-        if (!result.ok) {
+      const result = await matchedHandler({
+        ...(request.rowKey !== undefined ? { rowKey: request.rowKey } : {}),
+        ...(request.input !== undefined ? { input: request.input } : {}),
+        ...(request.expectedEntryInstanceId !== undefined ? { expectedEntryInstanceId: request.expectedEntryInstanceId } : {}),
+        ...(request.expectedTarget !== undefined ? { expectedTarget: request.expectedTarget } : {}),
+        ...(request.expectedCheckedKeys !== undefined ? { expectedCheckedKeys: request.expectedCheckedKeys } : {}),
+        agentContext,
+      });
+      const toPageActionOutcome = (mountedResult: PanelMountedActionResult): PageActionOutcome => {
+        if (!mountedResult.ok) {
+          if (mountedResult.reason === "unknown") {
+            const unknownOutcome = mountedResult.outcome !== undefined
+              ? mountedResult.outcome
+              : agentContext.completed?.response.kind === "dispatched"
+                ? agentContext.completed.response.outcome
+                : undefined;
+            return {
+              ok: false,
+              kind: "unknown",
+              reason: "outcome_unknown",
+              operation: request.operation,
+              ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+              ...(unknownOutcome !== undefined ? { outcome: unknownOutcome } : {}),
+              ...(mountedResult.message ? { message: mountedResult.message } : {}),
+            };
+          }
+          if (mountedResult.reason === "partial") {
+            const partialOutcome = mountedResult.outcome !== undefined
+              ? mountedResult.outcome
+              : agentContext.completed?.response.kind === "dispatched"
+                ? agentContext.completed.response.outcome
+                : undefined;
+            return {
+              ok: false,
+              kind: "partially_executed",
+              reason: "partial_completion",
+              operation: request.operation,
+              ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+              code: mountedResult.code ?? "PARTIAL_COMPLETION",
+              message: mountedResult.message ?? "Operation partially completed with refusals or failures.",
+              ...(mountedResult.savedFields?.length ? { savedFields: mountedResult.savedFields } : {}),
+              outcome: partialOutcome,
+            };
+          }
           return {
             ok: false,
-            reason: result.reason,
+            reason: mountedResult.reason,
             operation: request.operation,
-            ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
-            ...(result.message ? { message: result.message } : {}),
+            ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+            ...(mountedResult.code ? { code: mountedResult.code } : {}),
+            ...(mountedResult.message ? { message: mountedResult.message } : {}),
           };
         }
-        if ("confirmation" in result) {
+        if ("confirmation" in mountedResult) {
           return {
             ok: true,
             kind: "awaiting_confirmation",
             operation: request.operation,
-            intentId: result.confirmation.intentId,
-            questionId: result.confirmation.questionId,
-            label: result.confirmation.label,
-            confirmation: result.confirmation,
+            intentId: mountedResult.confirmation.intentId,
+            questionId: mountedResult.confirmation.questionId,
+            label: mountedResult.confirmation.label,
+            confirmation: mountedResult.confirmation,
           };
+        }
+        if (agentContext.completed) {
+          const classified = classifyDispatchResponseForAction(agentContext.completed.response);
+          if (!classified.ok) return toPageActionOutcome(classified);
         }
         return {
           ok: true,
           kind: "executed",
           operation: request.operation,
-          ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
-          outcome: result.outcome ?? (scope.completed?.response.kind === "dispatched" ? scope.completed.response.outcome : scope.completed?.response),
+          ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+          outcome: mountedResult.outcome ?? (agentContext.completed?.response.kind === "dispatched" ? agentContext.completed.response.outcome : agentContext.completed?.response),
         };
-      }
-
-      const binding = operations.value.find((op) => op.id === fullOperationId || op.id === request.operation);
-      if (!binding) {
-        return {
-          ok: false,
-          reason: "action_not_found",
-          operation: request.operation,
-          message: `The currently displayed page offers no mounted action '${request.operation}'.`,
-        };
-      }
-      if (request.rowKey !== undefined) {
-        return {
-          ok: false,
-          reason: "action_not_found",
-          operation: request.operation,
-          message: `Row action '${request.operation}' is not mounted on a list member.`,
-        };
-      }
-      const outcome = await binding.invoke(request.input);
-      return {
-        ok: true,
-        kind: "executed",
-        operation: request.operation,
-        ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
-        outcome: scope.completed?.response.kind === "dispatched" ? scope.completed.response.outcome : outcome,
       };
+      return toPageActionOutcome(result);
     } catch (error) {
       if (error instanceof PanelConfirmationDeferred) {
         const { confirmation } = error;
@@ -587,64 +841,116 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
           confirmation,
         };
       }
-      if (error instanceof PanelOperationDeferred) {
-        const { preparation, dispatchNow, cancelNow } = error;
-        const confirmation: PendingPageActionConfirmation = {
-          intentId: preparation.intentId,
-          questionId: preparation.questionId!,
-          operationId: preparation.operationId,
-          label: preparation.label,
-          isStillValid: () => ({ ok: true }),
-          async dispatch(): Promise<PageActionConfirmedDispatchResult> {
-            try {
-              const confirmed = await dispatchNow();
-              if (confirmed.decision !== "confirm") {
-                return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "Operation was cancelled." };
-              }
-              if (confirmed.response.kind === "not-dispatched") {
-                return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
-              }
-              return {
-                ok: true,
-                intentId: preparation.intentId,
-                outcome: confirmed.response.outcome,
-                summary: summarizeDispatchResponse(confirmed.response),
-              };
-            } catch (dispatchError) {
-              return {
-                ok: false,
-                intentId: preparation.intentId,
-                reason: "failed",
-                message: dispatchError instanceof Error ? dispatchError.message : String(dispatchError),
-              };
-            }
-          },
-          cancel: cancelNow,
-        };
+      if (error instanceof PanelSubmissionStaleError) {
         return {
-          ok: true,
-          kind: "awaiting_confirmation",
+          ok: false,
+          reason: "stale",
           operation: request.operation,
-          intentId: preparation.intentId,
-          questionId: preparation.questionId!,
-          label: preparation.label,
-          confirmation,
+          ...(error.intentId ? { intentId: error.intentId } : {}),
+          message: error.message,
         };
+      }
+      if (agentContext.completed) {
+        const classified = classifyDispatchResponseForAction(agentContext.completed.response);
+        if (!classified.ok) {
+          if (classified.reason === "unknown") {
+            return {
+              ok: false,
+              kind: "unknown",
+              reason: "outcome_unknown",
+              operation: request.operation,
+              intentId: agentContext.completed.intentId,
+              ...(classified.outcome !== undefined ? { outcome: classified.outcome } : {}),
+              ...(classified.message ? { message: classified.message } : {}),
+            };
+          }
+          if (classified.reason === "partial") {
+            return {
+              ok: false,
+              kind: "partially_executed",
+              reason: "partial_completion",
+              operation: request.operation,
+              intentId: agentContext.completed.intentId,
+              code: classified.code ?? "PARTIAL_COMPLETION",
+              message: classified.message ?? "Operation partially completed with refusals or failures.",
+              ...(classified.savedFields?.length ? { savedFields: classified.savedFields } : {}),
+              outcome: classified.outcome,
+            };
+          }
+          return {
+            ok: false,
+            reason: classified.reason,
+            operation: request.operation,
+            intentId: agentContext.completed.intentId,
+            ...(classified.code ? { code: classified.code } : {}),
+            ...(classified.message ? { message: classified.message } : {}),
+          };
+        }
       }
       return {
         ok: false,
         reason: "failed",
         operation: request.operation,
-        ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
+        ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
         message: error instanceof Error ? error.message : String(error),
       };
-    } finally {
-      activeAgentAction = previousScope;
     }
   }
   const topLevelMemberKeys = Object.keys(manifest.members);
-  const forms = new PanelFormAdapters(options.reportDraftError, topLevelMemberKeys);
-  const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
+  const forms = new PanelFormAdapters(topLevelMemberKeys);
+  function memberStateInputs(member: string, visited: Set<string>, fields: Set<string>) {
+    if (visited.has(member)) return;
+    visited.add(member);
+    const declaration = manifest.members[member]!;
+    if ("fromState" in declaration.target) fields.add(declaration.target.fromState);
+    for (const input of Object.values(declaration.inputs ?? {})) {
+      if ("state" in input) fields.add(input.state);
+      if ("output" in input) {
+        const { member, name } = input.output;
+        const source = manifest.members[member]!;
+        const output = source.outputs?.[name];
+        if (output && !source.inputs?.[name]) fields.add(output.state);
+        memberStateInputs(member, visited, fields);
+      }
+    }
+  }
+  function blocksFormInputChange(changed: ReadonlySet<string>): boolean {
+    const fields = new Set<string>();
+    const visited = new Set<string>();
+    for (const { member, fields: bound } of forms.dirtyInputs()) {
+      memberStateInputs(member, visited, fields);
+      for (const field of bound) fields.add(field);
+    }
+    for (const [member, publisher] of publishers) {
+      if (publisher.value.dirty()) memberStateInputs(member, visited, fields);
+    }
+    return [...fields].some((field) => changed.has(field));
+  }
+
+  const formRegistries = (): PanelFormAdapters[] => [
+    forms,
+    ...[...publishers.values()].flatMap((publisher) => publisher.value.formRegistries()),
+  ];
+  async function applyStatePreservingDrafts(patch: Readonly<Record<string, RuntimeJsonValue>>): Promise<boolean> {
+    const registries = formRegistries();
+    const drafts = registries.flatMap((registry) => registry.captureDirtyDrafts());
+    const previous = state.values.value;
+    for (const registry of registries) registry.probing = true;
+    try {
+      state.setState(patch);
+      await nextTick();
+      if (drafts.every((draft) => draft.stillMounted())) return true;
+      const restored = drafts.map((draft) => draft.restoreOnRemount());
+      state.setState(previous);
+      await nextTick();
+      // Projection components can resolve asynchronously even when their definitions are already held.
+      await Promise.all(restored);
+      await nextTick();
+      return false;
+    } finally {
+      for (const registry of registries) registry.probing = false;
+    }
+  }
   const memberOutputStore = reactive<Record<string, Record<string, RuntimeJsonValue | null>>>({});
   function setMemberOutput(member: string, name: string, value: RuntimeJsonValue | null) {
     let bucket = memberOutputStore[member];
@@ -699,37 +1005,60 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       ...(reportedForms.length ? { forms: reportedForms } : {}),
     };
   });
-  return {
+  function memberInstances(): Readonly<Record<string, string>> {
+    const result: Record<string, string> = {};
+    for (const [member, publisher] of publishers.entries()) {
+      result[member] = publisher.value.instanceId;
+      for (const [subKey, subId] of Object.entries(publisher.value.memberInstances?.() ?? {})) {
+        result[`${member}.${subKey}`] = subId;
+      }
+    }
+    return result;
+  }
+  function entryInstances(): Readonly<Record<string, string>> {
+    const result: Record<string, string> = {};
+    for (const [opId, list] of actionHandlers.entries()) {
+      const defaultEntry = list.find((entry) => entry.scope === "default");
+      if (defaultEntry) result[opId] = defaultEntry.entryInstanceId();
+      const rowEntry = list.find((entry) => entry.scope === "row");
+      if (rowEntry) result[`row:${opId}`] = rowEntry.entryInstanceId();
+    }
+    for (const publisher of publishers.values()) {
+      Object.assign(result, publisher.value.entryInstances?.() ?? {});
+    }
+    return result;
+  }
+  function checkedKeys(): Readonly<Record<string, readonly string[]>> {
+    const result: Record<string, readonly string[]> = {};
+    for (const [name, { type }] of Object.entries(manifest.state)) {
+      if (type.kind === "list" && type.items.kind === "object") {
+        result[name] = stateObjects(state.values.value[name]).map(
+          ({ className, primaryKey }) => `${className}:${primaryKey}`,
+        );
+      }
+    }
+    for (const [member, publisher] of publishers.entries()) {
+      for (const [subKey, keys] of Object.entries(publisher.value.checkedKeys?.() ?? {})) {
+        result[`${member}.${subKey}`] = keys;
+      }
+    }
+    return result;
+  }
+  const instance: PanelInstance = {
+    instanceId,
+    isDisposed: () => disposed,
+    markDisposed() {
+      disposed = true;
+    },
     manifest,
     state,
     pageContext,
     operations,
     forms,
-    draft: readonly(draft) as Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>,
-    receiveDraft(value) { draft.value = value; },
-    rollbackDraft(value) { if (draft.value === value) draft.value = null; },
-    async settleDraft(slot, created) {
-      const ended = draft.value;
-      if (ended?.slot !== slot) return;
-      if (created !== undefined && ended.target.id === undefined)
-        await options.recordDraftCreated(ended.link, created);
-      if (draft.value === ended) draft.value = null;
-      for (const listener of settledListeners) listener(ended.link);
-    },
-    onDraftSettled(listener) {
-      settledListeners.add(listener);
-      return () => settledListeners.delete(listener);
-    },
-    unclaimedDraft: computed(() => {
-      const registered = registrations.value;
-      if (!topLevelMemberKeys.every((member) => registered.some((registration) => registration.slot === member))) return null;
-      const formSlots = registered.filter((registration) => registration.takesDrafts).map((registration) => registration.slot);
-      return forms.unclaimed(formSlots, forms.hasRowDetailHost());
-    }),
     projections: readonly(registrations),
     register(registration) {
       // In the declaration's slot order, whichever projection finished loading first: the operations an agent lists and
-      // the header draws, and the forms a draft is offered to, keep the panel's own order.
+      // the header draws keep the panel's own order.
       const order = Object.keys(manifest.members);
       registrations.value = [...registrations.value, registration]
         .sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
@@ -744,8 +1073,10 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const input = declaration.inputs?.[name];
       const outputBinding = declaration.outputs?.[name];
       if (input && !("state" in input)) {
-        const fixed = "literal" in input ? input.literal : null;
-        return { value: computed(() => fixed), set: () => { throw new Error(`Member '${member}' fixes '${name}'; it cannot be set`); } };
+        return {
+          value: computed(() => memberInputValue(instance, input)),
+          set: () => { throw new Error(`Member '${member}' fixes '${name}'; it cannot be set`); },
+        };
       }
       const bound = input?.state ?? outputBinding?.state;
       if (bound !== undefined) {
@@ -807,7 +1138,10 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     outputs: memberOutputStore,
     setMemberOutput,
-    dirty: () => draft.value !== null || forms.dirty() || [...publishers.values()].some((publisher) => publisher.value.dirty()),
+    dirty: () => forms.probing || forms.dirty() || [...publishers.values()].some((publisher) => publisher.value.dirty()),
+    blocksFormInputChange,
+    applyStatePreservingDrafts,
+    formRegistries,
     memberPathOf,
     operationIdOf,
     operationPath,
@@ -825,16 +1159,21 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     deepLink: () => state.deepLinkable(),
     publicState,
+    memberInstances,
+    entryInstances,
+    checkedKeys,
+    ...(options.operations.requestLocalConfirmation
+      ? { requestLocalConfirmation: (input: PanelLocalConfirmationRequest) => options.operations.requestLocalConfirmation!(input) }
+      : {}),
+    ...(options.operations.claimLocalConfirmation
+      ? { claimLocalConfirmation: (questionId: string) => options.operations.claimLocalConfirmation!(questionId) }
+      : {}),
+    ...(options.operations.cancelLocalConfirmation
+      ? { cancelLocalConfirmation: (questionId: string, reason: { code: string; message: string }) => options.operations.cancelLocalConfirmation!(questionId, reason) }
+      : {}),
     fillForm,
     executeAction,
     registerActionHandler,
-    notifyFormEdited(target) {
-      for (const listener of formEditedListeners) listener(target);
-    },
-    onFormEdited(listener) {
-      formEditedListeners.add(listener);
-      return () => formEditedListeners.delete(listener);
-    },
     operationCompleted(event) {
       for (const listener of operationCompletedListeners) listener(event);
     },
@@ -843,6 +1182,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       return () => operationCompletedListeners.delete(listener);
     },
   };
+  return instance;
 }
 
 /**
@@ -857,9 +1197,4 @@ export function applyPanelRequest(manifest: PanelManifest, state: PanelStateStor
     patch[name] = value;
   }
   state.setState(patch);
-}
-
-/** The draft link an address carries, if it carries one. */
-export function pageDraftLinkOf(address: string): PageDraftLink | null {
-  return pageDraftLink(Object.fromEntries(new URL(address, "http://page.invalid").searchParams));
 }

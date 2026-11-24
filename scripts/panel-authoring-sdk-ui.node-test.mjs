@@ -586,7 +586,8 @@ test("checkPanelWorkspace accepts official display components bound to metricOut
 
 test("every shipped skill template workspace passes checkPanelWorkspace", () => {
   const script = `
-    import { resolve } from "node:path";
+    import { readdirSync } from "node:fs";
+    import { dirname, resolve } from "node:path";
     import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
     import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
     import { componentMetadata } from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/apps-sdk/reference.mjs")).href)};
@@ -595,13 +596,25 @@ test("every shipped skill template workspace passes checkPanelWorkspace", () => 
       source: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/src/catalogue.ts"),
     }).map(({ metadata }) => ({ ...metadata, ports: { props: [], events: [], slots: [] } }));
     const catalogue = { version: "1.0.0", components };
+    import { customerOntologyReads } from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/platform-object-types.ts")).href)};
+    const objectAction = (id) => ({
+      id, kind: "action", effect: "write", target: { source: "input", input: "target" },
+      inputSchema: { type: "object" }, batch: false,
+    });
     const typeTable = {
       resultSchemas: {
         panelRecordList: { type: "array" },
+        panelRecordQuery: { type: "object" },
         panelRecord: { type: "object" },
         panelFormDescription: { type: "object", required: ["fields"] },
       },
+      operations: [{
+        ...objectAction("student.create"), target: { source: "none" }, affects: ["Student"],
+      }],
       objectTypes: {
+        Student: { reads: customerOntologyReads, operations: [objectAction("student.update")] },
+        Course: { reads: customerOntologyReads, operations: [objectAction("course.update"), objectAction("course.archive")] },
+        Enrollment: { reads: customerOntologyReads },
         "platform:AgentDefinition": {
           reads: {
             list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
@@ -613,11 +626,11 @@ test("every shipped skill template workspace passes checkPanelWorkspace", () => 
         },
       },
     };
-    const dirs = [
-      "agent-skills/ontomato-app-builder/references/templates/catalog-detail-dialog",
-      "agent-skills/ontomato-app-builder/references/templates/two-entry-catalog-detail/catalog",
-      "agent-skills/ontomato-app-builder/references/templates/two-entry-catalog-detail/detail",
-    ];
+    const root = resolve(${JSON.stringify(ROOT)}, "agent-skills/ontomato-app-builder/references/templates");
+    const dirs = readdirSync(root, { recursive: true })
+      .filter(file => file.endsWith("panel.json"))
+      .map(file => dirname(resolve(root, file)))
+      .sort();
     const results = [];
     for (const dir of dirs) {
       const res = await checkPanelWorkspace(resolve(${JSON.stringify(ROOT)}, dir), { checks, catalogue, version: "1.0.0", typeTable });
@@ -630,9 +643,144 @@ test("every shipped skill template workspace passes checkPanelWorkspace", () => 
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   }));
-  assert.equal(results.length, 3);
+  assert.ok(results.length > 0, "Expected to find shipped template workspaces");
   for (const item of results) {
     assert.equal(item.status, "valid", `${item.dir} failed checkPanelWorkspace`);
     assert.equal(item.unchecked, 0, `${item.dir} had unchecked references`);
   }
+});
+
+test("panel check accepts top-level targetless customer Actions on ObjectForm and OperationButton", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ontomato-targetless-check-"));
+  try {
+    writeFileSync(join(dir, "panel.html"), `<div id="app"><projection slot="createForm"></projection><projection slot="createBtn"></projection></div>\n`);
+    writeFileSync(join(dir, "panel.mjs"), `import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n`);
+    writeFileSync(join(dir, "registration.json"), JSON.stringify({
+      panels: [{ id: "targetless-panel", mode: "create", input: { name: "Orders", description: "", visibility: "domain" } }],
+    }));
+    writeFileSync(join(dir, "panel.json"), JSON.stringify({
+      manifest: {
+        state: {},
+        members: {
+          createForm: {
+            component: "ObjectForm",
+            type: "Order",
+            data: { createForm: "createForm" },
+            operations: { save: "action-create-order" },
+          },
+          createBtn: {
+            component: "OperationButton",
+            operation: "action-create-order",
+          },
+        },
+      },
+    }));
+    const script = `
+      import { resolve } from "node:path";
+      import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
+      import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
+      import { componentMetadata } from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/apps-sdk/reference.mjs")).href)};
+      const components = componentMetadata({
+        tsconfig: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/tsconfig.json"),
+        source: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/src/catalogue.ts"),
+      }).map(({ metadata }) => ({ ...metadata, ports: { props: [], events: [], slots: [] } }));
+      const typeTable = {
+        resultSchemas: { panelFormDescription: { type: "object" } },
+        objectTypes: {
+          Order: {
+            reads: { createForm: { source: "type", parameterMode: "fixed", params: {}, result: "panelFormDescription" } },
+          },
+        },
+        operations: [
+          {
+            id: "action-create-order",
+            kind: "action",
+            effect: "write",
+            target: { source: "none" },
+            inputSchema: { type: "object", properties: { values: { type: "object", properties: { customer: { type: "string" } } } } },
+            batch: false,
+            affects: ["Order"],
+          },
+        ],
+      };
+      const res = await checkPanelWorkspace(${JSON.stringify(dir)}, { checks, catalogue: { version: "1.0.0", components }, version: "1.0.0", typeTable });
+      console.log(JSON.stringify({ status: res.status, unchecked: res.unchecked.length }));
+    `;
+    const res = JSON.parse(execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", script], {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }));
+    assert.equal(res.status, "valid");
+    assert.equal(res.unchecked, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("describePanelType includes top-level targetless operations affecting the queried type", async () => {
+  const { describePanelType } = await import(PANEL_CHECK_URL);
+  const typeTable = {
+    resultSchemas: {
+      panelFormDescription: { type: "object", properties: { fields: { type: "array" } } },
+    },
+    objectTypes: {
+      Student: {
+        reads: { form: { source: "object", parameterMode: "fixed", params: {}, result: "panelFormDescription" } },
+        operations: [
+          {
+            id: "action-update-student",
+            kind: "action",
+            effect: "write",
+            target: { source: "input", input: "target" },
+            inputSchema: { type: "object", properties: {} },
+            batch: false,
+          },
+        ],
+      },
+      Course: {
+        reads: {},
+        operations: [],
+      },
+    },
+    operations: [
+      {
+        id: "action-create-student",
+        kind: "action",
+        effect: "write",
+        target: { source: "none" },
+        inputSchema: { type: "object", properties: {} },
+        batch: false,
+        affects: ["Student"],
+      },
+      {
+        id: "action-import-other",
+        kind: "action",
+        effect: "write",
+        target: { source: "none" },
+        inputSchema: { type: "object", properties: {} },
+        batch: false,
+        affects: ["Order"],
+      },
+    ],
+  };
+
+  const student = describePanelType(typeTable, "Student");
+  assert.equal(student.id, "Student");
+  assert.equal(student.operations.length, 1);
+  assert.equal(student.operations[0].id, "action-update-student");
+  assert.equal(student.targetlessOperations.length, 1);
+  assert.equal(student.targetlessOperations[0].id, "action-create-student");
+  assert.equal(student.targetlessOperations[0].targetless, true);
+  assert.equal(student.targetlessOperations[0].callTarget, null);
+  assert.match(student.targetlessOperationsHint, /target: null/);
+  assert.match(student.targetlessOperationsHint, /panel type --all/);
+
+  const course = describePanelType(typeTable, "Course");
+  assert.deepEqual(course.targetlessOperations, []);
+  assert.match(course.targetlessOperationsHint, /panel type --all/);
+
+  const formRead = describePanelType(typeTable, "Student", "form");
+  assert.equal(formRead.read, "form");
+  assert.equal(formRead.targetlessOperations, undefined);
 });

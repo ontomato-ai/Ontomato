@@ -53,8 +53,6 @@ function mountDirect(
       if (maybeAffected) instance.refresh(maybeAffected as never);
       return result;
     },
-    recordDraftCreated: async () => {},
-    reportDraftError: () => {},
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
       reads.push(request);
@@ -150,7 +148,7 @@ it("mounts ObjectForm on an ordinary customer ObjectType and saves edits through
           ],
           values: { id: "e-1", studentName: "Alice", credits: 3 },
           errors: [],
-          save: { method: "PUT", path: "/ontology/objects/CourseEnrollment", bodySchema: {}, draftOperation: "CourseEnrollment.update" },
+          save: { method: "PUT", path: "/ontology/objects/CourseEnrollment", bodySchema: {} },
         });
       }
       return ready({
@@ -160,7 +158,7 @@ it("mounts ObjectForm on an ordinary customer ObjectType and saves edits through
         ],
         values: { id: "", studentName: "" },
         errors: [],
-        save: { method: "POST", path: "/ontology/objects/CourseEnrollment", bodySchema: {}, draftOperation: "CourseEnrollment.create" },
+        save: { method: "POST", path: "/ontology/objects/CourseEnrollment", bodySchema: {} },
       });
     },
     { selected: { className: customerType, primaryKey: "e-1" } },
@@ -269,7 +267,7 @@ it("submits a form member's draft from a separate member declaring operationDraf
         ],
         values: { desc: "Initial" },
         errors: [],
-        save: { method: "PUT", path: "/ontology/model/relationships/r1", bodySchema: {}, draftOperation: "relationship.update" },
+        save: { method: "PUT", path: "/ontology/model/relationships/r1", bodySchema: {} },
       });
     },
     { selected: { className: RELATIONSHIP, primaryKey: "r1" } },

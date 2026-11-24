@@ -3,7 +3,7 @@ import { effectScope, nextTick, type ComputedRef } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { BUSINESS_KNOWLEDGE } from "@ontomato/contracts/platform-object-types";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { createDirectPanelInstance, type MemberDataState, type MemberInputs } from "../../../../../packages/apps-sdk/src/panel/direct";
+import { createDirectPanelInstance, type MemberDataState } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { slotInputValues } from "../../../../../packages/apps-sdk/src/panel/ports";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
@@ -44,14 +44,14 @@ it("sends what the panel's state binds as the author's input and what the member
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "knowledge", url: () => "/ontology/knowledge", label: () => "Knowledge", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async () => knowledge,
     read: async (request) => {
       reads.push(request);
       return { status: "ready", value: { rows: [] } as never };
     },
   });
-  const inputsOf = (member: string) => () => slotInputValues(manifest, member, instance.state.values.value) as MemberInputs;
+  const inputsOf = (member: string) => () => slotInputValues(instance, member);
   const scope = effectScope();
   let rows!: ComputedRef<MemberDataState>;
   scope.run(() => { rows = instance.memberData("list", knowledge, inputsOf("list")).use("rows"); });

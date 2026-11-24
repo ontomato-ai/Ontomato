@@ -1,0 +1,36 @@
+<style>
+  .course-table { min-width: 0; padding: var(--page-content-gap) var(--page-gutter); }
+</style>
+<div id="app">
+  <page-header :title="t('panel.name')"></page-header>
+  <div class="course-table">
+    <projection slot="courses" @row-action="rowAction"></projection>
+  </div>
+
+  <sdk-dialog v-model="dialog" :title="t('dialog.title')" width="min(36rem, calc(100% - 2rem))" append-to-body destroy-on-close>
+    <div v-if="dialog" :key="editing.primaryKey">
+      <page-header :draft="draft">
+        <template #title><projection slot="header"></projection></template>
+        <template #actions>
+          <sdk-button @click="cancel">{{ t('action.cancel') }}</sdk-button>
+        </template>
+      </page-header>
+      <template v-if="ready">
+        <sdk-tabs v-model="tab">
+          <sdk-tab-pane name="details" :label="t('tab.details')"></sdk-tab-pane>
+          <sdk-tab-pane name="capacity" :label="t('tab.capacity')"></sdk-tab-pane>
+        </sdk-tabs>
+        <projection slot="form" @saved="close">
+          <template #default>
+            <div v-show="tab === 'details'">
+              <object-form-fields :fields="['/name', '/description']"></object-form-fields>
+            </div>
+            <div v-show="tab === 'capacity'">
+              <object-form-fields :fields="['/capacity']"></object-form-fields>
+            </div>
+          </template>
+        </projection>
+      </template>
+    </div>
+  </sdk-dialog>
+</div>

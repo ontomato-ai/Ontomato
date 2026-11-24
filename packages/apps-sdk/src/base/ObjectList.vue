@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Comment, Fragment, Text, computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, shallowRef, useSlots, watch, type Slot, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
-import type { PageActionConfirmedDispatchResult, PendingPageActionConfirmation } from "@ontomato/contracts/agent-presentation";
+import type { PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
 import type { PanelChildObjectIdentity, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
@@ -14,6 +15,7 @@ import {
   panelRecordItemKey,
   panelRecordObjectRef,
   panelRowOperationKey,
+  type PanelRecordChildReferenceFieldValue,
   type PanelRecordQuery,
   type PanelRecordReferenceFieldValue,
 } from "@ontomato/contracts/panel-projection";
@@ -24,14 +26,23 @@ import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { paramValues } from "../panel/direct";
 import {
+  classifyDispatchResponseForAction,
+  classifyDispatchResponseForConfirmation,
   PanelConfirmationDeferred,
   PanelOperationDeferred,
-  summarizeDispatchResponse,
+  type PanelAgentActionContext,
   type PanelWriteResult,
 } from "../panel/instance";
+import {
+  createDeferredConfirmation,
+  matchesExpectedTarget,
+  PanelSubmissionStaleError,
+  type SubmissionEvaluator,
+} from "../panel/operation-binding";
 import { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam } from "../panel/member";
-import { admittedOperations } from "../panel/member-operations";
+import { admittedOperations, missingOperationDescriptorResult } from "../panel/member-operations";
 import type {
+  PlatformChildFieldReference,
   PlatformFieldReference,
   PlatformGraphStatus,
   PlatformObjectRecord,
@@ -42,12 +53,16 @@ import type { ListRowSlotOperation } from "../panel/slot-context";
 import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
 import { resolveValueMapEntry, type ResolvedValueMapEntry } from "./display-value";
 import ListRowSlotHost from "./ListRowSlotHost.vue";
+import ObjectListBatchActions from "./ObjectListBatchActions.vue";
 import ObjectListRowActions, { type ResolvedRowActionItem } from "./ObjectListRowActions.vue";
+import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
+import TypedValue from "./TypedValue.vue";
 import {
   formatOperationOutcome,
   resolveOperationInputFields,
+  type OperationBatchReceipt as BatchReceipt,
   type OperationOutcome,
   type SingleOperationOutcome,
 } from "./operation-dispatch";
@@ -86,12 +101,15 @@ import {
   VIRTUAL_ROW_THRESHOLD,
 } from "./object-list-virtual";
 import {
+  childReferenceDisplayLabel,
   displayFieldText,
+  isRecordChildReference,
   isRecordReference,
   rawRecordField,
   recordFieldArrayItems,
   referenceDisplayLabel,
   scalarFieldText,
+  toChildFieldReference,
   toFieldReference,
 } from "./record-field";
 import { textHighlightSegments } from "./text-highlight";
@@ -203,14 +221,7 @@ const props = withDefaults(
     subtitleLines?: number;
     /** How many items a page holds when the owner's read pages (a query's cursor, or page numbers); 20 by default. */
     pageSize?: number;
-    /**
-     * Automatically selects the first listed item only in two cases (and never while a draft is active):
-     * (a) on first showing when nothing is selected yet, and
-     * (b) after the reader changes search or filter parameters and the previously selected item is no longer listed
-     *     (selecting the first new match, or clearing selection to null when no items match).
-     * Clearing selection elsewhere (entering or cancelling create, closing detail, manual deselect, or subsequent
-     * refreshes while nothing is selected) is never overridden.
-     */
+    /** On the initial load, select the first listed item if there is no current selection. */
     fallbackToFirst?: boolean;
     /** Whether clicking the selected item again clears the selection; off, a click always selects. */
     toggleable?: boolean;
@@ -310,6 +321,8 @@ const emit = defineEmits<{
   "update:listed": [value: readonly ObjectListRef[]];
   /** Emitted when a reader clicks a reference cell carrying an owner-supplied object reference. */
   navigate: [reference: PlatformFieldReference, columnKey: string];
+  /** Emitted when a reader clicks a parent-scoped child reference cell or inline child reference item. */
+  "navigate-child": [reference: PlatformChildFieldReference, columnKey: string];
   /** Emitted when the reader clicks Clear filters from the narrowed empty state. */
   "clear-filters": [];
   /** Emitted when the reader clicks a local button (`kind: "local"`) in the built-in row action column. */
@@ -369,6 +382,10 @@ defineSlots<{
 }>();
 
 const slots = useSlots();
+const batchReceipt = shallowRef<BatchReceipt | null>(null);
+function publishBatchReceipt(receipt: BatchReceipt | null) {
+  batchReceipt.value = receipt;
+}
 
 const { t, te, locale } = useI18n();
 const slot = useProjectionSlot();
@@ -385,6 +402,8 @@ if (!datum) {
 const placement = panel.manifest.members[member.key]!;
 const declaration = directReadDeclaration(member.projection, datum);
 const rowObjectType = directReadRowType(member.projection, datum) ?? objectType;
+const hasObjectRows = datumName === "objects" || declaration?.rowType !== undefined
+  || ("type" in datum.source && (datum.source.type.kind === "ObjectType" || datum.source.type.kind === "PlatformObjectType"));
 const signatureParams = declaration?.parameterMode === "fixed" ? declaration.params : {};
 const requiredParamNames = new Set(declaration?.parameterMode === "fixed" ? (declaration.requiredParams ?? []) : []);
 
@@ -428,6 +447,10 @@ const canSearch = computed(
   () => props.searchable !== false && (hasServerSearch || (isLocalSearchActive.value && isWritableParam("search"))),
 );
 const canCheck = Boolean(slotOutputState(panel.manifest, member.key, "checked"));
+const selectedStateName = slotOutputState(panel.manifest, member.key, "selected")
+  ?? (placement.inputs?.selected && "state" in placement.inputs.selected ? placement.inputs.selected.state : undefined);
+const selectedStateType = selectedStateName ? panel.manifest.state[selectedStateName]?.type : undefined;
+const isChildObjectSelection = selectedStateType?.kind === "child-object";
 const canSelect = Boolean(slotOutputState(panel.manifest, member.key, "selected"));
 const hasWritableSelectedInput = Boolean(
   placement.inputs?.selected && "state" in placement.inputs.selected,
@@ -668,7 +691,6 @@ const filterSignature = computed(() =>
   JSON.stringify(nonPagingParamNames.map((name) => currentParams.value[name] ?? null)),
 );
 let initialLoadDone = false;
-let pendingFilterFallback = false;
 let pendingScrollToTop = false;
 
 // Synchronously clear local search and reset paging when switching dynamic type, so useMemberData issues one read.
@@ -697,7 +719,6 @@ if ("object" in datum.source) {
     (next, prev) => {
       if (next === prev) return;
       initialLoadDone = false;
-      pendingFilterFallback = false;
       activeRowLabel.value = null;
       expandedKey.value = null;
       resetPaging();
@@ -706,17 +727,13 @@ if ("object" in datum.source) {
   );
 }
 
-// Synchronously arm filter-change fallback and reset paging whenever search or any filter input changes,
-// before useMemberData's pre-flush watch runs.
+// Reset paging before useMemberData's pre-flush watch reacts to search or filter changes.
 if (nonPagingParamNames.length > 0) {
   watch(
     filterSignature,
     (next, prev) => {
       if (next === prev) return;
-      if (initialLoadDone) {
-        pendingFilterFallback = true;
-        pendingScrollToTop = true;
-      }
+      if (initialLoadDone) pendingScrollToTop = true;
       if (pageMode !== "none") resetPaging();
     },
     { flush: "sync" },
@@ -888,7 +905,11 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => {
   });
 });
 
-const total = computed<number | null>(() => (hasActiveLocalFilter.value ? rows.value.length : parsedData.value.total));
+const total = computed<number | null>(() => {
+  if (hasActiveLocalFilter.value) return rows.value.length;
+  if (datumState.value.status === "empty" && isCompleteList.value) return 0;
+  return parsedData.value.total;
+});
 const effectiveHasTotal = computed(
   () =>
     isCompleteList.value
@@ -900,20 +921,44 @@ const queryStatus = computed(() => parsedData.value.status);
 const diagnostics = computed(() => parsedData.value.diagnostics);
 const queryReason = computed(() => parsedData.value.reason);
 
-function rowSelectionValue(row: PlatformObjectRecord): ObjectListRef {
+const childSelectionParent = computed<PanelObjectIdentity | null>(() => {
+  if (!isChildObjectSelection || !("object" in datum.source)) return null;
+  if ("literal" in datum.source.object) {
+    const literal = datum.source.object.literal;
+    return { objectType: literal.className, primaryKey: literal.primaryKey };
+  }
+  const inputRef = stateObject(member.inputs.value[datum.source.object.input] as PanelFieldValue | undefined);
+  if (!inputRef) return null;
+  return { objectType: inputRef.className, primaryKey: inputRef.primaryKey };
+});
+
+function rowObjectRef(row: PlatformObjectRecord) {
   return panelRecordObjectRef(row, activeType.value ?? rowObjectType);
 }
+
+function rowSelectionValue(row: PlatformObjectRecord): ObjectListSelection {
+  const parent = childSelectionParent.value;
+  if (parent) {
+    return { parent, primaryKey: row.primaryKey };
+  }
+  return rowObjectRef(row);
+}
+const listedRefs = computed(() => rows.value.map(rowObjectRef));
 
 function rowItemKey(row: PlatformObjectRecord) {
   return panelRecordItemKey(row, { fallbackClassName: activeType.value ?? rowObjectType });
 }
 
 function rowClassName(row: PlatformObjectRecord): string {
-  return rowSelectionValue(row).className;
+  return rowObjectRef(row).className;
 }
 
 function refKey(refValue: ObjectListRef): string {
   return `${refValue.className}\u0000${refValue.primaryKey}`;
+}
+
+function rowCheckKey(row: PlatformObjectRecord): string {
+  return refKey(rowObjectRef(row));
 }
 
 function selectionIdentity(value: ObjectListSelection | null): string | null {
@@ -923,7 +968,7 @@ function selectionIdentity(value: ObjectListSelection | null): string | null {
 }
 
 function rowIdentityKey(row: PlatformObjectRecord): string {
-  return refKey(rowSelectionValue(row));
+  return selectionIdentity(rowSelectionValue(row))!;
 }
 
 const chosenRef = computed<ObjectListSelection | null>(() => {
@@ -938,10 +983,10 @@ const checkedRefs = computed<readonly ObjectListRef[]>(() =>
 );
 const checkedIdentityKeys = computed(() => new Set(checkedRefs.value.map(refKey)));
 const allVisibleChecked = computed(
-  () => rows.value.length > 0 && rows.value.every((row) => checkedIdentityKeys.value.has(rowIdentityKey(row))),
+  () => rows.value.length > 0 && rows.value.every((row) => checkedIdentityKeys.value.has(rowCheckKey(row))),
 );
 const someVisibleChecked = computed(
-  () => !allVisibleChecked.value && rows.value.some((row) => checkedIdentityKeys.value.has(rowIdentityKey(row))),
+  () => !allVisibleChecked.value && rows.value.some((row) => checkedIdentityKeys.value.has(rowCheckKey(row))),
 );
 
 const effectiveLayout = computed<"list" | "table" | "cards">(() => {
@@ -956,7 +1001,7 @@ const isCards = computed(() => effectiveLayout.value === "cards");
 const LONG_TEXT = 24;
 /** A column's text in a row, as the cell shows it. */
 function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string {
-  return fieldValue(row, column.key);
+  return displayFieldText(rawRecordField(row, column.key), locale.value, t, column.listSeparator ?? ", ");
 }
 /**
  * How a column is laid out, with no width of its own: one line at its own width by default, so a short value never
@@ -1029,7 +1074,11 @@ const footerReady = computed(
 );
 const footerHasTotal = computed(() => (loadingMore.value ? lastKnownHasTotal.value : effectiveHasTotal.value));
 const footerTotal = computed<number | null>(() => (loadingMore.value ? lastKnownTotal.value : total.value));
-const showFooterTotal = computed(() => footerReady.value && footerHasTotal.value && footerTotal.value !== null);
+const showFooterTotal = computed(() => footerHasTotal.value && footerTotal.value !== null && (
+  footerReady.value
+  || (datumState.value.status === "ready" && queryStatus.value === "ok")
+  || (datumState.value.status === "empty" && isCompleteList.value)
+));
 
 const showPageSizeSelect = computed(
   () =>
@@ -1210,32 +1259,16 @@ function setChecked(next: readonly ObjectListRef[]) {
   emit("update:checked", next);
 }
 
-function applyFallback(listed: readonly PlatformObjectRecord[]) {
-  const isInitialLoad = !initialLoadDone;
+function selectInitially(listed: readonly PlatformObjectRecord[]) {
+  if (initialLoadDone) return;
   initialLoadDone = true;
-  const filterChanged = pendingFilterFallback;
-  pendingFilterFallback = false;
-
-  if (!hasSelectedBinding || !props.fallbackToFirst || panel.instance.draft.value !== null) return;
-
-  // (a) First showing with no selection yet: pick the first row when non-empty.
-  if (isInitialLoad) {
-    if (chosenIdentity.value === null && listed.length > 0) {
-      setSelected(rowSelectionValue(listed[0]!));
-    }
-    return;
-  }
-
-  // (b) After search/filters changed and the previously selected item disappeared: pick the first match or clear to null.
-  if (filterChanged && chosenIdentity.value !== null) {
-    if (listed.some((row) => rowIdentityKey(row) === chosenIdentity.value)) return;
-    setSelected(listed.length > 0 ? rowSelectionValue(listed[0]!) : null);
+  if (hasSelectedBinding && props.fallbackToFirst && chosenIdentity.value === null && listed.length > 0) {
+    setSelected(rowSelectionValue(listed[0]!));
   }
 }
 
 let lastListedSignature: string | null = null;
-function publishListed(listed: readonly PlatformObjectRecord[]) {
-  const refs = listed.map(rowSelectionValue);
+function publishListed(refs: readonly ObjectListRef[]) {
   const signature = JSON.stringify(refs);
   if (signature === lastListedSignature) return;
   lastListedSignature = signature;
@@ -1252,7 +1285,7 @@ watch(
     if (state.status === "empty") {
       pendingScrollToTop = false;
       publishListed([]);
-      applyFallback([]);
+      selectInitially([]);
       return;
     }
     if (state.status !== "ready" || parsedData.value.status !== "ok") {
@@ -1260,20 +1293,23 @@ watch(
       return;
     }
     const allLoaded = rawRows.value;
-    const byType = new Map<string, { primaryKey: string; label: string }[]>();
-    for (const item of allLoaded) {
-      const itemType = rowClassName(item);
-      let bucket = byType.get(itemType);
-      if (!bucket) {
-        bucket = [];
-        byType.set(itemType, bucket);
+    if (isChildObjectSelection && selectedStateType?.kind === "child-object" && childSelectionParent.value) {
+      panel.instance.nameChildObjects(childSelectionParent.value, selectedStateType.collection, allLoaded);
+    } else {
+      const byType = new Map<string, { primaryKey: string; label: string }[]>();
+      for (const item of allLoaded) {
+        const itemType = rowClassName(item);
+        let bucket = byType.get(itemType);
+        if (!bucket) {
+          bucket = [];
+          byType.set(itemType, bucket);
+        }
+        bucket.push(item);
       }
-      bucket.push(item);
+      for (const [itemType, items] of byType) panel.instance.nameObjects(itemType, items);
     }
-    for (const [itemType, items] of byType) panel.instance.nameObjects(itemType, items);
-    const listed = rows.value;
-    publishListed(listed);
-    applyFallback(listed);
+    publishListed(listedRefs.value);
+    selectInitially(rows.value);
     if (pendingScrollToTop) {
       pendingScrollToTop = false;
       scrollTop.value = 0;
@@ -1303,10 +1339,7 @@ if (pageMode === "none") {
       if (datumState.value.status !== "ready" || parsedData.value.status !== "ok") return;
       scrollTop.value = 0;
       if (scrollContainerRef.value) scrollContainerRef.value.scrollTop = 0;
-      pendingFilterFallback = true;
-      const listed = rows.value;
-      publishListed(listed);
-      applyFallback(listed);
+      publishListed(listedRefs.value);
     },
     { flush: "sync" },
   );
@@ -1642,20 +1675,6 @@ watch(rows, (listed) => {
   }
 });
 
-let unregisterRowDetailHost: (() => void) | undefined;
-watch(
-  hasRowDetailSlot,
-  (present) => {
-    unregisterRowDetailHost?.();
-    unregisterRowDetailHost = present ? panel.instance.forms.registerRowDetailHost(member.key) : undefined;
-  },
-  { immediate: true },
-);
-onBeforeUnmount(() => {
-  unregisterRowDetailHost?.();
-  unregisterRowDetailHost = undefined;
-});
-
 const activeRowLabel = ref<string | null>(null);
 
 // When external or agent state changes `selected`, discard any stale human-click label so `activeLabel` stays in sync.
@@ -1757,21 +1776,21 @@ function onListItemKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
 }
 
 function toggleChecked(row: PlatformObjectRecord, checked: boolean) {
-  const identity = rowIdentityKey(row);
+  const identity = rowCheckKey(row);
   if (checked) {
     if (checkedIdentityKeys.value.has(identity)) return;
-    setChecked([...checkedRefs.value, rowSelectionValue(row)]);
+    setChecked([...checkedRefs.value, rowObjectRef(row)]);
   } else {
     setChecked(checkedRefs.value.filter((item) => refKey(item) !== identity));
   }
 }
 
 function toggleAllVisible(checked: boolean) {
-  const visibleKeys = new Set(rows.value.map(rowIdentityKey));
+  const visibleKeys = new Set(rows.value.map(rowCheckKey));
   if (checked) {
     const added = rows.value
-      .filter((row) => !checkedIdentityKeys.value.has(rowIdentityKey(row)))
-      .map(rowSelectionValue);
+      .filter((row) => !checkedIdentityKeys.value.has(rowCheckKey(row)))
+      .map(rowObjectRef);
     setChecked([...checkedRefs.value, ...added]);
   } else {
     setChecked(checkedRefs.value.filter((item) => !visibleKeys.has(refKey(item))));
@@ -1786,6 +1805,15 @@ function navigateTo(reference: PlatformFieldReference, columnKey: string) {
   const output = placement.outputs?.[columnKey] ? columnKey : "navigate";
   void panel.instance.output(member.key, output, { className: reference.className, primaryKey: reference.primaryKey });
   emit("navigate", reference, columnKey);
+}
+
+function navigateToChild(reference: PlatformChildFieldReference, columnKey: string) {
+  emit("navigate-child", {
+    parent: reference.parent,
+    collection: reference.collection,
+    primaryKey: reference.primaryKey,
+    label: reference.label,
+  }, columnKey);
 }
 
 /** The field each compact item's summary line shows: the one configured, else the owner's own subtitle. */
@@ -1810,6 +1838,27 @@ function referenceField(row: PlatformObjectRecord, key: string): PanelRecordRefe
   return isRecordReference(raw) ? raw : null;
 }
 
+function childReferenceField(row: PlatformObjectRecord, key: string): PanelRecordChildReferenceFieldValue | null {
+  const raw = rawRecordField(row, key);
+  return isRecordChildReference(raw) ? raw : null;
+}
+
+function arrayHasChildReference(row: PlatformObjectRecord, key: string): boolean {
+  const raw = rawRecordField(row, key);
+  return Array.isArray(raw) && raw.some((item) => isRecordChildReference(item));
+}
+
+function usesTypedValueCell(row: PlatformObjectRecord, column: ObjectListColumn): boolean {
+  if (column.kind !== "text" && childReferenceField(row, column.key)) return true;
+  const raw = rawRecordField(row, column.key);
+  if (Array.isArray(raw)) {
+    return column.listSeparator !== undefined
+      || column.listStyle !== undefined
+      || arrayHasChildReference(row, column.key);
+  }
+  return false;
+}
+
 function highlightRangesFor(row: PlatformObjectRecord, key: string, text: string): readonly TextHighlightRange[] | undefined {
   const ownerRanges = row.highlights?.[key];
   if (ownerRanges?.length) return ownerRanges;
@@ -1828,6 +1877,13 @@ function cellSegments(row: PlatformObjectRecord, key: string, empty = "—") {
   const text = fieldValue(row, key);
   if (text === "") return [{ text: empty, hit: false }];
   return textSegmentsFor(row, key, text);
+}
+
+function subtitleSegments(row: PlatformObjectRecord, column: ObjectListColumn) {
+  if (!column.subtitleKey) return [];
+  const text = fieldValue(row, column.subtitleKey);
+  if (text !== "") return textSegmentsFor(row, column.subtitleKey, text);
+  return column.subtitleEmptyKey ? [{ text: panel.t(column.subtitleEmptyKey), hit: false }] : [];
 }
 
 function columnMapped(row: PlatformObjectRecord, column: ObjectListColumn): ResolvedValueMapEntry | null {
@@ -1986,12 +2042,158 @@ const rowOpPendingInputFields = computed<readonly OperationInputField[]>(() => {
 const rowOpOutcome = computed<OperationOutcome | null>(() =>
   rowOpReceipt.value?.kind === "dispatched" ? rowOpReceipt.value.outcome ?? null : null,
 );
-const rowOpBatchItems = computed(() => (rowOpOutcome.value?.kind === "batch" ? rowOpOutcome.value.items : []));
-const rowOpBatchDone = computed(() => rowOpBatchItems.value.filter((item) => item.outcome.kind === "success").length);
 const saidRowOp = (single: SingleOperationOutcome) => formatOperationOutcome(single, t);
-const nameOfRowOp = (target: PanelObjectIdentity) =>
-  rowOpNamed.value.find(({ target: known }) =>
-    known.objectType === target.objectType && known.primaryKey === target.primaryKey)?.label ?? target.primaryKey;
+
+const hasCustomRowActionSlot = computed(() =>
+  Boolean(
+    slots.actions
+    || slots.card
+    || slots.cell
+    || slots["row-detail"]
+    || Object.keys(slots).some((name) => name.startsWith("cell-")),
+  ),
+);
+
+/**
+ * Evaluates whether a row operation button is currently visible and enabled for a human on `row`,
+ * following `rowActions` `when` and `disabledWhen` rules.
+ */
+function rowActionButtonState(
+  row: PlatformObjectRecord,
+  operationName: string,
+): { readonly ok: true } | { readonly ok: false; readonly message: string } {
+  const configured = (props.rowActions?.items ?? []).filter(
+    (item) => item.kind === "operation" && item.operation === operationName,
+  );
+  if (configured.length === 0) {
+    if (hasCustomRowActionSlot.value) return { ok: true };
+    return {
+      ok: false,
+      message: `Row action '${operationName}' is not rendered on rows of this list.`,
+    };
+  }
+  const visible = configured.filter((item) => matchesRowActionWhen(row, item.when, true));
+  if (visible.length === 0) {
+    return {
+      ok: false,
+      message: `Row action '${operationName}' is not shown on row '${row.primaryKey}'.`,
+    };
+  }
+  const enabled = visible.filter((item) => !(item.disabledWhen ? matchesRowActionWhen(row, item.disabledWhen, false) : false));
+  if (enabled.length === 0) {
+    return {
+      ok: false,
+      message: `Row action '${operationName}' is currently disabled on row '${row.primaryKey}'.`,
+    };
+  }
+  return { ok: true };
+}
+
+let listUnmounted = false;
+onBeforeUnmount(() => {
+  listUnmounted = true;
+});
+
+/** Unique mounted list instance ID; rotates on remount, dynamic type switch, or parent/member input change. */
+const listInstanceId = ref(randomId());
+watch(
+  () => JSON.stringify({ activeType: activeType.value, inputs: member.inputs.value }),
+  (next, prev) => {
+    if (next !== prev) listInstanceId.value = randomId();
+  },
+);
+
+/**
+ * Whether this list is declared or observed to hold multiple/dynamic object types, in which case
+ * row actions must always use the composite `<className>:<primaryKey>` key and reject bare primary keys.
+ */
+const requiresCompositeRowKey = computed<boolean>(() => {
+  if (datumName === "objects" || !rowObjectType) return true;
+  const isUnionState = (stateName: string | undefined) => {
+    if (!stateName) return false;
+    const field = panel.manifest.state[stateName];
+    if (!field) return false;
+    return field.type.kind === "object-union"
+      || (field.type.kind === "list" && field.type.items.kind === "object-union");
+  };
+  if (
+    isUnionState(placement.inputs?.selected && "state" in placement.inputs.selected ? placement.inputs.selected.state : undefined)
+    || isUnionState(placement.outputs?.selected?.state)
+    || isUnionState(placement.outputs?.checked?.state)
+  ) {
+    return true;
+  }
+  const fallback = activeType.value ?? rowObjectType;
+  return rows.value.some((item) => Boolean(item.className && item.className !== fallback));
+});
+
+/** Briefly waits for an in-flight initial list load to settle so row actions do not falsely report `action_not_found`. */
+function waitForInitialRowsLoad(timeoutMs = 2000): Promise<boolean> {
+  if (datumState.value.status !== "loading") return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let done = false;
+    let stop: (() => void) | null = null;
+    const finish = (settled: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      stop?.();
+      resolve(settled);
+    };
+    const timer = setTimeout(() => finish(datumState.value.status !== "loading"), timeoutMs);
+    stop = watch(
+      () => datumState.value.status,
+      (status) => {
+        if (listUnmounted || panel.instance.isDisposed()) finish(false);
+        else if (status !== "loading") finish(true);
+      },
+      { immediate: true },
+    );
+  });
+}
+
+/**
+ * Resolves a loaded row by composite `<className>:<primaryKey>` key first (required for mixed-type and
+ * dynamic-type lists), falling back to plain `primaryKey` only on fixed single-type lists when unambiguous.
+ */
+function findLoadedRowByKey(
+  rowKey: string,
+): { readonly ok: true; readonly row: PlatformObjectRecord } | { readonly ok: false; readonly reason: "action_not_found" | "input_required"; readonly message: string } {
+  const fallbackClassName = activeType.value ?? rowObjectType;
+  const exactMatches = rows.value.filter((item) => panelRowOperationKey(item, fallbackClassName) === rowKey);
+  if (exactMatches.length === 1) return { ok: true, row: exactMatches[0]! };
+  if (exactMatches.length > 1) {
+    return {
+      ok: false,
+      reason: "input_required",
+      message: `Row key '${rowKey}' matched multiple loaded rows.`,
+    };
+  }
+  if (requiresCompositeRowKey.value) {
+    return {
+      ok: false,
+      reason: "input_required",
+      message: `Row key '${rowKey}' must use the composite '<className>:<primaryKey>' format on a multi-type or dynamic-type list.`,
+    };
+  }
+  const plainMatches = rows.value.filter((item) => item.primaryKey === rowKey);
+  if (plainMatches.length === 0) {
+    return {
+      ok: false,
+      reason: "action_not_found",
+      message: `Row '${rowKey}' is not currently loaded in this list.`,
+    };
+  }
+  if (plainMatches.length > 1) {
+    const candidates = plainMatches.map((item) => panelRowOperationKey(item, fallbackClassName)).join(", ");
+    return {
+      ok: false,
+      reason: "input_required",
+      message: `Row key '${rowKey}' is ambiguous across multiple object types (${candidates}); specify the composite '<className>:<primaryKey>' key.`,
+    };
+  }
+  return { ok: true, row: plainMatches[0]! };
+}
 
 async function executeRowOperation(
   row: PlatformObjectRecord,
@@ -1999,17 +2201,64 @@ async function executeRowOperation(
   descriptor: PanelOwnerOperationDescriptor,
   boundInput: Record<string, RuntimeJsonValue>,
   providedInput: Record<string, RuntimeJsonValue>,
-) {
-  if (rowOpRunning.value) return;
+  agentContext?: PanelAgentActionContext,
+): Promise<"executed" | "cancelled" | "skipped"> {
+  if (rowOpRunning.value) return "skipped";
   const binding = member.projection.operations?.[operationName];
-  if (!binding) return;
+  if (!binding) return "skipped";
   const fallbackClassName = activeType.value ?? rowObjectType;
   const target = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
-  if (target === undefined) return;
+  if (target === undefined) return "skipped";
   const operationId = panel.instance.operationIdOf(slot.slot, operationName);
+  const capturedCompositeKey = panelRowOperationKey(row, fallbackClassName);
   const input: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
     ? wrapActionOperationInput(descriptor.inputSchema, boundInput, providedInput)
     : { ...providedInput, ...boundInput };
+
+  const evaluateRowSubmission: SubmissionEvaluator = (phase) => {
+    if (listUnmounted || panel.instance.isDisposed()) {
+      return { ok: false, message: "The list was closed or unmounted." };
+    }
+    if (phase === "confirm" && rowOpRunning.value) {
+      return { ok: false, message: "Another row operation is currently running." };
+    }
+    const liveFallback = activeType.value ?? rowObjectType;
+    const liveRow = rows.value.find((item) => panelRowOperationKey(item, liveFallback) === capturedCompositeKey);
+    if (!liveRow) {
+      return { ok: false, message: `Row '${capturedCompositeKey}' is no longer displayed.` };
+    }
+    const liveBinding = member.projection.operations?.[operationName];
+    const liveDescriptor = admittedOpMap.value[operationName];
+    if (!liveBinding || !liveDescriptor) {
+      return { ok: false, message: `Operation '${operationName}' is no longer available on this list.` };
+    }
+    const liveButton = rowActionButtonState(liveRow, operationName);
+    if (!liveButton.ok) {
+      return { ok: false, message: liveButton.message };
+    }
+    const liveRowOp = rowOperationsFor(liveRow)[operationName];
+    if (!liveRowOp?.available) {
+      return {
+        ok: false,
+        message: liveRowOp?.unavailable?.reason ?? `Operation '${operationName}' is no longer available on row '${capturedCompositeKey}'.`,
+      };
+    }
+    const liveTarget = resolveRowOperationTarget(liveBinding, liveRow, liveFallback, member.inputs.value);
+    if (liveTarget === undefined) {
+      return { ok: false, message: `Operation '${operationName}' no longer resolves a valid target for row '${capturedCompositeKey}'.` };
+    }
+    const liveBoundInput = resolveRowOperationParams(liveBinding, liveRow, member.inputs.value);
+    const liveInput: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(liveDescriptor.inputSchema)
+      ? wrapActionOperationInput(liveDescriptor.inputSchema, liveBoundInput, providedInput)
+      : { ...providedInput, ...liveBoundInput };
+    return {
+      ok: true,
+      instanceId: panel.instance.instanceId,
+      operationId: panel.instance.operationIdOf(slot.slot, operationName),
+      target: liveTarget,
+      payload: { rowKey: capturedCompositeKey, input: liveInput },
+    };
+  };
 
   rowOpRunning.value = true;
   rowOpFailure.value = null;
@@ -2018,7 +2267,7 @@ async function executeRowOperation(
   try {
     if (descriptor.effect === "read") {
       rowOpRead.value = await panel.instance.readOperation(operationId, { target, input });
-      return;
+      return "executed";
     }
     const applyRowAnswer = (
       answer: { decision: "confirm" | "cancel"; response?: PanelHumanOperationDispatchResponse; named: PanelWriteResult["named"] },
@@ -2028,46 +2277,31 @@ async function executeRowOperation(
       const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
       if (answered?.kind === "success") panel.notify({ kind: "success", text: saidRowOp(answered) });
       else rowOpReceipt.value = answer.response;
-      if (answered) emit("operation-done", operationName, answered, rowSelectionValue(row));
+      if (answered) emit("operation-done", operationName, answered, rowObjectRef(row));
       return answered;
     };
     let answer: PanelWriteResult;
     try {
-      answer = await panel.instance.writeOperation(
-        operationId,
-        { call: { target, input } },
-      );
+      answer = agentContext
+        ? await panel.instance.writeOperation(
+            operationId,
+            { call: { target, input } },
+            { agentContext, evaluateSubmission: evaluateRowSubmission },
+          )
+        : await panel.instance.writeOperation(operationId, { call: { target, input } });
     } catch (reason) {
       if (reason instanceof PanelOperationDeferred) {
         const deferred = reason;
         const { preparation } = deferred;
-        const capturedRowKey = row.primaryKey;
-        const isStillValid = () => {
-          const liveRow = rows.value.find((item) => item.primaryKey === capturedRowKey);
-          if (!liveRow) return { ok: false as const, reason: "stale", message: `Row '${capturedRowKey}' is no longer displayed.` };
-          const liveRowOp = rowOperationsFor(liveRow)[operationName];
-          if (!liveRowOp?.available) {
-            return {
-              ok: false as const,
-              reason: "stale",
-              message: liveRowOp?.unavailable?.reason ?? `Operation '${operationName}' is no longer available on row '${capturedRowKey}'.`,
-            };
-          }
-          if (rowOpRunning.value) return { ok: false as const, reason: "stale", message: "Another row operation is currently running." };
-          return { ok: true as const };
-        };
-        const confirmation: PendingPageActionConfirmation = {
+        const confirmation = createDeferredConfirmation({
           intentId: preparation.intentId,
           questionId: preparation.questionId!,
           operationId: preparation.operationId,
           label: preparation.label,
-          isStillValid,
-          async dispatch(): Promise<PageActionConfirmedDispatchResult> {
-            const check = isStillValid();
-            if (!check.ok) {
-              await deferred.cancelNow({ code: "ROW_ACTION_CONFIRMATION_STALE", message: check.message }).catch(() => undefined);
-              return { ok: false, intentId: preparation.intentId, reason: "stale", message: check.message };
-            }
+          staleCode: "ROW_ACTION_CONFIRMATION_STALE",
+          isStillValid: deferred.isStillValid,
+          cancel: deferred.cancelNow,
+          async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
             rowOpRunning.value = true;
             rowOpFailure.value = null;
             rowOpReceipt.value = null;
@@ -2077,16 +2311,16 @@ async function executeRowOperation(
                 return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "Operation was cancelled." };
               }
               applyRowAnswer({ ...confirmed, named: deferred.named });
-              if (confirmed.response.kind === "not-dispatched") {
-                return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
-              }
-              return {
-                ok: true,
-                intentId: preparation.intentId,
-                outcome: confirmed.response.outcome,
-                summary: summarizeDispatchResponse(confirmed.response),
-              };
+              return classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
             } catch (dispatchReason) {
+              if (dispatchReason instanceof PanelSubmissionStaleError) {
+                return {
+                  ok: false,
+                  intentId: preparation.intentId,
+                  reason: "stale",
+                  message: dispatchReason.message,
+                };
+              }
               rowOpFailure.value = dispatchReason instanceof Error ? dispatchReason : new Error(String(dispatchReason));
               return {
                 ok: false,
@@ -2098,16 +2332,18 @@ async function executeRowOperation(
               rowOpRunning.value = false;
             }
           },
-          cancel: deferred.cancelNow,
-        };
+        });
         throw new PanelConfirmationDeferred(confirmation);
       }
       throw reason;
     }
+    if (answer.decision === "cancel") return "cancelled";
     applyRowAnswer(answer);
+    return "executed";
   } catch (reason) {
-    if (reason instanceof PanelConfirmationDeferred) throw reason;
+    if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) throw reason;
     rowOpFailure.value = reason instanceof Error ? reason : new Error(String(reason));
+    return "executed";
   } finally {
     rowOpRunning.value = false;
   }
@@ -2169,61 +2405,137 @@ async function confirmRowOpInput(providedInput: Record<string, RuntimeJsonValue>
   await executeRowOperation(row, operationName, descriptor, boundInput, provided);
 }
 
-const unregisterRowActionHandlers = Object.keys(member.projection.operations ?? {}).map((operationName) =>
-  panel.instance.registerActionHandler(
-    panel.instance.operationIdOf(slot.slot, operationName),
-    async ({ rowKey, input }) => {
-      if (!rowKey) {
-        return { ok: false, reason: "input_required", message: `Row action '${operationName}' requires rowKey.` };
-      }
-      const row = rows.value.find((item) => item.primaryKey === rowKey);
-      if (!row) {
-        return { ok: false, reason: "action_not_found", message: `Row '${rowKey}' is not currently loaded in this list.` };
-      }
-      const descriptor = admittedOpMap.value[operationName];
-      const binding = member.projection.operations?.[operationName];
-      if (!descriptor || !binding) {
-        return { ok: false, reason: "action_not_ready", message: `Row operation '${operationName}' is not ready yet.` };
-      }
-      const rowOp = rowOperationsFor(row)[operationName];
-      if (!rowOp || !rowOp.available) {
-        return {
-          ok: false,
-          reason: "action_unavailable",
-          message: rowOp?.unavailable?.reason ?? `Operation '${operationName}' is not available on row '${rowKey}'.`,
-        };
-      }
-      const boundInput = resolveRowOperationParams(binding, row, member.inputs.value);
-      const allFields = resolveOperationInputFields(panel, slot, operationName, descriptor);
-      const allowedKeys = allowedRowOperationInputKeys(binding, allFields);
-      const filteredExtra = filterAllowedRowOperationInput(input, allowedKeys);
-      const baseInput: Record<string, RuntimeJsonValue> = { ...filteredExtra, ...boundInput };
-      const suppliedKeys = new Set(Object.keys(baseInput));
-      const missing = allFields
-        .filter((field) => field.required && allowedKeys.has(field.name) && !suppliedKeys.has(field.name))
-        .map((field) => field.name);
-      if (missing.length > 0) {
-        return {
-          ok: false,
-          reason: "input_required",
-          message: `Row operation '${operationName}' requires input fields: ${missing.join(", ")}.`,
-        };
-      }
-      await executeRowOperation(row, operationName, descriptor, boundInput, filteredExtra);
-      if (rowOpFailure.value) {
-        return { ok: false, reason: "failed", message: rowOpFailure.value.message };
-      }
-      if (rowOpRead.value) {
-        return { ok: true, outcome: rowOpRead.value };
-      }
-      return { ok: true, outcome: rowOpOutcome.value ?? rowOpReceipt.value ?? undefined };
-    },
-    { scope: "row" },
-  ),
-);
-onBeforeUnmount(() => {
-  for (const unregister of unregisterRowActionHandlers) unregister();
+const mountedRowActionOperations = computed<readonly string[]>(() => {
+  const declared = Object.keys(member.projection.operations ?? {});
+  if (hasCustomRowActionSlot.value) return declared;
+  const configured = new Set(
+    (props.rowActions?.items ?? [])
+      .filter((item): item is Extract<typeof item, { kind: "operation" }> => item.kind === "operation")
+      .map((item) => item.operation),
+  );
+  return declared.filter((name) => configured.has(name));
 });
+
+let unregisterRowActionHandlers: (() => void)[] = [];
+function clearRowActionHandlers() {
+  for (const unregister of unregisterRowActionHandlers) unregister();
+  unregisterRowActionHandlers = [];
+}
+watch(
+  mountedRowActionOperations,
+  (operationNames) => {
+    clearRowActionHandlers();
+    unregisterRowActionHandlers = operationNames.map((operationName) =>
+      panel.instance.registerActionHandler(
+        panel.instance.operationIdOf(slot.slot, operationName),
+        async ({ rowKey, input, expectedTarget, agentContext }) => {
+          if (!rowKey) {
+            return { ok: false, reason: "input_required", message: `Row action '${operationName}' requires rowKey.` };
+          }
+          if (datumState.value.status === "loading" && (!initialLoadDone || rows.value.length === 0)) {
+            const settled = await waitForInitialRowsLoad();
+            if (!settled || listUnmounted || panel.instance.isDisposed()) {
+              return {
+                ok: false,
+                reason: "action_not_ready",
+                message: `List is still loading rows for action '${operationName}'.`,
+              };
+            }
+          }
+          const matched = findLoadedRowByKey(rowKey);
+          if (!matched.ok) {
+            return { ok: false, reason: matched.reason, message: matched.message };
+          }
+          const { row } = matched;
+          const binding = member.projection.operations?.[operationName];
+          if (!binding) {
+            return { ok: false, reason: "action_not_found", message: `Row operation '${operationName}' is not declared on this list.` };
+          }
+          if (expectedTarget !== undefined) {
+            const fallbackClassName = activeType.value ?? rowObjectType;
+            const resolvedTarget = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
+            const effectiveTarget = resolvedTarget ?? {
+              kind: "object" as const,
+              objectType: rowObjectRef(row).className,
+              primaryKey: rowObjectRef(row).primaryKey,
+            };
+            if (!matchesExpectedTarget(effectiveTarget, expectedTarget)) {
+              return {
+                ok: false,
+                reason: "stale",
+                message: `Row operation '${operationName}' target no longer matches the expected target.`,
+              };
+            }
+          }
+          if (rowOpRunning.value) {
+            return {
+              ok: false,
+              reason: "action_unavailable",
+              message: `List is busy executing another row operation; cannot run '${operationName}' on row '${rowKey}'.`,
+            };
+          }
+          const descriptor = admittedOpMap.value[operationName];
+          if (!descriptor) {
+            return missingOperationDescriptorResult(memberOperationsState.value, operationName);
+          }
+          const buttonState = rowActionButtonState(row, operationName);
+          if (!buttonState.ok) {
+            return { ok: false, reason: "action_unavailable", message: buttonState.message };
+          }
+          const rowOp = rowOperationsFor(row)[operationName];
+          if (!rowOp || !rowOp.available) {
+            return {
+              ok: false,
+              reason: "action_unavailable",
+              message: rowOp?.unavailable?.reason ?? `Operation '${operationName}' is not available on row '${rowKey}'.`,
+            };
+          }
+          const boundInput = resolveRowOperationParams(binding, row, member.inputs.value);
+          const allFields = resolveOperationInputFields(panel, slot, operationName, descriptor);
+          const allowedKeys = allowedRowOperationInputKeys(binding, allFields);
+          const filteredExtra = filterAllowedRowOperationInput(input, allowedKeys);
+          const baseInput: Record<string, RuntimeJsonValue> = { ...filteredExtra, ...boundInput };
+          const suppliedKeys = new Set(Object.keys(baseInput));
+          const missing = allFields
+            .filter((field) => field.required && allowedKeys.has(field.name) && !suppliedKeys.has(field.name))
+            .map((field) => field.name);
+          if (missing.length > 0) {
+            return {
+              ok: false,
+              reason: "input_required",
+              message: `Row operation '${operationName}' requires input fields: ${missing.join(", ")}.`,
+            };
+          }
+          const status = await executeRowOperation(row, operationName, descriptor, boundInput, filteredExtra, agentContext);
+          const dispatchedResponse = rowOpReceipt.value ?? agentContext?.completed?.response;
+          if (dispatchedResponse) {
+            return classifyDispatchResponseForAction(dispatchedResponse);
+          }
+          if (rowOpFailure.value) {
+            return { ok: false, reason: "failed", message: rowOpFailure.value.message };
+          }
+          if (status === "cancelled") {
+            return { ok: false, reason: "cancelled", message: `Row operation '${operationName}' was cancelled.` };
+          }
+          if (status === "skipped") {
+            return {
+              ok: false,
+              reason: "action_unavailable",
+              message: `Row operation '${operationName}' could not be executed because the list is busy.`,
+            };
+          }
+          if (rowOpRead.value) {
+            return { ok: true, outcome: rowOpRead.value };
+          }
+          return { ok: true, outcome: rowOpOutcome.value ?? undefined };
+        },
+        { scope: "row", entryInstanceId: () => listInstanceId.value },
+      ),
+    );
+  },
+  { immediate: true },
+);
+onBeforeUnmount(clearRowActionHandlers);
 
 function triggerRowAction(row: PlatformObjectRecord, index: number, item: ResolvedRowActionItem) {
   activeRowLabel.value = row.label || row.primaryKey;
@@ -2232,7 +2544,7 @@ function triggerRowAction(row: PlatformObjectRecord, index: number, item: Resolv
     return;
   }
   if (item.kind === "local" && item.id) {
-    const ref = rowSelectionValue(row);
+    const ref = rowObjectRef(row);
     if (item.to) {
       const address = resolveRowActionAddress(item.to, row, activeType.value ?? rowObjectType);
       void panel.navigate(address);
@@ -2263,7 +2575,7 @@ function cellSlotProps(row: PlatformObjectRecord, index: number, column: ObjectL
     ...rowActionsSlotProps(row, index),
     column,
     value: rawRecordField(row, column.key),
-    displayText: fieldValue(row, column.key),
+    displayText: columnText(row, column),
     tone: columnTone(row, column),
   };
 }
@@ -2278,6 +2590,11 @@ const selectedRowLabel = computed<string | null>(() => {
 });
 
 useMemberOutput("status", () => datumState.value.status);
+useMemberOutput("listed", () => {
+  if (!hasObjectRows) return null;
+  if (datumState.value.status === "empty") return [];
+  return datumState.value.status === "ready" && queryStatus.value === "ok" ? listedRefs.value : null;
+});
 useMemberOutput("total", () => {
   if (datumState.value.status === "ready" && parsedData.value.status === "ok") {
     return parsedData.value.hasTotal ? parsedData.value.total : null;
@@ -2337,7 +2654,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
           {{ t("platform.listSelectedCount", { count: checkedRefs.length }) }}
         </span>
       </div>
-      <div v-if="canCheck && checkedRefs.length > 0" class="sdk-object-list-batch-actions" role="group">
+      <ObjectListBatchActions v-if="canCheck && checkedRefs.length > 0" :publish-receipt="publishBatchReceipt">
         <span v-if="isTable" class="sdk-object-list-selected-count" role="status">
           {{ t("platform.listSelectedCount", { count: checkedRefs.length }) }}
         </span>
@@ -2345,11 +2662,20 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
         <button type="button" class="sdk-object-list-link-btn" @click="clearChecked">
           {{ t("platform.listClearSelection") }}
         </button>
-      </div>
+      </ObjectListBatchActions>
       <div v-if="$slots['toolbar-actions']" class="sdk-object-list-toolbar-actions">
         <slot name="toolbar-actions"></slot>
       </div>
     </div>
+
+    <OperationBatchReceipt
+      v-if="batchReceipt"
+      class="sdk-object-list-batch-receipt"
+      :items="batchReceipt.items"
+      :named="batchReceipt.named"
+      dismissible
+      @dismiss="publishBatchReceipt(null)"
+    />
 
     <div v-if="showCreateRow" class="sdk-object-list-create-row" data-create-row="true">
       <slot name="create-row"></slot>
@@ -2468,7 +2794,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <input
                       type="checkbox"
                       :aria-label="entry.row.label"
-                      :checked="checkedIdentityKeys.has(entry.key)"
+                      :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
                       @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                     />
                   </td>
@@ -2482,7 +2808,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <list-row-slot-host
                       v-if="columnCellSlot(column.key)"
                       :list-slot="member.key"
-                      :row-ref="rowSelectionValue(entry.row)"
+                      :row-ref="rowObjectRef(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -2490,8 +2816,19 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                       :slot-props="cellSlotProps(entry.row, entry.rowIndex, column)"
                       :fallback-to-default="true"
                     >
+                      <TypedValue
+                        v-if="usesTypedValueCell(entry.row, column)"
+                        :value="rawRecordField(entry.row, column.key)"
+                        :field="column.key"
+                        :kind="Array.isArray(rawRecordField(entry.row, column.key)) ? (column.kind === 'tags' ? 'tags' : 'list') : 'reference'"
+                        :list-style="column.kind === 'tags' ? 'tags' : (column.listStyle ?? 'inline')"
+                        :separator="column.listSeparator ?? ', '"
+                        :empty-text="columnEmpty(column)"
+                        @navigate="(ref) => navigateTo(ref, column.key)"
+                        @navigate-child="(ref) => navigateToChild(ref, column.key)"
+                      />
                       <button
-                        v-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
+                        v-else-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
                         type="button"
                         class="sdk-object-ref-link"
                         @click.stop="navigateTo(toFieldReference(referenceField(entry.row, column.key)!), column.key)"
@@ -2503,7 +2840,15 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                       <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
                         <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
                           <button
-                            v-if="isRecordReference(item)"
+                            v-if="isRecordChildReference(item)"
+                            type="button"
+                            class="sdk-object-ref-link"
+                            @click.stop="navigateToChild(toChildFieldReference(item), column.key)"
+                          >
+                            {{ childReferenceDisplayLabel(item) }}
+                          </button>
+                          <button
+                            v-else-if="isRecordReference(item)"
                             type="button"
                             class="sdk-object-ref-link"
                             @click.stop="navigateTo(toFieldReference(item), column.key)"
@@ -2543,14 +2888,25 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                               <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                             </template>
                           </span>
-                          <span v-if="column.subtitleKey && fieldValue(entry.row, column.subtitleKey) !== ''" class="sdk-object-list-cell-sub">
-                            <template v-for="(part, index) in cellSegments(entry.row, column.subtitleKey, '')" :key="index">
+                          <span v-if="subtitleSegments(entry.row, column).length" class="sdk-object-list-cell-sub">
+                            <template v-for="(part, index) in subtitleSegments(entry.row, column)" :key="index">
                               <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                             </template>
                           </span>
                         </div>
                       </div>
                     </list-row-slot-host>
+                    <TypedValue
+                      v-else-if="usesTypedValueCell(entry.row, column)"
+                      :value="rawRecordField(entry.row, column.key)"
+                      :field="column.key"
+                      :kind="Array.isArray(rawRecordField(entry.row, column.key)) ? (column.kind === 'tags' ? 'tags' : 'list') : 'reference'"
+                      :list-style="column.kind === 'tags' ? 'tags' : (column.listStyle ?? 'inline')"
+                      :separator="column.listSeparator ?? ', '"
+                      :empty-text="columnEmpty(column)"
+                      @navigate="(ref) => navigateTo(ref, column.key)"
+                      @navigate-child="(ref) => navigateToChild(ref, column.key)"
+                    />
                     <button
                       v-else-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
                       type="button"
@@ -2564,7 +2920,15 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
                       <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
                         <button
-                          v-if="isRecordReference(item)"
+                          v-if="isRecordChildReference(item)"
+                          type="button"
+                          class="sdk-object-ref-link"
+                          @click.stop="navigateToChild(toChildFieldReference(item), column.key)"
+                        >
+                          {{ childReferenceDisplayLabel(item) }}
+                        </button>
+                        <button
+                          v-else-if="isRecordReference(item)"
                           type="button"
                           class="sdk-object-ref-link"
                           @click.stop="navigateTo(toFieldReference(item), column.key)"
@@ -2604,8 +2968,8 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                             <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                           </template>
                         </span>
-                        <span v-if="column.subtitleKey && fieldValue(entry.row, column.subtitleKey) !== ''" class="sdk-object-list-cell-sub">
-                          <template v-for="(part, index) in cellSegments(entry.row, column.subtitleKey, '')" :key="index">
+                        <span v-if="subtitleSegments(entry.row, column).length" class="sdk-object-list-cell-sub">
+                          <template v-for="(part, index) in subtitleSegments(entry.row, column)" :key="index">
                             <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                           </template>
                         </span>
@@ -2622,7 +2986,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <list-row-slot-host
                       v-if="hasActionsSlot"
                       :list-slot="member.key"
-                      :row-ref="rowSelectionValue(entry.row)"
+                      :row-ref="rowObjectRef(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -2661,7 +3025,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell sdk-object-list-detail-host">
                     <list-row-slot-host
                       :list-slot="member.key"
-                      :row-ref="rowSelectionValue(entry.row)"
+                      :row-ref="rowObjectRef(entry.row)"
                       :item-key="rowItemKey(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
@@ -2727,7 +3091,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
             <list-row-slot-host
               v-if="slots.card"
               :list-slot="member.key"
-              :row-ref="rowSelectionValue(entry.row)"
+              :row-ref="rowObjectRef(entry.row)"
               :index="entry.rowIndex"
               :operations="rowOperationsFor(entry.row)"
               :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -2735,8 +3099,8 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
               :slot-props="{
                 ...rowActionsSlotProps(entry.row, entry.rowIndex),
                 selected: entry.key === chosenIdentity,
-                checked: checkedIdentityKeys.has(entry.key),
-                toggleCheck: (next?: boolean) => toggleChecked(entry.row, next ?? !checkedIdentityKeys.has(entry.key)),
+                checked: checkedIdentityKeys.has(rowCheckKey(entry.row)),
+                toggleCheck: (next?: boolean) => toggleChecked(entry.row, next ?? !checkedIdentityKeys.has(rowCheckKey(entry.row))),
                 expanded: isRowExpanded(entry.row),
                 toggleExpand: () => toggleRowExpanded(entry.row),
               }"
@@ -2758,7 +3122,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   type="checkbox"
                   class="sdk-object-list-card-check"
                   :aria-label="entry.row.label"
-                  :checked="checkedIdentityKeys.has(entry.key)"
+                  :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
                   @click.stop
                   @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                 />
@@ -2801,7 +3165,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   type="checkbox"
                   class="sdk-object-list-card-check"
                   :aria-label="entry.row.label"
-                  :checked="checkedIdentityKeys.has(entry.key)"
+                  :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
                   @click.stop
                   @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                 />
@@ -2833,7 +3197,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <list-row-slot-host
                       v-if="columnCellSlot(column.key)"
                       :list-slot="member.key"
-                      :row-ref="rowSelectionValue(entry.row)"
+                      :row-ref="rowObjectRef(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -2845,6 +3209,17 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                         <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                       </template>
                     </list-row-slot-host>
+                    <TypedValue
+                      v-else-if="usesTypedValueCell(entry.row, column)"
+                      :value="rawRecordField(entry.row, column.key)"
+                      :field="column.key"
+                      :kind="Array.isArray(rawRecordField(entry.row, column.key)) ? (column.kind === 'tags' ? 'tags' : 'list') : 'reference'"
+                      :list-style="column.kind === 'tags' ? 'tags' : (column.listStyle ?? 'inline')"
+                      :separator="column.listSeparator ?? ', '"
+                      :empty-text="columnEmpty(column)"
+                      @navigate="(ref) => navigateTo(ref, column.key)"
+                      @navigate-child="(ref) => navigateToChild(ref, column.key)"
+                    />
                     <button
                       v-else-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
                       type="button"
@@ -2858,7 +3233,15 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
                       <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
                         <button
-                          v-if="isRecordReference(item)"
+                          v-if="isRecordChildReference(item)"
+                          type="button"
+                          class="sdk-object-ref-link"
+                          @click.stop="navigateToChild(toChildFieldReference(item), column.key)"
+                        >
+                          {{ childReferenceDisplayLabel(item) }}
+                        </button>
+                        <button
+                          v-else-if="isRecordReference(item)"
                           type="button"
                           class="sdk-object-ref-link"
                           @click.stop="navigateTo(toFieldReference(item), column.key)"
@@ -2908,7 +3291,15 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
               <div v-if="tagsField && recordFieldArrayItems(entry.row, tagsField).length" class="sdk-object-list-card-tags">
                 <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, tagsField)" :key="itemIndex">
                   <button
-                    v-if="isRecordReference(item)"
+                    v-if="isRecordChildReference(item)"
+                    type="button"
+                    class="sdk-object-ref-link"
+                    @click.stop="navigateToChild(toChildFieldReference(item), tagsField)"
+                  >
+                    {{ childReferenceDisplayLabel(item) }}
+                  </button>
+                  <button
+                    v-else-if="isRecordReference(item)"
                     type="button"
                     class="sdk-object-ref-link"
                     @click.stop="navigateTo(toFieldReference(item), tagsField)"
@@ -2922,7 +3313,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                 <list-row-slot-host
                   v-if="hasActionsSlot"
                   :list-slot="member.key"
-                  :row-ref="rowSelectionValue(entry.row)"
+                  :row-ref="rowObjectRef(entry.row)"
                   :index="entry.rowIndex"
                   :operations="rowOperationsFor(entry.row)"
                   :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -2956,7 +3347,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
             >
               <list-row-slot-host
                 :list-slot="member.key"
-                :row-ref="rowSelectionValue(entry.row)"
+                :row-ref="rowObjectRef(entry.row)"
                 :item-key="rowItemKey(entry.row)"
                 :index="entry.rowIndex"
                 :operations="rowOperationsFor(entry.row)"
@@ -3031,7 +3422,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                 type="checkbox"
                 class="sdk-object-list-row-check"
                 :aria-label="entry.row.label"
-                :checked="checkedIdentityKeys.has(entry.key)"
+                :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
                 @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
               />
               <component
@@ -3087,7 +3478,17 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   <span v-if="tagsField && recordFieldArrayItems(entry.row, tagsField).length" class="sdk-object-list-item-tags">
                     <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, tagsField)" :key="itemIndex">
                       <span
-                        v-if="isRecordReference(item)"
+                        v-if="isRecordChildReference(item)"
+                        role="link"
+                        tabindex="0"
+                        class="sdk-object-ref-link"
+                        @click.stop="navigateToChild(toChildFieldReference(item), tagsField)"
+                        @keydown.enter.stop.prevent="navigateToChild(toChildFieldReference(item), tagsField)"
+                      >
+                        {{ childReferenceDisplayLabel(item) }}
+                      </span>
+                      <span
+                        v-else-if="isRecordReference(item)"
                         role="link"
                         tabindex="0"
                         class="sdk-object-ref-link"
@@ -3106,7 +3507,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                 <list-row-slot-host
                   v-if="hasActionsSlot"
                   :list-slot="member.key"
-                  :row-ref="rowSelectionValue(entry.row)"
+                  :row-ref="rowObjectRef(entry.row)"
                   :index="entry.rowIndex"
                   :operations="rowOperationsFor(entry.row)"
                   :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -3140,7 +3541,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
             >
               <list-row-slot-host
                 :list-slot="member.key"
-                :row-ref="rowSelectionValue(entry.row)"
+                :row-ref="rowObjectRef(entry.row)"
                 :item-key="rowItemKey(entry.row)"
                 :index="entry.rowIndex"
                 :operations="rowOperationsFor(entry.row)"
@@ -3259,16 +3660,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
       <template v-if="rowOpReceipt">
         <p v-if="rowOpReceipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ rowOpReceipt.message }}</p>
         <p v-else-if="rowOpOutcome === null" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
-        <div v-else-if="rowOpOutcome.kind === 'batch'" class="sdk-object-list-op-batch" role="status">
-          <p>{{ t("platform.operationBatchDone", { done: rowOpBatchDone, total: rowOpBatchItems.length }) }}</p>
-          <ul>
-            <li
-              v-for="item in rowOpBatchItems"
-              :key="item.target.objectType + ':' + item.target.primaryKey"
-              :data-outcome="item.outcome.kind"
-            >{{ nameOfRowOp(item.target) }}: {{ saidRowOp(item.outcome) }}</li>
-          </ul>
-        </div>
+        <OperationBatchReceipt v-else-if="rowOpOutcome.kind === 'batch'" :items="rowOpOutcome.items" :named="rowOpNamed" />
         <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="rowOpOutcome.kind">{{ saidRowOp(rowOpOutcome) }}</p>
       </template>
     </div>
@@ -3551,16 +3943,10 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
   color: var(--el-color-danger);
   font-size: var(--text-xs);
 }
-.sdk-object-list-op-batch {
-  font-size: var(--text-xs);
-  color: var(--el-text-color-regular);
-}
-.sdk-object-list-op-batch p {
-  margin: 0 0 var(--spacing-2xs);
-}
-.sdk-object-list-op-batch ul {
-  margin: 0;
-  padding-inline-start: var(--spacing-md);
+.sdk-object-list-batch-receipt {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
 }
 .sdk-object-list-row-chevron {
   display: inline-block;

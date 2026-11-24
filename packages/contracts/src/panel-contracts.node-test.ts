@@ -11,7 +11,8 @@ import {
   FEEDBACK_RECORD, IMPORT_SKILL, SKILL,
 } from "./panel-client-requests";
 import {
-  createPanelHumanOperationIntentRequestSchema, createPanelOperationIntentRequestSchema,
+  classifyPanelOperationOutcome,
+  createPanelHumanOperationIntentRequestSchema,
   dispatchPanelHumanOperationIntentRequestSchema, inspectPanelOperationImpactRequestSchema,
   isPanelHumanOperationIntent, panelHumanOperationDispatchResponseSchema, panelHumanOperationPreparationSchema,
   panelOperationOutcomeSchema,
@@ -40,11 +41,10 @@ import {
 } from "./panel-host";
 import {
   matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema,
-  panelChildCollectionQuerySchema, panelChildObjectIdentitySchema, panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema,
+  panelChildCollectionQuerySchema, panelChildObjectIdentitySchema, panelManifestSchema, panelMemberInputSchema, panelOpenRequestSchema, panelStateFieldSchema,
   panelOperationSchema, panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
 import { pageSelectionSchema } from "./page-context";
-import { pageDraftSchema } from "./page-draft";
 import { findPanelFormOption, panelFormObjectSelectError } from "./form-fields";
 import {
   panelFormDescriptionSchema, panelFormFieldSchema, panelFormFrequencyValueSchema,
@@ -79,6 +79,31 @@ import { platformTypeTableEntrySchema } from "./platform-type-table";
 const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id });
 const platformOperation = (id: string) => ({ kind: "PlatformOperation" as const, id });
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
+
+test("member inputs reference a sibling's read-only output and optional JSON Pointer", () => {
+  const target = { projectionId: "projection" };
+  const output = { member: "form", name: "draft" };
+  for (const input of [{ output }, { output: { ...output, path: "/function/code" } }]) {
+    assert.deepEqual(panelMemberInputSchema.parse(input), input);
+    assert.equal(panelManifestSchema.safeParse({
+      state: {},
+      members: { form: { target }, reader: { target, inputs: { content: input } } },
+    }).success, true);
+  }
+  for (const path of ["function/code", "/function/~2code", "/function/code~", ""]) {
+    assert.equal(panelMemberInputSchema.safeParse({ output: { ...output, path } }).success, false);
+  }
+  assert.equal(panelMemberInputSchema.safeParse({ output: { ...output, extra: true } }).success, false);
+  assert.equal(panelMemberInputSchema.safeParse({ output, state: "selected" }).success, false);
+  for (const member of ["missing", "reader"]) {
+    const result = panelManifestSchema.safeParse({
+      state: {},
+      members: { form: { target }, reader: { target, inputs: { content: { output: { ...output, member } } } } },
+    });
+    assert.equal(result.success, false);
+    if (!result.success) assert.deepEqual(result.error.issues[0]?.path, ["members", "reader", "inputs", "content", "output", "member"]);
+  }
+});
 
 test("current SDK discovery carries the digest of the build and the component catalogue path", () => {
   const build = { version: "1.1.2", digest: "2f".repeat(32) };
@@ -369,11 +394,30 @@ test("panel records carry optional className and strongly typed field values", a
       enabled: true,
       title: { kind: "localized" as const, values: { "zh-CN": "订单服务", en: "Order Service" } },
       owner: { kind: "reference" as const, className: "platform:User", primaryKey: "u-1", label: "Alice" },
+      paramRef: {
+        kind: "child-reference" as const,
+        parent: { objectType: "platform:Action", primaryKey: "act-1" },
+        collection: "parameters",
+        primaryKey: "order_id",
+        label: "order_id",
+      },
       tools: {
         kind: "json" as const,
         value: [{ name: "query_order", inputSchema: { type: "object", required: ["id"] } }],
       },
-      tags: ["production", 2, false, { kind: "reference" as const, className: "platform:Action", primaryKey: "a-1", label: "Sync" }],
+      tags: [
+        "production",
+        2,
+        false,
+        { kind: "reference" as const, className: "platform:Action", primaryKey: "a-1", label: "Sync" },
+        {
+          kind: "child-reference" as const,
+          parent: { objectType: "platform:Action", primaryKey: "act-1" },
+          collection: "codeSegments",
+          primaryKey: "seg-1",
+          label: "Update order (L2–5)",
+        },
+      ],
     },
   };
   assert.deepEqual(panelRecordSchema.parse(record), record);
@@ -393,6 +437,21 @@ test("panel records carry optional className and strongly typed field values", a
   assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "localized", values: { en: "ok" }, extra: true }).success, false);
   assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "reference", className: "", primaryKey: "p-1", label: "x" }).success, false);
   assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "reference", className: "platform:User", primaryKey: "u-1", label: "Alice", extra: 1 }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse({
+    kind: "child-reference",
+    parent: { objectType: "platform:Action", primaryKey: "act-1" },
+    collection: "",
+    primaryKey: "order_id",
+    label: "order_id",
+  }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse({
+    kind: "child-reference",
+    parent: { objectType: "platform:Action", primaryKey: "act-1" },
+    collection: "parameters",
+    primaryKey: "order_id",
+    label: "order_id",
+    extra: 1,
+  }).success, false);
   assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "json", value: { ok: true }, extra: 1 }).success, false);
   assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "json", value: Number.POSITIVE_INFINITY }).success, false);
   assert.equal(panelRecordFieldValueSchema.safeParse([{ kind: "localized", values: { en: "nested" } }]).success, false);
@@ -429,6 +488,39 @@ test("panelRecordFieldText formats scalars, localized maps, references, arrays a
   assert.equal(panelRecordFieldText(0, "zh-CN"), "0");
   assert.equal(panelRecordFieldText(true, "zh-CN"), "true");
   assert.equal(panelRecordFieldText(false, "zh-CN"), "false");
+  assert.equal(
+    panelRecordFieldText({
+      kind: "child-reference",
+      parent: { objectType: "platform:Action", primaryKey: "act-1" },
+      collection: "parameters",
+      primaryKey: "order_id",
+      label: "order_id",
+    }),
+    "order_id",
+  );
+  assert.equal(
+    panelRecordFieldText({
+      kind: "child-reference",
+      parent: { objectType: "platform:Action", primaryKey: "act-1" },
+      collection: "parameters",
+      primaryKey: "order_id",
+      label: "",
+    }),
+    "order_id",
+  );
+  assert.equal(
+    panelRecordFieldText([
+      "Target:",
+      {
+        kind: "child-reference",
+        parent: { objectType: "platform:Action", primaryKey: "act-1" },
+        collection: "parameters",
+        primaryKey: "order_id",
+        label: "order_id",
+      },
+    ]),
+    "Target:, order_id",
+  );
 
   // Localized fallback chain: zh-CN -> zh -> fallbackLocale -> first non-empty entry.
   assert.equal(
@@ -768,7 +860,7 @@ test("application addresses carry flat named frame and entry state while preserv
     validateApplicationPanelAddressState,
   } = await import("./panel-host");
   const path = "/applications/app-school/orders";
-  const query = new URLSearchParams([["draftPath", "outputs/drafts/秋季.json"], ["standalone", "1"], ["from", "workspace"]]);
+  const query = new URLSearchParams([["standalone", "1"], ["from", "工作区"]]);
   const frame = { term: "秋季 & 春季" };
   const state = { mode: "list", term: "ignored", tags: ["one", "two"] };
   const encoded = applicationPanelAddress(path, { frame, state, query });
@@ -879,7 +971,7 @@ test("flat panel URLs encode empty string lists as named empty parameters withou
     assert.equal(singletonEmptyUrl, `${path}?tags=`);
     assert.deepEqual(panelAddressState(singletonEmptyUrl, manifest), { tags: [] });
 
-    for (const tags of [[], ["a"], ["a", "b"]]) {
+    for (const tags of [[], ["a"], ["a", ""], ["a", "b"]]) {
       const state = { tags };
       const panelUrl = panelAddress(path, state, manifest);
       assert.deepEqual(panelAddressState(panelUrl, manifest), state, panelUrl);
@@ -890,6 +982,64 @@ test("flat panel URLs encode empty string lists as named empty parameters withou
       assert.deepEqual(parsed.frame, state, forwarded);
       assert.deepEqual(parsed.state, state, forwarded);
     }
+  }
+});
+
+test("unnamed query parameters (=x, tags=&=tags, frame.=x) are ignored without error when parsing or rebuilding panel addresses", async () => {
+  const { applicationPanelAddress, panelAddress, panelAddressState, parseApplicationPanelAddress } = await import("./panel-host");
+  const path = "/applications/app-school/orders";
+  const manifest = panelManifestSchema.parse({
+    state: {
+      tags: { type: { kind: "list", items: { kind: "scalar", type: "string" } }, deepLink: true },
+      page: { type: { kind: "scalar", type: "number" }, deepLink: true, default: 1 },
+      term: { type: { kind: "scalar", type: "string" }, deepLink: true },
+    },
+    members: {},
+  });
+
+  const cases = [
+    {
+      url: `${path}?tags=&=tags`,
+      untypedState: { tags: "" },
+      typedState: { tags: [] },
+      rebuilt: `${path}?tags=`,
+    },
+    {
+      url: `${path}?=x`,
+      untypedState: {},
+      typedState: {},
+      rebuilt: path,
+    },
+    {
+      url: `${path}?frame.=x&page=2`,
+      untypedState: { page: "2" },
+      typedState: { page: 2 },
+      rebuilt: `${path}?page=2`,
+    },
+  ];
+
+  for (const { url, untypedState, typedState, rebuilt } of cases) {
+    // Manifest-free parsing and rebuilding: unnamed keys never enter frame/state/query and never throw on re-encode.
+    const raw = parseApplicationPanelAddress(url);
+    assert.deepEqual(raw.frame, {}, url);
+    assert.deepEqual(raw.state, untypedState, url);
+    assert.deepEqual([...raw.query.entries()], [], url);
+    assert.equal(applicationPanelAddress(raw.path, raw), rebuilt, url);
+    assert.deepEqual(panelAddressState(url), untypedState, url);
+    assert.equal(panelAddress(url, {}), rebuilt, url);
+
+    // Manifest-aware parsing and rebuilding: unnamed keys are ignored while valid named parameters round-trip cleanly.
+    const parsed = parseApplicationPanelAddress(url, { frameManifest: manifest, stateManifest: manifest });
+    assert.deepEqual(parsed.frame, {}, url);
+    assert.deepEqual(parsed.state, typedState, url);
+    assert.deepEqual([...parsed.query.entries()], [], url);
+    assert.equal(
+      applicationPanelAddress(parsed.path, { ...parsed, frameManifest: manifest, stateManifest: manifest }),
+      rebuilt,
+      url,
+    );
+    assert.deepEqual(panelAddressState(url, manifest), typedState, url);
+    assert.equal(panelAddress(url, parsed.state, manifest), rebuilt, url);
   }
 });
 
@@ -1352,7 +1502,7 @@ test("form save preserves nested JSON and the owner's revision when present", ()
 });
 
 const editableField = { required: false, readOnly: false };
-const ownerSave = { method: "PUT", path: "/workflows/example", bodySchema: {}, draftOperation: "workflow.update" };
+const ownerSave = { method: "PUT", path: "/workflows/example", bodySchema: {} };
 
 test("field validation stays in the ready form and preserves the submitted value", async () => {
   const { productPanelReadResponseSchema } = await import("./panel-host");
@@ -1541,12 +1691,10 @@ test("frequency uses the scheduled-task value and keeps time zone in a separate 
   assert.equal(panelFormFrequencyValueSchema.safeParse({ ...frequency, timeZone }).success, false);
 });
 
-test("submitted field pointers stay separate from draft values and their presence", () => {
+test("form save preserves omitted and explicit null values alongside submitted field pointers", () => {
   const omitted = { steps: [{ actionId: "review" }] };
   const explicitNull = { ...omitted, runContract: null };
-  const draft = { pageKey: "workflows", operation: "workflow.update", target: { objectType: "platform:Workflow", id: "example" } };
-  assert.deepEqual(pageDraftSchema.parse({ ...draft, form: omitted }).form, omitted);
-  assert.deepEqual(pageDraftSchema.parse({ ...draft, form: explicitNull }).form, explicitNull);
+  assert.deepEqual(panelFormSaveInputSchema.parse({ values: omitted }).values, omitted);
 
   for (const submittedFields of [undefined, [], ["/runContract", "/steps/0/actionId"]]) {
     const input = { values: explicitNull, ...(submittedFields === undefined ? {} : { submittedFields }) };
@@ -1703,20 +1851,6 @@ test("canonical relation paths are already routable and carry no view state", ()
     assert.equal(applicationPanelUsePathSchema.safeParse(path).success, false);
 });
 
-test("a frame settles a particular draft artifact without proposing an address", () => {
-  const settled = {
-    kind: "draft-settled",
-    draft: {
-      sessionId: "5931a639-a70d-4dae-96db-6b8a4460d228",
-      runId: "6a0c53c8-d21c-48cd-861e-5102be9e297b",
-      path: "outputs/drafts/agent.page-draft.json",
-    },
-  };
-  assert.deepEqual(panelFrameMessageSchema.parse(settled), settled);
-  assert.equal(panelFrameMessageSchema.safeParse({ ...settled, address: "/agents/settings" }).success, false);
-  assert.equal(panelFrameMessageSchema.safeParse({ ...settled, draft: { ...settled.draft, path: "outputs/report.md" } }).success, false);
-});
-
 test("candidate source needs only workspace identity, content and build-test context", () => {
   const candidate = {
     kind: "candidate",
@@ -1781,7 +1915,7 @@ test("Trigger definition reads, writes and Workflow minimal list use exact bindi
   assert.ok(panelClientReads(workflows).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test("/workflow/query")));
   assert.ok(clientSends([workflows], "POST", "/data-query", "/workflow/query"));
   assert.ok(!clientSends([workflows], "POST", "/data-query", "/workflow/save"));
-  assert.deepEqual(Object.keys(platformObjectTypes[WORKFLOW].reads ?? {}), ["list"]);
+  assert.equal(platformObjectTypes[WORKFLOW].reads?.list.result, "panelRecordList");
   assert.deepEqual(platformObjectTypes[TRIGGER].operations, [`${TRIGGER}.save`, SET_TRIGGER_STATUS, DELETE_TRIGGER]);
 });
 
@@ -2019,10 +2153,27 @@ test("a read-only trial carries the current draft and parameters without a write
   };
   assert.deepEqual(panelReadOperationDescriptorSchema.parse(owner), owner);
   assert.equal(panelReadOperationDescriptorSchema.safeParse({ ...owner, effect: "write" }).success, false);
-  for (const result of [{ kind: "markdown", markdown: "Preview" }, { kind: "json", value: [{ count: 1 }] }]) {
+  for (const result of [
+    { kind: "markdown", markdown: "Preview" },
+    { kind: "json", value: [{ count: 1 }] },
+    { kind: "json", value: [{ count: 1 }], truncation: { rowLimit: 20000, hint: "Narrow the range" } },
+    { kind: "json", value: null, truncation: { rowLimit: null, hint: null } },
+  ]) {
     assert.deepEqual(panelReadOperationResultSchema.parse(result), result);
     assert.equal(panelReadOperationResultSchema.safeParse({ ...result, affected: { objects: [] } }).success, false);
   }
+  assert.equal(
+    panelReadOperationResultSchema.safeParse({
+      kind: "json", value: [], truncation: { rowLimit: 100, hint: null, extra: true },
+    }).success,
+    false,
+  );
+  assert.equal(
+    panelReadOperationResultSchema.safeParse({
+      kind: "markdown", markdown: "Preview", truncation: { rowLimit: 10, hint: null },
+    }).success,
+    false,
+  );
 });
 
 test("the author type table and live descriptions share operation declarations", async () => {
@@ -2388,11 +2539,11 @@ test("batch confirmation and dispatch share the same concrete calls under one in
   const call = { target: { ...operationTarget, kind: "object" }, input: {} };
   const calls = [call, { ...call, target: { ...call.target, primaryKey: "another" } }];
   const use = { applicationId: "ontology", useId: "knowledge", operationId: "list.delete" };
-  const batch = { ...use, intentId: operationIntentId, calls };
-  assert.deepEqual(createPanelOperationIntentRequestSchema.parse(batch), batch);
+  const batch = { ...use, calls };
+  assert.deepEqual(createPanelHumanOperationIntentRequestSchema.parse(batch), batch);
   assert.deepEqual(inspectPanelOperationImpactRequestSchema.parse({ ...use, calls }), { ...use, calls });
-  assert.equal(createPanelOperationIntentRequestSchema.safeParse({ ...batch, call }).success, false);
-  assert.equal(createPanelOperationIntentRequestSchema.safeParse({
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({ ...batch, call }).success, false);
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({
     ...batch, calls: [{ ...call, executionUserId: "another" }],
   }).success, false);
   assert.equal(panelWriteOperationSnapshotSchema.safeParse({
@@ -2415,6 +2566,32 @@ test("batch outcomes keep owner refusals, execution failures and unknown outcome
   assert.deepEqual(panelOperationOutcomeSchema.parse({ kind: "unknown", message: "No batch receipt" }), {
     kind: "unknown", message: "No batch receipt",
   });
+});
+
+test("batch receipts accept owner-unavailable items with or without successful writes", () => {
+  const skipped = {
+    target: { ...operationTarget, primaryKey: "already-approved" },
+    outcome: { kind: "skipped", reason: "Already approved", code: "ALREADY_APPROVED" },
+  };
+  const allSkipped = { kind: "batch", items: [skipped] };
+  const affected = { objects: [operationTarget], objectTypes: [operationTarget.objectType] };
+  const mixed = {
+    kind: "batch",
+    items: [skipped, { target: operationTarget, outcome: { kind: "success", data: {}, affected } }],
+    affected,
+  };
+  for (const batch of [allSkipped, mixed]) {
+    const parsed = panelOperationOutcomeSchema.parse(batch);
+    assert.deepEqual(parsed, batch);
+    const classified = classifyPanelOperationOutcome(parsed);
+    assert.equal(classified.kind, "executed");
+    assert.match(classified.summary, /1 skipped/u);
+  }
+  assert.equal(panelOperationOutcomeSchema.safeParse({ ...allSkipped, affected }).success, false);
+  assert.equal(panelOperationOutcomeSchema.safeParse(skipped.outcome).success, false);
+  assert.equal(panelOperationOutcomeSchema.safeParse({
+    ...allSkipped, items: [{ ...skipped, outcome: { kind: "skipped", reason: "" } }],
+  }).success, false);
 });
 
 test("legacy confirmations expire while dispatched and unknown records preserve their history", () => {
@@ -2475,7 +2652,9 @@ test("a frame can prepare a human intent and only the host can dispatch it", () 
   assert.equal(clientSends(bindings, "GET", "", `/panel-operation-intents/${operationIntentId}`), false);
   assert.equal(clientSends(bindings, "POST", "", `${create}/${operationIntentId}/dispatch`), false);
   assert.deepEqual(dispatchPanelHumanOperationIntentRequestSchema.parse({}), {});
-  assert.equal(dispatchPanelHumanOperationIntentRequestSchema.safeParse({ confirmed: true }).success, false);
+  for (const forged of [{ confirmed: true }, { questionId: operationIntentId }, { call }]) {
+    assert.equal(dispatchPanelHumanOperationIntentRequestSchema.safeParse(forged).success, false);
+  }
   const reply = { kind: "dispatched", intentId: operationIntentId, outcome: { kind: "unknown", message: "No receipt" } };
   assert.deepEqual(panelHumanOperationDispatchResponseSchema.parse(reply), reply);
 });
@@ -3224,7 +3403,7 @@ test("operationDrafts validates target form member and directs projectionOperati
 
 test("targetless customer Actions live in top-level type table operations and omit object on action snapshots", async () => {
   const { platformTypeTableResponseSchema } = await import("./platform-type-table");
-  const { panelWriteOperationSnapshotSchema, panelFormEditedTargetSchema } = await import("./panel-agent");
+  const { panelWriteOperationSnapshotSchema } = await import("./panel-agent");
   const { EXECUTE_OBJECT_ACTION } = await import("./platform-object-types");
 
   const createOrder = {
@@ -3277,9 +3456,33 @@ test("targetless customer Actions live in top-level type table operations and om
   assert.equal(snapshot.action?.object, undefined);
   assert.deepEqual(snapshot.action?.affects, ["Order"]);
 
-  // Form edit notifications accept optional slot for both object and draft targets.
-  assert.deepEqual(
-    panelFormEditedTargetSchema.parse({ kind: "draft", objectType: "Order", slot: "orderForm" }),
-    { kind: "draft", objectType: "Order", slot: "orderForm" },
-  );
+});
+
+test("projectionOperation preserves draft targets on read actions so panelOperationSchema accepts them", () => {
+  const manifest = panelManifestSchema.parse({
+    state: {},
+    members: {
+      definition: {
+        target: { projectionId: "metric-definition-form" },
+        readOperationInputs: {
+          test: { draft: { slot: "definition" }, parameters: { fields: {} } },
+          testExecute: { draft: { slot: "definition" }, parameters: { fields: {} } },
+        },
+      },
+    },
+  });
+  const placed = projectionOperation(manifest, "definition", "test", {
+    kind: "action",
+    effect: "read",
+    batch: false,
+    handlerRef: "platform:MetricView.test",
+    label: "Test",
+    target: { source: "draft", slot: "definition" },
+    inputSchema: { type: "object", properties: {} },
+    resultSchema: {},
+  });
+  assert.deepEqual(placed.target, { source: "draft", slot: "definition" });
+  const parsed = panelOperationSchema.parse(placed);
+  assert.equal(parsed.id, "definition.test");
+  assert.deepEqual(parsed.target, { source: "draft", slot: "definition" });
 });

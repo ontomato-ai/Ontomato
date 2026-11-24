@@ -81,7 +81,6 @@ class BussinessKnowledgeFormTest {
 		JSONObject save = form.getJSONObject("save");
 		assertEquals("POST", save.getString("method"));
 		assertEquals("/admin/addBussinessKnowledge", save.getString("path"));
-		assertEquals("knowledge.create", save.getString("draftOperation"));
 		assertEquals("integer", save.getJSONObject("bodySchema").getJSONObject("properties")
 				.getJSONObject("status").getString("type"));
 		assertEquals("array", save.getJSONObject("bodySchema").getJSONObject("properties")
@@ -146,7 +145,6 @@ class BussinessKnowledgeFormTest {
 		assertEquals(List.of("Business"), values.getJSONArray("knowledgeTags").toJavaList(String.class));
 		assertEquals(0, values.getIntValue("status"));
 		assertEquals("/admin/editBussinessKnowledge", form.getJSONObject("save").getString("path"));
-		assertEquals("knowledge.update", form.getJSONObject("save").getString("draftOperation"));
 		verify(knowledge).getBussinessKnowledge("domain-a");
 	}
 

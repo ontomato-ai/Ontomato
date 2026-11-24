@@ -55,7 +55,7 @@ const metricTarget = { kind: "object" as const, objectType: METRIC_VIEW, primary
 const functionTarget = { kind: "object" as const, objectType: FUNCTION, primaryKey: "f1" };
 
 describe("metric and function panel server operations", () => {
-  it("declares the metric save target, draft operation and create identity", () => {
+  it("accepts metric view and draft targets for form saves", () => {
     const operation = write(`${METRIC_VIEW}.save`);
     expect(operation.kind).toBe("form.save");
     if (operation.kind !== "form.save") throw new Error("not a form save");
@@ -63,9 +63,6 @@ describe("metric and function panel server operations", () => {
     expect(operation.targetSchema.safeParse(metricTarget).success).toBe(true);
     expect(operation.targetSchema.safeParse({ ...metricTarget, objectType: FUNCTION }).success).toBe(false);
     expect(operation.targetSchema.safeParse({ kind: "draft" }).success).toBe(true);
-    expect(operation.draftOperation(metricTarget)).toBe("metric-view.update");
-    expect(operation.draftOperation({ kind: "draft" })).toBe("metric-view.create");
-    expect(operation.create?.createdObject({ id: "created" })).toEqual({ objectType: METRIC_VIEW, primaryKey: "created" });
   });
 
   it("sends the complete metric values and returns the saved asset", async () => {
@@ -369,7 +366,6 @@ describe("metric and function panel server operations", () => {
     const save = write(`${FUNCTION}.save`);
     if (save.kind !== "form.save") throw new Error("not a form save");
     expect(save.targetSchema.safeParse(functionTarget).success).toBe(true);
-    expect(save.draftOperation(functionTarget)).toBe("function.update");
     const saved = hostWith(() => Response.json({ success: true, data: { id: "f1", name: "Revenue query" } }));
     expect(await save.execute(saved.host, functionTarget, { values: { name: "Revenue query" } }))
       .toEqual({
@@ -462,7 +458,7 @@ describe("metric and function panel server operations", () => {
       .toEqual({ kind: "markdown", markdown: "ok" });
     const ran = hostWith(() => Response.json({ success: true, data: [] }));
     expect(await read(TEST_EXECUTE_METRIC_VIEW).execute(ran.host, { input: { draft, parameters: { year: 2026 }, bindingId: "b1" } }))
-      .toEqual({ kind: "json", value: { result: [] } });
+      .toEqual({ kind: "json", value: [] });
     expect(JSON.parse(String(ran.sent[0]?.init.body))).toEqual({ metricView: draft, param: { year: 2026 }, bindingId: "b1" });
 
     const unread = hostWith(() => Response.json({ success: true, data: { md: "never" } }));
@@ -475,7 +471,7 @@ describe("metric and function panel server operations", () => {
     const draft = { id: "m1", name: "Revenue", function: { queryPackage: { manifest: { parameterDefs: [] } } } };
     const complete = hostWith(() => Response.json({ success: true, data: [{ total: 9 }] }));
     expect(await operation.execute(complete.host, { target: metricTarget, input: { draft, parameters: { year: 2026 }, bindingId: "b1" } }))
-      .toEqual({ kind: "json", value: { result: [{ total: 9 }] } });
+      .toEqual({ kind: "json", value: [{ total: 9 }] });
     expect(complete.sent[0]?.path).toBe("/api/data-query/metricView/testExecute");
     expect(JSON.parse(String(complete.sent[0]?.init.body))).toEqual({ metricView: draft, param: { year: 2026 }, bindingId: "b1" });
 
@@ -483,7 +479,7 @@ describe("metric and function panel server operations", () => {
       success: true, data: [{ total: 9 }], truncated: true, rowLimit: 20000, truncationHint: "Narrow the time range",
     }));
     expect(await operation.execute(truncated.host, { target: metricTarget, input: { draft, parameters: {} } })).toEqual({
-      kind: "json", value: { result: [{ total: 9 }], truncated: true, rowLimit: 20000, truncationHint: "Narrow the time range" },
+      kind: "json", value: [{ total: 9 }], truncation: { rowLimit: 20000, hint: "Narrow the time range" },
     });
     expect(JSON.parse(String(truncated.sent[0]?.init.body))).toEqual({ metricView: draft, param: {} });
 

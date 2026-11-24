@@ -43,7 +43,7 @@ it("reads a list's rows once while the selection changes, and the selected recor
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
       reads.push(request);
@@ -73,30 +73,44 @@ it("reads a list's rows once while the selection changes, and the selected recor
   scope.stop();
 });
 
-it("keeps a shown datum on screen while it is read again, and shows its new answer once it arrives", async () => {
-  // The second read of the summary is held, as a slow owner holds it; the first answer stays until it comes.
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => { release = resolve; });
+it("keeps a datum ready during a same-target refresh and clears it immediately when the target changes", async () => {
+  let releaseRefresh!: () => void;
+  let releaseSwitch!: () => void;
+  const heldRefresh = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+  const heldSwitch = new Promise<void>((resolve) => { releaseSwitch = resolve; });
   let reads = 0;
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
-      if (++reads === 2) await held;
-      return { status: "ready", value: row(String((request.inputs.task as { primaryKey: string }).primaryKey)) as never };
+      const readNumber = ++reads;
+      if (readNumber === 2) await heldRefresh;
+      if (readNumber === 3) await heldSwitch;
+      const task = row(String((request.inputs.task as { primaryKey: string }).primaryKey));
+      if (readNumber === 2) task.label = "Refreshed task";
+      return { status: "ready", value: task as never };
     },
   });
   const inputs = () => ({ task: instance.state.values.value.selectedTask ?? null }) as never;
   const scope = effectScope();
   let summary!: ComputedRef<MemberDataState>;
   scope.run(() => { summary = instance.memberData("summary", projections["task-summary"]!, inputs).use("record"); });
-  await vi.waitFor(() => expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-1" } }));
+  await vi.waitFor(() => expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-1", label: "t-1" } }));
+
+  instance.refresh({ objectTypes: [], objects: [{ objectType: SCHEDULED_TASK, primaryKey: "t-1" }] });
+  expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-1", label: "t-1" } });
+  releaseRefresh();
+  await vi.waitFor(() => expect(summary.value).toMatchObject({
+    status: "ready",
+    value: { primaryKey: "t-1", label: "Refreshed task" },
+  }));
 
   instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-2" });
+  expect(summary.value).toEqual({ status: "loading" });
   await nextTick();
-  expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-1" } });
-  release();
+  expect(summary.value).toEqual({ status: "loading" });
+  releaseSwitch();
   await vi.waitFor(() => expect(summary.value).toMatchObject({ status: "ready", value: { primaryKey: "t-2" } }));
   scope.stop();
 });

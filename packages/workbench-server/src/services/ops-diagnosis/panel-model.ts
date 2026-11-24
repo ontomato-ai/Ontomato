@@ -14,7 +14,7 @@ import { readDiagnosisModel, saveDiagnosisModel } from "./model-settings";
 
 const operation = `${DIAGNOSIS_MODEL}.save`;
 const inputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict().extend({ values: modelSelectionWrite });
-const save = { method: "PUT", path: "/api/assistant/diagnosis-model", draftOperation: operation } as const;
+const save = { method: "PUT", path: "/api/assistant/diagnosis-model" } as const;
 
 export function createDiagnosisModelReads(domainId: string, viewer: AssistantCredentials) {
   const text = (key: string) => tForLocale(viewer.locale, `panels.simplePages.${key}`);
@@ -54,9 +54,8 @@ export const diagnosisModelOperations = [{
   binding: { kind: "PlatformObjectType", id: DIAGNOSIS_MODEL }, targetType: DIAGNOSIS_MODEL,
   targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(DIAGNOSIS_MODEL), primaryKey: z.literal(DIAGNOSIS_AGENT_ID) }).strict(),
   inputSchema, resultSchema: modelSelectionWrite,
-  draftOperation: () => operation,
   draftInput: input => inputSchema.parse(input).values,
-  formInstructions: "Set modelSelection.modelId to a domain chat model reference or null to follow the domain default.",
+
   async execute(host, _target, input) {
     const { owner, credentials } = host.executor;
     await assertPermission(credentials, agentDefinitionPermissions);

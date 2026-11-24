@@ -29,7 +29,7 @@ const values = (defaultAgent?: unknown) => ({ entry: { path: "/applications/app-
 const field = (path: string, control: unknown) => ({ path, label: path, valueSchema: {}, required: false, readOnly: false, control });
 const description = (agentControl: unknown) => ({
   fields: [field("/panelUses", { kind: "object-array", itemFields: [field("/pageKey", { kind: "text" }), field("/defaultAgent", agentControl)] })],
-  values: values(), errors: [], save: { method: "PUT", path: "/platform/applications/app-one/panel-uses", bodySchema: {}, draftOperation: "saveEntries" },
+  values: values(), errors: [], save: { method: "PUT", path: "/platform/applications/app-one/panel-uses", bodySchema: {} },
 });
 const saveEntries = (defaultAgent?: unknown) => save.execute(
   { executor: { owner, credentials: { locale: "en" } } } as never,

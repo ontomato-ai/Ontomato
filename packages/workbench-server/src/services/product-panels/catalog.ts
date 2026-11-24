@@ -3,12 +3,13 @@ import { z } from "zod";
 import type { PoolClient } from "pg";
 import { panelPlacementSchema } from "@ontomato/contracts/panel-manifest";
 import {
-  BUILTIN_PRODUCT_ID_PREFIX, PRODUCT_IN_USE, builtinProductPanelInputSchema, productCurrentIdParamsSchema,
-  productPanelInputSchema, productPanelSummarySchema, productProjectionInputSchema, type ProductCatalogQuery,
-  type ProductVisibility,
+  PRODUCT_IN_USE, productCurrentIdParamsSchema, productPanelSchema,
+  productPanelInputSchema, productProjectionInputSchema, type ProductCatalogQuery,
+  type ProductPanelUsedBy, type ProductProjectionUsedBy, type ProductVisibility,
 } from "@ontomato/contracts/product-panels";
 import {
-  currentProductRecord, currentProductRows, currentProductTables, findCurrentProduct, type CurrentProductKind,
+  currentProductColumns, currentProductRecord, currentProductRows, currentProductTables, findCurrentProduct,
+  type CurrentProductKind, type CurrentProductRow,
 } from "../../infrastructure/product-current";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
@@ -16,7 +17,8 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import {
-  changeProductDomainGrant, changeProductGrant, grantedProductIds, productGrantAllowed, readProductGrantRecords, unregisterProductResource,
+  changeProductDomainGrant, changeProductGrant, grantedProductIds, productGrantAllowed, readProductGrantRecords,
+  requireProductGrant, unregisterProductResource,
   type ProductOwner,
 } from "../product-governance/grants";
 import { insertCurrentProduct, loadCurrentProduct, requireCurrentProduct, requireOrdinaryProjection } from "./current";
@@ -52,23 +54,71 @@ interface SummaryRow {
   sortKey: string;
   componentId?: string;
   template?: boolean | null;
-  definition?: unknown;
+  definition: CurrentProductRow["definition"];
+  domainId: CurrentProductRow["domainId"];
+  createdAt: Date;
+}
+
+const catalogueVisibility = (ownedPanel: string) =>
+  `(domain_id IS NULL OR (domain_id=$1 AND (id=ANY($2::text[]) OR (${ownedPanel}))))`;
+
+async function catalogueGrants(credentials: AssistantCredentials, panel: boolean) {
+  const [usable, editable] = await Promise.all([grantedProductIds("use", credentials), grantedProductIds("edit", credentials)]);
+  return { visible: panel ? [...usable, ...editable] : usable, edited: new Set(editable) };
+}
+
+function cataloguePanel(owner: ProductOwner, row: CurrentProductRow, editable: boolean) {
+  const result = productPanelSchema.safeParse(currentProductRecord(row, editable));
+  if (result.success) return { panel: result.data };
+  const removable = row.ownerId === owner.userId || editable;
+  return {
+    unavailable: {
+      id: row.id,
+      reason: panelDefinitionProblem(result.error),
+      ...(removable && { revision: row.revision }),
+    },
+  };
+}
+
+async function loadCataloguePanel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
+  const row = await loadCurrentProduct(owner.domainId, "panel", id);
+  const editable = row.domainId !== null && (await grantedProductIds("edit", credentials)).includes(id);
+  if (row.ownerId !== owner.userId && !editable) await requireProductGrant(id, "use", credentials);
+  return { row, editable };
+}
+
+export async function readCataloguePanel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
+  const { row, editable } = await loadCataloguePanel(owner, credentials, id);
+  return cataloguePanel(owner, row, editable);
+}
+
+export async function listUnavailablePanels(owner: ProductOwner, credentials: AssistantCredentials) {
+  const { visible, edited } = await catalogueGrants(credentials, true);
+  const { rows } = await getPostgresPool().query<CurrentProductRow>(
+    `SELECT ${currentProductColumns} FROM ${currentProductRows("panel")} AS definitions
+     WHERE ${catalogueVisibility("owner_id=$3")} ORDER BY id`,
+    [owner.domainId, visible, owner.userId],
+  );
+  return rows.flatMap(row => {
+    const { unavailable } = cataloguePanel(owner, row, row.domainId !== null && edited.has(row.id));
+    return unavailable ? [unavailable] : [];
+  });
 }
 
 export async function listCurrentProducts(owner: ProductOwner, credentials: AssistantCredentials,
   kind: CurrentProductKind, input: ProductPanelCatalogQuery) {
   const cursor = readCursor(input);
-  const [usable, editable] = await Promise.all([grantedProductIds("use", credentials), grantedProductIds("edit", credentials)]);
   const panelCatalog = kind === "panel";
-  const visible = panelCatalog ? [...usable, ...editable] : usable;
+  const { visible, edited } = await catalogueGrants(credentials, panelCatalog);
   const updated = input.sort === "updated";
   const order = updated ? "updated_at" : "lower(definition->>'name')";
   const direction = updated ? "DESC" : "ASC";
   const keyType = updated ? "timestamptz" : "text";
   // PostgreSQL provides the exact timestamp key, including sub-millisecond precision.
   const cursorKey = updated ? "to_jsonb(updated_at)#>>'{}'" : order;
-  const kindColumn = kind === "projection" ? `,definition->>'componentId' AS "componentId"` : `,definition,definition->'template' AS template`;
-  const whereFilter = `WHERE (domain_id IS NULL OR (domain_id=$1 AND (id=ANY($2::text[]) OR ($7::boolean AND owner_id=$4))))
+  const kindColumn = kind === "projection" ? `,definition->>'componentId' AS "componentId"`
+    : `,definition,definition->'template' AS template,domain_id AS "domainId",created_at AS "createdAt"`;
+  const whereFilter = `WHERE ${catalogueVisibility("$7::boolean AND owner_id=$4")}
        AND ($6::boolean IS NULL OR COALESCE(definition->'template', 'false'::jsonb) = to_jsonb($6::boolean))
        AND ($3='all' OR COALESCE(owner_id=$4,false)=($3='mine'))
        AND (strpos(lower(definition->>'name'),lower($5))>0 OR strpos(lower(definition->>'description'),lower($5))>0)`;
@@ -89,20 +139,16 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
     ),
   ]);
   const total = countRows[0]?.total ?? 0;
-  const edited = new Set(editable);
   const unavailableItems: { id: string; reason: string; revision?: number }[] = [];
-  const items = rows.slice(0, input.limit).flatMap(({ sortKey: _sortKey, definition, updatedAt, template, ...row }) => {
+  const items = rows.slice(0, input.limit).flatMap(({ sortKey: _sortKey, definition, domainId, createdAt, updatedAt, template, ...row }) => {
     const summary = {
       ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(),
       editable: row.ownerId !== null && edited.has(row.id),
     };
     if (!panelCatalog) return [summary];
-    const schema = row.id.startsWith(BUILTIN_PRODUCT_ID_PREFIX) ? builtinProductPanelInputSchema : productPanelInputSchema;
-    const parsed = schema.safeParse(definition);
-    const result = parsed.success ? productPanelSummarySchema.safeParse(summary) : parsed;
-    if (result.success) return [summary];
-    const removable = row.ownerId === owner.userId || summary.editable;
-    unavailableItems.push({ id: row.id, reason: panelDefinitionProblem(result.error), ...(removable && { revision: row.revision }) });
+    const { unavailable } = cataloguePanel(owner, { ...row, definition, domainId, createdAt, updatedAt }, summary.editable);
+    if (!unavailable) return [summary];
+    unavailableItems.push(unavailable);
     return [];
   });
   const last = rows[input.limit - 1];
@@ -111,11 +157,14 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   return { items, nextCursor, total, ...(unavailableItems.length > 0 && { unavailableItems }) };
 }
 
-export async function currentProductUsedBy(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string) {
-  await requireCurrentProduct(owner, credentials, kind, id, "use");
-  return kind === "projection"
-    ? panelsUsingProjection(owner.domainId, id, credentials)
-    : panelUsers(owner.domainId, id, credentials);
+export async function currentProductUsedBy(owner: ProductOwner, credentials: AssistantCredentials,
+  kind: CurrentProductKind, id: string): Promise<ProductPanelUsedBy | ProductProjectionUsedBy> {
+  if (kind === "projection") {
+    await requireCurrentProduct(owner, credentials, kind, id, "use");
+    return panelsUsingProjection(owner.domainId, id, credentials);
+  }
+  await loadCataloguePanel(owner, credentials, id);
+  return panelUsers(owner.domainId, id, credentials, undefined, id);
 }
 
 function panelProjectionIds(definition: unknown) {
@@ -187,11 +236,16 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
 }
 
 export async function copyCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, sourceId: string,
-  copy: { id: string; name: string }) {
+  copy: { id: string; name: string; template?: boolean }) {
   const row = await transaction(async client => {
     await lockProducts(client, owner);
     const source = await requireCurrentProduct(owner, credentials, kind, sourceId, "use", client);
-    const definition = { ...source.definition, name: copy.name, visibility: "private" };
+    const definition = {
+      ...source.definition,
+      name: copy.name,
+      visibility: "private",
+      ...(kind === "panel" && copy.template !== undefined ? { template: copy.template } : {}),
+    };
     const input = kind === "projection" ? productProjectionInputSchema.parse(definition) : productPanelInputSchema.parse(definition);
     if ("componentId" in input) requireOrdinaryProjection(input);
     if (await findCurrentProduct(owner.domainId, kind, copy.id, client))

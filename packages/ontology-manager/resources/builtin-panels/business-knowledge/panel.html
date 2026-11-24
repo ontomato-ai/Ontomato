@@ -150,9 +150,9 @@
       </div>
     <div class="bk-body">
       <div class="bk-list">
-        <projection slot="list" class="bk-list-member" @choose="onUserSelect">
+        <projection slot="list" class="bk-list-member" @update:selected="onListUpdateSelected" @choose="onUserSelect">
           <template #batch-actions>
-            <projection slot="approveAll" @done="onApproveDone"></projection>
+            <projection slot="approveAll"></projection>
             <projection slot="deleteAll"></projection>
           </template>
         </projection>
@@ -166,8 +166,8 @@
           <span>{{ t("panel.backToList") }}</span>
         </button>
         <projection slot="detail" v-show="mode === 'view'"></projection>
-        <div class="bk-detail-actions" v-show="mode === 'view'" v-if="selected && detailReady">
-          <projection slot="approve" @done="onApproveDone"></projection>
+        <div class="bk-detail-actions" v-if="mode === 'view' && selected && detailReady">
+          <projection slot="approve"></projection>
           <sdk-button @click="openEdit">
             <svg class="bk-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
@@ -178,10 +178,10 @@
           <projection slot="remove"></projection>
         </div>
         <h2 v-if="editing" class="bk-form-title">{{ t(mode === "create" ? "panel.add" : "panel.editTitle") }}</h2>
-        <projection slot="form" v-show="editing" @saved="onSaved" @discarded="onDiscarded"></projection>
-        <div class="bk-form-actions" v-show="editing">
+        <projection slot="form" v-if="editing" @saved="onSaved" @discarded="onDiscarded"></projection>
+        <div class="bk-form-actions" v-if="editing">
           <sdk-button :disabled="formBusy" @click="cancelEdit">{{ t("panel.cancel") }}</sdk-button>
-          <sdk-button type="primary" :loading="formBusy" :disabled="formBusy || (mode === 'edit' && !formDirty)" @click="saveForm">
+          <sdk-button type="primary" :loading="formBusy" :disabled="!formCanSubmit" @click="saveForm">
             {{ t("panel.save") }}
           </sdk-button>
         </div>

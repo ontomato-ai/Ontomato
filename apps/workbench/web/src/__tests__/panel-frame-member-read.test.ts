@@ -35,8 +35,7 @@ const panel = definePanel({
   members: { list: { target: { projectionId: knowledge.id }, inputs: { status: { state: "status" } } }, tasks: { target: { projectionId: tasks.id } } },
 });
 const instance = () => createPanelInstance(panel, {
-  text: (key) => key, pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: { status: "pending" }, ...noOperations,
-  recordDraftCreated: async () => {}, readProjection: async () => { throw new Error("unused"); },
+  text: (key) => key, pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: { status: "pending" }, ...noOperations, readProjection: async () => { throw new Error("unused"); },
 });
 
 afterEach(() => {

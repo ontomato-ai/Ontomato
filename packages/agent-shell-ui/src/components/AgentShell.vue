@@ -239,12 +239,13 @@ provide(shellContextKey, {
     return {
       ...base,
       async answer(requestId, answer, selectedOption) {
-        await pendingFormEditFlush;
-        const bound = display.takePendingActionConfirmation(requestId);
+        const bound = await display.waitPendingActionConfirmation(requestId);
         if (bound) {
           if (selectedOption === 1) {
             const sameSession = bound.sessionId === conversation.state.sessionId;
-            const samePage = display.page.value?.instance === bound.pageInstance;
+            const samePage =
+              display.page.value?.instance === bound.pageInstance
+              && display.pageInstanceId.value === bound.pageInstanceId;
             if (!sameSession || !samePage) {
               const reason = "The page or conversation changed after confirmation was requested.";
               await bound.confirmation.cancel({ code: "FORM_CONFIRMATION_STALE", message: reason }).catch(() => undefined);
@@ -255,9 +256,13 @@ provide(shellContextKey, {
               );
             }
             const dispatched = await bound.confirmation.dispatch();
+            const codePrefix = !dispatched.ok && dispatched.code ? `${dispatched.code}: ` : "";
+            const savedSuffix = !dispatched.ok && dispatched.savedFields?.length
+              ? ` (savedFields: ${dispatched.savedFields.join(", ")})`
+              : "";
             const note = dispatched.ok
               ? `[intent=${dispatched.intentId}: executed - ${dispatched.summary}]`
-              : `[intent=${dispatched.intentId}: ${dispatched.reason} - ${dispatched.message}]`;
+              : `[intent=${dispatched.intentId}: ${dispatched.reason} - ${codePrefix}${dispatched.message}${savedSuffix}]`;
             return base.answer(requestId, `${answer} ${note}`, selectedOption);
           }
           await bound.confirmation
@@ -285,17 +290,6 @@ provide(shellContextKey, {
     };
   })(),
 });
-
-/** Tracks in-flight form-edited notifications so answering a pending confirmation waits for invalidation to land. */
-let pendingFormEditFlush: Promise<void> = Promise.resolve();
-onBeforeUnmount(
-  display.onFormEdited((target) => {
-    const id = conversation.state.sessionId;
-    if (!id || !props.panelOperations?.notifyFormEdited) return;
-    const notify = props.panelOperations.notifyFormEdited(id, target).catch(() => undefined);
-    pendingFormEditFlush = pendingFormEditFlush.then(() => notify);
-  }),
-);
 
 /**
  * The open conversation's choice whether agents ask before a panel operation, once the host told it; null for a new
@@ -479,6 +473,7 @@ async function send(input: string) {
   const agent = agentId.value;
   if (!agent) return;
   const page = pairedPage.value ? display.pageContext.value : null;
+  const initialPage = page === null ? undefined : display.pageSnapshot(page);
   const shown = display.target.value;
   const file = shown?.kind === "artifact" ? { label: shown.open.title || fileName(shown.open.artifact.path), path: shown.open.artifact.path } : null;
   // The target rides on the conversation's first message or when it changed: the reader already knows what is beside
@@ -495,7 +490,7 @@ async function send(input: string) {
       ? (told === file.path ? "" : fileContextLine(file, props.labels.fileContext))
       : closes ? props.labels.pageContextClosed : "";
   const text = line ? `${input}\n\n${line}` : input;
-  const result = await conversation.send(agent, text);
+  const result = await conversation.send(agent, text, { initialPage });
   if (!result) return;
   // Only a message the host accepted moved the conversation's page; a refused one carries it again next time. It went to
   // the conversation this send started, or to the one it was written in.

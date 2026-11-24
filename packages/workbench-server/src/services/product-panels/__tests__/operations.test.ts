@@ -6,14 +6,14 @@ import * as serverOperations from "../server-operations";
 import rawExamples from "../../../../../contracts/examples/platform-schedules.json";
 import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts/platform-schedules";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { isPanelHumanOperationIntent, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import { type CreatePanelHumanOperationIntentRequest, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
-const mocks = vi.hoisted(() => ({draft:vi.fn(), createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),recordCreated:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn(),notify:vi.fn()}));
+const mocks = vi.hoisted(() => ({createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
-vi.mock("../../assistant/service",()=>({assistantService:{pageDraft:mocks.draft,recordPageDraftCreated:mocks.recordCreated}}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://owner.test"}}}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
@@ -33,7 +33,6 @@ vi.mock("../../assistant/skills",()=>({
 }));
 vi.mock("../../../utils/backend-client",()=>({backendGet:mocks.backend,backendPost:mocks.backend,buildBackendHeaders:(token:string,_x:unknown,_l:unknown,key:string,headers:object)=>({...headers,...(token?{tk:token}:{}),...(key?{"X-API-Key":key}:{})})}));
 vi.mock("../../agent-host/caller",()=>({restoreAgentCaller:mocks.restore,readAgentSessionActor:mocks.sessionActor}));
-vi.mock("../../agent-host/presentation",()=>({publishObjectChanged:mocks.notify}));
 vi.mock("../current",()=>({
   readCurrentPanelRecord: mocks.panel,
   async requireDirectPanelMember(...[owner, credentials, panel, key]: Parameters<typeof import("../current").requireDirectPanelMember>) {
@@ -52,13 +51,14 @@ vi.mock("../current",()=>({
         ...(form && { target: { input: form } }),
       },
     };
-    return { member, projection: { ...projection, data, operations } };
+    return { member, projection: { ...projection, data, operations: projection.operations ?? operations } };
   },
 }));
 import {
-  operatePanel as realOperatePanel, dispatchPanel, dispatchHumanPanelOperation, inspectPanelOperationImpact, invalidateFormConfirmations, ownPanelSettings,
+  dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings,
   prepareHumanPanelOperation, projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
 } from "../operations";
+import { productCatalogServerOperations } from "../catalog-operations";
 import { panelOperationStore } from "../operation-store";
 import { readAdmittedProjectionOperations } from "../direct-operations";
 import { requireDirectPanelMember } from "../current";
@@ -71,27 +71,30 @@ configureI18n({
 });
 const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
 const owner={domainId:"d",userId:"U"},credentials={token:"U-token",locale:"en"};
-const operatePanel=(initiator:typeof owner,auth:typeof credentials,runId:string,input:Parameters<typeof realOperatePanel>[3])=>realOperatePanel(initiator,auth,runId,input,"Alice");
 const session={providerId:"workbench",sessionId:uuid(1)},root={providerId:"ontology",sessionId:uuid(2)};
 const skill={namespace:{kind:"domain" as const,domainId:"d"},name:"derived-panel"};
 const use={id:"tasks",pageKey:"tasks",path:"/applications/A/tasks",panelId:"P",access:{kind:"domain-member"}};
-let intents:Map<string,PanelOperationIntent>, automatic:boolean, current:RuntimeRun, human:Record<string,unknown>|null;
+let intents:Map<string,PanelOperationIntent>, automatic:boolean, current:RuntimeRun;
 const action=()=>({intentId:uuid(5),applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object" as const,objectType:"platform:ScheduledTask",primaryKey:uuid(9)},input:{}}});
-const save=()=>({...action(),operationId:"form.save",call:{...action().call,input:{revision:4,values:{title:"draft"}}}});
+function prepareLiveAction({ intentId, ...request }: CreatePanelHumanOperationIntentRequest & { intentId: string }) {
+  return prepareHumanPanelOperation(owner, credentials, {
+    ...request, agentRun: { runId: current.id, sessionId: current.sessionId, toolCallId: intentId },
+  }, "Alice");
+}
+
+async function executeLiveAction(request: Parameters<typeof prepareLiveAction>[0]) {
+  const { intentId } = await prepareLiveAction(request);
+  return dispatchHumanPanelOperation(owner, credentials, intentId);
+}
 function mockRegisteredOperation(handler: serverOperations.PanelServerOperation) {
  return vi.spyOn(serverOperations, "registeredPanelOperation").mockReturnValue({
    handler, declaration: serverOperations.operationDeclaration(handler),
    targetType: handler.effect === "write" ? handler.targetType : undefined,
  });
 }
-function agentQuestionId() {
- const intent = intents.get(uuid(5))!;
- if (isPanelHumanOperationIntent(intent)) throw new Error("Expected an agent intent");
- return intent.questionId;
-}
 beforeEach(()=>{
- vi.resetAllMocks();intents=new Map();automatic=false;human=null;
- current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:"V",channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill,digest:"sha256:" + "a".repeat(64)}]} as unknown as RuntimeRun;
+ vi.resetAllMocks();intents=new Map();automatic=false;
+ current={id:uuid(3),sessionId:session.sessionId,status:"running",executionUserId:null,channel:{agent:{providerId:"workbench",agentId:"agent"},actor:{id:uuid(4),domainId:"d"},authority:{classNames:[],executionKind:"live"},root:{session:root,runId:uuid(10)},requestedBy:null,userRecipient:{session:root,actor:{id:uuid(4),domainId:"d"}}},resolvedSkills:[{skill,digest:"sha256:" + "a".repeat(64)}]} as unknown as RuntimeRun;
  mocks.run.mockImplementation(async()=>({run:current}));
  mocks.resolve.mockImplementation(async()=>({credentials:{apiKey:"V-key"}}));
  mocks.backend.mockImplementation(async(_name:string,url:string,options:{headers:object})=>{
@@ -121,32 +124,34 @@ beforeEach(()=>{
  });
  mocks.projection.mockImplementation(async(_o:unknown,c:unknown,id:string)=>{expect(c).toBe(credentials);return {id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"schedules.runNow"}:{kind:"PlatformObjectType",id:"platform:ScheduledTask"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}};});
  mocks.restore.mockResolvedValue({owner});
- mocks.session.mockImplementation(async()=>({messages:human?[{message:human}]:[]}));
- mocks.request.mockImplementation(async(path:string,_method:string,body:{source:unknown})=>path==="/v1/channel/user-questions"?{questionId:agentQuestionId(),source:body.source,recipient:{session:root,actor:{id:uuid(4),domainId:"d"}}}:{questionId:agentQuestionId(),answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:1,text:"Execute"});
+ mocks.session.mockResolvedValue({messages:[]});
+ mocks.request.mockResolvedValue({});
  mocks.query.mockImplementation(async(sql:string,args:unknown[])=>{
    const id=String(args[sql.startsWith("SELECT intent,owner_id")?1:2]);
    if(sql.startsWith("SELECT confirm_before"))return {rows:automatic?[{confirm_before_execute:false}]:[]};
    if(sql.startsWith("SELECT intent"))return {rows:intents.has(id)?[{intent:structuredClone(intents.get(id)),owner_id:owner.userId}]:[]};
    if(sql.startsWith("INSERT INTO panel_operation_intents")){if(!intents.has(String(args[1])))intents.set(String(args[1]),structuredClone(args[4] as PanelOperationIntent));return {rows:[]};}
-   if(sql.includes("jsonb_set(intent,'{invalidated}'")){
-     const reason=JSON.parse(String(args[2]));
-     const targetType=String(args[3]);
-     const primaryKey=sql.includes("primaryKey")?String(args[4]):null;
-     const providerIdx=sql.includes("providerId")?(primaryKey?5:4):-1;
-     let count=0;
-     for(const [k,v] of intents.entries()){
-       if(v.dispatched||isPanelHumanOperationIntent(v)||v.operation.kind!=="form.save"||v.invalidated)continue;
-       if(!("call" in v))continue;
-       const matchesTarget=primaryKey
-         ?(v.call.target?.kind==="object"&&v.call.target.objectType===targetType&&v.call.target.primaryKey===primaryKey)
-         :(v.call.target?.kind==="draft"&&v.binding?.id===targetType);
-       if(!matchesTarget)continue;
-       if(providerIdx>=0&&(v.rootSession.providerId!==String(args[providerIdx])||v.rootSession.sessionId!==String(args[providerIdx+1])))continue;
-       intents.set(k,{...v,invalidated:reason});count++;
+   if(sql.includes("'{invalidated}'") && sql.includes("id<>$3")){
+     const [domainId, userId, excludeId, targetsJson, reasonJson] = args;
+     const targets = JSON.parse(String(targetsJson)) as { target: PanelOperationCall["target"] }[];
+     const reason = JSON.parse(String(reasonJson));
+     for (const [id, intent] of intents) {
+       if (intent.initiator.domainId !== domainId || intent.initiator.userId !== userId || id === excludeId
+         || intent.source.kind !== "agent-page" || intent.source.questionId === null || intent.dispatched || intent.invalidated) continue;
+       const calls = "call" in intent ? [intent.call] : intent.calls;
+       if (calls.some(({ target }) => target?.kind === "object" && targets.some(item =>
+         item.target?.kind === "object" && target.objectType === item.target.objectType && target.primaryKey === item.target.primaryKey
+       ))) intent.invalidated = reason;
      }
-     return {rowCount:count};
+     return {};
    }
-   if(sql.includes("AND intent->>'dispatched'='false'")){const value=intents.get(id)!;if(value.dispatched)return {rowCount:0};intents.set(id,structuredClone(args[3] as PanelOperationIntent));return {rowCount:1};}
+   if(sql.includes("'{invalidated}'") && sql.includes("WHERE domain_id=$1 AND owner_id=$2 AND id=$3")){
+     const val=intents.get(id);
+     if(!val || val.dispatched || val.invalidated) return {rowCount:0};
+     val.invalidated=JSON.parse(String(args[3]));
+     return {rowCount:1};
+   }
+   if(sql.includes("AND intent->>'dispatched'='false'")){const value=intents.get(id)!;if(value.dispatched || value.invalidated)return {rowCount:0};intents.set(id,structuredClone(args[3] as PanelOperationIntent));return {rowCount:1};}
    if(sql.includes("jsonb_set")){intents.get(id)!.outcome=JSON.parse(String(args[3]));return {rowCount:1};}
    throw new Error(sql);
  });
@@ -156,144 +161,20 @@ beforeEach(()=>{
      expect(new Headers(init.headers).get("X-API-Key")).toBeNull();
      return Response.json({...task,title:"Inventory summary"});
    }
-   expect(new Headers(init.headers).get("X-API-Key")).toBe("V-key");
-   expect(new Headers(init.headers).get("tk")).toBeNull();
-   expect(new Headers(init.headers).get("X-Ontomato-Retrieval-Caller-Id")).toBe(current.id);
-   return Response.json({error:{code:"PERMISSION_DENIED",message:"V cannot use U's task"},correlationId:"test"},{status:403});
+   expect(new Headers(init.headers).get("X-API-Key")).toBeNull();
+   expect(new Headers(init.headers).get("tk")).toBe("U-token");
+   return Response.json({error:{code:"PERMISSION_DENIED",message:"User cannot update this task"},correlationId:"test"},{status:403});
  }));
 });
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
 const ownerWrites=()=>vi.mocked(fetch).mock.calls.filter(([,init])=>["POST","PUT"].includes(init?.method ?? "GET"));
-function answer(source:object={kind:"user"}) {human={role:"notification",kind:"agent-answer",source,replyTo:agentQuestionId(),answerId:uuid(11)};}
 it("does not let a content page's loaded skill authorize a frame operation", async () => {
-  await expect(operatePanel(owner, credentials, current.id, { ...action(), root: "frame" })).rejects.toMatchObject({
+  await expect(prepareLiveAction({ ...action(), root: "frame" })).rejects.toMatchObject({
     status: 403, code: "PANEL_FRAME_SKILL_REQUIRED",
   });
   expect(intents.size).toBe(0);
 });
 
-it("returns immediately and ignores the parent's endorsement; a later run uses V once after a genuine U selection",async()=>{
- const request=action();const response=await operatePanel(owner,credentials,current.id,request);
- expect(response.kind).toBe("confirmation-required");expect(ownerWrites()).toHaveLength(0);
- const question=mocks.request.mock.calls[0][2];
- expect(question.message).toBe('Run “Run now” on “Inventory summary” as Victor?');
- expect(question.message).not.toContain(request.intentId);
- expect(question.options).toEqual([{label:"Do not execute",isDefault:true},{label:"Execute this operation"}]);
- answer({session:root,runId:uuid(10)});
- expect(await dispatchPanel(owner,credentials,current.id,request.intentId)).toMatchObject({kind:"not-dispatched",code:"CONFIRMATION_REQUIRED"});
- answer();current={...current,id:uuid(6)};
- const results=await Promise.all([dispatchPanel(owner,credentials,current.id,request.intentId),dispatchPanel(owner,credentials,current.id,request.intentId)]);
- expect(results.some(result=>result.kind==="dispatched")).toBe(true);
- expect(ownerWrites()).toHaveLength(1);
- expect(intents.get(request.intentId)).toMatchObject({dispatched:true,outcome:{kind:"refusal",code:"PERMISSION_DENIED"},source:{runId:uuid(3)}});
- expect(mocks.notify).not.toHaveBeenCalled();
- await operatePanel(owner,credentials,current.id,request);
- await dispatchPanel(owner,credentials,current.id,request.intentId);
- expect(ownerWrites()).toHaveLength(1);
- expect(mocks.resolve.mock.calls.at(-1)?.[0].execution_user_id).toBe("V");
-});
-it("requires a new intent for changed parameters, target, questioning session or executor",async()=>{
- const input=action();await operatePanel(owner,credentials,current.id,input);
- await expect(operatePanel(owner,credentials,current.id,{...input,call:{...input.call,input:{forged:true}}})).rejects.toBeDefined();
- await expect(operatePanel(owner,credentials,current.id,{...input,call:{...input.call,target:{...input.call.target,primaryKey:uuid(8)}}})).rejects.toMatchObject({code:"INTENT_CHANGED"});
- current={...current,executionUserId:"W"};
- await expect(dispatchPanel(owner,credentials,current.id,input.intentId)).rejects.toMatchObject({code:"INTENT_CHANGED"});
- current={...current,sessionId:uuid(7)};
- await expect(dispatchPanel(owner,credentials,current.id,input.intentId)).rejects.toMatchObject({code:"FORBIDDEN"});
-});
-it.each([undefined,0])("does not approve free text or the default selectedOption %s",async selectedOption=>{
- await operatePanel(owner,credentials,current.id,action());answer();
- mocks.request.mockResolvedValue({questionId:agentQuestionId(),answerId:uuid(11),source:{kind:"user"},respondent:{id:uuid(12),domainId:"d"},recipientSession:root,selectedOption:selectedOption??null,text:"I approve"});
- expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"NOT_APPROVED"});
- expect(ownerWrites()).toHaveLength(0);
-});
-it("requires the actual initiating user, not another human receipt",async()=>{
- await operatePanel(owner,credentials,current.id,action());answer();mocks.restore.mockResolvedValue({owner:{...owner,userId:"other"}});
- expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"NOT_APPROVED"});expect(ownerWrites()).toHaveLength(0);
-});
-it("default form save requests human confirmation and executes only after approval",async()=>{
- const response=await operatePanel(owner,credentials,current.id,save());
- expect(response).toMatchObject({kind:"confirmation-required",intentId:uuid(5)});
- expect(ownerWrites()).toHaveLength(0);
- expect(mocks.request).toHaveBeenCalledWith("/v1/channel/user-questions","POST",expect.objectContaining({
-   message:expect.stringContaining("draft"),
- }),expect.any(String));
- expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({kind:"not-dispatched",code:"CONFIRMATION_REQUIRED"});
- expect(ownerWrites()).toHaveLength(0);
- answer();
- vi.stubGlobal("fetch",vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
-   if(init.method==="PUT")return Response.json({...task,revision:5});
-   if(url.endsWith("/form"))return Response.json(rawExamples.forms.find(form=>form.name==="governance-ready")!.response);
-   return Response.json(task);
- }));
- expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
- expect(vi.mocked(fetch).mock.calls.filter(([,init])=>init?.method==="PUT")).toHaveLength(1);
-});
-
-it("invalidates a pending form.save confirmation when the user edits that form before confirming",async()=>{
- const response=await operatePanel(owner,credentials,current.id,save());
- expect(response.kind).toBe("confirmation-required");
- // Editing an unrelated object does not invalidate this confirmation.
- expect(await invalidateFormConfirmations(owner,{
-   rootSession:root,
-   target:{kind:"object",objectType:"platform:ScheduledTask",primaryKey:uuid(8)},
- })).toEqual({invalidated:0});
- // Editing the same form invalidates the pending confirmation so stale values never overwrite newer edits.
- expect(await invalidateFormConfirmations(owner,{
-   rootSession:root,
-   target:{kind:"object",objectType:"platform:ScheduledTask",primaryKey:uuid(9)},
- })).toEqual({invalidated:1});
- answer();
- expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({
-   kind:"not-dispatched",
-   code:"FORM_CONFIRMATION_STALE",
- });
- expect(ownerWrites()).toHaveLength(0);
- expect(await operatePanel(owner,credentials,current.id,save())).toMatchObject({
-   kind:"not-dispatched",
-   code:"FORM_CONFIRMATION_STALE",
- });
-});
-
-it("invalidates a pending agent form.save confirmation when the user saves that form directly on the page",async()=>{
- const response=await operatePanel(owner,credentials,current.id,save());
- expect(response.kind).toBe("confirmation-required");
- vi.stubGlobal("fetch",vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
-   if(init.method==="PUT")return Response.json({...task,revision:5});
-   if(url.endsWith("/form"))return Response.json(rawExamples.forms.find(form=>form.name==="governance-ready")!.response);
-   return Response.json(task);
- }));
- const humanPrep=await prepareHumanPanelOperation(owner,credentials,{
-   applicationId:"A",useId:"tasks",operationId:"form.save",
-   call:{target:{kind:"object",objectType:"platform:ScheduledTask",primaryKey:uuid(9)},input:{values:task.content,revision:4}},
- });
- const humanDispatched=await dispatchHumanPanelOperation(owner,credentials,humanPrep.intentId);
- expect(humanDispatched).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
- answer();
- expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({
-   kind:"not-dispatched",
-   code:"FORM_CONFIRMATION_STALE",
- });
- expect(vi.mocked(fetch).mock.calls.filter(([,init])=>init?.method==="PUT")).toHaveLength(1);
-});
-it.each(["save","runNow"])("automatic %s calls the same owner client, preserving the form revision",async operation=>{
- automatic=true;
- const writes:NonNullable<Parameters<typeof fetch>[1]>[]=[];
- vi.stubGlobal("fetch",vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
-   expect(new Headers(init.headers).get("X-API-Key")).toBe("V-key");
-   if(init.method==="PUT"){writes.push(init);return Response.json({error:{code:"REVISION_CONFLICT",message:"The task changed"},correlationId:"test"},{status:409});}
-   if(url.endsWith("/runs"))return Response.json({error:{code:"PERMISSION_DENIED",message:"Denied"},correlationId:"test"},{status:403});
-   if(url.endsWith("/form"))return Response.json(platformScheduleFormSchema.parse(rawExamples.forms.find(form=>form.name==="governance-ready")!.response));
-   // The actual service contracts are supplied by the fixture for the read and dynamic form below.
-   return Response.json(task);
- }));
- const response=await operatePanel(owner,credentials,current.id,operation==="save"?save():action());
- expect(response).toMatchObject({
-   kind: "dispatched", outcome: { kind: "refusal", code: operation === "save" ? "REVISION_CONFLICT" : "PERMISSION_DENIED" },
- });
- expect(mocks.request).not.toHaveBeenCalled();
- if(operation==="save")expect(JSON.parse(String(writes[0]?.body))).toMatchObject({revision:4});
-});
 const task=platformTaskSchema.parse({...rawExamples.creates.find(task=>task.name==="governance-instruction")!.response,id:uuid(9),revision:9});
 it("session settings compare the authenticated owner even when a session is readable",async()=>{
  mocks.sessionActor.mockResolvedValue({id:uuid(4),domainId:"d"});mocks.restore.mockResolvedValue({owner:{...owner,userId:"someone-else"}});
@@ -302,43 +183,12 @@ it("session settings compare the authenticated owner even when a session is read
 });
 it("declines unsupported business/test authority before an owner write",async()=>{
  current.channel!.authority.executionKind="build-test";
- await expect(operatePanel(owner,credentials,current.id,action())).rejects.toMatchObject({code:"BUILD_TEST_UNSUPPORTED"});expect(ownerWrites()).toHaveLength(0);
+ await expect(prepareLiveAction(action())).rejects.toMatchObject({code:"BUILD_TEST_UNSUPPORTED"});expect(ownerWrites()).toHaveLength(0);
 });
 
-it.each(["save","runNow"])("automatic %s succeeds through the server owner interface without a human question",async operation=>{
- automatic=true;
- vi.stubGlobal("fetch",vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
-   expect(new Headers(init.headers).get("X-API-Key")).toBe("V-key");
-   if(init.method==="PUT") {const input=JSON.parse(String(init.body));expect(input.revision).toBe(9);return Response.json({...task,content:input.content,revision:10});}
-   if(url.endsWith("/runs"))return Response.json({...rawExamples.runs.find(run=>run.name==="agents-running")!.response,taskId:task.id});
-   if(url.endsWith("/form"))return Response.json(rawExamples.forms.find(form=>form.name==="governance-ready")!.response);
-   return Response.json(task);
- }));
- const input=operation==="save"?{...save(),call:{...save().call,input:{values:task.content,revision:9}}}:action();
- expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
- const target = { objectType: "platform:ScheduledTask", primaryKey: uuid(9) };
- expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
-   target, affected: { objects: [target], objectTypes: [target.objectType] },
- }]]);
- expect(mocks.request).not.toHaveBeenCalled();
-});
-it("notifies the initiator once after the later run dispatches an approved action",async()=>{
- const input=action();
- await operatePanel(owner,credentials,current.id,input);
- expect(mocks.notify).not.toHaveBeenCalled();
- answer();
- current={...current,id:uuid(6)};
- vi.stubGlobal("fetch",vi.fn(async()=>Response.json({...rawExamples.runs.find(run=>run.name==="agents-running")!.response,taskId:task.id})));
- expect(await dispatchPanel(owner,credentials,current.id,input.intentId)).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
- await dispatchPanel(owner,credentials,current.id,input.intentId);
- const target = { objectType: "platform:ScheduledTask", primaryKey: uuid(9) };
- expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
-   target, affected: { objects: [target], objectTypes: [target.objectType] },
- }]]);
-});
 it("rejects a declaration whose target type does not match its platform operation",async()=>{
  const panel=await mocks.panel();panel.manifest.state.task.type.objectType="customer:Account";
- await expect(operatePanel(owner,credentials,current.id,action())).rejects.toMatchObject({
+ await expect(prepareLiveAction(action())).rejects.toMatchObject({
    status: 422, code: "PANEL_OPERATION_TARGET_MISMATCH",
    message: expect.stringContaining("connect input 'task' to an object of type 'platform:ScheduledTask'"),
  });
@@ -347,7 +197,7 @@ it("rejects a declaration whose target type does not match its platform operatio
 
 it("uses the initiator's display name in self mode",async()=>{
  current={...current,executionUserId:null};
- await operatePanel(owner,credentials,current.id,action());
+ await prepareLiveAction(action());
  expect(mocks.request.mock.calls[0][2].message).toBe('Run “Run now” on “Inventory summary” as Alice?');
  expect(mocks.backend.mock.calls.some(([,url])=>url.includes("/platform/agent-execution/options"))).toBe(false);
 });
@@ -358,18 +208,13 @@ it.each([403,404])("identifies an unreadable task by ID after one initiator read
    expect(new Headers(init.headers).get("X-API-Key")).toBeNull();
    return Response.json({error:{code:status===403?"PERMISSION_DENIED":"TASK_NOT_FOUND",message:"Unavailable"},correlationId:"test"},{status});
  });vi.stubGlobal("fetch",read);
- await operatePanel(owner,credentials,current.id,action());
+ await prepareLiveAction(action());
  expect(read).toHaveBeenCalledTimes(1);
- expect(mocks.request.mock.calls[0][2].message).toBe(`Run “Run now” on “${uuid(9)}” as Victor?`);
-});
-it("preserves a failed target read instead of hiding an owner outage behind an ID",async()=>{
- vi.stubGlobal("fetch",vi.fn(async()=>Response.json({error:{code:"DEPENDENCY_UNAVAILABLE",message:"Owner unavailable"},correlationId:"test"},{status:503})));
- await expect(operatePanel(owner,credentials,current.id,action())).rejects.toMatchObject({status:503});
- expect(mocks.request).not.toHaveBeenCalled();
+ expect(mocks.request.mock.calls[0][2].message).toBe(`Run “Run now” on “${uuid(9)}” as Alice?`);
 });
 it("rejects an unregistered server handler before any question or dispatch",async()=>{
  mocks.projection.mockResolvedValue({id:"run",name:"Other",componentId:"run",binding:{kind:"PlatformOperation",id:"not.registered"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}});
- await expect(operatePanel(owner,credentials,current.id,{...action(),operationId:"run.registered"})).rejects.toMatchObject({status:422,code:"OPERATION_UNAVAILABLE"});
+ await expect(prepareLiveAction({...action(),operationId:"run.registered"})).rejects.toMatchObject({status:422,code:"OPERATION_UNAVAILABLE"});
  expect(mocks.request).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();
 });
 it("dispatches through the registered owner without a resource-specific coordinator branch",async()=>{
@@ -381,138 +226,26 @@ it("dispatches through the registered owner without a resource-specific coordina
  const panel=await mocks.panel();panel.manifest.state.task.type.objectType="test:Thing";
  mocks.projection.mockResolvedValue({id:"run",name:"Perform",componentId:"run",binding:handler.binding,inputs:{task:{kind:"object",objectType:handler.targetType}}});
  const input={...action(),operationId:"run.perform",call:{target:{kind:"object" as const,objectType:handler.targetType,primaryKey:"opaque-key"},input:{value:7}}};
- expect(await operatePanel(owner,credentials,current.id,input)).toMatchObject({kind:"dispatched",outcome:{kind:"success",data:{done:true}}});
- expect(handler.execute).toHaveBeenCalledWith(expect.objectContaining({request:expect.any(Function)}),input.call.target,input.call.input,input.intentId);
+ const { intentId, autoMode } = await prepareLiveAction(input);
+ expect(autoMode).toBe(true);
+ expect(mocks.request).not.toHaveBeenCalled();
+ expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({kind:"dispatched",outcome:{kind:"success",data:{done:true}}});
+ expect(handler.execute).toHaveBeenCalledWith(expect.objectContaining({executor:{owner,credentials}}),input.call.target,input.call.input,intentId);
  expect(fetch).not.toHaveBeenCalled();
- expect(mocks.notify).not.toHaveBeenCalled();
-});
-
-it("reuses the original creation artifact as the initiator and saves as the executor", async () => {
-  automatic = true;
-  const objectType = "platform:AgentDefinition";
-  const values = { name: "Assistant", icon: "legacy", description: "", enabled: false,
-    systemPrompt: "", skills: [{ name: "report", namespace: { kind: "domain", domainId: owner.domainId } }],
-    classNames: ["Customer"], modelSelection: { modelId: null }, enabledMcpServiceIds: [] };
-  const link = { sessionId: session.sessionId, runId: current.id, path: "outputs/drafts/new.page-draft.json" };
-  const form = { pageKey: use.pageKey, operation: "agent.create", target: { objectType },
-    form: { ...values, skills: [{ name: "report", namespace: { kind: "domain" } }] } };
-  mocks.projection.mockResolvedValue({
-    id: "form", name: "Agent form", componentId: "form", binding: { kind: "PlatformObjectType", id: objectType }, inputs: {},
-  });
-  mocks.draft.mockResolvedValue(form);
-  const input = { ...save(), call: { target: { kind: "draft" as const }, input: { values }, draft: link } };
-  const createdId = uuid(21);
-  mocks.createDefinition.mockResolvedValue({
-    definition: { ...values, id: createdId, executionUserId: null, sortOrder: 0 },
-  });
-  expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
-  expect(mocks.assertPermission).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "V-key" }), ["analysis-agent"]);
-  expect(mocks.createDefinition).toHaveBeenCalledWith(input.intentId, values, { domainId: owner.domainId, userId: "V" },
-    expect.objectContaining({ apiKey: "V-key" }), { credentials, view: { resolveSource: mocks.resolveMember } });
-  expect(fetch).not.toHaveBeenCalled();
-  expect(mocks.draft).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, owner);
-  expect(mocks.recordCreated).toHaveBeenCalledWith(link.sessionId, link.runId, link.path, createdId, owner);
-  const target = { objectType, primaryKey: createdId };
-  expect(mocks.notify).toHaveBeenCalledWith({ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
-    target, affected: { objects: [target], objectTypes: [objectType] },
-  });
-  mocks.draft.mockResolvedValue({ ...form, created: { id: createdId } });
-  await expect(operatePanel(owner, credentials, current.id, { ...input, intentId: uuid(22) }))
-    .rejects.toMatchObject({ code: "PAGE_DRAFT_MISMATCH" });
-  expect(mocks.createDefinition).toHaveBeenCalledTimes(1);
-
-  const currentView = { resolveSource: mocks.resolveMember, revoked: true };
-  mocks.pages.mockResolvedValueOnce(currentView);
-  mocks.projectDefinition.mockImplementationOnce(definition => ({ ...definition, skills: [] }));
-  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({
-    kind: "dispatched", outcome: { kind: "success", data: { id: createdId, skills: [] } },
-  });
-  expect(mocks.projectDefinition).toHaveBeenLastCalledWith(expect.objectContaining({ skills: values.skills }), currentView);
-  expect(mocks.createDefinition).toHaveBeenCalledTimes(1);
-});
-
-it("asks by the entry's title and approves the whole entry as the executor", async () => {
-  const key = uuid(9);
-  const entry = { knowledgeID: key, knowledgeTitle: "Order rule", knowledgeText: "Orders need a customer", knowledgeTags: ["Business"], status: 0, creatorType: 1 };
-  mocks.panel.mockResolvedValue({ id: "P", manifest: {
-    state: { task: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
-    members: { run: { target: { projectionId: "run" }, inputs: { knowledge: { state: "task" } } } },
-  } });
-  mocks.projection.mockResolvedValue({ id: "run", name: "Approve", componentId: "@ontomato/sdk:OperationButton",
-    binding: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE }, inputs: { knowledge: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
-  });
-  // The label is read as the initiator; the dispatch's list read and the write go as the executor.
-  const reads: Headers[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    const headers = new Headers(init.headers);
-    if (String(url).endsWith("/admin/getBussinessKnowledge")) {
-      reads.push(headers);
-      return Response.json({ success: true, data: { [key]: entry } });
-    }
-    expect(String(url).endsWith("/admin/editBussinessKnowledge")).toBe(true);
-    expect(headers.get("X-API-Key")).toBe("V-key");
-    expect(headers.get("tk")).toBeNull();
-    // Approval rewrites the whole entry as the owner read it, with status 1.
-    expect(JSON.parse(String(init.body))).toEqual({ ...entry, status: 1 });
-    return Response.json({ success: true });
-  }));
-  const input = { ...action(), operationId: "run.approve", call: { target: { kind: "object" as const, objectType: BUSINESS_KNOWLEDGE, primaryKey: key }, input: {} } };
-  const response = await operatePanel(owner, credentials, current.id, input);
-  expect(response.kind).toBe("confirmation-required");
-  expect(mocks.request.mock.calls[0][2].message).toBe('Run “Approve” on “Order rule” as Victor?');
-  answer();
-  current = { ...current, id: uuid(6) };
-  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({
-    kind: "dispatched", outcome: { kind: "success", data: {}, message: "Business knowledge “Order rule” approved" },
-  });
-  // Then, as the executor, the entry's title for the owner's sentence and the list read of the approval itself.
-  expect(reads.map((headers) => [headers.get("tk"), headers.get("X-API-Key")])).toEqual([["U-token", null], [null, "V-key"], [null, "V-key"]]);
-  const target = { objectType: BUSINESS_KNOWLEDGE, primaryKey: key };
-  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
-    target, affected: { objects: [target], objectTypes: [BUSINESS_KNOWLEDGE] },
-  }]]);
 });
 
 it("freezes the owner write description with a named target and a result schema", async () => {
   const input = action();
-  await operatePanel(owner, credentials, current.id, input);
-  expect(intents.get(input.intentId)).toMatchObject({
+  const { intentId } = await prepareLiveAction(input);
+  expect(intents.get(intentId)).toMatchObject({
     call: input.call,
     operation: { effect: "write", target: { source: "input", input: "task" }, resultSchema: { type: "object" }, batch: false },
   });
 });
 
-it("expires an old pending confirmation without reading the owner or claiming its write", async () => {
-  const input = action();
-  await operatePanel(owner, credentials, current.id, input);
-  const legacyOperation = {
-    id: input.operationId, slot: "run", label: "Run now", kind: "action", handlerRef: "schedules.runNow",
-    inputSchema: {}, target: { source: "state", state: "task" },
-  };
-  Object.assign(intents.get(input.intentId)!, { operation: legacyOperation });
-  answer();
-  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({
-    kind: "not-dispatched", code: "PANEL_CONFIRMATION_EXPIRED",
-  });
-  expect(intents.get(input.intentId)?.dispatched).toBe(false);
-  expect(ownerWrites()).toHaveLength(0);
-});
-
-it("returns an old unknown outcome without making its intent claimable again", async () => {
-  const input = action();
-  await operatePanel(owner, credentials, current.id, input);
-  const outcome = { kind: "unknown", message: "The owner did not return a result" };
-  Object.assign(intents.get(input.intentId)!, { dispatched: true, outcome, operation: {
-    id: input.operationId, slot: "run", label: "Run now", kind: "action", handlerRef: "schedules.runNow",
-    inputSchema: {}, target: { source: "state", state: "task" },
-  } });
-  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({ kind: "dispatched", outcome });
-  expect(ownerWrites()).toHaveLength(0);
-});
-
 it("rejects a batch when the registered owner does not declare batch support", async () => {
   const { call, ...intent } = action();
-  await expect(operatePanel(owner, credentials, current.id, { ...intent, calls: [call] }))
+  await expect(prepareLiveAction({ ...intent, calls: [call] }))
     .rejects.toMatchObject({ code: "OPERATION_BATCH_UNSUPPORTED" });
   expect(intents.size).toBe(0);
   expect(ownerWrites()).toHaveLength(0);
@@ -541,47 +274,14 @@ it.each([
       executionUserId: null, modelSelection: { modelId: null }, skills: [], systemPrompt: "",
     })
     : Response.json({ error: { code, message: "Owner response" }, correlationId: "test" }, { status })));
-  expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({
+  expect(await executeLiveAction(input)).toMatchObject({
     kind: "dispatched", outcome: { kind, code },
   });
-  expect(mocks.notify).not.toHaveBeenCalled();
 });
 
-it("uses the agent deletion label and inspects its target as the initiator", async () => {
-  const objectType = "platform:AgentDefinition", primaryKey = uuid(9);
-  const panel = await mocks.panel();
-  panel.manifest.state.task.type.objectType = objectType;
-  panel.manifest.members.run.inputs = { agent: { state: "task" } };
-  mocks.projection.mockResolvedValue({
-    id: "run", componentId: "run", name: "remove", binding: { kind: "PlatformOperation", id: "agents.delete" },
-    inputs: { agent: { kind: "object", objectType } },
-  });
-  const read = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
-    expect(url).toBe(`http://workbench.test/api/assistant/agent-definitions/${primaryKey}`);
-    expect(init.method).toBe("GET");
-    expect(new Headers(init.headers).get("tk")).toBe("U-token");
-    return Response.json({
-      id: primaryKey, name: "Inventory analyst", description: "", icon: null, enabled: true,
-      executionUserId: null, modelSelection: { modelId: null }, skills: [], systemPrompt: "",
-    });
-  });
-  vi.stubGlobal("fetch", read);
-  const input = { applicationId: "A", useId: "tasks", operationId: "run.delete", call: {
-    target: { kind: "object" as const, objectType, primaryKey }, input: {},
-  } };
-  expect(await inspectPanelOperationImpact(owner, credentials, input)).toEqual({
-    summary: "This deletes the selected agent definition.",
-    objects: [{ target: { objectType, primaryKey }, label: "Inventory analyst" }], total: 1,
-  });
-  expect(read).toHaveBeenCalledTimes(1);
-  expect(intents.size).toBe(0);
-  const preparation = await prepareHumanPanelOperation(owner, credentials, input);
-  expect(preparation).toMatchObject({ label: "Delete agent", confirmation: { kind: "impact" } });
-  expect(await projectPanelOperationIntent(owner, preparation.intentId, { applicationId: "A", useId: "tasks" }, credentials))
-    .toMatchObject({ label: "Delete agent" });
-});
-
-function installBatchOwner() {
+function installBatchOwner(
+  availability: Pick<serverOperations.PanelWriteServerOperation, "unavailable" | "unavailableBatch"> = {},
+) {
   const objectType = "platform:ScheduledTask";
   const binding = { kind: "PlatformOperation" as const, id: "test.batch" };
   const handler = {
@@ -593,6 +293,7 @@ function installBatchOwner() {
     inspectImpact: { handlerRef: "test.batch.impact", inspect: vi.fn() },
     execute: vi.fn(),
     executeBatch: vi.fn(),
+    ...availability,
   };
   mockRegisteredOperation(handler);
   mocks.projection.mockResolvedValue({
@@ -620,7 +321,8 @@ it("uses the same owner impact for the human read and agent confirmation of the 
   const { intentId: _intentId, ...inspect } = request;
   expect(await inspectPanelOperationImpact(owner, credentials, inspect)).toEqual(impact);
   expect(intents.size).toBe(0);
-  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "confirmation-required" });
+  const { intentId } = await prepareLiveAction(request);
+  expect(intents.get(intentId)?.source).toMatchObject({ kind: "agent-page", autoMode: false });
   expect(handler.inspectImpact.inspect).toHaveBeenCalledTimes(2);
   for (const [host, calls] of handler.inspectImpact.inspect.mock.calls) {
     expect(host).toMatchObject({ request: expect.any(Function) });
@@ -630,10 +332,27 @@ it("uses the same owner impact for the human read and agent confirmation of the 
   expect(question.message).toContain("Task 1");
   expect(question.message).toContain("(12)");
   expect(question.message).toContain(impact.summary);
-  expect(intents.get(request.intentId)).toMatchObject({
-    calls: request.calls, executionUserId: "V", operation: { batch: true, inspectImpact: { handlerRef: "test.batch.impact" } },
+  expect(intents.get(intentId)).toMatchObject({
+    calls: request.calls, operation: { batch: true, inspectImpact: { handlerRef: "test.batch.impact" } },
   });
   expect(handler.executeBatch).not.toHaveBeenCalled();
+});
+
+it("previews only executable calls in the agent's confirmation and owner impact", async () => {
+  const { handler, request, impact } = installBatchOwner({
+    unavailable: async (_host, target) => target.primaryKey === uuid(9) ? { reason: "Already processed" } : undefined,
+  });
+  const [skipped, executable] = request.calls;
+  handler.targetLabel.mockImplementation(async (_host, target) => target.primaryKey === skipped.target.primaryKey
+    ? "Already processed task" : "Pending task");
+  handler.inspectImpact.inspect.mockResolvedValue({ ...impact, objects: [], total: 1 });
+
+  await prepareLiveAction({ ...request, calls: [skipped, executable!] });
+  expect(handler.inspectImpact.inspect).toHaveBeenCalledWith(expect.anything(), [executable]);
+  const { message } = mocks.request.mock.calls[0]![2];
+  expect(message).toContain("Pending task (1)");
+  expect(message).not.toContain("Already processed task");
+  expect(message).toMatch(/\b1\b.*will be skipped/i);
 });
 
 it("reads the registered owner descriptor for an admitted human panel use", async () => {
@@ -681,6 +400,8 @@ it("adds owner availability only to a live descriptor for the selected record", 
 it("dispatches one frozen batch once and merges affected evidence from successful items only", async () => {
   const { handler, request, impact } = installBatchOwner();
   const first = impact.objects[0]!.target, refused = impact.objects[1]!.target;
+  const pending = await prepareLiveAction({ ...request, intentId: uuid(55), calls: [request.calls[4]!] });
+  const unchanged = await prepareLiveAction({ ...request, intentId: uuid(56), calls: [request.calls[1]!] });
   const statuses = [
     { kind: "success", data: { done: true }, affected: { objects: [first], objectTypes: [first.objectType] } },
     { kind: "refusal", code: "REVISION_CONFLICT", message: "The task changed" },
@@ -690,33 +411,33 @@ it("dispatches one frozen batch once and merges affected evidence from successfu
   ];
   const items = impact.objects.map(({ target }, index) => ({ target, outcome: statuses[index] }));
   handler.executeBatch.mockResolvedValue({ kind: "batch", items, affected: { objects: [refused], objectTypes: ["ignored"] } });
-  await operatePanel(owner, credentials, current.id, request);
-  answer();
+  const { intentId } = await prepareLiveAction(request);
   const results = await Promise.all([
-    dispatchPanel(owner, credentials, current.id, request.intentId),
-    dispatchPanel(owner, credentials, current.id, request.intentId),
+    dispatchHumanPanelOperation(owner, credentials, intentId),
+    dispatchHumanPanelOperation(owner, credentials, intentId),
   ]);
   expect(results).toContainEqual(expect.objectContaining({
     kind: "dispatched", outcome: { kind: "batch", items, affected: { objects: [first], objectTypes: [first.objectType] } },
   }));
   expect(handler.executeBatch).toHaveBeenCalledTimes(1);
-  expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ request: expect.any(Function) }), request.calls, request.intentId);
+  expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ request: expect.any(Function) }), request.calls, intentId);
   expect(handler.execute).not.toHaveBeenCalled();
-  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
-    target: null, affected: { objects: [first], objectTypes: [first.objectType] },
-  }]]);
+  expect(await dispatchHumanPanelOperation(owner, credentials, pending.intentId)).toMatchObject({
+    kind: "not-dispatched", code: "FORM_CONFIRMATION_STALE",
+  });
+  expect(intents.get(unchanged.intentId)?.invalidated).toBeUndefined();
 });
 
-it("keeps an uncertain owner batch terminal and publishes no change", async () => {
+it("keeps an uncertain owner batch terminal", async () => {
   const { handler, request } = installBatchOwner();
   automatic = true;
   handler.executeBatch.mockRejectedValue(new Error("Connection lost after dispatch"));
-  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({
+  const { intentId } = await prepareLiveAction(request);
+  expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({
     kind: "dispatched", outcome: { kind: "unknown", message: "Connection lost after dispatch" },
   });
-  await dispatchPanel(owner, credentials, current.id, request.intentId);
+  await dispatchHumanPanelOperation(owner, credentials, intentId);
   expect(handler.executeBatch).toHaveBeenCalledTimes(1);
-  expect(mocks.notify).not.toHaveBeenCalled();
 });
 
 it("keeps a definitive atomic batch receipt without inventing per-item receipts", async () => {
@@ -727,22 +448,98 @@ it("keeps a definitive atomic batch receipt without inventing per-item receipts"
     objects, objectTypes: ["platform:ScheduledTask"],
   } };
   handler.executeBatch.mockResolvedValue(outcome);
-  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "dispatched", outcome });
+  expect(await executeLiveAction(request)).toMatchObject({ kind: "dispatched", outcome });
   expect(handler.executeBatch).toHaveBeenCalledTimes(1);
-  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
-    target: null, affected: outcome.affected,
-  }]]);
 });
 
-it("publishes type-only changes from a successful single write", async () => {
+it("uses the owner's bulk availability at dispatch and restores skipped targets in the frozen order", async () => {
+  const reason = "Already approved";
+  const unavailable = vi.fn();
+  type UnavailableBatch = NonNullable<serverOperations.PanelWriteServerOperation["unavailableBatch"]>;
+  const unavailableBatch = vi.fn<Parameters<UnavailableBatch>, ReturnType<UnavailableBatch>>();
+  unavailableBatch.mockResolvedValue(new Map());
+  const { handler, request, impact } = installBatchOwner({ unavailable, unavailableBatch });
+  automatic = true;
+  const { intentId } = await prepareLiveAction(request);
+  unavailableBatch.mockImplementation(async (_host, targets) => new Map([
+    [targets[1]!.rowKey, { reason }],
+    [targets[4]!.rowKey, { reason }],
+  ]));
+  const executable = [request.calls[0], request.calls[2], request.calls[3]];
+  const targets = impact.objects.map(({ target }) => target);
+  const affected = { objects: [targets[0]!], objectTypes: [targets[0]!.objectType] };
+  const success = { kind: "success", data: {}, affected };
+  const failure = { kind: "failure", code: "STORE_ERROR", message: "Write failed" };
+  const skipped = { kind: "skipped", reason };
+  handler.executeBatch.mockResolvedValue({
+    kind: "batch", items: [
+      { target: targets[0], outcome: success },
+      { target: targets[2], outcome: failure },
+      { target: targets[3], outcome: failure },
+    ],
+  });
+  expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({
+    kind: "dispatched",
+    outcome: {
+      kind: "batch",
+      items: targets.map((target, index) => ({ target, outcome: [success, skipped, failure, failure, skipped][index] })),
+      affected,
+    },
+  });
+  expect(handler.executeBatch).toHaveBeenCalledWith(expect.anything(), executable, intentId);
+  expect(unavailable).not.toHaveBeenCalled();
+});
+
+it("uses single-target availability and maps an atomic result only to the executable items", async () => {
+  const reason = { reason: "Already approved" };
+  type Unavailable = NonNullable<serverOperations.PanelWriteServerOperation["unavailable"]>;
+  const unavailable = vi.fn<Parameters<Unavailable>, ReturnType<Unavailable>>();
+  const { handler, request, impact } = installBatchOwner({ unavailable });
+  automatic = true;
+  const ids = [request.calls[1].target.primaryKey, request.calls[3].target.primaryKey];
+  unavailable.mockImplementation(async (_host, target) => ids.includes(target.primaryKey) ? reason : undefined);
+  const success = { kind: "success", data: { updated: 3 }, affected: {
+    objects: impact.objects.filter(({ target }) => !ids.includes(target.primaryKey)).map(({ target }) => target),
+    objectTypes: [request.calls[0].target.objectType],
+  } };
+  handler.executeBatch.mockResolvedValue(success);
+  const { intentId } = await prepareLiveAction(request);
+  expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({
+    kind: "dispatched",
+    outcome: {
+      kind: "batch",
+      items: impact.objects.map(({ target }) => ({
+        target, outcome: ids.includes(target.primaryKey) ? { kind: "skipped", ...reason } : success,
+      })),
+      affected: success.affected,
+    },
+  });
+  expect(handler.executeBatch).toHaveBeenCalledWith(expect.anything(),
+    request.calls.filter(({ target }) => !ids.includes(target.primaryKey)), intentId);
+});
+
+it("records an all-skipped batch without calling the owner write or invalidating pending writes", async () => {
+  const reason = { reason: "Already approved" };
+  const { handler, request, impact } = installBatchOwner({ unavailable: async () => reason });
+  automatic = true;
+  const pending = await prepareLiveAction({ ...request, intentId: uuid(57), calls: [request.calls[0]] });
+  const { intentId } = await prepareLiveAction(request);
+  const outcome = {
+    kind: "batch",
+    items: impact.objects.map(({ target }) => ({ target, outcome: { kind: "skipped", ...reason } })),
+  };
+  expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toEqual({ kind: "dispatched", intentId, outcome });
+  expect(handler.executeBatch).not.toHaveBeenCalled();
+  expect(handler.inspectImpact.inspect).not.toHaveBeenCalled();
+  expect(intents.get(pending.intentId)?.invalidated).toBeUndefined();
+});
+
+it("returns type-only changes from a successful single write", async () => {
   const { handler, request: { calls, ...request } } = installBatchOwner();
   automatic = true;
   const affected = { objects: [], objectTypes: ["platform:ScheduledTask"] };
   handler.execute.mockResolvedValue({ kind: "success", data: { done: true }, affected });
-  await operatePanel(owner, credentials, current.id, { ...request, call: calls[0] });
-  expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
-    target: null, affected,
-  }]]);
+  expect(await executeLiveAction({ ...request, call: calls[0] })).toMatchObject({ outcome: { affected } });
 });
 
 it("says what a single write did by its target's name, read before the write, unless the owner said it", async () => {
@@ -758,14 +555,14 @@ it("says what a single write did by its target's name, read before the write, un
     return { kind: "success", data: { done: true } };
   });
   Object.assign(handler, { done: (_host: unknown, name: string) => `${name} deleted` });
-  expect(await operatePanel(owner, credentials, current.id, { ...request, call: calls[0] })).toMatchObject({
+  expect(await executeLiveAction({ ...request, call: calls[0] })).toMatchObject({
     kind: "dispatched", outcome: { kind: "success", message: `Task ${calls[0].target.primaryKey} deleted` },
   });
   // The name is read while the target is still there.
   expect(order.slice(-2)).toEqual(["name", "write"]);
 
   handler.execute.mockResolvedValue({ kind: "success", data: { done: true }, message: "The owner's own words" });
-  expect(await operatePanel(owner, credentials, current.id, { ...request, intentId: uuid(6), call: calls[1] })).toMatchObject({
+  expect(await executeLiveAction({ ...request, intentId: uuid(6), call: calls[1] })).toMatchObject({
     kind: "dispatched", outcome: { kind: "success", message: "The owner's own words" },
   });
 });
@@ -775,9 +572,10 @@ it("fails before claiming a write whose target's name cannot be read, so the wri
   automatic = true;
   Object.assign(handler, { done: (_host: unknown, name: string) => `${name} deleted` });
   handler.targetLabel.mockRejectedValueOnce(new Error("The task is gone"));
-  await expect(operatePanel(owner, credentials, current.id, { ...request, call: calls[0] })).rejects.toThrow("The task is gone");
+  const { intentId } = await prepareLiveAction({ ...request, call: calls[0] });
+  await expect(dispatchHumanPanelOperation(owner, credentials, intentId)).rejects.toThrow("The task is gone");
   expect(handler.execute).not.toHaveBeenCalled();
-  expect(intents.get(request.intentId)).toMatchObject({ dispatched: false });
+  expect(intents.get(intentId)).toMatchObject({ dispatched: false });
 });
 
 it("gathers what a batch removed from its successful items once", async () => {
@@ -791,7 +589,7 @@ it("gathers what a batch removed from its successful items once", async () => {
     target, outcome: index === 0 ? gone(first) : index === 1 ? gone(second) : { kind: "refusal", code: "IN_USE", message: "In use" },
   }));
   handler.executeBatch.mockResolvedValue({ kind: "batch", items });
-  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "dispatched", outcome: {
+  expect(await executeLiveAction(request)).toMatchObject({ kind: "dispatched", outcome: {
     kind: "batch", affected: { objects: [first, second], objectTypes: [first!.objectType], removed: [first, second] },
   } });
 });
@@ -826,7 +624,6 @@ it("freezes a human batch and its impact, then claims once with the reader's cre
   expect(await projectPanelOperationIntent(owner, id, useRef, credentials)).toEqual(preparation);
   await expect(projectPanelOperationIntent(owner, id, { ...useRef, useId: "other" }, credentials)).rejects.toMatchObject({ status: 404 });
   expect(ownerWrite).not.toHaveBeenCalled();
-  await expect(dispatchPanel(owner, credentials, current.id, id)).rejects.toMatchObject({ code: "FORBIDDEN" });
   const results = await Promise.all([dispatchHumanPanelOperation(owner, credentials, id), dispatchHumanPanelOperation(owner, credentials, id)]);
   expect(results).toContainEqual({ kind: "dispatched", intentId: id, outcome: {
     ...outcome, affected: { objects: impact.objects.map(item => item.target), objectTypes: [input.calls[0].target.objectType] },
@@ -836,13 +633,6 @@ it("freezes a human batch and its impact, then claims once with the reader's cre
   expect(handler.execute).not.toHaveBeenCalled();
   expect(ownerWrite).toHaveBeenCalledOnce();
   expect(mocks.resolve).not.toHaveBeenCalled();
-  expect(mocks.notify).not.toHaveBeenCalled();
-});
-
-it("refuses to dispatch an agent intent from the human route", async () => {
-  await operatePanel(owner, credentials, current.id, action());
-  await expect(dispatchHumanPanelOperation(owner, credentials, action().intentId)).rejects.toMatchObject({ code: "FORBIDDEN" });
-  expect(ownerWrites()).toHaveLength(0);
 });
 
 it("requires confirmation for a batch without an impact inspector", async () => {
@@ -857,6 +647,32 @@ it("requires confirmation for a batch without an impact inspector", async () => 
     })),
   } });
   expect(handler.executeBatch).not.toHaveBeenCalled();
+});
+
+it("freezes a localized input schema and dispatches the batch in the same locale", async () => {
+  const { handler, request } = installBatchOwner();
+  const describeInputSchema: NonNullable<serverOperations.PanelServerOperation["describeInputSchema"]> = async (_host, locale) => ({
+    type: "object",
+    properties: { status: { type: "number", title: locale === "fr" ? "Statut" : "Status" } },
+  });
+  mockRegisteredOperation({ ...handler, describeInputSchema });
+  handler.executeBatch.mockResolvedValue({
+    kind: "batch",
+    items: request.calls.map(({ target: { objectType, primaryKey } }) => ({
+      target: { objectType, primaryKey }, outcome: { kind: "success", data: { done: true } },
+    })),
+  });
+  const viewer = { ...credentials, locale: "fr" };
+  const { intentId: _id, ...input } = request;
+
+  const descriptor = await readPanelOperationDescriptor(owner, viewer, input);
+  expect(descriptor.inputSchema).toHaveProperty("properties.status.title", "Statut");
+  const { intentId } = await prepareHumanPanelOperation(owner, viewer, input);
+  expect(intents.get(intentId)?.operation.inputSchema).toEqual(descriptor.inputSchema);
+  await expect(dispatchHumanPanelOperation(owner, viewer, intentId)).resolves.toMatchObject({
+    kind: "dispatched", outcome: { kind: "batch" },
+  });
+  expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ locale: "fr" }), input.calls, intentId);
 });
 
 it("runs a registered read using the reader and preview context without creating an intent", async () => {
@@ -903,12 +719,11 @@ it("runs a registered read using the reader and preview context without creating
   await expect(prepareHumanPanelOperation(owner, credentials, input)).rejects.toMatchObject({ code: "OPERATION_WRITE_REQUIRED" });
   expect(ownerRead).toHaveBeenCalledOnce();
   expect(intents.size).toBe(0);
-  expect(mocks.notify).not.toHaveBeenCalled();
 });
 
 it("resolves the actual panel-use member and refuses a run that only loaded a sibling", async () => {
   mocks.resolveMember.mockResolvedValue({ ...skill, name: "other-panel-in-the-same-group" });
-  await expect(operatePanel(owner, credentials, current.id, action())).rejects.toMatchObject({ code: "FORBIDDEN" });
+  await expect(prepareLiveAction(action())).rejects.toMatchObject({ code: "FORBIDDEN" });
   expect(mocks.pages).toHaveBeenCalledWith(owner.domainId, credentials);
   expect(mocks.resolveMember).toHaveBeenCalledWith(
     expect.objectContaining({ resolveSource: mocks.resolveMember }),
@@ -921,15 +736,18 @@ it("resolves the actual panel-use member and refuses a run that only loaded a si
   expect(ownerWrites()).toHaveLength(0);
 });
 
-it("rechecks a customer action and reads the confirmation label as the initiator, then executes as the runner", async () => {
+it.each([false, true])("handles an Action-backed form with another tab saving first = %s", async (humanSavesFirst) => {
  const order = { kind: "object" as const, objectType: "Order", primaryKey: "o1" };
  const identity = { kind: "object", objectType: "Order" };
+ const binding = { kind: "Action", id: "approve-order" };
+ const token = "private-customer-action-token";
  mocks.panel.mockResolvedValue({ id: "P", manifest: {
    state: { order: { type: identity } },
-   members: { run: { target: { projectionId: "approval" }, inputs: { target: { state: "order" } } } },
+   members: { form: { target: { projectionId: "approval" }, inputs: { target: { state: "order" } } } },
  } });
  mocks.projection.mockResolvedValue({ id: "approval", name: "Approve order",
-   binding: { kind: "Action", id: "approve-order" }, inputs: { target: identity },
+   binding, inputs: { target: identity },
+   operations: { save: { operation: binding, target: { input: "target" } } },
  });
  const originalBackend = mocks.backend.getMockImplementation()!;
  mocks.backend.mockImplementation(async (...args) => {
@@ -958,7 +776,7 @@ it("rechecks a customer action and reads the confirmation label as the initiator
      return Response.json({ success: true, data: {
        id: "approve-order", name: "Approve order", codeHash: "a".repeat(64),
        target: { className: "Order", keyParameter: "key" },
-       function: { parameters: [{ name: "key", type: "TYPE_STRING" }] },
+       function: { parameters: [{ name: "key", type: "TYPE_STRING" }, { name: "token", type: "TYPE_STRING" }] },
      } });
    }
    if (path === "/action/form") {
@@ -967,29 +785,43 @@ it("rechecks a customer action and reads the confirmation label as the initiator
        expect(headers.get("tk")).toBe("U-token");
        ownerCalls.push("open");
      } else {
-       expect(headers.get("X-API-Key")).toBe("V-key");
-       expect(headers.get("tk")).toBeNull();
+       expect(headers.get("X-API-Key")).toBeNull();
+       expect(headers.get("tk")).toBe("U-token");
+       expect(submitted.values).toMatchObject({ token });
        ownerCalls.push("submit");
      }
      return Response.json({ success: true, data: {
        fields: [{ key: "key", label: "Key", required: false, defaultValue: null, help: null,
          type: "text", multiline: false, placeholder: null, maxLength: 200 }],
-       values: { key: "o1" }, errors: [], parameters: submitted.values === undefined ? null : { key: "o1" },
+       values: { key: "o1" }, errors: [], parameters: submitted.values === undefined ? null : { key: "o1", token },
      } });
    }
    expect(path).toBe("/action/execute");
-   expect(headers.get("X-API-Key")).toBe("V-key");
-   expect(headers.get("tk")).toBeNull();
-   expect((init.body as FormData).get("param")).toBe(JSON.stringify({ key: "o1" }));
+   expect(headers.get("X-API-Key")).toBeNull();
+   expect(headers.get("tk")).toBe("U-token");
+   expect((init.body as FormData).get("param")).toBe(JSON.stringify({ key: "o1", token }));
    ownerCalls.push("execute");
    return Response.json({ success: true, data: { result: "{}", affects: ["Order"] } });
  }));
- const input = { ...action(), operationId: "run.execute", call: { target: order, input: { values: {} } } };
- expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({ kind: "confirmation-required" });
- expect(JSON.stringify(mocks.request.mock.calls[0]?.[2])).toContain("Purchase order");
+ const input = { ...action(), operationId: "form.save", call: { target: order, input: { values: { token } } } };
+ const { intentId } = await prepareLiveAction(input);
+ const { message } = mocks.request.mock.calls[0]![2] as { message: string };
+ expect(message).toContain("Purchase order");
+ expect(message).toContain("token");
+ expect(message).not.toContain(token);
  expect(ownerCalls).toEqual(["definition", "open"]);
- answer();
- expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({
+ if (humanSavesFirst) {
+   const manual = await prepareHumanPanelOperation(owner, credentials, input);
+   expect(await dispatchHumanPanelOperation(owner, credentials, manual.intentId)).toMatchObject({
+     kind: "dispatched", outcome: { kind: "success" },
+   });
+   expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({
+     kind: "not-dispatched", code: "FORM_CONFIRMATION_STALE",
+   });
+   expect(ownerCalls.filter(call => call === "execute")).toHaveLength(1);
+   return;
+ }
+ expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({
    kind: "dispatched", outcome: { kind: "success" },
  });
  expect(ownerCalls).toEqual(["definition", "open", "definition", "open", "submit", "execute"]);
@@ -1012,13 +844,9 @@ it("admits a cross-member form.save write operation bound to another form member
     ]),
     inputSchema: z.object({ values: z.record(z.unknown()) }),
     resultSchema: z.object({}),
-    draftOperation: () => "relationship.create",
     draftInput: input => input,
-    formInstructions: "Save relationship.",
-    create: {
-      draftValues: values => (values as Record<string, unknown>) ?? {},
-      createdObject: () => ({ primaryKey: "rel-1", objectType: "platform:Relationship" }),
-    },
+
+    create: true,
     execute: async () => ({ kind: "success", data: {}, affected: { objects: [], objectTypes: ["platform:Relationship"] } }),
   });
 
@@ -1066,4 +894,300 @@ it("admits a cross-member form.save write operation bound to another form member
     effect: "write",
     target: { source: "draft", slot: "relationForm" },
   });
+});
+
+it("marks a batch operation unavailable only when every item in a non-empty array target is unavailable", async () => {
+  const unavailableBatch = vi.fn(async (_host, targets: readonly { target: { primaryKey: string }; rowKey: string }[]) => {
+    const reasons = new Map<string, { reason: string }>();
+    for (const entry of targets) {
+      if (entry.target.primaryKey !== "k-draft") {
+        reasons.set(entry.rowKey, { reason: `Already approved: ${entry.target.primaryKey}` });
+      }
+    }
+    return reasons;
+  });
+  const unavailableFallback = vi.fn(async (_host, target: { primaryKey: string }) =>
+    target.primaryKey === "k-draft" ? undefined : { reason: `Single unavailable: ${target.primaryKey}` });
+
+  const makeBatchHandler = (
+    overrides: Pick<serverOperations.PanelWriteServerOperation, "unavailable" | "unavailableBatch">,
+  ): serverOperations.PanelWriteServerOperation => ({
+    handlerRef: APPROVE_KNOWLEDGE,
+    labelKey: "test.batch",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE },
+    effect: "write",
+    batch: true,
+    targetType: BUSINESS_KNOWLEDGE,
+    targetInput: "knowledge",
+    targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(BUSINESS_KNOWLEDGE), primaryKey: z.string() }),
+    inputSchema: z.object({}).strict(),
+    resultSchema: z.object({ approved: z.boolean() }).strict(),
+    targetLabel: async (_host, target) => target.primaryKey,
+    execute: async () => ({ kind: "success", data: { approved: true } }),
+    executeBatch: async () => ({ kind: "success", data: { approved: true } }),
+    ...overrides,
+  });
+
+  const panel = {
+    id: "panel-batch-availability",
+    manifest: {
+      state: {
+        checked: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+      },
+      members: {
+        toolbar: {
+          target: { projectionId: "toolbar-proj" },
+          inputs: { checked: { state: "checked" } },
+        },
+      },
+    },
+  };
+  const projection = {
+    id: "toolbar-proj",
+    name: "Toolbar",
+    description: "",
+    visibility: "domain" as const,
+    componentId: "@ontomato/sdk:OperationButton",
+    inputs: {
+      checked: { kind: "list" as const, items: { kind: "object" as const, objectType: BUSINESS_KNOWLEDGE } },
+    },
+    outputs: {},
+    data: {},
+    config: { operation: "approveAll" },
+    operations: {
+      approveAll: {
+        operation: { kind: "PlatformOperation" as const, id: APPROVE_KNOWLEDGE },
+        target: { input: "checked" },
+      },
+    },
+  };
+  const actor = { owner, credentials };
+  const placement = {
+    panel: panel as never,
+    projection: projection as never,
+    member: panel.manifest.members.toolbar,
+    slot: "toolbar",
+  };
+  const approved1 = { className: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-1" };
+  const approved2 = { className: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-2" };
+  const draft = { className: BUSINESS_KNOWLEDGE, primaryKey: "k-draft" };
+
+  // 1. Handler with unavailableBatch (and unavailable, verifying unavailableBatch takes precedence)
+  const spy = mockRegisteredOperation(makeBatchHandler({ unavailableBatch, unavailable: unavailableFallback }));
+
+  // All selected items unavailable -> returns first target's unavailable reason
+  const allUnavailable = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, approved2] });
+  expect(allUnavailable.approveAll).toMatchObject({ unavailable: { reason: "Already approved: k-approved-1" } });
+  expect(unavailableBatch).toHaveBeenCalledTimes(1);
+  expect(unavailableBatch).toHaveBeenCalledWith(
+    expect.objectContaining({ locale: "en", executor: actor }),
+    [
+      { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-1" }, rowKey: "0" },
+      { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-2" }, rowKey: "1" },
+    ],
+  );
+  expect(unavailableFallback).not.toHaveBeenCalled();
+
+  // Mixed selection (at least one available) -> remains available
+  const mixed = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, draft] });
+  expect(mixed.approveAll).not.toHaveProperty("unavailable");
+  expect(unavailableBatch).toHaveBeenCalledTimes(2);
+
+  // Empty array -> remains available without invoking handler checks
+  const empty = await readAdmittedProjectionOperations(actor, placement, { checked: [] });
+  expect(empty.approveAll).not.toHaveProperty("unavailable");
+  expect(unavailableBatch).toHaveBeenCalledTimes(2);
+
+  // Pinned literal array input on member -> also checked
+  const pinnedPlacement = {
+    ...placement,
+    member: {
+      ...panel.manifest.members.toolbar,
+      inputs: { checked: { literal: [approved2, approved1] } },
+    },
+  };
+  const pinnedResult = await readAdmittedProjectionOperations(actor, pinnedPlacement as never, {});
+  expect(pinnedResult.approveAll).toMatchObject({ unavailable: { reason: "Already approved: k-approved-2" } });
+
+  // 2. Handler implementing only unavailable (no unavailableBatch) -> falls back to concurrent per-item checks
+  spy.mockRestore();
+  mockRegisteredOperation(makeBatchHandler({ unavailable: unavailableFallback }));
+
+  const fallbackAllUnavailable = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, approved2] });
+  expect(fallbackAllUnavailable.approveAll).toMatchObject({ unavailable: { reason: "Single unavailable: k-approved-1" } });
+  expect(unavailableFallback).toHaveBeenCalledTimes(2);
+
+  const fallbackMixed = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, draft] });
+  expect(fallbackMixed.approveAll).not.toHaveProperty("unavailable");
+  expect(unavailableFallback).toHaveBeenCalledTimes(4);
+});
+
+it.each([
+  { scenario: "two tabs on one entry", crossEntry: false, targetKind: "same" },
+  { scenario: "two different applications and entries", crossEntry: true, targetKind: "same" },
+  { scenario: "two different objects", crossEntry: false, targetKind: "different" },
+  { scenario: "two independent new drafts", crossEntry: false, targetKind: "draft" },
+])("scopes pending form confirmation invalidation for $scenario", async ({ crossEntry, targetKind }) => {
+  const objectType = "platform:ScheduledTask";
+  const objectTarget = { kind: "object" as const, objectType, primaryKey: uuid(9) };
+  const target = targetKind === "draft" ? { kind: "draft" as const } : objectTarget;
+  const manualTarget = targetKind === "different" ? { ...objectTarget, primaryKey: uuid(10) } : target;
+  const execute = vi.fn(async () => ({
+    kind: "success" as const,
+    data: {},
+    ...(targetKind === "draft" && { affected: { objects: [{ objectType, primaryKey: uuid(11) }], objectTypes: [objectType] } }),
+  }));
+  const saveHandlerRef = "platform:ScheduledTask.save";
+  mockRegisteredOperation({
+    handlerRef: saveHandlerRef,
+    labelKey: "test.perform",
+    binding: { kind: "PlatformOperation", id: saveHandlerRef },
+    kind: "form.save",
+    effect: "write",
+    batch: false,
+    targetType: objectType,
+    targetSchema: z.union([
+      z.object({ kind: z.literal("object"), objectType: z.literal(objectType), primaryKey: z.string() }).strict(),
+      z.object({ kind: z.literal("draft") }).strict(),
+    ]),
+    inputSchema: z.object({ values: z.record(z.unknown()), submittedFields: z.array(z.string()).optional() }),
+    resultSchema: z.object({}),
+    draftInput: input => input,
+    create: true,
+    execute,
+  });
+  if (targetKind === "draft") {
+    mocks.panel.mockResolvedValue({
+      id: "P", manifest: { state: {}, members: { form: { target: { projectionId: "form" } } } },
+    });
+    mocks.projection.mockResolvedValue({
+      id: "form", binding: { kind: "PlatformObjectType", id: objectType }, inputs: {},
+    });
+  }
+  if (crossEntry) {
+    const read = mocks.backend.getMockImplementation()!;
+    mocks.backend.mockImplementation(async (...args) => {
+      const url = new URL(args[1]);
+      if (url.searchParams.get("applicationId") !== "B" || url.searchParams.get("useId") !== "other-tasks") {
+        return read(...args);
+      }
+      const otherUse = { ...use, id: "other-tasks", path: "/applications/B/other-tasks" };
+      return { text: JSON.stringify({ success: true, data: {
+        applicationId: "B", use: otherUse, menu: { groups: [], panelUses: [] },
+      } }) };
+    });
+  }
+
+  const values = { title: "private-title-value", password: "private-password-value", credentials: { token: "private-token-value" }, untouched: true };
+  const agentPrepared = await prepareLiveAction({
+    intentId: uuid(51),
+    applicationId: "A",
+    useId: "tasks",
+    operationId: "form.save",
+    call: { target, input: { values, submittedFields: ["/title", "/password", "/credentials/token"] } },
+  });
+  const { message } = mocks.request.mock.calls[0]![2] as { message: string };
+  for (const field of ["title", "password", "credentials/token"]) expect(message).toContain(field);
+  for (const secret of [values.title, values.password, values.credentials.token]) expect(message).not.toContain(secret);
+  expect(message).not.toContain("untouched");
+
+  const humanPrepared = await prepareHumanPanelOperation(owner, credentials, {
+    applicationId: crossEntry ? "B" : "A",
+    useId: crossEntry ? "other-tasks" : "tasks",
+    operationId: "form.save",
+    call: { target: manualTarget, input: { values: { title: "Manual title" }, submittedFields: ["/title"] } },
+  });
+  const humanDispatched = await dispatchHumanPanelOperation(owner, credentials, humanPrepared.intentId);
+  expect(humanDispatched).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+
+  const agentDispatched = await dispatchHumanPanelOperation(owner, credentials, agentPrepared.intentId);
+  if (targetKind === "same") {
+    expect(agentDispatched).toMatchObject({ kind: "not-dispatched", code: "FORM_CONFIRMATION_STALE" });
+    expect(execute).toHaveBeenCalledTimes(1);
+  } else {
+    expect(agentDispatched).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+  }
+});
+
+it("persists the agent-page intent before publishing the confirmation question and cancels it if publishing fails", async () => {
+  const { request } = installBatchOwner();
+  const order: string[] = [];
+  const origQuery = mocks.query.getMockImplementation()!;
+  mocks.query.mockImplementation(async (sql: string, args: unknown[]) => {
+    if (sql.startsWith("INSERT INTO panel_operation_intents")) order.push("insert-intent");
+    return origQuery(sql, args);
+  });
+  mocks.request.mockImplementation(async (path: string) => {
+    if (path === "/v1/channel/user-questions") order.push("publish-question");
+    return {};
+  });
+
+  await prepareLiveAction({ ...request, intentId: uuid(54) });
+  expect(order).toEqual(["insert-intent", "publish-question"]);
+
+  // If publishing the question fails after insert, the intent is cancelled rather than left pending.
+  mocks.request.mockRejectedValueOnce(new Error("runtime unavailable"));
+  await expect(prepareLiveAction({ ...request, intentId: uuid(52) })).rejects.toThrow("runtime unavailable");
+  const inserted = [...intents.values()].find(item => item.source.kind === "agent-page" && item.source.toolCallId === uuid(52));
+  expect(inserted?.invalidated).toMatchObject({ code: "CONFIRMATION_PUBLISH_FAILED" });
+});
+
+it("lists every target name in batch confirmation questions instead of truncating at four", async () => {
+  const { request } = installBatchOwner();
+  await prepareLiveAction({ ...request, intentId: uuid(53) });
+  const questionBody = mocks.request.mock.calls.at(-1)?.[2] as { message: string };
+  for (let index = 1; index <= 5; index += 1) {
+    expect(questionBody.message).toContain(`Task ${index}`);
+  }
+});
+
+it("names the specific application entry in deleteEntry confirmation prompts", async () => {
+  const deleteEntry = productCatalogServerOperations.find(op => op.handlerRef === "applications.deleteEntry")!;
+  if (deleteEntry.effect !== "write" || deleteEntry.kind !== "action" || !deleteEntry.targetLabel) {
+    throw new Error("Expected applications.deleteEntry write handler");
+  }
+  const origBackend = mocks.backend.getMockImplementation()!;
+  mocks.backend.mockImplementation(async (name: string, url: string, opts: { headers: object }) => {
+    if (url.includes("/platform/applications/catalogue/app-1")) {
+      return {
+        text: JSON.stringify({
+          success: true,
+          data: {
+            id: "app-1",
+            source: "domain",
+            names: { en: "Orders App" },
+            descriptions: {},
+            icon: "apps",
+            allowStandalone: false,
+            canMaintain: true,
+            canEditEntries: true,
+            canGrant: true,
+            entryCount: 2,
+            updatedAt: "",
+            entry: { path: "/orders", home: "/orders/list" },
+            groups: [],
+            panelUses: [
+              { id: "entry-a", pageKey: "orders", panelId: "p1", path: "/orders/list", access: { kind: "domain-member" }, names: { en: "Order List" } },
+              { id: "entry-b", pageKey: "settings", panelId: "p2", path: "/orders/settings", access: { kind: "domain-member" }, names: { en: "Order Settings" } },
+            ],
+          },
+        }),
+      };
+    }
+    return origBackend(name, url, opts);
+  });
+
+  const host = {
+    initiator: { owner, credentials },
+    executor: { owner, credentials },
+    locale: "en",
+    request: async () => new Response(),
+    requestWorkbench: async () => new Response(),
+  };
+  const labelA = await deleteEntry.targetLabel(host, { kind: "object", objectType: "platform:Application", primaryKey: "app-1" }, { entryId: "entry-a" });
+  const labelB = await deleteEntry.targetLabel(host, { kind: "object", objectType: "platform:Application", primaryKey: "app-1" }, { entryId: "entry-b" });
+  expect(labelA).toBe("Orders App / Order List");
+  expect(labelB).toBe("Orders App / Order Settings");
+  expect(labelA).not.toBe(labelB);
 });

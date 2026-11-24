@@ -157,14 +157,49 @@ it("provides a single protected source for all uses of the same panel and lists 
   await summary!.readManifest(skill("captured-summary-skill"));
   expect(manifest.name).toBe(taskRef.name);
   expect(pkg.skill).toEqual(taskRef);
-  expect(parseSkillMarkdown(pkg.files[0]!.content)?.manifest).toEqual(manifest);
-  expect(pkg.files[0]!.content).not.toContain(uses[1]!.path);
+  expect(parseSkillMarkdown(pkg.files[0]!.content)?.manifest).toMatchObject({
+    name: manifest.name, description: manifest.description,
+  });
   expect(pkg.files[0]!.content).toContain("run.runNow");
   const reads = vi.mocked(findCurrentProduct).mock.calls;
   expect(reads).toHaveLength(trial.panels.length + trial.projections.length);
   expect(backendGet).toHaveBeenNthCalledWith(1, "panel-skill-sources",
     "http://java.test/platform/applications/panel-skill-sources?domainId=trial-domain",
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
+});
+
+it("lists only the admitted registered entrances and fingerprints each entrance set", async () => {
+  const first = { ...uses[0]!, names: { en: "Scheduled tasks", "zh-CN": "计划任务" },
+    applicationNames: { en: "Operations" } };
+  const second = { ...uses[1]!, names: { en: "Task administration" }, applicationNames: { en: "Administration" } };
+  javaSources([second, first]);
+  const [offering] = await panelSkillProvider.list({ domainId, reader: { ...skillReader, locale: "zh-CN" }, reportSourceFailure });
+  assert(offering);
+  async function provide(...sources: PanelSkillSource[]) {
+    const pkg = await offering!.provide(taskRef, { admittedEntrances: sources.map(source => source.entrance) });
+    return pkg.files[0]!.content;
+  }
+  const sourceJson = ({ applicationId, useId }: PanelSkillSource) =>
+    JSON.stringify({ kind: "registered", applicationId, useId });
+  const firstOnly = await provide(first);
+  const secondOnly = await provide(second);
+  const both = await provide(first, second);
+  expect(firstOnly).toContain("### Available entrances");
+  for (const fact of ["计划任务", "Operations", first.path, sourceJson(first)]) expect(firstOnly).toContain(fact);
+  for (const fact of ["Task administration", second.path, sourceJson(second)]) expect(firstOnly).not.toContain(fact);
+  expect(secondOnly).toContain(second.path);
+  expect(secondOnly).not.toContain(first.path);
+  for (const fact of ["计划任务", first.path, sourceJson(first), "Task administration", second.path, sourceJson(second)])
+    expect(both).toContain(fact);
+  const fingerprints = [firstOnly, secondOnly, both].map(content =>
+    parseSkillMarkdown(content)?.manifest.metadata?.["ontomato-panel-fingerprint"]);
+  expect(fingerprints).not.toContain(undefined);
+  expect(new Set(fingerprints).size).toBe(3);
+  expect(await provide(second, first)).toBe(both);
+  expect((await offering.provide(taskRef)).files[0]!.content).toBe(both);
+  const none = await provide();
+  expect(none).not.toContain(first.path);
+  expect(none).not.toContain(second.path);
 });
 
 it("describes member reads and declared operations in the generated skill", async () => {
@@ -181,12 +216,10 @@ it("describes member reads and declared operations in the generated skill", asyn
   const shared = await offering.provide(taskRef);
   const { content } = shared.files[0]!;
   const reads = content.split("### Read current data\n")[1]!.split("\n### Open the panel")[0];
-  expect(reads).toContain('memberPath: [previewSegment,{member:"detail"}]');
-  expect(reads).toContain('dataName: "record"');
-  const operations = content.split("### Declared operations\n")[1]!.split("\n### ")[0];
-  expect(operations).toContain("operations:true");
-  expect(operations).toContain('memberPath: [previewSegment,{member:"approve"}]');
-  expect(operations).toContain('operationId: "preview.approve.approve"');
+  expect(reads).toContain("$ONTOMATO_PANEL_OPERATIONS_URL/nested");
+  const operations = content.split("### Declared operations and live page actions\n")[1]!.split("\n### ")[0];
+  expect(operations).toContain("operations: true");
+  expect(operations).toContain('operation, memberPath?, rowKey?, input?');
   expect(content).not.toContain("### Panel commands");
   expect(await offering.provide(taskRef)).toEqual(shared);
   expect(await offering.provide(taskRef, { entryInputKeys: ["unrelated"] })).toEqual(shared);
@@ -308,10 +341,9 @@ it("uses owner operation names and fingerprints the names and language visible t
 
   const readPackage = async (reader: typeof skillReader) => {
     const [offering] = await panelSkillProvider.list({ domainId, reader, reportSourceFailure });
-    const manifest = await offering!.readManifest(taskRef);
     const { files } = await offering!.provide(taskRef);
     const markdown = files[0]!.content;
-    expect(parseSkillMarkdown(markdown)?.manifest).toEqual(manifest);
+    const manifest = parseSkillMarkdown(markdown)!.manifest;
     return { markdown, fingerprint: manifest.metadata?.["ontomato-panel-fingerprint"] };
   };
   const first = await readPackage(skillReader);
@@ -336,16 +368,18 @@ it("uses owner operation names and fingerprints the names and language visible t
   expect(hidden.fingerprint).not.toBe(renamed.fingerprint);
 });
 
-it("reads the direct trial panel from the current SDK catalogue", async () => {
+it("reads the direct trial panel from the current SDK catalogue without copying generic component meaning", async () => {
   javaSources([uses[0]!]);
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain(trial.panels[0]!.name);
-  expect(markdown).toContain("Summary from the current SDK release.");
+  expect(markdown).toContain("@ontomato/sdk:ObjectSummary");
   expect(markdown).toContain('Named data: {"record":');
+  expect(markdown).not.toContain("Summary from the current SDK release.");
+  expect(markdown).not.toContain("List from the current SDK release.");
 });
 
-it("describes a code panel's fixed projections using the current SDK", async () => {
+it("describes a code panel's fixed projections using the current SDK without generic component meaning", async () => {
   const source = uses[2]!;
   const id = source.panelId;
   const panel = panels.get(id)!;
@@ -360,10 +394,12 @@ it("describes a code panel's fixed projections using the current SDK", async () 
 
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
-  expect(markdown).toContain("Summary from the current SDK release.");
-  expect(markdown).toContain("List from the current SDK release.");
+  expect(markdown).toContain("@ontomato/sdk:ObjectSummary");
+  expect(markdown).toContain("@ontomato/sdk:ObjectList");
   expect(markdown).toContain('Named data: {"record":');
   expect(markdown).toContain('"read":"record","params":{},"result":"panelRecord"');
+  expect(markdown).not.toContain("Summary from the current SDK release.");
+  expect(markdown).not.toContain("List from the current SDK release.");
 });
 
 it("binds the current SDK digest to the supplied panel bytes for the lifetime of the offering", async () => {
@@ -381,7 +417,7 @@ it("binds the current SDK digest to the supplied panel bytes for the lifetime of
   expect(updated.files[0]!.content).not.toBe(original.files[0]!.content);
 });
 
-it("keeps the package and recipes for a panel independent of its entrance", async () => {
+it("keeps the shared panel recipes when the entry list changes", async () => {
   extraProjections.set("legacy-form", trialProjections.get("projection-schedules-form")!);
   extraProjections.set("legacy-run", runProjection);
   extraProjections.set("projection-editor", {
@@ -400,22 +436,20 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const manifest = await offering!.readManifest(ref);
   expect(manifest.description).toBe(
-    "Read current data, open the panel, draft changes, and review declared operations for " + panel.name + ".",
+    "Read current data, open the panel, fill live forms, and review declared operations for " + panel.name + ".",
   );
   javaSources([uses[1]!]);
   const [otherEntrance] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
-  expect(await otherEntrance!.provide(ref)).toEqual(await offering!.provide(ref));
+  const recipes = await readFile(new URL("p/recipes.md", example), "utf8");
+  expect((await otherEntrance!.provide(ref)).files[0]!.content).toContain(recipes);
   const originalName = panel.name;
   panel.name = "Renamed independently of the locator";
   try {
     const pkg = await offering!.provide(taskRef);
     expect(pkg.skill).toEqual(ref);
     const markdown = pkg.files[0]!.content;
-    expect(parseSkillMarkdown(markdown)?.manifest).toEqual(await offering!.readManifest(taskRef));
     expect(markdown).toContain(originalName);
-    expect(markdown).toContain(await readFile(new URL("p/recipes.md", example), "utf8"));
-    expect(markdown).not.toContain("/applications/app-panels-trial-a/tasks");
-    expect(markdown).not.toContain("/applications/app-panels-trial-b/tasks");
+    expect(markdown).toContain(recipes);
     expect(markdown).toContain('"objectType":"platform:ScheduledTask"');
     expect(markdown).toContain("platform:ScheduledTask.save");
     expect(markdown).toContain("handlerRef schedules.runNow");
@@ -425,42 +459,19 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(readSection).toContain("Member `form`, dataName `form` — form returns `panelFormDescription`");
     expect(readSection).toContain("X-Ontomato-Callback-Credential");
     expect(readSection).not.toContain("/platform/scheduled-tasks");
-    const draftSection = markdown.split("### Draft a change")[1]!.split(/\n### /)[0];
-    expect(draftSection).toContain("Follow that form-save operation's drafting instructions under Declared operations");
-    const [, draftExample] = draftSection.match(/```json\n([\s\S]*?)\n```/) ?? [];
-    expect(JSON.parse(draftExample!)).toMatchObject({ target: { objectType: taskInput.objectType, id: "<owner object id>" } });
-    const scheduledForm = draftSection.split("\n").find(line => line.startsWith("- Form `form.save`."))!;
-    expect(scheduledForm).toContain('"target":{"objectType":"platform:ScheduledTask","id":"<owner object id>"}');
-    expect(scheduledForm).not.toContain("For creation");
-    const projectionForm = draftSection.split("\n").find(line => line.startsWith("- Form `catalogue.save`."))!;
-    expect(projectionForm).toContain(`"operation":"projection.update","target":{"objectType":"${PRODUCT_PROJECTION}","id":"<owner object id>"}`);
-    expect(projectionForm).toContain(`"operation":"projection.create","target":{"objectType":"${PRODUCT_PROJECTION}"}`);
-    expect(draftSection).not.toContain("validate the complete values");
-    expect(draftSection).toContain("Write each draft to a fresh output path.");
-    expect(draftSection).toContain("test -s \"$ONTOMATO_OUTPUT_DIR/drafts/<name>.page-draft.json\" && printenv ONTOMATO_SESSION_ID ONTOMATO_RUN_ID");
-    expect(draftSection).toContain("check that this is the file you just wrote and use the IDs printed by that call");
-    expect(draftSection).toContain("Never copy a run ID from the conversation, a previous link, or an earlier run.");
-    expect(draftSection).toContain("preserve the entry's existing query parameters");
-    expect(draftSection).toContain("site-relative address starting with a single `/`");
-    expect(draftSection).toContain("Do not prefix it with `$ONTOMATO_BASE_URL`, a hostname, or a URL scheme.");
-    expect(draftSection).toContain("It starts with `outputs/drafts/` and has no leading `/`.");
-    expect(draftSection).toContain("URL-encode that value exactly once");
-    expect(markdown).toContain("Declared public state covers every state field that decides which business content the user sees");
+    const formSection = markdown.split("### Fill a live form")[1]!.split("\n### ")[0]!;
+    expect(formSection).toContain("Form member `form` (save operation `form.save`, type `platform:ScheduledTask`)");
+    expect(formSection).toContain("Form member `catalogue` (save operation `catalogue.save`");
+    expect(formSection).toContain("blocked_unsaved");
+    expect(formSection).toContain("overwriteUnsaved: true");
+    expect(markdown).toContain("Declared public state covers every state field");
     expect(markdown).toContain("current live contents and unsaved status of open forms");
     expect(markdown).toContain("observe_display");
     expect(markdown).toContain("call `present({ target, state })` immediately in this round");
     expect(markdown).toContain("including fields not marked `deepLink`");
-    expect(markdown).toContain("Form save (`form.save`) is a declared operation just like an action");
-    expect(markdown).toContain("FORM_CONFIRMATION_STALE");
-    expect(draftSection).toContain("?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json");
-    expect(draftSection).toContain("immediately call `present({ target:");
-    expect(draftSection).toContain("blocked_unsaved");
-    expect(draftSection).toContain("overwriteUnsavedDraft: true");
-    expect(draftSection).toContain("Any reply link must be a Markdown link with a destination that starts with a single slash");
-    expect(draftSection).toContain("Never put a scheme, hostname, port, or `localhost` in the draft link.");
-    expect(draftSection).toContain("[Open the draft](/ontology/applications?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json)");
+    expect(markdown).toContain("awaiting_confirmation");
+    expect(markdown).toContain("instance, target, and form contents have not changed");
     expect(markdown).toContain("Never put a scheme, hostname, or port in a platform page link.");
-    expect(draftSection).toContain("Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.");
     expect(markdown).not.toContain("fixture-platform-service");
     expect(markdown).not.toContain("fixture-owner");
     expect(markdown).not.toContain(panel.content.html);
@@ -469,7 +480,7 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(renamedManifest.description).toContain(panel.name);
     const updatedMarkdown = (await renamed!.provide(taskRef)).files[0]!.content;
     expect(updatedMarkdown).toContain(`## ${panel.name}`);
-    expect(parseSkillMarkdown(updatedMarkdown)?.manifest).toEqual(renamedManifest);
+    expect(parseSkillMarkdown(updatedMarkdown)?.manifest.description).toBe(renamedManifest.description);
     expect(findCurrentProduct).toHaveBeenCalledWith(domainId, "panel", uses[0]!.panelId);
   } finally {
     panel.name = originalName;
@@ -482,11 +493,10 @@ it("describes B's direct summary data without adding agent operations", async ()
   expect((await offering!.readManifest(taskRef)).description).toBe(`Read current data and open the panel for ${trial.panels[1]!.name}.`);
   const { files } = await offering!.provide(taskRef);
   const markdown = files[0]!.content;
-  expect(parseSkillMarkdown(markdown)?.manifest).toEqual(await offering!.readManifest(taskRef));
   expect(markdown).toContain('Named data: {"record":');
   expect(markdown).toContain("### Open the panel");
   expect(markdown).toContain("No operations.");
-  expect(markdown).not.toContain("### Draft a change");
+  expect(markdown).not.toContain("### Fill a live form");
   expect(markdown).not.toContain("### Recipes");
 });
 
@@ -498,7 +508,7 @@ it("advertises a declared operation without promising a draft when there is no f
   expect((await offering!.readManifest(taskRef)).description).toBe(`Open the panel and review declared operations for ${panel.name}.`);
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain("handlerRef schedules.runNow");
-  expect(markdown).not.toContain("### Draft a change");
+  expect(markdown).not.toContain("### Fill a live form");
   expect(markdown).not.toContain("### Read current data");
 });
 
@@ -544,7 +554,7 @@ it("documents only the platform ontology reads declared on the projection", asyn
   expect(reads).not.toContain("dataName `start`");
 });
 
-it("describes row-scoped operations declared on a list projection, bound operation params, and row-scoped operate guidance", async () => {
+it("describes row-scoped operations declared on a list projection, bound operation params, and row-scoped page actions", async () => {
   javaSources([uses[0]!]);
   const listProj = trialProjections.get("projection-schedules-tasks")!;
   extraProjections.set("row-list", {
@@ -573,8 +583,9 @@ it("describes row-scoped operations declared on a list projection, bound operati
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain("Row-scoped operation on list rows.");
   expect(markdown).toContain('Bound params: {"note":{"rowField":"schedule"},"source":{"literal":"row-action"}}.');
-  expect(markdown).toContain("batch per-row availability (`rowOperations`)");
-  expect(markdown).toContain("Entry-pinned and literal parameters are enforced server-side.");
+  expect(markdown).toContain("`<className>:<primaryKey>`");
+  expect(markdown).toContain("verbatim from the corresponding row in the page snapshot");
+  expect(markdown).toContain("per-row availability and bound parameters");
   expect(markdown).not.toContain("rowContext");
 });
 
@@ -604,7 +615,7 @@ it("refuses generating a panel skill when legacy listColumn syntax is present", 
   await expect(offering!.provide(taskRef)).rejects.toThrow(SkillSourceRecordError);
 });
 
-it("describes targetless customer Actions without requiring object selection and specifies call.target: null", async () => {
+it("describes targetless customer Actions without requiring object selection and names the mounted action", async () => {
   javaSources([uses[0]!]);
   vi.mocked(backendPost).mockImplementation(async (_name, url) => {
     if (String(url).endsWith("/action/queryList")) {
@@ -655,12 +666,12 @@ it("describes targetless customer Actions without requiring object selection and
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain("Create order (createBtn.create), Action create-order, target null.");
   expect(markdown).toContain("No object selection is required.");
-  expect(markdown).toContain("call: { target: null, input: { values: { ... } } }");
+  expect(markdown).toContain("page_action({ operation: \"createBtn.create\", input? })");
   expect(markdown).not.toContain("for the actual selected object");
-  expect(markdown).not.toContain("### Draft a change");
+  expect(markdown).not.toContain("### Fill a live form");
 });
 
-it("includes customer Action create and edit ObjectForms in Draft a change and directs agents to fill the live form before /operate", async () => {
+it("documents filling and saving mounted customer Action forms", async () => {
   javaSources([uses[0]!]);
   vi.mocked(backendPost).mockImplementation(async (_name, url) => {
     if (String(url).endsWith("/action/queryList")) {
@@ -746,18 +757,15 @@ it("includes customer Action create and edit ObjectForms in Draft a change and d
   });
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const manifest = await offering!.readManifest(taskRef);
-  expect(manifest.description).toContain("draft changes");
+  expect(manifest.description).toContain("fill live forms");
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
-  const draftSection = markdown.split("### Draft a change")[1]!.split(/\n### /)[0]!;
-  expect(draftSection).toContain('- Form `createForm.save`. For creation, use `{"operation":"Order.create","target":{"objectType":"Order"}}`.');
-  expect(draftSection).toContain('- Form `editForm.save`. For editing, use `{"operation":"Order.update","target":{"objectType":"Order","id":"<owner object id>"}}`.');
-  expect(draftSection).toContain("present({ target:");
-  const opsSection = markdown.split("### Declared operations")[1]!;
-  expect(opsSection).toContain('Create order (createForm.save), form save via Action create-order, target null.');
-  expect(opsSection).toContain('fill this page\'s live form using "Draft a change" and `present`');
-  expect(opsSection).toContain('Update order (editForm.save), form save via Action update-order, target {"input":"target"}.');
-  expect(opsSection).toContain("pass its `operationId` and `call` unchanged to `/operate`");
-  expect(opsSection).toContain("FORM_CONFIRMATION_STALE");
+  const formSection = markdown.split("### Fill a live form")[1]!.split("\n### ")[0]!;
+  expect(formSection).toContain("Form member `createForm` (save operation `createForm.save`, type `Order`)");
+  expect(formSection).toContain("Form member `editForm` (save operation `editForm.save`, type `Order`)");
+  expect(formSection).toContain("present({ target, state })");
+  expect(formSection).toContain("fill_form({ member, memberPath?, values, overwriteUnsaved? })");
+  expect(markdown).toContain('page_action({ operation: "createForm.save" })');
+  expect(markdown).toContain('page_action({ operation: "editForm.save" })');
 });
 
 it("never treats a targetless customer Action as a customer form save when a projection also declares a platform form.save", async () => {
@@ -815,9 +823,9 @@ it("never treats a targetless customer Action as a customer form save when a pro
   });
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
-  const draftSection = markdown.split("### Draft a change")[1]!.split(/\n### /)[0]!;
-  expect(draftSection).toContain("knowledgeForm.save");
-  expect(draftSection).not.toContain("knowledgeForm.review");
+  const formSection = markdown.split("### Fill a live form")[1]!.split(/\n### /)[0]!;
+  expect(formSection).toContain("knowledgeForm.save");
+  expect(formSection).not.toContain("knowledgeForm.review");
   const opsSection = markdown.split("### Declared operations")[1]!;
   expect(opsSection).toContain("Submit review (knowledgeForm.review)");
   expect(opsSection).not.toContain("form save via Action review-action");

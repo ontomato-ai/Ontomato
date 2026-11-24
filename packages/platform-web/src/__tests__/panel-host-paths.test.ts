@@ -1,10 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { effectScope, nextTick, ref } from "vue";
+import { createMemoryHistory, createRouter } from "vue-router";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import en from "element-plus/es/locale/lang/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { cachedApplicationFrameManifest, framePanelHost, panelHostPaths, readApplicationFrameManifest } from "../panel-host";
+import { PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH } from "@ontomato/contracts/panel-host";
+import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import { usePanelInstance, type PanelHostLabels } from "@ontomato/platform-shell";
+import type { PlatformPreferences } from "@ontomato/platform-admin";
+import { installAppHost } from "../app-host";
+import {
+  clearPanelDefinitionCache,
+  getCachedProjection,
+  setCachedProjection,
+} from "../panel-definition-cache";
+import { builtinFramePanelHost, cachedApplicationFrameManifest, framePanelHost, panelHostPaths, platformPanelHost, readApplicationFrameManifest } from "../panel-host";
 
 /*
  * The panel host's addresses (design 10.3): each request goes to the owner it belongs to, and the two owners differ.
@@ -219,4 +233,1070 @@ it("backs off consecutive failures, resets on a snapshot, and cancels a pending 
     observer.close();
     vi.useRealTimers();
   }
+});
+
+describe("controlled personal state fields", () => {
+  beforeEach(() => {
+    installAppHost({
+      credential: { type: "anonymous" },
+      preferences: { locale: ref("en"), locales: ["en"], theme: ref("light"), setLocale: () => {}, setTheme: () => {} } as PlatformPreferences,
+      router: createRouter({ history: createMemoryHistory(), routes: [] }),
+      onAuthFailure: vi.fn(),
+    });
+  });
+
+  const hostLabels: PanelHostLabels = {
+    notStarted: "Not started",
+    failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
+    content: { styleOutside: "Style outside" },
+    refresh: "Refresh",
+  };
+  const wiredUse = {
+    id: "use-personal-ext-wired",
+    pageKey: "personal-ext-wired",
+    panelId: "panel-personal-ext",
+    path: "/applications/app-a/personal-ext-wired",
+    access: { kind: "domain-member" as const },
+    inputs: { term: { frameState: "term" } },
+  };
+  const unwiredUse = {
+    id: "use-personal-ext-unwired",
+    pageKey: "personal-ext-unwired",
+    panelId: "panel-personal-ext",
+    path: "/applications/app-a/personal-ext-unwired",
+    access: { kind: "domain-member" as const },
+  };
+  const termAndDensityManifest = definePanel({
+    state: {
+      term: { type: { kind: "scalar", type: "string" }, external: true, personal: true, deepLink: false, default: "autumn" },
+      density: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "compact" },
+    },
+    members: {},
+  });
+  const termOnlyManifest = definePanel({
+    state: {
+      term: { type: { kind: "scalar", type: "string" }, external: true, personal: true, deepLink: false, default: "autumn" },
+    },
+    members: {},
+  });
+  const nestedChildManifest = definePanel({
+    state: {
+      term: { type: { kind: "scalar", type: "string" }, external: true, personal: true, deepLink: false, default: "autumn" },
+      density: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "compact" },
+    },
+    members: {},
+  });
+  const nestedOuterManifest = definePanel({
+    state: {
+      outerTerm: { type: { kind: "scalar", type: "string" }, default: "spring" },
+      childRef: {
+        type: { kind: "object", objectType: PRODUCT_PANEL },
+        default: { className: PRODUCT_PANEL, primaryKey: "panel-nested-child" },
+      },
+    },
+    members: {
+      child: {
+        target: { fromState: "childRef", candidates: { panelIds: ["panel-nested-child"] } },
+        inputs: { term: { state: "outerTerm" } },
+      },
+    },
+  });
+
+  function panelRecord(id: string, name: string, manifestDef: ReturnType<typeof definePanel>, module = "") {
+    return {
+      id,
+      revision: 1,
+      name,
+      description: "",
+      visibility: "domain",
+      domainId: "domain-1",
+      ownerId: "owner-1",
+      editable: true,
+      createdAt: "2026-11-24T00:00:00.000Z",
+      updatedAt: "2026-11-24T00:00:00.000Z",
+      content: { html: '<div id="app"><span>panel</span></div>', module },
+      manifest: manifestDef,
+    };
+  }
+
+  function stubPersonalHostFetch(options: {
+    use: typeof wiredUse | typeof unwiredUse;
+    panels: Record<string, ReturnType<typeof panelRecord>>;
+    storage: Record<string, unknown>;
+    reads: { memberPath: unknown[]; fields: string[] }[];
+    writes: { memberPath: unknown[]; values: Record<string, unknown> }[];
+  }) {
+    const controlledForPath = (memberPath: { member: string }[]) => {
+      if (!memberPath.length) {
+        return new Set(Object.keys((options.use as { inputs?: Record<string, unknown> }).inputs ?? {}));
+      }
+      // Resolve the parent manifest along the path (here root outer panel -> child).
+      let current = options.panels[options.use.panelId]!.manifest;
+      for (let i = 0; i < memberPath.length - 1; i++) {
+        const seg = memberPath[i]!;
+        const target = current.members[seg.member]?.target;
+        if (target && "panelId" in target) current = options.panels[target.panelId]!.manifest;
+      }
+      const last = memberPath.at(-1)!;
+      return new Set(Object.keys(current.members[last.member]?.inputs ?? {}));
+    };
+
+    vi.stubGlobal("fetch", async (input: string | URL, init?: { method?: string; body?: string }) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === `/api${PANEL_PERSONAL_STATE_READ_PATH}`) {
+        const body = JSON.parse(init?.body ?? "{}") as { memberPath?: { member: string }[]; fields?: string[] };
+        const memberPath = body.memberPath ?? [];
+        const fields = body.fields ?? [];
+        options.reads.push({ memberPath, fields });
+        const controlled = controlledForPath(memberPath);
+        const offending = fields.find(field => controlled.has(field));
+        if (offending) {
+          return Response.json(
+            { error: { code: "PANEL_STATE_CONTROLLED", message: `State '${offending}' is set by the outer panel` } },
+            { status: 400 },
+          );
+        }
+        const values = Object.fromEntries(
+          fields.filter(field => Object.hasOwn(options.storage, field)).map(field => [field, options.storage[field]]),
+        );
+        return Response.json({ values });
+      }
+      if (url.pathname === `/api${PANEL_PERSONAL_STATE_PATH}` && init?.method === "PUT") {
+        const body = JSON.parse(init.body ?? "{}") as { memberPath?: { member: string }[]; values?: Record<string, unknown> };
+        const memberPath = body.memberPath ?? [];
+        const values = body.values ?? {};
+        options.writes.push({ memberPath, values });
+        const controlled = controlledForPath(memberPath);
+        const offending = Object.keys(values).find(field => controlled.has(field));
+        if (offending) {
+          return Response.json(
+            { error: { code: "PANEL_STATE_CONTROLLED", message: `State '${offending}' is set by the outer panel` } },
+            { status: 400 },
+          );
+        }
+        Object.assign(options.storage, values);
+        return Response.json({ values });
+      }
+      if (url.pathname === `/api${PANEL_NESTED_READ_PATH}`) {
+        const body = JSON.parse(init?.body ?? "{}") as {
+          memberPath?: { selection?: { target?: { panelId?: string } } }[];
+        };
+        const targetId = body.memberPath?.at(-1)?.selection?.target?.panelId ?? "panel-nested-child";
+        const { id, revision, content, manifest: panelManifest } = options.panels[targetId]!;
+        return Response.json({ panel: { id, revision, content, manifest: panelManifest } });
+      }
+      if (url.pathname.endsWith("/snapshot")) {
+        return Response.json({
+          panel: { id: options.use.panelId, revision: 1 },
+          projections: [],
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: options.use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname.endsWith("/page-skill-context")) {
+        return Response.json({
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: options.use.pageKey }, member: null },
+        });
+      }
+      for (const [id, rec] of Object.entries(options.panels)) {
+        if (url.pathname === panelHostPaths.panel(id)) {
+          return Response.json({ panel: rec, projections: {} });
+        }
+      }
+      return Response.json({});
+    });
+  }
+
+  function mountedState(view: ReturnType<typeof usePanelInstance>) {
+    const mount = view.direct.value?.mount as {
+      instance: {
+        state: { values: { value: Record<string, unknown> }; set(name: string, value: unknown): void };
+        placing(member: string): Promise<unknown>;
+      };
+    } | undefined;
+    return mount!.instance.state;
+  }
+
+  it("excludes wired entry inputs from personal reads/writes so sibling personal fields still load and save, and withdrawn wired inputs fall back to defaults", async () => {
+    const storage: Record<string, unknown> = { term: "summer", density: "comfortable" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: wiredUse,
+      panels: { [wiredUse.panelId]: panelRecord(wiredUse.panelId, "Personal External", termAndDensityManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const inputs = ref<Record<string, string>>({ term: "spring" });
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", wiredUse, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => wiredUse.path,
+        initial: () => ({}),
+        entryInputs: () => inputs.value,
+        wired: () => ["term"],
+      }))!;
+      await view.ready;
+      expect(view.error.value).toBe("");
+
+      expect(reads).toEqual([{ memberPath: [], fields: ["density"] }]);
+      expect(mountedState(view).values.value).toEqual({ term: "spring", density: "comfortable" });
+
+      // Withdrawing the wired external input reverts `term` to its declared default ("autumn"), not saved "summer".
+      inputs.value = {};
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mountedState(view).values.value).toEqual({ term: "autumn", density: "comfortable" });
+      expect(writes).toEqual([]);
+
+      // User edits to the wired field inside the panel do not write to personal storage.
+      mountedState(view).set("term", "winter");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(writes).toEqual([]);
+      expect(storage.term).toBe("summer");
+
+      // User edits to the uncontrolled personal field persist only that field.
+      mountedState(view).set("density", "spacious");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(writes).toEqual([{ memberPath: [], values: { density: "spacious" } }]);
+      expect(storage).toEqual({ term: "summer", density: "spacious" });
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses declared default when a wired entry passes no initial value while still reading sibling personal fields", async () => {
+    const storage: Record<string, unknown> = { term: "summer", density: "spacious" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: wiredUse,
+      panels: { [wiredUse.panelId]: panelRecord(wiredUse.panelId, "Personal External", termAndDensityManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", wiredUse, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => wiredUse.path,
+        initial: () => ({}),
+        entryInputs: () => ({}),
+        wired: () => ["term"],
+      }))!;
+      await view.ready;
+
+      expect(reads).toEqual([{ memberPath: [], fields: ["density"] }]);
+      expect(mountedState(view).values.value).toEqual({ term: "autumn", density: "spacious" });
+      expect(writes).toEqual([]);
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("reads both personal fields when the same panel is opened from an unwired entry", async () => {
+    const storage: Record<string, unknown> = { term: "summer", density: "spacious" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: unwiredUse,
+      panels: { [unwiredUse.panelId]: panelRecord(unwiredUse.panelId, "Personal External", termAndDensityManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", unwiredUse, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => unwiredUse.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      expect(reads).toEqual([{ memberPath: [], fields: ["term", "density"] }]);
+      expect(mountedState(view).values.value).toEqual({ term: "summer", density: "spacious" });
+      expect(writes).toEqual([]);
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("issues zero personal-state reads or writes when every personal field is controlled by entry inputs", async () => {
+    const onlyUse = { ...wiredUse, id: "use-personal-only", pageKey: "personal-only", panelId: "panel-personal-only" };
+    const storage: Record<string, unknown> = { term: "summer" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: onlyUse,
+      panels: { [onlyUse.panelId]: panelRecord(onlyUse.panelId, "Personal Only", termOnlyManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const inputs = ref<Record<string, string>>({ term: "spring" });
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", onlyUse, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Personal Only",
+        address: () => onlyUse.path,
+        initial: () => ({}),
+        entryInputs: () => inputs.value,
+        wired: () => ["term"],
+      }))!;
+      await view.ready;
+      expect(mountedState(view).values.value).toEqual({ term: "spring" });
+
+      inputs.value = { term: "winter" };
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mountedState(view).values.value).toEqual({ term: "winter" });
+
+      inputs.value = {};
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mountedState(view).values.value).toEqual({ term: "autumn" });
+
+      mountedState(view).set("term", "fall");
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(reads).toEqual([]);
+      expect(writes).toEqual([]);
+      expect(storage.term).toBe("summer");
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("excludes parent member inputs from personal reads/writes on a nested panel while preserving its other personal fields", async () => {
+    const nestedUse = {
+      id: "use-nested-outer",
+      pageKey: "nested-outer",
+      panelId: "panel-nested-outer",
+      path: "/applications/app-a/nested-outer",
+      access: { kind: "domain-member" as const },
+    };
+    const storage: Record<string, unknown> = { term: "summer", density: "comfortable" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    const childModule = `
+      import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+      await mountPanel({
+        setup() {
+          globalThis.__controlledPersonalNestedState = usePanelContext().instance.state;
+          return {};
+        },
+      });
+    `;
+    stubPersonalHostFetch({
+      use: nestedUse,
+      panels: {
+        "panel-nested-outer": panelRecord("panel-nested-outer", "Outer", nestedOuterManifest),
+        "panel-nested-child": panelRecord("panel-nested-child", "Child", nestedChildManifest, childModule),
+      },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", nestedUse, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Outer",
+        address: () => nestedUse.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+      const outerMount = view.direct.value?.mount as {
+        instance: { placing(member: string): Promise<unknown> };
+      } | undefined;
+      await outerMount!.instance.placing("child");
+
+      const childState = (globalThis as Record<string, unknown>).__controlledPersonalNestedState as {
+        values: { value: Record<string, unknown> };
+        set(name: string, value: unknown): void;
+      };
+      expect(childState).toBeDefined();
+      expect(reads).toEqual([
+        {
+          memberPath: [{
+            member: "child",
+            selection: {
+              stateValue: { className: PRODUCT_PANEL, primaryKey: "panel-nested-child" },
+              target: { panelId: "panel-nested-child" },
+            },
+          }],
+          fields: ["density"],
+        },
+      ]);
+      expect(childState.values.value).toEqual({ term: "spring", density: "comfortable" });
+
+      childState.set("term", "winter");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(writes).toEqual([]);
+      expect(storage.term).toBe("summer");
+
+      childState.set("density", "spacious");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(writes).toEqual([
+        {
+          memberPath: [{
+            member: "child",
+            selection: {
+              stateValue: { className: PRODUCT_PANEL, primaryKey: "panel-nested-child" },
+              target: { panelId: "panel-nested-child" },
+            },
+          }],
+          values: { density: "spacious" },
+        },
+      ]);
+      expect(storage).toEqual({ term: "summer", density: "spacious" });
+    } finally {
+      delete (globalThis as Record<string, unknown>).__controlledPersonalNestedState;
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("puts only changed personal fields across concurrent sessions so two tabs editing different fields do not overwrite each other", async () => {
+    const prefsUse = {
+      id: "use-personal-prefs",
+      pageKey: "personal-prefs",
+      panelId: "panel-personal-prefs",
+      path: "/applications/app-a/personal-prefs",
+      access: { kind: "domain-member" as const },
+    };
+    const prefsManifest = definePanel({
+      state: {
+        density: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "compact" },
+        sort: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "asc" },
+      },
+      members: {},
+    });
+    const storage: Record<string, unknown> = { density: "compact", sort: "asc" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: prefsUse,
+      panels: { [prefsUse.panelId]: panelRecord(prefsUse.panelId, "Personal Prefs", prefsManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const tab1Scope = effectScope();
+    const tab2Scope = effectScope();
+    try {
+      const tab1 = tab1Scope.run(() => usePanelInstance(platformPanelHost("app-a", prefsUse, () => {}), {
+        labels: hostLabels,
+        label: () => "Personal Prefs",
+        address: () => prefsUse.path,
+        initial: () => ({}),
+      }))!;
+      const tab2 = tab2Scope.run(() => usePanelInstance(platformPanelHost("app-a", prefsUse, () => {}), {
+        labels: hostLabels,
+        label: () => "Personal Prefs",
+        address: () => prefsUse.path,
+        initial: () => ({}),
+      }))!;
+      await Promise.all([tab1.ready, tab2.ready]);
+
+      expect(mountedState(tab1).values.value).toEqual({ density: "compact", sort: "asc" });
+      expect(mountedState(tab2).values.value).toEqual({ density: "compact", sort: "asc" });
+
+      mountedState(tab1).set("density", "spacious");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(writes).toEqual([{ memberPath: [], values: { density: "spacious" } }]);
+
+      mountedState(tab2).set("sort", "desc");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(writes).toEqual([
+        { memberPath: [], values: { density: "spacious" } },
+        { memberPath: [], values: { sort: "desc" } },
+      ]);
+      expect(storage).toEqual({ density: "spacious", sort: "desc" });
+    } finally {
+      tab1Scope.stop();
+      tab2Scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("issues zero PUT requests when a personal field is changed and reverted to its stored value within the debounce window", async () => {
+    const prefsUse = {
+      id: "use-personal-revert",
+      pageKey: "personal-revert",
+      panelId: "panel-personal-revert",
+      path: "/applications/app-a/personal-revert",
+      access: { kind: "domain-member" as const },
+    };
+    const prefsManifest = definePanel({
+      state: {
+        density: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "compact" },
+        sort: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "asc" },
+      },
+      members: {},
+    });
+    const storage: Record<string, unknown> = { density: "compact", sort: "asc" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: prefsUse,
+      panels: { [prefsUse.panelId]: panelRecord(prefsUse.panelId, "Personal Revert", prefsManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const scope = effectScope();
+    try {
+      const view = scope.run(() => usePanelInstance(platformPanelHost("app-a", prefsUse, () => {}), {
+        labels: hostLabels,
+        label: () => "Personal Revert",
+        address: () => prefsUse.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      mountedState(view).set("density", "spacious");
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(200);
+      mountedState(view).set("density", "compact");
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(writes).toEqual([]);
+      expect(storage).toEqual({ density: "compact", sort: "asc" });
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("dynamic and nested member projection access verification", () => {
+  beforeEach(() => {
+    clearPanelDefinitionCache();
+    installAppHost({
+      credential: { type: "anonymous" },
+      preferences: { locale: ref("en"), locales: ["en"], theme: ref("light"), setLocale: () => {}, setTheme: () => {} } as PlatformPreferences,
+      router: createRouter({ history: createMemoryHistory(), routes: [] }),
+      onAuthFailure: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    clearPanelDefinitionCache();
+  });
+
+  const hostLabels: PanelHostLabels = {
+    notStarted: "Not started",
+    failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
+    content: { styleOutside: "Style outside" },
+    refresh: "Refresh",
+  };
+
+  function makeProjection(id: string, emptyText: string, revision = 1): ProductProjection {
+    return {
+      id,
+      revision,
+      name: emptyText,
+      description: "",
+      domainId: "domain-1",
+      ownerId: "owner-1",
+      editable: false,
+      visibility: "domain",
+      createdAt: "2026-11-24T00:00:00.000Z",
+      updatedAt: "2026-11-24T00:00:00.000Z",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: { emptyText },
+      data: {
+        rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+      },
+    };
+  }
+
+  function makeCodedPanel(id: string, manifestDef: ReturnType<typeof definePanel>, slotName: string, revision = 1) {
+    return {
+      id,
+      revision,
+      name: id,
+      description: "",
+      visibility: "domain" as const,
+      domainId: "domain-1",
+      ownerId: "owner-1",
+      editable: true,
+      createdAt: "2026-11-24T00:00:00.000Z",
+      updatedAt: "2026-11-24T00:00:00.000Z",
+      content: {
+        html: `<div id="app"><projection slot="${slotName}"></projection></div>`,
+        module: `import { mountPanel } from "@ontomato/sdk/panel"; await mountPanel({});`,
+      },
+      manifest: manifestDef,
+    };
+  }
+
+  it("verifies server use grant for a cached projection selected by a fromState dynamic member and clears cache on 403", async () => {
+    const use = {
+      id: "use-proj-catalog",
+      pageKey: "proj-catalog",
+      panelId: "panel-proj-catalog",
+      path: "/applications/app-a/proj-catalog",
+      access: { kind: "domain-member" as const },
+    };
+    const projP = makeProjection("proj-dynamic-p", "Cached Projection P");
+    // Pre-populate the client cache within the same login session.
+    setCachedProjection({ projection: projP });
+    expect(getCachedProjection(projP.id)).toBeDefined();
+
+    const catalogManifest = definePanel({
+      state: {
+        selected: { type: { kind: "object", objectType: PRODUCT_PROJECTION }, personal: false, deepLink: false, default: { className: PRODUCT_PROJECTION, primaryKey: projP.id } },
+      },
+      members: {
+        preview: { target: { fromState: "selected", candidates: { rule: "usable" } } },
+      },
+    });
+    const catalogPanel = makeCodedPanel(use.panelId, catalogManifest, "preview");
+
+    const projectionRequests: string[] = [];
+    const readRequests: unknown[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL, init?: { body?: string }) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === panelHostPaths.panel(use.panelId)) {
+        return Response.json({ panel: catalogPanel, projections: {} });
+      }
+      if (url.pathname.endsWith("/page-skill-context")) {
+        return Response.json({
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname === `/api/product-projections/${projP.id}`) {
+        projectionRequests.push(url.pathname);
+        return Response.json({ error: { code: "FORBIDDEN", message: "Product use Grant required" } }, { status: 403 });
+      }
+      if (url.pathname === "/api/product-panels/read") {
+        readRequests.push(JSON.parse(init?.body ?? "{}"));
+        return Response.json({ status: "ready", value: [] });
+      }
+      return Response.json({});
+    });
+
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Projection Catalog",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      const element = view.direct.value!.element;
+      await vi.waitFor(() => expect(projectionRequests).toEqual([`/api/product-projections/${projP.id}`]));
+      await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataForbidden));
+      expect(element.textContent).not.toContain("Cached Projection P");
+      expect(getCachedProjection(projP.id)).toBeUndefined();
+      expect(readRequests).toEqual([]);
+    } finally {
+      scope.stop();
+    }
+  });
+
+  it("re-verifies a dynamic projection after revoking and switching away and back while the panel stays open", async () => {
+    const use = {
+      id: "use-proj-switch",
+      pageKey: "proj-switch",
+      panelId: "panel-proj-switch",
+      path: "/applications/app-a/proj-switch",
+      access: { kind: "domain-member" as const },
+    };
+    const proj1 = makeProjection("proj-switch-1", "Projection One");
+    const proj2 = makeProjection("proj-switch-2", "Projection Two");
+    let proj1Revoked = false;
+
+    const catalogManifest = definePanel({
+      state: {
+        selected: { type: { kind: "object", objectType: PRODUCT_PROJECTION }, personal: false, deepLink: false },
+      },
+      members: {
+        preview: { target: { fromState: "selected", candidates: { rule: "usable" } } },
+      },
+    });
+    const catalogPanel = makeCodedPanel(use.panelId, catalogManifest, "preview");
+
+    const projectionRequests: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL, init?: { body?: string }) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === panelHostPaths.panel(use.panelId)) {
+        return Response.json({ panel: catalogPanel, projections: {} });
+      }
+      if (url.pathname.endsWith("/page-skill-context")) {
+        return Response.json({
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname === `/api/product-projections/${proj1.id}`) {
+        projectionRequests.push(proj1.id);
+        return proj1Revoked
+          ? Response.json({ error: { code: "FORBIDDEN", message: "Product use Grant required" } }, { status: 403 })
+          : Response.json({ projection: proj1 });
+      }
+      if (url.pathname === `/api/product-projections/${proj2.id}`) {
+        projectionRequests.push(proj2.id);
+        return Response.json({ projection: proj2 });
+      }
+      if (url.pathname === "/api/product-panels/read") {
+        const body = JSON.parse(init?.body ?? "{}") as { operations?: true };
+        return Response.json(body.operations ? { status: "ready", value: {} } : { status: "ready", value: [] });
+      }
+      return Response.json({});
+    });
+
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Projection Switch",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      const mount = view.direct.value!.mount as unknown as {
+        instance: { state: { set(name: string, value: unknown): void } };
+      };
+      const element = view.direct.value!.element;
+
+      // 1. Select P1 -> mounts and warms cache.
+      mount.instance.state.set("selected", { className: PRODUCT_PROJECTION, primaryKey: proj1.id });
+      await vi.waitFor(() => expect(element.textContent).toContain("Projection One"), { timeout: 5000 });
+      expect(getCachedProjection(proj1.id)).toBeDefined();
+
+      // 2. Revoke P1 on server, switch to P2, then switch back to P1.
+      proj1Revoked = true;
+      mount.instance.state.set("selected", { className: PRODUCT_PROJECTION, primaryKey: proj2.id });
+      await vi.waitFor(() => expect(element.textContent).toContain("Projection Two"), { timeout: 5000 });
+
+      mount.instance.state.set("selected", { className: PRODUCT_PROJECTION, primaryKey: proj1.id });
+      await vi.waitFor(() => expect(projectionRequests).toEqual([proj1.id, proj2.id, proj1.id]));
+      await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataForbidden), { timeout: 5000 });
+      expect(element.textContent).not.toContain("Projection One");
+      expect(getCachedProjection(proj1.id)).toBeUndefined();
+    } finally {
+      scope.stop();
+    }
+  });
+
+  it("verifies server use grant for projections inside a nested panel preview even when the projection was cached", async () => {
+    const use = {
+      id: "use-panel-catalog",
+      pageKey: "panel-catalog",
+      panelId: "panel-catalog-outer",
+      path: "/applications/app-a/panel-catalog",
+      access: { kind: "domain-member" as const },
+    };
+    const projP = makeProjection("proj-nested-p", "Nested Cached Projection P");
+    // Pre-populate the client cache within the same login session.
+    setCachedProjection({ projection: projP });
+    expect(getCachedProjection(projP.id)).toBeDefined();
+
+    const outerManifest = definePanel({
+      state: {
+        selectedPanel: { type: { kind: "object", objectType: PRODUCT_PANEL }, personal: false, deepLink: false, default: { className: PRODUCT_PANEL, primaryKey: "panel-b" } },
+      },
+      members: {
+        preview: { target: { fromState: "selectedPanel", candidates: { rule: "usable" } } },
+      },
+    });
+    const innerManifest = definePanel({
+      state: {},
+      members: {
+        innerMember: { target: { projectionId: projP.id } },
+      },
+    });
+    const outerPanel = makeCodedPanel(use.panelId, outerManifest, "preview");
+    const innerPanel = makeCodedPanel("panel-b", innerManifest, "innerMember");
+
+    const projectionRequests: string[] = [];
+    const readRequests: unknown[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL, init?: { body?: string }) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === panelHostPaths.panel(use.panelId)) {
+        return Response.json({ panel: outerPanel, projections: {} });
+      }
+      if (url.pathname.endsWith("/page-skill-context")) {
+        return Response.json({
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname === `/api${PANEL_NESTED_READ_PATH}`) {
+        return Response.json({
+          panel: { id: innerPanel.id, revision: innerPanel.revision, content: innerPanel.content, manifest: innerPanel.manifest },
+        });
+      }
+      if (url.pathname === `/api/product-projections/${projP.id}`) {
+        projectionRequests.push(url.pathname);
+        return Response.json({ error: { code: "FORBIDDEN", message: "Product use Grant required" } }, { status: 403 });
+      }
+      if (url.pathname === "/api/product-panels/read") {
+        readRequests.push(JSON.parse(init?.body ?? "{}"));
+        return Response.json({ status: "ready", value: [] });
+      }
+      return Response.json({});
+    });
+
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Panel Catalog",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      const element = view.direct.value!.element;
+      await vi.waitFor(() => expect(projectionRequests).toEqual([`/api/product-projections/${projP.id}`]));
+      await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataForbidden), { timeout: 5000 });
+      expect(element.textContent).not.toContain("Nested Cached Projection P");
+      expect(getCachedProjection(projP.id)).toBeUndefined();
+      expect(readRequests).toEqual([]);
+    } finally {
+      scope.stop();
+    }
+  });
+
+  it("keeps the fast cache path for fixed projection members verified via includeProjections or snapshot", async () => {
+    const use = {
+      id: "use-fixed-fast",
+      pageKey: "fixed-fast",
+      panelId: "panel-fixed-fast",
+      path: "/applications/app-a/fixed-fast",
+      access: { kind: "domain-member" as const },
+    };
+    const projFixed = makeProjection("proj-fixed-fast", "Fixed Projection Fast");
+    const fixedManifest = definePanel({
+      state: {},
+      members: {
+        fixedMember: { target: { projectionId: projFixed.id } },
+      },
+    });
+    const fixedPanel = makeCodedPanel(use.panelId, fixedManifest, "fixedMember");
+
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL, init?: { body?: string }) => {
+      const url = new URL(String(input), "http://localhost");
+      requests.push(url.pathname + url.search);
+      if (url.pathname === panelHostPaths.panel(use.panelId)) {
+        return Response.json({
+          panel: fixedPanel,
+          projections: {
+            [projFixed.id]: { status: "ready", projection: projFixed },
+          },
+        });
+      }
+      if (url.pathname === panelHostPaths.snapshot(use.panelId)) {
+        return Response.json({
+          panel: { id: fixedPanel.id, revision: fixedPanel.revision },
+          projections: [{ id: projFixed.id, revision: projFixed.revision }],
+          members: [{ status: "ready", memberPath: [{ member: "fixedMember" }], target: { kind: "projection", id: projFixed.id }, revision: projFixed.revision }],
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname.endsWith("/page-skill-context")) {
+        return Response.json({
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname === "/api/product-panels/read") {
+        const body = JSON.parse(init?.body ?? "{}") as { operations?: true };
+        return Response.json(body.operations ? { status: "ready", value: {} } : { status: "ready", value: [] });
+      }
+      return Response.json({});
+    });
+
+    // 1. Cold open via ?includeProjections=1 -> 0 individual projection GETs.
+    const firstScope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = firstScope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Fixed Fast",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+      await vi.waitFor(() => expect(view.direct.value!.element.textContent).toContain("Fixed Projection Fast"));
+      expect(requests.filter((entry) => entry.startsWith("/api/product-projections/"))).toEqual([]);
+    } finally {
+      firstScope.stop();
+    }
+
+    // 2. Re-entry verified via /snapshot -> still 0 individual projection GETs.
+    requests.length = 0;
+    const secondScope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = secondScope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Fixed Fast",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+      await vi.waitFor(() => expect(view.direct.value!.element.textContent).toContain("Fixed Projection Fast"));
+      expect(requests.some((entry) => entry.startsWith(panelHostPaths.snapshot(use.panelId)))).toBe(true);
+      expect(requests.filter((entry) => entry.startsWith("/api/product-projections/"))).toEqual([]);
+    } finally {
+      secondScope.stop();
+    }
+  });
+
+  it("reconciles cold loads from includeProjections=1 with 0 /snapshot calls and still checks /snapshot on cache hit for all three hosts", async () => {
+    const use = {
+      id: "use-cold-reconcile",
+      pageKey: "cold-reconcile",
+      panelId: "panel-cold-page",
+      path: "/applications/app-a/cold-reconcile",
+      access: { kind: "domain-member" as const },
+    };
+    const cases = [
+      {
+        name: "platformPanelHost",
+        panelId: use.panelId,
+        projId: "proj-cold-page",
+        createPort: () => platformPanelHost("app-a", use, () => {}),
+      },
+      {
+        name: "framePanelHost",
+        panelId: "panel-cold-frame",
+        projId: "proj-cold-frame",
+        createPort: () => framePanelHost("app-a", use, "panel-cold-frame", () => {}),
+      },
+      {
+        name: "builtinFramePanelHost",
+        panelId: "panel-cold-builtin-frame",
+        projId: "proj-cold-builtin-frame",
+        createPort: () => builtinFramePanelHost("settings", "panel-cold-builtin-frame"),
+      },
+    ] as const;
+
+    for (const hostCase of cases) {
+      clearPanelDefinitionCache();
+      const proj = makeProjection(hostCase.projId, `Projection for ${hostCase.name}`);
+      const panelDef = makeCodedPanel(
+        hostCase.panelId,
+        definePanel({
+          state: {},
+          members: {
+            fixedMember: { target: { projectionId: proj.id } },
+          },
+        }),
+        "fixedMember",
+      );
+
+      const requests: string[] = [];
+      vi.stubGlobal("fetch", async (input: string | URL, init?: { body?: string }) => {
+        const url = new URL(String(input), "http://localhost");
+        requests.push(url.pathname + url.search);
+        if (url.pathname === panelHostPaths.panel(hostCase.panelId)) {
+          return Response.json({
+            panel: panelDef,
+            projections: {
+              [proj.id]: { status: "ready", projection: proj },
+            },
+          });
+        }
+        if (url.pathname === panelHostPaths.snapshot(hostCase.panelId)) {
+          return Response.json({
+            panel: { id: panelDef.id, revision: panelDef.revision },
+            projections: [{ id: proj.id, revision: proj.revision }],
+            members: [{ status: "ready", memberPath: [{ member: "fixedMember" }], target: { kind: "projection", id: proj.id }, revision: proj.revision }],
+            ...(hostCase.name === "platformPanelHost"
+              ? { pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null } }
+              : {}),
+          });
+        }
+        if (url.pathname.endsWith("/page-skill-context")) {
+          return Response.json({
+            pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+          });
+        }
+        if (url.pathname === "/api/product-panels/read") {
+          const body = JSON.parse(init?.body ?? "{}") as { operations?: true };
+          return Response.json(body.operations ? { status: "ready", value: {} } : { status: "ready", value: [] });
+        }
+        return Response.json({});
+      });
+
+      // 1. Cold open: 1 GET /api/product-panels/:id?...includeProjections=1 and 0 /snapshot calls.
+      const coldScope = effectScope();
+      try {
+        const port = hostCase.createPort();
+        const view = coldScope.run(() => usePanelInstance(port, {
+          labels: hostLabels,
+          label: () => hostCase.name,
+          address: () => use.path,
+          initial: () => ({}),
+        }))!;
+        await view.ready;
+        await nextTick();
+        await Promise.resolve();
+        expect(port.sourceReconciled?.(), hostCase.name).toBe(true);
+        const panelReads = requests.filter((entry) => entry.startsWith(`${panelHostPaths.panel(hostCase.panelId)}?`));
+        expect(panelReads, hostCase.name).toHaveLength(1);
+        expect(new URLSearchParams(panelReads[0]!.split("?")[1]).get("includeProjections"), hostCase.name).toBe("1");
+        expect(requests.filter((entry) => entry.startsWith(panelHostPaths.snapshot(hostCase.panelId))), hostCase.name).toEqual([]);
+      } finally {
+        coldScope.stop();
+      }
+
+      // 2. Warm cache re-entry: 1 /snapshot verification and 0 GET /api/product-panels/:id calls.
+      requests.length = 0;
+      const warmScope = effectScope();
+      try {
+        const port = hostCase.createPort();
+        const view = warmScope.run(() => usePanelInstance(port, {
+          labels: hostLabels,
+          label: () => hostCase.name,
+          address: () => use.path,
+          initial: () => ({}),
+        }))!;
+        await view.ready;
+        await nextTick();
+        await Promise.resolve();
+        expect(port.sourceReconciled?.(), hostCase.name).toBe(true);
+        expect(requests.filter((entry) => entry.startsWith(panelHostPaths.snapshot(hostCase.panelId))), hostCase.name).toHaveLength(1);
+        expect(requests.filter((entry) => entry.startsWith(`${panelHostPaths.panel(hostCase.panelId)}?`)), hostCase.name).toEqual([]);
+      } finally {
+        warmScope.stop();
+      }
+    }
+  });
 });

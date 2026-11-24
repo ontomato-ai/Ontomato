@@ -5,7 +5,8 @@
  */
 export type { DirectPanelMount, DirectPanelMountOptions } from "./panel/direct-mount";
 export {
-  createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type MemberDataState, type PanelOperationAffected,
+  createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type DirectProjectionReadOptions,
+  type MemberDataState, type PanelOperationAffected,
   type PanelMemberReadRequest, PanelMemberUnavailable, type MemberPlacing, type NestedPanelMount,
 } from "./panel/direct";
 export { panelModuleFor, type DirectPanelComponentPort, type DirectPanelModuleExports } from "./panel/direct-run";
@@ -16,3 +17,10 @@ export { readProjectionForRender } from "./panel/platform-requests";
 export { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam, useMemberRead } from "./panel/member";
 export { usePanelOutput, usePanelOutputs } from "./panel/panel-output";
 export { useFormFieldSlot, useListRowSlot, type FormFieldSlotContext, type ListRowSlotContext, type ListRowSlotOperation } from "./panel/slot-context";
+export {
+  usePanelOperation,
+  type PanelOperationAvailability,
+  type PanelOperationContext,
+  type PanelOperationHandle,
+  type UsePanelOperationOptions,
+} from "./panel/panel-operation";

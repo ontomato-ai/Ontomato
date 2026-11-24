@@ -7,11 +7,16 @@
 </style>
 <div id="app">
   <section class="detail-page">
-    <page-header :title="selectedTitle" :back-label="t('detail.back')" :draft="formDraft" @back="goBack"></page-header>
-    <div class="detail-body">
+    <page-header :back-label="t('detail.back')" :draft="formDraft" @back="goBack">
+      <template #title>
+        <projection v-if="selected" slot="header"></projection>
+        <span v-else>{{ t('detail.choose') }}</span>
+      </template>
+    </page-header>
+    <div v-if="selected && ready" class="detail-body">
       <section class="detail-card">
         <h2>{{ t("detail.basicInfo") }}</h2>
-        <projection slot="form" @saved="onSaved"></projection>
+        <projection slot="form"></projection>
       </section>
       <section class="detail-card">
         <h2>{{ t("detail.overview") }}</h2>
