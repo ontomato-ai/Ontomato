@@ -105,10 +105,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
     sections: [{ key: "dashboards:all", titleKey: "assistant.featureDashboards", paths: [platformRoutes.dashboards.path] }],
   },
   {
-    renderer: "schedules",
-    sections: [{ key: "schedules:all", titleKey: "platform.schedules", paths: [platformRoutes.schedules.path] }],
-  },
-  {
     renderer: "settings",
     // Its pages are shown through its platform frame panel, by group; an account enters at the first page it may open.
     sections: [
@@ -129,23 +125,28 @@ export const nativeLayouts: Record<string, NativeLayout> = Object.fromEntries(la
 
 export function catalogPartition(applications: import("@ontomato/contracts/platform-identity").CatalogApplication[], locale: string,
   renderers: Record<string, NativeLayout> = {}): AppPartition[] {
-  return applications.filter(app => app.kind === "hosted" || app.kind === "connected"||app.kind==='product'
-    || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])).map((app) => {
+  return applications.filter(app => app.kind === "hosted" || app.kind === "connected" || app.kind === "product"
+    || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])
+    || Boolean(app.panelUses?.length)).map((app) => {
     const embedded = app.kind === "hosted" || app.kind === "connected";
     const panels = isPanelApplication(app);
     const applicationRoute = embedded || panels;
+    const hasLegacyLayout = Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!]);
     // A native application's panel entries stand where its menu table lists their addresses.
     const entries = !panels && !embedded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
       id: panelUsePath(use.path),
       label: localizedApplicationText(use.names, locale) ?? use.pageKey,
+      ...(use.icon ? { icon: use.icon } : {}),
     }] as const] : []) ?? []) : undefined;
-    // Panel applications draw their navigation through their frame panel (platform default or custom), never the shell.
-    const layout: NativeLayout = applicationRoute || app.kind === "product" ? { sections: [] } : {
+    // Panel applications and fully panel-backed built-ins draw navigation through their frame panel, never the shell.
+    const layout: NativeLayout = applicationRoute || app.kind === "product" || !hasLegacyLayout ? { sections: [] } : {
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
-    const entryHome = layout.entryHome && app.panelUses?.some(use => panelUsePath(use.path) === layout.entryHome)
-      ? layout.entryHome : undefined;
+    const firstPanelUse = app.panelUses?.find(use => Boolean(use.names)) ?? app.panelUses?.[0];
+    const entryHome = layout.entryHome
+      ? (app.panelUses?.some(use => panelUsePath(use.path) === layout.entryHome) ? layout.entryHome : undefined)
+      : (!applicationRoute && !hasLegacyLayout && firstPanelUse ? panelUsePath(firstPanelUse.path) : undefined);
     return { ...layout, entryHome, entries, id: app.id, label: localizedApplicationText(app.names, locale) ?? app.id, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : localizedApplicationText(app.descriptions, locale) ?? null), icon: app.icon, rail: app.rail, category: app.category,
       allowStandalone: app.allowStandalone,
       framePanelId: app.framePanelId,

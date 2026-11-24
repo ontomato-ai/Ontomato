@@ -88,6 +88,15 @@ export function panelRegistrationRecords({ projections = [], panels = [], applic
           throw new Error(`${field} must be under ${root}/`);
         }
       }
+      for (let index = 0; index < input.panelUses.length; index++) {
+        const entryIcon = input.panelUses[index]?.icon;
+        if (entryIcon !== undefined) {
+          const choices = domainApplicationIconChoices(checks);
+          if (!choices.includes(entryIcon)) {
+            throw new Error(`panelUses[${index}].icon '${entryIcon}' is not available for a domain application. Choose one of ${choices.join(", ")}`);
+          }
+        }
+      }
       if (input.declaration === undefined) continue;
       const { icon } = input.declaration;
       if (icon !== undefined) {

@@ -44,6 +44,42 @@ describe("the platform's applications", () => {
     expect(dashboards.home).toBe("/dashboards");
     const schedules = declarations.find((app) => app.id === "schedules")!;
     expect(schedules.home).toBe("/schedules");
+    expect(schedules.framePanelId).toBe("builtin-product-platform-frame");
+    expect(schedules.groups).toEqual([]);
+  });
+
+  it("admits fully panel-backed built-in applications without native-layouts and lands home on the first visible named entry", () => {
+    const permissionsApp = {
+      ...catalogFixture()[0]!,
+      id: "permissions",
+      kind: "native" as const,
+      framePanelId: "builtin-product-platform-frame",
+      entry: { path: "/permissions", renderer: "permissions" },
+      panelUses: [
+        {
+          id: "permissions-member-detail",
+          pageKey: "permissions-member-detail",
+          panelId: "builtin-product-governance-member-detail",
+          path: "/permissions/members/detail",
+          access: { permissionCode: "user-management" },
+        },
+        {
+          id: "permissions-roles",
+          pageKey: "permissions-roles",
+          panelId: "builtin-product-governance-roles",
+          path: "/permissions/roles",
+          icon: "user-cog",
+          names: { en: "Roles", "zh-CN": "角色" },
+          access: { permissionCode: "role-management" },
+        },
+      ],
+    };
+    const partition = catalogPartition([permissionsApp], "zh-CN");
+    const [declared] = appDeclarations(generatedNavigation(), closedAccess([]), partition, t);
+    expect(declared?.id).toBe("permissions");
+    expect(declared?.framePanelId).toBe("builtin-product-platform-frame");
+    expect(declared?.groups).toEqual([]);
+    expect(declared?.home).toBe("/permissions/roles");
   });
 
 });

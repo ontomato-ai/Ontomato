@@ -382,21 +382,20 @@ const applicationSave: PanelWriteServerOperation = {
       const id = target.primaryKey;
       if (submittedFields?.length === 0) return { primaryKey: id, data: { id } };
       const singleEntryKeys = new Set(["id", "pageKey", "panelId", "path", "access", "groupKey", "inputs", "defaultAgent"]);
-      const isSingleEntry = !("panelUses" in values) && !("icon" in values) && (
-        submittedFields === undefined
-          ? ("pageKey" in values && "panelId" in values)
-          : submittedFields.some(pointer => singleEntryKeys.has(pointer.split("/", 2)[1] ?? ""))
+      const isSingleEntry = !("panelUses" in values) && (
+        ("pageKey" in values && "panelId" in values)
+        || (submittedFields !== undefined && submittedFields.some(pointer => singleEntryKeys.has(pointer.split("/", 2)[1] ?? "")))
       );
       if (isSingleEntry) {
         const currentEntryId = typeof values.id === "string" && values.id.length > 0 ? values.id : "__new__";
         const currentEntriesForm = await java.form({ section: "entries", target, changedField: null });
         const entriesValues = applicationEntriesUpdateSchema.parse(currentEntriesForm.values);
         const existingIndex = entriesValues.panelUses.findIndex(item => item.id === currentEntryId);
-        const baseEntry = (existingIndex >= 0
-          ? entriesValues.panelUses[existingIndex]
-          : { id: "", pageKey: "", panelId: "", path: `/applications/${id}/`, access: { kind: "domain-member" } }) as Parameters<typeof applySubmittedFields>[0];
+        const existingEntry = existingIndex >= 0 ? entriesValues.panelUses[existingIndex] : undefined;
+        const baseEntry = (existingEntry
+          ?? { id: "", pageKey: "", panelId: "", path: `/applications/${id}/`, access: { kind: "domain-member" } }) as Parameters<typeof applySubmittedFields>[0];
         const body = submittedFields === undefined
-          ? values
+          ? (existingEntry?.icon !== undefined && !("icon" in values) ? { ...values, icon: existingEntry.icon } : values)
           : applySubmittedFields(baseEntry, values, submittedFields);
         const parsedEntry = formValues(applicationPanelUseSchema, body, async () =>
           (await java.form({ section: "entry", entryId: existingIndex >= 0 ? currentEntryId : "__new__", target, changedField: null })).fields);
@@ -409,12 +408,33 @@ const applicationSave: PanelWriteServerOperation = {
         : submittedFields.some(pointer => Object.hasOwn(applicationEntriesUpdateSchema.shape, pointer.split("/", 2)[1]));
       const section = entries ? "entries" : "identity";
       const sectionFields = (form: "entries" | "identity") => async () => (await java.form({ section: form, target, changedField: null })).fields;
-      const body = submittedFields === undefined ? values : applySubmittedFields(
-        (await java.form({ section, target, changedField: null })).values, values, submittedFields,
-      );
+      const currentValues = submittedFields === undefined
+        ? undefined
+        : (await java.form({ section, target, changedField: null })).values;
+      const body = submittedFields === undefined ? values : applySubmittedFields(currentValues!, values, submittedFields);
       if (entries) {
-        checkDefaultAgentShapes(body);
-        await java.saveEntries(id, formValues(applicationEntriesUpdateSchema, body, sectionFields("entries")));
+        const existingIcons = new Map<string, string>();
+        if (Array.isArray(currentValues?.panelUses)) {
+          for (const item of currentValues.panelUses) {
+            if (item && typeof item === "object" && typeof (item as Record<string, unknown>).id === "string"
+              && typeof (item as Record<string, unknown>).icon === "string") {
+              existingIcons.set((item as Record<string, unknown>).id as string, (item as Record<string, unknown>).icon as string);
+            }
+          }
+        }
+        const preservedBody = Array.isArray(body.panelUses) && existingIcons.size > 0
+          ? {
+              ...body,
+              panelUses: body.panelUses.map((item) => {
+                if (!item || typeof item !== "object" || "icon" in item) return item;
+                const entryId = (item as Record<string, unknown>).id;
+                const savedIcon = typeof entryId === "string" ? existingIcons.get(entryId) : undefined;
+                return savedIcon ? { ...(item as Record<string, unknown>), icon: savedIcon } : item;
+              }),
+            }
+          : body;
+        checkDefaultAgentShapes(preservedBody);
+        await java.saveEntries(id, formValues(applicationEntriesUpdateSchema, preservedBody, sectionFields("entries")));
       } else await java.saveIdentity(id, formValues(applicationIdentityUpdateSchema, body, sectionFields("identity")));
       return { primaryKey: id, data: { id } };
     }, locale ?? credentials.locale);

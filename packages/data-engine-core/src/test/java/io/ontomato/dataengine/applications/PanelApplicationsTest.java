@@ -483,4 +483,15 @@ class PanelApplicationsTest {
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
             .andExpect(jsonPath("$.data[0].applicationId").value("ontology"));
     }
+
+    @Test void preservesEntryIconAndRejectsBlankEntryIcon() {
+        var withIcon = new ApplicationPanelUse("use-roles", "roles", "panel-p", "/applications/app-panel-a/roles",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("en", "Roles"),
+            null, null, null, "user-cog");
+        assertEquals("user-cog", ApplicationPanelUse.canonical(List.of(withIcon)).getFirst().icon());
+        var blankIcon = new ApplicationPanelUse("use-blank-icon", "blank-icon", "panel-p", "/applications/app-panel-a/blank-icon",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("en", "Blank"),
+            null, null, null, "   ");
+        assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(blankIcon)));
+    }
 }

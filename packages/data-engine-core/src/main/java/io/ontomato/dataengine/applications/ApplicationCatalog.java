@@ -473,6 +473,21 @@ public class ApplicationCatalog {
         return application != null && Objects.equals(application.getString("icon"), icon) ? null : icon;
     }
 
+    private static List<ApplicationPanelUse> withChangedIcons(JSONObject old, List<ApplicationPanelUse> uses) {
+        if (old == null) return uses;
+        var priorIcons = new HashMap<String, String>();
+        var priorUses = old.getList("panelUses", ApplicationPanelUse.class);
+        if (priorUses != null) {
+            for (var prior : priorUses) {
+                if (prior.icon() != null) priorIcons.put(prior.id(), prior.icon());
+            }
+        }
+        return uses.stream().map(use -> use.icon() != null && Objects.equals(priorIcons.get(use.id()), use.icon())
+            ? new ApplicationPanelUse(use.id(), use.pageKey(), use.panelId(), use.path(), use.access(),
+                use.defaultAgent(), use.names(), use.descriptions(), use.inputs(), use.groupKey(), null)
+            : use).toList();
+    }
+
     private void requireIconChange(JSONObject application, String icon, User user) {
         var changed = changedIcon(application, icon);
         if (changed != null) panels.requireCurrent(user.getDomainId(), null, List.of(), null, null, changed, null);
@@ -971,7 +986,7 @@ public class ApplicationCatalog {
                 validateUseGroups(uses, supplied == null ? old.getList("groups", Group.class) : supplied.groups());
             var entry = JSONObject.of("path", entryPath, "renderer", "panels");
             validateMappings(id, user.getDomainId(), entry, List.of(), uses);
-            panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses, settings.delivery(), settings.theme(),
+            panels.requireCurrent(user.getDomainId(), settings.framePanelId(), withChangedIcons(old, uses), settings.delivery(), settings.theme(),
                 supplied == null ? null : changedIcon(old, supplied.icon()), locale);
             boolean allowStandalone = body.allowStandalone() != null ? body.allowStandalone() : (old == null || allowsStandalone(old));
             if (old != null && supplied == null) {

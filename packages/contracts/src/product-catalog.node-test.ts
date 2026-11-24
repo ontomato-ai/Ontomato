@@ -312,11 +312,12 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
 test("all catalogue icons are available to domain applications while unknown keys are rejected", async () => {
   const { domainApplicationIconKeys } = await import("./panel-check");
   const { applicationIconKeys, recommendApplicationIcon } = await import("./application-icons");
-  const { applicationPanelReferencesRequestSchema } = await import("./product-panels");
+  const { applicationPanelReferencesRequestSchema, applicationPanelUseSchema } = await import("./product-panels");
+  const { applicationCatalogSchema } = await import("./platform-identity");
   const { applicationIdentityUpdateSchema } = await import("./application-catalogue");
   const request = { domainId: "test-domain", uses: [], delivery: { panels: [], projections: [] } };
   assert.deepEqual([...domainApplicationIconKeys], [...applicationIconKeys]);
-  for (const icon of ["settings", "ontology", "book"] as const) {
+  for (const icon of ["settings", "ontology", "book", "user-cog", "shield-check", "building-2"] as const) {
     assert.equal(domainApplicationIconKeys.includes(icon), true);
     assert.equal(applicationPanelReferencesRequestSchema.parse({ ...request, icon }).icon, icon);
   }
@@ -324,6 +325,29 @@ test("all catalogue icons are available to domain applications while unknown key
   const invalid = applicationPanelReferencesRequestSchema.safeParse({ ...request, icon: "not-a-platform-icon" });
   assert.equal(invalid.success, false);
   if (!invalid.success) assert.match(invalid.error.issues[0]!.message, /Choose one of app-window/);
+  // Entry icons share the same unified icon list on write while keeping stored keys readable.
+  const entryUse = { id: "entry-roles", pageKey: "roles", panelId: "panel-roles", path: "/applications/app-a/roles", access: { kind: "domain-member" as const }, icon: "user-cog" };
+  assert.equal(applicationPanelUseSchema.parse(entryUse).icon, "user-cog");
+  assert.equal(applicationPanelUseSchema.parse({ ...entryUse, icon: "legacy-stored-key" }).icon, "legacy-stored-key");
+  assert.equal(applicationPanelUseSchema.safeParse({ ...entryUse, icon: "   " }).success, false);
+  assert.equal(applicationPanelReferencesRequestSchema.parse({
+    ...request,
+    uses: [{ id: entryUse.id, panelId: entryUse.panelId, icon: "user-cog" }],
+  }).uses[0]!.icon, "user-cog");
+  assert.equal(applicationPanelReferencesRequestSchema.safeParse({
+    ...request,
+    uses: [{ id: entryUse.id, panelId: entryUse.panelId, icon: "not-a-platform-icon" }],
+  }).success, false);
+  // Navigation catalog preserves application groups for initial frame rendering.
+  const catalogParsed = applicationCatalogSchema.parse([{
+    id: "app-grouped", kind: "product", names: { en: "Grouped" }, descriptions: {}, icon: "app-window",
+    rail: "apps", category: "business", sort: 10, entry: { path: "/applications/app-grouped", renderer: "panels" },
+    entryAccess: ["domain-member"], scheduleAdapter: null, releaseId: null,
+    groups: [{ key: "main", names: { en: "Main" }, sort: 0 }],
+    panelUses: [{ ...entryUse, groupKey: "main" }],
+    framePanelId: "builtin-product-platform-frame",
+  }]);
+  assert.deepEqual(catalogParsed[0]!.groups, [{ key: "main", names: { en: "Main" }, sort: 0 }]);
   const icon = recommendApplicationIcon("Knowledge");
   assert.ok(domainApplicationIconKeys.includes(icon));
   assert.equal(applicationPanelReferencesRequestSchema.parse({ ...request, icon }).icon, icon);

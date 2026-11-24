@@ -310,7 +310,7 @@ const entryMenu = computed<ApplicationEntryMenu>(() => {
   const frame = effectiveFrame.value;
   return {
     names: app?.names ?? (frame ? { en: frame.title } : undefined),
-    groups: [],
+    groups: app?.groups ?? [],
     panelUses: app?.panelUses ?? [],
   };
 });

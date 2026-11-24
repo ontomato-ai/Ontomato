@@ -90,7 +90,7 @@ function groupsFromEntryMenu(menu: ApplicationEntryMenu, locale: string): AppMen
     if (!use.names) continue;
     const id = panelUsePath(use.path);
     const label = localizedApplicationText(use.names, locale) ?? use.pageKey;
-    const item: AppMenuItem = { id, label };
+    const item: AppMenuItem = { id, label, ...(use.icon ? { icon: use.icon } : {}) };
     if (use.groupKey && sortedGroups.some((group) => group.key === use.groupKey)) {
       const bucket = byGroup.get(use.groupKey) ?? [];
       bucket.push(item);

@@ -20,15 +20,21 @@ import org.springframework.web.util.UriUtils;
 public record ApplicationPanelUse(String id, String pageKey, String panelId, String path,
                                   Access access, DefaultAgentTarget defaultAgent, Map<String, String> names,
                                   @JsonDeserialize(using = DescriptionsDeserializer.class) Map<String, String> descriptions,
-                                  Map<String, Map<String, Object>> inputs, String groupKey) {
+                                  Map<String, Map<String, Object>> inputs, String groupKey, String icon) {
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
                                DefaultAgentTarget defaultAgent, Map<String, String> names) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, null, null, null);
+        this(id, pageKey, panelId, path, access, defaultAgent, names, null, null, null, null);
     }
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
                                DefaultAgentTarget defaultAgent, Map<String, String> names,
                                Map<String, Map<String, Object>> inputs, String groupKey) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, null, inputs, groupKey);
+        this(id, pageKey, panelId, path, access, defaultAgent, names, null, inputs, groupKey, null);
+    }
+    public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
+                               DefaultAgentTarget defaultAgent, Map<String, String> names,
+                               Map<String, String> descriptions,
+                               Map<String, Map<String, Object>> inputs, String groupKey) {
+        this(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, inputs, groupKey, null);
     }
 
     private static final class DescriptionsDeserializer extends JsonDeserializer<Map<String, String>> {
@@ -64,7 +70,7 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
 
     static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses) {
         var normalized = uses.stream().map(use -> new ApplicationPanelUse(use.id, use.pageKey, use.panelId,
-            canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.descriptions, use.inputs, use.groupKey)).toList();
+            canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.descriptions, use.inputs, use.groupKey, use.icon)).toList();
         validate(normalized);
         return normalized;
     }
@@ -116,6 +122,8 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
             if (use.descriptions() != null && (use.descriptions().isEmpty()
                 || use.descriptions().values().stream().anyMatch(text -> text == null || blankDescription(text))))
                 throw ApplicationCatalog.bad("Panel entry " + use.pageKey() + " descriptions require at least one nonblank localized description");
+            if (use.icon() != null && use.icon().isBlank())
+                throw ApplicationCatalog.bad("Panel entry " + use.pageKey() + " icon must be nonblank");
             if (use.inputs() != null) {
                 for (var input : use.inputs().entrySet()) {
                     var source = input.getValue();
