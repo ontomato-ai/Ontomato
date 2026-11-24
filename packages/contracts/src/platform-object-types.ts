@@ -343,7 +343,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [TRIGGER]: {
     ...describeType("trigger", "capability"),
-    reads: { ...metadataList, ...definitionQuery, ...modelReads },
+    reads: { ...metadataList, ...definitionQuery, ...modelReads, count: countRead, armedCount: countRead },
     operations: [`${TRIGGER}.save`, SET_TRIGGER_STATUS, DELETE_TRIGGER],
   },
   [SKILL]: {

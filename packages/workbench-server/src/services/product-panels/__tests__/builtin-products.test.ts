@@ -76,6 +76,15 @@ describe("readBuiltinProducts", () => {
       expect(functionDetail.content.html).not.toContain('v-if="detailReady" #actions');
       expect(panels.has("builtin-product-skills-library")).toBe(true);
       expect(panels.has("builtin-product-skills-library-detail")).toBe(true);
+      expect(panels.has("builtin-product-ontology-triggers")).toBe(true);
+
+      const triggersPanel = panels.get("builtin-product-ontology-triggers");
+      expect(triggersPanel).toBeDefined();
+      expect(triggersPanel!.manifest.state.search?.deepLink).toBe(true);
+      expect(triggersPanel!.manifest.state.creating?.deepLink).toBe(false);
+      expect(triggersPanel!.manifest.state.editing?.deepLink).toBe(false);
+      expect(triggersPanel!.content.html).not.toMatch(/<el-|--el-/);
+      expect(triggersPanel!.content.module).not.toContain("usePanelData");
 
       const frame = panels.get("builtin-product-ontology-frame");
       expect(frame).toBeDefined();

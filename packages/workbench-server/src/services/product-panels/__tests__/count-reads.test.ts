@@ -1,5 +1,5 @@
 import {
-  ACTION, AGENT_DEFINITION, ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP, SDK_COMPONENT, WORKFLOW,
+  ACTION, AGENT_DEFINITION, ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP, SDK_COMPONENT, TRIGGER, WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
 import { applicationPanelUseSchema, productProjectionSchema } from "@ontomato/contracts/product-panels";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -67,13 +67,13 @@ configureI18n({
   packs: { en: { ...enLocaleMeta, messages: en } },
 });
 
-function readCount(typeId: string) {
+function readCount(typeId: string, read = "count") {
   const projection = productProjectionSchema.parse({
     id: "builtin-product-test-count", domainId: null, ownerId: null, editable: false,
     name: "Count", description: "", visibility: "platform", revision: 1,
     createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z",
     componentId: "@ontomato/sdk:ObjectCount", inputs: {}, outputs: {}, config: {},
-    data: { rows: { source: { type: { kind: "PlatformObjectType", id: typeId } }, read: "count", params: {} } },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: typeId } }, read, params: {} } },
   });
   mocks.resolveMember.mockResolvedValue({ kind: "projection", member: {}, projection });
   return readProductPanelData(owner, viewer, {
@@ -111,6 +111,7 @@ describe("platform count reads", () => {
     { type: ATTRIBUTE, path: "/ontology/model/attributes", rows: [attribute] },
     { type: RELATIONSHIP, path: "/ontology/model/relationships", rows: [relationship] },
     { type: ACTION, path: "/action/queryList", rows: [{ id: "a", name: "Approve" }], post: true },
+    { type: TRIGGER, path: "/trigger/queryList", rows: [{ id: "t1", name: "Nightly", enabled: true }, { id: "t2", name: "Paused", enabled: false }], post: true },
     { type: WORKFLOW, path: "/workflow/query", rows: [{ id: "w", name: "Restock" }], post: true },
   ])("$type counts only the records returned to the current viewer", async ({ type, path, rows, post }) => {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
@@ -123,6 +124,24 @@ describe("platform count reads", () => {
       return Response.json(post ? { success: true, data: rows } : rows);
     }));
     await expect(readCount(type)).resolves.toEqual({ status: "ready", value: { rows: [], total: rows.length } });
+  });
+
+  it("counts armed triggers separately from the total trigger count", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+      expect(new URL(url).pathname).toBe("/trigger/queryList");
+      expect(init.method).toBe("POST");
+      expect(init.body).toBe("{}");
+      return Response.json({
+        success: true,
+        data: [
+          { id: "t1", name: "Nightly", enabled: true },
+          { id: "t2", name: "Paused", enabled: false },
+          { id: "t3", name: "Draft" },
+        ],
+      });
+    }));
+    await expect(readCount(TRIGGER, "count")).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
+    await expect(readCount(TRIGGER, "armedCount")).resolves.toEqual({ status: "ready", value: { rows: [], total: 1 } });
   });
 
   it("projects a fixed object state key before reading the selected class's attributes", async () => {

@@ -5,7 +5,6 @@ import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import ManagerFrame from "./ManagerFrame.vue";
 import WorkflowCatalog from "./components/WorkflowCatalog.vue";
-import TriggerCatalog from "./components/TriggerCatalog.vue";
 import { useManagerClient } from "./context";
 import {
   legacyProductAssetTarget,
@@ -85,13 +84,6 @@ const WorkflowPage = defineComponent({
   name: "ManagerWorkflowPage",
   setup() {
     return () => h("section", { class: "asset-surface" }, [h(WorkflowCatalog)]);
-  },
-});
-
-const TriggerPage = defineComponent({
-  name: "ManagerTriggerPage",
-  setup() {
-    return () => h("section", { class: "asset-surface" }, [h(TriggerCatalog)]);
   },
 });
 
@@ -176,7 +168,6 @@ export function managerRoutes(): RouteRecordRaw[] {
               : true,
         },
         { ...routes.workflows, component: WorkflowPage, meta: { page: managerPaths.workflows } },
-        { ...routes.triggers, component: TriggerPage, meta: { page: managerPaths.triggers } },
       ],
     },
   ];

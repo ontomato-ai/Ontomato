@@ -1,0 +1,270 @@
+{
+  "manifest": {
+    "state": {
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "",
+        "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": false
+      },
+      "editing": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Trigger"
+        },
+        "deepLink": false
+      }
+    },
+    "members": {
+      "armedStats": {
+        "component": "ObjectCount",
+        "type": "platform:Trigger",
+        "data": {
+          "rows": "armedCount"
+        },
+        "config": {
+          "appearance": "badge",
+          "omitWhenUnavailable": false
+        },
+        "name": "Armed triggers count",
+        "description": "Total number of armed triggers in this domain",
+        "id": "builtin-product-17ed9b9b-1469-4e9d-b7d5-2036ed4d7848"
+      },
+      "totalStats": {
+        "component": "ObjectCount",
+        "type": "platform:Trigger",
+        "data": {
+          "rows": "count"
+        },
+        "config": {
+          "appearance": "badge",
+          "omitWhenUnavailable": false
+        },
+        "name": "Total triggers count",
+        "description": "Total number of triggers in this domain",
+        "id": "builtin-product-fe82ad9c-1ca9-4a08-8705-098741fa382b"
+      },
+      "triggers": {
+        "component": "ObjectList",
+        "type": "platform:Trigger",
+        "data": {
+          "rows": "query"
+        },
+        "state": {
+          "search": "search"
+        },
+        "operations": {
+          "disable": {
+            "operation": "triggers.setStatus",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "status": {
+                "literal": "UNUSED"
+              },
+              "enabled": {
+                "literal": false
+              }
+            }
+          },
+          "publish": {
+            "operation": "triggers.setStatus",
+            "target": {
+              "row": true
+            },
+            "params": {
+              "status": {
+                "literal": "PUBLISHED"
+              },
+              "enabled": {
+                "literal": true
+              }
+            }
+          },
+          "remove": {
+            "operation": "triggers.delete",
+            "target": {
+              "row": true
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "emptyText": "list.empty",
+          "noMatchText": "list.noMatch",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "col.trigger",
+              "subtitleKey": "subtitle",
+              "minWidth": 150
+            },
+            {
+              "key": "effect",
+              "labelKey": "col.effect",
+              "minWidth": 160
+            },
+            {
+              "key": "condition",
+              "labelKey": "col.schedule",
+              "minWidth": 130
+            },
+            {
+              "key": "nextRunAt",
+              "labelKey": "col.nextRunAt",
+              "kind": "time",
+              "timeFormat": "datetime",
+              "emptyKey": "col.emptyDash",
+              "width": 152
+            },
+            {
+              "key": "status",
+              "labelKey": "col.status",
+              "kind": "tag",
+              "width": 88
+            }
+          ],
+          "rowActions": {
+            "labelKey": "col.actions",
+            "width": 180,
+            "align": "right",
+            "maxVisible": 3,
+            "items": [
+              {
+                "kind": "local",
+                "id": "edit",
+                "labelKey": "action.edit"
+              },
+              {
+                "kind": "operation",
+                "operation": "disable",
+                "labelKey": "action.disable",
+                "when": {
+                  "field": "enabled",
+                  "equals": true
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "publish",
+                "labelKey": "action.publish",
+                "when": {
+                  "field": "enabled",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "remove",
+                "labelKey": "action.delete",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "Triggers table",
+        "description": "Domain triggers with schedule, effect, status, and inline edit, publish/disable, and delete actions",
+        "id": "builtin-product-1d6a36f2-967a-4887-a486-dfafaf572a3f"
+      },
+      "createForm": {
+        "component": "ObjectForm",
+        "type": "platform:Trigger",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "platform:Trigger.save",
+        "config": {
+          "actions": "none"
+        },
+        "name": "New trigger form",
+        "description": "Owner-declared form for creating a trigger",
+        "id": "builtin-product-13889715-c2a0-4896-9d97-fc120574c8cb"
+      },
+      "editForm": {
+        "component": "ObjectForm",
+        "type": "platform:Trigger",
+        "target": "editing",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:Trigger.save",
+        "config": {
+          "actions": "none"
+        },
+        "name": "Edit trigger form",
+        "description": "Owner-declared form for editing the selected trigger",
+        "id": "builtin-product-b78eb7d4-afab-4057-bd9b-7bda80cb46da"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "page.title": "Triggers",
+        "page.description": "Define when workflows start",
+        "search.placeholder": "Filter by name",
+        "note.text": "One condition kind can be saved: the time table. The other three (a Definition's membership changing, a MetricView crossing a threshold, an Action completing) and the skill and notification effects have no evaluator or executor yet, so the backend refuses them rather than storing a trigger that would never fire.",
+        "stats.armed": "Armed",
+        "stats.total": "Total",
+        "col.trigger": "Trigger",
+        "col.effect": "Effect",
+        "col.schedule": "Schedule",
+        "col.nextRunAt": "Next run",
+        "col.status": "State",
+        "col.actions": "Actions",
+        "col.emptyDash": "—",
+        "list.empty": "No triggers in this domain yet",
+        "list.noMatch": "No matching triggers",
+        "action.refresh": "Refresh",
+        "action.new": "New trigger",
+        "action.edit": "Edit",
+        "action.disable": "Disable",
+        "action.publish": "Publish",
+        "action.delete": "Delete",
+        "action.cancel": "Cancel",
+        "action.save": "Save",
+        "dialog.createTitle": "New trigger",
+        "dialog.editTitle": "Edit trigger"
+      },
+      "zh-CN": {
+        "page.title": "触发",
+        "page.description": "配置流程的启动时机",
+        "search.placeholder": "按名称筛选",
+        "note.text": "目前只能保存一种条件：时间表。另外三种条件（Definition 成员集变化、MetricView 阈值越界、Action 完成）与 Skill、通知两种效果还没有求值器或执行器，后端会直接拒绝，而不是存下一个永远不会触发的定义。",
+        "stats.armed": "已启用",
+        "stats.total": "总数",
+        "col.trigger": "触发",
+        "col.effect": "效果",
+        "col.schedule": "计划",
+        "col.nextRunAt": "下次运行",
+        "col.status": "状态",
+        "col.actions": "操作",
+        "col.emptyDash": "—",
+        "list.empty": "暂无触发",
+        "list.noMatch": "无匹配结果",
+        "action.refresh": "刷新",
+        "action.new": "新建触发",
+        "action.edit": "编辑",
+        "action.disable": "停用",
+        "action.publish": "发布",
+        "action.delete": "删除",
+        "action.cancel": "取消",
+        "action.save": "保存",
+        "dialog.createTitle": "新建触发",
+        "dialog.editTitle": "编辑触发"
+      }
+    }
+  }
+}

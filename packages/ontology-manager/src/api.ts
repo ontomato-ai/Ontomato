@@ -2,7 +2,6 @@ import { BUILD_TEST_HEADER, type AppExecutionContext } from "@ontomato/contracts
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import type { ObjectViewDocument, ObjectViewState } from "@ontomato/contracts/object-views";
-import type { PlatformTaskFrequency } from "@ontomato/contracts/platform-schedules";
 import { createActionsClient } from "./clients/actions";
 import { createProductsClient } from "./clients/products";
 import type { DashboardDetail, DashboardListItem } from "@ontomato/contracts/dashboard";
@@ -284,31 +283,6 @@ export interface SubjectRecord {
   loginCode?: string | null;
   displayName?: string | null;
   roleIds?: string[];
-}
-
-/**
- * One Trigger of this domain: a capability object, not a scheduled task of some application.
- *
- * <p>The platform's task table is a different thing — a personal schedule of an app's effect. A Trigger has a
- * condition kind, an effect kind, a status and a revision, and it is governed like every other capability.</p>
- */
-export interface TriggerRecord {
-  id: string;
-  name: string;
-  description?: string | null;
-  status?: string;
-  version?: number;
-  conditionKind?: string | null;
-  effectKind?: string | null;
-  effect?: { actionId?: string; workflowId?: string } | null;
-  /**
-   * The stored condition, verbatim. A time condition's frequency has the platform scheduler's shape; the page words it
-   * in the reader's language and the edit form restores it.
-   */
-  condition?: { frequency?: PlatformTaskFrequency | null; timeZone?: string } | null;
-  enabled?: boolean;
-  nextRunAt?: string | null;
-  lastFiredAt?: string | null;
 }
 
 export type ManagerClient = ReturnType<typeof createManagerClient>;
@@ -761,48 +735,6 @@ export function createManagerClient(
    * which is one condition kind — not the object an operator authors. Reading it here made the page look like it could
    * configure triggers when it was only listing somebody else's tasks.</p>
    */
-  /**
-   * Create or update a trigger.
-   *
-   * <p>The body is the capability object itself: condition and effect as the definition holds them. Publication is a
-   * separate call, so an author can save a draft without arming it.</p>
-   */
-  async function saveTrigger(input: Record<string, unknown>) {
-    const response = await post("/trigger/save", input);
-    return response.data as TriggerRecord;
-  }
-
-  async function deleteTrigger(id: string) {
-    await post("/trigger/delete", { id });
-  }
-
-  /** Publish or retire. Publishing arms: the definition is what an operator approved to run. */
-  async function setTriggerStatus(id: string, status: "PUBLISHED" | "UNUSED" | "PENDING_REVIEW", enabled?: boolean) {
-    const response = await post("/trigger/status", { id, status, ...(enabled === undefined ? {} : { enabled }) });
-    return response.data as TriggerRecord;
-  }
-
-  async function loadTriggers(): Promise<TriggerRecord[]> {
-    const response = await post("/trigger/queryList", {});
-    const rows = Array.isArray(response.data) ? (response.data as Array<Record<string, unknown>>) : [];
-    return rows.map((row) => {
-      return {
-        id: String(row.id ?? ""),
-        name: typeof row.name === "string" && row.name.trim() ? row.name : String(row.id ?? ""),
-        description: typeof row.description === "string" ? row.description : null,
-        status: typeof row.status === "string" ? row.status : undefined,
-        version: typeof row.version === "number" ? row.version : undefined,
-        conditionKind: typeof row.conditionKind === "string" ? row.conditionKind : null,
-        effectKind: typeof row.effectKind === "string" ? row.effectKind : null,
-        effect: (row.effect ?? null) as TriggerRecord["effect"],
-        condition: (row.condition ?? null) as TriggerRecord["condition"],
-        enabled: row.enabled === true,
-        nextRunAt: typeof row.nextRunAt === "string" ? row.nextRunAt : null,
-        lastFiredAt: typeof row.lastFiredAt === "string" ? row.lastFiredAt : null,
-      };
-    });
-  }
-
   return {
     /** The data engine's endpoints as the platform's shared pages read them (the agents' model pages): the `data`. */
     products: createProductsClient(transport),
@@ -850,10 +782,6 @@ export function createManagerClient(
     deactivateWorkflow,
     deleteWorkflow,
     loadCapabilityGrants,
-    loadTriggers,
-    saveTrigger,
-    deleteTrigger,
-    setTriggerStatus,
     loadSubjects,
   };
 }

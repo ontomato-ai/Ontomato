@@ -209,6 +209,8 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       annotatedExplanation: async selection => (await actions()).annotatedExplanation(selection.primaryKey!),
     },
     [TRIGGER]: {
+      count: async () => (await triggers()).count(),
+      armedCount: async () => (await triggers()).armedCount(),
       list: async () => (await triggers()).list(),
       query: async (_selection, params) => (await triggers()).query(params),
       record: async selection => (await triggers()).record(selection.primaryKey!),
