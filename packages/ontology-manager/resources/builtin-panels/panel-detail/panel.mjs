@@ -150,6 +150,15 @@ const PanelDetail = {
     );
 
     // Mount the dynamic preview child panel only while viewing a ready, available panel on the Preview tab.
+    const tabItems = computed(() => [
+      { name: "overview", label: t("tab.overview") },
+      { name: "source", label: t("tab.source") },
+      { name: "members", label: t("tab.members") },
+      { name: "usage", label: t("tab.usage") },
+      ...(canGrant.value ? [{ name: "grants", label: t("tab.grants") }] : []),
+      { name: "preview", label: t("tab.preview") },
+    ]);
+
     const shouldMountPreview = computed(
       () =>
         !showEditForm.value
@@ -764,6 +773,7 @@ const PanelDetail = {
       t,
       selectedKey,
       tabModel,
+      tabItems,
       recordStatus,
       recordReady,
       recordUnavailable,
