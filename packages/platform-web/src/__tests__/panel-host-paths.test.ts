@@ -9,7 +9,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH } from "@ontomato/contracts/panel-host";
 import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import type { ApplicationPanelUse, ProductProjection } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels } from "@ontomato/platform-shell";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAppHost } from "../app-host";
@@ -18,7 +18,7 @@ import {
   getCachedProjection,
   setCachedProjection,
 } from "../panel-definition-cache";
-import { builtinFramePanelHost, cachedApplicationFrameManifest, framePanelHost, panelHostPaths, platformPanelHost, readApplicationFrameManifest } from "../panel-host";
+import { builtinFramePanelHost, cachedApplicationFrameManifest, framePanelHost, onPanelReadDenied, panelHostPaths, platformPanelHost, readApplicationFrameManifest, readPanelData, resolveApplicationEntry } from "../panel-host";
 
 /*
  * The panel host's addresses (design 10.3): each request goes to the owner it belongs to, and the two owners differ.
@@ -1297,6 +1297,62 @@ describe("dynamic and nested member projection access verification", () => {
       } finally {
         warmScope.stop();
       }
+    }
+  });
+
+  it("notifies onPanelReadDenied listeners when panel record or data reads return HTTP 403, and ignores 404 and resolve-entry 403", async () => {
+    const denied = vi.fn();
+    const unsubscribe = onPanelReadDenied(denied);
+    let nextStatus = 403;
+    vi.stubGlobal("fetch", async () => Response.json({ error: { message: "Denied" } }, { status: nextStatus }));
+    try {
+      await expect(readPanelData({
+        source: { kind: "registered", applicationId: "app-a", useId: "use-1" },
+        memberPath: [{ member: "list" }],
+        dataName: "rows",
+        inputs: {},
+      })).rejects.toThrow();
+      expect(denied).toHaveBeenCalledTimes(1);
+
+      // Panel record read returning 403 also notifies listeners.
+      clearPanelDefinitionCache();
+      const deniedUse: ApplicationPanelUse = {
+        id: "use-denied",
+        pageKey: "denied-page",
+        panelId: "panel-denied",
+        path: "/applications/app-a/denied",
+        access: { kind: "domain-member" },
+      };
+      const port = platformPanelHost("app-a", deniedUse, () => {});
+      await expect(port.source()).rejects.toThrow();
+      expect(denied).toHaveBeenCalledTimes(2);
+
+      // resolveApplicationEntry 403 does not trigger panel-read-denied loop.
+      await expect(resolveApplicationEntry({ path: "/applications/app-a/tasks" })).rejects.toThrow();
+      expect(denied).toHaveBeenCalledTimes(2);
+
+      // 404 does not trigger 403 read-denied notification.
+      nextStatus = 404;
+      await expect(readPanelData({
+        source: { kind: "registered", applicationId: "app-a", useId: "use-1" },
+        memberPath: [{ member: "list" }],
+        dataName: "rows",
+        inputs: {},
+      })).rejects.toThrow();
+      expect(denied).toHaveBeenCalledTimes(2);
+
+      // Unsubscribing stops further notifications.
+      unsubscribe();
+      nextStatus = 403;
+      await expect(readPanelData({
+        source: { kind: "registered", applicationId: "app-a", useId: "use-1" },
+        memberPath: [{ member: "list" }],
+        dataName: "rows",
+        inputs: {},
+      })).rejects.toThrow();
+      expect(denied).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
     }
   });
 });

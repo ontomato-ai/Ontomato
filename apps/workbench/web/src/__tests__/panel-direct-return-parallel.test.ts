@@ -8,15 +8,10 @@ import recorded from "./fixtures/direct-panel-host-http.json";
 import { panelAnswer, pageSkillContextFor, installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
 
 /*
- * Coming back to a panel's page (first gate, hot return): the page is rebuilt as a native page is — native views
- * are not kept either — but its reads are not queued behind Java's answer for the application's use relations. The
- * shell's catalog already names the reader's relations, so the page reads its record, its members' projections and
- * their data at once, while Java's answer is read beside them; the page is shown only once that answer names it, and a
- * page it does not name is never shown. Node's answers for the panel and its projections are the ones Node gave over
- * HTTP (`fixtures/direct-panel-host-http.json`); Java and the owner are stand-ins.
- *
- * What this rules out: a return whose reads wait for the use relations (the 2026-11-20 gate: +232 ms, the reads ran
- * after Java's 107 ms answer), and a page shown, or left shown, that Java's answer does not name.
+ * Coming back to a panel's page (hot return): the shell's catalog already names the reader's admitted entries, so an
+ * entry present in that table mounts and displays immediately without waiting behind `resolve-entry`, while Java's
+ * answer refreshes in the background. If Java's background answer no longer names the entry, the route withdraws it
+ * and explains that the address is unavailable.
  */
 
 const application = "app-panels-trial-a";
@@ -66,20 +61,20 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-it("reads the page's record, projections and data while Java's answer is coming, and shows the page once it names it", async () => {
+it("admits and displays a known entry immediately while Java's answer refreshes in the background", async () => {
   const relations = heldRelations();
   const { app, element, sent } = await open(relations.answer);
   try {
     await vi.waitFor(() => expect(reached(sent, "/api/product-panels/read")).toBe(true));
     expect(reached(sent, "/api/product-panels/panel-schedules-trial")).toBe(true);
     expect(reached(sent, "/api/product-projections/projection-schedules-tasks")).toBe(true);
-    // Drawn so its members read, but nothing is shown before Java's answer names the page.
-    expect(element.querySelector<HTMLElement>(".panel-host-direct")?.style.display).toBe("none");
+    // Admitted immediately from the known entry table: shown right away without waiting for resolve-entry.
+    expect(element.querySelector<HTMLElement>(".panel-host-direct")?.style.display).toBe("");
+    await vi.waitFor(() => expect(element.querySelectorAll("[data-member='tasks'] [role='option']")).toHaveLength(1));
 
     relations.release([use]);
-    await vi.waitFor(() => expect(element.querySelector<HTMLElement>(".panel-host-direct")?.style.display).toBe(""));
-    // Shown, its list draws the row it read once the module has mounted it.
-    await vi.waitFor(() => expect(element.querySelectorAll("[data-member='tasks'] [role='option']")).toHaveLength(1));
+    await nextTick();
+    expect(element.querySelector<HTMLElement>(".panel-host-direct")?.style.display).toBe("");
     // The page did not start again for Java's answer: its record and projections were read once.
     expect(sent.filter(request => request.path === "/api/product-panels/panel-schedules-trial")).toHaveLength(1);
     expect(sent.filter(request => request.path === "/api/product-projections/projection-schedules-tasks")).toHaveLength(1);
@@ -88,7 +83,7 @@ it("reads the page's record, projections and data while Java's answer is coming,
   }
 });
 
-it("never shows a page Java's answer does not name", async () => {
+it("withdraws a page when Java's background answer no longer names it", async () => {
   const relations = heldRelations();
   const { app, element } = await open(relations.answer);
   try {

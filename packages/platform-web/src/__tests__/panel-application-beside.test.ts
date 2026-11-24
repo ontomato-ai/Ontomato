@@ -44,6 +44,7 @@ vi.mock("../panel-host", () => ({
     return { applicationId: path.split("/")[2], use, menu: { groups: [], panelUses: uses } };
   },
   platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
+  onPanelReadDenied: () => () => {},
 }));
 
 /** Every panel instance mounted, with the state it opened at. */

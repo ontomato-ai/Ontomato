@@ -40,6 +40,7 @@ vi.mock("../panel-host", () => ({
   readApplicationFrameManifest: readFrameManifest,
   // The host the route builds is the one for the use relation its address names.
   platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
+  onPanelReadDenied: () => () => {},
 }));
 
 vi.mock("@ontomato/platform-shell", async (importOriginal) => ({

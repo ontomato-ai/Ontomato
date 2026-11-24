@@ -79,8 +79,31 @@ export const panelHostPaths = {
     `/api/workspaces/${encodeURIComponent(workspaceId)}/panel-candidate?${new URLSearchParams({ ref })}`,
 };
 
-async function json(path: string, init: RequestInit = {}) {
-  const response = await nodeApiRequest(path, init);
+const panelReadDeniedListeners = new Set<() => void>();
+
+/**
+ * Registers a listener notified whenever a panel record, projection, or data read is refused with HTTP 403.
+ * Returns an unsubscribe function.
+ */
+export function onPanelReadDenied(listener: () => void): () => void {
+  panelReadDeniedListeners.add(listener);
+  return () => { panelReadDeniedListeners.delete(listener); };
+}
+
+function notifyPanelReadDenied(failure: unknown) {
+  if (failure instanceof ApiRequestError && failure.status === 403) {
+    for (const listener of [...panelReadDeniedListeners]) listener();
+  }
+}
+
+async function json(path: string, init: RequestInit = {}, options: { notifyDenied?: boolean } = {}) {
+  let response: Response;
+  try {
+    response = await nodeApiRequest(path, init);
+  } catch (failure) {
+    if (options.notifyDenied !== false) notifyPanelReadDenied(failure);
+    throw failure;
+  }
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message ?? `Request failed: ${path}`);
   return body;
@@ -126,8 +149,6 @@ export type PanelObjectChange = DisplayObjectChange;
  */
 export function platformPanelHost(
   applicationId: string, use: ApplicationPanelUse, changed: (change: PanelObjectChange) => void, mode: PanelDefinitionMode = { kind: "view" },
-  /** Java's answer for the application, when the page was opened from the shell's catalog before it came. */
-  resolution?: Promise<ApplicationEntryResolution>,
   /** Hears which page skill a message written beside this page reaches, as Node answers it with the panel. */
   pageSkill?: (context: PageSkillContext) => void,
   /** Beside a conversation, the conversation's display, which opens an address the panel asks for; at full page, none. */
@@ -155,7 +176,7 @@ export function platformPanelHost(
     async source() {
       sourceReconciled = false;
       let sourceFailed = false;
-      void json(`${panelHostPaths.pageSkillContext(use.panelId)}?${page}`)
+      void json(`${panelHostPaths.pageSkillContext(use.panelId)}?${page}`, {}, { notifyDenied: false })
         .then((answer) => {
           if (!sourceFailed) pageSkill?.(productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext);
         })
@@ -230,8 +251,6 @@ export function platformPanelHost(
     async current() {
       return names(await resolveApplicationEntry(shown));
     },
-    // Java's answer not coming is not admitting the page: the route that asked for it says why where the page would be.
-    ...(resolution ? { admitted: resolution.then(names, () => false) } : {}),
     // The page's check of its definitions, when it is shown again or comes back to the foreground, is read for this page
     // too: the page skill it reaches is confirmed again with it, since what it may reach can have changed meanwhile.
     async snapshot(panelId) {
@@ -532,7 +551,10 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
  * the bridge, sent here directly, Node's at `/api` and Java's under its data-query prefix.
  */
 const platformRequests: PlatformRequests = {
-  request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, init),
+  request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, init).catch((failure: unknown) => {
+    notifyPanelReadDenied(failure);
+    throw failure;
+  }),
 };
 
 /**
@@ -776,7 +798,7 @@ async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTa
  */
 export async function resolveApplicationEntry(query: ApplicationEntryResolutionQuery): Promise<ApplicationEntryResolution> {
   const search = new URLSearchParams(applicationEntryResolutionQuerySchema.parse(query) as Record<string, string>);
-  const answer = await json(`/api/data-query/platform/applications/resolve-entry?${search}`);
+  const answer = await json(`/api/data-query/platform/applications/resolve-entry?${search}`, {}, { notifyDenied: false });
   if (answer.success === false) throw new Error(answer.message ?? "This entry cannot be opened");
   return applicationEntryResolutionSchema.parse(answer.data ?? answer);
 }

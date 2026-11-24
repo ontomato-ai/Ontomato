@@ -2,6 +2,8 @@
 import { computed, inject, markRaw, onBeforeUnmount, ref, shallowRef, toRaw, watch, watchEffect, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
+import { ElSkeleton } from "element-plus";
+import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type AppMenuGroup, type DirectPanelRun, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import {
   applicationPanelAddress,
@@ -19,7 +21,7 @@ import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/a
 import { PageComposer, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-import { cachedApplicationFrameManifest, framePanelHost, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
+import { cachedApplicationFrameManifest, framePanelHost, onPanelReadDenied, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import EntryUnit from "./EntryUnit.vue";
 import { hostThemeMode } from "../app-host";
 import { platformApplicationsKey } from "../apps";
@@ -139,7 +141,7 @@ if (props.registerPageController) {
     },
     isLoading() {
       if (failure.value || missing.value) return false;
-      if (!answered.value || !host.value) return true;
+      if (verifying.value || !host.value) return true;
       return host.value.isLoading?.() ?? false;
     },
   });
@@ -169,6 +171,10 @@ watch(() => props.objectRefresh?.seq, () => {
  * (`notes/keepalive.md`).
  */
 const KEPT_PAGES = 2;
+/** How long the previous clean page stays visible during a same-application switch before showing the loading placeholder. */
+const TRANSITION_PLACEHOLDER_DELAY_MS = 150;
+/** Periodic silent refresh interval for the current application's entry table while the tab is visible. */
+const ENTRY_TABLE_REFRESH_MS = 5 * 60 * 1000;
 
 /** A page of this application whose instance is kept, shown or not. */
 interface KeptPage {
@@ -183,6 +189,8 @@ interface KeptPage {
   pageSkill: PageSkillContext | null;
   /** Shown again and not yet through its checks: what it reaches is passed on only once they have confirmed it. */
   rechecking: boolean;
+  /** True by default for synchronous mock hosts in tests; real PanelHost emits false on mount until its surface renders. */
+  surfaceReady: boolean;
   /** When the reader was last on it, in the order of the pages shown: the page dropped is the one left longest ago. */
   lastShown: number;
 }
@@ -197,36 +205,139 @@ const failure = ref("");
 const frameManifest = shallowRef<{ framePanelId: string; manifest: Pick<PanelManifest, "state"> } | null>(null);
 const catalog = useApplicationCatalog();
 /**
- * Java's answer for the entry the reader opened (\`resolve-entry\`): its use relation, admitted for this reader, with the
- * application's frame panel and theme where its renderer is \`panels\`, and the menu of the entries the reader may see. The
- * page starts from the shell's catalog while it is read, and shows nothing until it names the same page (the host's
- * \`admitted\`); the opened page's admission and the route share this one read.
+ * Java's answer for this application's entry (`resolve-entry`): the admitted use relation, frame panel, theme, and
+ * visible entry menu. Same-application switches hitting the known entry table mount immediately without re-asking.
  */
 const resolution = shallowRef<ApplicationEntryResolution | null>(null);
-let resolving: Promise<ApplicationEntryResolution> | null = null;
-/** Whether \`resolution\` is Java's answer for the address opened now. */
-const answered = ref(false);
-/** Read again after a kept page's use relation was withdrawn. */
-const rereads = ref(0);
+/** True while waiting for server admission on a direct link not present in the current application's entry table. */
+const verifying = ref(false);
+/** Entry path explicitly refused by the server (403/404 or mismatched application). */
+const deniedPath = ref<string | null>(null);
+type FrameState = ReturnType<typeof parseApplicationPanelAddress>["frame"];
+/**
+ * The frame's state as the frame last reported it, for the frame panel that reported it: going from entry to entry the
+ * frame stays, and so does its state (design section 3: another entry of the application takes the frame's public context
+ * along), whether or not the address the reader went to names it.
+ */
+const lastFrame = shallowRef<{ framePanelId: string; addressState: FrameState; liveState: FrameState } | null>(null);
+let frameFor: { framePanelId: string; port: PanelHostPort } | null = null;
+const frameSurfaceReady = ref(true);
+const retainedPage = shallowRef<KeptPage | null>(null);
+const transitionTimedOut = ref(false);
+let transitionTimer: ReturnType<typeof setTimeout> | null = null;
+let resolveEpoch = 0;
+let refreshInFlight: Promise<void> | null = null;
+let unmounted = false;
+
+function clearTransitionTimer() {
+  if (transitionTimer !== null) {
+    clearTimeout(transitionTimer);
+    transitionTimer = null;
+  }
+}
+
+function clearTransition() {
+  clearTransitionTimer();
+  retainedPage.value = null;
+  transitionTimedOut.value = false;
+}
+
+function ensureTransitionTimer() {
+  if (transitionTimer !== null || transitionTimedOut.value || !retainedPage.value) return;
+  transitionTimer = setTimeout(() => {
+    transitionTimer = null;
+    transitionTimedOut.value = true;
+    retainedPage.value = null;
+  }, TRANSITION_PLACEHOLDER_DELAY_MS);
+}
 
 /** The page's address as the reader is on it: the conversation's page parameter beside a chat, the router's full. */
 const opened = computed(() => props.address ?? route.fullPath);
 const openedPath = computed(() => opened.value.split("?")[0]!);
-/** The reader's use relations as the shell's catalog lists them: where a page starts before Java answers. */
-const listed = computed(() => catalog.applications.value.find((app) => app.id === props.applicationId)?.panelUses ?? []);
+const catalogApp = computed(() => catalog.applications.value.find((app) => app.id === props.applicationId) ?? null);
+const currentResolution = computed(() =>
+  resolution.value?.applicationId === props.applicationId ? resolution.value : null,
+);
+/** Known entry table for this application: authoritative resolution menu once received, else navigation catalog. */
+const entryTable = computed<readonly ApplicationPanelUse[]>(() =>
+  currentResolution.value?.menu.panelUses ?? catalogApp.value?.panelUses ?? [],
+);
 /** The entry an address opens: its own path, or the application's first listed entry at the application's own address. */
 const entryPath = computed(() => {
   if (openedPath.value !== applicationRootPath(props.applicationId)) return openedPath.value;
-  const first = resolution.value?.menu.panelUses[0] ?? listed.value[0];
+  const first = entryTable.value[0];
   return first ? panelUsePath(first.path) : null;
 });
 
-// Another application is another set of pages: the kept ones of the application left are dropped. At once, as the
-// route's application changes: the same route instance serves the next application's entry (one panel route serves
-// every built-in application's entries), and the page it opens must not be dropped with the old ones.
+function findEntryByPath(entries: readonly ApplicationPanelUse[], path: string): ApplicationPanelUse | null {
+  return entries.find((candidate) => panelUsePath(candidate.path) === path) ?? null;
+}
+
+function revokeEntry(path: string) {
+  kept.value = kept.value.filter((page) => panelUsePath(page.use.path) !== path);
+  if (retainedPage.value && panelUsePath(retainedPage.value.use.path) === path) {
+    clearTransition();
+  }
+  resolution.value = null;
+  deniedPath.value = path;
+  verifying.value = false;
+}
+
+async function requestEntryResolution(
+  applicationId: string,
+  path: string,
+  options: { blocking: boolean; epoch?: number },
+) {
+  const epoch = options.epoch ?? ++resolveEpoch;
+  if (options.blocking) {
+    clearTransition();
+    verifying.value = true;
+  }
+  try {
+    const answer = await resolveApplicationEntry({ path });
+    if (unmounted || epoch !== resolveEpoch || props.applicationId !== applicationId || entryPath.value !== path) return;
+    if (answer.applicationId !== applicationId) {
+      revokeEntry(path);
+      return;
+    }
+    resolution.value = answer;
+    deniedPath.value = null;
+    verifying.value = false;
+  } catch {
+    if (unmounted || epoch !== resolveEpoch || props.applicationId !== applicationId || entryPath.value !== path) return;
+    revokeEntry(path);
+  }
+}
+
+function refreshEntryTable({ refreshCatalog }: { refreshCatalog: boolean }) {
+  if (unmounted || verifying.value) return Promise.resolve();
+  if (refreshInFlight) return refreshInFlight;
+  const applicationId = props.applicationId;
+  const path = entryPath.value;
+  if (refreshCatalog) void catalog.refresh();
+  if (!path) return Promise.resolve();
+  const epoch = ++resolveEpoch;
+  const task = requestEntryResolution(applicationId, path, { blocking: false, epoch }).finally(() => {
+    if (refreshInFlight === task) refreshInFlight = null;
+  });
+  refreshInFlight = task;
+  return task;
+}
+
+// Another application is another set of pages: drop kept pages and reset all frame/resolution/transition state at once
+// so cross-application switches never flash the previous application's title, menu, or frame port.
 watch(() => props.applicationId, (_next, previous) => {
+  resolveEpoch += 1;
+  refreshInFlight = null;
   kept.value = [];
   failure.value = "";
+  resolution.value = null;
+  verifying.value = false;
+  deniedPath.value = null;
+  frameFor = null;
+  frameSurfaceReady.value = true;
+  lastFrame.value = null;
+  clearTransition();
   if (previous !== undefined) {
     pendingControllerState = null;
     frameManifest.value = null;
@@ -234,49 +345,78 @@ watch(() => props.applicationId, (_next, previous) => {
   emit("display-loaded", { status: "loading" });
 }, { immediate: true, flush: "sync" });
 
-watch([() => props.applicationId, entryPath, rereads], ([applicationId, path], _, onCleanup) => {
-  let current = true;
-  onCleanup(() => { current = false; });
-  answered.value = false;
+watch([() => props.applicationId, entryPath], ([applicationId, path]) => {
+  const epoch = ++resolveEpoch;
+  deniedPath.value = null;
   if (!path) {
+    verifying.value = false;
     resolution.value = null;
-    answered.value = true;
     return;
   }
-  const read = resolving = resolveApplicationEntry({ path });
-  read.then((answer) => {
-    if (!current) return;
-    // An answer for another application is not this route's page.
-    resolution.value = answer.applicationId === applicationId ? answer : null;
-    answered.value = true;
-  }, () => {
-    // Java finds no entry the reader may open at this address: the page says so in the platform's language.
-    if (!current) return;
-    resolution.value = null;
-    answered.value = true;
-  });
+  const known = findEntryByPath(entryTable.value, path)
+    ?? kept.value.find((page) => panelUsePath(page.use.path) === path)?.use
+    ?? null;
+  if (known) {
+    verifying.value = false;
+    if (!currentResolution.value) {
+      void requestEntryResolution(applicationId, path, { blocking: false, epoch });
+    }
+    return;
+  }
+  void requestEntryResolution(applicationId, path, { blocking: true, epoch });
 }, { immediate: true });
 
+const stopVisibility = onDocumentVisibility((visible) => {
+  if (visible) void refreshEntryTable({ refreshCatalog: true });
+});
+const stopReadDenied = onPanelReadDenied(() => {
+  void refreshEntryTable({ refreshCatalog: true });
+});
+const refreshTimer = setInterval(() => {
+  if (documentVisible()) void refreshEntryTable({ refreshCatalog: true });
+}, ENTRY_TABLE_REFRESH_MS);
+
+onBeforeUnmount(() => {
+  unmounted = true;
+  clearTransition();
+  stopVisibility();
+  stopReadDenied();
+  clearInterval(refreshTimer);
+});
+
+const listedUse = computed<ApplicationPanelUse | null>(() =>
+  entryPath.value ? findEntryByPath(entryTable.value, entryPath.value) : null,
+);
+const resolvedUse = computed<ApplicationPanelUse | null>(() => {
+  const path = entryPath.value;
+  const answer = currentResolution.value;
+  if (!path || !answer) return null;
+  return panelUsePath(answer.use.path) === path ? answer.use : null;
+});
+const keptUse = computed<ApplicationPanelUse | null>(() => {
+  const path = entryPath.value;
+  if (!path) return null;
+  return kept.value.find((page) => panelUsePath(page.use.path) === path)?.use ?? null;
+});
 /**
- * The use relation the opened address names: Java's, once it answered. Until then, a kept page's own relation — shown
- * again at once, and checked again before it may ask for anything — else the catalog's, unadmitted.
+ * The use relation the opened address names: admitted immediately when present in this application's known entry table
+ * or already kept in this application (and confirmed by resolve-entry for direct links), and null while awaiting
+ * direct-link verification or once refused.
  */
 const use = computed<ApplicationPanelUse | null>(() => {
   const path = entryPath.value;
-  if (!path) return null;
-  if (answered.value) return resolution.value && panelUsePath(resolution.value.use.path) === path ? resolution.value.use : null;
-  const at = (candidate: ApplicationPanelUse) => panelUsePath(candidate.path) === path;
-  return kept.value.find((page) => at(page.use))?.use ?? listed.value.find(at) ?? null;
+  if (!path || verifying.value || deniedPath.value === path) return null;
+  return resolvedUse.value ?? listedUse.value ?? keptUse.value;
 });
 /**
- * The application's theme from Java's answer (a \`panels\` application's only). At full page the platform's layout assigns
+ * The application's theme from Java's answer (a `panels` application's only). At full page the platform's layout assigns
  * it on the application's area, its menu and its page; beside a conversation it is assigned on this content alone.
  */
 const area = ref<HTMLElement | null>(null);
-if (props.navigate) useAppTheme(area, () => resolution.value?.theme, hostThemeMode);
-else useApplicationTheme(() => resolution.value?.theme);
+if (props.navigate) useAppTheme(area, () => currentResolution.value?.theme, hostThemeMode);
+else useApplicationTheme(() => currentResolution.value?.theme);
 /** An address that names no use relation the reader may open is a page that cannot load, and its receipt says so. */
-const missing = computed(() => answered.value && !use.value ? t("platform.panelNotInApplication", { path: openedPath.value }) : "");
+const missing = computed(() => !verifying.value && !use.value ? t("platform.panelNotInApplication", { path: openedPath.value }) : "");
 watch(missing, (message) => {
   if (message) emit("display-loaded", panelUnavailable(new Error(message)));
 });
@@ -285,30 +425,24 @@ watch(missing, (message) => {
  * An application's own frame (product-layer standard, part one; design §三, big main's rulings 2026-11-21): when Java's
  * answer names a frame panel, that panel stands in the application's area at full page instead of the platform's
  * application menu, and the entry's page — the platform's header and the content, one unit — stands where the frame's
- * \`<current-entry>\` is. The frame stays while the reader goes from entry to entry; the unit's content changes. Its state
- * rides in the address's \`frame\` segment, beside the content's \`state\`; beside a conversation no frame is drawn, but
+ * `<current-entry>` is. The frame stays while the reader goes from entry to entry; the unit's content changes. Its state
+ * rides in the address's `frame` segment, beside the content's `state`; beside a conversation no frame is drawn, but
  * the same segment gives the content the values the frame shares.
  */
-/**
- * The frame's state as the frame last reported it, for the frame panel that reported it: going from entry to entry the
- * frame stays, and so does its state (design §三: another entry of the application takes the frame's public context
- * along), whether or not the address the reader went to names it.
- */
-type FrameState = ReturnType<typeof parseApplicationPanelAddress>["frame"];
-const lastFrame = shallowRef<{ framePanelId: string; addressState: FrameState; liveState: FrameState } | null>(null);
 watch(
-  [() => props.applicationId, () => props.navigate, () => resolution.value?.framePanelId, () => resolution.value?.use],
-  ([applicationId, navigate, framePanelId, resolvedUse], _, onCleanup) => {
+  [() => props.applicationId, () => props.navigate, () => currentResolution.value?.framePanelId, () => use.value?.id],
+  ([applicationId, navigate, framePanelId], _, onCleanup) => {
     let current = true;
     onCleanup(() => { current = false; });
     if (!framePanelId) {
       frameManifest.value = null;
       return;
     }
+    const activeUse = use.value;
     // Beside a conversation (unframed), load the frame panel's manifest so declared deep-link defaults
     // populate `frameState` even when omitted from the URL (and empty overrides decode against frame types).
-    if (!navigate || !resolvedUse) return;
-    void readApplicationFrameManifest(applicationId, resolvedUse, framePanelId).then((manifest) => {
+    if (!navigate || !activeUse) return;
+    void readApplicationFrameManifest(applicationId, activeUse, framePanelId).then((manifest) => {
       if (!current) return;
       frameManifest.value = { framePanelId, manifest };
     }, () => {
@@ -336,7 +470,7 @@ function hasFrameParams(address: string): boolean {
   return false;
 }
 const activeFrameManifest = computed(() =>
-  resolution.value?.framePanelId && frameManifest.value?.framePanelId === resolution.value.framePanelId
+  currentResolution.value?.framePanelId && frameManifest.value?.framePanelId === currentResolution.value.framePanelId
     ? frameManifest.value.manifest
     : undefined,
 );
@@ -364,20 +498,32 @@ const frameState = computed((): FrameState => {
   // While the next entry's answer is coming, the frame that stands is still the one that reported.
   return Object.keys(base).length ? base : named;
 });
-const catalogApp = computed(() => catalog.applications.value.find((app) => app.id === props.applicationId) ?? null);
-const framed = computed(() => !props.navigate && Boolean(resolution.value?.framePanelId));
+const framed = computed(() => !props.navigate && Boolean(currentResolution.value?.framePanelId));
 /** True while this full-page route is framed or awaiting admission for an application that declares a frame panel. */
-const expectingFrame = computed(() => !props.navigate && Boolean(resolution.value?.framePanelId ?? (!answered.value && catalogApp.value?.framePanelId)));
+const expectingFrame = computed(() => {
+  if (props.navigate) return false;
+  if (currentResolution.value) return Boolean(currentResolution.value.framePanelId);
+  return !deniedPath.value && Boolean(catalogApp.value?.framePanelId);
+});
 useApplicationFrame(() => expectingFrame.value);
-let frameFor: { framePanelId: string; port: PanelHostPort } | null = null;
 const framePort = computed(() => {
-  const answer = resolution.value;
+  const answer = currentResolution.value;
   if (!framed.value || !answer?.framePanelId) return null;
   if (frameFor?.framePanelId !== answer.framePanelId)
     frameFor = { framePanelId: answer.framePanelId, port: markRaw(framePanelHost(props.applicationId, answer.use, answer.framePanelId, changed)) };
   return frameFor.port;
 });
-const frameContext = computed(() => resolution.value ? applicationFrameContextOf(resolution.value) : null);
+watch(framePort, (next) => {
+  if (!next) frameSurfaceReady.value = true;
+});
+const frameContext = computed(() => {
+  const answer = currentResolution.value;
+  if (!answer) return null;
+  return applicationFrameContextOf({
+    ...answer,
+    use: use.value ?? answer.use,
+  });
+});
 /**
  * Host-supplied menu groups for hybrid built-in applications (such as Ontology Manager while native pages still coexist
  * alongside panel entries); null for pure panel applications, which read Java's `entryMenu` directly.
@@ -419,7 +565,7 @@ const currentEntry: NonNullable<DirectPanelRun["currentEntry"]> = {
 const frameAddress = computed(() => openedPath.value);
 /** The frame reported its live deep-linkable state (including defaults omitted from the URL). */
 function reportFrameState(state: FrameState) {
-  const framePanelId = resolution.value?.framePanelId;
+  const framePanelId = currentResolution.value?.framePanelId;
   if (!framePanelId) return;
   if (frameManifest.value?.framePanelId !== framePanelId) {
     const cached = cachedApplicationFrameManifest(props.applicationId, framePanelId);
@@ -431,7 +577,7 @@ function reportFrameState(state: FrameState) {
 /** The frame reported its address: the URL carries its non-default params as `frame.<name>`, leaving entry state intact. */
 function reportFrameAddress(input: DisplayPageAddressInput) {
   const reported = panelAddressState(input.address) as FrameState;
-  const framePanelId = resolution.value?.framePanelId;
+  const framePanelId = currentResolution.value?.framePanelId;
   if (framePanelId) {
     if (frameManifest.value?.framePanelId !== framePanelId) {
       const cached = cachedApplicationFrameManifest(props.applicationId, framePanelId);
@@ -445,15 +591,15 @@ function reportFrameAddress(input: DisplayPageAddressInput) {
   if (next !== opened.value) void router.replace(next);
 }
 /** An entry opened without `frame.*` params while the frame stands: its address takes the frame's non-default state back. */
-watch([opened, () => resolution.value?.framePanelId], () => {
-  const kept = lastFrame.value;
-  const framePanelId = resolution.value?.framePanelId;
+watch([opened, () => currentResolution.value?.framePanelId], () => {
+  const keptFrame = lastFrame.value;
+  const framePanelId = currentResolution.value?.framePanelId;
   // Another frame, or none, answers for this application now: the state kept was another frame's.
-  if (kept && resolution.value && kept.framePanelId !== framePanelId) lastFrame.value = null;
-  if (!framed.value || !kept || kept.framePanelId !== framePanelId || !Object.keys(kept.addressState).length) return;
+  if (keptFrame && currentResolution.value && keptFrame.framePanelId !== framePanelId) lastFrame.value = null;
+  if (!framed.value || !keptFrame || keptFrame.framePanelId !== framePanelId || !Object.keys(keptFrame.addressState).length) return;
   if (hasFrameParams(opened.value)) return;
   const { path, state, query } = parseApplicationPanelAddress(opened.value);
-  void router.replace(applicationPanelAddress(path, { frame: kept.addressState, state, query }));
+  void router.replace(applicationPanelAddress(path, { frame: keptFrame.addressState, state, query }));
 });
 
 /** What the panel host says to the reader, in the platform's language. */
@@ -542,7 +688,26 @@ const requestedState = computed(() => panelAddressState(opened.value));
  */
 const pageName = computed(() => localizedApplicationText(use.value?.names, locale.value) ?? "");
 
-const shownPage = computed(() => kept.value.find((page) => page.use.id === use.value?.id) ?? null);
+const shownPage = computed(() =>
+  kept.value.find((page) => page.use.id === use.value?.id && page.use.panelId === use.value?.panelId) ?? null,
+);
+watch(shownPage, (next) => {
+  if (!next) host.value = null;
+});
+/**
+ * The visually displayed page: the logical current page once its surface is ready, otherwise the retained previous
+ * page of the same application for up to TRANSITION_PLACEHOLDER_DELAY_MS, else null (loading placeholder).
+ */
+const displayedPage = computed<KeptPage | null>(() => {
+  const current = shownPage.value;
+  if (current?.surfaceReady) return current;
+  const retained = retainedPage.value;
+  if (current && retained && !transitionTimedOut.value && retained.surfaceReady) {
+    const alive = kept.value.find((page) => toRaw(page) === toRaw(retained));
+    if (alive) return alive;
+  }
+  return null;
+});
 
 /**
  * The page the reader opens becomes the shown one: a kept page as it was left, or a new instance. At `KEPT_PAGES`, the
@@ -553,15 +718,22 @@ const shownPage = computed(() => kept.value.find((page) => page.use.id === use.v
  * says what it showed when it was left.
  */
 watch(use, (next, previous) => {
-  // Java's answer naming the page the catalog opened is the same page; one it rebinds ends that page's check.
+  // Same entry bound to the same panel: nothing to switch or rebuild.
   if (next && previous?.id === next.id && previous.panelId === next.panelId) return;
   // A page left with unsaved changes was left through the unsaved-changes question: its changes go with its instance.
   const left = previous && previous.id !== next?.id ? kept.value.find((page) => page.use.id === previous.id) : undefined;
   if (left?.dirty) kept.value = kept.value.filter((page) => page !== left);
+  // Drop any kept instance for the same use relation if it was rebound to a different panel.
+  if (next) {
+    kept.value = kept.value.filter((page) => !(page.use.id === next.id && page.use.panelId !== next.panelId));
+  }
   shownSkill.value = null;
-  if (!next) return;
+  if (!next) {
+    clearTransition();
+    return;
+  }
   performance.mark("ontomato:panel-page-opened", { detail: { applicationId: props.applicationId, useId: next.id } });
-  const found = kept.value.find((page) => page.use.id === next.id);
+  const found = kept.value.find((page) => page.use.id === next.id && page.use.panelId === next.panelId);
   if (found) found.lastShown = ++showings;
   else if (kept.value.length >= KEPT_PAGES) {
     const [oldest] = [...kept.value].sort((one, other) => one.lastShown - other.lastShown);
@@ -569,6 +741,21 @@ watch(use, (next, previous) => {
   }
   const page = found ?? openPage(next);
   if (!found) kept.value = [...kept.value, page];
+
+  const wasTimedOut = transitionTimedOut.value;
+  clearTransitionTimer();
+  transitionTimedOut.value = false;
+  if (found && found.surfaceReady) {
+    retainedPage.value = null;
+  } else {
+    const candidate = left && !left.dirty && left.surfaceReady ? left : (!wasTimedOut ? retainedPage.value : null);
+    const alive = candidate && toRaw(candidate) !== toRaw(page)
+      ? kept.value.find((entry) => toRaw(entry) === toRaw(candidate) && entry.surfaceReady) ?? null
+      : null;
+    retainedPage.value = alive;
+    if (!page.surfaceReady) ensureTransitionTimer();
+  }
+
   // A kept page shown again is checked again, and its page skill with it; a new page tells it once its panel is read.
   if (found) found.rechecking = true;
   // Its bare address opens a kept page as it was left: the address takes the state the page is at.
@@ -611,14 +798,22 @@ function openPage(use: ApplicationPanelUse): KeptPage {
     dirty: false,
     pageSkill: null,
     rechecking: false,
+    surfaceReady: true,
     lastShown: ++showings,
   };
   page.port = markRaw(platformPanelHost(
-    props.applicationId, use, changed, undefined, answered.value ? undefined : resolving ?? undefined, (context) => reportPageSkill(page, context),
+    props.applicationId, use, changed, undefined, (context) => reportPageSkill(page, context),
     // Beside a conversation, an address the panel opens goes to the conversation's display; at full page, the router.
     props.navigate,
   ));
   return page;
+}
+
+function reportSurfaceReady(page: KeptPage, ready: boolean) {
+  page.surfaceReady = ready;
+  if (!shownPage.value || toRaw(page) !== toRaw(shownPage.value)) return;
+  if (ready) clearTransition();
+  else ensureTransitionTimer();
 }
 
 /**
@@ -635,7 +830,9 @@ function reportPageSkill(page: KeptPage, context: PageSkillContext) {
 /** A kept page shown again whose use relation was withdrawn or bound elsewhere ends; the page opens from the current relations. */
 function withdraw(page: KeptPage) {
   kept.value = kept.value.filter((other) => other !== page);
-  rereads.value += 1;
+  if (retainedPage.value && toRaw(retainedPage.value) === toRaw(page)) clearTransition();
+  const path = entryPath.value;
+  if (path) void requestEntryResolution(props.applicationId, path, { blocking: true });
 }
 
 /**
@@ -671,8 +868,9 @@ function reportDirty(page: KeptPage, dirty: boolean) {
     <template v-if="!failure">
       <PanelHost
         v-if="framePort"
+        v-show="frameSurfaceReady"
         ref="frameHost"
-        key="frame"
+        :key="`${props.applicationId}:${currentResolution?.framePanelId}`"
         class="panel-application-frame"
         :port="framePort"
         :labels="labels"
@@ -683,13 +881,27 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         :history-back="false"
         @display-address="reportFrameAddress"
         @display-state="reportFrameState"
+        @surface-ready="frameSurfaceReady = $event"
       />
+      <div
+        v-if="framePort && !frameSurfaceReady && !missing"
+        class="panel-application-loading"
+        role="status"
+        aria-busy="true"
+        :aria-label="t('common.loading')"
+        data-panel-loading-placeholder
+      >
+        <div class="panel-application-loading-inner">
+          <ElSkeleton :rows="4" animated />
+          <span class="panel-application-loading-text">{{ t("common.loading") }}</span>
+        </div>
+      </div>
       <div v-if="framePort" ref="holder" class="panel-entry-holder">
         <EntryUnit ref="unit">
           <PanelHost
             v-for="page in kept"
-            v-show="page === shownPage"
-            :key="page.use.id"
+            v-show="page === displayedPage"
+            :key="`${page.use.id}:${page.use.panelId}`"
             :ref="(instance) => { if (page === shownPage) host = instance as ShownInstance | null; }"
             :class="{ 'panel-host-page': !props.navigate }"
             :port="page.port"
@@ -707,9 +919,23 @@ function reportDirty(page: KeptPage, dirty: boolean) {
             @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
             @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
             @context="(context: PageContext) => reportContext(page, context)"
+            @surface-ready="(ready: boolean) => reportSurfaceReady(page, ready)"
             @reopened="markReopened(page)"
             @withdrawn="withdraw(page)"
           />
+          <div
+            v-if="frameSurfaceReady && !missing && !displayedPage"
+            class="panel-application-loading"
+            role="status"
+            aria-busy="true"
+            :aria-label="t('common.loading')"
+            data-panel-loading-placeholder
+          >
+            <div class="panel-application-loading-inner">
+              <ElSkeleton :rows="4" animated />
+              <span class="panel-application-loading-text">{{ t("common.loading") }}</span>
+            </div>
+          </div>
           <template v-if="!props.navigate && ((shownPage && shownSkill) || composerProblem)" #foot>
             <PageComposer
               v-if="shownPage && shownSkill"
@@ -722,11 +948,24 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           </template>
         </EntryUnit>
       </div>
+      <div
+        v-else-if="expectingFrame && !missing"
+        class="panel-application-loading"
+        role="status"
+        aria-busy="true"
+        :aria-label="t('common.loading')"
+        data-panel-loading-placeholder
+      >
+        <div class="panel-application-loading-inner">
+          <ElSkeleton :rows="4" animated />
+          <span class="panel-application-loading-text">{{ t("common.loading") }}</span>
+        </div>
+      </div>
       <template v-else-if="!expectingFrame">
         <PanelHost
           v-for="page in kept"
-          v-show="page === shownPage"
-          :key="page.use.id"
+          v-show="page === displayedPage"
+          :key="`${page.use.id}:${page.use.panelId}`"
           :ref="(instance) => { if (page === shownPage) host = instance as ShownInstance | null; }"
           :class="{ 'panel-host-page': !props.navigate }"
           :port="page.port"
@@ -744,9 +983,23 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
           @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
           @context="(context: PageContext) => reportContext(page, context)"
+          @surface-ready="(ready: boolean) => reportSurfaceReady(page, ready)"
           @reopened="markReopened(page)"
           @withdrawn="withdraw(page)"
         />
+        <div
+          v-if="!missing && !displayedPage"
+          class="panel-application-loading"
+          role="status"
+          aria-busy="true"
+          :aria-label="t('common.loading')"
+          data-panel-loading-placeholder
+        >
+          <div class="panel-application-loading-inner">
+            <ElSkeleton :rows="4" animated />
+            <span class="panel-application-loading-text">{{ t("common.loading") }}</span>
+          </div>
+        </div>
         <!-- Offered once the panel's read named the page's skill: the agents are the ones that skill reaches. -->
         <div v-if="!props.navigate && ((shownPage && shownSkill) || composerProblem)" class="panel-page-foot platform-page-gutter">
           <PageComposer
@@ -788,6 +1041,33 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   flex-shrink: 0;
   margin: 0;
   padding-block: var(--page-content-gap);
+}
+.panel-application-loading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  padding: var(--page-content-gap, 16px) var(--page-gutter, 20px);
+  background: var(--el-bg-color);
+  box-sizing: border-box;
+}
+.panel-application-loading-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md, 12px);
+  width: 100%;
+  max-width: 960px;
+}
+.panel-application-loading-text {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm, 13px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-application-loading :deep(.el-skeleton__item) {
+    animation: none;
+  }
 }
 /*
  * The page composer floats at the bottom edge of the application area without shortening the panel's content box,

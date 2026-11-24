@@ -1,5 +1,6 @@
 import type { ProductDefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { describe, expect, it, vi } from "vitest";
+import { flushPromises, mount } from "@vue/test-utils";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,7 @@ import { effectScope, nextTick, ref, shallowRef } from "vue";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import { panelAddress, panelAddressState, PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
+import PanelHost from "../PanelHost.vue";
 import {
   panelFrameDocument,
   usePanelInstance,
@@ -790,5 +792,35 @@ describe("the panel host", () => {
     expect(fillCalls).toEqual([{ member: "taskForm", values: { name: "Nightly" } }]);
     expect(actionCalls).toEqual([{ operation: "taskForm.save", agentRun }]);
     scope.stop();
+  });
+
+  it("emits surface-ready(false) on mount and surface-ready(true) once a direct surface mounts without an admitted gate", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    let releaseSource!: () => void;
+    const sourceGate = new Promise<void>((resolve) => { releaseSource = resolve; });
+    const basePort = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] }).port("use-a");
+    const port: PanelHostPort = {
+      ...basePort,
+      async source() {
+        await sourceGate;
+        return basePort.source();
+      },
+    };
+    const wrapper = mount(PanelHost, {
+      props: {
+        port,
+        labels,
+        language: { locale: "en", fallback: "en" },
+        address: "/applications/app-a/a/schedules",
+      },
+    });
+    expect(wrapper.emitted("surface-ready")).toEqual([[false]]);
+
+    releaseSource();
+    await flushPromises();
+    expect(wrapper.emitted("surface-ready")).toEqual([[false], [true]]);
+    expect(wrapper.find(".panel-host-direct").exists()).toBe(true);
+    expect((wrapper.get(".panel-host-direct").element as HTMLElement).style.display).toBe("");
+    wrapper.unmount();
   });
 });

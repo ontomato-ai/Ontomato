@@ -84,6 +84,8 @@ const emit = defineEmits<{
   reopened: [];
   /** Shown again, the page is no longer its application's: its use relation was withdrawn or bound elsewhere. */
   withdrawn: [];
+  /** Whether this host has mounted a visible panel surface (direct component, frame document, or error alert). */
+  "surface-ready": [ready: boolean];
 }>();
 
 const shellLeave = useOptionalLeaveConfirmation();
@@ -166,6 +168,8 @@ watch(view.address, (address) => emit("display-address", { kind: "state", addres
 watch(view.state, (state) => emit("display-state", state), { immediate: true });
 watch(view.displayLoad, (load) => emit("display-loaded", load));
 watch(view.dirty, (dirty) => emit("display-dirty", dirty), { flush: "sync", immediate: true });
+const surfaceReady = computed(() => Boolean(view.direct.value || view.document.value || view.error.value));
+watch(surfaceReady, (ready) => emit("surface-ready", ready), { immediate: true });
 
 const operations = computed(() =>
   view.operations.value.map((operation) => ({
@@ -185,23 +189,20 @@ defineExpose({ ...view, operations });
     <!-- A host notice stands above the content box so the box height adjusts around it and never scrolls the notice. -->
     <p
       v-if="!view.error.value && view.direct.value && view.notice.value"
-      v-show="view.admitted.value"
       role="status"
       class="panel-host-notice"
     >
       {{ view.notice.value }}
     </p>
-    <!-- Drawn while Java's answer is coming, so its members read at once; shown only once that answer names the page. -->
     <div
       v-if="!view.error.value && view.direct.value"
-      v-show="view.admitted.value"
       class="panel-host-direct"
       :data-panel-instance="view.instance"
     >
       <div :ref="placeCoded" class="panel-host-coded" />
     </div>
     <iframe
-      v-else-if="!view.error.value && view.document.value && view.admitted.value"
+      v-else-if="!view.error.value && view.document.value"
       ref="frame"
       class="panel-host-frame"
       :title="title ?? label"
