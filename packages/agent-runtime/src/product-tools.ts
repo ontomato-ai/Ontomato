@@ -18,33 +18,41 @@ export function productToolDeclarations(
 export function productTools(request: RuntimeStartRunRequest, runId: string): PlatformTool[] {
   const definitions = request.definition.productTools ?? [];
   if (!definitions.length) return [];
-  const root = request.environment.values.ONTOMATO_WORKBENCH_URL;
-  const credential = request.environment.secrets.ONTOMATO_PRODUCT_CALLBACK;
+  const callback = request.businessCallbacks?.product;
+  const root = callback?.baseUrl ?? request.environment.values.ONTOMATO_WORKBENCH_URL;
+  const credential = callback?.credential ?? request.environment.secrets.ONTOMATO_PRODUCT_CALLBACK;
   if (!root || !credential) throw new Error("Product tool callback delegation is missing");
   const base = new URL(root);
   if (!["http:", "https:"].includes(base.protocol) || base.search || base.hash || base.username || base.password) {
     throw new Error("Invalid product callback origin");
   }
-  return definitions.map((definition) => ({
-    declaration: {
-      name: definition.name,
-      description: definition.description,
-      parameters: definition.inputSchema as RuntimeJsonObject,
-    },
-    label: definition.name,
-    async execute(call) {
-      const response = await fetch(new URL(base.toString().replace(/\/$/, "") + definition.path), {
-        method: "POST",
-        redirect: "error",
-        headers: { "Content-Type": "application/json", tk: credential, "X-Ontomato-Run-Id": runId },
-        body: JSON.stringify({ parameters: call.args }),
-        signal: call.signal,
-      });
-      const result = await response.json();
-      return {
-        result: { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} },
-        isError: !response.ok,
-      };
-    },
-  }));
+  return definitions.map((definition) => {
+    const target = callback
+      ? new URL(definition.path, base.origin)
+      : new URL(base.toString().replace(/\/$/, "") + definition.path);
+    if (callback && !target.pathname.startsWith(base.pathname.replace(/\/$/, "") + "/"))
+      throw new Error("Product tool is outside its declared callback path");
+    return {
+      declaration: {
+        name: definition.name,
+        description: definition.description,
+        parameters: definition.inputSchema as RuntimeJsonObject,
+      },
+      label: definition.name,
+      async execute(call) {
+        const response = await fetch(target, {
+          method: "POST",
+          redirect: "error",
+          headers: { "Content-Type": "application/json", tk: credential, "X-Ontomato-Run-Id": runId },
+          body: JSON.stringify({ parameters: call.args }),
+          signal: call.signal,
+        });
+        const result = await response.json();
+        return {
+          result: { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} },
+          isError: !response.ok,
+        };
+      },
+    };
+  });
 }

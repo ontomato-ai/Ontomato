@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { Readable } from "node:stream";
+import type { ReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
 import { runtimeBusinessCallbacksSchema, type RuntimeBusinessCallback } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { runtimeIdSchema, runtimeKeySchema } from "@ontomato/contracts/agent-runtime-values";
@@ -35,6 +36,8 @@ export function businessCallbackEnvironment(sessionUrl: string, token: string) {
 
 /** A GET/POST relay can extend only the path already authorized for the active run. */
 export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispatcher, req: Request, res: Response) {
+  if (req.method !== "GET" && req.method !== "POST")
+    throw new RuntimeError(405, "METHOD_NOT_ALLOWED", "Skill callbacks accept GET and POST");
   const kind = callbackName.parse(req.params.kind);
   const scope = {
     hostId: runtimeKeySchema.parse(req.params.hostId),
@@ -44,7 +47,7 @@ export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispat
   const token = req.header("X-Ontomato-Callback-Credential") ?? (kind === "governance" ? req.header("tk") : undefined);
   const suffix = req.params[0] as string | undefined;
   const segments = suffix?.split("/") ?? [];
-  if (segments.some(part => part === "." || part === ".." || /[%\\\x00-\x1f\x7f]/u.test(part)))
+  if (segments.some(part => part === "." || part === ".." || part.includes("%") || part.includes("\\")))
     throw new RuntimeError(400, "INVALID_REQUEST", "Invalid skill callback path");
 
   await dispatcher.withBusinessCallback(scope, sessionId, kind, token, async (declaration, runId, signal) => {
@@ -69,7 +72,7 @@ export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispat
     try {
       const upstream = await fetch(target, {
         method: req.method, headers, redirect: "error",
-        body: req.method === "POST" ? req.body as Uint8Array<ArrayBuffer> | undefined : undefined,
+        body: req.method === "POST" && Buffer.isBuffer(req.body) ? req.body as Uint8Array<ArrayBuffer> : undefined,
         signal: AbortSignal.any([signal, client.signal]),
       });
       res.status(upstream.status);
@@ -79,7 +82,7 @@ export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispat
       }
       if (upstream.body) {
         res.flushHeaders();
-        await pipeline(Readable.fromWeb(upstream.body), res);
+        await pipeline(Readable.fromWeb(upstream.body as ReadableStream<Uint8Array>), res);
       } else {
         res.end();
       }

@@ -7,15 +7,11 @@ import { HarnessRegistry } from "./adapters/registry";
 import { RuntimeError } from "./errors";
 import type { ModelGatewayClient } from "./gateway-client";
 import { litellmEntry, type ModelLease, type ResolvedChatModel } from "./model";
-import { canonical, digest, type RuntimeStore, type Scope } from "./store";
-import type { OpenSessionSandbox } from "./sandbox";
+import { canonical, type RuntimeStore, type Scope } from "./store";
+import { sessionSandboxDirectory, type OpenSessionSandbox } from "./sandbox";
 import { businessCallbackEnvironment } from "./business-callback";
 import { openSkillCallback } from "./skill-callback";
 import { removeWorkerFiles } from "./worker";
-
-export function sessionDirectory(root: string, scope: Scope, sessionId: string) {
-  return path.join(root, "sessions", digest([scope, sessionId]));
-}
 
 export interface SessionEngineSandboxRequest {
   scope: Scope;
@@ -104,7 +100,7 @@ export class SessionEngines {
       this.callback ??= openSkillCallback(this.callbackDispatcher);
       const { endpoint: callback } = await this.callback;
       sandbox = await this.sandboxFactory!({
-        scope, sessionId: id, sessionDirectory: sessionDirectory(this.root, scope, id), workspaceId: workspaceId ?? null,
+        scope, sessionId: id, sessionDirectory: sessionSandboxDirectory(this.root, scope, id), workspaceId: workspaceId ?? null,
         skills: request.skills, limits: request.limits, gatewayUrl: lease.url, callback,
       });
       const processSpace = sandbox;
@@ -207,7 +203,7 @@ export class SessionEngines {
 
   async remove(scope: Scope, id: string) {
     await this.release(scope, id);
-    await removeWorkerFiles(sessionDirectory(this.root, scope, id));
+    await removeWorkerFiles(sessionSandboxDirectory(this.root, scope, id));
   }
 
   async close() {

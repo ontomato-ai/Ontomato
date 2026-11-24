@@ -93,11 +93,14 @@ it("writes an unknown outcome for an unfinished dispatched call before closing t
     return { event };
   });
   const fakeStore = { pool: {}, run: async () => ({ run: { sessionId: "session", workspaceCommit: null } }),
-    messages: async () => messages, append };
+    messages: async () => messages,
+    toolEvents: async () => [{ event: { type: "tool_execution_start", toolCallId: "dispatched", toolName: "wait", args: {} } }],
+    append };
   await RuntimeStore.prototype.finish.call(fakeStore as unknown as RuntimeStore, scope, "run", "aborted", "Run cancelled");
   const events = append.mock.calls.map(call => call[2]);
   expect(events.at(-1)!.type).toBe("agent_end");
   expect(events.find(event => event.type === "agent_end")).toMatchObject({ stopReason: "aborted", answerMessageId: null });
+  expect(events).toContainEqual(expect.objectContaining({ type: "tool_execution_end", toolCallId: "dispatched", outcome: "unknown" }));
   expect(messages[1].message).toMatchObject({ role: "toolResult", toolCallId: "dispatched", isError: true, outcome: "unknown" });
   expect(messages.at(-1)!.message).toMatchObject({ role: "assistant", stopReason: "aborted" });
 });
@@ -163,6 +166,7 @@ it("reports unknown in both live snapshot and history messages for a cancelled t
     run: async () => ({ run: runRecord, seq, streamId: "44444444-4444-4444-8444-444444444444" }),
     messages: async () => messages,
     consumedInputs: async () => [],
+    runPresentation: async () => new Map(),
     toolEvents: async () => toolEvents,
     artifacts: async () => [],
     append,

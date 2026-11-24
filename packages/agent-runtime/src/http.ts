@@ -363,7 +363,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     if(runtimeIdSchema.parse(req.query.actorId)!==entry.intent.channel.actor.id) throw new RuntimeError(403,"FORBIDDEN","Task authorization does not match");
     return {ctx,entry};
   }
-  registerSkillCallbackRoutes(app, runtime, route);
+  registerSkillCallbackRoutes(app, { runChannelCommand: (...args) => runtime.runChannelCommand(...args) }, route);
   app.post("/v1/channel/commands",route(async(req,res)=>{
     const ctx=gateway(req),body=z.object({command:agentChannelCommandSchema,actor:agentActorRefSchema,authority:agentAuthoritySchema,language:z.string().min(1),credential:agentCredentialSchema}).strict().parse(req.body);
     if(body.actor.domainId!==ctx.scope.domainId) throw new RuntimeError(403,"CROSS_DOMAIN","Actor belongs to another domain");

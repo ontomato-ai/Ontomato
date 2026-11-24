@@ -20,7 +20,7 @@ export async function openSkillCallback(dispatcher: SessionSkillCallbackDispatch
   app.get(paths, forward);
   app.post(paths, express.raw({ type: () => true, limit: "32mb" }), forward);
   app.use(express.json({ limit: "32mb" }));
-  registerSkillCallbackRoutes(app, dispatcher);
+  registerSkillCallbackRoutes(app, { sessionChannelCommand: (...args) => dispatcher.sessionChannelCommand(...args) });
   app.use((_req, _res, next) => next(new RuntimeError(404, "NOT_FOUND", "Skill callback endpoint not found")));
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (res.headersSent || res.destroyed) { res.end(); return; }

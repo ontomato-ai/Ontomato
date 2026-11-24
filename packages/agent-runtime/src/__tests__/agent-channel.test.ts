@@ -525,7 +525,7 @@ it("imports provider dataset bytes into the caller's ordinary output snapshots",
   const workspace=await mkdtemp(path.join(os.tmpdir(),"agent-delivery-"));
   try {
     await mkdir(path.join(workspace,"outputs"));
-    const receiver={active:new Map([[canonical([scope.hostId,scope.domainId,runId]),{sandbox:{workspace}}]])} as unknown as AgentRuntime;
+    const receiver={active:new Map([[canonical([scope.hostId,scope.domainId,runId]),{workspace}]])} as unknown as AgentRuntime;
     const bytes=Buffer.from(JSON.stringify({schema:"workbench.dataset.v2",execution:{receiptId:inputId},rows:[[0,false,null]]}));
     const delivered=await AgentRuntime.prototype.importAgentFile.call(receiver,scope,runId,inputId,{id:inputId,name:inputId+".dataset.json"},bytes);
     const files=new ArtifactFiles(path.join(workspace,"blobs"));

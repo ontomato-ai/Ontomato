@@ -995,20 +995,28 @@ export class RuntimeStore {
     workspaceCommit?: string | null,
   ) {
     const { run } = await this.run(scope, id);
-    let messages = (await this.messages(scope, run.sessionId, this.pool, id)).map((m) => m.message);
-    // Settle dispatched calls before closing the run, including restart recovery.
-    const answered = new Set(messages.flatMap(m => m.role === "toolResult" ? [m.toolCallId] : []));
-    for (const message of messages) {
-      if (message.role !== "assistant") continue;
-      for (const part of message.content) {
-        if (part.type !== "toolCall" || answered.has(part.id)) continue;
-        await this.append(scope, id, {
-          type: "message_end", messageId: randomUUID(), messageSeq: 0, contextSeq: null,
-          message: { role: "toolResult", toolCallId: part.id, toolName: part.name,
-            isError: true, outcome: "unknown", timestamp: Date.now(), content: [{ type: "text",
-              text: "Execution ended before its result was recorded. Its external outcome is unknown. Do not repeat this action automatically." }] },
-        });
-      }
+    const unsaved = new Map<string, Extract<RuntimeAgentEvent, { type: "tool_execution_start" | "tool_execution_end" }>>();
+    for (const { event } of await this.toolEvents(scope, id, true)) {
+      if (event.type === "tool_execution_start" || event.type === "tool_execution_end")
+        unsaved.set(event.toolCallId, event);
+    }
+    // Persisted starts are the authority both at live stop and after a process restart.
+    for (const event of unsaved.values()) {
+      const { toolCallId, toolName } = event;
+      const result = event.type === "tool_execution_end" ? event : {
+        type: "tool_execution_end" as const,
+        toolCallId, toolName, isError: true, outcome: "unknown" as const,
+        result: { content: [{ type: "text" as const, text: unknownToolMessage }], details: { artifactIds: [] } },
+      };
+      if (event.type === "tool_execution_start") await this.append(scope, id, result);
+      await this.append(scope, id, {
+        type: "message_end", messageId: randomUUID(), messageSeq: 0, contextSeq: null,
+        message: {
+          role: "toolResult", toolCallId, toolName, isError: result.isError,
+          outcome: result.outcome ?? (result.isError ? "failure" : "success"),
+          content: result.result.content, details: result.result.details, timestamp: Date.now(),
+        },
+      });
     }
     let rows = await this.messages(scope, run.sessionId, this.pool, id);
     const opening = rows.find(row => row.message.role === "user" || row.message.role === "notification");
@@ -1016,7 +1024,7 @@ export class RuntimeStore {
       if (reason !== "aborted") reason = "error";
       errorMessage = [errorMessage, openingInputUnconfirmed].filter(Boolean).join(" ");
     }
-    messages = rows.map(m => m.message);
+    let messages = rows.map(m => m.message);
     const last = [...messages].reverse().find((m) => m.role === "assistant");
     if (
       reason &&

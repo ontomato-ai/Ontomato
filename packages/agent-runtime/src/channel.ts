@@ -485,7 +485,7 @@ export class AgentChannel {
     }, scope.domainId, this.credential(channel), signal));
     return {
       id: row.id,
-      message: await this.modelMessage(scope.domainId, row.message, isDirectUserRun(channel, run.sessionId)) as RuntimeMessage,
+      message: await this.modelMessage(scope.domainId, row.message, isDirectUserRun(channel, run.sessionId)),
       context: prepared.context ?? null,
     };
   }
@@ -513,11 +513,11 @@ export class AgentChannel {
   modelMessagesForRun(scope: Scope, run: RuntimeRun, openingMessageId: string, rows: MessageRow[]): Promise<Message[]> {
     const direct = run.channel !== undefined && isDirectUserRun(run.channel, run.sessionId);
     return Promise.all(rows.map(row => this.modelMessage(scope.domainId, row.message,
-      direct && row.runId === run.id && row.id !== openingMessageId)));
+      direct && row.runId === run.id && row.id !== openingMessageId))) as unknown as Promise<Message[]>;
   }
   /** Shape model context only; receipt records and host decision inputs remain unchanged. */
-  async modelMessage(domainId: string, message: RuntimeMessage, midRound = false): Promise<Message> {
-    if (message.role !== "notification") return message as Message;
+  async modelMessage(domainId: string, message: RuntimeMessage, midRound = false): Promise<RuntimeMessage> {
+    if (message.role !== "notification") return message;
     let content = message.content;
     if (message.kind === "agent-answer" && message.replyTo) {
       const question = await this.facts.question(domainId,message.replyTo);

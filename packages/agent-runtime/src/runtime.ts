@@ -54,7 +54,7 @@ import type {
   RuntimeToolResult,
 } from "@ontomato/contracts/agent-runtime-events";
 import type { RuntimeJsonObject, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
-import { RuntimeStore, digest, canonical, type MessageRow, type Scope } from "./store";
+import { RuntimeStore, digest, canonical, type Scope } from "./store";
 import {
   SkillRegistry,
   skillCatalog,
@@ -760,7 +760,7 @@ export class AgentRuntime {
     const { scope, run, controller } = active;
     const signal = controller.signal;
     let reason: RuntimeStopReason = "error";
-    let failure: string | null = null;
+    let failure: string | null;
     let closeMcp: (() => Promise<void>) | undefined;
     try {
       signal.throwIfAborted();
@@ -1031,7 +1031,7 @@ export class AgentRuntime {
       const previous = await Promise.all(rows
         .filter((r) => r.messageSeq > covered && r.runId !== null)
         .map((r) => this.channel.modelMessage(scope.domainId,r.message)));
-      const messages = recoverContext(previous);
+      const messages = recoverContext(previous as Message[]);
       if (summary)
         messages.unshift({
           role: "user",
@@ -1101,7 +1101,7 @@ export class AgentRuntime {
                 return undefined;
               }
             : undefined,
-          convertToLlm: (m) => Promise.all(m.map(message => this.channel.modelMessage(scope.domainId,message as RuntimeMessage))),
+          convertToLlm: (m) => Promise.all(m.map(message => this.channel.modelMessage(scope.domainId,message as RuntimeMessage))) as unknown as Promise<Message[]>,
           getFollowUpMessages: run.channel ? () => this.channel.followUp(scope, run) : undefined,
           getSteeringMessages: run.channel ? () => this.channel.steering(scope,run) : undefined,
           prepareRequest: async ({ context }) => {
@@ -1151,7 +1151,7 @@ export class AgentRuntime {
                       ? this.channel.modelMessage(scope.domainId, row.message)
                       : projected[index]!,
                   ));
-                  const prompt = `<conversation>\n${serializeConversation(summaryMessages)}\n</conversation>\n${summary ? `<previous-summary>\n${summary}\n</previous-summary>\n` : ""}${summary ? request.definition.compaction.updatePrompt : request.definition.compaction.summarizePrompt}`;
+                  const prompt = `<conversation>\n${serializeConversation(summaryMessages as Message[])}\n</conversation>\n${summary ? `<previous-summary>\n${summary}\n</previous-summary>\n` : ""}${summary ? request.definition.compaction.updatePrompt : request.definition.compaction.summarizePrompt}`;
                   const next = await completeSummary(
                     modelStream(
                       config,
