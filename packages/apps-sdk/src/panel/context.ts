@@ -5,7 +5,7 @@ import type { ApplicationEntryMenu, CurrentApplicationEntry, PanelDefinitionCont
 import type { PanelInstance } from "./instance";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
-import type { PanelFormAdapter, PanelFormHandle } from "./forms";
+import type { PanelFormAdapter, PanelFormAdapters, PanelFormHandle } from "./forms";
 import {
   adapterPart,
   platformObjectAdapter,
@@ -36,6 +36,17 @@ export const panelContextKey: InjectionKey<PanelContext> = Symbol("panel-context
 
 /** The projection one component is drawn as: its record and the values its slot passes it. */
 export const projectionKey: InjectionKey<ProjectionSlot> = Symbol("panel-projection");
+
+/**
+ * Form scope provided by official SDK overlays (`SdkDialog` / `SdkDrawer`). Forms mounted inside the overlay register
+ * their slot here so closing the overlay asks before hiding or destroying unsaved edits and discards only the forms
+ * owned by that overlay.
+ */
+export interface OverlayFormScope {
+  register(slot: string, forms?: PanelFormAdapters): () => void;
+}
+
+export const overlayFormScopeKey: InjectionKey<OverlayFormScope> = Symbol("ontomato.overlayFormScope");
 
 export interface ProjectionSlot {
   /** The slot of the panel's declaration this projection fills. */
@@ -181,7 +192,13 @@ export function useProjectionForm(adapter: PanelFormAdapter): void {
     Object.values(member.operationDrafts ?? {}).some((draft) => draft.slot === drawn.slot));
   if (!hasOwnOperation && !hasSiblingDraftOperation)
     throw new Error(`The projection in member '${drawn.slot}' names no operation, so its form cannot save`);
-  onBeforeUnmount(context.instance.forms.register(drawn.slot, adapter));
+  const unregisterForm = context.instance.forms.register(drawn.slot, adapter);
+  const overlayScope = inject(overlayFormScopeKey, null);
+  const unregisterOverlay = overlayScope?.register(drawn.slot, context.instance.forms);
+  onBeforeUnmount(() => {
+    unregisterOverlay?.();
+    unregisterForm();
+  });
 }
 
 /** One field of a form in this panel instance, as a field projection reads and edits it. */
