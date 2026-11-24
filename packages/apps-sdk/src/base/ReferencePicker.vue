@@ -28,6 +28,8 @@ const props = withDefaults(
     disabled?: boolean;
     /** Visual control size in standalone inline mode (`"small"` by default for compact toolbars). */
     size?: "small" | "default" | "large";
+    /** Optional record field key in `row.fields` used to group options in standalone inline mode (`data.rows`). */
+    groupBy?: string;
   }>(),
   {
     placeholder: undefined,
@@ -36,6 +38,7 @@ const props = withDefaults(
     clearable: true,
     disabled: false,
     size: "small",
+    groupBy: undefined,
   },
 );
 
@@ -71,6 +74,7 @@ defineSlots<{
     :clearable="props.clearable"
     :disabled="props.disabled"
     :size="props.size"
+    :group-by="props.groupBy"
     @update:selected="emit('update:selected', $event)"
   >
     <template v-if="$slots.option" #option="scope">

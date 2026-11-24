@@ -16,6 +16,13 @@
 | `selectedTypeRef` | 与 `selectedType` 双向同步的 `platform:OntologyType` 对象引用，供类型列表、类型选择器与类详情头/摘要使用 | 否 |
 | `query` | 搜索关键字（图形视图高亮已画出的节点；类型列表视图本地过滤类型） | 否 |
 | `relationKinds` | 过滤显示的关系种类列表（`platform:OntologyRelationKind` 引用数组；为空时显示全部关系种类） | 否 |
+| `visibleLayers` | 画布启用的本体层标识列表（如 `["fact", "capability"]`；为 `null` 时启用全部可用层），与 `graph` 双向同步 | 否 |
+| `expandedNodes` | 实例模式中除起点外已展开一跳邻居的节点引用列表，与 `graph` 双向同步，供智能体复现当前子图 | 否 |
+| `pickingStart` | 布尔值（默认 `false`），控制类型模式下是否展开「按类型挑选起点」候选区 | 否 |
+| `showUserPicker` | 布尔值（默认 `false`），控制实例模式下是否展开「选择起点用户」候选区 | 否 |
+| `typeObjectsSearch` | 「按类型挑选起点」对象列表（`typeObjects`）的搜索关键字 | 否 |
+| `userPickerSearch` | 「选择起点用户」列表（`userPicker`）的搜索关键字 | 否 |
+| `relationKindsSearch` | 关系种类过滤列表（`relationKindFilter`）的搜索关键字 | 否 |
 
 ## 页面投影成员
 
@@ -23,7 +30,7 @@
 | --- | --- | --- | --- |
 | `graph` | `OntologyGraph` | `platform:OntologyType`（`schema`、`counts`、`start`、`neighbors`） | 四层类型图谱与实例一跳展开画布 |
 | `typeList` | `ObjectList` | `platform:OntologyType.list` | 类型模式「按层分组」视图，按 `layer` 分组展示类型、可读计数/状态徽标与原因 |
-| `typePicker` | `ReferencePicker` | `platform:OntologyType.list` | 按类型挑选起点时的可过滤类型下拉选择器 |
+| `typePicker` | `ReferencePicker` | `platform:OntologyType.list` | 按类型挑选起点时的可过滤类型下拉选择器（按 `layer` 分组） |
 | `typeHeader` | `ObjectHeader` | `platform:OntologyType.record` | 类型模式右侧类详情标题、类型标识、计数状态徽标，并发布 `directoryPath`/`directoryName` 只读输出 |
 | `typeSummary` | `ObjectSummary` | `platform:OntologyType.record` | 类详情所属层、可读实例数与说明、一句话定义、创建与使用规则 |
 | `typeProperties` | `ObjectList` | `platform:OntologyType.properties` | 选中类型的公开属性表 |
@@ -52,31 +59,32 @@
 
 三种换法都可同时用：
 
-1. 右侧「起点」里的「切换起点用户」，展开 `userPicker` 挑一个可读用户；
-2. 选中图上任意节点后，点顶部「以选中节点为起点」，或在右侧 `relations` 里对任意对端节点点「设为起点」；
-3. 右侧「按类型挑选起点」里用 `typePicker` 选类型、在 `typeObjects` 里挑对象（类型模式下从类详情进入也是这一处）。
+1. 右侧「起点」里的「切换起点用户」，展开 `userPicker`（`showUserPicker: true`）挑一个可读用户；
+2. 选中图上任意节点后，点顶部「以选中节点为起点」，或在右侧 `relations` 里对任意对端节点点「设为起点」（即使该对端原本就是当前起点，也会把右侧选中切回该起点并保持实例模式）；
+3. 右侧「按类型挑选起点」里用按层分组的 `typePicker` 选类型、在 `typeObjects` 里挑对象（类型模式下点「选一个作图谱起点」将 `pickingStart` 置为 `true` 后也是这一处）。
 
-右侧「起点」里的「回到当前用户」清掉 `start` 和 `selected`，重新以当前登录用户为起点。
+自定义起点时，右侧「起点」区直接展示 `graph` 发布的 `startLabel`（名称）与 `startDetail`（类型与主键），同名对象始终可区分。点「回到当前用户」清掉 `start`、`selected` 与 `expandedNodes`，重新以当前登录用户为起点。
 
 ## 图上画什么、怎么筛
 
 - 实线是明确存储的引用关系（含「发布了」），虚线是能从记录推导出来的关系。
-- 画布上方的层筛选按事实 / 能力 / 治理 / 产品开关，图例只统计当前已画出的节点；同一层重新打开时会补读这一层的关系。
-- 类型模式图形视图工具栏中的「关系种类」筛选（`relationKindFilter`）与实例模式右侧 `relations` 内的关系种类过滤共用 `relationKinds` 状态，与 `graph` 双向联动。
+- 画布上方的层筛选按事实 / 能力 / 治理 / 产品开关，与公开状态 `visibleLayers` 双向联动；图例只统计当前已画出的节点；同一层重新打开时会补读这一层的关系。
+- 类型模式图形视图工具栏中的「关系种类」筛选（`relationKindFilter`）与实例模式右侧 `relations` 内的关系种类过滤共用 `relationKinds` 状态，与 `graph` 双向联动；类型模式工具栏收起态同时展示已选关系种类名称标签与一键清除按钮。
 - 「没有邻居」「无权读取某类关系」「读取失败」「尚未接入」分别显示，互不合并：某个关系被属主拒绝，不影响同一节点其他关系照常显示；零条边的正常关系组会折叠为计数提示。
 
 ## 搜索行为
 
 - 在图形视图下，搜索框（`query`）只把**已经画在画布上**的匹配节点高亮，不会去全库查找，也不会隐藏其他节点。
-- 在类型模式的「按层分组」列表视图下，同一个搜索框会对 `typeList` 进行本地即时过滤。
-- 要找还没画出来的对象：切到类型模式或展开「按类型挑选起点」，选定类型后在 `typeObjects` 中按关键字过滤并挑选。
+- 在类型模式的「按层分组」列表视图下，同一个搜索框会对 `typeList` 进行本地即时过滤；此时隐藏的 `graph` 不会挂载或发请求。
+- 要找还没画出来的对象：切到类型模式或展开「按类型挑选起点」，选定类型后在 `typeObjects` 中按 `typeObjectsSearch` 过滤并挑选。
 
 ## 选中节点与关系检视
 
-选中图上任意节点（包括投影、面板这类绑定平台类型的节点）后，右侧 `relations` 按关系种类分组列出它的全部入向与出向一跳关系：方向、存储/推导、对端对象与对端类型；关系带有绑定信息时一并显示绑定的读法、操作与经输入绑定标签。点对端名字可以切换 `selected`，点「设为起点」直接更新 `start` 并以它重新展开一跳关系。
+选中图上任意节点（包括投影、面板这类绑定平台类型的节点）后，右侧 `relations` 按关系种类分组列出它的全部入向与出向一跳关系：方向、存储/推导、对端对象与对端类型；关系带有绑定信息时一并显示绑定的读法、操作与经输入绑定标签。点对端名字可以切换 `selected`，点「设为起点」会把 `start` 与 `selected` 同步设为该对端节点并清空 `expandedNodes`，重新展开它的一跳关系（即使该对端原本已是 `start`，也会把右侧选中切回该起点）。
 
 ## 智能体可以怎么做
 
-- 读当前状态：模式、视图、起点、选中节点、选中类型都以扁平具名参数写在地址里，打开页面时也可以带上这些参数（例如 `?mode=type&view=list&selectedType=platform:Action` 或 `?selected=platform:Action~<id>`）直接切到类型/实例模式、图形/按层列表视图，或聚焦到某个类型或节点。
-- 清除选中或回到当前用户起点时，打开本页并把 `selected`、`start` 置为 `null`（或省略）即可。
+- 读当前状态或直达视图：模式、视图、起点、选中节点、选中类型以扁平具名参数写在地址里，打开页面时可带上参数（例如 `?mode=type&view=list&selectedType=platform:Action` 或 `?mode=instance&start=platform:User~u-1&selected=platform:Action~act-1`）。同时设置 `start` 与 `selected` 时不会互相覆盖；若仅传 `selected=B`（未传 `start`），右侧 `relations` 会直接查 `B` 的关系，画布仅在 `B` 已处于当前子图内时才会居中聚焦 `B`——要在画布上聚焦多跳外的对象，请同时设 `start=B`，或经 `expandedNodes` 逐跳展开。
+- 操控筛选、展开与候选区：在已打开的页面上调用 `setState` 可按需更新任意公开状态，例如切换层筛选（`visibleLayers: ["fact", "capability"]`）、展开指定节点的一跳邻居（`expandedNodes: [{ className, primaryKey }]`）、在实例模式下展开用户候选并搜索（`showUserPicker: true, userPickerSearch: "Alice"`）、在类型模式下展开按类型挑选起点并过滤对象（`pickingStart: true, selectedType: "platform:Action", typeObjectsSearch: "Refund"`），或过滤关系种类候选（`relationKindsSearch: "binds"`）。
+- 清除状态：在已打开的页面上调 `setState` 只修改本次传入的字段；要清除 `selected`、`start`、`relationKinds`、`visibleLayers` 或 `expandedNodes`，必须明确传 `null`（省略参数仅在新开裸地址时采用默认值）。
 - 刷新数据可点击页头右上角的刷新按钮，重新拉取全部投影数据。

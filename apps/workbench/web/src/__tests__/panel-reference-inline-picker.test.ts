@@ -580,3 +580,77 @@ it("inline paged rows mode (panelRecordQuery) forwards search to the owner's rea
     expect(container.querySelector(".sdk-inline-reference-picker .el-select__selected-item:not(.is-hidden)")?.textContent?.trim()).toBe("Teacher 21");
   });
 });
+
+it("groups inline rows by a generic record field (groupBy) preserving owner order and local filtering", async () => {
+  const groupedProjection: DirectProjection = {
+    ...meta,
+    id: "grouped-object-picker",
+    name: "Grouped object picker",
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: {},
+    outputs: { selected: { kind: "object", objectType: OBJECT_TYPE } },
+    config: { placeholder: "Pick subject", groupBy: "department" },
+    data: {
+      rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} },
+    },
+  };
+  const manifest: DirectPanelManifest = {
+    state: {
+      subject: { type: { kind: "object", objectType: OBJECT_TYPE }, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      picker: {
+        target: { projectionId: groupedProjection.id },
+        outputs: { selected: { state: "subject" } },
+      },
+    },
+  };
+
+  const { container, reads, instance } = mountPanel(manifest, { [groupedProjection.id]: groupedProjection }, () =>
+    ready([
+      { className: OBJECT_TYPE, primaryKey: "t-1", label: "Alice", fields: { department: "Mathematics" } },
+      { className: OBJECT_TYPE, primaryKey: "t-2", label: "Bob", fields: { department: "Physics" } },
+      { className: OBJECT_TYPE, primaryKey: "t-3", label: "Carol", fields: { department: "Mathematics" } },
+    ]),
+  );
+
+  await vi.waitFor(() => {
+    expect(container.querySelector(".sdk-inline-reference-picker")?.getAttribute("data-state")).toBe("ready");
+  });
+  expect(reads).toHaveLength(1);
+
+  const wrapper = container.querySelector<HTMLElement>(".sdk-inline-reference-picker .el-select__wrapper")!;
+  wrapper.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+  await vi.waitFor(() => {
+    const groupTitles = [...document.querySelectorAll<HTMLElement>(".el-select-group__title")].map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(groupTitles).toEqual(["Mathematics", "Physics"]);
+  });
+
+  const groups = [...document.querySelectorAll<HTMLElement>(".el-select-group__wrap")];
+  expect(groups[0]?.textContent).toContain("Alice");
+  expect(groups[0]?.textContent).toContain("Carol");
+  expect(groups[1]?.textContent).toContain("Bob");
+
+  // Local filter narrows visible groups and items without issuing extra reads.
+  const input = container.querySelector<HTMLInputElement>(".sdk-inline-reference-picker input.el-select__input")!;
+  input.value = "Bob";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => {
+    const visibleTitles = [...document.querySelectorAll<HTMLElement>(".el-select-group__title")].map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(visibleTitles).toEqual(["Physics"]);
+  });
+  expect(reads).toHaveLength(1);
+
+  const bobItem = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")].find((el) =>
+    el.textContent?.includes("Bob"),
+  )!;
+  bobItem.click();
+  await vi.waitFor(() => {
+    expect(instance.state.values.value.subject).toEqual({ className: OBJECT_TYPE, primaryKey: "t-2" });
+  });
+});

@@ -224,12 +224,25 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.deepEqual(declared.get("ObjectRefCard").outputs, { navigate: ontologyNode });
     assert.ok(declared.get("ObjectForm").bindsElement.includes("ObjectType:*"), "ObjectForm applies to customer object types");
     // A placement hands a graph its running inputs from the panel's state, which an inline member binds by these names.
+    const stringList = { kind: "list", items: { kind: "scalar", type: "string" } };
+    const ontologyNodeList = { kind: "list", items: ontologyNode };
     assert.deepEqual(declared.get("OntologyGraph").inputs, {
       mode: { kind: "scalar", type: "string" },
       start: ontologyNode,
       selected: ontologyNode,
       selectedType: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
+      visibleLayers: stringList,
+      expandedNodes: ontologyNodeList,
+    });
+    const platformRelationKindList = { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } };
+    assert.deepEqual(declared.get("OntologyGraph").outputs, {
+      selectedNode: ontologyNode,
+      selected: ontologyNode,
+      selectedType: { kind: "scalar", type: "string" },
+      visibleRelationKinds: platformRelationKindList,
+      visibleLayers: stringList,
+      expandedNodes: ontologyNodeList,
     });
     const relationKindList = { kind: "list", items: { kind: "scalar", type: "string" } };
     const anyObject = { kind: "object", objectType: "@any" };
@@ -298,6 +311,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const pickerPlaceholder = declared.get("ReferencePicker").config.find(prop => prop.name === "placeholder");
     assert.equal(pickerPlaceholder?.required, false);
     assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "clearable")?.required, false);
+    assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "group-by")?.required, false);
     const summaryShowTitle = declared.get("ObjectSummary").config.find(prop => prop.name === "show-title");
     assert.equal(summaryShowTitle?.required, false);
     assert.match(summaryShowTitle?.type ?? "", /boolean/);
@@ -320,6 +334,9 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     ]);
     assert.deepEqual(Object.keys(declared.get("ObjectGraph").readOnlyOutputs ?? {}).sort(), [
       "edgeCount", "error", "nodeCount", "pathHops", "pathMessage", "pathStatus", "status",
+    ]);
+    assert.deepEqual(Object.keys(declared.get("OntologyGraph").readOnlyOutputs ?? {}).sort(), [
+      "startDetail", "startLabel", "visibleRelationKindLabels",
     ]);
     assert.deepEqual(Object.keys(declared.get("ObjectRelations").readOnlyOutputs ?? {}).sort(), [
       "edgeCount", "label", "status",

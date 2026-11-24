@@ -77,6 +77,71 @@
           }
         },
         "deepLink": false
+      },
+      "visibleLayers": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        },
+        "deepLink": false
+      },
+      "expandedNodes": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "object-union",
+            "layers": [
+              "fact",
+              "capability",
+              "governance",
+              "product"
+            ],
+            "objectTypes": [
+              "platform:OntologyType"
+            ]
+          }
+        },
+        "deepLink": false
+      },
+      "pickingStart": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false,
+        "default": false
+      },
+      "showUserPicker": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false,
+        "default": false
+      },
+      "typeObjectsSearch": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false
+      },
+      "userPickerSearch": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false
+      },
+      "relationKindsSearch": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false
       }
     },
     "members": {
@@ -97,7 +162,9 @@
           "selected": "selected",
           "selectedType": "selectedType",
           "query": "query",
-          "visibleRelationKinds": "relationKinds"
+          "visibleRelationKinds": "relationKinds",
+          "visibleLayers": "visibleLayers",
+          "expandedNodes": "expandedNodes"
         },
         "config": {
           "showLayerFilter": true,
@@ -159,7 +226,8 @@
         "config": {
           "placeholderKey": "cm.chooseType",
           "clearable": true,
-          "size": "small"
+          "size": "small",
+          "groupBy": "layer"
         },
         "id": "builtin-product-ca2a3147-cba6-47aa-8413-bc9d2814856b"
       },
@@ -445,7 +513,8 @@
           "rows": "list"
         },
         "state": {
-          "checked": "relationKinds"
+          "checked": "relationKinds",
+          "search": "relationKindsSearch"
         },
         "config": {
           "layout": "list",
@@ -472,7 +541,8 @@
           }
         },
         "state": {
-          "selected": "start"
+          "selected": "start",
+          "search": "typeObjectsSearch"
         },
         "config": {
           "emptyText": "cm.pickEmpty"
@@ -495,7 +565,8 @@
           }
         },
         "state": {
-          "selected": "start"
+          "selected": "start",
+          "search": "userPickerSearch"
         },
         "config": {
           "emptyText": "cm.userEmpty"

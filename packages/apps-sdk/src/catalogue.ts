@@ -321,7 +321,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ReferencePicker",
     role: "control",
     meaning:
-      "Chooses a reference from the bound type's records or option catalogue in either of two modes. In form-field mode (when placed inside an `ObjectForm` field Vue slot such as `#field-skills`, `#field-modelSelection.modelId`, `#field-items.*.skillId`, or `#field`), it connects automatically to the enclosing form field and writes the owner's own value (a skill's whole reference, a model's key) into the form so the choice is saved and discarded with it; `options` finds choices, `selected` resolves the values already in the form, descriptions and empty defaults are shown, and unavailable values remain listed with the owner's reason. In standalone inline mode (when rendered outside a form field slot), it renders a compact, filterable single-select dropdown directly at the `<Projection>` site (suited for workbench toolbars such as path start/target pickers), reading either `data.rows` (`panelRecordList` filtered locally in memory with zero extra requests, or paged `panelRecordQuery` whose `search` parameter is forwarded to the owner's read) or `data.options` (`panelOptionList`, with optional `data.selected` to resolve held/unavailable values), and syncing the chosen `{ className, primaryKey }` (or `null` when cleared) through the `selected` output/member parameter; when data is forbidden or unreachable, the dropdown is disabled with a readable tooltip. Both modes expose an `#option` Vue slot to customize option rows.",
+      "Chooses a reference from the bound type's records or option catalogue in either of two modes. In form-field mode (when placed inside an `ObjectForm` field Vue slot such as `#field-skills`, `#field-modelSelection.modelId`, `#field-items.*.skillId`, or `#field`), it connects automatically to the enclosing form field and writes the owner's own value (a skill's whole reference, a model's key) into the form so the choice is saved and discarded with it; `options` finds choices, `selected` resolves the values already in the form, descriptions and empty defaults are shown, and unavailable values remain listed with the owner's reason. In standalone inline mode (when rendered outside a form field slot), it renders a compact, filterable single-select dropdown directly at the `<Projection>` site (suited for workbench toolbars such as path start/target pickers), reading either `data.rows` (`panelRecordList` filtered locally in memory with zero extra requests, or paged `panelRecordQuery` whose `search` parameter is forwarded to the owner's read, and optionally grouped by a record field via `groupBy`) or `data.options` (`panelOptionList`, with optional `data.selected` to resolve held/unavailable values), and syncing the chosen `{ className, primaryKey }` (or `null` when cleared) through the `selected` output/member parameter; when data is forbidden or unreachable, the dropdown is disabled with a readable tooltip. Both modes expose an `#option` Vue slot to customize option rows.",
     effects: "Reads the bound type's options or records as the reader; writes only the target form field in form-field mode, or the panel's `selected` state in standalone inline mode.",
     bindsElement: ["PlatformObjectType:*"],
     // Form-field mode uses `options` + `selected`; standalone inline mode uses either `rows` (local filter) or `options` (with optional `selected`).
@@ -415,8 +415,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OntologyGraph",
     role: "control",
     meaning:
-      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, keeping layer filter and viewport as internal view state, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit and relayout controls. The graph fills the height of the box its member is placed in and falls back to a 420px canvas height when that box has no definite height.",
-    effects: "Reads the bound graph source's schema, counts, starting node and one-hop neighbors as the reader; writes only the panel's own selection state.",
+      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, syncing `visibleLayers`, `visibleRelationKinds`, and `expandedNodes` bidirectionally with panel state while keeping dragged coordinates and viewport local, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit and relayout controls. Publishes `startLabel`, `startDetail`, and `visibleRelationKindLabels` as read-only outputs. The graph fills the height of the box its member is placed in and falls back to a 420px canvas height when that box has no definite height.",
+    effects: "Reads the bound graph source's schema, counts, starting node and one-hop neighbors as the reader; writes only the panel's own selection, layer filter, relation-kind filter, and expanded-nodes state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // Expanding from a node is what the graph does; the three overview reads it shows when a placement supplies them.
     data: {
@@ -426,13 +426,16 @@ export const components: readonly ComponentMetadata[] = [
       // The node the reader expands, and the layers and relation kinds the graph shows now.
       neighbors: { results: ["panelGraphNeighbors"], required: true, runtimeParams: ["node", "layers", "relationKinds"] },
     },
-    // What a placement hands the graph: how it draws, where instance mode starts, what is selected and what to highlight.
+    // What a placement hands the graph: how it draws, where instance mode starts, what is selected, what to highlight,
+    // which layers are visible, and which nodes are expanded.
     inputs: {
       mode: { kind: "scalar", type: "string" },
       start: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
       selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
       selectedType: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
+      visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
+      expandedNodes: { kind: "list", items: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
     },
     outputs: {
       selectedNode: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
@@ -440,6 +443,13 @@ export const components: readonly ComponentMetadata[] = [
       selectedType: { kind: "scalar", type: "string" },
       // The relation kinds drawn, read as well as written: a page's own kind filter and the graph follow one choice.
       visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
+      visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
+      expandedNodes: { kind: "list", items: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
+    },
+    readOnlyOutputs: {
+      startLabel: { kind: "scalar", type: "string" },
+      startDetail: { kind: "scalar", type: "string" },
+      visibleRelationKindLabels: { kind: "list", items: { kind: "scalar", type: "string" } },
     },
   }),
   defineComponentMeta({

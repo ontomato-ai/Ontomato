@@ -20,7 +20,7 @@ import {
 } from "@ontomato/foundation-ui/graph/g6";
 import { usePanelContext } from "../panel/context";
 import type { MemberDataState } from "../panel/direct";
-import { useMember, useMemberParam, useMemberRead, type PanelMemberContext } from "../panel/member";
+import { useMember, useMemberOutput, useMemberParam, useMemberRead, type PanelMemberContext } from "../panel/member";
 import { savePanelFile } from "../panel/save-file";
 import type {
   PlatformGraphEdge,
@@ -46,8 +46,11 @@ import {
  * platform capability map (M3: type mode + instance mode) and the object browser instance graph (M4: instance mode).
  *
  * Reads `schema`, `counts`, `start`, and `neighbors` through the member's named data port (in both direct and framed
- * panels). Keeps layer filters, expanded nodes, dragged coordinates and viewport as internal view state rather than
- * panel state. Node selection always writes complete `{ className, primaryKey }` identities through `instance.output`.
+ * panels). Syncs layer filters (`visibleLayers`), relation-kind filters (`visibleRelationKinds`), and expanded instance
+ * nodes (`expandedNodes`) through bidirectional member parameters so readers and agents share the same canvas state,
+ * while keeping dragged coordinates and viewport local to the canvas. Publishes `startLabel`, `startDetail`, and
+ * `visibleRelationKindLabels` as read-only outputs. Node selection always writes complete `{ className, primaryKey }`
+ * identities through `instance.output`.
  */
 const props = withDefaults(
   defineProps<{
@@ -120,6 +123,54 @@ const shownKinds = computed<ReadonlySet<string> | null>(() => {
   return new Set(held.map((kind) => (kind as { primaryKey: string }).primaryKey));
 });
 const kindShown = (relationKind: string) => shownKinds.value === null || shownKinds.value.has(relationKind);
+
+/**
+ * Bidirectional layer visibility state (`visibleLayers`, a list of layer IDs). When `null`/omitted, all available
+ * layers (or explicit `props.layers` when provided) are enabled.
+ */
+const visibleLayersParam = useMemberParam("visibleLayers");
+const paramVisibleLayers = computed<readonly string[] | null>(() => {
+  const held = visibleLayersParam.value.value;
+  if (held === null) return null;
+  if (!Array.isArray(held)) throw new Error("visibleLayers holds a list of layer identifiers");
+  return held.filter((item): item is string => typeof item === "string");
+});
+
+/**
+ * Bidirectional expanded instance nodes state (`expandedNodes`, a list of `{ className, primaryKey }` refs).
+ * Expanding a node writes back here; setting it externally expands the listed nodes in instance mode.
+ */
+const expandedNodesParam = useMemberParam("expandedNodes");
+const isExpandedNodesBound = computed(() => {
+  const memberDecl = panel.manifest.members[member.key];
+  return Boolean(memberDecl?.inputs?.expandedNodes || memberDecl?.outputs?.expandedNodes);
+});
+const paramExpandedNodes = computed<readonly PanelObjectValue[]>(() => {
+  const held = expandedNodesParam.value.value;
+  if (held === null) return [];
+  if (!Array.isArray(held)) throw new Error("expandedNodes holds a list of object references");
+  const list: PanelObjectValue[] = [];
+  const seen = new Set<string>();
+  for (const item of held) {
+    if (
+      item
+      && typeof item === "object"
+      && typeof (item as { className?: unknown }).className === "string"
+      && typeof (item as { primaryKey?: unknown }).primaryKey === "string"
+    ) {
+      const refItem: PanelObjectValue = {
+        className: (item as { className: string }).className,
+        primaryKey: (item as { primaryKey: string }).primaryKey,
+      };
+      const id = encodeGraphNodeId(refItem);
+      if (!seen.has(id)) {
+        seen.add(id);
+        list.push(refItem);
+      }
+    }
+  }
+  return list;
+});
 
 function nameNodes(nodes: readonly PlatformGraphNode[]) {
   const byType = new Map<string, { primaryKey: string; label: string }[]>();
@@ -245,10 +296,8 @@ const fetchedLayersByNode = shallowRef<Map<string, Set<string> | null>>(new Map(
 const relationStatusesByNode = shallowRef<Map<string, readonly PlatformGraphRelationStatus[]>>(new Map());
 const instancePositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 
-// Internal view state (deliberately excluded from panel state)
+// Local canvas view state (dragged coordinates, viewport, focus)
 const hasExplicitLayers = Array.isArray(props.layers) && props.layers.length > 0;
-const enabledLayers = shallowRef<Set<string>>(new Set(hasExplicitLayers ? props.layers! : []));
-const seenLayers = new Set<string>(hasExplicitLayers ? props.layers! : []);
 const manualPositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 const currentViewport = shallowRef<GraphCanvasViewport | null>(null);
 const focusedNodeId = ref<string | null>(null);
@@ -319,41 +368,76 @@ const hasDeclaredLayerSet = computed(() =>
   ),
 );
 
-watch(
-  availableLayers,
-  (layers) => {
-    if (hasExplicitLayers) return;
-    let changed = false;
-    const next = new Set(enabledLayers.value);
-    for (const layer of layers) {
-      if (!seenLayers.has(layer)) {
-        seenLayers.add(layer);
-        next.add(layer);
-        changed = true;
-      }
+const enabledLayers = computed<ReadonlySet<string>>(() => {
+  const param = paramVisibleLayers.value;
+  if (param !== null) return new Set(param);
+  if (hasExplicitLayers) return new Set(props.layers!);
+  return new Set(availableLayers.value);
+});
+
+watch(enabledLayers, (next, prev) => {
+  if (activeMode.value !== "instance" || !prev) return;
+  const added: string[] = [];
+  for (const layer of next) {
+    if (!prev.has(layer)) added.push(layer);
+  }
+  if (added.length === 0) return;
+  for (const nodeId of expandedNodes.value) {
+    const fetched = fetchedLayersByNode.value.get(nodeId);
+    if (fetched !== null && fetched !== undefined && added.some((layer) => !fetched.has(layer))) {
+      const node = instanceNodes.value.get(nodeId);
+      if (node) void expandInstanceNode({ className: node.className, primaryKey: node.primaryKey }, loadGeneration, false, true);
     }
-    if (changed) enabledLayers.value = next;
-  },
-  { immediate: true, flush: "sync" },
-);
+  }
+});
 
 function toggleLayer(layer: string) {
   const next = new Set(enabledLayers.value);
-  const adding = !next.has(layer);
-  if (adding) next.add(layer);
-  else next.delete(layer);
-  enabledLayers.value = next;
+  if (next.has(layer)) next.delete(layer);
+  else next.add(layer);
 
-  if (adding && activeMode.value === "instance") {
-    for (const nodeId of expandedNodes.value) {
-      const fetched = fetchedLayersByNode.value.get(nodeId);
-      if (fetched !== null && fetched !== undefined && !fetched.has(layer)) {
-        const node = instanceNodes.value.get(nodeId);
-        if (node) void expandInstanceNode({ className: node.className, primaryKey: node.primaryKey }, loadGeneration, false, true);
-      }
-    }
+  const ordered = availableLayers.value.filter((entry) => next.has(entry));
+  for (const entry of next) {
+    if (!ordered.includes(entry)) ordered.push(entry);
   }
+  const allEnabled = availableLayers.value.length > 0 && availableLayers.value.every((entry) => next.has(entry));
+  visibleLayersParam.set(allEnabled && !hasExplicitLayers ? null : ordered);
 }
+
+// ---- Read-only projection outputs ----
+const startNode = computed<PlatformGraphNode | null>(() =>
+  activeMode.value === "instance" && rootNodeId.value ? (instanceNodes.value.get(rootNodeId.value) ?? null) : null,
+);
+
+useMemberOutput("startLabel", () => startNode.value?.label || null);
+useMemberOutput("startDetail", () =>
+  startNode.value
+    ? `${typeDisplayName(startNode.value.className, undefined, (startNode.value as { typeLabel?: string }).typeLabel)} · ${startNode.value.primaryKey}`
+    : null,
+);
+
+const visibleRelationKindLabels = computed<string[]>(() => {
+  const held = visibleKindsParam.value.value;
+  if (!Array.isArray(held) || held.length === 0) return [];
+  const byId = new Map((typeSchema.value?.relationKinds ?? []).map((item) => [item.id, item]));
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const item of held) {
+    const id =
+      typeof item === "string"
+        ? item
+        : item && typeof item === "object" && typeof (item as { primaryKey?: unknown }).primaryKey === "string"
+          ? (item as { primaryKey: string }).primaryKey
+          : null;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const spec = byId.get(id);
+    labels.push(relationDisplayName(id, spec?.label, spec?.labelKey));
+  }
+  return labels;
+});
+
+useMemberOutput("visibleRelationKindLabels", () => visibleRelationKindLabels.value);
 
 function isLayerVisible(layer: string | undefined): boolean {
   if (!layer || availableLayers.value.length === 0) return true;
@@ -695,8 +779,9 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
 
     const nextExpanded = new Set(expandedNodes.value);
     nextExpanded.add(centerId);
+    const fetchedSet = !activeLayers || allLayersActive ? null : new Set(activeLayers);
     const nextFetched = new Map(fetchedLayersByNode.value);
-    nextFetched.set(centerId, !activeLayers || allLayersActive ? null : new Set(activeLayers));
+    nextFetched.set(centerId, fetchedSet);
     const nextStatuses = new Map(relationStatusesByNode.value);
     nextStatuses.set(centerId, result.relations);
 
@@ -709,9 +794,29 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
     focusedNodeId.value = centerId;
     if (isRoot) rootNodeId.value = centerId;
 
+    if (!isRoot && centerId !== rootNodeId.value) {
+      const alreadyDeclared = paramExpandedNodes.value.some((item) => encodeGraphNodeId(item) === centerId);
+      if (!alreadyDeclared) {
+        expandedNodesParam.set([
+          ...paramExpandedNodes.value,
+          { className: result.node.className, primaryKey: result.node.primaryKey },
+        ]);
+      }
+    }
+
     if (isRoot) {
       await nextTick();
       fitReadable();
+    }
+
+    // If additional layers were enabled while this request was in flight, backfill them once unlocked.
+    const needsBackfill =
+      activeMode.value === "instance"
+      && fetchedSet !== null
+      && [...enabledLayers.value].some((layer) => !fetchedSet.has(layer));
+    if (needsBackfill) {
+      expandingNodeIds.delete(nodeId);
+      void expandInstanceNode({ className: result.node.className, primaryKey: result.node.primaryKey }, generation, false, true);
     }
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
@@ -739,6 +844,9 @@ async function loadInstanceMode(generation: number) {
   manualPositions.value = new Map();
   rootNodeId.value = null;
   focusedNodeId.value = null;
+  if (!isExpandedNodesBound.value && paramExpandedNodes.value.length > 0) {
+    expandedNodesParam.set(null);
+  }
 
   try {
     let startRef: PanelObjectValue | null = props.start ? { className: props.start.className, primaryKey: props.start.primaryKey } : null;
@@ -758,6 +866,24 @@ async function loadInstanceMode(generation: number) {
       rootNodeId.value = startId;
     }
     await expandInstanceNode(startRef, generation, true);
+    if (generation !== loadGeneration) return;
+
+    let expandedExtra = false;
+    for (const extraRef of paramExpandedNodes.value) {
+      if (generation !== loadGeneration) return;
+      const extraId = encodeGraphNodeId(extraRef);
+      if (!expandedNodes.value.has(extraId)) {
+        await expandInstanceNode(extraRef, generation, false);
+        expandedExtra = true;
+      }
+    }
+    if (generation !== loadGeneration) return;
+    const selectedId = props.selected ? encodeGraphNodeId(props.selected) : null;
+    focusedNodeId.value = selectedId && instanceNodes.value.has(selectedId) ? selectedId : rootNodeId.value;
+    if (expandedExtra) {
+      await nextTick();
+      fitReadable();
+    }
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
     recordFailure(reason);
@@ -775,6 +901,29 @@ watch(
   () => [activeMode.value, props.start?.className ?? "", props.start?.primaryKey ?? ""] as const,
   () => reload(),
   { immediate: true },
+);
+
+watch(
+  () => paramExpandedNodes.value.map((item) => encodeGraphNodeId(item)).join("\u0000"),
+  async () => {
+    if (activeMode.value !== "instance" || !rootNodeId.value || loading.value) return;
+    const generation = loadGeneration;
+    const desired = paramExpandedNodes.value;
+    const desiredIds = new Set(desired.map((item) => encodeGraphNodeId(item)));
+    for (const expandedId of expandedNodes.value) {
+      if (expandedId !== rootNodeId.value && !desiredIds.has(expandedId)) {
+        reload();
+        return;
+      }
+    }
+    for (const extraRef of desired) {
+      if (generation !== loadGeneration) return;
+      const extraId = encodeGraphNodeId(extraRef);
+      if (!expandedNodes.value.has(extraId)) {
+        await expandInstanceNode(extraRef, generation, false);
+      }
+    }
+  },
 );
 
 watch(
