@@ -222,12 +222,14 @@ function setFrequency(next: FrequencyDraft) {
       :multiple="control.multiple"
       :filterable="control.allowCreate"
       :allow-create="control.allowCreate"
+      :clearable="!field.required && !control.multiple"
+      :value-on-clear="() => undefined"
       :default-first-option="control.allowCreate"
       :fit-input-width="control.options.some(optionNote)"
       :placeholder="control.placeholder ?? undefined"
       :disabled="off"
       class="sdk-form-field-wide"
-      @update:model-value="set($event)"
+      @update:model-value="$event === undefined ? controls.remove(path) : set($event)"
     >
       <el-option
         v-for="(option, index) in control.options"
