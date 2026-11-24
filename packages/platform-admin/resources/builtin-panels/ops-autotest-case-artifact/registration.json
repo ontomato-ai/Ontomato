@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ops-autotest-case-artifact",
+      "input": {
+        "name": "Case artifacts",
+        "description": "Inspect one autotest case's evaluation summary, evidence references, gaps, and artifact files."
+      }
+    }
+  ]
+}

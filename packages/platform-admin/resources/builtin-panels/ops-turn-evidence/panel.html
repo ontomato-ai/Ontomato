@@ -1,0 +1,302 @@
+<style>
+  [v-cloak] { display: none; }
+  .ops-turn-page {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    container: ops-turn-page / inline-size;
+  }
+  .ops-turn-page-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .ops-turn-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    box-sizing: border-box;
+  }
+  .ops-turn-layout {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+  .ops-turn-aside {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .ops-turn-detail-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .ops-turn-detail-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    min-width: 0;
+  }
+  .ops-turn-detail-title {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .ops-turn-detail-time {
+    flex: 0 0 auto;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+  .ops-turn-detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .ops-turn-detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    min-width: 0;
+    container: ops-turn-detail / inline-size;
+  }
+  .ops-turn-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .ops-turn-section-title {
+    margin: 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    line-height: var(--leading-sm);
+  }
+  .ops-turn-summary-card {
+    padding: var(--spacing-md);
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+  .ops-turn-raw {
+    margin-top: var(--spacing-xs);
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--sdk-fill-color-light);
+  }
+  .ops-turn-raw summary {
+    cursor: pointer;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+    font-weight: var(--font-medium);
+  }
+  .ops-turn-raw-content {
+    margin-top: var(--spacing-sm);
+    max-height: 20rem;
+    overflow: auto;
+  }
+  .ops-turn-files {
+    display: grid;
+    grid-template-columns: clamp(13rem, 28%, 18rem) minmax(0, 1fr);
+    min-height: 22rem;
+    max-height: 36rem;
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    overflow: hidden;
+  }
+  .ops-turn-file-tree {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-sm);
+    border-inline-end: 1px solid var(--ui-divider);
+    overflow: hidden;
+  }
+  .ops-turn-file-pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .ops-turn-file-path {
+    flex: 0 0 auto;
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-bottom: 1px solid var(--ui-divider);
+    color: var(--sdk-text-color-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ops-turn-file-viewer {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-md);
+    overflow: hidden;
+  }
+  .ops-turn-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    max-width: 26rem;
+    text-align: center;
+  }
+  .ops-turn-empty-hint {
+    margin: 0;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+    line-height: var(--leading-sm);
+  }
+  .ops-turn-fill {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+  @container ops-turn-page (max-width: 45rem) {
+    .ops-turn-body {
+      padding: var(--spacing-sm) var(--spacing-md) calc(var(--page-content-gap) + 56px);
+    }
+    .ops-turn-detail-top {
+      flex-wrap: wrap;
+    }
+  }
+  @container ops-turn-detail (max-width: 42rem) {
+    .ops-turn-files {
+      grid-template-columns: minmax(0, 1fr);
+      max-height: none;
+    }
+    .ops-turn-file-tree {
+      max-height: 14rem;
+      border-inline-end: 0;
+      border-bottom: 1px solid var(--ui-divider);
+    }
+    .ops-turn-file-viewer {
+      min-height: 18rem;
+    }
+  }
+</style>
+
+<div id="app" v-cloak class="ops-turn-page">
+  <page-header :title="t('panel.title')">
+    <template #actions>
+      <div class="ops-turn-page-actions">
+        <projection slot="buildTurn" @done="onBuildDone"></projection>
+        <sdk-button text :aria-label="t('panel.refresh')" @click="refresh">
+          {{ t("panel.refresh") }}
+        </sdk-button>
+      </div>
+    </template>
+  </page-header>
+
+  <div class="ops-turn-body">
+    <two-pane-layout
+      class="ops-turn-layout"
+      mode="split"
+      :selected="Boolean(selectedKey)"
+      :selection-key="selectedKey"
+      :back-label="t('panel.back')"
+      :empty-label="t('panel.selectHint')"
+      @back="clearSelection"
+    >
+      <template #aside>
+        <div class="ops-turn-aside">
+          <projection slot="turns" class="ops-turn-fill"></projection>
+        </div>
+      </template>
+
+      <template #header>
+        <div v-if="selectedKey" class="ops-turn-detail-header">
+          <div class="ops-turn-detail-top">
+            <div class="ops-turn-detail-title">
+              <projection slot="detailHeader" :fallback-title="selectedKey"></projection>
+            </div>
+            <div class="ops-turn-detail-time">
+              <projection slot="createdAt"></projection>
+            </div>
+          </div>
+          <div class="ops-turn-detail-actions">
+            <projection slot="diagnose" :disabled="hasEvidence !== true"></projection>
+            <projection slot="refreshTurn"></projection>
+            <projection slot="keepTurn"></projection>
+            <projection slot="unkeepTurn"></projection>
+            <projection slot="downloadTurn"></projection>
+            <projection slot="deleteTurn" @done="onDeleteDone"></projection>
+          </div>
+        </div>
+      </template>
+
+      <div v-if="selectedKey" class="ops-turn-detail-body">
+        <projection slot="evidenceBanner"></projection>
+
+        <section class="ops-turn-section">
+          <h2 class="ops-turn-section-title">{{ t("panel.detailsTitle") }}</h2>
+          <div class="ops-turn-summary-card">
+            <projection slot="detailSummary"></projection>
+          </div>
+        </section>
+
+        <section v-show="showGaps" class="ops-turn-section">
+          <h2 class="ops-turn-section-title">{{ t("panel.gapsTitle") }}</h2>
+          <projection slot="evidenceGaps"></projection>
+        </section>
+
+        <section v-show="hasEvidence !== false" class="ops-turn-section">
+          <h2 class="ops-turn-section-title">{{ t("panel.runsTitle") }}</h2>
+          <projection slot="evidenceRuns"></projection>
+          <details v-if="hasEvidence === true" class="ops-turn-raw">
+            <summary>{{ t("panel.rawReferences") }}</summary>
+            <div class="ops-turn-raw-content">
+              <projection slot="evidenceJson"></projection>
+            </div>
+          </details>
+        </section>
+
+        <section class="ops-turn-section">
+          <h2 class="ops-turn-section-title">{{ t("panel.filesTitle") }}</h2>
+          <div class="ops-turn-files">
+            <div class="ops-turn-file-tree">
+              <projection slot="fileTree" class="ops-turn-fill"></projection>
+            </div>
+            <div class="ops-turn-file-pane">
+              <div v-if="filePath" class="ops-turn-file-path" :title="filePath">{{ filePath }}</div>
+              <div class="ops-turn-file-viewer">
+                <projection slot="fileViewer" class="ops-turn-fill"></projection>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <template #empty>
+        <div class="ops-turn-empty">
+          <sdk-empty :description="t('panel.selectHint')"></sdk-empty>
+          <p class="ops-turn-empty-hint">{{ t("panel.selectSubhint") }}</p>
+        </div>
+      </template>
+    </two-pane-layout>
+  </div>
+</div>

@@ -14,8 +14,6 @@ export interface ObserveRouteOptions {
 
 const diagnosisPage: PageComponent = () =>
   import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.ObserveLayout);
-const turnEvidencePage: PageComponent = () =>
-  import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.TurnEvidencePage);
 const autotestPage: PageComponent = () =>
   import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.AutotestPage);
 const liveLogsPage: PageComponent = () =>
@@ -24,9 +22,9 @@ const dslTestPage: PageComponent = () =>
   import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.DslTestPage);
 
 /**
- * Native operations diagnosis routes still awaiting panel migration. Every route renders directly inside the shared
- * platform application frame (`builtin-product-platform-frame`) alongside already-migrated panel entries such as
- * `/ops/knowledge` and `/ops/feedback`, so the application keeps one menu and one persistent outer frame.
+ * Native operations diagnosis routes still awaiting Batch 2 panel migration, plus legacy deep-link redirects to the
+ * migrated built-in panels (`/ops/turn`, `/ops/results`, `/ops/autotest/case`, `/ops/knowledge`, `/ops/feedback`).
+ * Every route renders inside the shared platform application frame (`builtin-product-platform-frame`).
  */
 export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecordRaw[] {
   const baseMeta: RouteMeta = { ...options.meta, ownHeader: true };
@@ -40,24 +38,18 @@ export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecor
       meta: { ...baseMeta, page: routes.diagnosis.path },
     },
     {
-      ...routes.turn,
-      component: turnEvidencePage,
-      meta: { ...baseMeta, page: routes.turn.path },
-    },
-    {
       ...routes.turnDetail,
-      component: turnEvidencePage,
-      meta: { ...baseMeta, page: routes.turn.path },
+      redirect: (to) => {
+        const turnKey = typeof to.params.turnKey === "string" ? to.params.turnKey : "";
+        return turnKey
+          ? { path: routes.turn.path, query: { ...to.query, selected: turnKey } }
+          : { path: routes.turn.path };
+      },
     },
     {
       ...routes.test,
       component: autotestPage,
       meta: { ...baseMeta, page: routes.test.path },
-    },
-    {
-      ...routes.results,
-      component: autotestPage,
-      meta: { ...baseMeta, page: routes.results.path },
     },
     {
       ...routes.cases,
@@ -66,8 +58,13 @@ export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecor
     },
     {
       ...routes.caseDetail,
-      component: autotestPage,
-      meta: { ...baseMeta, page: routes.results.path },
+      redirect: (to) => {
+        const runId = typeof to.params.runId === "string" ? to.params.runId : "";
+        const caseId = typeof to.params.caseId === "string" ? to.params.caseId : "";
+        return runId && caseId
+          ? { path: "/ops/autotest/case", query: { ...to.query, selected: `${runId}::${caseId}` } }
+          : { path: routes.results.path };
+      },
     },
     {
       ...routes.logs,

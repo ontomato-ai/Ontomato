@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ops-turn-evidence",
+      "input": {
+        "name": "Turn evidence",
+        "description": "Collect, inspect, retain, download, and diagnose turn evidence workspaces and artifact files."
+      }
+    }
+  ]
+}

@@ -1,0 +1,668 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AutotestRun"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": ""
+      },
+      "verdict": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "all"
+      },
+      "caseDetailPath": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "external": true,
+        "default": "/ops/autotest/case"
+      }
+    },
+    "members": {
+      "runs": {
+        "component": "ObjectList",
+        "type": "platform:AutotestRun",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "selected",
+          "search": "search"
+        },
+        "config": {
+          "layout": "cards",
+          "statusField": "statusLabel",
+          "subtitleField": "summaryLine",
+          "subtitleLines": 2,
+          "fallbackToFirst": true,
+          "searchable": true,
+          "searchPlaceholder": "runs.searchPlaceholder",
+          "searchFields": [
+            "label",
+            "caseSetName",
+            "runId",
+            "statusLabel",
+            "keptLabel",
+            "summaryLine"
+          ],
+          "emptyText": "runs.empty",
+          "emptyHint": "runs.emptyHint",
+          "noMatchText": "runs.noMatch",
+          "showFooter": false,
+          "columns": [
+            {
+              "key": "keptLabel",
+              "labelKey": "runs.colRetention",
+              "kind": "tag",
+              "emptyKey": "common.dash"
+            },
+            {
+              "key": "startedAt",
+              "labelKey": "runs.colStartedAt",
+              "kind": "time",
+              "timeFormat": "relative"
+            }
+          ]
+        },
+        "name": "Test runs",
+        "description": "List of automatic test runs with case set name, status badge, retention flag, summary, and timestamp",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1001"
+      },
+      "runHeader": {
+        "component": "ObjectHeader",
+        "type": "platform:AutotestRun",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitleField": "runId",
+          "statusField": "statusLabel"
+        },
+        "name": "Test run header",
+        "description": "Selected test run title, status badge, run identifier, and read-only lifecycle outputs",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1002"
+      },
+      "runKept": {
+        "component": "TypedValue",
+        "type": "platform:AutotestRun",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "keptLabel",
+          "kind": "tag",
+          "emptyText": ""
+        },
+        "name": "Test run retention badge",
+        "description": "Displays the retention tag when the selected test run is marked as kept",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1003"
+      },
+      "runStartedAt": {
+        "component": "TypedValue",
+        "type": "platform:AutotestRun",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "startedAt",
+          "kind": "datetime",
+          "emptyKey": "common.dash"
+        },
+        "name": "Test run start time",
+        "description": "Localized start timestamp of the selected test run",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1004"
+      },
+      "runFinishedAt": {
+        "component": "TypedValue",
+        "type": "platform:AutotestRun",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "finishedAt",
+          "kind": "datetime",
+          "emptyKey": "common.dash"
+        },
+        "name": "Test run completion time",
+        "description": "Localized completion timestamp of the selected test run",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1005"
+      },
+      "runMetrics": {
+        "component": "MetricCard",
+        "type": "platform:AutotestRun",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "variant": "compact",
+          "columns": 6,
+          "items": [
+            {
+              "field": "total",
+              "labelKey": "metrics.total"
+            },
+            {
+              "field": "correct",
+              "labelKey": "metrics.correct",
+              "tone": "success"
+            },
+            {
+              "field": "wrong",
+              "labelKey": "metrics.wrong",
+              "tone": "danger"
+            },
+            {
+              "field": "abnormal",
+              "labelKey": "metrics.abnormal",
+              "tone": "warning"
+            },
+            {
+              "field": "accuracyRate",
+              "labelKey": "metrics.accuracyRate",
+              "tone": "info"
+            },
+            {
+              "field": "avgDuration",
+              "labelKey": "metrics.avgDuration"
+            }
+          ]
+        },
+        "name": "Test run summary metrics",
+        "description": "Owner-computed totals, verdict counts, accuracy rate, and average duration for the selected test run",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1006"
+      },
+      "keepRun": {
+        "component": "OperationButton",
+        "type": "platform:AutotestRun",
+        "target": "selected",
+        "operation": "autotestRun.keep",
+        "config": {
+          "type": "default",
+          "size": "small",
+          "hideWhenUnavailable": true
+        },
+        "name": "Keep test run",
+        "description": "Mark the selected test run as kept so retention cleanup preserves its artifacts",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1007"
+      },
+      "unkeepRun": {
+        "component": "OperationButton",
+        "type": "platform:AutotestRun",
+        "target": "selected",
+        "operation": "autotestRun.unkeep",
+        "config": {
+          "type": "default",
+          "size": "small",
+          "hideWhenUnavailable": true
+        },
+        "name": "Unkeep test run",
+        "description": "Remove the retention flag from the selected test run",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1008"
+      },
+      "downloadRun": {
+        "component": "OperationButton",
+        "type": "platform:AutotestRun",
+        "target": "selected",
+        "operation": "autotestRun.download",
+        "config": {
+          "type": "default",
+          "size": "small"
+        },
+        "name": "Download test run archive",
+        "description": "Download the selected test run results and case artifacts as a ZIP archive",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1009"
+      },
+      "deleteRun": {
+        "component": "OperationButton",
+        "type": "platform:AutotestRun",
+        "target": "selected",
+        "operation": "autotestRun.delete",
+        "config": {
+          "type": "danger",
+          "plain": true,
+          "size": "small",
+          "icon": "trash"
+        },
+        "name": "Delete test run",
+        "description": "Delete the selected test run after confirming impact; disabled with reason while the run is active",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1010"
+      },
+      "results": {
+        "component": "ObjectList",
+        "type": "platform:AutotestRun",
+        "target": "selected",
+        "data": {
+          "rows": {
+            "read": "results",
+            "params": {
+              "verdict": {
+                "state": "verdict"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "showChevron": true,
+          "showFooter": true,
+          "fallbackToFirst": false,
+          "emptyText": "results.empty",
+          "noMatchText": "results.noMatch",
+          "columns": [
+            {
+              "key": "caseId",
+              "labelKey": "results.colCaseId",
+              "width": 110
+            },
+            {
+              "key": "question",
+              "labelKey": "results.colQuestion",
+              "minWidth": 240,
+              "emptyKey": "common.dash"
+            },
+            {
+              "key": "statusLabel",
+              "labelKey": "results.colStatus",
+              "kind": "tag",
+              "width": 116
+            },
+            {
+              "key": "verdictLabel",
+              "labelKey": "results.colVerdict",
+              "kind": "tag",
+              "width": 104
+            },
+            {
+              "key": "durationText",
+              "labelKey": "results.colDuration",
+              "width": 96,
+              "align": "right"
+            },
+            {
+              "key": "reason",
+              "labelKey": "results.colReason",
+              "minWidth": 180,
+              "emptyKey": "common.dash"
+            }
+          ],
+          "rowActions": {
+            "maxVisible": 1,
+            "items": [
+              {
+                "kind": "local",
+                "id": "openArtifact",
+                "labelKey": "results.openArtifact",
+                "primary": true
+              }
+            ]
+          }
+        },
+        "name": "Test case results",
+        "description": "Case execution outcomes for the selected test run filtered by verdict; selecting a row or action opens the corresponding AutotestCaseArtifact",
+        "id": "builtin-product-9c4f1e20-6a8b-4d3e-8f12-3a7b9c5d1011"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.title": "Test results",
+        "panel.description": "Review automatic test runs, accuracy summaries, and per-case verdicts.",
+        "panel.refresh": "Refresh",
+        "panel.back": "Back to test runs",
+        "panel.selectHint": "Select a test run on the left to inspect its summary and case results.",
+        "common.dash": "-",
+        "runs.title": "Test runs",
+        "runs.searchPlaceholder": "Search by case set, run ID, or status",
+        "runs.empty": "No test runs yet",
+        "runs.emptyHint": "Start an automatic test run to inspect results here.",
+        "runs.noMatch": "No matching test runs",
+        "runs.colRetention": "Retention",
+        "runs.colStartedAt": "Started",
+        "detail.startedAt": "Started",
+        "detail.finishedAt": "Finished",
+        "detail.activeNotice": "This test run is still in progress. Use Refresh to load the latest metrics and case results.",
+        "metrics.total": "Total",
+        "metrics.correct": "Correct",
+        "metrics.wrong": "Wrong",
+        "metrics.abnormal": "Abnormal",
+        "metrics.accuracyRate": "Accuracy",
+        "metrics.avgDuration": "Avg duration",
+        "filter.verdict": "Filter by verdict",
+        "filter.all": "All",
+        "filter.correct": "Correct",
+        "filter.wrong": "Wrong",
+        "filter.abnormal": "Abnormal",
+        "results.title": "Case results",
+        "results.empty": "No case results for this filter",
+        "results.noMatch": "No matching case results",
+        "results.colCaseId": "Case ID",
+        "results.colQuestion": "Question",
+        "results.colStatus": "Execution status",
+        "results.colVerdict": "Verdict",
+        "results.colDuration": "Duration",
+        "results.colReason": "Error / analysis",
+        "results.openArtifact": "Artifacts",
+        "notice.deleted": "Test run deleted.",
+        "notice.kept": "Test run marked as kept.",
+        "notice.unkept": "Test run retention removed."
+      },
+      "zh-CN": {
+        "panel.title": "测试结果",
+        "panel.description": "查看自动测试批次、准确率汇总与各用例结论，支持保留、下载与产物钻取。",
+        "panel.refresh": "刷新",
+        "panel.back": "返回测试批次",
+        "panel.selectHint": "请从左侧选择一个测试批次查看统计概览和用例结果。",
+        "common.dash": "-",
+        "runs.title": "测试批次",
+        "runs.searchPlaceholder": "搜索用例集、批次 ID 或状态",
+        "runs.empty": "暂无测试批次",
+        "runs.emptyHint": "执行一次自动测试后即可在此查看结果。",
+        "runs.noMatch": "没有匹配的测试批次",
+        "runs.colRetention": "保留",
+        "runs.colStartedAt": "开始时间",
+        "detail.startedAt": "开始时间",
+        "detail.finishedAt": "结束时间",
+        "detail.activeNotice": "当前测试批次仍在执行中，请点击「刷新」获取最新进度与用例结果。",
+        "metrics.total": "总数",
+        "metrics.correct": "正确",
+        "metrics.wrong": "错误",
+        "metrics.abnormal": "异常",
+        "metrics.accuracyRate": "准确率",
+        "metrics.avgDuration": "平均耗时",
+        "filter.verdict": "按结论筛选",
+        "filter.all": "全部",
+        "filter.correct": "正确",
+        "filter.wrong": "错误",
+        "filter.abnormal": "异常",
+        "results.title": "用例结果",
+        "results.empty": "当前筛选下暂无用例结果",
+        "results.noMatch": "没有匹配的用例结果",
+        "results.colCaseId": "用例 ID",
+        "results.colQuestion": "问题",
+        "results.colStatus": "执行状态",
+        "results.colVerdict": "评估结论",
+        "results.colDuration": "耗时",
+        "results.colReason": "错误 / 分析摘要",
+        "results.openArtifact": "查看产物",
+        "notice.deleted": "测试批次已删除。",
+        "notice.kept": "测试批次已设为保留。",
+        "notice.unkept": "已取消测试批次保留。"
+      },
+      "zh-TW": {
+        "panel.title": "測試結果",
+        "panel.description": "檢視自動測試批次、準確率彙總與各用例結論，支援保留、下載與產物檢視。",
+        "panel.refresh": "重新整理",
+        "panel.back": "返回測試批次",
+        "panel.selectHint": "請從左側選擇一個測試批次以檢視統計概覽與用例結果。",
+        "common.dash": "-",
+        "runs.title": "測試批次",
+        "runs.searchPlaceholder": "搜尋用例集、批次 ID 或狀態",
+        "runs.empty": "尚無測試批次",
+        "runs.emptyHint": "執行一次自動測試後即可在此檢視結果。",
+        "runs.noMatch": "沒有符合的測試批次",
+        "runs.colRetention": "保留",
+        "runs.colStartedAt": "開始時間",
+        "detail.startedAt": "開始時間",
+        "detail.finishedAt": "結束時間",
+        "detail.activeNotice": "此測試批次仍在執行中，請點擊「重新整理」以載入最新進度與用例結果。",
+        "metrics.total": "總數",
+        "metrics.correct": "正確",
+        "metrics.wrong": "錯誤",
+        "metrics.abnormal": "異常",
+        "metrics.accuracyRate": "準確率",
+        "metrics.avgDuration": "平均耗時",
+        "filter.verdict": "依結論篩選",
+        "filter.all": "全部",
+        "filter.correct": "正確",
+        "filter.wrong": "錯誤",
+        "filter.abnormal": "異常",
+        "results.title": "用例結果",
+        "results.empty": "目前篩選條件下尚無用例結果",
+        "results.noMatch": "沒有符合的用例結果",
+        "results.colCaseId": "用例 ID",
+        "results.colQuestion": "問題",
+        "results.colStatus": "執行狀態",
+        "results.colVerdict": "評估結論",
+        "results.colDuration": "耗時",
+        "results.colReason": "錯誤 / 分析摘要",
+        "results.openArtifact": "檢視產物",
+        "notice.deleted": "測試批次已刪除。",
+        "notice.kept": "已標記保留此測試批次。",
+        "notice.unkept": "已取消此測試批次的保留狀態。"
+      },
+      "ja": {
+        "panel.title": "テスト結果",
+        "panel.description": "自動テスト実行バッチ、精度サマリー、ケースごとの判定結果を確認します。",
+        "panel.refresh": "更新",
+        "panel.back": "テスト一覧に戻る",
+        "panel.selectHint": "左側からテストバッチを選択すると、統計概要とケース結果が表示されます。",
+        "common.dash": "-",
+        "runs.title": "テストバッチ",
+        "runs.searchPlaceholder": "ケースセット名・実行 ID・状態で検索",
+        "runs.empty": "テストバッチがありません",
+        "runs.emptyHint": "自動テストを実行するとここに結果が表示されます。",
+        "runs.noMatch": "一致するテストバッチがありません",
+        "runs.colRetention": "保持",
+        "runs.colStartedAt": "開始日時",
+        "detail.startedAt": "開始日時",
+        "detail.finishedAt": "終了日時",
+        "detail.activeNotice": "このテストバッチは実行中です。最新の進捗とケース結果を取得するには「更新」をクリックしてください。",
+        "metrics.total": "合計",
+        "metrics.correct": "正解",
+        "metrics.wrong": "誤り",
+        "metrics.abnormal": "異常",
+        "metrics.accuracyRate": "正解率",
+        "metrics.avgDuration": "平均所要時間",
+        "filter.verdict": "判定で絞り込む",
+        "filter.all": "すべて",
+        "filter.correct": "正解",
+        "filter.wrong": "誤り",
+        "filter.abnormal": "異常",
+        "results.title": "ケース結果",
+        "results.empty": "この条件に該当するケース結果がありません",
+        "results.noMatch": "一致するケース結果がありません",
+        "results.colCaseId": "ケース ID",
+        "results.colQuestion": "質問",
+        "results.colStatus": "実行状態",
+        "results.colVerdict": "評価判定",
+        "results.colDuration": "所要時間",
+        "results.colReason": "エラー / 分析概要",
+        "results.openArtifact": "成果物",
+        "notice.deleted": "テストバッチを削除しました。",
+        "notice.kept": "テストバッチを保持対象にしました。",
+        "notice.unkept": "テストバッチの保持を解除しました。"
+      },
+      "de": {
+        "panel.title": "Testergebnisse",
+        "panel.description": "Automatische Testläufe, Genauigkeitskennzahlen und Einzelfallbewertungen prüfen.",
+        "panel.refresh": "Aktualisieren",
+        "panel.back": "Zurück zu Testläufen",
+        "panel.selectHint": "Wählen Sie links einen Testlauf aus, um Übersicht und Fallergebnisse anzuzeigen.",
+        "common.dash": "-",
+        "runs.title": "Testläufe",
+        "runs.searchPlaceholder": "Nach Testset, Lauf-ID oder Status suchen",
+        "runs.empty": "Noch keine Testläufe",
+        "runs.emptyHint": "Starten Sie einen automatischen Testlauf, um Ergebnisse hier zu prüfen.",
+        "runs.noMatch": "Keine passenden Testläufe",
+        "runs.colRetention": "Aufbewahrung",
+        "runs.colStartedAt": "Gestartet",
+        "detail.startedAt": "Gestartet",
+        "detail.finishedAt": "Beendet",
+        "detail.activeNotice": "Dieser Testlauf wird noch ausgeführt. Klicken Sie auf Aktualisieren, um den neuesten Stand zu laden.",
+        "metrics.total": "Gesamt",
+        "metrics.correct": "Korrekt",
+        "metrics.wrong": "Falsch",
+        "metrics.abnormal": "Auffällig",
+        "metrics.accuracyRate": "Genauigkeit",
+        "metrics.avgDuration": "Ø Dauer",
+        "filter.verdict": "Nach Bewertung filtern",
+        "filter.all": "Alle",
+        "filter.correct": "Korrekt",
+        "filter.wrong": "Falsch",
+        "filter.abnormal": "Auffällig",
+        "results.title": "Fallergebnisse",
+        "results.empty": "Keine Fallergebnisse für diesen Filter",
+        "results.noMatch": "Keine passenden Fallergebnisse",
+        "results.colCaseId": "Fall-ID",
+        "results.colQuestion": "Frage",
+        "results.colStatus": "Ausführungsstatus",
+        "results.colVerdict": "Bewertung",
+        "results.colDuration": "Dauer",
+        "results.colReason": "Fehler / Analyse",
+        "results.openArtifact": "Artefakte",
+        "notice.deleted": "Testlauf gelöscht.",
+        "notice.kept": "Testlauf zur Aufbewahrung markiert.",
+        "notice.unkept": "Aufbewahrungsmarkierung entfernt."
+      },
+      "fr": {
+        "panel.title": "Résultats des tests",
+        "panel.description": "Consulter les lots de tests automatiques, les indicateurs de précision et les verdicts par cas.",
+        "panel.refresh": "Actualiser",
+        "panel.back": "Retour aux lots",
+        "panel.selectHint": "Sélectionnez un lot de test à gauche pour consulter son résumé et ses résultats.",
+        "common.dash": "-",
+        "runs.title": "Lots de tests",
+        "runs.searchPlaceholder": "Rechercher par jeu de cas, ID ou statut",
+        "runs.empty": "Aucun lot de test pour le moment",
+        "runs.emptyHint": "Lancez un test automatique pour consulter les résultats ici.",
+        "runs.noMatch": "Aucun lot de test correspondant",
+        "runs.colRetention": "Conservation",
+        "runs.colStartedAt": "Début",
+        "detail.startedAt": "Début",
+        "detail.finishedAt": "Fin",
+        "detail.activeNotice": "Ce lot de test est encore en cours. Cliquez sur Actualiser pour charger les derniers résultats.",
+        "metrics.total": "Total",
+        "metrics.correct": "Correct",
+        "metrics.wrong": "Incorrect",
+        "metrics.abnormal": "Anormal",
+        "metrics.accuracyRate": "Précision",
+        "metrics.avgDuration": "Durée moy.",
+        "filter.verdict": "Filtrer par verdict",
+        "filter.all": "Tous",
+        "filter.correct": "Correct",
+        "filter.wrong": "Incorrect",
+        "filter.abnormal": "Anormal",
+        "results.title": "Résultats des cas",
+        "results.empty": "Aucun résultat de cas pour ce filtre",
+        "results.noMatch": "Aucun résultat correspondant",
+        "results.colCaseId": "ID du cas",
+        "results.colQuestion": "Question",
+        "results.colStatus": "Statut d'exécution",
+        "results.colVerdict": "Verdict",
+        "results.colDuration": "Durée",
+        "results.colReason": "Erreur / analyse",
+        "results.openArtifact": "Artefacts",
+        "notice.deleted": "Lot de test supprimé.",
+        "notice.kept": "Lot de test marqué comme conservé.",
+        "notice.unkept": "Conservation du lot de test retirée."
+      },
+      "it": {
+        "panel.title": "Risultati dei test",
+        "panel.description": "Consulta le esecuzioni dei test automatici, le metriche di accuratezza e gli esiti per singolo caso.",
+        "panel.refresh": "Aggiorna",
+        "panel.back": "Torna alle esecuzioni",
+        "panel.selectHint": "Seleziona un'esecuzione di test a sinistra per vedere riepilogo e risultati dei casi.",
+        "common.dash": "-",
+        "runs.title": "Esecuzioni test",
+        "runs.searchPlaceholder": "Cerca per set di casi, ID o stato",
+        "runs.empty": "Nessuna esecuzione di test",
+        "runs.emptyHint": "Avvia un test automatico per consultare i risultati qui.",
+        "runs.noMatch": "Nessuna esecuzione corrispondente",
+        "runs.colRetention": "Conservazione",
+        "runs.colStartedAt": "Avviato",
+        "detail.startedAt": "Avviato",
+        "detail.finishedAt": "Terminato",
+        "detail.activeNotice": "Questa esecuzione è ancora in corso. Fai clic su Aggiorna per caricare gli ultimi risultati.",
+        "metrics.total": "Totale",
+        "metrics.correct": "Corretti",
+        "metrics.wrong": "Errati",
+        "metrics.abnormal": "Anomali",
+        "metrics.accuracyRate": "Accuratezza",
+        "metrics.avgDuration": "Durata media",
+        "filter.verdict": "Filtra per esito",
+        "filter.all": "Tutti",
+        "filter.correct": "Corretti",
+        "filter.wrong": "Errati",
+        "filter.abnormal": "Anomali",
+        "results.title": "Risultati dei casi",
+        "results.empty": "Nessun risultato per questo filtro",
+        "results.noMatch": "Nessun risultato corrispondente",
+        "results.colCaseId": "ID caso",
+        "results.colQuestion": "Domanda",
+        "results.colStatus": "Stato esecuzione",
+        "results.colVerdict": "Esito",
+        "results.colDuration": "Durata",
+        "results.colReason": "Errore / analisi",
+        "results.openArtifact": "Artefatti",
+        "notice.deleted": "Esecuzione di test eliminata.",
+        "notice.kept": "Esecuzione contrassegnata da conservare.",
+        "notice.unkept": "Contrassegno di conservazione rimosso."
+      },
+      "ar": {
+        "panel.title": "نتائج الاختبارات",
+        "panel.description": "استعراض دفعات الاختبار التلقائي وملخصات الدقة ونتائج كل حالة.",
+        "panel.refresh": "تحديث",
+        "panel.back": "العودة إلى دفعات الاختبار",
+        "panel.selectHint": "اختر دفعة اختبار من القائمة لعرض الملخص ونتائج الحالات.",
+        "common.dash": "-",
+        "runs.title": "دفعات الاختبار",
+        "runs.searchPlaceholder": "ابحث باسم مجموعة الحالات أو المعرّف أو الحالة",
+        "runs.empty": "لا توجد دفعات اختبار بعد",
+        "runs.emptyHint": "شغّل اختبارًا تلقائيًا لاستعراض النتائج هنا.",
+        "runs.noMatch": "لا توجد دفعات اختبار مطابقة",
+        "runs.colRetention": "الاحتفاظ",
+        "runs.colStartedAt": "وقت البدء",
+        "detail.startedAt": "وقت البدء",
+        "detail.finishedAt": "وقت الانتهاء",
+        "detail.activeNotice": "دفعة الاختبار هذه لا تزال قيد التشغيل. استخدم زر التحديث لتحميل أحدث المقاييس والنتائج.",
+        "metrics.total": "الإجمالي",
+        "metrics.correct": "صحيح",
+        "metrics.wrong": "خاطئ",
+        "metrics.abnormal": "غير طبيعي",
+        "metrics.accuracyRate": "نسبة الدقة",
+        "metrics.avgDuration": "متوسط المدة",
+        "filter.verdict": "تصفية حسب النتيجة",
+        "filter.all": "الكل",
+        "filter.correct": "صحيح",
+        "filter.wrong": "خاطئ",
+        "filter.abnormal": "غير طبيعي",
+        "results.title": "نتائج الحالات",
+        "results.empty": "لا توجد نتائج حالات لهذا المرشح",
+        "results.noMatch": "لا توجد نتائج حالات مطابقة",
+        "results.colCaseId": "معرّف الحالة",
+        "results.colQuestion": "السؤال",
+        "results.colStatus": "حالة التنفيذ",
+        "results.colVerdict": "نتيجة التقييم",
+        "results.colDuration": "المدة",
+        "results.colReason": "الخطأ / التحليل",
+        "results.openArtifact": "المخرجات",
+        "notice.deleted": "تم حذف دفعة الاختبار.",
+        "notice.kept": "تم تمييز دفعة الاختبار للاحتفاظ بها.",
+        "notice.unkept": "تم إلغاء الاحتفاظ بدفعة الاختبار."
+      }
+    }
+  }
+}
