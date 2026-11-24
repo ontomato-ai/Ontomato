@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import {
-  PANEL_CONFIRMATION_EXPIRED, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema,
+  PANEL_CONFIRMATION_EXPIRED, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema, withoutPanelSecretDelivery,
   type inspectPanelOperationImpactRequestSchema,
   type CreatePanelHumanOperationIntentRequest,
   type PanelHumanOperationConfirmation, type PanelHumanOperationDispatchResponse, type PanelHumanOperationIntent,
@@ -12,6 +12,7 @@ import {
   type PanelOperationIntent, type PanelOperationRef, type ReadPanelOperationRequest,
   type PanelUseRef, type BatchItemOperationOutcome, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
+import { normalizePanelSecretPointer, panelSchemaSecretPaths, panelSecretPathsOverlap, panelSecretValuePresent, restorePanelSecrets, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
 import { EXECUTE_OBJECT_ACTION } from "@ontomato/contracts/platform-object-types";
 import {
@@ -44,6 +45,7 @@ import { panelConfirmation } from "./confirmation";
 import { operationHost } from "./operation-host";
 import { panelOperationStore as store } from "./operation-store";
 import { panelUploadStore as uploads } from "./upload-store";
+import { panelSecretStore } from "./secret-store";
 
 type PanelRun = Awaited<ReturnType<typeof runForOwner>>;
 
@@ -259,6 +261,51 @@ function invocationOf(input: PanelOperationInvocation): PanelOperationInvocation
   return "calls" in input ? { calls: input.calls } : { call: input.call };
 }
 
+function mapInvocation(
+  invocation: PanelOperationInvocation,
+  mapInput: (input: Record<string, unknown>, index: number) => Record<string, unknown>,
+): PanelOperationInvocation {
+  if ("call" in invocation) return { call: { ...invocation.call, input: mapInput(invocation.call.input, 0) } };
+  const [first, ...rest] = invocation.calls;
+  return { calls: [
+    { ...first, input: mapInput(first.input, 0) },
+    ...rest.map((call, index) => ({ ...call, input: mapInput(call.input, index + 1) })),
+  ] };
+}
+
+function redactInvocation(
+  invocation: PanelOperationInvocation,
+  { handler, descriptor, acceptsDraftSecretFields }: Pick<ReturnType<typeof writeOperation>, "handler" | "descriptor" | "acceptsDraftSecretFields">,
+  fields: readonly string[] = [],
+) {
+  if (fields.length && !acceptsDraftSecretFields) {
+    throw new HttpError(400, "Only a form draft can declare additional secret input fields", "INVALID_REQUEST");
+  }
+  const declared = [...new Set([...(handler.secretFields ?? []), ...fields].map(normalizePanelSecretPointer))]
+    .map(path => handler.kind === "form.save" ? `/values${path}` : path);
+  const secrets: ReadonlyMap<string, unknown>[] = [];
+  const redacted = mapInvocation(invocation, (input, index) => {
+    const paths = [...declared, ...panelSchemaSecretPaths(descriptor.inputSchema, input)];
+    const split = splitPanelSecrets(input, paths);
+    secrets[index] = split.secrets;
+    return split.redacted;
+  });
+  return { redacted, secrets, paths: [...new Set(secrets.flatMap(values => [...values.keys()]))] };
+}
+
+async function persistIntent(
+  owner: AssistantOwner, intent: PanelHumanOperationIntent, secrets: ReturnType<typeof redactInvocation>,
+) {
+  await store.insert(owner, intent);
+  if (secrets.paths.length) panelSecretStore.stage(owner, intent.intentId, secrets.secrets);
+}
+
+function confirmationInvocation(checked: CheckedInvocation, redacted: PanelOperationInvocation): CheckedInvocation {
+  return "call" in checked
+    ? { ...checked, call: (redacted as { call: PanelOperationCall }).call }
+    : { ...checked, calls: (redacted as { calls: PanelBatchCalls }).calls };
+}
+
 type CheckedInvocation =
   | { call: PanelOperationCall; target: ReturnType<typeof validateCall> }
   | { calls: PanelBatchCalls; owner: Extract<PanelWriteServerOperation, { batch: true }> };
@@ -341,7 +388,9 @@ export async function inspectPanelOperationImpact(owner: AssistantOwner, credent
   const concrete = materializeWriteInvocation(input, current);
   const { handler, fixedTarget } = current;
   const staged = handler.inspectImpact &&
-    await withStagedFile(owner, input, handler, validateInvocation(handler, concrete, fixedTarget), credentials.locale);
+    await withStagedFile(owner, input, handler, confirmationInvocation(
+      validateInvocation(handler, concrete, fixedTarget), redactInvocation(concrete, current).redacted,
+    ), credentials.locale);
   const impact = staged && await ownerImpact(handler.inspectImpact!, operationHost({ owner, credentials }), concreteCalls(staged.invocation));
   if (!impact) throw new HttpError(422, "The owner has no impact description for this operation", "OPERATION_IMPACT_UNAVAILABLE");
   return impact;
@@ -353,6 +402,7 @@ function humanPreparation(intent: PanelHumanOperationIntent): PanelHumanOperatio
     operationId: intent.operation.id,
     label: intent.operation.label,
     confirmation: intent.confirmation,
+    ...(intent.redactedSecretFields?.length && { hasSecretInput: true }),
     ...(intent.source.kind === "agent-page"
       ? {
           autoMode: intent.source.autoMode,
@@ -425,7 +475,12 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     }));
     refuseAgentUpload(current.handler, credentials.locale);
     const concrete = materializeWriteInvocation(input, current);
-    const prepared = validateInvocation(current.handler, concrete, current.fixedTarget);
+    const secrets = redactInvocation(concrete, current, input.secretFields);
+    if (current.handler.kind !== "form.save" &&
+        secrets.secrets.some(values => [...values.values()].some(panelSecretValuePresent))) {
+      throw new HttpError(400, tForLocale(credentials.locale, "panels.secret.humanInput"), "PANEL_SECRET_HUMAN_INPUT_REQUIRED");
+    }
+    const prepared = confirmationInvocation(validateInvocation(current.handler, concrete, current.fixedTarget), secrets.redacted);
     const host = operationHost({ owner, credentials });
     const confirmation = await humanConfirmation(current.handler, host, prepared);
     const settings = await store.settings(owner, root);
@@ -474,13 +529,14 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
       projectionId: current.projection.id,
       binding: current.projection.binding,
       operation: current.operation,
-      ...invocationOf(concrete),
+      ...secrets.redacted,
+      ...(secrets.paths.length && { redactedSecretFields: secrets.paths }),
       confirmation,
       dispatched: false,
       outcome: null,
     };
     // Persist the intent BEFORE publishing the conversation question so answering immediately can never race ahead of intent registration.
-    await store.insert(owner, intent);
+    await persistIntent(owner, intent, secrets);
     if (questionPrompt && questionId) {
       try {
         await new RuntimeClient(owner.domainId, undefined, owner.userId).request("/v1/channel/user-questions", "POST", {
@@ -501,7 +557,8 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     mode: "prepare",
   }));
   const concrete = materializeWriteInvocation(input, current);
-  const prepared = validateInvocation(current.handler, concrete, current.fixedTarget);
+  const secrets = redactInvocation(concrete, current, input.secretFields);
+  const prepared = confirmationInvocation(validateInvocation(current.handler, concrete, current.fixedTarget), secrets.redacted);
   const staged = await withStagedFile(owner, input, current.handler, prepared, credentials.locale);
   const confirmation = await humanConfirmation(current.handler, operationHost({ owner, credentials }), staged.invocation, staged.upload?.file);
   const intent: PanelHumanOperationIntent = {
@@ -514,12 +571,13 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     projectionId: current.projection.id,
     binding: current.projection.binding,
     operation: current.operation,
-    ...invocationOf(concrete),
+    ...secrets.redacted,
+    ...(secrets.paths.length && { redactedSecretFields: secrets.paths }),
     confirmation,
     dispatched: false,
     outcome: null,
   };
-  await store.insert(owner, intent);
+  await persistIntent(owner, intent, secrets);
   return humanPreparation(intent);
 }
 
@@ -588,14 +646,23 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
       : intent;
   const ref = { ...intent.use, root: intent.root, operationId: intent.operation.id, memberPath: intent.operation.memberPath };
   const current = writeOperation(await operationForUse(owner, credentials, ref, invocationTarget(intent), { mode: "dispatch" }));
-  requireFrozenOperation(intent, current);
-  const prepared = validateInvocation(current.handler, intent, current.fixedTarget);
+  let invocation = invocationOf(intent);
+  if (intent.redactedSecretFields?.length) {
+    const secrets = panelSecretStore.take(owner, id);
+    if (!secrets) return {
+      kind: "not-dispatched", intentId: id, code: "PANEL_SECRET_EXPIRED",
+      message: tForLocale(credentials.locale, "panels.secret.expired"),
+    };
+    invocation = mapInvocation(invocation, (input, index) => restorePanelSecrets(input, secrets[index]!));
+  }
+  requireFrozenOperation({ ...intent, ...invocation }, current);
+  const prepared = validateInvocation(current.handler, invocation, current.fixedTarget);
   // An expired or missing file refuses before the intent is claimed, so nothing is spent.
   const staged = await withStagedFile(owner, ref, current.handler, prepared, credentials.locale);
   const view = current.handler.projectResult && await readAssistantSkillView(owner.domainId, credentials);
   const host = operationHost({ owner, credentials }, view);
   const result = await claimAndExecutePanel(owner, host, claimedIntent, current.handler, staged.invocation);
-  const outcome = result?.outcome;
+  const outcome = result?.persistedOutcome;
   if (outcome?.kind === "success" && intent.source.kind === "agent-page" && intent.source.rootSession && "call" in staged.invocation) {
     const { target: preparedTarget } = staged.invocation;
     const target = preparedTarget?.kind === "object"
@@ -611,6 +678,7 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
         target,
         ...(outcome.message !== undefined && { message: outcome.message }),
         ...(outcome.created && { created: outcome.created }),
+        ...(outcome.secretGenerated && { secretGenerated: true }),
       },
       ...(outcome.affected && { affected: outcome.affected }),
     });
@@ -618,7 +686,7 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   // A refused call keeps its file for the reader's retry, such as confirming an overwrite.
   if (result?.outcome.kind === "success" && staged.upload) await uploads.remove(owner, staged.upload.id);
   return result
-    ? { kind: "dispatched", intentId: id, outcome: await presentOutcome({ operation: intent.operation, outcome: result.outcome }, owner, credentials, view) }
+    ? { kind: "dispatched", intentId: id, outcome: await presentOutcome({ operation: intent.operation, outcome: credentials.token ? result.outcome : result.persistedOutcome }, owner, credentials, view) }
     : replay(await store.get(owner, id), owner, credentials);
 }
 
@@ -688,7 +756,7 @@ function confirmationInputSummary(handler: PanelWriteServerOperation, invocation
   const { values, submittedFields } = invocation.call.input;
   const fields = isFormSave && Array.isArray(submittedFields)
     ? (submittedFields as string[]).map(pointer => pointer.replace(/^\//u, ""))
-    : Object.keys(values as Record<string, unknown>);
+    : Object.keys((values ?? {}) as Record<string, unknown>);
   return fields.length ? fields.join(", ") : undefined;
 }
 
@@ -707,13 +775,28 @@ async function confirmationTarget(handler: PanelWriteServerOperation,
     : operationLabel;
 }
 
+/** Form owners may acknowledge fields already saved before a refusal. Keep the acknowledgement without its value. */
+function redactSavedFormFields(outcome: SinglePanelOperationOutcome, paths: readonly string[]): SinglePanelOperationOutcome {
+  if ((outcome.kind !== "refusal" && outcome.kind !== "failure") || !outcome.savedFields) return outcome;
+  const savedFields = Object.fromEntries(Object.entries(outcome.savedFields).map(([field, value]) => {
+    const pointer = normalizePanelSecretPointer(field);
+    const secretPaths = paths.map(path => path.slice("/values".length))
+      .filter(path => panelSecretPathsOverlap(path, pointer));
+    if (!secretPaths.length) return [field, value];
+    return [field, splitPanelSecrets({ value }, secretPaths.map(path =>
+      path.startsWith(`${pointer}/`) ? `/value${path.slice(pointer.length)}` : "/value",
+    )).redacted.value ?? null];
+  }));
+  return { ...outcome, savedFields };
+}
+
 async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationHost, intent: PanelOperationIntent,
   handler: PanelWriteServerOperation, prepared: CheckedInvocation,
 ) {
   // The name the owner's completion sentence gives, read while the target is still there; a target that cannot be read
   // fails here, before anything is claimed or written.
   const done = handler.kind === "action" && handler.done && "call" in prepared
-    ? handler.done(host, await handler.targetLabel(host, prepared.target as PanelRecordTarget, prepared.call.input))
+    ? handler.done(host, await handler.targetLabel(host, prepared.target as PanelRecordTarget, "call" in intent ? intent.call.input : undefined))
     : undefined;
   if (!await store.claim(owner, intent)) return;
   const id = intent.intentId;
@@ -723,16 +806,22 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
       outcome = await executeAvailableBatch(host, prepared, id);
     } else {
       outcome = await executeOwner(handler, host, prepared.target, prepared.call.input, id);
-      if (done !== undefined && outcome.kind === "success" && outcome.message === undefined) outcome = { ...outcome, message: done };
+      if (handler.kind === "form.save" && intent.redactedSecretFields?.length) {
+        outcome = redactSavedFormFields(outcome, intent.redactedSecretFields.filter(path => path.startsWith("/values/")));
+      }
+      if (done !== undefined && outcome.kind === "success" && !outcome.secret && outcome.message === undefined) outcome = { ...outcome, message: done };
     }
   } catch (error) {
     // An uncertain owner call never releases the irreversible claim.
-    outcome = {kind:"unknown",message:error instanceof Error?error.message:String(error)};
+    outcome = { kind: "unknown", message: intent.redactedSecretFields?.length
+      ? tForLocale(host.locale, "panels.secret.outcomeUnknown")
+      : error instanceof Error ? error.message : String(error) };
   }
-  await store.outcome(owner,id,outcome);
-  const written = outcome.kind === "batch"
-    ? outcome.items.flatMap(item => writtenObjects(item.outcome, [item.target]))
-    : writtenObjects(outcome, "calls" in prepared
+  const persistedOutcome = withoutPanelSecretDelivery(outcome, tForLocale(host.locale, "panels.secret.generated"));
+  await store.outcome(owner, id, persistedOutcome);
+  const written = persistedOutcome.kind === "batch"
+    ? persistedOutcome.items.flatMap(item => writtenObjects(item.outcome, [item.target]))
+    : writtenObjects(persistedOutcome, "calls" in prepared
       ? prepared.calls.map(call => call.target)
       : prepared.target?.kind === "object" ? [prepared.target] : []);
   if (written.length) {
@@ -741,7 +830,7 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
       message: "This record was already saved in another action or tab.",
     });
   }
-  return { outcome };
+  return { outcome, persistedOutcome };
 }
 
 function writtenObjects(outcome: BatchItemOperationOutcome, targets: readonly PanelObjectIdentity[]): PanelObjectIdentity[] {

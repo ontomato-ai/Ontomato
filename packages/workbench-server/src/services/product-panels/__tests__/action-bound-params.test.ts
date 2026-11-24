@@ -389,7 +389,7 @@ describe("customer Action boundParams materialization into input.values", () => 
         if (!intents.has(String(args[1]))) intents.set(String(args[1]), structuredClone(args[4] as PanelOperationIntent));
         return { rows: [] };
       }
-      if (sql.includes("jsonb_set(intent,'{invalidated}'")) return { rowCount: 0 };
+      if (sql.includes("jsonb_set(intent,'{invalidated}'")) return { rowCount: 0, rows: [] };
       if (sql.includes("AND intent->>'dispatched'='false'")) {
         const value = intents.get(id)!;
         if (value.dispatched) return { rowCount: 0 };

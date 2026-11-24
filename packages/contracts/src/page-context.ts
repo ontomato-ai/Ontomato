@@ -126,8 +126,10 @@ export const pageFormSnapshotSchema = z
     dirty: z.boolean(),
     /** Field paths currently modified relative to the opened baseline. */
     dirtyFields: z.array(z.string().min(1).max(500)).max(200).readonly().optional(),
-    /** Current live field values in the form, including unsaved user edits. */
+    /** Current live field values in the form, including unsaved user edits, with secret values removed. */
     values: runtimeJsonObjectSchema,
+    /** Whether each active secret field is filled, keyed by JSON Pointer. */
+    secretFields: z.record(z.string().min(1).max(500), z.boolean()).optional(),
     /** The current customer Action save call, prepared by the form's own field wiring. */
     save: z.object({
       operationId: panelOperationIdSchema,

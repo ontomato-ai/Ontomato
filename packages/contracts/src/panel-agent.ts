@@ -82,6 +82,7 @@ export type PanelLocalConfirmationRequest = z.infer<typeof localPanelConfirmatio
 
 const panelHumanIntentScopeSchema = panelOperationRefSchema.extend({
   agentRun: panelAgentRunRefSchema.optional(),
+  secretFields: panelOwnerOperationDescriptorSchema.shape.secretFields,
 });
 
 /** Node supplies the intent ID and the initiator from the authenticated reader. */
@@ -121,6 +122,7 @@ export const panelHumanOperationPreparationSchema = z.object({
   operationId: panelOperationIdSchema,
   label: z.string().min(1).max(200),
   confirmation: panelHumanOperationConfirmationSchema,
+  hasSecretInput: z.literal(true).optional(),
   /** Present for agent-initiated page actions: true when the conversation runs in full-auto mode. */
   autoMode: z.boolean().optional(),
   /** Present for agent-initiated page actions that require user confirmation in the conversation. */
@@ -141,9 +143,34 @@ const rejectedFormFields = {
   affected: panelOperationAffectedSchema.optional(),
 };
 
+export const panelSecretItemSchema = z.object({
+  label: z.string().min(1),
+  value: z.string().min(1),
+  hint: z.string().min(1).optional(),
+}).strict();
+export const panelSecretDownloadSchema = z.object({
+  filename: z.string().min(1),
+  contentType: z.string().min(1),
+  content: z.string(),
+  encoding: z.enum(["utf8", "base64"]).optional(),
+}).strict();
+export const panelSecretDeliverySchema = z.object({
+  title: z.string().min(1).optional(),
+  summary: z.string().min(1).optional(),
+  items: z.array(panelSecretItemSchema).optional(),
+  download: panelSecretDownloadSchema.optional(),
+}).strict().refine(
+  value => Boolean(value.items?.length) || value.download !== undefined,
+  "Secret delivery must include at least one secret item or a download",
+);
+export type PanelSecretDelivery = z.infer<typeof panelSecretDeliverySchema>;
+
 const singleOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("success"),
+    /** One-time response for the authenticated operator. All recorded and agent receipts carry only the marker. */
+    secret: panelSecretDeliverySchema.optional(),
+    secretGenerated: z.boolean().optional(),
     /** The owner's localized completion text, separate from the operation result. */
     message: z.string().min(1).optional(),
     data: runtimeJsonObjectSchema,
@@ -243,6 +270,7 @@ const legacyAgentOperationIntentSchema = z.union([
 
 const humanIntentFactsSchema = commonIntentFactsSchema.extend({
   ...currentOperationFields,
+  redactedSecretFields: panelOwnerOperationDescriptorSchema.shape.secretFields,
   source: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("human") }).strict(),
     z.object({
@@ -351,6 +379,20 @@ export type PanelOperationAgentClassification =
       readonly outcome?: PanelOperationOutcome | null;
     };
 
+/** The shared receipt used for persistence, events and agent tools. */
+export function withoutPanelSecretDelivery<T extends PanelOperationOutcome | BatchItemOperationOutcome>(
+  outcome: T, generated = "Generated",
+): T {
+  if (outcome.kind === "batch") {
+    const [first, ...rest] = outcome.items;
+    const redact = (item: typeof first) => ({ ...item, outcome: withoutPanelSecretDelivery(item.outcome, generated) });
+    return { ...outcome, items: [redact(first), ...rest.map(redact)] };
+  }
+  if (outcome.kind !== "success" || !outcome.secret) return outcome;
+  const { secret, ...receipt } = outcome;
+  return { ...receipt, secretGenerated: true, message: outcome.message || secret.summary || generated } as T;
+}
+
 function hasRecordedSingleWrites(outcome: BatchItemOperationOutcome): boolean {
   if (outcome.kind === "success") return true;
   if (outcome.kind === "unknown" || outcome.kind === "skipped") return false;
@@ -363,6 +405,7 @@ export function classifyPanelOperationOutcome(
   outcome: PanelOperationOutcome | null | undefined,
   intentId?: string,
 ): PanelOperationAgentClassification {
+  if (outcome) outcome = withoutPanelSecretDelivery(outcome);
   if (!outcome) {
     return {
       kind: "unknown",

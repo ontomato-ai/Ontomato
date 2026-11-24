@@ -242,7 +242,7 @@ export function usePanelOperation(
     const hasDeclaredDraft = manifest.members[member]?.operationDrafts?.[name] !== undefined;
     if (desc.effect === "write" && hasDeclaredDraft) return [];
     const boundKeys = new Set(Object.keys(currentOperationBinding()?.params ?? {}));
-    return operationInputFields(desc.inputSchema, boundKeys);
+    return operationInputFields(desc.inputSchema, boundKeys, desc.secretFields);
   }
 
   function buildInput(

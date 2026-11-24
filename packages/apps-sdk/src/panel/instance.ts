@@ -1,3 +1,4 @@
+import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
 import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, nextTick, reactive, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
@@ -28,9 +29,8 @@ import { memberInputValue, type PanelProjectionRegistration } from "./ports";
 import { PanelFormAdapters } from "./forms";
 import { handlerFor } from "./handlers";
 import type { PanelOperationBinding } from "./types";
-import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
 import {
-  classifyPanelOperationDispatch,
+  classifyPanelOperationDispatch, withoutPanelSecretDelivery, type PanelSecretDelivery,
   type PanelAgentRunRef,
   type PanelHumanOperationDispatchResponse,
   type PanelHumanOperationPreparation,
@@ -105,6 +105,7 @@ export interface PanelWriteOperationOptions {
   memberPath?: PanelMemberPath;
   /** Called right after confirmation passes (or immediately when no confirmation is required), before dispatch begins. */
   onConfirmed?: () => void;
+  onSecretDelivery?: (deliveries: readonly PanelSecretDelivery[]) => void;
   /** Present only when this write was initiated by an agent `page_action` call. */
   agentContext?: PanelAgentActionContext;
   /**
@@ -512,6 +513,15 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     const preparation = agentScope?.agentRun
       ? await options.operations.prepare(operationId, invocation, path, agentScope.agentRun)
       : await options.operations.prepare(operationId, invocation, path);
+    function receive(answer: AppBridgeConfirmPanelOperationResult): AppBridgeConfirmPanelOperationResult {
+      if (answer.decision !== "confirm" || answer.response.kind !== "dispatched" || !answer.response.outcome) return answer;
+      const { outcome } = answer.response;
+      const items = outcome.kind === "batch" ? outcome.items.map(item => item.outcome) : [outcome];
+      const deliveries = items.flatMap(item => item.kind === "success" && item.secret ? [item.secret] : []);
+      if (!deliveries.length) return answer;
+      writeOptions?.onSecretDelivery?.(deliveries);
+      return { ...answer, response: { ...answer.response, outcome: withoutPanelSecretDelivery(outcome) } };
+    }
     const named = namedTargets(preparation.confirmation);
     const verifyOrCancel = async (phase: "auto-dispatch" | "confirm") => {
       if (!frozen?.ok || !evaluator) return;
@@ -533,11 +543,11 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
         preparation,
         named,
         isStillValid,
-        dispatchNow: () => options.confirmOperation(preparation, {
+        dispatchNow: async () => receive(await options.confirmOperation(preparation, {
           ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
           skipDialog: true,
           beforeDispatch: () => verifyOrCancel("confirm"),
-        }),
+        })),
         cancelNow: (reason) => options.operations.cancel?.(preparation.intentId, reason) ?? Promise.resolve(),
       });
     }
@@ -553,9 +563,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
           ...(skipDialog ? { beforeDispatch: () => verifyOrCancel("auto-dispatch") } : {}),
         }
       : undefined;
-    const confirmed = confirmHooks
+    const confirmed = receive(confirmHooks
       ? await options.confirmOperation(preparation, confirmHooks)
-      : await options.confirmOperation(preparation);
+      : await options.confirmOperation(preparation));
+    if (confirmed.decision === "cancel" && preparation.hasSecretInput) {
+      await options.operations.cancel?.(preparation.intentId, { code: "OPERATION_CANCELLED", message: "Operation was cancelled." });
+    }
     if (agentScope && confirmed.decision === "confirm") {
       agentScope.completed = { intentId: preparation.intentId, response: confirmed.response };
     }

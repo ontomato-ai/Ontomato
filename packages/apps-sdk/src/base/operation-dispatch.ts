@@ -156,7 +156,7 @@ export function resolveOperationInputFields(
   const hasDeclaredDraft = panel.manifest.members[slot.slot]?.operationDrafts?.[operationName] !== undefined;
   if (descriptor.effect === "write" && hasDeclaredDraft) return [];
   const boundParams = new Set(Object.keys(slot.projection.operations?.[operationName]?.params ?? {}));
-  return operationInputFields(descriptor.inputSchema, boundParams);
+  return operationInputFields(descriptor.inputSchema, boundParams, descriptor.secretFields);
 }
 
 /**
@@ -225,6 +225,7 @@ export function useOperationRunner(options: {
   /** Checks whether the mounted UI entry (button or overflow item) is still visible and enabled. */
   isEntryAvailable?: (operationName: string) => { readonly ok: true } | { readonly ok: false; readonly message: string };
   onDone?: (operationName: string, outcome: OperationOutcome) => void;
+  onSecretDelivery?: import("../panel/instance").PanelWriteOperationOptions["onSecretDelivery"];
   onRead?: (operationName: string, result: PanelReadOperationResult) => void;
 }): OperationRunner {
   let runnerDisposed = false;
@@ -458,6 +459,7 @@ export function useOperationRunner(options: {
           first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: effectiveInput } },
           {
             onConfirmed,
+            ...(options.onSecretDelivery && { onSecretDelivery: options.onSecretDelivery }),
             ...(agentContext ? { agentContext, evaluateSubmission: evaluateButtonSubmission } : {}),
           },
         );

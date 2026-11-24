@@ -48,6 +48,8 @@ export const panelOperationDeclarationSchema = z.object({
   target: panelOperationDeclarationTargetSchema,
   inputSchema: runtimeJsonObjectSchema,
   batch: z.boolean(),
+  /** Secret paths are relative to form values for a save, or to the operation input for an action. */
+  secretFields: z.array(z.string().min(1)).readonly().optional(),
   /** A single write action whose named input is a file the person stages first (see `panel-upload`). */
   upload: panelUploadDeclarationSchema.optional(),
 }).strict();
@@ -192,6 +194,7 @@ export const panelCompletedOperationSchema = z.object({
   panelId: runtimeKeySchema,
   target: panelObjectIdentitySchema.nullable(),
   message: z.string().optional(),
+  secretGenerated: z.boolean().optional(),
   created: panelObjectIdentitySchema.optional(),
 }).strict();
 export type PanelCompletedOperation = z.infer<typeof panelCompletedOperationSchema>;

@@ -138,15 +138,16 @@ beforeEach(()=>{
      const [domainId, userId, excludeId, targetsJson, reasonJson] = args;
      const targets = JSON.parse(String(targetsJson)) as { target: PanelOperationCall["target"] }[];
      const reason = JSON.parse(String(reasonJson));
+     const rows = [];
      for (const [id, intent] of intents) {
        if (intent.initiator.domainId !== domainId || intent.initiator.userId !== userId || id === excludeId
          || intent.source.kind !== "agent-page" || intent.source.questionId === null || intent.dispatched || intent.invalidated) continue;
        const calls = "call" in intent ? [intent.call] : intent.calls;
        if (calls.some(({ target }) => target?.kind === "object" && targets.some(item =>
          item.target?.kind === "object" && target.objectType === item.target.objectType && target.primaryKey === item.target.primaryKey
-       ))) intent.invalidated = reason;
+       ))) { intent.invalidated = reason; rows.push({ id }); }
      }
-     return {};
+     return { rows };
    }
    if(sql.includes("'{invalidated}'") && sql.includes("WHERE domain_id=$1 AND owner_id=$2 AND id=$3")){
      const val=intents.get(id);
@@ -185,19 +186,24 @@ it("reports the identity assigned by the agent definition owner to a new draft",
   expect(outcome).toMatchObject({ kind: "success", created: { objectType: AGENT_DEFINITION, primaryKey } });
 });
 
-it("broadcasts the draft owner's created identity to the agent's root session", async () => {
+it("delivers generated secrets to the operator once and broadcasts only the safe receipt", async () => {
   const objectType = "platform:ScheduledTask";
   const handlerRef = `${objectType}.save`;
   const created = { objectType, primaryKey: uuid(91) };
   const previous = { objectType, primaryKey: uuid(92) };
   const affected = { objects: [previous, created], objectTypes: [objectType], removed: [previous] };
+  const secret = { items: [{ label: "Initial password", value: "generated-fixture-secret" }] };
+  const humanValue = "entered-fixture-secret";
+  const execute = vi.fn(async () => ({ kind: "success" as const, data: {}, created, affected, secret }));
+  const inspect = vi.fn(async () => ({ summary: "Create task", total: 0, objects: [] }));
   mockRegisteredOperation({
     handlerRef, labelKey: "test.perform", binding: { kind: "PlatformOperation", id: handlerRef },
     kind: "form.save", effect: "write", batch: false, targetType: objectType, create: true,
     targetSchema: z.object({ kind: z.literal("draft") }).strict(),
     inputSchema: z.object({ values: z.record(z.unknown()) }), resultSchema: z.object({}),
     draftInput: input => input,
-    execute: async () => ({ kind: "success", data: {}, created, affected }),
+    inspectImpact: { handlerRef: "test.inspect", inspect },
+    execute,
   });
   mocks.panel.mockResolvedValue({
     id: "P", manifest: { state: {}, members: { form: { target: { projectionId: "form" } } } },
@@ -213,16 +219,29 @@ it("broadcasts the draft owner's created identity to the agent's root session", 
   openPresentationView("workbench", owner, uuid(95), send, view.signal);
   openPresentationView("workbench", { ...owner, userId: "other" }, uuid(96), unrelated, view.signal);
   try {
-    const result = await executeLiveAction({
+    const prepared = await prepareLiveAction({
       intentId: uuid(93), applicationId: "A", useId: "tasks", operationId: "form.save",
-      call: { target: { kind: "draft" }, input: { values: { title: "New task" } } },
+      secretFields: ["/settings/password"],
+      call: { target: { kind: "draft" }, input: { values: { title: "New task", settings: { password: humanValue } } } },
     });
-    expect(result).toMatchObject({ kind: "dispatched", outcome: { kind: "success", created } });
+    expect(JSON.stringify([intents.get(prepared.intentId), prepared, mocks.request.mock.calls, inspect.mock.calls]))
+      .not.toContain(humanValue);
+    const result = await dispatchHumanPanelOperation(owner, credentials, prepared.intentId);
+    expect(result).toMatchObject({ kind: "dispatched", outcome: { kind: "success", created, secret } });
+    expect(execute).toHaveBeenCalledWith(expect.anything(), { kind: "draft" }, {
+      values: { title: "New task", settings: { password: humanValue } },
+    }, prepared.intentId);
+    const replay = await dispatchHumanPanelOperation(owner, credentials, prepared.intentId);
+    expect(replay).toMatchObject({ outcome: { secretGenerated: true } });
+    const queried = await projectPanelOperationIntent(owner, prepared.intentId, undefined, credentials);
+    const safe = JSON.stringify([intents.get(prepared.intentId), replay, queried, send.mock.calls]);
+    expect(safe).not.toContain(humanValue);
+    expect(safe).not.toContain(secret.items[0]!.value);
     expect(send).toHaveBeenCalledOnce();
     const frame = agentHostObjectChangedFrameSchema.parse(JSON.parse(JSON.stringify(send.mock.calls[0]![0])));
     expect(frame).toMatchObject({
       session: rootSession, target: null, affected,
-      operation: { operationId: "form.save", panelId: "P", target: null, created },
+      operation: { operationId: "form.save", panelId: "P", target: null, created, secretGenerated: true },
     });
     expect(unrelated).not.toHaveBeenCalled();
   } finally {
@@ -342,7 +361,7 @@ it.each([
 });
 
 function installBatchOwner(
-  availability: Pick<serverOperations.PanelWriteServerOperation, "unavailable" | "unavailableBatch"> = {},
+  availability: Pick<serverOperations.PanelWriteServerOperation, "unavailable" | "unavailableBatch" | "secretFields"> = {},
 ) {
   const objectType = "platform:ScheduledTask";
   const binding = { kind: "PlatformOperation" as const, id: "test.batch" };
@@ -377,6 +396,43 @@ function installBatchOwner(
   const request = { intentId: uuid(5), applicationId: "A", useId: "tasks", operationId: "run.batch", calls };
   return { handler, request, impact };
 }
+
+it("restores each human batch input and expires a batch whose secrets are gone", async () => {
+  const { handler, request } = installBatchOwner({ secretFields: ["password"] });
+  const [first, second] = request.calls;
+  const calls: serverOperations.PanelBatchCalls = [
+    { ...first, input: { ...first.input, password: "first-fixture-secret" } },
+    { ...second!, input: { ...second!.input, password: "second-fixture-secret" } },
+  ];
+  handler.executeBatch.mockImplementation(async (_host, calls: serverOperations.PanelBatchCalls) => ({
+    kind: "batch",
+    items: calls.map(({ target }, index) => ({
+      target: { objectType: target.objectType, primaryKey: target.primaryKey },
+      outcome: { kind: "success", data: {}, secret: { items: [{ label: "Key", value: `fixture-output-${index}` }] } },
+    })),
+  }));
+  const { intentId: _unused, ...input } = request;
+  const prepared = await prepareHumanPanelOperation(owner, credentials, { ...input, calls });
+  expect(JSON.stringify([intents.get(prepared.intentId), prepared])).not.toContain("fixture-secret");
+  const done = await dispatchHumanPanelOperation(owner, credentials, prepared.intentId);
+  expect(handler.executeBatch).toHaveBeenCalledWith(expect.anything(), calls, prepared.intentId);
+  expect(JSON.stringify(done)).toContain("fixture-output-1");
+  expect(JSON.stringify(intents.get(prepared.intentId))).not.toContain("fixture-output-");
+  expect(await dispatchHumanPanelOperation(owner, credentials, prepared.intentId)).toMatchObject({
+    outcome: { items: [{ outcome: { secretGenerated: true } }, { outcome: { secretGenerated: true } }] },
+  });
+  vi.useFakeTimers();
+  try {
+    const pending = await prepareHumanPanelOperation(owner, credentials, { ...input, calls });
+    vi.runOnlyPendingTimers();
+    expect(await dispatchHumanPanelOperation(owner, credentials, pending.intentId)).toMatchObject({
+      kind: "not-dispatched", code: "PANEL_SECRET_EXPIRED",
+    });
+    expect(intents.get(pending.intentId)?.dispatched).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 it("uses the same owner impact for the human read and agent confirmation of the frozen batch", async () => {
   const { handler, request, impact } = installBatchOwner();
@@ -1252,4 +1308,21 @@ it("names the specific application entry in deleteEntry confirmation prompts", a
   expect(labelA).toBe("Orders App / Order List");
   expect(labelB).toBe("Orders App / Order Settings");
   expect(labelA).not.toBe(labelB);
+});
+
+it("rejects an agent-page action that supplies a declared secret", async () => {
+  const handlerRef = "test.setPassword";
+  mockRegisteredOperation({
+    handlerRef, labelKey: "test.perform", binding: { kind: "PlatformOperation", id: handlerRef },
+    kind: "action", effect: "write", batch: false, secretFields: ["password"],
+    targetSchema: z.null(), inputSchema: z.object({ password: z.string() }), resultSchema: z.object({}),
+    execute: async () => ({ kind: "success" as const, data: {} }),
+  });
+  mocks.panel.mockResolvedValue({ id: "P", manifest: { state: {}, members: { action: { target: { projectionId: "action" } } } } });
+  mocks.projection.mockResolvedValue({ id: "action", binding: { kind: "PlatformOperation", id: handlerRef }, inputs: {} });
+  await expect(prepareLiveAction({
+    intentId: uuid(93), applicationId: "A", useId: "tasks", operationId: "action.setPassword",
+    call: { target: null, input: { password: "agent-fixture-secret" } },
+  })).rejects.toMatchObject({ code: "PANEL_SECRET_HUMAN_INPUT_REQUIRED" });
+  expect(intents.size).toBe(0);
 });

@@ -51,8 +51,8 @@ function resetForm() {
 
 watch(
   () => props.modelValue,
-  (open) => {
-    if (open) resetForm();
+  () => {
+    resetForm();
   },
   { immediate: true },
 );
@@ -140,6 +140,8 @@ function submit() {
         ></el-input>
         <el-input
           v-else
+          :type="field.kind === 'password' ? 'password' : 'text'"
+          :show-password="field.kind === 'password'"
           :model-value="String(draft[field.name] ?? '')"
           @update:model-value="(value) => { draft[field.name] = value; clearError(field.name); }"
         ></el-input>

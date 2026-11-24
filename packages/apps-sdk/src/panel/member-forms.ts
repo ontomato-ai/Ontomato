@@ -1,3 +1,4 @@
+import { normalizePanelSecretPointer, panelInputPointer, panelSchemaSecretPaths, panelSecretPathsOverlap, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
 import { declaredCustomerFormSaveName, hasDeclaredPlatformFormSave } from "@ontomato/contracts/panel-projection";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
@@ -30,6 +31,8 @@ import type { SubmissionEvaluator } from "./operation-binding";
 
 /** Extra context for routing a form submission to its save operation. */
 export interface FormSaveContext {
+  readonly secretFields?: readonly string[];
+  readonly onSecretDelivery?: import("./instance").PanelWriteOperationOptions["onSecretDelivery"];
   readonly fixedFieldPaths?: readonly string[];
   readonly changedFields?: readonly string[];
   readonly baselineValues?: PanelFormValues;
@@ -44,6 +47,7 @@ export interface FormSaveContext {
 /** Outcome returned by a form save: the saved/created object primary key (or null when an action did not report one). */
 export interface FormSaveResult {
   readonly primaryKey: string | null;
+  readonly secretGenerated?: boolean;
   readonly message?: string;
 }
 
@@ -407,10 +411,11 @@ export function resolveFormSaveAnswer(
   const outcome = response.outcome;
   if (outcome === null) throw new Error("Whether the owner saved is not known");
   if (outcome.kind === "success") {
-    if (target.kind === "object") return { primaryKey: target.primaryKey, message: outcome.message };
+    const receipt = { message: outcome.message, ...(outcome.secretGenerated && { secretGenerated: true }) };
+    if (target.kind === "object") return { primaryKey: target.primaryKey, ...receipt };
     const { created } = outcome;
     const primaryKey = created && (objectType === null || created.objectType === objectType) ? created.primaryKey : null;
-    return { primaryKey, message: outcome.message };
+    return { primaryKey, ...receipt };
   }
   if (outcome.kind === "refusal" || outcome.kind === "failure") {
     // The owner names each refused field by its JSON Pointer.
@@ -418,6 +423,18 @@ export function resolveFormSaveAnswer(
   }
   if (outcome.kind === "batch") throw new Error("A form's save is one call, not a batch");
   throw new Error(outcome.message);
+}
+
+function actionSaveSecretPaths(
+  descriptor: PanelOwnerOperationDescriptor, binding: ProjectionOperationBinding | undefined, paths: readonly string[],
+): readonly string[] {
+  const wiring = resolveActionSaveWiring(descriptor, binding);
+  if (!wiring) return paths;
+  return Object.entries(wiring.params).flatMap(([param, source]) => {
+    const pointers = source.kind === "field" ? [source.path] : source.kind === "fields" ? Object.values(source.fields) : [];
+    return pointers.some(pointer => paths.some(path => panelSecretPathsOverlap(path, pointer)))
+      ? [`/values${panelInputPointer(param)}`] : [];
+  });
 }
 
 export function memberFormSource(member: PanelMemberContext, instance: PanelInstance): FormSource {
@@ -466,9 +483,14 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       if (!save || save.descriptor.kind !== "action") return null;
       const prepared = actionSaveInput(save.descriptor, projection.operations?.[save.name], input, context);
       if ("refusal" in prepared) return null;
+      const secretPaths = [
+        ...actionSaveSecretPaths(save.descriptor, projection.operations?.[save.name], context.secretFields ?? []),
+        ...save.descriptor.secretFields?.map(normalizePanelSecretPointer) ?? [],
+        ...panelSchemaSecretPaths(save.descriptor.inputSchema, prepared.input),
+      ];
       return {
         operationId: instance.operationIdOf(member.key, save.name),
-        call: { target: save.descriptor.target.source === "none" ? null : target, input: prepared.input },
+        call: { target: save.descriptor.target.source === "none" ? null : target, input: splitPanelSecrets(prepared.input, secretPaths).redacted },
       };
     },
     async save(target, input, override, context) {
@@ -486,13 +508,16 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       if ("refusal" in prepared) throw prepared.refusal;
       const callTarget = descriptor.target.source === "none" ? null : target;
       const agentContext = context?.agentContext ?? override?.agentContext;
-      const answer = agentContext
-        ? await instance.writeOperation(
-            operationId,
-            { call: { target: callTarget, input: prepared.input } },
-            { agentContext, ...(context?.evaluateSubmission ? { evaluateSubmission: context.evaluateSubmission } : {}) },
-          )
-        : await instance.writeOperation(operationId, { call: { target: callTarget, input: prepared.input } });
+      const paths = context?.secretFields ?? [];
+      const secretFields = descriptor.kind === "form.save" ? paths : actionSaveSecretPaths(descriptor, binding, paths);
+      const answer = await instance.writeOperation(operationId, {
+        call: { target: callTarget, input: prepared.input },
+        ...(secretFields.length && { secretFields }),
+      }, {
+        ...(context?.onSecretDelivery && { onSecretDelivery: context.onSecretDelivery }),
+        ...(agentContext && { agentContext }),
+        ...(context?.evaluateSubmission && { evaluateSubmission: context.evaluateSubmission }),
+      });
       const { type } = target.kind === "object" ? { type: target.objectType } : formRead(target, undefined, null);
       return resolveFormSaveAnswer(answer, target, type);
     },

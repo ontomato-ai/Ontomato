@@ -4,6 +4,7 @@ import { ElMessage } from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
+import type { PanelFormDescription } from "@ontomato/contracts/panel-projection";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { baseRecord, mountCreatePanel, ORDER, ready } from "./customer-action-form-fixture";
 
@@ -92,6 +93,76 @@ describe("ObjectForm create mode with targetless customer Action", () => {
       orderForm: { target: { projectionId: "order-form" }, inputs: { target: { state: "selected" } } },
     },
   };
+
+  it("redacts form secrets from observations and refuses agent edits of secret subtrees", async () => {
+    const secretField = (path: string): PanelFormDescription["fields"][number] => ({
+      path, label: path, valueSchema: { type: "string" }, required: false, readOnly: false,
+      control: { kind: "text", secret: true },
+    });
+    const formDescription: PanelFormDescription = {
+      ...createFormDescription,
+      save: { ...createFormDescription.save, method: "POST" },
+      fields: [
+        { ...secretField("/customer"), control: { kind: "text" } }, secretField("/apiKey"),
+        { ...secretField("/account"), control: { kind: "object", fields: [
+          secretField("/token"), { ...secretField("/label"), control: { kind: "text" } },
+        ] } },
+        { ...secretField("/items"), control: { kind: "object-array", itemFields: [secretField("/password")] } },
+      ],
+      values: { customer: "Customer", apiKey: "", account: { token: "initial-secret", label: "public" }, items: [{ password: "row-secret" }] },
+    };
+    const harness = mountCreatePanel({
+      manifest,
+      projections: {
+        ...projections,
+        "order-form": { ...projections["order-form"]!, operations: {
+          save: { operation: { kind: "Action", id: "create-order" }, params: {
+            apiKey: { formField: "/apiKey" },
+            account: { formFields: { token: "/account/token", label: "/account/label" } },
+            items: { formField: "/items" },
+          } },
+        } },
+      },
+      answer: request => {
+        if (request.operations) return ready({ save: {
+          ...createOrderDescriptor,
+          inputSchema: { type: "object", properties: { values: { type: "object", properties: {
+            customer: { type: "string" }, apiKey: { type: "string" },
+            account: { type: "string", contentMediaType: "application/json" },
+            items: { type: "string", contentMediaType: "application/json" },
+          } } } },
+        } });
+        if (request.dataName === "rows") return ready({ rows: [], total: 0 });
+        return ready(formDescription);
+      },
+    });
+    const { forms } = harness.instance;
+    try {
+      await vi.waitFor(() => expect(forms.snapshot("orderForm")?.secretFields).toEqual({
+        "/apiKey": false, "/account/token": true, "/items/0/password": true,
+      }));
+      const form = forms.handle("orderForm")!;
+      form.set("/apiKey", "entered-secret");
+      const snapshot = forms.snapshot("orderForm")!;
+      expect(snapshot.secretFields?.["/apiKey"]).toBe(true);
+      expect(snapshot.values).toMatchObject({ account: { label: "public" }, items: [{}] });
+      expect(snapshot.values).not.toHaveProperty("apiKey");
+      expect(snapshot.save?.call.input).toBeDefined();
+      const observed = JSON.stringify(snapshot);
+      for (const secret of ["initial-secret", "row-secret", "entered-secret"]) expect(observed).not.toContain(secret);
+      const attempted = await forms.fill("orderForm", {
+        "/apiKey": "from-agent", "/account": { token: "from-agent" },
+        "/account/token/child": "from-agent", "/items": [{ password: "from-agent" }],
+      });
+      expect(attempted).toMatchObject({ ok: false, rejectedFields: [
+        { path: "/apiKey", reason: "secret" }, { path: "/account", reason: "secret" },
+        { path: "/account/token/child", reason: "secret" }, { path: "/items", reason: "secret" },
+      ] });
+      expect(form.values.value).toMatchObject({ apiKey: "entered-secret", account: { token: "initial-secret" }, items: [{ password: "row-secret" }] });
+    } finally {
+      harness.unmount();
+    }
+  });
 
   it("human create succeeds without primaryKey: resets form cleanly, notifies success, emits saved(null), and refreshes sibling ObjectList", async () => {
     let listReadCount = 0;

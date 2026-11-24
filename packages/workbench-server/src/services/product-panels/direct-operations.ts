@@ -505,6 +505,9 @@ export async function declaredDirectOperation(
     ...current,
     descriptor,
     operation,
+    acceptsDraftSecretFields: current.handler.kind === "form.save" ||
+      placement.member.operationDrafts?.[name] !== undefined ||
+      Object.values(placement.projection.data).some(datum => datum.read === "form" || datum.read === "createForm"),
     boundParams,
     ...(bound.binding.params ? { bindingParams: bound.binding.params } : {}),
     use,

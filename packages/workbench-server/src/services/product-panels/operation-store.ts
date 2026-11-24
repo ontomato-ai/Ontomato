@@ -5,6 +5,8 @@ import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postg
 import { HttpError } from "../../utils/errors";
 import type { AssistantOwner } from "../assistant/store";
 
+import { panelSecretStore } from "./secret-store";
+
 const db = () => getPostgresPool();
 export const panelOperationStore = {
   async get(owner: AssistantOwner, id: string) {
@@ -45,6 +47,7 @@ export const panelOperationStore = {
        RETURNING id`,
       [owner.domainId, owner.userId, id, JSON.stringify(reason)],
     );
+    if (result.rowCount) panelSecretStore.remove(owner, id);
     return (result.rowCount ?? 0) > 0;
   },
   async cancelPendingAgentPageQuestion(
@@ -62,6 +65,7 @@ export const panelOperationStore = {
        RETURNING id`,
       [owner.domainId, owner.userId, questionId, JSON.stringify(reason)],
     )).rows[0];
+    if (row) panelSecretStore.remove(owner, row.id);
     return row ? { intentId: row.id } : null;
   },
   async invalidatePendingObjectWrites(
@@ -71,7 +75,7 @@ export const panelOperationStore = {
     reason: { code: string; message: string },
   ): Promise<void> {
     const targets = objects.map(({ objectType, primaryKey }) => ({ target: { kind: "object", objectType, primaryKey } }));
-    await db().query(
+    const { rows } = await db().query<{ id: string }>(
       `UPDATE ${t("panel_operation_intents")}
        SET intent=jsonb_set(intent,'{invalidated}',$5::jsonb)
        WHERE domain_id=$1 AND owner_id=$2 AND id<>$3
@@ -83,9 +87,11 @@ export const panelOperationStore = {
            SELECT 1 FROM jsonb_array_elements($4::jsonb) AS affected(call)
            WHERE intent->'call' @> affected.call
               OR intent->'calls' @> jsonb_build_array(affected.call)
-         )`,
+         )
+       RETURNING id`,
       [owner.domainId, owner.userId, excludeIntentId, JSON.stringify(targets), JSON.stringify(reason)],
     );
+    for (const { id } of rows) panelSecretStore.remove(owner, id);
   },
   async claim(owner: AssistantOwner, intent: PanelOperationIntent) {
     return (await db().query(`UPDATE ${t("panel_operation_intents")} SET intent=$4::jsonb WHERE domain_id=$1 AND owner_id=$2 AND id=$3 AND intent->>'dispatched'='false' AND intent->'invalidated' IS NULL RETURNING id`, [owner.domainId,owner.userId,intent.intentId,{...intent,dispatched:true}])).rowCount !== 0;

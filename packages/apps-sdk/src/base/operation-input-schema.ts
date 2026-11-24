@@ -1,7 +1,8 @@
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { normalizePanelSecretPointer, panelInputPointer, panelSchemaSecretPaths, panelSecretPathsOverlap } from "@ontomato/contracts/panel-secrets";
 import { cloneJsonValue, jsonValuesEqual } from "../panel/form-values";
 
-export type OperationInputFieldKind = "text" | "textarea" | "select" | "number" | "integer" | "boolean";
+export type OperationInputFieldKind = "text" | "password" | "textarea" | "select" | "number" | "integer" | "boolean";
 
 export interface OperationInputOption {
   readonly value: RuntimeJsonValue;
@@ -179,8 +180,11 @@ export function wrapActionOperationInput(
 export function operationInputFields(
   inputSchema: Record<string, RuntimeJsonValue>,
   excludeKeys: ReadonlySet<string> = new Set(),
+  secretFields: readonly string[] = [],
 ): readonly OperationInputField[] {
-  const root = (isActionValuesEnvelope(inputSchema)
+  const enveloped = isActionValuesEnvelope(inputSchema);
+  const declared = [...secretFields.map(normalizePanelSecretPointer), ...panelSchemaSecretPaths(inputSchema)];
+  const root = (enveloped
     ? ((inputSchema as RawSchema).properties as Record<string, unknown>).values
     : inputSchema) as RawSchema;
   if (!isObjectRecord(root.properties)) return [];
@@ -191,14 +195,16 @@ export function operationInputFields(
   for (const [name, rawProperty] of Object.entries(root.properties)) {
     if (excludeKeys.has(name) || !isObjectRecord(rawProperty)) continue;
     const schema = unwrapNullableSchema(rawProperty as RawSchema);
-    const { kind, options } = resolveKind(schema);
+    const path = (enveloped ? "/values" : "") + panelInputPointer(name);
+    const secret = declared.some(pointer => panelSecretPathsOverlap(path, pointer));
+    const { kind, options } = secret ? { kind: "password" as const, options: undefined } : resolveKind(schema);
     fields.push({
       name,
       label: (typeof schema.title === "string" && schema.title.trim()) || name,
       ...(typeof schema.description === "string" && schema.description.trim() ? { description: schema.description } : {}),
       kind,
       required: required.has(name),
-      defaultValue: schema.default === undefined ? undefined : cloneJsonValue(schema.default as RuntimeJsonValue),
+      defaultValue: secret || schema.default === undefined ? undefined : cloneJsonValue(schema.default as RuntimeJsonValue),
       ...(options ? { options } : {}),
       ...(typeof schema.minimum === "number" ? { min: schema.minimum } : {}),
       ...(typeof schema.maximum === "number" ? { max: schema.maximum } : {}),

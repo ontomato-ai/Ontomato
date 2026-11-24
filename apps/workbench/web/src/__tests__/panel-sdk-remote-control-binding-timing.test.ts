@@ -5,13 +5,13 @@ import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { ProductPanelOperationsReadResponse, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { PanelFormDescription } from "@ontomato/contracts/panel-projection";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { APPLICATION } from "@ontomato/contracts/platform-object-types";
-import { createDirectPanelInstance, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
+import { createDirectPanelInstance, type PanelReadPort } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
@@ -60,7 +60,7 @@ function mountPanel(options: {
   manifest: DirectPanelManifest;
   projections: Record<string, DirectProjection>;
   initial?: Record<string, unknown>;
-  read: (request: PanelMemberReadRequest) => Promise<ProductPanelReadResponse | ProductPanelOperationsReadResponse>;
+  read: PanelReadPort;
   prepare?: (
     operationId: string,
     invocation: unknown,
@@ -228,7 +228,7 @@ describe("Item 1.2 & 1.6: Batch expectedCheckedKeys verification and full-auto p
       projections: { "p-batch-btn": batchBtnProjection },
       read: async (req) =>
         req.operations
-          ? { status: "ready", value: { batchDelete: batchDeleteDescriptor } }
+          ? ready({ batchDelete: batchDeleteDescriptor })
           : ready([]),
     });
     try {
@@ -275,7 +275,7 @@ describe("Item 1.2 & 1.6: Batch expectedCheckedKeys verification and full-auto p
       autoMode: true,
       read: async (req) =>
         req.operations
-          ? { status: "ready", value: { batchDelete: batchDeleteDescriptor } }
+          ? ready({ batchDelete: batchDeleteDescriptor })
           : ready([]),
       prepare: async () => pendingPrepare.promise,
     });
@@ -360,7 +360,7 @@ describe("Item 1.3, 1.4 & 1.6: Mixed-type list composite rowKey and row confirma
       projections: { "p-mixed-list": projection },
       autoMode: true,
       read: async (req) => {
-        if (req.operations) return { status: "ready", value: { remove: removeDescriptor } };
+        if (req.operations) return ready({ remove: removeDescriptor });
         return ready([
           { primaryKey: "42", className: "demo:Alpha", label: "Alpha 42", fields: {} },
           { primaryKey: "42", className: "demo:Beta", label: "Beta 42", fields: {} },
@@ -457,7 +457,7 @@ describe("Item 1.3, 1.4 & 1.6: Mixed-type list composite rowKey and row confirma
       projections: { "p-app-entries": projection },
       autoMode: false,
       read: async (req) => {
-        if (req.operations) return { status: "ready", value: { remove: removeDescriptor } };
+        if (req.operations) return ready({ remove: removeDescriptor });
         return ready([{ primaryKey: "entry-1", className: "platform:Entry", label: "Home Entry", fields: {} }]);
       },
     });
@@ -490,7 +490,7 @@ describe("Item 1.3, 1.4 & 1.6: Mixed-type list composite rowKey and row confirma
       projections: { "p-app-entries": projection },
       autoMode: true,
       read: async (req) => {
-        if (req.operations) return { status: "ready", value: { remove: removeDescriptor } };
+        if (req.operations) return ready({ remove: removeDescriptor });
         return ready([{ primaryKey: "entry-1", className: "platform:Entry", label: "Home Entry", fields: {} }]);
       },
       prepare: async () => pendingPrepare.promise,
@@ -609,7 +609,7 @@ describe("Item 1.1, 1.4, 1.6 & 2.4: ObjectForm fixedFields staleness, expectedTa
       autoMode: false,
       read: async (req) =>
         req.operations
-          ? { status: "ready", value: { save: saveDescriptor } }
+          ? ready({ save: saveDescriptor })
           : ready(formDescription),
     });
     try {
@@ -658,7 +658,7 @@ describe("Item 1.1, 1.4, 1.6 & 2.4: ObjectForm fixedFields staleness, expectedTa
       autoMode: true,
       read: async (req) =>
         req.operations
-          ? { status: "ready", value: { save: saveDescriptor } }
+          ? ready({ save: saveDescriptor })
           : ready(formDescription),
       prepare: async () => pendingPrepare.promise,
     });
@@ -703,7 +703,7 @@ describe("Item 1.1, 1.4, 1.6 & 2.4: ObjectForm fixedFields staleness, expectedTa
       requestLocalConfirmation,
       read: async (req) =>
         req.operations
-          ? { status: "ready", value: { save: saveDescriptor } }
+          ? ready({ save: saveDescriptor })
           : ready(formDescription),
     });
     try {
@@ -805,14 +805,14 @@ describe("Item 1.1 & 1.4: Nested panel expectedMemberInstanceId and disposal inv
       projections: { "p-child-btn": childBtnProjection },
       autoMode: false,
       read: async (req) =>
-        req.operations ? { status: "ready", value: { run: runDescriptor } } : ready([]),
+        req.operations ? ready({ run: runDescriptor }) : ready([]),
     });
     const childB = mountPanel({
       manifest: childManifest,
       projections: { "p-child-btn": childBtnProjection },
       autoMode: false,
       read: async (req) =>
-        req.operations ? { status: "ready", value: { run: runDescriptor } } : ready([]),
+        req.operations ? ready({ run: runDescriptor }) : ready([]),
     });
 
     try {

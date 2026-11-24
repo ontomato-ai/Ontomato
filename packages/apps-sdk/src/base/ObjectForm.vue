@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { PanelSecretDelivery } from "@ontomato/contracts/panel-agent";
+import { panelSecretValuePresent, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
 import { projectionElement } from "../panel/projection-element";
 import { Comment, computed, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowReactive, shallowRef, useSlots, watch, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
@@ -55,6 +57,8 @@ import {
   type FormSaveResult,
 } from "../panel/member-forms";
 import { formControlsKey } from "./form-controls";
+import { formSecretPaths } from "./form-secret-fields";
+import SecretDeliveryDialog from "./SecretDeliveryDialog.vue";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
 import FormFieldPlace from "./FormFieldPlace.vue";
 import {
@@ -270,6 +274,7 @@ const ownerOpened = shallowRef<PanelFormDescription | null>(null);
 /** The owner's reading when the form opened: what discard returns to and the revision a save is sent with. */
 const opened = shallowRef<PanelFormDescription | null>(null);
 const values = shallowRef<PanelFormValues>({});
+const deliveries = shallowRef<readonly PanelSecretDelivery[]>([]);
 const changed = shallowRef<ReadonlySet<string>>(new Set());
 const errors = shallowRef<Readonly<Record<string, string>>>({});
 /** Fields holding text that is not a value of the owner's (JSON that does not parse), by absolute path. */
@@ -1372,12 +1377,14 @@ useProjectionForm({
       pending.set(pointer, value);
     }
 
+    const isSecret = (pointer: string) => formSecretPaths(fields.value, values.value, { target: pointer }).length > 0;
+
     // Standard detail 3.8: only block when filling fields that overlap unsaved edits made by the user.
     // Filling untouched fields or revising fields filled by the agent earlier in this session proceeds directly.
     if (!options?.overwriteUnsaved) {
       const activeUserEdited = activeUserEditedPaths();
       const conflicts = [...pending.keys()].filter((pointer) =>
-        activeUserEdited.some((userPath) => pathsOverlap(pointer, userPath)),
+        !isSecret(pointer) && activeUserEdited.some((userPath) => pathsOverlap(pointer, userPath)),
       );
       if (conflicts.length > 0) {
         return {
@@ -1414,6 +1421,10 @@ useProjectionForm({
       pointer: string,
       value: RuntimeJsonValue,
     ): { readonly ok: true; readonly field: PanelFormField } | { readonly ok: false; readonly rejection: FormFieldRejection } => {
+      if (isSecret(pointer)) {
+        const key = "platform.formSecretHumanInput";
+        return { ok: false, rejection: { path: pointer, reason: "secret", message: te(key) ? t(key) : "Enter this secret yourself on the page." } };
+      }
       if (isFixed(pointer)) {
         return { ok: false, rejection: { path: pointer, reason: "fixed", message: `Field ${pointer} is fixed by page state.` } };
       }
@@ -1540,6 +1551,8 @@ useProjectionForm({
     if (!opened.value) return null;
     const currentTarget = target.value;
     const modified = [...dirtyFields.value];
+    const paths = formSecretPaths(fields.value, values.value);
+    const active = formSecretPaths(fields.value, values.value, { active: true });
     const save = currentTarget && canSubmit.value && Object.keys(activeInvalid.value).length === 0
       ? forms.prepareActionSave(currentTarget, saveInput(prunedValues.value), saveContext())
       : null;
@@ -1555,7 +1568,8 @@ useProjectionForm({
         : {}),
       dirty: dirty.value,
       ...(modified.length ? { dirtyFields: modified } : {}),
-      values: { ...values.value },
+      values: splitPanelSecrets(values.value, paths).redacted,
+      ...(active.length && { secretFields: Object.fromEntries(active.map(path => [path, panelSecretValuePresent(valueAt(values.value, path))])) }),
     };
   },
 });
@@ -1713,6 +1727,8 @@ function saveInput(payloadValues: PanelFormValues) {
 
 function saveContext(agentContext?: PanelAgentActionContext, evaluateSubmission?: SubmissionEvaluator) {
   return {
+    secretFields: formSecretPaths(fields.value, values.value),
+    onSecretDelivery: (value: readonly PanelSecretDelivery[]) => { deliveries.value = value; },
     fixedFieldPaths: Object.keys(fixedValues.value),
     changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
     baselineValues: opened.value!.values,
@@ -1737,7 +1753,7 @@ function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
       if (createdWithoutKey) {
         adopt(ownerOpened.value!);
       } else {
-        adopt({ ...ownerShown.value!, values: payloadValues, errors: [] });
+        adopt({ ...ownerShown.value!, values: splitPanelSecrets(payloadValues, formSecretPaths(fields.value, payloadValues)).redacted, errors: [] });
         if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey! });
       }
     }
@@ -2255,6 +2271,7 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
       </div>
     </el-form>
     </data-state>
+    <secret-delivery-dialog v-if="deliveries.length" :deliveries="deliveries" @close="deliveries = []" />
   </div>
 </template>
 

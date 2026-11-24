@@ -239,9 +239,9 @@ describe("ObjectForm save", () => {
     form.set("/name", "Ada");
 
     await form.submit();
-    expect(write).toHaveBeenCalledWith("form.create", {
+    expect(write.mock.calls[0]?.slice(0, 2)).toEqual(["form.create", {
       call: { target: null, input: { values: { name: "Ada", campus: "North" } } },
-    });
+    }]);
     wrapper.unmount();
   });
 
@@ -259,9 +259,9 @@ describe("ObjectForm save", () => {
     await form.reset();
     form.set("/name", "Ada");
     await form.submit();
-    expect(write).toHaveBeenCalledWith("form.create", {
+    expect(write.mock.calls[0]?.slice(0, 2)).toEqual(["form.create", {
       call: { target: null, input: { values: { name: "Ada", campus: "Owner default" } } },
-    });
+    }]);
 
     operations.value = { status: "loading" };
     await nextTick();
@@ -278,12 +278,12 @@ describe("ObjectForm save", () => {
     form.set("/name", "Updated article");
 
     await form.submit();
-    expect(write).toHaveBeenCalledWith("form.persist", {
+    expect(write.mock.calls[0]?.slice(0, 2)).toEqual(["form.persist", {
       call: {
         target: { kind: "object", objectType: platformType, primaryKey: "article" },
         input: { values: { name: "Updated article", campus: "North", note: "" }, submittedFields: ["/name", "/campus"] },
       },
-    });
+    }]);
     wrapper.unmount();
   });
 
@@ -374,14 +374,14 @@ describe("ObjectForm save", () => {
     form.set("/contact", { grade: "B" });
 
     await form.submit();
-    expect(write).toHaveBeenCalledWith("form.create", {
+    expect(write.mock.calls[0]?.slice(0, 2)).toEqual(["form.create", {
       call: {
         target: null,
         input: { values: {
           campus: "North", name: "Ada", customer_note: "", contact_json: JSON.stringify({ grade: "B", phone: null }),
         } },
       },
-    });
+    }]);
     wrapper.unmount();
   });
 
@@ -708,7 +708,7 @@ describe("ObjectForm save", () => {
       },
     });
     await expect(form.submit()).resolves.toMatchObject({ primaryKey: "bk-new" });
-    expect(write).toHaveBeenCalledWith("form.persist", expect.any(Object));
+    expect(write.mock.calls[0]?.[0]).toBe("form.persist");
     wrapper.unmount();
   });
 });
