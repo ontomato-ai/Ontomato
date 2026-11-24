@@ -1,6 +1,6 @@
 import {
   panelHumanOperationPreparationSchema, panelOperationDescriptorResponseSchema, readPanelOperationResponseSchema,
-  type PanelAgentRunRef, type PanelHumanOperationPreparation, type PanelUseRef,
+  type PanelAgentRunRef, type PanelHumanOperationPreparation, type PanelLocalConfirmationRequest, type PanelUseRef,
 } from "@ontomato/contracts/panel-agent";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
 import type { PanelMemberPath, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
@@ -30,13 +30,7 @@ export interface PanelReadCall {
   input: ReadOperationInput | Readonly<Record<string, unknown>>;
 }
 
-/** Request body for creating a conversation confirmation question for a local UI action (e.g. discarding dirty edits). */
-export interface PanelLocalConfirmationRequest {
-  readonly agentRun: PanelAgentRunRef;
-  readonly operationLabel: string;
-  readonly targetLabel: string;
-  readonly impactSummary?: string;
-}
+export type { PanelLocalConfirmationRequest } from "@ontomato/contracts/panel-agent";
 
 /** Response from creating a conversation confirmation question for a local UI action. */
 export interface PanelLocalConfirmationResponse {

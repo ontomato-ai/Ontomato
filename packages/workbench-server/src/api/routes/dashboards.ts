@@ -20,11 +20,11 @@ import {
 import { listDashboards } from "../../services/dashboard/store";
 import { requireDomainId, credentialsFromRequest, type AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler } from "../utils/http";
-import { dashboardCardRequestSchema, dashboardAuthoring } from "@ontomato/contracts/dashboard";
+import { dashboardCardRequestSchema, dashboardAuthoring, dashboardAgentConfirmRequestSchema } from "@ontomato/contracts/dashboard";
 import { dashboardSourceSchema, dashboardAddArtifactSchema, dashboardAddChartFileSchema } from "@ontomato/contracts/dashboard-artifacts";
 import { DashboardMetricClient } from "../../services/dashboard/metric-client";
 import { queryMetricCard, metricCardParameterForm, saveMetricCardParameters } from "../../services/dashboard/metric-data";
-import { dashboardAgentConfirmRequestSchema, prepareDashboardAgentConfirm } from "../../services/dashboard/agent-confirm";
+import { prepareDashboardAgentConfirm } from "../../services/dashboard/agent-confirm";
 import {registerDashboardProduct} from '../../services/product-assets/register-dashboard';
 const router: ExpressRouter = Router();
 function metricContext(req: AuthenticatedRequest) {

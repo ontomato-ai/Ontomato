@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   cancelPanelOperationIntentRequestSchema, createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
-  inspectPanelOperationImpactRequestSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
+  inspectPanelOperationImpactRequestSchema, localPanelConfirmationRequestSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
   panelOperationDescriptorResponseSchema, panelOperationRefSchema, panelUseRefSchema,
   panelUploadRequestSchema, readPanelOperationRequestSchema, readPanelOperationResponseSchema, updatePanelOperationSettingsRequestSchema,
 } from "@ontomato/contracts/panel-agent";
@@ -57,17 +57,6 @@ import { panelConfirmation } from "../../services/product-panels/confirmation";
 import { runForOwner } from "../../services/assistant/execution";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { readRegisteredPanelPageSkillContext } from "../../services/skills/view";
-
-const localPanelConfirmationRequestSchema = z.object({
-  agentRun: z.object({
-    sessionId: z.string().uuid(),
-    runId: z.string().uuid(),
-    toolCallId: z.string().min(1),
-  }).strict(),
-  operationLabel: z.string().min(1),
-  targetLabel: z.string().min(1),
-  impactSummary: z.string().min(1).optional(),
-}).strict();
 
 type FrameRead = Extract<ProductPanelReadQuery, { source: "frame" }>;
 
@@ -396,7 +385,7 @@ panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (
     throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
   }
   const settings = await panelOperationStore.settings(owner, root);
-  const autoMode = !settings.confirmBeforeExecute;
+  const autoMode = input.requireConfirmation ? false : !settings.confirmBeforeExecute;
   const intentId = randomUUID();
   const questionId = autoMode ? null : randomUUID();
   if (!autoMode && questionId) {

@@ -152,12 +152,17 @@ vi.mock("../../api", () => ({
   prepareDashboardAgentConfirm: async (input: Record<string, unknown>) => {
     api.confirmCalls.push(input);
     const seq = api.confirmMode.nextSeq++;
-    const label = input.operation === "board.save" ? "Save dashboard changes" : "Save card parameters";
+    const autoMode = api.confirmMode.autoMode && input.requireConfirmation !== true;
+    const labels: Record<string, string> = {
+      "board.save": "Save dashboard changes",
+      "card.parameters.save": "Save card parameters",
+      "card.parameters.discard": "Discard card parameter changes",
+    };
     return {
       intentId: `intent-${seq}`,
-      autoMode: api.confirmMode.autoMode,
-      questionId: api.confirmMode.autoMode ? null : `question-${seq}`,
-      label,
+      autoMode,
+      questionId: autoMode ? null : `question-${seq}`,
+      label: labels[String(input.operation)],
     };
   },
   createDimension: async () => true,
@@ -446,6 +451,76 @@ describe("dashboard whole-board live preview and confirmed remote control", () =
     expect(api.savedParams).toEqual([{ dashboardId: "d1", cardId: "c1", revision: "r1", values: { year: "2024" } }]);
 
     wrapper.unmount();
+  });
+
+  describe.each(["card.parameters.discard", "form.discard"])("%s with the parameter dialog open", (operation) => {
+    it.each([false, true])("asks before discarding user edits when autoMode is %s", async (autoMode) => {
+      api.confirmMode.autoMode = autoMode;
+      const { wrapper, controller } = await mountDashboardHome();
+      try {
+        expect(await controller.executeAction!({ operation: "card.parameters.open", agentRun })).toMatchObject({ ok: true });
+        const fields = wrapper.findComponent(FormFields);
+        fields.vm.$emit("input", "year", "user-value");
+        await flushPromises();
+
+        const pending = await controller.executeAction!({ operation, agentRun });
+        if (!pending.ok || pending.kind !== "awaiting_confirmation") throw new Error(`Expected confirmation for ${operation}`);
+        expect(fields.props("values")).toMatchObject({ year: "user-value" });
+        expect(api.confirmCalls.at(-1)).toMatchObject({
+          operation: "card.parameters.discard",
+          requireConfirmation: true,
+          impactSummary: expect.stringContaining("Year"),
+        });
+        expect(api.confirmCalls.at(-1)?.impactSummary).not.toContain("user-value");
+
+        fields.vm.$emit("input", "year", "new-user-value");
+        await flushPromises();
+        expect(pending.confirmation.isStillValid()).toMatchObject({ ok: false, reason: "stale" });
+        expect(await pending.confirmation.dispatch()).toMatchObject({ ok: false, reason: "stale" });
+        expect(fields.props("values")).toMatchObject({ year: "new-user-value" });
+
+        const renewed = await controller.executeAction!({ operation, agentRun });
+        if (!renewed.ok || renewed.kind !== "awaiting_confirmation") throw new Error(`Expected confirmation for ${operation}`);
+        expect(await renewed.confirmation.dispatch()).toMatchObject({ ok: true, outcome: { discarded: true } });
+        await flushPromises();
+        expect(wrapper.findComponent(FormFields).exists()).toBe(false);
+        expect(await controller.executeAction!({ operation: "card.parameters.open", agentRun })).toMatchObject({ ok: true });
+        await flushPromises();
+        expect(wrapper.findComponent(FormFields).props("values")).toMatchObject({ year: "2026" });
+        expect(api.savedParams).toEqual([]);
+      } finally {
+        wrapper.unmount();
+      }
+    });
+
+    it("discards agent-only edits in full-auto mode and closes a clean dialog without confirmation", async () => {
+      api.confirmMode.autoMode = true;
+      const { wrapper, controller } = await mountDashboardHome();
+      try {
+        expect(await controller.fillForm!({ member: "card.parameters", values: { year: "2025" } })).toMatchObject({ ok: true });
+        await flushPromises();
+        const fields = wrapper.findComponent(FormFields);
+        fields.vm.$emit("input", "region", "West");
+        fields.vm.$emit("input", "region", "East");
+        await flushPromises();
+
+        expect(await controller.executeAction!({ operation, agentRun })).toMatchObject({ ok: true, kind: "executed", operation });
+        expect(api.confirmCalls.at(-1)).not.toHaveProperty("requireConfirmation");
+        await flushPromises();
+        expect(wrapper.findComponent(FormFields).exists()).toBe(false);
+
+        api.confirmCalls.length = 0;
+        api.confirmMode.autoMode = false;
+        expect(await controller.executeAction!({ operation: "card.parameters.open", agentRun })).toMatchObject({ ok: true });
+        await flushPromises();
+        expect(await controller.executeAction!({ operation, agentRun })).toEqual({ ok: true, kind: "executed", operation });
+        expect(api.confirmCalls).toEqual([]);
+        await flushPromises();
+        expect(wrapper.findComponent(FormFields).exists()).toBe(false);
+      } finally {
+        wrapper.unmount();
+      }
+    });
   });
 
   it("disables direct board-write entries with a reason while a board preview is active, while keeping read-only controls and Save/Cancel usable", async () => {

@@ -27,7 +27,7 @@ import {
   wrapActionOperationInput,
   type OperationInputField,
 } from "../base/operation-input-schema";
-import { usePanelContext } from "./context";
+import { slotInputState, usePanelContext } from "./context";
 import { directMountKey } from "./direct-projection";
 import {
   classifyDispatchResponseForAction,
@@ -683,25 +683,36 @@ export function usePanelOperation(
     }
   };
 
+  const memberBinding = manifest.members[member]!;
+  const boundStateNames = [...new Set([
+    ...Object.keys(memberBinding.inputs ?? {}),
+    ...Object.keys(memberBinding.outputs ?? {}),
+  ].map((port) => slotInputState(manifest, member, port)).filter((state) => state !== null))];
   const entryBindingSignature = computed(() => {
-    const desc = descriptor.value;
-    const declaredDraftSlot = manifest.members[member]?.operationDrafts?.[name]?.slot;
+    const declaredDraftSlot = memberBinding.operationDrafts?.[name]?.slot;
     const draftFormId = declaredDraftSlot
       ? (instance.forms.snapshot(declaredDraftSlot)?.formInstanceId ?? null)
       : null;
-    const targetInfo = desc
-      ? resolveMemberOperationTarget(manifest, member, desc, instance.state.values.value)
-      : null;
     return JSON.stringify({
-      target: targetInfo?.target ?? null,
-      checked: targetInfo?.checkedTargets ?? null,
       inputs: currentMemberInputs(),
       draftFormId,
+      boundState: boundStateNames.map((state) => instance.state.values.value[state]),
     });
   });
-  watch(entryBindingSignature, (next, prev) => {
-    if (next !== prev) entryInstanceId.value = randomId();
+  const resolvedTargetSignature = computed(() => {
+    const desc = descriptor.value;
+    if (!desc) return null;
+    const { target, checkedTargets } = resolveMemberOperationTarget(manifest, member, desc, instance.state.values.value);
+    return JSON.stringify({ target, checked: checkedTargets });
   });
+
+  let lastResolvedTarget = resolvedTargetSignature.value;
+  watch([entryBindingSignature, resolvedTargetSignature], ([binding, target], [previousBinding]) => {
+    if (binding !== previousBinding || (target !== null && lastResolvedTarget !== null && target !== lastResolvedTarget)) {
+      entryInstanceId.value = randomId();
+    }
+    if (target !== null) lastResolvedTarget = target;
+  }, { flush: "sync" });
 
   const unregister = options.entry === false
     ? undefined

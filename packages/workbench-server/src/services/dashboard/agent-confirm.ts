@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import type {
+  DashboardAgentConfirmOperation, DashboardAgentConfirmRequest, DashboardAgentConfirmResponse,
+} from "@ontomato/contracts/dashboard";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -10,41 +12,16 @@ import { panelConfirmation } from "../product-panels/confirmation";
 import { panelOperationStore } from "../product-panels/operation-store";
 import { getOwnedDashboard } from "./access";
 
-const text = z.string().trim().min(1);
-
-export const dashboardAgentConfirmOperationSchema = z.enum(["board.save", "card.parameters.save"]);
-export type DashboardAgentConfirmOperation = z.infer<typeof dashboardAgentConfirmOperationSchema>;
-
-export const dashboardAgentConfirmRequestSchema = z.object({
-  dashboardId: text,
-  operation: dashboardAgentConfirmOperationSchema,
-  targetLabel: text.max(200),
-  impactSummary: text.max(1000).optional(),
-  agentRun: z.object({
-    sessionId: text,
-    runId: text,
-    toolCallId: text,
-  }).strict(),
-}).strict();
-export type DashboardAgentConfirmRequest = z.infer<typeof dashboardAgentConfirmRequestSchema>;
-
-export interface DashboardAgentConfirmResponse {
-  intentId: string;
-  autoMode: boolean;
-  questionId: string | null;
-  label: string;
-}
-
 const OPERATION_LABELS: Record<DashboardAgentConfirmOperation, string> = {
   "board.save": "Save dashboard changes",
   "card.parameters.save": "Save card parameters",
+  "card.parameters.discard": "Discard card parameter changes",
 };
 
 /**
- * Prepares confirmation for an agent-driven save on the live dashboard page.
- * Validates ownership of both the dashboard and the active live run, reads the root
- * session's `confirmBeforeExecute` preference, and in default mode publishes a standard
- * conversation confirmation prompt without exposing edited field values.
+ * Prepares confirmation for an agent-driven edit action on the live dashboard page.
+ * Validates dashboard and run ownership, then asks when the root session prefers
+ * confirmation or the action requires it. The prompt omits edited field values.
  */
 export async function prepareDashboardAgentConfirm(
   owner: AssistantOwner,
@@ -81,7 +58,7 @@ export async function prepareDashboardAgentConfirm(
   }
 
   const settings = await panelOperationStore.settings(owner, root);
-  const autoMode = !settings.confirmBeforeExecute;
+  const autoMode = input.requireConfirmation ? false : !settings.confirmBeforeExecute;
   const intentId = randomUUID();
   const questionId = autoMode ? null : randomUUID();
   const label = OPERATION_LABELS[input.operation];

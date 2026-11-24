@@ -530,6 +530,15 @@ onBeforeUnmount(() => {
   unregisterSave?.();
 });
 
+function activeUserEditedPaths(): string[] {
+  const invalidPaths = Object.keys(activeInvalid.value);
+  return [...userEditedPaths.value].filter((userPath) =>
+    invalidPaths.some((invalidPath) => pathsOverlap(invalidPath, userPath))
+    || (prunedOpenedValues.value !== null
+      && !jsonValuesEqual(valueAt(prunedValues.value, userPath), valueAt(prunedOpenedValues.value, userPath))),
+  );
+}
+
 async function handleDiscardAction(
   operationName: "discard" | "reset",
   request: {
@@ -594,11 +603,13 @@ async function handleDiscardAction(
   const targetLabel = currentTarget.kind === "object"
     ? panel.instance.objectName(currentTarget.objectType, currentTarget.primaryKey) ?? currentTarget.primaryKey
     : objectType;
+  const hasHumanUnsavedEdits = activeUserEditedPaths().length > 0;
   const created = await panel.instance.requestLocalConfirmation({
     agentRun: request.agentContext.agentRun,
     operationLabel: t("platform.discard"),
     targetLabel,
     impactSummary: t("platform.formDiscardConfirm"),
+    ...(hasHumanUnsavedEdits ? { requireConfirmation: true } : {}),
   });
   const preCheck = verifySubmissionUnchanged(frozen, evaluateDiscardSubmission, "auto-dispatch");
   if (!preCheck.ok) {
@@ -610,11 +621,12 @@ async function handleDiscardAction(
     }
     return { ok: false as const, reason: "stale" as const, message: preCheck.message };
   }
-  if (created.autoMode === true || !created.questionId) {
+  if (created.autoMode === true) {
     discard();
     return { ok: true as const, outcome: { discarded: true } };
   }
   const questionId = created.questionId;
+  if (questionId === null) throw new Error("Discard confirmation did not return a question ID.");
   const confirmation = createDeferredConfirmation({
     intentId: created.intentId,
     questionId,
@@ -1304,11 +1316,7 @@ useProjectionForm({
     // Standard detail 3.8: only block when filling fields that overlap unsaved edits made by the user.
     // Filling untouched fields or revising fields filled by the agent earlier in this session proceeds directly.
     if (!options?.overwriteUnsaved) {
-      const activeUserEdited = [...userEditedPaths.value].filter((userPath) =>
-        Object.keys(activeInvalid.value).some((invalidPath) => pathsOverlap(invalidPath, userPath))
-        || (prunedOpenedValues.value !== null
-          && !jsonValuesEqual(valueAt(prunedValues.value, userPath), valueAt(prunedOpenedValues.value, userPath))),
-      );
+      const activeUserEdited = activeUserEditedPaths();
       const conflicts = [...pending.keys()].filter((pointer) =>
         activeUserEdited.some((userPath) => pathsOverlap(pointer, userPath)),
       );

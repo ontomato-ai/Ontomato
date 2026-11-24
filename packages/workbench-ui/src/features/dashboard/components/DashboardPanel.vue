@@ -1775,8 +1775,7 @@ async function executeAction(request) {
     if (!parametersOpen.value || !parameterDialogRef.value) {
       return { ok: false, reason: "action_not_ready", operation, message: "The card parameter dialog is not open." };
     }
-    parameterDialogRef.value.discard();
-    return { ok: true, kind: "executed", operation };
+    return parameterDialogRef.value.discardFromAction(operation, request.agentRun);
   }
   if (operation === "board.save") {
     return saveBoardFromAction(operation, request.agentRun);
@@ -1799,8 +1798,7 @@ async function executeAction(request) {
   }
   if (operation === "form.discard") {
     if (parametersOpen.value && parameterDialogRef.value) {
-      parameterDialogRef.value.discard();
-      return { ok: true, kind: "executed", operation };
+      return parameterDialogRef.value.discardFromAction(operation, request.agentRun);
     }
     if (hasBoardPreview.value) {
       await discardBoardPreview();
