@@ -475,7 +475,7 @@ function effectiveInputs(
     if (!Object.hasOwn(projection.inputs, name)) {
       const implicit = Object.values(projection.data).some(datum => {
         const source = authoredReadParameterSource(datum.params, name, member);
-        return source && "state" in source && panelReadParameterId(directReadDeclaration(projection, datum)!, name);
+        return source && ("state" in source || "output" in source) && panelReadParameterId(directReadDeclaration(projection, datum)!, name);
       });
       if (!implicit) throw new HttpError(400, `Unknown projection input: ${name}`, "PANEL_INPUT_UNKNOWN");
       continue;

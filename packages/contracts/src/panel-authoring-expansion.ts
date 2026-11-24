@@ -169,7 +169,7 @@ export function expandPanelAuthoringMember(
       inputBindings.set(name, source);
       return { input: name };
     }
-    if (expected && expected.kind !== "json" && !matchesDirectPanelValue(expected, source.literal)) {
+    if ("literal" in source && expected && expected.kind !== "json" && !matchesDirectPanelValue(expected, source.literal)) {
       fail(path, `Literal value does not match input '${name}'`);
     }
     if (!inputTypes.has(name)) {

@@ -6,7 +6,7 @@ import { componentIdSchema } from "./product-record-id";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { directPanelPortTypeSchema, matchesObjectType, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
+import { directPanelPortTypeSchema, matchesObjectType, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
@@ -367,16 +367,16 @@ export function panelReadParameterId(declaration: PlatformReadDeclaration, name:
 
 /**
  * A read parameter without a projection mapping is an input with the same name and the type in the read signature.
- * A member's state binding supplies that input before any component runtime parameter can.
+ * A member's state or output binding supplies that input before any component runtime parameter can.
  */
 export function authoredReadParameterSource(
   params: DirectProjectionData["params"],
   name: string,
   member?: Pick<PanelMember, "inputs" | "outputs">,
-): DirectProjectionData["params"][string] | PanelStateRef | undefined {
+): DirectProjectionData["params"][string] | Exclude<PanelMemberInput, { literal: unknown }> | undefined {
   if (Object.hasOwn(params, name)) return params[name];
   const input = member?.inputs?.[name];
-  return input && "state" in input ? input : member?.outputs?.[name];
+  return input && !("literal" in input) ? input : member?.outputs?.[name];
 }
 
 /** Registration checks the projection, its placement and the active catalogue for a required parameter's source. */

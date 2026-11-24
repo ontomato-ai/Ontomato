@@ -300,6 +300,9 @@ const commandInputSchema = z.union([literalValue, panelStateRefSchema, itemValue
 export const panelMemberInputSchema = z.union([
   literalValue,
   panelStateRefSchema,
+  z.object({
+    output: z.object({ member: key, name: key, path: formFieldErrorSchema.shape.field.optional() }).strict(),
+  }).strict(),
 ]);
 export type PanelMemberInput = z.infer<typeof panelMemberInputSchema>;
 const placementPorts = {
@@ -611,6 +614,11 @@ export const panelManifestSchema = z.object({
     }
     for (const [name, input] of Object.entries(declaration.inputs ?? {})) {
       if ("state" in input) requireName(state, input.state, [...path, "inputs", name, "state"]);
+      if ("output" in input) {
+        const outputPath = [...path, "inputs", name, "output", "member"];
+        requireName(members, input.output.member, outputPath);
+        if (input.output.member === member) issue(outputPath, "A member cannot read its own output as an input");
+      }
     }
     for (const [name, output] of Object.entries(declaration.outputs ?? {}))
       requireName(state, output.state, [...path, "outputs", name, "state"]);

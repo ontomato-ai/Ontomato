@@ -12,11 +12,17 @@ function tokens(path: string): string[] {
 }
 
 /** The value a pointer names; undefined when the values do not reach it. */
-export function valueAt(values: PanelFormValues, path: string): RuntimeJsonValue | undefined {
+export function valueAt(values: RuntimeJsonValue, path: string): RuntimeJsonValue | undefined {
   let current: RuntimeJsonValue | undefined = values;
   for (const token of tokens(path)) {
     if (current === null || typeof current !== "object") return undefined;
-    current = Array.isArray(current) ? current[Number(token)] : current[token];
+    if (Array.isArray(current)) {
+      if (!/^(0|[1-9][0-9]*)$/.test(token)) return undefined;
+      current = current[Number(token)];
+    } else {
+      const value: RuntimeJsonValue | undefined = current[token];
+      current = Object.hasOwn(current, token) ? value : undefined;
+    }
   }
   return current;
 }

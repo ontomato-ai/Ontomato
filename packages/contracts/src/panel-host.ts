@@ -578,3 +578,20 @@ export function panelAddressState(
   }
   return collapseBucket(bucket, manifest);
 }
+
+/** The complete deep-link state restored by an address, including defaults for omitted fields. */
+export function restoredPanelAddressState(
+  address: string,
+  manifest: Pick<PanelManifest, "state">,
+): Record<string, PanelDeepLinkStateValue> {
+  const decoded = panelAddressState(address, manifest);
+  return Object.fromEntries(Object.entries(manifest.state)
+    .filter(([, field]) => field.deepLink)
+    .map(([name, field]) => [name, Object.hasOwn(decoded, name) ? decoded[name]! : field.default ?? null]));
+}
+
+/** A live patch on a bare address for the same page preserves its current deep-link state. */
+export function presentationAppliesAddress(current: string, next: string, hasStatePatch: boolean): boolean {
+  return !hasStatePatch || next.includes("?") || next.includes("#")
+    || next.split(/[?#]/, 1)[0] !== current.split(/[?#]/, 1)[0];
+}

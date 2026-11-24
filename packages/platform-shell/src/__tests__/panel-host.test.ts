@@ -127,6 +127,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
           return {
             refresh() {}, activate() {}, dispose() {},
             address: url => { started.addresses.push(url); },
+            publicState: () => Object.assign({}, run.initial, ...started.statePatches),
             setState: (...args: unknown[]) => {
               const patch = args[0] as Record<string, unknown>;
               started.statePatches.push({ ...patch });

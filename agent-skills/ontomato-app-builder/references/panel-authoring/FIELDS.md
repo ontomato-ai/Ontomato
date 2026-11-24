@@ -63,7 +63,7 @@ Use these fields for a new member inside `manifest.members` in `panel.json`.
 | `parameters` | No | Parameters for a draft read operation. Use {state: fieldName}, {formField: {slot, path}}, or {fields: {parameterName: source}}. Defaults to an empty object. |
 | `bindingId` | No | Optional binding ID for a draft read operation, from {state: fieldName} or {formField: {slot, path}}. |
 | `state` | No | Map typed component port names or owner read parameter names to panel state fields. |
-| `inputs` | No | Explicit projection input bindings: {state: fieldName}, {literal: value}, or {fromSlot: true} when supplied by an enclosing Vue slot. |
+| `inputs` | No | Explicit projection input bindings: {state: fieldName}, {literal: value}, {output: {member, name, path?}}, or {fromSlot: true} when supplied by an enclosing Vue slot. |
 | `config` | No | Component configuration from the released SDK catalogue. |
 | `agent` | No | Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}. |
 | `prefill` | No | ConversationEntry text placed in the page composer without sending it. |

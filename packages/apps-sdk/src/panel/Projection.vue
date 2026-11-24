@@ -43,8 +43,11 @@ const placementStyle = computed(() => attrs.style as StyleValue);
 const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ projection: ProductProjection; component: Component; member: PanelMemberContext } | null>(null);
-const resolvedInputs = ref<Record<string, unknown>>({});
-/** A member's inputs are JSON as the state holds them. */
+const resolvedInputs = computed(() => ({
+  ...slotInputValues(panel.instance, props.slot),
+  ...props.inputs,
+}));
+/** A member's inputs as supplied by its placement. */
 const memberInputs = computed(() => resolvedInputs.value as MemberInputs);
 let registered: (() => void) | undefined;
 /** What the member's operations are read in, for the projection drawn now. */
@@ -119,19 +122,6 @@ onBeforeUnmount(() => {
   stop();
   registered?.();
 });
-
-// The slot's inputs follow the instance's state: the panel's own values, never a copy.
-watch(
-  [() => panel.instance.state.values.value, () => props.inputs],
-  () => {
-    resolvedInputs.value = {
-      ...slotInputValues(panel.manifest, props.slot, panel.instance.state.values.value),
-      ...(props.inputs ?? {}),
-    };
-  },
-  { immediate: true, deep: true },
-);
-
 provide(projectionKey, {
   slot: props.slot,
   get projection() {

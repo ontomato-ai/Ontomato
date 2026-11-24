@@ -216,7 +216,7 @@ export function usePanelOperation(
 
   function currentMemberInputs(): Readonly<Record<string, RuntimeJsonValue>> {
     if (memberContext.value) return memberContext.value.inputs.value;
-    return slotInputValues(manifest, member, instance.state.values.value) as Record<string, RuntimeJsonValue>;
+    return slotInputValues(instance, member);
   }
 
   function resolveBoundParams(): Record<string, RuntimeJsonValue> {

@@ -613,8 +613,22 @@ export function liveFormScenario() {
   const panel = panelRecord(
     "panel-schedules-form",
     "Task form (trial)",
-    definePanel({ state: selectedTask, members: { form: slot(formProjection.id, "task") } }),
+    definePanel({
+      state: { ...selectedTask, mode: { type: { kind: "scalar", type: "string" }, default: "view" } },
+      members: { form: slot(formProjection.id, "task") },
+    }),
   );
+  panel.content.module = `import { h, resolveComponent } from "vue";
+import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+await mountPanel({
+  setup() {
+    const { instance } = usePanelContext();
+    const Projection = resolveComponent("Projection");
+    return () => instance.state.values.value.mode === "edit"
+      ? h(Projection, { slot: "form" })
+      : h("button", { type: "button", "data-edit": "", onClick: () => instance.state.set("mode", "edit") }, "Edit");
+  },
+});`;
   const use = panelUse("use-trial-a-form", "panels-trial-a-form", panel.id, "/applications/app-panels-trial-a/form");
   const form = platformScheduleFormSchema.parse({
     ...taskForm,

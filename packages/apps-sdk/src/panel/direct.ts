@@ -18,7 +18,7 @@ import type { PanelContext } from "./context";
 import { admittedOperations, watchMemberOperations, type MemberOperationsState } from "./member-operations";
 import type { PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
-import { slotInputValues } from "./ports";
+import { memberInputValue, slotInputValues } from "./ports";
 import { memberComponentId } from "./projection-element";
 
 /*
@@ -466,13 +466,13 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   }
   /** The state a placed panel's inputs take from this instance, by the placed panel's names. */
   const nestedInputs = (member: string) => Object.fromEntries(Object.entries(direct.members[member]!.inputs ?? {}).map(([name, from]) => [
-    name, "literal" in from ? from.literal : "state" in from ? instance.state.values.value[from.state] ?? null : null,
+    name, memberInputValue(instance, from),
   ])) as Record<string, PanelFieldValue>;
   /** Holds the projection a member places: its inputs, its operations as its owners admit them, and its data. */
   async function placeProjection(member: string, scope: EffectScope): Promise<MemberPlacing> {
     const projection = await directInstance.projectionOf(member);
     const context = scope.run(() => {
-      const inputs = computed(() => slotInputValues(direct, member, instance.state.values.value) as MemberInputs);
+      const inputs = computed(() => slotInputValues(instance, member));
       const operations = directInstance.memberOperations(member, projection, () => inputs.value);
       const memberContext: PanelMemberContext = {
         key: member,
@@ -534,8 +534,10 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         fillForm: (request) => placed.fillForm(request),
         executeAction: (request) => placed.executeAction(request),
       }))));
-      // Its inputs follow this instance's state; its outputs write it.
-      watch(() => JSON.stringify(nestedInputs(member)), () => placed.state.setState(nestedInputs(member)));
+      // Apply changes that arrived while the child was mounting, then follow the live bindings.
+      watch(() => JSON.stringify(nestedInputs(member)), (next, previous) => {
+        if (next !== (previous ?? JSON.stringify(run.initial))) placed.state.setState(nestedInputs(member));
+      }, { immediate: true });
       for (const [name, to] of Object.entries(direct.members[member]!.outputs ?? {}))
         watch(() => placed.state.values.value[name], (value) => instance.state.set(to.state, (value ?? null) as never), { immediate: true });
       onScopeDispose(() => {
@@ -651,7 +653,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       const ownParamsRef = shallowRef<Record<string, RuntimeJsonValue>>({});
       const context = scope.run(() => {
         const inputs = computed<MemberInputs>(() => ({
-          ...(slotInputValues(direct, member, instance.state.values.value) as MemberInputs),
+          ...slotInputValues(instance, member),
           ...overrideInputs(),
         }));
         const operations = directInstance.memberOperations(member, projection, () => inputs.value);
