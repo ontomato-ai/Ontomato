@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPresentationBatchController, createPresentationTools } from "../runtime";
+import { createPresentationBatchController, createPresentationTools } from "../platform-tools";
 
 const callback = {
   url: "http://127.0.0.1:4000/api/assistant/sessions/s1/runs/r1/presentation-call/v1",
@@ -30,10 +30,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 describe("presentation tools schema & same-batch sequential early-stop", () => {
   it("does not expose expected* basis parameters on fill_form or page_action tool schemas", () => {
     const tools = createPresentationTools("r1", callback);
-    const fillForm = tools.find((tool) => tool.name === "fill_form")!;
-    const pageAction = tools.find((tool) => tool.name === "page_action")!;
-    const fillProps = Object.keys((fillForm.parameters as { properties: Record<string, unknown> }).properties);
-    const actionProps = Object.keys((pageAction.parameters as { properties: Record<string, unknown> }).properties);
+    const fillForm = tools.find((tool) => tool.declaration.name === "fill_form")!;
+    const pageAction = tools.find((tool) => tool.declaration.name === "page_action")!;
+    const fillProps = Object.keys((fillForm.declaration.parameters as { properties: Record<string, unknown> }).properties);
+    const actionProps = Object.keys((pageAction.declaration.parameters as { properties: Record<string, unknown> }).properties);
 
     for (const forbidden of [
       "expectedPageInstanceId",
@@ -80,11 +80,22 @@ describe("presentation tools schema & same-batch sequential early-stop", () => {
 
     const batch = createPresentationBatchController();
     const tools = createPresentationTools("r1", callback, batch, fetchMock as unknown as typeof fetch);
-    const present = tools.find((t) => t.name === "present")!;
-    const fillForm = tools.find((t) => t.name === "fill_form")!;
+    const present = tools.find((t) => t.declaration.name === "present")!;
+    const fillForm = tools.find((t) => t.declaration.name === "fill_form")!;
+    const signal = new AbortController().signal;
 
-    const first = present.execute("call-1", { target: "/applications/crm/contacts" }, undefined);
-    const second = fillForm.execute("call-2", { member: "form", values: { "/name": "Alice" } }, undefined);
+    const first = present.execute({
+      toolCallId: "call-1",
+      toolName: "present",
+      args: { target: "/applications/crm/contacts" },
+      signal,
+    });
+    const second = fillForm.execute({
+      toolCallId: "call-2",
+      toolName: "fill_form",
+      args: { member: "form", values: { "/name": "Alice" } },
+      signal,
+    });
 
     await vi.waitFor(() => expect(events).toEqual(["start:call-1"]));
     releaseFirst();
@@ -106,22 +117,38 @@ describe("presentation tools schema & same-batch sequential early-stop", () => {
     const turn1 = { role: "assistant" };
     batch.beginTurn(turn1);
     const tools = createPresentationTools("r1", callback, batch, fetchMock as unknown as typeof fetch);
-    const present = tools.find((t) => t.name === "present")!;
-    const fillForm = tools.find((t) => t.name === "fill_form")!;
-    const pageAction = tools.find((t) => t.name === "page_action")!;
+    const present = tools.find((t) => t.declaration.name === "present")!;
+    const fillForm = tools.find((t) => t.declaration.name === "fill_form")!;
+    const pageAction = tools.find((t) => t.declaration.name === "page_action")!;
+    const signal = new AbortController().signal;
 
-    const r1 = await present.execute("c1", { target: "/applications/crm/other" }, undefined);
-    const r2 = await fillForm.execute("c2", { member: "form", values: { "/name": "Bob" } }, undefined);
-    const r3 = await pageAction.execute("c3", { operation: "form.save" }, undefined);
+    const r1 = await present.execute({
+      toolCallId: "c1",
+      toolName: "present",
+      args: { target: "/applications/crm/other" },
+      signal,
+    });
+    const r2 = await fillForm.execute({
+      toolCallId: "c2",
+      toolName: "fill_form",
+      args: { member: "form", values: { "/name": "Bob" } },
+      signal,
+    });
+    const r3 = await pageAction.execute({
+      toolCallId: "c3",
+      toolName: "page_action",
+      args: { operation: "form.save" },
+      signal,
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse((r1.content[0] as { text: string }).text)).toMatchObject({ status: "not_opened", reason: "blocked_unsaved" });
-    expect(JSON.parse((r2.content[0] as { text: string }).text)).toMatchObject({
+    expect(JSON.parse((r1.result.content[0] as { text: string }).text)).toMatchObject({ status: "not_opened", reason: "blocked_unsaved" });
+    expect(JSON.parse((r2.result.content[0] as { text: string }).text)).toMatchObject({
       status: "not_filled",
       reason: "previous_step_failed",
       member: "form",
     });
-    expect(JSON.parse((r3.content[0] as { text: string }).text)).toMatchObject({
+    expect(JSON.parse((r3.result.content[0] as { text: string }).text)).toMatchObject({
       status: "not_executed",
       reason: "previous_step_failed",
       operation: "form.save",
@@ -137,9 +164,14 @@ describe("presentation tools schema & same-batch sequential early-stop", () => {
       filledFields: ["/name"],
       current: samplePageSnapshot,
     }));
-    const r4 = await fillForm.execute("c4", { member: "form", values: { "/name": "Carol" } }, undefined);
+    const r4 = await fillForm.execute({
+      toolCallId: "c4",
+      toolName: "fill_form",
+      args: { member: "form", values: { "/name": "Carol" } },
+      signal,
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse((r4.content[0] as { text: string }).text)).toMatchObject({ status: "filled" });
+    expect(JSON.parse((r4.result.content[0] as { text: string }).text)).toMatchObject({ status: "filled" });
   });
 
   it.each([
@@ -161,16 +193,17 @@ describe("presentation tools schema & same-batch sequential early-stop", () => {
         status: "executed", reason: "action_completed", operation: "form.save", current: samplePageSnapshot,
       }));
     const tools = createPresentationTools("r1", callback, createPresentationBatchController(), fetchMock);
-    const fillForm = tools.find((tool) => tool.name === "fill_form")!;
-    const pageAction = tools.find((tool) => tool.name === "page_action")!;
-    const values = rejectedFields?.length ? { "/name": "Bob", "/phoen": "123" } : { "/name": "Bob" };
+    const fillForm = tools.find((tool) => tool.declaration.name === "fill_form")!;
+    const pageAction = tools.find((tool) => tool.declaration.name === "page_action")!;
+    const signal = new AbortController().signal;
+    const values: Record<string, string> = rejectedFields?.length ? { "/name": "Bob", "/phoen": "123" } : { "/name": "Bob" };
     const [fill, save] = await Promise.all([
-      fillForm.execute("fill", { member: "form", values }, undefined),
-      pageAction.execute("save", { operation: "form.save" }, undefined),
+      fillForm.execute({ toolCallId: "fill", toolName: "fill_form", args: { member: "form", values }, signal }),
+      pageAction.execute({ toolCallId: "save", toolName: "page_action", args: { operation: "form.save" }, signal }),
     ]);
 
-    expect(JSON.parse((fill.content[0] as { text: string }).text)).toEqual(receipt);
-    const saveReceipt = JSON.parse((save.content[0] as { text: string }).text);
+    expect(JSON.parse((fill.result.content[0] as { text: string }).text)).toEqual(receipt);
+    const saveReceipt = JSON.parse((save.result.content[0] as { text: string }).text);
     if (rejectedFields?.length) {
       expect(saveReceipt).toMatchObject({
         status: "not_executed",
@@ -200,22 +233,45 @@ describe("presentation tools schema & same-batch sequential early-stop", () => {
 
     const batch = createPresentationBatchController();
     const tools = createPresentationTools("r1", callback, batch, fetchMock as unknown as typeof fetch);
-    const pageAction = tools.find((t) => t.name === "page_action")!;
-    const present = tools.find((t) => t.name === "present")!;
+    const pageAction = tools.find((t) => t.declaration.name === "page_action")!;
+    const present = tools.find((t) => t.declaration.name === "present")!;
+    const signal = new AbortController().signal;
 
-    await pageAction.execute("c1", { operation: "form.save" }, undefined);
-    const skippedAfterConfirm = await present.execute("c2", { target: "/applications/crm/next" }, undefined);
+    await pageAction.execute({
+      toolCallId: "c1",
+      toolName: "page_action",
+      args: { operation: "form.save" },
+      signal,
+    });
+    const skippedAfterConfirm = await present.execute({
+      toolCallId: "c2",
+      toolName: "present",
+      args: { target: "/applications/crm/next" },
+      signal,
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse((skippedAfterConfirm.content[0] as { text: string }).text)).toMatchObject({
+    expect(JSON.parse((skippedAfterConfirm.result.content[0] as { text: string }).text)).toMatchObject({
       status: "not_opened",
       reason: "previous_step_failed",
     });
 
     batch.reset();
-    await expect(pageAction.execute("c3", { operation: "form.save" }, undefined)).rejects.toThrow("network boom");
-    const skippedAfterThrow = await pageAction.execute("c4", { operation: "remove.delete" }, undefined);
+    await expect(
+      pageAction.execute({
+        toolCallId: "c3",
+        toolName: "page_action",
+        args: { operation: "form.save" },
+        signal,
+      }),
+    ).rejects.toThrow("network boom");
+    const skippedAfterThrow = await pageAction.execute({
+      toolCallId: "c4",
+      toolName: "page_action",
+      args: { operation: "remove.delete" },
+      signal,
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse((skippedAfterThrow.content[0] as { text: string }).text)).toMatchObject({
+    expect(JSON.parse((skippedAfterThrow.result.content[0] as { text: string }).text)).toMatchObject({
       status: "not_executed",
       reason: "previous_step_failed",
       operation: "remove.delete",
