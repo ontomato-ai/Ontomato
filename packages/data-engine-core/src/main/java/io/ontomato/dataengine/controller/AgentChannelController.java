@@ -120,7 +120,8 @@ public class AgentChannelController {
   }
   @PostMapping("/prepare")
   public JSONObject prepare(@RequestBody Map<String,Object> input,HttpServletRequest request) throws Exception {
-    var body=body(input); validatePrepare(body); String domain=domain(request);
+    // Retrieval conditions distinguish a missing mapping from an explicit null on the wire.
+    var body=AgentJson.copy(new JSONObject(input)); validatePrepare(body); String domain=domain(request);
     var ref=body.getJSONObject("agent");
     if(!"ontology".equals(ref.getString("providerId"))) throw AgentHttpException.missing();
     String agent=ref.getString("agentId"),session=AgentJson.id(body.getString("sessionId")),run=AgentJson.id(body.getString("runId"));
