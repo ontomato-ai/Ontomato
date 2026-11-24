@@ -1243,6 +1243,7 @@ export default {
       "attribute": "Attribute",
       "relationship": "Relationship",
       "metricView": "Metric view",
+      "dashboard": "Dashboard",
       "dashboardCard": "Dashboard card",
       "function": "Function",
       "action": "Action",

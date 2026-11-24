@@ -87,6 +87,12 @@ export interface PlatformObjectTypeDeclaration {
   labelKey?: string;
   /** Set for types that have a declared place in the four-layer ontology. */
   layer?: typeof platformOntologyLayers[number];
+  /**
+   * When this object type's primary key is composite `<encodeURIComponent(parentPrimaryKey)>/<encodeURIComponent(localKey)>`,
+   * declares the owning parent object type so deep-link URLs can omit the redundant parent prefix whenever the manifest
+   * carries a unique matching parent deep-link state field.
+   */
+  parentKeyType?: string;
   reads?: Readonly<Record<string, PlatformReadDeclaration>>;
   operations?: readonly string[];
   /** Named child collections owned by each instance of this type. */
@@ -143,6 +149,15 @@ export const PAUSE_VECTOR_REBUILD = "modelUsage.pauseVectorRebuild";
 export const TEST_DATA_ADAPTER_CONNECTION = "dataAdapters.testConnection";
 export const SAVE_OBJECT_DETAIL_PANEL = `${OBJECT_TYPE}.saveDetailPanel`;
 export const CLEAR_OBJECT_DETAIL_PANEL = "objectTypes.clearDetailPanel";
+export const CREATE_DASHBOARD = "dashboards.create";
+export const RENAME_DASHBOARD = "dashboards.rename";
+export const DELETE_DASHBOARD = "dashboards.delete";
+export const SAVE_DASHBOARD_LAYOUT = "dashboards.saveLayout";
+export const CREATE_DASHBOARD_GROUP = "dashboards.createGroup";
+export const RENAME_DASHBOARD_GROUP = "dashboards.renameGroup";
+export const DELETE_DASHBOARD_GROUP = "dashboards.deleteGroup";
+export const RENAME_DASHBOARD_CARD = "dashboardCards.rename";
+export const DELETE_DASHBOARD_CARD = "dashboardCards.delete";
 export const DELETE_OBJECT_TYPE = "objectTypes.delete";
 export const DELETE_ATTRIBUTE = "attributes.delete";
 export const DELETE_RELATIONSHIP = "relationships.delete";
@@ -357,12 +372,53 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [`${METRIC_VIEW}.save`, SET_METRIC_VIEW_STATUS, DELETE_METRIC_VIEW, TEST_METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW],
   },
+  [DASHBOARD]: {
+    ...describeType("dashboard"),
+    childCollections: ["cards"],
+    reads: {
+      list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      record: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          name: { kind: "scalar", type: "string" },
+          groupCount: { kind: "scalar", type: "number" },
+          cardCount: { kind: "scalar", type: "number" },
+        },
+      },
+      cards: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: DASHBOARD_CARD },
+    },
+    operations: [
+      CREATE_DASHBOARD,
+      RENAME_DASHBOARD,
+      DELETE_DASHBOARD,
+      SAVE_DASHBOARD_LAYOUT,
+      CREATE_DASHBOARD_GROUP,
+      RENAME_DASHBOARD_GROUP,
+      DELETE_DASHBOARD_GROUP,
+    ],
+  },
   [DASHBOARD_CARD]: {
     ...describeType("dashboardCard"),
+    parentKeyType: DASHBOARD,
     reads: {
       chartTemplate: { source: "object", parameterMode: "fixed", params: {}, result: "chartTemplate" },
       result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
+      record: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          name: { kind: "scalar", type: "string" },
+          kind: { kind: "scalar", type: "string" },
+          metricId: { kind: "scalar", type: "string" },
+        },
+      },
+      form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+      metricSource: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
     },
+    operations: [
+      RENAME_DASHBOARD_CARD,
+      DELETE_DASHBOARD_CARD,
+      `${DASHBOARD_CARD}.save`,
+    ],
   },
   [FUNCTION]: {
     ...describeType("function", "capability"),

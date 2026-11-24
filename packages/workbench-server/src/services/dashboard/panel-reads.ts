@@ -1,0 +1,368 @@
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import {
+  dashboardCardPrimaryKey,
+  parseDashboardCardPrimaryKey,
+  type DashboardDetail,
+  type DashboardGroup,
+  type MetricReferenceEntry,
+} from "@ontomato/contracts/dashboard";
+import { formFieldPointer } from "@ontomato/contracts/form-fields";
+import type {
+  PanelFormDescription,
+  PanelFormField,
+  PanelFormValues,
+  PanelRecord,
+  PanelRecordFieldValue,
+} from "@ontomato/contracts/panel-projection";
+import { DASHBOARD, DASHBOARD_CARD, METRIC_VIEW } from "@ontomato/contracts/platform-object-types";
+import { tForLocale } from "../../i18n";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { HttpError } from "../../utils/errors";
+import type { ProductOwner } from "../product-governance/grants";
+import { getOwnedDashboard } from "./access";
+import { DashboardMetricClient } from "./metric-client";
+import { metricCardParameterForm } from "./metric-data";
+import { listDashboards } from "./store";
+
+type FormReadParams = {
+  values?: PanelFormValues;
+  changedField?: string | null;
+};
+
+function findCardWithGroup(
+  detail: DashboardDetail,
+  cardId: string,
+): { group: DashboardGroup; groupIndex: number; card: MetricReferenceEntry; kind: "chart" | "metric" } | null {
+  for (let groupIndex = 0; groupIndex < detail.groups.length; groupIndex += 1) {
+    const group = detail.groups[groupIndex]!;
+    const metric = group.metrics.find(entry => entry.id === cardId);
+    if (metric) return { group, groupIndex, card: metric, kind: "metric" };
+    const chart = group.charts.find(entry => entry.id === cardId);
+    if (chart) return { group, groupIndex, card: chart, kind: "chart" };
+  }
+  return null;
+}
+
+function formatParameterValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
+
+function metricStatusTone(status: string | undefined): "success" | "warning" | "danger" | "default" {
+  switch (status) {
+    case "PUBLISHED":
+      return "success";
+    case "PENDING_REVIEW":
+      return "warning";
+    case "UNAVAILABLE":
+      return "danger";
+    default:
+      return "default";
+  }
+}
+
+function metricStatusLabel(status: string | undefined, locale?: string): string {
+  switch (status) {
+    case "PUBLISHED":
+      return tForLocale(locale, "panels.dashboard.metricStatus.published");
+    case "PENDING_REVIEW":
+      return tForLocale(locale, "panels.dashboard.metricStatus.pendingReview");
+    case "UNUSED":
+      return tForLocale(locale, "panels.dashboard.metricStatus.unused");
+    case "UNAVAILABLE":
+      return tForLocale(locale, "panels.dashboard.metricStatus.unavailable");
+    default:
+      return status || "—";
+  }
+}
+
+function dashboardCardRecord(
+  detail: DashboardDetail,
+  group: DashboardGroup,
+  groupIndex: number,
+  card: MetricReferenceEntry,
+  order: number,
+  locale?: string,
+): PanelRecord {
+  const isChart = "chartFile" in card;
+  const colSpan = card.layout?.colSpan ?? (isChart ? 6 : 3);
+  const rowSpan = card.layout?.rowSpan ?? (isChart ? 2 : 1);
+  const fields: Record<string, PanelRecordFieldValue> = {
+    cardId: card.id,
+    dashboardId: detail.id,
+    name: card.name,
+    kind: isChart ? "chart" : "metric",
+    groupId: group.id,
+    groupTitle: group.title,
+    groupIndex,
+    order,
+    colSpan,
+    rowSpan,
+    metricId: card.query.metricId,
+    hasParameters: Object.keys(card.query.parameters).length > 0,
+  };
+  if (isChart) {
+    const firstSeries = card.chartFile.content.series[0] as { type?: unknown } | undefined;
+    const chartType = typeof firstSeries?.type === "string" && firstSeries.type.length > 0 ? firstSeries.type : undefined;
+    if (chartType) fields.chartType = chartType;
+    fields.chartFile = { kind: "json", value: card.chartFile };
+  } else {
+    fields.valueField = card.valueField;
+    if (card.unit !== undefined && card.unit.length > 0) fields.unit = card.unit;
+    if (card.formats !== undefined) fields.formats = { kind: "json", value: card.formats };
+    if (card.sort !== undefined) fields.sort = { kind: "json", value: card.sort };
+  }
+  return {
+    primaryKey: dashboardCardPrimaryKey({ dashboardId: detail.id, cardId: card.id }),
+    className: DASHBOARD_CARD,
+    label: card.name,
+    fields,
+    fieldLabels: {
+      name: tForLocale(locale, "panels.dashboard.fields.cardName"),
+      kind: tForLocale(locale, "panels.dashboard.fields.cardKind"),
+      groupTitle: tForLocale(locale, "panels.dashboard.fields.groupTitle"),
+      colSpan: tForLocale(locale, "panels.dashboard.fields.colSpan"),
+      rowSpan: tForLocale(locale, "panels.dashboard.fields.rowSpan"),
+    },
+    outputs: {
+      name: card.name,
+      kind: isChart ? "chart" : "metric",
+      metricId: card.query.metricId,
+    },
+  };
+}
+
+export function createDashboardReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  const { userId, domainId } = owner;
+  const { locale } = viewer;
+
+  return {
+    async list(): Promise<PanelRecord[]> {
+      const items = await listDashboards(userId, domainId);
+      const fieldLabels = {
+        name: tForLocale(locale, "panels.dashboard.fields.name"),
+        createdAt: tForLocale(locale, "panels.dashboard.fields.createdAt"),
+        updatedAt: tForLocale(locale, "panels.dashboard.fields.updatedAt"),
+      };
+      return items.map(item => ({
+        primaryKey: item.id,
+        className: DASHBOARD,
+        label: item.name,
+        fields: {
+          name: item.name,
+          createdAt: new Date(item.createdAt).toISOString(),
+          updatedAt: new Date(item.updatedAt).toISOString(),
+        },
+        fieldLabels,
+      }));
+    },
+
+    async record(dashboardId: string): Promise<PanelRecord> {
+      const detail = await getOwnedDashboard(userId, domainId, dashboardId);
+      const groupCount = detail.groups.length;
+      const cardCount = detail.groups.reduce((count, group) => count + group.charts.length + group.metrics.length, 0);
+      return {
+        primaryKey: detail.id,
+        className: DASHBOARD,
+        label: detail.name,
+        fields: {
+          name: detail.name,
+          createdAt: new Date(detail.createdAt).toISOString(),
+          updatedAt: new Date(detail.updatedAt).toISOString(),
+          groupCount,
+          cardCount,
+          groups: {
+            kind: "json",
+            value: detail.groups.map((group, order) => ({
+              id: group.id,
+              title: group.title,
+              order,
+              metricCount: group.metrics.length,
+              chartCount: group.charts.length,
+            })),
+          },
+        },
+        fieldLabels: {
+          name: tForLocale(locale, "panels.dashboard.fields.name"),
+          createdAt: tForLocale(locale, "panels.dashboard.fields.createdAt"),
+          updatedAt: tForLocale(locale, "panels.dashboard.fields.updatedAt"),
+          groupCount: tForLocale(locale, "panels.dashboard.fields.groupCount"),
+          cardCount: tForLocale(locale, "panels.dashboard.fields.cardCount"),
+        },
+        outputs: {
+          name: detail.name,
+          groupCount,
+          cardCount,
+        },
+      };
+    },
+
+    async cards(dashboardId: string): Promise<PanelRecord[]> {
+      const detail = await getOwnedDashboard(userId, domainId, dashboardId);
+      const rows: PanelRecord[] = [];
+      detail.groups.forEach((group, groupIndex) => {
+        group.metrics.forEach((card, order) => {
+          rows.push(dashboardCardRecord(detail, group, groupIndex, card, order, locale));
+        });
+        group.charts.forEach((card, order) => {
+          rows.push(dashboardCardRecord(detail, group, groupIndex, card, order, locale));
+        });
+      });
+      return rows;
+    },
+  };
+}
+
+export function createDashboardCardOwnerReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  const { userId, domainId } = owner;
+  const { locale } = viewer;
+
+  return {
+    async record(primaryKey: string): Promise<PanelRecord> {
+      const { dashboardId, cardId } = parseDashboardCardPrimaryKey(primaryKey);
+      const detail = await getOwnedDashboard(userId, domainId, dashboardId);
+      const found = findCardWithGroup(detail, cardId);
+      if (!found) throw new HttpError(404, "Dashboard card not found", "NOT_FOUND");
+      const order = found.kind === "metric"
+        ? found.group.metrics.findIndex(item => item.id === cardId)
+        : found.group.charts.findIndex(item => item.id === cardId);
+      return dashboardCardRecord(detail, found.group, found.groupIndex, found.card, Math.max(0, order), locale);
+    },
+
+    async form(primaryKey: string, params: FormReadParams): Promise<PanelFormDescription> {
+      const request = parseDashboardCardPrimaryKey(primaryKey);
+      const loaded = await metricCardParameterForm(
+        { userId, domainId },
+        request,
+        new DashboardMetricClient(domainId, viewer),
+      );
+      const readOnlySet = new Set(loaded.readOnly);
+      const fields: PanelFormField[] = loaded.fields.map(field => {
+        const path = formFieldPointer("/", field.key);
+        const base = {
+          path,
+          label: field.label,
+          required: field.required,
+          readOnly: readOnlySet.has(field.key),
+          ...(field.help !== null ? { help: field.help } : {}),
+          ...(field.defaultValue !== null ? { defaultValue: field.defaultValue } : {}),
+        };
+        if (field.type === "select") {
+          const enumValues = field.options.map(option => option.value);
+          const valueSchema: Record<string, RuntimeJsonValue> = enumValues.length > 0
+            ? { type: "string", enum: enumValues }
+            : { type: "string" };
+          return {
+            ...base,
+            valueSchema,
+            ...(field.refreshOnChange ? { refreshOnChange: true } : {}),
+            control: {
+              kind: "select",
+              options: field.options.map(option => ({
+                value: option.value,
+                label: option.label,
+                description: option.description,
+                disabled: option.disabled,
+                disabledReason: option.disabledReason,
+              })),
+            },
+          };
+        }
+        const valueSchema: Record<string, RuntimeJsonValue> = { type: "string", maxLength: field.maxLength };
+        return {
+          ...base,
+          valueSchema,
+          control: {
+            kind: "text",
+            multiline: field.multiline,
+            ...(field.placeholder !== null ? { placeholder: field.placeholder } : {}),
+            maxLength: field.maxLength,
+          },
+        };
+      });
+
+      const values: PanelFormValues = {};
+      for (const field of loaded.fields) {
+        const incoming = params.values?.[field.key];
+        if (!readOnlySet.has(field.key) && typeof incoming === "string") {
+          values[field.key] = incoming;
+        } else if (typeof loaded.values[field.key] === "string") {
+          values[field.key] = loaded.values[field.key]!;
+        } else {
+          values[field.key] = "";
+        }
+      }
+
+      const properties: Record<string, { type: string }> = {};
+      for (const field of loaded.fields) properties[field.key] = { type: "string" };
+
+      return {
+        fields,
+        values,
+        errors: [],
+        revision: loaded.revision,
+        save: {
+          method: "POST",
+          path: "/api/dashboards/save-card-parameters",
+          bodySchema: {
+            type: "object",
+            properties: {
+              revision: { type: "string" },
+              values: { type: "object", properties },
+            },
+            required: ["values"],
+          },
+        },
+      };
+    },
+
+    async metricSource(primaryKey: string): Promise<PanelRecord> {
+      const { dashboardId, cardId } = parseDashboardCardPrimaryKey(primaryKey);
+      const detail = await getOwnedDashboard(userId, domainId, dashboardId);
+      const found = findCardWithGroup(detail, cardId);
+      if (!found) throw new HttpError(404, "Dashboard card not found", "NOT_FOUND");
+      const { card } = found;
+      const client = new DashboardMetricClient(domainId, viewer);
+      let metricName = card.query.metricId;
+      let metricStatus = "UNAVAILABLE";
+      try {
+        const spec = await client.describe(card.query.metricId);
+        metricName = spec.name || spec.id;
+        metricStatus = spec.status;
+      } catch (error) {
+        if (!(error instanceof HttpError) || (error.status !== 404 && error.code !== "METRIC_UNAVAILABLE")) {
+          throw error;
+        }
+      }
+      const parameterEntries = Object.entries(card.query.parameters);
+      const parametersDisplay = parameterEntries.length > 0
+        ? parameterEntries.map(([key, value]) => `${key}: ${formatParameterValue(value)}`).join("\n")
+        : tForLocale(locale, "panels.dashboard.metricSource.noParameters");
+      return {
+        primaryKey,
+        className: DASHBOARD_CARD,
+        label: card.name,
+        fields: {
+          metric: {
+            kind: "reference",
+            className: METRIC_VIEW,
+            primaryKey: card.query.metricId,
+            label: metricName,
+          },
+          status: metricStatusLabel(metricStatus, locale),
+          parameters: parametersDisplay,
+        },
+        tones: {
+          status: metricStatusTone(metricStatus),
+        },
+        fieldLabels: {
+          metric: tForLocale(locale, "panels.dashboard.metricSource.metricName"),
+          status: tForLocale(locale, "panels.dashboard.metricSource.status"),
+          parameters: tForLocale(locale, "panels.dashboard.metricSource.parameters"),
+        },
+      };
+    },
+  };
+}

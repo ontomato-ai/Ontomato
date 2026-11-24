@@ -1233,6 +1233,10 @@ export const panelFormSectionSchema = z.object({
 }).strict();
 export type PanelFormSection = z.infer<typeof panelFormSectionSchema>;
 
+/** Opaque revision token returned with a form read and echoed back unchanged on save. */
+export const panelFormRevisionSchema = z.union([z.number().int().positive().safe(), z.string().min(1)]);
+export type PanelFormRevision = z.infer<typeof panelFormRevisionSchema>;
+
 export const panelFormDescriptionSchema = z.object({
   fields: z.array(panelFormFieldSchema),
   /** The form's sections in order; a form without them is one list of fields. */
@@ -1241,7 +1245,7 @@ export const panelFormDescriptionSchema = z.object({
   /** Owner validation is part of a successful form read, alongside the current values. */
   errors: z.array(formFieldErrorSchema),
   /** Present only when the owner's save requires the revision returned with these values. */
-  revision: z.number().int().positive().safe().optional(),
+  revision: panelFormRevisionSchema.optional(),
   save: formSaveRequestSchema,
 }).strict();
 export type PanelFormDescription = z.infer<typeof panelFormDescriptionSchema>;

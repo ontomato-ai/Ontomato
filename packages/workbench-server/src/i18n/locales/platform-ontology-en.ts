@@ -14,6 +14,7 @@ export const platformOntologyEn = {
   "platformOntology.types.attribute": "Attribute",
   "platformOntology.types.relationship": "Relationship",
   "platformOntology.types.metricView": "Metric view",
+  "platformOntology.types.dashboard": "Dashboard",
   "platformOntology.types.dashboardCard": "Dashboard card",
   "platformOntology.types.function": "Function",
   "platformOntology.types.action": "Action",

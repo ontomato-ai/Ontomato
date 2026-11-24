@@ -155,7 +155,7 @@ function validateBuiltinProjection(projection: DirectProjectionPorts, ctx: z.Ref
 const builtinProjectionDefinition = projectionDefinition.extend({
   visibility: builtinVisibility,
   componentId: projectionDefinition.shape.componentId.refine(
-    componentId => componentId !== METRIC_CHART_COMPONENT && !isDomainComponentId(componentId), domainProjectionBinding("componentId"),
+    componentId => !isDomainComponentId(componentId), domainProjectionBinding("componentId"),
   ),
 });
 export const builtinProductProjectionInputSchema = builtinProjectionDefinition.superRefine(validateBuiltinProjection);

@@ -42,6 +42,7 @@ export type PlatformTypeReadDeclaration = z.infer<ReturnType<typeof typeReadDecl
 export const platformTypeTableEntrySchema = z.object({
   labelKey: runtimeKeySchema.optional(),
   layer: z.enum(platformOntologyLayers).optional(),
+  parentKeyType: runtimeKeySchema.optional(),
   reads: z.record(runtimeKeySchema, platformTypeReadDeclarationSchema).optional(),
   operations: z.array(z.lazy(() => panelOperationDeclarationSchema)).optional(),
   childCollections: z.array(runtimeKeySchema).optional(),

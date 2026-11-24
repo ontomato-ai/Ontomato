@@ -133,9 +133,19 @@ test("platform projections bind declared types and runtime state instead of stor
   for (const target of [{ kind: "page-default" }, { kind: "preset", agentKind: "knowledge-governance" }]) {
     assert.equal(builtinProductProjectionInputSchema.safeParse({ ...button, conversationEntry: { target } }).success, true);
   }
+  const metricChartBuiltin = {
+    ...base,
+    componentId: "@ontomato/sdk:MetricChart",
+    inputs: { target: { kind: "object", objectType: "platform:DashboardCard" } },
+    data: {
+      template: { source: { object: { input: "target" } }, read: "chartTemplate", params: {} },
+      result: { source: { object: { input: "target" } }, read: "result", params: {} },
+    },
+  };
+  assert.equal(builtinProductProjectionInputSchema.safeParse(metricChartBuiltin).success, true);
   const platformOperation = { operation: { kind: "PlatformOperation", id: "schedules.runNow" } };
   for (const [changes, field] of [
-    [{ componentId: "@ontomato/sdk:MetricChart" }, "componentId"],
+    [{ componentId: "domain-component:custom-list" }, "componentId"],
     [{ conversationEntry: { target: { kind: "id", id: "domain-agent" } } }, "conversationEntry.target.id"],
     [{ data: { record: { source: { object: { literal: object } }, read: "record", params: {} } } }, "data.record.source.object.literal"],
     [{ data: { rows: { source: { type: { kind: "ObjectType", id: "Account" } }, read: "query", params: {} } } }, "data.rows.source.type"],

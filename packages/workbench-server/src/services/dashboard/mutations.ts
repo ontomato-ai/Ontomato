@@ -32,13 +32,15 @@ function chartIds(groups: DashboardGroup[]) {
 }
 
 async function saveLayout(ownerId: string, domainId: string, id: string,
-  nextGroups: (detail: DashboardDetail) => DashboardGroup[] | Promise<DashboardGroup[]>) {
+  nextGroups: (detail: DashboardDetail) => DashboardGroup[] | Promise<DashboardGroup[]>,
+  nextName?: string) {
   await transaction(async client => {
     const detail = ensureDashboard(ownerId, await getDashboard(ownerId, domainId, id, client));
     const groups = await nextGroups(detail);
     const retained = new Set(chartIds(groups));
     await requireUnusedChartSources(client, domainId, id, chartIds(detail.groups).filter(cardId => !retained.has(cardId)));
     detail.groups = groups;
+    if (nextName !== undefined) detail.name = nextName;
     await saveDashboard(ownerId, domainId, detail, client);
   });
 }
@@ -65,13 +67,18 @@ export async function createDashboardDimension(
   );
   const groupTitle = String(body?.dimensionName || "").trim();
   if (!groupTitle) throw new HttpError(400, "dimensionName is required");
-  detail.groups.push({
+  const group: DashboardGroup = {
     id: randomUUID(),
     title: groupTitle,
     charts: [],
     metrics: [],
-  });
+  };
+  const insertIndex = typeof body?.insertIndex === "number" && Number.isInteger(body.insertIndex)
+    ? Math.max(0, Math.min(body.insertIndex, detail.groups.length))
+    : detail.groups.length;
+  detail.groups.splice(insertIndex, 0, group);
   await saveDashboard(ownerId, domainId, detail);
+  return { id: group.id, title: group.title };
 }
 export async function addDashboardChart(
   ownerId: string, domainId: string, body: DashboardAddArtifact, credentials: AssistantCredentials,
@@ -170,8 +177,16 @@ export async function deleteDashboardChart(
   await saveLayout(ownerId, domainId, requireDashboardId(body?.id),
     detail => detail.groups.map(group => ({ ...group, charts: group.charts.filter(card => card.id !== chartId) })));
 }
-export async function replaceDashboardLayout(ownerId: string, domainId: string, input: unknown, credentials: AssistantCredentials) {
+export async function replaceDashboardLayout(
+  ownerId: string,
+  domainId: string,
+  input: unknown,
+  credentials: AssistantCredentials,
+  nextName?: string,
+) {
   const body = parseDashboardInput(dashboardReplaceLayoutSchema, input);
+  const trimmedName = nextName !== undefined ? nextName.trim() : undefined;
+  if (trimmedName !== undefined && !trimmedName) throw new HttpError(400, "name is required", "INVALID_REQUEST");
   const client = new DashboardMetricClient(domainId, credentials);
   await saveLayout(ownerId, domainId, body.id, detail => {
     const charts = new Map(detail.groups.flatMap(group => group.charts).map(card => [card.id, card]));
@@ -191,7 +206,7 @@ export async function replaceDashboardLayout(ownerId: string, domainId: string, 
         return { ...card, ...patch };
       }),
     })));
-  });
+  }, trimmedName);
 }
 export async function renameDashboardMetric(
   ownerId: string,
@@ -230,6 +245,52 @@ export async function deleteDashboardMetric(
     group.metrics = group.metrics.filter((item) => item.id !== metricId);
   }
   await saveDashboard(ownerId, domainId, detail);
+}
+
+/** Rename either a chart card or a metric card on an owned dashboard by its unified card ID. */
+export async function renameDashboardCard(
+  ownerId: string,
+  domainId: string,
+  input: { dashboardId: string; cardId: string; name: string },
+) {
+  const detail = ensureDashboard(
+    ownerId,
+    await getDashboard(ownerId, domainId, requireDashboardId(input.dashboardId)),
+  );
+  const cardId = String(input.cardId || "").trim();
+  const name = String(input.name || "").trim();
+  if (!name) throw new HttpError(400, "name is required", "INVALID_REQUEST");
+  let found = false;
+  for (const group of detail.groups) {
+    const card = group.charts.find(item => item.id === cardId) ?? group.metrics.find(item => item.id === cardId);
+    if (card) {
+      card.name = name;
+      found = true;
+      break;
+    }
+  }
+  if (!found) throw new HttpError(404, "Card not found", "NOT_FOUND");
+  await saveDashboard(ownerId, domainId, detail);
+}
+
+/** Delete either a chart card or a metric card on an owned dashboard, enforcing chart-source reference protection. */
+export async function deleteDashboardCard(
+  ownerId: string,
+  domainId: string,
+  input: { dashboardId: string; cardId: string },
+) {
+  const cardId = String(input.cardId || "").trim();
+  await saveLayout(ownerId, domainId, requireDashboardId(input.dashboardId), detail => {
+    const exists = detail.groups.some(group =>
+      group.charts.some(card => card.id === cardId) || group.metrics.some(card => card.id === cardId),
+    );
+    if (!exists) throw new HttpError(404, "Card not found", "NOT_FOUND");
+    return detail.groups.map(group => ({
+      ...group,
+      charts: group.charts.filter(card => card.id !== cardId),
+      metrics: group.metrics.filter(card => card.id !== cardId),
+    }));
+  });
 }
 
 /** A file import keeps its drawing and stores only the target card's metric reference. */

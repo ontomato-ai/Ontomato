@@ -805,7 +805,7 @@ export function toProductProjectionPanelRecord(
   const language = resolveLocale(locale);
   const word = (key: string) => tForLocale(language, `panels.productCatalog.projection.${key}`);
   const isDetail = "data" in row;
-  const isChart = row.componentId === METRIC_CHART_COMPONENT;
+  const isChart = row.componentId === METRIC_CHART_COMPONENT && row.visibility !== "platform";
   const isBuiltin = row.visibility === "platform" || row.ownerId === null;
   const componentDisplay = extra?.componentLabel || shortComponentName(row.componentId);
   const ownerDisplay = row.ownerId === null ? word("platformOwner") : (extra?.ownerLabel || row.ownerId);
@@ -1112,7 +1112,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
     async form(primaryKey: string, params: FormParams) {
       const projection = await rawRecord(primaryKey);
       const { componentId, data, config, inputs, outputs, operations, conversationEntry } = projection;
-      const chart = componentId === METRIC_CHART_COMPONENT;
+      const chart = componentId === METRIC_CHART_COMPONENT && projection.visibility !== "platform";
       const values = chart ? { ...commonValues(projection), componentId } : {
         ...commonValues(projection), componentId, data, config, inputs, outputs,
         ...(operations !== undefined && { operations }), ...(conversationEntry !== undefined && { conversationEntry }),

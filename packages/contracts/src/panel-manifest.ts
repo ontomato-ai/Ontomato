@@ -421,15 +421,63 @@ function decodeFlatObjectRef(raw: string, expectedObjectType?: string): PanelObj
   return { className: raw.slice(0, sep), primaryKey: raw.slice(sep + 1) };
 }
 
-function decodeFlatChildObjectRef(raw: string, parentType: string): PanelChildObjectIdentity | null {
+function decodeFlatChildObjectRef(
+  raw: string,
+  parentType: string,
+  siblingParentKey?: string,
+): PanelChildObjectIdentity | null {
   const prefix = `${parentType}${FLAT_OBJECT_REF_SEPARATOR}`;
   const rest = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
   const sep = rest.indexOf(FLAT_OBJECT_REF_SEPARATOR);
-  if (sep <= 0 || sep === rest.length - 1) return null;
+  if (sep < 0) {
+    if (siblingParentKey && rest.length > 0) {
+      return { parent: { objectType: parentType, primaryKey: siblingParentKey }, primaryKey: rest };
+    }
+    return null;
+  }
+  if (sep === 0 || sep === rest.length - 1) return null;
   const parentKey = rest.slice(0, sep);
   const primaryKey = rest.slice(sep + 1);
   if (!parentKey || !primaryKey) return null;
   return { parent: { objectType: parentType, primaryKey: parentKey }, primaryKey };
+}
+
+/**
+ * When a manifest declares a unique `deepLink` field of `kind: "object"` matching `parentType`, return that state
+ * field's name so parent-scoped object and child-object URL parameters can omit the redundant parent prefix.
+ */
+export function uniqueDeepLinkParentStateKey(
+  manifest: Pick<PanelManifest, "state"> | undefined,
+  parentType: string,
+): string | undefined {
+  if (!manifest) return undefined;
+  const matches = Object.entries(manifest.state)
+    .filter(([, field]) => field.deepLink && field.type.kind === "object" && field.type.objectType === parentType)
+    .map(([name]) => name);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/** Parent object type whose primary key scopes a field's URL shorthand, if any. */
+export function parentScopedObjectType(type: DirectPanelPortType): string | undefined {
+  if (type.kind === "child-object") return type.parentType;
+  if (type.kind === "object") return platformObjectTypes[type.objectType]?.parentKeyType;
+  return undefined;
+}
+
+function resolveScopedObjectCandidate(
+  raw: string,
+  objectType: string,
+  siblingParentKey?: string,
+): PanelObjectRef | null {
+  const decoded = decodeFlatObjectRef(raw, objectType);
+  if (!decoded) return null;
+  if (!platformObjectTypes[objectType]?.parentKeyType) return decoded;
+  if (decoded.primaryKey.includes("/")) return decoded;
+  if (!siblingParentKey) return null;
+  return {
+    className: objectType,
+    primaryKey: `${encodeURIComponent(siblingParentKey)}/${encodeURIComponent(decoded.primaryKey)}`,
+  };
 }
 
 /**
@@ -438,9 +486,11 @@ function decodeFlatChildObjectRef(raw: string, parentType: string): PanelChildOb
  *   An explicit empty query value (`""`, from `?name=`) decodes to `""` for `string` and `null` for nullable
  *   `number` / `boolean` / `date` / `object` / `object-union` / `child-object` fields so cleared non-null defaults
  *   round-trip without bouncing back.
- * - Single fixed-type `kind: "object"` accepts either bare `primaryKey` or `objectType~primaryKey` (or an object ref).
+ * - Single fixed-type `kind: "object"` accepts either bare `primaryKey` or `objectType~primaryKey` (or an object ref);
+ *   when the object type declares `parentKeyType`, a bare local key expands against `siblingParentKey`.
  * - Multi-type `kind: "object-union"` accepts `className~primaryKey` (or an object ref) verified against allowed types.
- * - `kind: "child-object"` accepts `parentKey~primaryKey` or `parentType~parentKey~primaryKey` (or a child identity).
+ * - `kind: "child-object"` accepts `parentKey~primaryKey`, `parentType~parentKey~primaryKey`, a bare local key paired
+ *   with `siblingParentKey`, or a child identity object.
  * - `kind: "list"` decodes an explicit empty query value (`""`, from `?name=`) as `[]` (used when clearing a non-empty
  *   list default), and otherwise accepts a
  *   single query value or repeated query values, normalizing every non-null element.
@@ -449,6 +499,7 @@ function decodeFlatChildObjectRef(raw: string, parentType: string): PanelChildOb
 export function normalizeExternalPanelValue(
   type: DirectPanelPortType,
   value: unknown,
+  siblingParentKey?: string,
 ): { ok: true; value: PanelDeepLinkStateValue } | { ok: false } {
   if (value === null) return { ok: true, value: null };
   switch (type.kind) {
@@ -477,7 +528,9 @@ export function normalizeExternalPanelValue(
     case "object": {
       if (Array.isArray(value)) return { ok: false };
       if (value === "") return { ok: true, value: null };
-      const candidate = typeof value === "string" ? decodeFlatObjectRef(value, type.objectType) : value;
+      const candidate = typeof value === "string"
+        ? resolveScopedObjectCandidate(value, type.objectType, siblingParentKey)
+        : value;
       if (!candidate) return { ok: false };
       const parsed = panelDeepLinkStateValueSchema.safeParse(candidate);
       return parsed.success && matchesDirectPanelValue(type, parsed.data)
@@ -497,7 +550,9 @@ export function normalizeExternalPanelValue(
     case "child-object": {
       if (Array.isArray(value)) return { ok: false };
       if (value === "") return { ok: true, value: null };
-      const candidate = typeof value === "string" ? decodeFlatChildObjectRef(value, type.parentType) : value;
+      const candidate = typeof value === "string"
+        ? decodeFlatChildObjectRef(value, type.parentType, siblingParentKey)
+        : value;
       if (!candidate) return { ok: false };
       const parsed = panelDeepLinkStateValueSchema.safeParse(candidate);
       return parsed.success && matchesDirectPanelValue(type, parsed.data)
@@ -510,7 +565,7 @@ export function normalizeExternalPanelValue(
       const normalizedItems: PanelDeepLinkStateValue[] = [];
       for (const item of rawItems) {
         if (item === null) return { ok: false };
-        const normalized = normalizeExternalPanelValue(type.items, item);
+        const normalized = normalizeExternalPanelValue(type.items, item, siblingParentKey);
         if (!normalized.ok || normalized.value === null) return { ok: false };
         normalizedItems.push(normalized.value);
       }
@@ -526,6 +581,23 @@ export function normalizeExternalPanelValue(
   }
 }
 
+/** Resolve the sibling parent primary key for a parent-scoped field from normalized state or manifest defaults. */
+export function resolveSiblingParentKey(
+  manifest: Pick<PanelManifest, "state"> | undefined,
+  type: DirectPanelPortType,
+  resolvedState: Readonly<Record<string, unknown>>,
+): string | undefined {
+  const parentType = parentScopedObjectType(type);
+  if (!parentType || !manifest) return undefined;
+  const parentFieldName = uniqueDeepLinkParentStateKey(manifest, parentType);
+  if (!parentFieldName) return undefined;
+  const rawParent = Object.hasOwn(resolvedState, parentFieldName)
+    ? resolvedState[parentFieldName]
+    : manifest.state[parentFieldName]?.default;
+  const parsed = panelObjectRefSchema.safeParse(rawParent);
+  return parsed.success && parsed.data.className === parentType ? parsed.data.primaryKey : undefined;
+}
+
 /**
  * Normalizes URL state against a panel manifest:
  * keeps only `deepLink` fields, promotes single-type object string shorthands, and drops invalid values
@@ -536,10 +608,20 @@ export function normalizePanelDeepLinkState(
   raw: Readonly<Record<string, unknown>>,
 ): Record<string, PanelDeepLinkStateValue> {
   const result: Record<string, PanelDeepLinkStateValue> = {};
+  const deferred: [string, unknown, PanelStateField][] = [];
   for (const [name, value] of Object.entries(raw)) {
     const field = manifest.state[name];
     if (!field?.deepLink) continue;
+    if (parentScopedObjectType(field.type) !== undefined) {
+      deferred.push([name, value, field]);
+      continue;
+    }
     const normalized = normalizeExternalPanelValue(field.type, value);
+    if (normalized.ok) result[name] = normalized.value;
+  }
+  for (const [name, value, field] of deferred) {
+    const siblingParentKey = resolveSiblingParentKey(manifest, field.type, result);
+    const normalized = normalizeExternalPanelValue(field.type, value, siblingParentKey);
     if (normalized.ok) result[name] = normalized.value;
   }
   return result;
