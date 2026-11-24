@@ -28,7 +28,6 @@ const LAZY: Record<string, () => Promise<Component>> = {
   ShellDockRoom: () => import("@ontomato/agent-shell-ui").then((module) => module.ShellDockRoom),
   AgentPicker: () => import("@ontomato/agent-shell-ui").then((module) => module.AgentPicker),
   AgentAvatar: () => import("@ontomato/agent-shell-ui").then((module) => module.AgentAvatar),
-  DatasetSelectionButton: () => import("@ontomato/agent-shell-ui").then((module) => module.DatasetSelectionButton),
   ToolStep: () => import("@ontomato/agent-shell-ui").then((module) => module.ToolStep),
   ShellComposer: () => import("@ontomato/agent-shell-ui").then((module) => module.ShellComposer),
   PageComposer: () => import("@ontomato/agent-shell-ui").then((module) => module.PageComposer),

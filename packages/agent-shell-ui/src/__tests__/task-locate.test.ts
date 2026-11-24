@@ -114,3 +114,50 @@ it("opens a deeper task's read-only process through the existing proxy and links
     row.click();await nextTick();expect(detach).toHaveBeenCalledOnce();
   } finally {app.unmount();root.remove();}
 });
+
+it("labels non-retrieval delegated tasks with the delegated role and avoids mislabeling handoffs as retriever", async () => {
+  const genericTask: ChannelAgentTask = {
+    ...task,
+    id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    title: "Inspect deployment health",
+    retrieval: undefined,
+  };
+  const handoffItem: ResponseItem = {
+    ...item,
+    handoff: true,
+    process: [{ kind: "task", key: `task:${genericTask.id}`, task: genericTask }],
+  };
+  const root = document.createElement("div");
+  document.body.append(root);
+  const app = createApp({ render: () => h(ShellResponse, { item: handoffItem, sessionId: task.root.sessionId }) });
+  app.provide(shellContextKey, {
+    labels: ref({
+      thinking: "Thinking",
+      worked: (time: string) => time,
+      working: "Working",
+      elapsed: (time: string) => time,
+      tasks: {
+        count: (n: number) => `${n} tasks`,
+        retriever: "Retriever",
+        delegatedAgent: "Delegated agent",
+        delegated: "Delegated work",
+        status: { starting: "Starting", running: "Running", completed: "Done", failed: "Failed", cancelled: "Cancelled" },
+        errors: {},
+      },
+    }),
+    slots: {},
+  } as unknown as ShellContext);
+  app.mount(root);
+  try {
+    const toggle = root.querySelector<HTMLButtonElement>(".process-toggle")!;
+    expect(toggle.textContent?.trim()).toBe("Delegated work");
+    toggle.click();
+    await nextTick();
+    const card = root.querySelector(`#agent-task-${genericTask.id}`)!;
+    expect(card.querySelector(".executor")?.textContent?.trim()).toBe("Delegated agent");
+    expect(card.querySelector(".detail")?.textContent?.trim()).toBe("Inspect deployment health");
+  } finally {
+    app.unmount();
+    root.remove();
+  }
+});

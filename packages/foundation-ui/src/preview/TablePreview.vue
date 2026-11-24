@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { ElCheckbox } from "element-plus/es/components/checkbox/index";
 import { ElPagination } from "element-plus/es/components/pagination/index";
 import { ElTable, ElTableColumn } from "element-plus/es/components/table/index";
 import ColumnFilter from "./ColumnFilter.vue";
@@ -9,36 +8,24 @@ import type { TableArrangeLabels, TableData } from "./table-data";
 /**
  * A table of text cells (a CSV, TSV or dataset file, or a projection of other data) drawn with Element Plus. Cells keep
  * their spaces and line breaks, and columns whose every cell is a number align right. Given a page size, the rows come a
- * page at a time with the total beside the pager. Given the chosen rows, each row can be chosen by its index in the whole
- * table, so a choice holds across pages. Given the labels to arrange it, its reader can sort it by a column and keep only
- * some values of a column; that changes what is shown, never the table, and rows are still chosen by their index in the
- * whole table. Other attributes go to the Element Plus table (height, max-height, empty-text).
+ * page at a time when they span more than one page. Given the labels to arrange it, its reader can sort it by a column
+ * and keep only some values of a column; that changes what is shown, never the table. Other attributes go to the Element
+ * Plus table (height, max-height, empty-text).
  */
 defineOptions({ inheritAttrs: false });
 
 const props = defineProps<{
   /** The columns' names and the rows of text cells, such as `parseCsv` reads from a CSV or TSV text. */
   table: TableData;
-  /** Rows per page: given, the rows come a page at a time with the total beside the pager; otherwise all at once. */
+  /** Rows per page: given, rows paginate when more than one page is present; otherwise all at once. */
   pageSize?: number;
-  /** Indices of the chosen rows in the whole table; rows can be chosen when given. */
-  selected?: number[];
-  /** Accessible name of a row's checkbox, from the row's number (from 1) in the whole table. */
-  selectRowLabel?: (row: number) => string;
-  /** While true, the choice of rows does not change. */
-  selectionDisabled?: boolean;
   /** Given, the reader can sort the table by a column and filter a column by its values. */
   arrange?: TableArrangeLabels;
 }>();
 
-const emit = defineEmits<{
-  /** The chosen rows after the reader checks or clears one, by their indices in the whole table. */
-  "update:selected": [rows: number[]];
-}>();
-
-/** A column's least width; an arranged column adds the room its filter button and sort carets take (44px). */
-const MIN_WIDTH = 120;
-const ARRANGED_MIN_WIDTH = MIN_WIDTH + 44;
+/** A column's least width; an arranged column adds room for its filter button and sort carets. */
+const MIN_WIDTH = 112;
+const ARRANGED_MIN_WIDTH = MIN_WIDTH + 36;
 
 type Order = "ascending" | "descending";
 const sort = ref<{ column: number; order: Order } | null>(null);
@@ -113,13 +100,8 @@ function sorted({ prop, order: direction }: { prop: string | null; order: Order 
   sort.value = prop !== null && direction ? { column: Number(prop), order: direction } : null;
 }
 
-/** Rows keep their source index as identity, so a row's checkbox follows its record when the order changes. */
+/** Rows keep their source index as stable identity when the display order changes. */
 const sourceIndex = (row: { source: number }) => String(row.source);
-const chosenRow = ({ row }: { row: { source: number } }) => (props.selected?.includes(row.source) ? "is-chosen" : "");
-
-function toggle(row: number, selected: number[]) {
-  emit("update:selected", selected.includes(row) ? selected.filter((item) => item !== row) : [...selected, row]);
-}
 </script>
 
 <template>
@@ -129,19 +111,8 @@ function toggle(row: number, selected: number[]) {
       v-bind="$attrs"
       :data="rows"
       :row-key="sourceIndex"
-      :row-class-name="chosenRow"
       @sort-change="sorted"
     >
-      <el-table-column v-if="selected" width="44" class-name="table-preview-choice">
-        <template #default="{ row }">
-          <el-checkbox
-            :model-value="selected.includes(row.source)"
-            :disabled="selectionDisabled"
-            :aria-label="selectRowLabel?.(row.source + 1)"
-            @change="toggle(row.source, selected)"
-          />
-        </template>
-      </el-table-column>
       <el-table-column
         v-for="(column, index) in table.columns"
         :key="index"
@@ -169,7 +140,7 @@ function toggle(row: number, selected: number[]) {
       </el-table-column>
     </el-table>
     <el-pagination
-      v-if="pageSize"
+      v-if="pageSize && order.length > pageSize"
       v-model:current-page="page"
       class="table-preview-pager"
       size="small"
@@ -236,6 +207,30 @@ function toggle(row: number, selected: number[]) {
   height: 22px;
   margin-left: 0;
   border-radius: 5px;
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.table-preview :deep(th.table-preview-arranged .column-filter-button) {
+  opacity: 0;
+}
+
+.table-preview :deep(th.table-preview-arranged:hover .caret-wrapper),
+.table-preview :deep(th.table-preview-arranged:focus-within .caret-wrapper),
+.table-preview :deep(th.table-preview-arranged.ascending .caret-wrapper),
+.table-preview :deep(th.table-preview-arranged.descending .caret-wrapper),
+.table-preview :deep(th.table-preview-arranged:hover .column-filter-button),
+.table-preview :deep(th.table-preview-arranged:focus-within .column-filter-button),
+.table-preview :deep(th.table-preview-arranged .column-filter-button.active),
+.table-preview :deep(th.table-preview-arranged .column-filter-button.open) {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .table-preview :deep(th.table-preview-arranged .caret-wrapper),
+  .table-preview :deep(th.table-preview-arranged .column-filter-button) {
+    opacity: 0.72;
+  }
 }
 
 .table-preview :deep(.caret-wrapper:hover) {
@@ -269,25 +264,15 @@ function toggle(row: number, selected: number[]) {
   opacity: 1;
 }
 
-/* Element Plus gives a checkbox a 32px line of its own; here it is only as tall as its box and sits in the middle of
-   the row, so a row that can be chosen is as tall as one that cannot. */
-.table-preview :deep(.table-preview-choice .cell) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.table-preview :deep(.table-preview-choice .el-checkbox) {
-  height: auto;
-}
-
-.table-preview :deep(.el-table__row.is-chosen > td.el-table__cell) {
-  background: var(--el-color-primary-light-9);
-}
-
 .table-preview-pager {
   flex: none;
   justify-content: flex-end;
-  padding: var(--spacing-sm) 0;
+  padding: 6px var(--spacing-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-preview :deep(.caret-wrapper) {
+    transition: none;
+  }
 }
 </style>

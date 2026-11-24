@@ -22,6 +22,7 @@ const props = defineProps<{
 const emit = defineEmits<{ change: [kept: Set<string> | null] }>();
 
 const search = ref("");
+const open = ref(false);
 const values = computed(() => {
   const counts = new Map<string, number>();
   for (const value of props.cells) counts.set(value, (counts.get(value) ?? 0) + 1);
@@ -46,12 +47,21 @@ function keep(value: string, on: boolean) {
 </script>
 
 <template>
-  <el-popover trigger="click" placement="bottom-start" :width="260" :persistent="false" popper-class="column-filter-popper">
+  <el-popover
+    trigger="click"
+    placement="bottom-start"
+    :width="260"
+    :persistent="false"
+    popper-class="column-filter-popper"
+    @show="open = true"
+    @hide="open = false"
+  >
     <template #reference>
       <button
         type="button"
         class="column-filter-button"
-        :class="{ active: kept !== null }"
+        :class="{ active: kept !== null, open }"
+        :aria-expanded="open"
         :aria-label="labels.filter(column)"
         :title="labels.filter(column)"
         @click.stop
@@ -102,11 +112,12 @@ function keep(value: string, on: boolean) {
   color: var(--el-text-color-placeholder);
   vertical-align: middle;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
 }
 
 .column-filter-button:hover,
-.column-filter-button:focus-visible {
+.column-filter-button:focus-visible,
+.column-filter-button.open {
   background: var(--el-fill-color);
   color: var(--el-text-color-primary);
 }

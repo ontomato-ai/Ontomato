@@ -161,10 +161,12 @@ Lookup is always host override → shell default → generic file card or step.
   they appear once the reply has its answer and update as checks settle. The process stays
   open while a retrieval it delegated still runs after the run stopped to wait for it.
 - **Tasks**: a host that serves the [task routes](agent-tasks.md) sets `tasks` on its client
-  and supplies `labels.tasks`. A retrieval card names its executor, its outcome with the
-  datasets it delivered and, while the retriever runs, its live thinking, notes and steps, followed in their own
-  state with the same reducer; its files show as names only. The conversation's corner opens
-  the reply's task list, which leads to a card or a review.
+  and supplies `labels.tasks`. Each delegated task renders in a light bounded card with a
+  role badge (retriever or generic delegated agent), title, status pill, delivered datasets
+  when applicable, and—while an inline task runs—its live thinking, notes and steps followed
+  in their own state with the same reducer; its files show as names only. Folded handoff
+  turns label themselves as delegated work rather than a specific executor. The
+  conversation's corner opens the reply's task list, which leads to a card or a review.
 - **Artifacts**: `outputs/` image syntax renders inline, link syntax renders a
   card that opens the right panel; an unclosed reference shows a placeholder.
   Defaults by extension: `.chart.json` ECharts, `.csv`/`.json` in the foundation's

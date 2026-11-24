@@ -8,3 +8,4 @@ export const dropdownBoundaryOptions = {
 export { actionTooltipProps } from "./action-tooltip";
 export { default as ActionTooltip } from "./ActionTooltip.vue";
 export { ElDrawer } from "element-plus/es/components/drawer/index";
+export { ElPopover } from "element-plus/es/components/popover/index";

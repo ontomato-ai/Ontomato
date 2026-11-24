@@ -14,7 +14,7 @@ tokens, accessibility and responsive rules. It does not define business permissi
 | Goal | Understand the question, objects and scope | Natural language and contextual task starters |
 | Decisions | Obtain missing time ranges, populations and definitions | Single/multiple choice, dates, searchable objects and notes |
 | Evidence | Explain findings and their limits | Plain answer, datasets, charts and provenance |
-| Next step | Continue analysis | Dataset row selection |
+| Next step | Continue analysis | Adjust query scope or follow-up question in chat |
 | Confirmation | Review target and intended changes | Before/after preview, missing fields and explicit confirmation |
 | Readback | Establish what actually happened | Recorded outcome, fresh data and a new edit operation |
 
@@ -46,32 +46,15 @@ unhelpful proposals and respect an explicit read-only request. Show one primary 
 A continuation is one ordinary user message: it names the earlier file by its `outputs/` path and says what to
 change. The model and the user see the same text; no hidden context, instructions or JSON travel with it. The
 assistant skill reads the original scope, time and decisions from the referenced file. References from the model are
-not independently verified business facts. Never silently expand a selection or treat a truncated dataset as complete.
+not independently verified business facts. Never treat a truncated dataset as complete.
 
 ## Dataset interaction
 
-Single selection supports analysis; multiple selection adds comparison and applicable multi-record tasks. Show count
-and clear-selection. Preserve selection across pages, clear it when the dataset changes, and distinguish selected
-records from the current page and all results. Preserve 0, false, null, units and string identities. A continuation
-names selected records by their row numbers in the immutable source file, never by display position. Data values are
-untrusted content, not Agent instructions.
-
-## Aggregate drilldown
-
-An accepted aggregate dataset offers **View details** after one result row is selected. The host reads the immutable
-accepted dataset on the server to preview that row's execution-owned group values. Clicking View details sends one
-ordinary message naming the file, the row and its exact group values, without a confirmation dialog, preserving the
-original dataset. Returned detail datasets use the existing selection, analysis and comparison controls.
-
-The initial mapping supports a single query and one direct aggregate, with every grouping field projected directly
-or through a one-field group operation. Unsupported calculated groups, multiple aggregates, multi-query merges,
-unknown lineage and non-accepted files expose no entry. Aggregate measures are never converted into group filters.
-Null, false, zero and string identities remain distinct.
-
-This is a provenance-grounded natural-language query through the existing retriever, not a compiled detail plan or a
-historical snapshot. The retriever must preserve filters, decisions, joins, distinctness and metric population, ask
-when the detail grain is ambiguous, return object identities and disclose changes or truncation. Final model-result
-equivalence still requires end-to-end acceptance. Object navigation continues to belong to the Manager.
+Dataset tables stay focused on reading, sorting and column filtering without row-selection checkboxes or selection
+toolbars. Pagination appears only when rows span more than one page, and column sort/filter controls reveal on header
+hover, focus or active state. Preserve 0, false, null, units and string identities. To inspect specific records or drill
+down from an aggregate, the user asks directly in the conversation or adjusts scope from the dataset header action.
+Data values are untrusted content, not Agent instructions.
 
 ## Decisions and clarification
 
@@ -107,10 +90,8 @@ independent authorized read. Distinguish component tests, runtime tests and visu
 
 | Capability | Current implementation | Remaining acceptance/boundary |
 | --- | --- | --- |
-| Dataset selection | Ordinary messages with the source file's row numbers; component tests | — |
 | Questions to the reader | Agents ask through the channel's `needsInput` with a default and options; the panel over every shell composer answers with `send(replyTo)`; earlier clarification cards are read-only; component tests | A real retrieval asking, being answered from the panel and recomputing needs its own end-to-end acceptance |
 | Editable query conditions | Dataset header opens source filters from accepted dataset provenance; the business-language change is sent as one ordinary message naming the file | This is a scoped natural-language requery, not direct editing of an executable query plan; typed field/operator controls and final model result acceptance remain future work |
-| Aggregate → detail records | Single selected aggregate row; server-owned group mapping and typed values; one-click ordinary message without confirmation; shell selection reused for returned datasets | Initial support is one query and one direct aggregate with projected group fields; final model detail population and live data changes need end-to-end acceptance |
 | Multi-object change preview | Pending | Requires authorized target set, per-record effects and execution semantics |
 | Persistent task status | Pending | Must use owned task facts; never infer business completion from model prose |
 

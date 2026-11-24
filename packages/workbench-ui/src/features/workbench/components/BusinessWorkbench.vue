@@ -25,7 +25,6 @@ import { agentHostSessionPageSchema, type AgentHostSession } from "@ontomato/con
 import { nodeApiGet } from "../../../utils/api";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
-import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import {
   DASHBOARDS_PAGE_ID,
@@ -693,9 +692,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
         @display-skill="display.skill"
       />
       <slot v-else name="feature" :feature-id="page" />
-    </template>
-    <template #dataset-selection-actions="{ artifact, title, selectedRowIndices }">
-      <DatasetDrilldown :artifact="artifact" :title="title" :selected-row-indices="selectedRowIndices" />
     </template>
     <template #artifact-actions="{ artifact, title, caption }">
       <!-- A file added to a board opens the dashboards application, which is where boards live: a dataset is planned
