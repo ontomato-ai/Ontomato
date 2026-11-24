@@ -91,11 +91,19 @@ const CapabilityMap = {
       },
     );
 
+    const MAX_VISIBLE_KIND_TAGS = 4;
     const relationKindsCount = computed(() => (Array.isArray(values.value.relationKinds) ? values.value.relationKinds.length : 0));
     const activeRelationKindLabels = computed(() =>
       Array.isArray(graphRelationKindLabels.value)
         ? graphRelationKindLabels.value.filter((item) => typeof item === "string" && item.length > 0)
         : [],
+    );
+    const visibleRelationKindTags = computed(() => activeRelationKindLabels.value.slice(0, MAX_VISIBLE_KIND_TAGS));
+    const hiddenRelationKindTagCount = computed(() =>
+      Math.max(0, activeRelationKindLabels.value.length - MAX_VISIBLE_KIND_TAGS),
+    );
+    const hiddenRelationKindTagTitle = computed(() =>
+      activeRelationKindLabels.value.slice(MAX_VISIBLE_KIND_TAGS).join(", "),
     );
 
     function clearRelationKinds() {
@@ -233,6 +241,9 @@ const CapabilityMap = {
       typeDetailVisible,
       relationKindsCount,
       activeRelationKindLabels,
+      visibleRelationKindTags,
+      hiddenRelationKindTagCount,
+      hiddenRelationKindTagTitle,
       clearRelationKinds,
       onTypeChosen,
       openInstances,
