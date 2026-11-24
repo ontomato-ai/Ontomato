@@ -8,11 +8,13 @@ import rawExamples from "../../../../../contracts/examples/platform-schedules.js
 import {platformTaskSchema} from "@ontomato/contracts/platform-schedules";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { type CreatePanelHumanOperationIntentRequest, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import { agentHostObjectChangedFrameSchema } from "@ontomato/contracts/agent-host";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { AGENT_DEFINITION, APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
+import { openPresentationView } from "../../agent-host/presentation";
 const mocks = vi.hoisted(() => ({createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn()}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:mocks.query}),qualifiedTable:(name:string)=>name}));
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
@@ -181,6 +183,51 @@ it("reports the identity assigned by the agent definition owner to a new draft",
 
   const outcome = await agentDefinitionOperations[0].execute(host, { kind: "draft" }, { values }, uuid(92));
   expect(outcome).toMatchObject({ kind: "success", created: { objectType: AGENT_DEFINITION, primaryKey } });
+});
+
+it("broadcasts the draft owner's created identity to the agent's root session", async () => {
+  const objectType = "platform:ScheduledTask";
+  const handlerRef = `${objectType}.save`;
+  const created = { objectType, primaryKey: uuid(91) };
+  const previous = { objectType, primaryKey: uuid(92) };
+  const affected = { objects: [previous, created], objectTypes: [objectType], removed: [previous] };
+  mockRegisteredOperation({
+    handlerRef, labelKey: "test.perform", binding: { kind: "PlatformOperation", id: handlerRef },
+    kind: "form.save", effect: "write", batch: false, targetType: objectType, create: true,
+    targetSchema: z.object({ kind: z.literal("draft") }).strict(),
+    inputSchema: z.object({ values: z.record(z.unknown()) }), resultSchema: z.object({}),
+    draftInput: input => input,
+    execute: async () => ({ kind: "success", data: {}, created, affected }),
+  });
+  mocks.panel.mockResolvedValue({
+    id: "P", manifest: { state: {}, members: { form: { target: { projectionId: "form" } } } },
+  });
+  mocks.projection.mockResolvedValue({
+    id: "form", binding: { kind: "PlatformObjectType", id: objectType }, inputs: {},
+  });
+  const rootSession = { providerId: "workbench", sessionId: uuid(94) };
+  current.channel!.userRecipient!.session = rootSession;
+  const send = vi.fn();
+  const unrelated = vi.fn();
+  const view = new AbortController();
+  openPresentationView("workbench", owner, uuid(95), send, view.signal);
+  openPresentationView("workbench", { ...owner, userId: "other" }, uuid(96), unrelated, view.signal);
+  try {
+    const result = await executeLiveAction({
+      intentId: uuid(93), applicationId: "A", useId: "tasks", operationId: "form.save",
+      call: { target: { kind: "draft" }, input: { values: { title: "New task" } } },
+    });
+    expect(result).toMatchObject({ kind: "dispatched", outcome: { kind: "success", created } });
+    expect(send).toHaveBeenCalledOnce();
+    const frame = agentHostObjectChangedFrameSchema.parse(JSON.parse(JSON.stringify(send.mock.calls[0]![0])));
+    expect(frame).toMatchObject({
+      session: rootSession, target: null, affected,
+      operation: { operationId: "form.save", panelId: "P", target: null, created },
+    });
+    expect(unrelated).not.toHaveBeenCalled();
+  } finally {
+    view.abort();
+  }
 });
 
 it("does not let a content page's loaded skill authorize a frame operation", async () => {

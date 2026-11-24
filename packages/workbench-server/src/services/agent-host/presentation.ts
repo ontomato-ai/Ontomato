@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentPrepareRequest, AgentRunContext } from "@ontomato/contracts/agent-channel";
-import type { AgentHostSessionLiveFrame } from "@ontomato/contracts/agent-host";
+import type { AgentHostObjectChangedFrame, AgentHostSessionLiveFrame } from "@ontomato/contracts/agent-host";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
   ExpectedPageTarget, FillFormRequest, ObservedPageTarget, ObserveDisplayRequest, PageActionRequest,
@@ -282,6 +282,14 @@ export function openPresentationView(
     if (views.get(key) === connection) views.delete(key);
   }, { once: true });
   return connection.id;
+}
+
+export function publishObjectChanged(initiator: AgentHostOwner, frame: AgentHostObjectChangedFrame): void {
+  for (const { host, owner, send } of views.values()) {
+    if (host === frame.session.providerId && owner.domainId === initiator.domainId && owner.userId === initiator.userId) {
+      send(frame);
+    }
+  }
 }
 
 export function visibilityReader(body: AgentPrepareRequest): AgentVisibilityReader | undefined {
