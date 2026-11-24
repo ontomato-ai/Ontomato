@@ -61,7 +61,6 @@ Node.js: /usr/local/share/node/LICENSE
 Python interpreter and standard library: /usr/local/lib/python3.10/LICENSE.txt
 Debian packages: /usr/share/doc/<package>/copyright
 PI CLI 1.4.0 (https://github.com/earendil-works/pi/releases/tag/v1.4.0): /app/licenses/pi-MIT.txt
-The pi-agent-core fork retains its MIT license in /app/packages/agent-runtime/src/core/pi/LICENSE
 EOF
 RUN rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.10/site-packages/setuptools* /usr/local/lib/python3.10/site-packages/pkg_resources /usr/local/bin/pip* \
  && node --version && python -c "import requests, numpy, pandas, sympy, litellm, starlette, uvicorn" \

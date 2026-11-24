@@ -1,5 +1,5 @@
 import { Compile } from "typebox/compile";
-import type { Express, NextFunction, Request, Response } from "express";
+import type { Express } from "express";
 import {
   presentationResultSchema,
   type PresentationResult,
@@ -19,8 +19,6 @@ import {
   type RuntimeJsonObject,
 } from "@ontomato/contracts/agent-runtime-values";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
-import { serviceLogIdentitySchema } from "@ontomato/contracts/service-logging";
-import { updateServiceLogContext } from "@ontomato/service-logging";
 import type {
   HarnessToolCall,
   HarnessToolCallResult,
@@ -529,17 +527,6 @@ export function bindPlatformTools(options: BindPlatformToolsOptions): BoundPlatf
 }
 
 /** Executes scoped skill commands without exposing host tokens or upstream credentials. */
-export interface SkillCallbackDispatcher {
-  runChannelCommand(
-    scope: Scope,
-    runId: string,
-    credential: string | undefined,
-    runHeader: string | undefined,
-    executionContextHeader: string | undefined,
-    body: unknown,
-  ): Promise<unknown>;
-}
-
 export interface SessionSkillCallbackDispatcher {
   sessionChannelCommand(
     scope: Scope,
@@ -551,50 +538,18 @@ export interface SessionSkillCallbackDispatcher {
 }
 
 /** Mounts only the callback command endpoint for the supplied dispatcher. */
-export function registerSkillCallbackRoutes(
-  app: Express,
-  dispatcher: SkillCallbackDispatcher | SessionSkillCallbackDispatcher,
-  wrap?: (handler: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => void,
-): void {
-  const handle = async (req: Request, res: Response) => {
-    const commandScope = {
-      hostId: runtimeKeySchema.parse(req.params.hostId),
-      domainId: runtimeKeySchema.parse(req.params.domainId),
+export function registerSkillCallbackRoutes(app: Express, dispatcher: SessionSkillCallbackDispatcher): void {
+  app.post("/v1/channel/hosts/:hostId/domains/:domainId/sessions/:sessionId/commands", (req, res, next) => {
+    const handle = async () => {
+      const scope = {
+        hostId: runtimeKeySchema.parse(req.params.hostId),
+        domainId: runtimeKeySchema.parse(req.params.domainId),
+      };
+      res.json(await dispatcher.sessionChannelCommand(
+        scope, runtimeIdSchema.parse(req.params.sessionId),
+        req.header("X-Ontomato-Callback-Credential"), req.header(BUILD_TEST_HEADER), req.body,
+      ));
     };
-    const credential = req.header("X-Ontomato-Callback-Credential");
-    const executionContext = req.header(BUILD_TEST_HEADER);
-    if ("sessionChannelCommand" in dispatcher) {
-      const sessionId = runtimeIdSchema.parse(req.params.sessionId);
-      res.json(await dispatcher.sessionChannelCommand(commandScope, sessionId, credential, executionContext, req.body));
-      return;
-    }
-    const runId = runtimeIdSchema.parse(req.params.runId);
-    const sessionHeader = serviceLogIdentitySchema.safeParse(req.header("X-Ontomato-Session-Id"));
-    updateServiceLogContext({
-      domainId: commandScope.domainId,
-      runId,
-      sessionId: sessionHeader.success ? sessionHeader.data : null,
-    });
-    res.json(
-      await dispatcher.runChannelCommand(
-        commandScope,
-        runId,
-        credential,
-        req.header("X-Ontomato-Run-Id"),
-        executionContext,
-        req.body,
-      ),
-    );
-  };
-
-  app.post(
-    "sessionChannelCommand" in dispatcher
-      ? "/v1/channel/hosts/:hostId/domains/:domainId/sessions/:sessionId/commands"
-      : "/v1/channel/hosts/:hostId/domains/:domainId/runs/:runId/commands",
-    wrap
-      ? wrap(handle)
-      : (req, res, next) => {
-          handle(req, res).catch(next);
-        },
-  );
+    void handle().catch(next);
+  });
 }

@@ -8,7 +8,6 @@ import type {
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { RuntimeEnvironment } from "@ontomato/contracts/agent-runtime-skills";
 import { getQueryTimeoutMs } from "../../config/query-settings";
-import { renderPrompt } from "../../core/prompts/loader";
 import { getLogContext } from "../../logging/log-context";
 import {
   getPostgresPool,
@@ -47,23 +46,6 @@ export function runDefinition(
         wallTimeMs: getQueryTimeoutMs(),
         cpuSeconds: Math.ceil(getQueryTimeoutMs() / 1000),
       }),
-    },
-    compaction: {
-      systemPrompt: renderPrompt(
-        "agent-runtime.compaction.system",
-        {},
-        locale,
-      ),
-      summarizePrompt: renderPrompt(
-        "agent-runtime.compaction.summarize.user",
-        {},
-        locale,
-      ),
-      updatePrompt: renderPrompt(
-        "agent-runtime.compaction.update.user",
-        {},
-        locale,
-      ),
     },
   };
 }

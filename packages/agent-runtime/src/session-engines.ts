@@ -62,15 +62,13 @@ export class SessionEngines {
     private readonly root: string,
     private readonly gateway: ModelGatewayClient,
     private readonly registry: HarnessRegistry,
-    private readonly sandboxFactory: SessionEngineSandboxFactory | undefined,
+    private readonly sandboxFactory: SessionEngineSandboxFactory,
     private readonly locked: SessionLock,
     private readonly callbackDispatcher: Parameters<typeof openSkillCallback>[0],
     private readonly onCloseError: (error: unknown) => void,
   ) {}
 
   plugin(id: string) {
-    if (!this.sandboxFactory)
-      throw new RuntimeError(503, "CODE_ISOLATION_UNAVAILABLE", "The session engine sandbox is not configured");
     return this.registry.get(id);
   }
 
@@ -100,7 +98,7 @@ export class SessionEngines {
       request.signal.throwIfAborted();
       this.callback ??= openSkillCallback(this.callbackDispatcher);
       const { endpoint: callback } = await this.callback;
-      sandbox = await this.sandboxFactory!({
+      sandbox = await this.sandboxFactory({
         scope, sessionId: id, sessionDirectory: sessionSandboxDirectory(this.root, scope, id), workspaceId: workspaceId ?? null,
         skills: request.skills, limits: request.limits, gatewayUrl: lease.url, callback,
       });

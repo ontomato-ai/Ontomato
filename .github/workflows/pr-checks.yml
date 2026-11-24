@@ -104,7 +104,7 @@ jobs:
         run: python3 -m pip install -r packages/agent-runtime/requirements-py310.txt
 
       - name: Test runtime session engine integration
-        run: pnpm --filter @ontomato/agent-runtime exec vitest run --maxWorkers=2 --minWorkers=1 src/__tests__/session-engine.integration.test.ts
+        run: pnpm --filter @ontomato/agent-runtime exec vitest run --maxWorkers=2 --minWorkers=1 src/__tests__/session-engine.integration.test.ts src/__tests__/http.integration.test.ts
 
       - name: Test workbench server integration
         run: pnpm --filter @ontomato/workbench-server test:integration

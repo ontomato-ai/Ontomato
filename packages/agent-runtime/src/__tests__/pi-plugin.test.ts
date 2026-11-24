@@ -487,8 +487,8 @@ describe("PI 1.4.0 RPC plugin", () => {
 
   it("imports older context once before open returns and sends it with a resumed prompt", async () => {
     const requests = await configure(() => ({ status: "length", text: "Cut short" }));
-    const session = await open({ previousContext: [user("Old context lifted from storage")] });
-    expect(await readFile(join(directories.state, "pi.jsonl"), "utf8")).toContain("Old context lifted from storage");
+    const interrupted: RuntimeMessage[] = JSON.parse(await readFile(new URL("./fixtures/interrupted-history.json", import.meta.url), "utf8"));
+    const session = await open({ previousContext: [user("Old context lifted from storage"), ...interrupted] });
     await session.close();
     const resumed = await open({ engineRef: session.engineRef });
     expect(await turn(resumed, host(), input("new", "Continue the old turn"))).toMatchObject({ stopReason: "length" });

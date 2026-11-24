@@ -1,3 +1,4 @@
+import { defaultEngineId } from "./adapters/registry";
 import { historyCursor, historyPosition, type SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { runtimeRunViewSchema, type RuntimeRunView } from "@ontomato/contracts/agent-runtime";
 import { runtimeSkillRefSchema, type RuntimeRegisteredSkill } from "@ontomato/contracts/agent-runtime-skills";
@@ -16,7 +17,7 @@ import type {
   RuntimeEventEnvelope,
 } from "@ontomato/contracts/agent-runtime-events";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
+import type { RuntimeMessage, RuntimeRunInput } from "@ontomato/contracts/agent-runtime-messages";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeError, missing } from "./errors";
 import { answerMessageId } from "./answer";
@@ -436,9 +437,9 @@ export class RuntimeStore {
     scope: Scope,
     run: RuntimeRun,
     fingerprint: string,
-    input: RuntimeMessage,
+    input: RuntimeRunInput,
+    engine: string,
     reserved = false,
-    engine?: string,
   ) {
     return this.transaction(async (c) => {
       if (reserved) {
@@ -476,33 +477,27 @@ export class RuntimeStore {
           "Session already has an active run",
         );
       if (!reserved && session.preparing_run_id) throw new RuntimeError(409,"SESSION_BUSY","Session has a preparing execution intent");
-      const contextSeq = engine ? null : Number(session.context_seq) + 1;
       const streamId = randomUUID();
       const received = reserved ? (await c.query(`SELECT id,seq FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND id=(SELECT (intent->>'inputId')::uuid FROM ${this.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$4) AND run_id IS NULL`, [...values(scope), run.sessionId, run.id])).rows[0] : null;
       const messageId = received ? received.id : randomUUID();
       const messageSeq = received ? Number(received.seq) : Number(session.message_seq) + 1;
       await c.query(
-        `INSERT INTO ${this.table("runs")} (host_id,domain_id,id,session_id,run,stream_id,seq,log_context) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [...values(scope), run.id, run.sessionId, run, streamId, engine ? 2 : 3, { userId: getServiceLogContext().userId ?? null }],
+        `INSERT INTO ${this.table("runs")} (host_id,domain_id,id,session_id,run,stream_id,seq,log_context) VALUES ($1,$2,$3,$4,$5,$6,2,$7)`,
+        [...values(scope), run.id, run.sessionId, run, streamId, { userId: getServiceLogContext().userId ?? null }],
       );
       await c.query(
-        `UPDATE ${this.table("sessions")} SET active_run_id=$4,latest_run_id=$4,preparing_run_id=NULL,message_seq=GREATEST(message_seq,$5),engine=COALESCE(engine,$6),context_seq=COALESCE($7,context_seq),updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
-        [...values(scope), run.sessionId, run.id, messageSeq, engine ?? null, contextSeq],
+        `UPDATE ${this.table("sessions")} SET active_run_id=$4,latest_run_id=$4,preparing_run_id=NULL,message_seq=GREATEST(message_seq,$5),engine=COALESCE(engine,$6),updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+        [...values(scope), run.sessionId, run.id, messageSeq, engine],
       );
-      if (received) await c.query(`UPDATE ${this.table("messages")} SET run_id=$4,context_seq=$5 WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), messageId, run.id, contextSeq]);
+      if (received) await c.query(`UPDATE ${this.table("messages")} SET run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...values(scope), messageId, run.id]);
       else await c.query(
-        `INSERT INTO ${this.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message,context_seq) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [...values(scope), messageId, run.sessionId, run.id, messageSeq, input, contextSeq],
+        `INSERT INTO ${this.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+        [...values(scope), messageId, run.sessionId, run.id, messageSeq, input],
       );
       const events: RuntimeAgentEvent[] = [
         { type: "agent_start" },
+        { type: "input_received", messageId, messageSeq, message: input },
       ];
-      if (engine) {
-        events.push({ type: "input_received", messageId, messageSeq, message: input as import("@ontomato/contracts/agent-channel").AgentInput });
-      } else {
-        events.push({ type: "message_start", messageId, message: input },
-          { type: "message_end", messageId, messageSeq, contextSeq, message: input });
-      }
       for (const [index, event] of events.entries())
         await c.query(
           `INSERT INTO ${this.table("events")} VALUES($1,$2,$3,$4,$5)`,
@@ -528,7 +523,7 @@ export class RuntimeStore {
     );
     if (!row) missing();
     return {
-      engine: (row.engine ?? (row.latest_run_id ? "pi" : null)) as string | null,
+      engine: (row.engine ?? (row.latest_run_id ? defaultEngineId : null)) as string | null,
       engineRef: row.engine_ref as string | null,
     };
   }
@@ -550,7 +545,9 @@ export class RuntimeStore {
       )
     ).rows[0];
     if (!row) missing();
-    const run: RuntimeRun = row.run;
+    // Older stored runs keep their original definition on disk.
+    const { compaction: _legacyCompaction, ...definition } = row.run.definition as RuntimeRun["definition"] & { compaction?: unknown };
+    const run: RuntimeRun = { ...row.run, definition };
     const legacySkills = runtimeSkillRefSchema.array().safeParse(run.definition.skills);
     if (legacySkills.success && legacySkills.data.length) {
       const versions = run.resolvedSkills.map(({ skill, digest }: RuntimeRegisteredSkill) => ({ skill, digest }));

@@ -1,3 +1,5 @@
+import { HarnessRegistry } from "../adapters/registry";
+import { piPlugin } from "../adapters/pi";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
@@ -103,12 +105,12 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     gateway: new ModelGatewayClient(base, base),
     modelSeed: { modelName: "fixture-model", baseUrl: base + "/v1", apiKey: "fixture-upstream-key" },
     worker: { development: true, python: "python3" },
-    channelCommandBaseUrl: base,
+    engineRegistry: new HarnessRegistry([piPlugin]),
     openEngineSandbox: sandbox,
   });
   const sessionId = randomUUID();
   let runtime = createRuntime();
-  async function run(text: string, engine?: string) {
+  async function run(text: string, engine?: string, targetSession = sessionId) {
     const id = randomUUID();
     const request: RuntimeStartRunRequest = {
       input: { role: "user", content: text, timestamp: Date.now() },
@@ -116,11 +118,10 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
       definition: {
         ...(engine ? { engine } : {}), systemPrompt: "Use the fixture tool when requested.",
         modelId: null, skills: [], externalMcp: [], sandbox: { limits: codeLimitsSchema.parse({}) },
-        compaction: { systemPrompt: "", summarizePrompt: "", updatePrompt: "" },
       },
       businessCallbacks: { workbench: { baseUrl: `${base}/api/assistant/executions/${id}/workbench`, credential: "wbc1.fixture" } },
     };
-    await runtime.start(host, scope, sessionId, id, id, request);
+    await runtime.start(host, scope, targetSession, id, id, request);
     const stopped = await runtime.runStatus(scope, id, { timeoutMs: 15000, signal: new AbortController().signal });
     expect(stopped.stopReason, stopped.errorMessage ?? "").toBe("stop");
     const snapshot = runtimeRunSnapshotSchema.parse(await runtime.snapshot(scope, id));
@@ -166,13 +167,50 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     expect(leases.size).toBe(0);
     await expect(readFile(path.join(launched.workspace, "outputs", "probe.txt"))).rejects.toMatchObject({ code: "ENOENT" });
 
+    const legacySession = randomUUID(), legacyRun = randomUUID();
+    const legacyInput = { role: "user", content: "The original legacy question", timestamp: Date.now() } as const;
+    await runtime.store.createSession(scope, legacySession);
+    const legacy = await runtime.store.admit(scope, {
+      ...first.run, id: legacyRun, sessionId: legacySession, status: "running",
+      finishedAt: null, stopReason: null, errorMessage: null, answerMessageId: null,
+    }, "legacy-fixture", legacyInput, "pi");
+    await runtime.store.append(scope, legacyRun, {
+      type: "message_end", messageId: legacy.inputId!, messageSeq: 0, contextSeq: null, message: legacyInput,
+    }, true);
+    await runtime.store.finish(scope, legacyRun, "aborted", "Legacy run was cancelled");
+    const keys = [scope.hostId, scope.domainId];
+    await runtime.store.pool.query(
+      `UPDATE ${runtime.store.table("sessions")} SET engine=NULL WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+      [...keys, legacySession],
+    );
+    const oldCompaction = { systemPrompt: "Old system", summarizePrompt: "Old summary", updatePrompt: "Old update" };
+    await runtime.store.pool.query(
+      `UPDATE ${runtime.store.table("runs")} SET run=jsonb_set(run,'{definition,compaction}',$4) WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+      [...keys, legacyRun, oldCompaction],
+    );
+    await runtime.store.pool.query(
+      `INSERT INTO ${runtime.store.table("compactions")} (host_id,domain_id,session_id,covered_seq,summary) VALUES($1,$2,$3,1,$4)`,
+      [...keys, legacySession, "Previously summarized context"],
+    );
+
+    const historical = runtimeRunSnapshotSchema.parse(await runtime.snapshot(scope, legacyRun));
+    expect(historical.run.definition).not.toHaveProperty("compaction");
+    const stored = await runtime.store.pool.query(
+      `SELECT run->'definition'->'compaction' AS compaction FROM ${runtime.store.table("runs")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+      [...keys, legacyRun],
+    );
+    expect(stored.rows[0].compaction).toEqual(oldCompaction);
+    await run("Continue the legacy thread", "uninstalled", legacySession);
+    expect(await runtime.store.sessionEngine(scope, legacySession)).toMatchObject({ engine: "pi", engineRef: expect.any(String) });
+    expect(modelRequests.at(-1)).toContain("Previously summarized context");
+
     const recoverySession = randomUUID(), recoveryRun = randomUUID();
     const input = { role: "user", content: "Unconfirmed opening input", timestamp: Date.now() } as const;
     await runtime.store.createSession(scope, recoverySession);
     await runtime.store.admit(scope, {
       ...first.run, id: recoveryRun, sessionId: recoverySession, status: "running",
       finishedAt: null, stopReason: null, errorMessage: null, answerMessageId: null,
-    }, "restart-fixture", input, false, "pi");
+    }, "restart-fixture", input, "pi");
     await runtime.store.append(scope, recoveryRun, {
       type: "tool_execution_start", toolCallId: "unfinished", toolName: "external_tool", args: {},
     });

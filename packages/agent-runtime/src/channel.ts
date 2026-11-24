@@ -8,7 +8,6 @@ import { runtimeStartRunRequestSchema, type RuntimeRun } from "@ontomato/contrac
 import type { RuntimeMessage, RuntimeToolDeclaration } from "@ontomato/contracts/agent-runtime-messages";
 import type { RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
 import type { AgentTask } from "@ontomato/contracts/agent-tasks";
-import type { Message } from "@earendil-works/pi-ai";
 import type { PlatformTool } from "./platform-tools";
 import type { AgentRuntime } from "./runtime";
 import type { Scope, MessageRow } from "./store";
@@ -99,7 +98,6 @@ type Listener = () => void;
 export class AgentChannel {
   readonly facts: ChannelStore;
   /** PI returns the same queued object; preserve its receipt identity in the event sink. */
-  readonly inputIds = new WeakMap<object, string>();
   private listeners = new Map<string, Set<Listener>>();
   private chains = new Map<string, { credential: AgentCredential; executions: Set<string>; presentationBinding?: PresentationBinding }>();
   private chainKey(channel: AgentRunContext) { return JSON.stringify([channel.actor.domainId,channel.root.session.providerId,channel.root.session.sessionId,channel.root.runId]); }
@@ -488,32 +486,6 @@ export class AgentChannel {
       message: await this.modelMessage(scope.domainId, row.message, isDirectUserRun(channel, run.sessionId)),
       context: prepared.context ?? null,
     };
-  }
-  followUp(scope: Scope, run: RuntimeRun) { return this.consumeInputs(scope,run,"followup"); }
-  steering(scope: Scope, run: RuntimeRun) { return this.consumeInputs(scope,run,"steer"); }
-  private async consumeInputs(scope: Scope, run: RuntimeRun, mode: "followup" | "steer"): Promise<Message[]> {
-    const pending = await this.runtime.locked(scope, run.sessionId, async () => {
-      if ((await this.facts.intent(scope,run.id)).cancelled) { this.runtime.seal(scope,run.id); return []; }
-      const rows = await this.facts.pending(scope,run.sessionId,mode === "steer" ? "steer" : undefined,run.id);
-      if (!rows.length && mode === "followup") this.runtime.seal(scope,run.id);
-      return rows;
-    });
-    if (!pending.length) return [];
-    for (const row of pending) {
-      const channel = run.channel!;
-      const prepared = agentSteerPreparationSchema.parse(await this.post(this.provider(channel.agent.providerId), "/prepare", { mode: "steer", executionActor:run.executionUserId ? {userId:run.executionUserId,domainId:scope.domainId} : null, language: run.language, agent: channel.agent, actor: channel.actor, sessionId: run.sessionId, runId: run.id, inputId: row.id, input: row.message, authority: channel.authority, requestedBy: channel.requestedBy, root: channel.root, userRecipient: channel.userRecipient ?? null }, scope.domainId, this.credential(channel)));
-      await this.runtime.locked(scope, run.sessionId, async () => {
-        await this.facts.consume(scope, run.sessionId, run.id, [row.id]);
-        if (prepared.context !== undefined) await this.runtime.updateHostContext(scope, run.id, prepared.context);
-      });
-    }
-    return pending.map(row => { const message = row.message as unknown as Message; this.inputIds.set(message, row.id); return message; });
-  }
-  /** The rebuilt model request has already consumed these queued inputs at a safe boundary. */
-  modelMessagesForRun(scope: Scope, run: RuntimeRun, openingMessageId: string, rows: MessageRow[]): Promise<Message[]> {
-    const direct = run.channel !== undefined && isDirectUserRun(run.channel, run.sessionId);
-    return Promise.all(rows.map(row => this.modelMessage(scope.domainId, row.message,
-      direct && row.runId === run.id && row.id !== openingMessageId))) as unknown as Promise<Message[]>;
   }
   /** Shape model context only; receipt records and host decision inputs remain unchanged. */
   async modelMessage(domainId: string, message: RuntimeMessage, midRound = false): Promise<RuntimeMessage> {

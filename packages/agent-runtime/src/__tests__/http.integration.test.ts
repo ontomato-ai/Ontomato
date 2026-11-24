@@ -82,11 +82,6 @@ describe("standard runtime real HTTP/PG/processes", () => {
           wallTimeMs: 15000,
         }),
       },
-      compaction: {
-        systemPrompt: "COMPACT",
-        summarizePrompt: "Summary",
-        updatePrompt: "Update",
-      },
     },
     environment: {
       values: { FIXTURE_URL: base },
@@ -107,7 +102,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       [
         "--import",
         createRequire(import.meta.url).resolve("tsx"),
-        path.join(repo, "apps/agent-runtime/src/index.ts"),
+        path.join(repo, "apps/agent-runtime/src/__tests__/fixtures/runtime-process.ts"),
       ],
       {
         cwd: repo,
@@ -284,7 +279,6 @@ describe("standard runtime real HTTP/PG/processes", () => {
               skills: [],
               externalMcp: [],
               sandbox: { limits: codeLimitsSchema.parse({ memoryBytes: codeExecutionVirtualAddressSpaceBytes, wallTimeMs: 15000 }) },
-              compaction: { systemPrompt: "COMPACT", summarizePrompt: "Summary", updatePrompt: "Update" },
             },
             environment: { values: {}, secrets: {} },
           }));
@@ -348,7 +342,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
             : String(user.content).includes("loop")
               ? `printf ${modelCalls}`
               : String(user.content).includes("channel-script")
-                ? "node -e 'import(\"node:fs/promises\").then(async({writeFile})=>{const r=await fetch(process.env.ONTOMATO_AGENT_COMMAND_URL,{method:\"POST\",headers:{\"content-type\":\"application/json\",\"X-Ontomato-Callback-Credential\":process.env.ONTOMATO_AGENT_CALLBACK,\"X-Ontomato-Run-Id\":process.env.ONTOMATO_RUN_ID},body:JSON.stringify({op:\"start\",agent:{providerId:\"workbench\",agentId:\"fixture-agent\"},message:\"Child question\"})});await writeFile(\"outputs/channel-env.json\",JSON.stringify({scenario:process.env.ONTOMATO_SKILL_SCENARIO,url:process.env.ONTOMATO_AGENT_COMMAND_URL,secret:process.env.ONTOMATO_AGENT_CALLBACK,runId:process.env.ONTOMATO_RUN_ID,status:r.status,body:await r.json()}));})'"
+                ? "node -e 'import(\"node:fs/promises\").then(async({writeFile})=>{const r=await fetch(process.env.ONTOMATO_AGENT_COMMAND_URL,{method:\"POST\",headers:{\"content-type\":\"application/json\",\"X-Ontomato-Callback-Credential\":process.env.ONTOMATO_AGENT_CALLBACK},body:JSON.stringify({op:\"start\",agent:{providerId:\"workbench\",agentId:\"fixture-agent\"},message:\"Child question\"})});await writeFile(\"outputs/channel-env.json\",JSON.stringify({scenario:process.env.ONTOMATO_SKILL_SCENARIO,url:process.env.ONTOMATO_AGENT_COMMAND_URL,secret:process.env.ONTOMATO_AGENT_CALLBACK,runId:process.env.ONTOMATO_RUN_ID,status:r.status,body:await r.json()}));})'"
             : "node skills/fixture-skill/scripts/run.mjs";
         frame({
           role: "assistant",
@@ -822,7 +816,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     expect(output.status).toBe(200);
     expect(await output.text()).toBe("first version\n");
   });
-  it("injects per-run channel credentials into worker bash and rejects late calls with 409 RUN_CLOSED", async () => {
+  it("injects session credentials into native bash and rejects late calls with 409 RUN_CLOSED", async () => {
     const sessionId = await session();
     const runId = randomUUID();
     const agent = { providerId: "workbench", agentId: "fixture-agent" };
@@ -857,7 +851,6 @@ describe("standard runtime real HTTP/PG/processes", () => {
       headers: {
         "content-type": "application/json",
         "X-Ontomato-Callback-Credential": captured.secret,
-        "X-Ontomato-Run-Id": captured.runId,
       },
       body: JSON.stringify({ op: "list" }),
     });

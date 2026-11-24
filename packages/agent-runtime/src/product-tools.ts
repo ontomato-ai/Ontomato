@@ -19,18 +19,13 @@ export function productTools(request: RuntimeStartRunRequest, runId: string): Pl
   const definitions = request.definition.productTools ?? [];
   if (!definitions.length) return [];
   const callback = request.businessCallbacks?.product;
-  const root = callback?.baseUrl ?? request.environment.values.ONTOMATO_WORKBENCH_URL;
-  const credential = callback?.credential ?? request.environment.secrets.ONTOMATO_PRODUCT_CALLBACK;
-  if (!root || !credential) throw new Error("Product tool callback delegation is missing");
-  const base = new URL(root);
-  if (!["http:", "https:"].includes(base.protocol) || base.search || base.hash || base.username || base.password) {
-    throw new Error("Invalid product callback origin");
-  }
+  if (!callback) throw new Error("Product tool callback delegation is missing");
+  const base = new URL(callback.baseUrl);
+  const prefix = base.pathname.replace(/\/$/, "");
+  const deploymentPath = prefix.slice(0, prefix.lastIndexOf("/api/product-assets/"));
   return definitions.map((definition) => {
-    const target = callback
-      ? new URL(definition.path, base.origin)
-      : new URL(base.toString().replace(/\/$/, "") + definition.path);
-    if (callback && !target.pathname.startsWith(base.pathname.replace(/\/$/, "") + "/"))
+    const target = new URL(deploymentPath + definition.path, base.origin);
+    if (!target.pathname.startsWith(prefix + "/"))
       throw new Error("Product tool is outside its declared callback path");
     return {
       declaration: {
@@ -43,7 +38,7 @@ export function productTools(request: RuntimeStartRunRequest, runId: string): Pl
         const response = await fetch(target, {
           method: "POST",
           redirect: "error",
-          headers: { "Content-Type": "application/json", tk: credential, "X-Ontomato-Run-Id": runId },
+          headers: { "Content-Type": "application/json", tk: callback.credential, "X-Ontomato-Run-Id": runId },
           body: JSON.stringify({ parameters: call.args }),
           signal: call.signal,
         });

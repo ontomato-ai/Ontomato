@@ -5,6 +5,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { AgentChannel } from "../channel";
 import { ChannelStore } from "../channel-store";
 import { AgentRuntime } from "../runtime";
+import { openSkillCallback } from "../skill-callback";
+import { SessionEngines } from "../session-engines";
 import { createRuntimeHttp } from "../http";
 import { ArtifactFiles } from "../files";
 import { canonical, RuntimeStore, type MessageRow } from "../store";
@@ -28,12 +30,12 @@ function channel() {
     locked: async (_scope: unknown, _session: unknown, fn: () => Promise<unknown>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     questionsChanged: vi.fn(async()=>{}),
     publishSessionRun: vi.fn(),
-    seal: vi.fn(() => expect(locked).toBe(true)),
   } as unknown as AgentRuntime;
   const port = new AgentChannel(runtime);
   port.remember(context,{token:"initiating-token",apiKey:null});
   vi.spyOn(port.facts,"intent").mockResolvedValue({ id: runId, session: source.session, channel: context, inputId, status: "running", language: "en", createdAt: new Date(0).toISOString(), error: null, cancelled: false });
   vi.spyOn(port.facts,"questions").mockResolvedValue([]);
+  vi.spyOn(port.facts,"question").mockResolvedValue({...notification, kind: "agent-question", content: "Which period?"});
   vi.spyOn(port.facts,"pendingQuestions").mockResolvedValue([]);
   vi.spyOn(port.facts,"queuedRuns").mockResolvedValue([]);
   vi.spyOn(port.facts,"waiting").mockResolvedValue(null);
@@ -45,6 +47,7 @@ const humanChannel = { ...context, userRecipient: { session: source.session, act
 const browserBinding = { viewId: "55555555-5555-4555-8555-555555555555" };
 const initiatingCredential = { token: "initiating-token", apiKey: null };
 const userInput = { role: "user", content: "Show a page", timestamp: 1 } as const;
+const receipt = (message: AgentInput): MessageRow => ({ id: inputId, runId: null, messageSeq: 8, contextSeq: null, message });
 
 function presentationAdmission(activeRunId: string | null = null) {
   const { runtime, channel: port } = channel();
@@ -70,9 +73,6 @@ function presentationAdmission(activeRunId: string | null = null) {
     [...receipts.values()]
       .filter(row => row.runId === null && (!runId || !row.intentId || row.intentId === runId))
       .sort((a, b) => a.messageSeq - b.messageSeq));
-  vi.spyOn(port.facts, "consume").mockImplementation(async (_scope, _sessionId, runId, ids) => {
-    for (const id of ids) receipts.get(id)!.runId = runId;
-  });
   vi.spyOn(port.facts, "reserve").mockImplementation(async (_scope, sessionId, id, inputId, channel, options) => {
     const intent: AgentRunIntent = {
       id, session: { providerId: channel.agent.providerId, sessionId }, channel, inputId,
@@ -99,8 +99,7 @@ function presentationAdmission(activeRunId: string | null = null) {
     const prepared: RuntimeStartRunRequest = {
       language: request.language, input: request.input,
       definition: { systemPrompt: "", modelId: null, skills: [], externalMcp: [],
-        sandbox: { limits: codeLimitsSchema.parse({ memoryBytes: 1_000_000_000, wallTimeMs: 60_000, cpuSeconds: 60 }) },
-        compaction: { systemPrompt: "", summarizePrompt: "", updatePrompt: "" } },
+        sandbox: { limits: codeLimitsSchema.parse({ memoryBytes: 1_000_000_000, wallTimeMs: 60_000, cpuSeconds: 60 }) } },
       environment: { values: {}, secrets: {} }, presentationCallback: callback,
     };
     return Response.json(prepared);
@@ -228,16 +227,9 @@ it("accepts a delegated process cursor from the URL and rejects invalid cursor q
   }
 });
 
-it("seals under the consumption lock when the queue is empty", async () => {
-  const { runtime, channel: port } = channel();
-  vi.spyOn(port.facts, "pending").mockResolvedValue([]);
-  expect(await port.followUp(scope, run)).toEqual([]);
-  expect(runtime.seal).toHaveBeenCalledWith(scope, runId);
-});
 it("a registered provider sees typed inputs outside the lock; PI keeps their receipt identity", async () => {
   const { channel: port, locked } = channel();
   vi.spyOn(port.facts, "pending").mockResolvedValue([{ id: inputId, runId: null, messageSeq: 8, contextSeq: null, message: notification }]);
-  const consume = vi.spyOn(port.facts, "consume").mockImplementation(async () => { expect(locked()).toBe(true); });
   const fetch = vi.fn(async (_url: unknown, init: { body?: string }) => {
     expect(locked()).toBe(false);
     expect(JSON.parse(init.body as string)).toMatchObject({ mode: "steer", input: notification, agent: context.agent, actor: context.actor });
@@ -245,18 +237,14 @@ it("a registered provider sees typed inputs outside the lock; PI keeps their rec
     return Response.json({ accepted: true });
   });
   vi.stubGlobal("fetch", fetch);
-  const [message] = await port.followUp(scope, run);
-  expect(message).toBe(notification);
-  expect(port.inputIds.get(message)).toBe(inputId);
-  expect(consume).toHaveBeenCalledWith(scope, sessionId, runId, [inputId]);
+  expect(await port.prepareSteer(scope, run, receipt(notification))).toMatchObject({ id: inputId });
   expect(fetch.mock.calls[0][0]).toBe("http://provider.test/channel/prepare");
 });
 it("does not turn a provider refusal into model input or an empty success", async () => {
   const { channel: port } = channel();
   vi.spyOn(port.facts, "pending").mockResolvedValue([{ id: inputId, runId: null, messageSeq: 8, contextSeq: null, message: notification }]);
-  vi.spyOn(port.facts, "consume").mockResolvedValue();
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { code: "CALLER_EXPIRED", message: "Caller expired" } }, { status: 403 })));
-  await expect(port.followUp(scope, run)).rejects.toMatchObject({ code: "CALLER_EXPIRED" });
+  await expect(port.prepareSteer(scope, run, receipt(notification))).rejects.toMatchObject({ code: "CALLER_EXPIRED" });
 });
 it("rejects an unrelated recipient before receiving an input or calling a provider", async () => {
   const { channel: port } = channel();
@@ -393,10 +381,6 @@ it("projects only the conversation subtree returned by the store, retaining its 
   ]);
 });
 
-it("an empty steering boundary does not seal the current loop",async()=>{
-  const {runtime,channel:port}=channel();vi.spyOn(port.facts,"pending").mockResolvedValue([]);
-  expect(await port.steering(scope,run)).toEqual([]);expect(runtime.seal).not.toHaveBeenCalled();
-});
 it("ordinary busy send refuses before receipt, while replyTo selects steering automatically",async()=>{
   const {runtime,channel:port}=channel();
   runtime.store.session=vi.fn().mockResolvedValue({activeRunId:runId});
@@ -416,7 +400,6 @@ it("a question without a creator is output on its own run and does not stop it",
   const receive=vi.spyOn(port.facts,"receive").mockResolvedValue({id:inputId,runId,messageSeq:8, contextSeq: null,message:notification});
   await expect(port.execute(scope,run,{op:"send",session:"parent",message:"Which period?",needsInput:true,defaultAssumption:"Current year"})).resolves.toMatchObject({questionId:inputId,taskId:runId,recipient:"caller"});
   expect(receive).toHaveBeenCalledWith(scope,sessionId,expect.objectContaining({kind:"agent-question",defaultAssumption:"Current year"}),{outputRunId:runId});
-  expect(runtime.seal).not.toHaveBeenCalled();
 });
 it("native commands refuse build-test authority before contacting a provider",async()=>{
   const {channel:port}=channel();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
@@ -427,9 +410,8 @@ it("native commands refuse build-test authority before contacting a provider",as
 it("fails explicitly after runtime memory is lost and never passes a missing credential to prepare",async()=>{
   const {runtime}=channel(),port=new AgentChannel(runtime);
   vi.spyOn(port.facts,"intent").mockResolvedValue({id:runId,session:source.session,channel:context,inputId,status:"running",language:"en",createdAt:new Date(0).toISOString(),error:null,cancelled:false});
-  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8, contextSeq: null,message:notification}]);
-  vi.spyOn(port.facts,"consume").mockResolvedValue();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
-  await expect(port.steering(scope,run)).rejects.toMatchObject({code:"CALLER_CREDENTIAL_INVALID",message:expect.stringContaining("please start again")});
+  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8, contextSeq: null,message:notification}]);const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+  await expect(port.prepareSteer(scope, run, receipt(notification))).rejects.toMatchObject({code:"CALLER_CREDENTIAL_INVALID",message:expect.stringContaining("please start again")});
   expect(fetch).not.toHaveBeenCalled();
 });
 it("retains only the root credential until delegated business attachments finish, then drops it",async()=>{
@@ -453,23 +435,20 @@ it("retains only the root credential until delegated business attachments finish
 it("turns an expired initiating credential into an explicit restart instruction",async()=>{
   const {channel:port}=channel();
   vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8, contextSeq: null,message:notification}]);
-  vi.spyOn(port.facts,"consume").mockResolvedValue();
   vi.stubGlobal("fetch",vi.fn(async()=>Response.json({success:false},{status:401})));
-  await expect(port.steering(scope,run)).rejects.toMatchObject({code:"CALLER_CREDENTIAL_INVALID",message:expect.stringContaining("please start again")});
+  await expect(port.prepareSteer(scope, run, receipt(notification))).rejects.toMatchObject({code:"CALLER_CREDENTIAL_INVALID",message:expect.stringContaining("please start again")});
 });
 
 it("projects the original question, default and reply as one context message for steering and a new round",async()=>{
   const {channel:port}=channel();
   vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8, contextSeq: null,message:notification}]);
-  vi.spyOn(port.facts,"consume").mockResolvedValue();
   vi.spyOn(port.facts,"question").mockResolvedValue({role:"notification",kind:"agent-question",source,content:"Which period?",defaultAssumption:"Current year",timestamp:0});
   vi.stubGlobal("fetch",vi.fn(async()=>Response.json({accepted:true})));
-  const [steering]=await port.steering(scope,run);
-  const inserted=await port.modelMessage(scope.domainId,steering as unknown as import("@ontomato/contracts/agent-runtime-messages").RuntimeMessage);
+  const { message: inserted, id } = await port.prepareSteer(scope, run, receipt(notification));
   const nextRound=await port.modelMessage(scope.domainId,notification);
   expect(inserted).toEqual(nextRound);expect(inserted.role).toBe("user");
   expect(inserted.content).toContain("Question:\nWhich period?\nDefault assumption:\nCurrent year\nAnswer:\nUse the confirmed period");
-  expect(notification.content).toBe("Use the confirmed period");expect(port.inputIds.get(steering)).toBe(inputId);
+  expect(notification.content).toBe("Use the confirmed period");expect(id).toBe(inputId);
   expect(port.facts.question).toHaveBeenCalledWith(scope.domainId,inputId);
 });
 
@@ -488,27 +467,20 @@ const humanRun = { ...run, channel: humanChannel };
 it("adds the fact once when rebuilding a direct human round after consuming a delivery", async () => {
   const { channel: port } = channel();
   const original = await port.modelMessage(scope.domainId, deliveredResult);
-  const project = () => port.modelMessagesForRun(scope, humanRun, runId, [deliveryRow]);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ accepted: true })));
+  const project = async () => (await port.prepareSteer(scope, humanRun, deliveryRow)).message;
   const first = await project();
-  expect(first[0].content).toBe(`${original.content}\n${MID_ROUND_RESULT_NOTIFICATION_FACT}`);
+  expect(first.content).toBe(`${original.content}\n${MID_ROUND_RESULT_NOTIFICATION_FACT}`);
   expect(await project()).toEqual(first);
   expect(deliveryRow.message.content).toBe("Retrieval completed");
-});
-
-it("leaves a delivery unchanged when it opens a new round or belongs to an earlier round", async () => {
-  const { channel: port } = channel();
-  const original = await port.modelMessage(scope.domainId, deliveredResult);
-  expect(await port.modelMessagesForRun(scope, humanRun, deliveryRow.id, [deliveryRow])).toEqual([original]);
-  expect(await port.modelMessagesForRun(scope, humanRun, runId, [
-    { ...deliveryRow, runId: inputId },
-  ])).toEqual([original]);
 });
 
 it("leaves deliveries to a delegated round unchanged even with a human recipient", async () => {
   const { channel: port } = channel();
   const delegatedRun = { ...humanRun, channel: { ...humanChannel, requestedBy: deliveredResult.source } };
   const original = await port.modelMessage(scope.domainId, deliveredResult);
-  expect(await port.modelMessagesForRun(scope, delegatedRun, runId, [deliveryRow])).toEqual([original]);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ accepted: true })));
+  expect((await port.prepareSteer(scope, delegatedRun, deliveryRow)).message).toEqual(original);
 });
 
 it.each(["native","external"])("forwards %s caller language to each provider without translating its directory",async kind=>{
@@ -551,10 +523,10 @@ it.each(["running","preparing"])("web input joins the %s execution and reaches t
   const result=await port.request(scope,sessionId,inputId,context,message,"en",undefined,{token:"initiating-token",apiKey:null});
   expect(result.delivery).toMatchObject({runId,delivery:"steer",status:phase==="running"?"running":"starting"});
   expect(reserve).not.toHaveBeenCalled();
-  vi.spyOn(port.facts,"pending").mockResolvedValue([record]);vi.spyOn(port.facts,"consume").mockResolvedValue();
+  vi.spyOn(port.facts,"pending").mockResolvedValue([record]);
   const fetch=vi.fn(async(_url:unknown,init:{body?:string})=>{expect(JSON.parse(init.body!)).toMatchObject({mode:"steer",inputId,input:message,runId});return Response.json({accepted:true});});
   vi.stubGlobal("fetch",fetch);
-  expect(await port.steering(scope,run)).toEqual([message]);
+  expect(await port.prepareSteer(scope, run, record)).toMatchObject({ id: inputId, message });
 });
 
 it("web input after sealing reserves one next intent without preparing against the closing run",async()=>{
@@ -574,10 +546,9 @@ it("web input after sealing reserves one next intent without preparing against t
   expect(reserve).toHaveBeenCalledTimes(1);
 });
 
-it.each(["steer","followup"])("keeps the run's fixed executor for %s while its actor and credential remain the initiator",async mode=>{
+it("keeps the run's fixed executor while its actor and credential remain the initiator", async () => {
   const {channel:port}=channel();
   vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8,contextSeq:null,message:notification}]);
-  vi.spyOn(port.facts,"consume").mockResolvedValue();
   const prepared=vi.fn(async (_url:unknown,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
     const body=JSON.parse(String(init.body));
     expect(body.actor).toEqual(context.actor);
@@ -588,18 +559,17 @@ it.each(["steer","followup"])("keeps the run's fixed executor for %s while its a
     return Response.json({accepted:true});
   });vi.stubGlobal("fetch",prepared);
   const fixed={...run,executionUserId:"executor"};
-  await (mode==="steer"?port.steering(scope,fixed):port.followUp(scope,fixed));
+  await port.prepareSteer(scope, fixed, receipt(notification));
   expect(notification).not.toHaveProperty("executionActor");
 });
 
 it("keeps a selected user equal to the initiator distinct from null self mode",async()=>{
  const {channel:port}=channel();
  vi.spyOn(port.facts,"pending").mockResolvedValue([{id:inputId,runId:null,messageSeq:8,contextSeq:null,message:notification}]);
- vi.spyOn(port.facts,"consume").mockResolvedValue();
  const actors:unknown[]=[];
  vi.stubGlobal("fetch",vi.fn(async (_url:unknown,init:NonNullable<Parameters<typeof fetch>[1]>)=>{actors.push(JSON.parse(String(init.body)).executionActor);return Response.json({accepted:true});}));
- await port.steering(scope,{...run,executionUserId:null});
- await port.steering(scope,{...run,executionUserId:"initiator-user"});
+ await port.prepareSteer(scope, {...run,executionUserId:null}, receipt(notification));
+ await port.prepareSteer(scope, {...run,executionUserId:"initiator-user"}, receipt(notification));
  expect(actors).toEqual([null,{userId:"initiator-user",domainId:"a"}]);
 });
 
@@ -674,78 +644,39 @@ it("parses a task-stream notification with no invented pending-question property
  }]}).notifications?.[0].message).toEqual(notification);
 });
 
-it("enforces run-scoped channel command authentication, rejection order, build-test refusal and native delegation", async () => {
+it("authenticates the session command, uses its active run and refuses build-test and late calls", async () => {
   const { channel: port } = channel();
   const workspace = await mkdtemp(path.join(os.tmpdir(), "channel-cmd-"));
-  const activeRun: RuntimeRun = { ...run, status: "running", executionUserId: "exec-user", channel: humanChannel };
-  const secret = "per-run-channel-secret";
-  const otherRunId = "44444444-4444-4444-8444-444444444444";
-  const auxRunId = "66666666-6666-4666-8666-666666666666";
-  const activeMap = new Map<string, any>([
-    [canonical([scope.hostId, scope.domainId, runId]), {
-      scope,
-      run: activeRun,
-      controller: new AbortController(),
-      sealed: false,
-      channelSecret: secret,
-      workspace,
-    }],
-    [canonical([scope.hostId, scope.domainId, auxRunId]), {
-      scope,
-      run: { ...run, id: auxRunId, status: "running", channel: undefined },
-      controller: new AbortController(),
-      sealed: false,
-    }],
-  ]);
+  const activeRun: RuntimeRun = { ...run, status: "running", executionUserId: "exec-user", channel: humanChannel,
+    definition: { ...run.definition, toolSurface: "standard" } };
+  const secret = "session-channel-secret";
+  const active = { scope, run: activeRun, controller: new AbortController(), sealed: false, workspace, skillCommands: new Set() };
+  const session = { runId: runId as string | undefined, credential: Buffer.from(secret) };
   const runtime = Object.assign(Object.create(AgentRuntime.prototype), {
-    options: {
-      hosts: [{ id: scope.hostId, token: "fixture-host-token", providers: [context.agent.providerId] }],
-      channelCommandBaseUrl: "http://127.0.0.1:3001",
-    },
     channel: port,
-    active: activeMap,
+    active: new Map([[canonical([scope.hostId, scope.domainId, runId]), active]]),
+    sessionEngines: Object.assign(Object.create(SessionEngines.prototype), {
+      live: new Map([[canonical([scope.hostId, scope.domainId, sessionId]), session]]),
+    }),
   }) as AgentRuntime;
-  const server = createRuntimeHttp(runtime).listen(0, "127.0.0.1");
-  await new Promise<void>((done) => server.once("listening", done));
-  const addr = server.address() as AddressInfo;
-  const baseUrl = `http://127.0.0.1:${addr.port}`;
-  const commandUrl = (host: string, domain: string, targetRunId: string) =>
-    `${baseUrl}/v1/channel/hosts/${host}/domains/${domain}/runs/${targetRunId}/commands`;
-  const post = (targetUrl: string, hdrs: Record<string, string>, body: unknown = { op: "list" }) =>
-    fetch(targetUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...hdrs },
-      body: JSON.stringify(body),
-    });
-
+  const listener = await openSkillCallback({
+    sessionChannelCommand: (...args) => runtime.sessionChannelCommand(...args),
+    async withBusinessCallback() {},
+  });
+  const baseUrl = `http://${listener.endpoint.host}:${listener.endpoint.port}`;
+  const commandUrl = (host = scope.hostId, domain = scope.domainId, id = sessionId) =>
+    `${baseUrl}/v1/channel/hosts/${host}/domains/${domain}/sessions/${id}/commands`;
+  const post = (url: string, headers: Record<string, string>, body: unknown = { op: "list" }) => fetch(url, {
+    method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body),
+  });
+  const credential = { "X-Ontomato-Callback-Credential": secret };
   try {
-    // 1. Missing secret or forged run header -> 401 before active lookup
-    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Run-Id": runId })).status).toBe(401);
-    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { tk: "user-only", "X-Ontomato-Run-Id": runId })).status).toBe(401);
-    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": otherRunId })).status).toBe(401);
-
-    // 2. Credential present, target not in active (different host/domain/run) -> 409 RUN_CLOSED
-    for (const [h, d, r] of [[scope.hostId, scope.domainId, otherRunId], ["other-host", scope.domainId, runId], [scope.hostId, "other-domain", runId]]) {
-      const missing = await post(commandUrl(h, d, r), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": r });
-      expect(missing.status).toBe(409);
-      expect(await missing.json()).toMatchObject({ error: { code: "RUN_CLOSED" } });
-    }
-
-    // 3. Target in active, secret mismatch or no channelSecret -> 401
-    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": "wrong-secret", "X-Ontomato-Run-Id": runId })).status).toBe(401);
-    expect((await post(commandUrl(scope.hostId, scope.domainId, auxRunId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": auxRunId })).status).toBe(401);
-
-    // 4. Extra field rejected by strict command schema -> 400
-    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": runId }, { op: "list", caller: "forged" })).status).toBe(400);
-
-    // 5. Execution-context header refused with 422 BUILD_TEST_UNSUPPORTED
-    const buildTestHeader = await post(commandUrl(scope.hostId, scope.domainId, runId), {
-      "X-Ontomato-Callback-Credential": secret,
-      "X-Ontomato-Run-Id": runId,
-      "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test", contextId: null }),
-    });
-    expect(buildTestHeader.status).toBe(422);
-    expect(await buildTestHeader.json()).toMatchObject({ error: { code: "BUILD_TEST_UNSUPPORTED" } });
+    expect((await post(commandUrl(), {})).status).toBe(401);
+    expect((await post(commandUrl("other-host"), credential)).status).toBe(401);
+    expect((await post(commandUrl(scope.hostId, "other-domain"), credential)).status).toBe(401);
+    expect((await post(commandUrl(), { "X-Ontomato-Callback-Credential": "wrong-secret" })).status).toBe(401);
+    expect((await post(commandUrl(), credential, { op: "list", caller: "forged" })).status).toBe(400);
+    expect((await post(commandUrl(), { ...credential, "X-Ontomato-Execution-Context": "build-test" })).status).toBe(422);
 
     // 6. Live run start via script channel inherits requestedBy/root/userRecipient and can be read/cancelled natively
     const childId = inputId;
@@ -762,7 +693,7 @@ it("enforces run-scoped channel command authentication, rejection order, build-t
     };
     const reserve = vi.spyOn(port.facts, "reserve").mockResolvedValue(childIntent);
     vi.spyOn(port, "prepare").mockResolvedValue();
-    const started = await post(commandUrl(scope.hostId, scope.domainId, runId), {
+    const started = await post(commandUrl(), {
       "X-Ontomato-Callback-Credential": secret,
       "X-Ontomato-Run-Id": runId,
     }, { op: "start", agent: context.agent, message: "Count active rows" });
@@ -790,30 +721,23 @@ it("enforces run-scoped channel command authentication, rejection order, build-t
     expect(cancel).toHaveBeenCalledWith(scope, childIntent);
 
     // 7. Build-test authority on the active run is refused with 422
-    activeMap.get(canonical([scope.hostId, scope.domainId, runId])).run = {
+    active.run = {
       ...activeRun,
       channel: { ...humanChannel, authority: { ...humanChannel.authority, executionKind: "build-test" } },
     };
-    const buildTestRun = await post(commandUrl(scope.hostId, scope.domainId, runId), {
+    const buildTestRun = await post(commandUrl(), {
       "X-Ontomato-Callback-Credential": secret,
       "X-Ontomato-Run-Id": runId,
     });
     expect(buildTestRun.status).toBe(422);
     expect(await buildTestRun.json()).toMatchObject({ error: { code: "BUILD_TEST_UNSUPPORTED" } });
 
-    // 8. Sealed or aborted active run, or removed run -> 409 RUN_CLOSED
-    activeMap.get(canonical([scope.hostId, scope.domainId, runId])).sealed = true;
-    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": runId })).status).toBe(409);
-    activeMap.delete(canonical([scope.hostId, scope.domainId, runId]));
-    expect((await post(commandUrl(scope.hostId, scope.domainId, runId), { "X-Ontomato-Callback-Credential": secret, "X-Ontomato-Run-Id": runId })).status).toBe(409);
-
-    // 9. Command URL builds from the configured base URL
-    const channelCommandUrl = (AgentRuntime.prototype as unknown as { channelCommandUrl: (s: typeof scope, r: string) => string }).channelCommandUrl;
-    expect(channelCommandUrl.call(runtime, scope, runId))
-      .toBe(`http://127.0.0.1:3001/v1/channel/hosts/${scope.hostId}/domains/${scope.domainId}/runs/${runId}/commands`);
+    active.sealed = true;
+    expect((await post(commandUrl(), credential)).status).toBe(409);
+    session.runId = undefined;
+    expect((await post(commandUrl(), credential)).status).toBe(409);
   } finally {
-    server.closeAllConnections();
-    await new Promise<void>((done) => server.close(() => done()));
+    await listener.close();
     await rm(workspace, { recursive: true, force: true });
   }
 });
@@ -829,11 +753,10 @@ function currentRun(channel: AgentRunContext, status: "starting" | "running") {
     id: runId, session: source.session, channel, inputId, status, language: "en",
     createdAt: new Date(0).toISOString(), error: null, cancelled: false,
   });
-  const active = { scope, run: activeRun, sealed: false, controller: new AbortController(), channelSecret: "callback-secret" };
+  const active = { scope, run: activeRun, sealed: false, controller: new AbortController() };
   Object.assign(runtime, {
     active: new Map(status === "running" ? [[canonical([scope.hostId, scope.domainId, runId]), active]] : []),
     acceptsInput: AgentRuntime.prototype.acceptsInput,
-    seal: AgentRuntime.prototype.seal,
     inputReceived: vi.fn(),
   });
   const send = (id: string, channel: AgentRunContext, input: AgentInput) =>
@@ -844,7 +767,7 @@ function currentRun(channel: AgentRunContext, status: "starting" | "running") {
 }
 
 it("runs a channel command after queuing human input and keeps that input out of the background run", async () => {
-  const { runtime, port, send, finish, activeRun, prepares } = currentRun(context, "running");
+  const { port, send, finish, activeRun, prepares } = currentRun(context, "running");
 
   expect((await send(nextRunId, humanChannel, userInput)).delivery).toMatchObject({
     runId: nextRunId, delivery: "run", status: "starting",
@@ -855,10 +778,8 @@ it("runs a channel command after queuing human input and keeps that input out of
   const prepare = globalThis.fetch;
   vi.stubGlobal("fetch", async (url: string, init: Parameters<typeof fetch>[1]) =>
     url.endsWith("/list") ? Response.json(directory) : prepare(url, init));
-  await expect(AgentRuntime.prototype.runChannelCommand.call(
-    runtime, scope, runId, "callback-secret", runId, undefined, { op: "list" },
-  )).resolves.toMatchObject(directory);
-  expect(await port.followUp(scope, activeRun)).toEqual([]);
+  await expect(port.execute(scope, activeRun, { op: "list" })).resolves.toMatchObject(directory);
+  expect(await port.facts.pending(scope, sessionId, undefined, activeRun.id)).toEqual([]);
 
   await port.prepare((await finish())!);
   expect(prepares[0]).toMatchObject({
@@ -879,7 +800,7 @@ it("queues unattended requests and keeps subsequent human input in the running h
   const prepare = globalThis.fetch;
   vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) =>
     JSON.parse(String(init.body)).mode === "steer" ? Response.json({ accepted: true }) : prepare(url, init));
-  expect(await port.followUp(scope, activeRun)).toEqual([userInput]);
+  expect((await port.facts.pending(scope, sessionId, undefined, activeRun.id)).map(row => row.message)).toEqual([userInput]);
 
   await port.prepare((await finish())!);
   expect(prepares[0]).toMatchObject({ runId: nextRunId, input: unattended, userRecipient: null });
@@ -915,7 +836,7 @@ it("coalesces consecutive human messages at the queue tail across background pre
   vi.mocked(runtime.store.session).mockResolvedValue({ activeRunId: runId } as never);
   (runtime as unknown as { active: Map<string, unknown> }).active.set(
     canonical([scope.hostId, scope.domainId, runId]),
-    { scope, run: { ...run, status: "running", channel: context }, sealed: false, controller: new AbortController(), channelSecret: "secret" },
+    { scope, run: { ...run, status: "running", channel: context }, sealed: false, controller: new AbortController() },
   );
   const third = await send(thirdId, humanChannel, msg3);
   expect(third.delivery).toMatchObject({ runId: nextRunId, delivery: "steer", status: "starting" });
@@ -935,8 +856,10 @@ it("coalesces consecutive human messages at the queue tail across background pre
   const prepare = globalThis.fetch;
   vi.stubGlobal("fetch", async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) =>
     JSON.parse(String(init.body)).mode === "steer" ? Response.json({ accepted: true }) : prepare(url, init));
-  const consumed = await port.followUp(scope, { ...run, id: nextRunId, status: "running", channel: humanChannel });
-  expect(consumed).toEqual([msg2, msg3]);
+  const pending = await port.facts.pending(scope, sessionId, undefined, nextRunId);
+  expect(pending.map(row => row.message)).toEqual([msg2, msg3]);
+  // Simulate the runtime receiving the engine acknowledgments.
+  for (const row of pending) receipts.get(row.id)!.runId = nextRunId;
 
   // No second out-of-order human round remains in the queue.
   const afterHuman = await port.nextLocked(scope, { ...run, id: nextRunId, status: "stopped", stopReason: "stop", errorMessage: null, channel: humanChannel });

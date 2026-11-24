@@ -1,4 +1,4 @@
-import { agentRunContextSchema, agentNotificationSchema, agentAuthoritySchema, agentPendingQuestionSchema, agentExecutionActorRefSchema } from "./agent-channel";
+import { agentRunContextSchema, agentAuthoritySchema, agentPendingQuestionSchema, agentExecutionActorRefSchema } from "./agent-channel";
 import { workspaceCommitSchema } from "./workspaces";
 import { serviceLogCorrelationSchema } from "./service-logging";
 import { z } from "zod";
@@ -18,7 +18,7 @@ import { runtimeRunDetailSchema } from "./agent-runtime-details";
 import {
   runtimeMessageSchema,
   runtimeSettledMessageSchema,
-  runtimeUserMessageSchema,
+  runtimeRunInputSchema,
 } from "./agent-runtime-messages";
 import {
   runtimeEnvironmentSchema,
@@ -71,14 +71,6 @@ export const runtimeAgentDefinitionSchema = z
     externalMcp: z.array(runtimeMcpRefSchema),
     productTools:z.array(runtimeProductToolSchema).max(100).optional(),
     toolSurface:z.enum(['standard','product']).optional(),
-    // Host-rendered instructions; the runtime prepends conversation and previous-summary blocks.
-    compaction: z
-      .object({
-        systemPrompt: z.string(),
-        summarizePrompt: z.string(),
-        updatePrompt: z.string(),
-      })
-      .strict(),
   })
   .strict().superRefine((definition,context)=>{
     if(definition.toolSurface==='product'&&(definition.skills.length||definition.externalMcp.length))context.addIssue({code:'custom',message:'Product tool surfaces cannot include inherited skills or MCP tools'});
@@ -89,7 +81,7 @@ export const runtimeStartRunRequestSchema = z
   .object({
     language: runtimeKeySchema,
     definition: runtimeAgentDefinitionSchema,
-    input: z.union([runtimeUserMessageSchema, agentNotificationSchema]),
+    input: runtimeRunInputSchema,
     channel: agentRunContextSchema.optional(),
     authority: agentAuthoritySchema.optional(),
     executionActor: agentExecutionActorRefSchema.nullable().optional(),

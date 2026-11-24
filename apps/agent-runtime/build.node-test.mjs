@@ -198,7 +198,7 @@ test("runtime production closure keeps only the runtime application and no enter
     );
     assert.ok(
       Object.keys(graph.packages).some((key) =>
-        key.startsWith("@earendil-works/pi-ai@1.4.0"),
+        key.startsWith("@earendil-works/pi-coding-agent@1.4.0"),
       ),
     );
   }
@@ -207,7 +207,7 @@ test("runtime production closure keeps only the runtime application and no enter
   assert.equal(app.component, "ontomato-agent-runtime");
 });
 
-test("source staging accepts an app without a web bundle and preserves the fork license", async (t) => {
+test("source staging accepts an app without a web bundle and preserves the PI plugin license", async (t) => {
   const { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync } =
     await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -217,12 +217,12 @@ test("source staging accepts an app without a web bundle and preserves the fork 
   const root = mkdtempSync(join(tmpdir(), "runtime-stage-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const absolute = join(root, "app");
-  mkdirSync(join(absolute, "src/core/pi"), { recursive: true });
+  mkdirSync(join(absolute, "src/adapters/pi"), { recursive: true });
   writeFileSync(
     join(absolute, "package.json"),
     JSON.stringify({ name: "fixture" }),
   );
-  writeFileSync(join(absolute, "src/core/pi/LICENSE"), "MIT fixture");
+  writeFileSync(join(absolute, "src/adapters/pi/UPSTREAM-LICENSE"), "MIT fixture");
   assembleAppStage({
     root,
     stageRoot: join(root, "stage"),
@@ -239,7 +239,7 @@ test("source staging accepts an app without a web bundle and preserves the fork 
     selected: [{ path: "app" }],
   });
   assert.equal(
-    readFileSync(join(root, "stage/app/src/core/pi/LICENSE"), "utf8"),
+    readFileSync(join(root, "stage/app/src/adapters/pi/UPSTREAM-LICENSE"), "utf8"),
     "MIT fixture",
   );
   assert.equal(existsSync(join(root, "stage/dist/web")), false);
