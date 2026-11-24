@@ -24,13 +24,34 @@
           "rows": "catalogue"
         },
         "state": {
-          "search": "search",
-          "selected": "selected"
+          "search": "search"
         },
         "config": {
-          "subtitleField": "meaning",
-          "subtitleLines": 2,
-          "fallbackToFirst": false
+          "layout": "table",
+          "showChevron": true,
+          "searchable": false,
+          "showFooter": false,
+          "fallbackToFirst": false,
+          "emptyText": "components.list.empty",
+          "noMatchText": "components.list.noMatch",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "components.table.component",
+              "minWidth": 180
+            },
+            {
+              "key": "package",
+              "labelKey": "components.table.package",
+              "minWidth": 150
+            },
+            {
+              "key": "meaning",
+              "labelKey": "components.table.meaning",
+              "minWidth": 240,
+              "wrap": true
+            }
+          ]
         },
         "name": "组件目录",
         "description": "当前 SDK 发行声明的组件，按名称和用途搜索。",
@@ -321,7 +342,17 @@
         "components.table.default": "默认值",
         "components.table.description": "说明",
         "components.table.signature": "签名",
-        "components.selectPrompt": "从左侧选择一个组件，查看它在当前发行里声明的各栏。"
+        "components.table.component": "组件",
+        "components.table.package": "所属包",
+        "components.table.meaning": "含义",
+        "components.search.placeholder": "筛选基础组件",
+        "components.count": "{count} 项",
+        "components.list.empty": "当前发行未声明基础组件",
+        "components.list.noMatch": "未找到匹配的基础组件",
+        "detail.back": "返回基础组件",
+        "detail.loading": "正在读取组件声明…",
+        "detail.forbidden": "当前账号无权查看这个组件。",
+        "detail.notFound": "当前发行里不存在组件“{id}”。"
       },
       "en": {
         "panel.name": "Base components",
@@ -354,7 +385,17 @@
         "components.table.default": "Default",
         "components.table.description": "Description",
         "components.table.signature": "Signature",
-        "components.selectPrompt": "Choose a component on the left to read what the current release declares for it."
+        "components.table.component": "Component",
+        "components.table.package": "Package",
+        "components.table.meaning": "Meaning",
+        "components.search.placeholder": "Filter base components",
+        "components.count": "{count} items",
+        "components.list.empty": "No base components declared in the current release",
+        "components.list.noMatch": "No matching base components",
+        "detail.back": "Back to base components",
+        "detail.loading": "Loading component declaration…",
+        "detail.forbidden": "Your account does not have permission to view this component.",
+        "detail.notFound": "Component \"{id}\" does not exist in the current release."
       },
       "zh-TW": {
         "panel.name": "基礎組件",
@@ -387,7 +428,17 @@
         "components.table.default": "預設值",
         "components.table.description": "說明",
         "components.table.signature": "簽章",
-        "components.selectPrompt": "從左側選擇一個組件，檢視它在目前發行裡宣告的各欄。"
+        "components.table.component": "組件",
+        "components.table.package": "所屬套件",
+        "components.table.meaning": "含義",
+        "components.search.placeholder": "篩選基礎組件",
+        "components.count": "{count} 項",
+        "components.list.empty": "目前發行未宣告基礎組件",
+        "components.list.noMatch": "未找到符合的基礎組件",
+        "detail.back": "返回基礎組件",
+        "detail.loading": "正在讀取組件宣告…",
+        "detail.forbidden": "目前帳號無權檢視這個組件。",
+        "detail.notFound": "目前發行裡不存在組件「{id}」。"
       }
     }
   }
