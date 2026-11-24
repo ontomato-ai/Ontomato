@@ -153,6 +153,7 @@ describe("ontology model server operations", () => {
     expect(created).toEqual({
       kind: "success",
       data: objectTypeView,
+      created: { objectType: OBJECT_TYPE, primaryKey: "Pump" },
       affected: { objects: [{ objectType: OBJECT_TYPE, primaryKey: "Pump" }], objectTypes: [OBJECT_TYPE, ATTRIBUTE] },
     });
     expect(updated).toEqual({
@@ -217,10 +218,15 @@ describe("ontology model server operations", () => {
         body: { className: "Device", name: "size", showName: "Size", attrDesc: "Updated", enable: true, businessKey: true },
       },
     ]);
+    expect(created.kind === "success" && created.created).toEqual({
+      objectType: ATTRIBUTE,
+      primaryKey: '["Device","size"]',
+    });
     expect(created.kind === "success" && created.affected).toEqual({
       objects: [{ objectType: ATTRIBUTE, primaryKey: '["Device","size"]' }, { objectType: OBJECT_TYPE, primaryKey: "Device" }],
       objectTypes: [ATTRIBUTE, OBJECT_TYPE],
     });
+    expect(updated.kind === "success" && updated.created).toBeUndefined();
     expect(updated.kind === "success" && updated.affected).toEqual({
       objects: [{ objectType: ATTRIBUTE, primaryKey: '["Device","size"]' }, { objectType: OBJECT_TYPE, primaryKey: "Device" }],
       objectTypes: [ATTRIBUTE, OBJECT_TYPE],
@@ -278,6 +284,10 @@ describe("ontology model server operations", () => {
         body: { relationship: "owns", desc: "owns", fromField: "site_id", toField: "id" },
       },
     ]);
+    expect(created.kind === "success" && created.created).toEqual({
+      objectType: RELATIONSHIP,
+      primaryKey: "owns",
+    });
     expect(created.kind === "success" && created.affected).toEqual({
       objects: [
         { objectType: RELATIONSHIP, primaryKey: "owns" },
@@ -286,6 +296,7 @@ describe("ontology model server operations", () => {
       ],
       objectTypes: [RELATIONSHIP, OBJECT_TYPE],
     });
+    expect(updated.kind === "success" && updated.created).toBeUndefined();
     expect(updated.kind === "success" && updated.affected).toEqual({
       objects: [
         { objectType: RELATIONSHIP, primaryKey: "owns" },
@@ -588,6 +599,7 @@ describe("ontology model server operations", () => {
     expect(await saveAttribute.inspectImpact!.inspect(host, [{ target, input: { values: { ...next, name: "" } } }])).toBeNull();
     expect(await saveAttribute.execute(host, target, input, "create-key")).toMatchObject({
       kind: "success",
+      created: objects[0],
       affected: { objects: [objects[0], { objectType: OBJECT_TYPE, primaryKey: "Device" }, objects[1]] },
     });
   });
