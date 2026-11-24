@@ -34,6 +34,7 @@ test("build prepares an empty context before adding Python requirements and invo
     "apps/agent-runtime/build.mjs",
     "apps/agent-runtime/Dockerfile",
     "apps/agent-runtime/sandbox-policy",
+    "apps/agent-runtime/codex",
     "apps/agent-runtime/package.json",
     "apps/agent-runtime/src/index.ts",
     "packages/agent-runtime/package.json",
@@ -97,6 +98,7 @@ childProcess.spawnSync = (command, args, options) => {
     call.context = {
       inputs: JSON.parse(readFileSync(join(context, "inputs.json"), "utf8")),
       requirements: readFileSync(join(context, "requirements-py310.txt"), "utf8"),
+      codexLock: readFileSync(join(context, "codex/sources.lock"), "utf8"),
       launcher: readFileSync(join(context, "workspace/ontomato/packages/agent-runtime/src/worker-launch.py"), "utf8"),
       stale: existsSync(join(context, "stale-marker")),
     };
@@ -153,6 +155,8 @@ syncBuiltinESMExports();
       "@ontomato/agent-runtime",
     );
     assert.equal(build.context.inputs.web, false);
+    assert.match(build.context.codexLock, /^amd64 0\.171\.0 [0-9a-f]{64} https:\/\//m);
+    assert.match(build.context.codexLock, /^arm64 0\.171\.0 [0-9a-f]{64} https:\/\//m);
     assert.equal(
       build.context.requirements,
       readFileSync(
