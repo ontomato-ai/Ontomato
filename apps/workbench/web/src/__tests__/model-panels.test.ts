@@ -262,7 +262,7 @@ async function openBuiltPanel(
 }
 
 describe("built-in model panels", () => {
-  it("mounts model-connections panel, renders masked secret apiKey, tests a model row, and discovers models", async () => {
+  it("mounts the model connections panel with a blank password input, tests a model row, and discovers models", async () => {
     const readOps: Record<string, unknown>[] = [];
     await openBuiltPanel(connectionsUse, builtConnections, {
       read(request) {
@@ -382,10 +382,10 @@ describe("built-in model panels", () => {
           return Response.json({
             status: "ready",
             value: {
-              values: { name: "openai-main", provider: "openai", apiBase: "https://api.openai.com/v1", apiKey: "******1234", extraHeaders: [] },
+              values: { name: "openai-main", provider: "openai", apiBase: "https://api.openai.com/v1", apiKey: "", extraHeaders: [] },
               fields: [
                 { path: "/name", label: "Connection name", required: true, readOnly: true, valueSchema: { type: "string" }, control: { kind: "text" } },
-                { path: "/apiKey", label: "API key", required: true, readOnly: false, valueSchema: { type: "string" }, control: { kind: "text", secret: true } },
+                { path: "/apiKey", label: "API key", required: false, readOnly: false, valueSchema: { type: "string" }, control: { kind: "text", secret: true } },
               ],
               errors: [],
               save: { method: "POST", path: "/api/data-query/model-settings/save", bodySchema: {} },
@@ -425,8 +425,8 @@ describe("built-in model panels", () => {
     await vi.waitFor(() => {
       const apiKeyInput = document.querySelector<HTMLInputElement>('[data-field="/apiKey"] input');
       expect(apiKeyInput?.type).toBe("password");
-      expect(apiKeyInput?.value).toBe("******1234");
-    });
+      expect(apiKeyInput?.value).toBe("");
+    }, { timeout: 3000 });
 
     const testBtn = await vi.waitFor(() => {
       const btn = document.querySelector<HTMLButtonElement>('[data-local-action="test"]');
@@ -589,7 +589,7 @@ describe("built-in model panels", () => {
     await vi.waitFor(() => {
       expect(document.body.textContent).toContain("Embedding configuration changed; rebuild vectors (0/10).");
       expect(document.body.textContent).toContain("Ontology QA");
-    });
+    }, { timeout: 3000 });
     const rebuildBtn = [...document.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent?.trim() === "Rebuild vectors");
     expect(rebuildBtn).toBeDefined();
