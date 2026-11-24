@@ -47,8 +47,13 @@ defineSlots<{
 }>();
 
 function optionLabel(page: PlatformPanelPage): string {
-  const trailing = props.itemTrailingText?.[page.id]?.trim();
-  return trailing ? `${page.label} ${trailing}` : page.label;
+  if (props.itemTrailingText !== undefined) {
+    const trailing = props.itemTrailingText[page.id]?.trim();
+    return trailing ? `${page.label} ${trailing}` : page.label;
+  }
+  // Shell-internal bridge strictly for unconverted native pages supplied by hostMenu (PlatformPanelPage.count);
+  // removed together with host-built menus once those pages migrate to panels + ObjectCount. Do not add new callers.
+  return page.count !== null && page.count !== undefined ? `${page.label} (${page.count})` : page.label;
 }
 
 function nativePageCount(item: AppMenuItem): number | null | undefined {
