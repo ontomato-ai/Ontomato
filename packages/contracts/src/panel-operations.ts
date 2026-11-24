@@ -147,7 +147,11 @@ export const panelReadOperationCallSchema = z.object({
 /** The JSON success body of a read. File-producing reads send bytes with attachment headers. */
 export const panelReadOperationJsonResultSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("markdown"), markdown: z.string() }).strict(),
-  z.object({ kind: z.literal("json"), value: runtimeJsonValueSchema }).strict(),
+  z.object({
+    kind: z.literal("json"),
+    value: runtimeJsonValueSchema,
+    truncation: z.object({ rowLimit: z.number().nullable(), hint: z.string().nullable() }).strict().optional(),
+  }).strict(),
 ]);
 export const panelReadOperationResultSchema = z.union([panelReadOperationJsonResultSchema, panelDownloadReceiptSchema]);
 export type PanelReadOperationResult = z.infer<typeof panelReadOperationResultSchema>;

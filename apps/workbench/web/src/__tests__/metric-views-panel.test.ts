@@ -192,8 +192,23 @@ function metricFormDescription(mode: "create" | "edit", key: string) {
     ],
     values: {
       name: mode === "create" ? "" : `Metric ${key}`,
-      function: { parameters: [] },
-      bindings: [],
+      function: {
+        queryPackage: {
+          manifest: {
+            parameterDefs: [
+              { name: "year", type: "number", value: 2025, description: "Target year" },
+              { name: "region", type: "string", value: "US", description: "Region code" },
+            ],
+          },
+        },
+      },
+      bindings: [
+        {
+          id: "bind-q1",
+          name: "Q1 Preset",
+          parameters: { year: 2024, region: "EU" },
+        },
+      ],
     },
     errors: [],
     save: {
@@ -226,6 +241,7 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
   const reads: DataReadRequest[] = [];
   const opsReads: OpsReadRequest[] = [];
   const readOperations: string[] = [];
+  const readCalls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
   const dispatched: Array<{ operationId: string; targetPrimaryKey: string | null }> = [];
   let localConfirmSeq = 0;
   let intentSeq = 0;
@@ -310,13 +326,20 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
       return Response.json({ cancelled: true });
     }
     if (path === "/api/panel-operations/read") {
-      const body = request.body as { operationId?: string };
-      if (typeof body.operationId === "string") readOperations.push(body.operationId);
-      if (body.operationId === "definition.test") {
+      const body = request.body as { operationId?: string; call?: { input?: Record<string, unknown> } };
+      if (typeof body.operationId === "string") {
+        readOperations.push(body.operationId);
+        readCalls.push({ operationId: body.operationId, input: body.call?.input ?? {} });
+      }
+      if (body.operationId === "testMarkdown.test") {
         return Response.json({ kind: "markdown", markdown: "# Metric Preview\n\nTotal: 42" });
       }
-      if (body.operationId === "definition.testExecute") {
-        return Response.json({ kind: "json", value: { result: [{ total: 42 }], truncated: false } });
+      if (body.operationId === "testJson.testExecute") {
+        return Response.json({
+          kind: "json",
+          value: [{ total: 42 }],
+          truncation: { rowLimit: 20000, hint: "Narrow the date filter" },
+        });
       }
       return Response.json({ kind: "json", value: {} });
     }
@@ -346,6 +369,13 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
                 resultSchema: {},
                 batch: false,
               },
+            },
+          });
+        }
+        if (member === "testMarkdown") {
+          return Response.json({
+            status: "ready",
+            value: {
               test: {
                 kind: "action",
                 handlerRef: TEST_METRIC_VIEW,
@@ -356,6 +386,13 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
                 resultSchema: {},
                 batch: false,
               },
+            },
+          });
+        }
+        if (member === "testJson") {
+          return Response.json({
+            status: "ready",
+            value: {
               testExecute: {
                 kind: "action",
                 handlerRef: TEST_EXECUTE_METRIC_VIEW,
@@ -450,6 +487,7 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
     reads,
     opsReads,
     readOperations,
+    readCalls,
     dispatched,
     router,
     setHeaderOverride(fn: ((key: string) => Record<string, unknown>) | null) {
@@ -566,68 +604,132 @@ describe("metric-views builtin panel detail mount lifecycle", () => {
       expect(mounted.element.contains(catalogEl!)).toBe(true);
       expect(catalogEl!.style.display).toBe("none");
 
-      // Trial operations declared on definition bind reactively once detail is mounted.
+      // Trial projections stay unmounted while testOpen is false.
+      expect(await harness.controller()!.executeAction!({ operation: "testMarkdown.test", agentRun: AGENT_RUN })).toMatchObject({
+        ok: false,
+        reason: "action_not_found",
+      });
+      expect(await harness.controller()!.executeAction!({ operation: "testJson.testExecute", agentRun: AGENT_RUN })).toMatchObject({
+        ok: false,
+        reason: "action_not_found",
+      });
+
+      // Open the test dialog via human click: both standalone OperationButton projections mount & become enabled.
       const testBtn = Array.from(mounted.element.querySelectorAll<HTMLButtonElement>(".mv-detail button")).find((b) =>
         b.textContent?.includes("Test"),
       );
       expect(testBtn).toBeTruthy();
       testBtn!.click();
+      const findTrialButton = (member: "testMarkdown" | "testJson") =>
+        document.body.querySelector<HTMLButtonElement>(`[data-member='${member}'] button`);
       await waitFor(() => {
-        const buttons = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"));
-        const mdBtn = buttons.find((b) => b.textContent?.includes("Test and generate Markdown"));
-        const jsonBtn = buttons.find((b) => b.textContent?.includes("Test and return JSON"));
+        const mdBtn = findTrialButton("testMarkdown");
+        const jsonBtn = findTrialButton("testJson");
         return Boolean(mdBtn && !mdBtn.disabled && jsonBtn && !jsonBtn.disabled);
-      }, "trial and trialJson buttons enabled after definition mounts");
+      }, "testMarkdown and testJson OperationButton projections enabled after opening dialog");
 
-      // Human clicks on both trial buttons must dispatch read operations (not self-block on busy).
-      const findButton = (label: string) =>
-        Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
-          b.textContent?.includes(label),
-        );
-      findButton("Test and generate Markdown")!.click();
+      // Human clicks on both trial buttons dispatch read operations and render official OperationResult.
+      findTrialButton("testMarkdown")!.click();
       await waitFor(
         () =>
-          harness.readOperations.includes("definition.test")
-          && document.body.textContent?.includes("Total: 42") === true,
-        "human click on Markdown trial dispatches definition.test and renders preview",
+          harness.readOperations.includes("testMarkdown.test")
+          && document.body.querySelector("[data-member='testMarkdown']")?.textContent?.includes("Total: 42") === true,
+        "human click on testMarkdown dispatches testMarkdown.test and renders Markdown preview",
       );
-      findButton("Test and return JSON")!.click();
+      expect(harness.readCalls.at(-1)).toMatchObject({
+        operationId: "testMarkdown.test",
+        input: { parameters: { year: 2025, region: "US" } },
+      });
+
+      findTrialButton("testJson")!.click();
       await waitFor(
         () =>
-          harness.readOperations.includes("definition.testExecute")
-          && document.body.textContent?.includes("\"total\": 42") === true,
-        "human click on JSON trial dispatches definition.testExecute and renders preview",
+          harness.readOperations.includes("testJson.testExecute")
+          && document.body.querySelector("[data-member='testJson']")?.textContent?.includes("\"total\": 42") === true
+          && document.body.querySelector("[data-member='testJson']")?.textContent?.includes("20000") === true,
+        "human click on testJson dispatches testJson.testExecute and renders JSON + truncation warning",
       );
+      expect(harness.readCalls.at(-1)?.input).not.toHaveProperty("bindingId");
+
+      // Closing the test dialog unmounts the trial projections and clears prior results on reopen.
       const closeBtn = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
         (b) => b.textContent?.trim() === "Close",
       );
       closeBtn?.click();
+      await waitFor(
+        () => document.body.querySelector("[data-member='testMarkdown']") === null,
+        "closing test dialog unmounts trial projections",
+      );
 
-      // Agent page_action can directly trigger definition.test and definition.testExecute via unified usePanelOperation.
+      // Agent present opens dialog with explicit testParameters without overwriting them, filling only missing defaults.
+      harness.controller()!.applyState({ testOpen: true, testParameters: { year: 2026 } });
+      await waitFor(() => {
+        const mdBtn = findTrialButton("testMarkdown");
+        const jsonBtn = findTrialButton("testJson");
+        return Boolean(mdBtn && !mdBtn.disabled && jsonBtn && !jsonBtn.disabled);
+      }, "trial projections mounted and ready after agent present");
+      expect(document.body.querySelector("[data-member='testMarkdown']")?.textContent?.includes("Total: 42")).toBe(false);
+
       const mdResult = await harness.controller()!.executeAction!({
-        operation: "definition.test",
-        input: { parameters: {} },
+        operation: "testMarkdown.test",
         agentRun: AGENT_RUN,
       });
-      expect(mdResult).toMatchObject({ ok: true, kind: "executed", operation: "definition.test" });
+      expect(mdResult).toMatchObject({ ok: true, kind: "executed", operation: "testMarkdown.test" });
+      expect(harness.readCalls.at(-1)).toMatchObject({
+        operationId: "testMarkdown.test",
+        input: { parameters: { year: 2026, region: "US" } },
+      });
       await waitFor(
-        () => document.body.textContent?.includes("Total: 42") === true,
-        "definition.test populates markdown preview in the panel",
+        () => document.body.querySelector("[data-member='testMarkdown']")?.textContent?.includes("Total: 42") === true,
+        "testMarkdown.test populates markdown preview in the panel",
+      );
+
+      // Invalid JSON in explicit parameter field shows error and disables both trial buttons (human & agent).
+      const paramInputs = Array.from(document.body.querySelectorAll<HTMLInputElement>(".mv-test-params input"));
+      expect(paramInputs).toHaveLength(2);
+      paramInputs[0]!.value = "{bad";
+      paramInputs[0]!.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(
+        () =>
+          findTrialButton("testMarkdown")?.disabled === true
+          && findTrialButton("testJson")?.disabled === true
+          && document.body.textContent?.includes("Invalid JSON value for parameter year") === true,
+        "invalid JSON parameter disables trial projections and shows localized error",
+      );
+      expect(await harness.controller()!.executeAction!({ operation: "testMarkdown.test", agentRun: AGENT_RUN })).toMatchObject({
+        ok: false,
+        reason: "action_unavailable",
+      });
+
+      // Switching testSource to a draft binding copies the draft binding parameters without bindingId and re-enables trials.
+      harness.controller()!.applyState({ testSource: "binding:0" });
+      await waitFor(
+        () => findTrialButton("testJson")?.disabled === false,
+        "switching testSource to binding:0 re-enables trial projections",
       );
       const jsonResult = await harness.controller()!.executeAction!({
-        operation: "definition.testExecute",
-        input: { parameters: {} },
+        operation: "testJson.testExecute",
         agentRun: AGENT_RUN,
       });
-      expect(jsonResult).toMatchObject({ ok: true, kind: "executed", operation: "definition.testExecute" });
+      expect(jsonResult).toMatchObject({ ok: true, kind: "executed", operation: "testJson.testExecute" });
+      expect(harness.readCalls.at(-1)).toMatchObject({
+        operationId: "testJson.testExecute",
+        input: { parameters: { year: 2024, region: "EU" } },
+      });
+      expect(harness.readCalls.at(-1)?.input).not.toHaveProperty("bindingId");
       await waitFor(
-        () => document.body.textContent?.includes("\"total\": 42") === true,
-        "definition.testExecute populates JSON preview in the panel",
+        () => document.body.querySelector("[data-member='testJson']")?.textContent?.includes("\"total\": 42") === true,
+        "testJson.testExecute populates JSON preview in the panel",
       );
+
       const closeAfterAgent = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
         (b) => b.textContent?.trim() === "Close",
       );
       closeAfterAgent?.click();
+      await waitFor(
+        () => document.body.querySelector("[data-member='testJson']") === null,
+        "test dialog closed after agent trials",
+      );
 
       // Live fillForm works while detail is open, then discard before clicking Back.
       const filled = await harness.controller()!.fillForm!({ member: "definition", values: { "/name": "Revenue Revised" } });

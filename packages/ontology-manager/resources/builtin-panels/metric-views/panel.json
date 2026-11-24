@@ -38,6 +38,37 @@
           "type": "string"
         },
         "default": "PUBLISHED"
+      },
+      "testOpen": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": false
+      },
+      "testSource": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "explicit",
+        "deepLink": false
+      },
+      "testTab": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "markdown",
+        "deepLink": false
+      },
+      "testParameters": {
+        "type": {
+          "kind": "json"
+        },
+        "default": {},
+        "deepLink": false
       }
     },
     "members": {
@@ -108,19 +139,40 @@
           "createForm": "createForm"
         },
         "operation": "platform:MetricView.save",
-        "operations": {
-          "test": {
-            "operation": "metricViews.test",
-            "draft": "definition"
-          },
-          "testExecute": {
-            "operation": "metricViews.testExecute",
-            "draft": "definition"
-          }
-        },
         "name": "指标定义",
-        "description": "指标的名称、描述、状态、匹配问题、函数逻辑（查询包、列标签、逻辑说明与旧格式只读代码）及参数绑定，同时挂载草稿试运行操作。",
+        "description": "指标的名称、描述、状态、匹配问题、函数逻辑（查询包、列标签、逻辑说明与旧格式只读代码）及参数绑定。",
         "id": "builtin-product-1d856c95-d8b9-4ade-bed9-88f912283c8c"
+      },
+      "testMarkdown": {
+        "component": "OperationButton",
+        "type": "platform:MetricView",
+        "operation": "metricViews.test",
+        "draft": "definition",
+        "parameters": {
+          "state": "testParameters"
+        },
+        "config": {
+          "type": "primary",
+          "labelKey": "metricViews.testMarkdown"
+        },
+        "name": "Markdown 试运行",
+        "description": "使用当前草稿和参数值试运行指标并返回 Markdown 预览，不保存修改。",
+        "id": "builtin-product-34c95189-34b3-40fc-9f8c-5ea7e728c95b"
+      },
+      "testJson": {
+        "component": "OperationButton",
+        "type": "platform:MetricView",
+        "operation": "metricViews.testExecute",
+        "draft": "definition",
+        "parameters": {
+          "state": "testParameters"
+        },
+        "config": {
+          "labelKey": "metricViews.testJson"
+        },
+        "name": "JSON 试运行",
+        "description": "使用当前草稿和参数值试运行指标并返回 JSON 结果与截断提示，不保存修改。",
+        "id": "builtin-product-066b6aa3-547f-409d-b2c1-6ed26dbeac70"
       },
       "remove": {
         "component": "OperationButton",
@@ -184,14 +236,7 @@
         "metricViews.testJson": "Test and return JSON",
         "metricViews.testMarkdownTab": "Markdown test",
         "metricViews.testJsonTab": "JSON test",
-        "metricViews.testPreview": "Preview",
-        "metricViews.testSourceTab": "Source",
-        "metricViews.testPlaceholder": "Test results will appear here",
-        "metricViews.testJsonPlaceholder": "Tests can run after publishing; results will appear here",
-        "metricViews.testNoResult": "No result returned",
-        "metricViews.testTruncated": "The result is truncated: at most {rows} rows were read.",
         "metricViews.testInvalidValue": "Invalid JSON value for parameter {name}",
-        "metricViews.testFailed": "Test execution failed: {message}",
         "metricViews.testNoDraft": "Open or create a metric first: the test runs the definition this page is editing.",
         "metricViews.close": "Close"
       },
@@ -222,14 +267,7 @@
         "metricViews.testJson": "测试并返回 JSON",
         "metricViews.testMarkdownTab": "Markdown 测试",
         "metricViews.testJsonTab": "JSON 测试",
-        "metricViews.testPreview": "预览",
-        "metricViews.testSourceTab": "源码",
-        "metricViews.testPlaceholder": "测试结果将在这里显示",
-        "metricViews.testJsonPlaceholder": "发布后可执行测试，结果将在这里显示",
-        "metricViews.testNoResult": "无返回结果",
-        "metricViews.testTruncated": "结果被截断：最多读到 {rows} 行。",
         "metricViews.testInvalidValue": "参数 {name} 不是有效的 JSON 值",
-        "metricViews.testFailed": "测试执行失败：{message}",
         "metricViews.testNoDraft": "先打开或新建一个指标：测试使用的是这一页正在编辑的定义。",
         "metricViews.close": "关闭"
       }

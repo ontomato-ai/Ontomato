@@ -3,7 +3,7 @@ import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { randomId } from "@ontomato/contracts/random-id";
-import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
+import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { classifyDispatchResponseForAction } from "../panel/instance";
@@ -84,6 +84,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** A write was dispatched and its owner answered: the outcome, for the page to act on. */
   done: [outcome: OperationOutcome];
+  /** A read-only operation answered: the result, for the page to react to. */
+  read: [result: PanelReadOperationResult];
 }>();
 
 const { t } = useI18n();
@@ -144,6 +146,9 @@ const {
     if (answered.kind === "batch") publishBatchReceipt?.({ items: answered.items, named: named.value });
     emit("done", answered);
   },
+  onRead: (_name, answered) => {
+    emit("read", answered);
+  },
 });
 
 const values = computed(() => panel.instance.state.values.value);
@@ -182,7 +187,22 @@ const inputFields = computed(() =>
   resolveOperationInputFields(panel, slot, props.operation, descriptor.value),
 );
 
-watch(targetKey, () => {
+const draftSlot = computed(() => {
+  if (descriptor.value?.target.source === "draft") return descriptor.value.target.slot;
+  return (
+    panel.manifest.members[slot.slot]?.operationDrafts?.[props.operation]?.slot
+    ?? panel.manifest.members[slot.slot]?.readOperationInputs?.[props.operation]?.draft?.slot
+    ?? null
+  );
+});
+
+const draftFormKey = computed(() => {
+  if (!draftSlot.value) return null;
+  const snap = panel.instance.forms.snapshot(draftSlot.value);
+  return snap ? `${snap.formInstanceId ?? ""}:${JSON.stringify(snap.target ?? null)}` : null;
+});
+
+watch([targetKey, draftFormKey], () => {
   reset();
 });
 
@@ -193,7 +213,7 @@ const hiddenByAvailability = computed(() => {
 });
 
 const ready = computed(() =>
-  !props.disabled && isOperationReady(descriptor.value, targetInfo.value, running.value),
+  !props.disabled && isOperationReady(descriptor.value, targetInfo.value, running.value, panel.instance.forms),
 );
 
 function onTriggerClick() {
@@ -204,9 +224,8 @@ function onTriggerClick() {
 
 const entryInstanceId = ref(randomId());
 const entryBindingSignature = computed(() => {
-  const declaredDraftSlot = panel.manifest.members[slot.slot]?.operationDrafts?.[props.operation]?.slot;
-  const draftFormId = declaredDraftSlot
-    ? (panel.instance.forms.snapshot(declaredDraftSlot)?.formInstanceId ?? null)
+  const draftFormId = draftSlot.value
+    ? (panel.instance.forms.snapshot(draftSlot.value)?.formInstanceId ?? null)
     : null;
   return JSON.stringify({
     target: targetInfo.value.target,
@@ -235,9 +254,8 @@ const unregisterAction = panel.instance.registerActionHandler(
       }
     }
     if (expectedTarget !== undefined) {
-      const declaredDraftSlot = panel.manifest.members[slot.slot]?.operationDrafts?.[props.operation]?.slot;
-      const currentTarget = declaredDraftSlot
-        ? (panel.instance.forms.snapshot(declaredDraftSlot)?.target ?? null)
+      const currentTarget = draftSlot.value
+        ? (panel.instance.forms.snapshot(draftSlot.value)?.target ?? null)
         : targetInfo.value.target;
       if (!matchesExpectedTarget(currentTarget, expectedTarget)) {
         return {

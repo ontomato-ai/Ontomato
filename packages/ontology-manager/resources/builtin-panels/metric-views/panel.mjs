@@ -3,7 +3,7 @@ import {
   mountPanel,
   usePanelBack,
   usePanelContext,
-  usePanelOperation,
+  usePanelOutput,
 } from "@ontomato/sdk/panel";
 
 /*
@@ -11,8 +11,8 @@ import {
  *
  * Reads, form validation, read-only rules, deletion availability/impact, batch publication status and both unsaved-draft
  * trials live with the MetricView owner behind the declared official projections (no raw persisted record reads). This
- * script coordinates only view visibility, guarded back navigation, and the test dialog that reads unsaved form draft
- * values for live trial execution without saving.
+ * script coordinates only view visibility, guarded back navigation, and the test dialog's public state synchronization
+ * with the form's published `draft` output.
  */
 await mountPanel({
   setup() {
@@ -31,7 +31,14 @@ await mountPanel({
     });
 
     function closeDetail() {
-      instance.state.setState({ selected: null, creating: false });
+      instance.state.setState({
+        selected: null,
+        creating: false,
+        testOpen: false,
+        testSource: "explicit",
+        testTab: "markdown",
+        testParameters: {},
+      });
     }
 
     const detailBack = usePanelBack(() => detailVisible.value, closeDetail, { pushHistory: true });
@@ -40,19 +47,42 @@ await mountPanel({
       void detailBack.back();
     }
 
-    watch(selected, (next) => {
-      if (next) setCreating(false);
-    });
+    function cloneJson(value) {
+      return value === undefined ? null : JSON.parse(JSON.stringify(value));
+    }
 
-    // Unsaved form input is explicitly permitted for live draft preview and trial execution.
-    const form = computed(() => instance.forms.handle("definition") ?? null);
-    const formValues = computed(() => form.value?.values.value ?? {});
+    function normalizeParams(raw) {
+      return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    }
+
+    function bindingSourceValue(index) {
+      return `binding:${index}`;
+    }
+
+    function parseBindingIndex(source) {
+      if (typeof source !== "string" || !source.startsWith("binding:")) return null;
+      const index = Number(source.slice("binding:".length));
+      return Number.isInteger(index) && index >= 0 ? index : null;
+    }
+
+    // Read unsaved form values through the official ObjectForm `draft` output.
+    const formDraft = usePanelOutput("definition", "draft");
+    const formValues = computed(() => (
+      formDraft.value && typeof formDraft.value === "object" && !Array.isArray(formDraft.value)
+        ? formDraft.value
+        : {}
+    ));
     const detailTitle = computed(() => {
       const draftName = typeof formValues.value.name === "string" ? formValues.value.name.trim() : "";
       return draftName || t("metricViews.new");
     });
 
-    const functionRecord = computed(() => formValues.value.function ?? {});
+    const hasFunctionDraft = computed(() => Boolean(
+      formValues.value.function
+      && typeof formValues.value.function === "object"
+      && !Array.isArray(formValues.value.function),
+    ));
+    const functionRecord = computed(() => (hasFunctionDraft.value ? formValues.value.function : {}));
     const parameterDefs = computed(() => {
       const declared = functionRecord.value.queryPackage?.manifest?.parameterDefs ?? functionRecord.value.parameters ?? [];
       return Array.isArray(declared) ? declared.filter((def) => def && def.name && String(def.name).trim() !== "") : [];
@@ -72,21 +102,159 @@ await mountPanel({
       if (outcome?.kind === "success") closeDetail();
     }
 
-    // ---- Test current unsaved draft ----
+    // ---- Test current unsaved draft via declared OperationButton projections ----
 
-    const testOpen = ref(false);
-    const testSource = ref("explicit");
     const testValues = ref({});
-    const testTab = ref("markdown");
-    const markdownView = ref("preview");
-    const testMarkdown = ref("");
-    const testJson = ref("");
-    const truncation = ref(null);
-    const testFailure = ref("");
+    const testErrors = ref({});
+    let pendingInputParamsJson = null;
 
-    function errorText(reason) {
-      return reason instanceof Error ? reason.message : String(reason);
+    const testOpen = computed({
+      get: () => state.value.testOpen === true,
+      set: (next) => instance.state.set("testOpen", Boolean(next)),
+    });
+    const dialogOpen = computed({
+      get: () => detailVisible.value && testOpen.value,
+      set: (next) => {
+        testOpen.value = Boolean(next);
+      },
+    });
+    const testSource = computed({
+      get: () => (typeof state.value.testSource === "string" && state.value.testSource ? state.value.testSource : "explicit"),
+      set: (next) => instance.state.set("testSource", typeof next === "string" && next ? next : "explicit"),
+    });
+    const testTab = computed({
+      get: () => (state.value.testTab === "json" ? "json" : "markdown"),
+      set: (next) => instance.state.set("testTab", next === "json" ? "json" : "markdown"),
+    });
+    const testParameters = computed(() => normalizeParams(state.value.testParameters));
+
+    const selectedKey = computed(() => selected.value?.primaryKey ?? null);
+    watch(selectedKey, (next, prev) => {
+      const patched = new Set(instance.state.lastPatchedKeys);
+      const patch = {};
+      if (next && creating.value) patch.creating = false;
+      if (prev !== next) {
+        if (!patched.has("testOpen")) patch.testOpen = false;
+        if (!patched.has("testSource")) patch.testSource = "explicit";
+        if (!patched.has("testTab")) patch.testTab = "markdown";
+        if (!patched.has("testParameters")) patch.testParameters = {};
+      }
+      if (Object.keys(patch).length > 0) instance.state.setState(patch);
+    });
+
+    watch(detailVisible, (visible) => {
+      if (visible) return;
+      testValues.value = {};
+      testErrors.value = {};
+      if (
+        state.value.testOpen !== false
+        || state.value.testSource !== "explicit"
+        || state.value.testTab !== "markdown"
+        || Object.keys(normalizeParams(state.value.testParameters)).length > 0
+      ) {
+        instance.state.setState({
+          testOpen: false,
+          testSource: "explicit",
+          testTab: "markdown",
+          testParameters: {},
+        });
+      }
+    });
+
+    function syncTestState() {
+      if (!detailVisible.value || !testOpen.value) {
+        testErrors.value = {};
+        return;
+      }
+
+      const bindingIndex = parseBindingIndex(testSource.value);
+      if (bindingIndex !== null) {
+        testErrors.value = {};
+        if (!hasFunctionDraft.value) return;
+        const row = bindingRows.value[bindingIndex];
+        // Copy parameters from the current draft binding row (never bindingId) so unsaved edits are tested.
+        const nextParams = cloneJson(normalizeParams(row?.parameters));
+        if (JSON.stringify(nextParams) !== JSON.stringify(testParameters.value)) {
+          instance.state.set("testParameters", nextParams);
+        }
+        return;
+      }
+
+      const current = testParameters.value;
+      let merged = current;
+      let changed = false;
+      for (const def of parameterDefs.value) {
+        if (!Object.hasOwn(current, def.name)) {
+          if (!changed) merged = { ...current };
+          merged[def.name] = def.value === undefined ? null : cloneJson(def.value);
+          changed = true;
+        }
+      }
+      if (changed) {
+        instance.state.set("testParameters", merged);
+      }
+
+      const nextValues = {};
+      for (const def of parameterDefs.value) {
+        const value = Object.hasOwn(merged, def.name)
+          ? merged[def.name]
+          : (def.value === undefined ? null : def.value);
+        nextValues[def.name] = JSON.stringify(value);
+      }
+      testValues.value = nextValues;
+      testErrors.value = {};
     }
+
+    watch(
+      [detailVisible, testOpen, testSource, hasFunctionDraft, parameterDefs, bindingRows, testParameters],
+      (next, prev) => {
+        const onlyParamsChanged =
+          prev !== undefined
+          && next[0] === prev[0]
+          && next[1] === prev[1]
+          && next[2] === prev[2]
+          && next[3] === prev[3]
+          && next[4] === prev[4]
+          && next[5] === prev[5];
+        if (onlyParamsChanged && pendingInputParamsJson !== null && JSON.stringify(next[6]) === pendingInputParamsJson) {
+          pendingInputParamsJson = null;
+          return;
+        }
+        pendingInputParamsJson = null;
+        syncTestState();
+      },
+      { immediate: true },
+    );
+
+    function onParamInput(name, rawText) {
+      const text = typeof rawText === "string" ? rawText : "";
+      testValues.value = { ...testValues.value, [name]: text };
+      const nextErrors = { ...testErrors.value };
+      let parsed;
+      if (text.trim() === "") {
+        parsed = null;
+      } else {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          nextErrors[name] = t("metricViews.testInvalidValue", { name });
+          testErrors.value = nextErrors;
+          return;
+        }
+      }
+      delete nextErrors[name];
+      testErrors.value = nextErrors;
+      const nextParams = { ...testParameters.value, [name]: parsed };
+      pendingInputParamsJson = JSON.stringify(nextParams);
+      instance.state.set("testParameters", nextParams);
+    }
+
+    const hasInvalidTestParams = computed(() => (
+      testSource.value === "explicit" && Object.keys(testErrors.value).length > 0
+    ));
+    const trialDisabled = computed(() => (
+      !detailVisible.value || !hasFunctionDraft.value || hasInvalidTestParams.value
+    ));
 
     function parameterLabel(parameter) {
       return parameter.type ? `${parameter.name} (${parameter.type})` : parameter.name;
@@ -98,108 +266,15 @@ await mountPanel({
     }
 
     function openTest() {
-      testSource.value = "explicit";
-      testTab.value = "markdown";
-      markdownView.value = "preview";
-      testMarkdown.value = "";
-      testJson.value = "";
-      truncation.value = null;
-      testFailure.value = "";
-      const initial = {};
-      for (const def of parameterDefs.value) {
-        initial[def.name] = JSON.stringify(def.value === undefined ? null : def.value);
-      }
-      testValues.value = initial;
       testOpen.value = true;
     }
 
-    function draftValues() {
-      const current = formValues.value;
-      if (!current || !current.function) throw new Error(t("metricViews.testNoDraft"));
-      return JSON.parse(JSON.stringify(current));
+    function onMarkdownRead() {
+      testTab.value = "markdown";
     }
 
-    function typedParameters() {
-      const parsed = {};
-      for (const def of parameterDefs.value) {
-        const text = testValues.value[def.name];
-        if (typeof text !== "string" || text.trim() === "") {
-          parsed[def.name] = null;
-          continue;
-        }
-        try {
-          parsed[def.name] = JSON.parse(text);
-        } catch {
-          throw new Error(t("metricViews.testInvalidValue", { name: def.name }));
-        }
-      }
-      return parsed;
-    }
-
-    function chosenParameters() {
-      if (testSource.value === "explicit") return typedParameters();
-      const row = bindingRows.value[testSource.value];
-      return row?.parameters ? JSON.parse(JSON.stringify(row.parameters)) : {};
-    }
-
-    const canRunTrial = computed(() => Boolean(detailVisible.value && formValues.value?.function));
-    const trial = usePanelOperation("definition", "test", {
-      available: canRunTrial,
-      prepareInput(provided) {
-        return {
-          draft: draftValues(),
-          parameters: provided.parameters !== undefined ? provided.parameters : chosenParameters(),
-        };
-      },
-      onSettled(result) {
-        testOpen.value = true;
-        testFailure.value = "";
-        testMarkdown.value = (result?.kind === "markdown" && result.markdown) || t("metricViews.testNoResult");
-        testTab.value = "markdown";
-        markdownView.value = "preview";
-      },
-      onError(error) {
-        testOpen.value = true;
-        testFailure.value = t("metricViews.testFailed", { message: errorText(error) });
-      },
-    });
-    const trialJson = usePanelOperation("definition", "testExecute", {
-      available: canRunTrial,
-      prepareInput(provided) {
-        // Pass the form's current draft parameters (never bindingId) so unsaved edits to a binding's values are tested.
-        return {
-          draft: draftValues(),
-          parameters: provided.parameters !== undefined ? provided.parameters : chosenParameters(),
-        };
-      },
-      onSettled(result) {
-        testOpen.value = true;
-        testFailure.value = "";
-        const value = result?.kind === "json" ? result.value : null;
-        testJson.value = JSON.stringify(value && "result" in value ? value.result : value, null, 2);
-        truncation.value = value?.truncated
-          ? { rowLimit: value.rowLimit ?? null, hint: value.truncationHint ?? null }
-          : null;
-        testTab.value = "json";
-      },
-      onError(error) {
-        testOpen.value = true;
-        testFailure.value = t("metricViews.testFailed", { message: errorText(error) });
-      },
-    });
-    const trialReady = computed(() => Boolean(trial.operation.value));
-    const trialJsonReady = computed(() => Boolean(trialJson.operation.value));
-    const testingMarkdown = trial.running;
-    const testingJson = trialJson.running;
-
-    async function runMarkdown() {
-      testFailure.value = "";
-      await trial.run({});
-    }
-
-    async function runJson() {
-      testFailure.value = "";
-      await trialJson.run({});
+    function onJsonRead() {
+      testTab.value = "json";
     }
 
     return {
@@ -207,31 +282,29 @@ await mountPanel({
       creating,
       detailVisible,
       detailTitle,
+      hasFunctionDraft,
       batchStatus,
       parameterDefs,
       bindingRows,
-      trialReady,
-      trialJsonReady,
       backToCatalog,
       onSaved,
       onDiscarded,
       onRemoveDone,
       testOpen,
+      dialogOpen,
       testSource,
-      testValues,
       testTab,
-      markdownView,
-      testMarkdown,
-      testJson,
-      truncation,
-      testFailure,
-      testingMarkdown,
-      testingJson,
+      testValues,
+      testErrors,
+      hasInvalidTestParams,
+      trialDisabled,
+      bindingSourceValue,
       parameterLabel,
       bindingLabel,
       openTest,
-      runMarkdown,
-      runJson,
+      onParamInput,
+      onMarkdownRead,
+      onJsonRead,
       startCreate: () => instance.state.setState({ selected: null, creating: true }),
       refresh: () => instance.refreshObjects(),
     };
