@@ -47,8 +47,9 @@ export function configuration(mode, { root }, inherited = process.env) {
   switch (mode) {
     case "dev":
       env.NODE_ENV = "development";
+      env.ONTOMATO_DEV_WAIT_FOR_SERVER = "1";
       tool = "concurrently";
-      args = ["pnpm:dev:server", "pnpm:dev:web"];
+      args = ["--kill-others-on-fail", "pnpm:dev:server", "pnpm:dev:web"];
       break;
     case "server":
       env.NODE_ENV = "development";
@@ -75,6 +76,22 @@ export function configuration(mode, { root }, inherited = process.env) {
       throw new Error(`Unknown development command: ${mode}`);
   }
   return { env, tool, args, cwd };
+}
+
+export async function waitForWorkbench(url, timeout = 120_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(new URL("/api/health", url), {
+        signal: AbortSignal.timeout(2000),
+      });
+      if (response.ok) return;
+    } catch {
+      // The workbench is still preparing or starting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`Workbench did not become ready at ${url} within ${timeout / 1000}s`);
 }
 
 // Foreground child signal ownership, shared with the full-stack entry: Unix forwards SIGINT/SIGTERM
@@ -149,6 +166,11 @@ export async function runCli(product) {
   let runtime;
   try {
     const mode = process.argv[2];
+    if (mode === "web" && process.env.ONTOMATO_DEV_WAIT_FOR_SERVER === "1") {
+      const url = `http://127.0.0.1:${process.env.PORT || "3000"}`;
+      console.log(`[dev] Waiting for workbench at ${url} before starting Vite`);
+      await waitForWorkbench(url);
+    }
     if (!["dev", "runtime", "server"].includes(mode)) {
       start(product);
       return;
