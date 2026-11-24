@@ -13,14 +13,14 @@ import java.util.List;
  * write-only from the product's own point of view.</p>
  *
  * <p>The open-source edition has no roles and grants nothing, so it returns an empty list; the
- * enterprise edition reads the role-capability rows and resolves their role codes.</p>
+ * enterprise edition reads the role-capability rows and resolves their role names.</p>
  */
 public interface CapabilityGrantQuery {
 
     /** One grant, named the way an operator reads it rather than the way it is stored. */
     record Grant(
             String roleId,
-            /** The role's code in this domain — the same vocabulary a workflow step is written in. */
+            /** The domain role's display name (role_name), also used by workflow steps. */
             String roleCode,
             String capabilityKind,
             String capabilityId,

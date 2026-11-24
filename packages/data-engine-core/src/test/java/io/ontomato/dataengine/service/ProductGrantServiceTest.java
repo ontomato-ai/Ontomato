@@ -152,4 +152,93 @@ class ProductGrantServiceTest {
         verify(db).update("DELETE FROM product_grant WHERE domain_id=? AND resource_id=?", "domain", "projection");
         verify(db).update("DELETE FROM product_resource WHERE domain_id=? AND id=?", "domain", "projection");
     }
+    @Test void ownerlessRegistrationWritesManagementAndSharingGrantsOnce() {
+        var db = mock(JdbcTemplate.class);
+        var principals = mock(ProductPrincipalLookup.class);
+        var service = new ProductGrantService(db, mock(IdentityService.class), principals);
+        String ownerQuery = "SELECT owner_id FROM product_resource WHERE domain_id=? AND id=?";
+        when(db.queryForList(ownerQuery, String.class, "domain", "retriever")).thenReturn(List.of(), List.of(""));
+        var verbs = List.of("use", "view", "edit");
+        when(principals.defaultAdminGrants("domain", verbs)).thenReturn(
+            verbs.stream().map(verb -> new ProductGrants.Grant("role", "admin", verb)).toList());
+        when(principals.legacyMenuGrants("domain", "analysis-agent", verbs)).thenReturn(
+            verbs.stream().map(verb -> new ProductGrants.Grant("role", "legacy-editor", verb)).toList());
+
+        service.register("domain", "retriever", null, true, verbs, true, "analysis-agent");
+        service.register("domain", "retriever", null, true, verbs, true, "analysis-agent");
+
+        verify(db).update("INSERT INTO product_resource(domain_id,id,owner_id) VALUES(?,?,?)", "domain", "retriever", "");
+        for (String verb : verbs) {
+            verify(db).update(eq(INSERT_GRANT), eq("domain"), eq("retriever"), eq("role"), eq("admin"), eq(verb));
+            verify(db).update(eq(INSERT_GRANT), eq("domain"), eq("retriever"), eq("role"), eq("legacy-editor"), eq(verb));
+        }
+        verify(db).update(INSERT_GRANT, "domain", "retriever", "domain", "*", "use");
+        verify(db, never()).update(eq(INSERT_GRANT), eq("domain"), eq("retriever"), eq("principal"), any(), any());
+        verify(principals).defaultAdminGrants("domain", verbs);
+        verify(principals).legacyMenuGrants("domain", "analysis-agent", verbs);
+        assertEquals(409, assertThrows(ResponseStatusException.class,
+            () -> service.register("domain", "retriever", "author", false)).getStatusCode().value());
+    }
+
+    @Test void grantSetLocksAndAuthorizesBeforeReplacingOnlyTheTargetSubject() {
+        var db = mock(JdbcTemplate.class);
+        var identity = mock(IdentityService.class);
+        when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("editor", "domain"));
+        var principals = mock(ProductPrincipalLookup.class);
+        when(principals.productPrincipalId("editor")).thenReturn("editor");
+        var grants = List.of(new ProductGrants.Grant("principal", "editor", "edit"));
+        when(db.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), eq("domain"), eq("agent")))
+            .thenReturn(List.of()).thenReturn(grants);
+        var service = new ProductGrantService(db, identity, principals);
+        String delete = "DELETE FROM product_grant WHERE domain_id=? AND resource_id=? AND principal_kind=? AND principal_id=?";
+
+        assertEquals(403, assertThrows(ResponseStatusException.class,
+            () -> service.setGrants("agent", "role", "reviewer", List.of("use"))).getStatusCode().value());
+        verify(db, never()).update(delete, "domain", "agent", "role", "reviewer");
+        clearInvocations(db);
+
+        service.setGrants("agent", "role", "reviewer", List.of("view", "use", "view"));
+        var sequence = inOrder(db);
+        sequence.verify(db).queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", Object.class, "product-grant:domain:agent");
+        sequence.verify(db).query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), eq("domain"), eq("agent"));
+        sequence.verify(db).update(delete, "domain", "agent", "role", "reviewer");
+        sequence.verify(db).update(INSERT_GRANT, "domain", "agent", "role", "reviewer", "view");
+        sequence.verify(db).update(INSERT_GRANT, "domain", "agent", "role", "reviewer", "use");
+        sequence.verifyNoMoreInteractions();
+
+        clearInvocations(db);
+        service.setGrants("agent", "role", "reviewer", List.of());
+        verify(db).update(delete, "domain", "agent", "role", "reviewer");
+        verify(db, never()).update(eq(INSERT_GRANT), any(), any(), any(), any(), any());
+    }
+
+    @Test void domainReverseLookupResolvesNamesInBatchesAndExcludesReservedRows() throws Exception {
+        var db = mock(JdbcTemplate.class);
+        var identity = mock(IdentityService.class);
+        when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("reader", "domain"));
+        var principals = mock(ProductPrincipalLookup.class);
+        when(principals.roleNames("domain", List.of("reviewer"))).thenReturn(Map.of("reviewer", "Reviewer"));
+        var row = mock(ResultSet.class);
+        when(row.getString(1)).thenReturn("agent", "agent-two", "builtin-product-example");
+        when(row.getString(2)).thenReturn("role");
+        when(row.getString(3)).thenReturn("reviewer");
+        when(row.getString(4)).thenReturn("view", "edit", "edit");
+        when(db.query(endsWith("WHERE domain_id=? AND principal_kind=? AND principal_id=? ORDER BY resource_id, principal_kind, principal_id, verb"),
+            any(org.springframework.jdbc.core.RowMapper.class), eq("domain"), eq("role"), eq("reviewer")))
+            .thenAnswer(call -> {
+                var mapper = call.<org.springframework.jdbc.core.RowMapper<?>>getArgument(1);
+                return List.of(mapper.mapRow(row, 0), mapper.mapRow(row, 1), mapper.mapRow(row, 2));
+            });
+
+        var service = new ProductGrantService(db, identity, principals);
+        assertEquals(List.of(
+            new ProductGrantService.DomainGrantView("agent", "role", "reviewer", "Reviewer", "view"),
+            new ProductGrantService.DomainGrantView("agent-two", "role", "reviewer", "Reviewer", "edit")
+        ), service.domainGrants("role", "reviewer"));
+        verify(principals).roleNames("domain", List.of("reviewer"));
+        verifyNoMoreInteractions(principals);
+    }
+
+    private static final String INSERT_GRANT =
+        "INSERT INTO product_grant(domain_id,resource_id,principal_kind,principal_id,verb) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING";
 }

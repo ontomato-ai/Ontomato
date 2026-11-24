@@ -8,8 +8,11 @@ import java.util.Set;
 public final class ProductGrants {
     private ProductGrants() {}
     public record Grant(String principalKind,String principalId,String verb) {}
+    static boolean isValidVerb(String verb) {
+        return "use".equals(verb) || "view".equals(verb) || "edit".equals(verb);
+    }
     public static boolean allows(List<Grant> grants,String userId,Set<String> roles,String verb) {
-        if(userId==null||!Set.of("use","edit").contains(verb))return false;
+        if(userId==null||!isValidVerb(verb))return false;
         return grants.stream().anyMatch(grant->Objects.equals(verb,grant.verb())&&switch(grant.principalKind()) {
             case "principal" -> Objects.equals(userId,grant.principalId());
             case "role" -> roles.contains(grant.principalId());

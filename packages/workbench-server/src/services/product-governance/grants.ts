@@ -4,9 +4,14 @@ import {environment} from '../../config/environment';
 import {HttpError} from '../../utils/errors';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
 import {
+  domainProductGrantsResponseSchema,
+  productGrantChangeResponseSchema,
   productGrantPrincipalsResponseSchema,
   productGrantsResponseSchema,
   type ChangeProductGrantRequest,
+  type DomainProductGrantsRequest,
+  type ProductGrantVerb,
+  type SetProductGrantsRequest,
 } from '@ontomato/contracts/product-governance';
 
 export interface ProductOwner { domainId: string; userId: string }
@@ -24,16 +29,27 @@ export async function unregisterProductResource(domainId: string, id: string) {
     throw new HttpError(503, "Product resource removal failed", "PRODUCT_GOVERNANCE_UNAVAILABLE");
 }
 
-export async function registerProductResource(owner:ProductOwner,id:string,shared:boolean){
-  const response=await backendPost('product-grant-registration',config.dataQuery.baseUrl+'/product-governance/register',{domainId:owner.domainId,ownerId:owner.userId,id,shared},{headers:serviceHeaders(),retries:1});
+interface ProductRegistrationOptions {
+  ownerId?: string | null;
+  verbs?: ProductGrantVerb[];
+  grantAdmin?: boolean;
+  legacyMenuPermission?: string;
+}
+
+export async function registerProductResource(
+  owner: { domainId: string; userId?: string }, id: string, shared: boolean,
+  { ownerId = owner.userId, ...options }: ProductRegistrationOptions = {},
+) {
+  const response = await backendPost('product-grant-registration', config.dataQuery.baseUrl + '/product-governance/register',
+    { domainId: owner.domainId, ownerId, id, shared, ...options }, { headers: serviceHeaders(), retries: 1 });
   if(JSON.parse(response.text).success!==true)throw new HttpError(503,'Product resource registration failed','PRODUCT_GOVERNANCE_UNAVAILABLE');
 }
-export async function productGrantAllowed(id:string,verb:'use'|'edit',credentials:AssistantCredentials){
+export async function productGrantAllowed(id:string,verb: ProductGrantVerb,credentials:AssistantCredentials){
   const response=await backendPost('product-grant-check',config.dataQuery.baseUrl+'/product-governance/check',{id,verb},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
   return JSON.parse(response.text).allowed===true;
 }
 export async function productGrantsAllowedBatch(
-  ids: readonly string[], verb: "use" | "edit", credentials: AssistantCredentials,
+  ids: readonly string[], verb: ProductGrantVerb, credentials: AssistantCredentials,
 ): Promise<Record<string, boolean>> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return {};
@@ -52,10 +68,10 @@ export async function productGrantsAllowedBatch(
     throw new HttpError(503, "Invalid product Grant response", "PRODUCT_GOVERNANCE_UNAVAILABLE");
   return allowed;
 }
-export async function requireProductGrant(id:string,verb:'use'|'edit',credentials:AssistantCredentials){
+export async function requireProductGrant(id:string,verb: ProductGrantVerb,credentials:AssistantCredentials){
   if(!await productGrantAllowed(id,verb,credentials))throw new HttpError(403,`Product ${verb} Grant required`,'PRODUCT_FORBIDDEN');
 }
-export async function grantedProductIds(verb:'use'|'edit',credentials:AssistantCredentials):Promise<string[]>{
+export async function grantedProductIds(verb: ProductGrantVerb,credentials:AssistantCredentials):Promise<string[]>{
   const response=await backendPost('product-grant-resources',config.dataQuery.baseUrl+'/product-governance/resources',{verb},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
   const result=JSON.parse(response.text);
   if(!Array.isArray(result.ids)||result.ids.some((id:unknown)=>typeof id!=='string'))throw new HttpError(503,'Invalid product Grant response','PRODUCT_GOVERNANCE_UNAVAILABLE');
@@ -65,7 +81,7 @@ export async function shareProductResource(id:string,shared:boolean,credentials:
   const response=await backendPost('product-grant-sharing',config.dataQuery.baseUrl+'/product-governance/share',{id,shared},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
   if(JSON.parse(response.text).success!==true)throw new HttpError(503,'Product sharing update failed','PRODUCT_GOVERNANCE_UNAVAILABLE');
 }
-export async function productGrantIdsForOwner(owner:ProductOwner,verb:'use'|'edit'):Promise<string[]>{
+export async function productGrantIdsForOwner(owner:ProductOwner,verb: ProductGrantVerb):Promise<string[]>{
   const response=await backendPost('product-grant-owner-resources',config.dataQuery.baseUrl+'/product-governance/service-resources',{domainId:owner.domainId,userId:owner.userId,verb},{headers:serviceHeaders(),retries:1});
   const result=JSON.parse(response.text);
   if(!Array.isArray(result.ids)||result.ids.some((id:unknown)=>typeof id!=='string'))throw new HttpError(503,'Invalid product Grant response','PRODUCT_GOVERNANCE_UNAVAILABLE');
@@ -94,3 +110,21 @@ export async function changeProductGrant(id:string,grant:ChangeProductGrantReque
   if(JSON.parse(response.text).success!==true)throw new HttpError(503,'Product Grant update failed','PRODUCT_GOVERNANCE_UNAVAILABLE');
 }
 export async function changeProductDomainGrant(id:string,shared:boolean,credentials:AssistantCredentials){return shareProductResource(id,shared,credentials);}
+
+export async function setProductGrants(credentials: AssistantCredentials, input: SetProductGrantsRequest) {
+  const response = await backendPost(
+    "product-grant-set", config.dataQuery.baseUrl + "/product-governance/grant-set", input,
+    { headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1 },
+  );
+  return productGrantChangeResponseSchema.parse(JSON.parse(response.text));
+}
+
+export async function readDomainProductGrants(
+  credentials: AssistantCredentials, filter: DomainProductGrantsRequest = {},
+) {
+  const response = await backendPost(
+    "product-grant-domain-records", config.dataQuery.baseUrl + "/product-governance/domain-grants", filter,
+    { headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1 },
+  );
+  return domainProductGrantsResponseSchema.parse(JSON.parse(response.text));
+}

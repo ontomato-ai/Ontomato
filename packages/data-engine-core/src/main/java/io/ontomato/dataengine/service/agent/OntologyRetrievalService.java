@@ -21,6 +21,7 @@ public class OntologyRetrievalService {
   private final OntologyAgentDefinitions definitions;
   private final OntologyQueryService ontology;
   private final QueryGrantService grants;
+  private final ProductGrantService productGrants;
   private final QueryOutputService outputs;
   private final QueryJobService jobs;
   private final QueryQualityService quality;
@@ -44,7 +45,7 @@ public class OntologyRetrievalService {
       QueryOutputService outputs,
       QueryJobService jobs,
       QueryQualityService quality,
-      OntologyAgentAccess access, RetrievalResults results, AgentChannelRuns channel,AgentChannelChanges changes) {
+      OntologyAgentAccess access, RetrievalResults results, AgentChannelRuns channel,AgentChannelChanges changes, ProductGrantService productGrants) {
     this.store = store;
     this.runtime = runtime;
     this.definitions = definitions;
@@ -57,6 +58,7 @@ public class OntologyRetrievalService {
     this.results = results;
     this.channel = channel;
     this.changes=changes;
+    this.productGrants = productGrants;
   }
 
   public static int timeout(JSONObject body) {
@@ -247,6 +249,9 @@ public class OntologyRetrievalService {
   }
 
   public JSONObject begin(String key, JSONObject body, OntologyAgentAccess.Context context) {
+    var user = context.access().user();
+    if (!productGrants.allowedFor(user.getDomainId(), user.getId(), RETRIEVER, "use"))
+      throw new AgentHttpException(403, "FORBIDDEN", "Retriever use Grant required");
     String existing = body.getString("retrievalId");
     var copy = AgentJson.copy(body);
     copy.remove("retrievalId");

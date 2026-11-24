@@ -3,6 +3,7 @@ package io.ontomato.dataengine.service.agent;
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.schedules.ScheduleIdentity;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.ProductGrantService;
 import java.time.Instant;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,14 +15,15 @@ public class AgentCaller {
   private final JdbcTemplate jdbc;
   private final ScheduleIdentity identities;
   private final IdentityService identity;
+  private final ProductGrantService productGrants;
   @org.springframework.beans.factory.annotation.Autowired
   private io.ontomato.dataengine.service.BuildTestContextService contexts;
 
   @org.springframework.beans.factory.annotation.Autowired
   private AgentExecutionAccess executions;
 
-  public AgentCaller(JdbcTemplate jdbc, ScheduleIdentity identities, IdentityService identity) {
-    this.jdbc=jdbc; this.identities=identities; this.identity=identity;
+  public AgentCaller(JdbcTemplate jdbc, ScheduleIdentity identities, IdentityService identity, ProductGrantService productGrants) {
+    this.jdbc=jdbc; this.identities=identities; this.identity=identity; this.productGrants=productGrants;
   }
   public record Actor(String id, io.ontomato.dataengine.core.bean.User user, long expiresAt) {
     public OntologyAgentStore.Owner owner() { return new OntologyAgentStore.Owner(user.getId(),user.getDomainId()); }
@@ -87,6 +89,8 @@ public class AgentCaller {
     var executor=executionUser(actor,executionActor);
     boolean query = purpose != Purpose.GENERATION;
     if(query) requireQueryUser(executor);
+    if (purpose == Purpose.RETRIEVAL && !productGrants.allowedFor(domain, executor.getId(), OntologyAgentStore.RETRIEVER, "use"))
+      throw new AgentHttpException(403, "FORBIDDEN", "Retriever use Grant required");
     var permission=identities.dataPermission(domain,executor.getId());
     var classes=authority.getList("classNames",String.class);
     if(purpose == Purpose.QUERY) classes=io.ontomato.dataengine.service.QueryAccessService.classScope(permission,classes);

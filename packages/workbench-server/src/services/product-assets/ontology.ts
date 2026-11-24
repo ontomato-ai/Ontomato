@@ -57,6 +57,7 @@ export async function registeredProductGraph(owner:ProductOwner,assets:ProductAs
   if(credentials)for(const asset of assets.filter(asset=>asset.editable&&['application','agent-profile'].includes(asset.document.kind))){
     const {grants}=await readProductGrantRecords(asset.id,credentials);
     for(const grant of grants){
+      if (grant.verb === "view") continue;
       const id=`grant:${grant.principalKind}:${grant.principalId}`;
       if(!graph.nodes.some(node=>node.id===id))graph.nodes.push({id,name:grant.principalId,kind:grant.principalKind,category:'principal'});
       if(!graph.edges.some(edge=>edge.source===id&&edge.target===`asset:${asset.id}`&&edge.relation===grant.verb))graph.edges.push({source:id,target:`asset:${asset.id}`,relation:grant.verb,storage:'governance'});

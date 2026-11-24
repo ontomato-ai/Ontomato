@@ -43,7 +43,11 @@ public class ProductGrantController {
     @PostMapping(REGISTER_PATH) public Object register(HttpServletRequest request,@RequestBody Map<String,Object> body){
         authentication.authenticate(request);
         if(!(body.get("shared") instanceof Boolean shared))throw new IllegalArgumentException("Expected sharing intent");
-        grants.register(text(body,"domainId"),text(body,"id"),text(body,"ownerId"),shared);return Map.of("success",true);
+        Object admin = body.getOrDefault("grantAdmin", false);
+        if (!(admin instanceof Boolean grantAdmin)) throw new IllegalArgumentException("Expected grantAdmin");
+        grants.register(text(body, "domainId"), text(body, "id"), optionalText(body, "ownerId"), shared,
+            body.get("verbs") == null ? List.of() : verbs(body), grantAdmin, optionalText(body, "legacyMenuPermission"));
+        return Map.of("success", true);
     }
     @PostMapping(UNREGISTER_PATH)
     public Object unregister(HttpServletRequest request, @RequestBody Map<String,Object> body) {
@@ -56,5 +60,34 @@ public class ProductGrantController {
         if(!(body.get("remove") instanceof Boolean remove))throw new IllegalArgumentException("Expected removal intent");
         grants.grant(text(body,"id"),new ProductGrants.Grant(text(body,"principalKind"),text(body,"principalId"),text(body,"verb")),remove);return Map.of("success",true);
     }
+    @PostMapping("/product-governance/grant-set")
+    public Object setGrants(@RequestBody Map<String, Object> body) {
+        grants.setGrants(text(body, "id"), text(body, "principalKind"), text(body, "principalId"), verbs(body));
+        return Map.of("success", true);
+    }
+
+    @PostMapping("/product-governance/domain-grants")
+    public Object domainGrants(@RequestBody(required = false) Map<String, Object> body) {
+        var filter = body == null ? Map.<String, Object>of() : body;
+        return Map.of("grants", grants.domainGrants(optionalText(filter, "principalKind"), optionalText(filter, "principalId")));
+    }
+
+    private static List<String> verbs(Map<String, Object> body) {
+        if (!(body.get("verbs") instanceof List<?> values)) throw new IllegalArgumentException("Expected verbs");
+        var verbs = new ArrayList<String>(values.size());
+        for (Object value : values) {
+            if (!(value instanceof String verb)) throw new IllegalArgumentException("Expected verb");
+            verbs.add(verb);
+        }
+        return verbs;
+    }
+
+    private static String optionalText(Map<String, Object> body, String key) {
+        Object value = body.get(key);
+        if (value == null) return null;
+        if (value instanceof String text) return text;
+        throw new IllegalArgumentException("Expected " + key);
+    }
+
     private static String text(Map<String,Object> body,String key){if(!(body.get(key) instanceof String value)||value.isBlank())throw new IllegalArgumentException("Expected "+key);return value;}
 }

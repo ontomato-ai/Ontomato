@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
+import io.ontomato.dataengine.service.ProductGrantService;
+import java.util.List;
 import io.ontomato.dataengine.service.agent.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -16,6 +18,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class AgentChannelBoundaryTest {
   private static final String SESSION="11111111-1111-4111-8111-111111111111", RUN="22222222-2222-4222-8222-222222222222";
+  private final ProductGrantService productGrants = mock(ProductGrantService.class);
   private final AgentCaller callers=mock(AgentCaller.class);
   private final AgentDirectory directory=mock(AgentDirectory.class);
   private final OntologyAgentStore store=mock(OntologyAgentStore.class);
@@ -70,7 +73,7 @@ class AgentChannelBoundaryTest {
   @Test void crossDomainReferencesFailBeforeLookingUpIdentityOrCredentials() {
     var jdbc=mock(org.springframework.jdbc.core.JdbcTemplate.class);
     var identities=mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class);
-    var caller=new AgentCaller(jdbc,identities,mock(io.ontomato.dataengine.service.IdentityService.class));
+    var caller=new AgentCaller(jdbc,identities,mock(io.ontomato.dataengine.service.IdentityService.class),productGrants);
     var failure=assertThrows(AgentHttpException.class,()->caller.restore(JSONObject.of("id",RUN,"domainId","b"),"a"));
     assertEquals("CROSS_DOMAIN",failure.code());
     verifyNoInteractions(jdbc,identities);
@@ -97,7 +100,7 @@ class AgentChannelBoundaryTest {
     var identities=mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class);
     var identity=mock(io.ontomato.dataengine.service.IdentityService.class);
     when(jdbc.queryForList(anyString(),any(Object[].class))).thenReturn(java.util.List.of(java.util.Map.of("user_id","user","domain_id","a","deadline",new java.sql.Timestamp(System.currentTimeMillis()+60000))));
-    var caller=new AgentCaller(jdbc,identities,identity);var ref=JSONObject.of("id",RUN,"domainId","a");
+    var caller=new AgentCaller(jdbc,identities,identity,productGrants);var ref=JSONObject.of("id",RUN,"domainId","a");
     when(identity.getCurrentUser()).thenReturn(new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"));
     assertEquals("user",caller.restore(ref,"a").owner().userId());
     when(identity.getCurrentUser()).thenReturn(null);
@@ -143,7 +146,7 @@ class AgentChannelBoundaryTest {
   @Test void backgroundGenerationDoesNotConsultWebIdentity() {
     var identity=mock(io.ontomato.dataengine.service.IdentityService.class);
     when(identity.getCurrentUser()).thenThrow(new IllegalStateException("No web context on a quality worker"));
-    var caller=new AgentCaller(mock(org.springframework.jdbc.core.JdbcTemplate.class),mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class),identity);
+    var caller=new AgentCaller(mock(org.springframework.jdbc.core.JdbcTemplate.class),mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class),identity,productGrants);
     var access=new io.ontomato.dataengine.service.QueryAccessService.Access(new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user","a"),null,null,null,1000L);
     var context=caller.ownerContext(new OntologyAgentStore.Owner("user","a"),access,"en",2000L);
     assertNull(context.token());assertNull(context.apiKey());assertEquals(1000L,context.expiresAt());
@@ -179,11 +182,48 @@ class AgentChannelBoundaryTest {
     var permission=new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission();permission.setFullData(true);
     when(identities.dataPermission("a","V")).thenReturn(permission);
     var execution=mock(AgentExecutionAccess.class);when(execution.require("a","V")).thenReturn(executor);
-    var caller=new AgentCaller(jdbc,identities,identity);org.springframework.test.util.ReflectionTestUtils.setField(caller,"executions",execution);
+    var caller=new AgentCaller(jdbc,identities,identity,productGrants);org.springframework.test.util.ReflectionTestUtils.setField(caller,"executions",execution);
     var restored=caller.query(JSONObject.of("id",RUN,"domainId","a"),"a","en",JSONObject.of("classNames",java.util.List.of("Orders"),"executionKind","live"),null,JSONObject.of("runId",RUN),JSONObject.of("userId","V","domainId","a"));
     assertEquals("U",restored.owner().userId());assertEquals("V",restored.access().user().getId());assertEquals(java.util.List.of("Orders"),restored.access().classNames());
     verify(identity).requireQueryAccess("V","a");verify(execution).require("a","V");
     assertThrows(AgentHttpException.class,()->caller.query(JSONObject.of("id",RUN,"domainId","a"),"a","en",JSONObject.of("classNames",java.util.List.of(),"executionKind","live"),null,JSONObject.of("runId",RUN),JSONObject.of("userId","V","domainId","other")));
+
+    var ref = JSONObject.of("id", RUN, "domainId", "a");
+    var authority = JSONObject.of("classNames", List.of("Orders"), "executionKind", "live");
+    var root = JSONObject.of("runId", RUN);
+    var executorRef = JSONObject.of("userId", "V", "domainId", "a");
+    assertEquals(403, assertThrows(AgentHttpException.class,
+        () -> caller.retrieval(ref, "a", "en", authority, null, root, executorRef)).status());
+    when(productGrants.allowedFor("a", "V", OntologyAgentStore.RETRIEVER, "use")).thenReturn(true);
+    assertEquals("V", caller.retrieval(ref, "a", "en", authority, null, root, executorRef).access().user().getId());
+    var denied = new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN);
+    doThrow(denied).when(identity).requireQueryAccess("V", "a");
+    assertSame(denied, assertThrows(org.springframework.web.server.ResponseStatusException.class,
+        () -> caller.retrieval(ref, "a", "en", authority, null, root, executorRef)));
+  }
+
+  @Test void directoryRequiresBothPermissionsForRetrievalAndKeepsActionCreationIndependentOfProductGrant() {
+    var user = new io.ontomato.dataengine.service.QueryAccessService.GrantUser("U", "a");
+    var actor = JSONObject.of("id", RUN, "domainId", "a");
+    var restored = new AgentCaller.Actor(RUN, user, System.currentTimeMillis() + 60000);
+    when(callers.restore(actor, "a")).thenReturn(restored);
+    when(callers.executionUser(restored, null)).thenReturn(user);
+    var labels = mock(OntologyAgentLabels.class);
+    when(labels.localize(anyString(), any(), anyString())).thenAnswer(inv -> inv.getArgument(1));
+    var agents = new AgentDirectory(callers, mock(ActionCreationService.class), labels, productGrants);
+
+    var withoutUse = agents.list(actor, "a", "en").getJSONArray("agents");
+    assertEquals(1, withoutUse.size());
+    assertEquals(ActionCreationService.AGENT, withoutUse.getJSONObject(0).getJSONObject("ref").getString("agentId"));
+
+    when(productGrants.allowedFor("a", "U", OntologyAgentStore.RETRIEVER, "use")).thenReturn(true);
+    var withUse = agents.list(actor, "a", "en").getJSONArray("agents");
+    assertEquals(2, withUse.size());
+    assertEquals(OntologyAgentStore.retrieverRef(), withUse.getJSONObject(0).getJSONObject("ref"));
+
+    doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN))
+        .when(callers).requireQueryUser(user);
+    assertTrue(agents.list(actor, "a", "en").getJSONArray("agents").isEmpty());
   }
 
   @Test void assistantSkillPublicationSharesDirectoryRetrieverRef() throws Exception {
@@ -208,7 +248,8 @@ class AgentChannelBoundaryTest {
     when(agentCallers.executionUser(any(), isNull())).thenReturn(user);
     var actions = mock(ActionCreationService.class);
     doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN)).when(actions).authorize(any());
-    var listed = new AgentDirectory(agentCallers, actions, labels).list(actor, "a", "en");
+    when(productGrants.allowedFor("a", "U", OntologyAgentStore.RETRIEVER, "use")).thenReturn(true);
+    var listed = new AgentDirectory(agentCallers, actions, labels, productGrants).list(actor, "a", "en");
     var entry = listed.getJSONArray("agents").getJSONObject(0);
     var descriptor = JSONObject.parseObject(files.get("retriever-ref.json"));
     assertEquals(entry.getJSONObject("ref"), descriptor.getJSONObject("ref"));
