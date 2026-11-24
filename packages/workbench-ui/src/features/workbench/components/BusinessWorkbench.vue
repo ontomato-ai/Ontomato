@@ -257,17 +257,18 @@ const labels = computed(() => {
   if (locale.value === "zh-TW") return { ...base, newConversation: "新增會話", sessions: "歷史會話", send: "查詢" };
   return base;
 });
-const dashboards = useDashboardStore();
+const dashboards = props.internalPages ? useDashboardStore() : null;
 const dashboardsOpen = ref(false);
 const dashboardMenu = ref<string | null>(null);
 
 function closeDashboards() {
   dashboardsOpen.value = false;
   dashboardMenu.value = null;
-  dashboards.cancelDashboardRename();
+  dashboards?.cancelDashboardRename();
 }
 
 function toggleDashboards() {
+  if (!dashboards) return;
   if (dashboardsOpen.value) return closeDashboards();
   dashboardsOpen.value = true;
   void dashboards.loadDashboards({ notifyError: true });
@@ -612,7 +613,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
         <ListTodo :size="16" aria-hidden="true" /><span>{{ allTasksLabel }}</span>
         <small v-if="taskSessions.length" class="legacy-task-badge">{{ taskSessions.length }}{{ taskCursor ? '+' : '' }}</small>
       </button>
-      <section v-if="dashboardsOpen" id="data-agent-dashboard-list" class="legacy-dashboard-list" :aria-label="t('analysis.myDashboards')" @keydown.esc.stop="closeDashboards">
+      <section v-if="dashboardsOpen && dashboards" id="data-agent-dashboard-list" class="legacy-dashboard-list" :aria-label="t('analysis.myDashboards')" @keydown.esc.stop="closeDashboards">
         <header>
           <span>{{ t('analysis.myDashboards') }}</span>
           <button type="button" :aria-label="t('common.close')" @click="closeDashboards"><X :size="14" /></button>
