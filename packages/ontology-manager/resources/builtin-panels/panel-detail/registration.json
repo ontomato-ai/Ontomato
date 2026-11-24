@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-panel-detail",
+      "input": {
+        "name": "面板详情",
+        "description": "查看、编辑、复制、授权和预览单个面板，或诊断并清理不可用面板。"
+      }
+    }
+  ]
+}

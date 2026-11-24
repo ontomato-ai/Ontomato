@@ -47,6 +47,7 @@ async function mountStandalone(initialAddress: string, fetchImpl?: (url: string)
     routes: [
       ...managerStandaloneRoutes(),
       { path: "/ontology/panels", component: { template: '<div class="dest">panels</div>' } },
+      { path: "/ontology/panels/detail", component: { template: '<div class="dest">panel-detail</div>' } },
       { path: "/ontology/projections", component: { template: '<div class="dest">projections</div>' } },
       { path: "/ontology/applications", component: { template: '<div class="dest">applications</div>' } },
       { path: "/ontology/applications/detail", component: { template: '<div class="dest">application-detail</div>' } },
@@ -145,7 +146,7 @@ describe("retired /ontology/products redirect routes", () => {
     [
       "/ontology/products/page-42",
       asset("page-42", { kind: "page", children: [] }),
-      "/ontology/panels?selected=page-42",
+      "/ontology/panels/detail?selected=page-42",
     ],
   ])("resolves single record %s to %s using its loaded document kind", async (from, loaded, expected) => {
     const { router } = await mountStandalone(from, async (url) => {
@@ -156,8 +157,8 @@ describe("retired /ontology/products redirect routes", () => {
   });
 
   it.each([
-    [403, "/ontology/products/secret-panel", "/ontology/panels?selected=secret-panel"],
-    [404, "/ontology/products/missing-panel", "/ontology/panels?selected=missing-panel"],
+    [403, "/ontology/products/secret-panel", "/ontology/panels/detail?selected=secret-panel"],
+    [404, "/ontology/products/missing-panel", "/ontology/panels/detail?selected=missing-panel"],
     [403, "/ontology/products/secret-proj?kind=projection", "/ontology/projections?selected=secret-proj"],
     [404, "/ontology/products/platform-application-hr-portal", "/ontology/applications/detail?selected=hr-portal"],
     [403, "/ontology/products/default-agent-profile-agent-9", "/ontology/agents?selected=agent-9"],

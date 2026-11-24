@@ -105,6 +105,7 @@ export const assistantService = {
     input: {
       agentId?: string;
       workspaceId?: string;
+      analysisOnly?: boolean;
       limit: number;
       cursor?: string;
     },
@@ -118,17 +119,20 @@ export const assistantService = {
             id: z.string().uuid(),
             agentId: z.string().optional(),
             workspaceId: z.string().optional(),
+            analysisOnly: z.boolean().optional(),
           })
           .parse(JSON.parse(Buffer.from(input.cursor, "base64url").toString()));
       } catch {
         throw new HttpError(400, "Invalid session cursor", "INVALID_REQUEST");
       }
     }
-    if (cursor && (cursor.agentId !== input.agentId || cursor.workspaceId !== input.workspaceId))
+    if (cursor && (cursor.agentId !== input.agentId || cursor.workspaceId !== input.workspaceId || cursor.analysisOnly !== input.analysisOnly))
       throw new HttpError(400, "Cursor filters differ");
     const rows = (
       await db().query(
-        `SELECT * FROM ${table("assistant_sessions")} WHERE domain_id=$1 AND owner_id=$2 AND ($3::uuid IS NULL OR agent_id=$3) AND ($7::uuid IS NULL OR workspace_id=$7) AND ($4::timestamptz IS NULL OR (updated_at,id)<($4,$5::uuid)) ORDER BY updated_at DESC,id DESC LIMIT $6`,
+        `SELECT s.* FROM ${table("assistant_sessions")} s WHERE s.domain_id=$1 AND s.owner_id=$2 AND ($3::uuid IS NULL OR s.agent_id=$3) AND ($7::uuid IS NULL OR s.workspace_id=$7) AND ($4::timestamptz IS NULL OR (s.updated_at,s.id)<($4,$5::uuid))
+         AND (NOT $8::boolean OR (s.workspace_id IS NULL AND EXISTS (SELECT 1 FROM ${table("assistant_agents")} a WHERE a.id=s.agent_id AND a.domain_id=s.domain_id AND a.kind NOT IN ('regular','knowledge-governance','app-builder') AND a.kind NOT LIKE 'app-builder:%')))
+         ORDER BY s.updated_at DESC,s.id DESC LIMIT $6`,
         [
           owner.domainId,
           owner.userId,
@@ -137,6 +141,7 @@ export const assistantService = {
           cursor?.id ?? null,
           input.limit + 1,
           input.workspaceId ?? null,
+          input.analysisOnly ?? false,
         ],
       )
     ).rows as SessionRow[];
@@ -164,7 +169,8 @@ export const assistantService = {
                 updatedAt: new Date(last.updated_at).toISOString(),
                 id: last.id,
                 agentId: input.agentId,
-                workspaceId: input.workspaceId,
+                 workspaceId: input.workspaceId,
+                 analysisOnly: input.analysisOnly,
               }),
             ).toString("base64url")
           : null,

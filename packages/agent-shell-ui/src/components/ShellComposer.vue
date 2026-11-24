@@ -33,6 +33,7 @@ const props = defineProps<{
   autofocus?: boolean;
   minLines?: number;
   sendIcon?: "arrow" | "plane";
+  sendText?: string;
   /** The box floats over a page (a page's foot, a full page beside the conversation) rather than standing under a conversation. */
   floating?: boolean;
   /** A floating box also names its fold and its round button; a conversation's box has neither. */
@@ -174,12 +175,14 @@ defineExpose({ focus: () => input.value?.focus() });
           <button
             type="submit"
             class="composer-button"
+            :class="{ 'composer-button-text': sendText }"
             :disabled="!canSend"
              :aria-label="labels.send"
              :aria-busy="sending || undefined"
           >
              <LoaderCircle v-if="sending" :size="16" class="sending-spinner" aria-hidden="true" />
-             <Send v-else-if="sendIcon === 'plane'" :size="13" aria-hidden="true" />
+              <span v-else-if="sendText">{{ sendText }}</span>
+              <Send v-else-if="sendIcon === 'plane'" :size="13" aria-hidden="true" />
             <ArrowUp v-else :size="16" aria-hidden="true" />
           </button>
           </ActionTooltip>
@@ -190,6 +193,7 @@ defineExpose({ focus: () => input.value?.focus() });
 </template>
 
 <style scoped>
+.composer-button.composer-button-text { inline-size: auto; padding-inline: var(--spacing-md); }
 .sending-spinner { animation: composer-spin 1s linear infinite; }
 @keyframes composer-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .sending-spinner { animation: none; } }

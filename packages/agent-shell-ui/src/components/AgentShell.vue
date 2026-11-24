@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, toRef, useId, useSlots, watch } from "vue";
 import { PanelLeft, PanelRightOpen, X } from "lucide-vue-next";
+import { ElDrawer } from "element-plus";
 import { conversationQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
 import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand } from "../page-composer-entry";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
@@ -100,6 +101,11 @@ const props = withDefaults(
      * runs on a single agent heads its column with its name.
      */
     agentPicker?: boolean;
+    splitNavigation?: boolean;
+    /** An editor shown over the conversation, with its own form actions. */
+    editorTitle?: string;
+    formatSessionDate?: (date: string) => string;
+    agentActions?: { createLabel: string; editLabel: string; create(): void; edit(): void };
   }>(),
   { artifactRenderers: () => [], toolRenderers: () => [], title: "", bottom: null, conversations: true, agentPicker: false },
 );
@@ -107,6 +113,7 @@ const slots = useSlots();
 const emit = defineEmits<{
   error: [message: string];
   featureAction: [id: string];
+  railAgentSelected: [];
   openBottom: [];
   run: [change: ShellRunChange];
 }>();
@@ -194,10 +201,20 @@ const currentFeature = display.feature;
  * The page skill of the page shown: what its own snapshot named for the instance shown, else the page's declaration. It
  * narrows who may take a message, and it travels with every message sent while that page is shown.
  */
-const pageSkill = computed(() => display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null);
+const pageSkill = computed(() => props.editorTitle ? null : (display.pageSkill.value ?? currentFeature.value?.pageSkill ?? null));
 /** A page that sits in the agent-app states rather than replacing the conversation. */
 const pairedPage = computed(() => currentFeature.value?.withConversation === true);
-const pageFull = computed(() => pairedPage.value && display.view.value === "full");
+const pageFull = computed(() => !props.editorTitle && pairedPage.value && display.view.value === "full");
+let closingEditor = false;
+async function closeEditor() {
+  if (closingEditor) return;
+  closingEditor = true;
+  try {
+    await display.close();
+  } finally {
+    closingEditor = false;
+  }
+}
 const openArtifact = computed(() => (display.target.value?.kind === "artifact" ? display.target.value.open : null));
 /** The conversation in view has not started: no session yet, and no message on its way to make one. */
 const unstarted = computed(() => !conversation.sending.value && conversation.state.sessionId === null);
@@ -387,6 +404,11 @@ function chooseAgent(id: string) {
   agentId.value = id;
 }
 
+function selectRailAgent(id: string) {
+  if (id === agentId.value || !conversation.busy.value) emit("railAgentSelected");
+  chooseAgent(id);
+}
+
 /**
  * A panel's conversation entry on the page beside this conversation (design U18): when the agent it names is this
  * conversation's, its sentence is filled here; when it is another of the page's candidates, a new conversation starts
@@ -554,7 +576,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="agent-shell" :class="{ 'panel-open': openArtifact }" @keydown.esc="closeNav(true)">
+  <div class="agent-shell" :class="{ 'panel-open': openArtifact, 'split-navigation': splitNavigation }" @keydown.esc="closeNav(true)">
     <div class="compact-nav">
       <button ref="navToggle" type="button" class="compact-nav-toggle" :aria-expanded="navOpen"
         :aria-controls="navId" @click="toggleNav">
@@ -587,11 +609,14 @@ onMounted(() => {
           :conversations="conversations"
           :panel-confirmation="panelConfirmation"
           :agent-picker="agentPicker"
+          :split-navigation="splitNavigation"
+          :format-session-date="formatSessionDate"
+          :agent-actions="agentActions"
           :labels="labels"
           @new-conversation="nav.startNew(); closeNav(true)"
           @select-feature="display.openFeature($event)"
           @feature-action="emit('featureAction', $event)"
-          @select-agent="chooseAgent"
+          @select-agent="selectRailAgent"
           @select-session="nav.selectSession($event)"
           @delete-session="(id) => nav.removeSession(id).catch(report)"
           @rename-session="(id, title) => nav.renameSession(id, title).catch(report)"
@@ -599,11 +624,19 @@ onMounted(() => {
           @open-bottom="emit('openBottom')"
           @load-more="void nav.loadSessions(true)"
           @retry="void nav.loadSessions()"
-        />
+        >
+          <template v-if="slots.brand" #brand><slot name="brand" /></template>
+          <template v-if="slots.account" #account><slot name="account" /></template>
+          <template v-if="slots.shortcuts" #shortcuts><slot name="shortcuts" /></template>
+          <template v-if="slots['session-list']" #session-list><slot name="session-list" /></template>
+        </ShellNavBody>
       </slot>
     </ShellColumn>
 
     <main v-show="!pageFull" class="shell-main">
+      <header v-if="splitNavigation && sessionId && !display.page.value" class="conversation-heading">
+        <h1>{{ nav.currentSession.value?.title || currentAgent?.name || labels.newConversation }}</h1>
+      </header>
       <button
         v-if="closedPage && !display.target.value"
         type="button"
@@ -622,7 +655,7 @@ onMounted(() => {
         @locate="taskFocus = { taskId: $event, at: Date.now() }"
         @close="tasksOpen = false"
       />
-      <div v-if="display.page.value && !pairedPage" class="feature-page">
+      <div v-if="display.page.value && !pairedPage && !editorTitle" class="feature-page">
         <slot name="feature" :feature-id="display.page.value.featureId" view="full" />
       </div>
       <ShellConversation
@@ -647,14 +680,24 @@ onMounted(() => {
         @retry="conversation.open(sessionId)"
         @load-older="conversation.loadOlder"
       >
+        <template v-if="slots.welcome" #welcome="scope">
+          <slot name="welcome" v-bind="scope" />
+        </template>
         <template v-if="slots['composer-context']" #composer-context>
           <slot name="composer-context" :page-open="pairedPage" :inline="false" :unstarted="unstarted" />
         </template>
       </ShellConversation>
     </main>
 
+    <ElDrawer v-if="display.page.value && editorTitle" :model-value="true" class="shell-editor-drawer"
+      :title="editorTitle" size="min(1000px, 100%)" :before-close="closeEditor">
+      <div class="shell-editor-body">
+        <slot name="feature" :feature-id="display.page.value.featureId" view="full" />
+      </div>
+    </ElDrawer>
+
     <ShellPagePane
-      v-if="display.page.value && pairedPage"
+      v-else-if="display.page.value && pairedPage"
       :feature="currentFeature"
       :view="display.view.value"
       :busy="conversation.busy.value"
@@ -681,6 +724,57 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.agent-shell :deep(.shell-editor-drawer > .el-drawer__body) { display: flex; padding: 0; overflow: hidden; }
+.shell-editor-body { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.agent-shell.split-navigation { container-type: inline-size; }
+.conversation-heading {
+  flex: none;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-block-end: 1px solid var(--el-border-color);
+}
+.conversation-heading h1 {
+  margin: 0;
+  font-size: var(--text-base);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell-main:has(> .conversation-heading) > :deep(.conversation) { flex: 1; height: auto; }
+@container (min-width: 960px) {
+  .split-navigation > :deep(.shell-column) {
+    flex: 0 0 min(48%, 654px);
+    width: min(48%, 654px);
+    padding: 14px 7px 14px 14px;
+    border: 0;
+    background: transparent;
+  }
+  .split-navigation > .shell-main {
+    --shell-conversation-ground: var(--el-bg-color);
+    margin: 14px 14px 14px 7px;
+    border-radius: 24px;
+    background: var(--el-bg-color);
+  }
+  .split-navigation > :deep(.side-panel),
+  .split-navigation > :deep(.page-pane.side) {
+    min-inline-size: 0;
+    max-inline-size: 38%;
+    block-size: auto;
+    margin: 14px 14px 14px 0;
+    border-radius: 24px;
+  }
+  .split-navigation > :deep(.side-panel) { animation: none; }
+  .split-navigation > :deep(.page-pane.full) {
+    block-size: auto;
+    margin: 14px 14px 14px 7px;
+    border-radius: 24px;
+    background: var(--el-bg-color);
+  }
+  .split-navigation:has(> .side-panel) > :deep(.shell-column),
+  .split-navigation:has(> .page-pane) > :deep(.shell-column) {
+    flex-basis: min(35%, 540px);
+    width: min(35%, 540px);
+  }
+}
 /*
  * The conversation application, filling the surface the platform gives it: its own column, then the conversation on one
  * flat area, no gutter, no border and no shadow of its own (DESIGN.md "Applications and shells"). Its composer is raised.

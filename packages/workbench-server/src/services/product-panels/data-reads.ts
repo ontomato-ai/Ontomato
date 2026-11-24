@@ -291,7 +291,14 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       form: (selection, params) => governance.users.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => governance.users.createForm(formParams(params)),
       effectivePermissions: selection => governance.users.effectivePermissions(selection.primaryKey!),
-      lookupAccount: (_selection, params) => governance.users.lookupAccount(panelReadParameterSchemas.keyword.parse(params.keyword)),
+      effectiveOrgShares: selection => governance.users.effectiveOrgShares(selection.primaryKey!),
+      effectiveApiPermissions: selection => governance.users.effectiveApiPermissions(selection.primaryKey!),
+      effectiveSubjectDataPermissions: selection => governance.users.effectiveDataPermissions(selection.primaryKey!, "subject"),
+      effectiveManagedDataPermissions: selection => governance.users.effectiveDataPermissions(selection.primaryKey!, "managed"),
+      effectiveDataPermissions: selection => governance.users.effectiveDataPermissions(selection.primaryKey!, "effective"),
+      lookupAccount: (_selection, params) => governance.users.lookupAccount(
+        panelReadParameterSchemas.keyword.optional().parse(params.keyword) ?? "",
+      ),
     },
     [ROLE]: {
       options: async (_selection, params) => {

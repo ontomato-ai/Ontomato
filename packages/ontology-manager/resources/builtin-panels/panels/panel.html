@@ -1,7 +1,6 @@
 <!--
-  Panel directory (product layer): lists panels available in this domain through `ObjectList`, paired with a detail
-  pane powered by `ObjectHeader`, `ObjectSummary`, `ObjectTree` + `ObjectTextReader`, official `ObjectList` sub-tables
-  (members, usage, grants), bound `OperationButton` / `ReferencePicker` controls, `ObjectForm`, and inline `<projection slot="preview">`.
+  Panels catalog (product layer): full-width directory of domain-available panels powered by `ObjectList`,
+  plus an unavailable panels section and a centered `<sdk-dialog>` create form (`ObjectForm`).
 -->
 <style>
   [v-cloak] { display: none; }
@@ -19,74 +18,33 @@
     flex-shrink: 0;
   }
 
-  .pd-body {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--page-content-gap);
-    align-items: start;
-    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
-    min-width: 0;
-  }
-
-  @container pd-page (min-width: 68rem) {
-    .pd-body.with-detail {
-      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.15fr);
-    }
-  }
-
-  .pd-pane {
-    min-width: 0;
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-    padding: var(--spacing-md);
+  .pd-catalog {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
+    gap: var(--spacing-lg);
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + 56px);
   }
 
-  .pd-detail {
-    container: pd-detail / inline-size;
+  .pd-list-slot {
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .pd-filter-select {
     width: 9.5rem;
   }
 
-  .pd-detail-head {
+  .pd-unavailable-section {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm);
-    min-width: 0;
-  }
-
-  .pd-detail-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
     gap: var(--spacing-xs);
-  }
-
-  .pd-state-box {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-2xl) var(--spacing-md);
-    text-align: center;
-    color: var(--sdk-text-color-secondary);
-    font-size: var(--text-sm);
-  }
-
-  .pd-tabs {
-    margin-bottom: calc(var(--spacing-xs) * -1);
-  }
-
-  .pd-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
     min-width: 0;
   }
 
@@ -105,162 +63,13 @@
     color: var(--sdk-text-color-primary);
   }
 
-  .pd-muted {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--sdk-text-color-secondary);
-  }
-
-  .pd-source-grid {
-    display: grid;
-    grid-template-columns: minmax(10rem, 13.5rem) minmax(0, 1fr);
-    min-height: 22rem;
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    overflow: hidden;
-  }
-
-  .pd-source-tree {
-    min-width: 0;
-    padding: var(--spacing-sm);
-    border-inline-end: 1px solid var(--sdk-border-color, var(--ui-border));
-    overflow: auto;
-  }
-
-  .pd-source-viewer {
-    min-width: 0;
-    padding: var(--spacing-sm) var(--spacing-md);
-    overflow: auto;
-  }
-
-  .pd-share-bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-  }
-
-  .pd-share-left {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .pd-share-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-xs);
-  }
-
-  .pd-form-wrap :deep(.sdk-owner-form),
-  .pd-form-wrap :deep(.sdk-owner-form-inner) {
+  .pd-create-body :deep(.sdk-owner-form),
+  .pd-create-body :deep(.sdk-owner-form-inner) {
     height: auto;
   }
 
-  .pd-form-wrap :deep(.sdk-owner-form-body) {
+  .pd-create-body :deep(.sdk-owner-form-body) {
     overflow: visible;
-  }
-
-  .pd-preview-box {
-    min-width: 0;
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    padding: var(--spacing-sm);
-    overflow: auto;
-  }
-
-  .pd-unavailable-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs);
-    padding-top: var(--spacing-sm);
-    border-top: 1px solid var(--sdk-border-color, var(--ui-border));
-    min-width: 0;
-  }
-
-  .pd-member-picker {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--spacing-md);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-fill-color-blank, var(--sdk-bg-color));
-    min-width: 0;
-  }
-
-  .pd-member-picker-list {
-    max-height: 14rem;
-    overflow: auto;
-    min-width: 0;
-  }
-
-  .pd-member-picker-bar {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs);
-    min-width: 0;
-  }
-
-  .pd-member-picker-inputs {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-xs);
-    min-width: 0;
-  }
-
-  .pd-member-picker-inputs > :first-child {
-    flex: 1 1 12rem;
-    min-width: 0;
-  }
-
-  .pd-member-card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-md);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    min-width: 0;
-  }
-
-  .pd-usage-skills {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs);
-    min-width: 0;
-  }
-
-  .pd-error {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--sdk-color-danger);
-  }
-
-  .pd-dialog-footer {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: var(--spacing-sm);
-  }
-
-  @container pd-detail (max-width: 40rem) {
-    .pd-source-grid {
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .pd-source-tree {
-      max-height: 12rem;
-      border-inline-end: 0;
-      border-bottom: 1px solid var(--sdk-border-color, var(--ui-border));
-    }
   }
 
   @container pd-page (max-width: 48rem) {
@@ -292,279 +101,50 @@
       </template>
     </page-header>
 
-    <div class="pd-body" :class="{ 'with-detail': showDetail }">
-      <aside class="pd-pane">
-        <projection slot="catalogue" @choose="onChoosePanel">
-          <template #filters>
-            <sdk-segmented v-model="scopeModel" :options="scopeOptions" size="default"></sdk-segmented>
-            <sdk-select v-model="sortModel" class="pd-filter-select" :aria-label="t('list.sort')">
-              <sdk-option value="updated" :label="t('sort.updated')"></sdk-option>
-              <sdk-option value="name" :label="t('sort.name')"></sdk-option>
-            </sdk-select>
-            <sdk-select v-model="templateFilterModel" class="pd-filter-select" :aria-label="t('list.template')">
-              <sdk-option value="all" :label="t('template.all')"></sdk-option>
-              <sdk-option value="template" :label="t('template.only')"></sdk-option>
-              <sdk-option value="ordinary" :label="t('template.ordinary')"></sdk-option>
-            </sdk-select>
-          </template>
-        </projection>
-
-        <section v-show="hasUnavailablePanels" class="pd-unavailable-section">
-          <div class="pd-section-bar">
-            <h3 class="pd-section-title">{{ t('unavailable.title') }}</h3>
-          </div>
-          <projection slot="unavailableList" @choose="onChoosePanel"></projection>
-        </section>
-      </aside>
-
-      <main v-if="showDetail" class="pd-pane pd-detail">
-        <!-- Edit or create form -->
-        <section v-if="isFormMode" class="pd-section">
-          <div class="pd-section-bar">
-            <h2 class="pd-section-title">{{ formTargetKey ? t('form.edit') : t('form.new') }}</h2>
-            <sdk-button size="small" @click="cancelFormGuarded">{{ t('action.cancel') }}</sdk-button>
-          </div>
-
-          <!-- Search and add existing projection/panel into /manifest/members -->
-          <section v-if="canPickMembers" class="pd-member-picker">
-            <div class="pd-section-bar">
-              <h3 class="pd-section-title">{{ t('members.addExisting') }}</h3>
-              <sdk-segmented v-model="memberKind" :options="memberKindOptions" size="small"></sdk-segmented>
-            </div>
-            <div class="pd-member-picker-list">
-              <projection v-if="memberKind === 'panel'" slot="memberPanelPicker"></projection>
-              <projection v-else slot="memberProjectionPicker"></projection>
-            </div>
-            <div class="pd-member-picker-bar">
-              <span class="pd-muted">
-                {{ pickedMemberId ? t('members.selectedCandidate', { name: pickedMemberLabel }) : t('members.chooseCandidate') }}
-              </span>
-              <div class="pd-member-picker-inputs">
-                <sdk-input
-                  v-model="memberSlotName"
-                  size="small"
-                  :placeholder="t('members.slotPlaceholder')"
-                  :aria-label="t('members.slotPlaceholder')"
-                ></sdk-input>
-                <sdk-button type="primary" size="small" :disabled="!canAddPickedMember" @click="addPickedMember">
-                  {{ t('members.addExisting') }}
-                </sdk-button>
-              </div>
-            </div>
-            <p v-if="memberError" class="pd-error" role="alert">{{ memberError }}</p>
-          </section>
-
-          <div class="pd-form-wrap">
-            <projection slot="form" @saved="onSaved" @discarded="onFormDiscarded" @cancel="cancelForm"></projection>
-          </div>
-        </section>
-
-        <!-- Detail view -->
-        <template v-else-if="selectedKey">
-          <div class="pd-detail-head">
-            <projection slot="headerTitle" :fallback-title="selectedKey">
-              <template v-if="recordReady" #actions>
-                <div class="pd-detail-actions">
-                  <sdk-button v-if="!recordUnavailable && canEdit" size="small" type="primary" plain @click="startEdit">{{ t('action.edit') }}</sdk-button>
-                  <sdk-button v-if="!recordUnavailable && canEdit" size="small" @click="openCopyDialog('copy')">{{ t('action.copy') }}</sdk-button>
-                  <sdk-button v-if="!recordUnavailable && isTemplate" size="small" @click="openCopyDialog('fromTemplate')">{{ t('action.fromTemplate') }}</sdk-button>
-                  <sdk-button v-if="!recordUnavailable && canEdit" size="small" @click="openCopyDialog('saveAsTemplate')">{{ t('action.saveAsTemplate') }}</sdk-button>
-                  <projection v-if="canDelete && hasSelectedRevision" slot="deletePanel" @done="onDeleteDone"></projection>
-                  <sdk-button size="small" text @click="closeDetail">{{ t('action.close') }}</sdk-button>
-                </div>
-              </template>
-            </projection>
-          </div>
-
-          <div v-if="recordStatus === 'loading' || recordStatus === 'awaiting'" class="pd-state-box">
-            <span>{{ t('detail.loading') }}</span>
-          </div>
-          <div v-else-if="recordStatus === 'forbidden'" class="pd-state-box">
-            <span>{{ t('detail.forbidden') }}</span>
-            <sdk-button size="small" @click="closeDetail">{{ t('action.close') }}</sdk-button>
-          </div>
-          <div v-else-if="recordStatus === 'error' || recordStatus === 'empty'" class="pd-state-box">
-            <span>{{ recordErrorText }}</span>
-            <sdk-button size="small" @click="refresh">{{ t('action.retry') }}</sdk-button>
-          </div>
-
-          <!-- Unavailable panel diagnostics -->
-          <section v-else-if="recordReady && recordUnavailable" class="pd-section pd-unavailable-detail">
-            <info-banner tone="warning" :text="t('unavailable.detailBanner')"></info-banner>
-            <projection slot="unavailableSummary"></projection>
-            <p v-if="!canDelete || !hasSelectedRevision" class="pd-muted">{{ t('unavailable.cannotDelete') }}</p>
-          </section>
-
-          <template v-else-if="recordReady">
-            <info-banner v-if="!canEdit" tone="info" :text="t('detail.readonly')"></info-banner>
-
-            <sdk-tabs v-model="tabModel" class="pd-tabs">
-              <sdk-tab-pane name="overview" :label="t('tab.overview')"></sdk-tab-pane>
-              <sdk-tab-pane name="source" :label="t('tab.source')"></sdk-tab-pane>
-              <sdk-tab-pane name="members" :label="t('tab.members')"></sdk-tab-pane>
-              <sdk-tab-pane name="usage" :label="t('tab.usage')"></sdk-tab-pane>
-              <sdk-tab-pane v-if="canGrant" name="grants" :label="t('tab.grants')"></sdk-tab-pane>
-              <sdk-tab-pane name="preview" :label="t('tab.preview')"></sdk-tab-pane>
-            </sdk-tabs>
-
-            <!-- Tab 1: Overview -->
-            <section v-show="tabModel === 'overview'" class="pd-section pd-tab-panel" data-tab="overview">
-              <projection slot="overviewSummary"></projection>
-            </section>
-
-            <!-- Tab 2: Source files (ObjectTree + ObjectTextReader) -->
-            <section v-show="tabModel === 'source'" class="pd-section pd-tab-panel" data-tab="source">
-              <div class="pd-source-grid">
-                <div class="pd-source-tree">
-                  <projection slot="sourceTree"></projection>
-                </div>
-                <div class="pd-source-viewer">
-                  <projection slot="sourceViewer"></projection>
-                </div>
-              </div>
-            </section>
-
-            <!-- Tab 3: Members -->
-            <section v-show="tabModel === 'members'" class="pd-section pd-tab-panel" data-tab="members">
-              <projection slot="membersList" @choose="onChooseMemberRow" @navigate="onNavigateReference"></projection>
-              <div class="pd-member-card">
-                <p v-if="!memberProjectionKey" class="pd-muted">{{ t('members.projectionEmpty') }}</p>
-                <template v-else>
-                  <div class="pd-section-bar">
-                    <h3 class="pd-section-title">{{ t('members.projectionRecord') }}</h3>
-                  </div>
-                  <projection slot="memberProjectionHeader" :fallback-title="memberProjectionKey">
-                    <template #actions>
-                      <div class="pd-detail-actions">
-                        <sdk-button size="small" type="primary" plain @click="openMemberProjection">
-                          {{ t('members.openInProjections') }}
-                        </sdk-button>
-                        <sdk-button size="small" text @click="clearMemberProjection">{{ t('action.close') }}</sdk-button>
-                      </div>
-                    </template>
-                  </projection>
-                  <projection slot="memberProjectionSummary" @navigate="onNavigateReference"></projection>
-                </template>
-              </div>
-            </section>
-
-            <!-- Tab 4: Usage -->
-            <section v-show="tabModel === 'usage'" class="pd-section pd-tab-panel" data-tab="usage">
-              <div class="pd-section-bar">
-                <sdk-button size="small" @click="openAddress('/ontology/applications')">{{ t('action.allApplications') }}</sdk-button>
-              </div>
-              <info-banner
-                v-if="hiddenUsedByCount > 0"
-                tone="info"
-                :text="t('usage.hidden', { count: hiddenUsedByCount })"
-              ></info-banner>
-              <projection
-                slot="usedByList"
-                @navigate="onNavigateReference"
-                @row-action="onUsedByRowAction"
-              ></projection>
-              <div class="pd-usage-skills">
-                <h3 class="pd-section-title">{{ t('usage.skills') }}</h3>
-                <info-banner tone="info" :text="t('usage.skillsNote')"></info-banner>
-              </div>
-            </section>
-
-            <!-- Tab 5: Grants & Domain Sharing -->
-            <section v-if="canGrant" v-show="tabModel === 'grants'" class="pd-section pd-tab-panel" data-tab="grants">
-              <div class="pd-share-bar">
-                <div class="pd-share-left">
-                  <strong class="pd-section-title">{{ t('grants.shareTitle') }}</strong>
-                  <span class="pd-muted"><projection slot="shareStatusDesc"></projection></span>
-                  <span class="pd-muted">{{ t('grants.shareNote') }}</span>
-                </div>
-                <div class="pd-share-actions">
-                  <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
-                  <projection v-else slot="shareEnable" @done="onShareDone"></projection>
-                  <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t('action.addGrant') }}</sdk-button>
-                </div>
-              </div>
-              <projection slot="grantsList"></projection>
-            </section>
-
-            <!-- Tab 6: Live Inline Preview (mounted on demand only while viewing a ready, available panel on Preview tab) -->
-            <section v-if="shouldMountPreview" class="pd-section" data-tab="preview">
-              <h3 class="pd-section-title">{{ t('preview.live') }}</h3>
-              <div class="pd-preview-box">
-                <projection slot="preview"></projection>
-              </div>
-            </section>
-          </template>
+    <div class="pd-catalog">
+      <projection slot="catalogue" class="pd-list-slot" @choose="openDetail">
+        <template #filters>
+          <sdk-segmented v-model="scopeModel" :options="scopeOptions" size="default"></sdk-segmented>
+          <sdk-select v-model="sortModel" class="pd-filter-select" :aria-label="t('list.sort')">
+            <sdk-option value="updated" :label="t('sort.updated')"></sdk-option>
+            <sdk-option value="name" :label="t('sort.name')"></sdk-option>
+          </sdk-select>
+          <sdk-select v-model="templateFilterModel" class="pd-filter-select" :aria-label="t('list.template')">
+            <sdk-option value="all" :label="t('template.all')"></sdk-option>
+            <sdk-option value="template" :label="t('template.only')"></sdk-option>
+            <sdk-option value="ordinary" :label="t('template.ordinary')"></sdk-option>
+          </sdk-select>
         </template>
-      </main>
+      </projection>
+
+      <section v-show="hasUnavailablePanels" class="pd-unavailable-section">
+        <div class="pd-section-bar">
+          <h2 class="pd-section-title">{{ t('unavailable.title') }}</h2>
+        </div>
+        <projection slot="unavailableList" @choose="openDetail"></projection>
+      </section>
     </div>
 
-    <!-- Copy / Save as template / Create from template dialog -->
     <sdk-dialog
-      v-if="copyEntryAllowed"
-      v-model="copyDialogOpen"
-      :title="copyDialogTitle"
-      width="480px"
+      v-model="createDialog"
+      :title="t('action.create')"
+      width="560px"
       append-to-body
       destroy-on-close
     >
-      <sdk-form label-position="top">
-        <p class="pd-muted" style="margin-bottom: var(--spacing-sm);">{{ copyDialogNote }}</p>
-        <sdk-form-item :label="t('copy.newId')">
-          <sdk-input v-model="copyIdModel" :placeholder="t('copy.idPlaceholder')"></sdk-input>
-        </sdk-form-item>
-        <sdk-form-item :label="t('copy.newName')">
-          <sdk-input v-model="copyNameModel"></sdk-input>
-        </sdk-form-item>
-      </sdk-form>
-      <template #footer>
-        <div class="pd-dialog-footer">
-          <sdk-button @click="copyDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection
-            v-if="copyDialogOpen && copyEntryAllowed"
-            slot="copySubmit"
-            :label-key="copyActionLabelKey"
-            :disabled="!canSubmitCopy"
-            @done="onCopyDone"
-          ></projection>
-        </div>
-      </template>
-    </sdk-dialog>
-
-    <!-- Add Grant dialog using official ReferencePicker & OperationButton -->
-    <sdk-dialog
-      v-if="grantEntryAllowed"
-      v-model="grantDialogOpen"
-      :title="t('grants.dialogTitle')"
-      width="480px"
-      append-to-body
-      destroy-on-close
-    >
-      <sdk-form v-if="grantDialogOpen && grantEntryAllowed" label-position="top">
-        <sdk-form-item :label="t('grants.kind')">
-          <sdk-segmented v-model="grantPrincipalKindModel" :options="grantKindOptions" size="default"></sdk-segmented>
-        </sdk-form-item>
-        <sdk-form-item :label="grantPrincipalKindModel === 'role' ? t('grants.role') : t('grants.principal')">
-          <projection v-if="grantPrincipalKindModel === 'role'" slot="rolePicker"></projection>
-          <projection v-else slot="userPicker"></projection>
-        </sdk-form-item>
-        <sdk-form-item :label="t('grants.verb')">
-          <sdk-select v-model="grantVerbModel" style="width: 100%">
-            <sdk-option value="use" :label="t('grants.use')"></sdk-option>
-            <sdk-option value="edit" :label="t('grants.edit')"></sdk-option>
-          </sdk-select>
-        </sdk-form-item>
-      </sdk-form>
-      <template #footer>
-        <div class="pd-dialog-footer">
-          <sdk-button @click="grantDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection
-            v-if="grantDialogOpen && grantEntryAllowed"
-            slot="grantSubmit"
-            :disabled="!canSubmitGrant"
-            @done="onGrantAdded"
-          ></projection>
-        </div>
-      </template>
+      <div class="pd-create-body">
+        <projection
+          v-if="createDialog"
+          slot="createForm"
+          @saved="onCreated"
+          @discarded="onCreateCancelled"
+          @cancel="onCreateCancelled"
+        >
+          <template #default>
+            <object-form-fields :fields="['/name', '/id', '/description', '/visibility', '/template']"></object-form-fields>
+          </template>
+        </projection>
+      </div>
     </sdk-dialog>
   </section>
 </div>

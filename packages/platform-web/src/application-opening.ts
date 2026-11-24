@@ -3,6 +3,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { appAt, type PlatformAppDeclaration } from "./apps";
 import { HOME_APPLICATION_ID, recordApplicationOpened } from "./features/home";
+import { externalLinkOf } from "./external-link";
 
 /**
  * The platform's one entry for opening an application, and the record of when each was last opened.
@@ -15,7 +16,7 @@ import { HOME_APPLICATION_ID, recordApplicationOpened } from "./features/home";
  *
  * A failed record does not stop the application from opening; its error is shown like any other request's.
  */
-export function useApplicationOpening(declarations: Readonly<Ref<readonly PlatformAppDeclaration[]>>) {
+export function useApplicationOpening(declarations: Readonly<Ref<readonly PlatformAppDeclaration[]>>, opensStandalone?: (id: string) => boolean) {
   const route = useRoute();
   const router = useRouter();
 
@@ -46,6 +47,8 @@ export function useApplicationOpening(declarations: Readonly<Ref<readonly Platfo
     } else if (app.href) {
       window.open(app.href, "_blank", "noopener,noreferrer");
       record(id);
+    } else if (app.home && opensStandalone?.(id)) {
+      window.open(externalLinkOf(app.home), "_blank", "noopener,noreferrer");
     } else if (app.home) {
       void router.push(app.home);
     }
