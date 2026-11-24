@@ -13,8 +13,7 @@ $release
 MANIFEST
 archive=$(mktemp)
 trap 'rm -f "$archive"' EXIT
-curl --fail --silent --show-error --location "$url" --output "$archive"
-printf '%s  %s\n' "$sha" "$archive" | sha256sum --check
+sh "$root/../../../scripts/github-download.sh" "$url" "$sha" "$archive"
 mkdir -p "$destination/codex-resources"
 tar -xzf "$archive" -C "$destination" bin/codex bin/codex-exec-server codex-package.json codex-path/rg
 "$destination/bin/codex" --version | grep -Fx "codex-cli $version"

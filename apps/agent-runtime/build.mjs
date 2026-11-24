@@ -42,6 +42,7 @@ export function prepareContext(destination) {
   writeFileSync(join(destination, "inputs.json"), JSON.stringify(record));
   for (const file of [
     "apt-install.sh",
+    "github-download.sh",
     "build-support.mjs",
     "third_party_notices.py",
     ...[

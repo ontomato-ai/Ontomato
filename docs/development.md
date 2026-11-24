@@ -28,6 +28,9 @@ image digests and pnpm versions live in the Dockerfiles. `DEBIAN_MIRROR`,
 When a Debian mirror is set, the image installs its packages from it and then
 restores the base image's sources; if that install fails, it retries once from
 the original sources. Leaving the mirrors unset uses the official sources.
+`GITHUB_DOWNLOAD_PROXIES` optionally lists space-separated URL prefixes that the
+agent-runtime image tries, in order, before GitHub for its pinned downloads (Codex,
+nsjail); every download is still checked against its locked SHA256.
 
 CI publishes final images. Pushes to `develop` publish the `edge` version, pushes to
 `stable` publish the `stable` version, and formal `v*` tags publish the stripped version

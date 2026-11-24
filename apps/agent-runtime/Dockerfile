@@ -4,15 +4,21 @@ ARG NODE_BUILDER_IMAGE=docker.io/library/node:24.21.0@sha256:64af3819f9275802414
 ARG PYTHON_RUNTIME_IMAGE=docker.io/library/python:3.10-slim-bookworm@sha256:2559be987fd64d61badbdafd303ea58a9ccab36d6c3c08bce219e762177d2eca
 FROM ${NODE_RUNTIME_IMAGE} AS node-runtime
 FROM ${NODE_BUILDER_IMAGE} AS sandbox-builder
+# Optional URL prefixes tried before GitHub for pinned downloads (tools/github-download.sh).
+ARG GITHUB_DOWNLOAD_PROXIES=
 COPY sandbox-policy/build-nsjail.sh sandbox-policy/sources.lock /sandbox-policy/
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=bind,source=tools/github-download.sh,target=/tmp/github-download.sh \
+    apt-get update && apt-get install -y --no-install-recommends \
       bison flex libprotobuf-dev protobuf-compiler libnl-route-3-dev pkg-config \
  && /bin/sh /sandbox-policy/build-nsjail.sh
 
 FROM ${NODE_BUILDER_IMAGE} AS codex-builder
 ARG TARGETARCH
-COPY codex/ /codex-source/
-RUN sh /codex-source/install.sh "$TARGETARCH" /codex
+ARG GITHUB_DOWNLOAD_PROXIES=
+# Keep the repository layout that install.sh uses to find the download helper.
+COPY codex/ /codex-source/apps/agent-runtime/codex/
+COPY tools/github-download.sh /codex-source/scripts/github-download.sh
+RUN sh /codex-source/apps/agent-runtime/codex/install.sh "$TARGETARCH" /codex
 
 FROM ${NODE_RUNTIME_IMAGE} AS dependencies
 RUN npm install -g pnpm@9.15.9
