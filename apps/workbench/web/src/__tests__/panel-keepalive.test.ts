@@ -8,6 +8,7 @@ import { PanelHost, provideUnsavedChanges } from "@ontomato/platform-shell";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { panelAuthorDefinitions, panelHostPaths, platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
+  sentPanelReadItems,
   ignoreChanges, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
   panelSnapshot, panelUse, projections, SCHEDULED_TASK, task, type Sent,
 } from "./panel-frame";
@@ -128,8 +129,7 @@ const shownPanel = (element: HTMLElement, left?: HTMLElement) => vi.waitFor(() =
   return found;
 });
 const summaryTitle = (panel: HTMLElement) => panel.querySelector("[data-member='summary'] .sdk-object-summary-title")?.textContent;
-const reads = (sent: Sent[], dataName?: string) => sent.filter(request => request.path === "/api/product-panels/read"
-  && (dataName === undefined || (request.body as Read).dataName === dataName));
+const reads = (sent: Sent[], dataName?: string) => sentPanelReadItems(sent).filter(request => dataName === undefined || (request.body as Read).dataName === dataName);
 
 afterEach(() => {
   snapshotGate = null;

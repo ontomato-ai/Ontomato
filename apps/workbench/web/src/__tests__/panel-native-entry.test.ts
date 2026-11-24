@@ -14,7 +14,7 @@ import { panelNavigator } from "../../../../../packages/platform-web/src/panel-n
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "../../../../../packages/platform-web/src/detail-selection";
 import { startPage } from "../../../../../packages/platform-web/src/shell";
 import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
-import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, type Sent } from "./panel-frame";
+import { sentPanelReadItems, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, type Sent } from "./panel-frame";
 
 /*
  * A native built-in application's panel entry at its original address (big main's ruling, 2026-11-21: one panel route
@@ -294,8 +294,8 @@ it("explains the missing owner permission to a reader admitted to the ontology s
   try {
     expect(router.currentRoute.value.path).toBe("/ontology/agents");
     await vi.waitFor(() => expect(element.querySelector('[role="alert"]')?.textContent).toContain("analysis-agent"));
-    expect(sent).toContainEqual(expect.objectContaining({
-      path: "/api/product-panels/read", body: expect.objectContaining({
+    expect(sentPanelReadItems(sent)).toContainEqual(expect.objectContaining({
+      body: expect.objectContaining({
         source: { kind: "registered", applicationId: "ontology", useId: use.id },
         memberPath: [{ member: "list" }], dataName: "rows",
       }),

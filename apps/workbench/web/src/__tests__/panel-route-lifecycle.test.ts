@@ -10,6 +10,7 @@ import { useApplicationCatalog } from "../../../../../packages/platform-web/src/
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import {
+  sentPanelReadItems, isPanelDataRead,
   ignoreChanges, installPlatform, leaveFrame, manifestP, manifestQ, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
   panelSnapshot, panelUse, projections, SCHEDULED_TASK, task, type Sent,
 } from "./panel-frame";
@@ -88,7 +89,7 @@ function visibility() {
   return { set, reset: () => { set("visible"); current.mockRestore(); } };
 }
 
-const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read").map(request => request.body as Read & { source: unknown });
+const reads = (sent: Sent[]) => sentPanelReadItems(sent).map(request => request.body as Read & { source: unknown });
 const summaryTitle = () => document.querySelector("[data-member='summary'] .sdk-object-summary-title")?.textContent;
 const firstLabel = () => document.querySelector("[data-member='summary'] .sdk-object-summary dt")?.textContent;
 
@@ -138,7 +139,7 @@ it("reconciles definitions and objects on foreground without replacing an unchan
   const foreground = visibility();
   const { app, element, sent } = await open(panelAddress(useQ.path, deepState));
   const definitionReads = () => sent.filter(request => /\/api\/product-(panels|projections)\//.test(request.path)
-    && !request.path.endsWith("/snapshot") && request.path !== "/api/product-panels/read");
+    && !request.path.endsWith("/snapshot") && !isPanelDataRead(request));
   try {
     await vi.waitFor(() => expect(summaryTitle()).toBe(task.title));
     const panel = element.querySelector(".panel-host-coded > *");

@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -18,6 +20,41 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import io.ontomato.dataengine.config.BaseControllerAdvice;
 
 class ProductGrantControllerTest {
+    @Test void batchCheckBindsJacksonListsAndReturnsTheJavaDecisions() throws Exception {
+        var grants = mock(ProductGrantService.class);
+        when(grants.allowedBatch(List.of("builtin-product-frame", "projection"), "use"))
+            .thenReturn(Map.of("builtin-product-frame", true, "projection", false));
+        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, mock(WorkbenchServiceAuthentication.class)))
+            .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+        mvc.perform(post("/product-governance/check-batch").contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"ids":["builtin-product-frame","projection"],"verb":"use"}
+                """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.allowed['builtin-product-frame']").value(true))
+            .andExpect(jsonPath("$.allowed.projection").value(false));
+    }
+
+    @Test void invalidBatchBodiesNeverReachAuthorization() throws Exception {
+        var grants = mock(ProductGrantService.class);
+        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, mock(WorkbenchServiceAuthentication.class)))
+            .setControllerAdvice(new BaseControllerAdvice())
+            .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+        for (String body : List.of(
+            "{\"verb\":\"use\"}",
+            "{\"ids\":\"p\",\"verb\":\"use\"}",
+            "{\"ids\":[],\"verb\":\"use\"}",
+            "{\"ids\":[\"p\",42],\"verb\":\"use\"}",
+            "{\"ids\":[\" \"],\"verb\":\"use\"}",
+            "{\"ids\":[\"p\"]}",
+            "{\"ids\":[" + String.join(",", Collections.nCopies(201, "\"p\"")) + "],\"verb\":\"use\"}"
+        )) {
+            mvc.perform(post("/product-governance/check-batch").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(jsonPath("$.success").value(false));
+        }
+        verifyNoInteractions(grants);
+    }
+
     @Test void registrationBindsTheRealJacksonBodyAndKeepsServiceAuthentication() throws Exception {
         var grants=mock(ProductGrantService.class);
         var authentication=mock(WorkbenchServiceAuthentication.class);

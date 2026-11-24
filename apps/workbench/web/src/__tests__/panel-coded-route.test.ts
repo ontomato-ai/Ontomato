@@ -7,6 +7,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
 import {
+  sentPanelReadItems,
   formSaveCalls, humanIntents, installPlatform, leaveFrame, manifestP, mountPlatformPage, nothingAt, panelAnswer, panelRecord,
   panelSnapshot, panelUse, projections, READER, SCHEDULED_TASK, task, type Sent,
 } from "./panel-frame";
@@ -62,7 +63,7 @@ function answer(request: Sent) {
   return nothingAt(request);
 }
 
-const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read").map(request => request.body as Read);
+const reads = (sent: Sent[]) => sentPanelReadItems(sent).map(request => request.body as Read);
 const member = (root: HTMLElement, name: string) => root.querySelector<HTMLElement>(`.panel-host-coded [data-member='${name}']`);
 
 async function openPage(address: string) {

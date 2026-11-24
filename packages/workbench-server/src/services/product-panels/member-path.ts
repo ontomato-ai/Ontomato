@@ -8,12 +8,14 @@ import {
 } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
-import { currentProductRecord, findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
+import {
+  currentProductRecord, findCurrentProduct, findCurrentProducts, type CurrentProductKind, type CurrentProductRow,
+} from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanelNestedReadRequest, ProductPanelNestedReadResponse } from "@ontomato/contracts/panel-host";
 import { HttpError } from "../../utils/errors";
-import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
+import { productGrantAllowed, productGrantsAllowedBatch, requireProductGrant, type ProductOwner } from "../product-governance/grants";
 import { requirePanelEntry } from "./application-use";
 import { parseStoredDefinition } from "./definition-diagnostics";
 import { readPanelDomainComponents } from "./component-catalogue";
@@ -25,6 +27,71 @@ type Target = { kind: CurrentProductKind; id: string };
 type PanelPathRoot = Pick<ProductPanel, "manifest"> & { id?: string };
 type ReadPathSegment = ProductPanelNestedReadRequest["memberPath"][number];
 type AnyPathSegment = ReadPathSegment | PanelMemberPath[number];
+type RegisteredSource = PanelUseRef & { kind?: "registered" | "frame" };
+type PanelEntry = Awaited<ReturnType<typeof requirePanelEntry>>;
+
+function memoize<K, V>(cache: Map<K, Promise<V>>, key: K, load: () => Promise<V>): Promise<V> {
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const pending = load();
+  cache.set(key, pending);
+  return pending;
+}
+
+function targetKey({ kind, id }: Target) {
+  return `${kind}\0${id}`;
+}
+
+export class PanelReadBatchCache {
+  private readonly entries = new Map<string, Promise<PanelEntry>>();
+  private readonly grants = new Map<string, Promise<boolean>>();
+  private readonly products = new Map<string, Promise<CurrentProductRow | undefined>>();
+
+  constructor(private readonly domainId: string, private readonly viewer: AssistantCredentials) {}
+
+  entry(source: PanelUseRef) {
+    return memoize(this.entries, `${source.applicationId}\0${source.useId}`, () => requirePanelEntry(this.viewer, source));
+  }
+
+  allowed(id: string) {
+    return memoize(this.grants, id, () => productGrantAllowed(id, "use", this.viewer));
+  }
+
+  product(target: Target, client?: QueryClient) {
+    return memoize(this.products, targetKey(target), () => findCurrentProduct(this.domainId, target.kind, target.id, client));
+  }
+
+  async prefetch(targets: readonly Target[]) {
+    const unchecked = [...new Set(targets.map(({ id }) => id))].filter(id => !this.grants.has(id));
+    if (unchecked.length > 0) {
+      const decisions = productGrantsAllowedBatch(unchecked, "use", this.viewer);
+      for (const id of unchecked) this.grants.set(id, decisions.then(allowed => allowed[id]));
+    }
+    const lookups: Promise<CurrentProductRow | undefined>[] = [];
+    for (const kind of ["panel", "projection"] as const) {
+      const ids = [...new Set(targets.filter(target => target.kind === kind).map(target => target.id))]
+        .filter(id => !this.products.has(targetKey({ kind, id })));
+      if (ids.length === 0) continue;
+      const rows = Promise.all(ids.map(async id => ({ id, allowed: await this.allowed(id) })))
+        .then(decisions => {
+          const allowedIds = decisions.filter(decision => decision.allowed).map(decision => decision.id);
+          return allowedIds.length ? findCurrentProducts(this.domainId, kind, allowedIds) : new Map<string, CurrentProductRow>();
+        });
+      for (const id of ids) {
+        const row = rows.then(products => products.get(id));
+        this.products.set(targetKey({ kind, id }), row);
+        lookups.push(row);
+      }
+    }
+    // Keep rejections in the cache for the reads that need those entries.
+    await Promise.allSettled(lookups);
+  }
+}
+
+export function registeredPanelRootId(source: RegisteredSource, { use, framePanelId }: PanelEntry) {
+  // The entry owner only returns framePanelId for its panels renderer.
+  return source.kind === "frame" ? framePanelId : use.panelId;
+}
 
 export interface ResolvedPanelPathStep {
   parentPanel: PanelPathRoot;
@@ -42,9 +109,15 @@ function unavailable(): never {
   throw new HttpError(403, "Panel member is unavailable on this path", "PANEL_MEMBER_FORBIDDEN");
 }
 
-async function requireTarget(owner: ProductOwner, viewer: AssistantCredentials, target: Target, client?: QueryClient) {
-  await requireProductGrant(target.id, "use", viewer);
-  const row = await findCurrentProduct(owner.domainId, target.kind, target.id, client);
+async function requireTarget(
+  owner: ProductOwner, viewer: AssistantCredentials, target: Target, client?: QueryClient, batchCache?: PanelReadBatchCache,
+) {
+  if (batchCache) {
+    if (!await batchCache.allowed(target.id)) throw new HttpError(403, "Product use Grant required", "PRODUCT_FORBIDDEN");
+  } else await requireProductGrant(target.id, "use", viewer);
+  const row = await (batchCache
+    ? batchCache.product(target, client)
+    : findCurrentProduct(owner.domainId, target.kind, target.id, client));
   if (!row) {
     const kind = target.kind === "panel" ? "Panel" : "Projection";
     throw new HttpError(404, `${kind} '${target.id}' does not exist`, "PRODUCT_UNAVAILABLE");
@@ -53,17 +126,16 @@ async function requireTarget(owner: ProductOwner, viewer: AssistantCredentials, 
 }
 
 export async function requireRegisteredPanelRoot(
-  owner: ProductOwner, viewer: AssistantCredentials, source: PanelUseRef & { kind?: "registered" | "frame" },
-  { client, expectedPanelId }: { client?: QueryClient; expectedPanelId?: string } = {},
+  owner: ProductOwner, viewer: AssistantCredentials, source: RegisteredSource,
+  { client, expectedPanelId, batchCache }: { client?: QueryClient; expectedPanelId?: string; batchCache?: PanelReadBatchCache } = {},
 ) {
-  const { use, framePanelId } = await requirePanelEntry(viewer, source);
-  // The entry owner only returns framePanelId for its panels renderer.
-  const id = source.kind === "frame" ? framePanelId : use.panelId;
+  const entry = await (batchCache ? batchCache.entry(source) : requirePanelEntry(viewer, source));
+  const id = registeredPanelRootId(source, entry);
   if (id === undefined || (expectedPanelId !== undefined && expectedPanelId !== id))
     throw new HttpError(404, "This entry does not use the requested application frame", "PANEL_FRAME_UNAVAILABLE");
 
-  const record = await requireTarget(owner, viewer, { kind: "panel", id }, client);
-  return { panel: parseStoredDefinition(productPanelSchema, record, "Panel"), entry: use, framePanelId };
+  const record = await requireTarget(owner, viewer, { kind: "panel", id }, client, batchCache);
+  return { panel: parseStoredDefinition(productPanelSchema, record, "Panel"), entry: entry.use, framePanelId: entry.framePanelId };
 }
 
 async function declaredTarget(
@@ -141,14 +213,14 @@ function pathKey(segment: Pick<PanelMemberPath[number], "member" | "itemKey">): 
 /** Re-resolve the requested path from an authorized root. A denied member never supplies its definition. */
 export function resolvePanelMemberPath<Root extends PanelPathRoot>(
   owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: PanelMemberPath,
-  entry?: ApplicationPanelUse, client?: QueryClient,
+  entry?: ApplicationPanelUse, client?: QueryClient, batchCache?: PanelReadBatchCache,
 ) {
-  return resolveMemberPath(owner, viewer, root, memberPath, entry, client);
+  return resolveMemberPath(owner, viewer, root, memberPath, entry, client, batchCache);
 }
 
 async function resolveMemberPath<Root extends PanelPathRoot>(
   owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: readonly AnyPathSegment[],
-  entry?: ApplicationPanelUse, client?: QueryClient,
+  entry?: ApplicationPanelUse, client?: QueryClient, batchCache?: PanelReadBatchCache,
 ) {
   let panel: Root | ProductPanel = root;
   const ancestors = new Set(root.id === undefined ? [] : [root.id]);
@@ -172,7 +244,7 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
     const target = await declaredTarget(owner, panel, member.target, placement ? undefined : segment.selection, entry, client);
     if (target.kind === "panel" && ancestors.has(target.id))
       throw new HttpError(409, `Panel member '${segment.member}' forms a cycle`, "PANEL_REFERENCE_CYCLE");
-    const record = await requireTarget(owner, viewer, target, client);
+    const record = await requireTarget(owner, viewer, target, client, batchCache);
     if (target.kind === "projection") {
       if (!isFinal) unavailable();
       return {

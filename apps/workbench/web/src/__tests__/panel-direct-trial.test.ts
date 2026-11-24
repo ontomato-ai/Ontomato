@@ -7,7 +7,7 @@ import { panelDefinitionSnapshotSchema } from "@ontomato/contracts/product-subsc
 import { productPanelSchema, productProjectionResponseSchema } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import recorded from "./fixtures/direct-panel-host-http.json";
-import { panelAnswer, pageSkillContextFor, installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
+import { sentPanelReadItems, panelAnswer, pageSkillContextFor, installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
 
 /*
  * The scheduled tasks trial as it is registered (design 8, first gate): P is a Vue component and its declaration, and its
@@ -92,7 +92,7 @@ it("runs the trial's P: choose a task, see it summed up and in its form, run it 
   }] });
   await router.push(use.path);
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
-  const reads = (name: string) => sent.filter(request => request.path === "/api/product-panels/read")
+  const reads = (name: string) => sentPanelReadItems(sent)
     .map(request => request.body as Read).filter(read => read.dataName === name);
   const options = () => element.querySelectorAll<HTMLElement>("[data-member='tasks'] [role='option']");
   try {

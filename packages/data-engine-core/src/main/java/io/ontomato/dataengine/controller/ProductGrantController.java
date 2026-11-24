@@ -4,6 +4,8 @@ import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.ProductGrants;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,6 +18,18 @@ public class ProductGrantController {
     private final WorkbenchServiceAuthentication authentication;
     public ProductGrantController(ProductGrantService grants,WorkbenchServiceAuthentication authentication){this.grants=grants;this.authentication=authentication;}
     @PostMapping("/product-governance/check") public Object check(@RequestBody Map<String,Object> body){return Map.of("allowed",grants.allowed(text(body,"id"),text(body,"verb")));}
+    @PostMapping("/product-governance/check-batch")
+    public Object checkBatch(@RequestBody Map<String, Object> body) {
+        if (!(body.get("ids") instanceof List<?> values) || values.isEmpty() || values.size() > 200)
+            throw new IllegalArgumentException("Expected 1 to 200 product ids");
+        var ids = new ArrayList<String>(values.size());
+        for (Object value : values) {
+            if (!(value instanceof String id) || id.isBlank())
+                throw new IllegalArgumentException("Expected non-blank product id");
+            ids.add(id);
+        }
+        return Map.of("allowed", grants.allowedBatch(ids, text(body, "verb")));
+    }
     @PostMapping("/product-governance/resources") public Object resources(@RequestBody Map<String,Object> body){return Map.of("ids",grants.resources(text(body,"verb")));}
     @PostMapping("/product-governance/grants") public Object grants(@RequestBody Map<String,Object> body){return Map.of("grants",grants.grantViews(text(body,"id")));}
     @PostMapping("/product-governance/principals") public Object principals(@RequestBody Map<String,Object> body){

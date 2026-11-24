@@ -11,7 +11,7 @@ import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import {
   PANEL_MEMBER_RENDER_HEADER, PANEL_NESTED_READ_PATH, productPanelNestedReadRequestSchema, productPanelNestedReadResponseSchema,
-  productPanelReadRequestSchema,
+  PANEL_READ_BATCH_PATH, productPanelReadBatchRequestSchema, productPanelReadRequestSchema,
 } from "@ontomato/contracts/panel-host";
 import {
   cancelHumanPanelOperation, cancelPendingAgentPageQuestion, claimPendingLocalConfirmation,
@@ -46,7 +46,7 @@ import {
 import { HttpError } from "../../utils/errors";
 import { tForLocale } from "../../i18n";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
-import { readProductPanelData } from "../../services/product-panels/data-reads";
+import { readProductPanelData, readProductPanelDataBatch } from "../../services/product-panels/data-reads";
 import { readPanelDomainComponents, validateProjectionComponent } from "../../services/product-panels/component-catalogue";
 import { readNestedPanel, requireRegisteredPanelRoot } from "../../services/product-panels/member-path";
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
@@ -152,6 +152,16 @@ productPanelsRouter.post("/read", wrap(async (req, res) => {
   const viewer = request.source.kind === "candidate" || preview === undefined
     ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
   res.json(await readProductPanelData(owner, viewer, request, (req as AuthenticatedRequest).userName, req));
+}));
+productPanelsRouter.post(PANEL_READ_BATCH_PATH.slice("/product-panels".length), wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const { reads } = productPanelReadBatchRequestSchema.parse(req.body);
+  const results = await readProductPanelDataBatch(owner, credentials, reads, {
+    previewHeader: req.header(BUILD_TEST_HEADER),
+    callerUserName: (req as AuthenticatedRequest).userName,
+    location: req,
+  });
+  res.json({ results });
 }));
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   res.set("Cache-Control", "no-store");

@@ -7,7 +7,9 @@ import type { ProductDefinitionTarget } from "@ontomato/contracts/product-subscr
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { appBuilderPages } from "../../../../../packages/platform-web/src/workbench-routes";
 import PanelCandidateRoute from "../../../../../packages/platform-web/src/pages/PanelCandidateRoute.vue";
-import { confirmDiscard,
+import {
+  sentPanelReadItems, isPanelDataRead,
+  confirmDiscard,
   installPlatform, leaveFrame, mountPlatformPage, nothingAt, PLACE_EVERY_MEMBER, projections, READER, type Sent,
 } from "./panel-frame";
 
@@ -120,7 +122,7 @@ function visibility() {
  */
 const formal = (sent: Sent[]) => sent.filter(request =>
   request.path.startsWith("/api/product-panels")
-    && !["/api/product-panels/definition-stream", "/api/product-panels/read"].includes(request.path)
+    && request.path !== "/api/product-panels/definition-stream" && !isPanelDataRead(request)
   || request.path.includes("/platform/applications") || request.method === "PUT" && request.path.startsWith("/api/product-"));
 
 afterEach(leaveFrame);
@@ -136,7 +138,7 @@ const nameInput = (element: HTMLElement) => vi.waitFor(() => {
   if (!input) throw new Error("The form is not drawn yet");
   return input;
 });
-const candidateReads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read").map(request => request.body as {
+const candidateReads = (sent: Sent[]) => sentPanelReadItems(sent).map(request => request.body as {
   source: unknown; memberPath: unknown; dataName: string;
 });
 

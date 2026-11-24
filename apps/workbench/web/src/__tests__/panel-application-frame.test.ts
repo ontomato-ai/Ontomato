@@ -484,7 +484,7 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
       ? { ...app, panelUses: ontologyUses, framePanelId: ontologyFrame.id }
       : app,
   );
-  installPlatform(responder, router);
+  const sent = installPlatform(responder, router);
 
   await router.push("/ontology/playground");
   const mounted = mountPlatformPage(() => h(defineComponent({
@@ -504,6 +504,12 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
 
     // Only visible count members issued data reads; unauthorized/omitted members issued zero reads.
     expect([...new Set(readMembers)].sort()).toEqual(["knowledge", "objectTypes", "skills"]);
+    const reads = sent.filter(request => request.method === "POST" && request.path.startsWith("/api/product-panels/read"));
+    expect(reads).toEqual([expect.objectContaining({
+      path: "/api/product-panels/read-batch",
+      body: { reads: expect.arrayContaining(["knowledge", "objectTypes", "skills"].map(member =>
+        expect.objectContaining({ memberPath: [{ member }] }))) },
+    })]);
 
     // Forbidden count member renders zero ObjectCount DOM nodes; non-count entry renders zero trailing projection.
     expect(mounted.element.querySelector('[data-member="skills"] .sdk-object-count')).toBeNull();

@@ -6,7 +6,7 @@ import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import en from "element-plus/es/locale/lang/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH } from "@ontomato/contracts/panel-host";
+import { PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import type { ApplicationPanelUse, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -93,6 +93,137 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe("panel data read batching", () => {
+  const read = (member: string): Extract<ProductPanelReadRequest, { dataName: string }> => ({
+    source: { kind: "registered", applicationId: "app-a", useId: "use-1" },
+    memberPath: [{ member }], dataName: "rows", inputs: {},
+  });
+
+  it("lets registered content reads complete while the same entry's frame batch is pending", async () => {
+    const frame = { kind: "frame", applicationId: "app-a", useId: "use-1" } as const;
+    const frameReads = [{ ...read("countA"), source: frame }, { ...read("countB"), source: frame }];
+    const content = read("content");
+    const sent: { path: string; body: unknown }[] = [];
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      const path = new URL(url, "http://localhost").pathname;
+      const body = JSON.parse(String(init.body));
+      sent.push({ path, body });
+      if (path.endsWith("/read-batch")) {
+        await held;
+        return Response.json({ results: [{ status: "empty" }, { status: "empty" }] });
+      }
+      return Response.json({ status: "ready", value: "content" });
+    });
+
+    const counts = Promise.all(frameReads.map(readPanelData));
+    const primary = readPanelData(content);
+    try {
+      await Promise.resolve();
+      expect(sent).toEqual([
+        { path: "/api/product-panels/read-batch", body: { reads: frameReads } },
+        { path: "/api/product-panels/read", body: content },
+      ]);
+      await expect(primary).resolves.toEqual({ status: "ready", value: "content" });
+    } finally {
+      release();
+      await Promise.allSettled([counts, primary]);
+    }
+  });
+
+  it("lets primary reads complete while supplement data from the same panel is pending", async () => {
+    const primaryReads = [read("list"), read("summary")];
+    const supplement = { ...read("list"), dataName: "supplement" };
+    const sent: { path: string; body: unknown }[] = [];
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      const path = new URL(url, "http://localhost").pathname;
+      const body = JSON.parse(String(init.body));
+      sent.push({ path, body });
+      if (path.endsWith("/read-batch")) {
+        return Response.json({ results: primaryReads.map(() => ({ status: "empty" })) });
+      }
+      await held;
+      return Response.json({ status: "ready", value: "supplement" });
+    });
+
+    const primary = Promise.all(primaryReads.map(readPanelData));
+    const secondary = readPanelData(supplement);
+    try {
+      await Promise.resolve();
+      expect(sent).toEqual([
+        { path: "/api/product-panels/read-batch", body: { reads: primaryReads } },
+        { path: "/api/product-panels/read", body: supplement },
+      ]);
+      await expect(primary).resolves.toEqual([{ status: "empty" }, { status: "empty" }]);
+    } finally {
+      release();
+      await Promise.allSettled([primary, secondary]);
+    }
+  });
+
+  it("sends a lone read on /read and pairs concurrent results in request order under fake timers", async () => {
+    const sent: { path: string; body: unknown }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      const path = new URL(url, "http://localhost").pathname;
+      sent.push({ path, body: JSON.parse(String(init.body)) });
+      return Response.json(path.endsWith("/read-batch")
+        ? { results: [{ status: "forbidden" }, { status: "ready", value: 42 }] }
+        : { status: "empty" });
+    });
+    vi.useFakeTimers();
+    try {
+      await expect(readPanelData(read("single"))).resolves.toEqual({ status: "empty" });
+      await expect(Promise.all([readPanelData(read("first")), readPanelData(read("second"))]))
+        .resolves.toEqual([{ status: "forbidden" }, { status: "ready", value: 42 }]);
+      expect(sent).toEqual([
+        { path: "/api/product-panels/read", body: read("single") },
+        { path: "/api/product-panels/read-batch", body: { reads: [read("first"), read("second")] } },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends the overflow of a full batch on /read when only one item remains", async () => {
+    const sent: { path: string; size: number }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      const path = new URL(url, "http://localhost").pathname;
+      const body = JSON.parse(String(init.body));
+      const empty = { status: "empty" };
+      sent.push({ path, size: body.reads?.length ?? 1 });
+      return Response.json(body.reads ? { results: body.reads.map(() => empty) } : empty);
+    });
+    const results = await Promise.all(Array.from({ length: 51 }, (_, i) => readPanelData(read(`member-${i}`))));
+    expect(results).toHaveLength(51);
+    expect(sent).toEqual([
+      { path: "/api/product-panels/read-batch", size: 50 },
+      { path: "/api/product-panels/read", size: 1 },
+    ]);
+  });
+
+  it("rejects every waiter on HTTP 403 or a mismatched result count and notifies denial once", async () => {
+    const denied = vi.fn();
+    const unsubscribe = onPanelReadDenied(denied);
+    const batch = () => Promise.allSettled([readPanelData(read("first")), readPanelData(read("second"))]);
+    try {
+      vi.stubGlobal("fetch", async () => Response.json({ error: { message: "Denied" } }, { status: 403 }));
+      const rejected = { status: "rejected", reason: expect.objectContaining({ status: 403 }) };
+      await expect(batch()).resolves.toEqual([rejected, rejected]);
+      expect(denied).toHaveBeenCalledTimes(1);
+
+      vi.stubGlobal("fetch", async () => Response.json({ results: [{ status: "empty" }] }));
+      const mismatch = { status: "rejected", reason: expect.objectContaining({ message: expect.stringContaining("count") }) };
+      await expect(batch()).resolves.toEqual([mismatch, mismatch]);
+      expect(denied).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
 });
 
 describe("the panel host's addresses", () => {

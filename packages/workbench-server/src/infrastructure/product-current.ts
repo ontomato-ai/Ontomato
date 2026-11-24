@@ -34,6 +34,27 @@ export async function findCurrentProduct(domain: string, kind: CurrentProductKin
   return result.rows[0];
 }
 
+export async function findCurrentProducts(
+  domain: string, kind: CurrentProductKind, ids: readonly string[],
+  client: Pick<PoolClient, "query"> = getPostgresPool(),
+): Promise<Map<string, CurrentProductRow>> {
+  const builtinIds: string[] = [], domainIds: string[] = [];
+  for (const id of new Set(ids)) (isBuiltinProductId(id) ? builtinIds : domainIds).push(id);
+  const [builtin, scoped] = await Promise.all([
+    builtinIds.length && client.query<CurrentProductRow>(
+      `SELECT NULL::text AS "domainId",NULL::text AS "ownerId",id,definition,revision,
+         created_at AS "createdAt",updated_at AS "updatedAt"
+       FROM ${t(builtinProductTables[kind])} WHERE id = ANY($1::text[])`, [builtinIds],
+    ),
+    domainIds.length && client.query<CurrentProductRow>(
+      `SELECT ${currentProductColumns} FROM ${t(currentProductTables[kind])} WHERE domain_id = $1 AND id = ANY($2::text[])`,
+      [domain, domainIds],
+    ),
+  ]);
+  const rows = [...(builtin ? builtin.rows : []), ...(scoped ? scoped.rows : [])];
+  return new Map(rows.map(row => [row.id, row]));
+}
+
 export function currentProductRecord(row: CurrentProductRow, editable: boolean) {
   const def = row.definition;
   const normalized = def && typeof def === "object" && !Array.isArray(def) && "manifest" in def

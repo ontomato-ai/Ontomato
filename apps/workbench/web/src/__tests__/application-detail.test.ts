@@ -17,6 +17,7 @@ import source from "../../../../../packages/ontology-manager/resources/builtin-p
 import html from "../../../../../packages/ontology-manager/resources/builtin-panels/application-detail/panel.html?raw";
 import module from "../../../../../packages/ontology-manager/resources/builtin-panels/application-detail/panel.mjs?raw";
 import {
+  sentPanelReadItems,
   installPlatform,
   leaveFrame,
   mountPlatformPage,
@@ -260,6 +261,12 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
               value: appRecord("app-no-panels", "No Panels App", { canMaintain: true, canEditEntries: true }),
             });
           }
+          if (targetKey === "app-with-panels") {
+            return Response.json({
+              status: "ready",
+              value: appRecord("app-with-panels", "App with Panels", { canMaintain: true, canEditEntries: true }),
+            });
+          }
           return Response.json({
             status: "ready",
             value: appRecord("app-editable", "Editable App", { canMaintain: true, canEditEntries: true }),
@@ -273,7 +280,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
           return Response.json({ status: "ready", value: emptyForm(targetKey) });
         }
         if (member === "usedPanelsList" && body.dataName === "rows") {
-          if (targetKey === "app-editable") return panelsGate.promise.then((payload) => Response.json(payload));
+          if (targetKey === "app-with-panels") return panelsGate.promise.then((payload) => Response.json(payload));
           return Response.json({ status: "empty" });
         }
         return Response.json({ status: "empty" });
@@ -318,9 +325,9 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
         expect(element.textContent).toContain("not a panel application");
       });
 
-      // 5. Switch to Assets tab on app-editable while usedPanelsList is still pending (total === null):
+      // 5. Open Assets for another app and hold the panel read started by this step.
       //    Heading shows count-less "Used panels", NOT "Used panels (0)".
-      await route.router.push(panelAddress(use.path, { selected: appRef("app-editable"), tab: "assets" }, detailPanel.manifest));
+      await route.router.push(panelAddress(use.path, { selected: appRef("app-with-panels"), tab: "assets" }, detailPanel.manifest));
       await vi.waitFor(() => {
         const heading = element.querySelector(".apps-assets-grid .apps-card-title")?.textContent?.trim();
         expect(heading).toBe("Used panels");
@@ -422,8 +429,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
         inspectedPanel: panelRef("panel-b2"),
       });
       // Confirm panelMembersList never read panel-b1; it read panel-b2 directly.
-      const memberReadsAfterB = route.sent
-        .filter((req) => req.path === "/api/product-panels/read")
+      const memberReadsAfterB = sentPanelReadItems(route.sent)
         .map((req) => req.body as ProductPanelReadRequest)
         .filter((b) => b.memberPath[0]?.member === "panelMembersList")
         .map((b) => (b.inputs.target as { primaryKey?: string } | undefined)?.primaryKey);

@@ -18,6 +18,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
+import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
@@ -57,7 +58,9 @@ import {
   readSdkComponentRecord,
 } from "./component-catalogue";
 import { resolvePinnedInputs } from "./input-wiring";
-import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
+import { PanelReadBatchCache, registeredPanelRootId, requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
+
+const logger = createLogger("panel-data-reads");
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadMember = ProductPanel["manifest"]["members"][string];
@@ -469,7 +472,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
 }
 
-async function resolveReadMember(owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest) {
+async function resolveReadMember(
+  owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest, batchCache?: PanelReadBatchCache,
+) {
   const { source, memberPath } = request;
   if (source.kind === "candidate") {
     const { resolvePanelCandidateMember } = await import("../workspaces/panel-candidate");
@@ -480,8 +485,8 @@ async function resolveReadMember(owner: ProductOwner, viewer: AssistantCredentia
     return { member, projection, panel, inputs: request.inputs, viewer: { ...viewer, headers } };
   }
 
-  const { panel, entry } = await requireRegisteredPanelRoot(owner, viewer, source);
-  const placement = await resolvePanelMemberPath(owner, viewer, panel, memberPath, entry);
+  const { panel, entry } = await requireRegisteredPanelRoot(owner, viewer, source, { batchCache });
+  const placement = await resolvePanelMemberPath(owner, viewer, panel, memberPath, entry, undefined, batchCache);
   if (placement.kind !== "projection")
     throw new HttpError(403, "The member path does not select a projection", "PANEL_MEMBER_FORBIDDEN");
   const fieldInputs = Object.entries(placement.member.inputs ?? {}).filter(([, ref]) => "field" in ref);
@@ -618,9 +623,10 @@ export async function executeProjectionDataRead(
 
 export async function readProductPanelData(
   owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest, callerUserName?: string, location?: McpRequestLocation,
+  batchCache?: PanelReadBatchCache,
 ): Promise<ProductPanelReadResponse> {
   try {
-    const { member, projection, panel, inputs: submittedInputs, viewer: readViewer } = await resolveReadMember(owner, viewer, request);
+    const { member, projection, panel, inputs: submittedInputs, viewer: readViewer } = await resolveReadMember(owner, viewer, request, batchCache);
     const slot = request.memberPath.at(-1)!.member;
     if ("operations" in request) {
       const inputs = effectiveInputs(projection, member, submittedInputs);
@@ -678,6 +684,41 @@ export async function readProductPanelData(
     if (error instanceof HttpError && (error.status === 401 || error.status === 403)) return { status: "forbidden" };
     if (error instanceof HttpError || error instanceof BackendUnavailableError || error instanceof z.ZodError || error instanceof SyntaxError)
       return { status: "error", message: error.message };
+    if (batchCache) {
+      logger.error("Panel batch item failed", error instanceof Error ? error : undefined);
+      return { status: "error", message: "Service unavailable" };
+    }
     throw error;
   }
+}
+
+export async function readProductPanelDataBatch(
+  owner: ProductOwner, credentials: AssistantCredentials, requests: readonly ProductPanelReadRequest[],
+  { previewHeader, callerUserName, location }: { previewHeader?: string; callerUserName?: string; location?: McpRequestLocation } = {},
+): Promise<ProductPanelReadResponse[]> {
+  const registeredViewer = previewHeader === undefined ? credentials
+    : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: previewHeader } };
+  const batchCache = new PanelReadBatchCache(owner.domainId, registeredViewer);
+  const registered = requests.flatMap(({ source, memberPath }) => source.kind === "candidate" ? [] : [{ source, memberPath }]);
+
+  const entries = await Promise.allSettled(registered.map(async request =>
+    registeredPanelRootId(request.source, await batchCache.entry(request.source))));
+  await batchCache.prefetch(entries.flatMap(entry =>
+    entry.status === "fulfilled" && entry.value !== undefined ? [{ kind: "panel", id: entry.value }] : []));
+
+  const members = await Promise.allSettled(registered.map(async ({ source, memberPath }) => {
+    const { panel } = await requireRegisteredPanelRoot(owner, registeredViewer, source, { batchCache });
+    const first = memberPath[0];
+    if (first.selection || first.member.startsWith("$state.")) return;
+    const target = panel.manifest.members[first.member]?.target;
+    if (!target) return;
+    if ("projectionId" in target) return { kind: "projection" as const, id: target.projectionId };
+    if ("panelId" in target) return { kind: "panel" as const, id: target.panelId };
+  }));
+  await batchCache.prefetch(members.flatMap(member =>
+    member.status === "fulfilled" && member.value ? [member.value] : []));
+
+  return Promise.all(requests.map(request => readProductPanelData(
+    owner, request.source.kind === "candidate" ? credentials : registeredViewer, request, callerUserName, location, batchCache,
+  )));
 }

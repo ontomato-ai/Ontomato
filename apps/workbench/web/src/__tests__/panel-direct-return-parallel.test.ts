@@ -5,7 +5,7 @@ import { productPanelSchema, productProjectionResponseSchema } from "@ontomato/c
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import recorded from "./fixtures/direct-panel-host-http.json";
-import { panelAnswer, pageSkillContextFor, installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
+import { isPanelDataRead, panelAnswer, pageSkillContextFor, installPlatform, mountPlatformPage, nothingAt, panelUse, type Sent } from "./panel-frame";
 
 /*
  * Coming back to a panel's page (hot return): the shell's catalog already names the reader's admitted entries, so an
@@ -65,7 +65,7 @@ it("admits and displays a known entry immediately while Java's answer refreshes 
   const relations = heldRelations();
   const { app, element, sent } = await open(relations.answer);
   try {
-    await vi.waitFor(() => expect(reached(sent, "/api/product-panels/read")).toBe(true));
+    await vi.waitFor(() => expect(sent.some(isPanelDataRead)).toBe(true));
     expect(reached(sent, "/api/product-panels/panel-schedules-trial")).toBe(true);
     expect(reached(sent, "/api/product-projections/projection-schedules-tasks")).toBe(true);
     // Admitted immediately from the known entry table: shown right away without waiting for resolve-entry.

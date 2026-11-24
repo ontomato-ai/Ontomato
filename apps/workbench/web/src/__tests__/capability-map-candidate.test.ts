@@ -43,6 +43,7 @@ import {
   projectionMaterial,
 } from "../../../../../packages/apps-sdk/examples/panels/capability-map/material.mjs";
 import {
+  sentPanelReadItems,
   installPlatform,
   leaveFrame,
   mountPlatformPage,
@@ -145,7 +146,7 @@ type Read = {
 };
 
 const reads = (sent: Sent[]) =>
-  sent.filter((request) => request.path === "/api/product-panels/read").map((request) => request.body as Read);
+  sentPanelReadItems(sent).map((request) => request.body as Read);
 
 function memberData({ dataName, inputs, runtimeParams }: Read): unknown {
   if (dataName === "schema") {

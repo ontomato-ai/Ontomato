@@ -5,7 +5,7 @@ import { panelAddress } from "@ontomato/contracts/panel-host";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import type { ProductPanel, DirectProjection } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
-import { panelAnswer, panelSnapshot, installPlatform, mountPlatformPage, nothingAt, panelUse, READER, type Sent } from "./panel-frame";
+import { sentPanelReadItems, panelAnswer, panelSnapshot, installPlatform, mountPlatformPage, nothingAt, panelUse, READER, type Sent } from "./panel-frame";
 
 /*
  * A panel at its application's address (direct rendering design 5, 8): its component runs in the platform's own
@@ -114,7 +114,7 @@ async function open(address: string) {
 }
 
 /** The data the page read: its members' operations, read for every member from the start, are not data. */
-const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read")
+const reads = (sent: Sent[]) => sentPanelReadItems(sent)
   .map(request => request.body as { source: unknown; memberPath: unknown; dataName?: string; inputs: { task?: { primaryKey: string } } })
   .filter(read => read.dataName !== undefined);
 
