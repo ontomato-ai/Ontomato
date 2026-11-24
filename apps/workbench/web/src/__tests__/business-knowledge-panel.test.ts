@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { DisplayPageController } from "../../../../../packages/agent-shell-ui/src/conversation-display";
+import type { BatchItemOperationOutcome, PanelHumanOperationConfirmation } from "@ontomato/contracts/panel-agent";
 import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
@@ -38,6 +39,8 @@ import {
 const APP_ID = "ontology";
 const ENTRY_A = "bk-a";
 const ENTRY_B = "bk-b";
+const ENTRY_C = "bk-c";
+const ALREADY_APPROVED_REASON = "This business knowledge entry is already approved.";
 
 const use = panelUse(
   "ontology-knowledge",
@@ -201,41 +204,48 @@ function toListRow(record: KnowledgeRecord) {
 
 function mountKnowledgeRoute(options: {
   initialState?: Record<string, unknown>;
+  initialRecords?: KnowledgeRecord[];
   confirmLeave?: () => Promise<boolean>;
   beforeListRead?: () => Promise<void>;
   beforeFormRead?: () => Promise<void>;
   formReadResponse?: (dataName: string) => Response | null;
 } = {}) {
-  const records = new Map<string, KnowledgeRecord>([
-    [
-      ENTRY_A,
-      {
-        primaryKey: ENTRY_A,
-        knowledgeTitle: "Order Cutoff Rule",
-        knowledgeText: "Orders after 18:00 ship next day.",
-        knowledgeTags: ["orders"],
-        status: "1",
-      },
-    ],
-    [
-      ENTRY_B,
-      {
-        primaryKey: ENTRY_B,
-        knowledgeTitle: "Refund SLA",
-        knowledgeText: "Refunds settle within 3 business days.",
-        knowledgeTags: ["billing"],
-        status: "0",
-      },
-    ],
-  ]);
+  const defaultRecords: KnowledgeRecord[] = [
+    {
+      primaryKey: ENTRY_A,
+      knowledgeTitle: "Order Cutoff Rule",
+      knowledgeText: "Orders after 18:00 ship next day.",
+      knowledgeTags: ["orders"],
+      status: "1",
+    },
+    {
+      primaryKey: ENTRY_B,
+      knowledgeTitle: "Refund SLA",
+      knowledgeText: "Refunds settle within 3 business days.",
+      knowledgeTags: ["billing"],
+      status: "0",
+    },
+  ];
+  const records = new Map<string, KnowledgeRecord>(
+    (options.initialRecords ?? defaultRecords).map((record) => [record.primaryKey, { ...record }]),
+  );
   const savedCalls: SavedCall[] = [];
   const dispatchedActions: DispatchedActionCall[] = [];
   const formTargetReads: Array<{ dataName: string; targetPrimaryKey: string | null }> = [];
   let controller: DisplayPageController | null = null;
   let intentCounter = 0;
-  const preparedIntents = new Map<string, { operationId: string; call: PanelOperationCall }>();
+  const preparedIntents = new Map<
+    string,
+    {
+      operationId: string;
+      call?: PanelOperationCall;
+      calls?: PanelOperationCall[];
+      confirmation: PanelHumanOperationConfirmation;
+    }
+  >();
 
   const confirmLeaveUnsaved = vi.fn(async () => (options.confirmLeave ? options.confirmLeave() : true));
+  const onDisplayDirty = vi.fn();
 
   const router = createRouter({
     history: createMemoryHistory(),
@@ -245,6 +255,7 @@ function mountKnowledgeRoute(options: {
         component: PanelApplicationRoute,
         props: {
           applicationId: APP_ID,
+          onDisplayDirty,
           registerPageController(next: DisplayPageController) {
             controller = next;
             return () => {
@@ -311,7 +322,50 @@ function mountKnowledgeRoute(options: {
                 inputSchema: {},
                 resultSchema: {},
                 batch: true,
-                ...(record.status !== "0" ? { unavailable: { reason: "Already approved" } } : {}),
+                ...(record.status !== "0" ? { unavailable: { reason: ALREADY_APPROVED_REASON } } : {}),
+              },
+            },
+          });
+        }
+        if (member === "approveAll") {
+          const refs = (body.inputs.knowledge ?? body.inputs.target) as Array<{ primaryKey?: string }> | undefined;
+          if (!Array.isArray(refs) || refs.length === 0) return Response.json({ status: "ready", value: {} });
+          const allApproved = refs.every((ref) => {
+            const record = ref?.primaryKey ? records.get(ref.primaryKey) : undefined;
+            return !record || record.status !== "0";
+          });
+          return Response.json({
+            status: "ready",
+            value: {
+              approve: {
+                kind: "action",
+                handlerRef: APPROVE_KNOWLEDGE,
+                label: "Approve",
+                effect: "write",
+                target: { source: "input", input: "knowledge" },
+                inputSchema: {},
+                resultSchema: {},
+                batch: true,
+                ...(allApproved ? { unavailable: { reason: ALREADY_APPROVED_REASON } } : {}),
+              },
+            },
+          });
+        }
+        if (member === "deleteAll") {
+          const refs = (body.inputs.knowledge ?? body.inputs.target) as Array<{ primaryKey?: string }> | undefined;
+          if (!Array.isArray(refs) || refs.length === 0) return Response.json({ status: "ready", value: {} });
+          return Response.json({
+            status: "ready",
+            value: {
+              delete: {
+                kind: "action",
+                handlerRef: DELETE_KNOWLEDGE,
+                label: "Delete",
+                effect: "write",
+                target: { source: "input", input: "knowledge" },
+                inputSchema: {},
+                resultSchema: {},
+                batch: true,
               },
             },
           });
@@ -388,16 +442,40 @@ function mountKnowledgeRoute(options: {
       return Response.json({ status: "empty" });
     }
     if (request.method === "POST" && path === "/api/panel-operations/intents") {
-      const { operationId, call } = request.body as { operationId: string; call: PanelOperationCall };
+      const { operationId, call, calls } = request.body as {
+        operationId: string;
+        call?: PanelOperationCall;
+        calls?: PanelOperationCall[];
+      };
       intentCounter += 1;
       const intentId = `22222222-2222-4222-8222-22222222222${intentCounter}`;
-      preparedIntents.set(intentId, { operationId, call });
-      const label = operationId === "approve.approve" ? "Approve" : operationId === "remove.delete" ? "Delete" : "Save";
+      const label =
+        operationId === "approve.approve" || operationId === "approveAll.approve"
+          ? "Approve"
+          : operationId === "remove.delete" || operationId === "deleteAll.delete"
+            ? "Delete"
+            : "Save";
+      const confirmation: PanelHumanOperationConfirmation = calls
+        ? {
+            kind: "batch",
+            targets: {
+              objects: calls.map((item) => {
+                const target = item.target as { objectType: string; primaryKey: string };
+                return {
+                  target: { objectType: target.objectType, primaryKey: target.primaryKey },
+                  label: records.get(target.primaryKey)?.knowledgeTitle ?? target.primaryKey,
+                };
+              }),
+              total: calls.length,
+            },
+          }
+        : { kind: "none" };
+      preparedIntents.set(intentId, { operationId, call, calls, confirmation });
       return Response.json({
         intentId,
         operationId,
         label,
-        confirmation: { kind: "none" },
+        confirmation,
         autoMode: true,
       });
     }
@@ -405,19 +483,63 @@ function mountKnowledgeRoute(options: {
     if (intentRead && request.method === "GET") {
       const entry = preparedIntents.get(intentRead[1]!);
       const operationId = entry?.operationId ?? "form.save";
-      const label = operationId === "approve.approve" ? "Approve" : operationId === "remove.delete" ? "Delete" : "Save";
+      const label =
+        operationId === "approve.approve" || operationId === "approveAll.approve"
+          ? "Approve"
+          : operationId === "remove.delete" || operationId === "deleteAll.delete"
+            ? "Delete"
+            : "Save";
       return Response.json({
         intentId: intentRead[1],
         operationId,
         label,
-        confirmation: { kind: "none" },
+        confirmation: entry?.confirmation ?? { kind: "none" },
         autoMode: true,
       });
     }
     const intentDispatch = /^\/api\/panel-operations\/intents\/([^/]+)\/dispatch$/.exec(path);
     if (intentDispatch && request.method === "POST") {
       const entry = preparedIntents.get(intentDispatch[1]!)!;
-      const target = entry.call.target as { primaryKey?: string } | undefined;
+      if (entry.calls && entry.operationId === "approveAll.approve") {
+        const affectedObjects: Array<{ objectType: string; primaryKey: string }> = [];
+        const items: Array<{ target: { objectType: string; primaryKey: string }; outcome: BatchItemOperationOutcome }> =
+          entry.calls.map((item) => {
+            const target = item.target as { objectType: string; primaryKey: string };
+            const existing = records.get(target.primaryKey);
+            if (!existing || existing.status !== "0") {
+              return {
+                target: { objectType: target.objectType, primaryKey: target.primaryKey },
+                outcome: { kind: "skipped", reason: ALREADY_APPROVED_REASON },
+              };
+            }
+            records.set(target.primaryKey, { ...existing, status: "1" });
+            dispatchedActions.push({ operationId: entry.operationId, targetPrimaryKey: target.primaryKey });
+            affectedObjects.push({ objectType: BUSINESS_KNOWLEDGE, primaryKey: target.primaryKey });
+            return {
+              target: { objectType: target.objectType, primaryKey: target.primaryKey },
+              outcome: {
+                kind: "success",
+                data: {},
+                affected: {
+                  objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: target.primaryKey }],
+                  objectTypes: [BUSINESS_KNOWLEDGE],
+                },
+              },
+            };
+          });
+        return Response.json({
+          kind: "dispatched",
+          intentId: intentDispatch[1],
+          outcome: {
+            kind: "batch",
+            items,
+            ...(affectedObjects.length > 0
+              ? { affected: { objects: affectedObjects, objectTypes: [BUSINESS_KNOWLEDGE] } }
+              : {}),
+          },
+        });
+      }
+      const target = entry.call?.target as { primaryKey?: string } | undefined;
       const targetPrimaryKey = target?.primaryKey ?? null;
       dispatchedActions.push({ operationId: entry.operationId, targetPrimaryKey });
       if (entry.operationId === "approve.approve") {
@@ -456,7 +578,7 @@ function mountKnowledgeRoute(options: {
           },
         });
       }
-      const input = entry.call.input as PanelFormSaveInput | undefined;
+      const input = entry.call?.input as PanelFormSaveInput | undefined;
       const values = (input?.values ?? {}) as Record<string, unknown>;
       savedCalls.push({ targetPrimaryKey, values: { ...values } });
       const savedKey = targetPrimaryKey ?? `bk-new-${savedCalls.length}`;
@@ -493,6 +615,7 @@ function mountKnowledgeRoute(options: {
     dispatchedActions,
     formTargetReads,
     confirmLeaveUnsaved,
+    onDisplayDirty,
     getController: () => controller,
     async open() {
       useApplicationCatalog().applications.value = [
@@ -552,6 +675,23 @@ function clickListOption(element: HTMLElement, text: string) {
   if (!option) throw new Error(`Expected list option containing "${text}"`);
   const trigger = option.querySelector<HTMLElement>(".sdk-object-list-item-btn") ?? option;
   trigger.click();
+}
+
+function findListCheckbox(element: HTMLElement, label: string): HTMLInputElement | null {
+  return element.querySelector<HTMLInputElement>(`.sdk-object-list input[type="checkbox"][aria-label="${label}"]`);
+}
+
+function toggleListCheckbox(element: HTMLElement, label: string, checked: boolean) {
+  const input = findListCheckbox(element, label);
+  if (!input) throw new Error(`Expected list checkbox for "${label}"`);
+  input.checked = checked;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function findBatchActionButton(element: HTMLElement, label: string): HTMLButtonElement | undefined {
+  return [...element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-batch-actions button")].find(
+    (button) => button.textContent?.trim() === label,
+  );
 }
 
 function formHeading(element: HTMLElement): string | null {
@@ -1333,6 +1473,238 @@ describe("business-knowledge builtin panel Save button aligns with form.canSubmi
       expect(findButton(element, "Save")?.disabled).toBe(true);
     } finally {
       formReadGate.release?.();
+      app.unmount();
+    }
+  });
+});
+
+describe("business-knowledge builtin panel batch approve skipped receipt", () => {
+  it("shows persistent OperationBatchReceipt with skipped reason for a mixed batch, removes succeeded items from checked, and dismisses manually", { timeout: 20000 }, async () => {
+    const route = mountKnowledgeRoute({ initialState: { selected: knowledgeRef(ENTRY_A) } });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(findListCheckbox(element, "Order Cutoff Rule")).not.toBeNull();
+        expect(findListCheckbox(element, "Refund SLA")).not.toBeNull();
+      }, { timeout: 5000 });
+
+      toggleListCheckbox(element, "Order Cutoff Rule", true);
+      toggleListCheckbox(element, "Refund SLA", true);
+
+      await vi.waitFor(() => {
+        const approveBatch = findBatchActionButton(element, "Approve");
+        expect(approveBatch).toBeTruthy();
+        expect(approveBatch?.disabled).toBe(false);
+      }, { timeout: 5000 });
+
+      findBatchActionButton(element, "Approve")!.click();
+
+      const confirmButton = await vi.waitFor(() => {
+        const button = document.body.querySelector<HTMLButtonElement>(".el-message-box__btns .el-button--primary");
+        expect(button).not.toBeNull();
+        return button!;
+      }, { timeout: 5000 });
+      confirmButton.click();
+
+      const receiptSelector = ".sdk-object-list-batch-receipt";
+      await vi.waitFor(() => {
+        expect(element.querySelector(receiptSelector)).not.toBeNull();
+      }, { timeout: 5000 });
+
+      expect(route.dispatchedActions).toEqual([{ operationId: "approveAll.approve", targetPrimaryKey: ENTRY_B }]);
+      expect(element.querySelectorAll(".sdk-batch-receipt")).toHaveLength(1);
+      const items = [...element.querySelectorAll(`${receiptSelector} li`)];
+      expect(items.map((item) => item.getAttribute("data-outcome"))).toEqual(["skipped", "success"]);
+      expect(items[0]?.textContent).toContain("Order Cutoff Rule");
+      expect(items[0]?.textContent).toContain(ALREADY_APPROVED_REASON);
+      expect(items[1]?.textContent).toContain("Refund SLA");
+      expect(element.querySelector(`${receiptSelector} [role="status"] p`)?.textContent).toContain("1 skipped");
+
+      // Succeeded entry is removed from checked; skipped entry stays checked.
+      await vi.waitFor(() => {
+        expect(findListCheckbox(element, "Order Cutoff Rule")?.checked).toBe(true);
+        expect(findListCheckbox(element, "Refund SLA")?.checked).toBe(false);
+      }, { timeout: 5000 });
+
+      // Receipt remains visible until manually dismissed.
+      expect(element.querySelector(receiptSelector)).not.toBeNull();
+      element.querySelector<HTMLButtonElement>(`${receiptSelector} .sdk-batch-receipt-dismiss`)!.click();
+      await vi.waitFor(() => {
+        expect(element.querySelector(receiptSelector)).toBeNull();
+      }, { timeout: 5000 });
+      expect(findListCheckbox(element, "Order Cutoff Rule")?.checked).toBe(true);
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("hides batch approve when all checked items are already approved and renders all-skipped receipt when items become approved before dispatch", { timeout: 20000 }, async () => {
+    const initialRecords: KnowledgeRecord[] = [
+      {
+        primaryKey: ENTRY_A,
+        knowledgeTitle: "Order Cutoff Rule",
+        knowledgeText: "Orders after 18:00 ship next day.",
+        knowledgeTags: ["orders"],
+        status: "1",
+      },
+      {
+        primaryKey: ENTRY_B,
+        knowledgeTitle: "Refund SLA",
+        knowledgeText: "Refunds settle within 3 business days.",
+        knowledgeTags: ["billing"],
+        status: "0",
+      },
+      {
+        primaryKey: ENTRY_C,
+        knowledgeTitle: "Shipping SLA",
+        knowledgeText: "Domestic orders ship within 24 hours.",
+        knowledgeTags: ["shipping"],
+        status: "0",
+      },
+    ];
+    const route = mountKnowledgeRoute({ initialState: { selected: knowledgeRef(ENTRY_A) }, initialRecords });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(findListCheckbox(element, "Order Cutoff Rule")).not.toBeNull();
+        expect(findListCheckbox(element, "Refund SLA")).not.toBeNull();
+        expect(findListCheckbox(element, "Shipping SLA")).not.toBeNull();
+      }, { timeout: 5000 });
+
+      // Checking only already-approved ENTRY_A hides approveAll via hideWhenUnavailable.
+      toggleListCheckbox(element, "Order Cutoff Rule", true);
+      await vi.waitFor(() => {
+        expect(findBatchActionButton(element, "Delete")).toBeTruthy();
+      }, { timeout: 5000 });
+      expect(findBatchActionButton(element, "Approve")).toBeUndefined();
+      toggleListCheckbox(element, "Order Cutoff Rule", false);
+
+      // Check two pending entries so approveAll is visible, then mark both approved before dispatch.
+      toggleListCheckbox(element, "Refund SLA", true);
+      toggleListCheckbox(element, "Shipping SLA", true);
+      await vi.waitFor(() => {
+        const approveBatch = findBatchActionButton(element, "Approve");
+        expect(approveBatch).toBeTruthy();
+        expect(approveBatch?.disabled).toBe(false);
+      }, { timeout: 5000 });
+
+      route.records.set(ENTRY_B, { ...route.records.get(ENTRY_B)!, status: "1" });
+      route.records.set(ENTRY_C, { ...route.records.get(ENTRY_C)!, status: "1" });
+
+      findBatchActionButton(element, "Approve")!.click();
+
+      const confirmButton = await vi.waitFor(() => {
+        const button = document.body.querySelector<HTMLButtonElement>(".el-message-box__btns .el-button--primary");
+        expect(button).not.toBeNull();
+        return button!;
+      }, { timeout: 5000 });
+      confirmButton.click();
+
+      const receiptSelector = ".sdk-object-list-batch-receipt";
+      await vi.waitFor(() => {
+        expect(element.querySelector(receiptSelector)).not.toBeNull();
+      }, { timeout: 5000 });
+
+      expect(route.dispatchedActions).toHaveLength(0);
+      const items = [...element.querySelectorAll(`${receiptSelector} li`)];
+      expect(items.map((item) => item.getAttribute("data-outcome"))).toEqual(["skipped", "skipped"]);
+      expect(items[0]?.textContent).toContain("Refund SLA");
+      expect(items[0]?.textContent).toContain(ALREADY_APPROVED_REASON);
+      expect(items[1]?.textContent).toContain("Shipping SLA");
+      expect(items[1]?.textContent).toContain(ALREADY_APPROVED_REASON);
+      expect(element.querySelector(`${receiptSelector} [role="status"] p`)?.textContent).toContain("2 skipped");
+
+      // Neither entry succeeded, so both remain checked until the user clears or dismisses the receipt.
+      expect(findListCheckbox(element, "Refund SLA")?.checked).toBe(true);
+      expect(findListCheckbox(element, "Shipping SLA")?.checked).toBe(true);
+
+      element.querySelector<HTMLButtonElement>(`${receiptSelector} .sdk-batch-receipt-dismiss`)!.click();
+      await vi.waitFor(() => {
+        expect(element.querySelector(receiptSelector)).toBeNull();
+      }, { timeout: 5000 });
+    } finally {
+      app.unmount();
+    }
+  });
+});
+
+describe("business-knowledge builtin panel same-page unsaved navigation guard", () => {
+  it("blocks same-page state changes such as mode: view via host blocksNavigation while preserving the unsaved draft", { timeout: 20000 }, async () => {
+    const route = mountKnowledgeRoute({ initialState: { selected: knowledgeRef(ENTRY_A) } });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(route.getController()).not.toBeNull();
+        expect(findButton(element, "Edit")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      findButton(element, "Edit")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBe("Edit Knowledge");
+        expect(titleInput(element)?.value).toBe("Order Cutoff Rule");
+      }, { timeout: 5000 });
+
+      // Agent or human edits leave the form dirty and signal display-dirty to the panel host.
+      const fillResult = await route.getController()!.fillForm!({
+        member: "form",
+        values: { "/knowledgeTitle": "Order Cutoff Rule Unsaved Draft" },
+      });
+      expect(fillResult).toMatchObject({
+        ok: true,
+        member: "form",
+        filledFields: ["/knowledgeTitle"],
+      });
+      await vi.waitFor(() => {
+        expect(route.onDisplayDirty).toHaveBeenLastCalledWith(true);
+        expect(titleInput(element)?.value).toBe("Order Cutoff Rule Unsaved Draft");
+        expect(element.querySelector(".sdk-owner-form-changed")).not.toBeNull();
+      }, { timeout: 5000 });
+
+      const controller = route.getController()!;
+      const formEl = element.querySelector('[data-field="/knowledgeTitle"]');
+      const currentAddress = `${use.path}?selected=${ENTRY_A}`;
+      const blockedCases = [
+        { address: use.path, state: { mode: "view" } },
+        { address: currentAddress, state: { mode: "view" } },
+        { address: use.path, state: { mode: "create" } },
+        { address: `${use.path}?selected=${ENTRY_B}` },
+        { address: use.path, state: { selected: knowledgeRef(ENTRY_B) } },
+        { address: use.path },
+      ] as const;
+
+      for (const next of blockedCases) {
+        expect(controller.blocksNavigation!(next)).toBe(true);
+      }
+
+      // No-op presentations matching the current edit state are not blocked.
+      const allowedCases = [
+        { address: currentAddress },
+        { address: currentAddress, state: { mode: "edit" } },
+        { address: use.path, state: { selected: knowledgeRef(ENTRY_A) } },
+      ] as const;
+      for (const next of allowedCases) {
+        expect(controller.blocksNavigation!(next)).toBe(false);
+      }
+
+      // Guarded same-page mode: "view" leaves the mounted form and unsaved draft untouched.
+      if (!controller.blocksNavigation!({ address: use.path, state: { mode: "view" } })) {
+        controller.applyState({ mode: "view" });
+      }
+      expect(formHeading(element)).toBe("Edit Knowledge");
+      expect(element.querySelector('[data-field="/knowledgeTitle"]')).toBe(formEl);
+      expect(titleInput(element)?.value).toBe("Order Cutoff Rule Unsaved Draft");
+      expect(element.querySelector(".sdk-owner-form-changed")).not.toBeNull();
+      expect(route.onDisplayDirty).toHaveBeenLastCalledWith(true);
+
+      // Saving clears the dirty flag so same-page state changes are no longer blocked.
+      findButton(element, "Save")!.click();
+      await vi.waitFor(() => {
+        expect(route.savedCalls).toHaveLength(1);
+        expect(formHeading(element)).toBeNull();
+        expect(route.onDisplayDirty).toHaveBeenLastCalledWith(false);
+      }, { timeout: 5000 });
+      expect(controller.blocksNavigation!({ address: use.path, state: { mode: "view" } })).toBe(false);
+    } finally {
       app.unmount();
     }
   });

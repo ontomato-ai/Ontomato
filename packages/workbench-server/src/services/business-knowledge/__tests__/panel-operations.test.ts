@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PanelOperationIntent, PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import {
   APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE,
 } from "@ontomato/contracts/panel-client-requests";
@@ -6,6 +7,107 @@ import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 import { m7ServerOperations } from "../panel-operations";
+
+const dispatchState = vi.hoisted(() => ({
+  intents: new Map<string, PanelOperationIntent>(),
+  invalidatedTargets: [] as unknown[],
+}));
+
+vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
+vi.mock("../../../config/environment", () => ({ environment: { agentRuntime: () => ({ callbackUrl: "http://workbench.test" }) } }));
+vi.mock("../../assistant/skills", () => ({
+  readAssistantSkillView: vi.fn(),
+  resolvePageSkillSource: vi.fn(),
+  loadedPageSkillVersion: vi.fn(),
+}));
+vi.mock("../../product-panels/application-use", () => ({
+  requirePanelUseEntry: async () => ({
+    use: {
+      id: "use-bk",
+      panelId: "panel-bk",
+      pageKey: "business-knowledge",
+      path: "/ontology/knowledge",
+      access: { access: "domain-member" as const },
+      inputs: {},
+    },
+    framePanelId: undefined,
+  }),
+}));
+vi.mock("../../product-panels/current", () => {
+  const checkedPort = { kind: "list" as const, items: { kind: "object" as const, objectType: BUSINESS_KNOWLEDGE } };
+  const panel = {
+    id: "panel-bk",
+    manifest: {
+      state: {
+        selected: { type: { kind: "object" as const, objectType: BUSINESS_KNOWLEDGE } },
+        checked: { type: checkedPort },
+      },
+      members: {
+        approve: { target: { projectionId: "proj-approve" }, inputs: { knowledge: { state: "selected" } } },
+        approveAll: { target: { projectionId: "proj-approve-all" }, inputs: { knowledge: { state: "checked" } } },
+      },
+    },
+  };
+  const projections = {
+    "proj-approve": {
+      id: "proj-approve",
+      name: "Approve",
+      componentId: "@ontomato/sdk:OperationButton",
+      binding: { kind: "PlatformOperation" as const, id: APPROVE_KNOWLEDGE },
+      inputs: { knowledge: { kind: "object" as const, objectType: BUSINESS_KNOWLEDGE } },
+      data: {},
+      operations: {
+        approve: { operation: { kind: "PlatformOperation" as const, id: APPROVE_KNOWLEDGE }, target: { input: "knowledge" } },
+      },
+    },
+    "proj-approve-all": {
+      id: "proj-approve-all",
+      name: "Approve",
+      componentId: "@ontomato/sdk:OperationButton",
+      binding: { kind: "PlatformOperation" as const, id: APPROVE_KNOWLEDGE },
+      inputs: { knowledge: checkedPort },
+      data: {},
+      operations: {
+        approve: { operation: { kind: "PlatformOperation" as const, id: APPROVE_KNOWLEDGE }, target: { input: "knowledge" } },
+      },
+    },
+  };
+  return {
+    readCurrentPanelRecord: async () => panel,
+    requireDirectPanelMember: async (_owner: unknown, _credentials: unknown, _panel: unknown, slot: "approve" | "approveAll") => {
+      const member = panel.manifest.members[slot];
+      return { member, projection: projections[member.target.projectionId as keyof typeof projections] };
+    },
+  };
+});
+vi.mock("../../product-panels/operation-store", () => ({
+  panelOperationStore: {
+    async get(_owner: unknown, id: string) {
+      const intent = dispatchState.intents.get(id);
+      if (!intent) throw new Error(`Unknown intent ${id}`);
+      return { kind: "current" as const, intent: structuredClone(intent) };
+    },
+    async insert(_owner: unknown, intent: PanelOperationIntent) {
+      dispatchState.intents.set(intent.intentId, structuredClone(intent));
+      return { kind: "current" as const, intent: structuredClone(intent) };
+    },
+    async claim(_owner: unknown, intent: PanelOperationIntent) {
+      const existing = dispatchState.intents.get(intent.intentId);
+      if (!existing || existing.dispatched || existing.invalidated) return false;
+      dispatchState.intents.set(intent.intentId, structuredClone({ ...intent, dispatched: true }));
+      return true;
+    },
+    async outcome(_owner: unknown, id: string, outcome: PanelOperationOutcome) {
+      const existing = dispatchState.intents.get(id);
+      if (existing) existing.outcome = structuredClone(outcome);
+    },
+    async invalidatePendingObjectWrites(_owner: unknown, _excludeId: string, objects: readonly unknown[]) {
+      dispatchState.invalidatedTargets.push(...objects);
+    },
+  },
+}));
+
+import { dispatchHumanPanelOperation, prepareHumanPanelOperation } from "../../product-panels/operations";
 
 /*
  * The business knowledge server operations: their target shapes, the data-query requests they send, the success data they
@@ -186,6 +288,17 @@ describe("business knowledge panel server operations", () => {
     expect(await operation.execute(refused.host, target)).toEqual({
       kind: "refusal", code: "KNOWLEDGE_APPROVE_REFUSED", message: "The entry is governed elsewhere",
     });
+
+    const alreadyApproved = hostWith(answers("/admin/getBussinessKnowledge", {
+      success: true,
+      data: { "k-1": { ...entry, status: 1 } },
+    }));
+    expect(await operation.execute({ ...alreadyApproved.host, locale: "en" }, target)).toEqual({
+      kind: "refusal",
+      code: "KNOWLEDGE_APPROVE_REFUSED",
+      message: en["panels.knowledge.alreadyApproved"],
+    });
+    expect(alreadyApproved.sent.filter(item => item.path.endsWith("/admin/editBussinessKnowledge"))).toHaveLength(0);
   });
 
   it("reports approve availability from owner status for single and batch checks", async () => {
@@ -355,5 +468,146 @@ describe("business knowledge panel server operations", () => {
       { handlerRef: APPROVE_KNOWLEDGE, effect: "write", batch: true, kind: "action", targetInput: "knowledge", inspectImpact: undefined },
       { handlerRef: DELETE_KNOWLEDGE, effect: "write", batch: true, kind: "action", targetInput: "knowledge", inspectImpact: `${DELETE_KNOWLEDGE}.inspect-impact` },
     ]);
+  });
+});
+
+describe("business knowledge batch approval through panel dispatch", () => {
+  beforeEach(() => {
+    dispatchState.intents.clear();
+    dispatchState.invalidatedTargets.length = 0;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubOwnerFetch(entries: Record<string, typeof entry>) {
+    const sent: { url: string; body: Record<string, unknown> }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string | URL, init?: Parameters<typeof fetch>[1]) => {
+      const targetUrl = String(url);
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
+      sent.push({ url: targetUrl, body });
+      if (targetUrl.endsWith("/admin/getBussinessKnowledge")) {
+        return Response.json({ success: true, data: entries });
+      }
+      if (targetUrl.endsWith("/admin/editBussinessKnowledge")) {
+        return Response.json({ success: true });
+      }
+      throw new Error(`Unexpected fetch URL: ${targetUrl}`);
+    }));
+    return sent;
+  }
+
+  it("skips already-approved entries in a mixed batch and only edits pending entries", async () => {
+    const pending = { ...entry, knowledgeID: "k-1", knowledgeTitle: "Pending rule", status: 0 };
+    const approved = { ...entry, knowledgeID: "k-2", knowledgeTitle: "Approved rule", status: 1 };
+    const sent = stubOwnerFetch({ "k-1": pending, "k-2": approved });
+
+    const calls = [
+      { target: { kind: "object" as const, objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, input: {} },
+      { target: { kind: "object" as const, objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }, input: {} },
+    ] as const;
+
+    const prepared = await prepareHumanPanelOperation(actor.owner, actor.credentials, {
+      applicationId: "ontology",
+      useId: "use-bk",
+      operationId: "approveAll.approve",
+      calls: [...calls],
+    });
+    const dispatched = await dispatchHumanPanelOperation(actor.owner, actor.credentials, prepared.intentId);
+
+    expect(dispatched).toEqual({
+      kind: "dispatched",
+      intentId: prepared.intentId,
+      outcome: {
+        kind: "batch",
+        items: [
+          {
+            target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" },
+            outcome: { kind: "skipped", reason: en["panels.knowledge.alreadyApproved"] },
+          },
+          {
+            target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" },
+            outcome: {
+              kind: "success",
+              data: {},
+              affected: {
+                objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }],
+                objectTypes: [BUSINESS_KNOWLEDGE],
+              },
+            },
+          },
+        ],
+        affected: {
+          objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }],
+          objectTypes: [BUSINESS_KNOWLEDGE],
+        },
+      },
+    });
+
+    const edits = sent.filter(item => item.url.endsWith("/admin/editBussinessKnowledge"));
+    expect(edits).toHaveLength(1);
+    expect(edits[0]?.body).toEqual({ ...pending, status: 1 });
+  });
+
+  it("returns all skipped without calling editBussinessKnowledge when every entry is already approved", async () => {
+    const approvedA = { ...entry, knowledgeID: "k-1", knowledgeTitle: "Approved A", status: 1 };
+    const approvedB = { ...entry, knowledgeID: "k-2", knowledgeTitle: "Approved B", status: 1 };
+    const sent = stubOwnerFetch({ "k-1": approvedA, "k-2": approvedB });
+
+    const prepared = await prepareHumanPanelOperation(actor.owner, actor.credentials, {
+      applicationId: "ontology",
+      useId: "use-bk",
+      operationId: "approveAll.approve",
+      calls: [
+        { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }, input: {} },
+        { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, input: {} },
+      ],
+    });
+    const dispatched = await dispatchHumanPanelOperation(actor.owner, actor.credentials, prepared.intentId);
+
+    expect(dispatched).toEqual({
+      kind: "dispatched",
+      intentId: prepared.intentId,
+      outcome: {
+        kind: "batch",
+        items: [
+          {
+            target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" },
+            outcome: { kind: "skipped", reason: en["panels.knowledge.alreadyApproved"] },
+          },
+          {
+            target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" },
+            outcome: { kind: "skipped", reason: en["panels.knowledge.alreadyApproved"] },
+          },
+        ],
+      },
+    });
+    expect(sent.filter(item => item.url.endsWith("/admin/editBussinessKnowledge"))).toHaveLength(0);
+    expect(dispatchState.invalidatedTargets).toHaveLength(0);
+  });
+
+  it("refuses a direct single approve dispatch when the entry is already approved", async () => {
+    const approved = { ...entry, knowledgeID: "k-1", knowledgeTitle: "Approved A", status: 1 };
+    const sent = stubOwnerFetch({ "k-1": approved });
+
+    const prepared = await prepareHumanPanelOperation(actor.owner, actor.credentials, {
+      applicationId: "ontology",
+      useId: "use-bk",
+      operationId: "approve.approve",
+      call: { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }, input: {} },
+    });
+    const dispatched = await dispatchHumanPanelOperation(actor.owner, actor.credentials, prepared.intentId);
+
+    expect(dispatched).toEqual({
+      kind: "dispatched",
+      intentId: prepared.intentId,
+      outcome: {
+        kind: "refusal",
+        code: "KNOWLEDGE_APPROVE_REFUSED",
+        message: en["panels.knowledge.alreadyApproved"],
+      },
+    });
+    expect(sent.filter(item => item.url.endsWith("/admin/editBussinessKnowledge"))).toHaveLength(0);
   });
 });
