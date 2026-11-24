@@ -617,7 +617,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectFormFields",
     role: "presentation",
     meaning:
-      "Renders a selected subset of an enclosing `ObjectForm`'s fields (`fields`, `section`, `group`, or `rest`) inside panel-authored cards, tabs, or wizard steps while keeping one shared form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and live assistant form filling. It reads nothing itself and binds no ontology element.",
+      "Renders a selected subset of an enclosing `ObjectForm`'s fields (`fields`, `parent`, `section`, `group`, or `rest`) inside panel-authored layouts, including field slots. Absolute field paths and `parent` can select active object sub-fields. Every slice shares form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and live assistant form filling. It reads nothing itself and binds no ontology element.",
   }),
   defineComponentMeta({
     componentId: "PathTree",

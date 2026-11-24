@@ -1,18 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, provide, ref } from "vue";
+import { createApp, defineComponent, h, nextTick, provide, ref, type Slots } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import type { PanelFormField } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormField } from "@ontomato/contracts/panel-projection";
 import { FUNCTION } from "@ontomato/contracts/platform-object-types";
 import { randomId } from "@ontomato/contracts/random-id";
 import { createPanelBackController } from "@ontomato/platform-shell";
 import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 import { panelContextKey } from "../../../../../packages/apps-sdk/src/panel/context";
-import { directPanelContext } from "../../../../../packages/apps-sdk/src/panel/direct";
+import { directPanelContext, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { usePanelFormDraft } from "../../../../../packages/apps-sdk/src/panel/form-draft";
 import { usePanelBack } from "../../../../../packages/apps-sdk/src/panel/back";
 import PageHeader from "../../../../../packages/apps-sdk/src/base/PageHeader.vue";
@@ -100,6 +100,8 @@ function mountFormScenario(options: {
   values?: Record<string, unknown>;
   onSave?: (input: Record<string, unknown>) => { ok: true } | { refuse: { message: string; fields: Record<string, string> } };
   customSlot?: boolean;
+  slots?: Slots;
+  describeDraft?: (request: PanelMemberReadRequest) => Promise<PanelFormDescription>;
   withHeaderAndBack?: boolean;
   initialUrl?: string;
 }) {
@@ -220,7 +222,10 @@ function mountFormScenario(options: {
     },
     read: async (request): Promise<ProductPanelReadResponse> => {
       if (request.operations) return { status: "ready", value: { save: saveDescriptor } as never };
-      const proposed = (request.inputs?.values as Record<string, unknown> | undefined) ?? undefined;
+      const proposed = request.inputs.values as Record<string, unknown> | undefined;
+      if (proposed !== undefined && options.describeDraft) {
+        return { status: "ready", value: await options.describeDraft(request) };
+      }
       return {
         status: "ready",
         value: {
@@ -239,16 +244,17 @@ function mountFormScenario(options: {
 
   const backHandleRef = { current: null as ReturnType<typeof usePanelBack> | null };
   const panelContext = directPanelContext(mount.instance);
+  let draft!: ReturnType<typeof usePanelFormDraft>;
 
   const InnerHost = defineComponent({
     setup() {
-      const draft = options.withHeaderAndBack ? usePanelFormDraft("form") : null;
+      draft = usePanelFormDraft("form");
       if (options.withHeaderAndBack) {
         backHandleRef.current = usePanelBack(true, backCalls, { forms: "form" });
       }
       return () => {
         const children = [];
-        if (options.withHeaderAndBack && draft) {
+        if (options.withHeaderAndBack) {
           children.push(
             h(PageHeader, {
               title: "Edit Function",
@@ -275,7 +281,7 @@ function mountFormScenario(options: {
             }),
           );
         } else {
-          children.push(mount.member("form"));
+          children.push(mount.member("form", options.slots));
         }
         return h("div", { class: "test-host" }, children);
       };
@@ -297,7 +303,7 @@ function mountFormScenario(options: {
     element.remove();
   });
 
-  return { mount, element, savedPayloads, backCalls, confirmLeaveUnsaved, backHandleRef };
+  return { mount, element, savedPayloads, backCalls, confirmLeaveUnsaved, backHandleRef, draft };
 }
 
 describe("ObjectForm multi-card, multi-tab, multi-step, and custom-slot forms sharing one draft", () => {
@@ -531,4 +537,169 @@ describe("ObjectForm multi-card, multi-tab, multi-step, and custom-slot forms sh
     await nextTick();
     expect(element.querySelector<HTMLInputElement>('[data-field="/code"] input')?.value).toBe("return (a - b) * 100;");
   });
+});
+
+const choice = (value: string) => ({ value, label: value, description: null, disabled: false, disabledReason: null });
+const formField = (path: string, control: PanelFormField["control"] = { kind: "text" }): PanelFormField => ({
+  path, label: path, control, valueSchema: {}, required: false, readOnly: false,
+});
+
+it("renders active nested object fields in a field slot with one shared draft and only top-level claims", async () => {
+  const escapePointer = (segment: string) => segment.replaceAll("~", "~0").replaceAll("/", "~1");
+  const order = "Order/Domestic~";
+  const selectedClass = ref(order);
+  const parent = (name: string) => `/dataPermissions/${escapePointer(name)}`;
+  const archive = parent("Archive");
+  const orderPath = parent(order);
+  const row = formField("/rowPermission");
+  const fieldPermissions = formField("/fieldPermissions", {
+    kind: "choice-matrix",
+    rows: [{ key: "amount", label: "Amount", disabled: false, disabledReason: null }],
+    options: [choice("visible")],
+  });
+  const { element, mount, draft } = mountFormScenario({
+    config: {},
+    fields: [
+      formField("/dataPermissions", {
+        kind: "object",
+        fields: [
+          formField("/mode", { kind: "select", options: [choice("active"), choice("inactive")] }),
+          { ...formField("/Archive", { kind: "object", fields: [row, fieldPermissions] }), readOnly: true },
+        ],
+        variantBy: "/mode",
+        variants: {
+          active: [formField(`/${escapePointer(order)}`, {
+            kind: "object",
+            fields: [
+              row,
+              fieldPermissions,
+              { ...formField("/advanced"), advanced: true },
+              formField("/notes"),
+              formField("/hidden", { kind: "hidden" }),
+            ],
+          })],
+          inactive: [],
+        },
+      }),
+      row,
+    ],
+    values: {
+      dataPermissions: {
+        mode: "active",
+        [order]: { rowPermission: "current", fieldPermissions: {} },
+        Archive: { rowPermission: "archived", fieldPermissions: {} },
+      },
+      rowPermission: "top level",
+    },
+    slots: {
+      default: () => [h(ObjectFormFields, { fields: ["/dataPermissions"] }), h(ObjectFormFields, { rest: true })],
+      "field-/dataPermissions": () => [
+        h(ObjectFormFields, {
+          parent: parent(selectedClass.value),
+          exclude: ["/notes", `${orderPath}/advanced`],
+        }),
+        h(ObjectFormFields, { fields: [`${orderPath}/advanced`], inlineAdvanced: true }),
+      ],
+      [`field-${archive}/rowPermission`]: ({ path, value, disabled }) => [
+        h("button", { "data-field": path, disabled }, value),
+      ],
+    },
+  });
+  const input = (path: string) => element.querySelector<HTMLInputElement>(`[data-field="${path}"] input`);
+  await vi.waitFor(() => expect(input(`${orderPath}/rowPermission`)?.value).toBe("current"));
+  expect(element.querySelector('[data-form-group="rest"] [data-field="/rowPermission"] input')).toBe(input("/rowPermission"));
+  expect(input(`${orderPath}/advanced`)).not.toBeNull();
+  expect(element.querySelectorAll(`[data-field="${orderPath}/advanced"]`)).toHaveLength(1);
+  expect(element.querySelector(`[data-field="${orderPath}/notes"], [data-field="${orderPath}/hidden"]`)).toBeNull();
+
+  const handle = mount.instance.forms.handle("form")!;
+  setFieldValue(element, `${orderPath}/rowPermission`, "amount > 100");
+  element.querySelector<HTMLButtonElement>(`[data-field="${orderPath}/fieldPermissions"] button`)!.click();
+  expect(handle.values.value.dataPermissions).toMatchObject({
+    [order]: { rowPermission: "amount > 100", fieldPermissions: { amount: "visible" } },
+  });
+  expect(draft.value?.dirty).toBe(true);
+
+  selectedClass.value = "Archive";
+  await nextTick();
+  expect(input(`${orderPath}/rowPermission`)).toBeNull();
+  expect(element.querySelector<HTMLButtonElement>(`button[data-field="${archive}/rowPermission"]`)?.disabled).toBe(true);
+  expect(element.querySelector<HTMLFieldSetElement>(`[data-field="${archive}/fieldPermissions"] fieldset`)?.disabled).toBe(true);
+
+  selectedClass.value = order;
+  await nextTick();
+  expect(input(`${orderPath}/rowPermission`)?.value).toBe("amount > 100");
+  handle.set("/dataPermissions/mode", "inactive");
+  await nextTick();
+  expect(input(`${orderPath}/rowPermission`)).toBeNull();
+  expect(input(`${orderPath}/advanced`)).toBeNull();
+});
+
+function refreshedDescription(): PanelFormDescription {
+  return {
+    fields: [formField("/name"), formField("/notes"), formField("/catalogue", {
+      kind: "select",
+      presentation: "radio",
+      options: [choice("catalogue-item")],
+    })],
+    values: { name: "Owner response", notes: "Owner response", catalogue: "catalogue-item" },
+    revision: 2,
+    errors: [],
+    save: formSaveMeta,
+  };
+}
+
+it.each([true, false])("refreshes field metadata without overwriting edits made during the read (initially dirty: %s)", async (initiallyDirty) => {
+  let answer!: (description: PanelFormDescription) => void;
+  const pending = new Promise<PanelFormDescription>((resolve) => { answer = resolve; });
+  const describeDraft = vi.fn(() => pending);
+  const { element, mount, draft, savedPayloads } = mountFormScenario({ config: {}, describeDraft });
+  await vi.waitFor(() => expect(element.querySelector('[data-field="/name"] input')).not.toBeNull());
+  const handle = mount.instance.forms.handle("form")!;
+  if (initiallyDirty) setFieldValue(element, "/name", "Draft name");
+
+  const refreshing = draft.value!.refreshDraft();
+  await vi.waitFor(() => expect(describeDraft).toHaveBeenCalledWith(expect.objectContaining({
+    inputs: expect.objectContaining({
+      changedField: null,
+      values: { ...initialValues, ...(initiallyDirty ? { name: "Draft name" } : {}) },
+    }),
+  })));
+  setFieldValue(element, "/notes", "Typed during refresh");
+  answer({
+    ...refreshedDescription(),
+    errors: [{ field: "/notes", code: "invalid_format", message: "Check this note" }],
+  });
+  await refreshing;
+  await nextTick();
+
+  expect(element.querySelector('[data-field="/catalogue"] input[type="radio"]')).not.toBeNull();
+  expect(handle.errors.value["/notes"]).toBe("Check this note");
+  const draftValues = { ...initialValues, ...(initiallyDirty ? { name: "Draft name" } : {}), notes: "Typed during refresh" };
+  expect(handle.values.value).toEqual(draftValues);
+  expect(draft.value?.dirty).toBe(true);
+  if (initiallyDirty) {
+    await handle.submit();
+    expect(savedPayloads[0]).toMatchObject({ revision: 1, submittedFields: ["/name", "/notes"], values: draftValues });
+    return;
+  }
+  await handle.reset();
+  expect(handle.values.value).toEqual(initialValues);
+  expect(handle.dirty.value).toBe(false);
+});
+
+it("adopts a manual refresh as the clean baseline through the form handle", async () => {
+  const description = refreshedDescription();
+  const { element, mount } = mountFormScenario({ config: {}, describeDraft: async () => description });
+  await vi.waitFor(() => expect(element.querySelector('[data-field="/name"] input')).not.toBeNull());
+  const handle = mount.instance.forms.handle("form")!;
+
+  await handle.refreshDraft();
+  await nextTick();
+  expect(element.querySelector<HTMLInputElement>('[data-field="/catalogue"] input[type="radio"]')?.checked).toBe(true);
+  expect(handle.values.value).toEqual(description.values);
+  expect(handle.dirty.value).toBe(false);
+  handle.set("/name", "Local edit");
+  await handle.reset();
+  expect(handle.values.value).toEqual(description.values);
 });

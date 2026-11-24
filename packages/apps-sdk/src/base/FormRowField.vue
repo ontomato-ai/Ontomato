@@ -14,7 +14,7 @@ const props = defineProps<{ field: PanelFormField; path: string; index: number; 
 const { t } = useI18n();
 const controls = useFormControls();
 const absolutePath = computed(() => `${props.path}/${props.index}${props.field.path}`);
-const customSlot = computed(() => controls.resolveFieldSlot(props.field, absolutePath.value, props.path, props.index));
+const customSlot = computed(() => controls.resolveFieldSlot(props.field, absolutePath.value, props.disabled, props.path, props.index));
 </script>
 
 <template>

@@ -878,6 +878,24 @@ function reread() {
     },
   );
 }
+
+async function refreshDraft(): Promise<void> {
+  const current = target.value;
+  if (current === null || !description.value) return;
+  const reading = ++latestRead;
+  const generation = editGeneration;
+  const answer = await forms.describe({ target: current, values: prunedValues.value, changedField: null });
+  if (reading !== latestRead) return;
+  if (!canSettle.value && generation === editGeneration) {
+    adopt(answer);
+    return;
+  }
+  const previouslyPruned = prunedValues.value;
+  ownerShown.value = answer;
+  description.value = fixDescription(answer);
+  if (!jsonValuesEqual(previouslyPruned, prunedValues.value)) values.value = prunedValues.value;
+  errors.value = fieldMessages(answer.errors);
+}
 onBeforeUnmount(panel.instance.onOperationCompleted(async ({ operation }) => {
   const into = target.value;
   if (!into || !canSettle.value || saving.value) return;
@@ -1217,9 +1235,24 @@ const claimedPaths = computed<ReadonlySet<string>>(() => {
   return merged;
 });
 
+function resolveSliceField(path: string) {
+  const topLevel = drawn.value.find((field) => field.path === path);
+  if (topLevel) return { field: topLevel, path, disabled: topLevel.readOnly };
+  const resolved = resolveActiveField(drawn.value, values.value, path);
+  return resolved && { field: resolved.field, path, disabled: resolved.readOnly };
+}
+
 provide(formFieldsContextKey, {
   drawn,
   groups: resolvedGroups,
+  resolveField: resolveSliceField,
+  childFields(parent) {
+    const entry = resolveSliceField(parent);
+    if (entry?.field.control.kind !== "object") return [];
+    return panelFormObjectActiveFields(entry.field.control, valueAt(values.value, parent))
+      .filter((field) => field.control.kind !== "hidden")
+      .map((field) => ({ field, path: parent + field.path, disabled: entry.disabled || field.readOnly }));
+  },
   registerClaim(token, paths) {
     fieldSliceClaims.set(token, paths);
   },
@@ -1253,7 +1286,7 @@ provide(formControlsKey, {
   remove,
   reorder,
   invalid: markInvalid,
-  resolveFieldSlot(field, absolutePath, arrayPath, index) {
+  resolveFieldSlot(field, absolutePath, disabled, arrayPath, index) {
     const pointerToDot = (pointer: string) => pointer.replace(/^\/+/u, "").replaceAll("/", ".");
     const dotName = arrayPath !== undefined
       ? `field-${pointerToDot(arrayPath)}.*.${pointerToDot(field.path)}`
@@ -1272,7 +1305,7 @@ provide(formControlsKey, {
       value: valueAt(values.value, absolutePath),
       error: allErrors.value[absolutePath],
       changed: changed.value.has(absolutePath),
-      disabled: field.readOnly || saving.value,
+      disabled: disabled || field.readOnly || saving.value,
       set: (value: RuntimeJsonValue) => set(absolutePath, value),
       remove: () => remove(absolutePath),
     };
@@ -1313,6 +1346,7 @@ useProjectionForm({
     submitting: saving,
     canSubmit,
     set,
+    refreshDraft,
     submit: () => panel.instance.forms.submit(slot.slot),
     reset: async (options) => {
       if (options?.confirm) return await confirmDiscard();

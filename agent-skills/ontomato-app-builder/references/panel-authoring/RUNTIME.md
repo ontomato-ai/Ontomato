@@ -128,11 +128,11 @@ function usePanelOutputs(member: string): ComputedRef<Readonly<Record<string, Ru
 ### usePanelFormDraft
 
 Binds one mounted `ObjectForm` slot to `<page-header :draft="draft">`: returns `null` while the form slot is absent
-(or `when` is false), and otherwise exposes reactive `dirty`, `saving`, `canSave`, `save()`, and `discard()` wired
-straight to `instance.forms.handle(slot)`.
+(or `when` is false), and otherwise exposes the header's draft controls and `refreshDraft()` wired straight to
+`instance.forms.handle(slot)`.
 
 ```ts
-function usePanelFormDraft(slot: MaybeRefOrGetter<string | null | undefined>, options?: UsePanelFormDraftOptions | undefined): ComputedRef<PageHeaderDraft | null>
+function usePanelFormDraft(slot: MaybeRefOrGetter<string | null | undefined>, options?: UsePanelFormDraftOptions | undefined): ComputedRef<PanelFormDraftControls | null>
 ```
 
 ### UsePanelFormDraftOptions
@@ -227,6 +227,8 @@ interface PanelFormHandle {
   readonly canSubmit: Readonly<Ref<boolean>>;
   /** Sets one field's value; a field the owner marks `refreshOnChange` has the owner asked again. */
   set(path: string, value: RuntimeJsonValue): void;
+  /** Refreshes the owner's fields and validation for the current values, preserving unsaved edits. */
+  refreshDraft(): Promise<void>;
   /** Submits the form through its owner. */
   submit(): Promise<unknown>;
   /**

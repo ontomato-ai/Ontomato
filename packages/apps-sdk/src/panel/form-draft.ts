@@ -15,19 +15,24 @@ export interface UsePanelFormDraftOptions {
   confirmDiscard?: boolean;
 }
 
+export interface PanelFormDraftControls extends PageHeaderDraft {
+  /** Refreshes the owner's fields and validation for the current values, preserving unsaved edits. */
+  refreshDraft(): Promise<void>;
+}
+
 /**
  * Binds one mounted `ObjectForm` slot to `<page-header :draft="draft">`: returns `null` while the form slot is absent
- * (or `when` is false), and otherwise exposes reactive `dirty`, `saving`, `canSave`, `save()`, and `discard()` wired
- * straight to `instance.forms.handle(slot)`.
+ * (or `when` is false), and otherwise exposes the header's draft controls and `refreshDraft()` wired straight to
+ * `instance.forms.handle(slot)`.
  */
 export function usePanelFormDraft(
   slot: MaybeRefOrGetter<string | null | undefined>,
   options?: UsePanelFormDraftOptions,
-): ComputedRef<PageHeaderDraft | null> {
+): ComputedRef<PanelFormDraftControls | null> {
   const { instance } = usePanelContext();
   const confirmDiscard = options?.confirmDiscard ?? true;
 
-  return computed<PageHeaderDraft | null>(() => {
+  return computed<PanelFormDraftControls | null>(() => {
     if (options?.when !== undefined && !toValue(options.when)) return null;
     const slotName = toValue(slot);
     if (!slotName) return null;
@@ -37,6 +42,7 @@ export function usePanelFormDraft(
       dirty: handle.dirty.value,
       saving: handle.submitting.value,
       canSave: handle.canSubmit.value,
+      refreshDraft: () => handle.refreshDraft(),
       save: () => {
         // ObjectForm displays owner validation/refusal feedback inline on the form itself.
         void handle.submit().catch(() => undefined);

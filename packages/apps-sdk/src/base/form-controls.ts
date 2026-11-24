@@ -47,6 +47,7 @@ export interface FormControls {
   resolveFieldSlot(
     field: PanelFormField,
     absolutePath: string,
+    disabled?: boolean,
     arrayPath?: string,
     index?: number,
   ): { slot: Slot; props: Record<string, unknown> } | undefined;
