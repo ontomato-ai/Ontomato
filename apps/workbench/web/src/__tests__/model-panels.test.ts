@@ -388,7 +388,7 @@ describe("built-in model panels", () => {
                 { path: "/apiKey", label: "API key", required: true, readOnly: false, valueSchema: { type: "string" }, control: { kind: "text", secret: true } },
               ],
               errors: [],
-              save: { method: "POST", path: "/api/data-query/model-settings/save", bodySchema: {}, draftOperation: "modelConnection.update" },
+              save: { method: "POST", path: "/api/data-query/model-settings/save", bodySchema: {} },
             },
           });
         }
@@ -544,7 +544,7 @@ describe("built-in model panels", () => {
                 },
               ],
               errors: [],
-              save: { method: "POST", path: "/api/data-query/model-settings/save", bodySchema: {}, draftOperation: "modelUsage.update" },
+              save: { method: "POST", path: "/api/data-query/model-settings/save", bodySchema: {} },
             },
           });
         }

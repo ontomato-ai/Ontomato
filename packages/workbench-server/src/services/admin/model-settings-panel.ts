@@ -525,7 +525,6 @@ function buildConnectionForm(
       method: "POST",
       path: "/api/data-query/model-settings/save",
       bodySchema: cachedZodToRuntimeJsonSchema(connectionFormValuesSchema),
-      draftOperation: creating ? "modelConnection.create" : "modelConnection.update",
     },
   };
 }
@@ -803,7 +802,6 @@ function buildModelForm(
       method: "POST",
       path: "/api/data-query/model-settings/save",
       bodySchema: cachedZodToRuntimeJsonSchema(modelFormValuesSchema),
-      draftOperation: creating ? "modelEntry.create" : "modelEntry.update",
     },
   };
 }
@@ -1151,7 +1149,6 @@ export function createModelUsageReads(actor: PanelOperationActor) {
           method: "POST",
           path: "/api/data-query/model-settings/save",
           bodySchema: cachedZodToRuntimeJsonSchema(usageFormValuesSchema),
-          draftOperation: "modelUsage.update",
         },
       };
     },
@@ -1438,13 +1435,8 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     targetSchema: connectionSaveTargetSchema,
     inputSchema: saveInputSchema,
     resultSchema: savedKeySchema,
-    draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "modelConnection.create" : "modelConnection.update",
     draftInput: (input) => saveInputSchema.parse(input).values,
-    formInstructions: "Provide the connection name, LiteLLM provider prefix, API base URL (required for azure and custom_openai), API key, and optional extra headers.",
-    create: {
-      draftValues: (values) => runtimeJsonObjectSchema.parse(values),
-      createdObject: (data) => ({ objectType: MODEL_CONNECTION, primaryKey: savedKeySchema.parse(data).id }),
-    },
+    create: true,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const settings = await readSettings(host, host.executor.credentials);
       const { values } = saveInputSchema.parse(input);
@@ -1578,9 +1570,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     targetSchema: connectionTargetSchema,
     inputSchema: saveInputSchema,
     resultSchema: savedKeySchema,
-    draftOperation: () => "modelEntry.create",
     draftInput: (input) => saveInputSchema.parse(input).values,
-    formInstructions: "Provide model type (chat or embedding), unique public model name, upstream model ID, and type-specific parameters (contextWindow/maxOutputTokens/supportsVision/supportsReasoning for chat; dimensions for embedding).",
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Adding a model requires a selected connection");
       const settings = await readSettings(host, host.executor.credentials);
@@ -1623,9 +1613,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     targetSchema: modelTargetSchema,
     inputSchema: saveInputSchema,
     resultSchema: savedKeySchema,
-    draftOperation: () => "modelEntry.update",
     draftInput: (input) => saveInputSchema.parse(input).values,
-    formInstructions: "Update the model's public name, upstream model ID, type, and call parameters.",
     inspectImpact: saveModelImpact,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Updating a model requires a selected model");
@@ -1716,9 +1704,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     targetSchema: usageTargetSchema,
     inputSchema: saveInputSchema,
     resultSchema: usageFormValuesSchema,
-    draftOperation: () => "modelUsage.update",
     draftInput: (input) => saveInputSchema.parse(input).values,
-    formInstructions: "Select the domain's default chat model and embedding model by public model name, or empty string to unset.",
     inspectImpact: saveUsageImpact,
     async execute(host: PanelOperationHost, _target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const settings = await readSettings(host, host.executor.credentials);
