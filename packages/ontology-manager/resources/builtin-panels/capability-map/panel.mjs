@@ -154,6 +154,19 @@ const CapabilityMap = {
       typeof graphStartDetail.value === "string" && graphStartDetail.value ? graphStartDetail.value : null,
     );
 
+    /** When start changes on its own (e.g. via agent present), move selected along with it; explicit start+selected patches keep selected. */
+    watch(
+      () => [start.value, selected.value],
+      ([nextStart, nextSelected], [prevStart, prevSelected]) => {
+        const nextStartKey = identityKey(nextStart);
+        if (nextStartKey === identityKey(prevStart)) return;
+        const nextSelectedKey = identityKey(nextSelected);
+        if (nextSelectedKey !== identityKey(prevSelected)) return;
+        if (nextSelectedKey === nextStartKey) return;
+        state.set("selected", nextStart);
+      },
+    );
+
     /** Explicit user action to promote a node as instance-mode start and focus it in the right pane. */
     function onSetStart(node) {
       const target = identity(node);

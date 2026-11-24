@@ -85,6 +85,6 @@
 ## 智能体可以怎么做
 
 - 读当前状态或直达视图：模式、视图、起点、选中节点、选中类型以扁平具名参数写在地址里，打开页面时可带上参数（例如 `?mode=type&view=list&selectedType=platform:Action` 或 `?mode=instance&start=platform:User~u-1&selected=platform:Action~act-1`）。同时设置 `start` 与 `selected` 时不会互相覆盖；若仅传 `selected=B`（未传 `start`），右侧 `relations` 会直接查 `B` 的关系，画布仅在 `B` 已处于当前子图内时才会居中聚焦 `B`——要在画布上聚焦多跳外的对象，请同时设 `start=B`，或经 `expandedNodes` 逐跳展开。
-- 操控筛选、展开与候选区：在已打开的页面上调用 `setState` 可按需更新任意公开状态，例如切换层筛选（`visibleLayers: ["fact", "capability"]`）、展开指定节点的一跳邻居（`expandedNodes: [{ className, primaryKey }]`）、在实例模式下展开用户候选并搜索（`showUserPicker: true, userPickerSearch: "Alice"`）、在类型模式下展开按类型挑选起点并过滤对象（`pickingStart: true, selectedType: "platform:Action", typeObjectsSearch: "Refund"`），或过滤关系种类候选（`relationKindsSearch: "binds"`）。
-- 清除状态：在已打开的页面上调 `setState` 只修改本次传入的字段；要清除 `selected`、`start`、`relationKinds`、`visibleLayers` 或 `expandedNodes`，必须明确传 `null`（省略参数仅在新开裸地址时采用默认值）。
+- 操控筛选、展开与候选区：在已打开的页面上调用 `present({ target, state })` 可按需更新任意公开状态，例如切换层筛选（`visibleLayers: ["fact", "capability"]`）、展开指定节点的一跳邻居（`expandedNodes: [{ className, primaryKey }]`）、在实例模式下展开用户候选并搜索（`showUserPicker: true, userPickerSearch: "Alice"`）、在类型模式下展开按类型挑选起点并过滤对象（`pickingStart: true, selectedType: "platform:Action", typeObjectsSearch: "Refund"`），或过滤关系种类候选（`relationKindsSearch: "binds"`）。只改 `start` 而不同时指定 `selected` 时，`selected` 会同步跟到新起点（清空 `start: null` 时同步清空 `selected`）。
+- 清除状态：在已打开的页面上调 `present({ target, state })` 只修改本次传入的字段；要清除 `selected`、`start`、`relationKinds`、`visibleLayers` 或 `expandedNodes`，必须明确传 `null`（省略参数仅在新开裸地址时采用默认值）。
 - 刷新数据可点击页头右上角的刷新按钮，重新拉取全部投影数据。
