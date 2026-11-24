@@ -7,6 +7,7 @@ import { codeLimitsSchema } from "./agent-runtime-code";
 import { runtimeMcpRefSchema } from "./agent-runtime-mcp";
 import {runtimeProductToolSchema} from './agent-runtime-product-tools';
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
+import { runtimeBusinessCallbacksSchema } from "./agent-runtime-business-callbacks";
 import { runtimePresentationCallbackSchema } from "./agent-presentation";
 import {
   runtimeCursorSchema,
@@ -91,6 +92,8 @@ export const runtimeStartRunRequestSchema = z
     executionActor: agentExecutionActorRefSchema.nullable().optional(),
     environment: runtimeEnvironmentSchema,
     presentationCallback: runtimePresentationCallbackSchema.optional(),
+    /** Run-scoped Workbench capabilities kept outside the engine process. */
+    businessCallbacks: runtimeBusinessCallbacksSchema.optional(),
   })
   .strict();
 
