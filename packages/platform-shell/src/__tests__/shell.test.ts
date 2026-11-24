@@ -462,6 +462,36 @@ describe("the menu of an application whose pages are its own menu", () => {
       "Models v2",
     ]);
   });
+
+  it("includes shell-internal native page counts in the mobile selector when itemTrailingText is omitted", async () => {
+    const groups = [
+      {
+        key: "permissions",
+        label: "Access control",
+        items: [
+          { id: "/permissions/members", label: "Members", count: 12 },
+          { id: "/permissions/roles", label: "Roles", count: 0 },
+          { id: "/permissions/policies", label: "Policies", count: null },
+        ],
+      },
+    ];
+    const root = await mount(AppMenu, {
+      title: "Permissions",
+      groups,
+      activeId: "/permissions/members",
+      ariaLabel: "Pages",
+    });
+
+    const desktopCounts = [...root.querySelectorAll(".page-count")].map((node) => node.textContent?.trim());
+    expect(desktopCounts).toEqual(["12", "0"]);
+
+    const optionTexts = [...root.querySelectorAll(".mobile-page-select option")].map((opt) => opt.textContent?.trim());
+    expect(optionTexts).toEqual([
+      "Members (12)",
+      "Roles (0)",
+      "Policies",
+    ]);
+  });
 });
 
 describe("platform shell", () => {

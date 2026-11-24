@@ -294,4 +294,24 @@ describe("personal workspace", () => {
     expect(dialog.props("modelValue")).toBe(false);
     wrapper.unmount();
   });
+
+  it("omits the retired products management link in resource settings while keeping component composition", async () => {
+    const previous = api.request.getMockImplementation()!;
+    api.request.mockImplementation((path: string, init?: RequestInit) => {
+      if (path.includes("platform/applications")) {
+        return Promise.resolve(Response.json({
+          success: true,
+          data: [application, { ...application, id: "ontology", kind: "native", entry: { path: "/ontology", renderer: "ontology" } }],
+        }));
+      }
+      return previous(path, init);
+    });
+    const { wrapper } = await page({ ElSelect: true });
+    await wrapper.get('button[aria-label="Configure workspace"]').trigger("click");
+    await flushPromises();
+    const dialog = wrapper.findComponent({ name: "ElDialog" });
+    expect(dialog.text()).not.toContain(englishMessages.ontology.productHomeManageComponents);
+    expect(dialog.text()).toContain(englishMessages.ontology.productHomeProductComponents);
+    wrapper.unmount();
+  });
 });
