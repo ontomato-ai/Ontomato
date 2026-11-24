@@ -170,6 +170,17 @@ const panelReadResults = [
 ] as const;
 export const productPanelReadResponseSchema = z.discriminatedUnion("status", panelReadResults);
 export type ProductPanelReadResponse = z.infer<typeof productPanelReadResponseSchema>;
+
+export const PANEL_READ_BATCH_PATH = "/product-panels/read-batch";
+export const PANEL_READ_BATCH_MAX = 50;
+export const productPanelReadBatchRequestSchema = z.object({
+  reads: z.array(productPanelReadRequestSchema).nonempty().max(PANEL_READ_BATCH_MAX),
+}).strict();
+export const productPanelReadBatchResponseSchema = z.object({
+  results: z.array(productPanelReadResponseSchema),
+}).strict();
+export type ProductPanelReadBatchRequest = z.infer<typeof productPanelReadBatchRequestSchema>;
+export type ProductPanelReadBatchResponse = z.infer<typeof productPanelReadBatchResponseSchema>;
 export const productPanelOperationsReadResponseSchema = z.discriminatedUnion("status", [
   panelReadResults[0].extend({ value: z.record(panelLocalOperationNameSchema, panelOwnerOperationDescriptorSchema) }),
   panelReadResults[1], panelReadResults[2], panelReadResults[3],

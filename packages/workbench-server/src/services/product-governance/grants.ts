@@ -32,6 +32,26 @@ export async function productGrantAllowed(id:string,verb:'use'|'edit',credential
   const response=await backendPost('product-grant-check',config.dataQuery.baseUrl+'/product-governance/check',{id,verb},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
   return JSON.parse(response.text).allowed===true;
 }
+export async function productGrantsAllowedBatch(
+  ids: readonly string[], verb: "use" | "edit", credentials: AssistantCredentials,
+): Promise<Record<string, boolean>> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return {};
+  if (unique.length === 1) {
+    const [id] = unique;
+    return { [id]: await productGrantAllowed(id, verb, credentials) };
+  }
+  const response = await backendPost(
+    "product-grant-check-batch", config.dataQuery.baseUrl + "/product-governance/check-batch",
+    { ids: unique, verb },
+    { headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1 },
+  );
+  const allowed = JSON.parse(response.text)?.allowed;
+  if (allowed === null || typeof allowed !== "object" || Array.isArray(allowed)
+      || unique.some(id => !Object.hasOwn(allowed, id) || typeof allowed[id] !== "boolean"))
+    throw new HttpError(503, "Invalid product Grant response", "PRODUCT_GOVERNANCE_UNAVAILABLE");
+  return allowed;
+}
 export async function requireProductGrant(id:string,verb:'use'|'edit',credentials:AssistantCredentials){
   if(!await productGrantAllowed(id,verb,credentials))throw new HttpError(403,`Product ${verb} Grant required`,'PRODUCT_FORBIDDEN');
 }

@@ -1,7 +1,11 @@
 package io.ontomato.dataengine.service;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -36,6 +40,41 @@ public class ProductGrantService implements InitializingBean {
         userId=principals.productPrincipalId(userId);
         var grants=db.query("SELECT principal_kind,principal_id,verb FROM product_grant WHERE domain_id=? AND resource_id=?",(row,index)->new ProductGrants.Grant(row.getString(1),row.getString(2),row.getString(3)),domainId,id);
         return ProductGrants.allows(grants,userId,principals.effectiveRoles(userId,domainId),verb);
+    }
+    public Map<String, Boolean> allowedBatch(Collection<String> ids, String verb) {
+        var user = identity.getCurrentUser();
+        var allowed = new LinkedHashMap<String, Boolean>();
+        for (String id : ids) allowed.put(id, false);
+        if (user == null || user.getDomainId() == null || user.getId() == null
+            || !("use".equals(verb) || "edit".equals(verb))) return allowed;
+
+        var domainIds = new ArrayList<String>();
+        for (String id : allowed.keySet()) {
+            if (BuiltinProductIds.isReserved(id)) allowed.put(id, BuiltinProductIds.isValid(id) && "use".equals(verb));
+            else domainIds.add(id);
+        }
+        if (domainIds.isEmpty()) return allowed;
+
+        String domainId = user.getDomainId();
+        String principalId = principals.productPrincipalId(user.getId());
+        var roles = principals.effectiveRoles(user.getId(), domainId);
+        var parameters = new ArrayList<String>(domainIds.size() + 1);
+        parameters.add(domainId);
+        parameters.addAll(domainIds);
+        String placeholders = String.join(", ", Collections.nCopies(domainIds.size(), "?"));
+        var grants = db.query(
+            "SELECT resource_id, principal_kind, principal_id, verb FROM product_grant WHERE domain_id = ? AND resource_id IN (" + placeholders + ")",
+            rows -> {
+                var byId = new HashMap<String, List<ProductGrants.Grant>>();
+                while (rows.next()) {
+                    byId.computeIfAbsent(rows.getString(1), key -> new ArrayList<>())
+                        .add(new ProductGrants.Grant(rows.getString(2), rows.getString(3), rows.getString(4)));
+                }
+                return byId;
+            }, parameters.toArray());
+        for (String id : domainIds)
+            allowed.put(id, ProductGrants.allows(grants.getOrDefault(id, List.of()), principalId, roles, verb));
+        return allowed;
     }
     @Transactional public void migrateApplication(String domainId,String id){
         requireDomainGrantResource(id);

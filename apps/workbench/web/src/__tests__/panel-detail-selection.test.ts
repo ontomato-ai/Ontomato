@@ -4,7 +4,9 @@ import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { detailSelectionGuard, type DetailSelection } from "../../../../../packages/platform-web/src/detail-selection";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
-import { panelAnswer,
+import {
+  sentPanelReadItems,
+  panelAnswer,
   installPlatform, leaveFrame, manifestP, mountPlatformPage, nothingAt, projections,
   panelRecord, panelSnapshot, panelUse, task, type Sent,
 } from "./panel-frame";
@@ -66,8 +68,7 @@ async function expectPanelSelected({ router, sent }: Awaited<ReturnType<typeof o
   const { path, query } = router.currentRoute.value;
   expect({ path, query }).toEqual({ path: use.path, query: selected });
   // The panel opens on the selection as on any address of its own.
-  await vi.waitFor(() => expect(sent.some(request => request.path === "/api/product-panels/read"
-    && JSON.stringify((request.body as { inputs: unknown }).inputs).includes(task.id))).toBe(true));
+  await vi.waitFor(() => expect(sentPanelReadItems(sent).some(request => JSON.stringify((request.body as { inputs: unknown }).inputs).includes(task.id))).toBe(true));
   // The detail address is not a page of its own in the reader's history: going back leaves the panel.
   router.back();
   await new Promise(resolve => setTimeout(resolve));

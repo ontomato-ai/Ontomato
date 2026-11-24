@@ -21,7 +21,7 @@ import { useApplicationCatalog } from "../../../../../packages/platform-web/src/
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import PanelCandidateRoute from "../../../../../packages/platform-web/src/pages/PanelCandidateRoute.vue";
 import { appBuilderPages } from "../../../../../packages/platform-web/src/workbench-routes";
-import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, panelUse, READER, type Sent } from "./panel-frame";
+import { sentPanelReadItems, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, panelUse, READER, type Sent } from "./panel-frame";
 
 /*
  * The agent settings panel's G1 candidate (design 9.3), as an author previews it: the workspace files `material.mjs`
@@ -155,7 +155,7 @@ const fieldItem = (path: string) => document.querySelector(`.panel-host-coded [d
 const node = (id: string) => document.querySelector<SVGGElement>(`.panel-host-coded [data-node-id="${id}"]`)!;
 const formSave = () => [...document.querySelectorAll<HTMLButtonElement>(".panel-host-coded .sdk-owner-form-actions button")]
   .find(button => button.textContent?.trim() === "Save" || button.textContent?.trim() === "Create")!;
-const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read").map(request => request.body as Read);
+const reads = (sent: Sent[]) => sentPanelReadItems(sent).map(request => request.body as Read);
 
 const PREVIEW_REFUSAL = "A panel preview runs no operations; they run in the panel's application";
 /** A write of a definition, or any operation sent through the platform's coordinator. */

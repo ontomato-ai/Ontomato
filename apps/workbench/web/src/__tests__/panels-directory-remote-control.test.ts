@@ -245,7 +245,7 @@ async function mountDirectory(options: HarnessOptions = {}) {
       return panelSnapshot(panelsDirectoryPanel, Object.fromEntries(projections), request);
     }
     const nestedMatch = /^\/api\/product-panels\/([^/]+)(\/snapshot)?$/.exec(path);
-    if (nestedMatch && nestedMatch[1] !== "read" && nestedMatch[1] !== panelsDirectoryPanel.id && options.nestedPanel) {
+    if (request.method === "GET" && nestedMatch && nestedMatch[1] !== panelsDirectoryPanel.id && options.nestedPanel) {
       const answered = options.nestedPanel(nestedMatch[1]!, request);
       if (answered) return answered;
     }

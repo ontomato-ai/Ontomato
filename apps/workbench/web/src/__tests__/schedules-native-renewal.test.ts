@@ -19,7 +19,7 @@ import { catalogFixture } from "../../../../../packages/platform-web/src/__tests
 import source from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.json";
 import html from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.html?raw";
 import module from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.mjs?raw";
-import { humanIntents, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot } from "./panel-frame";
+import { sentPanelReadItems, humanIntents, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot } from "./panel-frame";
 
 const application = catalogFixture().find(app => app.id === "schedules")!;
 const use = application.panelUses![0]!;
@@ -173,8 +173,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       await vi.waitFor(() => expect(element.querySelector(".schedules [role=alert]")?.textContent).toContain("Credential service unavailable"));
     else {
       await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({ path: `/api/panel-operations/intents/${id}/dispatch` })));
-      await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
-        path: "/api/product-panels/read",
+      await vi.waitFor(() => expect(sentPanelReadItems(sent)).toContainEqual(expect.objectContaining({
         body: expect.objectContaining({
           memberPath: [{ member: "focus" }], dataName: "run",
           inputs: { target: { className: "platform:ScheduledTask", primaryKey: taskId }, runId },

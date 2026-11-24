@@ -7,6 +7,7 @@ import { PRODUCT_PANEL, SCHEDULED_TASK } from "@ontomato/contracts/platform-obje
 import type { ProductPanel } from "@ontomato/contracts/product-panels";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import {
+  sentPanelReadItems,
   installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, panelUse, PLACE_EVERY_MEMBER, projections, task,
   type Sent,
 } from "./panel-frame";
@@ -143,7 +144,7 @@ it("asks Node for an object's detail panel by the object alone, and reads inside
       memberPath: [{ member: "detail", selection: { stateValue: taskRef } }],
     }]);
     // Inside it, every read names the panel Node answered with, as the admission of a placed panel requires.
-    const inner = sent.filter(request => request.path === "/api/product-panels/read").map(request => (request.body as { memberPath: unknown }).memberPath);
+    const inner = sentPanelReadItems(sent).map(request => (request.body as { memberPath: unknown }).memberPath);
     expect(inner).toContainEqual([
       { member: "detail", selection: { stateValue: taskRef, target: { panelId: "panel-task-detail" } } },
       { member: "tasks" },

@@ -3,13 +3,72 @@ package io.ontomato.dataengine.service;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import io.ontomato.dataengine.core.bean.User;
+import java.sql.ResultSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.web.server.ResponseStatusException;
 
 class ProductGrantServiceTest {
+    @Test void aMixedBatchResolvesTheSubjectOnceAndUsesOneDomainQuery() throws Exception {
+        var db = mock(JdbcTemplate.class);
+        var identity = mock(IdentityService.class);
+        var principals = mock(ProductPrincipalLookup.class);
+        var member = mock(User.class);
+        when(member.getId()).thenReturn("member");
+        when(member.getDomainId()).thenReturn("domain-a");
+        when(identity.getCurrentUser()).thenReturn(member);
+        when(principals.productPrincipalId("member")).thenReturn("mapped-member");
+        when(principals.effectiveRoles("member", "domain-a")).thenReturn(Set.of("reader"));
+
+        var rows = mock(ResultSet.class);
+        when(rows.next()).thenReturn(true, true, true, true, false);
+        when(rows.getString(1)).thenReturn("owned", "role-read", "shared", "edit-only");
+        when(rows.getString(2)).thenReturn("principal", "role", "domain", "principal");
+        when(rows.getString(3)).thenReturn("mapped-member", "reader", "*", "mapped-member");
+        when(rows.getString(4)).thenReturn("use", "use", "use", "edit");
+        Object[] parameters = {"domain-a", "owned", "role-read", "shared", "edit-only", "missing"};
+        when(db.query(anyString(), any(ResultSetExtractor.class), eq(parameters)))
+            .thenAnswer(call -> call.<ResultSetExtractor<?>>getArgument(1).extractData(rows));
+
+        var service = new ProductGrantService(db, identity, principals);
+        assertEquals(Map.of(
+            "builtin-product-frame", true, "builtin-product-", false,
+            "owned", true, "role-read", true, "shared", true, "edit-only", false, "missing", false
+        ), service.allowedBatch(List.of(
+            "owned", "builtin-product-frame", "role-read", "shared", "edit-only", "missing", "builtin-product-", "owned"
+        ), "use"));
+        verify(identity).getCurrentUser();
+        verify(principals).productPrincipalId("member");
+        verify(principals).effectiveRoles("member", "domain-a");
+        verify(db).query(anyString(), any(ResultSetExtractor.class), eq(parameters));
+        verifyNoMoreInteractions(db, identity, principals);
+    }
+
+    @Test void builtinOnlyAndInvalidBatchesNeverQueryGrants() {
+        var db = mock(JdbcTemplate.class);
+        var identity = mock(IdentityService.class);
+        var principals = mock(ProductPrincipalLookup.class);
+        var member = mock(User.class);
+        when(member.getId()).thenReturn("member");
+        var service = new ProductGrantService(db, identity, principals);
+        var ids = List.of("builtin-product-frame", "builtin-product-", "builtin-product-frame");
+        var denied = Map.of("builtin-product-frame", false, "builtin-product-", false);
+
+        assertEquals(denied, service.allowedBatch(ids, "use"));
+        when(identity.getCurrentUser()).thenReturn(member);
+        assertEquals(denied, service.allowedBatch(ids, "use"));
+        when(member.getDomainId()).thenReturn("domain-a");
+        assertEquals(Map.of("builtin-product-frame", true, "builtin-product-", false), service.allowedBatch(ids, "use"));
+        assertEquals(denied, service.allowedBatch(ids, "edit"));
+        assertEquals(Map.of("builtin-product-frame", false, "projection", false),
+            service.allowedBatch(List.of("builtin-product-frame", "projection"), "delete"));
+        verifyNoInteractions(db, principals);
+    }
+
     @Test void platformIdsCanBeUsedAcrossDomainsWithoutGrantsAndCannotBeEdited() {
         var db = mock(JdbcTemplate.class);
         var identity = mock(IdentityService.class);

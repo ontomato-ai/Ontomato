@@ -12,7 +12,8 @@ import {
 } from "@ontomato/contracts/product-subscriptions";
 import {
   candidatePanelSourceSchema, PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH,
-  panelPersonalStateResponseSchema, productPanelNestedReadResponseSchema, productPanelReadResponseSchema,
+  PANEL_READ_BATCH_MAX, PANEL_READ_BATCH_PATH,
+  panelPersonalStateResponseSchema, productPanelNestedReadResponseSchema, productPanelReadBatchResponseSchema, productPanelReadResponseSchema,
   type ProductPanelNestedReadRequest,
   type CandidatePanelSource, type DirectPanelHostSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
@@ -75,6 +76,7 @@ export const panelHostPaths = {
   definitionStream: "/api/product-panels/definition-stream",
   /** What a panel's member shows: one named datum, read by the platform as the reader. */
   read: "/api/product-panels/read",
+  readBatch: `/api${PANEL_READ_BATCH_PATH}`,
   candidate: (workspaceId: string, ref: string) =>
     `/api/workspaces/${encodeURIComponent(workspaceId)}/panel-candidate?${new URLSearchParams({ ref })}`,
 };
@@ -125,9 +127,63 @@ async function panel(panelId: string) {
   return productPanelSchema.parse((await json(panelHostPaths.panel(panelId))).panel);
 }
 
+interface PendingPanelRead {
+  request: ProductPanelReadRequest;
+  resolve: (result: ProductPanelReadResponse) => void;
+  reject: (error: unknown) => void;
+}
+const pendingPanelReads: PendingPanelRead[] = [];
+
+function panelReadBatchKey(request: ProductPanelReadRequest): string {
+  const { source } = request;
+  const identity = source.kind === "candidate"
+    ? [source.kind, source.workspace.id, source.workspace.ref]
+    : [source.kind, source.applicationId, source.useId];
+  // ObjectList renders its primary rows while the supplement is still loading.
+  const supplement = "dataName" in request && request.dataName === "supplement";
+  return JSON.stringify([...identity, supplement]);
+}
+
+function flushPendingPanelReads() {
+  const reads = pendingPanelReads.splice(0);
+  const buckets = new Map<string, PendingPanelRead[]>();
+  for (const item of reads) {
+    const key = panelReadBatchKey(item.request);
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(item);
+    else buckets.set(key, [item]);
+  }
+  for (const bucket of buckets.values()) {
+    for (let offset = 0; offset < bucket.length; offset += PANEL_READ_BATCH_MAX) {
+      const chunk = bucket.slice(offset, offset + PANEL_READ_BATCH_MAX);
+      void sendPanelReads(chunk).catch(error => {
+        for (const item of chunk) item.reject(error);
+      });
+    }
+  }
+}
+
+async function sendPanelReads(chunk: PendingPanelRead[]) {
+  if (chunk.length === 1) {
+    const [item] = chunk;
+    const result = await json(panelHostPaths.read, { method: "POST", body: JSON.stringify(item.request) });
+    item.resolve(productPanelReadResponseSchema.parse(result));
+    return;
+  }
+  const result = await json(panelHostPaths.readBatch, {
+    method: "POST", body: JSON.stringify({ reads: chunk.map(item => item.request) }),
+  });
+  const { results } = productPanelReadBatchResponseSchema.parse(result);
+  if (results.length !== chunk.length) throw new Error("Panel read batch response count does not match the request");
+  chunk.forEach((item, index) => item.resolve(results[index]));
+}
+
 /** One named datum a panel's member shows, read by the platform as the reader, in one of its four states. */
-export async function readPanelData(request: ProductPanelReadRequest): Promise<ProductPanelReadResponse> {
-  return productPanelReadResponseSchema.parse(await json(panelHostPaths.read, { method: "POST", body: JSON.stringify(request) }));
+export function readPanelData(request: ProductPanelReadRequest): Promise<ProductPanelReadResponse> {
+  return new Promise((resolve, reject) => {
+    pendingPanelReads.push({ request, resolve, reject });
+    if (pendingPanelReads.length === 1) queueMicrotask(flushPendingPanelReads);
+  });
 }
 
 async function snapshot(panelId: string) {

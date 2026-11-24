@@ -354,6 +354,23 @@ export interface Sent {
  * network answering through `answer`. Returns what was sent, in order.
  */
 /** `router` is the platform's, as its app host is installed with it: where a panel's own navigation goes at full page. */
+const panelReadPath = "/api/product-panels/read";
+const panelReadBatchPath = "/api/product-panels/read-batch";
+
+export function isPanelDataRead({ method, path }: Sent) {
+  return method === "POST" && (path === panelReadPath || path === panelReadBatchPath);
+}
+
+function panelReadItems(request: Sent): Sent[] {
+  if (request.path === panelReadPath) return [request];
+  const { reads } = request.body as { reads: unknown[] };
+  return reads.map(body => ({ ...request, path: panelReadPath, body }));
+}
+
+export function sentPanelReadItems(sent: readonly Sent[]) {
+  return sent.filter(isPanelDataRead).flatMap(panelReadItems);
+}
+
 export function installPlatform(answer: (request: Sent) => Response | Promise<Response>, router: Router = createRouter({ history: createMemoryHistory(), routes: [] })) {
   const sent: Sent[] = [];
   installAuthHost({
@@ -394,6 +411,12 @@ export function installPlatform(answer: (request: Sent) => Response | Promise<Re
     if (request.path === SDK_MANIFEST_PATH) return Response.json(sdkManifest);
     if (request.path === RESOLVE_ENTRY_PATH) return resolveEntryFrom(answer, request);
     if (request.path.endsWith(PAGE_SKILL_CONTEXT_SUFFIX)) return pageSkillContextFrom(answer, request);
+    if (request.method === "POST" && request.path === panelReadBatchPath) {
+      const response = await answer(request);
+      if (response.status !== 404) return response;
+      const results = await Promise.all(panelReadItems(request).map(async item => (await answer(item)).json()));
+      return Response.json({ results });
+    }
     return answer(request);
   });
   return sent;

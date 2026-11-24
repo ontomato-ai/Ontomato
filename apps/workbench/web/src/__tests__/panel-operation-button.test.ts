@@ -6,6 +6,7 @@ import { BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, EXPORT_SKILL, SKILL } from "@onto
 import type { PanelOperationDescriptor } from "../../../../../packages/apps-sdk/src/panel/human-operations";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
+  isPanelDataRead,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -172,7 +173,7 @@ const dialog = () => vi.waitFor(() => {
 const dialogButton = (box: HTMLElement, text: string) =>
   [...box.querySelectorAll<HTMLButtonElement>("button")].find((element) => element.textContent?.trim() === text)!;
 /** What was sent that writes: the platform's read entry is asked by POST and writes nothing. */
-const writes = (sent: Sent[]) => sent.filter((request) => request.method !== "GET" && request.path !== "/api/product-panels/read")
+const writes = (sent: Sent[]) => sent.filter((request) => request.method !== "GET" && !isPanelDataRead(request))
   .map((request) => request.path);
 
 afterEach(() => {

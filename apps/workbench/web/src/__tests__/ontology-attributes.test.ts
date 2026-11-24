@@ -18,6 +18,7 @@ import source from "../../../../../packages/ontology-manager/resources/builtin-p
 import html from "../../../../../packages/ontology-manager/resources/builtin-panels/ontology-attributes/panel.html?raw";
 import module from "../../../../../packages/ontology-manager/resources/builtin-panels/ontology-attributes/panel.mjs?raw";
 import {
+  sentPanelReadItems,
   humanIntents,
   installPlatform,
   leaveFrame,
@@ -535,10 +536,9 @@ describe("ontology-attributes builtin panel", () => {
         expect(element.textContent).not.toContain("Email");
       });
       expect(
-        route.sent.some(
+        sentPanelReadItems(route.sent).some(
           (req) =>
-            req.path === "/api/product-panels/read"
-            && (req.body as { memberPath?: { member: string }[]; dataName?: string })?.memberPath?.[0]?.member === "ownerPicker"
+            (req.body as { memberPath?: { member: string }[]; dataName?: string })?.memberPath?.[0]?.member === "ownerPicker"
             && (req.body as { dataName?: string })?.dataName === "options",
         ),
       ).toBe(true);
@@ -590,10 +590,9 @@ describe("ontology-attributes builtin panel", () => {
 
     try {
       await vi.waitFor(() => {
-        const resolveCall = route.sent.find(
+        const resolveCall = sentPanelReadItems(route.sent).find(
           (req) =>
-            req.path === "/api/product-panels/read"
-            && (req.body as { memberPath?: { member: string }[]; dataName?: string })?.memberPath?.[0]?.member === "ownerPicker"
+            (req.body as { memberPath?: { member: string }[]; dataName?: string })?.memberPath?.[0]?.member === "ownerPicker"
             && (req.body as { dataName?: string })?.dataName === "selected",
         );
         expect(resolveCall).toBeDefined();

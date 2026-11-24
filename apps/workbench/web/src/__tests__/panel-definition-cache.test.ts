@@ -16,6 +16,7 @@ import {
 } from "../../../../../packages/platform-web/src/panel-definition-cache";
 import { candidatePanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
+  isPanelDataRead,
   installPlatform,
   leaveFrame,
   mountPlatformPage,
@@ -223,7 +224,7 @@ describe("panel definition cache & bundled projections", () => {
     dataGeneration = 2;
     const panelGetsBeforeReentry = sent.filter((r) => r.path === `/api/product-panels/${PANEL_ID}`).length;
     const projAGetsBeforeReentry = sent.filter((r) => r.path === `/api/product-projections/${PROJ_A_ID}`).length;
-    const dataReadsBeforeReentry = sent.filter((r) => r.path === "/api/product-panels/read").length;
+    const dataReadsBeforeReentry = sent.filter(isPanelDataRead).length;
 
     const second = mountPlatformPage(() => h(RouterView), router);
     try {
@@ -236,7 +237,7 @@ describe("panel definition cache & bundled projections", () => {
       // Projection B was not cached while unavailable, so it was fetched on re-entry once access returned.
       expect(sent.filter((r) => r.path === `/api/product-projections/${PROJ_B_ID}`).length).toBeGreaterThanOrEqual(1);
       // Business data was freshly read on re-entry (never served from cache).
-      expect(sent.filter((r) => r.path === "/api/product-panels/read").length).toBeGreaterThan(dataReadsBeforeReentry);
+      expect(sent.filter(isPanelDataRead).length).toBeGreaterThan(dataReadsBeforeReentry);
     } finally {
       second.app.unmount();
     }
@@ -403,13 +404,13 @@ describe("panel definition cache & bundled projections", () => {
 
     // 3. Revoke panel itself: pre-mount snapshot returns 403 -> panel cache evicted, never mounts, and error reported.
     panelRevoked = true;
-    const readsBeforeRevoked = sent.filter((r) => r.path === "/api/product-panels/read").length;
+    const readsBeforeRevoked = sent.filter(isPanelDataRead).length;
     const third = mountPlatformPage(() => h(RouterView), router);
     try {
       await vi.waitFor(() => expect(getCachedPanel(PANEL_ID)).toBeUndefined());
       await vi.waitFor(() => expect(third.element.textContent).toContain("Panel access revoked"));
       expect(third.element.textContent).not.toContain("Banner v1");
-      expect(sent.filter((r) => r.path === "/api/product-panels/read")).toHaveLength(readsBeforeRevoked);
+      expect(sent.filter(isPanelDataRead)).toHaveLength(readsBeforeRevoked);
     } finally {
       third.app.unmount();
     }
@@ -523,7 +524,7 @@ describe("panel definition cache & bundled projections", () => {
       expect(getCachedPanel(PANEL_ID)).toBeUndefined();
       expect(revokedSeenBanners).toEqual([]);
       expect(revoked.element.querySelector(".panel-host-coded > *")).toBeNull();
-      expect(sent.filter((r) => r.path === "/api/product-panels/read")).toHaveLength(0);
+      expect(sent.filter(isPanelDataRead)).toHaveLength(0);
     } finally {
       revokedObserver.disconnect();
       revoked.app.unmount();
