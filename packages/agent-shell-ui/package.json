@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./agent-avatar": "./src/components/AgentAvatar.vue",
     "./avatar": "./src/avatar.ts",
     "./style.css": "./src/style.css"
   },
