@@ -18,7 +18,11 @@ import { createAssistantClient, createAssistantFeedback, createPanelOperationSet
 import { readRememberedAgent, readRememberedSession, rememberAgent, rememberSession } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
-import { dashboardSelectionFrom } from "../../dashboard";
+import { dashboardSelectionFrom, useDashboardStore } from "../../dashboard";
+import { formatRelativeTime } from "../../../utils/relative-time";
+import { ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, X } from "lucide-vue-next";
+import { agentHostSessionPageSchema, type AgentHostSession } from "@ontomato/contracts/agent-host";
+import { nodeApiGet } from "../../../utils/api";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
@@ -30,6 +34,7 @@ import {
   workbenchFeatures,
 } from "../features";
 import ClarificationRenderer from "./ClarificationRenderer.vue";
+defineOptions({ inheritAttrs: false });
 const artifactRenderers = [
   { path: /\.clarification\.json$/i, component: ClarificationRenderer },
 ];
@@ -44,6 +49,8 @@ const props = withDefaults(
     features?: ShellFeatureDeclaration[];
     defaultLogo: string;
     defaultBrandName: string;
+    splitNavigation?: boolean;
+    internalPages?: { dashboard: string; schedules: string; agents: string };
   }>(),
   { features: () => [] },
 );
@@ -55,7 +62,7 @@ const WORKBENCH_ID = "business";
 const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
-const client = createAssistantClient();
+const client = createAssistantClient(undefined, { excludeGovernance: Boolean(props.internalPages) });
 const feedback = createAssistantFeedback();
 const panelOperations = createPanelOperationSettings();
 const appearance = ref<WorkbenchAppearance | null>(null);
@@ -78,7 +85,30 @@ const agentId = ref<string | null>(readRememberedAgent());
  * The pages it opens are the platform assembly's: the resolver mounts each from its own address, and a page's own move
  * (another board, another agent, a finding) goes to the display as the reader's navigation.
  */
-const pilot = usePilotPage()((address) => void display.navigate(address, { history: "replace" }));
+const resolvePilot = usePilotPage()((address) => {
+  if (props.internalPages && address.split("?")[0] === routes.chat.path) {
+    const query = new URLSearchParams(address.split("?")[1]);
+    const sessionId = query.get("sessionId");
+    if (sessionId) {
+      const { page: _page, ...remaining } = route.query;
+      void router.push({ query: { ...remaining, sessionId } });
+    }
+    return;
+  }
+  const target = props.internalPages && address.split("?")[0] === routes.dashboards.path
+    ? props.internalPages.dashboard + address.slice(routes.dashboards.path.length)
+    : address;
+  void display.navigate(target, { history: "replace" });
+});
+function pilot(address: string) {
+  if (!props.internalPages) return resolvePilot(address);
+  const path = address.split("?")[0];
+  if (path === props.internalPages.dashboard) {
+    return resolvePilot(routes.dashboards.path + address.slice(path.length));
+  }
+  if (path === props.internalPages.schedules || path === props.internalPages.agents) return resolvePilot(address);
+  return null;
+}
 /** An in-app address that names a page this assembly mounts beside a conversation; a host elsewhere is never one. */
 function resolvePage(href: string): DisplayPage | null {
   const address = href.replace(/^#/, "");
@@ -94,7 +124,7 @@ function resolvePage(href: string): DisplayPage | null {
 async function serialize(page: DisplayPage | null, view: DisplayView, history: DisplayHistory): Promise<boolean> {
   const { page: _page, ...rest } = route.query;
   const to: RouteLocationRaw =
-    page && view === "full" && display.view.value === "side"
+    page && view === "full" && display.view.value === "side" && !props.internalPages
       ? page.address
       : { query: page ? { ...route.query, page: page.address } : rest };
   const failure = await (history === "push" || router.resolve(to).path !== route.path ? router.push(to) : router.replace(to));
@@ -141,6 +171,16 @@ const pageAddress = computed(() => display.page.value?.address ?? null);
 const inDashboards = computed(() => display.page.value?.featureId === DASHBOARDS_PAGE_ID);
 const inAgentSettings = computed(() => pageAddress.value?.split("?")[0] === routes.agents.path);
 const inPanelApplication = computed(() => display.page.value?.featureId === PANEL_APPLICATION_PAGE_ID);
+const editorTitle = computed(() => {
+  const address = pageAddress.value;
+  if (!props.internalPages || !address) return undefined;
+  const [path, query] = address.split("?");
+  if (path !== props.internalPages.agents) return undefined;
+  const creating = new URLSearchParams(query).get("mode") === "create";
+  if (locale.value === "zh-CN") return creating ? "新建智能体" : "编辑智能体";
+  if (locale.value === "zh-TW") return creating ? "新增智慧代理" : "編輯智慧代理";
+  return creating ? t("admin.newAgent", "New agent") : t("analysis.editAgent", "Edit agent");
+});
 
 /**
  * The open conversation. The address carries it while the settings are shown, so leaving them (or reloading) returns to
@@ -167,6 +207,9 @@ const shell = ref<InstanceType<typeof AgentShell> | null>(null);
  */
 function pageLinks(href: string): (() => void) | null {
   const address = href.replace(/^#/, "");
+  if (props.internalPages) {
+    return pilot(address) ? () => { void display.navigate(address, { history: "push" }); } : null;
+  }
   if (!address.startsWith("/") || address.startsWith("//")) return null;
   const resolved = router.resolve(address);
   // The address is a page when the route it lands on is one: the deepest record it matches. Every page of the platform sits
@@ -206,7 +249,29 @@ function selectionIn(page: DisplayPage, reported: PageContext | null): readonly 
   return [];
 }
 
-const labels = useShellLabels();
+const shellLabels = useShellLabels();
+const labels = computed(() => {
+  const base = shellLabels.value;
+  if (!props.splitNavigation) return base;
+  if (locale.value === "zh-CN") return { ...base, newConversation: "新建会话", sessions: "历史会话", send: "查询" };
+  if (locale.value === "zh-TW") return { ...base, newConversation: "新增會話", sessions: "歷史會話", send: "查詢" };
+  return base;
+});
+const dashboards = useDashboardStore();
+const dashboardsOpen = ref(false);
+const dashboardMenu = ref<string | null>(null);
+
+function closeDashboards() {
+  dashboardsOpen.value = false;
+  dashboardMenu.value = null;
+  dashboards.cancelDashboardRename();
+}
+
+function toggleDashboards() {
+  if (dashboardsOpen.value) return closeDashboards();
+  dashboardsOpen.value = true;
+  void dashboards.loadDashboards({ notifyError: true });
+}
 
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
@@ -215,7 +280,7 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
     props.features,
     {
       label: t("assistant.featureDashboards"),
-      address: inDashboards.value ? pageAddress.value! : routes.dashboards.path,
+      address: inDashboards.value ? pageAddress.value! : (props.internalPages?.dashboard ?? routes.dashboards.path),
     },
     inPanelApplication.value
       ? panelApplicationPageFeature(display.pageContext.value?.label || pageAddress.value!, pageAddress.value!)
@@ -265,6 +330,20 @@ const opensModels = computed(() => canOpen(routes.usage.path));
  * in the application. An account without the agents' permission goes to the models the conversations run on, which is
  * the platform's own settings page.
  */
+function openInternalAgentEditor(mode: "create" | "edit") {
+  if (!props.internalPages || !editsAgents.value) return;
+  const state = mode === "edit" && agentId.value ? { mode, selected: agentId.value } : { mode };
+  closeDashboards();
+  void display.navigate(panelAddress(props.internalPages.agents, state), { history: "push" });
+}
+
+const agentActions = computed(() => props.internalPages && editsAgents.value ? {
+  createLabel: locale.value === "zh-CN" ? "添加智能体" : locale.value === "zh-TW" ? "新增智慧代理" : (t("analysis.addAgent") === "analysis.addAgent" ? "Add Agent" : t("analysis.addAgent")),
+  editLabel: locale.value === "zh-CN" ? "编辑智能体" : t("analysis.editAgent"),
+  create: () => openInternalAgentEditor("create"),
+  edit: () => openInternalAgentEditor("edit"),
+} : undefined);
+
 function openSettings() {
   if (!editsAgents.value) return void router.push(routes.systemAgentModels.path);
   void router.push(agentId.value
@@ -272,14 +351,80 @@ function openSettings() {
     : routes.agents.path);
 }
 
+const showingTasks = ref(false);
+const taskSessions = ref<AgentHostSession[]>([]);
+const taskCursor = ref<string | null>(null);
+const tasksLoading = ref(false);
+const tasksError = ref(false);
+let taskRequest = 0;
+const allTasksLabel = computed(() => locale.value === "zh-CN" ? "全部任务" : locale.value === "zh-TW" ? "全部任務" : "All tasks");
+const taskGroups = computed(() => {
+  const groups = {
+    running: { key: "running", label: locale.value === "zh-CN" ? "执行中" : t("assistant.taskRunning"), sessions: [] as AgentHostSession[] },
+    stopped: { key: "stopped", label: t("assistant.taskCompleted"), sessions: [] as AgentHostSession[] },
+    pending: { key: "pending", label: locale.value === "zh-CN" ? "待运行" : locale.value === "zh-TW" ? "待執行" : "Not started", sessions: [] as AgentHostSession[] },
+  };
+  for (const session of taskSessions.value) {
+    const run = session.latestRun;
+    const group = !run ? groups.pending : run.status === "running" || run.delegatedRunning ? groups.running : groups.stopped;
+    group.sessions.push(session);
+  }
+  return Object.values(groups).filter(group => group.sessions.length);
+});
+
+function analysisTaskStatus(session: AgentHostSession) {
+  const run = session.latestRun;
+  if (!run) return null;
+  if (run.status === "running" || run.delegatedRunning) return "running";
+  if (run.stopReason === "aborted") return "cancelled";
+  if (run.stopReason === "error" || run.stopReason === "length") return "failed";
+  return "completed";
+}
+
+const taskStatusLabels = computed(() => ({
+  running: t("assistant.taskRunning"), completed: t("assistant.taskCompleted"),
+  failed: t("assistant.taskFailed"), cancelled: t("assistant.taskCancelled"),
+}));
+
+async function loadAnalysisTasks(append = false) {
+  const request = ++taskRequest;
+  tasksLoading.value = true;
+  tasksError.value = false;
+  try {
+    const cursor = append ? taskCursor.value : null;
+    const path = `/assistant/analysis-sessions${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`;
+    const page = agentHostSessionPageSchema.parse(await nodeApiGet(path));
+    if (request !== taskRequest) return;
+    taskSessions.value = append ? [...taskSessions.value, ...page.sessions] : page.sessions;
+    taskCursor.value = page.nextCursor;
+  } catch {
+    if (request === taskRequest) tasksError.value = true;
+  } finally {
+    if (request === taskRequest) tasksLoading.value = false;
+  }
+}
+
+async function openAllTasks() {
+  if (!(await display.close())) return;
+  closeDashboards();
+  nav.startNew();
+  showingTasks.value = true;
+  void loadAnalysisTasks();
+}
+
+function openAnalysisTask(session: AgentHostSession) {
+  nav.adoptAgent(session.agentId);
+  nav.selectSession(session.id);
+}
+
 /**
  * The column's own entry at the foot: the agent settings, shown in this application and its current row while they are;
  * for an account that only opens the models, their page in the platform's settings.
  */
 const bottomEntry = computed<ShellBottomEntry | null>(() =>
-  editsAgents.value
+  props.internalPages ? null : editsAgents.value
     ? { label: t("assistant.featureAgents"), icon: "agents", page: inAgentSettings.value ? PANEL_APPLICATION_PAGE_ID : undefined }
-    : opensModels.value
+    : !props.internalPages && opensModels.value
       ? { label: t("assistant.featureAgents"), icon: "agents" }
       : null,
 );
@@ -406,6 +551,11 @@ watch(
 
 /** The board a conversation just added a dataset to: the dashboards application, opened on that board. */
 function openDashboardApplication(dashboardId: string) {
+  closeDashboards();
+  if (props.internalPages) {
+    void display.navigate(panelAddress(props.internalPages.dashboard, { dashboardId }), { history: "push" });
+    return;
+  }
   void router.push({ path: routes.dashboards.path, query: { dashboardId } });
 }
 
@@ -430,6 +580,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
 <template>
   <AgentShell
     ref="shell"
+    v-bind="$attrs"
     class="business-conversation-shell"
     v-model:agent-id="agentId"
     v-model:session-id="conversationId"
@@ -438,6 +589,10 @@ function appearanceSaved(value: WorkbenchAppearance) {
     :workbench="workbench"
     :title="workbench.label"
     agent-picker
+    :split-navigation="splitNavigation"
+    :editor-title="editorTitle"
+    :format-session-date="splitNavigation ? formatRelativeTime : undefined"
+    :agent-actions="agentActions"
     :bottom="bottomEntry"
     :client="client"
     :labels="labels"
@@ -448,7 +603,75 @@ function appearanceSaved(value: WorkbenchAppearance) {
     @error="ElMessage.error($event)"
     @feature-action="emit('featureAction', $event)"
     @open-bottom="openSettings"
+    @rail-agent-selected="showingTasks = false"
   >
+    <template v-if="$slots.brand" #brand><slot name="brand" /></template>
+    <template v-if="$slots.account" #account><slot name="account" /></template>
+    <template v-if="internalPages" #shortcuts>
+      <button class="legacy-footer-item" type="button" :title="allTasksLabel" :aria-pressed="showingTasks" @click="openAllTasks">
+        <ListTodo :size="16" aria-hidden="true" /><span>{{ allTasksLabel }}</span>
+        <small v-if="taskSessions.length" class="legacy-task-badge">{{ taskSessions.length }}{{ taskCursor ? '+' : '' }}</small>
+      </button>
+      <section v-if="dashboardsOpen" id="data-agent-dashboard-list" class="legacy-dashboard-list" :aria-label="t('analysis.myDashboards')" @keydown.esc.stop="closeDashboards">
+        <header>
+          <span>{{ t('analysis.myDashboards') }}</span>
+          <button type="button" :aria-label="t('common.close')" @click="closeDashboards"><X :size="14" /></button>
+        </header>
+        <div class="legacy-dashboard-items" :aria-busy="dashboards.loadingDashboards">
+          <p v-if="!dashboards.loadingDashboards && !dashboards.dashboardItems.length">{{ t('analysis.noDashboards') }}</p>
+          <div v-for="board in dashboards.dashboardItems" :key="board.id" class="legacy-dashboard-item" :class="{ active: board.id === dashboards.currentDashboardId }">
+            <input v-if="dashboards.editingDashboardId === board.id" v-model="dashboards.editingDashboardName" :aria-label="t('common.rename')" maxlength="50"
+              @keydown.enter.prevent="($event.target as HTMLInputElement).blur()" @keydown.esc.stop="dashboards.cancelDashboardRename()" @blur="dashboards.saveDashboardRename(board)" />
+            <template v-else>
+              <button type="button" class="legacy-dashboard-open" @click="openDashboardApplication(board.id)">
+                <strong>{{ board.name }}</strong><small v-if="board.updatedAt">{{ formatRelativeTime(board.updatedAt) }}</small>
+              </button>
+              <button type="button" :aria-label="t('common.more')" :aria-expanded="dashboardMenu === board.id" @click="dashboardMenu = dashboardMenu === board.id ? null : board.id"><MoreHorizontal :size="16" /></button>
+              <div v-if="dashboardMenu === board.id" class="legacy-dashboard-actions">
+                <button type="button" @click="dashboards.startDashboardRename(board); dashboardMenu = null">{{ t('common.rename') }}</button>
+                <button type="button" @click="dashboards.deleteDashboard(board); dashboardMenu = null">{{ t('common.delete') }}</button>
+              </div>
+            </template>
+          </div>
+        </div>
+        <button type="button" class="legacy-dashboard-create" @click="dashboards.promptCreateDashboard(openDashboardApplication)">+ {{ locale === 'zh-CN' ? '新建仪表盘' : t('analysis.createDashboard') }}</button>
+      </section>
+      <button class="legacy-footer-item" type="button" :title="t('assistant.featureDashboards')" :aria-expanded="dashboardsOpen" :aria-controls="dashboardsOpen ? 'data-agent-dashboard-list' : undefined" @click="toggleDashboards">
+        <LayoutDashboard :size="16" aria-hidden="true" /><span>{{ t('assistant.featureDashboards') }}</span>
+        <ChevronDown class="legacy-dashboard-arrow" :size="12" aria-hidden="true" />
+      </button>
+    </template>
+    <template v-if="showingTasks" #session-list>
+      <header class="session-heading legacy-task-heading">
+        <div class="legacy-task-avatar"><ClipboardList :size="22" aria-hidden="true" /></div>
+        <div><strong>{{ allTasksLabel }}</strong><p>{{ locale === 'zh-CN' ? '跨智能体统一任务看板' : locale === 'zh-TW' ? '跨智慧代理任務總覽' : 'Tasks across agents' }}</p></div>
+      </header>
+      <p v-if="tasksLoading && !taskSessions.length" class="session-note" role="status">{{ t('common.loading') }}</p>
+      <p v-if="tasksError" class="session-note" role="alert">{{ labels.loadFailed }} <button type="button" @click="loadAnalysisTasks()">{{ labels.retry }}</button></p>
+      <p v-else-if="!tasksLoading && !taskSessions.length" class="session-note">{{ labels.noSessions }}</p>
+      <div v-if="taskSessions.length" class="session-list legacy-task-list">
+        <section v-for="group in taskGroups" :key="group.key" class="legacy-task-group" :aria-label="group.label">
+          <h2><span class="history-list-marker" :data-status="group.key" aria-hidden="true" />{{ group.label }} ({{ group.sessions.length }})</h2>
+          <ul>
+            <li v-for="session in group.sessions" :key="session.id" class="session-item" :class="{ active: session.id === conversationId }">
+              <button type="button" class="session-open" :aria-current="session.id === conversationId ? 'page' : undefined" @click="openAnalysisTask(session)">
+                <span class="session-title">{{ session.title || labels.newConversation }}</span>
+                <span class="history-list-meta">
+                  {{ formatRelativeTime(session.createdAt) }}
+                  <template v-if="analysisTaskStatus(session)">
+                    <span class="legacy-task-status" :data-status="analysisTaskStatus(session)">{{ taskStatusLabels[analysisTaskStatus(session)!] }}</span>
+                  </template>
+                </span>
+              </button>
+            </li>
+          </ul>
+        </section>
+        <button v-if="taskCursor" type="button" class="more" :disabled="tasksLoading" @click="loadAnalysisTasks(true)">{{ labels.more }}</button>
+      </div>
+    </template>
+    <template v-if="$slots.welcome" #welcome="scope">
+      <slot name="welcome" v-bind="scope" />
+    </template>
     <template #feature="{ featureId: page }">
       <!-- What the page hands its display: what the reader looks at, its address moves, what its loader knows, and
            whether leaving it now would drop unsaved changes. What the display hands the page: when to read its objects
@@ -479,7 +702,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <ChartFileActions :artifact="artifact" :title="title" :caption="caption" @open-dashboard="openDashboardApplication" />
     </template>
     <template #message-actions="{ sessionId, runId }">
-      <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />
+      <TurnDiagnoseButton v-if="!internalPages && sessionId && runId" :session-id="sessionId" :run-id="runId" />
     </template>
   </AgentShell>
   <WorkbenchAppearanceDialog

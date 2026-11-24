@@ -1,0 +1,171 @@
+<!--
+  Action detail: single-row <page-header> (back link, action name/status, delete button, and Save/Discard draft controls)
+  above the three tabs (Definition form, Derived definition tables, and AnnotatedCode explanation).
+-->
+<style>
+  [v-cloak] { display: none; }
+  .ac-detail-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    container: action-detail-page / inline-size;
+  }
+  .ac-detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+  }
+  .ac-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .ac-section h3 {
+    margin: var(--spacing-xs) 0 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+  }
+  .ac-hint {
+    margin: 0;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+  }
+  .ac-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    border-bottom: 1px solid var(--ui-divider);
+  }
+  .ac-tab {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    cursor: pointer;
+    color: var(--sdk-text-color-regular);
+    font: inherit;
+    font-size: var(--text-sm);
+  }
+  .ac-tab[aria-selected="true"] {
+    border-bottom-color: var(--sdk-color-primary);
+    color: var(--brand-link);
+    font-weight: var(--font-semibold);
+  }
+  .ac-form-wrap {
+    min-width: 0;
+  }
+  .ac-form-wrap .sdk-owner-form,
+  .ac-form-wrap .sdk-owner-form-inner {
+    height: auto;
+  }
+  .ac-form-wrap .sdk-owner-form-body {
+    overflow: visible;
+  }
+  .ac-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-2xl) var(--page-gutter);
+    text-align: center;
+  }
+  .ac-note {
+    margin: 0;
+    padding: var(--spacing-lg) var(--page-gutter);
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+  .ac-failure {
+    color: var(--sdk-color-danger-text);
+  }
+
+  @container action-detail-page (max-width: 640px) {
+    .ac-detail-body {
+      padding-block: var(--spacing-sm) calc(var(--page-content-gap) + 56px);
+      gap: var(--spacing-sm);
+    }
+  }
+</style>
+<div id="app" v-cloak>
+  <section class="ac-detail-page">
+    <page-header
+      :back-label="t('back')"
+      :draft="detailDraft"
+      @back="goBack"
+    >
+      <template #title>
+        <projection v-if="selectedKey" slot="header" :fallback-title="selectedKey"></projection>
+        <h1 v-else-if="creating">{{ t('newAction') }}</h1>
+        <h1 v-else>{{ t('pageTitle') }}</h1>
+      </template>
+      <template v-if="detailReady" #actions>
+        <projection slot="remove" @done="onRemoveDone"></projection>
+      </template>
+    </page-header>
+
+    <div v-if="!selectedKey && !creating" class="ac-state">
+      <sdk-empty :description="t('missing')"></sdk-empty>
+    </div>
+    <p v-else-if="selectedKey && (recordStatus === 'loading' || recordStatus === 'awaiting')" class="ac-note" role="status">
+      {{ t('loading') }}
+    </p>
+    <div v-else-if="selectedKey && recordStatus === 'forbidden'" class="ac-state">
+      <p class="ac-note ac-failure" role="alert">{{ t('forbidden') }}</p>
+    </div>
+    <div v-else-if="selectedKey && recordStatus === 'error'" class="ac-state">
+      <sdk-empty :description="errorText"></sdk-empty>
+      <sdk-button @click="retry">{{ t('retry') }}</sdk-button>
+    </div>
+    <div v-else-if="selectedKey && recordStatus !== 'ready'" class="ac-state">
+      <sdk-empty :description="t('missing')"></sdk-empty>
+    </div>
+    <section v-else class="ac-detail-body">
+      <div v-if="detailReady" class="ac-tabs" role="tablist">
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          type="button"
+          class="ac-tab"
+          role="tab"
+          :aria-selected="activeTab === tab.key"
+          @click="activeTab = tab.key"
+        >
+          {{ t(tab.label) }}
+        </button>
+      </div>
+
+      <!-- Definition tab: owner-declared ObjectForm for editing or agent-driven creation via fill_form. -->
+      <div class="ac-form-wrap" v-show="!detailReady || activeTab === 'definition'">
+        <projection slot="form" @saved="onFormSaved" @cancel="onFormCancel"></projection>
+      </div>
+
+      <!-- Derived definition tab: summary, grouped effects, selectable parameters, and submission conditions. -->
+      <section v-if="detailReady" class="ac-section" v-show="activeTab === 'derived'">
+        <p class="ac-hint">{{ t("derivedHint") }}</p>
+        <projection slot="derivedSummary"></projection>
+
+        <h3>{{ t("effects") }}</h3>
+        <projection slot="derivedEffects" @navigate-child="onNavigateChild"></projection>
+
+        <h3>{{ t("parameters") }}</h3>
+        <projection slot="derivedParameters" @navigate-child="onNavigateChild"></projection>
+
+        <h3>{{ t("conditions") }}</h3>
+        <projection slot="derivedConditions" @navigate-child="onNavigateChild"></projection>
+      </section>
+
+      <!-- Code explanation tab: generic AnnotatedCode bound to owner-projected annotatedExplanation. -->
+      <section v-if="detailReady" class="ac-section" v-show="activeTab === 'code'">
+        <projection slot="explanation" @select-ref="onSelectRef"></projection>
+      </section>
+    </section>
+  </section>
+</div>

@@ -32,7 +32,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
 import {
-  ACTION, AGENT_DEFINITION, ATTRIBUTE, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIGGER, USER, WORKFLOW,
+  ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, ATTRIBUTE, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIGGER, USER, WORKFLOW,
   RUN_NOW, SCHEDULED_TASK, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
@@ -1951,11 +1951,10 @@ test("Action definition reads and writes use distinct exact binding requests", (
   assert.ok(!clientSends([status], "POST", "", "/action/setStatus"));
 });
 
-test("Trigger definition reads, writes and Workflow minimal list use exact binding requests", () => {
+test("Trigger definition reads and writes use exact binding requests", () => {
   const definitions = binding(TRIGGER);
   const deletion = bindingKey({ kind: "PlatformOperation", id: DELETE_TRIGGER });
   const status = bindingKey({ kind: "PlatformOperation", id: SET_TRIGGER_STATUS });
-  const workflows = binding(WORKFLOW);
   for (const path of ["/trigger/queryList", "/trigger/queryById", "/trigger/form"]) {
     assert.ok(panelClientReads(definitions).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test(path)));
     assert.ok(clientSends([definitions], "POST", "/data-query", path));
@@ -1966,11 +1965,41 @@ test("Trigger definition reads, writes and Workflow minimal list use exact bindi
   assert.ok(clientSends([deletion], "POST", "/data-query", "/trigger/delete", { id: "tr-1" }));
   assert.ok(clientSends([status], "POST", "/data-query", "/trigger/status", { id: "tr-1", status: "PUBLISHED" }));
   assert.ok(!clientSends([status], "POST", "", "/trigger/status"));
-  assert.ok(panelClientReads(workflows).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test("/workflow/query")));
-  assert.ok(clientSends([workflows], "POST", "/data-query", "/workflow/query"));
-  assert.ok(!clientSends([workflows], "POST", "/data-query", "/workflow/save"));
-  assert.equal(platformObjectTypes[WORKFLOW].reads?.list.result, "panelRecordList");
   assert.deepEqual(platformObjectTypes[TRIGGER].operations, [`${TRIGGER}.save`, SET_TRIGGER_STATUS, DELETE_TRIGGER]);
+});
+
+test("Workflow definition reads and writes use exact binding requests", () => {
+  const workflows = binding(WORKFLOW);
+  const reads = platformObjectTypes[WORKFLOW].reads;
+  assert.ok(reads);
+  for (const path of ["/workflow/query", "/workflow/grants", "/workflow/subjects", "/action/queryList"]) {
+    assert.ok(panelClientReads(workflows).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test(path)));
+    assert.ok(clientSends([workflows], "POST", "/data-query", path));
+  }
+  assert.ok(clientSends([workflows], "POST", "/data-query", "/workflow/save"));
+  assert.ok(!panelClientReads(workflows).some(read => read.path.test("/workflow/save")));
+  assert.equal(reads.list.result, "panelRecordList");
+  assert.equal(reads.query.parameterMode, "fixed");
+  assert.deepEqual(reads.query.params, { search: "keyword", cursor: "cursor", size: "size" });
+  assert.equal(reads.count.result, "panelRecordQuery");
+  assert.equal(reads.record.result, "panelRecord");
+  assert.equal(reads.form.result, "panelFormDescription");
+  assert.equal(reads.createForm.result, "panelFormDescription");
+  for (const name of ["grantCaseScopedSteps", "grantInForce", "grantSuperseded", "grantDirect"] as const) {
+    assert.equal(reads[name].source, "object");
+    assert.equal(reads[name].result, "panelRecordList");
+  }
+  assert.deepEqual(platformObjectTypes[WORKFLOW].operations, [`${WORKFLOW}.save`, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW]);
+  for (const [id, path] of [
+    [ACTIVATE_WORKFLOW, "/workflow/activate"],
+    [DEACTIVATE_WORKFLOW, "/workflow/deactivate"],
+    [DELETE_WORKFLOW, "/workflow/delete"],
+  ]) {
+    const operation = bindingKey({ kind: "PlatformOperation", id });
+    assert.ok(clientSends([operation], "POST", "/data-query", path));
+    assert.ok(clientSends([operation], "POST", "", "/panel-operations/inspect-impact"));
+    assert.ok(!clientSends([workflows], "POST", "/data-query", path));
+  }
 });
 
 test("a panel operation descriptor admits exactly the three use and operation query keys", () => {

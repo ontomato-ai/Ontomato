@@ -21,6 +21,7 @@ import { diagnosisModelOperations } from "../ops-diagnosis/panel-model";
 import { feedbackExportOperation } from "../admin/feedback-panel-reads";
 import { m6ServerOperations } from "../action/panel-operations";
 import { triggerServerOperations } from "../trigger/panel-operations";
+import { workflowServerOperations } from "../workflow/panel-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
 import { m7ServerOperations } from "../business-knowledge/panel-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
@@ -159,6 +160,7 @@ const registrations: readonly PanelServerOperation[] = [
   ...m5ServerOperations,
   ...m6ServerOperations,
   ...triggerServerOperations,
+  ...workflowServerOperations,
   ...m7ServerOperations,
   ...skillServerOperations,
   feedbackExportOperation,

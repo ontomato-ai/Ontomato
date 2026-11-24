@@ -63,6 +63,7 @@ const props = defineProps<{
   appTheme?: PanelThemeOverrides | null;
   /** The shown application draws its own frame in its area: no menu column, header or gutter of the platform's. */
   appFramed?: boolean;
+  standaloneApplications?: readonly string[];
   /** The host shows no application at all (its licence is not in force, or the account holds no page). */
   blocked?: { reason: "licence" | "no-pages"; message: string } | null;
 }>();
@@ -115,6 +116,8 @@ const externalTab = ref(externalLinkTab());
 const standaloneRequested = ref(route.query.standalone === "1");
 const standaloneAllowed = computed(() => allowsStandalone(activeApp.value));
 const hideRail = computed(() => {
+  if (route.meta.standaloneApplication === true) return true;
+  if (activeAppId.value && props.standaloneApplications?.includes(activeAppId.value)) return true;
   if (!standaloneAllowed.value) return false;
   if (externalTab.value) return true;
   return (route.query.standalone === "1" || standaloneRequested.value) && !props.loading;

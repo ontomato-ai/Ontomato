@@ -97,6 +97,15 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials) {
       effectivePermissions(id: string): Promise<PanelRecord> {
         return owner("governance-user-effective-permissions", "/panel/governance/users/effective-permissions", { id }, panelRecordSchema);
       },
+      effectiveOrgShares(id: string): Promise<PanelRecord[]> {
+        return owner("governance-user-effective-org-shares", "/panel/governance/users/effective-org-shares", { id }, panelRecordListSchema);
+      },
+      effectiveApiPermissions(id: string): Promise<PanelRecord[]> {
+        return owner("governance-user-effective-api-permissions", "/panel/governance/users/effective-api-permissions", { id }, panelRecordListSchema);
+      },
+      effectiveDataPermissions(id: string, scope: "subject" | "managed" | "effective"): Promise<PanelRecord[]> {
+        return owner("governance-user-effective-data-permissions", "/panel/governance/users/effective-data-permissions", { id, scope }, panelRecordListSchema);
+      },
       lookupAccount(keyword: string): Promise<PanelOptionList> {
         return owner("governance-user-lookup-account", "/panel/governance/users/lookup-account", { keyword }, panelOptionListSchema);
       },

@@ -83,6 +83,9 @@
       "descriptions": {"en": "Every action of this domain: its definition, the definition its code derives, the explanation of that code, status and deletion.", "zh-CN": "本域的全部动作：定义、由代码推导的定义、代码解释，以及状态和删除。"},
       "names": {"en": "Actions", "zh-CN": "动作"}, "groupKey": "capabilities"
     }, {
+      "id": "ontology-action-detail", "pageKey": "action-detail", "panelId": "builtin-product-ontology-action-detail",
+      "path": "/ontology/assets/actions/detail", "access": {"permissionCode": "action-management"}
+    }, {
       "id": "ontology-skills", "pageKey": "skills-library", "panelId": "builtin-product-skills-library",
       "path": "/ontology/skills", "access": {"permissionCode": "skill-management"},
       "descriptions": {
@@ -125,6 +128,9 @@
       "path": "/ontology/panels", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "The panels this domain grants you: name, owner, sharing scope and template use; each panel's source, style, members, usage and grants.", "zh-CN": "本域授予你使用的面板：名称、所属人、共享范围与模板用途，以及每个面板的源码、样式、成员、引用与授权。"},
       "names": {"en": "Panels","zh-CN": "面板"}, "groupKey": "products"
+    }, {
+      "id": "use-ontology-panel-detail", "pageKey": "ontology-panel-detail", "panelId": "builtin-product-ontology-panel-detail",
+      "path": "/ontology/panels/detail", "access": {"permissionCode": "ontology-modeling"}
     }, {
       "id": "use-ontology-applications", "pageKey": "ontology-applications", "panelId": "builtin-product-ontology-applications",
       "path": "/ontology/applications", "access": {"permissionCode": "ontology-modeling"},
