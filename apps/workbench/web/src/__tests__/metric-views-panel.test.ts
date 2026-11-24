@@ -226,6 +226,7 @@ async function waitFor(check: () => boolean, label: string | (() => string)): Pr
 function mountMetricViews(initialState: Record<string, unknown> = {}) {
   const reads: DataReadRequest[] = [];
   const opsReads: OpsReadRequest[] = [];
+  const readOperations: string[] = [];
   const dispatched: Array<{ operationId: string; targetPrimaryKey: string | null }> = [];
   let localConfirmSeq = 0;
   let intentSeq = 0;
@@ -311,6 +312,7 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
     }
     if (path === "/api/panel-operations/read") {
       const body = request.body as { operationId?: string };
+      if (typeof body.operationId === "string") readOperations.push(body.operationId);
       if (body.operationId === "definition.test") {
         return Response.json({ kind: "markdown", markdown: "# Metric Preview\n\nTotal: 42" });
       }
@@ -448,6 +450,7 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
   return {
     reads,
     opsReads,
+    readOperations,
     dispatched,
     router,
     setHeaderOverride(fn: ((key: string) => Record<string, unknown>) | null) {
@@ -576,6 +579,26 @@ describe("metric-views builtin panel detail mount lifecycle", () => {
         const jsonBtn = buttons.find((b) => b.textContent?.includes("Test and return JSON"));
         return Boolean(mdBtn && !mdBtn.disabled && jsonBtn && !jsonBtn.disabled);
       }, "trial and trialJson buttons enabled after definition mounts");
+
+      // Human clicks on both trial buttons must dispatch read operations (not self-block on busy).
+      const findButton = (label: string) =>
+        Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
+          b.textContent?.includes(label),
+        );
+      findButton("Test and generate Markdown")!.click();
+      await waitFor(
+        () =>
+          harness.readOperations.includes("definition.test")
+          && document.body.textContent?.includes("Total: 42") === true,
+        "human click on Markdown trial dispatches definition.test and renders preview",
+      );
+      findButton("Test and return JSON")!.click();
+      await waitFor(
+        () =>
+          harness.readOperations.includes("definition.testExecute")
+          && document.body.textContent?.includes("\"total\": 42") === true,
+        "human click on JSON trial dispatches definition.testExecute and renders preview",
+      );
       const closeBtn = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
         (b) => b.textContent?.trim() === "Close",
       );
