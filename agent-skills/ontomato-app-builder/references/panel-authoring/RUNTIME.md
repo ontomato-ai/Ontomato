@@ -267,9 +267,11 @@ Registers a panel-local back/close layer with the enclosing host (LIFO). While `
 function usePanelBack(active: MaybeRefOrGetter<boolean>, onBack: () => void, options?: UsePanelBackOptions | undefined): PanelBackHandle
 ```
 
-Back layers close last-in first-out. For `<sdk-dialog>`, leave Escape handling enabled. The back handler yields
-while the dialog is open. The dialog's `v-model` setter should call the layer's `back()` on close, so clicking
-close and pressing Escape both check unsaved changes.
+Back layers close last-in first-out. `<sdk-dialog>` and `<sdk-drawer>` automatically guard dirty forms registered
+through `useProjectionForm` inside them before closing on close-button click, backdrop click, or Escape (leaving
+Escape handling enabled while the back handler yields). Panels do not need a custom unsaved-changes guard in the
+overlay's `v-model` setter or `:before-close` for those forms; wire `usePanelBack` when browser Back or an
+explicit in-panel back button should also close the layer.
 
 
 ### UsePanelBackOptions

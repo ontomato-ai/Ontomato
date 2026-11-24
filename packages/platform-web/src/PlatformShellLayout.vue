@@ -25,7 +25,7 @@ import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
 import type { PlatformBrand } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { panelEntryApplication, useApplicationCatalog } from "./catalog";
+import { panelEntryApplication, resetApplicationCatalog, useApplicationCatalog } from "./catalog";
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import { resolveApplicationEntry } from "./panel-host";
 import { appAt } from "./apps";
@@ -66,7 +66,10 @@ const pinnedAppIds=ref<string[]>([]);
 const dynamicAppIds=computed(()=>catalog.applications.value.filter(app=>['hosted','connected','link'].includes(app.kind)).map(app=>app.id));
 async function readShortcuts(){try{pinnedAppIds.value=(await readHomeState()).favorites.filter(item=>item.kind==='application').map(item=>item.id);}catch{/* Shortcut discovery must not prevent opening the platform. */}}
 onMounted(()=>{void readShortcuts();window.addEventListener(HOME_PREFERENCES_CHANGED,readShortcuts);});
-onBeforeUnmount(()=>window.removeEventListener(HOME_PREFERENCES_CHANGED,readShortcuts));
+onBeforeUnmount(() => {
+  window.removeEventListener(HOME_PREFERENCES_CHANGED, readShortcuts);
+  resetApplicationCatalog();
+});
 onMounted(() => { void catalog.refresh(); });
 watch(() => host.navigation.value, () => { void catalog.refresh(); }, { deep: true });
 // The home lists every application, so returning to it reads the catalog again; the first read above covers a shell

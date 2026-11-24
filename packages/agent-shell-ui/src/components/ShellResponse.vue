@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
 import { copyText } from "@ontomato/foundation-ui/clipboard";
-import { Check, ChevronRight, CircleAlert, Copy, LoaderCircle, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
+import { Check, ChevronRight, CircleAlert, CircleHelp, Copy, LoaderCircle, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
 import type { ShellFeedbackPort, ShellFeedbackValue } from "../types";
 import SlotOutlet from "./SlotOutlet.vue";
 import TaskCard from "./tasks/TaskCard.vue";
@@ -10,6 +10,7 @@ import { shellContextKey } from "../context";
 import type { ResponseItem } from "../view";
 import ShellMarkdown from "./ShellMarkdown.vue";
 import ShellProcess from "./ShellProcess.vue";
+import ProcessDetail from "./ProcessDetail.vue";
 import ProcessInput from "./ProcessInput.vue";
 import { useAutoFold } from "../useAutoFold";
 
@@ -22,10 +23,44 @@ const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
 
 const copied = ref(false);
+const usageOpen = ref(false);
 const rating = ref<ShellFeedbackValue | null>(null);
 const reasonOpen = ref(false);
 const reason = ref("");
 const feedbackBusy = ref(false);
+
+const hasUnknownTools = computed(() =>
+  props.item.process.some(
+    (block) => block.kind === "steps" && block.steps.some((step) => step.kind === "tool" && step.status === "unknown"),
+  ),
+);
+
+function usageTotal(counts: { input: number; output: number; cacheRead: number; cacheWrite: number; reasoning?: number; totalTokens: number }) {
+  return counts.totalTokens || (counts.input + counts.output + counts.cacheRead + counts.cacheWrite + (counts.reasoning ?? 0));
+}
+
+const usageSummary = computed(() => {
+  const usage = props.item.usage;
+  if (!usage) return null;
+  const total = usageTotal(usage.counts);
+  const format = labels.value.usage;
+  const label = format ? format.tokens(total) : `${total.toLocaleString()} tokens`;
+  const parts: string[] = [
+    format ? format.input(usage.counts.input) : `Input ${usage.counts.input.toLocaleString()}`,
+    format ? format.output(usage.counts.output) : `Output ${usage.counts.output.toLocaleString()}`,
+  ];
+  if (usage.counts.cacheRead > 0)
+    parts.push(format ? format.cacheRead(usage.counts.cacheRead) : `Cache read ${usage.counts.cacheRead.toLocaleString()}`);
+  if (usage.counts.cacheWrite > 0)
+    parts.push(format ? format.cacheWrite(usage.counts.cacheWrite) : `Cache write ${usage.counts.cacheWrite.toLocaleString()}`);
+  if ((usage.counts.reasoning ?? 0) > 0)
+    parts.push(format ? format.reasoning(usage.counts.reasoning!) : `Reasoning ${usage.counts.reasoning!.toLocaleString()}`);
+  if (usage.last) {
+    const lastTotal = usageTotal(usage.last);
+    parts.push(format ? format.lastCall(lastTotal) : `Last call ${lastTotal.toLocaleString()}`);
+  }
+  return { label, parts, title: parts.join(" · ") };
+});
 
 /** The runtime names the answer when the run stops, so feedback has a target only then. */
 const target = computed(() =>
@@ -138,7 +173,7 @@ async function submit(value: ShellFeedbackValue) {
 
 <template>
   <div class="response" :class="{ 'collapsed-handoff': item.handoff && !open && !timingActive }">
-    <section v-if="status || hasProcess" class="process-region" :class="{ open }">
+    <section v-if="status || hasProcess || usageSummary" class="process-region" :class="{ open }">
       <div class="process-line">
         <button
           v-if="hasProcess"
@@ -152,19 +187,42 @@ async function submit(value: ShellFeedbackValue) {
           <span>{{ status }}</span>
           <ChevronRight :size="14" class="chevron" />
         </button>
-        <div v-else class="process-toggle" :aria-live="timingActive ? 'off' : 'polite'">
+        <div v-else-if="status" class="process-toggle" :aria-live="timingActive ? 'off' : 'polite'">
           <LoaderCircle v-if="item.running" :size="12" class="spin" />
           <span>{{ status }}</span>
         </div>
+        <button
+          v-if="!item.running && hasUnknownTools"
+          type="button"
+          class="process-unknown"
+          @click="reveal()"
+        >
+          <CircleHelp :size="12" />
+          <span>{{ labels.toolOutcomeUnknown ?? "Outcome unknown" }}</span>
+        </button>
         <button v-if="taskCount && shell.openTasks" type="button" class="process-toggle tasks-entry" @click="shell.openTasks(item.runId)">
           {{ labels.tasks!.count(taskCount) }}
         </button>
+        <button
+          v-if="usageSummary"
+          type="button"
+          class="process-toggle usage-entry"
+          :aria-expanded="usageOpen"
+          :title="usageSummary.title"
+          @click="usageOpen = !usageOpen"
+        >
+          <span>{{ usageSummary.label }}</span>
+        </button>
+      </div>
+      <div v-if="usageSummary && usageOpen" class="usage-breakdown">
+        <span v-for="part in usageSummary.parts" :key="part" class="usage-part">{{ part }}</span>
       </div>
       <div v-if="processVisited && hasProcess" v-show="open" class="process-body">
         <template v-for="block in item.process" :key="block.key">
           <ShellProcess v-if="block.kind === 'steps'" :steps="block.steps" :active="block.active" />
           <TaskCard v-else-if="block.kind === 'task'" :task="block.task" :session-id="sessionId ?? ''" />
           <ProcessInput v-else-if="block.kind === 'input'" :text="block.text" :answer="block.replyTo !== undefined" />
+          <ProcessDetail v-else-if="block.kind === 'detail'" :detail="block.detail" :running="item.running" />
           <div v-else class="process-note">
             <ShellMarkdown :content="block.text" :final="block.final" :run-id="block.runId" />
           </div>
@@ -294,6 +352,38 @@ button.process-toggle:focus-visible {
 }
 .process-toggle[aria-expanded="true"] > .chevron {
   transform: rotate(90deg);
+}
+.process-unknown {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--el-color-warning) 35%, transparent);
+  border-radius: var(--radius-xs);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
+  font: inherit;
+  font-size: var(--text-xs, 12px);
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.process-unknown:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
+}
+.usage-entry {
+  color: var(--el-text-color-tertiary);
+}
+.usage-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--text-xs, 12px);
+  line-height: var(--leading-sm, 20px);
+  color: var(--el-text-color-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 .process-region {
   display: flex;

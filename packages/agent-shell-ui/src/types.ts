@@ -235,6 +235,34 @@ export interface ShellLabels {
   pageContextClosed: string;
   toolInput: string;
   toolOutput: string;
+  /** Shown on a tool call that ended with `outcome=unknown` (no result returned). */
+  toolOutcomeUnknown?: string;
+  /** Brief explanation shown inside an expanded `unknown` tool call. */
+  toolOutcomeUnknownHint?: string;
+  /** Generic process entry labels for `run_detail` categories and file-change operations. */
+  runDetails?: {
+    fileAdded: string;
+    fileModified: string;
+    fileDeleted: string;
+    compaction: string;
+    diagnostic: string;
+    attachment: string;
+    hook: string;
+    model: string;
+    moderation: string;
+    review: string;
+    patch: string;
+  };
+  /** Token usage labels shown on a reply when the run reports token counts. */
+  usage?: {
+    tokens: (count: number) => string;
+    input: (count: number) => string;
+    output: (count: number) => string;
+    cacheRead: (count: number) => string;
+    cacheWrite: (count: number) => string;
+    reasoning: (count: number) => string;
+    lastCall: (count: number) => string;
+  };
   stopped: string;
   truncated: string;
   failed: string;

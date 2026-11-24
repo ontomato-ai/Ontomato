@@ -6,8 +6,22 @@ import {
   StreamableHTTPError,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import type { TSchema } from "typebox";
-import type { AgentTool } from "./core/pi/types";
+import type { RuntimeToolDeclaration } from "@ontomato/contracts/agent-runtime-messages";
+import type { RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
+import type { PlatformTool } from "./platform-tools";
+
+/** Builds an engine-neutral tool declaration from a discovered MCP tool descriptor. */
+export function mcpToolDeclaration(tool: {
+  name: string;
+  description?: string;
+  inputSchema: unknown;
+}): RuntimeToolDeclaration {
+  return {
+    name: tool.name,
+    description: tool.description ?? tool.name,
+    parameters: tool.inputSchema as RuntimeJsonObject,
+  };
+}
 export interface McpConnection {
   id: string;
   name: string;
@@ -98,7 +112,7 @@ export async function connectMcp(
   signal: AbortSignal,
 ) {
   const clients: Client[] = [];
-  const tools: AgentTool[] = [];
+  const tools: PlatformTool[] = [];
   try {
     for (const config of configs) {
       const { client, tools: discovered } = await openMcp(
@@ -109,34 +123,48 @@ export async function connectMcp(
       clients.push(client);
       for (const tool of discovered)
         tools.push({
-          name: tool.name,
+          declaration: mcpToolDeclaration(tool),
           label: tool.title ?? tool.name,
-          description: tool.description ?? tool.name,
-          parameters: tool.inputSchema as TSchema,
-          async execute(_id, args, callSignal) {
+          async execute(call) {
             const response = await client.callTool(
-              { name: tool.name, arguments: args as Record<string, unknown> },
+              { name: tool.name, arguments: call.args as Record<string, unknown> },
               undefined,
-              { signal: callSignal },
+              {
+                signal: call.signal,
+                ...(call.onUpdate
+                  ? {
+                      onprogress: (progress) => {
+                        const text =
+                          progress.message ??
+                          (progress.total !== undefined
+                            ? `${progress.progress}/${progress.total}`
+                            : String(progress.progress));
+                        call.onUpdate?.({ text });
+                      },
+                    }
+                  : {}),
+              },
             );
             const parts = (
               "content" in response ? response.content : []
             ) as Array<Record<string, unknown>>;
             return {
-              content: parts.map((p) =>
-                p.type === "image"
-                  ? {
-                      type: "image" as const,
-                      data: String(p.data),
-                      mimeType: String(p.mimeType),
-                    }
-                  : {
-                      type: "text" as const,
-                      text:
-                        p.type === "text" ? String(p.text) : JSON.stringify(p),
-                    },
-              ),
-              details: {},
+              result: {
+                content: parts.map((p) =>
+                  p.type === "image"
+                    ? {
+                        type: "image" as const,
+                        data: String(p.data),
+                        mimeType: String(p.mimeType),
+                      }
+                    : {
+                        type: "text" as const,
+                        text:
+                          p.type === "text" ? String(p.text) : JSON.stringify(p),
+                      },
+                ),
+                details: {},
+              },
               isError: Boolean(response.isError),
             };
           },

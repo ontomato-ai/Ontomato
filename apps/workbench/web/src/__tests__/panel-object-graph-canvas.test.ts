@@ -147,12 +147,17 @@ function mount(
   editable: boolean,
   initial: Record<string, unknown> = {},
   look: Record<string, unknown> = {},
-  overrides: { nodes?: ProductPanelReadResponse; edges?: ProductPanelReadResponse } = {},
+  overrides: {
+    nodes?: ProductPanelReadResponse;
+    edges?: ProductPanelReadResponse;
+    confirmLeaveUnsaved?: () => Promise<boolean>;
+  } = {},
 ) {
   const projection = graph(editable, look);
   const instance = createDirectPanelInstance(manifest(projection.id), {
     pageKey: "modeling", url: () => "/modeling", label: () => "Modeling", initial: initial as never,
     text: createPanelText({}, ref("en"), "en"), ...noOperations,
+    ...(overrides.confirmLeaveUnsaved ? { confirmLeaveUnsaved: overrides.confirmLeaveUnsaved } : {}),
     readProjection: async () => projection,
     read: async (request) => {
       if (request.operations) return ready({});
@@ -649,4 +654,123 @@ it("publishes graph status, counts, and shortest-path read-only outputs for pane
   await nextTick();
   expect(instance.outputs.graph?.pathStatus).toBe("not-found");
   expect(instance.outputs.graph?.pathHops ?? null).toBeNull();
+});
+
+it("keeps node and edge selections mutually exclusive on canvas clicks", async () => {
+  const { instance } = mount(true);
+  await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
+
+  canvas.emit!("update:selected", ["person"]);
+  await nextTick();
+  expect(instance.state.values.value.selectedClass).toEqual({ className: OBJECT_TYPE, primaryKey: "person" });
+  expect(instance.state.values.value.selectedRelation).toBeNull();
+
+  // Clicking an edge clears the previously selected node.
+  canvas.emit!("update:selectedEdges", ["works-in"]);
+  await nextTick();
+  expect(instance.state.values.value.selectedRelation).toEqual({ className: RELATIONSHIP, primaryKey: "works-in" });
+  expect(instance.state.values.value.selectedClass).toBeNull();
+
+  // Clicking a node clears the previously selected edge.
+  canvas.emit!("update:selected", ["org"]);
+  await nextTick();
+  expect(instance.state.values.value.selectedClass).toEqual({ className: OBJECT_TYPE, primaryKey: "org" });
+  expect(instance.state.values.value.selectedRelation).toBeNull();
+});
+
+it("guards canvas selection changes when the panel has unsaved form edits", async () => {
+  let allowLeave = false;
+  const confirmLeaveUnsaved = vi.fn(() => Promise.resolve(allowLeave));
+  const flushGuard = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await nextTick();
+  };
+
+  const { instance } = mount(
+    true,
+    { selectedClass: { className: OBJECT_TYPE, primaryKey: "person" } },
+    {},
+    { confirmLeaveUnsaved },
+  );
+  await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
+
+  let isDirty = true;
+  const discard = vi.fn(() => {
+    isDirty = false;
+  });
+  const unregister = instance.forms.register("classForm", {
+    handle: {} as never,
+    submit: async () => undefined,
+    dirty: () => isDirty,
+    discard,
+  });
+
+  try {
+    // No-op: clicking the already-selected sole node does not prompt.
+    canvas.emit!("update:selected", ["person"]);
+    await nextTick();
+    expect(confirmLeaveUnsaved).not.toHaveBeenCalled();
+
+    // Cancelled switch to another node keeps selection and draft intact.
+    allowLeave = false;
+    canvas.emit!("update:selected", ["org"]);
+    await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1));
+    await flushGuard();
+    expect(discard).not.toHaveBeenCalled();
+    expect(isDirty).toBe(true);
+    expect(instance.state.values.value.selectedClass).toEqual({ className: OBJECT_TYPE, primaryKey: "person" });
+
+    // Cancelled switch to an edge, deselect, and blank click all preserve the original node and draft.
+    canvas.emit!("update:selectedEdges", ["works-in"]);
+    await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(2));
+    await flushGuard();
+    expect(instance.state.values.value.selectedClass).toEqual({ className: OBJECT_TYPE, primaryKey: "person" });
+    expect(instance.state.values.value.selectedRelation).toBeNull();
+
+    canvas.emit!("update:selected", []);
+    await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(3));
+    await flushGuard();
+    expect(instance.state.values.value.selectedClass).toEqual({ className: OBJECT_TYPE, primaryKey: "person" });
+
+    canvas.emit!("blank");
+    await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(4));
+    await flushGuard();
+    expect(instance.state.values.value.selectedClass).toEqual({ className: OBJECT_TYPE, primaryKey: "person" });
+    expect(discard).not.toHaveBeenCalled();
+
+    // Re-entrancy lock: a second click while confirmation is open is ignored.
+    let resolveConfirm!: (allowed: boolean) => void;
+    confirmLeaveUnsaved.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => {
+        resolveConfirm = resolve;
+      }),
+    );
+    canvas.emit!("update:selected", ["org"]);
+    canvas.emit!("blank");
+    expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(5);
+    resolveConfirm(true);
+    await vi.waitFor(() =>
+      expect(instance.state.values.value.selectedClass).toEqual({ className: OBJECT_TYPE, primaryKey: "org" }),
+    );
+    expect(discard).toHaveBeenCalledTimes(1);
+    expect(isDirty).toBe(false);
+
+    // Confirming blank while dirty again discards draft and clears selection.
+    isDirty = true;
+    allowLeave = true;
+    canvas.emit!("blank");
+    await vi.waitFor(() => expect(instance.state.values.value.selectedClass).toBeNull());
+    expect(discard).toHaveBeenCalledTimes(2);
+    expect(instance.state.values.value.selectedRelation).toBeNull();
+
+    // Blank when nothing is selected is a no-op even if a form is dirty.
+    isDirty = true;
+    confirmLeaveUnsaved.mockClear();
+    canvas.emit!("blank");
+    await nextTick();
+    expect(confirmLeaveUnsaved).not.toHaveBeenCalled();
+  } finally {
+    unregister();
+  }
 });

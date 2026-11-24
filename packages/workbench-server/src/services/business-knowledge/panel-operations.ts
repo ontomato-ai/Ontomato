@@ -176,7 +176,8 @@ async function save(host: Host, target: PanelOperationTarget, values: Record<str
   if (!envelope.success) return { kind: "refusal", code: "KNOWLEDGE_SAVE_REFUSED", message: envelope.message ?? "The owner refused the save" };
   if (create) {
     const data = runtimeJsonObjectSchema.parse(envelope.data);
-    return { kind: "success", data, affected: affected(savedIdSchema.parse(data).id) };
+    const primaryKey = savedIdSchema.parse(data).id;
+    return { kind: "success", data, created: { objectType: BUSINESS_KNOWLEDGE, primaryKey }, affected: affected(primaryKey) };
   }
   return { kind: "success", data: {}, affected: affected(target.primaryKey) };
 }

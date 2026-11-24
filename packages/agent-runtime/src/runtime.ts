@@ -2,12 +2,8 @@ import { AgentChannel, type AgentProvider } from "./channel";
 import { processLanguageInstruction } from "./process-language";
 import { agentChannelCommandSchema, agentNotificationSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
-import {
-  presentationResultSchema,
-  type PresentationResult,
-  type RuntimePresentationCallback,
-} from "@ontomato/contracts/agent-presentation";
-import { Type } from "typebox";
+import type { RuntimePresentationCallback } from "@ontomato/contracts/agent-presentation";
+import type { TSchema } from "typebox";
 import { Workspaces } from "./workspaces";
 import type { RuntimeSessionHistory, SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { ServiceLogStore, withServiceLogContext, getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
@@ -18,7 +14,7 @@ import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
 import { CodeExecutor } from "./code";
 import { signalUid, assertWorkerPolicy, type WorkerPolicy } from "./worker";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import {productTools} from './product-tools';
+import { bindPlatformTools, usesEngineTools, type BoundPlatformTools } from "./platform-tools";
 import path from "node:path";
 import { normalizeContext, type Message } from "@earendil-works/pi-ai";
 import {
@@ -44,7 +40,7 @@ import type {
   RuntimeSessionRunFrame,
   RuntimeStreamFrame,
 } from "@ontomato/contracts/agent-runtime-events";
-import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeJsonObject, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { runAgentLoopContinue } from "./core/pi/agent-loop";
 import type { AgentEvent, AgentTool } from "./core/pi/types";
 import { RuntimeStore, digest, canonical, type Scope } from "./store";
@@ -99,259 +95,39 @@ const stopMessage = (signal: AbortSignal) =>
 /** Digits and whitespace are noise for a command that only drifts a line number or an ID. */
 const shape = (value: string) => value.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
 
-interface PresentationBatchFailure {
-  readonly toolName: string;
-  readonly summary: string;
-}
-
-/**
- * Coordinates sequential execution and early-stop across page-control tool calls emitted in the same
- * assistant turn (product-layer standard detail 3.8).
- *
- * When any step in a batch fails to complete (`not_opened`, `load_error`, `not_filled`, `not_executed`,
- * `partially_executed`, `unknown`, `awaiting_confirmation`, HTTP error, or thrown error), all later
- * page-control calls in that same batch are skipped without sending requests to the host.
- */
-export interface PresentationBatchController {
-  /** Resets batch failure state whenever the agent loop advances to a new assistant turn. */
-  beginTurn(turnToken: unknown): void;
-  /** Manually resets batch failure state (useful for unit tests). */
-  reset(): void;
-  /** Runs one page-control step sequentially within the current batch. */
-  runStep<T>(fn: () => Promise<T>): Promise<T>;
-  /** Returns the earlier failure that aborted this batch, if any. */
-  failure(): PresentationBatchFailure | null;
-  /** Records that a page-control step in this batch did not succeed. */
-  recordFailure(toolName: string, summary: string): void;
-}
-
-export function createPresentationBatchController(): PresentationBatchController {
-  let activeTurn: unknown = Symbol("initial-turn");
-  let failed: PresentationBatchFailure | null = null;
-  let queue: Promise<unknown> = Promise.resolve();
-
-  return {
-    beginTurn(turnToken: unknown) {
-      if (turnToken !== activeTurn) {
-        activeTurn = turnToken;
-        failed = null;
-      }
-    },
-    reset() {
-      failed = null;
-    },
-    runStep<T>(fn: () => Promise<T>): Promise<T> {
-      const next = queue.catch(() => undefined).then(fn);
-      queue = next.then(() => undefined, () => undefined);
-      return next;
-    },
-    failure() {
-      return failed;
-    },
-    recordFailure(toolName: string, summary: string) {
-      if (!failed) failed = { toolName, summary };
-    },
-  };
-}
-
-function stepFailureSummary(toolName: string, result: PresentationResult): string | null {
-  if (toolName === "present") {
-    if (result.status === "opened" && result.reason === "target_selected") return null;
-    return `${result.status}/${result.reason}`;
-  }
-  if (toolName === "observe_display") {
-    if (result.status === "observed" && result.reason === "current_display") return null;
-    return `${result.status}/${result.reason}`;
-  }
-  if (toolName === "fill_form") {
-    if (result.status === "filled") {
-      return result.rejectedFields?.length
-        ? `filled/partial_rejected:${result.rejectedFields.map((item) => item.path).join(",")}`
-        : null;
-    }
-    return `${result.status}/${result.reason}`;
-  }
-  if (toolName === "page_action") {
-    if (result.status === "executed") return null;
-    return `${result.status}/${result.reason}`;
-  }
-  return null;
-}
-
-function skippedResultFor(
-  toolName: "present" | "observe_display" | "fill_form" | "page_action",
-  prior: PresentationBatchFailure,
-  input: Record<string, unknown>,
-): PresentationResult {
-  const error = {
-    code: "PREVIOUS_STEP_FAILED",
-    message: `Not executed because earlier page step '${prior.toolName}' in this batch did not succeed (${prior.summary}).`,
-  };
-  const current = { known: false as const, reason: "previous_step_failed" };
-  if (toolName === "present") {
-    return { status: "not_opened", reason: "previous_step_failed", current, error };
-  }
-  if (toolName === "observe_display") {
-    return { status: "observed", reason: "previous_step_failed", current, error };
-  }
-  if (toolName === "fill_form") {
-    return {
-      status: "not_filled",
-      reason: "previous_step_failed",
-      ...(typeof input.member === "string" ? { member: input.member } : {}),
-      ...(Array.isArray(input.memberPath) ? { memberPath: input.memberPath as string[] } : {}),
-      current,
-      error,
-    };
-  }
-  return {
-    status: "not_executed",
-    reason: "previous_step_failed",
-    ...(typeof input.operation === "string" ? { operation: input.operation } : {}),
-    current,
-    error,
-  };
-}
-
-async function executePresentationCall(
-  toolName: "present" | "observe_display" | "fill_form" | "page_action",
-  runId: string,
-  callback: RuntimePresentationCallback,
-  batch: PresentationBatchController,
-  toolCallId: string,
-  payloadInput: Record<string, unknown>,
-  rawInput: Record<string, unknown>,
-  signal: AbortSignal | undefined,
-  fetchImpl: typeof fetch = fetch,
-) {
-  return batch.runStep(async () => {
-    const prior = batch.failure();
-    if (prior) {
-      const skipped = presentationResultSchema.parse(skippedResultFor(toolName, prior, rawInput));
-      return { content: [{ type: "text" as const, text: JSON.stringify(skipped) }], details: {}, isError: false };
-    }
-    try {
-      const response = await fetchImpl(callback.url, {
-        method: "POST",
-        redirect: "error",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Ontomato-Callback-Credential": callback.credential,
-          "X-Ontomato-Run-Id": runId,
+/** Adapts engine-neutral bound platform tools to the legacy in-process PI agent loop. */
+function toPiAgentTools(bound: BoundPlatformTools): AgentTool[] {
+  return bound.tools.map((tool) => ({
+    name: tool.declaration.name,
+    label: tool.label,
+    description: tool.declaration.description,
+    parameters: tool.declaration.parameters as unknown as TSchema,
+    ...(tool.executionMode ? { executionMode: tool.executionMode } : {}),
+    ...(tool.replay ? { replay: tool.replay } : {}),
+    async execute(toolCallId, args, signal, onUpdate) {
+      const outcome = await bound.invoke({
+        toolCallId,
+        toolName: tool.declaration.name,
+        args: (args ?? {}) as RuntimeJsonObject,
+        signal: signal ?? new AbortController().signal,
+        onUpdate: (partial) => {
+          onUpdate?.({
+            content: [{ type: "text", text: partial.text }],
+            details: {},
+            ...(partial.data !== undefined ? { structuredContent: partial.data } : {}),
+          });
         },
-        body: JSON.stringify({ toolCallId, input: payloadInput }),
-        signal,
       });
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        batch.recordFailure(toolName, `http_${response.status}`);
-        return { content: [{ type: "text" as const, text: JSON.stringify(body) }], details: {}, isError: true };
-      }
-      const result = presentationResultSchema.parse(body);
-      const failureSummary = stepFailureSummary(toolName, result);
-      if (failureSummary !== null) {
-        batch.recordFailure(toolName, failureSummary);
-      }
-      return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {}, isError: false };
-    } catch (error) {
-      batch.recordFailure(toolName, error instanceof Error ? error.message : String(error));
-      throw error;
-    }
-  });
-}
-
-/** Builds the four sequential live page-control tools bound to a shared batch early-stop controller. */
-export function createPresentationTools(
-  runId: string,
-  callback: RuntimePresentationCallback,
-  batch: PresentationBatchController = createPresentationBatchController(),
-  fetchImpl: typeof fetch = fetch,
-): AgentTool[] {
-  const present: AgentTool = {
-    name: "present",
-    label: "Present",
-    description: "Show an outputs/ artifact or navigate/update a registered site-relative page in the user's current conversation display right in this round. For a page, this performs a real navigation written to the browser address (preserved on refresh) without changing the user's side-by-side or full-page layout (opens side-by-side if no page is open). Optional state applies to any declared public state field of the page in place (not only deepLink fields) without reloading or triggering business writes, and must not duplicate a state query parameter. Use fill_form to populate a mounted live form and page_action to trigger save or other declared actions. The result reports what the view actually shows at receipt time, including the panel's declared public state values and current live form contents (including unsaved user edits). For an outputs/ artifact card, the display remains temporary and is not saved in the page address.",
-    parameters: Type.Object({
-      target: Type.String(),
-      state: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    replay: "never",
-    execute(toolCallId, input, signal) {
-      const record = input as Record<string, unknown>;
-      return executePresentationCall("present", runId, callback, batch, toolCallId, record, record, signal, fetchImpl);
+      return {
+        content: outcome.result.content,
+        details: outcome.result.details,
+        ...(outcome.result.details.data !== undefined
+          ? { structuredContent: outcome.result.details.data }
+          : {}),
+        isError: outcome.isError,
+      };
     },
-  };
-
-  const observeDisplay: AgentTool = {
-    name: "observe_display",
-    label: "Observe display",
-    description: "Read the latest live state of the page or artifact currently open beside the conversation — including its address, selection, highlights, all declared public state values (tabs, filters, view mode, etc.), and the current live values and unsaved status of any open forms (reflecting any edits the user made mid-round). Call `observe_display` (or `present`) before calling `fill_form` or `page_action`: the platform automatically binds subsequent `fill_form` and `page_action` calls to the latest snapshot delivered in this round so stale requests are rejected instead of operating on a changed page, form, or object. Read-only: does not navigate, reload, change layout, or trigger writes.",
-    parameters: Type.Object({}, { additionalProperties: false }),
-    executionMode: "sequential",
-    replay: "never",
-    execute(toolCallId, _input, signal) {
-      return executePresentationCall("observe_display", runId, callback, batch, toolCallId, { mode: "observe" }, {}, signal, fetchImpl);
-    },
-  };
-
-  const fillForm: AgentTool = {
-    name: "fill_form",
-    label: "Fill form",
-    description: "Fill explicit fields into a live form currently displayed on the page beside the conversation, using the form's own editing entry so changed fields are highlighted, owner-driven dynamic updates run, and the form remains unsaved until saved. Does not navigate or save. The platform binds this call to the latest page snapshot in this round, starting with the page context attached to the user message. If no page context was attached, use `observe_display` or `present` first. It rejects as `stale` if the page, panel, form, target, or dashboard board/card changed. Keys in `values` are JSON Pointer field paths (e.g. \"/name\") or top-level field names (e.g. \"name\"). When the form has unsaved edits made by the user on any target field, refuses without overwriting (not_filled / blocked_unsaved) — ask the user first and pass overwriteUnsaved: true only after explicit user confirmation.",
-    parameters: Type.Object({
-      member: Type.Optional(Type.String()),
-      memberPath: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
-      values: Type.Record(Type.String(), Type.Unknown()),
-      overwriteUnsaved: Type.Optional(Type.Boolean()),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    replay: "never",
-    execute(toolCallId, input, signal) {
-      const record = input as Record<string, unknown>;
-      return executePresentationCall(
-        "fill_form",
-        runId,
-        callback,
-        batch,
-        toolCallId,
-        { mode: "fill_form", ...record },
-        record,
-        signal,
-        fetchImpl,
-      );
-    },
-  };
-
-  const pageAction: AgentTool = {
-    name: "page_action",
-    label: "Page action",
-    description: "Execute a declared operation or local page action on the page currently displayed beside the conversation, through the exact same UI entry a user clicks (for example saving a live form with its current contents, clicking a bound action button, running a list row/batch action, refreshing data with \"page.refresh\", or discarding form edits with \"<form>.discard\"). Never pass form field values here — fill the form with `fill_form` first, then invoke its save operation. The platform binds this call to the latest page snapshot in this round, starting with the page context attached to the user message. If no page context was attached, use `observe_display` or `present` first. It rejects as `stale` if the page, panel, entry, target object, checked rows, or dashboard board/card changed. For business writes in default mode (and discarding dirty form edits), this asks the user to confirm in the conversation (`awaiting_confirmation`); in full-auto sessions writes execute immediately (`executed`) after verifying page state is unchanged. For list row actions, pass `rowKey` using `<className>:<primaryKey>` (required for mixed-type or dynamic-type lists; plain `<primaryKey>` is allowed on single-type lists). If receipt is missing (`unknown`), check the returned `intentId` instead of retrying.",
-    parameters: Type.Object({
-      operation: Type.String(),
-      memberPath: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
-      rowKey: Type.Optional(Type.String()),
-      input: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-    }, { additionalProperties: false }),
-    executionMode: "sequential",
-    replay: "never",
-    execute(toolCallId, input, signal) {
-      const record = input as Record<string, unknown>;
-      return executePresentationCall(
-        "page_action",
-        runId,
-        callback,
-        batch,
-        toolCallId,
-        { mode: "page_action", ...record },
-        record,
-        signal,
-        fetchImpl,
-      );
-    },
-  };
-
-  return [present, observeDisplay, fillForm, pageAction];
+  }));
 }
 
 export interface RuntimeOptions {
@@ -865,7 +641,10 @@ export class AgentRuntime {
     let closeMcp = async () => {};
     const lease = await this.gateway.lease({ [config.name]: litellmEntry(config) });
     try {
-      const mcpConfigs = await this.mcp.resolve(scope, request.definition.externalMcp.map((ref) => ref.id));
+      const engineTools = usesEngineTools(request.definition);
+      const mcpConfigs = engineTools
+        ? await this.mcp.resolve(scope, request.definition.externalMcp.map((ref) => ref.id))
+        : [];
       const rows = await this.store.contextMessages(scope, run.sessionId);
       // Admission commits the opening input first in context order, before any safe-boundary consumption.
       const openingMessageId = rows.find(row => row.runId === run.id)!.id;
@@ -902,14 +681,14 @@ export class AgentRuntime {
       for (const file of await this.files.scan(sandbox.workspace))
         active.outputBaseline.set(file.path, file.sha256);
       let channelEnv: { commandUrl: string; callbackSecret: string } | undefined;
-      if (request.definition.toolSurface !== "product" && run.channel) {
+      if (engineTools && run.channel) {
         active.channelSecret = randomBytes(32).toString("base64url");
         channelEnv = {
           commandUrl: this.channelCommandUrl(scope, run.id),
           callbackSecret: active.channelSecret,
         };
       }
-      const tools = request.definition.toolSurface==='product'?[]:await sandbox.start(
+      const engineToolList = !engineTools ? [] : await sandbox.start(
         uid,
         run.id,
         run.correlationId,
@@ -918,19 +697,27 @@ export class AgentRuntime {
         channelEnv,
       );
       const mcp = await connectMcp(
-        request.definition.toolSurface==='product'?[]:mcpConfigs,
+        engineTools ? mcpConfigs : [],
         run.correlationId,
         signal,
       );
       closeMcp = mcp.close;
-      tools.push(...mcp.tools);
-      tools.push(...productTools(request,run.id));
-      if (run.channel) tools.push(this.channel.tool(scope, run));
-      let presentationBatch: PresentationBatchController | undefined;
-      if (presentationCallback) {
-        presentationBatch = createPresentationBatchController();
-        tools.push(...createPresentationTools(run.id, presentationCallback, presentationBatch));
-      }
+      const boundTools = bindPlatformTools({
+        runId: run.id,
+        request,
+        mcpTools: mcp.tools,
+        channelTool: run.channel ? this.channel.tool(scope, run) : undefined,
+        presentationCallback,
+        authorize: () => {
+          signal.throwIfAborted();
+        },
+        onClose: mcp.close,
+      });
+      closeMcp = () => boundTools.close();
+      const tools: AgentTool[] = [
+        ...engineToolList,
+        ...toPiAgentTools(boundTools),
+      ];
       if (new Set(tools.map((t) => t.name)).size !== tools.length)
         throw new Error("Exposed tool names must be unique");
       const model = piModel(config, lease);
@@ -939,9 +726,9 @@ export class AgentRuntime {
         {
           model,
           toolExecution: "sequential",
-          beforeToolCall: presentationBatch
+          beforeToolCall: presentationCallback
             ? async ({ assistantMessage }) => {
-                presentationBatch!.beginTurn(assistantMessage);
+                boundTools.beginTurn(assistantMessage);
                 return undefined;
               }
             : undefined,
@@ -1221,7 +1008,16 @@ export class AgentRuntime {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           args: tools.get(event.toolCallId)?.args ?? {},
-          status: event.isError ? "failed" : "completed",
+          status:
+            event.outcome === "unknown"
+              ? "unknown"
+              : event.outcome === "failure"
+                ? "failed"
+                : event.outcome === "success"
+                  ? "completed"
+                  : event.isError
+                    ? "failed"
+                    : "completed",
           result: event.result,
         });
     }

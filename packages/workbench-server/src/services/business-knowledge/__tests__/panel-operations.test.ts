@@ -169,6 +169,7 @@ describe("business knowledge panel server operations", () => {
 
     expect(outcome).toEqual({
       kind: "success", data: { id: "k-new" },
+      created: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-new" },
       affected: { objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-new" }], objectTypes: [BUSINESS_KNOWLEDGE] },
     });
     expect(sent[0]?.path).toBe("/api/data-query/admin/addBussinessKnowledge");

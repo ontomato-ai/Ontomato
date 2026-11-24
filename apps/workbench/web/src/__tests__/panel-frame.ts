@@ -613,8 +613,12 @@ export function panelSnapshot(panel: ProductPanel, current: Record<string, { rev
  * Panel application A with a panel that is the task's form alone: the page's address with the task selected, and what
  * the platform answers for the page, the panel, its projection, and its form read.
  */
-export function liveFormScenario() {
-  const formProjection = projections["projection-schedules-form"]!;
+export function liveFormScenario(fixedScope = false) {
+  const projection = projections["projection-schedules-form"]!;
+  const formProjection = fixedScope ? {
+    ...projection,
+    config: { ...projection.config, fixedFields: { "/scope": { state: "scope" } } },
+  } : projection;
   const panel = panelRecord(
     "panel-schedules-form",
     "Task form (trial)",
@@ -627,6 +631,7 @@ export function liveFormScenario() {
         status: { type: { kind: "scalar", type: "string" } },
         checked: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
         grantDialog: { type: { kind: "scalar", type: "boolean" } },
+        ...(fixedScope ? { scope: { type: { kind: "scalar" as const, type: "string" as const }, default: "global" } } : {}),
       },
       members: { form: slot(formProjection.id, "task") },
     }),

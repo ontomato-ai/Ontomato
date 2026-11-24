@@ -3,17 +3,20 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
 import { defineComponent, h } from "vue";
 import type { PlatformShellLabels } from "@ontomato/platform-shell";
-import type { NativeFrameSpec } from "../NativeFrameHost.vue";
+import type { ApplicationFrameSpec } from "../ApplicationFrameHost.vue";
 
-vi.mock("../NativeFrameHost.vue", () => ({
+vi.mock("../ApplicationFrameHost.vue", () => ({
   default: defineComponent({
-    name: "NativeFrameHostDouble",
-    props: { frame: { type: Object as () => NativeFrameSpec | null, default: null } },
+    name: "ApplicationFrameHostDouble",
+    props: {
+      frame: { type: Object as () => ApplicationFrameSpec | null, default: null },
+      blocked: { type: Boolean, default: false },
+    },
     setup(props, { slots }) {
       return () =>
-        h("div", { class: "native-frame-double", "data-frame-panel": props.frame?.framePanelId ?? "", "data-frame-app": props.frame?.applicationId ?? "" }, [
+        h("div", { class: "application-frame-double", "data-frame-panel": props.frame?.framePanelId ?? "", "data-frame-app": props.frame?.applicationId ?? "" }, [
           props.frame
-            ? h("aside", { class: "mock-frame-menu", "data-active-page": props.frame.activePageId }, props.frame.groups.flatMap((group) =>
+            ? h("aside", { class: "mock-frame-menu", "data-active-page": props.frame.activePageId }, (props.frame.groups ?? []).flatMap((group) =>
                 group.items.map((item) => h("button", { class: ["mock-frame-row", { active: item.id === props.frame?.activePageId }], "data-id": item.id }, item.label)),
               ))
             : null,
@@ -162,7 +165,7 @@ describe("the platform layout", () => {
     });
     await router.push({ path: "/permissions/members", query: { navigationContext: "ontology" } });
     await flushPromises();
-    expect(wrapper.get(".native-frame-double").attributes("data-frame-panel")).toBe("builtin-product-ontology-frame");
+    expect(wrapper.get(".application-frame-double").attributes("data-frame-panel")).toBe("builtin-product-ontology-frame");
     expect(wrapper.get(".mock-frame-menu").attributes("data-active-page")).toBe("/permissions/members");
     expect(wrapper.find(".mock-frame-row.active").text()).toBe("Members");
     await router.push("/permissions/members");
@@ -207,9 +210,18 @@ describe("the platform layout", () => {
     const withFrame = partitionOf().map((app) => (app.id === "ontology" ? { ...app, framePanelId: "builtin-product-ontology-frame" } : app));
     await wrapper.setProps({ apps: appDeclarations(generatedNavigation(), closedAccess(["ontology-modeling"]), withFrame, t) });
     await flushPromises();
-    expect(wrapper.get(".native-frame-double").attributes("data-frame-panel")).toBe("builtin-product-ontology-frame");
+    expect(wrapper.get(".application-frame-double").attributes("data-frame-panel")).toBe("builtin-product-ontology-frame");
     expect(wrapper.find(".mock-frame-menu").exists()).toBe(true);
     expect(wrapper.find(".platform-page-body .page-double").exists()).toBe(true);
+    expect(mounts).toBe(1);
+
+    // Panel entries reporting `appFramed: true` hide the shell page header and apply `.own-frame`,
+    // while keeping the same outer frame spec active on ApplicationFrameHost.
+    await wrapper.setProps({ shownPage: { title: "nav.objectTypes" }, appFramed: true });
+    await flushPromises();
+    expect(wrapper.get(".application-frame-double").attributes("data-frame-panel")).toBe("builtin-product-ontology-frame");
+    expect(wrapper.find(".platform-page-header").exists()).toBe(false);
+    expect(wrapper.find(".platform-page-body.own-frame").exists()).toBe(true);
     expect(mounts).toBe(1);
   });
 

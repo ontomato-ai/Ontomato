@@ -940,7 +940,7 @@ export class RuntimeStore {
         await this.append(scope, id, {
           type: "message_end", messageId: randomUUID(), messageSeq: 0, contextSeq: null,
           message: { role: "toolResult", toolCallId: part.id, toolName: part.name,
-            isError: true, timestamp: Date.now(), content: [{ type: "text",
+            isError: true, outcome: "unknown", timestamp: Date.now(), content: [{ type: "text",
               text: "Execution ended before its result was recorded. Its external outcome is unknown. Do not repeat this action automatically." }] },
         });
       }

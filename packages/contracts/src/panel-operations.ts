@@ -192,5 +192,6 @@ export const panelCompletedOperationSchema = z.object({
   panelId: runtimeKeySchema,
   target: panelObjectIdentitySchema.nullable(),
   message: z.string().optional(),
+  created: panelObjectIdentitySchema.optional(),
 }).strict();
 export type PanelCompletedOperation = z.infer<typeof panelCompletedOperationSchema>;

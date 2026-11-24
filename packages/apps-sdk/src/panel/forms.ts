@@ -2,6 +2,7 @@ import { shallowReactive, shallowRef, type Ref } from "vue";
 import type { ExpectedPageTarget, FormFieldRejection, FormFillOutcome } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
+import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { PanelFormDescription, PanelFormField, PanelFormValues, ProjectionOperationBinding } from "@ontomato/contracts/panel-projection";
 import type { PanelAgentActionContext } from "./instance";
@@ -265,6 +266,40 @@ export class PanelFormAdapters {
   /** Drops unsaved edits in a slot's form, restoring its owner baseline. */
   discard(slot: string): void {
     this.#bySlot.get(slot)?.discard();
+  }
+
+  /**
+   * Discards dirty forms whose current object target is in `removed`, or whose bound state inputs include any state
+   * key in `clearedStateKeys` (for example, a draft whose `fixedFields` parent object was removed). Called before
+   * clearing panel state on removal so form target watchers do not prompt to keep editing or write deleted objects back.
+   */
+  discardRemoved(
+    removed: readonly PanelObjectIdentity[],
+    clearedStateKeys?: ReadonlySet<string>,
+  ): void {
+    const hasRemoved = removed.length > 0;
+    const hasClearedStates = Boolean(clearedStateKeys?.size);
+    if (!hasRemoved && !hasClearedStates) return;
+    for (const [slot, adapter] of [...this.#bySlot.entries()]) {
+      if (this.#bySlot.get(slot) !== adapter) continue;
+      if (!adapter.dirty() && !adapter.handle?.dirty?.value) continue;
+      const target = adapter.snapshot?.()?.target;
+      const targetRemoved =
+        hasRemoved
+        && target?.kind === "object"
+        && removed.some(
+          ({ objectType, primaryKey }) =>
+            objectType === target.objectType && primaryKey === target.primaryKey,
+        );
+      const stateCleared =
+        !targetRemoved
+        && hasClearedStates
+        && (
+          [...(this.#boundState.get(slot) ?? [])].some((key) => clearedStateKeys!.has(key))
+          || [...(adapter.draft?.inputStateKeys() ?? [])].some((key) => clearedStateKeys!.has(key))
+        );
+      if (targetRemoved || stateCleared) adapter.discard();
+    }
   }
 
   /**

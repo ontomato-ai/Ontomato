@@ -171,6 +171,7 @@ function mountFormHarness(options: {
         outcome: {
           kind: "success",
           data: {},
+          created: { objectType: FUNCTION, primaryKey: "fn-created" },
           affected: { objects: [{ objectType: FUNCTION, primaryKey: "fn-created" }], objectTypes: [FUNCTION] },
         },
       },

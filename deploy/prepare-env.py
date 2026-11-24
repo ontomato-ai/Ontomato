@@ -41,13 +41,8 @@ def prepare(path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("env_file", nargs="?", default=".env")
-    parser.add_argument("--sandbox-preflight", action="store_true")
     args = parser.parse_args()
     try:
-        if args.sandbox_preflight:
-            from runtime_policy import run_preflight
-            run_preflight(args.env_file)
-        else:
-            prepare(args.env_file)
-    except (OSError, ValueError, RuntimeError) as error:
+        prepare(args.env_file)
+    except (OSError, ValueError) as error:
         parser.exit(1, "prepare-env: " + str(error) + "\n")

@@ -64,6 +64,11 @@ const objectChangedFrame = z.object({
 export const agentHostObjectChangedFrameSchema = z.union([
   objectChangedFrame.extend({ target: panelObjectIdentitySchema, affected: panelOperationAffectedSchema.optional() }),
   objectChangedFrame.extend({ target: z.null(), affected: panelOperationAffectedSchema }),
+  objectChangedFrame.extend({
+    target: panelObjectIdentitySchema.nullable(),
+    operation: panelCompletedOperationSchema,
+    affected: panelOperationAffectedSchema.optional(),
+  }),
 ]);
 /** Live frames on the same stream have their own SSE event names and no replay cursor. */
 export const agentHostSessionLiveFrameSchema = z.union([

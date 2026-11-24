@@ -352,8 +352,9 @@ export interface PanelInstance {
   ): Promise<PanelWriteResult>;
   objectChanged(object: PanelObjectIdentity): void;
   /**
-   * Lets go of objects a write removed: a state holding one is cleared, a list state drops it, so nothing keeps choosing
-   * or reading what is no longer there.
+   * Lets go of objects a write removed: dirty forms targeting them (or bound to state fields being cleared) are
+   * discarded first, then any state holding a removed object is cleared and any list state drops it, so nothing keeps
+   * choosing, prompting for, or reading what is no longer there.
    */
   letGo(removed: readonly PanelObjectIdentity[]): void;
   /**
@@ -1108,8 +1109,20 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     writeOperation,
     objectChanged,
     letGo(removed) {
+      if (!removed.length) return;
       const gone = (object: PanelObjectRef) =>
         removed.some(({ objectType, primaryKey }) => objectType === object.className && primaryKey === object.primaryKey);
+      const clearedStateKeys = new Set<string>();
+      for (const [name, { type }] of Object.entries(manifest.state)) {
+        if (type.kind !== "object") continue;
+        const held = stateObject(state.values.value[name]);
+        if (held && gone(held)) clearedStateKeys.add(name);
+      }
+      // Discard dirty forms targeting removed objects (or bound to state fields being cleared) before mutating panel
+      // state so target watchers do not prompt to keep editing or write deleted objects back into state.
+      for (const registry of formRegistries()) {
+        registry.discardRemoved(removed, registry === forms ? clearedStateKeys : undefined);
+      }
       for (const [name, { type }] of Object.entries(manifest.state)) {
         const value = state.values.value[name];
         if (type.kind === "object") {

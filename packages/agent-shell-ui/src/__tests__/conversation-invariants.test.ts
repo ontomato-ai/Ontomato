@@ -319,7 +319,7 @@ function subscription(read: () => Promise<AgentHostRunSnapshot[]>): FakeSubscrip
     read: vi.fn(read),
     current: () => ({
       id: runId, status: "running", stopReason: null, errorMessage: null, answerMessageId: null, workspaceCommit: null, createdAt: timestamp,
-      finishedAt: null, cursor, artifacts: [], tools: {}, retrievals: [],
+      finishedAt: null, cursor, artifacts: [], tools: {}, details: {}, usageUpdate: null,
     }),
     snapshot(pages) {
       cursor = pages[pages.length - 1]!.cursor;

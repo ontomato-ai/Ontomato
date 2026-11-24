@@ -19,7 +19,7 @@ import {
   panelOperationDescriptorResponseSchema, panelOperationRefSchema,
   panelWriteOperationSnapshotSchema, readPanelOperationRequestSchema, readPanelOperationResponseSchema, readStoredPanelOperationIntent,
 } from "./panel-agent";
-import { panelOperationImpactSchema, panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
+import { panelCompletedOperationSchema, panelOperationImpactSchema, panelReadOperationDescriptorSchema, panelReadOperationResultSchema } from "./panel-operations";
 import {
   appBridgeConfirmPanelOperationResultSchema, appBridgeConfirmPanelOperationSchema,
   appBridgeExpandPageComposerSchema, appBridgeRequestSchema, APP_BRIDGE_CHANNEL,
@@ -1337,6 +1337,30 @@ test("a dispatched success carries the owner's message alongside the result data
   assert.deepEqual(panelHumanOperationDispatchResponseSchema.parse(reply), reply);
   assert.deepEqual(panelOperationOutcomeSchema.parse({ kind: "success", data: {} }), { kind: "success", data: {} });
   assert.equal(panelOperationOutcomeSchema.safeParse({ ...reply.outcome, message: { key: "started" } }).success, false);
+});
+
+test("success receipts carry a strictly shaped created object identity", () => {
+  const created = { objectType: ATTRIBUTE, primaryKey: "Order.code" };
+  const outcome = { kind: "success", data: {}, created };
+  assert.deepEqual(panelOperationOutcomeSchema.parse(outcome), outcome);
+  const dispatch = { kind: "dispatched", intentId: "eeb5fc31-8ecf-46a9-882f-728ce4ba3fff", outcome };
+  assert.deepEqual(panelHumanOperationDispatchResponseSchema.parse(dispatch), dispatch);
+  for (const invalid of [null, { objectType: ATTRIBUTE }, { ...created, primaryKey: "" }, { ...created, objectType: "" }, { ...created, extra: true }]) {
+    assert.equal(panelOperationOutcomeSchema.safeParse({ ...outcome, created: invalid }).success, false);
+  }
+});
+
+test("completed operations preserve and validate the created identity through the panel host message", () => {
+  const operation = { operationId: "form.save", panelId: "attributes", target: null };
+  const created = { objectType: ATTRIBUTE, primaryKey: "Order.code" };
+  const completed = { ...operation, created };
+  assert.deepEqual(panelCompletedOperationSchema.parse(operation), operation);
+  assert.deepEqual(panelCompletedOperationSchema.parse(completed), completed);
+  const event = { kind: "object-changed", target: null, operation: completed };
+  assert.deepEqual(panelHostFrameMessageSchema.parse(event), event);
+  for (const invalid of [null, { objectType: ATTRIBUTE }, { ...created, primaryKey: "" }, { ...created, extra: true }]) {
+    assert.equal(panelCompletedOperationSchema.safeParse({ ...operation, created: invalid }).success, false);
+  }
 });
 
 test("legacy formField member attachments are rejected in favour of ObjectForm Vue slots", () => {

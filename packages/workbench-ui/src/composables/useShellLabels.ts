@@ -5,6 +5,7 @@ export function useShellLabels() {
 const { t, locale } = useI18n();
 const selectionMessage = (key: string, file: { title: string; path: string }, rows: number[]) =>
   t(key, { rows: new Intl.ListFormat(locale.value).format(rows.map(String)), file: t("assistant.continuation.file", file) });
+const formatCount = (count: number) => new Intl.NumberFormat(locale.value).format(count);
 return computed<ShellLabels>(() => ({
   selectRow: (row) => t("assistant.selectRow", { row }),
   selectedRows: (count) => t("assistant.selectedRows", { count }),
@@ -52,6 +53,30 @@ return computed<ShellLabels>(() => ({
   pageContextClosed: t("assistant.pageContextClosed"),
   toolInput: t("assistant.toolInput"),
   toolOutput: t("assistant.toolOutput"),
+  toolOutcomeUnknown: t("assistant.toolOutcomeUnknown"),
+  toolOutcomeUnknownHint: t("assistant.toolOutcomeUnknownHint"),
+  runDetails: {
+    fileAdded: t("assistant.detailFileAdded"),
+    fileModified: t("assistant.detailFileModified"),
+    fileDeleted: t("assistant.detailFileDeleted"),
+    compaction: t("assistant.detailCompaction"),
+    diagnostic: t("assistant.detailDiagnostic"),
+    attachment: t("assistant.detailAttachment"),
+    hook: t("assistant.detailHook"),
+    model: t("assistant.detailModel"),
+    moderation: t("assistant.detailModeration"),
+    review: t("assistant.detailReview"),
+    patch: t("assistant.detailPatch"),
+  },
+  usage: {
+    tokens: (count) => t("assistant.usageTokens", { count: formatCount(count) }, count),
+    input: (count) => t("assistant.usageInput", { count: formatCount(count) }),
+    output: (count) => t("assistant.usageOutput", { count: formatCount(count) }),
+    cacheRead: (count) => t("assistant.usageCacheRead", { count: formatCount(count) }),
+    cacheWrite: (count) => t("assistant.usageCacheWrite", { count: formatCount(count) }),
+    reasoning: (count) => t("assistant.usageReasoning", { count: formatCount(count) }),
+    lastCall: (count) => t("assistant.usageLastCall", { count: formatCount(count) }),
+  },
   stopped: t("assistant.stopped"),
   truncated: t("assistant.truncated"),
   failed: t("assistant.failed"),
