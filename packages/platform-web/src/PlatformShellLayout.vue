@@ -51,6 +51,7 @@ const props = defineProps<{
   renderers?: Record<string, NativeLayout>;
   /** The edition's mark; its name defaults to the platform's service name. */
   brand?: Omit<PlatformBrand, "name"> & { name?: string };
+  standaloneApplications?: readonly string[];
 }>();
 
 const host = usePlatformHost();
@@ -166,7 +167,7 @@ const labels = computed(() => ({
 }));
 
 /** The rail's rows and every page inside (the home's cards, the app builder) open applications through this entry. */
-const openApplication = useApplicationOpening(declarations);
+const openApplication = useApplicationOpening(declarations, id => props.standaloneApplications?.includes(id) ?? false);
 function selectRailApp(id: string) {
   if (id !== "agent-builder") openApplication(id);
   else if (agentBuilder.value?.home) void router.push(agentBuilder.value.home);
@@ -329,6 +330,7 @@ const blocked = computed(() => {
     :page-actions="pageActions"
     :app-theme="appTheme"
     :app-framed="appFramed"
+    :standalone-applications="standaloneApplications"
     :blocked="catalog.error.value ? { reason: 'no-pages', message: catalog.error.value } : blocked"
     @select-app="selectRailApp"
   />

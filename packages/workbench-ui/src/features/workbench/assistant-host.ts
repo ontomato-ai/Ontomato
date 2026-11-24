@@ -34,8 +34,22 @@ const workbenchRequest: AgentHostClientOptions["request"] = (path, init) =>
  * The shared shell client of the assistant's agents. `request` is an authenticated request to a path under the API
  * root: the workbench's own by default, the app's when an SDK app embeds the conversation.
  */
-export function createAssistantClient(request: AgentHostClientOptions["request"] = workbenchRequest) {
-  return createAgentHostClient({ request: (path, init) => request(`${PREFIX}${path}`, init), tasks: true });
+export function createAssistantClient(
+  request: AgentHostClientOptions["request"] = workbenchRequest,
+  { excludeGovernance = false } = {},
+) {
+  return createAgentHostClient({
+    request: (path, init) => {
+      if (excludeGovernance && (path === "/agents" || path.startsWith("/agents?"))) {
+        const [pathname, search] = path.split("?");
+        const query = new URLSearchParams(search);
+        query.set("excludePreset", "knowledge-governance");
+        return request(`${PREFIX}${pathname}?${query}`, init);
+      }
+      return request(`${PREFIX}${path}`, init);
+    },
+    tasks: true,
+  });
 }
 
 /** The same client with its conversations bound to one workspace (the app builder's): made in it, listed from it. */
@@ -131,4 +145,3 @@ export async function readDatasetSource(sessionId: string, artifactId: string): 
     throw error;
   }
 }
-

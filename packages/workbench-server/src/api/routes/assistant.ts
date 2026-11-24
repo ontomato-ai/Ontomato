@@ -23,7 +23,7 @@ import {
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { platformService } from "../middleware/platform-service";
 import { initializeDomainPresetAgents } from "../../services/assistant/preset-initialization";
-import { agentHostCreateSessionSchema } from "@ontomato/contracts/agent-host";
+import { agentHostCreateSessionSchema, agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
 import { z } from "zod";
 import {
   assistantAgentInputSchema,
@@ -72,7 +72,13 @@ router.post("/sessions", guardBuilder);
 router.post("/sessions/:sessionId/runs", guardBuilder);
 router.get("/agents", wrap(async (req, res) => {
   const c = context(req);
-  res.json(await assistantService.agents(c.owner, c.credentials, assistantAgentsQuerySchema.parse(req.query)));
+  const { excludePreset, ...query } = req.query;
+  const excluded = z.literal("knowledge-governance").optional().parse(excludePreset);
+  res.json(await assistantService.agents(c.owner, c.credentials, assistantAgentsQuerySchema.parse(query), excluded));
+}));
+router.get("/analysis-sessions", wrap(async (req, res) => {
+  const query = agentHostSessionPageQuerySchema.parse(req.query);
+  res.json(await assistantService.list(context(req).owner, { ...query, analysisOnly: true }));
 }));
 router.use(createAgentHostRouter(assistantService, true));
 router.get("/sessions/:sessionId/runs/:runId/authoring/:kind/tests/:executionId", wrap(async (req, res) => {

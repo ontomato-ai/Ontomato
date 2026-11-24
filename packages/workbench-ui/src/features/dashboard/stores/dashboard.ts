@@ -85,7 +85,7 @@ export const useDashboardStore = defineStore("dashboard", () => {
     return apiCreateDashboard(name);
   }
 
-  async function promptCreateDashboard() {
+  async function promptCreateDashboard(openDashboard: (id: string) => void = selectDashboard) {
     try {
       const { value } = await ElMessageBox.prompt(
         t("analysis.enterDashboardName"),
@@ -106,7 +106,7 @@ export const useDashboardStore = defineStore("dashboard", () => {
       const created = await createDashboard(name);
       await loadDashboards();
       if (created?.id) {
-        void selectDashboard(created.id);
+        openDashboard(created.id);
       }
     } catch {
       // Cancelled or failed

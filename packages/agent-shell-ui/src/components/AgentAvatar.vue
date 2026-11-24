@@ -6,7 +6,7 @@ import { agentAvatar, avatarIcon, avatarSwatch } from "../avatar";
  * An agent's avatar: the icon its definition chose on its swatch, or the default avatar when it chose none. The swatch
  * follows the theme: its light value in the light theme, its dark value in the dark one.
  */
-const props = withDefaults(defineProps<{ icon: string | null; size?: number }>(), { size: 24 });
+const props = withDefaults(defineProps<{ icon: string | null; size?: number; iconSize?: number }>(), { size: 24 });
 const avatar = computed(() => agentAvatar(props.icon));
 const style = computed(() => {
   const swatch = avatarSwatch(avatar.value.color);
@@ -16,7 +16,7 @@ const style = computed(() => {
 
 <template>
   <span class="agent-avatar" :style="style" aria-hidden="true">
-    <component :is="avatarIcon(avatar.key)" :size="Math.round(size * 0.6)" />
+    <component :is="avatarIcon(avatar.key)" :size="iconSize ?? Math.round(size * 0.6)" />
   </span>
 </template>
 
