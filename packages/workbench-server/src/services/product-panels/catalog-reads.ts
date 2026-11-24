@@ -183,7 +183,7 @@ function formatBindingMap(bindings: Readonly<Record<string, unknown>> | undefine
   if (!entries.length) return "—";
   return entries.map(([name, value]) => {
     if (!value || typeof value !== "object") return `${name}: ${String(value)}`;
-    if ("state" in value) return `${name}: state ${(value as { state: string }).state}`;
+    if ("state" in value) return `${name}: state ${value.state}${"field" in value ? `.${value.field}` : ""}`;
     if ("literal" in value) return `${name}: ${JSON.stringify((value as { literal: unknown }).literal)}`;
     if ("item" in value) return `${name}: row`;
     return name;

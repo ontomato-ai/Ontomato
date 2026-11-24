@@ -6,7 +6,7 @@ import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-
 import type { AppMenuGroup, DirectPanelRun } from "@ontomato/platform-shell";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { panelOperationAffectedSchema, panelReadResultSchemas, type PanelCompletedOperation } from "@ontomato/contracts/panel-operations";
-import { authoredReadParameterSource, directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
+import { authoredReadParameterSource, directReadDeclaration, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { ApplicationEntryMenu, CurrentApplicationEntry, DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
@@ -283,7 +283,8 @@ export function awaitsInputs(projection: DirectProjection, data: DirectProjectio
   const declaration = directReadDeclaration(projection, data);
   const required = declaration?.parameterMode === "fixed" ? declaration.requiredParams ?? [] : [];
   // An empty state, an unmapped parameter and a literal null all leave a required parameter without a value.
-  return required.some((param) => values[param] === null || values[param] === undefined);
+  return required.some(param => values[param] == null) || Object.entries(values).some(([param, value]) =>
+    value == null && readParameterUsesStateField(authoredReadParameterSource(data.params, param, member), member));
 }
 
 /** One read of a member's — a named datum, or the operations it can do — without the panel, which the host fills in. */
@@ -466,7 +467,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   }
   /** The state a placed panel's inputs take from this instance, by the placed panel's names. */
   const nestedInputs = (member: string) => Object.fromEntries(Object.entries(direct.members[member]!.inputs ?? {}).map(([name, from]) => [
-    name, memberInputValue(instance, from),
+    name, memberInputValue(instance, from) ?? null,
   ])) as Record<string, PanelFieldValue>;
   /** Holds the projection a member places: its inputs, its operations as its owners admit them, and its data. */
   async function placeProjection(member: string, scope: EffectScope): Promise<MemberPlacing> {

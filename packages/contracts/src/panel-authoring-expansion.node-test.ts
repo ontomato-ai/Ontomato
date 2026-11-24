@@ -5,7 +5,7 @@ import { bindPanelAuthoringChart, expandPanelAuthoringMember, panelAuthoringMemb
 import { panelOperationDeclarationSchema } from "./panel-operations";
 import { declaredCustomerFormSaveName, hasDeclaredPlatformFormSave } from "./panel-projection";
 import { dashboardCardPrimaryKey } from "./dashboard";
-import { CREATE_SCHEDULED_TASK, DASHBOARD_CARD, platformObjectTypes } from "./platform-object-types";
+import { ATTRIBUTE, OBJECT_TYPE, CREATE_SCHEDULED_TASK, DASHBOARD_CARD, platformObjectTypes } from "./platform-object-types";
 import { platformTypeTableEntrySchema } from "./platform-type-table";
 import { productProjectionInputSchema } from "./product-panels";
 
@@ -69,6 +69,34 @@ test("short reads bind declared input parameters and resolve typed SDK outputs",
     inputs: { search: { state: "search" } },
     outputs: { selected: { state: "selected" }, search: { state: "search" } },
   });
+});
+
+test("short members bind object identity fields to read parameters and scalar ports", () => {
+  const component = buildComponent("AttributeList", {
+    data: { rows: { results: ["panelRecordList"], required: true } },
+    inputs: { title: search },
+  });
+  const table = { objectTypes: { [ATTRIBUTE]: platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[ATTRIBUTE].reads }) } };
+  const fields = panelManifestSchema.parse({
+    state: { selectedNode: { type: { kind: "object", objectType: OBJECT_TYPE } }, search: { type: search } },
+    members: {},
+  }).state;
+  const expandList = (source: string) => {
+    const member = panelAuthoringMemberSchema.parse({
+      component: "AttributeList", type: ATTRIBUTE,
+      data: { rows: { read: "list", params: { className: { state: source, field: "primaryKey" } } } },
+      inputs: { title: { state: "selectedNode", field: "objectType" } },
+    });
+    assert("component" in member);
+    return expandPanelAuthoringMember("attributes", member, { typeTable: table, components: [component], state: fields });
+  };
+  const { projection, placement } = expandList("selectedNode");
+  assert.deepEqual(placement.inputs?.className, { state: "selectedNode", field: "primaryKey" });
+  assert.deepEqual(placement.inputs?.title, { state: "selectedNode", field: "objectType" });
+  assert.deepEqual(projection.inputs.className, search);
+  assert.deepEqual(projection.data.rows.params.className, { input: "className" });
+  productProjectionInputSchema.parse({ ...projection, name: "Attributes", description: "", visibility: "domain" });
+  assert.throws(() => expandList("search"), /data\.rows\.params\.className.*must be an object/);
 });
 
 test("explicit parameters take precedence over a same-named state binding", () => {

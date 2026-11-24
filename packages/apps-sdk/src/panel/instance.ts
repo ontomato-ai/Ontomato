@@ -1073,9 +1073,9 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       if (!declaration) throw new Error(`The panel declares no member '${member}'`);
       const input = declaration.inputs?.[name];
       const outputBinding = declaration.outputs?.[name];
-      if (input && !("state" in input)) {
+      if (input && (!("state" in input) || "field" in input)) {
         return {
-          value: computed(() => memberInputValue(instance, input)),
+          value: computed(() => memberInputValue(instance, input) ?? null),
           set: () => { throw new Error(`Member '${member}' fixes '${name}'; it cannot be set`); },
         };
       }
