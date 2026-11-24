@@ -78,6 +78,7 @@ export const BUILD_ARG_NAMES = [
   "PIP_INDEX_URL",
   "DEBIAN_MIRROR",
   "DEBIAN_SECURITY_MIRROR",
+  "GITHUB_DOWNLOAD_PROXIES",
 ];
 
 export function imageBuildArgs(names = BUILD_ARG_NAMES) {
