@@ -546,15 +546,16 @@ export class RuntimeStore {
       )
     ).rows[0];
     if (!row) missing();
-    const definition = { ...row.run.definition };
+    const stored: RuntimeRun = row.run;
+    const definition = { ...stored.definition };
     const legacySkills = runtimeSkillRefSchema.array().safeParse(definition.skills);
     if (legacySkills.success && legacySkills.data.length) {
-      const versions = row.run.resolvedSkills.map(({ skill, digest }: RuntimeRegisteredSkill) => ({ skill, digest }));
+      const versions = stored.resolvedSkills.map(({ skill, digest }: RuntimeRegisteredSkill) => ({ skill, digest }));
       if (canonical(legacySkills.data) !== canonical(versions.map(({ skill }) => skill)))
         throw new Error("Stored run has no matching resolved skill versions");
       definition.skills = versions;
     }
-    const run: RuntimeRun = { ...row.run, definition: storedRuntimeAgentDefinitionSchema.parse(definition) };
+    const run: RuntimeRun = { ...stored, definition: storedRuntimeAgentDefinitionSchema.parse(definition) };
     updateServiceLogContext({ runId: run.id, sessionId: run.sessionId, domainId: scope.domainId });
     return { run, seq: Number(row.seq), streamId: row.stream_id };
   }

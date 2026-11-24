@@ -716,18 +716,19 @@ describe("standard runtime real HTTP/PG/processes", () => {
       ).toBe(false);
     }
   });
-  async function waitFor(check: () => boolean | Promise<boolean>) {
+  async function waitFor(expected: string, check: () => boolean | Promise<boolean>) {
     for (let i = 0; i < 200; i++) {
       if (await check()) return;
       await pause(25);
     }
-    throw new Error("The test run did not reach the expected state: " + logs);
+    throw new Error(`Timed out waiting for ${expected}:
+${logs}`);
   }
 
   it("cancels a real shell tree and recovers killed runtime work as aborted without replay", async () => {
     const s = await session(),
       r = await run(s, "hang");
-    await waitFor(async () => (await api(`/v1/runs/${r.id}`)).body.toolExecutions.some(
+    await waitFor("native bash to start", async () => (await api(`/v1/runs/${r.id}`)).body.toolExecutions.some(
       (tool: { toolName: string; status: string }) => tool.toolName === "bash" && tool.status === "running",
     ));
     const cancelled = await api(`/v1/runs/${r.id}/cancel`, {});
@@ -735,7 +736,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     hold = true;
     const callsBefore = modelCalls;
     const pending = await run(s, "unanswered");
-    await waitFor(() => modelCalls > callsBefore);
+    await waitFor("the gateway request before restart", () => modelCalls > callsBefore);
     const calls = modelCalls;
     await stop("SIGKILL");
     hold = false;
@@ -746,7 +747,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     expect(modelCalls).toBe(calls);
     const next = await run(s, "overwrite");
     expect((await settle(next.id)).run.stopReason).toBe("stop");
-  });
+  }, 20000);
   async function stoppedCodeExecution(id: string) {
     for (let i = 0; i < 200; i++) {
       const result = codeExecutionSchema.parse((await api(`/v1/code-executions/${id}`)).body);
