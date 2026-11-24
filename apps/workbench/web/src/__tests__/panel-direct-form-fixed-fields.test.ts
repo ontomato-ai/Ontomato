@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp, h, nextTick } from "vue";
+import { createApp, h, nextTick, ref, watch } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -43,6 +43,7 @@ const manifest: DirectPanelManifest = {
   state: {
     attribute: { type: attribute, personal: false, deepLink: true, external: false },
     objectType: { type: { kind: "object", objectType: OBJECT_TYPE }, personal: false, deepLink: true, external: false },
+    className: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false },
   },
   members: { form: { target: { projectionId: projection.id }, inputs: { attribute: { state: "attribute" } } } },
 };
@@ -64,7 +65,20 @@ const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", 
 
 const objectType = (primaryKey: string) => ({ className: OBJECT_TYPE, primaryKey });
 
-function open(initial: Record<string, RuntimeJsonValue>) {
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+let unmount: (() => void) | undefined;
+function open(
+  initial: Record<string, RuntimeJsonValue>,
+  options: {
+    confirmLeaveUnsaved?: () => Promise<boolean>;
+    describe?: (request: Extract<PanelMemberReadRequest, { dataName: string }>) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>;
+  } = {},
+) {
   const prepared: unknown[] = [];
   const prepare = vi.fn(async (operationId: string, invocation: unknown): Promise<PanelHumanOperationPreparation> => {
     prepared.push(invocation);
@@ -73,24 +87,181 @@ function open(initial: Record<string, RuntimeJsonValue>) {
   const instance = createDirectPanelInstance(manifest, {
     readComponentPackage: noOperations.readComponentPackage,
     pageKey: "classes", url: () => "/classes", label: () => "Classes", initial,
-    text: createPanelText({}, { value: "en" } as never, "en"),
+    text: createPanelText({}, ref("en"), "en"),
     operations: { ...noOperations.operations, prepare },
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: {
       kind: "success", data: {}, affected: { objects: [{ objectType: ATTRIBUTE, primaryKey: "Device.site_id" }], objectTypes: [ATTRIBUTE] },
     } as never } }),
     readProjection: async () => projection,
-    read: async (request: PanelMemberReadRequest) => (request.operations ? ready({ save }) : ready(createForm)),
+    confirmLeaveUnsaved: options.confirmLeaveUnsaved,
+    read: async (request) => request.operations ? ready({ save }) : options.describe?.(request) ?? ready(createForm),
   });
   const element = document.createElement("div");
   document.body.append(element);
-  createApp({ render: () => h(PanelMember, { instance, member: "form" }) })
-    .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
+  const app = createApp({ render: () => h(PanelMember, { instance, member: "form" }) })
+    .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
+  app.mount(element);
+  unmount = () => app.unmount();
   return { instance, element, prepared };
 }
 
 afterEach(() => {
+  unmount?.();
+  unmount = undefined;
   document.body.innerHTML = "";
+});
+
+function describeAttributes(request: Extract<PanelMemberReadRequest, { dataName: string }>) {
+  const { changedField, values } = request.inputs;
+  const fixed = values as Record<string, RuntimeJsonValue> | undefined;
+  // The owner describes around the supplied values only in its dynamic read mode.
+  const className = changedField === "/className" ? fixed?.className : "";
+  const options = className ? [choice(`${className}.id`)] : [];
+  return ready({
+    ...createForm,
+    fields: [...createForm.fields, {
+      path: "/referenceAttribute", label: "Reference", control: { kind: "select", options },
+      valueSchema: {}, required: false, readOnly: !className,
+    }],
+    values: { ...createForm.values, className, name: className ? `${className}_default` : "", referenceAttribute: options[0]?.value ?? "" },
+  });
+}
+
+it("keeps a dirty create form on its original parent and lets the panel resync derived state", async () => {
+  const decision = deferred<boolean>();
+  const confirmLeaveUnsaved = vi.fn(() => decision.promise);
+  const { instance } = open({ objectType: objectType("Device"), className: "Device" }, { confirmLeaveUnsaved });
+  const parent = instance.state.field("objectType");
+  const stop = watch(parent, async (value) => {
+    const key = (value as ReturnType<typeof objectType>).primaryKey;
+    await Promise.resolve();
+    instance.state.set("className", key);
+  });
+  try {
+    await vi.waitFor(() => expect(instance.forms.handle("form")?.values.value.className).toBe("Device"));
+    const form = instance.forms.handle("form")!;
+    form.set("/name", "draft");
+    instance.state.set("objectType", objectType("Site"));
+    await vi.waitFor(() => expect(instance.state.values.value.className).toBe("Site"));
+    expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
+    expect(form.values.value).toMatchObject({ className: "Device", name: "draft" });
+    decision.resolve(false);
+    await vi.waitFor(() => expect(instance.state.values.value).toMatchObject({ objectType: objectType("Device"), className: "Device" }));
+    expect(form.values.value).toMatchObject({ className: "Device", name: "draft" });
+    expect(form.dirty.value).toBe(true);
+    expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
+  } finally {
+    stop();
+  }
+});
+
+it("discards the draft and replaces its baseline when the reader accepts a new parent", async () => {
+  const confirmLeaveUnsaved = vi.fn(async () => true);
+  const { instance } = open({ objectType: objectType("Device") }, { confirmLeaveUnsaved, describe: describeAttributes });
+  await vi.waitFor(() => expect(instance.forms.handle("form")?.values.value.referenceAttribute).toBe("Device.id"));
+  const form = instance.forms.handle("form")!;
+  form.set("/name", "draft");
+  instance.state.set("objectType", objectType("Site"));
+  await vi.waitFor(() => expect(form.values.value).toMatchObject({ className: "Site", name: "Site_default", referenceAttribute: "Site.id" }));
+  expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
+  expect(form.dirty.value).toBe(false);
+  form.set("/name", "new edit");
+  await form.reset();
+  expect(form.values.value.name).toBe("Site_default");
+});
+
+it.each(["same patch", "following microtask"])("asks once for edit-target and fixed-input changes in the %s", async (timing) => {
+  const oldAttribute = { className: ATTRIBUTE, primaryKey: "Device.old" };
+  const nextAttribute = { className: ATTRIBUTE, primaryKey: "Site.new" };
+  const decision = deferred<boolean>();
+  const confirmLeaveUnsaved = vi.fn(() => decision.promise);
+  const { instance } = open({ objectType: objectType("Device"), attribute: oldAttribute }, { confirmLeaveUnsaved });
+  await vi.waitFor(() => expect(instance.forms.handle("form")?.values.value.className).toBe("Device"));
+  const form = instance.forms.handle("form")!;
+  form.set("/name", "draft");
+  if (timing === "same patch") {
+    instance.state.setState({ objectType: objectType("Site"), attribute: nextAttribute });
+  } else {
+    instance.state.set("objectType", objectType("Site"));
+    await nextTick();
+    instance.state.set("attribute", nextAttribute);
+  }
+  await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1));
+  decision.resolve(false);
+  await vi.waitFor(() => expect(instance.state.values.value).toMatchObject({ objectType: objectType("Device"), attribute: oldAttribute }));
+  expect(form.values.value).toMatchObject({ className: "Device", name: "draft" });
+  expect(form.dirty.value).toBe(true);
+  expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
+});
+
+it("preflights direct agent changes and rolls back derived fixed-input changes during a probe", async () => {
+  const confirmLeaveUnsaved = vi.fn(async () => true);
+  const { instance } = open({ objectType: objectType("Device"), className: "Device" }, { confirmLeaveUnsaved });
+  await vi.waitFor(() => expect(instance.forms.handle("form")?.values.value.className).toBe("Device"));
+  const form = instance.forms.handle("form")!;
+  form.set("/name", "draft");
+  expect(instance.blocksFormInputChange(new Set(["objectType"]))).toBe(true);
+  expect(instance.blocksFormInputChange(new Set(["className"]))).toBe(false);
+  const stop = watch(instance.state.field("className"), async (value) => {
+    await Promise.resolve();
+    instance.state.set("objectType", objectType(value as string));
+  });
+  try {
+    expect(await instance.applyStatePreservingDrafts({ className: "Site" })).toBe(false);
+    expect(instance.state.values.value).toMatchObject({ objectType: objectType("Device"), className: "Device" });
+    expect(form.values.value).toMatchObject({ className: "Device", name: "draft" });
+    expect(form.dirty.value).toBe(true);
+    expect(confirmLeaveUnsaved).not.toHaveBeenCalled();
+  } finally {
+    stop();
+  }
+});
+
+it("opens and reloads a clean form with the owner's dependent options for the fixed input", async () => {
+  const confirmLeaveUnsaved = vi.fn(async () => true);
+  const { instance } = open({ objectType: objectType("Device") }, { confirmLeaveUnsaved, describe: describeAttributes });
+  const expectDescription = (parent: string) => {
+    const form = instance.forms.handle("form")!;
+    expect(form.fields.value.find(({ path }) => path === "/referenceAttribute")).toMatchObject({
+      readOnly: false, control: { options: [choice(`${parent}.id`)] },
+    });
+    expect(form.values.value).toMatchObject({ className: parent, referenceAttribute: `${parent}.id` });
+    expect(form.dirty.value).toBe(false);
+  };
+  await vi.waitFor(() => expectDescription("Device"));
+  instance.state.set("objectType", objectType("Site"));
+  await vi.waitFor(() => expectDescription("Site"));
+  expect(confirmLeaveUnsaved).not.toHaveBeenCalled();
+});
+
+it("keeps a late owner edit answer out of the baseline for the next parent", async () => {
+  const oldAsk = deferred<ProductPanelReadResponse>();
+  const describe = vi.fn((request: Extract<PanelMemberReadRequest, { dataName: string }>) => {
+    if (request.inputs.changedField === "/name") return oldAsk.promise;
+    if ((request.inputs.values as { className: string }).className === "Device") {
+      return ready({
+        ...createForm,
+        fields: createForm.fields.map((field) => field.path === "/name" ? { ...field, refreshOnChange: true } : field),
+      });
+    }
+    return describeAttributes(request);
+  });
+  const { instance } = open({ objectType: objectType("Device") }, { confirmLeaveUnsaved: async () => true, describe });
+  await vi.waitFor(() => expect(instance.forms.handle("form")?.values.value.className).toBe("Device"));
+  const form = instance.forms.handle("form")!;
+  form.set("/name", "old draft");
+  await vi.waitFor(() => expect(describe).toHaveBeenCalledWith(expect.objectContaining({
+    inputs: expect.objectContaining({ changedField: "/name" }),
+  })));
+  instance.state.set("objectType", objectType("Site"));
+  await vi.waitFor(() => expect(form.values.value.referenceAttribute).toBe("Site.id"));
+  form.set("/name", "new draft");
+  expect(form.canSubmit.value).toBe(true);
+  oldAsk.resolve(ready({ ...createForm, values: { className: "Device", name: "old draft" } }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(form.values.value).toMatchObject({ className: "Site", name: "new draft", referenceAttribute: "Site.id" });
+  expect(form.canSubmit.value).toBe(true);
 });
 
 it("shows the page's fixed field read-only, keeps it from the reader, and submits it with the save", async () => {
