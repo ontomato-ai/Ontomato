@@ -33,7 +33,7 @@
         <h3>{{ t('agents.title') }}</h3>
         <sdk-button type="primary" size="small" :disabled="mode === 'create'" @click="startCreate">{{ t('agents.new') }}</sdk-button>
       </div>
-      <projection slot="list" @update:listed="onListed"></projection>
+      <projection slot="list"></projection>
     </template>
     <template v-if="listVisible">
       <p v-if="mode === 'list'" class="agent-settings-empty">{{ t('agents.choose') }}</p>

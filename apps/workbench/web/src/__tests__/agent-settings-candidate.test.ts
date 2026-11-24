@@ -639,13 +639,16 @@ describe("agent-settings builtin panel", () => {
     expect(builtinModule).not.toMatch(/usePanelData|PanelData/);
     expect(JSON.stringify(builtinSource)).not.toMatch(/usePanelData|PanelData/);
     expect(builtinModule).toContain('usePanelOutput("list", "status")');
+    expect(builtinModule).toContain('usePanelOutput("list", "listed")');
+    expect(builtinModule).not.toContain("onListed");
     expect(Object.keys(builtinSource.manifest.state).sort()).toEqual(["mode", "selected"]);
     expect(builtinSource.manifest.state).not.toHaveProperty("listedAgents");
     expect(builtinSource.manifest.state.selected.deepLink).toBe(true);
     expect(builtinSource.manifest.state.mode.deepLink).toBe(true);
     expect(builtinSource.manifest.members.list.state).toEqual({ selected: "selected" });
     expect(builtinSource.manifest.members.list.state).not.toHaveProperty("listed");
-    expect(builtinHtml).toContain('<projection slot="list" @update:listed="onListed"></projection>');
+    expect(builtinHtml).toContain('<projection slot="list"></projection>');
+    expect(builtinHtml).not.toContain("@update:listed");
     expect(builtinHtml).not.toContain("<button");
     expect(builtinHtml).not.toContain("agent-settings-button");
     expect(builtinHtml).toContain('<sdk-button text size="small" @click="viewType">');

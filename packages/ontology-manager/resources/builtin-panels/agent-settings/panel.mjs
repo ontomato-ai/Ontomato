@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { mountPanel, panelAddress, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 const AGENT = "platform:AgentDefinition";
@@ -11,10 +11,9 @@ await mountPanel({
     const selected = computed(() => state.values.value.selected);
     const mode = computed(() => state.values.value.mode ?? "list");
     const listStatus = usePanelOutput("list", "status");
+    const listedAgents = usePanelOutput("list", "listed");
     const summaryLabel = usePanelOutput("summary", "label");
-    const listedAgents = shallowRef([]);
     const listVersion = ref(0);
-    let hasListed = false;
 
     const listVisible = computed(
       () => listStatus.value !== null && listStatus.value !== "loading" && listStatus.value !== "forbidden",
@@ -30,12 +29,6 @@ await mountPanel({
     let pendingFallbackRemovedKey = null;
     let fallbackStartVersion = 0;
     let fallbackSawLoading = false;
-
-    function onListed(refs) {
-      listedAgents.value = Array.isArray(refs) ? refs : [];
-      hasListed = true;
-      listVersion.value += 1;
-    }
 
     watch(formDirty, (dirty) => {
       if (!dirty) {
@@ -63,9 +56,17 @@ await mountPanel({
         if (prev?.primaryKey) {
           pendingFallbackRemovedKey = prev.primaryKey;
           fallbackStartVersion = listVersion.value;
-          fallbackSawLoading = listStatus.value === "loading";
+          fallbackSawLoading = listStatus.value === "loading" || listedAgents.value === null;
         }
         state.set("mode", "list");
+      }
+    }, { immediate: true });
+
+    watch(listedAgents, (listed) => {
+      if (Array.isArray(listed)) {
+        listVersion.value += 1;
+      } else if (pendingFallbackRemovedKey !== null) {
+        fallbackSawLoading = true;
       }
     }, { immediate: true });
 
@@ -79,9 +80,10 @@ await mountPanel({
       // with another agent; let the summary projection report the owner's reason in place.
       if (state.values.value.selected) return;
 
+      if (status === "ready" && !Array.isArray(listed)) return;
       const agents = status === "empty" ? [] : listed;
       if (state.values.value.mode == null) {
-        if (status === "ready" && hasListed && agents.length) {
+        if (status === "ready" && agents.length) {
           state.set("selected", { className: AGENT, primaryKey: agents[0].primaryKey });
         }
         return;
@@ -117,6 +119,6 @@ await mountPanel({
       state.setState({ selected: null, mode: "create" });
     }
 
-    return { mode, listStatus, listVisible, selectedReady, formMounted, onListed, viewType, startCreate };
+    return { mode, listStatus, listVisible, selectedReady, formMounted, viewType, startCreate };
   },
 });
