@@ -208,6 +208,8 @@ function toggle(row: number, selected: number[]) {
 .table-preview :deep(th.table-preview-arranged > .cell) {
   display: flex;
   align-items: center;
+  gap: 3px;
+  min-height: 36px;
 }
 
 .table-preview :deep(th.table-preview-arranged.is-right > .cell) {
@@ -226,10 +228,14 @@ function toggle(row: number, selected: number[]) {
 }
 
 .table-preview :deep(.caret-wrapper) {
-  width: 20px;
-  height: 24px;
-  margin-left: 2px;
-  border-radius: var(--radius-sm);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 22px;
+  margin-left: 0;
+  border-radius: 5px;
 }
 
 .table-preview :deep(.caret-wrapper:hover) {
@@ -238,27 +244,29 @@ function toggle(row: number, selected: number[]) {
 
 /* Keep the table's sorting controls and hit targets, with light outline chevrons. */
 .table-preview :deep(.sort-caret) {
-  width: 6px;
-  height: 6px;
-  left: 7px;
+  width: 5px;
+  height: 5px;
+  left: 6px;
   border: 0;
   border-top: 1.5px solid var(--el-text-color-placeholder);
   border-left: 1.5px solid var(--el-text-color-placeholder);
+  opacity: 0.62;
 }
 
 .table-preview :deep(.sort-caret.ascending) {
-  top: 5px;
+  top: 6px;
   transform: rotate(45deg);
 }
 
 .table-preview :deep(.sort-caret.descending) {
-  bottom: 5px;
+  bottom: 6px;
   transform: rotate(225deg);
 }
 
 .table-preview :deep(.ascending .sort-caret.ascending),
 .table-preview :deep(.descending .sort-caret.descending) {
   border-color: var(--el-color-primary);
+  opacity: 1;
 }
 
 /* Element Plus gives a checkbox a 32px line of its own; here it is only as tall as its box and sits in the middle of

@@ -46,7 +46,7 @@ function keep(value: string, on: boolean) {
 </script>
 
 <template>
-  <el-popover trigger="click" placement="bottom-start" :width="240" :persistent="false" popper-class="column-filter-popper">
+  <el-popover trigger="click" placement="bottom-start" :width="260" :persistent="false" popper-class="column-filter-popper">
     <template #reference>
       <button
         type="button"
@@ -91,9 +91,10 @@ function keep(value: string, on: boolean) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  margin-left: 2px;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-left: 0;
   padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
@@ -101,6 +102,7 @@ function keep(value: string, on: boolean) {
   color: var(--el-text-color-placeholder);
   vertical-align: middle;
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .column-filter-button:hover,
@@ -110,23 +112,29 @@ function keep(value: string, on: boolean) {
 }
 
 .column-filter-button.active {
+  background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
 }
 
 .column-filter {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: 10px;
+  padding: 2px;
 }
 
 .column-filter-all {
+  padding: 0 2px 8px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .column-filter-values {
   display: flex;
   flex-direction: column;
-  max-height: 240px;
+  gap: 2px;
+  max-height: 260px;
+  margin: -4px -2px 0;
+  padding: 2px;
   overflow: auto;
 }
 
@@ -140,7 +148,14 @@ function keep(value: string, on: boolean) {
 
 .column-filter-values :deep(.el-checkbox) {
   display: flex;
+  min-height: 30px;
+  padding: 0 4px;
   margin-right: 0;
+  border-radius: var(--radius-sm);
+}
+
+.column-filter-values :deep(.el-checkbox:hover) {
+  background: var(--el-fill-color-light);
 }
 
 .column-filter-value {

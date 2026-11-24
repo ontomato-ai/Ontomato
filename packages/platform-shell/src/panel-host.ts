@@ -964,7 +964,13 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     tellAddress(requested);
     return true;
   }
-  watch([options.address, options.initial, () => JSON.stringify(options.entryInputs?.())], syncAddress);
+  // Compare `initial` by value like `entryInputs`: a parent re-render returning a fresh object with identical
+  // contents (for example `panelAddressState(page.reported)` before `@display-address` propagates) must not
+  // look like an external navigation back to the old address and overwrite state the panel just reported.
+  watch(
+    [options.address, () => JSON.stringify(options.initial()), () => JSON.stringify(options.entryInputs?.())],
+    syncAddress,
+  );
   watch(() => JSON.stringify(options.entryInputs?.()), syncExternalEntryState);
 
   /** The instance's address changed outside it: the frame hears it as a message, a direct instance as a call. */

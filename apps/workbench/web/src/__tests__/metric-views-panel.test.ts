@@ -986,4 +986,151 @@ describe("metric-views builtin panel detail mount lifecycle", () => {
       mounted.app.unmount();
     }
   });
+
+  it("preserves explicit test parameters when toggling binding sources and resets dialog state on reopen", async () => {
+    const harness = mountMetricViews({ selected: metricRef("mv-1") });
+    const mounted = await harness.open();
+    try {
+      await waitFor(
+        () =>
+          mounted.element.querySelector(".mv-detail") !== null
+          && (mounted.element.querySelector(".mv-detail input") as HTMLInputElement | null)?.value === "Metric mv-1"
+          && harness.controller() !== null,
+        "metric detail ready",
+      );
+
+      const openTestBtn = () =>
+        Array.from(mounted.element.querySelectorAll<HTMLButtonElement>(".mv-detail button")).find((b) =>
+          b.textContent?.includes("Test"),
+        );
+      const findTrialButton = (member: "testMarkdown" | "testJson") =>
+        document.body.querySelector<HTMLButtonElement>(`[data-member='${member}'] button`);
+      const explicitInputs = () =>
+        Array.from(document.body.querySelectorAll<HTMLInputElement>(".mv-test-params input"));
+
+      // 1. Open dialog via human button: starts on explicit defaults (year: 2025, region: "US").
+      openTestBtn()!.click();
+      await waitFor(
+        () => explicitInputs().length === 2 && findTrialButton("testMarkdown")?.disabled === false,
+        "test dialog opened with explicit inputs",
+      );
+      expect(explicitInputs().map((i) => i.value)).toEqual(["2025", "\"US\""]);
+
+      // 2. Edit explicit year to 2028, toggle to binding:0, then toggle back to explicit: 2028 must be preserved.
+      explicitInputs()[0]!.value = "2028";
+      explicitInputs()[0]!.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(
+        () => (harness.context()?.state?.testParameters as Record<string, unknown> | undefined)?.year === 2028,
+        "explicit year edit applied to state",
+      );
+
+      harness.controller()!.applyState({ testSource: "binding:0", testTab: "json" });
+      await waitFor(
+        () =>
+          explicitInputs().length === 0
+          && (harness.context()?.state?.testParameters as Record<string, unknown> | undefined)?.year === 2024,
+        "binding:0 selected and binding parameters populated",
+      );
+
+      harness.controller()!.applyState({ testSource: "explicit" });
+      await waitFor(
+        () =>
+          explicitInputs().length === 2
+          && explicitInputs()[0]!.value === "2028"
+          && (harness.context()?.state?.testParameters as Record<string, unknown> | undefined)?.year === 2028,
+        "switching back to explicit restores edited year without binding overwrite",
+      );
+
+      const callsBeforeExplicitRun = harness.readCalls.length;
+      findTrialButton("testMarkdown")!.click();
+      await waitFor(
+        () => harness.readCalls.length > callsBeforeExplicitRun,
+        "trial dispatched with restored explicit parameters",
+      );
+      expect(harness.readCalls.at(-1)).toMatchObject({
+        operationId: "testMarkdown.test",
+        input: { parameters: { year: 2028, region: "US" } },
+      });
+
+      // 3. Invalid JSON in explicit mode stays preserved across binding toggle.
+      explicitInputs()[0]!.value = "{bad";
+      explicitInputs()[0]!.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(
+        () => findTrialButton("testMarkdown")?.disabled === true,
+        "invalid explicit input disables trials",
+      );
+      harness.controller()!.applyState({ testSource: "binding:0" });
+      await waitFor(
+        () => findTrialButton("testMarkdown")?.disabled === false,
+        "binding source re-enables trials",
+      );
+      harness.controller()!.applyState({ testSource: "explicit" });
+      await waitFor(
+        () =>
+          explicitInputs()[0]?.value === "{bad"
+          && findTrialButton("testMarkdown")?.disabled === true,
+        "returning to explicit keeps invalid input and disabled state",
+      );
+
+      // 4. Close dialog from binding:0 + json tab and reopen on the same metric: resets to explicit, markdown, defaults.
+      harness.controller()!.applyState({ testSource: "binding:0", testTab: "json" });
+      await waitFor(
+        () => harness.context()?.state?.testTab === "json" && harness.context()?.state?.testSource === "binding:0",
+        "dialog switched to binding:0 and json tab before closing",
+      );
+      const closeBtn = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
+        (b) => b.textContent?.trim() === "Close",
+      );
+      closeBtn!.click();
+      await waitFor(
+        () => document.body.querySelector("[data-member='testMarkdown']") === null,
+        "dialog closed",
+      );
+
+      openTestBtn()!.click();
+      await waitFor(
+        () =>
+          explicitInputs().length === 2
+          && explicitInputs().map((i) => i.value).join(",") === "2025,\"US\""
+          && harness.context()?.state?.testSource === "explicit"
+          && harness.context()?.state?.testTab === "markdown"
+          && findTrialButton("testMarkdown")?.disabled === false,
+        "reopening test dialog on same metric resets source, tab, and explicit defaults",
+      );
+
+      // 5. Close, reopen directly on binding:0 via agent present, then switch to explicit: falls back to defaults, not binding values.
+      harness.controller()!.applyState({ testOpen: false });
+      await waitFor(() => document.body.querySelector("[data-member='testMarkdown']") === null, "closed via state");
+      harness.controller()!.applyState({ testOpen: true, testSource: "binding:0" });
+      await waitFor(
+        () => (harness.context()?.state?.testParameters as Record<string, unknown> | undefined)?.year === 2024,
+        "reopened directly on binding:0",
+      );
+      harness.controller()!.applyState({ testSource: "explicit" });
+      await waitFor(
+        () =>
+          explicitInputs().length === 2
+          && explicitInputs().map((i) => i.value).join(",") === "2025,\"US\""
+          && (harness.context()?.state?.testParameters as Record<string, unknown> | undefined)?.year === 2025,
+        "switching from directly opened binding:0 to explicit uses parameter defaults",
+      );
+
+      // 6. Explicit agent override when switching back from binding:0 is respected.
+      harness.controller()!.applyState({ testSource: "binding:0" });
+      await waitFor(
+        () => (harness.context()?.state?.testParameters as Record<string, unknown> | undefined)?.year === 2024,
+        "back on binding:0",
+      );
+      harness.controller()!.applyState({ testSource: "explicit", testParameters: { year: 2030 } });
+      await waitFor(
+        () =>
+          explicitInputs().length === 2
+          && explicitInputs().map((i) => i.value).join(",") === "2030,\"US\""
+          && (harness.context()?.state?.testParameters as Record<string, unknown> | undefined)?.year === 2030,
+        "explicit agent testParameters patch overrides when switching from binding",
+      );
+    } finally {
+      mounted.app.unmount();
+    }
+  });
 });
