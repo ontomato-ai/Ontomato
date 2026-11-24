@@ -21,7 +21,7 @@ public interface PlatformAccessQuery {
     /**
      * One role and the platform operations it holds.
      *
-     * @param roleCode the role's code in this domain, the same vocabulary a workflow step uses
+     * @param roleCode the domain role's display name (role_name), also used by workflow steps
      * @param apiPermissions the request paths this role may call, as the interceptor compares them
      * @param managementRole true when the role holds every enabled operation by rule rather than by
      *     listed rows; {@code apiPermissions} is then empty because expanding it here would go stale

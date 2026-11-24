@@ -6,6 +6,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -46,7 +47,7 @@ public class ProductGrantService implements InitializingBean {
         var allowed = new LinkedHashMap<String, Boolean>();
         for (String id : ids) allowed.put(id, false);
         if (user == null || user.getDomainId() == null || user.getId() == null
-            || !("use".equals(verb) || "edit".equals(verb))) return allowed;
+            || !ProductGrants.isValidVerb(verb)) return allowed;
 
         var domainIds = new ArrayList<String>();
         for (String id : allowed.keySet()) {
@@ -93,7 +94,7 @@ public class ProductGrantService implements InitializingBean {
     public List<String> resourcesFor(String domainId,String userId,String verb){
         if(domainId==null||userId==null)throw new IllegalArgumentException("Product subject is required");
         String principalId=principals.productPrincipalId(userId);
-        if(!List.of("use","edit").contains(verb))throw new IllegalArgumentException("Invalid product permission");
+        if(!ProductGrants.isValidVerb(verb))throw new IllegalArgumentException("Invalid product permission");
         var roles=principals.effectiveRoles(userId,domainId);
         var rows=db.queryForList("SELECT resource_id,principal_kind,principal_id FROM product_grant WHERE domain_id=? AND verb=?",domainId,verb);
         return rows.stream()
@@ -104,14 +105,39 @@ public class ProductGrantService implements InitializingBean {
     }
     /** The owning product service imports author and sharing facts; request bodies cannot select the acting user. */
     @Transactional public void register(String domainId,String id,String ownerId,boolean shared){
-        if(domainId==null||domainId.isBlank()||id==null||id.isBlank()||ownerId==null||ownerId.isBlank())throw new IllegalArgumentException("Product identity is required");
+        register(domainId, id, ownerId, shared, List.of("use", "edit"), false);
+    }
+
+    @Transactional
+    public void register(String domainId, String id, String ownerId, boolean shared, Collection<String> verbs, boolean grantAdmin) {
+        register(domainId, id, ownerId, shared, verbs, grantAdmin, null);
+    }
+
+    @Transactional
+    public void register(String domainId, String id, String ownerId, boolean shared, Collection<String> verbs,
+        boolean grantAdmin, String legacyMenuPermission) {
+        boolean hasOwner = ownerId != null && !ownerId.isBlank();
+        boolean hasLegacyMenu = legacyMenuPermission != null && !legacyMenuPermission.isBlank();
+        if (domainId == null || domainId.isBlank() || id == null || id.isBlank() || (!hasOwner && !grantAdmin && !shared && !hasLegacyMenu))
+            throw new IllegalArgumentException("Product identity is required");
         requireDomainGrantResource(id);
+        var permissions = verbs == null || verbs.isEmpty() ? List.of("use", "edit") : verbs;
+        requireValidVerbs(permissions);
         lockResource(domainId,id);
         var owners=db.queryForList("SELECT owner_id FROM product_resource WHERE domain_id=? AND id=?",String.class,domainId,id);
-        if(!owners.isEmpty()&&!owners.getFirst().equals(ownerId))throw new ResponseStatusException(HttpStatus.CONFLICT,"Product owner changed");
-        db.update("INSERT INTO product_resource(domain_id,id,owner_id) VALUES(?,?,?) ON CONFLICT DO NOTHING",domainId,id,ownerId);
-        if(owners.isEmpty())for(String verb:List.of("use","edit"))insert(domainId,id,new ProductGrants.Grant("principal",ownerId,verb));
-        if(owners.isEmpty()&&shared)insert(domainId,id,new ProductGrants.Grant("domain","*","use"));
+        if (!owners.isEmpty()) {
+            if (hasOwner && !owners.getFirst().equals(ownerId))
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Product owner changed");
+            return;
+        }
+        db.update("INSERT INTO product_resource(domain_id,id,owner_id) VALUES(?,?,?)", domainId, id, hasOwner ? ownerId : "");
+        if (hasOwner)
+            for (String verb : permissions) insert(domainId, id, new ProductGrants.Grant("principal", ownerId, verb));
+        if (grantAdmin)
+            for (var grant : principals.defaultAdminGrants(domainId, permissions)) insert(domainId, id, grant);
+        if (hasLegacyMenu)
+            for (var grant : principals.legacyMenuGrants(domainId, legacyMenuPermission, permissions)) insert(domainId, id, grant);
+        if (shared) insert(domainId, id, new ProductGrants.Grant("domain", "*", "use"));
     }
     @Transactional public void unregister(String domainId, String id) {
         requireDomainGrantResource(id);
@@ -140,11 +166,31 @@ public class ProductGrantService implements InitializingBean {
         var current=identity.getCurrentUser();
         if(current!=null)lockResource(current.getDomainId(),id);
         if(!allowed(id,"edit"))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Product edit Grant required");
-        if(!List.of("use","edit").contains(grant.verb())||!List.of("principal","role").contains(grant.principalKind())||grant.principalId()==null||grant.principalId().isBlank())throw new IllegalArgumentException("Invalid product Grant");
+        if(!ProductGrants.isValidVerb(grant.verb())||!List.of("principal","role").contains(grant.principalKind())||grant.principalId()==null||grant.principalId().isBlank())throw new IllegalArgumentException("Invalid product Grant");
         String domain=identity.getCurrentUser().getDomainId();
         if(remove)db.update("DELETE FROM product_grant WHERE domain_id=? AND resource_id=? AND principal_kind=? AND principal_id=? AND verb=?",domain,id,grant.principalKind(),grant.principalId(),grant.verb());
         else insert(domain,id,grant);
     }
+    private static void requireValidVerbs(Collection<String> verbs) {
+        if (verbs.stream().anyMatch(verb -> !ProductGrants.isValidVerb(verb)))
+            throw new IllegalArgumentException("Invalid product permission");
+    }
+
+    @Transactional
+    public void setGrants(String id, String principalKind, String principalId, Collection<String> verbs) {
+        requireDomainGrantResource(id);
+        if (!("principal".equals(principalKind) || "role".equals(principalKind)) || principalId == null || principalId.isBlank())
+            throw new IllegalArgumentException("Invalid product Grant");
+        requireValidVerbs(verbs);
+        var current = identity.getCurrentUser();
+        if (current != null && current.getDomainId() != null) lockResource(current.getDomainId(), id);
+        if (!allowed(id, "edit")) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Product edit Grant required");
+        String domain = current.getDomainId();
+        db.update("DELETE FROM product_grant WHERE domain_id=? AND resource_id=? AND principal_kind=? AND principal_id=?",
+            domain, id, principalKind, principalId);
+        for (String verb : new LinkedHashSet<>(verbs)) insert(domain, id, new ProductGrants.Grant(principalKind, principalId, verb));
+    }
+
     @Transactional public void share(String id,boolean shared){
         requireDomainGrantResource(id);
         var current=identity.getCurrentUser();
@@ -164,21 +210,56 @@ public class ProductGrantService implements InitializingBean {
 
     public List<GrantView> grantViews(String id) {
         var records = grants(id);
-        var user = identity.getCurrentUser();
-        String domainId = user != null ? user.getDomainId() : null;
+        var names = grantNames(identity.getCurrentUser().getDomainId(), records);
+        return records.stream().map(g -> new GrantView(
+            g.principalKind(), g.principalId(), names.resolve(g), g.verb())).toList();
+    }
+
+    public record DomainGrantView(String resourceId, String principalKind, String principalId,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String principalName, String verb) {}
+
+    private record ResourceGrant(String resourceId, ProductGrants.Grant grant) {}
+
+    public List<DomainGrantView> domainGrants(String principalKind, String principalId) {
+        String domain = identity.getCurrentUser().getDomainId();
+        var sql = new StringBuilder("SELECT resource_id, principal_kind, principal_id, verb FROM product_grant WHERE domain_id=?");
+        var parameters = new ArrayList<String>();
+        parameters.add(domain);
+        if (principalKind != null) {
+            sql.append(" AND principal_kind=?");
+            parameters.add(principalKind);
+        }
+        if (principalId != null) {
+            sql.append(" AND principal_id=?");
+            parameters.add(principalId);
+        }
+        sql.append(" ORDER BY resource_id, principal_kind, principal_id, verb");
+        var records = db.query(sql.toString(), (row, index) -> new ResourceGrant(row.getString(1),
+            new ProductGrants.Grant(row.getString(2), row.getString(3), row.getString(4))), parameters.toArray())
+            .stream().filter(row -> !BuiltinProductIds.isReserved(row.resourceId())).toList();
+        var names = grantNames(domain, records.stream().map(ResourceGrant::grant).toList());
+        return records.stream().map(row -> {
+            var grant = row.grant();
+            return new DomainGrantView(row.resourceId(), grant.principalKind(), grant.principalId(), names.resolve(grant), grant.verb());
+        }).toList();
+    }
+
+    private GrantNames grantNames(String domain, List<ProductGrants.Grant> records) {
         var userIds = records.stream().filter(g -> "principal".equals(g.principalKind())).map(ProductGrants.Grant::principalId).distinct().toList();
         var roleIds = records.stream().filter(g -> "role".equals(g.principalKind())).map(ProductGrants.Grant::principalId).distinct().toList();
-        Map<String, String> userNames = userIds.isEmpty() || domainId == null ? Map.of() : principals.principalNames(domainId, userIds);
-        Map<String, String> roleNames = roleIds.isEmpty() || domainId == null ? Map.of() : principals.roleNames(domainId, roleIds);
-        return records.stream().map(g -> {
-            String resolved = switch (g.principalKind()) {
-                case "principal" -> userNames.get(g.principalId());
-                case "role" -> roleNames.get(g.principalId());
+        return new GrantNames(userIds.isEmpty() ? Map.of() : principals.principalNames(domain, userIds),
+            roleIds.isEmpty() ? Map.of() : principals.roleNames(domain, roleIds));
+    }
+
+    private record GrantNames(Map<String, String> users, Map<String, String> roles) {
+        String resolve(ProductGrants.Grant grant) {
+            String name = switch (grant.principalKind()) {
+                case "principal" -> users.get(grant.principalId());
+                case "role" -> roles.get(grant.principalId());
                 default -> null;
             };
-            String name = resolved != null && !resolved.isBlank() ? resolved : null;
-            return new GrantView(g.principalKind(), g.principalId(), name, g.verb());
-        }).toList();
+            return name != null && !name.isBlank() ? name : null;
+        }
     }
 
     public Map<String, String> principalNames(String domainId, Collection<String> principalIds) {

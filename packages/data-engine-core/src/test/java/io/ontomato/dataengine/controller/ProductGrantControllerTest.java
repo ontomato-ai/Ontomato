@@ -61,8 +61,38 @@ class ProductGrantControllerTest {
         var mvc=MockMvcBuilders.standaloneSetup(new ProductGrantController(grants,authentication)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
         mvc.perform(post(ProductGrantController.REGISTER_PATH).contentType(MediaType.APPLICATION_JSON).content("{\"domainId\":\"domain\",\"ownerId\":\"author\",\"id\":\"profile\",\"shared\":true}")).andExpect(status().isOk());
         verify(authentication).authenticate(any());
-        verify(grants).register("domain","profile","author",true);
+        verify(grants).register("domain", "profile", "author", true, List.of(), false, null);
     }
+    @Test void expandedRegistrationAndGrantSetUseJacksonLists() throws Exception {
+        var grants = mock(ProductGrantService.class);
+        var authentication = mock(WorkbenchServiceAuthentication.class);
+        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, authentication))
+            .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+        mvc.perform(post(ProductGrantController.REGISTER_PATH).contentType(MediaType.APPLICATION_JSON).content("""
+            {"domainId":"domain","id":"retriever","shared":true,"grantAdmin":true,"verbs":["use","view","edit"],"legacyMenuPermission":"analysis-agent"}
+            """)).andExpect(status().isOk());
+        verify(authentication).authenticate(any());
+        verify(grants).register("domain", "retriever", null, true, List.of("use", "view", "edit"), true, "analysis-agent");
+        mvc.perform(post("/product-governance/grant-set").contentType(MediaType.APPLICATION_JSON).content("""
+            {"id":"retriever","principalKind":"role","principalId":"reviewers","verbs":[]}
+            """)).andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true));
+        verify(grants).setGrants("retriever", "role", "reviewers", List.of());
+    }
+
+    @Test void domainGrantsAcceptAnAbsentBodyAndOmitUnresolvedNames() throws Exception {
+        var grants = mock(ProductGrantService.class);
+        when(grants.domainGrants(null, null)).thenReturn(List.of(
+            new ProductGrantService.DomainGrantView("retriever", "domain", "*", null, "use")));
+        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, mock(WorkbenchServiceAuthentication.class)))
+            .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+        mvc.perform(post("/product-governance/domain-grants")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.grants[0].resourceId").value("retriever"))
+            .andExpect(jsonPath("$.grants[0].principalName").doesNotHaveJsonPath());
+        mvc.perform(post("/product-governance/domain-grants").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"principalKind\":\"role\",\"principalId\":\"reviewers\"}")).andExpect(status().isOk());
+        verify(grants).domainGrants("role", "reviewers");
+    }
+
     @Test void refusedGrantReadKeepsTheJavaStatusAndReason() throws Exception {
         var grants=mock(ProductGrantService.class);
         when(grants.grantViews("profile")).thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN,"Product edit Grant required"));
