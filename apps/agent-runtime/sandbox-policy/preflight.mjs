@@ -54,7 +54,7 @@ try {
   // Listen on all interfaces so the probe tests blocking a service reachable through the container IP.
   const extra = await endpoint("another service", "0.0.0.0");
   const outerAddress = Object.values(networkInterfaces()).flat().find(info => info.family === "IPv4" && !info.internal)?.address ?? "172.31.255.254";
-  const options = { uid: 20001, endpoints: { gateway, callback }, processCount: 512, fileBytes: 33554432 };
+  const options = { uid: 20001, endpoints: { gateway, callback }, fileBytes: 33554432 };
   const open = (sessionDirectory, files) => openSessionSandbox({ ...options, sessionDirectory, ...files });
   // The two jails use the same UID and the same relay ports without sharing a PID or network namespace.
   otherSandbox = await open(other, { skills: [] });

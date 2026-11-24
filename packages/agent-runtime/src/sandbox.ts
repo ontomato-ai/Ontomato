@@ -36,7 +36,6 @@ export function createSessionEngineSandboxFactory(store: RuntimeStore, root: str
       uid, sessionDirectory, skills,
       projectTree: workspaceId ? path.join(workspaceDirectory(root, scope, workspaceId), "tree") : undefined,
       endpoints: { gateway: { host: gateway.hostname, port: Number(gateway.port) }, callback },
-      processCount: limits.processCount,
       fileBytes: limits.fileBytes,
     });
     try {

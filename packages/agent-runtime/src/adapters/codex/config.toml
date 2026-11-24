@@ -9,8 +9,6 @@ allow_login_shell = false
 
 [features]
 enable_request_compression = false
-# Shell snapshot subprocesses can exhaust the session task budget before the model relay forks.
-shell_snapshot = false
 apps = false
 plugins = false
 remote_plugin = false

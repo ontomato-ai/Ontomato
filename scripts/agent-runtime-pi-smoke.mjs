@@ -38,7 +38,7 @@ try {
   sandbox = await openSessionSandbox({
     uid: 20001, sessionDirectory: root, skills: [],
     endpoints: { gateway: endpoint, callback: endpoint },
-    processCount: limits.processCount, fileBytes: limits.fileBytes,
+    fileBytes: limits.fileBytes,
   });
   const signal = AbortSignal.timeout(30000);
   const engine = await piPlugin.open({
