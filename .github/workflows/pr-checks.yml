@@ -6,7 +6,7 @@ on:
   workflow_call:
   workflow_dispatch:
   pull_request:
-    branches: ["develop", "stable", "main"]
+    branches: ["develop", "stable", "main", "feature/agent-session-engine"]
 
 permissions:
   contents: read
@@ -105,6 +105,12 @@ jobs:
 
       - name: Test runtime session engine integration
         run: pnpm --filter @ontomato/agent-runtime exec vitest run --maxWorkers=2 --minWorkers=1 src/__tests__/session-engine.integration.test.ts src/__tests__/http.integration.test.ts
+
+      - name: Test pinned Codex through the runtime session engine
+        run: |
+          sh apps/agent-runtime/codex/install.sh amd64 "$RUNNER_TEMP/ontomato-codex"
+          LITELLM_LOCAL_MODEL_COST_MAP=true ONTO_TEST_CODEX="$RUNNER_TEMP/ontomato-codex/bin/codex" \
+            pnpm --filter @ontomato/agent-runtime exec vitest run --maxWorkers=2 --minWorkers=1 src/__tests__/codex-engine.integration.test.ts
 
       - name: Test workbench server integration
         run: pnpm --filter @ontomato/workbench-server test:integration

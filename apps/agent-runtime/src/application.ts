@@ -1,5 +1,4 @@
-import { HarnessRegistry } from "@ontomato/agent-runtime/adapters/registry";
-import { piPlugin } from "@ontomato/agent-runtime/adapters/pi/index";
+import { installedHarnesses } from "@ontomato/agent-runtime/adapters/installed";
 import type { SessionEngineSandboxFactory } from "@ontomato/agent-runtime/session-engines";
 import { runtimeLogger } from "@ontomato/agent-runtime/logging";
 import "dotenv/config";
@@ -58,7 +57,7 @@ export async function startAgentRuntime(sandboxFactory: (store: RuntimeStore, ro
     store,
     hosts,
     root,
-    engineRegistry: new HarnessRegistry([piPlugin]),
+    engineRegistry: installedHarnesses,
     openEngineSandbox: sandboxFactory(store, root),
     modelRuntimeToken: process.env.ONTOMATO_MODEL_RUNTIME_TOKEN,
     modelSeed: { baseUrl: process.env.LLM_BASE_URL, apiKey: process.env.LLM_API_KEY, modelName: process.env.LLM_MODEL },

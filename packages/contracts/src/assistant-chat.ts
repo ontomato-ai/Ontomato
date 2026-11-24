@@ -13,8 +13,10 @@ import {
 import { defaultAgentSchema } from "./default-agent";
 import { AGENT_DEFINITION } from "./platform-object-types";
 import { skillCatalogDiagnosticsSchema } from "./skills";
+export const assistantEngineSchema = z.enum(["pi", "codex"]);
 export const assistantAgentDefinitionSchema = agentHostAgentSchema.extend({
   executionUserId: z.string().trim().min(1).nullable(),
+  engine: assistantEngineSchema.default("pi"),
   modelSelection: modelSelectionSchema,
   skills: z.array(runtimeSkillRefSchema),
   classNames: z.array(z.string().trim().min(1)).default([]),
@@ -60,14 +62,14 @@ export const assistantAgentInputSchema = assistantAgentDefinitionSchema
     skills: z.array(assistantSkillInputSchema),
   });
 /** An omitted skills field preserves the definition's existing selection. */
-export const assistantAgentUpdateInputSchema = assistantAgentInputSchema.partial({ skills: true });
+export const assistantAgentUpdateInputSchema = assistantAgentInputSchema.extend({ engine: assistantEngineSchema.optional() }).partial({ skills: true });
 export type AssistantAgentUpdateInput = z.infer<typeof assistantAgentUpdateInputSchema>;
 
 /** The settings panel carries unedited MCP and avatar values, and leaves sorting to the native owner. */
 export const assistantAgentPanelValuesSchema = assistantAgentInputSchema.omit({ sortOrder: true }).extend({
   enabledMcpServiceIds: assistantAgentInputSchema.shape.enabledMcpServiceIds.removeDefault(),
 });
-export const assistantAgentPanelUpdateValuesSchema = assistantAgentPanelValuesSchema.partial({ skills: true });
+export const assistantAgentPanelUpdateValuesSchema = assistantAgentPanelValuesSchema.extend({ engine: assistantEngineSchema.optional() }).partial({ skills: true });
 const agentValidationTargetSchema = z.object({ objectType: z.literal(AGENT_DEFINITION) }).strict();
 export const assistantAgentValidationSchema = z.union([
   z.object({ target: agentValidationTargetSchema.extend({ id: z.string().uuid() }), form: assistantAgentUpdateInputSchema }).strict(),

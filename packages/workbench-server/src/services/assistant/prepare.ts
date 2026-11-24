@@ -1,4 +1,5 @@
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import { assistantAgentDefinitionSchema } from "@ontomato/contracts/assistant-chat";
 import type { AgentInput } from "@ontomato/contracts/agent-channel";
 import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
@@ -118,7 +119,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
       };
   return {
     language: resolveLocale(credentials.locale), input,
-    definition: {agentId:session.agent_id,...runDefinition(instructions+"\n\n"+artifactInstructions+"\n"+ASSISTANT_INTERACTION_CONTEXT,
+    definition: {agentId:session.agent_id,engine:assistantAgentDefinitionSchema.shape.engine.parse(a.engine),...runDefinition(instructions+"\n\n"+artifactInstructions+"\n"+ASSISTANT_INTERACTION_CONTEXT,
       a.model_selection.modelId,skills,credentials.locale,profile?[]:a.enabled_mcp_service_ids.map(id=>({id})),prepared?.pageControl??false),
       ...(profile?{productTools:profileRuntimeTools(profile,sessionId),toolSurface:"product" as const}:{})},
     environment: {

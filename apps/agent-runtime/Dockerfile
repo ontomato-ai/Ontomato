@@ -9,6 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       bison flex libprotobuf-dev protobuf-compiler libnl-route-3-dev pkg-config \
  && /bin/sh /sandbox-policy/build-nsjail.sh
 
+FROM ${NODE_BUILDER_IMAGE} AS codex-builder
+ARG TARGETARCH
+COPY codex/ /codex-source/
+RUN sh /codex-source/install.sh "$TARGETARCH" /codex
+
 FROM ${NODE_RUNTIME_IMAGE} AS dependencies
 RUN npm install -g pnpm@9.15.9
 ENV npm_config_store_dir=/pnpm/store
@@ -37,6 +42,9 @@ RUN pi=packages/agent-runtime/node_modules/@earendil-works/pi-coding-agent \
  && cp -LR "$photon" /pi/node_modules/@silvia-odwyer/ \
  && cp packages/agent-runtime/src/adapters/pi/import.mjs packages/agent-runtime/src/adapters/pi/extension.mjs /pi/ \
  && node /pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --version | grep -Fx 1.4.0
+RUN mkdir /codex-launcher \
+ && cp packages/agent-runtime/src/adapters/codex/launch.mjs packages/agent-runtime/src/adapters/codex/config.toml \
+       packages/agent-runtime/src/adapters/codex/model-template.json /codex-launcher/
 COPY LICENSE NOTICE /stage/licenses/
 FROM ${PYTHON_RUNTIME_IMAGE} AS python-runtime
 ARG PIP_INDEX_URL=https://pypi.org/simple
@@ -61,6 +69,7 @@ Node.js: /usr/local/share/node/LICENSE
 Python interpreter and standard library: /usr/local/lib/python3.10/LICENSE.txt
 Debian packages: /usr/share/doc/<package>/copyright
 PI CLI 1.4.0 (https://github.com/earendil-works/pi/releases/tag/v1.4.0): /app/licenses/pi-MIT.txt
+Codex CLI 0.171.0 (https://github.com/openai/codex/releases/tag/rust-v0.171.0): /app/licenses/codex-Apache-2.0.txt
 EOF
 RUN rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.10/site-packages/setuptools* /usr/local/lib/python3.10/site-packages/pkg_resources /usr/local/bin/pip* \
  && node --version && python -c "import requests, numpy, pandas, sympy, litellm, starlette, uvicorn" \
@@ -79,6 +88,12 @@ ENV NODE_ENV=production AGENT_RUNTIME_HOST=0.0.0.0 AGENT_RUNTIME_ROOT=/data LITE
 COPY --from=dependencies /opt/runtime/node_modules /opt/runtime/node_modules
 COPY --from=payload /stage/ /app/
 COPY --from=payload /pi/ /usr/local/lib/ontomato-pi/
+COPY --from=codex-builder /codex/ /usr/local/lib/ontomato-codex/
+COPY --from=payload /codex-launcher/ /usr/local/lib/ontomato-codex/
+COPY codex/LICENSE /app/licenses/codex-Apache-2.0.txt
+COPY codex/NOTICE /app/licenses/codex-NOTICE.txt
+COPY codex/sources.lock /app/licenses/codex-sources.lock
+LABEL io.ontomato.agent-runtime.codex="0.171.0"
 COPY --from=payload /stage/packages/agent-runtime/src/adapters/pi/UPSTREAM-LICENSE /app/licenses/pi-MIT.txt
 COPY --from=python-runtime /runtime-notices.txt /app/licenses/THIRD_PARTY_NOTICES.txt
 COPY requirements-py310.txt /app/licenses/python-requirements.txt
