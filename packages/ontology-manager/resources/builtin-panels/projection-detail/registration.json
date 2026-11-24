@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-projection-detail",
+      "input": {
+        "name": "投影详情",
+        "description": "本体管理器产品层的投影详情：查看、预览、编辑、复制、授权与删除单条投影。"
+      }
+    }
+  ]
+}

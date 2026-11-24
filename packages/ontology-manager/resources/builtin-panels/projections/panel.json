@@ -1,13 +1,6 @@
 {
   "manifest": {
     "state": {
-      "selected": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:ProductProjection"
-        },
-        "deepLink": true
-      },
       "search": {
         "type": {
           "kind": "scalar",
@@ -31,88 +24,13 @@
         "deepLink": true,
         "default": "updated"
       },
-      "tab": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "deepLink": true,
-        "default": "overview"
-      },
       "creating": {
         "type": {
           "kind": "scalar",
           "type": "boolean"
-        }
-      },
-      "detailMode": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
         },
-        "default": "view"
-      },
-      "copyDialog": {
-        "type": {
-          "kind": "scalar",
-          "type": "boolean"
-        }
-      },
-      "copyId": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        }
-      },
-      "copyName": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        }
-      },
-      "deleteRevision": {
-        "type": {
-          "kind": "scalar",
-          "type": "number"
-        }
-      },
-      "grantDialog": {
-        "type": {
-          "kind": "scalar",
-          "type": "boolean"
-        }
-      },
-      "grantPrincipalKind": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "default": "principal"
-      },
-      "grantUser": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:User"
-        }
-      },
-      "grantRole": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:Role"
-        }
-      },
-      "grantPrincipalId": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        }
-      },
-      "grantVerb": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "default": "use"
+        "default": false,
+        "deepLink": false
       }
     },
     "members": {
@@ -133,12 +51,12 @@
           }
         },
         "state": {
-          "selected": "selected",
           "search": "search"
         },
         "config": {
           "layout": "table",
           "pagination": "pages",
+          "showChevron": true,
           "pageSize": 20,
           "pageSizes": [
             10,
@@ -153,30 +71,30 @@
               "key": "label",
               "labelKey": "col.name",
               "subtitleKey": "subtitle",
-              "minWidth": 180
+              "minWidth": 200
             },
             {
               "key": "component",
               "labelKey": "col.component",
-              "minWidth": 140
+              "minWidth": 160
             },
             {
               "key": "owner",
               "labelKey": "col.owner",
-              "width": 120
+              "width": 130
             },
             {
               "key": "scope",
               "labelKey": "col.scope",
               "kind": "tag",
-              "width": 108
+              "width": 112
             },
             {
               "key": "updatedAt",
               "labelKey": "col.updatedAt",
               "kind": "time",
               "timeFormat": "datetime",
-              "width": 164
+              "width": 168
             }
           ]
         },
@@ -184,514 +102,19 @@
         "description": "本域内我能使用的投影，按检索词、范围和排序逐页读取。",
         "id": "builtin-product-38cd4fdd-1a92-4106-adbc-9c752d7b85dc"
       },
-      "headerTitle": {
-        "component": "ObjectHeader",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
-        "config": {
-          "statusField": "scope"
-        },
-        "name": "投影目录 · 标题",
-        "description": "选中投影的名称、说明、范围状态与权限输出。",
-        "id": "builtin-product-dc338b37-5a06-4614-a301-3ff6a980cef5"
-      },
-      "summary": {
-        "component": "ObjectSummary",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
-        "config": {
-          "showTitle": false,
-          "fields": [
-            "id",
-            "component",
-            "projectionKind",
-            "scope",
-            "access",
-            "owner",
-            "revision",
-            "updatedAt"
-          ],
-          "copyableFields": [
-            "id"
-          ]
-        },
-        "name": "投影目录 · 摘要",
-        "description": "选中投影的基础属性摘要。",
-        "id": "builtin-product-7e20f1a1-5b8d-4c63-a4d2-10b9e4c83001"
-      },
-      "definitionSummary": {
-        "component": "ObjectSummary",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
-        "config": {
-          "showTitle": false,
-          "fields": [
-            "definitionJson"
-          ],
-          "copyableFields": [
-            "definitionJson"
-          ]
-        },
-        "name": "投影目录 · 完整定义",
-        "description": "选中投影的完整 JSON 定义。",
-        "id": "builtin-product-7e20f1a1-5b8d-4c63-a4d2-10b9e4c83002"
-      },
-      "preview": {
-        "target": {
-          "fromState": "selected",
-          "candidates": {
-            "rule": "usable"
-          }
-        }
-      },
-      "dataList": {
-        "component": "ObjectList",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "rows": "dataRows"
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "data.empty",
-          "columns": [
-            {
-              "key": "label",
-              "labelKey": "data.colName",
-              "width": 110
-            },
-            {
-              "key": "source",
-              "labelKey": "data.colSource",
-              "kind": "reference",
-              "minWidth": 160
-            },
-            {
-              "key": "read",
-              "labelKey": "data.colRead",
-              "width": 110
-            },
-            {
-              "key": "params",
-              "labelKey": "data.colParams",
-              "minWidth": 160,
-              "wrap": true
-            }
-          ]
-        },
-        "name": "投影目录 · 数据绑定",
-        "description": "选中投影声明的数据来处、读法与参数绑定。",
-        "id": "builtin-product-7e20f1a1-5b8d-4c63-a4d2-10b9e4c83003"
-      },
-      "configList": {
-        "component": "ObjectList",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "rows": "configRows"
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "config.empty",
-          "columns": [
-            {
-              "key": "label",
-              "labelKey": "config.colKey",
-              "width": 150
-            },
-            {
-              "key": "value",
-              "labelKey": "config.colValue",
-              "minWidth": 180,
-              "wrap": true
-            }
-          ]
-        },
-        "name": "投影目录 · 组件配置",
-        "description": "选中投影的组件配置项。",
-        "id": "builtin-product-7e20f1a1-5b8d-4c63-a4d2-10b9e4c83004"
-      },
-      "inputsList": {
-        "component": "ObjectList",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "rows": "inputRows"
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "io.noInputs",
-          "columns": [
-            {
-              "key": "label",
-              "labelKey": "io.colName",
-              "width": 140
-            },
-            {
-              "key": "portType",
-              "labelKey": "io.colType",
-              "minWidth": 160,
-              "wrap": true
-            }
-          ]
-        },
-        "name": "投影目录 · 输入端口",
-        "description": "选中投影声明的输入端口。",
-        "id": "builtin-product-7e20f1a1-5b8d-4c63-a4d2-10b9e4c83005"
-      },
-      "outputsList": {
-        "component": "ObjectList",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "rows": "outputRows"
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "io.noOutputs",
-          "columns": [
-            {
-              "key": "label",
-              "labelKey": "io.colName",
-              "width": 140
-            },
-            {
-              "key": "portType",
-              "labelKey": "io.colType",
-              "minWidth": 160,
-              "wrap": true
-            }
-          ]
-        },
-        "name": "投影目录 · 输出端口",
-        "description": "选中投影声明的输出端口。",
-        "id": "builtin-product-7e20f1a1-5b8d-4c63-a4d2-10b9e4c83006"
-      },
-      "operationsList": {
-        "component": "ObjectList",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "rows": "operationRows"
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "operations.empty",
-          "columns": [
-            {
-              "key": "label",
-              "labelKey": "operations.colName",
-              "width": 110
-            },
-            {
-              "key": "operation",
-              "labelKey": "operations.colOperation",
-              "kind": "reference",
-              "minWidth": 180
-            },
-            {
-              "key": "target",
-              "labelKey": "operations.colTarget",
-              "minWidth": 140,
-              "wrap": true
-            }
-          ]
-        },
-        "name": "投影目录 · 操作绑定",
-        "description": "选中投影登记的属主操作与目标。",
-        "id": "builtin-product-7e20f1a1-5b8d-4c63-a4d2-10b9e4c83007"
-      },
-      "usedByList": {
-        "component": "ObjectList",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "rows": "usedByRows"
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "usedBy.empty",
-          "columns": [
-            {
-              "key": "panel",
-              "labelKey": "usedBy.colPanel",
-              "kind": "reference",
-              "minWidth": 180
-            },
-            {
-              "key": "id",
-              "labelKey": "usedBy.colId",
-              "minWidth": 180
-            }
-          ]
-        },
-        "name": "投影目录 · 使用方",
-        "description": "哪些面板把这条投影放在自己的页面里。",
-        "id": "builtin-product-239fbd8b-f00d-4c3f-a6f8-a526a45f50d5"
-      },
-      "grantsList": {
-        "component": "ObjectList",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "rows": "grantRows"
-        },
-        "operations": {
-          "revoke": {
-            "operation": "productProjections.revoke",
-            "target": {
-              "state": "selected"
-            },
-            "params": {
-              "principalKind": {
-                "rowField": "principalKind"
-              },
-              "principalId": {
-                "rowField": "principalId"
-              },
-              "verb": {
-                "rowField": "verb"
-              }
-            }
-          }
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "grants.none",
-          "columns": [
-            {
-              "key": "principalKindLabel",
-              "labelKey": "grants.kind",
-              "kind": "tag",
-              "width": 120
-            },
-            {
-              "key": "label",
-              "labelKey": "grants.principalCol",
-              "subtitleKey": "subtitle",
-              "minWidth": 180
-            },
-            {
-              "key": "verbLabel",
-              "labelKey": "grants.verb",
-              "kind": "tag",
-              "width": 100
-            }
-          ],
-          "rowActions": {
-            "labelKey": "grants.actions",
-            "width": 96,
-            "align": "right",
-            "maxVisible": 1,
-            "items": [
-              {
-                "kind": "operation",
-                "operation": "revoke",
-                "labelKey": "grants.revoke",
-                "danger": true,
-                "when": {
-                  "field": "revocable",
-                  "equals": true
-                }
-              }
-            ]
-          }
-        },
-        "name": "投影目录 · 授权列表",
-        "description": "选中投影的使用与编辑授权记录。",
-        "id": "builtin-product-f2d68504-e5e9-4462-99b6-745b3bc19e99"
-      },
-      "userPicker": {
-        "component": "ReferencePicker",
-        "type": "platform:User",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "state": {
-          "selected": "grantUser"
-        },
-        "config": {
-          "size": "default",
-          "placeholderKey": "grants.selectMember"
-        },
-        "id": "builtin-product-8fd563ec-e384-451d-b7e0-81b2c1bf74b8"
-      },
-      "rolePicker": {
-        "component": "ReferencePicker",
-        "type": "platform:Role",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "state": {
-          "selected": "grantRole"
-        },
-        "config": {
-          "size": "default",
-          "placeholderKey": "grants.selectRole"
-        },
-        "id": "builtin-product-7e20f1a1-5b8d-4c63-a4d2-10b9e4c83008"
-      },
-      "grantSubmit": {
-        "component": "OperationButton",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "operation": "productProjections.grant",
-        "operationParams": {
-          "principalKind": {
-            "state": "grantPrincipalKind"
-          },
-          "principalId": {
-            "state": "grantPrincipalId"
-          },
-          "verb": {
-            "state": "grantVerb"
-          }
-        },
-        "config": {
-          "type": "primary",
-          "labelKey": "grants.submit"
-        },
-        "id": "builtin-product-b96f2b7c-2fd3-42fb-8d27-c464c38406b7"
-      },
-      "shareEnable": {
-        "component": "OperationButton",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "operation": "productProjections.share",
-        "operationParams": {
-          "shared": {
-            "literal": true
-          }
-        },
-        "config": {
-          "size": "small",
-          "labelKey": "grants.enableShare"
-        },
-        "id": "builtin-product-26d57225-7954-412d-a58d-329a3702354e"
-      },
-      "shareDisable": {
-        "component": "OperationButton",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "operation": "productProjections.share",
-        "operationParams": {
-          "shared": {
-            "literal": false
-          }
-        },
-        "config": {
-          "size": "small",
-          "labelKey": "grants.disableShare"
-        },
-        "id": "builtin-product-7e20f1a1-5b8d-4c63-a4d2-10b9e4c83009"
-      },
-      "shareStatusDesc": {
-        "component": "TypedValue",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
-        "config": {
-          "field": "domainShared",
-          "kind": "text",
-          "valueMap": {
-            "true": {
-              "labelKey": "grants.sharedDesc"
-            },
-            "false": {
-              "labelKey": "grants.privateDesc"
-            }
-          }
-        },
-        "id": "builtin-product-7e20f1a1-5b8d-4c63-a4d2-10b9e4c83010"
-      },
-      "copySubmit": {
-        "component": "OperationButton",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "operation": "productProjections.copy",
-        "operationParams": {
-          "id": {
-            "state": "copyId"
-          },
-          "name": {
-            "state": "copyName"
-          }
-        },
-        "config": {
-          "type": "primary",
-          "labelKey": "action.copy"
-        },
-        "id": "builtin-product-939794c4-a905-45b4-8299-8fa57f867268"
-      },
-      "deleteProjection": {
-        "component": "OperationButton",
-        "type": "platform:ProductProjection",
-        "target": "selected",
-        "operation": "productProjections.delete",
-        "operationParams": {
-          "revision": {
-            "state": "deleteRevision"
-          }
-        },
-        "config": {
-          "type": "danger",
-          "size": "small",
-          "plain": true,
-          "icon": "trash",
-          "labelKey": "action.delete",
-          "hideWhenUnavailable": true
-        },
-        "id": "builtin-product-3366ba8b-929b-4021-8fd1-95faff2e7db5"
-      },
-      "form": {
+      "createForm": {
         "component": "ObjectForm",
         "type": "platform:ProductProjection",
-        "target": "selected",
         "data": {
-          "form": "form",
           "createForm": "createForm"
         },
         "operation": "platform:ProductProjection.save",
         "config": {
-          "actions": "footer"
+          "actions": "none"
         },
-        "name": "投影目录 · 表单",
-        "description": "属主的投影表单：新建一条普通投影，或只改这次提交的字段。",
-        "id": "builtin-product-b86ed6aa-5467-4ef5-a23e-c3f0a3fdae62"
+        "name": "投影目录 · 新建表单",
+        "description": "属主的投影创建表单：按所选组件填写完整字段新建一条普通投影。",
+        "id": "builtin-product-f6a07193-d8c8-4cf0-a0dd-febe9945ed80"
       }
     }
   },
@@ -702,13 +125,7 @@
         "panel.description": "检索、维护、复制和授权本体投影",
         "action.refresh": "刷新",
         "action.create": "新建投影",
-        "action.edit": "编辑",
-        "action.copy": "复制",
-        "action.delete": "删除",
         "action.cancel": "取消",
-        "action.close": "关闭",
-        "action.retry": "重试",
-        "action.openClass": "查看所属类",
         "search.placeholder": "搜索名称或说明",
         "scope.all": "全部",
         "scope.mine": "我的",
@@ -722,87 +139,17 @@
         "col.scope": "共享范围",
         "col.updatedAt": "更新时间",
         "list.empty": "没有符合条件的投影",
-        "detail.selectHint": "选择一条投影查看详情",
-        "detail.loading": "正在读取这条投影…",
-        "detail.forbidden": "你没有这条投影的使用授权。",
-        "detail.missing": "这条投影已不可用。",
-        "detail.chartHint": "图投影由看板源卡登记，沿用原图的规则：不能复制、不能改绑组件与指标；编辑只改名称、说明与初始范围，删除在这里做。",
-        "form.editTitle": "编辑投影",
         "form.createTitle": "新建投影",
-        "form.partialHint": "只改这次提交的字段",
-        "tab.overview": "概览与预览",
-        "tab.definition": "定义与绑定",
-        "tab.usage": "使用方",
-        "tab.grants": "权限与共享",
-        "section.summary": "基本信息",
-        "section.preview": "原位预览",
-        "section.data": "来处与读法",
-        "section.config": "组件配置",
-        "section.inputs": "输入端口",
-        "section.outputs": "输出端口",
-        "section.operations": "属主登记的操作",
-        "section.usedBy": "被哪些面板使用",
-        "source.definition": "完整定义",
-        "data.colName": "数据",
-        "data.colSource": "来处",
-        "data.colRead": "读法",
-        "data.colParams": "参数从哪来",
-        "data.empty": "这条投影不读数据",
-        "config.colKey": "配置项",
-        "config.colValue": "配置值",
-        "config.empty": "未设置额外配置项",
-        "io.colName": "端口名",
-        "io.colType": "端口类型",
-        "io.noInputs": "没有输入",
-        "io.noOutputs": "没有输出",
-        "operations.colName": "名称",
-        "operations.colOperation": "操作",
-        "operations.colTarget": "目标",
-        "operations.empty": "这条投影不登记操作",
-        "usedBy.colPanel": "面板",
-        "usedBy.colId": "标识",
-        "usedBy.empty": "没有面板在用它，删除不会被拦。",
-        "usedBy.count": "{count} 个面板",
-        "usedBy.hiddenHint": "另有 {count} 个面板用它，你没有这些面板的使用授权。",
-        "grants.none": "暂无单独授权记录。",
-        "grants.kind": "主体类型",
-        "grants.principalCol": "主体",
-        "grants.verb": "权限",
-        "grants.actions": "操作",
-        "grants.principal": "成员",
-        "grants.role": "角色",
-        "grants.domain": "域内成员",
-        "grants.use": "使用",
-        "grants.edit": "编辑",
-        "grants.revoke": "撤销",
-        "grants.add": "添加授权",
-        "grants.dialogTitle": "添加授权",
-        "grants.shareTitle": "向本域成员共享",
-        "grants.sharedDesc": "已向本域所有成员开放使用权限。",
-        "grants.privateDesc": "当前仅对下方授权的成员与角色开放。",
-        "grants.enableShare": "开启域内共享",
-        "grants.disableShare": "关闭域内共享",
-        "grants.selectMember": "搜索或选择成员",
-        "grants.selectRole": "搜索或选择角色",
-        "grants.submit": "授予",
-        "copy.title": "复制投影",
-        "copy.nameLabel": "新名称",
-        "copy.idLabel": "新标识",
-        "copy.defaultName": "{name} 副本",
-        "notify.saved": "已保存"
+        "notify.saved": "已保存",
+        "notify.created": "已创建投影",
+        "action.back": "返回投影"
       },
       "en": {
         "panel.name": "Projections",
         "panel.description": "Search, maintain, copy, and share ontology projections",
         "action.refresh": "Refresh",
         "action.create": "New projection",
-        "action.edit": "Edit",
-        "action.copy": "Copy",
-        "action.delete": "Delete",
         "action.cancel": "Cancel",
-        "action.close": "Close",
-        "action.retry": "Retry",
-        "action.openClass": "View object type",
         "search.placeholder": "Search name or description",
         "scope.all": "All",
         "scope.mine": "Mine",
@@ -816,87 +163,17 @@
         "col.scope": "Scope",
         "col.updatedAt": "Updated",
         "list.empty": "No matching projections",
-        "detail.selectHint": "Select a projection to inspect its details",
-        "detail.loading": "Loading projection…",
-        "detail.forbidden": "You do not have permission to use this projection.",
-        "detail.missing": "This projection is no longer available.",
-        "detail.chartHint": "Chart projections are registered from dashboard source cards: they cannot be copied or rebound to another component or metric; editing updates only name, description, and initial scope.",
-        "form.editTitle": "Edit projection",
         "form.createTitle": "New projection",
-        "form.partialHint": "Only changed fields are submitted",
-        "tab.overview": "Overview & preview",
-        "tab.definition": "Definition & bindings",
-        "tab.usage": "Used by",
-        "tab.grants": "Permissions & sharing",
-        "section.summary": "Basics",
-        "section.preview": "Inline preview",
-        "section.data": "Data sources & reads",
-        "section.config": "Component configuration",
-        "section.inputs": "Inputs",
-        "section.outputs": "Outputs",
-        "section.operations": "Registered operations",
-        "section.usedBy": "Used by panels",
-        "source.definition": "Full definition",
-        "data.colName": "Datum",
-        "data.colSource": "Source",
-        "data.colRead": "Read",
-        "data.colParams": "Parameters",
-        "data.empty": "This projection reads no data",
-        "config.colKey": "Key",
-        "config.colValue": "Value",
-        "config.empty": "No configuration entries",
-        "io.colName": "Port",
-        "io.colType": "Type",
-        "io.noInputs": "No inputs",
-        "io.noOutputs": "No outputs",
-        "operations.colName": "Name",
-        "operations.colOperation": "Operation",
-        "operations.colTarget": "Target",
-        "operations.empty": "This projection registers no operations",
-        "usedBy.colPanel": "Panel",
-        "usedBy.colId": "ID",
-        "usedBy.empty": "No panels use this projection; deletion will not be blocked.",
-        "usedBy.count": "{count} panels",
-        "usedBy.hiddenHint": "{count} additional panel(s) use this projection without your access.",
-        "grants.none": "No individual grants.",
-        "grants.kind": "Principal type",
-        "grants.principalCol": "Principal",
-        "grants.verb": "Permission",
-        "grants.actions": "Actions",
-        "grants.principal": "Member",
-        "grants.role": "Role",
-        "grants.domain": "Domain members",
-        "grants.use": "Use",
-        "grants.edit": "Edit",
-        "grants.revoke": "Revoke",
-        "grants.add": "Add grant",
-        "grants.dialogTitle": "Add grant",
-        "grants.shareTitle": "Share with domain members",
-        "grants.sharedDesc": "Use access is open to all domain members.",
-        "grants.privateDesc": "Only the granted members and roles below can access this projection.",
-        "grants.enableShare": "Enable domain sharing",
-        "grants.disableShare": "Disable domain sharing",
-        "grants.selectMember": "Search or select a member",
-        "grants.selectRole": "Search or select a role",
-        "grants.submit": "Grant",
-        "copy.title": "Copy projection",
-        "copy.nameLabel": "New name",
-        "copy.idLabel": "New ID",
-        "copy.defaultName": "{name} copy",
-        "notify.saved": "Saved."
+        "notify.saved": "Saved.",
+        "notify.created": "Projection created.",
+        "action.back": "Back to projections"
       },
       "zh-TW": {
         "panel.name": "投影",
         "panel.description": "檢索、維護、複製與授權本體投影",
         "action.refresh": "重新整理",
         "action.create": "新建投影",
-        "action.edit": "編輯",
-        "action.copy": "複製",
-        "action.delete": "刪除",
         "action.cancel": "取消",
-        "action.close": "關閉",
-        "action.retry": "重試",
-        "action.openClass": "檢視所屬類",
         "search.placeholder": "搜尋名稱或說明",
         "scope.all": "全部",
         "scope.mine": "我的",
@@ -910,87 +187,17 @@
         "col.scope": "共享範圍",
         "col.updatedAt": "更新時間",
         "list.empty": "沒有符合條件的投影",
-        "detail.selectHint": "選擇一條投影檢視詳情",
-        "detail.loading": "正在讀取這條投影…",
-        "detail.forbidden": "你沒有這條投影的使用授權。",
-        "detail.missing": "這條投影已不可用。",
-        "detail.chartHint": "圖投影由看板源卡登記，沿用原圖規則：不能複製、不能改綁元件與指標；編輯僅改名稱、說明與初始範圍。",
-        "form.editTitle": "編輯投影",
         "form.createTitle": "新建投影",
-        "form.partialHint": "僅提交本次修改的欄位",
-        "tab.overview": "概覽與預覽",
-        "tab.definition": "定義與綁定",
-        "tab.usage": "使用方",
-        "tab.grants": "權限與共享",
-        "section.summary": "基本資訊",
-        "section.preview": "原位預覽",
-        "section.data": "來源與讀法",
-        "section.config": "元件設定",
-        "section.inputs": "輸入埠",
-        "section.outputs": "輸出埠",
-        "section.operations": "屬主登記的操作",
-        "section.usedBy": "被哪些面板使用",
-        "source.definition": "完整定義",
-        "data.colName": "資料",
-        "data.colSource": "來源",
-        "data.colRead": "讀法",
-        "data.colParams": "參數來源",
-        "data.empty": "這條投影不讀資料",
-        "config.colKey": "設定項",
-        "config.colValue": "設定值",
-        "config.empty": "未設定額外設定項",
-        "io.colName": "埠名",
-        "io.colType": "埠類型",
-        "io.noInputs": "沒有輸入",
-        "io.noOutputs": "沒有輸出",
-        "operations.colName": "名稱",
-        "operations.colOperation": "操作",
-        "operations.colTarget": "目標",
-        "operations.empty": "這條投影不登記操作",
-        "usedBy.colPanel": "面板",
-        "usedBy.colId": "識別碼",
-        "usedBy.empty": "沒有面板在使用它，刪除不會被攔截。",
-        "usedBy.count": "{count} 個面板",
-        "usedBy.hiddenHint": "另有 {count} 個面板使用它，你沒有這些面板的使用授權。",
-        "grants.none": "暫無單獨授權記錄。",
-        "grants.kind": "主體類型",
-        "grants.principalCol": "主體",
-        "grants.verb": "權限",
-        "grants.actions": "操作",
-        "grants.principal": "成員",
-        "grants.role": "角色",
-        "grants.domain": "網域成員",
-        "grants.use": "使用",
-        "grants.edit": "編輯",
-        "grants.revoke": "撤銷",
-        "grants.add": "新增授權",
-        "grants.dialogTitle": "新增授權",
-        "grants.shareTitle": "向本網域成員共享",
-        "grants.sharedDesc": "已向本網域所有成員開放使用權限。",
-        "grants.privateDesc": "目前僅對下方授權的成員與角色開放。",
-        "grants.enableShare": "開啟網域共享",
-        "grants.disableShare": "關閉網域共享",
-        "grants.selectMember": "搜尋或選擇成員",
-        "grants.selectRole": "搜尋或選擇角色",
-        "grants.submit": "授予",
-        "copy.title": "複製投影",
-        "copy.nameLabel": "新名稱",
-        "copy.idLabel": "新識別碼",
-        "copy.defaultName": "{name} 副本",
-        "notify.saved": "已儲存"
+        "notify.saved": "已儲存",
+        "notify.created": "已建立投影",
+        "action.back": "返回投影"
       },
       "ja": {
         "panel.name": "プロジェクション",
         "panel.description": "オントロジープロジェクションの検索・保守・複製・権限管理",
         "action.refresh": "更新",
         "action.create": "新規プロジェクション",
-        "action.edit": "編集",
-        "action.copy": "複製",
-        "action.delete": "削除",
         "action.cancel": "キャンセル",
-        "action.close": "閉じる",
-        "action.retry": "再試行",
-        "action.openClass": "所属クラスを表示",
         "search.placeholder": "名前または説明を検索",
         "scope.all": "すべて",
         "scope.mine": "自分",
@@ -1004,87 +211,17 @@
         "col.scope": "共有範囲",
         "col.updatedAt": "更新日時",
         "list.empty": "一致するプロジェクションがありません",
-        "detail.selectHint": "詳細を表示するプロジェクションを選択してください",
-        "detail.loading": "プロジェクションを読み込んでいます…",
-        "detail.forbidden": "このプロジェクションの使用権限がありません。",
-        "detail.missing": "このプロジェクションは利用できません。",
-        "detail.chartHint": "チャートプロジェクションはダッシュボードのソースカードから登録されます。複製やコンポーネント・指標の変更はできません。",
-        "form.editTitle": "プロジェクションを編集",
         "form.createTitle": "新規プロジェクション",
-        "form.partialHint": "変更したフィールドのみ送信されます",
-        "tab.overview": "概要とプレビュー",
-        "tab.definition": "定義とバインド",
-        "tab.usage": "使用パネル",
-        "tab.grants": "権限と共有",
-        "section.summary": "基本情報",
-        "section.preview": "インラインプレビュー",
-        "section.data": "データソースと読み取り",
-        "section.config": "コンポーネント設定",
-        "section.inputs": "入力",
-        "section.outputs": "出力",
-        "section.operations": "登録された操作",
-        "section.usedBy": "使用しているパネル",
-        "source.definition": "完全な定義",
-        "data.colName": "データ",
-        "data.colSource": "ソース",
-        "data.colRead": "読み取り",
-        "data.colParams": "パラメーター",
-        "data.empty": "このプロジェクションはデータを読み取りません",
-        "config.colKey": "キー",
-        "config.colValue": "値",
-        "config.empty": "設定項目はありません",
-        "io.colName": "ポート名",
-        "io.colType": "型",
-        "io.noInputs": "入力なし",
-        "io.noOutputs": "出力なし",
-        "operations.colName": "名前",
-        "operations.colOperation": "操作",
-        "operations.colTarget": "対象",
-        "operations.empty": "登録された操作はありません",
-        "usedBy.colPanel": "パネル",
-        "usedBy.colId": "ID",
-        "usedBy.empty": "このプロジェクションを使用しているパネルはありません。",
-        "usedBy.count": "{count} 件のパネル",
-        "usedBy.hiddenHint": "他にアクセス権のない {count} 件のパネルが使用しています。",
-        "grants.none": "個別の権限はありません。",
-        "grants.kind": "対象の種類",
-        "grants.principalCol": "対象",
-        "grants.verb": "権限",
-        "grants.actions": "操作",
-        "grants.principal": "メンバー",
-        "grants.role": "ロール",
-        "grants.domain": "ドメインメンバー",
-        "grants.use": "使用",
-        "grants.edit": "編集",
-        "grants.revoke": "取り消す",
-        "grants.add": "権限を追加",
-        "grants.dialogTitle": "権限を追加",
-        "grants.shareTitle": "ドメインメンバーに共有",
-        "grants.sharedDesc": "ドメイン内の全メンバーに使用権限が開放されています。",
-        "grants.privateDesc": "以下の権限を持つメンバーとロールのみがアクセスできます。",
-        "grants.enableShare": "ドメイン共有を有効化",
-        "grants.disableShare": "ドメイン共有を無効化",
-        "grants.selectMember": "メンバーを検索または選択",
-        "grants.selectRole": "ロールを検索または選択",
-        "grants.submit": "付与",
-        "copy.title": "プロジェクションを複製",
-        "copy.nameLabel": "新しい名前",
-        "copy.idLabel": "新しい ID",
-        "copy.defaultName": "{name} のコピー",
-        "notify.saved": "保存しました。"
+        "notify.saved": "保存しました。",
+        "notify.created": "プロジェクションを作成しました。",
+        "action.back": "プロジェクション一覧へ"
       },
       "ar": {
         "panel.name": "الإسقاطات",
         "panel.description": "البحث عن إسقاطات الأنطولوجيا وصيانتها ونسخها ومشاركتها",
         "action.refresh": "تحديث",
         "action.create": "إسقاط جديد",
-        "action.edit": "تعديل",
-        "action.copy": "نسخ",
-        "action.delete": "حذف",
         "action.cancel": "إلغاء",
-        "action.close": "إغلاق",
-        "action.retry": "إعادة المحاولة",
-        "action.openClass": "عرض نوع الكائن",
         "search.placeholder": "ابحث بالاسم أو الوصف",
         "scope.all": "الكل",
         "scope.mine": "الخاصة بي",
@@ -1098,87 +235,17 @@
         "col.scope": "النطاق",
         "col.updatedAt": "آخر تحديث",
         "list.empty": "لا توجد إسقاطات مطابقة",
-        "detail.selectHint": "اختر إسقاطاً لعرض تفاصيله",
-        "detail.loading": "جارٍ تحميل الإسقاط…",
-        "detail.forbidden": "ليست لديك صلاحية استخدام هذا الإسقاط.",
-        "detail.missing": "لم يعد هذا الإسقاط متاحاً.",
-        "detail.chartHint": "يتم تسجيل إسقاطات المخططات من بطاقات لوحة المعلومات ولا يمكن نسخها أو تغيير مكوّنها.",
-        "form.editTitle": "تعديل الإسقاط",
         "form.createTitle": "إسقاط جديد",
-        "form.partialHint": "تُرسل الحقول المعدّلة فقط",
-        "tab.overview": "نظرة عامة ومعاينة",
-        "tab.definition": "التعريف والارتباطات",
-        "tab.usage": "المستخدمون",
-        "tab.grants": "الصلاحيات والمشاركة",
-        "section.summary": "المعلومات الأساسية",
-        "section.preview": "معاينة مباشرة",
-        "section.data": "مصادر البيانات والقراءات",
-        "section.config": "إعدادات المكوّن",
-        "section.inputs": "المدخلات",
-        "section.outputs": "المخرجات",
-        "section.operations": "العمليات المسجلة",
-        "section.usedBy": "اللوحات المستخدمة",
-        "source.definition": "التعريف الكامل",
-        "data.colName": "البيان",
-        "data.colSource": "المصدر",
-        "data.colRead": "القراءة",
-        "data.colParams": "المعاملات",
-        "data.empty": "لا يقرأ هذا الإسقاط أي بيانات",
-        "config.colKey": "المفتاح",
-        "config.colValue": "القيمة",
-        "config.empty": "لا توجد إعدادات إضافية",
-        "io.colName": "المنفذ",
-        "io.colType": "النوع",
-        "io.noInputs": "لا توجد مدخلات",
-        "io.noOutputs": "لا توجد مخرجات",
-        "operations.colName": "الاسم",
-        "operations.colOperation": "العملية",
-        "operations.colTarget": "الهدف",
-        "operations.empty": "لا يسجّل هذا الإسقاط عمليات",
-        "usedBy.colPanel": "اللوحة",
-        "usedBy.colId": "المعرّف",
-        "usedBy.empty": "لا تستخدم أي لوحة هذا الإسقاط.",
-        "usedBy.count": "{count} لوحة",
-        "usedBy.hiddenHint": "تستخدم {count} لوحة إضافية هذا الإسقاط دون صلاحية عرض لديك.",
-        "grants.none": "لا توجد صلاحيات فردية.",
-        "grants.kind": "نوع الجهة",
-        "grants.principalCol": "الجهة",
-        "grants.verb": "الصلاحية",
-        "grants.actions": "الإجراءات",
-        "grants.principal": "عضو",
-        "grants.role": "دور",
-        "grants.domain": "أعضاء النطاق",
-        "grants.use": "استخدام",
-        "grants.edit": "تعديل",
-        "grants.revoke": "إلغاء",
-        "grants.add": "إضافة صلاحية",
-        "grants.dialogTitle": "إضافة صلاحية",
-        "grants.shareTitle": "مشاركة مع أعضاء النطاق",
-        "grants.sharedDesc": "صلاحية الاستخدام متاحة لجميع أعضاء النطاق.",
-        "grants.privateDesc": "متاح فقط للأعضاء والأدوار المصرح لها أدناه.",
-        "grants.enableShare": "تفعيل مشاركة النطاق",
-        "grants.disableShare": "إيقاف مشاركة النطاق",
-        "grants.selectMember": "ابحث أو اختر عضواً",
-        "grants.selectRole": "ابحث أو اختر دوراً",
-        "grants.submit": "منح",
-        "copy.title": "نسخ الإسقاط",
-        "copy.nameLabel": "الاسم الجديد",
-        "copy.idLabel": "المعرّف الجديد",
-        "copy.defaultName": "نسخة من {name}",
-        "notify.saved": "تم الحفظ."
+        "notify.saved": "تم الحفظ.",
+        "notify.created": "تم إنشاء الإسقاط.",
+        "action.back": "العودة إلى الإسقاطات"
       },
       "fr": {
         "panel.name": "Projections",
         "panel.description": "Rechercher, maintenir, copier et partager les projections d'ontologie",
         "action.refresh": "Actualiser",
         "action.create": "Nouvelle projection",
-        "action.edit": "Modifier",
-        "action.copy": "Copier",
-        "action.delete": "Supprimer",
         "action.cancel": "Annuler",
-        "action.close": "Fermer",
-        "action.retry": "Réessayer",
-        "action.openClass": "Voir le type d'objet",
         "search.placeholder": "Rechercher un nom ou une description",
         "scope.all": "Toutes",
         "scope.mine": "Les miennes",
@@ -1192,87 +259,17 @@
         "col.scope": "Portée",
         "col.updatedAt": "Mis à jour",
         "list.empty": "Aucune projection correspondante",
-        "detail.selectHint": "Sélectionnez une projection pour voir ses détails",
-        "detail.loading": "Chargement de la projection…",
-        "detail.forbidden": "Vous n'avez pas l'autorisation d'utiliser cette projection.",
-        "detail.missing": "Cette projection n'est plus disponible.",
-        "detail.chartHint": "Les projections de graphique proviennent d'une carte source : elles ne peuvent pas être copiées ni réassociées.",
-        "form.editTitle": "Modifier la projection",
         "form.createTitle": "Nouvelle projection",
-        "form.partialHint": "Seuls les champs modifiés sont soumis",
-        "tab.overview": "Aperçu",
-        "tab.definition": "Définition et liaisons",
-        "tab.usage": "Utilisé par",
-        "tab.grants": "Autorisations et partage",
-        "section.summary": "Informations générales",
-        "section.preview": "Aperçu intégré",
-        "section.data": "Sources de données et lectures",
-        "section.config": "Configuration du composant",
-        "section.inputs": "Entrées",
-        "section.outputs": "Sorties",
-        "section.operations": "Opérations enregistrées",
-        "section.usedBy": "Panneaux utilisateurs",
-        "source.definition": "Définition complète",
-        "data.colName": "Donnée",
-        "data.colSource": "Source",
-        "data.colRead": "Lecture",
-        "data.colParams": "Paramètres",
-        "data.empty": "Cette projection ne lit aucune donnée",
-        "config.colKey": "Clé",
-        "config.colValue": "Valeur",
-        "config.empty": "Aucune option de configuration",
-        "io.colName": "Port",
-        "io.colType": "Type",
-        "io.noInputs": "Aucune entrée",
-        "io.noOutputs": "Aucune sortie",
-        "operations.colName": "Nom",
-        "operations.colOperation": "Opération",
-        "operations.colTarget": "Cible",
-        "operations.empty": "Cette projection n'enregistre aucune opération",
-        "usedBy.colPanel": "Panneau",
-        "usedBy.colId": "Identifiant",
-        "usedBy.empty": "Aucun panneau n'utilise cette projection.",
-        "usedBy.count": "{count} panneaux",
-        "usedBy.hiddenHint": "{count} autre(s) panneau(x) l'utilisent sans accès visible.",
-        "grants.none": "Aucune autorisation individuelle.",
-        "grants.kind": "Type de bénéficiaire",
-        "grants.principalCol": "Bénéficiaire",
-        "grants.verb": "Autorisation",
-        "grants.actions": "Actions",
-        "grants.principal": "Membre",
-        "grants.role": "Rôle",
-        "grants.domain": "Membres du domaine",
-        "grants.use": "Utiliser",
-        "grants.edit": "Modifier",
-        "grants.revoke": "Révoquer",
-        "grants.add": "Ajouter une autorisation",
-        "grants.dialogTitle": "Ajouter une autorisation",
-        "grants.shareTitle": "Partager avec les membres du domaine",
-        "grants.sharedDesc": "L'accès en utilisation est ouvert à tous les membres du domaine.",
-        "grants.privateDesc": "Uniquement accessible aux membres et rôles autorisés ci-dessous.",
-        "grants.enableShare": "Activer le partage domaine",
-        "grants.disableShare": "Désactiver le partage domaine",
-        "grants.selectMember": "Rechercher ou sélectionner un membre",
-        "grants.selectRole": "Rechercher ou sélectionner un rôle",
-        "grants.submit": "Accorder",
-        "copy.title": "Copier la projection",
-        "copy.nameLabel": "Nouveau nom",
-        "copy.idLabel": "Nouvel identifiant",
-        "copy.defaultName": "{name} (copie)",
-        "notify.saved": "Enregistré."
+        "notify.saved": "Enregistré.",
+        "notify.created": "Projection créée.",
+        "action.back": "Retour aux projections"
       },
       "de": {
         "panel.name": "Projektionen",
         "panel.description": "Ontologie-Projektionen suchen, pflegen, kopieren und freigeben",
         "action.refresh": "Aktualisieren",
         "action.create": "Neue Projektion",
-        "action.edit": "Bearbeiten",
-        "action.copy": "Kopieren",
-        "action.delete": "Löschen",
         "action.cancel": "Abbrechen",
-        "action.close": "Schließen",
-        "action.retry": "Erneut versuchen",
-        "action.openClass": "Objekttyp anzeigen",
         "search.placeholder": "Name oder Beschreibung suchen",
         "scope.all": "Alle",
         "scope.mine": "Eigene",
@@ -1286,87 +283,17 @@
         "col.scope": "Bereich",
         "col.updatedAt": "Aktualisiert",
         "list.empty": "Keine passenden Projektionen",
-        "detail.selectHint": "Projektion auswählen, um Details anzuzeigen",
-        "detail.loading": "Projektion wird geladen…",
-        "detail.forbidden": "Sie haben keine Berechtigung, diese Projektion zu verwenden.",
-        "detail.missing": "Diese Projektion ist nicht mehr verfügbar.",
-        "detail.chartHint": "Diagramm-Projektionen stammen aus Dashboard-Karten und können weder kopiert noch neu gebunden werden.",
-        "form.editTitle": "Projektion bearbeiten",
         "form.createTitle": "Neue Projektion",
-        "form.partialHint": "Nur geänderte Felder werden übermittelt",
-        "tab.overview": "Übersicht & Vorschau",
-        "tab.definition": "Definition & Bindungen",
-        "tab.usage": "Verwendet von",
-        "tab.grants": "Berechtigungen & Freigabe",
-        "section.summary": "Grunddaten",
-        "section.preview": "Direktvorschau",
-        "section.data": "Datenquellen & Lesevorgänge",
-        "section.config": "Komponentenkonfiguration",
-        "section.inputs": "Eingänge",
-        "section.outputs": "Ausgänge",
-        "section.operations": "Registrierte Operationen",
-        "section.usedBy": "Verwendende Panels",
-        "source.definition": "Vollständige Definition",
-        "data.colName": "Datum",
-        "data.colSource": "Quelle",
-        "data.colRead": "Lesen",
-        "data.colParams": "Parameter",
-        "data.empty": "Diese Projektion liest keine Daten",
-        "config.colKey": "Schlüssel",
-        "config.colValue": "Wert",
-        "config.empty": "Keine Konfigurationseinträge",
-        "io.colName": "Port",
-        "io.colType": "Typ",
-        "io.noInputs": "Keine Eingänge",
-        "io.noOutputs": "Keine Ausgänge",
-        "operations.colName": "Name",
-        "operations.colOperation": "Operation",
-        "operations.colTarget": "Ziel",
-        "operations.empty": "Keine Operationen registriert",
-        "usedBy.colPanel": "Panel",
-        "usedBy.colId": "ID",
-        "usedBy.empty": "Keine Panels verwenden diese Projektion.",
-        "usedBy.count": "{count} Panels",
-        "usedBy.hiddenHint": "{count} weitere Panels ohne Zugriffsberechtigung verwenden diese Projektion.",
-        "grants.none": "Keine Einzelberechtigungen.",
-        "grants.kind": "Empfängertyp",
-        "grants.principalCol": "Empfänger",
-        "grants.verb": "Berechtigung",
-        "grants.actions": "Aktionen",
-        "grants.principal": "Mitglied",
-        "grants.role": "Rolle",
-        "grants.domain": "Domänenmitglieder",
-        "grants.use": "Verwenden",
-        "grants.edit": "Bearbeiten",
-        "grants.revoke": "Widerrufen",
-        "grants.add": "Berechtigung hinzufügen",
-        "grants.dialogTitle": "Berechtigung hinzufügen",
-        "grants.shareTitle": "Für Domänenmitglieder freigeben",
-        "grants.sharedDesc": "Nutzungszugriff ist für alle Domänenmitglieder geöffnet.",
-        "grants.privateDesc": "Nur für unten berechtigte Mitglieder und Rollen zugänglich.",
-        "grants.enableShare": "Domänenfreigabe aktivieren",
-        "grants.disableShare": "Domänenfreigabe deaktivieren",
-        "grants.selectMember": "Mitglied suchen oder wählen",
-        "grants.selectRole": "Rolle suchen oder wählen",
-        "grants.submit": "Erteilen",
-        "copy.title": "Projektion kopieren",
-        "copy.nameLabel": "Neuer Name",
-        "copy.idLabel": "Neue ID",
-        "copy.defaultName": "{name} Kopie",
-        "notify.saved": "Gespeichert."
+        "notify.saved": "Gespeichert.",
+        "notify.created": "Projektion erstellt.",
+        "action.back": "Zurück zu Projektionen"
       },
       "it": {
         "panel.name": "Proiezioni",
         "panel.description": "Cerca, gestisci, copia e condividi le proiezioni di ontologia",
         "action.refresh": "Aggiorna",
         "action.create": "Nuova proiezione",
-        "action.edit": "Modifica",
-        "action.copy": "Copia",
-        "action.delete": "Elimina",
         "action.cancel": "Annulla",
-        "action.close": "Chiudi",
-        "action.retry": "Riprova",
-        "action.openClass": "Visualizza tipo di oggetto",
         "search.placeholder": "Cerca nome o descrizione",
         "scope.all": "Tutte",
         "scope.mine": "Mie",
@@ -1380,74 +307,10 @@
         "col.scope": "Ambito",
         "col.updatedAt": "Aggiornato",
         "list.empty": "Nessuna proiezione corrispondente",
-        "detail.selectHint": "Seleziona una proiezione per visualizzarne i dettagli",
-        "detail.loading": "Caricamento proiezione…",
-        "detail.forbidden": "Non hai il permesso di usare questa proiezione.",
-        "detail.missing": "Questa proiezione non è più disponibile.",
-        "detail.chartHint": "Le proiezioni grafico derivano da una scheda dashboard e non possono essere copiate o riassegnate.",
-        "form.editTitle": "Modifica proiezione",
         "form.createTitle": "Nuova proiezione",
-        "form.partialHint": "Vengono inviati solo i campi modificati",
-        "tab.overview": "Panoramica e anteprima",
-        "tab.definition": "Definizione e binding",
-        "tab.usage": "Usata da",
-        "tab.grants": "Autorizzazioni e condivisione",
-        "section.summary": "Informazioni di base",
-        "section.preview": "Anteprima integrata",
-        "section.data": "Origini dati e letture",
-        "section.config": "Configurazione componente",
-        "section.inputs": "Input",
-        "section.outputs": "Output",
-        "section.operations": "Operazioni registrate",
-        "section.usedBy": "Pannelli utilizzatori",
-        "source.definition": "Definizione completa",
-        "data.colName": "Dato",
-        "data.colSource": "Origine",
-        "data.colRead": "Lettura",
-        "data.colParams": "Parametri",
-        "data.empty": "Questa proiezione non legge dati",
-        "config.colKey": "Chiave",
-        "config.colValue": "Valore",
-        "config.empty": "Nessuna configurazione",
-        "io.colName": "Porta",
-        "io.colType": "Tipo",
-        "io.noInputs": "Nessun input",
-        "io.noOutputs": "Nessun output",
-        "operations.colName": "Nome",
-        "operations.colOperation": "Operazione",
-        "operations.colTarget": "Destinazione",
-        "operations.empty": "Nessuna operazione registrata",
-        "usedBy.colPanel": "Pannello",
-        "usedBy.colId": "ID",
-        "usedBy.empty": "Nessun pannello utilizza questa proiezione.",
-        "usedBy.count": "{count} pannelli",
-        "usedBy.hiddenHint": "Altri {count} pannelli la utilizzano senza autorizzazione di visualizzazione.",
-        "grants.none": "Nessuna autorizzazione individuale.",
-        "grants.kind": "Tipo di destinatario",
-        "grants.principalCol": "Destinatario",
-        "grants.verb": "Autorizzazione",
-        "grants.actions": "Azioni",
-        "grants.principal": "Membro",
-        "grants.role": "Ruolo",
-        "grants.domain": "Membri del dominio",
-        "grants.use": "Usa",
-        "grants.edit": "Modifica",
-        "grants.revoke": "Revoca",
-        "grants.add": "Aggiungi autorizzazione",
-        "grants.dialogTitle": "Aggiungi autorizzazione",
-        "grants.shareTitle": "Condividi con i membri del dominio",
-        "grants.sharedDesc": "L'accesso in uso è aperto a tutti i membri del dominio.",
-        "grants.privateDesc": "Accessibile solo ai membri e ruoli autorizzati di seguito.",
-        "grants.enableShare": "Attiva condivisione dominio",
-        "grants.disableShare": "Disattiva condivisione dominio",
-        "grants.selectMember": "Cerca o seleziona un membro",
-        "grants.selectRole": "Cerca o seleziona un ruolo",
-        "grants.submit": "Concedi",
-        "copy.title": "Copia proiezione",
-        "copy.nameLabel": "Nuovo nome",
-        "copy.idLabel": "Nuovo ID",
-        "copy.defaultName": "{name} copia",
-        "notify.saved": "Salvato."
+        "notify.saved": "Salvato.",
+        "notify.created": "Proiezione creata.",
+        "action.back": "Torna alle proiezioni"
       }
     }
   }

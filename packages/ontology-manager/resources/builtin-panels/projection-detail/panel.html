@@ -1,0 +1,443 @@
+<!-- Projection detail panel: default view mode with full-width edit mode, inline preview, definition bindings, usage, and grants. -->
+<style>
+  [v-cloak] { display: none; }
+  .proj-detail-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: proj-detail / inline-size;
+  }
+
+  .proj-caret-icon {
+    margin-inline-start: 4px;
+    flex-shrink: 0;
+  }
+
+  .proj-dropdown-danger {
+    color: var(--sdk-color-danger-text, var(--sdk-color-danger));
+  }
+
+  .proj-detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 64px);
+    min-width: 0;
+  }
+
+  .proj-state-box {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-xl) var(--page-gutter);
+    min-width: 0;
+  }
+  .proj-state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+  }
+
+  .proj-tablist {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-lg);
+    border-bottom: 1px solid var(--sdk-border-color, var(--ui-border));
+  }
+  .proj-tab {
+    position: relative;
+    padding: var(--spacing-sm) 0;
+    border: 0;
+    background: none;
+    color: var(--sdk-text-color-secondary);
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+  .proj-tab:hover {
+    color: var(--sdk-text-color-primary);
+  }
+  .proj-tab.active {
+    color: var(--sdk-color-primary, var(--brand-link));
+  }
+  .proj-tab.active::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--sdk-color-primary, var(--brand-link));
+  }
+  .proj-tab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+  }
+
+  .proj-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .proj-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .proj-card-title {
+    margin: 0;
+    font-size: var(--text-base, var(--text-sm));
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .proj-card-subtitle {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .proj-muted {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+
+  .proj-io-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-md);
+  }
+  @container proj-detail (min-width: 720px) {
+    .proj-io-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+  }
+
+  .proj-definition-details {
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--sdk-bg-color);
+  }
+  .proj-definition-details > summary {
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .proj-definition-body {
+    margin-top: var(--spacing-sm);
+  }
+  .proj-definition-body .sdk-object-summary-text {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--text-xs);
+    max-height: 20rem;
+    overflow: auto;
+    display: block;
+  }
+
+  .proj-share-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+  .proj-share-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .proj-share-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .proj-form-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .proj-form-wrap .sdk-owner-form,
+  .proj-form-wrap .sdk-owner-form-inner {
+    height: auto;
+  }
+  .proj-form-wrap .sdk-owner-form-body {
+    overflow: visible;
+  }
+
+  .proj-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+</style>
+
+<div id="app" v-cloak>
+  <section class="proj-detail-page">
+    <page-header
+      :back-label="t('action.back')"
+      :draft="editDraft"
+      @back="goBack"
+    >
+      <template #title>
+        <projection v-if="selectedKey" slot="headerTitle" :fallback-title="selectedKey"></projection>
+        <span v-else>{{ t('panel.name') }}</span>
+      </template>
+      <template #actions>
+        <template v-if="recordReady">
+          <sdk-button v-if="isEditMode" :disabled="editDraft?.saving" @click="cancelEdit">{{ t('action.cancel') }}</sdk-button>
+          <template v-else>
+            <sdk-button v-if="canStartEdit" type="primary" @click="startEdit">{{ t('action.edit') }}</sdk-button>
+            <sdk-dropdown trigger="click" placement="bottom-end" @command="onMoreCommand">
+              <sdk-button :aria-label="t('action.more')">
+                <span>{{ t('action.more') }}</span>
+                <svg class="proj-caret-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m4 6 4 4 4-4" />
+                </svg>
+              </sdk-button>
+              <template #dropdown>
+                <sdk-dropdown-menu>
+                  <sdk-dropdown-item command="openClass">{{ t('action.openClass') }}</sdk-dropdown-item>
+                  <sdk-dropdown-item v-if="canOpenCopy" command="copy">{{ t('action.copy') }}</sdk-dropdown-item>
+                  <sdk-dropdown-item v-if="canOpenGrant" command="grants">{{ t('tab.grants') }}</sdk-dropdown-item>
+                  <sdk-dropdown-item
+                    v-if="canTriggerDelete"
+                    command="delete"
+                    divided
+                    :disabled="deleteRevision == null || deleteRunning"
+                    class="proj-dropdown-danger"
+                  >
+                    {{ t('action.delete') }}
+                  </sdk-dropdown-item>
+                </sdk-dropdown-menu>
+              </template>
+            </sdk-dropdown>
+          </template>
+        </template>
+      </template>
+    </page-header>
+
+    <!-- Missing / Loading / Forbidden / Error states driven solely by ObjectHeader read-only status output -->
+    <div v-if="!selectedKey" key="empty-selection" class="proj-state-box" role="alert">
+      <sdk-alert type="warning" :closable="false" :title="t('detail.missing')"></sdk-alert>
+      <div class="proj-state-actions">
+        <sdk-button type="primary" @click="goBack">{{ t('action.back') }}</sdk-button>
+      </div>
+    </div>
+    <div v-else-if="recordStatus === 'loading' || recordStatus === 'awaiting' || !recordStatus" key="loading" class="proj-state-box" role="status">
+      <sdk-alert type="info" :closable="false" :title="t('detail.loading')"></sdk-alert>
+    </div>
+    <div v-else-if="recordStatus === 'forbidden'" key="forbidden" class="proj-state-box" role="alert">
+      <sdk-alert type="warning" :closable="false" :title="t('detail.forbidden')"></sdk-alert>
+      <div class="proj-state-actions">
+        <sdk-button @click="goBack">{{ t('action.back') }}</sdk-button>
+      </div>
+    </div>
+    <div v-else-if="recordStatus === 'error'" key="error" class="proj-state-box" role="alert">
+      <sdk-alert type="error" :closable="false" :title="recordErrorText"></sdk-alert>
+      <div class="proj-state-actions">
+        <sdk-button size="small" @click="refresh">{{ t('action.retry') }}</sdk-button>
+        <sdk-button size="small" @click="goBack">{{ t('action.back') }}</sdk-button>
+      </div>
+    </div>
+    <div v-else-if="!recordReady" key="missing" class="proj-state-box" role="alert">
+      <sdk-alert type="warning" :closable="false" :title="t('detail.missing')"></sdk-alert>
+      <div class="proj-state-actions">
+        <sdk-button type="primary" @click="goBack">{{ t('action.back') }}</sdk-button>
+      </div>
+    </div>
+
+    <!-- Full-width edit mode -->
+    <div v-else-if="isEditMode && canEdit" key="edit" class="proj-detail-body">
+      <sdk-alert v-if="isChart" type="info" :closable="false" :title="t('detail.chartHint')"></sdk-alert>
+      <section class="proj-card">
+        <div class="proj-card-head">
+          <div>
+            <h2 class="proj-card-title">{{ t('form.editTitle') }}</h2>
+            <p class="proj-card-subtitle">{{ t('form.partialHint') }}</p>
+          </div>
+        </div>
+        <div class="proj-form-wrap">
+          <projection slot="form" @saved="onSaved"></projection>
+        </div>
+      </section>
+    </div>
+
+    <!-- Default full-width view mode -->
+    <div v-else key="view" class="proj-detail-body">
+      <sdk-alert v-if="isChart" type="info" :closable="false" :title="t('detail.chartHint')"></sdk-alert>
+
+      <div class="proj-tablist" role="tablist">
+        <button
+          v-for="item in tabItems"
+          :key="item.name"
+          type="button"
+          role="tab"
+          class="proj-tab"
+          :class="{ active: tabModel === item.name }"
+          :aria-selected="tabModel === item.name"
+          @click="tabModel = item.name"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+
+      <!-- Tab 1: Overview & inline preview -->
+      <div v-show="tabModel === 'overview'" class="proj-tab-panel" data-tab="overview">
+        <section class="proj-card">
+          <h3 class="proj-card-title">{{ t('section.summary') }}</h3>
+          <projection slot="summary" @navigate="onNavigateReference"></projection>
+        </section>
+
+        <section class="proj-card">
+          <h3 class="proj-card-title">{{ t('section.preview') }}</h3>
+          <projection slot="preview"></projection>
+        </section>
+      </div>
+
+      <!-- Tab 2: Definition & bindings -->
+      <div v-show="tabModel === 'definition'" class="proj-tab-panel" data-tab="definition">
+        <section class="proj-card">
+          <h3 class="proj-card-title">{{ t('section.data') }}</h3>
+          <projection slot="dataList" @navigate="onNavigateReference"></projection>
+        </section>
+
+        <section class="proj-card">
+          <h3 class="proj-card-title">{{ t('section.config') }}</h3>
+          <projection slot="configList"></projection>
+        </section>
+
+        <div class="proj-io-grid">
+          <section class="proj-card">
+            <h3 class="proj-card-title">{{ t('section.inputs') }}</h3>
+            <projection slot="inputsList"></projection>
+          </section>
+          <section class="proj-card">
+            <h3 class="proj-card-title">{{ t('section.outputs') }}</h3>
+            <projection slot="outputsList"></projection>
+          </section>
+        </div>
+
+        <section class="proj-card">
+          <h3 class="proj-card-title">{{ t('section.operations') }}</h3>
+          <projection slot="operationsList" @navigate="onNavigateReference"></projection>
+        </section>
+
+        <details class="proj-definition-details">
+          <summary>{{ t('source.definition') }}</summary>
+          <div class="proj-definition-body">
+            <projection slot="definitionSummary"></projection>
+          </div>
+        </details>
+      </div>
+
+      <!-- Tab 3: Used by panels -->
+      <div v-show="tabModel === 'usage'" class="proj-tab-panel" data-tab="usage">
+        <section class="proj-card">
+          <div class="proj-card-head">
+            <h3 class="proj-card-title">{{ t('section.usedBy') }}</h3>
+            <span class="proj-muted">{{ t('usedBy.count', { count: usedByCount }) }}</span>
+          </div>
+          <projection slot="usedByList" @choose="onChoosePanel" @navigate="onNavigateReference"></projection>
+          <p v-if="hiddenUsedByCount > 0" class="proj-muted">
+            {{ t('usedBy.hiddenHint', { count: hiddenUsedByCount }) }}
+          </p>
+        </section>
+      </div>
+
+      <!-- Tab 4: Permissions & sharing -->
+      <div v-if="canOpenGrant" v-show="tabModel === 'grants'" class="proj-tab-panel" data-tab="grants">
+        <div class="proj-share-bar">
+          <div class="proj-share-left">
+            <strong class="proj-card-title">{{ t('grants.shareTitle') }}</strong>
+            <span class="proj-muted"><projection slot="shareStatusDesc"></projection></span>
+          </div>
+          <div class="proj-share-actions">
+            <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
+            <projection v-else slot="shareEnable" @done="onShareDone"></projection>
+            <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t('grants.add') }}</sdk-button>
+          </div>
+        </div>
+
+        <projection slot="grantsList"></projection>
+      </div>
+    </div>
+
+    <!-- Copy projection dialog using bound OperationButton -->
+    <sdk-dialog
+      v-if="canOpenCopy"
+      v-model="copyDialogOpen"
+      :title="t('copy.title')"
+      width="440px"
+      append-to-body
+      destroy-on-close
+    >
+      <sdk-form label-position="top">
+        <sdk-form-item :label="t('copy.nameLabel')">
+          <sdk-input v-model="copyNameModel"></sdk-input>
+        </sdk-form-item>
+        <sdk-form-item :label="t('copy.idLabel')">
+          <sdk-input v-model="copyIdModel"></sdk-input>
+        </sdk-form-item>
+      </sdk-form>
+      <template #footer>
+        <div class="proj-dialog-footer">
+          <sdk-button @click="copyDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
+          <projection v-if="canOpenCopy && copyDialogOpen" slot="copySubmit" :disabled="!copyReady" @done="onCopyDone"></projection>
+        </div>
+      </template>
+    </sdk-dialog>
+
+    <!-- Add grant dialog using official ReferencePicker & bound OperationButton -->
+    <sdk-dialog
+      v-if="canOpenGrant"
+      v-model="grantDialogOpen"
+      :title="t('grants.dialogTitle')"
+      width="480px"
+      append-to-body
+      destroy-on-close
+    >
+      <sdk-form label-position="top">
+        <sdk-form-item :label="t('grants.kind')">
+          <sdk-segmented v-model="grantPrincipalKindModel" :options="grantKindOptions" size="default"></sdk-segmented>
+        </sdk-form-item>
+        <sdk-form-item :label="grantPrincipalKindModel === 'role' ? t('grants.role') : t('grants.principal')">
+          <projection v-if="canOpenGrant && grantDialogOpen && grantPrincipalKindModel === 'role'" slot="rolePicker"></projection>
+          <projection v-else-if="canOpenGrant && grantDialogOpen" slot="userPicker"></projection>
+        </sdk-form-item>
+        <sdk-form-item :label="t('grants.verb')">
+          <sdk-select v-model="grantVerbModel" style="width: 100%">
+            <sdk-option value="use" :label="t('grants.use')"></sdk-option>
+            <sdk-option value="edit" :label="t('grants.edit')"></sdk-option>
+          </sdk-select>
+        </sdk-form-item>
+      </sdk-form>
+      <template #footer>
+        <div class="proj-dialog-footer">
+          <sdk-button @click="grantDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
+          <projection v-if="canOpenGrant && grantDialogOpen" slot="grantSubmit" :disabled="!grantPrincipalId" @done="onGrantAdded"></projection>
+        </div>
+      </template>
+    </sdk-dialog>
+  </section>
+</div>

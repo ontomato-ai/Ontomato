@@ -5,6 +5,7 @@ import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 type RouteValues = Readonly<Record<string, unknown>>;
 
 const PROJECTIONS_PATH = "/ontology/projections";
+const PROJECTION_DETAIL_PATH = "/ontology/projections/detail";
 const PANELS_PATH = "/ontology/panels";
 const PANEL_DETAIL_PATH = "/ontology/panels/detail";
 const APPLICATIONS_PATH = "/ontology/applications";
@@ -92,7 +93,7 @@ export function legacyProductAssetTarget(asset: ProductAsset): string {
     return panelAddress(AGENTS_PATH, { selected: agentId });
   }
   const section = classifyProductKind(asset.document.kind);
-  return panelAddress(section === "projections" ? PROJECTIONS_PATH : PANEL_DETAIL_PATH, { selected: asset.id });
+  return panelAddress(section === "projections" ? PROJECTION_DETAIL_PATH : PANEL_DETAIL_PATH, { selected: asset.id });
 }
 
 /**
@@ -107,7 +108,7 @@ export function legacyProductIdFallbackTarget(id: string, query: RouteValues): s
   if (mirroredAgentId) return panelAddress(AGENTS_PATH, { selected: mirroredAgentId });
 
   const section = classifyProductKind(firstQueryString(query.kind));
-  if (section === "projections") return panelAddress(PROJECTIONS_PATH, { selected: id });
+  if (section === "projections") return panelAddress(PROJECTION_DETAIL_PATH, { selected: id });
   if (section === "applications") return panelAddress(APPLICATION_DETAIL_PATH, { selected: id });
   if (section === "agents") return panelAddress(AGENTS_PATH, { selected: id });
   return panelAddress(PANEL_DETAIL_PATH, { selected: id });

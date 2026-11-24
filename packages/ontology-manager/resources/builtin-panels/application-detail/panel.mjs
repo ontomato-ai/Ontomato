@@ -261,7 +261,7 @@ const ApplicationDetailPanel = {
       if (reference.className === PANEL) {
         openPanelCatalogue(reference.primaryKey);
       } else if (reference.className === PROJECTION) {
-        void openCatalogueRecord("/ontology/projections", reference.primaryKey);
+        void openCatalogueRecord("/ontology/projections/detail", reference.primaryKey);
       }
     }
 

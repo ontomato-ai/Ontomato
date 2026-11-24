@@ -701,6 +701,7 @@ async function mountPanelsApp(options: HarnessOptions = {}) {
       { path: CATALOG_PATH, name: "panels", component: { template: "<div />" } },
       { path: DETAIL_PATH, name: "panel-detail", component: { template: "<div />" } },
       { path: "/ontology/projections", name: "projections", component: { template: "<div />" } },
+      { path: "/ontology/projections/detail", name: "projection-detail", component: { template: "<div />" } },
       { path: "/ontology/applications", name: "applications", component: { template: "<div />" } },
       { path: "/ontology/applications/detail", name: "application-detail", component: { template: "<div />" } },
     ],
@@ -1257,7 +1258,7 @@ describe("panels two-entry architecture (catalog + detail)", () => {
         "source viewer loaded panel.html",
       );
 
-      // Members tab: clicking projection row populates inline summary, "Open in Projections" navigates to /ontology/projections.
+      // Members tab: clicking projection row populates inline summary, "Open in Projections" navigates to /ontology/projections/detail.
       await display.present(presentFrame({ tab: "members" }, display.page.value!.address));
       await waitFor(
         () => mounted.element.querySelector('[data-tab="members"]')?.textContent?.includes("Summary Projection") === true,
@@ -1275,7 +1276,7 @@ describe("panels two-entry architecture (catalog + detail)", () => {
         b.textContent?.includes("Open in Projections"),
       );
       openProjBtn!.click();
-      await waitFor(() => navigated.includes("/ontology/projections?selected=proj-1"), "navigated to projections");
+      await waitFor(() => navigated.includes("/ontology/projections/detail?selected=proj-1"), "navigated to projection detail");
 
       // Usage tab: hidden users banner & page skills section rendered; row action opens entry path.
       await display.present(presentFrame({ tab: "usage" }, display.page.value!.address));
