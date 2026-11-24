@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class AgentDirectory {
   public static JSONObject retrieverContextSchema() {
-    return JSONObject.of("type", "object", "properties", JSONObject.of("queryIntent", JSONObject.of("type", "object")), "additionalProperties", false);
+    return JSONObject.of("type", "object", "properties", JSONObject.of("queryIntent", QueryIntent.schema()), "additionalProperties", false);
   }
   private final AgentCaller callers;
   private final OntologyAgentLabels labels;

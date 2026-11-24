@@ -6,24 +6,59 @@ import java.util.*;
 
 /** Conservative structural coverage, never proof of semantic equivalence or authorization. */
 public final class QueryIntent {
+  private static final String VERSION = "ontomato.query-intent.v1";
+  private static final int MAX_CONDITIONS = 64;
+  private static final List<String> OPERATORS = List.of("=", "!=", ">", ">=", "<", "<=", "in", "like");
+  private static final String[] INTENT_FIELDS = {"schema", "conditions", "outputs"};
+  private static final String[] CONDITION_FIELDS = {"id", "quote", "mapping"};
+  private static final String[] MAPPING_FIELDS = {"className", "field", "operator", "value"};
+
   private QueryIntent() {}
+
+  static JSONObject schema() {
+    var mapping = objectSchema(JSONObject.of(
+        "className", JSONObject.of("type", "string", "pattern", "\\S"),
+        "field", JSONObject.of("type", "string", "pattern", "\\S"),
+        "operator", JSONObject.of("type", "string", "enum", OPERATORS),
+        "value", new JSONObject()
+    ), MAPPING_FIELDS);
+    var condition = objectSchema(JSONObject.of(
+        "id", JSONObject.of("type", "string", "pattern", "\\S", "description", "Unique condition ID within the intent."),
+        "quote", JSONObject.of("type", "string", "pattern", "\\S", "description", "Verbatim condition from the complete question."),
+        "mapping", JSONObject.of("anyOf", List.of(mapping, JSONObject.of("type", "null")),
+            "description", "Ontology predicate. Use null if the mapping is not known.")
+    ), CONDITION_FIELDS);
+    return objectSchema(JSONObject.of(
+        "schema", JSONObject.of("type", "string", "const", VERSION),
+        "conditions", JSONObject.of("type", "array", "items", condition, "maxItems", MAX_CONDITIONS),
+        "outputs", JSONObject.of("type", "array", "minItems", 1,
+            "items", JSONObject.of("type", "string", "pattern", "\\S"),
+            "description", "Descriptions of the requested outputs.")
+    ), INTENT_FIELDS);
+  }
+
+  private static JSONObject objectSchema(JSONObject properties, String... fields) {
+    return JSONObject.of("type", "object", "properties", properties, "required", List.of(fields),
+        "additionalProperties", false);
+  }
+
   public static JSONObject accept(JSONObject intent, String question) {
-    AgentJson.fields(intent,"schema","conditions","outputs");
-    if (!"ontomato.query-intent.v1".equals(intent.getString("schema"))) throw AgentHttpException.invalid("Invalid query intent version");
-    if (!(intent.get("conditions") instanceof List<?> conditions) || conditions.size()>64)
-      throw AgentHttpException.invalid("Query intent permits at most 64 conditions");
+    AgentJson.fields(intent, INTENT_FIELDS);
+    if (!VERSION.equals(intent.getString("schema"))) throw AgentHttpException.invalid("Invalid query intent version");
+    if (!(intent.get("conditions") instanceof List<?> conditions) || conditions.size() > MAX_CONDITIONS)
+      throw AgentHttpException.invalid("Query intent permits at most " + MAX_CONDITIONS + " conditions");
     var ids = new HashSet<String>();
     for (Object raw : conditions) {
       if (!(raw instanceof Map)) throw AgentHttpException.invalid("Condition must be an object");
-      var item=JSONObject.from(raw); AgentJson.fields(item,"id","quote","mapping");
+      var item=JSONObject.from(raw); AgentJson.fields(item, CONDITION_FIELDS);
       if (!ids.add(AgentJson.text(item,"id")) || !question.contains(AgentJson.text(item,"quote")))
         throw AgentHttpException.invalid("Conditions require unique ids and quotes from the complete question");
       if (!item.containsKey("mapping")) throw AgentHttpException.invalid("Condition mapping is required; use null when unknown");
       if (item.get("mapping")!=null) {
         if (!(item.get("mapping") instanceof Map)) throw AgentHttpException.invalid("Mapping must be an object");
-        var mapping=item.getJSONObject("mapping");AgentJson.fields(mapping,"className","field","operator","value");
+        var mapping=item.getJSONObject("mapping");AgentJson.fields(mapping, MAPPING_FIELDS);
         AgentJson.text(mapping,"className");AgentJson.text(mapping,"field");
-        if (!List.of("=","!=",">",">=","<","<=","in","like").contains(mapping.getString("operator")) || !mapping.containsKey("value"))
+        if (!OPERATORS.contains(mapping.getString("operator")) || !mapping.containsKey("value"))
           throw AgentHttpException.invalid("Invalid condition predicate");
       }
     }

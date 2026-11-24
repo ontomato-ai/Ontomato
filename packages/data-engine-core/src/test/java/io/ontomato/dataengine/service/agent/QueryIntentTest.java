@@ -1,11 +1,39 @@
 package io.ontomato.dataengine.service.agent;
 
 import com.alibaba.fastjson2.*;
+import com.alibaba.fastjson2.schema.JSONSchema;
+import java.util.List;
 import io.ontomato.dataengine.service.QueryPackage;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class QueryIntentTest {
+  @Test void advertisedSchemaMatchesAcceptedIntentStructure() {
+    var advertised = AgentDirectory.retrieverContextSchema()
+        .getJSONObject("properties").getJSONObject("queryIntent");
+    assertEquals("object", advertised.getString("type"));
+    assertEquals("ontomato.query-intent.v1",
+        advertised.getJSONObject("properties").getJSONObject("schema").getString("const"));
+    assertEquals(List.of("schema", "conditions", "outputs"), advertised.getJSONArray("required"));
+
+    var validator = JSONSchema.of(advertised);
+    var valid = intent();
+    assertTrue(validator.isValid(valid));
+    valid.getJSONArray("conditions").getJSONObject(0).put("mapping", null);
+    assertTrue(validator.isValid(QueryIntent.accept(valid, "People under 45")));
+
+    for (String required : List.of("schema", "conditions", "outputs")) {
+      var incomplete = AgentJson.copy(valid);
+      incomplete.remove(required);
+      assertFalse(validator.isValid(incomplete));
+      assertThrows(AgentHttpException.class, () -> QueryIntent.accept(incomplete, "People under 45"));
+    }
+    var unknown = AgentJson.copy(valid);
+    unknown.put("entity", "person");
+    assertFalse(validator.isValid(unknown));
+    assertThrows(AgentHttpException.class, () -> QueryIntent.accept(unknown, "People under 45"));
+  }
+
   @Test void bindingsResolveUnknownsWithoutChangingTheFrozenIntent() {
     var original=intent();var mapping=original.getJSONArray("conditions").getJSONObject(0).getJSONObject("mapping");
     original.getJSONArray("conditions").getJSONObject(0).put("mapping",null);
