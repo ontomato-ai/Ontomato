@@ -124,10 +124,11 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
     onObjectChanged: () => () => {},
     onOperationCompleted: () => () => {},
     operationIdOf: (slot, name) => `${slot}.${name}`,
+    memberPathOf: (member) => [{ member }],
     registerActionHandler: () => () => {},
     objectName: () => null,
   } satisfies Pick<PanelInstance, "state" | "forms" | "writeOperation" | "onObjectChanged"
-    | "onOperationCompleted" | "operationIdOf" | "registerActionHandler" | "objectName">;
+    | "onOperationCompleted" | "operationIdOf" | "memberPathOf" | "registerActionHandler" | "objectName">;
   const notify = vi.fn();
   const panel = { instance, manifest, notify } satisfies Pick<PanelContext, "manifest" | "notify"> & { instance: typeof instance };
   const operations = shallowRef<MemberOperationsState>({

@@ -524,6 +524,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       const placed = mount.instance;
       onScopeDispose(instance.publish(member, computed(() => ({
         instanceId: placed.instanceId,
+        formRegistries: placed.formRegistries,
         operations: placed.operations.value,
         dirty: () => placed.dirty(),
         context: placed.pageContext.value,

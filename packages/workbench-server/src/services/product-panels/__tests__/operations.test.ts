@@ -338,6 +338,23 @@ it("uses the same owner impact for the human read and agent confirmation of the 
   expect(handler.executeBatch).not.toHaveBeenCalled();
 });
 
+it("previews only executable calls in the agent's confirmation and owner impact", async () => {
+  const { handler, request, impact } = installBatchOwner({
+    unavailable: async (_host, target) => target.primaryKey === uuid(9) ? { reason: "Already processed" } : undefined,
+  });
+  const [skipped, executable] = request.calls;
+  handler.targetLabel.mockImplementation(async (_host, target) => target.primaryKey === skipped.target.primaryKey
+    ? "Already processed task" : "Pending task");
+  handler.inspectImpact.inspect.mockResolvedValue({ ...impact, objects: [], total: 1 });
+
+  await prepareLiveAction({ ...request, calls: [skipped, executable!] });
+  expect(handler.inspectImpact.inspect).toHaveBeenCalledWith(expect.anything(), [executable]);
+  const { message } = mocks.request.mock.calls[0]![2];
+  expect(message).toContain("Pending task (1)");
+  expect(message).not.toContain("Already processed task");
+  expect(message).toMatch(/\b1\b.*will be skipped/i);
+});
+
 it("reads the registered owner descriptor for an admitted human panel use", async () => {
   const { request } = installBatchOwner();
   const input = { applicationId: request.applicationId, useId: request.useId, operationId: request.operationId };
@@ -440,6 +457,7 @@ it("uses the owner's bulk availability at dispatch and restores skipped targets 
   const unavailable = vi.fn();
   type UnavailableBatch = NonNullable<serverOperations.PanelWriteServerOperation["unavailableBatch"]>;
   const unavailableBatch = vi.fn<Parameters<UnavailableBatch>, ReturnType<UnavailableBatch>>();
+  unavailableBatch.mockResolvedValue(new Map());
   const { handler, request, impact } = installBatchOwner({ unavailable, unavailableBatch });
   automatic = true;
   const { intentId } = await prepareLiveAction(request);
@@ -512,6 +530,7 @@ it("records an all-skipped batch without calling the owner write or invalidating
   };
   expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toEqual({ kind: "dispatched", intentId, outcome });
   expect(handler.executeBatch).not.toHaveBeenCalled();
+  expect(handler.inspectImpact.inspect).not.toHaveBeenCalled();
   expect(intents.get(pending.intentId)?.invalidated).toBeUndefined();
 });
 

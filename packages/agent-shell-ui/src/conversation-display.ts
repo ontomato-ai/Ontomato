@@ -70,8 +70,10 @@ export interface DisplayPageController {
   /** Validates a public state patch against the currently mounted page before any URL or state mutation. */
   validateState?(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
-  /** Returns true when navigating within the same mounted page instance would discard unsaved changes. */
+  /** Returns true when navigation changes inputs bound to a dirty form. */
   blocksNavigation?(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): boolean;
+  /** Tries a same-page state change, rolling it back if it removes a dirty form. */
+  probePresentation?(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): Promise<boolean | undefined>;
   /** Applies deep-link overrides before a new address reaches a mounted instance with unsaved edits. */
   presentationAddress?(address: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
@@ -316,6 +318,13 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
 
   function notOpened(reason: NotOpenedReason, error?: { code: string; message: string }): DisplayPresentationResult {
     return { status: "not_opened", reason, current: snapshot(), ...(error ? { error } : {}) };
+  }
+
+  function blockedUnsaved(): DisplayPresentationResult {
+    return notOpened("blocked_unsaved", {
+      code: "UNSAVED_CHANGES",
+      message: "The current page has unsaved changes. Ask the user to save or discard them before navigating away.",
+    });
   }
 
   function validateStatePatch(state: Record<string, RuntimeJsonValue>): { ok: true } | { ok: false; error: { code: string; message: string } } {
@@ -1033,26 +1042,15 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
         if (!resolved) return notOpened("unsupported_target");
 
         const nextTarget: DisplayTarget = { kind: "page", ...resolved };
-        if (!sameInstance) {
-          if (dropsUnsaved(nextTarget)) {
-            return notOpened("blocked_unsaved", {
-              code: "UNSAVED_CHANGES",
-              message: "The current page has unsaved changes. Ask the user to save or discard them before navigating away.",
-            });
-          }
-        }
+        if (!sameInstance && dropsUnsaved(nextTarget)) return blockedUnsaved();
 
         // Preserve the user's chosen side-by-side or full-page layout; open side-by-side when no page is open.
         const nextView: DisplayView = current.target?.kind === "page" ? current.view : "side";
 
         if (sameInstance && currentPage) {
           const controller = controllers.get(resolved.instance);
-          if (controller?.blocksNavigation?.({ address: resolved.address, ...(rawState !== undefined ? { state: rawState } : {}) })) {
-            return notOpened("blocked_unsaved", {
-              code: "UNSAVED_CHANGES",
-              message: "The current page has unsaved changes. Ask the user to save or discard them before navigating away.",
-            });
-          }
+          const next = { address: resolved.address, state: rawState };
+          if (controller?.blocksNavigation?.(next)) return blockedUnsaved();
           const hasStatePatch = rawState !== undefined && Object.keys(rawState).length > 0;
           const basePathOf = (value: string) => value.split(/[?#]/, 1)[0]!;
           const sameBasePath = basePathOf(resolved.address) === basePathOf(currentPage.address);
@@ -1068,6 +1066,8 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               });
             }
           }
+          const probed = await controller?.probePresentation?.(next);
+          if (probed === false) return blockedUnsaved();
           if (presentationAppliesAddress(currentPage.address, resolved.address, hasStatePatch)) {
             // Apply an explicit address with its live overrides so a mounted component never sees a superseded value.
             const address = hasStatePatch && sameBasePath
@@ -1080,7 +1080,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               if (hasStatePatch) await nextTick();
             }
           }
-          if (hasStatePatch) {
+          if (hasStatePatch && probed !== true) {
             if (controller) {
               try {
                 controller.applyState(rawState);

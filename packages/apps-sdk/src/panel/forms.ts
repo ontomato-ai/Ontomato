@@ -1,9 +1,9 @@
-import { shallowReactive, type Ref } from "vue";
+import { shallowReactive, shallowRef, type Ref } from "vue";
 import type { ExpectedPageTarget, FormFieldRejection, FormFillOutcome } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
-import type { PanelFormField, PanelFormValues, ProjectionOperationBinding } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormField, PanelFormValues, ProjectionOperationBinding } from "@ontomato/contracts/panel-projection";
 import type { PanelAgentActionContext } from "./instance";
 
 /*
@@ -69,6 +69,25 @@ export type PanelFormAdapterFillResult =
       readonly message?: string;
     };
 
+export interface InvalidFormText {
+  readonly message: string;
+  readonly source: string;
+}
+
+export interface PanelFormDraft {
+  readonly ownerOpened: PanelFormDescription;
+  readonly ownerShown: PanelFormDescription;
+  readonly values: PanelFormValues;
+  readonly changed: ReadonlySet<string>;
+  readonly submitted: ReadonlySet<string>;
+  readonly invalid: Readonly<Record<string, InvalidFormText>>;
+  readonly errors: Readonly<Record<string, string>>;
+  readonly refusal: Error | null;
+  readonly editedPaths: ReadonlySet<string>;
+  readonly userEditedPaths: ReadonlySet<string>;
+  readonly agentFilledPaths: ReadonlySet<string>;
+}
+
 /** One mounted form projection's adapter for live filling, submission, discard, and visibility snapshots. */
 export interface PanelFormAdapter {
   readonly handle: PanelFormHandle;
@@ -89,13 +108,73 @@ export interface PanelFormAdapter {
   discard(): void;
   /** Live snapshot of this form's current target, dirty state and values for page visibility; null while still loading. */
   snapshot?(): Omit<PageFormSnapshot, "member" | "memberPath"> | null;
+  readonly draft?: {
+    identity(): string;
+    inputStateKeys(): Iterable<string>;
+    capture(): PanelFormDraft;
+    restore(draft: PanelFormDraft): void;
+  };
 }
 
 /** The form adapters one panel instance's projections registered, by slot. */
 export class PanelFormAdapters {
   readonly #bySlot = shallowReactive(new Map<string, PanelFormAdapter>());
+  readonly #probing = shallowRef(false);
+  readonly #boundState = new Map<string, Set<string>>();
+  readonly #rollback = new Map<string, { draft: PanelFormDraft; restored(): void }>();
 
   constructor(private readonly memberOrder: readonly string[] = []) {}
+
+  get probing(): boolean {
+    return this.#probing.value;
+  }
+
+  set probing(value: boolean) {
+    this.#probing.value = value;
+  }
+
+  /** Declares a state input a panel's own code uses to derive a form binding. */
+  bindInputState(slot: string, field: string): void {
+    const fields = this.#boundState.get(slot) ?? new Set<string>();
+    fields.add(field);
+    this.#boundState.set(slot, fields);
+  }
+
+  dirtyInputs(): { member: string; fields: string[] }[] {
+    return [...this.#bySlot].flatMap(([member, adapter]) => adapter.dirty()
+      ? [{ member, fields: [...(this.#boundState.get(member) ?? []), ...(adapter.draft?.inputStateKeys() ?? [])] }]
+      : []);
+  }
+
+  captureDirtyDrafts() {
+    return [...this.#bySlot].flatMap(([slot, adapter]) => {
+      if (!adapter.draft || !adapter.dirty()) return [];
+      const form = adapter.draft;
+      const identity = form.identity();
+      const draft = form.capture();
+      return [{
+        stillMounted: () => {
+          const current = this.#bySlot.get(slot);
+          return current?.draft?.identity() === identity && current.dirty();
+        },
+        restoreOnRemount: () => {
+          if (this.#bySlot.get(slot) === adapter) {
+            if (!adapter.dirty()) form.restore(draft);
+            return;
+          }
+          return new Promise<void>((restored) => this.#rollback.set(identity, { draft, restored }));
+        },
+      }];
+    });
+  }
+
+  takeRollback(identity: string): PanelFormDraft | undefined {
+    const saved = this.#rollback.get(identity);
+    if (!saved) return;
+    this.#rollback.delete(identity);
+    saved.restored();
+    return saved.draft;
+  }
 
   register(slot: string, adapter: PanelFormAdapter): () => void {
     if (!slot) throw new Error("A form projection registers under the slot whose declaration names it");

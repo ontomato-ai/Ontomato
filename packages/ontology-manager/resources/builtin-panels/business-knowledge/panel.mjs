@@ -15,6 +15,8 @@ await mountPanel({
     const ctx = usePanelContext();
     const { instance } = ctx;
     const t = ctx.t ?? ((key) => key);
+    // The selection watcher feeds formTarget after the list's local selection handling.
+    instance.forms.bindInputState("form", "selected");
 
     const selected = computed(() => instance.state.values.value.selected ?? null);
     const formTarget = computed(() => instance.state.values.value.formTarget ?? null);
@@ -149,7 +151,7 @@ await mountPanel({
           return;
         }
         if (next === "create") {
-          if (prev === "edit") {
+          if (prev === "edit" && !instance.forms.probing) {
             if (!(await confirmLeave())) {
               revertingMode = true;
               instance.state.set("mode", "edit");

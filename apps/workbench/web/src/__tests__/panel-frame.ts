@@ -614,19 +614,35 @@ export function liveFormScenario() {
     "panel-schedules-form",
     "Task form (trial)",
     definePanel({
-      state: { ...selectedTask, mode: { type: { kind: "scalar", type: "string" }, default: "view" } },
+      state: {
+        ...selectedTask,
+        mode: { type: { kind: "scalar", type: "string" }, default: "view" },
+        tab: { type: { kind: "scalar", type: "string" }, deepLink: true },
+        search: { type: { kind: "scalar", type: "string" } },
+        status: { type: { kind: "scalar", type: "string" } },
+        checked: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+        grantDialog: { type: { kind: "scalar", type: "boolean" } },
+      },
       members: { form: slot(formProjection.id, "task") },
     }),
   );
-  panel.content.module = `import { h, resolveComponent } from "vue";
+  panel.content.module = `import { h, resolveComponent, vShow, withDirectives } from "vue";
 import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 await mountPanel({
   setup() {
     const { instance } = usePanelContext();
     const Projection = resolveComponent("Projection");
-    return () => instance.state.values.value.mode === "edit"
-      ? h(Projection, { slot: "form" })
-      : h("button", { type: "button", "data-edit": "", onClick: () => instance.state.set("mode", "edit") }, "Edit");
+    return () => {
+      const { mode, tab, search, status, checked, grantDialog } = instance.state.values.value;
+      return h("div", [
+        h("output", { "data-list": "" }, JSON.stringify({ search, status, checked })),
+        tab ? h("section", { "data-tab": tab }) : null,
+        mode === "edit"
+          ? withDirectives(h("section", [h(Projection, { slot: "form" })]), [[vShow, !tab || tab === "definition"]])
+          : h("button", { type: "button", "data-edit": "", onClick: () => instance.state.set("mode", "edit") }, "Edit"),
+        grantDialog ? h("div", { role: "dialog", "data-grant": "" }) : null,
+      ]);
+    };
   },
 });`;
   const use = panelUse("use-trial-a-form", "panels-trial-a-form", panel.id, "/applications/app-panels-trial-a/form");
@@ -639,6 +655,7 @@ await mountPanel({
     ),
   });
   const address = `/applications/app-panels-trial-a/form?${new URLSearchParams({ selectedTask: task.id })}`;
+  let formReads = 0;
   const answer = (request: Sent) => {
     if (request.path === "/api/data-query/platform/applications/app-panels-trial-a/panel-uses")
       return Response.json({
@@ -667,6 +684,7 @@ await mountPanel({
           },
         } });
       }
+      formReads += 1;
       const values = runtimeParams?.values ?? inputs.values ?? task.content;
       return Response.json({ status: "ready", value: {
         fields: [{
@@ -675,6 +693,9 @@ await mountPanel({
             { value: task.content.caseSetId, label: "Regression (12)", description: null, disabled: false, disabledReason: null },
             { value: "set-smoke", label: "Smoke (8)", description: null, disabled: false, disabledReason: null },
           ] },
+        }, {
+          path: "/settings", label: "Settings", required: false, readOnly: false,
+          valueSchema: { type: "object" }, control: { kind: "code", language: "json" },
         }],
         values, errors: [], revision: task.revision,
         save: { method: "PUT", path: "/platform/scheduled-tasks/:id", bodySchema: {} },
@@ -682,7 +703,7 @@ await mountPanel({
     }
     return nothingAt(request);
   };
-  return { panel, use, address, answer };
+  return { panel, use, address, answer, formReads: () => formReads };
 }
 
 /** The coordinator of an instance a test builds by hand and runs no operation of: any call to it fails the test. */

@@ -154,6 +154,8 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       }, slots),
       address: (url) => panelRun.address(url),
       publicState: instance.publicState,
+      blocksFormInputChange: instance.blocksFormInputChange,
+      applyStatePreservingDrafts: instance.applyStatePreservingDrafts,
       setState(patch) {
         const entries = Object.entries(patch);
         if (!entries.length) return;

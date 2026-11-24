@@ -344,7 +344,7 @@ function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirma
   const file=confirmation.kind==='impact'&&confirmation.upload
     ?[h('p',t('platform.confirmUploadFile',{name:confirmation.upload.name,size:panelUploadSize(confirmation.upload.size,locale.value)}))]:[];
   const message=h('div',confirmation.kind==='impact'?[...file,...impact(confirmation.impact)]
-    :[...names(confirmation.targets),...(confirmation.impact?impact(confirmation.impact):[])]);
+    :[...names(confirmation.targets),...(confirmation.skippedSummary?[h('p',confirmation.skippedSummary)]:[]),...(confirmation.impact?impact(confirmation.impact):[])]);
   return confirmDanger(message,label,{confirmButtonText:label,cancelButtonText:t('common.cancel')});
 }
 function executionContext(source: object) {

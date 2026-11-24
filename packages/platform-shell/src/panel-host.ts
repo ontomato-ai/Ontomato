@@ -186,6 +186,8 @@ export interface DirectPanelMount {
   address(url: string): void;
   /** Reads the instance's live public state, including fields that are absent from the address. */
   publicState(): Readonly<Record<string, RuntimeJsonValue>>;
+  blocksFormInputChange(fields: ReadonlySet<string>): boolean;
+  applyStatePreservingDrafts(patch: Readonly<Record<string, RuntimeJsonValue>>): Promise<boolean>;
   /** Updates any declared public state fields in place (including non-deepLink fields), without reload or writes. */
   setState?(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Objects it may show changed: it reads again what it shows of them. */
@@ -263,8 +265,10 @@ export interface PanelInstanceView {
   validateState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Applies a live patch to any declared public state fields in place (no reload, no business writes). */
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
-  /** Whether the proposed address and patch would change public state while a form is dirty. */
+  /** Whether the proposed address and patch change a dirty form's bound inputs. */
   blocksNavigation(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): boolean;
+  /** Tries a same-page state change with dirty forms. Undefined leaves the change to normal navigation. */
+  probePresentation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): Promise<boolean | undefined>;
   /** Applies deep-link overrides before the address reaches a panel with unsaved edits. */
   presentationAddress(address: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string;
   /** Fills explicit fields on a mounted live form through the form's own editing entry. */
@@ -624,6 +628,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
+  let presentationProbe: { state?: [PanelHostState, string]; context?: PageContext } | undefined;
+
   /** What an instance in this document reports to its host, as a frame would in its messages. */
   function directRun(next: HostedPanelSource, requested: PanelHostState): DirectPanelRun {
     return {
@@ -631,8 +637,14 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       url: () => address.value,
       label: () => options.label(next),
       initial: requested,
-      state: stateReported,
-      context: context => (pageContext.value = context),
+      state(state, fromAddress) {
+        if (presentationProbe) presentationProbe.state = [state, fromAddress];
+        else stateReported(state, fromAddress);
+      },
+      context(context) {
+        if (presentationProbe) presentationProbe.context = context;
+        else pageContext.value = context;
+      },
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
@@ -994,18 +1006,43 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
-  function blocksNavigation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): boolean {
-    if (!dirty.value || !source.value) return false;
-    const { manifest } = source.value.panel;
-    const current = direct.value ? direct.value.mount.publicState() : state.value;
+  function presentationPatch(
+    next: Parameters<PanelInstanceView["blocksNavigation"]>[0],
+    manifest: HostedPanelSource["panel"]["manifest"],
+    current: Readonly<Record<string, RuntimeJsonValue>>,
+  ) {
     const wired = new Set(options.wired?.() ?? []);
     const addressed = next.address !== address.value && presentationAppliesAddress(
       address.value, next.address, next.state !== undefined && Object.keys(next.state).length > 0,
     ) ? restoredPanelAddressState(next.address, manifest) : {};
-    const desired = { ...addressed, ...next.state };
-    return Object.entries(desired).some(([name, value]) =>
+    return Object.fromEntries(Object.entries({ ...addressed, ...next.state }).filter(([name, value]) =>
       Object.hasOwn(manifest.state, name) && !wired.has(name)
-      && JSON.stringify(current[name]) !== JSON.stringify(value));
+      && JSON.stringify(current[name]) !== JSON.stringify(value)));
+  }
+
+  function blocksNavigation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): boolean {
+    if (!dirty.value || !source.value || !direct.value) return false;
+    const { mount } = direct.value;
+    const patch = presentationPatch(next, source.value.panel.manifest, mount.publicState());
+    return mount.blocksFormInputChange(new Set(Object.keys(patch)));
+  }
+
+  async function probePresentation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): Promise<boolean | undefined> {
+    if (!dirty.value || !source.value || !direct.value) return;
+    const { mount } = direct.value;
+    const patch = presentationPatch(next, source.value.panel.manifest, mount.publicState());
+    if (!Object.keys(patch).length) return;
+    // Publish only the settled context and keep the host address untouched until the change is accepted.
+    const probe: NonNullable<typeof presentationProbe> = {};
+    presentationProbe = probe;
+    try {
+      const kept = await mount.applyStatePreservingDrafts(patch);
+      if (kept && probe.state) stateReported(...probe.state);
+      if (probe.context) pageContext.value = probe.context;
+      return kept;
+    } finally {
+      presentationProbe = undefined;
+    }
   }
 
   function presentationAddress(next: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string {
@@ -1089,6 +1126,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     validateState,
     applyState,
     blocksNavigation,
+    probePresentation,
     presentationAddress,
     fillForm(request) {
       if (!direct.value?.mount.fillForm) {

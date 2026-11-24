@@ -123,6 +123,8 @@ export const en = {
   "panels.confirmation.default": "This operation will not run unless you choose to execute it.",
   "panels.confirmation.decline": "Do not execute",
   "panels.confirmation.approve": "Execute this operation",
+  "panels.confirmation.skipped": "{count} of the checked items will be skipped.",
+  "panels.confirmation.noExecutableTargets": "0 executable items",
   "panels.confirmation.deleteAgentImpact": "This deletes the selected agent definition.",
   "panels.agentDefinition.save": "Save agent",
   "panels.agentDefinition.delete": "Delete agent",

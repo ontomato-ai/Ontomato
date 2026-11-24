@@ -387,6 +387,8 @@ export async function resolveBatchUnavailableReasons(
   if (handler.unavailableBatch) {
     return handler.unavailableBatch(host, targets);
   }
+  if (!handler.unavailable) return new Map();
+  const unavailable = handler.unavailable.bind(handler);
   // Deduplicate identical targets (e.g. outer parent target shared across all 50 rows -> 1 check instead of 50).
   const uniqueTargets = new Map<string, PanelRecordTarget>();
   for (const { target } of targets) {
@@ -394,7 +396,7 @@ export async function resolveBatchUnavailableReasons(
   }
   const reasonsByTarget = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
   await runWithConcurrency([...uniqueTargets.entries()], ROW_AVAILABILITY_CONCURRENCY, async ([targetKey, target]) => {
-    const reason = await handler.unavailable?.(host, target);
+    const reason = await unavailable(host, target);
     if (reason !== undefined) reasonsByTarget.set(targetKey, reason);
   });
   const reasonsByRowKey = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
