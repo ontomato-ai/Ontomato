@@ -228,6 +228,22 @@ export type DirectProjectionPorts = z.infer<typeof directProjectionPortsSchema>;
 type ProjectionReadFacts = DirectProjectionPorts & { metricId?: string };
 
 const positiveInteger = z.number().int().positive();
+const recordFilterSchema = z.object({
+  field: z.string().min(1),
+  operator: z.enum(["eq", "ne", "contains", "gt", "lt", "gte", "lte", "null", "notnull"]),
+  value: z.union([z.string(), z.number().finite(), z.boolean()]).optional(),
+}).strict().superRefine(({ operator, value }, context) => {
+  const nullCheck = operator === "null" || operator === "notnull";
+  if (nullCheck ? value !== undefined : value === undefined || (operator === "contains" && typeof value !== "string")) {
+    context.addIssue({
+      code: "custom", path: ["value"],
+      message: nullCheck ? "Null filters do not take a value" : operator === "contains" ? "Contains requires text" : "Filter value is required",
+    });
+  }
+});
+export const recordFiltersSchema = z.array(recordFilterSchema);
+export const recordSortSchema = z.object({ field: z.string().min(1), order: z.enum(["asc", "desc"]) }).strict();
+
 export const panelReadParameterSchemas = {
   productScope: productCatalogQuerySchema.shape.scope.removeDefault(),
   productSort: productCatalogQuerySchema.shape.sort.removeDefault(),
@@ -250,6 +266,10 @@ export const panelReadParameterSchemas = {
   ontologyType: platformOntologyObjectsRequestSchema.shape.type,
   className: panelObjectRefSchema.shape.className,
   neighborsLimit: positiveInteger.max(100),
+  neighborDirection: z.enum(["incoming", "outgoing", "both"]),
+  nonNegativeInt: z.number().int().nonnegative(),
+  recordFilters: recordFiltersSchema,
+  recordSort: recordSortSchema,
   ontologyParameter: runtimeJsonValueSchema,
   sort: runtimeJsonValueSchema,
   cursor: z.string(),
@@ -282,6 +302,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "keyword":
     case "ontologyType":
     case "className":
+    case "neighborDirection":
     case "cursor":
     case "scheduledRunId":
     case "auditLogBusiness":
@@ -310,6 +331,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
       return input?.kind === "scalar" && input.type === "boolean";
     case "size":
     case "neighborsLimit":
+    case "nonNegativeInt":
       return input?.kind === "scalar" && input.type === "number";
     case "ontologyParameter":
     case "sort":
@@ -717,6 +739,9 @@ export function panelRecordFieldText(
 const panelReadDiagnostics = z.array(z.string()).optional();
 export const panelRecordQuerySchema = z.object({
   rows: panelRecordListSchema,
+  /** Readable column labels for the collection, including when no rows match. */
+  fieldLabels: z.record(z.string()).optional(),
+  hasMore: z.boolean().optional(),
   nextCursor: z.string().optional(),
   total: z.number().int().nonnegative().optional(),
   diagnostics: panelReadDiagnostics,
@@ -1192,6 +1217,7 @@ export function pruneInactivePanelFormVariants(
 
 /** The client's native owner request. The form's binding supplies the body mapping to that owner's existing schema. */
 const formSaveRequestSchema = z.object({
+  operation: z.string().min(1).optional(),
   method: z.enum(["POST", "PUT"]),
   path: z.string().startsWith("/"),
   /** Derived from the native request schema, including any owner-required wrapper or revision. */

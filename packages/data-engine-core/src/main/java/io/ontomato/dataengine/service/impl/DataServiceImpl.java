@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -7,6 +8,8 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
@@ -22,6 +25,7 @@ import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.DataService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.QueryPermissions;
 import io.ontomato.dataengine.service.sys.bean.permission.FieldPermission;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.DslPermissionUtil;
@@ -344,7 +348,7 @@ public class DataServiceImpl implements DataService {
 			FieldPermission fieldPermission = permission.getFieldPermissionByClassName(className);
 			
 			if (permission.isFullData() || fieldPermission != null && !fieldPermission.isEmpty()) {
-				Integer count = getCountByClassName(className, null, jsonRule, permission, domainId);
+				Integer count = getCountByClassName(buildClassQueryObject(className, null), DslUtil.getPrimaryKey(classDef), jsonRule, permission, domainId);
 				Map<String,Object> classAndCount = new HashMap<String,Object>();
 				classAndCount.put("className", className);
 				classAndCount.put("showName", classDef.get("showName"));
@@ -377,26 +381,8 @@ public class DataServiceImpl implements DataService {
 		return object;
 	}
 
-	private Integer getCountByClassName(String className, String searchTerm, Map<String, Object> jsonRule, UserDataPermission permission, String domainId) {
-		Integer count = 0;
-		List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
-		Map<String, Object> classDef = null;
-		for(Map<String, Object> mapClassDef : classDefs) {
-			String classNameDef = (String) mapClassDef.get("className");
-			if (classNameDef.equals(className)) {
-				classDef = mapClassDef;
-				break;
-			}
-		}
-		String pk = "id";
-		for (Map<String, Object> attrDef : (List<Map<String, Object>>)classDef.get("attrs")) {
-        	if ((attrDef.get("enable") == null || (Boolean)attrDef.get("enable"))) {
-        		if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
-        			pk = (String)attrDef.get("name");
-        		}
-        	}
-        }
-		
+	private Integer getCountByClassName(JSONObject queryObject, String pk, Map<String, Object> jsonRule,
+			UserDataPermission permission, String domainId) {
 		String sessionId = UUID.randomUUID().toString();
 		JSONArray dsls = new JSONArray();
         JSONObject dsl = new JSONObject();
@@ -408,8 +394,7 @@ public class DataServiceImpl implements DataService {
         JSONArray patterns0 = new JSONArray();
         JSONObject pattern0 = new JSONObject();
         JSONArray objects0 = new JSONArray();
-		JSONObject object0 = buildClassQueryObject(className, searchTerm);
-        objects0.add(object0);
+		objects0.add(queryObject);
         pattern0.put("objects", objects0);
         patterns0.add(pattern0);
         graph0.put("patterns", patterns0);
@@ -433,19 +418,90 @@ public class DataServiceImpl implements DataService {
         
         BusinessConfig businessConfig = businessConfigService.get(domainId);
 		DslExecutionResult[] results = HttpRequestUtil.executeDsl(dataRagConfig, dataAdapterRegistry.create(businessConfig, jsonRule), JSON.toJSONString(dsls, Feature.WriteMapNullValue), sessionId, true, jsonRule, vectorResourceDao, permission, DslExecutionMode.OPTIMIZED, domainId);
-		Map<String, Object> rowPermissionDataMap = results[1].rawResponse();
-        if (rowPermissionDataMap.get("data") != null 
-        		&& ((List)rowPermissionDataMap.get("data")).size() > 0 
-        		&& ((Map)((List)rowPermissionDataMap.get("data")).get(0)).get("answer") != null
-        		&& ((List)((Map)((List)rowPermissionDataMap.get("data")).get(0)).get("answer")).size() > 0) {
-        	Map<String, Object> row = (Map<String, Object>)((List)((Map)((List)rowPermissionDataMap.get("data")).get(0)).get("answer")).get(0);
-        	try {
-        		count = Integer.parseInt(row.get("count_id") + "");
-        	} catch (Exception e) {}
-        }
-        return count;
+		JSONArray rows = classPageRows(results[1]);
+		return rows.isEmpty() ? 0 : rows.getJSONObject(0).getIntValue("count_id");
 	}
-	
+
+	private static JSONArray classPageRows(DslExecutionResult result) {
+		if (result.failed()) {
+			throw new IllegalStateException("Class data query failed", result.failure().cause());
+		}
+		return result.data().getJSONArray("data").getJSONObject(0).getJSONArray("answer");
+	}
+
+	private static ResponseStatusException invalidClassPage(String reason) {
+		return new ResponseStatusException(HttpStatus.BAD_REQUEST, reason);
+	}
+
+	private static Map<String, Object> requirePageField(Object field, List<Map<String, Object>> attributes,
+			String className, UserDataPermission permission) {
+		if (!(field instanceof String name) || name.isBlank()) throw invalidClassPage("Expected a field name");
+		var attribute = attributes.stream().filter(attr -> name.equals(attr.get("name"))).findFirst()
+				.orElseThrow(() -> invalidClassPage("Unknown or disabled field: " + name));
+		QueryPermissions.requireField(permission, className, name, QueryPermissions.Use.DETAIL);
+		return attribute;
+	}
+
+	private static JSONObject pageFilter(Map<?, ?> filter, String className,
+			List<Map<String, Object>> attributes, UserDataPermission permission) {
+		Object field = filter.get("field");
+		var attribute = requirePageField(field, attributes, className, permission);
+		if (!(filter.get("operator") instanceof String operator)) throw invalidClassPage("Expected a filter operator");
+		Object value = filter.get("value");
+		String dslOperator = switch (operator) {
+			case "eq" -> "=";
+			case "ne" -> "!=";
+			case "contains" -> "like";
+			case "gt" -> ">";
+			case "lt" -> "<";
+			case "gte" -> ">=";
+			case "lte" -> "<=";
+			case "null" -> "is";
+			case "notnull" -> "is not";
+			default -> throw invalidClassPage("Unknown filter operator: " + operator);
+		};
+		if ("is".equals(dslOperator) || "is not".equals(dslOperator)) {
+			if (filter.containsKey("value")) throw invalidClassPage("Null filters do not take a value");
+			return JSONObject.of("field", field, "operator", dslOperator, "value", null);
+		}
+		if (!(value instanceof String || value instanceof Number || value instanceof Boolean))
+			throw invalidClassPage("Expected a scalar filter value for " + field);
+		if ("like".equals(dslOperator)) {
+			if (!(value instanceof String text)) throw invalidClassPage("Contains requires a text value");
+			String pattern = text.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+			return JSONObject.of("field", field, "operator", dslOperator, "value", "%" + pattern + "%", "escape", "!");
+		}
+		// Numeric columns are rendered as numeric literals by the data adapters.
+		if (attribute.get("type") instanceof String type
+				&& List.of("int", "long", "double", "float", "decimal", "number").contains(type)
+				&& !(value instanceof Number)) {
+			if (!(value instanceof String text)) throw invalidClassPage("Expected a numeric value for " + field);
+			try {
+				value = new BigDecimal(text);
+			} catch (NumberFormatException e) {
+				throw invalidClassPage("Expected a numeric value for " + field);
+			}
+		}
+		return JSONObject.of("field", field, "operator", dslOperator, "value", value);
+	}
+
+	private static void applyPageFilters(JSONObject queryObject, Object filters, String className,
+			List<Map<String, Object>> attributes, UserDataPermission permission) {
+		if (!(filters instanceof List<?> list)) throw invalidClassPage("Expected a filters array");
+		JSONArray clauses = new JSONArray();
+		for (Object item : list) {
+			if (!(item instanceof Map<?, ?> filter)) throw invalidClassPage("Expected a filter object");
+			clauses.add(pageFilter(filter, className, attributes, permission));
+		}
+		if (clauses.isEmpty()) return;
+		JSONObject conditions = queryObject.getJSONObject("conditions");
+		if (conditions == null) {
+			conditions = new JSONObject();
+			queryObject.put("conditions", conditions);
+		}
+		conditions.put("properties", JSONObject.of("operator", "logic", "and", clauses));
+	}
+
 	@Override
 	public JSONObject getClassDataByPage(JSONObject classSearch, String lang, UserDataPermission permission, String domainId) {
 		return getClassDataByPage(classSearch, lang, permission, true, domainId);
@@ -458,7 +514,6 @@ public class DataServiceImpl implements DataService {
 
 	private JSONObject getClassDataByPage(JSONObject classSearch, String lang, UserDataPermission permission, boolean withBizzKey, String domainId) {
 		BusinessConfig businessConfig = businessConfigService.get(domainId);
-		DataAdapter adapter = dataAdapterRegistry.create(businessConfig, null);
 		
 		JSONObject ret = new JSONObject();
 		
@@ -484,15 +539,25 @@ public class DataServiceImpl implements DataService {
 				break;
 			}
 		}
-		String pk = "id";
-		for (Map<String, Object> attrDef : (List<Map<String, Object>>)classDef.get("attrs")) {
-        	if ((attrDef.get("enable") == null || (Boolean)attrDef.get("enable"))) {
-        		if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
-        			pk = (String)attrDef.get("name");
-        		}
-        	}
-        }
-		
+		if (classDef == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown class: " + className);
+		List<Map<String, Object>> attributes = ((List<Map<String, Object>>)classDef.get("attrs")).stream()
+				.filter(attr -> !Boolean.FALSE.equals(attr.get("enable"))).toList();
+		String pk = DslUtil.getPrimaryKey(classDef);
+		JSONObject queryObject = buildClassQueryObject(className, searchTerm);
+		if (!withBizzKey && classSearch.containsKey("filters"))
+			applyPageFilters(queryObject, classSearch.get("filters"), className, attributes, permission);
+		JSONArray sortFields = JSONArray.of(JSONObject.of("variable", "variable", "field", pk, "order", "asc"));
+		if (!withBizzKey && classSearch.containsKey("sort")) {
+			if (!(classSearch.get("sort") instanceof Map<?, ?> sort)) throw invalidClassPage("Expected a sort object");
+			Object field = sort.get("field");
+			requirePageField(field, attributes, className, permission);
+			Object order = sort.get("order");
+			if (!"asc".equals(order) && !"desc".equals(order)) throw invalidClassPage("Expected sort order asc or desc");
+			if (pk.equals(field) || !QueryPermissions.allowed(permission, className, pk, QueryPermissions.Use.DETAIL))
+				sortFields.clear();
+			sortFields.addFirst(JSONObject.of("variable", "variable", "field", field, "order", order));
+		}
+
 		FieldPermission fieldPermission = permission.getFieldPermissionByClassName(className);
 		if (permission.isFullData() || fieldPermission != null && !fieldPermission.isEmpty()) {
 			// Query details by page
@@ -507,8 +572,7 @@ public class DataServiceImpl implements DataService {
             JSONArray patterns0 = new JSONArray();
             JSONObject pattern0 = new JSONObject();
             JSONArray objects0 = new JSONArray();
-			JSONObject object0 = buildClassQueryObject(className, searchTerm);
-            objects0.add(object0);
+			objects0.add(queryObject);
             pattern0.put("objects", objects0);
             patterns0.add(pattern0);
             graph0.put("patterns", patterns0);
@@ -541,15 +605,7 @@ public class DataServiceImpl implements DataService {
             }
             
             output0.put("fields", fields0);
-            JSONObject sort0 = new JSONObject();
-            JSONArray sortFields0 = new JSONArray();
-            JSONObject sortField0 = new JSONObject();
-            sortField0.put("variable", "variable");
-            sortField0.put("field", pk);
-            sortField0.put("order", "asc");
-            sortFields0.add(sortField0);
-            sort0.put("fields", sortFields0);
-            output0.put("sort", sort0);
+            output0.put("sort", JSONObject.of("fields", sortFields));
             JSONObject limit0 = new JSONObject();
             limit0.put("offset", start);
             limit0.put("count", pagecount);
@@ -561,24 +617,17 @@ public class DataServiceImpl implements DataService {
             dsls.add(dsl);
             
 			DslExecutionResult[] results = HttpRequestUtil.executeDsl(dataRagConfig, dataAdapterRegistry.create(businessConfig, jsonRule), JSON.toJSONString(dsls, Feature.WriteMapNullValue), sessionId, true, jsonRule, vectorResourceDao, permission, DslExecutionMode.OPTIMIZED, domainId);
-			Map<String, Object> rowPermissionDataMap = results[1].rawResponse();
-            JSONArray rows = new JSONArray();
-            if (rowPermissionDataMap.get("data") != null 
-            		&& ((List)rowPermissionDataMap.get("data")).size() > 0 
-            		&& ((Map)((List)rowPermissionDataMap.get("data")).get(0)).get("answer") != null
-            		&& ((List)((Map)((List)rowPermissionDataMap.get("data")).get(0)).get("answer")).size() > 0) {
-            	List _rows = (List)((Map)((List)rowPermissionDataMap.get("data")).get(0)).get("answer");
-            	for (Object _row : _rows) {
-            		rows.add(_row);
-            	}
-            }
-            
-			// Query total record count
-			Integer totalCount = getCountByClassName(className, searchTerm, jsonRule, permission, domainId);
+            JSONArray rows = classPageRows(results[1]);
+			Integer totalCount = getCountByClassName(queryObject, pk, jsonRule, permission, domainId);
             int totalPage = totalCount % pagecount == 0 ? totalCount / pagecount : totalCount / pagecount + 1;
             rows = io.ontomato.dataengine.service.QueryPermissions.mask(rows,
                 io.ontomato.dataengine.service.QuerySourceAnalysis.fromDsl(dsl, classDefs), permission);
             ret.put("data", rows);
+            if (!withBizzKey) {
+                ret.put("readable_fields", attributes.stream().map(attr -> (String) attr.get("name"))
+                        .filter(field -> QueryPermissions.allowed(permission, className, field, QueryPermissions.Use.DETAIL))
+                        .toList());
+            }
     		ret.put("total_count", totalCount);
     		ret.put("total_page", totalPage);
     		ret.put("cur_page", pageNum);

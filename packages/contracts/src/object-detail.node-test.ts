@@ -27,9 +27,8 @@ test("the reverse lookup returns the classes that use a detail panel", () => {
   assert.deepEqual(detail.objectDetailUsedByResponseSchema.parse({ classNames: [] }), { classNames: [] });
 });
 
-test("the internal mapping lookup takes an explicit domain and class", () => {
-  const query = { domainId: "domain-a", className: "sales:Account" };
-  assert.deepEqual(detail.objectDetailInternalQuerySchema.parse(query), query);
-  assert.equal(detail.objectDetailInternalQuerySchema.safeParse({ className: "sales:Account" }).success, false);
-  assert.equal(detail.objectDetailClassParamsSchema.safeParse(query).success, false);
+test("saving an empty detail binding selects the default detail", () => {
+  assert.deepEqual(detail.saveObjectDetailValuesSchema.parse({ panelId: "" }), { panelId: "" });
+  assert.deepEqual(detail.saveObjectDetailValuesSchema.parse({ panelId: null }), { panelId: null });
+  assert.equal(detail.saveObjectDetailValuesSchema.safeParse({}).success, false);
 });

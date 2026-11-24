@@ -71,11 +71,14 @@ class LiveInstanceGraphPermissionsTest {
             assertFalse(search.getBooleanValue("hasMore"));
             search = data(controller.instanceGraphSearch(JSONObject.of("term", "p1")));
             assertEquals(Set.of("Person:p1"), ids(search, "nodes"));
+            assertEquals(1, search.getIntValue("total"));
             var node = search.getJSONArray("nodes").getJSONObject(0);
             assertEquals("Person:p1", node.getString("id"));
             assertEquals("—", node.getString("name"));
 
-            var neighbors = data(controller.instanceGraphNeighborhood(JSONObject.of("id", "Department:d1", "direction", "incoming")));
+            var neighbors = data(controller.instanceGraphNeighborhood(JSONObject.of(
+                    "node", Map.of("className", "Department", "primaryKey", "d1"),
+                    "direction", "incoming", "relationKinds", List.of("worksIn"), "limit", 1)));
             assertEquals(Set.of("Department:d1", "Person:p1"), ids(neighbors, "nodes"));
             assertEquals(1, neighbors.getIntValue("total"));
             assertNull(neighbors.get("nextOffset"));
@@ -109,6 +112,35 @@ class LiveInstanceGraphPermissionsTest {
                 "en", new UserDataPermission(), "test");
         assertFalse(deniedPage.getBooleanValue("success"));
         assertEquals("DATA_PERMISSION_DENIED", deniedPage.getString("code"));
+    }
+
+    @Test
+    void classPageCountsOnlyRowsMatchingBothSearchAndFiltersAfterRowPermissions() throws Exception {
+        var fixture = new Fixture(List.of("Person"));
+        fixture.rows.get("Person").addAll(List.of(
+                row("p1", "alice", "d1", "Pump east"),
+                row("p2", "alice", "d1", "Pump west"),
+                row("p3", "alice", "d1", "Valve"),
+                row("p4", "alice", "d2", "Pump south"),
+                row("p5", "bob", "d1", "Pump north")));
+        var service = new DataServiceImpl();
+        ReflectionTestUtils.setField(service, "adminService", fixture.admin);
+        ReflectionTestUtils.setField(service, "dataAdapterRegistry", fixture.adapters);
+        ReflectionTestUtils.setField(service, "businessConfigService", fixture.configs);
+        var reader = permission(List.of("Person"), "alice", false);
+        reader.getFieldPermissionByClassName("Person").getVisibleFields().addAll(List.of("name", "parent_id"));
+
+        var result = service.getWholeClassDataByPage(JSONObject.of("classname", "Person",
+                "pagenum", 1, "pagecount", 1, "search", "Pump",
+                "filters", List.of(Map.of("field", "parent_id", "operator", "eq", "value", "d1"))),
+                "en", reader, "test");
+
+        assertEquals(1, result.getJSONArray("data").size());
+        assertEquals(2, result.getIntValue("total_count"));
+        assertEquals(2, result.getIntValue("total_page"));
+        assertEquals(List.of("id", "name", "parent_id"), result.getList("readable_fields", String.class));
+        assertEquals("****", result.getJSONArray("data").getJSONObject(0).getString("title"));
+        assertEquals("****", result.getJSONArray("data").getJSONObject(0).getString("owner"));
     }
 
     @Test
@@ -292,7 +324,10 @@ class LiveInstanceGraphPermissionsTest {
 
         private static boolean matches(JSONObject row, JSONObject condition) {
             if (condition == null) return true;
+            if (condition.containsKey("text") && !row.getString("name").contains(
+                    condition.getJSONObject("text").getString("query"))) return false;
             if (condition.containsKey("properties")) return matches(row, condition.getJSONObject("properties"));
+            if (condition.containsKey("text")) return true;
             if (condition.containsKey("and")) return condition.getJSONArray("and").stream().allMatch(c -> matches(row, JSONObject.from(c)));
             if (condition.containsKey("or")) return condition.getJSONArray("or").stream().anyMatch(c -> matches(row, JSONObject.from(c)));
             Object value = row.get(condition.getString("field")), expected = condition.get("value");

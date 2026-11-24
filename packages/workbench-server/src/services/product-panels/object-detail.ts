@@ -17,25 +17,26 @@ export async function findObjectDetailPanelId(domainId: string, className: strin
   return rows[0]?.panelId ?? null;
 }
 
-export async function requireDetailPanel(domainId: string, panelId: string, client?: PoolClient) {
+export async function findDetailPanel(domainId: string, panelId: string, client?: PoolClient) {
   const panel = await findCurrentProduct(domainId, "panel", panelId, client);
-  if (!panel) throw new HttpError(404, "Mapped detail panel does not exist", "PRODUCT_NOT_FOUND");
-  if (!productPanelSchema.safeParse(currentProductRecord(panel, false)).success)
-    throw new HttpError(404, "Mapped detail panel definition is invalid", "PRODUCT_UNAVAILABLE");
+  if (!panel) return { status: "missing" } as const;
+  const parsed = productPanelSchema.safeParse(currentProductRecord(panel, false));
+  if (!parsed.success) return { status: "invalid" } as const;
+  return { status: "available", panel: parsed.data } as const;
 }
 
-/** Platform callers resolve the current relation before performing their own resource authorization. */
-export async function locateObjectDetailPanel(domainId: string, className: string): Promise<string | null> {
-  const panelId = await findObjectDetailPanelId(domainId, className);
-  if (panelId !== null) await requireDetailPanel(domainId, panelId);
-  return panelId;
+export async function requireDetailPanel(domainId: string, panelId: string, client?: PoolClient) {
+  const result = await findDetailPanel(domainId, panelId, client);
+  if (result.status === "missing") throw new HttpError(404, "Mapped detail panel does not exist", "PRODUCT_NOT_FOUND");
+  if (result.status === "invalid") throw new HttpError(404, "Mapped detail panel definition is invalid", "PRODUCT_UNAVAILABLE");
 }
 
 export async function resolveObjectDetail(
   owner: ProductOwner, credentials: AssistantCredentials, className: string,
 ): Promise<ObjectDetailResolution> {
-  const panelId = await locateObjectDetailPanel(owner.domainId, className);
+  const panelId = await findObjectDetailPanelId(owner.domainId, className);
   if (panelId === null) return { kind: "unconfigured" };
+  await requireDetailPanel(owner.domainId, panelId);
   await requireProductGrant(panelId, "use", credentials);
   return { kind: "configured", panelId };
 }

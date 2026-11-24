@@ -141,6 +141,8 @@ export const DELETE_MODEL_ENTRY = "modelEntries.delete";
 export const REBUILD_VECTORS = "modelUsage.rebuildVectors";
 export const PAUSE_VECTOR_REBUILD = "modelUsage.pauseVectorRebuild";
 export const TEST_DATA_ADAPTER_CONNECTION = "dataAdapters.testConnection";
+export const SAVE_OBJECT_DETAIL_PANEL = `${OBJECT_TYPE}.saveDetailPanel`;
+export const CLEAR_OBJECT_DETAIL_PANEL = "objectTypes.clearDetailPanel";
 export const DELETE_OBJECT_TYPE = "objectTypes.delete";
 export const DELETE_ATTRIBUTE = "attributes.delete";
 export const DELETE_RELATIONSHIP = "relationships.delete";
@@ -181,6 +183,8 @@ const definitionQuery = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
 } as const;
 const definitionFormParams = { values: "panelFormValues", changedField: "changedField" } as const;
+const customerQueryParams = { search: "keyword", page: "page", size: "size", filters: "recordFilters", sort: "recordSort" } as const;
+const customerQuery = { source: "type", parameterMode: "fixed", params: customerQueryParams, result: "panelRecordQuery" } as const;
 const modelReads = {
   record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
   form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
@@ -268,6 +272,37 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("objectType", "fact"),
     reads: {
       ...modelReads, ...metadataList, ...referenceReads, count: countRead,
+      instances: { ...customerQuery, params: { className: "className", ...customerQueryParams }, requiredParams: ["className"] },
+      instanceRecord: {
+        source: "type", parameterMode: "fixed", params: { object: "graphNode" },
+        requiredParams: ["object"], result: "panelRecord",
+      },
+      instanceNeighbors: {
+        source: "type", parameterMode: "fixed",
+        params: { node: "graphNode", relationKinds: "relationKinds", targetClass: "className", direction: "neighborDirection",
+          limit: "neighborsLimit", offset: "nonNegativeInt" },
+        requiredParams: ["node"], result: "panelGraphNeighbors",
+      },
+      instanceGraphOverview: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphOverview" },
+      instanceGraphConnections: {
+        source: "type", parameterMode: "fixed", params: { version: "keyword", sampleToken: "keyword" },
+        requiredParams: ["version"], result: "panelGraphConnections",
+      },
+      instanceGraphStatistics: { source: "type", parameterMode: "fixed", params: {}, result: "panelGraphCounts" },
+      instanceGraphSearch: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", className: "className", version: "keyword" }, result: "panelRecordQuery",
+      },
+      detailPanel: {
+        ...modelReads.record,
+        outputs: {
+          configured: { kind: "scalar", type: "boolean" },
+          panelId: { kind: "scalar", type: "string" },
+          panelStatus: { kind: "scalar", type: "string" },
+          canConfigure: { kind: "scalar", type: "boolean" },
+        },
+      },
+      detailPanelForm: modelReads.form,
       record: {
         ...modelReads.record,
         outputs: {
@@ -282,7 +317,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
     },
-    operations: [`${OBJECT_TYPE}.save`, DELETE_OBJECT_TYPE],
+    operations: [`${OBJECT_TYPE}.save`, DELETE_OBJECT_TYPE, SAVE_OBJECT_DETAIL_PANEL, CLEAR_OBJECT_DETAIL_PANEL],
   },
   [ATTRIBUTE]: {
     ...describeType("attribute", "fact"),
@@ -546,6 +581,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [PRODUCT_PANEL]: {
     ...describeType("productPanel", "product"),
     reads: {
+      options: { ...referenceReads.options, params: { keyword: "keyword", page: "page" } },
       ...productCatalogueFormReads,
       query: { ...catalogueQuery, params: { ...catalogueQuery.params, template: "productTemplate" }, result: "panelRecordQuery" },
       unavailable: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
@@ -860,17 +896,18 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
 };
 
-/** Form saves that create a new object rather than edit the selected one's `${typeId}.save`. */
-const platformCreateFormSaves: ReadonlySet<string> = new Set([
+/** Form save IDs other than the default `${typeId}.save`. */
+const platformNamedFormSaves: ReadonlySet<string> = new Set([
   CREATE_SCHEDULED_TASK,
   ADD_MODEL_ENTRY,
   CREATE_EXTERNAL_MCP_SERVICE,
+  SAVE_OBJECT_DETAIL_PANEL,
 ]);
 
 /** Platform operation IDs whose server handler is a `form.save` rather than an action. */
 export const platformFormSaveOperations: ReadonlySet<string> = new Set(
   Object.entries(platformObjectTypes).flatMap(([typeId, declaration]) =>
-    (declaration.operations ?? []).filter(id => id === `${typeId}.save` || platformCreateFormSaves.has(id)),
+    (declaration.operations ?? []).filter(id => id === `${typeId}.save` || platformNamedFormSaves.has(id)),
   ),
 );
 
@@ -881,7 +918,7 @@ export function isPlatformFormSaveOperation(operationId: string): boolean {
 
 /** These families apply to the class or relationship identified by the current domain catalogue. */
 export const customerOntologyReads: Readonly<Record<string, PlatformReadDeclaration>> = {
-  query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page" }, result: "panelRecordQuery" },
+  query: customerQuery,
   record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
   form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
   createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },

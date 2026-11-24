@@ -106,10 +106,12 @@ export async function listUnavailablePanels(owner: ProductOwner, credentials: As
 }
 
 export async function listCurrentProducts(owner: ProductOwner, credentials: AssistantCredentials,
-  kind: CurrentProductKind, input: ProductPanelCatalogQuery) {
+  kind: CurrentProductKind, input: ProductPanelCatalogQuery, picker?: { offset: number }) {
   const cursor = readCursor(input);
   const panelCatalog = kind === "panel";
-  const { visible, edited } = await catalogueGrants(credentials, panelCatalog);
+  const { visible, edited } = picker
+    ? { visible: await grantedProductIds("use", credentials), edited: new Set<string>() }
+    : await catalogueGrants(credentials, panelCatalog);
   const updated = input.sort === "updated";
   const order = updated ? "updated_at" : "lower(definition->>'name')";
   const direction = updated ? "DESC" : "ASC";
@@ -119,10 +121,11 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const kindColumn = kind === "projection" ? `,definition->>'componentId' AS "componentId"`
     : `,definition,definition->'template' AS template,domain_id AS "domainId",created_at AS "createdAt"`;
   const whereFilter = `WHERE ${catalogueVisibility("$7::boolean AND owner_id=$4")}
+       ${picker ? "AND (domain_id IS NULL OR id=ANY($2::text[]))" : ""}
        AND ($6::boolean IS NULL OR COALESCE(definition->'template', 'false'::jsonb) = to_jsonb($6::boolean))
        AND ($3='all' OR COALESCE(owner_id=$4,false)=($3='mine'))
        AND (strpos(lower(definition->>'name'),lower($5))>0 OR strpos(lower(definition->>'description'),lower($5))>0)`;
-  const filterValues = [owner.domainId, visible, input.scope, owner.userId, input.q, panelCatalog ? input.template ?? null : null, panelCatalog];
+  const filterValues = [owner.domainId, visible, input.scope, owner.userId, input.q, panelCatalog ? input.template ?? null : null, panelCatalog && !picker];
   const [{ rows }, { rows: countRows }] = await Promise.all([
     getPostgresPool().query<SummaryRow>(
       `SELECT id,owner_id AS "ownerId",definition->>'name' AS name,definition->>'description' AS description,
@@ -130,8 +133,8 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
        FROM ${currentProductRows(kind)} AS definitions
        ${whereFilter}
          AND ($8::${keyType} IS NULL OR (${order},id) ${updated ? "<" : ">"} ($8::${keyType},$9::text))
-       ORDER BY ${order} ${direction},id ${direction} LIMIT $10`,
-      [...filterValues, cursor?.key ?? null, cursor?.id ?? null, input.limit + 1],
+       ORDER BY ${order} ${direction},id ${direction} LIMIT $10 OFFSET $11`,
+      [...filterValues, cursor?.key ?? null, cursor?.id ?? null, input.limit + 1, picker?.offset ?? 0],
     ),
     getPostgresPool().query<{ total: number }>(
       `SELECT COUNT(*)::int AS total FROM ${currentProductRows(kind)} AS definitions ${whereFilter}`,

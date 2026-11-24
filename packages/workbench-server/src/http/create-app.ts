@@ -46,7 +46,7 @@ import opsAgentMcpRouter from "../api/routes/ops-agent-mcp";
 import preferencesRouter from "../api/routes/preferences";
 import personalWorkspaceRouter from "../api/routes/personal-workspace";
 import productAssetsRouter from "../api/routes/product-assets";
-import { objectDetailsInternalRouter, objectDetailsRouter } from "../api/routes/object-details";
+import { objectDetailsRouter } from "../api/routes/object-details";
 import {businessDefinitionsRouter,definitionTriggersRouter} from "../api/routes/business-definitions";
 import { createChartProjectionsRouter, productPanelsRouter, productProjectionsRouter, productPanelsInternalRouter, panelOperationsRouter } from "../api/routes/product-panels";
 import { dashboardChartSources } from "../services/dashboard/chart-sources";
@@ -195,7 +195,6 @@ export function createWorkbenchApp(): Express {
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
   app.use("/internal/assistant", governanceStatusRouter, assistantInternalRouter, assistantQualityRouter);
   app.use("/internal/product-panels", productPanelsInternalRouter);
-  app.use(objectDetailsInternalRouter);
   app.use("/internal/agent-channel", agentChannelRouter);
   app.post("/internal/schedule-applications/:appId/runs/status", scheduleExecutionStatus);
   app.use("/api", identity.authenticate);

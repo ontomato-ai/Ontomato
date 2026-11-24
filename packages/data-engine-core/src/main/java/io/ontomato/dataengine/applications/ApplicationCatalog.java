@@ -19,7 +19,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.util.UriUtils;
 import org.springframework.http.HttpStatus;
 
 @Service
@@ -40,9 +39,6 @@ public class ApplicationCatalog {
         }
     }
     public static final String DOMAIN_MEMBER_ENTRY = "domain-member";
-    private static final String OBJECT_DETAIL_ROOT = "/browser/detail/";
-    private static final String OBJECT_DETAIL_KEY_PREFIX = "browser-detail:";
-    private static final int OBJECT_DETAIL_CLASS_MAX_LENGTH = 200 - OBJECT_DETAIL_KEY_PREFIX.length();
     public record Group(String key, Map<String,String> names, int sort) {}
     public record Permission(String code, Map<String,String> names, String groupKey, int sort) {}
     public record Declaration(Map<String,String> names, Map<String,String> descriptions, String icon,
@@ -769,8 +765,6 @@ public class ApplicationCatalog {
         for (var app : applications) {
             if (!hasAssignedPanelPaths(app)) continue;
             for (var use : pageKeys.activeUses(app)) {
-                if (objectDetailClass(use.path()) != null)
-                    throw bad("Panel path belongs to the object detail resolver: " + use.path());
                 if (!paths.add(use.path())) throw bad("Duplicate panel path: " + use.path());
                 for (var root : roots.entrySet())
                     if (!root.getKey().equals(app.getString("id")) && !inAssignedSpace(use.path()) && ApplicationPanelUse.under(use.path(), root.getValue()))
@@ -808,8 +802,6 @@ public class ApplicationCatalog {
         var canonical = ApplicationPanelUse.canonicalPath(path);
         var apps = applicationsInDomain(user.getDomainId());
         var pageKeys = new BuiltinPageKeys(apps);
-        var detailClass = objectDetailClass(canonical);
-        if (detailClass != null) return resolveObjectDetail(canonical, detailClass, user, apps, pageKeys);
         for (var app : apps) {
             if (!hasAssignedPanelPaths(app)) continue;
             var declared = pageKeys.activeUses(app).stream().filter(use -> canonical.equals(use.path())).findFirst();
@@ -819,12 +811,6 @@ public class ApplicationCatalog {
     }
 
     public JSONObject resolveEntry(String applicationId, String useId, User user) {
-        if ("browser".equals(applicationId) && useId.startsWith(OBJECT_DETAIL_KEY_PREFIX)) {
-            var className = useId.substring(OBJECT_DETAIL_KEY_PREFIX.length());
-            if (className.isEmpty()) throw entryNotFound();
-            var path = OBJECT_DETAIL_ROOT + UriUtils.encodePathSegment(className, StandardCharsets.UTF_8);
-            return resolveEntry(path, user);
-        }
         var apps = all();
         var app = require(apps, applicationId);
         if (!inDomain(app, user)) throw denied();
@@ -839,27 +825,6 @@ public class ApplicationCatalog {
         var allowed = visiblePanelUses(app, user, pageKeys);
         var use = allowed.stream().filter(entry -> useId.equals(entry.id())).findFirst().orElseThrow(ApplicationCatalog::denied);
         return entryResolution(app, use, allowed);
-    }
-
-    private static String objectDetailClass(String path) {
-        if (!path.startsWith(OBJECT_DETAIL_ROOT)) return null;
-        var segment = path.substring(OBJECT_DETAIL_ROOT.length());
-        if (segment.isEmpty() || segment.contains("/")) return null;
-        return UriUtils.decode(segment, StandardCharsets.UTF_8);
-    }
-
-    private JSONObject resolveObjectDetail(String path, String className, User user, List<JSONObject> apps, BuiltinPageKeys pageKeys) {
-        if (className.length() > OBJECT_DETAIL_CLASS_MAX_LENGTH)
-            throw bad("Object detail class names must be at most " + OBJECT_DETAIL_CLASS_MAX_LENGTH + " UTF-16 code units");
-        var browser = require(apps, "browser");
-        if (user.getDomainId() == null || !canEnter(browser, user)) throw denied();
-        var panelId = panels.objectDetailPanel(user.getDomainId(), className);
-        if (panelId == null) throw entryNotFound();
-        if (!grants.allowed(panelId, "use")) throw denied();
-        var key = OBJECT_DETAIL_KEY_PREFIX + className;
-        var permission = browser.getList("entryAccess", String.class).getFirst();
-        var use = new ApplicationPanelUse(key, key, panelId, path, new ApplicationPanelUse.Access(permission, null), null, null);
-        return entryResolution(browser, use, visiblePanelUses(browser, user, pageKeys));
     }
 
     private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed) {

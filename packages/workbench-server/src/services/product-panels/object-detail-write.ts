@@ -4,7 +4,7 @@ import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
-import { findObjectDetailPanelId, requireDetailPanel } from "./object-detail";
+import { requireDetailPanel } from "./object-detail";
 import { validateObjectDetailPanelMapping } from "./references";
 
 async function writeObjectDetail(
@@ -13,8 +13,6 @@ async function writeObjectDetail(
   await assertPermission(credentials, ["ontology-modeling"]);
   await transaction(async client => {
     await lockProducts(client, owner);
-    const currentPanelId = await findObjectDetailPanelId(owner.domainId, className, client);
-    if (currentPanelId !== null) await requireProductGrant(currentPanelId, "edit", credentials);
     if (panelId === null) {
       await client.query(`DELETE FROM ${t("product_object_details")} WHERE domain_id=$1 AND class_name=$2`,
         [owner.domainId, className]);

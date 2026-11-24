@@ -3,6 +3,8 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { FormFieldError } from "@ontomato/contracts/form-fields";
 import {
   panelFormDescriptionSchema,
+  type recordFiltersSchema,
+  type recordSortSchema,
   type PanelFormDescription,
   type PanelFormField,
   type PanelFormValues,
@@ -54,7 +56,7 @@ type ClassRelationship = z.infer<typeof classRelationshipsSchema>[number];
 
 /** POST /data/getWholeClassDataByPage: the class's rows with the real total, or the owner's refusal. */
 const classPageSchema = z.union([
-  z.object({ success: z.literal(true), data: z.array(z.record(z.unknown())), total_count: z.number() }),
+  z.object({ success: z.literal(true), data: z.array(z.record(z.unknown())), total_count: z.number(), readable_fields: z.array(z.string()) }),
   z.object({ success: z.literal(false), code: z.literal("DATA_PERMISSION_DENIED"), message: z.string() }),
 ]);
 
@@ -82,6 +84,9 @@ export interface CustomerOntologyNodeRef {
 export interface CustomerOntologyQueryParams {
   search?: string;
   page?: { number: number; size: number };
+  size?: number;
+  filters?: z.infer<typeof recordFiltersSchema>;
+  sort?: z.infer<typeof recordSortSchema>;
 }
 
 export interface CustomerOntologyNeighborsParams {
@@ -130,7 +135,7 @@ function recordLabel(attributes: readonly ClassAttribute[], primaryKey: string, 
 }
 
 /** Map one owner row to the panel record shape; only the columns the row carries become fields. */
-function panelRecord(attributes: readonly ClassAttribute[], row: Record<string, unknown>): PanelRecord {
+function panelRecord(className: string, attributes: readonly ClassAttribute[], row: Record<string, unknown>): PanelRecord {
   const primaryKey = displayText(row[primaryKeyName(attributes)]);
   const fields: Record<string, string> = {};
   const fieldLabels: Record<string, string> = {};
@@ -138,7 +143,7 @@ function panelRecord(attributes: readonly ClassAttribute[], row: Record<string, 
     fields[name] = displayText(value);
     fieldLabels[name] = attributes.find(attribute => attribute.name === name)?.showName ?? name;
   }
-  return { primaryKey, label: recordLabel(attributes, primaryKey, row), fields, fieldLabels };
+  return { className, primaryKey, label: recordLabel(attributes, primaryKey, row), fields, fieldLabels };
 }
 
 /** The owner's reason for an unreadable object, by its code: a permission refusal answers forbidden, a missing object keeps its reason. */
@@ -612,7 +617,7 @@ export function createCustomerOntologyReadAdapter(
 
   /** One object's attribute values; the attributes are read once per call and shared with the caller. */
   async function readObject(typeId: string, primaryKey: string, attributes: readonly ClassAttribute[]): Promise<PanelRecord> {
-    return panelRecord(attributes, await readRawObject(typeId, primaryKey, attributes));
+    return panelRecord(typeId, attributes, await readRawObject(typeId, primaryKey, attributes));
   }
 
   /** One relation-direction query: a refusal names the viewer's permission; anything else the owner's or the transport's failure. */
@@ -634,17 +639,28 @@ export function createCustomerOntologyReadAdapter(
   }
 
   return {
-    async query(typeId, { search, page }) {
+    async query(typeId, { search, page, size, filters, sort }) {
       const attributes = await classAttributes(typeId);
+      const pageSize = size ?? page?.size ?? 20;
       const response = await backendPost(
         "customer-class-page",
         `${baseUrl}/data/getWholeClassDataByPage`,
-        { classname: typeId, pagenum: page?.number ?? 1, pagecount: page?.size ?? 20, search },
+        { classname: typeId, pagenum: page?.number ?? 1, pagecount: pageSize, search, filters, sort },
         options,
       );
       const answer = classPageSchema.parse(JSON.parse(response.text));
       if (!answer.success) throw new HttpError(403, answer.message, "CUSTOMER_DATA_PERMISSION");
-      return { rows: answer.data.map(row => panelRecord(attributes, row)), total: answer.total_count };
+      if (answer.data.length && !answer.readable_fields.includes(primaryKeyName(attributes)))
+        throw new HttpError(403, "The object's primary key is unreadable", "CUSTOMER_DATA_PERMISSION");
+      const readable = new Set(answer.readable_fields);
+      const fieldLabels = Object.fromEntries(attributes
+        .filter(attribute => attribute.enable && readable.has(attribute.name) && !ARRAY_TYPES.has(attribute.type.toLowerCase()))
+        .map(attribute => [attribute.name, attribute.showName]));
+      const rows = answer.data.map(row => {
+        const record = panelRecord(typeId, attributes, row);
+        return { ...record, fieldLabels };
+      });
+      return { rows, fieldLabels, total: answer.total_count };
     },
 
     async record(typeId, primaryKey) {

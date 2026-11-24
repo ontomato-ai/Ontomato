@@ -113,7 +113,7 @@ public class LiveInstanceGraph {
         this.adapters = adapters;
     }
 
-    private record ObjectType(String name, String pk, String label, List<String> searchFields, boolean hasBusinessName) {}
+    private record ObjectType(String name, String showName, String pk, String label, List<String> searchFields, boolean hasBusinessName) {}
     private record Relation(String type, ObjectType from, ObjectType to) {}
 
     static String identifier(String value) {
@@ -158,7 +158,8 @@ public class LiveInstanceGraph {
                 case "nodes" -> cachedOverview(adapter, pool, types, relations, version, cacheKey);
                 case "connections" -> {
                     CachedOverview cached = overviewCache.get(cacheKey);
-                    if (cached == null || !cached.data.getString("sampleToken").equals(request.getString("sampleToken")))
+                    String sampleToken = request.getString("sampleToken");
+                    if (cached == null || sampleToken != null && !cached.data.getString("sampleToken").equals(sampleToken))
                         throw new IllegalStateException("Graph sample expired. Reload the overview.");
                     JSONObject sampled = cached.data;
                     Map<String, List<String>> ids = new LinkedHashMap<>();
@@ -166,7 +167,7 @@ public class LiveInstanceGraph {
                     for (Object raw : sampled.getJSONArray("overviewNodes")) {
                         JSONObject node = (JSONObject) raw;
                         String type = node.getString("class");
-                        ids.get(type).add(node.getString("id").substring(type.length() + 1));
+                        ids.get(type).add(node.getString("primaryKey"));
                     }
                     JSONObject connected = overviewConnections(adapter, pool, relations, ids);
                     connected.put("version", version);
@@ -258,7 +259,7 @@ public class LiveInstanceGraph {
             String label = labelVisible ? type.label : type.pk;
             List<String> searchFields = type.searchFields.stream()
                     .filter(field -> QueryPermissions.allowed(permission, type.name, field, QueryPermissions.Use.DETAIL)).toList();
-            visible.put(type.name, new ObjectType(type.name, type.pk, label, searchFields, type.hasBusinessName && labelVisible));
+            visible.put(type.name, new ObjectType(type.name, type.showName, type.pk, label, searchFields, type.hasBusinessName && labelVisible));
         }
         return visible;
     }
@@ -279,7 +280,7 @@ public class LiveInstanceGraph {
                 }
             }
             String businessKey = io.ontomato.dataengine.util.InstanceNameUtil.businessKey(def);
-            types.put(name, new ObjectType(name, pk, businessKey == null ? pk : identifier(businessKey), searchFields, businessKey != null));
+            types.put(name, new ObjectType(name, (String) def.getOrDefault("showName", name), pk, businessKey == null ? pk : identifier(businessKey), searchFields, businessKey != null));
         }
         return types;
     }
@@ -341,7 +342,7 @@ public class LiveInstanceGraph {
                 keys.add(row.getString("pk"));
             }
             ids.put(type.name, keys);
-            classes.add(JSONObject.of("class", type.name, "sampleCount", keys.size(), "instanceCount", counts.get(type.name)));
+            classes.add(JSONObject.of("class", type.name, "classLabel", type.showName, "sampleCount", keys.size(), "instanceCount", counts.get(type.name)));
         }
         long sampledAt = System.nanoTime();
         JSONObject connections = cacheKey.nodesOnly
@@ -416,8 +417,13 @@ public class LiveInstanceGraph {
     }
 
     private void addOverviewEdge(JSONArray edges, Relation relation, JSONObject row) {
-        edges.add(JSONObject.of("source", relation.from.name + ":" + row.getString("source"),
-                "target", relation.to.name + ":" + row.getString("target"), "type", relation.type));
+        edges.add(graphEdge(relation.from.name, row.getString("source"), relation.to.name, row.getString("target"), relation.type));
+    }
+
+    private static JSONObject graphEdge(String fromClass, String fromKey, String toClass, String toKey, String relation) {
+        return JSONObject.of("source", fromClass + ":" + fromKey, "target", toClass + ":" + toKey, "type", relation,
+                "from", JSONObject.of("className", fromClass, "primaryKey", fromKey),
+                "to", JSONObject.of("className", toClass, "primaryKey", toKey));
     }
 
     private JSONObject statistics(Reader adapter, AdapterPool pool,
@@ -442,7 +448,11 @@ public class LiveInstanceGraph {
     }
 
     private long countRows(Reader adapter, ObjectType type) throws Exception {
-        JSONObject dsl = dsl(objects(object(0, "n", type.name, null)), null,
+        return countRows(adapter, type, null);
+    }
+
+    private long countRows(Reader adapter, ObjectType type, JSONObject conditions) throws Exception {
+        JSONObject dsl = dsl(objects(object(0, "n", type.name, conditions)), null,
                 fields(aggField("n", type.pk, "count", "cnt")), null, null);
         List<JSONObject> rows = runDsl(adapter, dsl);
         return rows.isEmpty() ? 0 : ((Number) rows.get(0).get("cnt")).longValue();
@@ -494,6 +504,7 @@ public class LiveInstanceGraph {
 
     private JSONObject search(Reader adapter, Map<String, ObjectType> types, JSONObject request, String version) throws Exception {
         JSONArray nodes = new JSONArray();
+        long total = 0;
         String term = request.getString("term");
         term = term == null ? "" : term.trim();
         for (ObjectType type : types.values()) {
@@ -512,45 +523,59 @@ public class LiveInstanceGraph {
                 or.put("or", ors);
                 conditions = conditions(or);
             }
+            int remaining = 50 - nodes.size();
+            if (remaining == 0) {
+                total += countRows(adapter, type, conditions);
+                continue;
+            }
             JSONObject dsl = dsl(objects(object(0, "n", type.name, conditions)), null,
                     fields(field("n", type.pk, "pk"), field("n", type.label, "name")),
-                    sort(sortField("pk")), limit(51, 0));
-            for (JSONObject row : runDsl(adapter, dsl)) {
-                nodes.add(node(type, row));
-                if (nodes.size() > 50) break;
-            }
-            if (nodes.size() > 50) break;
+                    sort(sortField("pk")), limit(remaining + 1, 0));
+            List<JSONObject> rows = runDsl(adapter, dsl);
+            rows.stream().limit(remaining).map(row -> node(type, row)).forEach(nodes::add);
+            total += rows.size() > remaining ? countRows(adapter, type, conditions) : rows.size();
         }
-        boolean more = nodes.size() > 50;
-        if (more) nodes.remove(50);
-        return JSONObject.of("nodes", nodes, "hasMore", more, "version", version);
+        return JSONObject.of("nodes", nodes, "total", total, "hasMore", total > nodes.size(), "version", version);
     }
 
     private JSONObject neighborhood(Reader adapter, Map<String, ObjectType> types, List<Relation> relations, JSONObject request, String version) throws Exception {
-        String id = request.getString("id");
-        int separator = id == null ? -1 : id.indexOf(':');
-        if (separator < 1) throw new IllegalArgumentException("Invalid instance id");
-        ObjectType center = types.get(id.substring(0, separator));
+        String className;
+        String key;
+        if (request.get("node") instanceof Map<?, ?> target) {
+            className = (String) target.get("className");
+            key = (String) target.get("primaryKey");
+            if (className == null || key == null || key.isEmpty()) throw new IllegalArgumentException("Invalid instance node");
+        } else {
+            String id = request.getString("id");
+            int separator = id == null ? -1 : id.indexOf(':');
+            if (separator < 1) throw new IllegalArgumentException("Invalid instance id");
+            className = id.substring(0, separator);
+            key = id.substring(separator + 1);
+        }
+        ObjectType center = types.get(className);
         if (center == null) throw new IllegalArgumentException("Unknown object type");
-        String key = id.substring(separator + 1);
         String direction = request.getString("direction");
         if (direction != null && !List.of("both", "incoming", "outgoing").contains(direction))
             throw new IllegalArgumentException("Unknown direction");
         int offset = request.getIntValue("offset");
         if (offset < 0 || offset > 2000) throw new IllegalArgumentException("Invalid offset");
+        int limit = request.getIntValue("limit", PAGE_SIZE);
+        if (limit < 1 || limit > PAGE_SIZE) throw new IllegalArgumentException("Invalid limit");
+        List<String> relationKinds = request.getList("relationKinds", String.class);
 
         JSONObject centerDsl = dsl(objects(object(0, "n", center.name, conditions(condition(center.pk, "=", key)))),
                 null, fields(field("n", center.pk, "pk"), field("n", center.label, "name")), null, limit(1, 0));
         List<JSONObject> centerRows = runDsl(adapter, centerDsl);
         if (centerRows.isEmpty()) throw new IllegalArgumentException("Instance no longer exists");
-        Map<String, JSONObject> nodes = new LinkedHashMap<>();
-        nodes.put(id, node(center, centerRows.get(0)));
+        Map<List<String>, JSONObject> nodes = new LinkedHashMap<>();
+        nodes.put(List.of(className, key), node(center, centerRows.get(0)));
 
         List<JSONObject> neighborRows = new ArrayList<>();
         // Every relation group only needs its own top slice for the requested page, never the full neighbourhood.
-        int fetchLimit = offset + PAGE_SIZE + 1;
+        int fetchLimit = offset + limit + 1;
         boolean truncated = false;
         for (Relation relation : relations) {
+            if (relationKinds != null && !relationKinds.contains(relation.type)) continue;
             boolean outgoingAllowed = relation.from.name.equals(center.name) && !"incoming".equals(direction);
             boolean incomingAllowed = relation.to.name.equals(center.name) && !"outgoing".equals(direction);
             if (request.getString("neighborClass") != null) {
@@ -572,7 +597,8 @@ public class LiveInstanceGraph {
                 if (rows.size() >= fetchLimit) truncated = true;
                 for (JSONObject row : rows) {
                     neighborRows.add(JSONObject.of("type", relation.type, "class", relation.to.name,
-                            "pk", row.getString("pk"), "name", row.getString("name"), "outgoing", true));
+                            "pk", row.getString("pk"), "name", row.getString("name"), "classLabel",
+                            relation.to.showName, "outgoing", true));
                 }
             }
             if (incomingAllowed) {
@@ -589,32 +615,36 @@ public class LiveInstanceGraph {
                 if (rows.size() >= fetchLimit) truncated = true;
                 for (JSONObject row : rows) {
                     neighborRows.add(JSONObject.of("type", relation.type, "class", relation.from.name,
-                            "pk", row.getString("pk"), "name", row.getString("name"), "outgoing", false));
+                            "pk", row.getString("pk"), "name", row.getString("name"), "classLabel",
+                            relation.from.showName, "outgoing", false));
                 }
             }
         }
 
-        Map<String, JSONObject> unique = new LinkedHashMap<>();
+        Map<List<Object>, JSONObject> unique = new LinkedHashMap<>();
         for (JSONObject n : neighborRows) {
-            unique.putIfAbsent(n.getString("type") + "|" + n.getString("class") + "|" + n.getString("pk") + "|" + n.getBooleanValue("outgoing"), n);
+            unique.putIfAbsent(List.of(n.getString("type"), n.getString("class"), n.getString("pk"), n.getBooleanValue("outgoing")), n);
         }
         List<JSONObject> sorted = new ArrayList<>(unique.values());
         sorted.sort(Comparator.comparing((JSONObject n) -> n.getString("type"))
                 .thenComparing(n -> n.getString("class"))
                 .thenComparing(n -> n.getString("pk"))
                 .thenComparing(n -> n.getBooleanValue("outgoing")));
-        int end = Math.min(offset + PAGE_SIZE, sorted.size());
+        int end = Math.min(offset + limit, sorted.size());
         boolean more = truncated || end < sorted.size();
         JSONArray edges = new JSONArray();
         for (int i = offset; i < end; i++) {
             JSONObject n = sorted.get(i);
-            String otherId = n.getString("class") + ":" + n.getString("pk");
-            nodes.putIfAbsent(otherId, JSONObject.of("id", otherId, "class", n.getString("class"), "name", n.getString("name")));
-            edges.add(JSONObject.of("source", n.getBooleanValue("outgoing") ? id : otherId,
-                    "target", n.getBooleanValue("outgoing") ? otherId : id, "type", n.getString("type")));
+            String otherClass = n.getString("class");
+            String otherKey = n.getString("pk");
+            nodes.putIfAbsent(List.of(otherClass, otherKey), JSONObject.of("id", otherClass + ":" + otherKey,
+                    "class", otherClass, "primaryKey", otherKey, "name", n.getString("name"), "classLabel", n.getString("classLabel")));
+            edges.add(n.getBooleanValue("outgoing")
+                    ? graphEdge(className, key, otherClass, otherKey, n.getString("type"))
+                    : graphEdge(otherClass, otherKey, className, key, n.getString("type")));
         }
         return JSONObject.of("nodes", new JSONArray(nodes.values()), "edges", edges,
-                "total", more ? null : offset + edges.size(),
+                "total", more ? null : sorted.size(),
                 "nextOffset", more ? offset + edges.size() : null, "version", version);
     }
 
@@ -640,6 +670,7 @@ public class LiveInstanceGraph {
 
     private JSONObject node(ObjectType type, JSONObject row) {
         return JSONObject.of("id", type.name + ":" + row.getString("pk"), "class", type.name,
+                "primaryKey", row.getString("pk"), "classLabel", type.showName,
                 "name", type.hasBusinessName && row.getString("name") != null && !row.getString("name").isBlank() ? row.getString("name") : "—");
     }
 
