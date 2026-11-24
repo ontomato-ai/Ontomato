@@ -42,6 +42,8 @@ vi.mock("../../config/application", () => ({ config: { dataQuery: { get baseUrl(
 vi.mock("../../config/environment", () => ({ environment: {
   agentRuntime: () => ({ queryServiceToken: "fixture-service", url: state.base, token: "fixture-runtime" }),
   publicBasePath: () => "",
+  queryBase: () => state.base,
+  queryTimeout: () => 5000,
 } }));
 vi.mock("../../utils/request-identity", async original => ({
   ...await original<typeof import("../../utils/request-identity")>(),
