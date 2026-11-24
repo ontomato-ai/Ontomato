@@ -39,17 +39,29 @@ function java(path: string, domainId: string, body: unknown, credentials: Assist
   });
 }
 
-// Authoring follows these product-owned uses, including when a locator has several members.
+// Authoring follows these product-owned uses (catalog and detail entries), including when a locator has several members.
 const authoringSources = {
-  action: {
-    entrance: { permissionCode: "action-management", pageKey: "actions" },
-    source: { kind: "application-use", applicationId: "ontology", useId: "ontology-actions" },
-  },
-  "metric-view": {
-    entrance: { permissionCode: "ontology-modeling", pageKey: "metric-views" },
-    source: { kind: "application-use", applicationId: "ontology", useId: "ontology-metric-views" },
-  },
-} satisfies Record<AuthoringKind, { entrance: PageSkillEntrance; source: PageSkillSource }>;
+  action: [
+    {
+      entrance: { permissionCode: "action-management", pageKey: "actions" },
+      source: { kind: "application-use", applicationId: "ontology", useId: "ontology-actions" },
+    },
+    {
+      entrance: { permissionCode: "action-management", pageKey: "action-detail" },
+      source: { kind: "application-use", applicationId: "ontology", useId: "ontology-action-detail" },
+    },
+  ],
+  "metric-view": [
+    {
+      entrance: { permissionCode: "ontology-modeling", pageKey: "metric-views" },
+      source: { kind: "application-use", applicationId: "ontology", useId: "ontology-metric-views" },
+    },
+    {
+      entrance: { permissionCode: "ontology-modeling", pageKey: "metric-view-detail" },
+      source: { kind: "application-use", applicationId: "ontology", useId: "ontology-metric-view-detail" },
+    },
+  ],
+} satisfies Record<AuthoringKind, readonly { entrance: PageSkillEntrance; source: PageSkillSource }[]>;
 
 async function authoringRun(
   owner: AssistantOwner,
@@ -67,10 +79,16 @@ async function authoringRun(
   }
   if (!loadedPageSkillVersion(APP_BUILDER_SKILL, run.resolvedSkills)) {
     if (appBuilderOnly) throw new HttpError(403, "The App Builder skill is required", "FORBIDDEN");
-    const { entrance, source } = authoringSources[kind];
     const view = await readAssistantSkillView(owner.domainId, credentials);
-    const ref = await resolvePageSkillSource(view, entrance, source, []);
-    if (!ref || !loadedPageSkillVersion(ref, run.resolvedSkills)) {
+    let admitted = false;
+    for (const { entrance, source } of authoringSources[kind]) {
+      const ref = await resolvePageSkillSource(view, entrance, source, []);
+      if (ref && loadedPageSkillVersion(ref, run.resolvedSkills)) {
+        admitted = true;
+        break;
+      }
+    }
+    if (!admitted) {
       throw new HttpError(403, "The required authoring skill is not loaded in this run", "FORBIDDEN");
     }
   }
