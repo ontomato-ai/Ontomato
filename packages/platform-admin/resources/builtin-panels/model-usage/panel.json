@@ -22,8 +22,8 @@
           "layout": "rows",
           "actions": "none"
         },
-        "name": "Domain model defaults",
-        "description": "Select the domain's default chat model and embedding model",
+        "name": "Domain model usage",
+        "description": "Select the domain's default chat model, embedding model, and background task models",
         "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-200000000001"
       },
       "vectorStatus": {
@@ -64,41 +64,6 @@
         "name": "Pause vector rebuild",
         "description": "Pause an active vector rebuild after the current item",
         "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-200000000004"
-      },
-      "agentUsages": {
-        "component": "ObjectList",
-        "type": "platform:ModelUsage",
-        "target": "domain",
-        "data": {
-          "rows": "agentUsages"
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "fallbackToFirst": false,
-          "emptyText": "agents.empty",
-          "columns": [
-            {
-              "key": "agent",
-              "labelKey": "agents.colAgent",
-              "minWidth": 180
-            },
-            {
-              "key": "model",
-              "labelKey": "agents.colModel",
-              "minWidth": 200
-            },
-            {
-              "key": "status",
-              "labelKey": "agents.colStatus",
-              "kind": "tag",
-              "width": 140
-            }
-          ]
-        },
-        "name": "Ontology agent model usage",
-        "description": "Models currently selected by ontology service agents",
-        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-200000000005"
       }
     }
   },
@@ -106,8 +71,7 @@
     "messages": {
       "en": {
         "panel.name": "Model usage",
-        "panel.description": "Configure the domain default chat and embedding models, vector index rebuilds, and agent model usage.",
-        "defaults.title": "Domain defaults",
+        "panel.description": "Configure the domain default chat and embedding models, vector index rebuilds, and system background task models.",
         "defaults.saved": "Model usage saved.",
         "vector.title": "Vector index rebuild",
         "vector.resume": "Resume rebuild",
@@ -115,18 +79,11 @@
         "vector.pause": "Pause rebuild",
         "vector.started": "Vector rebuild started.",
         "vector.paused": "Vector rebuild pause requested.",
-        "agents.title": "Ontology agent model usage",
-        "agents.empty": "No ontology service agents found.",
-        "agents.colAgent": "Agent",
-        "agents.colModel": "Model",
-        "agents.colStatus": "Status",
-        "agents.manage": "Configure system agent models",
-        "action.openConnections": "Connections & models"
+        "action.openConnections": "Providers & models"
       },
       "zh-CN": {
         "panel.name": "模型用途",
-        "panel.description": "配置域默认对话模型、向量模型、向量索引重建，并查看既有智能体模型用途。",
-        "defaults.title": "域默认模型",
+        "panel.description": "配置域默认对话模型、向量模型、向量索引重建及系统后台工序模型。",
         "defaults.saved": "模型用途已保存。",
         "vector.title": "向量索引重建",
         "vector.resume": "继续重建",
@@ -134,18 +91,11 @@
         "vector.pause": "暂停重建",
         "vector.started": "已开始重建向量。",
         "vector.paused": "已请求暂停重建。",
-        "agents.title": "本体智能体模型用途",
-        "agents.empty": "暂无本体服务智能体。",
-        "agents.colAgent": "智能体",
-        "agents.colModel": "模型",
-        "agents.colStatus": "状态",
-        "agents.manage": "配置系统智能体模型",
-        "action.openConnections": "连接和模型"
+        "action.openConnections": "服务商和模型"
       },
       "zh-TW": {
         "panel.name": "模型用途",
-        "panel.description": "設定域預設對話模型、向量模型、向量索引重建，並檢視既有智慧體模型用途。",
-        "defaults.title": "域預設模型",
+        "panel.description": "設定域預設對話模型、向量模型、向量索引重建及系統背景工序模型。",
         "defaults.saved": "模型用途已儲存。",
         "vector.title": "向量索引重建",
         "vector.resume": "繼續重建",
@@ -153,13 +103,7 @@
         "vector.pause": "暫停重建",
         "vector.started": "已開始重建向量。",
         "vector.paused": "已請求暫停重建。",
-        "agents.title": "本體智慧體模型用途",
-        "agents.empty": "暫無本體服務智慧體。",
-        "agents.colAgent": "智慧體",
-        "agents.colModel": "模型",
-        "agents.colStatus": "狀態",
-        "agents.manage": "設定系統智慧體模型",
-        "action.openConnections": "連線與模型"
+        "action.openConnections": "服務商與模型"
       }
     }
   }

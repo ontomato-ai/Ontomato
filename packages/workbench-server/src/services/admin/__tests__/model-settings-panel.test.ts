@@ -59,6 +59,7 @@ let storedSettings: ModelSettingsData;
 let storedAgents: { id: string; kind: string; name: string; modelSelection: { modelId: string | null } }[];
 let storedRebuild: Record<string, unknown>;
 let savedBodies: unknown[];
+let savedAgentModels: Array<{ id: string; body: unknown }>;
 
 function makeHost(): PanelOperationHost {
   return {
@@ -109,6 +110,7 @@ beforeEach(() => {
   assertPermission.mockReset();
   assertPermission.mockResolvedValue(undefined);
   savedBodies = [];
+  savedAgentModels = [];
   storedSettings = {
     connections: {
       "openai-main": {
@@ -147,8 +149,11 @@ beforeEach(() => {
     embeddingModel: "embed-3",
   };
   storedAgents = [
-    { id: "11111111-1111-4111-8111-111111111111", kind: "qa", name: "Ontology QA", modelSelection: { modelId: "gpt-4o" } },
-    { id: "22222222-2222-4222-8222-222222222222", kind: "analysis", name: "Analysis", modelSelection: { modelId: null } },
+    { id: "11111111-1111-4111-8111-111111111111", kind: "quality", name: "Question quality check", modelSelection: { modelId: "gpt-4o" } },
+    { id: "22222222-2222-4222-8222-222222222222", kind: "describe", name: "Program description", modelSelection: { modelId: null } },
+    { id: "33333333-3333-4333-8333-333333333333", kind: "explain", name: "Action explanation", modelSelection: { modelId: null } },
+    { id: "44444444-4444-4444-8444-444444444444", kind: "metric", name: "Metric crystallization", modelSelection: { modelId: null } },
+    { id: "dd3b91b9-9214-4aa6-9937-fb07fd37b232", kind: "retrieval", name: "Data retrieval", modelSelection: { modelId: "gpt-4o" } },
   ];
   storedRebuild = { configured: true, state: "PENDING", total: 10, done: 0, error: null };
 
@@ -175,8 +180,17 @@ beforeEach(() => {
       }
       return Response.json({ success: true, data: { type: "chat", content: "pong" } });
     }
-    if (path === "/api/data-query/ontology/ai/agent-models") {
+    if (path === "/api/data-query/ontology/ai/agent-models" && init?.method === "GET") {
       return Response.json({ success: true, data: { agents: storedAgents } });
+    }
+    if (path.startsWith("/api/data-query/ontology/ai/agent-models/") && init?.method === "PUT") {
+      const id = decodeURIComponent(path.slice("/api/data-query/ontology/ai/agent-models/".length));
+      const body = JSON.parse(String(init.body)) as { modelSelection: { modelId: string | null } };
+      savedAgentModels.push({ id, body });
+      const target = storedAgents.find((agent) => agent.id === id);
+      if (!target) return Response.json({ success: false, message: "Not found" }, { status: 404 });
+      target.modelSelection = body.modelSelection;
+      return Response.json({ success: true, data: target });
     }
     if (path === "/api/data-query/businessConfig/vectorRebuildStatus") {
       return Response.json({ success: true, data: storedRebuild });
@@ -267,16 +281,30 @@ describe("model settings owner reads & forms", () => {
   it("opens model usage with unset defaults and preserves omissions when checking a draft", async () => {
     const usage = createModelUsageReads(actor);
     const draft = panelFormDescriptionSchema.parse(await usage.form("domain", { values: {} }));
-    expect(draft.values).toEqual({});
+    expect(draft.values).toEqual({
+      taskModels: {
+        quality: "gpt-4o",
+        describe: "@default",
+        explain: "@default",
+        metric: "@default",
+      },
+    });
     expect(draft.errors).toEqual([]);
 
     storedSettings.defaultModel = null;
     storedSettings.embeddingModel = null;
     const opened = panelFormDescriptionSchema.parse(await usage.form("domain", {}));
-    expect(opened.values).toEqual({});
+    expect(opened.values).toEqual({
+      taskModels: {
+        quality: "gpt-4o",
+        describe: "@default",
+        explain: "@default",
+        metric: "@default",
+      },
+    });
   });
 
-  it("exposes vector rebuild outputs and ontology agent usages", async () => {
+  it("exposes vector rebuild outputs and the four background task models with domain default labels", async () => {
     const usage = createModelUsageReads(actor);
     const rebuild = await usage.vectorRebuild("domain");
     expect(rebuild.outputs).toMatchObject({
@@ -289,10 +317,44 @@ describe("model settings owner reads & forms", () => {
       canPause: false,
     });
 
-    const agents = await usage.agentUsages("domain");
-    expect(agents.map((row) => row.fields)).toEqual([
-      { agent: "Ontology QA", model: "gpt-4o", status: "Configured" },
-      { agent: "Analysis", model: "Follow domain default (gpt-4o)", status: "Configured" },
+    const form = panelFormDescriptionSchema.parse(await usage.form("domain", {}));
+    expect(form.sections?.map((section) => section.key)).toEqual(["defaults", "backgroundTasks"]);
+    const taskFields = form.fields.filter((field) => field.section === "backgroundTasks");
+    expect(taskFields.map((field) => field.path)).toEqual([
+      "/taskModels/quality",
+      "/taskModels/describe",
+      "/taskModels/explain",
+      "/taskModels/metric",
+    ]);
+    expect(taskFields[0]!.control).toMatchObject({
+      kind: "select",
+      options: expect.arrayContaining([
+        expect.objectContaining({ value: "@default", label: "Follow domain default (current: gpt-4o)" }),
+      ]),
+    });
+
+    const save = writeOp(`${MODEL_USAGE}.save`);
+    expect(await save.inspectImpact!.inspect(makeHost(), [{
+      target: { kind: "object", objectType: MODEL_USAGE, primaryKey: "domain" },
+      input: { values: { taskModels: { quality: "@default", describe: "claude-sonnet" } }, submittedFields: ["/taskModels/quality", "/taskModels/describe"] },
+    }])).toBeNull();
+
+    const outcome = await save.execute(makeHost(), { kind: "object", objectType: MODEL_USAGE, primaryKey: "domain" }, {
+      values: { taskModels: { quality: "@default", describe: "claude-sonnet" } },
+      submittedFields: ["/taskModels/quality", "/taskModels/describe"],
+    }, "intent-tasks");
+    expect(outcome).toMatchObject({
+      kind: "success",
+      data: {
+        defaultModel: "gpt-4o",
+        embeddingModel: "embed-3",
+        taskModels: { quality: "@default", describe: "claude-sonnet", explain: "@default", metric: "@default" },
+      },
+    });
+    expect(savedBodies).toHaveLength(0);
+    expect(savedAgentModels).toEqual([
+      { id: "11111111-1111-4111-8111-111111111111", body: { modelSelection: { modelId: null } } },
+      { id: "22222222-2222-4222-8222-222222222222", body: { modelSelection: { modelId: "claude-sonnet" } } },
     ]);
   });
 });
@@ -348,7 +410,7 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
     ]);
     expect(impact?.summary).toContain("gpt-4o");
     expect(impact?.summary).toContain("embed-3");
-    expect(impact?.summary).toContain("Ontology QA");
+    expect(impact?.summary).toContain("Question quality check");
 
     const outcome = await deleteConn.execute(
       makeHost(),
@@ -378,7 +440,7 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
     const editImpact = await editModel.inspectImpact!.inspect(makeHost(), [
       { target: { kind: "object", objectType: MODEL_ENTRY, primaryKey: "gpt-4o" }, input: { values: { name: "gpt-4o-renamed" } } },
     ]);
-    expect(editImpact?.summary).toContain("Ontology QA");
+    expect(editImpact?.summary).toContain("Question quality check");
 
     const renamed = await editModel.execute(
       makeHost(),
@@ -412,8 +474,15 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
       { values, submittedFields: ["/defaultModel", "/embeddingModel"] },
       "intent-clear",
     );
-    expect(result).toMatchObject({ kind: "success", data: {} });
-    expect(result.kind === "success" && result.data).toEqual({});
+    expect(result).toMatchObject({ kind: "success" });
+    expect(result.kind === "success" && result.data).toEqual({
+      taskModels: {
+        quality: "gpt-4o",
+        describe: "@default",
+        explain: "@default",
+        metric: "@default",
+      },
+    });
     expect(savedBodies).toEqual([expect.objectContaining({ defaultModel: null, embeddingModel: null })]);
   });
 

@@ -4,7 +4,6 @@ import {readHomeState,HOME_PREFERENCES_CHANGED} from './features/home/api';
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import {
-  agentModelLabelsKey,
   confirmDanger,
   pageAdmissionKey,
   platformApplicationNameKey,
@@ -15,7 +14,6 @@ import {
   providePageActions,
   providePageHeading,
   provideUnsavedChanges,
-  type AgentModelLabels,
 } from "@ontomato/platform-shell";
 import { availablePages, usePlatformHost, type PlatformPage } from "@ontomato/platform-admin";
 import PlatformLayout from "./PlatformLayout.vue";
@@ -57,7 +55,7 @@ const props = defineProps<{
 const host = usePlatformHost();
 // Conversation and home routes do not pass through a permission-bearing page guard.
 onMounted(() => { void host.access.load(); });
-const { t, te } = useI18n();
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 provide(workspaceObjectHostKey, createWorkspaceObjectHost());
@@ -277,31 +275,6 @@ provide(pageAdmissionKey, async (address: string) => {
   return { ok: true };
 });
 provide(platformApplicationNameKey, (id: string) => declarations.value.find((app) => app.id === id)?.label ?? id);
-
-/** The applications' model pages' words, in the platform's language. */
-provide(
-  agentModelLabelsKey,
-  computed<AgentModelLabels>(() => ({
-    title: t("platform.agentModels.title"),
-    description: t("platform.agentModels.description"),
-    followDefault: (model) => t("admin.followDomainDefault", { model: model ?? t("admin.noDefaultModel") }),
-    unavailable: (id) => t("admin.modelUnavailable", { id }),
-    missing: (id) => t("admin.modelSelectionMissing", { id }),
-    backToDefault: t("admin.followDefaultAction"),
-    agentName: (kind, fallback) => (te(`admin.ontologyAgentKinds.${kind}`) ? t(`admin.ontologyAgentKinds.${kind}`) : fallback),
-    empty: t("platform.agentModels.empty"),
-    loadFailed: t("admin.loadConfigFailed"),
-    retry: t("common.retry"),
-    saved: t("platform.agentModels.saved"),
-    saveFailed: t("platform.agentModels.saveFailed"),
-    discardTitle: t("admin.discardChanges"),
-    discardMessage: t("admin.discardChangesConfirm"),
-    cancel: t("common.cancel"),
-    save: t("platform.save"),
-    discard: t("platform.discard"),
-    unsavedChanges: t("platform.unsavedChanges"),
-  })),
-);
 
 /**
  * Why the platform shows no applications, if it shows none: the edition's licence is not in force, or the account holds

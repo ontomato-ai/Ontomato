@@ -257,7 +257,7 @@
   "content": {
     "messages": {
       "en": {
-        "panel.name": "Connections & models",
+        "panel.name": "Providers & models",
         "panel.description": "Manage named upstream connections and public chat or embedding models routed through the gateway.",
         "connections.title": "Connections",
         "connections.add": "Add connection",
@@ -303,7 +303,7 @@
         "action.openUsage": "Model usage"
       },
       "zh-CN": {
-        "panel.name": "连接和模型",
+        "panel.name": "服务商和模型",
         "panel.description": "维护域内命名连接及经网关路由的公开对话、向量模型。",
         "connections.title": "连接",
         "connections.add": "新建连接",
@@ -349,7 +349,7 @@
         "action.openUsage": "模型用途"
       },
       "zh-TW": {
-        "panel.name": "連線與模型",
+        "panel.name": "服務商與模型",
         "panel.description": "維護域內命名連線及經閘道路由的公開對話與向量模型。",
         "connections.title": "連線",
         "connections.add": "新增連線",

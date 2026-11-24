@@ -346,7 +346,7 @@ const agentActions = computed(() => props.internalPages && editsAgents.value ? {
 } : undefined);
 
 function openSettings() {
-  if (!editsAgents.value) return void router.push(routes.systemAgentModels.path);
+  if (!editsAgents.value) return void router.push(routes.usage.path);
   void router.push(agentId.value
     ? panelAddress(routes.agents.path, { selected: agentId.value, mode: "edit" })
     : routes.agents.path);

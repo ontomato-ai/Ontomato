@@ -11,7 +11,6 @@ export { default as PanelHost } from "./PanelHost.vue";
 export { default as PlatformPageHeader } from "./PlatformPageHeader.vue";
 export { default as PlatformTabs } from "./PlatformTabs.vue";
 export { default as PlatformBrandMark } from "./PlatformBrandMark.vue";
-export { default as AgentModelsPage } from "./AgentModelsPage.vue";
 export { appIcon, hasAppIcon, resolveIcon } from "./icons";
 export {default as ApplicationIconPicker} from './ApplicationIconPicker.vue';
 export { platformPath, platformRoutes } from "./routes";
@@ -29,18 +28,6 @@ export { provideApplicationFrame, useApplicationFrame } from "./app-frame";
 export {
   applyTheme, composeThemes, provideApplicationTheme, themeProperties, useApplicationTheme, useAppTheme, type ThemeMode,
 } from "./app-theme";
-export {
-  agentModelLabelsKey,
-  useAgentModelLabels,
-  agentModelPage,
-  ontologyAgentModelPages,
-  ontologyAgentModelSource,
-  type AgentModelEntry,
-  type AgentModelLabels,
-  type AgentModelPage,
-  type AgentModelSource,
-  type DataEngineTransport,
-} from "./agent-models";
 export { platformApplicationNameKey, platformPageAccessKey, useApplicationName, usePageAccess } from "./page-access";
 export {
   pageAdmissionKey,

@@ -8,7 +8,6 @@ import {
 
 const REBUILD_POLL_MS = 3000;
 const CONNECTIONS_PATH = "/settings/model-config/providers";
-const AGENT_MODELS_PATH = "/settings/model-config/agents";
 
 await mountPanel({
   setup() {
@@ -72,10 +71,6 @@ await mountPanel({
       void navigate(CONNECTIONS_PATH).catch(() => undefined);
     }
 
-    function openAgentModels() {
-      void navigate(AGENT_MODELS_PATH).catch(() => undefined);
-    }
-
     return {
       t,
       usageDraft,
@@ -87,7 +82,6 @@ await mountPanel({
       onRebuildStarted,
       onRebuildPaused,
       openConnections,
-      openAgentModels,
     };
   },
 });

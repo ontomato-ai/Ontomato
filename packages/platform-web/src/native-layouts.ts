@@ -112,7 +112,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
     renderer: "settings",
     // Its pages are shown through its platform frame panel, by group; an account enters at the first page it may open.
     sections: [
-      { key: "settings:models", titleKey: "platform.settingsGroups.models", paths: [platformRoutes.usage.path, platformRoutes.providers.path,platformRoutes.systemAgentModels.path] },
+      { key: "settings:models", titleKey: "platform.settingsGroups.models", paths: [platformRoutes.usage.path, platformRoutes.providers.path] },
       // The licence is the enterprise edition's; the open-source navigation has no such page, so it is not listed.
       { key: "settings:system", titleKey: "platform.settingsGroups.system", paths: [platformRoutes.general.path, platformRoutes.license.path] },
       {

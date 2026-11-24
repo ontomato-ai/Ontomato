@@ -192,7 +192,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [MODEL_USAGE]: {
       form: (selection, params) => modelUsage.form(selection.primaryKey!, formParams(params)),
       vectorRebuild: selection => modelUsage.vectorRebuild(selection.primaryKey!),
-      agentUsages: selection => modelUsage.agentUsages(selection.primaryKey!),
     },
     [ACTION]: {
       count: async () => (await actions()).count(),

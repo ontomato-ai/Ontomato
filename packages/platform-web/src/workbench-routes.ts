@@ -35,8 +35,6 @@ export function workbenchPages(
   observe: { component: PageComponent; meta?: RouteMeta; props?: Record<string, unknown> },
 ): RouteRecordRaw[] {
   return [
-    {...routes.systemAgentModels,component:()=>import('./pages/SystemAgentModelsRoute.vue'),meta:{service:true,page:routes.systemAgentModels.path}},
-    {...routes.builderModels,component:()=>import('./pages/BuilderModelsRoute.vue'),meta:{service:true,page:routes.builderModels.path}},
     { ...routes.publishedMcp,
       component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.PublishedMcpServices),
       meta: { service: true, page: routes.publishedMcp.path } },
@@ -57,8 +55,10 @@ export function workbenchPages(
     ),
     // The application's prefix is no page: the old tab link lands on the skills, and anything else opens the conversation.
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
-    // The old agent platform models direct link forwards to the unified system settings models page.
-    { path: "/agents/settings/models", redirect: { name: routes.systemAgentModels.name, query: { category: "agents" } } },
+    // The old agent platform models direct link forwards to the model usage page.
+    { path: "/agents/settings/models", redirect: routes.usage.path },
+    { path: "/settings/model-config/agents", redirect: routes.usage.path },
+    { path: "/settings/model-config/app-builder", redirect: routes.usage.path },
     { ...observeRoutes.root, ...observe, children: observeRoutes.children },
   ];
 }

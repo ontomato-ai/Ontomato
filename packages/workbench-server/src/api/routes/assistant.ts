@@ -3,9 +3,7 @@ import { validateBody } from "../middleware/validate";
 import { asyncHandler } from "../utils/http";
 import { describeAgentDefinitionForm } from "../../services/assistant/definition-form";
 import { AgentDefinitionFieldError } from "../../services/assistant/definition-form-schema";
-import { modelSelectionSchema } from "@ontomato/contracts/model-settings";
 import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
-import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 import { requirePermission } from "../../identity/installed";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
@@ -96,13 +94,6 @@ router.get("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(asy
   res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, z.string().max(35).optional().parse(req.query.locale)));
 }));
 const agentAdmin = requirePermission(agentDefinitionPermissions);
-router.get("/diagnosis-model", agentAdmin, wrap(async (req, res) => {
-  res.json(await readDiagnosisModel(context(req).owner.domainId));
-}));
-router.put("/diagnosis-model", agentAdmin, wrap(async (req, res) => {
-  const input = z.object({ modelSelection: modelSelectionSchema }).strict().parse(req.body);
-  res.json(await saveDiagnosisModel(context(req).owner.domainId, input.modelSelection));
-}));
 router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
   const c = context(req);
   res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials));

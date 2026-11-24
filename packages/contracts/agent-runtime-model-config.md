@@ -61,10 +61,12 @@ permissions; the options endpoint only requires identity. OSS keeps domain `1`.
 Workbench owns `assistant_agents.model_selection` and `ops_diagnosis_settings.model_selection`.
 Assistant definitions expose `modelSelection` instead of `modelRole`; creation/omission defaults
 to `{modelId:null}`. Existing `/api/assistant/agent-definitions` CRUD retains `analysis-agent`.
-GET/PUT `/api/assistant/diagnosis-model` uses that same permission and returns `{modelSelection}`;
-PUT takes the same shape. Diagnosis execution permissions remain unchanged. Auxiliary report,
-chart, preview and evaluation calls use the domain default. Ontology's Action input examples
-also use only that default. Workbench `/api/model-settings` and its management proxy are removed.
+System built-in agents (app builder, ops diagnosis, data retrieval) are managed uniformly via
+`platform:AgentDefinition` panel reads and operations; legacy `/api/assistant/diagnosis-model` and
+`/api/app-builder/agents*` endpoints are removed. Diagnosis execution permissions remain unchanged.
+Auxiliary report, chart, preview and evaluation calls use the domain default. Ontology's Action
+input examples also use only that default. Workbench `/api/model-settings` and its management proxy
+are removed.
 
 Embedding remains Java-owned with its existing businessConfig and vector rebuild endpoints.
 No embedding entries enter the runtime conversation-model list.
