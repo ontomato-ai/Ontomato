@@ -1,13 +1,8 @@
-import { modelSelectionSchema, type ModelSelection } from "@ontomato/contracts/model-settings";
+import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { validateModelSelection } from "../../platform/agent-runtime/model-selection";
 import { HttpError } from "../../utils/errors";
 import { assistantStore, type AssistantOwner } from "../assistant/store";
-
-export async function listBuilderAgents({ domainId }: AssistantOwner) {
-  const { id, name, model_selection } = await assistantStore.appBuilder(domainId);
-  return [{ id, name, modelSelection: modelSelectionSchema.parse(model_selection) }];
-}
 
 export async function saveBuilderModel(owner: AssistantOwner, id: string, modelSelection: ModelSelection) {
   const agent = await assistantStore.appBuilder(owner.domainId);

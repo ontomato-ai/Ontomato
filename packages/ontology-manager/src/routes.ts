@@ -184,10 +184,9 @@ export function managerRoutes(): RouteRecordRaw[] {
 
 /** Manager routes that redirect old standalone paths to their unified destinations. */
 export function managerStandaloneRoutes(): RouteRecordRaw[] {
-  const ontologyModelsTarget = { name: routes.systemAgentModels.name, query: { category: "ontology" } };
   return [
-    { path: "/ontology/models", redirect: ontologyModelsTarget },
-    { path: "/settings/model-config/ontology", redirect: ontologyModelsTarget },
+    { path: "/ontology/models", redirect: routes.usage.path },
+    { path: "/settings/model-config/ontology", redirect: routes.usage.path },
     // Retired legacy product-asset URLs forward purely by location without legacy menu permission gating.
     {
       ...routes.products,

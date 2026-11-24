@@ -141,7 +141,7 @@ function buildPanel(
 
 const builtConnections = buildPanel(
   connectionsUse.panelId,
-  "Connections & models",
+  "Providers & models",
   connectionsSource,
   connectionsHtml,
   connectionsModule,
@@ -572,23 +572,12 @@ describe("built-in model panels", () => {
             },
           });
         }
-        if (slot === "agentUsages") {
-          return Response.json({
-            status: "ready",
-            value: [{
-              primaryKey: "agent-1",
-              label: "Ontology QA",
-              fields: { agent: "Ontology QA", model: "gpt-4o", status: "Configured" },
-            }],
-          });
-        }
         return Response.json({ status: "empty" });
       },
     });
 
     await vi.waitFor(() => {
       expect(document.body.textContent).toContain("Embedding configuration changed; rebuild vectors (0/10).");
-      expect(document.body.textContent).toContain("Ontology QA");
     }, { timeout: 3000 });
     const rebuildBtn = [...document.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent?.trim() === "Rebuild vectors");

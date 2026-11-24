@@ -9,7 +9,7 @@ import {
   type DisplayPage, type PageContext, type PageSelection, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { useAgentModelLabels, useLeaveConfirmation, usePageAccess } from "@ontomato/platform-shell";
+import { useLeaveConfirmation, usePageAccess } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { DIAGNOSIS_AGENT_ID, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
 import { useShellLabels } from "../../../../composables/useShellLabels";
@@ -21,7 +21,6 @@ import KnowledgePage from "../knowledge/KnowledgePage.vue";
 import LiveLogsPage from "../live-logs/LiveLogsPage.vue";
 import AutotestPage from "../test-run/AutotestPage.vue";
 import TurnEvidencePage from "../turns/TurnEvidencePage.vue";
-import OpsModelPage from "../model/OpsModelPage.vue";
 
 /**
  * The operations agent app (DESIGN.md "Agent apps"): the diagnosis agent plus its pages. The address is the
@@ -41,10 +40,6 @@ const pages = [
 ] as const;
 const FEEDBACK = "feedback";
 const canOpen = usePageAccess();
-/** The model the diagnosis runs on: the application's own entry at the foot of its column, not one of its pages. */
-const MODEL = { id: "model", path: "/ops/model" } as const;
-const modelLabels = useAgentModelLabels();
-const bottomEntry = computed(() => ({ label: modelLabels.value.title, icon: "models", page: MODEL.id }));
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: "operations",
   // The application's name is the platform's (the rail and this column read one entry): the platform decides it.
@@ -72,9 +67,7 @@ function featureAction(id: string) {
   if (id === FEEDBACK) void router.push(platformRoutes.feedback.path);
 }
 const pageOf = (path: string) =>
-  path === MODEL.path
-    ? MODEL.id
-    : (pages.find((page) => page.match.some((prefix) => path === prefix || path.startsWith(prefix + "/")))?.id ?? null);
+  pages.find((page) => page.match.some((prefix) => path === prefix || path.startsWith(prefix + "/")))?.id ?? null;
 
 /*
  * The shell may set the page and the conversation in one gesture (opening a session closes the page); both land in
@@ -122,7 +115,7 @@ const leave = useLeaveConfirmation();
 const display = useConversationDisplay({
   features: () => workbench.value.features,
   resolve: (href) => pageAt(href.replace(/^#/, "").replace(/^\/observe(?=\/)/, "/ops").split("?")[0] ?? ""),
-  feature: (id) => pageAt([...pages, MODEL].find((item) => item.id === id)?.path ?? ""),
+  feature: (id) => pageAt(pages.find((item) => item.id === id)?.path ?? ""),
   serialize: (page) => {
     const path = page?.address ?? "/ops/diagnosis";
     if (path === route.path) return Promise.resolve(true);
@@ -137,7 +130,7 @@ watch(() => route.path, (path) => display.follow(path), { immediate: true });
 /** Which page "this" refers to, and the item it names: the message carries the item, and the page once. */
 function pageContext(id: string): PageContext {
   const page = pages.find((item) => item.id === id);
-  if (!page) return { pageKey: `ops.${id}`, url: route.fullPath, label: modelLabels.value.title, selection: [] };
+  if (!page) return { pageKey: `ops.${id}`, url: route.fullPath, label: t("platform.operations"), selection: [] };
   const params = route.params, query = route.query;
   let selection: PageSelection | null = null;
   if (page.id === "turn" && typeof params.turnKey === "string")
@@ -208,11 +201,9 @@ onMounted(async () => {
     :display="display"
     :workbench="workbench"
     :title="t('platform.operations')"
-    :bottom="bottomEntry"
     :client="client"
     :labels="labels"
     :nav="nav"
-    @open-bottom="display.openFeature('model')"
     @feature-action="featureAction"
     @error="ElMessage.error($event)"
   >
@@ -224,7 +215,6 @@ onMounted(async () => {
         <template #result-tabs="scope"><slot name="dsl-result-tabs" v-bind="scope" /></template>
       </DslTestPage>
       <KnowledgePage v-else-if="page === 'knowledge'" class="ops-padded" />
-      <OpsModelPage v-else-if="page === 'model'" />
     </template>
   </AgentShell>
 </template>

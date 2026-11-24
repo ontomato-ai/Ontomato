@@ -250,23 +250,16 @@ describe("the open-source platform's former settings addresses", () => {
   });
 
   it.each([
-    ["/ontology/models", "#/settings/model-config/agents?category=ontology"],
-    ["/settings/model-config/ontology", "#/settings/model-config/agents?category=ontology"],
-    ["/agents/settings/models", "#/settings/model-config/agents?category=agents"],
+    ["/ontology/models", "#/settings/model-config/usage"],
+    ["/settings/model-config/ontology", "#/settings/model-config/usage"],
+    ["/agents/settings/models", "#/settings/model-config/usage"],
+    ["/settings/model-config/agents", "#/settings/model-config/usage"],
+    ["/settings/model-config/app-builder", "#/settings/model-config/usage"],
   ])("forwards the retired model direct link %s to %s", async (path, expectedHash) => {
     await open(path);
     expect(window.location.hash).toBe(expectedHash);
-    expect(document.querySelector(".agent-models-page")).not.toBeNull();
   });
 
-});
-
-describe("the open-source platform's column", () => {
-  it("draws the operations application's model page at its own address", async () => {
-    await open("/ops/model");
-    expect(landedAt()).toBe("/ops/model");
-    expect(document.querySelector(".platform-page-body")!.innerHTML.trim()).not.toBe("");
-  });
 });
 
 describe("the open-source platform's rail", () => {

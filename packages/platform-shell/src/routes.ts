@@ -49,7 +49,6 @@ export const platformRoutes = {
   cases: { name: "ObserveCases", path: "/ops/cases" },
   caseDetail: { name: "ObserveAutoTestCaseDetail", path: "/ops/autotest/runs/:runId/cases/:caseId" },
   dsl: { name: "ObserveDsl", path: "/ops/dsl" },
-  opsModel: { name: "ObserveModel", path: "/ops/model" },
   /** 应用构建: the workspace in the address, the open conversation as `?sessionId=`. */
   appBuilder: { name: "AppBuilder", path: "/app-builder/:workspaceId?" },
   feedback: { name: "Feedback", path: "/ops/feedback" },
@@ -98,8 +97,6 @@ export const platformRoutes = {
   models: { name: "ModelConfig", path: "/settings/model-config" },
   usage: { name: "ModelUsage", path: "/settings/model-config/usage" },
   providers: { name: "ModelProviders", path: "/settings/model-config/providers" },
-  builderModels:{name:'BuilderModels',path:'/settings/model-config/app-builder'},
-  systemAgentModels:{name:'SystemAgentModels',path:'/settings/model-config/agents'},
   settings: { name: "SystemConfig", path: "/settings/system-config" },
   /** The external MCP services agents may call, registered once for the platform. */
   externalMcp: { name: "ExternalMcpServices", path: "/settings/external-mcp" },

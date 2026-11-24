@@ -10,7 +10,9 @@ import {
   modelProviderSchema,
   modelSettingsSchema,
   modelSettingsWriteSchema,
+  ontologyAgentModelSchema,
   ontologyAgentModelsSchema,
+  ontologyAgentModelWriteSchema,
   requiresApiBase,
   supportsEmbeddings,
   type ModelConnection,
@@ -85,6 +87,9 @@ const DOMAIN_KEY = "domain";
 const SAVE_CONNECTION_OP = `${MODEL_CONNECTION}.save`;
 const SAVE_MODEL_OP = `${MODEL_ENTRY}.save`;
 const SAVE_USAGE_OP = `${MODEL_USAGE}.save`;
+const BACKGROUND_TASK_KINDS = ["quality", "describe", "explain", "metric"] as const;
+type BackgroundTaskKind = (typeof BACKGROUND_TASK_KINDS)[number];
+const FOLLOW_DOMAIN_DEFAULT = "@default";
 
 /** Per-provider UI labels and default base URL placeholders. Validation rules live in `@ontomato/contracts/model-settings`. */
 export const PROVIDER_SPECS: Record<ModelProvider, {
@@ -156,9 +161,17 @@ const modelFormValuesSchema = z.object({
 }).strict();
 type ModelFormValues = z.infer<typeof modelFormValuesSchema>;
 
+const taskModelsValuesSchema = z.object({
+  quality: z.string().min(1).optional(),
+  describe: z.string().min(1).optional(),
+  explain: z.string().min(1).optional(),
+  metric: z.string().min(1).optional(),
+}).strict();
+
 const usageFormValuesSchema = z.object({
   defaultModel: z.string().optional(),
   embeddingModel: z.string().optional(),
+  taskModels: taskModelsValuesSchema.optional(),
 }).strict();
 
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
@@ -194,10 +207,15 @@ const testInputSchema = z.object({
   }).strict(),
 }).strict();
 
-async function requestOwnerEnvelope(host: DataQueryOperationHost, path: string, body?: unknown) {
+async function requestOwnerEnvelope(
+  host: DataQueryOperationHost,
+  path: string,
+  body?: unknown,
+  method?: "GET" | "POST" | "PUT",
+) {
   const init = body === undefined
-    ? { method: "GET" }
-    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+    ? { method: method ?? "GET" }
+    : { method: method ?? "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
   const response = await host.request(`${DATA_QUERY_GATEWAY}${path}`, init);
   return { status: response.status, envelope: ownerEnvelopeSchema.parse(await response.json()) };
 }
@@ -247,6 +265,26 @@ async function saveSettings(
 async function readOntologyAgents(host: DataQueryOperationHost, credentials: AssistantCredentials): Promise<OntologyAgentModel[]> {
   await assertPermission(credentials, ["system-config"]);
   return (await ownerData(host, "/ontology/ai/agent-models", ontologyAgentModelsSchema)).agents;
+}
+
+async function saveOntologyAgentModel(
+  host: DataQueryOperationHost,
+  credentials: AssistantCredentials,
+  agentId: string,
+  modelId: string | null,
+): Promise<{ ok: true; data: OntologyAgentModel } | { ok: false; outcome: Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }> }> {
+  await assertPermission(credentials, ["system-config"]);
+  const body = ontologyAgentModelWriteSchema.parse({ modelSelection: { modelId } });
+  const { envelope } = await requestOwnerEnvelope(
+    host,
+    `/ontology/ai/agent-models/${encodeURIComponent(agentId)}`,
+    body,
+    "PUT",
+  );
+  if (!envelope.success) {
+    return { ok: false, outcome: ownerWriteFailure(envelope, "MODEL_SETTINGS_SAVE_FAILED", "Unable to save task model selection") };
+  }
+  return { ok: true, data: ontologyAgentModelSchema.parse(envelope.data) };
 }
 
 async function readVectorRebuild(host: DataQueryOperationHost, credentials: AssistantCredentials): Promise<VectorRebuildStatus> {
@@ -1024,21 +1062,46 @@ function requireDomainKey(primaryKey: string) {
   if (primaryKey !== DOMAIN_KEY) throw new HttpError(404, "Domain model usage not found", "NOT_FOUND");
 }
 
-function usageFormValues(settings: ModelSettingsData): z.infer<typeof usageFormValuesSchema> {
+function backgroundTaskAgents(agents: readonly OntologyAgentModel[]): Map<BackgroundTaskKind, OntologyAgentModel> {
+  const byKind = new Map<BackgroundTaskKind, OntologyAgentModel>();
+  for (const kind of BACKGROUND_TASK_KINDS) {
+    const found = agents.find((agent) => agent.kind === kind);
+    if (found) byKind.set(kind, found);
+  }
+  return byKind;
+}
+
+function usageFormValues(
+  settings: ModelSettingsData,
+  backgroundAgents: ReadonlyMap<BackgroundTaskKind, OntologyAgentModel> = new Map(),
+): z.infer<typeof usageFormValuesSchema> {
+  const taskModels: Partial<Record<BackgroundTaskKind, string>> = {};
+  for (const kind of BACKGROUND_TASK_KINDS) {
+    const agent = backgroundAgents.get(kind);
+    if (agent) taskModels[kind] = agent.modelSelection.modelId ?? FOLLOW_DOMAIN_DEFAULT;
+  }
   return {
     ...(settings.defaultModel === null ? {} : { defaultModel: settings.defaultModel }),
     ...(settings.embeddingModel === null ? {} : { embeddingModel: settings.embeddingModel }),
+    ...(Object.keys(taskModels).length > 0 ? { taskModels } : {}),
   };
 }
 
 function parseUsageDraft(
   raw: Record<string, unknown>,
   settings: ModelSettingsData,
+  backgroundAgents: ReadonlyMap<BackgroundTaskKind, OntologyAgentModel>,
   submittedFields?: readonly string[],
+  locale?: string,
 ): {
   next?: ModelSettingsWrite;
+  writesDefaults: boolean;
+  taskUpdates: Array<{ kind: BackgroundTaskKind; agent: OntologyAgentModel; modelId: string | null }>;
   errors: FormFieldError[];
 } {
+  const writesDefaults = submittedFields === undefined
+    || submittedFields.includes("/defaultModel")
+    || submittedFields.includes("/embeddingModel");
   const checked = modelSettingsWriteSchema.safeParse({
     ...settingsWriteFromData(settings),
     defaultModel: submittedFields === undefined || submittedFields.includes("/defaultModel")
@@ -1048,18 +1111,60 @@ function parseUsageDraft(
       ? raw.embeddingModel ?? null
       : settings.embeddingModel,
   });
-  if (!checked.success) {
-    return {
-      errors: checked.error.issues
-        .filter((issue) => issue.path[0] === "defaultModel" || issue.path[0] === "embeddingModel")
-        .map((issue) => ({
-          field: `/${String(issue.path[0])}`,
-          code: issue.code === z.ZodIssueCode.custom ? "invalid_option" : issueCode(issue),
-          message: issue.message,
-        })),
-    };
+  const errors: FormFieldError[] = checked.success
+    ? []
+    : checked.error.issues
+      .filter((issue) => issue.path[0] === "defaultModel" || issue.path[0] === "embeddingModel")
+      .map((issue) => ({
+        field: `/${String(issue.path[0])}`,
+        code: issue.code === z.ZodIssueCode.custom ? "invalid_option" : issueCode(issue),
+        message: issue.message,
+      }));
+
+  const rawTasks = raw.taskModels && typeof raw.taskModels === "object" && !Array.isArray(raw.taskModels)
+    ? raw.taskModels as Record<string, unknown>
+    : undefined;
+  const taskUpdates: Array<{ kind: BackgroundTaskKind; agent: OntologyAgentModel; modelId: string | null }> = [];
+  for (const kind of BACKGROUND_TASK_KINDS) {
+    const agent = backgroundAgents.get(kind);
+    if (!agent) continue;
+    const fieldPath = `/taskModels/${kind}`;
+    const included = submittedFields === undefined
+      || submittedFields.includes("/taskModels")
+      || submittedFields.includes(fieldPath);
+    if (!included) continue;
+    const incoming = rawTasks?.[kind];
+    if (incoming === undefined) continue;
+    if (incoming === FOLLOW_DOMAIN_DEFAULT) {
+      if (agent.modelSelection.modelId !== null) taskUpdates.push({ kind, agent, modelId: null });
+      continue;
+    }
+    if (typeof incoming !== "string" || incoming.length === 0) {
+      errors.push({
+        field: fieldPath,
+        code: "invalid_option",
+        message: tForLocale(locale, "panels.modelSettings.usage.unavailableReason"),
+      });
+      continue;
+    }
+    const entry = settings.models[incoming];
+    if (incoming !== agent.modelSelection.modelId && (!entry || entry.type !== "chat")) {
+      errors.push({
+        field: fieldPath,
+        code: "invalid_option",
+        message: tForLocale(locale, "panels.modelSettings.usage.missingWarning", { name: incoming }),
+      });
+      continue;
+    }
+    if (incoming !== agent.modelSelection.modelId) taskUpdates.push({ kind, agent, modelId: incoming });
   }
-  return { next: checked.data, errors: [] };
+
+  return {
+    ...(checked.success ? { next: checked.data } : {}),
+    writesDefaults,
+    taskUpdates,
+    errors,
+  };
 }
 
 export function createModelUsageReads(actor: PanelOperationActor) {
@@ -1070,15 +1175,32 @@ export function createModelUsageReads(actor: PanelOperationActor) {
   return {
     async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
       requireDomainKey(primaryKey);
-      const settings = await readSettings(host, actor.credentials);
+      const [settings, ontologyAgents] = await Promise.all([
+        readSettings(host, actor.credentials),
+        readOntologyAgents(host, actor.credentials),
+      ]);
+      const tasks = backgroundTaskAgents(ontologyAgents);
       const chatModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "chat");
       const embeddingModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "embedding");
 
-      const values = inputs.values ?? usageFormValues(settings);
+      const baseValues = usageFormValues(settings, tasks);
+      const incomingTasks = inputs.values?.taskModels && typeof inputs.values.taskModels === "object" && !Array.isArray(inputs.values.taskModels)
+        ? inputs.values.taskModels as Record<string, unknown>
+        : undefined;
+      const mergedTaskModels = baseValues.taskModels
+        ? { ...baseValues.taskModels, ...(incomingTasks ?? {}) }
+        : incomingTasks;
+      const values: Record<string, unknown> = inputs.values
+        ? {
+          ...inputs.values,
+          ...(mergedTaskModels !== undefined ? { taskModels: mergedTaskModels } : {}),
+        }
+        : baseValues;
+
       const defaultModel = typeof values.defaultModel === "string" ? values.defaultModel : undefined;
       const embeddingModel = typeof values.embeddingModel === "string" ? values.embeddingModel : undefined;
 
-      const chatOptions: PanelFormOption[] = chatModels
+      const baseChatOptions: PanelFormOption[] = chatModels
         .map(([name, entry]) => ({
           value: name,
           label: name,
@@ -1086,9 +1208,10 @@ export function createModelUsageReads(actor: PanelOperationActor) {
           disabled: false,
           disabledReason: null,
         }));
+      const defaultChatOptions: PanelFormOption[] = [...baseChatOptions];
       const chatMissing = !!defaultModel && !chatModels.some(([name]) => name === defaultModel);
       if (chatMissing) {
-        chatOptions.push({
+        defaultChatOptions.push({
           value: defaultModel,
           label: t("panels.modelSettings.usage.unavailable", { name: defaultModel }),
           description: null,
@@ -1116,25 +1239,32 @@ export function createModelUsageReads(actor: PanelOperationActor) {
         });
       }
 
-      const errors = inputs.values ? parseUsageDraft(values, settings).errors : [];
+      const errors = inputs.values ? parseUsageDraft(values, settings, tasks, undefined, locale).errors : [];
+
+      const followDefaultLabel = defaultModel
+        ? t("panels.modelSettings.usage.followDefaultNamed", { name: defaultModel })
+        : t("panels.modelSettings.usage.followDefault");
 
       const fields: PanelFormField[] = [
         {
           path: "/defaultModel",
+          section: "defaults",
           label: t("panels.modelSettings.fields.defaultModel"),
           help: t("panels.modelSettings.fields.defaultModelHelp"),
           required: false,
           readOnly: false,
+          refreshOnChange: true,
           ...(chatMissing
             ? { warning: t("panels.modelSettings.usage.missingWarning", { name: defaultModel }) }
             : !defaultModel
               ? { warning: t("panels.modelSettings.usage.defaultChatUnset") }
               : {}),
           valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-          control: { kind: "select", options: chatOptions, placeholder: t("panels.modelSettings.usage.noDefaultChat") },
+          control: { kind: "select", options: defaultChatOptions, placeholder: t("panels.modelSettings.usage.noDefaultChat") },
         },
         {
           path: "/embeddingModel",
+          section: "defaults",
           label: t("panels.modelSettings.fields.embeddingModel"),
           help: t("panels.modelSettings.fields.embeddingModelHelp"),
           required: false,
@@ -1145,8 +1275,59 @@ export function createModelUsageReads(actor: PanelOperationActor) {
         },
       ];
 
+      for (const kind of BACKGROUND_TASK_KINDS) {
+        if (!tasks.has(kind)) continue;
+        const selected = typeof mergedTaskModels?.[kind] === "string"
+          ? mergedTaskModels[kind] as string
+          : FOLLOW_DOMAIN_DEFAULT;
+        const taskOptions: PanelFormOption[] = [
+          {
+            value: FOLLOW_DOMAIN_DEFAULT,
+            label: followDefaultLabel,
+            description: null,
+            disabled: false,
+            disabledReason: null,
+          },
+          ...baseChatOptions,
+        ];
+        const taskMissing = selected !== FOLLOW_DOMAIN_DEFAULT && !chatModels.some(([name]) => name === selected);
+        if (taskMissing) {
+          taskOptions.push({
+            value: selected,
+            label: t("panels.modelSettings.usage.unavailable", { name: selected }),
+            description: null,
+            disabled: true,
+            disabledReason: t("panels.modelSettings.usage.unavailableReason"),
+          });
+        }
+        fields.push({
+          path: `/taskModels/${kind}`,
+          section: "backgroundTasks",
+          label: t(`panels.modelSettings.usage.tasks.${kind}.label`),
+          help: t(`panels.modelSettings.usage.tasks.${kind}.help`),
+          required: true,
+          readOnly: false,
+          defaultValue: FOLLOW_DOMAIN_DEFAULT,
+          ...(taskMissing ? { warning: t("panels.modelSettings.usage.missingWarning", { name: selected }) } : {}),
+          valueSchema: cachedZodToRuntimeJsonSchema(z.string().min(1)),
+          control: { kind: "select", options: taskOptions },
+        });
+      }
+
+      const sections = [
+        { key: "defaults", title: t("panels.modelSettings.usage.sections.defaults") },
+        ...(tasks.size > 0
+          ? [{
+            key: "backgroundTasks",
+            title: t("panels.modelSettings.usage.sections.backgroundTasks"),
+            hint: t("panels.modelSettings.usage.sections.backgroundTasksHint"),
+          }]
+          : []),
+      ];
+
       return {
-        values,
+        sections,
+        values: values as PanelFormDescription["values"],
         fields,
         errors,
         save: {
@@ -1184,39 +1365,6 @@ export function createModelUsageReads(actor: PanelOperationActor) {
         },
         outputs: { configured: status.configured, state, tone, alive, canRebuild, canResume, canPause },
       };
-    },
-
-    async agentUsages(primaryKey: string): Promise<PanelRecord[]> {
-      requireDomainKey(primaryKey);
-      const [settings, agents] = await Promise.all([
-        readSettings(host, actor.credentials),
-        readOntologyAgents(host, actor.credentials),
-      ]);
-      const fieldLabels = {
-        agent: t("panels.modelSettings.usages.agent"),
-        model: t("panels.modelSettings.usages.model"),
-        status: t("panels.modelSettings.usages.status"),
-      };
-      return agents.map((agent): PanelRecord => {
-        const ref = agent.modelSelection.modelId;
-        const missing = ref !== null && !Object.hasOwn(settings.models, ref);
-        const modelText = ref === null
-          ? (settings.defaultModel
-            ? t("panels.modelSettings.usage.followDefaultNamed", { name: settings.defaultModel })
-            : t("panels.modelSettings.usage.followDefault"))
-          : ref;
-        const status = missing
-          ? t("panels.modelSettings.usage.statusMissing")
-          : ref === null && !settings.defaultModel
-            ? t("panels.modelSettings.usage.statusUnset")
-            : t("panels.modelSettings.usage.statusOk");
-        return {
-          primaryKey: agent.id,
-          label: agent.name,
-          fields: { agent: agent.name, model: modelText, status },
-          fieldLabels,
-        };
-      });
     },
   };
 }
@@ -1374,8 +1522,8 @@ const saveUsageImpact: PanelImpactInspector = {
   async inspect(host, calls) {
     const settings = await readSettings(host, host.executor.credentials);
     const { values, submittedFields } = saveInputSchema.parse(calls[0]!.input);
-    const evaluated = parseUsageDraft(values, settings, submittedFields);
-    if (!evaluated.next) return null;
+    const evaluated = parseUsageDraft(values, settings, new Map(), submittedFields, host.locale);
+    if (!evaluated.next || !evaluated.writesDefaults) return null;
     const nextDefault = evaluated.next.defaultModel;
     const nextEmbedding = evaluated.next.embeddingModel;
     const notes: string[] = [];
@@ -1712,9 +1860,13 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     draftInput: (input) => saveInputSchema.parse(input).values,
     inspectImpact: saveUsageImpact,
     async execute(host: PanelOperationHost, _target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      const settings = await readSettings(host, host.executor.credentials);
+      const [settings, ontologyAgents] = await Promise.all([
+        readSettings(host, host.executor.credentials),
+        readOntologyAgents(host, host.executor.credentials),
+      ]);
+      const tasks = backgroundTaskAgents(ontologyAgents);
       const { values, submittedFields } = saveInputSchema.parse(input);
-      const evaluated = parseUsageDraft(values, settings, submittedFields);
+      const evaluated = parseUsageDraft(values, settings, tasks, submittedFields, host.locale);
       if (evaluated.errors.length > 0 || !evaluated.next) {
         return {
           kind: "refusal",
@@ -1723,11 +1875,23 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
           errors: evaluated.errors,
         };
       }
-      const saved = await saveSettings(host, host.executor.credentials, evaluated.next);
-      if (!saved.ok) return saved.outcome;
+      let savedSettings = settings;
+      const defaultsChanged = evaluated.writesDefaults
+        && (evaluated.next.defaultModel !== settings.defaultModel || evaluated.next.embeddingModel !== settings.embeddingModel);
+      if (defaultsChanged) {
+        const saved = await saveSettings(host, host.executor.credentials, evaluated.next);
+        if (!saved.ok) return saved.outcome;
+        savedSettings = saved.data;
+      }
+      const updatedTasks = new Map(tasks);
+      for (const update of evaluated.taskUpdates) {
+        const savedTask = await saveOntologyAgentModel(host, host.executor.credentials, update.agent.id, update.modelId);
+        if (!savedTask.ok) return savedTask.outcome;
+        updatedTasks.set(update.kind, savedTask.data);
+      }
       return {
         kind: "success",
-        data: usageFormValues(saved.data),
+        data: usageFormValues(savedSettings, updatedTasks),
         affected: affected(MODEL_USAGE, DOMAIN_KEY, [MODEL_USAGE, MODEL_CONNECTION, MODEL_OPTION]),
       };
     },

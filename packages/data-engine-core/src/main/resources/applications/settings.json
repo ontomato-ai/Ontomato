@@ -51,8 +51,8 @@
           "ar": "استخدام النماذج"
         },
         "descriptions": {
-          "en": "Configure domain default chat and embedding models, vector rebuilds, and agent model usage",
-          "zh-CN": "配置域默认对话模型、向量模型、向量索引重建及智能体模型用途"
+          "en": "Configure domain default chat and embedding models, vector rebuilds, and background task models",
+          "zh-CN": "配置域默认对话模型、向量模型、向量索引重建及系统后台工序模型"
         }
       },
       {
@@ -62,18 +62,18 @@
         "path": "/settings/model-config/providers",
         "access": { "permissionCode": "system-config" },
         "names": {
-          "en": "Connections & models",
-          "zh-CN": "连接和模型",
-          "zh-TW": "連線與模型",
-          "ja": "接続とモデル",
-          "de": "Verbindungen & Modelle",
-          "fr": "Connexions et modèles",
-          "it": "Connessioni e modelli",
-          "ar": "الاتصالات والنماذج"
+          "en": "Providers & models",
+          "zh-CN": "服务商和模型",
+          "zh-TW": "服務商與模型",
+          "ja": "プロバイダーとモデル",
+          "de": "Anbieter & Modelle",
+          "fr": "Fournisseurs et modèles",
+          "it": "Provider e modelli",
+          "ar": "المزودون والنماذج"
         },
         "descriptions": {
-          "en": "Manage domain named model connections and public chat or embedding models",
-          "zh-CN": "维护域内命名连接及公开对话、向量模型"
+          "en": "Manage domain provider connections and public chat or embedding models",
+          "zh-CN": "维护域内模型服务商连接及公开对话、向量模型"
         }
       }
     ]

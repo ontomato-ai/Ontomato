@@ -183,21 +183,9 @@ export default {
     "empty": "No audit logs match these filters"
   },
   "platform": {
-    "systemAgentModels":"Agent models",
-    "systemAgentModelsDescription":"Choose models for interactive agents and background model uses",
     "layers": { "facts": "Facts", "capabilities": "Capabilities", "governance": "Governance", "products":"Products" },
     "productAssets":"Product assets",
     "settingsGroups": { "models": "Models", "system": "System", "connections": "Connections", "records": "Logs and monitoring" },
-    "ontologyAgentModels":"Ontology agent models",
-    "builderAgentModels":"App builder models",
-    "conversationAgentModels":"Data analysis models",
-    "agentModels": {
-      "title": "Models",
-      "description": "The model each agent of this application runs on; until one is chosen it follows the domain's default chat model",
-      "empty": "This application has no agents whose model can be chosen",
-      "saved": "Models saved",
-      "saveFailed": "Some models were not saved; the reason is shown beside each"
-    },
     "title": "Platform Management",
     "serviceName": "Ontomato",
     "navigation": "Ontology Service navigation",

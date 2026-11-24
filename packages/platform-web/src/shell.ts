@@ -4,7 +4,7 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Bot, Cable, Cpu, Plug } from "lucide-vue-next";
+import { Cable, Plug } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
@@ -148,12 +148,6 @@ export function createServiceManager(options: {
   });
 }
 
-/** The model settings pages the platform shell mounts directly. */
-const ontologyWorkspacePages: readonly PlatformPage[] = [
-  {path:platformRoutes.systemAgentModels.path,titleKey:'platform.systemAgentModels',descriptionKey:'platform.systemAgentModelsDescription',icon:Bot,permissions:['system-config','app-builder'],group:'platform',ownHeader:true},
-  {path:platformRoutes.builderModels.path,titleKey:'platform.builderAgentModels',icon:Cpu,permissions:['app-builder'],group:'platform',ownHeader:true},
-];
-
 /**
  * The system settings' connections the agent platform's pages draw: the external MCP services agents may call (its page
  * draws its own header) and the MCP services the platform publishes (under the settings' header).
@@ -163,9 +157,8 @@ const systemIntegrationPages: readonly PlatformPage[] = [
   { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", descriptionKey: "mcp.publishedHint", icon: Plug, permissions: ["mcp-service"], group: "platform" },
 ];
 
-/** The native skill, integration and model pages shared by the edition assemblies. */
+/** The native skill and integration pages shared by the edition assemblies. */
 export const applicationPages: readonly PlatformPage[] = [
-  ...ontologyWorkspacePages,
   ...systemIntegrationPages,
 ];
 

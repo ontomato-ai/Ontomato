@@ -1,4 +1,4 @@
-# Connections & models
+# Providers & models
 
 - Select a named connection on the left (`selected`) to inspect or edit its provider prefix, API base URL, and extra headers via `connectionForm`. The API key field starts blank. Ask the user to enter a new key if they want to replace it. Leaving it blank keeps the saved key.
 - Use **Add connection** (`creatingConnection: true`) to create a new named connection. The user must enter an API key. `azure` and `custom_openai` also require an API base URL.

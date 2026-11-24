@@ -3,8 +3,8 @@
     {
       "id": "builtin-product-model-connections",
       "input": {
-        "name": "Connections & models",
-        "description": "Manage domain named model connections and public chat/embedding models, test connections, and discover upstream models"
+        "name": "Providers & models",
+        "description": "Manage domain provider connections and public chat/embedding models, test connections, and discover upstream models"
       }
     }
   ]

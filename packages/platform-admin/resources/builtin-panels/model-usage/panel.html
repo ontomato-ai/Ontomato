@@ -74,9 +74,6 @@
 
     <div class="mu-body">
       <section class="mu-card">
-        <div class="mu-card-head">
-          <h2 class="mu-section-title">{{ t('defaults.title') }}</h2>
-        </div>
         <div class="mu-form-wrap">
           <projection slot="usageForm" @saved="onUsageSaved"></projection>
         </div>
@@ -102,14 +99,6 @@
           </div>
         </div>
         <projection slot="vectorStatus"></projection>
-      </section>
-
-      <section class="mu-card">
-        <div class="mu-card-head">
-          <h2 class="mu-section-title">{{ t('agents.title') }}</h2>
-          <sdk-button size="small" @click="openAgentModels">{{ t('agents.manage') }}</sdk-button>
-        </div>
-        <projection slot="agentUsages"></projection>
       </section>
     </div>
   </section>

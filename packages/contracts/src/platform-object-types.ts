@@ -698,7 +698,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           canPause: { kind: "scalar", type: "boolean" },
         },
       },
-      agentUsages: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
     },
     operations: [`${MODEL_USAGE}.save`, REBUILD_VECTORS, PAUSE_VECTOR_REBUILD],
   },
