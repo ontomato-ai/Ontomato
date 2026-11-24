@@ -1,4 +1,4 @@
-import { agentRunContextSchema, agentNotificationSchema, agentAuthoritySchema, agentPendingQuestionSchema, agentExecutionActorRefSchema } from "./agent-channel";
+import { agentRunContextSchema, agentAuthoritySchema, agentPendingQuestionSchema, agentExecutionActorRefSchema } from "./agent-channel";
 import { workspaceCommitSchema } from "./workspaces";
 import { serviceLogCorrelationSchema } from "./service-logging";
 import { z } from "zod";
@@ -7,15 +7,18 @@ import { codeLimitsSchema } from "./agent-runtime-code";
 import { runtimeMcpRefSchema } from "./agent-runtime-mcp";
 import {runtimeProductToolSchema} from './agent-runtime-product-tools';
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
+import { runtimeBusinessCallbacksSchema } from "./agent-runtime-business-callbacks";
 import { runtimePresentationCallbackSchema } from "./agent-presentation";
 import {
   runtimeCursorSchema,
   runtimeToolExecutionSchema,
+  runtimeUsageUpdateSchema,
 } from "./agent-runtime-events";
+import { runtimeRunDetailSchema } from "./agent-runtime-details";
 import {
   runtimeMessageSchema,
   runtimeSettledMessageSchema,
-  runtimeUserMessageSchema,
+  runtimeRunInputSchema,
 } from "./agent-runtime-messages";
 import {
   runtimeEnvironmentSchema,
@@ -50,6 +53,7 @@ export const runtimeAdmissionHeadersSchema = runtimeRequestHeadersSchema.extend(
 export const runtimeAgentDefinitionSchema = z
   .object({
     agentId: runtimeKeySchema.optional(),
+    engine: runtimeKeySchema.optional(),
     systemPrompt: z.string(),
     context: z.string().optional(),
     modelId: modelSelectionSchema.shape.modelId,
@@ -67,30 +71,31 @@ export const runtimeAgentDefinitionSchema = z
     externalMcp: z.array(runtimeMcpRefSchema),
     productTools:z.array(runtimeProductToolSchema).max(100).optional(),
     toolSurface:z.enum(['standard','product']).optional(),
-    // Host-rendered instructions; the runtime prepends conversation and previous-summary blocks.
-    compaction: z
-      .object({
-        systemPrompt: z.string(),
-        summarizePrompt: z.string(),
-        updatePrompt: z.string(),
-      })
-      .strict(),
   })
   .strict().superRefine((definition,context)=>{
     if(definition.toolSurface==='product'&&(definition.skills.length||definition.externalMcp.length))context.addIssue({code:'custom',message:'Product tool surfaces cannot include inherited skills or MCP tools'});
   });
+
+/** Stored definitions predate the engine's ownership of context compaction. */
+export const storedRuntimeAgentDefinitionSchema = z.preprocess(value => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const { compaction: _legacyCompaction, ...definition } = value as Record<string, unknown>;
+  return definition;
+}, runtimeAgentDefinitionSchema);
 
 export const runtimeCreateSessionRequestSchema = z.object({ workspaceId: runtimeIdSchema.optional() }).strict();
 export const runtimeStartRunRequestSchema = z
   .object({
     language: runtimeKeySchema,
     definition: runtimeAgentDefinitionSchema,
-    input: z.union([runtimeUserMessageSchema, agentNotificationSchema]),
+    input: runtimeRunInputSchema,
     channel: agentRunContextSchema.optional(),
     authority: agentAuthoritySchema.optional(),
     executionActor: agentExecutionActorRefSchema.nullable().optional(),
     environment: runtimeEnvironmentSchema,
     presentationCallback: runtimePresentationCallbackSchema.optional(),
+    /** Run-scoped Workbench capabilities kept outside the engine process. */
+    businessCallbacks: runtimeBusinessCallbacksSchema.optional(),
   })
   .strict();
 
@@ -156,6 +161,14 @@ export const runtimeRunViewSchema = z.object({
   executionUserId: runtimeRunFields.executionUserId,
 }).strict();
 export type RuntimeRunView = z.infer<typeof runtimeRunViewSchema>;
+export const runtimeRunPresentationSchema = z.object({
+  details: z.array(z.object({
+    detail: runtimeRunDetailSchema,
+    timestamp: z.number(),
+  }).strict()).optional(),
+  usageUpdate: runtimeUsageUpdateSchema.nullable().optional(),
+}).strict();
+export type RuntimeRunPresentation = z.infer<typeof runtimeRunPresentationSchema>;
 export const runtimeAdmissionResponseSchema = z
   .object({
     run: runtimeRunSchema,
@@ -192,6 +205,7 @@ export const runtimeRunSnapshotSchema = z
     ),
     toolExecutions: z.array(runtimeToolExecutionSchema),
     artifacts: z.array(runtimeArtifactSchema),
+    ...runtimeRunPresentationSchema.shape,
   })
   .strict();
 export const runtimeSessionSnapshotSchema = z

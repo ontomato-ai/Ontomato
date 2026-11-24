@@ -16,14 +16,23 @@ it('explicitly selecting U still validates its current shared key on every prote
  expect((await agentExecutionCredentials('agent','U',owner,original)).apiKey).toBe('renewed');
  expect(mocks.resolve).toHaveBeenNthCalledWith(2,{id:'agent',execution_user_id:'U'},owner,original);
 });
-it('restores the fixed run selection without rereading the current definition',async()=>{
+it('restores the fixed run selection and resolves retrieval_scope_id from the turn',async()=>{
+ mocks.turn.mockResolvedValue({id:'run',retrieval_scope_id:'scope-1'});
  mocks.run.mockResolvedValue({run:{id:'run',status:'running',executionUserId:'fixed',channel:{agent:{agentId:'agent'}}}});
  mocks.resolve.mockResolvedValue({credentials:{apiKey:'fixed-key',locale:'en'}});
  const restored=await credentialsForRun(owner,'run',original);
  expect(restored.executionUserId).toBe('fixed');expect(restored.credentials.apiKey).toBe('fixed-key');
+ expect(restored.retrievalScopeId).toBe('scope-1');
  expect(mocks.turn).toHaveBeenCalledWith('run',owner);
  expect(mocks.resolve).toHaveBeenCalledWith({id:'agent',execution_user_id:'fixed'},owner,original);
- expect(restored.credentials.headers).toMatchObject({'X-API-Key':'fixed-key','X-Ontomato-Retrieval-Caller-Id':'run'});
+ expect(restored.credentials.headers).toMatchObject({'X-API-Key':'fixed-key','X-Ontomato-Retrieval-Caller-Id':'scope-1'});
+});
+it('omits X-Ontomato-Retrieval-Caller-Id when the turn has no retrieval_scope_id',async()=>{
+ mocks.turn.mockResolvedValue({id:'run',retrieval_scope_id:null});
+ mocks.run.mockResolvedValue({run:{id:'run',status:'running',executionUserId:null,channel:{agent:{agentId:'agent'}}}});
+ const restored=await credentialsForRun(owner,'run',original);
+ expect(restored.retrievalScopeId).toBeNull();
+ expect(restored.credentials.headers).toBeUndefined();
 });
 it('does not fall back to the initiator when the fixed executor becomes invalid',async()=>{
  mocks.resolve.mockRejectedValue(new Error('invalid shared key'));

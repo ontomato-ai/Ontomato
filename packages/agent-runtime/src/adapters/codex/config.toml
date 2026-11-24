@@ -1,0 +1,46 @@
+model_provider = "ontomato"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+web_search = "disabled"
+check_for_update_on_startup = false
+project_root_markers = []
+model_reasoning_summary = "none"
+allow_login_shell = false
+
+[features]
+enable_request_compression = false
+apps = false
+plugins = false
+remote_plugin = false
+recommended_plugins = false
+multi_agent_v2 = false
+standalone_web_search = false
+skill_search = false
+skill_mcp_dependency_install = false
+tool_suggest = false
+goals = false
+sleep_tool = false
+view_image = false
+image_generation = false
+browser_use = false
+browser_use_external = false
+hooks = false
+
+[agents]
+enabled = false
+
+[tools.update_plan]
+enabled = false
+
+[tools.experimental_request_user_input]
+enabled = false
+
+[skills.bundled]
+enabled = false
+
+[shell_environment_policy]
+inherit = "all"
+include_only = ["PATH", "HOME", "LANG", "LC_*", "TZ", "TMPDIR", "PYTHONPATH", "ONTOMATO_*"]
+
+[analytics]
+enabled = false

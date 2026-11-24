@@ -1138,6 +1138,8 @@ describe("builtin capability-map panel (PanelData-free)", () => {
     }
     expect(recipes).toContain("明确传 `null`");
     expect(recipes).toContain("当前子图内");
+    expect(recipes).toContain("present({ target, state })");
+    expect(recipes).not.toContain("`setState`");
     const enMessages = parsed.content?.messages?.en ?? {};
     const zhMessages = parsed.content?.messages?.["zh-CN"] ?? {};
     expect(Object.keys(zhMessages).sort()).toEqual(Object.keys(enMessages).sort());
@@ -1483,14 +1485,20 @@ describe("builtin capability-map panel (PanelData-free)", () => {
         expect(document.querySelector(".panel-host-coded [data-cap-start-detail]")?.textContent?.trim()).toBe("Action · act-refund-1");
       }, { timeout: 5000 });
 
-      // 4) Switching to a second same-name start object keeps them distinguishable via startDetail even when selected === start.
+      // 4) Agent changing start alone (without passing selected) moves selected along to the new start, keeping same-name starts distinguishable via startDetail.
       host.applyState({
         start: { className: ACTION, primaryKey: "act-refund-2" },
-        selected: { className: ACTION, primaryKey: "act-refund-2" },
       });
       await vi.waitFor(() => {
+        expect(document.querySelector(".panel-host-coded .sdk-object-relations-subject")?.textContent?.trim()).toBe("Refund Order");
         expect(document.querySelector(".panel-host-coded [data-cap-start-label]")?.textContent?.trim()).toBe("Refund Order");
         expect(document.querySelector(".panel-host-coded [data-cap-start-detail]")?.textContent?.trim()).toBe("Action · act-refund-2");
+      }, { timeout: 5000 });
+
+      // 4b) Agent clearing start alone (without passing selected) also clears the stale selected node.
+      host.applyState({ start: null });
+      await vi.waitFor(() => {
+        expect(document.querySelector(".panel-host-coded .sdk-object-relations-subject")).toBeNull();
       }, { timeout: 5000 });
 
       // 5) typePicker renders four layer option groups via generic groupBy="layer".

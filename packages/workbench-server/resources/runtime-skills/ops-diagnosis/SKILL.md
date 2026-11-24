@@ -32,12 +32,15 @@ those bytes in the local working directory. It never reads a server path.
 `resolve` also accepts `{kind:"turn",turnKey}` or
 `{kind:"autotest-case",testRunId,caseId}`. `knowledge {}` lists the knowledge tree.
 
-Set `ONTOMATO_WORKBENCH_URL` to the workbench base URL before `/api`.
-`ONTOMATO_TK` is sent as tk; external API-key clients can instead set
-`ONTOMATO_API_KEY`. Do not set both. Product runs receive a short-lived, run-bound
-callback credential, not a service key. Runtime supplies `ONTOMATO_RUN_ID`,
-`ONTOMATO_SESSION_ID`, `ONTOMATO_CORRELATION_ID`, `ONTOMATO_LANGUAGE`; outside the
-product these trace variables are optional. Credentials are never command arguments.
+In the platform (`ONTOMATO_SKILL_SCENARIO=platform`), the runtime forwards
+`ONTOMATO_WORKBENCH_URL` directly to the `/api/observe/evidence` callback prefix and
+supplies `ONTOMATO_EXECUTION_CALLBACK` (sent as `X-Ontomato-Callback-Credential`) with
+session trace headers managed at the forwarding boundary. Outside the product, set
+`ONTOMATO_WORKBENCH_URL` to the workbench base URL before `/api`, and set `ONTOMATO_TK`
+(`tk` header) or `ONTOMATO_API_KEY` (`X-API-Key` header). Set only one credential
+variable; `ONTOMATO_RUN_ID`, `ONTOMATO_SESSION_ID`, `ONTOMATO_CORRELATION_ID` and
+`ONTOMATO_LANGUAGE` are optional outside the product. Credentials are never command
+arguments.
 
 Read each service independently (`workbench`, `ontology`, `agent-runtime`). Reuse
 the exact filters/window and `nextCursor` for the next page. Do not guess identities

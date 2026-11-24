@@ -1,0 +1,3 @@
+# Architecture version SHA256 release archive
+amd64 0.171.0 8391d67757496bfd14893eca6cbf0c96994bf2627566ff1f018f70600c9ef6b3 https://github.com/openai/codex/releases/download/rust-v0.171.0/codex-package-x86_64-unknown-linux-musl.tar.gz
+arm64 0.171.0 d8c43bee6cf11b01eb18b95f4d7961092bc40228180808859e70dabb7784c1c9 https://github.com/openai/codex/releases/download/rust-v0.171.0/codex-package-aarch64-unknown-linux-musl.tar.gz

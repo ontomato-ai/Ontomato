@@ -254,7 +254,8 @@
             "read": "list",
             "params": {
               "className": {
-                "fromSlot": true
+                "state": "objectType",
+                "field": "primaryKey"
               }
             }
           }
@@ -288,7 +289,8 @@
             "read": "list",
             "params": {
               "className": {
-                "fromSlot": true
+                "state": "objectType",
+                "field": "primaryKey"
               }
             }
           }

@@ -34,6 +34,7 @@ test("build prepares an empty context before adding Python requirements and invo
     "apps/agent-runtime/build.mjs",
     "apps/agent-runtime/Dockerfile",
     "apps/agent-runtime/sandbox-policy",
+    "apps/agent-runtime/codex",
     "apps/agent-runtime/package.json",
     "apps/agent-runtime/src/index.ts",
     "packages/agent-runtime/package.json",
@@ -97,6 +98,7 @@ childProcess.spawnSync = (command, args, options) => {
     call.context = {
       inputs: JSON.parse(readFileSync(join(context, "inputs.json"), "utf8")),
       requirements: readFileSync(join(context, "requirements-py310.txt"), "utf8"),
+      codexLock: readFileSync(join(context, "codex/sources.lock"), "utf8"),
       launcher: readFileSync(join(context, "workspace/ontomato/packages/agent-runtime/src/worker-launch.py"), "utf8"),
       stale: existsSync(join(context, "stale-marker")),
     };
@@ -153,6 +155,8 @@ syncBuiltinESMExports();
       "@ontomato/agent-runtime",
     );
     assert.equal(build.context.inputs.web, false);
+    assert.match(build.context.codexLock, /^amd64 0\.171\.0 [0-9a-f]{64} https:\/\//m);
+    assert.match(build.context.codexLock, /^arm64 0\.171\.0 [0-9a-f]{64} https:\/\//m);
     assert.equal(
       build.context.requirements,
       readFileSync(
@@ -198,7 +202,7 @@ test("runtime production closure keeps only the runtime application and no enter
     );
     assert.ok(
       Object.keys(graph.packages).some((key) =>
-        key.startsWith("@earendil-works/pi-ai@1.4.0"),
+        key.startsWith("@earendil-works/pi-coding-agent@1.4.0"),
       ),
     );
   }
@@ -207,7 +211,7 @@ test("runtime production closure keeps only the runtime application and no enter
   assert.equal(app.component, "ontomato-agent-runtime");
 });
 
-test("source staging accepts an app without a web bundle and preserves the fork license", async (t) => {
+test("source staging accepts an app without a web bundle and preserves the PI plugin license", async (t) => {
   const { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync } =
     await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -217,12 +221,12 @@ test("source staging accepts an app without a web bundle and preserves the fork 
   const root = mkdtempSync(join(tmpdir(), "runtime-stage-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const absolute = join(root, "app");
-  mkdirSync(join(absolute, "src/core/pi"), { recursive: true });
+  mkdirSync(join(absolute, "src/adapters/pi"), { recursive: true });
   writeFileSync(
     join(absolute, "package.json"),
     JSON.stringify({ name: "fixture" }),
   );
-  writeFileSync(join(absolute, "src/core/pi/LICENSE"), "MIT fixture");
+  writeFileSync(join(absolute, "src/adapters/pi/UPSTREAM-LICENSE"), "MIT fixture");
   assembleAppStage({
     root,
     stageRoot: join(root, "stage"),
@@ -239,7 +243,7 @@ test("source staging accepts an app without a web bundle and preserves the fork 
     selected: [{ path: "app" }],
   });
   assert.equal(
-    readFileSync(join(root, "stage/app/src/core/pi/LICENSE"), "utf8"),
+    readFileSync(join(root, "stage/app/src/adapters/pi/UPSTREAM-LICENSE"), "utf8"),
     "MIT fixture",
   );
   assert.equal(existsSync(join(root, "stage/dist/web")), false);

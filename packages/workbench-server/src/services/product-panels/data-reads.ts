@@ -8,7 +8,7 @@ import {
 import type { ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
-import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
+import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
   AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
@@ -57,6 +57,7 @@ import {
   readSdkComponentOutputRows,
   readSdkComponentRecord,
 } from "./component-catalogue";
+import { resolvePinnedInputs } from "./input-wiring";
 import { PanelReadBatchCache, registeredPanelRootId, requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
 
 const logger = createLogger("panel-data-reads");
@@ -481,14 +482,26 @@ async function resolveReadMember(
     const headers = { ...viewer.headers, [BUILD_TEST_HEADER]: JSON.stringify({
       kind: "build-test", contextId: previewContext.test?.contextId ?? null,
     }) };
-    return { member, projection, panel, viewer: { ...viewer, headers } };
+    return { member, projection, panel, inputs: request.inputs, viewer: { ...viewer, headers } };
   }
 
   const { panel, entry } = await requireRegisteredPanelRoot(owner, viewer, source, { batchCache });
   const placement = await resolvePanelMemberPath(owner, viewer, panel, memberPath, entry, undefined, batchCache);
   if (placement.kind !== "projection")
     throw new HttpError(403, "The member path does not select a projection", "PANEL_MEMBER_FORBIDDEN");
-  return { ...placement, viewer };
+  const fieldInputs = Object.entries(placement.member.inputs ?? {}).filter(([, ref]) => "field" in ref);
+  if (fieldInputs.length) {
+    const inputs = { ...request.inputs };
+    const pinned = resolvePinnedInputs(entry, placement.trail, placement.member, source.kind === "frame");
+    for (const [name] of fieldInputs) {
+      if (!pinned.has(name)) continue;
+      const value = pinned.get(name) as string | undefined;
+      if (value === undefined) delete inputs[name];
+      else inputs[name] = value;
+    }
+    return { ...placement, inputs, viewer };
+  }
+  return { ...placement, inputs: request.inputs, viewer };
 }
 
 function effectiveInputs(
@@ -539,6 +552,8 @@ async function readParameters(
     if (!source || !parameter) continue;
     const value = "literal" in source ? source.literal : inputs["input" in source ? source.input : name];
     if (value != null) resolved.set(name, panelReadParameterSchemas[parameter].parse(value));
+    else if (readParameterUsesStateField(source, member))
+      throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");
   }
   return Object.fromEntries(resolved);
 }
@@ -611,17 +626,17 @@ export async function readProductPanelData(
   batchCache?: PanelReadBatchCache,
 ): Promise<ProductPanelReadResponse> {
   try {
-    const { member, projection, panel, viewer: readViewer } = await resolveReadMember(owner, viewer, request, batchCache);
+    const { member, projection, panel, inputs: submittedInputs, viewer: readViewer } = await resolveReadMember(owner, viewer, request, batchCache);
     const slot = request.memberPath.at(-1)!.member;
     if ("operations" in request) {
-      const inputs = effectiveInputs(projection, member, request.inputs);
+      const inputs = effectiveInputs(projection, member, submittedInputs);
       const { readAdmittedProjectionOperations } = await import("./direct-operations");
       const value = await readAdmittedProjectionOperations({ owner, credentials: readViewer },
         { panel, projection, member, slot }, inputs);
       return { status: "ready", value };
     }
     const outcome = await executeProjectionDataRead(
-      owner, readViewer, { member, projection, slot }, request.dataName, request.inputs, request.runtimeParams, callerUserName, location,
+      owner, readViewer, { member, projection, slot }, request.dataName, submittedInputs, request.runtimeParams, callerUserName, location,
     );
     if (outcome.status === "empty") return { status: "empty" };
     let rowOperations;
@@ -632,7 +647,7 @@ export async function readProductPanelData(
         || outcome.declaration.result === "panelOntologyObjects")
     ) {
       const datum = projection.data[request.dataName];
-      const inputs = effectiveInputs(projection, member, request.inputs);
+      const inputs = effectiveInputs(projection, member, submittedInputs);
       // Prefer the read declaration's explicit cross-type `rowType` so server rowOperations keys and
       // row targets align with ObjectList's `directReadRowType` fallback for records without `row.className`.
       const fallbackClassName = outcome.declaration.rowType

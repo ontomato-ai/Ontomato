@@ -47,7 +47,9 @@ Minimal complete `panel.json` for a read-only stateless page (empty `state` and 
 
 ## Panel member fields
 
-Use these fields for a new member inside `manifest.members` in `panel.json`.
+Use these fields for a new inline member inside `manifest.members` in `panel.json`. Map writable ports via
+`state`, which expands to inputs and outputs according to the component declaration. Use `inputs` for explicit
+input sources such as another member's read-only output. The inline shorthand accepts no `outputs` key.
 
 | Field | Required on every member | Value |
 | --- | --- | --- |
@@ -55,7 +57,7 @@ Use these fields for a new member inside `manifest.members` in `panel.json`.
 | `component` | Yes | Component name from the released SDK catalogue. Use its package-qualified ID if the name is ambiguous. |
 | `type` | No | Default owner type ID from the type table for this member's reads and operations. |
 | `target` | No | Panel state field holding the target object (or object list), or {fromSlot: true} when supplied by an enclosing Vue slot via <Projection :inputs="{ target: ref }">. |
-| `data` | No | Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: fieldName}, {literal: value}, or {fromSlot: true}. |
+| `data` | No | Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: stateName}, {state: stateName, field: primaryKey or objectType}, {literal: value}, or {fromSlot: true}. |
 | `operation` | No | Single operation ID from the owner's entry in the type table. |
 | `operationParams` | No | Bind input parameters for `operation` to {literal: value}, {state: fieldName}, {input: portName}, {row: 'primaryKey' \| 'label'}, {rowField: fieldKey}, {formField: '/fieldPath'}, or {formFields: {key: '/fieldPath'}}. |
 | `operations` | No | Map local operation names to owner operations (e.g. row actions on ObjectList or multiple actions on ObjectHeader). Each value is an operation ID or {operation, type?, target?, params?, draft?} where target may be 'row', {row: true}, {rowField: key}, a state field name, {state: fieldName}, or {literal: ref}, and draft names a form member in this panel. |
@@ -63,7 +65,7 @@ Use these fields for a new member inside `manifest.members` in `panel.json`.
 | `parameters` | No | Parameters for a draft read operation. Use {state: fieldName}, {formField: {slot, path}}, or {fields: {parameterName: source}}. Defaults to an empty object. |
 | `bindingId` | No | Optional binding ID for a draft read operation, from {state: fieldName} or {formField: {slot, path}}. |
 | `state` | No | Map typed component port names or owner read parameter names to panel state fields. |
-| `inputs` | No | Explicit projection input bindings: {state: fieldName}, {literal: value}, {output: {member, name, path?}}, or {fromSlot: true} when supplied by an enclosing Vue slot. |
+| `inputs` | No | Explicit projection input bindings: {state: stateName}, {state: stateName, field: primaryKey or objectType}, {literal: value}, {output: {member, name, path?}}, or {fromSlot: true} when supplied by an enclosing Vue slot. |
 | `config` | No | Component configuration from the released SDK catalogue. |
 | `agent` | No | Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}. |
 | `prefill` | No | ConversationEntry text placed in the page composer without sending it. |

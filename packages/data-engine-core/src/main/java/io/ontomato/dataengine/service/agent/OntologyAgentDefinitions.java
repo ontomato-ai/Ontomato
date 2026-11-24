@@ -176,15 +176,7 @@ public class OntologyAgentDefinitions {
                 "wallTimeMs",
                 Math.max(1, remainingMs),
                 "cpuSeconds",
-                Math.max(1, (remainingMs + 999) / 1000))),
-        "compaction",
-        Map.of(
-            "systemPrompt",
-            prompt(language, "data-retrieval", "compaction/system"),
-            "summarizePrompt",
-            prompt(language, "data-retrieval", "compaction/summarize"),
-            "updatePrompt",
-            prompt(language, "data-retrieval", "compaction/update")));
+                Math.max(1, (remainingMs + 999) / 1000))));
   }
   /**
    * The conversational action creator: the action maker task prompt plus the generation skill, in

@@ -13,7 +13,6 @@ import type { ApplicationPanelInputs, PanelSkillSource } from "@ontomato/contrac
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { SkillRegistry, type InstalledSkill } from "../../../../agent-runtime/src/skills";
 import { runtimeStartRunRequestSchema } from "@ontomato/contracts/agent-runtime";
-import { SessionSandbox } from "../../../../agent-runtime/src/sandbox";
 import { RuntimeStore } from "../../../../agent-runtime/src/store";
 import { RuntimeError } from "../../../../agent-runtime/src/errors";
 import { removeWorkerFiles } from "../../../../agent-runtime/src/worker";
@@ -187,7 +186,7 @@ export async function startPanelSkillEntryServer(options: {
     expect(req.body).toMatchObject({ domainId, userId: "editor" });
     res.json({ ids: [...grants] });
   });
-  const installedSessions = new Map<string, { installed: InstalledSkill[]; workspace: string; systemPrompt: string }>();
+  const installedSessions = new Map<string, { installed: InstalledSkill[]; systemPrompt: string }>();
   app.post("/v1/skills", async (req, res) => {
     expect(req.header("X-Domain-Id")).toBe(domainId);
     const rejection = options.onPublish?.(req.body);
@@ -224,16 +223,14 @@ export async function startPanelSkillEntryServer(options: {
     if (!response.ok) { res.status(response.status).json(body); return; }
     const prepared = runtimeStartRunRequestSchema.parse(body);
     const installed = await Promise.all(prepared.definition.skills.map(version => registry.resolve(host, domainId, version)));
-    const sandbox = new SessionSandbox(store, root, { development: true, python: "python3" }, scope, sessionId);
-    await sandbox.prepare(installed);
     await store.admit(scope, {
       id: runId, sessionId, domainId, status: "running", correlationId: runId, language: prepared.language,
       createdAt: new Date().toISOString(), finishedAt: null, stopReason: null, errorMessage: null,
       answerMessageId: null, workspaceCommit: null, definition: prepared.definition,
       resolvedSkills: installed.map(({ skill, digest, description }) => ({ skill, digest, description })),
       environment: { values: prepared.environment.values, secretNames: Object.keys(prepared.environment.secrets) },
-    }, runId, input);
-    installedSessions.set(sessionId, { installed, workspace: sandbox.workspace, systemPrompt: prepared.definition.systemPrompt });
+    }, runId, input, "pi");
+    installedSessions.set(sessionId, { installed, systemPrompt: prepared.definition.systemPrompt });
     res.status(202).json({
       delivery: { messageId: runId, sessionRef: { providerId: "workbench", sessionId }, runId, delivery: "run", status: "starting" },
       input: { id: runId, runId, messageSeq: 1, contextSeq: null, message: input }, pendingQuestions: [], replayed: false,
@@ -255,14 +252,13 @@ export async function startPanelSkillEntryServer(options: {
   return {
     origin, domainId, regularAgentId, entries: panelEntries,
     async installedSkill(sessionId: string, ref: RuntimeSkillRef) {
-      const { installed, workspace, systemPrompt } = installedSessions.get(sessionId)!;
+      const { installed, systemPrompt } = installedSessions.get(sessionId)!;
       const version = installed.find(entry => runtimeSkillKey(entry.skill) === runtimeSkillKey(ref))!;
       const entry = entries.find(page => runtimeSkillKey(protectedSkillRef("product-panels", domainId, page.panelId)) === runtimeSkillKey(ref))!;
       expect(systemPrompt).toContain(JSON.stringify({ entrance: entry.entrance,
         member: { source: { kind: "application-use", applicationId: entry.applicationId, useId: entry.useId }, memberPath: [], ref },
         path: entry.path }));
-      const markdown = await readFile(path.join(workspace, "skills", ref.name, "SKILL.md"), "utf8");
-      expect(markdown).toBe(await readFile(path.join(version.directory, "SKILL.md"), "utf8"));
+      const markdown = await readFile(path.join(version.directory, "SKILL.md"), "utf8");
       return { skill: version.skill, digest: version.digest, markdown };
     },
     async close() {

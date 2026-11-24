@@ -423,7 +423,13 @@ describe("ontology-visual-modeling builtin panel", () => {
     expect(source.manifest.state.selectedAttribute.deepLink).toBe(true);
     expect("deepLink" in source.manifest.state.dialog).toBe(false);
     expect("className" in source.manifest.state).toBe(false);
-    expect(source.manifest.members.attributes.data.rows.params.className).toEqual({ fromSlot: true });
+    expect(source.manifest.members.attributes.data.rows.params.className).toEqual({
+      state: "selectedNode",
+      field: "primaryKey",
+    });
+    expect(html).not.toContain(":inputs=");
+    expect(html).not.toContain("update:listed");
+    expect(module).not.toContain("onAttributesListed");
     expect("toggleable" in source.manifest.members.attributes.config).toBe(false);
   });
 
@@ -664,6 +670,13 @@ describe("ontology-visual-modeling builtin panel", () => {
           .find((btn) => btn.textContent?.includes("Add object type") || btn.textContent?.includes("添加对象类型"));
         expect(addClassBtn).toBeDefined();
       });
+      // Unselected node leaves `attributes` awaiting without issuing a read request.
+      const attrReadsWhileUnselected = harness.sent.filter(
+        (req) =>
+          req.path === "/api/product-panels/read" &&
+          (req.body as ProductPanelReadRequest).memberPath[0]?.member === "attributes",
+      );
+      expect(attrReadsWhileUnselected).toHaveLength(0);
       addClassBtn!.click();
 
       let input: HTMLInputElement | null = null;

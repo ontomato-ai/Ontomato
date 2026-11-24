@@ -51,7 +51,7 @@ export async function allocateUid(file: string): Promise<number> {
   allocations.set(file, next);
   return next;
 }
-export function assertWorkerPolicy(policy: WorkerPolicy) {
+export function assertWorkerPolicy(policy: Pick<WorkerPolicy, "development">) {
   if (
     !policy.development &&
     (process.platform !== "linux" || process.getuid?.() !== 0)

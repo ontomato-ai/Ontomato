@@ -62,8 +62,33 @@ export function domainApplicationIconChoices(checks) {
 
 export function panelRegistrationRecords({ projections = [], panels = [], applications = [] }, checks) {
   for (const { id, mode, input } of applications) {
-    if (input.declaration === undefined) continue;
     try {
+      requireMode(mode);
+      if (mode === "create") {
+        requireApplicationId(id);
+        if (input.declaration == null || input.entryAccess == null) {
+          throw new Error("Application creation requires declaration and entryAccess");
+        }
+      } else {
+        const allowed = ["entry", "panelUses", "framePanelId", "declaration"];
+        const unexpected = Object.keys(input).filter(key => !allowed.includes(key));
+        if (unexpected.length) {
+          throw new Error(`Application update does not accept ${unexpected.join(", ")}. Use entry, panelUses, optional framePanelId and optional declaration`);
+        }
+      }
+      const root = `/applications/${id}`;
+      if (!Array.isArray(input.panelUses)) throw new Error("panelUses must be an array");
+      for (const [field, path] of [
+        ["entry.path", input.entry?.path],
+        ...input.panelUses.map(({ path }, index) => [`panelUses[${index}].path`, path]),
+      ]) {
+        if (field === "entry.path" && path === root) continue;
+        if (typeof path !== "string" || !path.startsWith(root + "/") ||
+            !new URL(path, "https://panel.invalid").pathname.startsWith(root + "/")) {
+          throw new Error(`${field} must be under ${root}/`);
+        }
+      }
+      if (input.declaration === undefined) continue;
       const { icon } = input.declaration;
       if (icon !== undefined) {
         const choices = domainApplicationIconChoices(checks);
@@ -71,19 +96,19 @@ export function panelRegistrationRecords({ projections = [], panels = [], applic
           throw new Error(`declaration.icon '${icon}' is not available for a domain application. Choose one of ${choices.join(", ")}`);
         }
       }
-      if (mode === "update") checks.applicationIdentityUpdateSchema.partial().parse(input.declaration);
+      if (mode === "update") checks.applicationIdentityUpdateSchema.partial().strict().parse(input.declaration);
     } catch (error) {
       throw new Error(`application ${id}: ${error.message}`, { cause: error });
     }
   }
   return [
-    ["projection", projections, checks.registerProductProjectionRequestSchema],
-    ["panel", panels, checks.registerProductPanelRequestSchema],
+    ["projection", projections, "registerProductProjectionRequestSchema"],
+    ["panel", panels, "registerProductPanelRequestSchema"],
   ].map(([kind, records, schema]) => [
     kind,
     records.map(item => {
       requireDomainProductId(`${kind} ${item.id}`, item.id, checks);
-      const result = schema.safeParse(productBody(item));
+      const result = checks[schema].safeParse(productBody(item));
       if (!result.success) {
         throw new Error(`${kind} ${item.id}: ${registrationIssues(result.error.issues).join("\n")}`);
       }
@@ -143,10 +168,6 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
     async register(material, onRegistered, checks, recoveredProjectionPanels = new Map()) {
       const { projections = [], panels = [], applications = [], ...unknown } = material;
       if (Object.keys(unknown).length) throw new Error(`Unknown registration fields: ${Object.keys(unknown).join(", ")}`);
-      for (const { id, mode } of applications) {
-        if (mode === "create") requireApplicationId(id);
-      }
-
       async function apply(kind, items, write) {
         for (const item of items) {
           try {
@@ -160,26 +181,22 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
 
       if (projections.length || panels.length || applications.some(({ input }) => input.declaration !== undefined)) {
         checks ??= await sdk.check(await sdk.current());
-        const writes = panelRegistrationRecords({ projections, panels, applications }, checks);
-        for (const [kind, items] of writes) {
-          await apply(kind, items, async ({ id, body }) => {
-            const panelId = kind === "projection" ? recoveredProjectionPanels.get(id) : undefined;
-            const guard = panelId === undefined ? undefined : { [checks.PROJECTION_REUSE_PANEL_HEADER]: panelId };
-            const answer = await call(workbenchUrl, "PUT", productPath(kind, id), body, guard);
-            if (answer[kind].revision !== body.revision + 1) {
-              throw new Error(`Owner did not advance revision ${body.revision} by one`);
-            }
-          });
-        }
+      }
+      const writes = panelRegistrationRecords({ projections, panels, applications }, checks);
+      for (const [kind, items] of writes) {
+        await apply(kind, items, async ({ id, body }) => {
+          const panelId = kind === "projection" ? recoveredProjectionPanels.get(id) : undefined;
+          const guard = panelId === undefined ? undefined : { [checks.PROJECTION_REUSE_PANEL_HEADER]: panelId };
+          const answer = await call(workbenchUrl, "PUT", productPath(kind, id), body, guard);
+          if (answer[kind].revision !== body.revision + 1) {
+            throw new Error(`Owner did not advance revision ${body.revision} by one`);
+          }
+        });
       }
       await apply("application", applications, async ({ id, mode, input }) => {
-        requireMode(mode);
         const application = `/platform/applications/${encodeURIComponent(id)}`;
         const path = `${application}/panel-uses`;
         if (mode === "create") {
-          if (input.declaration === undefined || input.entryAccess === undefined) {
-            throw new Error("Application creation requires declaration and entryAccess");
-          }
           // Reject an occupied ID before sending its creation body.
           const existing = await send(ontologyUrl, "GET", path);
           if (existing.status !== 404) {
@@ -191,7 +208,6 @@ export function panelRegistrationClient({ workbenchUrl, ontologyUrl = `${workben
         }
 
         const { declaration, ...entries } = input;
-        if (entries.entryAccess !== undefined) throw new Error("Application update takes entry, panelUses and optional identity");
         let identity;
         if (declaration !== undefined) {
           const answer = await call(ontologyUrl, "GET", `/platform/applications/catalogue/${encodeURIComponent(id)}`);

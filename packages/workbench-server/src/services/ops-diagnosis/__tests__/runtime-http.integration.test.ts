@@ -24,7 +24,7 @@ const queryServiceToken = "ops-query-fixture";
 if (!database)
   throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
 describe("diagnosis through real host/runtime/PG/skill processes", () => {
-  let model: Server, host: ChildProcess, runtime: ChildProcess, root: string, hostUrl = "", runtimeUrl = "", modelUrl = "";
+  let model: Server, host: ChildProcess, root: string, hostUrl = "", runtimeUrl = "", modelUrl = "";
   const schema = `ops_${randomUUID().replaceAll("-", "")}`, children: ChildProcess[] = [];
   const callers = new Map<string, { userId: string; domainId: string; expiresAt: number }>();
   const pool = new pg.Pool({ connectionString: database });
@@ -33,7 +33,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
   async function freePort() { const s = createServer(); await new Promise<void>((r) => s.listen(0, "127.0.0.1", r)); const port = (s.address() as { port: number }).port; await new Promise<void>((r) => s.close(() => r())); return port; }
   async function launch(kind: "host" | "runtime") {
     const port = Number(new URL(kind === "host" ? hostUrl : runtimeUrl).port);
-    const child = spawn(process.execPath, ["--import", tsx, kind === "runtime" ? path.join(repo, "apps/agent-runtime/src/index.ts") : path.join(repo, "packages/workbench-server/src/services/ops-diagnosis/__tests__/host-process.ts")], {
+    const child = spawn(process.execPath, ["--import", tsx, kind === "runtime" ? path.join(repo, "apps/agent-runtime/src/__tests__/fixtures/runtime-process.ts") : path.join(repo, "packages/workbench-server/src/services/ops-diagnosis/__tests__/host-process.ts")], {
       cwd: repo, env: { ...process.env, NODE_ENV: "test", HTTP_PROXY: "", HTTPS_PROXY: "", ALL_PROXY: "", NO_PROXY: "127.0.0.1,localhost",
         DATABASE_URL: database, PG_SCHEMA: schema, OPS_TEST_ROOT: path.join(root, "host"), PORT: String(port), DATA_QUERY_BASE_URL: modelUrl, DATA_QUERY_API_KEY: "",
         OBSERVE_TRACE_WORKSPACE_ROOT: path.join(root, "traces"), AGENT_RUNTIME_DATABASE_URL: database, AGENT_RUNTIME_SCHEMA: schema + "_runtime", AGENT_RUNTIME_ROOT: path.join(root, "runtime"),
@@ -159,7 +159,9 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
         if (last.role === "tool") { frame({ role: "assistant", content: "Read service evidence; no remediation was executed." }); frame({}, "stop"); }
         else {
           const user = [...input.messages].reverse().find((m: any) => m.role === "user");
-          const command = String(user?.content).includes("hold") ? "sleep 30" : `node skills/ops-diagnosis/scripts/ops.mjs logs '{"service":"workbench","limit":2}'`;
+          const userText = typeof user.content === "string" ? user.content
+            : user.content.map((part: { text?: string }) => part.text ?? "").join("");
+          const command = userText.includes("hold") ? "sleep 30" : `node skills/ops-diagnosis/scripts/ops.mjs logs '{"service":"workbench","limit":2}'`;
           frame({ role: "assistant", tool_calls: [{ index: 0, id: "call-" + modelCalls, type: "function", function: { name: "bash", arguments: JSON.stringify({ command }) } }] }); frame({}, "tool_calls");
         }
         res.end("data: [DONE]\n\n"); return;
@@ -168,7 +170,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     });
     await new Promise<void>((r) => model.listen(0, "127.0.0.1", r)); modelUrl = `http://127.0.0.1:${(model.address() as { port: number }).port}`;
     runtimeUrl = `http://127.0.0.1:${await freePort()}`; hostUrl = `http://127.0.0.1:${await freePort()}`;
-    runtime = await launch("runtime"); host = await launch("host");
+    await launch("runtime"); host = await launch("host");
   }, 60000);
   afterAll(async () => {
     for (const child of children.reverse()) await stop(child);

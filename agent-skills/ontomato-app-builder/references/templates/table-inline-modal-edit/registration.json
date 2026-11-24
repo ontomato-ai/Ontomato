@@ -16,7 +16,7 @@
       "mode": "create",
       "input": {
         "entry": {
-          "path": "/applications/app-course-catalogue",
+          "path": "/applications/app-course-catalogue/courses",
           "renderer": "panels"
         },
         "entryAccess": [

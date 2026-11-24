@@ -383,7 +383,6 @@ beforeAll(async () => {
           skills: [],
           sandbox: { limits: {} },
           externalMcp: [],
-          compaction: { systemPrompt: "", summarizePrompt: "", updatePrompt: "" },
         },
       },
       cursor: { runId, seq: 0, streamId: randomUUID() },

@@ -11,6 +11,7 @@ export const agentDefinitionTypeDetail = {
     { name: "icon", type: "string | null", description: "The agent's icon reference, when one is configured." },
     { name: "enabled", type: "boolean", description: "Whether the agent is enabled for use." },
     { name: "systemPrompt", type: "string", description: "The instructions supplied to the agent as its system prompt." },
+    { name: "engine", type: "pi | codex", description: "The execution engine selected for new sessions." },
     { name: "modelSelection", type: "ModelSelection", description: "The selected model, with a null model ID using the domain default." },
     { name: "skills", type: "RuntimeSkillRef[]", description: "The skill references selected for the agent." },
     { name: "classNames", type: "string[]", description: "The ontology class names in the agent's configured data scope." },

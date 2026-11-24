@@ -76,6 +76,7 @@ export const platformOntologyEn = {
   "platformOntology.typeDetails.agentDefinition.properties.icon": "The agent's icon reference, when one is configured.",
   "platformOntology.typeDetails.agentDefinition.properties.enabled": "Whether the agent is enabled for use.",
   "platformOntology.typeDetails.agentDefinition.properties.systemPrompt": "The instructions supplied to the agent as its system prompt.",
+  "platformOntology.typeDetails.agentDefinition.properties.engine": "The execution engine selected for new sessions.",
   "platformOntology.typeDetails.agentDefinition.properties.modelSelection": "The selected model, with a null model ID using the domain default.",
   "platformOntology.typeDetails.agentDefinition.properties.skills": "The skill references selected for the agent.",
   "platformOntology.typeDetails.agentDefinition.properties.classNames": "The ontology class names in the agent's configured data scope.",

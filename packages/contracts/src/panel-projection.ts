@@ -388,6 +388,15 @@ export function authoredReadParameterSource(
   return input && !("literal" in input) ? input : member?.outputs?.[name];
 }
 
+/** A read bound to an identity field waits for the object supplying that field. */
+export function readParameterUsesStateField(
+  source: ReturnType<typeof authoredReadParameterSource>,
+  member: Pick<PanelMember, "inputs">,
+): boolean {
+  const binding = source && "input" in source ? member.inputs?.[source.input] : source;
+  return binding !== undefined && "field" in binding;
+}
+
 /** Registration checks the projection, its placement and the active catalogue for a required parameter's source. */
 export function missingRequiredReadParameters(
   declaration: PlatformReadDeclaration,

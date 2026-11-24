@@ -5,6 +5,23 @@ description: "Compose, check and register panel applications with the Ontomato S
 
 # Ontomato app builder
 
+**Application IDs start with `app-`. Put application and entry paths under `/applications/<app-id>/`.**
+
+Run these through `node "$SKILL/scripts/ontomato.mjs"`.
+
+```text
+sdk current
+sdk read docs/components.md
+panel type <id> [--read <name>]
+panel check <dir>
+panel register <dir>
+```
+
+Use `sdk current` for release information and `panel type` for object types. There is no `sdk list` or top-level `read ObjectType`.
+
+Run `panel scaffold <type> <new directory>` to draft separate `catalog/` and `detail/` panels. Check both
+directories, then register the catalog first and the detail second to create the application.
+
 ## Rules for authoring pages
 
 **Rules the author must follow (not machine-checked, or not yet checked)**

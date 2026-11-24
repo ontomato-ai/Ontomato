@@ -1,4 +1,5 @@
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import { assistantAgentDefinitionSchema } from "@ontomato/contracts/assistant-chat";
 import type { AgentInput } from "@ontomato/contracts/agent-channel";
 import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
@@ -6,10 +7,10 @@ import { ASSISTANT_INTERACTION_CONTEXT } from "./interaction-context";
 import { prepareAssistantSkills, needsRetrievalScope, hasGovernanceSkill } from "./skills";
 import { assistantStore, type AgentRow, type AssistantOwner, type SessionRow, type TurnRow } from "./store";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { runDefinition, userSkillEnvironment, type AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { runDefinition, type AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { effectiveSystemPrompt } from "./prompts";
 import {assistantOntologyContext} from "./context";
-import {executionSkillEnvironment} from "./execution-callback";
+import { executionBusinessCallbacks, governanceBusinessCallback, productBusinessCallback } from "./execution-callback";
 import {executionCallerCredentials} from "./execution";
 import { resolveLocale } from "../../i18n";
 import { recentUserMessages } from "./user-quotes";
@@ -17,8 +18,6 @@ import { OntologyRetrievalClient } from "./ontology-retrieval";
 import { getQueryTimeoutMs } from "../../config/query-settings";
 import {profileForSession,profileSourceForSession} from '../product-assets/agent-profile';
 import {profileRuntimeTools} from '../product-assets/runtime-tools';
-import {callbackCredential} from '../agent-runtime/callback-credential';
-import {environment} from '../../config/environment';
 import { agentVisibilityPrompt, type AgentVisibilityReader } from "../agent-host/visibility";
 import { createLogger } from "../../logging/logger";
 
@@ -68,8 +67,6 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const businessCredentials=executionCallerCredentials(executionCredentials,opened.id);
   const profile=await profileForSession(owner,credentials,session.id,session.agent_id,businessCredentials,source);
   mark("profile");
-  const skillEnvironment=profile?{values:{ONTOMATO_WORKBENCH_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,'')},secrets:{}}
-    :executionUserId===null?userSkillEnvironment(credentials):executionSkillEnvironment(owner,credentials,id);
   if(retrieval)ontologyContext=await assistantOntologyContext(a,businessCredentials);
   if (retrieval) mark("ontology-overview");
   const externalContext = externalVariables && Object.keys(externalVariables).length
@@ -89,8 +86,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
   const instructions = profile
     ? profile.instructions+'\n\nProduct projection interfaces (not authorization):\n'+JSON.stringify({tools:profile.tools,contextViews:profile.contextViews,issues:profile.issues,...('objectContext' in profile?{objectContext:profile.objectContext}:{})})
     : effectiveSystemPrompt(a,resolveLocale(credentials.locale)) + (retrieval ? "\n\nInitial ontology context:\n"+ontologyContext : "") + externalContext + pageContext + skippedPageSkillContext;
-  const panelEnvironment=profile?null:executionUserId===null?executionSkillEnvironment(owner,credentials,id):skillEnvironment;
-  const governance=hasGovernanceSkill(skillRefs),callbackPath=`/api/assistant/sessions/${session.id}/governance-window`;
+  const governance=hasGovernanceSkill(skillRefs);
   const artifactInstructions = [
     ARTIFACT_MARKDOWN_PROMPT,
     reader ? agentVisibilityPrompt(reader) : "",
@@ -98,27 +94,40 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
       ? "Read the delegated result with agent read and files:true. When downloaded[].dataset supplies the needed rows and scope, reuse it without another file read. Follow the host's delivery mode: for reports, cite downloaded[].path inside the report and link the report in chat; otherwise answer directly and cite downloaded[].path. Read the file separately only when evidence is missing."
       : "",
   ].filter(Boolean).join("\n\n");
+  const businessCallbacks = profile
+    ? {
+        product: productBusinessCallback(
+          profile.id,
+          profile.releaseId,
+          id,
+          Date.now() + getQueryTimeoutMs(),
+          credentials,
+        ),
+      }
+    : {
+        ...executionBusinessCallbacks(owner, credentials, id),
+        ...(governance
+          ? {
+              governance: governanceBusinessCallback(
+                session.id,
+                id,
+                new Date(turn.created_at).getTime() + getQueryTimeoutMs(),
+                credentials,
+              ),
+            }
+          : {}),
+      };
   return {
     language: resolveLocale(credentials.locale), input,
-    definition: {agentId:session.agent_id,...runDefinition(instructions+"\n\n"+artifactInstructions+"\n"+ASSISTANT_INTERACTION_CONTEXT,
+    definition: {agentId:session.agent_id,engine:assistantAgentDefinitionSchema.shape.engine.parse(a.engine),...runDefinition(instructions+"\n\n"+artifactInstructions+"\n"+ASSISTANT_INTERACTION_CONTEXT,
       a.model_selection.modelId,skills,credentials.locale,profile?[]:a.enabled_mcp_service_ids.map(id=>({id})),prepared?.pageControl??false),
       ...(profile?{productTools:profileRuntimeTools(profile,sessionId),toolSurface:"product" as const}:{})},
     environment: {
       values: {
-        ...skillEnvironment.values,
-        ...(panelEnvironment?{
-          ONTOMATO_PANEL_OPERATIONS_URL:panelEnvironment.values.ONTOMATO_PANEL_OPERATIONS_URL,
-          ONTOMATO_AUTHORING_URL:panelEnvironment.values.ONTOMATO_AUTHORING_URL,
-        }:{}),
-        ONTOMATO_ASSISTANT_SESSION_ID:session.id,
-        ...(retrieval?{ONTOMATO_RETRIEVAL_CALLER_ID:turn.retrieval_scope_id!}:{}),
-        ...(governance?{ONTOMATO_GOVERNANCE_WINDOW_URL:environment.agentRuntime().callbackUrl.replace(/\/$/,"")+callbackPath}:{}),
-        ...(externalContext?{ONTOMATO_EXTERNAL_VARIABLES:JSON.stringify(externalVariables)}:{}),
+        ONTOMATO_ASSISTANT_SESSION_ID: session.id,
       },
-      secrets: {...skillEnvironment.secrets,...(panelEnvironment?{ONTOMATO_EXECUTION_CALLBACK:panelEnvironment.secrets.ONTOMATO_EXECUTION_CALLBACK}:{}),
-        ...(governance?{ONTOMATO_GOVERNANCE_CALLBACK:callbackCredential({pathPrefix:callbackPath,runId:turn.id,expiresAt:new Date(turn.created_at).getTime()+getQueryTimeoutMs(),token:credentials.token??"",apiKey:credentials.apiKey??""}).value}:{}),
-        ...(profile?{ONTOMATO_PRODUCT_CALLBACK:callbackCredential({pathPrefix:`/api/product-assets/${encodeURIComponent(profile.id)}/releases/${profile.releaseId}/tools/`,runId:id,expiresAt:Date.now()+getQueryTimeoutMs(),token:credentials.token??'',apiKey:credentials.apiKey??''}).value}:{}),
-      },
+      secrets: {},
     },
+    businessCallbacks,
   };
 }

@@ -80,7 +80,7 @@ Example application item in `registration.json` (two entries: menu catalog + hid
   "id": "app-my-management-page",
   "mode": "create",
   "input": {
-    "entry": { "path": "/applications/app-my-management-page", "renderer": "panels" },
+    "entry": { "path": "/applications/app-my-management-page/catalog", "renderer": "panels" },
     "declaration": {
       "names": { "en": "Management", "zh-CN": "管理应用" },
       "descriptions": { "en": "Management example", "zh-CN": "管理应用示例" },

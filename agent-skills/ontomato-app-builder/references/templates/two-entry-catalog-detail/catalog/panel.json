@@ -35,13 +35,11 @@
     "messages": {
       "en": {
         "panel.name": "Agent Definitions",
-        "command.new": "New Agent Definition",
-        "dialog.createTitle": "New Agent Definition"
+        "command.new": "New Agent Definition"
       },
       "zh-CN": {
         "panel.name": "\u667a\u80fd\u4f53\u5b9a\u4e49",
-        "command.new": "\u65b0\u5efa\u667a\u80fd\u4f53\u5b9a\u4e49",
-        "dialog.createTitle": "\u65b0\u5efa\u667a\u80fd\u4f53\u5b9a\u4e49"
+        "command.new": "\u65b0\u5efa\u667a\u80fd\u4f53\u5b9a\u4e49"
       }
     }
   }

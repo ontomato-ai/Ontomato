@@ -30,7 +30,6 @@ function baseDefinition(overrides: Partial<RuntimeAgentDefinition> = {}): Runtim
     externalMcp: [],
     toolSurface: "standard",
     productTools: [],
-    compaction: { systemPrompt: "", summarizePrompt: "", updatePrompt: "" },
     ...overrides,
   };
 }
@@ -40,10 +39,8 @@ function baseRequest(definition: RuntimeAgentDefinition): RuntimeStartRunRequest
     language: "en",
     definition,
     input: { role: "user", content: "hi", timestamp: 1 },
-    environment: {
-      values: { ONTOMATO_WORKBENCH_URL: "http://workbench.test" },
-      secrets: { ONTOMATO_PRODUCT_CALLBACK: "prod-secret" },
-    },
+    environment: { values: {}, secrets: {} },
+    businessCallbacks: { product: { baseUrl: "http://workbench.test/api/product-assets/orders/releases/12345678-1234-4234-8234-123456789012/tools", credential: "wbc1.prod-secret" } },
   };
 }
 
@@ -337,27 +334,25 @@ describe("bindPlatformTools", () => {
 });
 
 describe("registerSkillCallbackRoutes", () => {
-  it("mounts only the run-scoped skill command callback route", async () => {
-    const runChannelCommand = vi.fn(async () => ({ agents: [] }));
+  it("mounts only the session-scoped skill command callback route", async () => {
+    const sessionChannelCommand = vi.fn(async () => ({ agents: [] }));
     const app = express();
     app.use(express.json());
-    registerSkillCallbackRoutes(app, { runChannelCommand });
+    registerSkillCallbackRoutes(app, { sessionChannelCommand });
     const server = app.listen(0, "127.0.0.1");
     await new Promise<void>((resolve) => server.once("listening", resolve));
     const port = (server.address() as AddressInfo).port;
     const baseUrl = `http://127.0.0.1:${port}`;
-    const runId = "22222222-2222-4222-8222-222222222222";
     const sessionId = "11111111-1111-4111-8111-111111111111";
 
     try {
       const ok = await fetch(
-        `${baseUrl}/v1/channel/hosts/test-host/domains/a/runs/${runId}/commands`,
+        `${baseUrl}/v1/channel/hosts/test-host/domains/a/sessions/${sessionId}/commands`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "X-Ontomato-Callback-Credential": "secret-1",
-            "X-Ontomato-Run-Id": runId,
             "X-Ontomato-Session-Id": sessionId,
           },
           body: JSON.stringify({ op: "list" }),
@@ -365,11 +360,10 @@ describe("registerSkillCallbackRoutes", () => {
       );
       expect(ok.status).toBe(200);
       expect(await ok.json()).toEqual({ agents: [] });
-      expect(runChannelCommand).toHaveBeenCalledWith(
+      expect(sessionChannelCommand).toHaveBeenCalledWith(
         { hostId: "test-host", domainId: "a" },
-        runId,
+        sessionId,
         "secret-1",
-        runId,
         undefined,
         { op: "list" },
       );

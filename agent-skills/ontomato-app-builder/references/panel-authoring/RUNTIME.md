@@ -112,7 +112,7 @@ Read-only outputs stay separate from the panel's writable public `manifest.state
 function usePanelOutput<T extends RuntimeJsonValue = RuntimeJsonValue>(member: string, name: string): ComputedRef<T | null>
 ```
 
-Outputs are published by mounted projections. Subscribing with `usePanelOutput` alone never mounts a
+`usePanelOutput` reads from `instance.outputs`. Outputs are published by mounted projections. Subscribing never mounts a
 member or starts its reads. The component requests its named data when it mounts. An output with no
 published value is `null`. Use an `inputs` binding such as `{ output: { member, name, path } }` to connect
 the output directly to another member. Omit `path` for the whole value or use a JSON Pointer for a nested value.
@@ -268,10 +268,9 @@ function usePanelBack(active: MaybeRefOrGetter<boolean>, onBack: () => void, opt
 ```
 
 Back layers close last-in first-out. `<sdk-dialog>` and `<sdk-drawer>` automatically guard dirty forms registered
-through `useProjectionForm` inside them before closing on close-button click, backdrop click, or Escape (leaving
-Escape handling enabled while the back handler yields). Panels do not need a custom unsaved-changes guard in the
-overlay's `v-model` setter or `:before-close` for those forms; wire `usePanelBack` when browser Back or an
-explicit in-panel back button should also close the layer.
+through `useProjectionForm` before closing via the close button, backdrop, Escape, or `handleClose()`. Discarding
+clears only the dirty forms inside that overlay. Bind `v-model` directly to its open state. Use `usePanelBack` for
+an in-panel sub-view with its own Back action.
 
 
 ### UsePanelBackOptions
@@ -324,7 +323,12 @@ display the owner's missing, forbidden, or error state in place. Owner-declared 
 For the current list batch, read `usePanelOutput("list", "listed")`. It returns typed references when ready,
 `[]` when empty, and `null` when unavailable or before the first result. Keep the output separate from public
 state. Searches, filters, sorting, and paging preserve the selection. Only default-select when there was no
-selection on open. Keep a specified missing or forbidden selection in place.
+selection on open. Keep a specified missing or forbidden selection in place. Use `v-show` to retain a list across
+tab switches. `total` is owner-reported, `loadedCount` counts loaded rows, and `filteredCount` counts local matches
+only for a complete unpaged list without server search. Unavailable counts are `null`.
+
+Before refreshing for `affected.removed`, `letGo(removed)` discards drafts targeting removed objects or bound to
+parent state about to be cleared. It then clears matching object state and removes deleted references from checked lists.
 
 ### usePanelOperation
 
@@ -424,6 +428,8 @@ updating the editor or announcing a successful write.
 - On `decision: "confirm"`, read `response`. If its kind is `not-dispatched`, show its message.
 - For a single dispatched call, `response.outcome.kind === "success"` confirms the write. Use its `data` and then
   show success. On `refusal` or `failure`, keep the edits and show the owner's message and any named field errors.
+- A successful create carries the owner-reported `created: { objectType, primaryKey }`, also available as
+  `operation.created` on completion. Without it, the success has no key to navigate to. Use `affected` for refresh.
 - A null or `unknown` outcome leaves the result unconfirmed. A batch receipt reports one outcome per item.
 
 ## Page header and navigation
@@ -493,7 +499,11 @@ Assistants beside a displayed panel operate directly through four live tools on 
 The mounted `ObjectForm` owns its live values and submission. When an agent's same-page `present` would switch
 a dirty form's target or unmount it, the host returns `blocked_unsaved`. Unrelated state updates succeed while
 the dirty form stays mounted on the same target. Human controls that switch, close, or cancel a form use the
-panel's unsaved confirmation.
+panel's unsaved confirmation. `ObjectForm` also guards changes to both its `requestedTarget` and
+`requestedFixedValues` before taking up the new target or fixed values.
+
+When a selection watcher resets related fields, use `instance.state.lastPatchedKeys` to preserve fields explicitly
+set in the same state patch, such as a trial dialog and its parameters supplied together by `present`.
 
 Use `v-if` or operation availability/disabled conditions when an entry cannot be used now. Use `v-show` for
 stateful content the reader could still use after switching a tab, expanding a section, or returning to a list.

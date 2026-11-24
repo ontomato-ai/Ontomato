@@ -4,7 +4,7 @@ import { createI18n } from "vue-i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { panelAddress, type ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
-import { USER } from "@ontomato/contracts/platform-object-types";
+import { ATTRIBUTE, OBJECT_TYPE, USER } from "@ontomato/contracts/platform-object-types";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import { panelModuleFor, useMemberData, useMemberOutput, usePanelOutput, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
@@ -118,4 +118,70 @@ it("wires a member's draft to reactive props and reads without exposing it as pu
   expect(addresses.at(-1)).toBe("/bindings?selected=A");
   expect(() => mount.setState!({ code: "injected" })).toThrow(/no field 'code'/u);
   expect(() => context.instance.memberParam("reader", "code").set("injected")).toThrow(/cannot be set/u);
+});
+
+
+it("waits for a selected object, reads its key as className and publishes the member output", async () => {
+  const reader = defineComponent({
+    props: ["objectType"],
+    setup(props) {
+      const rows = useMemberData("rows");
+      useMemberOutput("loadedType", () => rows.value.status === "ready" ? props.objectType : null);
+      return () => h("output", { id: "read-status" }, rows.value.status);
+    },
+  });
+  const projection: DirectProjection = {
+    id: "attributes", domainId: "d", ownerId: "o", createdAt: "", updatedAt: "", editable: false,
+    visibility: "domain", name: "Attributes", description: "", revision: 1, config: {},
+    componentId: "domain-component:attributes", outputs: { loadedType: { kind: "scalar", type: "string" } },
+    inputs: { className: { kind: "scalar", type: "string" }, objectType: { kind: "scalar", type: "string" } },
+    data: { rows: {
+      source: { type: { kind: "PlatformObjectType", id: ATTRIBUTE } },
+      read: "list", params: { className: { input: "className" } },
+    } },
+  };
+  const manifest = definePanel({
+    state: { selectedNode: { type: { kind: "object", objectType: OBJECT_TYPE } } },
+    members: { attributes: {
+      target: { projectionId: projection.id },
+      inputs: {
+        className: { state: "selectedNode", field: "primaryKey" },
+        objectType: { state: "selectedNode", field: "objectType" },
+      },
+    } },
+  });
+  const element = document.createElement("div");
+  document.body.append(element);
+  const reads: RuntimeJsonValue[] = [];
+  const { mountPanel } = panelModuleFor({
+    manifest, element, template: '<Projection slot="attributes"/><output id="published">{{ published }}</output>',
+    run: directRun({ pageKey: "attributes", url: () => "/attributes", label: () => "Attributes", initial: {} }),
+    mounted: ({ dispose: disposePanel }) => { dispose = disposePanel; },
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    messages: {}, locale: ref("en"), defaultLocale: "en", use: null,
+    requests: { request: async () => { throw new Error("This test sends reads through the panel read port"); } },
+    ...noOperations,
+    readProjection: async () => ({
+      projection,
+      domainComponent: { domainId: "d", componentId: projection.componentId, revision: 1, source: { template: "<div/>" } },
+    }),
+    loadDomainComponent: async () => reader,
+    read: async (request): Promise<ProductPanelReadResponse> => {
+      if (request.operations) return { status: "ready", value: {} };
+      reads.push(request.inputs.className);
+      return { status: "ready", value: [] };
+    },
+  });
+  const { context } = await mountPanel({
+    setup() { return { published: usePanelOutput("attributes", "loadedType") }; },
+  });
+
+  await vi.waitFor(() => expect(element.querySelector("#read-status")?.textContent).toBe("awaiting"));
+  expect(reads).toEqual([]);
+  context.instance.state.set("selectedNode", { className: OBJECT_TYPE, primaryKey: "Device" });
+  await vi.waitFor(() => expect(element.querySelector("#published")?.textContent).toBe(OBJECT_TYPE));
+  expect(reads).toEqual(["Device"]);
+  context.instance.state.set("selectedNode", null);
+  await vi.waitFor(() => expect(element.querySelector("#read-status")?.textContent).toBe("awaiting"));
+  expect(reads).toEqual(["Device"]);
 });

@@ -177,7 +177,8 @@
             "read": "list",
             "params": {
               "className": {
-                "fromSlot": true
+                "state": "selectedNode",
+                "field": "primaryKey"
               }
             }
           }

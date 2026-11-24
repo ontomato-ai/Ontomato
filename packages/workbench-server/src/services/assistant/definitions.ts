@@ -45,6 +45,7 @@ const view = (a: AgentRow, locale?: string) =>
     description: assistantDescription(a, locale),
     icon: a.icon ?? null,
     enabled: a.enabled,
+    engine: a.engine,
     modelSelection: a.model_selection,
     skills: a.skills,
     classNames: a.class_names,
@@ -199,6 +200,7 @@ export async function saveAgentDefinitionSnapshot(
       set("description", "description", input.description === assistantDescription(agent, locale) ? agent.description : input.description);
       set("enabled", "enabled", input.enabled);
       set("systemPrompt", "system_prompt", storedSystemPrompt(agent.kind, input.systemPrompt, locale));
+      set("engine", "engine", input.engine);
       set("modelSelection", "model_selection", JSON.stringify(input.modelSelection));
       set("modelSelection", "model_reference_migrated", true);
       set("icon", "icon", input.icon);
@@ -250,7 +252,7 @@ export async function createAgentDefinitionSnapshot(
     if (input.executionUserId != null)
       await prepareExecutionSetting(owner, null, input.executionUserId, credentials);
     const inserted = await pool.query(
-      `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_selection,skills,icon,class_names,enabled_mcp_service_ids,sort_order,execution_user_id) VALUES($1::uuid,$2,($1::uuid)::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING`,
+      `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_selection,skills,icon,class_names,enabled_mcp_service_ids,sort_order,execution_user_id,engine) VALUES($1::uuid,$2,($1::uuid)::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT DO NOTHING`,
       [
         id,
         owner.domainId,
@@ -265,6 +267,7 @@ export async function createAgentDefinitionSnapshot(
         JSON.stringify(input.enabledMcpServiceIds),
         assistantAgentDefinitionSchema.shape.sortOrder.parse(input.sortOrder),
         executionUserId,
+        input.engine,
       ],
     );
     const actual = await readStoredAgentDefinition(id, owner);
