@@ -3541,6 +3541,24 @@ test("targetless customer Actions live in top-level type table operations and om
 
 });
 
+test("projectionOperation places a row target without a member input binding", () => {
+  const manifest = panelManifestSchema.parse({
+    state: {},
+    members: { list: { target: { projectionId: "skills-list" } } },
+  });
+  const placed = projectionOperation(manifest, "list", "export", {
+    kind: "action",
+    effect: "read",
+    batch: false,
+    handlerRef: "skills.export",
+    label: "Export",
+    target: { source: "row" },
+    inputSchema: {},
+    resultSchema: {},
+  });
+  assert.deepEqual(panelOperationSchema.parse(placed).target, { source: "row" });
+});
+
 test("projectionOperation preserves draft targets on read actions so panelOperationSchema accepts them", () => {
   const manifest = panelManifestSchema.parse({
     state: {},

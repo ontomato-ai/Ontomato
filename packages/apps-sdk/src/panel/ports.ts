@@ -64,6 +64,7 @@ function operationTarget(
   state: Readonly<Record<string, PanelFieldValue>>,
 ): PanelOperationCall["target"] {
   if (!operation.target || operation.target.source === "none") return null;
+  if (operation.target.source === "row") throw new Error(`Operation '${operation.id}' requires a row target`);
   if (operation.target.source === "draft") return { kind: "draft" };
   if (operation.target.source === "literal") {
     const { className, primaryKey } = operation.target.literal;

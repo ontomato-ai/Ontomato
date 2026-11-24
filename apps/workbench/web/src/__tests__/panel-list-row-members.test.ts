@@ -13,7 +13,8 @@ import {
   type DirectPanelInstance,
   type PanelMemberReadRequest,
 } from "../../../../../packages/apps-sdk/src/panel/direct";
-import type { PanelWriteInvocation } from "../../../../../packages/apps-sdk/src/panel/human-operations";
+import type { PanelHumanOperations, PanelWriteInvocation } from "../../../../../packages/apps-sdk/src/panel/human-operations";
+import { runPanel, type PanelRunReports } from "../../../../../packages/apps-sdk/src/panel/lifecycle";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
@@ -59,6 +60,8 @@ function mountPanel(options: {
   members: readonly string[];
   messages?: Record<string, Record<string, string>>;
   initial?: Record<string, unknown>;
+  readOperation?: PanelHumanOperations["read"];
+  reportOperations?: PanelRunReports["operations"];
   listeners?: Record<string, Record<string, (...args: unknown[]) => void>>;
   memberSlots?: (
     instance: DirectPanelInstance,
@@ -76,6 +79,7 @@ function mountPanel(options: {
     ...noOperations,
     operations: {
       ...noOperations.operations,
+      read: options.readOperation ?? noOperations.operations.read,
       async prepare(operationId, invocation, memberPath) {
         preparedCalls.push({ operationId, invocation, memberPath });
         return {
@@ -109,13 +113,30 @@ function mountPanel(options: {
   document.body.appendChild(element);
   const resolvedSlots = options.memberSlots?.(instance);
   const app = createApp({
-    setup: () => () =>
-      h(
+    setup() {
+      if (options.reportOperations) {
+        runPanel({
+          instance,
+          address: ref("/panels/tasks"),
+          isDirty: () => false,
+          projectionChanged() {},
+          refreshObject() {},
+          reports: {
+            state() {},
+            context() {},
+            dirty() {},
+            operations: options.reportOperations,
+            failed(reason) { throw reason; },
+          },
+        });
+      }
+      return () => h(
         "div",
         options.members.map((member) =>
           h(PanelMember, { instance, member, key: member, ...(options.listeners?.[member] ?? {}) }, resolvedSlots?.[member]),
         ),
-      ),
+      );
+    },
   })
     .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } as never }))
     .use(ElementPlus);
@@ -130,6 +151,78 @@ function mountPanel(options: {
 }
 
 describe("ObjectList action column, Vue slots, batch rowOperations, and read-only outputs", () => {
+  it("mounts top-level row reads and writes without a selection input and uses the clicked row", async () => {
+    const projection: DirectProjection = {
+      ...meta,
+      id: "tasks-list",
+      name: "Tasks",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: {
+        columns: [{ key: "label", labelKey: "col.name" }],
+        rowActions: {
+          maxVisible: 2,
+          items: [
+            { kind: "operation", operation: "inspect" },
+            { kind: "operation", operation: "remove" },
+          ],
+        },
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+      operations: {
+        inspect: { operation: { kind: "PlatformOperation", id: "schedules.inspectTask" }, target: { row: true } },
+        remove: { operation: { kind: "PlatformOperation", id: "schedules.deleteTask" }, target: { rowField: "related" } },
+      },
+    };
+    const manifest = definePanel({
+      state: {},
+      members: { tasks: { target: { projectionId: projection.id } } },
+    });
+    const readOperation = vi.fn<Parameters<PanelHumanOperations["read"]>, ReturnType<PanelHumanOperations["read"]>>(
+      async () => ({ kind: "json", value: {} }),
+    );
+    const reportOperations = vi.fn();
+    const { element, preparedCalls } = mountPanel({
+      manifest,
+      projections: { [projection.id]: projection },
+      members: ["tasks"],
+      messages: { en: { "col.name": "Task" } },
+      readOperation,
+      reportOperations,
+      answer(request) {
+        if (!request.operations) return ready([{
+          primaryKey: "clicked", label: "Task",
+          fields: { related: { kind: "reference", className: SCHEDULED_TASK, primaryKey: "related", label: "Related task" } },
+        }]);
+        const descriptor = { kind: "action", target: { source: "row" }, inputSchema: {}, resultSchema: {}, batch: false };
+        return ready({
+          inspect: { ...descriptor, effect: "read", handlerRef: "schedules.inspectTask", label: "Inspect" },
+          remove: { ...descriptor, effect: "write", handlerRef: "schedules.deleteTask", label: "Remove" },
+        });
+      },
+    });
+    const buttons = await vi.waitFor(() => {
+      const actions = element.querySelectorAll<HTMLButtonElement>("tbody .sdk-object-list-row-actions button");
+      expect(actions).toHaveLength(2);
+      return actions;
+    });
+    expect(reportOperations).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ id: "tasks.inspect", target: { source: "row" } }),
+      expect.objectContaining({ id: "tasks.remove", target: { source: "row" } }),
+    ]));
+    buttons[0]!.click();
+    await vi.waitFor(() => expect(readOperation).toHaveBeenCalledWith("tasks.inspect", {
+      target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "clicked" }, input: {},
+    }, undefined));
+    await vi.waitFor(() => expect(buttons[1]!.disabled).toBe(false));
+    buttons[1]!.click();
+    await vi.waitFor(() => expect(preparedCalls[0]).toMatchObject({
+      operationId: "tasks.remove",
+      invocation: { call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "related" } } },
+    }));
+  });
+
   it("renders built-in rowActions (inline + overflow More + local + conditional + batch rowOperations) and column widths", async () => {
     const rows = [
       { primaryKey: "t-1", label: "Daily Sync", fields: { status: "active", schedule: "0 0 * * *" } },

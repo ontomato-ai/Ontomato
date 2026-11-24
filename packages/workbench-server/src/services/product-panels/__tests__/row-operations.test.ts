@@ -728,7 +728,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     ]);
   });
 
-  it("blocks bound parameter overrides on read operations and row-targeted primaryKey bindings server-side", async () => {
+  it("admits row reads without a selection and requires a concrete target with server-bound parameters", async () => {
     const readOp: serverOperations.PanelReadServerOperation = {
       effect: "read",
       kind: "action",
@@ -779,6 +779,23 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
         },
       },
     }));
+
+    await expect(readProductPanelData(owner, credentials, {
+      source: { kind: "registered", applicationId: "A", useId: "tasks" },
+      memberPath: [{ member: "tasks" }],
+      operations: true,
+      inputs: {},
+    })).resolves.toMatchObject({
+      status: "ready",
+      value: { inspect: { effect: "read", target: { source: "row" } } },
+    });
+
+    await expect(readPanelOperation(owner, credentials, {
+      applicationId: "A",
+      useId: "tasks",
+      operationId: "tasks.inspect",
+      call: { input: {} },
+    })).rejects.toBeInstanceOf(z.ZodError);
 
     // Tampering with literal param is rejected.
     await expect(readPanelOperation(owner, credentials, {
