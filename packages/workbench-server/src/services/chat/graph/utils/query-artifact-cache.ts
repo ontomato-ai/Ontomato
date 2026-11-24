@@ -11,9 +11,21 @@ import {
 import { createLogger } from "../../../../logging/logger";
 import type { ResultTruncation } from "@ontomato/contracts/query-execution";
 import type { FieldDisplayPlan } from "../../../data-query/adapter";
-import { currentDatasetRule } from "./current-dataset";
 
 const logger = createLogger("query-artifact-cache");
+
+export interface ResolvedAnalysisDataset {
+  title?: string;
+  data: Record<string, unknown>[];
+  fieldDisplayPlan?: FieldDisplayPlan;
+  truncation?: ResultTruncation;
+}
+
+export interface ResolvedAnalysisData {
+  datasets: ResolvedAnalysisDataset[];
+  source: "current_query" | "historical";
+  queryResult?: QueryExecutionFact;
+}
 
 export function createQueryArtifactRef(input: {
   threadId: string;
@@ -45,16 +57,15 @@ function queryArtifactKey(ref: QueryArtifactRef): string {
   return `${ref.threadId}:${ref.requestSeq}:${ref.sourceKind}:${ref.sourceRef}`;
 }
 
-function selectedDatasetFromQueryResult(queryResult?: QueryExecutionFact): any | undefined {
-  const datasets = queryResult?.datasets as Array<{ data?: unknown }> | undefined;
-  if (!Array.isArray(datasets) || datasets.length === 0) {
-    return undefined;
-  }
-  return currentDatasetRule()(datasets);
-}
-
 function rowsFromDataset(dataset: any): Record<string, unknown>[] | undefined {
   return Array.isArray(dataset?.data) ? (dataset.data as Record<string, unknown>[]) : undefined;
+}
+
+function datasetTitle(dataset: any): string | undefined {
+  for (const candidate of [dataset?.subQuestion, dataset?.description, dataset?.name]) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  return undefined;
 }
 
 function fieldDisplayPlanFromDataset(dataset: any): FieldDisplayPlan | undefined {
@@ -70,10 +81,24 @@ function truncationFromDataset(dataset: any): ResultTruncation | undefined {
     : undefined;
 }
 
-export function extractRowsFromQueryResult(
-  queryResult?: QueryExecutionFact
-): Record<string, unknown>[] | undefined {
-  return rowsFromDataset(selectedDatasetFromQueryResult(queryResult));
+function normalizeDatasets(raw: unknown): ResolvedAnalysisDataset[] {
+  if (!Array.isArray(raw)) return [];
+  const datasets: ResolvedAnalysisDataset[] = [];
+  for (const item of raw) {
+    const rows = rowsFromDataset(item);
+    if (!rows) continue;
+    datasets.push({
+      title: datasetTitle(item),
+      data: rows,
+      fieldDisplayPlan: fieldDisplayPlanFromDataset(item),
+      truncation: truncationFromDataset(item),
+    });
+  }
+  return datasets;
+}
+
+function hasUsableDatasets(datasets: readonly ResolvedAnalysisDataset[]): boolean {
+  return datasets.some((dataset) => dataset.data.length > 0 || !!dataset.truncation);
 }
 
 export class QueryArtifactCache {
@@ -137,85 +162,42 @@ export async function resolveCurrentQueryResult(
   return queryResult;
 }
 
-function latestDatasetFromQueryRun(queryRun?: QueryRun | null): any | undefined {
-  const datasets = Array.isArray(queryRun?.datasetsPayload)
-    ? queryRun?.datasetsPayload
+function datasetsFromQueryRun(queryRun?: QueryRun | null): ResolvedAnalysisDataset[] {
+  const raw = Array.isArray(queryRun?.datasetsPayload)
+    ? queryRun.datasetsPayload
     : Array.isArray(queryRun?.dataPayload)
-      ? queryRun?.dataPayload
+      ? queryRun.dataPayload
       : [];
-  return datasets[datasets.length - 1];
+  return normalizeDatasets(raw);
 }
 
-function extractRowsFromQueryRun(
-  queryRun?: QueryRun | null
-): Record<string, unknown>[] | undefined {
-  const lastDataset = latestDatasetFromQueryRun(queryRun);
-  return Array.isArray(lastDataset?.data)
-    ? (lastDataset.data as Record<string, unknown>[])
-    : undefined;
-}
-
-/** A completed run is usable with rows, or as a partial result without rows: zero rows there are not "no data". */
+/** A completed run is usable when any dataset has rows or a partial-result marker: zero rows there are not "no data". */
 export function hasUsableQueryRun(queryRun?: QueryRun | null): boolean {
-  const rows = extractRowsFromQueryRun(queryRun);
-  return (
-    queryRun?.status === "completed" &&
-    Array.isArray(rows) &&
-    (rows.length > 0 || !!truncationFromDataset(latestDatasetFromQueryRun(queryRun)))
-  );
+  return queryRun?.status === "completed" && hasUsableDatasets(datasetsFromQueryRun(queryRun));
 }
 
 export async function resolveAnalysisData(
   state: GraphState,
   config?: any
-): Promise<
-  | {
-      data: Record<string, unknown>[];
-      source: "current_query" | "historical";
-      queryResult?: QueryExecutionFact;
-      fieldDisplayPlan?: FieldDisplayPlan;
-      truncation?: ResultTruncation;
-    }
-  | undefined
-> {
+): Promise<ResolvedAnalysisData | undefined> {
   const currentQueryResult = await resolveCurrentQueryResult(state, config);
-  // Rows and the field display plan come from the same selected dataset.
-  const currentDataset = selectedDatasetFromQueryResult(currentQueryResult);
-  const currentRows = rowsFromDataset(currentDataset);
-  const currentDatasets = currentQueryResult?.datasets;
-  const currentFieldDisplayPlan = fieldDisplayPlanFromDataset(currentDataset);
-  const currentTruncation = truncationFromDataset(currentDataset);
-  if (currentRows && currentRows.length > 0) {
+  const currentDatasets = normalizeDatasets(currentQueryResult?.datasets);
+  if (currentDatasets.length > 0) {
     return {
-      data: currentRows,
+      datasets: currentDatasets,
       source: "current_query",
       queryResult: currentQueryResult,
-      fieldDisplayPlan: currentFieldDisplayPlan,
-      truncation: currentTruncation,
-    };
-  }
-  if (Array.isArray(currentDatasets) && currentDatasets.length > 0) {
-    return {
-      data: currentRows || [],
-      source: "current_query",
-      queryResult: currentQueryResult,
-      fieldDisplayPlan: currentFieldDisplayPlan,
-      truncation: currentTruncation,
     };
   }
 
   if (state.historicalQueryRef) {
     try {
       const queryRun = await getQueryRunBySource(state.historicalQueryRef);
-      const historicalRows = extractRowsFromQueryRun(queryRun);
-      const historicalDataset = latestDatasetFromQueryRun(queryRun);
-      const historicalTruncation = truncationFromDataset(historicalDataset);
-      if (historicalRows && (historicalRows.length > 0 || historicalTruncation)) {
+      const historicalDatasets = datasetsFromQueryRun(queryRun);
+      if (hasUsableDatasets(historicalDatasets)) {
         return {
-          data: historicalRows,
+          datasets: historicalDatasets,
           source: "historical",
-          fieldDisplayPlan: fieldDisplayPlanFromDataset(historicalDataset),
-          truncation: historicalTruncation,
         };
       }
     } catch (error) {

@@ -1,6 +1,6 @@
 import { GraphState, GraphUpdate } from "../state";
 import { createLogger } from "../../../../logging/logger";
-import { t, tApp } from "../../../../i18n";
+import { t, tApp, tForLocale } from "../../../../i18n";
 import { skillRegistryManager } from "../../../../core/skills/registry/manager";
 import type { SkillRegistryManager } from "../../../../core/skills/registry/manager";
 import { skillRuntime } from "../../../../core/skills/execution/runtime";
@@ -22,14 +22,54 @@ import {
   createRuntimeArtifactRef,
   getQueryArtifactCache,
   resolveAnalysisData,
+  type ResolvedAnalysisDataset,
 } from "../utils/query-artifact-cache";
 
 const logger = createLogger("analysis-node");
 
+function buildAnalysisDataContext(
+  datasets: ResolvedAnalysisDataset[],
+  locale: string | undefined,
+  fallbackMarkdownTable?: string
+): string {
+  const hasStructuredEvidence = datasets.some(
+    (dataset) => dataset.data.length > 0 || !!dataset.truncation
+  );
+  if (!hasStructuredEvidence) {
+    return truncateText(fallbackMarkdownTable || "", 2500);
+  }
+
+  const perDatasetMaxChars = Math.max(1, Math.floor(100_000 / datasets.length));
+  return datasets
+    .map((dataset, index) => {
+      const displayRows = dataset.fieldDisplayPlan
+        ? applyFieldDisplayPlan(dataset.data, dataset.fieldDisplayPlan, locale)
+        : dataset.data;
+      const title =
+        dataset.title ||
+        tForLocale(locale, "query.datasetFallbackTitle", { index: index + 1 });
+      return [
+        `datasetTitle=${JSON.stringify(title)}`,
+        dataset.fieldDisplayPlan
+          ? `fieldDisplayPlan=${JSON.stringify(dataset.fieldDisplayPlan)}`
+          : "",
+        `dataView=${JSON.stringify(
+          buildModelDataView(displayRows, {
+            maxChars: perDatasetMaxChars,
+            truncation: dataset.truncation,
+          })
+        )}`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
+}
+
 async function matchExecutableAnalysisSkills(
   registry: SkillRegistryManager,
   query: string,
-  data: Record<string, unknown>[],
+  datasets: ResolvedAnalysisDataset[],
   services: { createModel: (opts?: number | ModelOptions) => Promise<any> | any }
 ): Promise<{ skill: SkillMeta; confidence: number; reason: string }[]> {
   const executableSkills = registry.getSkills({
@@ -39,19 +79,24 @@ async function matchExecutableAnalysisSkills(
 
   if (executableSkills.length === 0) return [];
 
-  // Analyze data characteristics
-  const rowCount = data.length;
-  const fields = Array.from(new Set(data.flatMap((row) => Object.keys(row || {}))));
-  const dataView = buildModelDataView(data);
-  const visibleRows = [...dataView.headRows, ...dataView.tailRows];
-  const sampleValues: Record<string, any[]> = {};
-  for (const field of fields) {
-    sampleValues[field] = visibleRows.map((row) => row[field]);
+  // Analyze data characteristics across all datasets
+  const rowCount = datasets.reduce((sum, dataset) => sum + dataset.data.length, 0);
+  const sampleValues = new Map<string, any[]>();
+  for (const dataset of datasets) {
+    if (dataset.data.length === 0) continue;
+    const fields = Array.from(new Set(dataset.data.flatMap((row) => Object.keys(row || {}))));
+    const dataView = buildModelDataView(dataset.data);
+    const visibleRows = [...dataView.headRows, ...dataView.tailRows];
+    for (const field of fields) {
+      const list = sampleValues.get(field) || [];
+      list.push(...visibleRows.map((row) => row[field]));
+      sampleValues.set(field, list);
+    }
   }
 
-  const fieldsInfo = fields
-    .map((field) => {
-      const samples = sampleValues[field].filter((v) => v !== null && v !== undefined);
+  const fieldsInfo = Array.from(sampleValues.entries())
+    .map(([field, values]) => {
+      const samples = values.filter((v) => v !== null && v !== undefined);
       const types = samples.map((v) => typeof v);
       const typeStr = types.length > 0 ? types[0] : "unknown";
       return tApp("queryFixed.11", { v0: (field), v1: (typeStr), v2: (samples.length) });
@@ -186,10 +231,12 @@ export async function analysisNode(state: GraphState, config?: any): Promise<Gra
     };
   }
 
-  const data = resolvedData.data;
+  const datasets = resolvedData.datasets;
+  const nonEmptyDatasets = datasets.filter((dataset) => dataset.data.length > 0);
+  const totalRowCount = nonEmptyDatasets.reduce((sum, dataset) => sum + dataset.data.length, 0);
   const dataSource = resolvedData.source;
   const sourceQueryResult = resolvedData.queryResult;
-  logger.info(tApp("queryFixed.14", { v0: (dataSource), v1: (data.length) }));
+  logger.info(tApp("queryFixed.14", { v0: (dataSource), v1: (totalRowCount) }));
 
   try {
     const registry = domainId ? await skillRegistryManager.forDomain(domainId) : null;
@@ -202,7 +249,7 @@ export async function analysisNode(state: GraphState, config?: any): Promise<Gra
     });
 
     const matchedCalcSkills = registry
-      ? await matchExecutableAnalysisSkills(registry, analysisInstruction, data, services)
+      ? await matchExecutableAnalysisSkills(registry, analysisInstruction, nonEmptyDatasets, services)
       : [];
     const computedResults: Record<string, any> = {};
 
@@ -229,16 +276,43 @@ export async function analysisNode(state: GraphState, config?: any): Promise<Gra
         });
 
         try {
-          const result = await skillRuntime.execute(
-            domainId!,
-            skill.id,
-            { query: analysisInstruction, data },
-            {
-              type: SkillType.EXECUTABLE,
-              category: SkillCategory.ANALYSIS,
+          if (nonEmptyDatasets.length <= 1) {
+            const single = nonEmptyDatasets[0];
+            const result = await skillRuntime.execute(
+              domainId!,
+              skill.id,
+              { query: analysisInstruction, data: single?.data || [] },
+              {
+                type: SkillType.EXECUTABLE,
+                category: SkillCategory.ANALYSIS,
+              }
+            );
+            computedResults[skill.id] = result.json || result.text || result.html;
+          } else {
+            const outputs: Array<{ title?: string; result: unknown }> = [];
+            let lastError: unknown;
+            for (const dataset of nonEmptyDatasets) {
+              try {
+                const result = await skillRuntime.execute(
+                  domainId!,
+                  skill.id,
+                  { query: analysisInstruction, title: dataset.title, data: dataset.data },
+                  {
+                    type: SkillType.EXECUTABLE,
+                    category: SkillCategory.ANALYSIS,
+                  }
+                );
+                outputs.push({
+                  title: dataset.title,
+                  result: result.json || result.text || result.html,
+                });
+              } catch (datasetError) {
+                lastError = datasetError;
+              }
             }
-          );
-          computedResults[skill.id] = result.json || result.text || result.html;
+            if (outputs.length === 0 && lastError) throw lastError;
+            computedResults[skill.id] = outputs;
+          }
           logger.info(tApp("queryFixed.16", { v0: (skill.id) }));
 
           sendEvent({
@@ -270,11 +344,12 @@ export async function analysisNode(state: GraphState, config?: any): Promise<Gra
       timestamp: Date.now(),
     });
 
+    const knowledgeSampleRows = nonEmptyDatasets.flatMap((dataset) => dataset.data);
     const matchedKnowledgeSkills = registry
       ? await registry.matchKnowledgeSkillsWithLLM(
           analysisInstruction,
           SkillCategory.ANALYSIS,
-          data,
+          knowledgeSampleRows,
           (event) => {
             sendEvent({
               type: "thinking" as const,
@@ -338,25 +413,11 @@ export async function analysisNode(state: GraphState, config?: any): Promise<Gra
       timestamp: Date.now(),
     });
 
-    const displayRows = resolvedData.fieldDisplayPlan
-      ? applyFieldDisplayPlan(data, resolvedData.fieldDisplayPlan, locale)
-      : data;
-    const dataContext =
-      data.length > 0 || resolvedData.truncation
-        ? [
-            resolvedData.fieldDisplayPlan
-              ? `fieldDisplayPlan=${JSON.stringify(resolvedData.fieldDisplayPlan)}`
-              : "",
-            `dataView=${JSON.stringify(
-              buildModelDataView(displayRows, {
-                maxChars: 100_000,
-                truncation: resolvedData.truncation,
-              })
-            )}`,
-          ]
-            .filter(Boolean)
-            .join("\n")
-        : truncateText(sourceQueryResult?.markdownTable || "", 2500);
+    const dataContext = buildAnalysisDataContext(
+      datasets,
+      locale,
+      sourceQueryResult?.markdownTable
+    );
     const computedContext =
       Object.keys(computedResults).length > 0
         ? tApp("queryFixed.20", { v0: (stringifyWithLimit(computedResults, 2500)) })
@@ -380,7 +441,8 @@ export async function analysisNode(state: GraphState, config?: any): Promise<Gra
       systemPromptLength: String(messagesForLLM[0].content || "").length,
       messageCount: messagesForLLM.length,
       messagesLength: estimateMessagesSize(messagesForLLM as Array<{ content: string }>),
-      dataRowCount: data.length,
+      dataRowCount: totalRowCount,
+      datasetCount: datasets.length,
     });
 
     const stream = await model.stream(messagesForLLM);
