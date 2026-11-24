@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElInput } from "element-plus/es/components/input/index";
@@ -16,20 +16,23 @@ type SelectControl = Extract<PanelFormField["control"], { kind: "select" }>;
 type Preset = NonNullable<SelectControl["presets"]>[number];
 type DropdownValue = string | number;
 
-const props = defineProps<{
-  control: SelectControl;
-  value: RuntimeJsonValue | undefined;
-  label: string;
-  required: boolean;
-  disabled: boolean;
-}>();
+// Keep `value` untyped at runtime so Vue does not coerce an empty string "" into `true` via Boolean prop casting.
+const props = defineProps({
+  control: { type: Object as PropType<SelectControl>, required: true },
+  value: { type: null as unknown as PropType<RuntimeJsonValue | undefined>, default: undefined },
+  label: { type: String, required: true },
+  required: { type: Boolean, required: true },
+  disabled: { type: Boolean, required: true },
+});
 const emit = defineEmits<{ change: [value: RuntimeJsonValue]; clear: [] }>();
 const { t } = useI18n();
 
 const isList = computed(() => props.control.presentation === "checklist" || props.control.presentation === "tree");
 const selected = computed<RuntimeJsonValue[]>(() => {
   if (props.control.multiple) return Array.isArray(props.value) ? props.value : [];
-  return props.value == null ? [] : [props.value];
+  if (props.value == null) return [];
+  if (props.value === "" && !findPanelFormOption(props.control.options, "")) return [];
+  return [props.value];
 });
 const isSelected = (option: PanelFormOption) => selected.value.some(held => jsonValuesEqual(held, option.value));
 const optionNote = ({ description, disabledReason }: PanelFormOption) => [description, disabledReason].filter(Boolean).join(" · ");
