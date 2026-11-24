@@ -4,7 +4,7 @@ import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { catalogFixture } from "./fixtures";
-import { useApplicationCatalog } from "../catalog";
+import { resetApplicationCatalog, useApplicationCatalog } from "../catalog";
 import {catalogPartition} from '../native-layouts';
 
 /*
@@ -80,5 +80,21 @@ describe("the application catalog", () => {
     await read;
     expect(catalog.error.value).toBe("Catalog unavailable");
     expect(catalog.applications.value).toEqual(shown);
+  });
+
+  it("starts with an unread catalog after a reset", async () => {
+    const catalog = await readOnce(catalogFixture());
+    const read = catalog.refresh();
+    answer({ success: false, message: "Catalog unavailable" });
+    await read;
+    expect(catalog.applications.value.length).toBeGreaterThan(0);
+    expect(catalog.error.value).not.toBeNull();
+    expect(catalog.loading.value).toBe(false);
+
+    resetApplicationCatalog();
+
+    expect(catalog.applications.value).toEqual([]);
+    expect(catalog.error.value).toBeNull();
+    expect(catalog.loading.value).toBe(true);
   });
 });
