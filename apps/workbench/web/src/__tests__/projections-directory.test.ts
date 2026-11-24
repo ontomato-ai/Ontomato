@@ -1057,7 +1057,7 @@ describe("projections two-entry catalog & detail panels", () => {
     }
   });
 
-  it("supports More menu operations: openClass, Copy (strict owner data.id), Delete via inspectImpact, usage link to /ontology/panels, and grants/share", { timeout: 20000 }, async () => {
+  it("supports More menu operations: openClass, Copy (strict owner data.id), Delete via inspectImpact, usage link to /ontology/panels/detail, and grants/share", { timeout: 20000 }, async () => {
     let nextCopyResponse: { kind: "success"; data: Record<string, unknown> } = {
       kind: "success",
       data: { id: "owner-assigned-copy" },
@@ -1092,7 +1092,7 @@ describe("projections two-entry catalog & detail panels", () => {
       findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Cancel")!.click();
       await waitFor(() => observed.context?.state?.grantDialog === false, "add grant dialog closed");
 
-      // Switch to usage tab -> shows visible panels and hidden count hint; clicking panel navigates to /ontology/panels?selected=...
+      // Switch to usage tab -> shows visible panels and hidden count hint; clicking panel navigates to /ontology/panels/detail?selected=...
       await present({ tab: "usage" });
       await waitFor(
         () =>
@@ -1105,7 +1105,7 @@ describe("projections two-entry catalog & detail panels", () => {
       expect(panelRow).toBeTruthy();
       panelRow!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await waitFor(
-        () => navigated.includes("/ontology/panels?selected=panel-sales"),
+        () => navigated.includes("/ontology/panels/detail?selected=panel-sales"),
         () => `navigated=${JSON.stringify(navigated)}`,
       );
 

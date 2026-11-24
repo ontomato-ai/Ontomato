@@ -20,7 +20,7 @@ const METRIC_VIEW_TYPE = "platform:MetricView";
 
 const CATALOG_PATH = "/ontology/projections";
 const CAPABILITY_MAP = "/ontology/assets/capability-map";
-const PANELS_PAGE = "/ontology/panels";
+const PANELS_PAGE = "/ontology/panels/detail";
 const COMPONENTS_PAGE = "/ontology/components";
 const OBJECTS_PAGE = "/ontology/objects";
 const RELATIONS_PAGE = "/ontology/relations";

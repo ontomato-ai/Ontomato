@@ -17,7 +17,7 @@ const SDK_COMPONENT_TYPE = "platform:SDKComponent";
 
 const CATALOG_PATH = "/ontology/panels";
 const PANEL_DETAIL_PATH = "/ontology/panels/detail";
-const PROJECTIONS_PAGE = "/ontology/projections";
+const PROJECTIONS_PAGE = "/ontology/projections/detail";
 const OPEN_EDIT_KEY_PREFIX = "ontomato:open-edit:builtin-product-ontology-panel-detail:";
 
 const COPY_DIALOG_RESET = {
