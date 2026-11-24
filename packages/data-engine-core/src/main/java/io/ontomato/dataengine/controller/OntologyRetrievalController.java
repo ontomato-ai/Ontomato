@@ -29,7 +29,7 @@ public class OntologyRetrievalController {
         || !"retrieval-exploration".equals(grant.getString("purpose")))
       throw new AgentHttpException(403, "FORBIDDEN", "A retrieval exploration grant is required");
     return JSONObject.of("id", grant.getString("retrievalId"),
-        "sessionId", grant.getString("runtimeSessionId"), "runId", grant.getString("runId"));
+        "sessionId", grant.getString("sessionId"), "runId", grant.getString("runId"));
   }
 
   @GetMapping("/ontology/retrievals/{id}")
