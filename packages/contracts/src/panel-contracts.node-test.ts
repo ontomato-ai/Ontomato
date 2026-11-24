@@ -32,7 +32,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
 import {
-  ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, ATTRIBUTE, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIGGER, USER, WORKFLOW,
+  ACTION, ACTIVATE_WORKFLOW, AGENT_DEFINITION, ATTRIBUTE, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, EXTERNAL_MCP_SERVICE, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIGGER, USER, WORKFLOW,
   RUN_NOW, SCHEDULED_TASK, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
@@ -1934,8 +1934,8 @@ test("bridge and skill agree about the specific semantic reads", () => {
   assert.ok(clientSends([agents], "POST", "", "/assistant/agent-definitions"));
   assert.ok(!panelClientReads(agents).some((request) => request.method === "POST" && request.path.test("/assistant/agent-definitions")));
   assert.ok(!clientSends([agents], "DELETE", "", "/assistant/agent-definitions/form"));
-  assert.ok(clientSends([binding(MCP_SERVICE_OPTION)], "GET", "", "/mcp/services/names"));
-  assert.ok(!clientSends([binding(MCP_SERVICE_OPTION)], "GET", "", "/mcp/services"));
+  assert.ok(clientSends([binding(EXTERNAL_MCP_SERVICE)], "GET", "", "/mcp/services/names"));
+  assert.ok(!clientSends([binding(EXTERNAL_MCP_SERVICE)], "GET", "", "/mcp/services"));
   for (const type of [OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP])
     assert.ok(clientSends([binding(type)], "POST", "/data-query", "/admin/getMetas"));
   assert.ok(!clientSends([binding(OBJECT_TYPE)], "POST", "/data-query", "/admin/getschemamarkdown"));

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { assistantEngineSchema, assistantAgentInputSchema, assistantAgentPanelValuesSchema as inputSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import type { PanelFormDescription, PanelFormField, PanelFormRequest } from "@ontomato/contracts/panel-projection";
 import type { FormFieldError } from "@ontomato/contracts/form-fields";
-import { AGENT_DEFINITION, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, EXTERNAL_MCP_SERVICE, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL, USER } from "@ontomato/contracts/panel-client-requests";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -40,7 +40,7 @@ const fields = [
   { key: "systemPrompt", path: "/systemPrompt", schema: inputSchema.shape.systemPrompt, control: { kind: "markdown" }, section: "prompt" },
   { key: "skills", path: "/skills", schema: inputSchema.shape.skills, control: reference(SKILL, true), section: "capabilities", help: true },
   { key: "enabledMcpServiceIds", path: "/enabledMcpServiceIds", schema: inputSchema.shape.enabledMcpServiceIds,
-    control: reference(MCP_SERVICE_OPTION, true), section: "capabilities", help: true },
+    control: reference(EXTERNAL_MCP_SERVICE, true), section: "capabilities", help: true },
   { key: "executionUserId", path: "/executionUserId", schema: inputSchema.shape.executionUserId, control: reference(USER), section: "execution" },
   { key: "classNames", path: "/classNames", schema: inputSchema.shape.classNames,
     control: { kind: "reference", objectType: OBJECT_TYPE, multiple: true, relatedObjectTypes: [RELATIONSHIP] }, section: "data", help: true },

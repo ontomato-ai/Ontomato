@@ -35,18 +35,12 @@ export function workbenchPages(
   observe: { component: PageComponent; meta?: RouteMeta; props?: Record<string, unknown> },
 ): RouteRecordRaw[] {
   return [
-    { ...routes.publishedMcp,
-      component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.PublishedMcpServices),
-      meta: { service: true, page: routes.publishedMcp.path } },
-    { ...routes.externalMcp,
-      component: () => import("./pages/ExternalMcpRoute.vue"),
-      meta: { service: true, page: routes.externalMcp.path, ownHeader: true } },
     // The capability library's earlier addresses: skills are the ontology manager's panel, external MCP the system settings'.
     ...[routes.ontologyCapabilities, routes.agentSettingsCapabilities, routes.agentSettingsSkills].map(
       (location) => ({ ...location, redirect: routes.ontologySkills.path }),
     ),
     ...[routes.ontologyMcp, routes.agentSettingsMcp].map(
-      (location) => ({ ...location, redirect: { name: routes.externalMcp.name } }),
+      (location) => ({ ...location, redirect: routes.externalMcp.path }),
     ),
     { ...routes.chat, component, meta: { workbench: true } },
     // The builder's old top-level entry turns to the agent platform's settings.

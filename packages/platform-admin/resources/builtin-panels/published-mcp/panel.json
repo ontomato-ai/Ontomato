@@ -1,0 +1,206 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:PublishedMcpService"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "services": {
+        "component": "ObjectList",
+        "type": "platform:PublishedMcpService",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "selected"
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "fallbackToFirst": true,
+          "statusField": "status",
+          "emptyText": "services.empty"
+        },
+        "name": "Published MCP services",
+        "description": "MCP services published by the platform for external clients",
+        "id": "builtin-product-9f1a4d2c-5c3e-4a7b-8d12-200000000001"
+      },
+      "serviceSummary": {
+        "component": "ObjectSummary",
+        "type": "platform:PublishedMcpService",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": true,
+          "fields": ["mcpUrl", "status", "toolCount", "authHint"],
+          "copyableFields": ["mcpUrl"],
+          "emptyText": "detail.empty"
+        },
+        "name": "Published MCP service summary",
+        "description": "Endpoint address, status, tool count, and authentication guidance for the selected published MCP service",
+        "id": "builtin-product-9f1a4d2c-5c3e-4a7b-8d12-200000000002"
+      },
+      "serviceTools": {
+        "component": "ObjectList",
+        "type": "platform:PublishedMcpService",
+        "target": "selected",
+        "data": {
+          "rows": "tools"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "showFooter": false,
+          "emptyText": "tools.empty",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "tools.colTool",
+              "subtitleKey": "name",
+              "minWidth": 180
+            },
+            {
+              "key": "description",
+              "labelKey": "tools.colDescription",
+              "wrap": true,
+              "minWidth": 220
+            },
+            {
+              "key": "inputSchema",
+              "labelKey": "tools.colInputSchema",
+              "wrap": true,
+              "minWidth": 240
+            }
+          ]
+        },
+        "name": "Published MCP service tools",
+        "description": "Structured tool catalog exposed by the selected published MCP service",
+        "id": "builtin-product-9f1a4d2c-5c3e-4a7b-8d12-200000000003"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Published MCP services",
+        "panel.description": "MCP endpoints published by the platform for external clients and IDEs.",
+        "action.refresh": "Refresh",
+        "services.title": "Services",
+        "services.empty": "No published MCP services are available.",
+        "detail.empty": "Select a published MCP service to view its endpoint and available tools.",
+        "tools.title": "Available tools",
+        "tools.empty": "This service does not expose any tools.",
+        "tools.colTool": "Tool",
+        "tools.colDescription": "Description",
+        "tools.colInputSchema": "Input schema",
+        "tools.viewSchema": "View schema"
+      },
+      "zh-CN": {
+        "panel.name": "对外 MCP 服务",
+        "panel.description": "平台面向外部客户端与 IDE 开放的 MCP 服务端点与工具清单。",
+        "action.refresh": "刷新",
+        "services.title": "服务列表",
+        "services.empty": "当前没有对外开放的 MCP 服务。",
+        "detail.empty": "选择一个对外 MCP 服务以查看接入地址与可用工具。",
+        "tools.title": "可用工具",
+        "tools.empty": "该服务暂未暴露任何工具。",
+        "tools.colTool": "工具",
+        "tools.colDescription": "说明",
+        "tools.colInputSchema": "输入参数",
+        "tools.viewSchema": "查看参数结构"
+      },
+      "zh-TW": {
+        "panel.name": "對外 MCP 服務",
+        "panel.description": "平台面向外部用戶端與 IDE 開放的 MCP 服務端點與工具清單。",
+        "action.refresh": "重新整理",
+        "services.title": "服務清單",
+        "services.empty": "目前沒有對外開放的 MCP 服務。",
+        "detail.empty": "選擇一個對外 MCP 服務以檢視存取位址與可用工具。",
+        "tools.title": "可用工具",
+        "tools.empty": "此服務尚未暴露任何工具。",
+        "tools.colTool": "工具",
+        "tools.colDescription": "說明",
+        "tools.colInputSchema": "輸入參數",
+        "tools.viewSchema": "檢視參數結構"
+      },
+      "ja": {
+        "panel.name": "公開 MCP サービス",
+        "panel.description": "外部クライアントや IDE 向けにプラットフォームが公開している MCP エンドポイントとツール一覧です。",
+        "action.refresh": "更新",
+        "services.title": "サービス一覧",
+        "services.empty": "公開されている MCP サービスはありません。",
+        "detail.empty": "公開 MCP サービスを選択して接続先と利用可能なツールを確認してください。",
+        "tools.title": "利用可能なツール",
+        "tools.empty": "このサービスには公開ツールがありません。",
+        "tools.colTool": "ツール",
+        "tools.colDescription": "説明",
+        "tools.colInputSchema": "入力スキーマ",
+        "tools.viewSchema": "スキーマを表示"
+      },
+      "de": {
+        "panel.name": "Veröffentlichte MCP-Dienste",
+        "panel.description": "Von der Plattform für externe Clients und IDEs bereitgestellte MCP-Endpunkte und Werkzeuge.",
+        "action.refresh": "Aktualisieren",
+        "services.title": "Dienste",
+        "services.empty": "Keine veröffentlichten MCP-Dienste verfügbar.",
+        "detail.empty": "Wählen Sie einen veröffentlichten MCP-Dienst aus, um Endpunkt und verfügbare Werkzeuge anzuzeigen.",
+        "tools.title": "Verfügbare Werkzeuge",
+        "tools.empty": "Dieser Dienst stellt keine Werkzeuge bereit.",
+        "tools.colTool": "Werkzeug",
+        "tools.colDescription": "Beschreibung",
+        "tools.colInputSchema": "Eingabeschema",
+        "tools.viewSchema": "Schema anzeigen"
+      },
+      "fr": {
+        "panel.name": "Services MCP publiés",
+        "panel.description": "Points de terminaison MCP et outils publiés par la plateforme pour les clients externes et IDE.",
+        "action.refresh": "Actualiser",
+        "services.title": "Services",
+        "services.empty": "Aucun service MCP publié n'est disponible.",
+        "detail.empty": "Sélectionnez un service MCP publié pour afficher son adresse et ses outils disponibles.",
+        "tools.title": "Outils disponibles",
+        "tools.empty": "Ce service n'expose aucun outil.",
+        "tools.colTool": "Outil",
+        "tools.colDescription": "Description",
+        "tools.colInputSchema": "Schéma d'entrée",
+        "tools.viewSchema": "Afficher le schéma"
+      },
+      "it": {
+        "panel.name": "Servizi MCP pubblicati",
+        "panel.description": "Endpoint MCP e strumenti pubblicati dalla piattaforma per client esterni e IDE.",
+        "action.refresh": "Aggiorna",
+        "services.title": "Servizi",
+        "services.empty": "Nessun servizio MCP pubblicato disponibile.",
+        "detail.empty": "Seleziona un servizio MCP pubblicato per visualizzare l'endpoint e gli strumenti disponibili.",
+        "tools.title": "Strumenti disponibili",
+        "tools.empty": "Questo servizio non espone alcuno strumento.",
+        "tools.colTool": "Strumento",
+        "tools.colDescription": "Descrizione",
+        "tools.colInputSchema": "Schema di input",
+        "tools.viewSchema": "Mostra schema"
+      },
+      "ar": {
+        "panel.name": "خدمات MCP المنشورة",
+        "panel.description": "نقاط نهاية MCP والأدوات التي تنشرها المنصة للعملاء الخارجيين وبيئات التطوير.",
+        "action.refresh": "تحديث",
+        "services.title": "الخدمات",
+        "services.empty": "لا تتوفر خدمات MCP منشورة.",
+        "detail.empty": "اختر خدمة MCP منشورة لعرض عنوان الاتصال والأدوات المتاحة.",
+        "tools.title": "الأدوات المتاحة",
+        "tools.empty": "لا توفر هذه الخدمة أي أدوات.",
+        "tools.colTool": "الأداة",
+        "tools.colDescription": "الوصف",
+        "tools.colInputSchema": "مخطط الإدخال",
+        "tools.viewSchema": "عرض المخطط"
+      }
+    }
+  }
+}

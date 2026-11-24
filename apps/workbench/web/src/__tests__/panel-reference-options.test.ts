@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
-import { mcpServiceOptionAdapters } from "../../../../../packages/apps-sdk/src/panel/mcp-service-option";
+import { externalMcpServiceAdapters } from "../../../../../packages/apps-sdk/src/panel/external-mcp-service";
 import { modelOptionAdapters } from "../../../../../packages/apps-sdk/src/panel/model-option";
 import { ontologyMetadataAdapters } from "../../../../../packages/apps-sdk/src/panel/ontology-metadata";
 import { skillAdapters } from "../../../../../packages/apps-sdk/src/panel/skill";
@@ -49,7 +49,7 @@ it("keeps held skills, MCP services and object types in order when their catalog
   const service = "ad4c9a59-bab6-4373-bfcf-198d3230e851";
   const missingService = "ad4c9a59-bab6-4373-bfcf-198d3230e852";
   const [skills] = skillAdapters(json({ skills: [{ skill: active, title: "Active skill", description: "" }] }));
-  const [services] = mcpServiceOptionAdapters(json([{ id: service, name: "Active service" }]));
+  const [services] = externalMcpServiceAdapters(json([{ id: service, name: "Active service" }]));
   const [classes] = ontologyMetadataAdapters(json({ success: true, data: { classDef: [{ className: "Order" }] } }));
   for (const [adapter, values] of [
     [skills, [removed, active, removed]],

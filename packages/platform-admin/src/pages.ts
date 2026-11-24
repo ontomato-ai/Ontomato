@@ -1,5 +1,5 @@
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { Activity, Cpu, Database, ScrollText, Server, SlidersHorizontal } from "lucide-vue-next";
+import { Activity, Cable, Cpu, Database, Plug, ScrollText, Server, SlidersHorizontal } from "lucide-vue-next";
 import type { RouteRecordRaw } from "vue-router";
 import type { PlatformEntryRow, PlatformGroup, PlatformPage } from "./navigation";
 
@@ -18,6 +18,8 @@ export const platformEntryRows: readonly PlatformEntryRow[] = [
   { path: platformRoutes.usage.path, icon: Cpu },
   { path: platformRoutes.providers.path, icon: Server },
   { path: platformRoutes.general.path, icon: SlidersHorizontal },
+  { path: platformRoutes.externalMcp.path, icon: Cable },
+  { path: platformRoutes.publishedMcp.path, icon: Plug },
   { path: platformRoutes.audit.path, icon: ScrollText },
 ];
 

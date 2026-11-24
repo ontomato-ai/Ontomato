@@ -10,7 +10,7 @@ import { readCurrentPanelRecord } from "../../services/product-panels/current";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { PROJECTION_REUSE_PANEL_HEADER } from "@ontomato/contracts/product-panels";
 import { Router, type Request } from "express";
-import { AGENT_DEFINITION, SKILL, MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE, ONTOLOGY_TYPE, bindingKey, chartProjectionLookupRead, chartProjectionSourceRead, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, SKILL, MODEL_OPTION, EXTERNAL_MCP_SERVICE, USER, OBJECT_TYPE, ONTOLOGY_TYPE, bindingKey, chartProjectionLookupRead, chartProjectionSourceRead, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
 import type {AssistantCredentials} from "../../platform/agent-runtime/runtime";
 import { Readable } from "node:stream";
 import { z } from "zod";
@@ -138,7 +138,7 @@ const skillReadPath = /^\/api\/skills(?:\/[^/]+\/(?:references|files|file))?$/u;
 const initiatorPanelReads = [AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE]
   .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
 const executorPanelReads = [
-  ...[MODEL_OPTION, MCP_SERVICE_OPTION, USER, OBJECT_TYPE]
+  ...[MODEL_OPTION, EXTERNAL_MCP_SERVICE, USER, OBJECT_TYPE]
     .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type }))),
   ...panelClientReads(bindingKey({ kind: "MetricView", id: "*" })),
   chartProjectionLookupRead,

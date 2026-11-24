@@ -10,8 +10,8 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AUDIT_LOG, GENERAL_SETTINGS, MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, PUBLISHED_MCP_SERVICE,
-  ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
+  AUDIT_LOG, EXTERNAL_MCP_SERVICE, GENERAL_SETTINGS, MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, PUBLISHED_MCP_SERVICE,
+  ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
   PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
   type PlatformReadDeclaration,
@@ -30,7 +30,8 @@ import { createGeneralSettingsReads } from "../admin/general-settings-panel";
 import {
   createModelConnectionReads, createModelEntryReads, createModelUsageReads,
 } from "../admin/model-settings-panel";
-import { readPublishedMcpService, readPublishedMcpServices } from "../mcp/panel-reads";
+import { createExternalMcpReads } from "../mcp/external-mcp-panel";
+import { readPublishedMcpService, readPublishedMcpServices, readPublishedMcpServiceTools } from "../mcp/panel-reads";
 import type { McpRequestLocation } from "../mcp/catalog";
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
@@ -162,10 +163,21 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const modelConnections = createModelConnectionReads({ owner, credentials: viewer });
   const modelEntries = createModelEntryReads({ owner, credentials: viewer });
   const modelUsage = createModelUsageReads({ owner, credentials: viewer });
+  const externalMcp = createExternalMcpReads(owner, viewer);
   return {
     [PUBLISHED_MCP_SERVICE]: {
       list: () => readPublishedMcpServices(viewer, location),
       record: selection => readPublishedMcpService(viewer, selection.primaryKey!, location),
+      tools: selection => readPublishedMcpServiceTools(viewer, selection.primaryKey!, location),
+    },
+    [EXTERNAL_MCP_SERVICE]: {
+      options: () => externalMcp.options(),
+      resolve: (_selection, params) => externalMcp.resolve(panelReadParameterSchemas.optionValues.parse(params.values)),
+      list: () => externalMcp.list(),
+      record: selection => externalMcp.record(selection.primaryKey!),
+      form: (selection, params) => externalMcp.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => externalMcp.createForm(formParams(params)),
+      tools: selection => externalMcp.tools(selection.primaryKey!),
     },
     [AUDIT_LOG]: {
       query: (_selection, params) => audit.query(params),
@@ -261,16 +273,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [MODEL_OPTION]: {
       options: async () => (await options()).models.options(),
       resolve: async (_selection, params) => (await options()).models.resolve(params.values as readonly unknown[]),
-    },
-    [MCP_SERVICE_OPTION]: {
-      async options() {
-        const { createMcpServiceOptionReadAdapter } = await import("../assistant/panel-reads");
-        return createMcpServiceOptionReadAdapter(owner, viewer).options();
-      },
-      async resolve(_selection, params) {
-        const { createMcpServiceOptionReadAdapter } = await import("../assistant/panel-reads");
-        return createMcpServiceOptionReadAdapter(owner, viewer).resolve(panelReadParameterSchemas.optionValues.parse(params.values));
-      },
     },
     [SDK_COMPONENT]: {
       count: () => countSdkComponents(owner),

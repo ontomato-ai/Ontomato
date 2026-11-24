@@ -1,0 +1,450 @@
+{
+  "manifest": {
+    "state": {
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false
+      },
+      "editingService": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ExternalMcpService"
+        },
+        "deepLink": false
+      },
+      "inspectedService": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ExternalMcpService"
+        },
+        "deepLink": false
+      }
+    },
+    "members": {
+      "services": {
+        "component": "ObjectList",
+        "type": "platform:ExternalMcpService",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "search": "search"
+        },
+        "operations": {
+          "delete": {
+            "operation": "externalMcp.delete",
+            "target": "row"
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchable": true,
+          "searchFields": ["label", "url"],
+          "searchPlaceholder": "services.searchPlaceholder",
+          "fallbackToFirst": false,
+          "emptyText": "services.empty",
+          "emptyHint": "services.emptyHint",
+          "noMatchText": "services.noMatch",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "table.service",
+              "subtitleKey": "url",
+              "minWidth": 260
+            },
+            {
+              "key": "usedBy",
+              "labelKey": "table.usedBy",
+              "minWidth": 180
+            },
+            {
+              "key": "headerNames",
+              "labelKey": "table.headers",
+              "emptyKey": "table.noHeaders",
+              "minWidth": 160
+            }
+          ],
+          "rowActions": {
+            "labelKey": "table.actions",
+            "maxVisible": 3,
+            "items": [
+              {
+                "kind": "local",
+                "id": "check",
+                "labelKey": "action.check"
+              },
+              {
+                "kind": "local",
+                "id": "edit",
+                "labelKey": "action.edit",
+                "primary": true
+              },
+              {
+                "kind": "operation",
+                "operation": "delete",
+                "labelKey": "action.delete",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "External MCP services",
+        "description": "Registered external MCP services in the current domain",
+        "id": "builtin-product-9f1a4d2c-5c3e-4a7b-8d12-300000000001"
+      },
+      "createForm": {
+        "component": "ObjectForm",
+        "type": "platform:ExternalMcpService",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "platform:ExternalMcpService.create",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "Add external MCP service form",
+        "description": "Create a new external MCP service with endpoint address and optional secret request headers",
+        "id": "builtin-product-9f1a4d2c-5c3e-4a7b-8d12-300000000002"
+      },
+      "editForm": {
+        "component": "ObjectForm",
+        "type": "platform:ExternalMcpService",
+        "target": "editingService",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:ExternalMcpService.save",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "Edit external MCP service form",
+        "description": "Edit an existing external MCP service; leaving stored header values blank keeps them unchanged",
+        "id": "builtin-product-9f1a4d2c-5c3e-4a7b-8d12-300000000003"
+      },
+      "inspectedSummary": {
+        "component": "ObjectSummary",
+        "type": "platform:ExternalMcpService",
+        "target": "inspectedService",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": true,
+          "fields": ["url", "usedBy", "headerNames"],
+          "copyableFields": ["url"]
+        },
+        "name": "Checked service details",
+        "description": "Sanitized details of the external MCP service currently being checked",
+        "id": "builtin-product-9f1a4d2c-5c3e-4a7b-8d12-300000000004"
+      },
+      "inspectedTools": {
+        "component": "ObjectList",
+        "type": "platform:ExternalMcpService",
+        "target": "inspectedService",
+        "data": {
+          "rows": "tools"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "showFooter": false,
+          "emptyText": "tools.empty",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "tools.colTool",
+              "subtitleKey": "name",
+              "minWidth": 160
+            },
+            {
+              "key": "description",
+              "labelKey": "tools.colDescription",
+              "wrap": true,
+              "minWidth": 200
+            },
+            {
+              "key": "inputSchema",
+              "labelKey": "tools.colInputSchema",
+              "wrap": true,
+              "minWidth": 220
+            }
+          ]
+        },
+        "name": "Discovered MCP tools",
+        "description": "On-demand connectivity check and discovered tools for the inspected external MCP service",
+        "id": "builtin-product-9f1a4d2c-5c3e-4a7b-8d12-300000000005"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "External MCP services",
+        "panel.description": "Register external MCP services that agents can call. Check connectivity on demand to inspect available tools.",
+        "action.refresh": "Refresh",
+        "action.addService": "Add service",
+        "action.check": "Check",
+        "action.recheck": "Check again",
+        "action.edit": "Edit",
+        "action.delete": "Delete",
+        "action.close": "Close",
+        "services.searchPlaceholder": "Search by name or address",
+        "services.empty": "No external MCP services configured.",
+        "services.emptyHint": "Add a service to make external tools available to agents.",
+        "services.noMatch": "No services match your search.",
+        "services.created": "External MCP service added.",
+        "services.saved": "External MCP service saved.",
+        "services.deleted": "External MCP service deleted.",
+        "table.service": "Service",
+        "table.usedBy": "Used by",
+        "table.headers": "Request headers",
+        "table.noHeaders": "None",
+        "table.actions": "Actions",
+        "dialog.addTitle": "Add external MCP service",
+        "dialog.editTitle": "Edit external MCP service",
+        "drawer.title": "Connectivity & discovered tools",
+        "tools.title": "Discovered tools",
+        "tools.empty": "Connected, but this service returned no tools.",
+        "tools.colTool": "Tool",
+        "tools.colDescription": "Description",
+        "tools.colInputSchema": "Input schema",
+        "tools.viewSchema": "View schema"
+      },
+      "zh-CN": {
+        "panel.name": "外部 MCP 服务",
+        "panel.description": "登记智能体可调用的外部 MCP 服务，按需检查连通性并查看对方提供的工具。",
+        "action.refresh": "刷新",
+        "action.addService": "添加服务",
+        "action.check": "检查",
+        "action.recheck": "重新检查",
+        "action.edit": "编辑",
+        "action.delete": "删除",
+        "action.close": "关闭",
+        "services.searchPlaceholder": "按服务名称或地址搜索",
+        "services.empty": "还没有配置外部 MCP 服务。",
+        "services.emptyHint": "点击「添加服务」登记外部 MCP 端点，随后即可在智能体中选用。",
+        "services.noMatch": "没有匹配的外部 MCP 服务。",
+        "services.created": "外部 MCP 服务已添加。",
+        "services.saved": "外部 MCP 服务已保存。",
+        "services.deleted": "外部 MCP 服务已删除。",
+        "table.service": "服务",
+        "table.usedBy": "引用智能体",
+        "table.headers": "请求头",
+        "table.noHeaders": "无",
+        "table.actions": "操作",
+        "dialog.addTitle": "添加外部 MCP 服务",
+        "dialog.editTitle": "编辑外部 MCP 服务",
+        "drawer.title": "连通检查与工具清单",
+        "tools.title": "发现的工具",
+        "tools.empty": "连接成功，该服务暂未返回工具。",
+        "tools.colTool": "工具",
+        "tools.colDescription": "说明",
+        "tools.colInputSchema": "输入参数",
+        "tools.viewSchema": "查看参数结构"
+      },
+      "zh-TW": {
+        "panel.name": "外部 MCP 服務",
+        "panel.description": "登記智慧體可呼叫的外部 MCP 服務，按需檢查連線並檢視對方提供的工具。",
+        "action.refresh": "重新整理",
+        "action.addService": "新增服務",
+        "action.check": "檢查",
+        "action.recheck": "重新檢查",
+        "action.edit": "編輯",
+        "action.delete": "刪除",
+        "action.close": "關閉",
+        "services.searchPlaceholder": "依服務名稱或位址搜尋",
+        "services.empty": "尚未設定外部 MCP 服務。",
+        "services.emptyHint": "點擊「新增服務」登記外部 MCP 端點，即可於智慧體中選用。",
+        "services.noMatch": "沒有符合的外部 MCP 服務。",
+        "services.created": "外部 MCP 服務已新增。",
+        "services.saved": "外部 MCP 服務已儲存。",
+        "services.deleted": "外部 MCP 服務已刪除。",
+        "table.service": "服務",
+        "table.usedBy": "引用智慧體",
+        "table.headers": "請求標頭",
+        "table.noHeaders": "無",
+        "table.actions": "操作",
+        "dialog.addTitle": "新增外部 MCP 服務",
+        "dialog.editTitle": "編輯外部 MCP 服務",
+        "drawer.title": "連線檢查與工具清單",
+        "tools.title": "發現的工具",
+        "tools.empty": "連線成功，此服務尚未回傳任何工具。",
+        "tools.colTool": "工具",
+        "tools.colDescription": "說明",
+        "tools.colInputSchema": "輸入參數",
+        "tools.viewSchema": "檢視參數結構"
+      },
+      "ja": {
+        "panel.name": "外部 MCP サービス",
+        "panel.description": "エージェントが呼び出せる外部 MCP サービスを登録し、必要に応じて接続確認とツール一覧の取得を行います。",
+        "action.refresh": "更新",
+        "action.addService": "サービスを追加",
+        "action.check": "確認",
+        "action.recheck": "再確認",
+        "action.edit": "編集",
+        "action.delete": "削除",
+        "action.close": "閉じる",
+        "services.searchPlaceholder": "サービス名またはアドレスで検索",
+        "services.empty": "外部 MCP サービスはまだ登録されていません。",
+        "services.emptyHint": "サービスを追加すると、エージェントから外部ツールを利用できるようになります。",
+        "services.noMatch": "条件に一致するサービスはありません。",
+        "services.created": "外部 MCP サービスを追加しました。",
+        "services.saved": "外部 MCP サービスを保存しました。",
+        "services.deleted": "外部 MCP サービスを削除しました。",
+        "table.service": "サービス",
+        "table.usedBy": "利用エージェント",
+        "table.headers": "リクエストヘッダー",
+        "table.noHeaders": "なし",
+        "table.actions": "操作",
+        "dialog.addTitle": "外部 MCP サービスを追加",
+        "dialog.editTitle": "外部 MCP サービスを編集",
+        "drawer.title": "接続確認と取得ツール",
+        "tools.title": "検出されたツール",
+        "tools.empty": "接続に成功しましたが、ツールは返されませんでした。",
+        "tools.colTool": "ツール",
+        "tools.colDescription": "説明",
+        "tools.colInputSchema": "入力スキーマ",
+        "tools.viewSchema": "スキーマを表示"
+      },
+      "de": {
+        "panel.name": "Externe MCP-Dienste",
+        "panel.description": "Registrieren Sie externe MCP-Dienste für Agenten und prüfen Sie Verbindung und Werkzeuge bei Bedarf.",
+        "action.refresh": "Aktualisieren",
+        "action.addService": "Dienst hinzufügen",
+        "action.check": "Prüfen",
+        "action.recheck": "Erneut prüfen",
+        "action.edit": "Bearbeiten",
+        "action.delete": "Löschen",
+        "action.close": "Schließen",
+        "services.searchPlaceholder": "Nach Name oder Adresse suchen",
+        "services.empty": "Keine externen MCP-Dienste konfiguriert.",
+        "services.emptyHint": "Fügen Sie einen Dienst hinzu, um Agenten externe Werkzeuge bereitzustellen.",
+        "services.noMatch": "Keine Dienste entsprechen Ihrer Suche.",
+        "services.created": "Externer MCP-Dienst hinzugefügt.",
+        "services.saved": "Externer MCP-Dienst gespeichert.",
+        "services.deleted": "Externer MCP-Dienst gelöscht.",
+        "table.service": "Dienst",
+        "table.usedBy": "Verwendet von",
+        "table.headers": "Anforderungsheader",
+        "table.noHeaders": "Keine",
+        "table.actions": "Aktionen",
+        "dialog.addTitle": "Externen MCP-Dienst hinzufügen",
+        "dialog.editTitle": "Externen MCP-Dienst bearbeiten",
+        "drawer.title": "Verbindung & erkannte Werkzeuge",
+        "tools.title": "Erkannte Werkzeuge",
+        "tools.empty": "Verbunden, aber dieser Dienst hat keine Werkzeuge zurückgegeben.",
+        "tools.colTool": "Werkzeug",
+        "tools.colDescription": "Beschreibung",
+        "tools.colInputSchema": "Eingabeschema",
+        "tools.viewSchema": "Schema anzeigen"
+      },
+      "fr": {
+        "panel.name": "Services MCP externes",
+        "panel.description": "Enregistrez des services MCP externes pour les agents et vérifiez la connectivité et les outils à la demande.",
+        "action.refresh": "Actualiser",
+        "action.addService": "Ajouter un service",
+        "action.check": "Vérifier",
+        "action.recheck": "Vérifier à nouveau",
+        "action.edit": "Modifier",
+        "action.delete": "Supprimer",
+        "action.close": "Fermer",
+        "services.searchPlaceholder": "Rechercher par nom ou adresse",
+        "services.empty": "Aucun service MCP externe configuré.",
+        "services.emptyHint": "Ajoutez un service pour rendre ses outils disponibles aux agents.",
+        "services.noMatch": "Aucun service ne correspond à votre recherche.",
+        "services.created": "Service MCP externe ajouté.",
+        "services.saved": "Service MCP externe enregistré.",
+        "services.deleted": "Service MCP externe supprimé.",
+        "table.service": "Service",
+        "table.usedBy": "Utilisé par",
+        "table.headers": "En-têtes de requête",
+        "table.noHeaders": "Aucun",
+        "table.actions": "Actions",
+        "dialog.addTitle": "Ajouter un service MCP externe",
+        "dialog.editTitle": "Modifier le service MCP externe",
+        "drawer.title": "Connectivité et outils détectés",
+        "tools.title": "Outils détectés",
+        "tools.empty": "Connecté, mais ce service n'a renvoyé aucun outil.",
+        "tools.colTool": "Outil",
+        "tools.colDescription": "Description",
+        "tools.colInputSchema": "Schéma d'entrée",
+        "tools.viewSchema": "Afficher le schéma"
+      },
+      "it": {
+        "panel.name": "Servizi MCP esterni",
+        "panel.description": "Registra i servizi MCP esterni richiamabili dagli agenti e verifica su richiesta la connettività e gli strumenti disponibili.",
+        "action.refresh": "Aggiorna",
+        "action.addService": "Aggiungi servizio",
+        "action.check": "Verifica",
+        "action.recheck": "Verifica di nuovo",
+        "action.edit": "Modifica",
+        "action.delete": "Elimina",
+        "action.close": "Chiudi",
+        "services.searchPlaceholder": "Cerca per nome o indirizzo",
+        "services.empty": "Nessun servizio MCP esterno configurato.",
+        "services.emptyHint": "Aggiungi un servizio per rendere disponibili gli strumenti esterni agli agenti.",
+        "services.noMatch": "Nessun servizio corrisponde alla ricerca.",
+        "services.created": "Servizio MCP esterno aggiunto.",
+        "services.saved": "Servizio MCP esterno salvato.",
+        "services.deleted": "Servizio MCP esterno eliminato.",
+        "table.service": "Servizio",
+        "table.usedBy": "Utilizzato da",
+        "table.headers": "Intestazioni richiesta",
+        "table.noHeaders": "Nessuna",
+        "table.actions": "Azioni",
+        "dialog.addTitle": "Aggiungi servizio MCP esterno",
+        "dialog.editTitle": "Modifica servizio MCP esterno",
+        "drawer.title": "Connettività e strumenti rilevati",
+        "tools.title": "Strumenti rilevati",
+        "tools.empty": "Connesso, ma questo servizio non ha restituito strumenti.",
+        "tools.colTool": "Strumento",
+        "tools.colDescription": "Descrizione",
+        "tools.colInputSchema": "Schema di input",
+        "tools.viewSchema": "Mostra schema"
+      },
+      "ar": {
+        "panel.name": "خدمات MCP الخارجية",
+        "panel.description": "سجّل خدمات MCP الخارجية التي يمكن للوكلاء استدعاؤها، وتحقق من الاتصال والأدوات المتاحة عند الطلب.",
+        "action.refresh": "تحديث",
+        "action.addService": "إضافة خدمة",
+        "action.check": "فحص",
+        "action.recheck": "إعادة الفحص",
+        "action.edit": "تعديل",
+        "action.delete": "حذف",
+        "action.close": "إغلاق",
+        "services.searchPlaceholder": "البحث بالاسم أو العنوان",
+        "services.empty": "لم يتم إعداد أي خدمات MCP خارجية.",
+        "services.emptyHint": "أضف خدمة لإتاحة أدواتها الخارجية للوكلاء.",
+        "services.noMatch": "لا توجد خدمات مطابقة للبحث.",
+        "services.created": "تمت إضافة خدمة MCP الخارجية.",
+        "services.saved": "تم حفظ خدمة MCP الخارجية.",
+        "services.deleted": "تم حذف خدمة MCP الخارجية.",
+        "table.service": "الخدمة",
+        "table.usedBy": "مستخدم بواسطة",
+        "table.headers": "ترويسات الطلب",
+        "table.noHeaders": "لا يوجد",
+        "table.actions": "الإجراءات",
+        "dialog.addTitle": "إضافة خدمة MCP خارجية",
+        "dialog.editTitle": "تعديل خدمة MCP الخارجية",
+        "drawer.title": "فحص الاتصال والأدوات المكتشفة",
+        "tools.title": "الأدوات المكتشفة",
+        "tools.empty": "تم الاتصال بنجاح، لكن هذه الخدمة لم تُعد أي أدوات.",
+        "tools.colTool": "الأداة",
+        "tools.colDescription": "الوصف",
+        "tools.colInputSchema": "مخطط الإدخال",
+        "tools.viewSchema": "عرض المخطط"
+      }
+    }
+  }
+}

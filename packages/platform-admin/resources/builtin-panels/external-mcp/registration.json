@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-external-mcp",
+      "input": {
+        "name": "External MCP services",
+        "description": "Register external MCP services that agents can call, configure secret request headers, and check connectivity and tools on demand"
+      }
+    }
+  ]
+}

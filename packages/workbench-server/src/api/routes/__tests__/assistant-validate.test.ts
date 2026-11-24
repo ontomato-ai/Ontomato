@@ -125,7 +125,7 @@ it("opens a create form in build-test without validating empty values or admitti
   expect(opened.values).not.toHaveProperty("sortOrder");
   expect(opened.save.bodySchema.properties).not.toHaveProperty("sortOrder");
   expect(opened.fields).toContainEqual(expect.objectContaining({
-    path: "/enabledMcpServiceIds", control: { kind: "reference", objectType: "platform:McpServiceOption", multiple: true },
+    path: "/enabledMcpServiceIds", control: { kind: "reference", objectType: "platform:ExternalMcpService", multiple: true },
   }));
   expect(opened.fields).toContainEqual(expect.objectContaining({ path: "/icon", control: { kind: "avatar" } }));
   expect(opened.fields).toContainEqual(expect.objectContaining({ path: "/executionUserId", readOnly: true }));

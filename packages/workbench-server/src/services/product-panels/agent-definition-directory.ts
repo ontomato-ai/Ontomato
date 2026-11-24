@@ -120,6 +120,41 @@ function validateId(primaryKey: string) {
 const isShared = (grants: ProductGrantRecord[]) =>
   grants.some(grant => grant.principalKind === "domain" && grant.verb === "use");
 
+export interface VisibleAgentMcpUsage {
+  /** Whether the caller can view at least one MCP-capable agent definition in this domain. */
+  readonly hasVisibleAgents: boolean;
+  /** Caller-visible agent display names grouped by enabled external MCP service ID. */
+  readonly byServiceId: ReadonlyMap<string, readonly string[]>;
+}
+
+/**
+ * Returns caller-visible agents' external MCP service references using the agent owner's own
+ * visibility rules (`grantedProductIds("view", viewer)` + `assistantStore.channelAgents`).
+ */
+export async function readVisibleAgentMcpUsages(
+  owner: AssistantOwner,
+  viewer: AssistantCredentials,
+): Promise<VisibleAgentMcpUsage> {
+  const [ids, agents] = await Promise.all([
+    grantedProductIds("view", viewer),
+    assistantStore.channelAgents(owner.domainId),
+  ]);
+  const visible = new Set(ids);
+  const byServiceId = new Map<string, string[]>();
+  let visibleCount = 0;
+  for (const agent of agents) {
+    if (!visible.has(agent.id) || isAppBuilderKind(agent.kind)) continue;
+    visibleCount += 1;
+    const label = assistantName(agent, viewer.locale);
+    for (const serviceId of agent.enabled_mcp_service_ids ?? []) {
+      const list = byServiceId.get(serviceId);
+      if (list) list.push(label);
+      else byServiceId.set(serviceId, [label]);
+    }
+  }
+  return { hasVisibleAgents: visibleCount > 0, byServiceId };
+}
+
 type FormInputs = Pick<PanelFormRequest, "values" | "changedField">;
 
 export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: AssistantCredentials) {
