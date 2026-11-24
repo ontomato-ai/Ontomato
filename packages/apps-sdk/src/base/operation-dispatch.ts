@@ -212,6 +212,13 @@ export interface OperationRunner {
   reset(): void;
 }
 
+export const agentOperationSecretRefusal = {
+  ok: false,
+  reason: "validation_failed",
+  code: "PANEL_SECRET_HUMAN_INPUT_REQUIRED",
+  message: "Ask the user to enter secret values on the page.",
+} as const;
+
 /**
  * Shared execution state and dispatch path for `OperationButton` and `ObjectHeader`'s "More" menu:
  * handles editable parameter dialog opening, read/write dispatch, host confirmation, batch checked-list pruning,
@@ -225,7 +232,6 @@ export function useOperationRunner(options: {
   /** Checks whether the mounted UI entry (button or overflow item) is still visible and enabled. */
   isEntryAvailable?: (operationName: string) => { readonly ok: true } | { readonly ok: false; readonly message: string };
   onDone?: (operationName: string, outcome: OperationOutcome) => void;
-  onSecretDelivery?: import("../panel/instance").PanelWriteOperationOptions["onSecretDelivery"];
   onRead?: (operationName: string, result: PanelReadOperationResult) => void;
 }): OperationRunner {
   let runnerDisposed = false;
@@ -327,7 +333,7 @@ export function useOperationRunner(options: {
         const input = owned.source === "draft" || hasDeclaredReadInputs
           ? readOperationInput(panel.instance, slot.slot, operationName, draftValues)
           : effectiveInput;
-        const result = await panel.instance.readOperation(operationId, { target: targetInfo.target, input });
+        const result = await panel.instance.readOperation(operationId, { target: targetInfo.target, input }, agentContext?.agentRun);
         read.value = result;
         options.onRead?.(operationName, result);
         return "executed";
@@ -459,7 +465,6 @@ export function useOperationRunner(options: {
           first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: effectiveInput } },
           {
             onConfirmed,
-            ...(options.onSecretDelivery && { onSecretDelivery: options.onSecretDelivery }),
             ...(agentContext ? { agentContext, evaluateSubmission: evaluateButtonSubmission } : {}),
           },
         );

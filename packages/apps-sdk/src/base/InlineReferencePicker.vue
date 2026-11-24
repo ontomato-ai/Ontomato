@@ -174,15 +174,18 @@ function searchRows(keyword = "") {
 // ---- Options mode (`panelOptionList`): remote or local search ----
 const optionsDatum = member.projection.data.options;
 const optionsDeclaration = optionsDatum ? directReadDeclaration(member.projection, optionsDatum) : undefined;
+const fixedOptionsParams = optionsDeclaration?.parameterMode === "fixed" ? optionsDeclaration.params : undefined;
+const requiresOptionsKeyword = optionsDeclaration?.parameterMode === "fixed"
+  && optionsDeclaration.requiredParams?.includes("keyword") === true;
 const supportsOptionsRemoteSearch = dataMode === "options"
-  && (!optionsDeclaration || optionsDeclaration.parameterMode !== "fixed" || "keyword" in optionsDeclaration.params);
+  && (!fixedOptionsParams || "keyword" in fixedOptionsParams);
 const supportsRemoteSearch = supportsOptionsRemoteSearch || supportsRowsRemoteSearch;
 const canFilter = dataMode === "options" || !isPagedRows || supportsRowsRemoteSearch;
 
 const readOptions = dataMode === "options" ? useMemberRead("options") : null;
 
 const offeredOptions = shallowRef<readonly InlineOption[]>([]);
-const searchingOptions = ref(dataMode === "options");
+const searchingOptions = ref(dataMode === "options" && !requiresOptionsKeyword);
 const optionsUnavailable = shallowRef<{ status: "forbidden" | "error" | "awaiting"; message: string } | null>(null);
 const optionDiagnostics = shallowRef<readonly string[]>([]);
 
@@ -202,8 +205,19 @@ let searchGeneration = 0;
 function searchOptions(keyword = "") {
   if (!readOptions) return;
   const generation = ++searchGeneration;
+  const trimmed = keyword.trim();
+  if (requiresOptionsKeyword && !trimmed) {
+    searchingOptions.value = false;
+    offeredOptions.value = [];
+    optionsUnavailable.value = null;
+    optionDiagnostics.value = [];
+    return;
+  }
   searchingOptions.value = true;
-  void readOptions({ ...(keyword ? { keyword } : {}), page: { number: 1, size: 50 } }).then((result) => {
+  void readOptions({
+    ...(trimmed ? { keyword: trimmed } : {}),
+    ...(!fixedOptionsParams || "page" in fixedOptionsParams ? { page: { number: 1, size: 50 } } : {}),
+  }).then((result) => {
     if (generation !== searchGeneration) return;
     searchingOptions.value = false;
     if (result.status === "ready") {
@@ -246,7 +260,7 @@ const selectedRef = computed<PanelObjectRef | null>(() =>
 );
 const currentKey = computed<string>(() => selectedRef.value?.primaryKey ?? "");
 
-if (readOptions) onMounted(() => searchOptions());
+if (readOptions && !requiresOptionsKeyword) onMounted(() => searchOptions());
 
 const selectedDatum = member.projection.data.selected;
 if (selectedDatum) {

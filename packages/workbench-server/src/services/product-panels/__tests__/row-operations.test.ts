@@ -353,8 +353,8 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       }
       return map;
     });
-    const unavailableSingle = vi.fn(async (_host, target: { primaryKey: string }) =>
-      target.primaryKey === "app-1" ? { reason: "Application is archived" } : undefined);
+    const unavailableSingle = vi.fn(async (_host, target: { primaryKey: string } | null) =>
+      target!.primaryKey === "app-1" ? { reason: "Application is archived" } : undefined);
 
     const deleteTaskOp: serverOperations.PanelWriteServerOperation = {
       effect: "write",
@@ -867,9 +867,9 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       return map;
     });
     const observedParentTargets: Array<{ objectType: string; primaryKey: string }> = [];
-    const unavailableParent = vi.fn(async (_host, target: { objectType: string; primaryKey: string }) => {
-      observedParentTargets.push(target);
-      return target.primaryKey === "app-1" ? { reason: "Application is locked" } : undefined;
+    const unavailableParent = vi.fn(async (_host, target: { objectType: string; primaryKey: string } | null) => {
+      observedParentTargets.push(target!);
+      return target!.primaryKey === "app-1" ? { reason: "Application is locked" } : undefined;
     });
 
     const deletePanelOp: serverOperations.PanelWriteServerOperation = {

@@ -703,6 +703,7 @@ it("guards canvas selection changes when the panel has unsaved form edits", asyn
     handle: {} as never,
     submit: async () => undefined,
     dirty: () => isDirty,
+    editingTarget: () => null,
     discard,
   });
 

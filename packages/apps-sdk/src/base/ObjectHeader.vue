@@ -22,7 +22,9 @@ import {
   resolveOperationTarget,
   useOperationRunner,
   type OperationOutcome,
+  agentOperationSecretRefusal,
 } from "./operation-dispatch";
+import { hasAgentOperationSecretInput } from "./operation-input-schema";
 import OperationButton from "./OperationButton.vue";
 import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
@@ -361,6 +363,7 @@ watch(
               message: item.descriptor.unavailable?.reason ?? `Operation '${operationName}' is currently disabled.`,
             };
           }
+          if (agentContext && hasAgentOperationSecretInput(item.descriptor, input)) return agentOperationSecretRefusal;
           const inputFields = resolveOperationInputFields(panel, slot, operationName, item.descriptor);
           const filteredInput = filterAllowedOperationInput(input, inputFields);
           const missing = inputFields

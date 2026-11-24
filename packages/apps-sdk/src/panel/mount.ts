@@ -3,6 +3,7 @@ import { contextExpandPageComposer, contextTranslate, contextTransport, panelBri
 import { connectPanelContext } from "./app-context";
 import { defaultLocale } from "apps-sdk:panel-appearance";
 import { createPanelText } from "./text";
+import SecretDeliveryDialog from "../base/SecretDeliveryDialog.vue";
 import { panelHumanOperations } from "./human-operations";
 import {
   PANEL_HOST_CHANNEL,
@@ -125,7 +126,13 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   const app = createApp({
     setup: () => {
       provide(panelContextKey, context);
-      return () => h(panelComponent);
+      return () => [
+        h(panelComponent),
+        instance.secretDeliveries.value.length ? h(SecretDeliveryDialog, {
+          deliveries: instance.secretDeliveries.value,
+          onClose: instance.clearSecretDeliveries,
+        }) : null,
+      ];
     },
   });
   // The one global a panel's HTML and module need: `<Projection slot="…"/>`. Its name is the SDK's public API, so it is

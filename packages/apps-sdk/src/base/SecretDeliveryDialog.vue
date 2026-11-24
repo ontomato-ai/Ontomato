@@ -5,7 +5,9 @@ import { ElButton } from "element-plus/es/components/button/index";
 import { ElDialog } from "element-plus/es/components/dialog/index";
 import { ElInput } from "element-plus/es/components/input/index";
 import type { PanelSecretDelivery } from "@ontomato/contracts/panel-agent";
+import { usePanelContext } from "../panel/context";
 
+const panel = usePanelContext();
 const props = defineProps<{ deliveries: readonly PanelSecretDelivery[] }>();
 const emit = defineEmits<{ close: [] }>();
 const { t, te } = useI18n();
@@ -42,7 +44,9 @@ function download(file: NonNullable<PanelSecretDelivery["download"]>) {
     :title="title"
     width="480px"
     class="sdk-secret-delivery-dialog"
-    append-to-body
+    :append-to="panel.overlayRoot ?? 'body'"
+    :append-to-body="!panel.overlayRoot"
+    :close-on-press-escape="panel.overlayShown?.value ?? true"
     destroy-on-close
     @update:model-value="open => { if (!open) emit('close'); }"
   >

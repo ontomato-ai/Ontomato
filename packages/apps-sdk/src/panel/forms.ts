@@ -2,7 +2,7 @@ import { shallowReactive, shallowRef, type Ref } from "vue";
 import type { ExpectedPageTarget, FormFieldRejection, FormFillOutcome } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
-import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { PanelFormTarget, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { PanelFormDescription, PanelFormField, PanelFormValues, ProjectionOperationBinding } from "@ontomato/contracts/panel-projection";
 import type { PanelAgentActionContext } from "./instance";
@@ -107,6 +107,8 @@ export interface PanelFormAdapter {
   dirty(): boolean;
   /** Drops the reader's unsaved changes and shows the form as its owner holds it. */
   discard(): void;
+  /** The target the current draft edits, even while its visibility snapshot is unavailable. */
+  editingTarget(): PanelFormTarget | null;
   /** Live snapshot of this form's current target, dirty state and values for page visibility; null while still loading. */
   snapshot?(): Omit<PageFormSnapshot, "member" | "memberPath"> | null;
   readonly draft?: {
@@ -283,7 +285,7 @@ export class PanelFormAdapters {
     for (const [slot, adapter] of [...this.#bySlot.entries()]) {
       if (this.#bySlot.get(slot) !== adapter) continue;
       if (!adapter.dirty() && !adapter.handle?.dirty?.value) continue;
-      const target = adapter.snapshot?.()?.target;
+      const target = adapter.editingTarget();
       const targetRemoved =
         hasRemoved
         && target?.kind === "object"

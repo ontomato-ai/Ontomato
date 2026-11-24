@@ -46,9 +46,18 @@ export type PanelOperationRef = z.infer<typeof panelOperationRefSchema>;
  */
 export const panelUploadRequestSchema = z.object({ operation: panelOperationRefSchema }).strict();
 
+/** Identifies the active agent tool call that asked the displayed page to execute an operation. */
+export const panelAgentRunRefSchema = z.object({
+  sessionId: runtimeIdSchema,
+  runId: runtimeIdSchema,
+  toolCallId: runtimeKeySchema,
+}).strict();
+export type PanelAgentRunRef = z.infer<typeof panelAgentRunRefSchema>;
+
 /** Resolve the declared read under the caller's authority without creating a write intent. */
 export const readPanelOperationRequestSchema = panelOperationRefSchema.extend({
   call: panelReadOperationCallSchema,
+  agentRun: panelAgentRunRefSchema.optional(),
 });
 export type ReadPanelOperationRequest = z.infer<typeof readPanelOperationRequestSchema>;
 export { panelReadOperationJsonResultSchema as readPanelOperationResponseSchema } from "./panel-operations";
@@ -61,14 +70,6 @@ export const inspectPanelOperationImpactRequestSchema = z.union([
   panelOperationRefSchema.merge(panelSingleInvocationSchema),
   panelOperationRefSchema.merge(panelBatchInvocationSchema),
 ]);
-
-/** Identifies the active agent tool call that asked the displayed page to execute an operation. */
-export const panelAgentRunRefSchema = z.object({
-  sessionId: runtimeIdSchema,
-  runId: runtimeIdSchema,
-  toolCallId: runtimeKeySchema,
-}).strict();
-export type PanelAgentRunRef = z.infer<typeof panelAgentRunRefSchema>;
 
 /** Requests conversation confirmation for a destructive action on the live panel. */
 export const localPanelConfirmationRequestSchema = z.object({

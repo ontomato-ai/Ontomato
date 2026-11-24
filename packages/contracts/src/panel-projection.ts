@@ -103,6 +103,7 @@ export const panelObjectListRowActionItemSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("operation"),
     operation: z.string().min(1),
+    hideWhenUnavailable: z.boolean().optional(),
     ...rowActionBaseFields,
   }).strict(),
   z.object({

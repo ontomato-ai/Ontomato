@@ -58,6 +58,7 @@ export interface PanelOperationHost {
   request(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
 }
 interface OperationInputDescription {
+  secretFields?: readonly string[];
   /** The owner's input schema with presentation annotations in the reader's locale. */
   describeInputSchema?(host: PanelOperationHost, locale?: string):
     PanelOwnerOperationDescriptor["inputSchema"] | Promise<PanelOwnerOperationDescriptor["inputSchema"]>;
@@ -67,10 +68,9 @@ interface ServerOperation extends OperationInputDescription {
   binding: OntologyElementRef;
   labelKey?: string;
   effect: "write";
-  secretFields?: readonly string[];
   inspectImpact?: PanelImpactInspector;
-  /** The current reader's display reason, only looked up for a concrete record on the operations read. */
-  unavailable?(host: PanelOperationHost, target: PanelRecordTarget): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
+  /** The current reader's display reason for the bound target, or null for a targetless operation. */
+  unavailable?(host: PanelOperationHost, target: PanelRecordTarget | null): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
   /** Optional batch availability lookup across a page of list rows to avoid per-row backend requests. */
   unavailableBatch?(
     host: PanelOperationHost,
@@ -208,7 +208,7 @@ export function operationDeclaration(handler: PanelServerOperation): PanelOperat
         ? handler.targetInput === undefined ? { source: "none" } : { source: "input", input: handler.targetInput }
       : { source: "draft" },
     inputSchema: jsonSchema(handler.inputSchema),
-    ...(handler.effect === "write" && handler.secretFields && { secretFields: handler.secretFields }),
+    ...(handler.secretFields && { secretFields: handler.secretFields }),
     ...(panelOperationUpload(handler) && { upload: panelOperationUpload(handler) }),
   }));
   declarationCache.set(handler, declaration);

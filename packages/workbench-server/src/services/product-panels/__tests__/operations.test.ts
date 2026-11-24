@@ -13,6 +13,7 @@ import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { AGENT_DEFINITION, APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import { openPresentationView } from "../../agent-host/presentation";
 const mocks = vi.hoisted(() => ({createDefinition:vi.fn(), projectDefinition:vi.fn(), assertPermission:vi.fn(),query:vi.fn(),backend:vi.fn(),run:vi.fn(),session:vi.fn(),request:vi.fn(),resolve:vi.fn(),panel:vi.fn(),projection:vi.fn(),pages:vi.fn(),resolveMember:vi.fn(),loadedMember:vi.fn(),restore:vi.fn(),sessionActor:vi.fn()}));
@@ -54,7 +55,7 @@ vi.mock("../current",()=>({
         ...(form && { target: { input: form } }),
       },
     };
-    return { member, projection: { ...projection, data, operations: projection.operations ?? operations } };
+    return { member, projection: { ...projection, data: projection.data ?? data, operations: projection.operations ?? operations } };
   },
 }));
 import {
@@ -458,7 +459,7 @@ it("uses the same owner impact for the human read and agent confirmation of the 
 
 it("previews only executable calls in the agent's confirmation and owner impact", async () => {
   const { handler, request, impact } = installBatchOwner({
-    unavailable: async (_host, target) => target.primaryKey === uuid(9) ? { reason: "Already processed" } : undefined,
+    unavailable: async (_host, target) => target!.primaryKey === uuid(9) ? { reason: "Already processed" } : undefined,
   });
   const [skipped, executable] = request.calls;
   handler.targetLabel.mockImplementation(async (_host, target) => target.primaryKey === skipped.target.primaryKey
@@ -615,7 +616,7 @@ it("uses single-target availability and maps an atomic result only to the execut
   const { handler, request, impact } = installBatchOwner({ unavailable });
   automatic = true;
   const ids = [request.calls[1].target.primaryKey, request.calls[3].target.primaryKey];
-  unavailable.mockImplementation(async (_host, target) => ids.includes(target.primaryKey) ? reason : undefined);
+  unavailable.mockImplementation(async (_host, target) => ids.includes(target!.primaryKey) ? reason : undefined);
   const success = { kind: "success", data: { updated: 3 }, affected: {
     objects: impact.objects.filter(({ target }) => !ids.includes(target.primaryKey)).map(({ target }) => target),
     objectTypes: [request.calls[0].target.objectType],
@@ -865,7 +866,11 @@ it.each([false, true])("handles an Action-backed form with another tab saving fi
  } });
  mocks.projection.mockResolvedValue({ id: "approval", name: "Approve order",
    binding, inputs: { target: identity },
-   operations: { save: { operation: binding, target: { input: "target" } } },
+   data: { form: { source: { object: { input: "target" } }, read: "form", params: {} } },
+   operations: {
+     save: { operation: binding, target: { input: "target" } },
+     run: { operation: binding, target: { input: "target" } },
+   },
  });
  const originalBackend = mocks.backend.getMockImplementation()!;
  mocks.backend.mockImplementation(async (...args) => {
@@ -921,13 +926,20 @@ it.each([false, true])("handles an Action-backed form with another tab saving fi
    ownerCalls.push("execute");
    return Response.json({ success: true, data: { result: "{}", affects: ["Order"] } });
  }));
- const input = { ...action(), operationId: "form.save", call: { target: order, input: { values: { token } } } };
- const { intentId } = await prepareLiveAction(input);
+ const input = {
+   ...action(), operationId: "form.save", secretFields: ["/values/token"],
+   call: { target: order, input: { values: { token } } },
+ };
+ await expect(prepareLiveAction({ ...input, operationId: "form.run", intentId: uuid(96) })).rejects.toMatchObject({
+   code: "PANEL_SECRET_HUMAN_INPUT_REQUIRED",
+ });
+ const prepared = await prepareLiveAction(input);
+ const { intentId } = prepared;
+ expect(JSON.stringify([prepared, intents.get(intentId)])).not.toContain(token);
  const { message } = mocks.request.mock.calls[0]![2] as { message: string };
  expect(message).toContain("Purchase order");
- expect(message).toContain("token");
  expect(message).not.toContain(token);
- expect(ownerCalls).toEqual(["definition", "open"]);
+ expect(ownerCalls.slice(-2)).toEqual(["definition", "open"]);
  if (humanSavesFirst) {
    const manual = await prepareHumanPanelOperation(owner, credentials, input);
    expect(await dispatchHumanPanelOperation(owner, credentials, manual.intentId)).toMatchObject({
@@ -939,10 +951,9 @@ it.each([false, true])("handles an Action-backed form with another tab saving fi
    expect(ownerCalls.filter(call => call === "execute")).toHaveLength(1);
    return;
  }
- expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({
-   kind: "dispatched", outcome: { kind: "success" },
- });
- expect(ownerCalls).toEqual(["definition", "open", "definition", "open", "submit", "execute"]);
+ const outcome = await dispatchHumanPanelOperation(owner, credentials, intentId);
+ expect(outcome).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+ expect(JSON.stringify([outcome, intents.get(intentId)])).not.toContain(token);
 });
 
 it("admits a cross-member form.save write operation bound to another form member via operationDrafts", async () => {
@@ -1024,8 +1035,10 @@ it("marks a batch operation unavailable only when every item in a non-empty arra
     }
     return reasons;
   });
-  const unavailableFallback = vi.fn(async (_host, target: { primaryKey: string }) =>
-    target.primaryKey === "k-draft" ? undefined : { reason: `Single unavailable: ${target.primaryKey}` });
+  const unavailableFallback = vi.fn(async (_host, target: { primaryKey: string } | null) => {
+    const { primaryKey } = target!;
+    return primaryKey === "k-draft" ? undefined : { reason: `Single unavailable: ${primaryKey}` };
+  });
 
   const makeBatchHandler = (
     overrides: Pick<serverOperations.PanelWriteServerOperation, "unavailable" | "unavailableBatch">,
@@ -1325,4 +1338,76 @@ it("rejects an agent-page action that supplies a declared secret", async () => {
     call: { target: null, input: { password: "agent-fixture-secret" } },
   })).rejects.toMatchObject({ code: "PANEL_SECRET_HUMAN_INPUT_REQUIRED" });
   expect(intents.size).toBe(0);
+});
+
+it.each(["none", "draft"] as const)("restricts agent reads with target source %s to human-entered draft secrets", async source => {
+  const handlerRef = "test.previewSecret";
+  const execute = vi.fn(async () => ({ kind: "json" as const, value: "preview" }));
+  mockRegisteredOperation({
+    handlerRef, labelKey: "test.perform", binding: { kind: "PlatformOperation", id: handlerRef },
+    kind: "action", effect: "read", batch: false, target: { source },
+    targetSchema: z.undefined().optional().or(z.object({ kind: z.literal("draft") })),
+    inputSchema: runtimeJsonObjectSchema,
+    describeInputSchema: () => ({
+      properties: {
+        draft: { properties: { password: { format: "password" } } },
+        parameters: { properties: { pin: { "x-secret": true } } },
+      },
+    }),
+    secretFields: ["/parameters/token"],
+    resultSchema: panelReadOperationResultSchema, execute,
+  });
+  const panel = await mocks.panel();
+  panel.manifest.members.run = {
+    target: { projectionId: "preview" },
+    readOperationInputs: { previewSecret: { draft: { slot: "form" }, parameters: { fields: {} } } },
+  };
+  mocks.projection.mockResolvedValue({ id: "preview", binding: { kind: "PlatformOperation", id: handlerRef }, inputs: {} });
+  const request = { applicationId: "A", useId: "tasks", operationId: "run.previewSecret" };
+  const agentRun = { runId: current.id, sessionId: current.sessionId, toolCallId: "preview" };
+  const draft = { password: "human-fixture-secret" };
+  const unsafe = { ...request, call: { input: { draft, parameters: { token: "agent-fixture-secret" } } } };
+
+  await expect(readPanelOperation(owner, credentials, { ...unsafe, agentRun })).rejects.toMatchObject({
+    code: "PANEL_SECRET_HUMAN_INPUT_REQUIRED",
+  });
+  const schemaMarked = { ...request, call: { input: { draft, parameters: { pin: "agent-fixture-pin" } } } };
+  await expect(readPanelOperation(owner, credentials, { ...schemaMarked, agentRun })).rejects.toMatchObject({
+    code: "PANEL_SECRET_HUMAN_INPUT_REQUIRED",
+  });
+  const draftOnly = { ...request, call: { input: { draft, parameters: {} } }, agentRun };
+  if (source === "draft") {
+    await expect(readPanelOperation(owner, credentials, draftOnly)).resolves.toMatchObject({ kind: "json" });
+    expect(execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ input: draftOnly.call.input }));
+  } else {
+    await expect(readPanelOperation(owner, credentials, draftOnly)).rejects.toMatchObject({
+      code: "PANEL_SECRET_HUMAN_INPUT_REQUIRED",
+    });
+    expect(execute).not.toHaveBeenCalled();
+  }
+  await expect(readPanelOperation(owner, credentials, { ...unsafe, agentRun: { ...agentRun, sessionId: uuid(99) } }))
+    .rejects.toMatchObject({ code: "FORBIDDEN" });
+  await expect(readPanelOperation(owner, credentials, unsafe)).resolves.toMatchObject({ kind: "json" });
+});
+
+it("asks the owner for availability of a targetless write operation", async () => {
+  const handlerRef = "test.create";
+  const reason = { reason: "Creation is closed" };
+  const unavailable = vi.fn(async () => reason);
+  mockRegisteredOperation({
+    handlerRef, labelKey: "test.perform", binding: { kind: "PlatformOperation", id: handlerRef },
+    kind: "action", effect: "write", batch: false, unavailable,
+    targetSchema: z.null(), inputSchema: z.object({}), resultSchema: z.object({}),
+    execute: async () => ({ kind: "success" as const, data: {} }),
+  });
+  const panel = await mocks.panel();
+  const member = { target: { projectionId: "create" } };
+  mocks.projection.mockResolvedValue({ id: "create", binding: { kind: "PlatformOperation", id: handlerRef }, inputs: {} });
+  panel.manifest.members.create = member;
+  const { projection } = await requireDirectPanelMember(owner, credentials, panel, "create");
+  const descriptors = await readAdmittedProjectionOperations({ owner, credentials }, {
+    panel, member, projection, slot: "create",
+  }, {});
+  expect(unavailable).toHaveBeenCalledWith(expect.anything(), null);
+  expect(descriptors.create?.unavailable).toEqual(reason);
 });

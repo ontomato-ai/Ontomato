@@ -81,7 +81,7 @@ const deleted = { kind: "success", data: {}, affected: { objects: [knowledge("a"
 const batchOutcome = {
   kind: "batch",
   items: [
-    { target: knowledge("a"), outcome: { kind: "success", data: {} } },
+    { target: knowledge("a"), outcome: { kind: "success", data: {}, secret: { items: [{ label: "Key", value: "batch-fixture-key" }] } } },
     { target: knowledge("b"), outcome: { kind: "refusal", code: "IN_USE", message: "Another entry uses this note" } },
     { target: knowledge("c"), outcome: { kind: "failure", code: "OWNER_FAILED", message: "The knowledge service failed" } },
   ],
@@ -92,7 +92,7 @@ const batchOutcome = {
 let unavailable: { reason: string } | null = null;
 
 /** Node's coordinator, as the frame and its host reach it. */
-function coordinator() {
+function coordinator(secret?: { items: { label: string; value: string }[] }) {
   const intents = new Map<string, Record<string, unknown>>();
   return (request: Sent): Response => {
     const projected = /^\/api\/product-projections\/(.+)$/.exec(request.path);
@@ -135,14 +135,16 @@ function coordinator() {
     const dispatch = /^\/api\/panel-operations\/intents\/([^/]+)\/dispatch$/.exec(request.path);
     if (dispatch) {
       const { intentId, operationId } = intents.get(dispatch[1]!) as { intentId: string; operationId: string };
-      return Response.json({ kind: "dispatched", intentId, outcome: operationId === "removeAll.delete" ? batchOutcome : deleted });
+      return Response.json({ kind: "dispatched", intentId, outcome: operationId === "removeAll.delete" ? batchOutcome : { ...deleted, ...(secret && { secret }) } });
     }
     return nothingAt(request);
   };
 }
 
+let delivery: { items: { label: string; value: string }[] } | undefined;
+
 async function open(state: Record<string, unknown>, ...slots: string[]) {
-  const sent = installPlatform(coordinator());
+  const sent = installPlatform(coordinator(delivery));
   const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
   const frame = panelFrame();
   // What the host hears an operation changed, at its one refresh port.
@@ -177,6 +179,7 @@ const writes = (sent: Sent[]) => sent.filter((request) => request.method !== "GE
   .map((request) => request.path);
 
 afterEach(() => {
+  delivery = undefined;
   document.querySelectorAll(".el-message-box__wrapper, .el-overlay").forEach((element) => element.remove());
   leaveFrame();
   vi.resetModules();
@@ -230,9 +233,11 @@ it("runs one batch over the checked objects, reports each, and keeps checked the
   expect(writes(sent).filter((path) => path.endsWith("/dispatch"))).toHaveLength(1);
   const items = [...buttonOf(0).querySelectorAll("li")].map((item) => [item.getAttribute("data-outcome"), item.textContent]);
   expect(items).toEqual([
-    ["success", "a: Done"], ["refusal", "b: Another entry uses this note"], ["failure", "c: The knowledge service failed"],
+    ["success", expect.stringMatching(/^a:/)], ["refusal", "b: Another entry uses this note"], ["failure", "c: The knowledge service failed"],
   ]);
   expect(context.instance.state.values.value.checkedKnowledge).toEqual(checked.slice(1));
+  expect(context.instance.secretDeliveries.value).toEqual([batchOutcome.items[0]!.outcome.secret]);
+  expect(buttonOf(0).textContent).not.toContain("batch-fixture-key");
 });
 
 it("shows an operation its owner would refuse now as off, with the owner's reason beside it, and prepares nothing", async () => {
@@ -275,4 +280,17 @@ it("runs a target-only read operation without readOperationInputs, saves the fil
     URL.createObjectURL = prevCreate;
     URL.revokeObjectURL = prevRevoke;
   }
+});
+
+it("renders one root delivery for a write in an iframe panel", async () => {
+  delivery = { items: [{ label: "Key", value: "iframe-fixture-key" }] };
+  const { context } = await open({ selectedKnowledge: { className: BUSINESS_KNOWLEDGE, primaryKey: "a" } }, "remove");
+  await click(0);
+  dialogButton(await dialog(), "Delete").click();
+  await vi.waitFor(() => {
+    const dialogs = document.querySelectorAll(".sdk-secret-delivery-dialog");
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0]?.querySelector<HTMLInputElement>("input[type=password]")?.value).toBe(delivery!.items[0]!.value);
+  });
+  expect(context.instance.secretDeliveries.value).toEqual([delivery]);
 });

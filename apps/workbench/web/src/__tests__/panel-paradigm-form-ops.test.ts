@@ -92,6 +92,7 @@ function mountFormHarness(options: {
   locale?: "en" | "zh-CN";
   config?: DirectProjection["config"];
   onSave?: (values: PanelFormValues) => void;
+  secret?: PanelSecretDelivery;
 }) {
   const createMode = options.createMode ?? false;
   const projection: DirectProjection = {
@@ -172,6 +173,7 @@ function mountFormHarness(options: {
         outcome: {
           kind: "success",
           data: {},
+          ...(options.secret && { secret: options.secret }),
           created: { objectType: FUNCTION, primaryKey: "fn-created" },
           affected: { objects: [{ objectType: FUNCTION, primaryKey: "fn-created" }], objectTypes: [FUNCTION] },
         },
@@ -204,6 +206,7 @@ function mountFormHarness(options: {
     element,
     cancelled,
     savedEvents,
+    instance: mount.instance,
     getLastSavedValues: () => lastSavedValues,
     dispose: () => {
       app.unmount();
@@ -218,7 +221,8 @@ describe("P3 ObjectForm save bar paradigm rules", () => {
       { path: "/name", label: "Name", required: true, readOnly: false, valueSchema: { type: "string" }, control: { kind: "text", multiline: false } },
       { path: "/summary", label: "Summary", required: false, readOnly: false, valueSchema: { type: "string" }, control: { kind: "text", multiline: false } },
     ];
-    const harness = mountFormHarness({ fields, values: { name: "Order", summary: "Initial" } });
+    const secret = { items: [{ label: "Key", value: "form-fixture-secret" }] };
+    const harness = mountFormHarness({ fields, values: { name: "Order", summary: "Initial" }, secret });
     try {
       await vi.waitFor(() => expect(harness.element.querySelector('[data-field="/name"] input')).not.toBeNull());
       // Clean edit form: save bar is not rendered at all.
@@ -243,6 +247,9 @@ describe("P3 ObjectForm save bar paradigm rules", () => {
       buttons[1]!.click();
       await vi.waitFor(() => expect(harness.getLastSavedValues()).toEqual({ name: "Order v2", summary: "Updated summary" }));
       await vi.waitFor(() => expect(harness.element.querySelector(".sdk-owner-form-actions")).toBeNull());
+      expect(harness.instance.secretDeliveries.value).toEqual([secret]);
+      expect(harness.savedEvents).toHaveLength(1);
+      expect(JSON.stringify(harness.savedEvents)).not.toContain(secret.items[0]!.value);
     } finally {
       harness.dispose();
     }
@@ -520,7 +527,7 @@ describe("P3 OperationButton parameter dialog", () => {
     }
   });
 
-  it("delivers a confirmed page action secret only through the operator dialog", async () => {
+  it("delivers a conversation-confirmed OperationButton write to the panel instance", async () => {
     const secret = {
       items: [{ label: "Access key", value: "generated-fixture-key" }],
       download: { filename: "key.txt", contentType: "text/plain", content: "a2V5", encoding: "base64" as const },
@@ -531,16 +538,6 @@ describe("P3 OperationButton parameter dialog", () => {
         target: { source: "none" }, batch: false, resultSchema: {}, inputSchema: {},
       },
       secret,
-    });
-    const downloads: string[] = [];
-    const clicked = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
-      downloads.push(this.download);
-    });
-    const createUrl = vi.fn(() => "blob:secret");
-    const revokeUrl = vi.fn();
-    vi.stubGlobal("URL", class extends URL {
-      static createObjectURL = createUrl;
-      static revokeObjectURL = revokeUrl;
     });
     try {
       await vi.waitFor(() => expect(harness.element.querySelector<HTMLButtonElement>(".sdk-operation-button button")?.disabled).toBe(false));
@@ -553,21 +550,8 @@ describe("P3 OperationButton parameter dialog", () => {
       expect(confirmed).toMatchObject({ ok: true, outcome: { secretGenerated: true, message: expect.any(String) } });
       expect(JSON.stringify(confirmed)).not.toContain(secret.items[0]!.value);
       expect(JSON.stringify(confirmed)).not.toContain(secret.download.content);
-      const dialog = await vi.waitFor(() => {
-        const shown = document.querySelector(".sdk-secret-delivery-dialog");
-        if (!shown) throw new Error("Expected one-time delivery");
-        return shown;
-      });
-      expect(dialog.querySelector<HTMLInputElement>("input[type=password]")?.value).toBe(secret.items[0]!.value);
-      expect(clicked).not.toHaveBeenCalled();
-      [...dialog.querySelectorAll("button")].find(button => button.textContent?.includes(secret.download.filename))!.click();
-      expect(createUrl).toHaveBeenCalledWith(expect.any(Blob));
-      expect(downloads).toEqual([secret.download.filename]);
-      expect(revokeUrl).toHaveBeenCalledWith("blob:secret");
-      dialog.querySelector<HTMLButtonElement>("button.el-dialog__headerbtn")!.click();
-      await vi.waitFor(() => expect(document.querySelector(".sdk-secret-delivery-dialog")).toBeNull());
+      expect(harness.instance.secretDeliveries.value).toEqual([secret]);
     } finally {
-      vi.unstubAllGlobals();
       harness.dispose();
     }
   });

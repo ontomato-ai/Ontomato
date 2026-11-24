@@ -38,8 +38,9 @@ const importSkill = {
 };
 const uploadId = "6d1b8a0e-3c2f-4a51-9e07-2b8c4d1f0a93";
 const staged = (file: File): PanelUploadReceipt => ({ uploadId, name: file.name, size: file.size, mime: "application/zip" });
+const secret = { items: [{ label: "Key", value: "upload-fixture-key" }] };
 const imported: PanelOperationOutcome = {
-  kind: "success", message: "Imported skill alpha.", data: { id: "alpha", title: "alpha" },
+  kind: "success", message: "Imported skill alpha.", data: { id: "alpha", title: "alpha" }, secret,
   affected: { objects: [{ objectType: SKILL, primaryKey: "alpha" }], objectTypes: [SKILL] },
 };
 
@@ -88,7 +89,7 @@ function open(exists: boolean) {
   document.body.append(element);
   const app = createApp({ render: () => h(PanelMember, { instance, member: "importer" }) });
   app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
-  return { element, uploads, prepared, preparations, unmount: () => app.unmount() };
+  return { instance, element, uploads, prepared, preparations, unmount: () => app.unmount() };
 }
 
 /** Picks a file, as the reader does in the browser's picker. */
@@ -109,13 +110,15 @@ afterEach(() => {
 });
 
 it("stages the picked file once and writes with it as the declared input, with nothing to confirm for a new skill", async () => {
-  const { element, uploads, prepared, preparations, unmount } = open(false);
+  const { instance, element, uploads, prepared, preparations, unmount } = open(false);
   await pick(element, zip());
   await vi.waitFor(() => expect(element.querySelector(".sdk-file-upload-done")?.textContent).toContain("Imported skill alpha."));
   expect(element.querySelector(".sdk-file-upload-done")!.textContent).toContain("alpha.zip (2 kB)");
   expect(uploads.map((file) => file.name)).toEqual(["alpha.zip"]);
   expect(prepared).toEqual([call({ file: { kind: "upload", uploadId } })]);
   expect(preparations.map(({ confirmation }) => confirmation.kind)).toEqual(["none"]);
+  expect(instance.secretDeliveries.value).toEqual([secret]);
+  expect(element.textContent).not.toContain(secret.items[0]!.value);
   unmount();
 });
 

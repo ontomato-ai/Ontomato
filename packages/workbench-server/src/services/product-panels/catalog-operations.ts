@@ -307,7 +307,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
 
   const panelCopyInputSchema = copyProductCurrentRequestSchema.extend({ template: z.boolean().optional() }).strict();
   const panelDeleteUnavailable: PanelWriteServerOperation["unavailable"] | undefined = kind === "panel"
-    ? async (host, { primaryKey }) => {
+    ? async (host, { primaryKey }: PanelRecordTarget) => {
         const locale = host.locale ?? host.initiator.credentials.locale;
         try {
           const { panel, unavailable } = await readCataloguePanel(host.initiator.owner, host.initiator.credentials, primaryKey);
@@ -492,7 +492,7 @@ const applicationOperations: readonly PanelWriteServerOperation[] = [
     noData,
     async ({ credentials }, id) => applicationCatalogueClient(credentials).remove(id),
     {
-      async unavailable(host, { primaryKey }) {
+      async unavailable(host, { primaryKey }: PanelRecordTarget) {
         const locale = host.locale ?? host.initiator.credentials.locale;
         try {
           const detail = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);

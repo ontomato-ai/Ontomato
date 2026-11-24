@@ -4,6 +4,7 @@ import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel, type PanelManifest, type PanelMemberPath } from "@ontomato/contracts/panel-manifest";
+import type { PanelSecretDelivery } from "@ontomato/contracts/panel-agent";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { panelRowOperationKey } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
@@ -61,6 +62,7 @@ function mountPanel(options: {
   messages?: Record<string, Record<string, string>>;
   initial?: Record<string, unknown>;
   readOperation?: PanelHumanOperations["read"];
+  secret?: PanelSecretDelivery;
   reportOperations?: PanelRunReports["operations"];
   listeners?: Record<string, Record<string, (...args: unknown[]) => void>>;
   memberSlots?: (
@@ -95,7 +97,7 @@ function mountPanel(options: {
       response: {
         kind: "dispatched",
         intentId: preparation.intentId,
-        outcome: { kind: "success", message: "Done", data: {} },
+        outcome: { kind: "success", message: "Done", data: {}, ...(options.secret && { secret: options.secret }) },
       },
     }),
     readProjection: async (id) => {
@@ -183,12 +185,14 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
       async () => ({ kind: "json", value: {} }),
     );
     const reportOperations = vi.fn();
-    const { element, preparedCalls } = mountPanel({
+    const secret = { items: [{ label: "Key", value: "row-fixture-secret" }] };
+    const { instance, element, preparedCalls } = mountPanel({
       manifest,
       projections: { [projection.id]: projection },
       members: ["tasks"],
       messages: { en: { "col.name": "Task" } },
       readOperation,
+      secret,
       reportOperations,
       answer(request) {
         if (!request.operations) return ready([{
@@ -214,16 +218,17 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
     buttons[0]!.click();
     await vi.waitFor(() => expect(readOperation).toHaveBeenCalledWith("tasks.inspect", {
       target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "clicked" }, input: {},
-    }, undefined));
+    }, undefined, undefined));
     await vi.waitFor(() => expect(buttons[1]!.disabled).toBe(false));
     buttons[1]!.click();
     await vi.waitFor(() => expect(preparedCalls[0]).toMatchObject({
       operationId: "tasks.remove",
       invocation: { call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "related" } } },
     }));
+    await vi.waitFor(() => expect(instance.secretDeliveries.value).toEqual([secret]));
   });
 
-  it("renders built-in rowActions (inline + overflow More + local + conditional + batch rowOperations) and column widths", async () => {
+  it.each([false, true])("renders row actions with hideWhenUnavailable=%s", async (hideWhenUnavailable) => {
     const rows = [
       { primaryKey: "t-1", label: "Daily Sync", fields: { status: "active", schedule: "0 0 * * *" } },
       { primaryKey: "t-2", label: "System GC", fields: { status: "paused", schedule: "0 3 * * *" } },
@@ -247,8 +252,8 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
           width: "220px",
           items: [
             { kind: "local", id: "edit", labelKey: "action.edit" },
-            { kind: "operation", operation: "runNow", when: { field: "status", equals: "active" } },
-            { kind: "operation", operation: "remove", danger: true },
+            { kind: "operation", operation: "runNow", ...(!hideWhenUnavailable && { when: { field: "status", equals: "active" } }) },
+            { kind: "operation", operation: "remove", danger: true, hideWhenUnavailable },
           ],
         },
       },
@@ -345,12 +350,15 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
     // Row 0 (`status: active`) has 3 visible actions -> 2 inline (`Edit`, `Run now`) + 1 More menu (`···`).
     const tableRows = [...element.querySelectorAll<HTMLElement>("tbody tr")];
     const row0Buttons = [...tableRows[0]!.querySelectorAll<HTMLButtonElement>(".sdk-object-list-row-actions button")];
-    expect(row0Buttons.map((b) => b.textContent?.trim())).toEqual(["Edit", "Run now", "···"]);
-    expect(row0Buttons[2]!.getAttribute("aria-label")).toContain("More");
+    expect(row0Buttons.at(-1)?.getAttribute("aria-label")).toContain("More");
 
     // Row 1 (`status: paused`) hides `Run now` (`when` condition) -> 2 inline (`Edit`, `Delete`), no More button.
     // `Delete` is disabled by batch `rowOperations` with its reason in title.
     const row1Buttons = [...tableRows[1]!.querySelectorAll<HTMLButtonElement>(".sdk-object-list-row-actions button")];
+    if (hideWhenUnavailable) {
+      expect(row1Buttons.map((b) => b.textContent?.trim())).toEqual(["Edit", "Run now"]);
+      return;
+    }
     expect(row1Buttons.map((b) => b.textContent?.trim())).toEqual(["Edit", "Delete"]);
     expect(row1Buttons[1]!.disabled).toBe(true);
     expect(row1Buttons[1]!.title).toBe("System task cannot be removed");

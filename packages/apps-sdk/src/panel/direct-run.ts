@@ -1,6 +1,7 @@
 import { createApp, h, provide, type App } from "vue";
 import { ID_INJECTION_KEY } from "element-plus/es/hooks/use-id/index.mjs";
 import * as panelEntry from "../entries/panel";
+import SecretDeliveryDialog from "../base/SecretDeliveryDialog.vue";
 import { baseComponents } from "../base-components";
 import { panelContextKey } from "./context";
 import { directPanelContext } from "./direct";
@@ -80,7 +81,13 @@ async function mountDirectPanelComponent(component: PanelComponent, port: Direct
     setup: () => {
       provide(panelContextKey, context);
       provide(directMountKey, mount);
-      return () => h(root);
+      return () => [
+        h(root),
+        mount.instance.secretDeliveries.value.length ? h(SecretDeliveryDialog, {
+          deliveries: mount.instance.secretDeliveries.value,
+          onClose: mount.instance.clearSecretDeliveries,
+        }) : null,
+      ];
     },
   });
   // The one global a panel's HTML and module need, as in a frame: `<Projection slot="…"/>`.
