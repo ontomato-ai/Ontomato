@@ -116,12 +116,14 @@ export const panelGraphOverviewSchema = z.object({
   edges: z.array(platformOntologyEdgeSchema).optional(),
   edgesTruncated: z.boolean().optional(),
 }).strict();
+export type PanelGraphOverview = z.infer<typeof panelGraphOverviewSchema>;
 
 export const panelGraphConnectionsSchema = z.object({
   edges: z.array(platformOntologyEdgeSchema),
   truncated: z.boolean(),
   version: z.string(),
 }).strict();
+export type PanelGraphConnections = z.infer<typeof panelGraphConnectionsSchema>;
 
 export const platformOntologyObjectsRequestSchema = z.object({
   type: typeId,

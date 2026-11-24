@@ -411,19 +411,25 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OntologyGraph",
     role: "control",
     meaning:
-      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, syncing `visibleLayers`, `visibleRelationKinds`, and `expandedNodes` bidirectionally with panel state while keeping dragged coordinates and viewport local, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit and relayout controls. Publishes `startLabel`, `startDetail`, and `visibleRelationKindLabels` as read-only outputs. The graph fills the height of the box its member is placed in and falls back to a 420px canvas height when that box has no definite height.",
-    effects: "Reads the bound graph source's schema, counts, starting node and one-hop neighbors as the reader; writes only the panel's own selection, layer filter, relation-kind filter, and expanded-nodes state.",
+      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared types and relation kinds by layer with per-type readable counts and access statuses; sampled overview mode (`overview` and optional deferred `connections` ports) arranges nodes into grouped clusters with obstacle-avoiding group headings, aggregated inter-group edges (which fade behind a selected node's direct edges), generation/empty/truncation notices, and version-conflict recovery; instance mode expands one-hop neighbors with optional paginated loading (`offset`, `limit`) and direction/target-group/relation filtering. Preserves complete object identities, highlights drawn query matches, syncs `visibleLayers`, `visibleRelationKinds`, `expandedNodes`, and per-person `positions` (`json`) bidirectionally with panel state, distinguishes no-neighbors, owner-refused and read-failed outcomes, provides toolbar controls (aggregated edges, edge labels, zoom, fit, relayout, refresh, PNG export) plus `#toolbar` and `#overlay` slots, and publishes read-only summary outputs. The graph fills the height of the box its member is placed in and falls back to a 420px canvas height when that box has no definite height.",
+    effects: "Reads the bound graph source's schema, counts, starting node, sampled overview, deferred connections, and paginated one-hop neighbors as the reader; writes only the panel's own selection, layer filter, relation-kind filter, expanded-nodes, and personal positions state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
-    // Expanding from a node is what the graph does; the three overview reads it shows when a placement supplies them.
+    // Expanding from a node is what the graph does; optional overview, deferred connections, and schema/counts/start reads activate when a placement supplies them.
     data: {
       schema: { results: ["panelGraphSchema"], required: false },
       counts: { results: ["panelGraphCounts"], required: false },
       start: { results: ["panelGraphStart"], required: false },
-      // The node the reader expands, and the layers and relation kinds the graph shows now.
-      neighbors: { results: ["panelGraphNeighbors"], required: true, runtimeParams: ["node", "layers", "relationKinds"] },
+      overview: { results: ["panelGraphOverview"], required: false },
+      connections: { results: ["panelGraphConnections"], required: false, runtimeParams: ["version", "sampleToken"] },
+      // The node the reader expands, plus optional layers, relation kinds, target group, direction, and paging parameters.
+      neighbors: {
+        results: ["panelGraphNeighbors"],
+        required: true,
+        runtimeParams: ["node", "layers", "relationKinds", "targetClass", "direction", "limit", "offset"],
+      },
     },
     // What a placement hands the graph: how it draws, where instance mode starts, what is selected, what to highlight,
-    // which layers are visible, and which nodes are expanded.
+    // which layers are visible, which nodes are expanded, and saved per-person node coordinates.
     inputs: {
       mode: { kind: "scalar", type: "string" },
       start: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
@@ -441,11 +447,20 @@ export const components: readonly ComponentMetadata[] = [
       visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
       visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
       expandedNodes: { kind: "list", items: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
+      positions: { kind: "json" },
     },
     readOnlyOutputs: {
       startLabel: { kind: "scalar", type: "string" },
       startDetail: { kind: "scalar", type: "string" },
       visibleRelationKindLabels: { kind: "list", items: { kind: "scalar", type: "string" } },
+      activeMode: { kind: "scalar", type: "string" },
+      graphStatus: { kind: "scalar", type: "string" },
+      graphVersion: { kind: "scalar", type: "string" },
+      sampleToken: { kind: "scalar", type: "string" },
+      nodeCount: { kind: "scalar", type: "number" },
+      edgeCount: { kind: "scalar", type: "number" },
+      hasMoreNeighbors: { kind: "scalar", type: "boolean" },
+      versionChanged: { kind: "scalar", type: "boolean" },
     },
   }),
   defineComponentMeta({

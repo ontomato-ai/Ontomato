@@ -19,7 +19,16 @@ export async function readPanelData(requests: PlatformRequests, request: Omit<Pr
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request),
   }, "");
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.message ?? "The panel's data could not be read");
+  if (!response.ok) {
+    const error = new Error(body.error?.message ?? body.message ?? "The panel's data could not be read") as Error & {
+      code?: string;
+      status?: number;
+    };
+    const code = body.error?.code ?? body.code;
+    if (typeof code === "string" && code.length > 0) error.code = code;
+    error.status = response.status;
+    throw error;
+  }
   return productPanelReadResponseSchema.parse(body);
 }
 

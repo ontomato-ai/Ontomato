@@ -41,7 +41,7 @@ export type PanelOperationAffected = ReturnType<typeof panelOperationAffectedSch
  */
 export type MemberDataState =
   | Exclude<PanelDataState, { status: "error" }>
-  | { status: "error"; message: string; unreachable?: true; retry?: () => void }
+  | { status: "error"; message: string; code?: string; unreachable?: true; retry?: () => void }
   | { status: "awaiting" };
 
 /** A projection input's value: a JSON value as the member and the run supply it; absent while nothing is supplied. */
@@ -320,12 +320,21 @@ export async function readMemberDatum(read: PanelReadPort, projection: DirectPro
   const result: MemberDataState = await read({
     memberPath, dataName: name, inputs: authored,
     ...(Object.keys(runtime).length ? { runtimeParams: runtime } : {}),
-  }).catch((reason: unknown) => ({
-    status: "error" as const, message: reason instanceof Error ? reason.message : String(reason),
-    // No answer at all: the request reached nothing (the browser's network failure) or what came back was no answer of
-    // the platform's (a gateway's page while a service is replaced). A failure the platform states keeps its words.
-    ...(reason instanceof TypeError || reason instanceof SyntaxError ? { unreachable: true as const } : {}),
-  }));
+  }).catch((reason: unknown) => {
+    const code = reason && typeof reason === "object" && typeof (reason as { code?: unknown }).code === "string"
+      ? (reason as { code: string }).code
+      : reason && typeof reason === "object" && (reason as { status?: unknown }).status === 409
+        ? "GRAPH_VERSION_CHANGED"
+        : undefined;
+    return {
+      status: "error" as const,
+      message: reason instanceof Error ? reason.message : String(reason),
+      ...(code ? { code } : {}),
+      // No answer at all: the request reached nothing (the browser's network failure) or what came back was no answer of
+      // the platform's (a gateway's page while a service is replaced). A failure the platform states keeps its words.
+      ...(reason instanceof TypeError || reason instanceof SyntaxError ? { unreachable: true as const } : {}),
+    };
+  });
   if (result.status !== "ready") return result;
   // The host's answer is checked against the result the owner registered for this read.
   const declaration = directReadDeclaration(projection, data);
