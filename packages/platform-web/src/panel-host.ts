@@ -190,6 +190,7 @@ export function platformPanelHost(
         mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
         panelDomainComponents = answer.domainComponents;
         lastPanel = answer.panel;
+        sourceReconciled = true;
         return { kind: "registered", applicationId, use, panel: answer.panel };
       } catch (failure) {
         sourceFailed = true;
@@ -310,6 +311,7 @@ export function framePanelHost(
       mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
       frameDomainComponents = answer.domainComponents;
       lastPanel = answer.panel;
+      sourceReconciled = true;
       return { kind: "registered", applicationId, use, panel: answer.panel };
     },
     sourceReconciled: () => sourceReconciled,
@@ -413,6 +415,7 @@ export function builtinFramePanelHost(
       setCachedPanel(cacheKey, answer.panel, scope);
       mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
       lastPanel = answer.panel;
+      sourceReconciled = true;
       return { kind: "registered", applicationId, use: placeholderUse, panel: answer.panel };
     },
     sourceReconciled: () => sourceReconciled,

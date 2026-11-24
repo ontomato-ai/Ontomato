@@ -67,7 +67,6 @@ const dynamicAppIds=computed(()=>catalog.applications.value.filter(app=>['hosted
 async function readShortcuts(){try{pinnedAppIds.value=(await readHomeState()).favorites.filter(item=>item.kind==='application').map(item=>item.id);}catch{/* Shortcut discovery must not prevent opening the platform. */}}
 onMounted(()=>{void readShortcuts();window.addEventListener(HOME_PREFERENCES_CHANGED,readShortcuts);});
 onBeforeUnmount(()=>window.removeEventListener(HOME_PREFERENCES_CHANGED,readShortcuts));
-watch(()=>route.path,()=>{void readShortcuts();});
 onMounted(() => { void catalog.refresh(); });
 watch(() => host.navigation.value, () => { void catalog.refresh(); }, { deep: true });
 // The home lists every application, so returning to it reads the catalog again; the first read above covers a shell

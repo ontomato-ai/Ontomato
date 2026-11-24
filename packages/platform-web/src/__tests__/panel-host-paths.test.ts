@@ -18,7 +18,7 @@ import {
   getCachedProjection,
   setCachedProjection,
 } from "../panel-definition-cache";
-import { cachedApplicationFrameManifest, framePanelHost, panelHostPaths, platformPanelHost, readApplicationFrameManifest } from "../panel-host";
+import { builtinFramePanelHost, cachedApplicationFrameManifest, framePanelHost, panelHostPaths, platformPanelHost, readApplicationFrameManifest } from "../panel-host";
 
 /*
  * The panel host's addresses (design 10.3): each request goes to the owner it belongs to, and the two owners differ.
@@ -1175,6 +1175,128 @@ describe("dynamic and nested member projection access verification", () => {
       expect(requests.filter((entry) => entry.startsWith("/api/product-projections/"))).toEqual([]);
     } finally {
       secondScope.stop();
+    }
+  });
+
+  it("reconciles cold loads from includeProjections=1 with 0 /snapshot calls and still checks /snapshot on cache hit for all three hosts", async () => {
+    const use = {
+      id: "use-cold-reconcile",
+      pageKey: "cold-reconcile",
+      panelId: "panel-cold-page",
+      path: "/applications/app-a/cold-reconcile",
+      access: { kind: "domain-member" as const },
+    };
+    const cases = [
+      {
+        name: "platformPanelHost",
+        panelId: use.panelId,
+        projId: "proj-cold-page",
+        createPort: () => platformPanelHost("app-a", use, () => {}),
+      },
+      {
+        name: "framePanelHost",
+        panelId: "panel-cold-frame",
+        projId: "proj-cold-frame",
+        createPort: () => framePanelHost("app-a", use, "panel-cold-frame", () => {}),
+      },
+      {
+        name: "builtinFramePanelHost",
+        panelId: "panel-cold-builtin-frame",
+        projId: "proj-cold-builtin-frame",
+        createPort: () => builtinFramePanelHost("settings", "panel-cold-builtin-frame"),
+      },
+    ] as const;
+
+    for (const hostCase of cases) {
+      clearPanelDefinitionCache();
+      const proj = makeProjection(hostCase.projId, `Projection for ${hostCase.name}`);
+      const panelDef = makeCodedPanel(
+        hostCase.panelId,
+        definePanel({
+          state: {},
+          members: {
+            fixedMember: { target: { projectionId: proj.id } },
+          },
+        }),
+        "fixedMember",
+      );
+
+      const requests: string[] = [];
+      vi.stubGlobal("fetch", async (input: string | URL, init?: { body?: string }) => {
+        const url = new URL(String(input), "http://localhost");
+        requests.push(url.pathname + url.search);
+        if (url.pathname === panelHostPaths.panel(hostCase.panelId)) {
+          return Response.json({
+            panel: panelDef,
+            projections: {
+              [proj.id]: { status: "ready", projection: proj },
+            },
+          });
+        }
+        if (url.pathname === panelHostPaths.snapshot(hostCase.panelId)) {
+          return Response.json({
+            panel: { id: panelDef.id, revision: panelDef.revision },
+            projections: [{ id: proj.id, revision: proj.revision }],
+            members: [{ status: "ready", memberPath: [{ member: "fixedMember" }], target: { kind: "projection", id: proj.id }, revision: proj.revision }],
+            ...(hostCase.name === "platformPanelHost"
+              ? { pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null } }
+              : {}),
+          });
+        }
+        if (url.pathname.endsWith("/page-skill-context")) {
+          return Response.json({
+            pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+          });
+        }
+        if (url.pathname === "/api/product-panels/read") {
+          const body = JSON.parse(init?.body ?? "{}") as { operations?: true };
+          return Response.json(body.operations ? { status: "ready", value: {} } : { status: "ready", value: [] });
+        }
+        return Response.json({});
+      });
+
+      // 1. Cold open: 1 GET /api/product-panels/:id?...includeProjections=1 and 0 /snapshot calls.
+      const coldScope = effectScope();
+      try {
+        const port = hostCase.createPort();
+        const view = coldScope.run(() => usePanelInstance(port, {
+          labels: hostLabels,
+          label: () => hostCase.name,
+          address: () => use.path,
+          initial: () => ({}),
+        }))!;
+        await view.ready;
+        await nextTick();
+        await Promise.resolve();
+        expect(port.sourceReconciled?.(), hostCase.name).toBe(true);
+        const panelReads = requests.filter((entry) => entry.startsWith(`${panelHostPaths.panel(hostCase.panelId)}?`));
+        expect(panelReads, hostCase.name).toHaveLength(1);
+        expect(new URLSearchParams(panelReads[0]!.split("?")[1]).get("includeProjections"), hostCase.name).toBe("1");
+        expect(requests.filter((entry) => entry.startsWith(panelHostPaths.snapshot(hostCase.panelId))), hostCase.name).toEqual([]);
+      } finally {
+        coldScope.stop();
+      }
+
+      // 2. Warm cache re-entry: 1 /snapshot verification and 0 GET /api/product-panels/:id calls.
+      requests.length = 0;
+      const warmScope = effectScope();
+      try {
+        const port = hostCase.createPort();
+        const view = warmScope.run(() => usePanelInstance(port, {
+          labels: hostLabels,
+          label: () => hostCase.name,
+          address: () => use.path,
+          initial: () => ({}),
+        }))!;
+        await view.ready;
+        await nextTick();
+        await Promise.resolve();
+        expect(port.sourceReconciled?.(), hostCase.name).toBe(true);
+        expect(requests.filter((entry) => entry.startsWith(panelHostPaths.snapshot(hostCase.panelId))), hostCase.name).toHaveLength(1);
+        expect(requests.filter((entry) => entry.startsWith(`${panelHostPaths.panel(hostCase.panelId)}?`)), hostCase.name).toEqual([]);
+      } finally {
+        warmScope.stop();
+      }
     }
   });
 });
