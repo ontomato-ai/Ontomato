@@ -164,6 +164,9 @@ export function platformPanelHost(
     ? { ...shown, pageKey: use.pageKey, permissionCode: use.access.permissionCode }
     : { ...shown, pageKey: use.pageKey, access: "domain-member" };
   const page = new URLSearchParams(read);
+  const personalSource = { kind: "registered", ...shown } as const;
+  const controlled = new Set(Object.keys(use.inputs ?? {}));
+  let pendingPersonalState: PersonalStateRead | undefined;
   let lastPanel: ProductPanel | undefined;
   let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
   let panelDomainComponents: Record<string, import("@ontomato/contracts/domain-components").DomainComponentRuntime> | undefined;
@@ -174,6 +177,8 @@ export function platformPanelHost(
     // composer and conversation wait for the skill (a read of the record that also worked out the skill took 2.3 s on
     // 128, the record alone 0.5 s).
     async source() {
+      warmTemplateCompiler();
+      pendingPersonalState = undefined;
       sourceReconciled = false;
       let sourceFailed = false;
       void json(`${panelHostPaths.pageSkillContext(use.panelId)}?${page}`, {}, { notifyDenied: false })
@@ -185,6 +190,13 @@ export function platformPanelHost(
       try {
         const cached = getCachedPanel(use.panelId);
         if (cached) {
+          const fields = personalFields(cached.manifest, controlled);
+          if (fields.length) {
+            pendingPersonalState = {
+              fieldKey: personalFieldKey(fields),
+              response: readPersonalState({ source: personalSource, memberPath: [] }, fields),
+            };
+          }
           // Verify panel access and definition revisions before mounting a cached record, using the lightweight
           // snapshot (no page query so Node skips pageSkillContext — that runs in parallel above).
           const scope = currentDefinitionCacheScope();
@@ -240,12 +252,17 @@ export function platformPanelHost(
     frame: (frame, source, open) => registerPanelFrame(frame, shown, { pageKey: use.pageKey, manifest: source.panel.manifest }, open, changed),
     // The panel runs in this document, as the same application's page: its members read through the platform as the
     // reader, within this use, and a person's write is confirmed and dispatched here.
-    coded: (source, run, target) => withPersonalState({ kind: "registered", ...shown }, [], source.panel.manifest, run,
-      (opened) => mountCoded(withNested({
+    coded: (source, run, target) => {
+      const entryPanel = source.panel.id === use.panelId;
+      const pending = pendingPersonalState;
+      pendingPersonalState = undefined;
+      const mount = (opened: DirectPanelRun) => mountCoded(withNested({
         ...directOptions(source, opened, shown, changed, beside, undefined, undefined, mountUnavailable),
         ...(panelDomainComponents ? { panelDomainComponents } : {}),
-      }, { kind: "registered", ...shown }), target, source.panel.content.module),
-      source.panel.id === use.panelId ? Object.keys(use.inputs ?? {}) : []),
+      }, personalSource), target, source.panel.content.module);
+      return withPersonalState(personalSource, [], source.panel.manifest, run, mount,
+        entryPanel ? controlled : new Set(), entryPanel ? pending : undefined);
+    },
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
@@ -313,6 +330,7 @@ export function framePanelHost(
   let sourceReconciled = false;
   return {
     async source() {
+      warmTemplateCompiler();
       sourceReconciled = false;
       const reconciled = await reconcileCachedApplicationFrame(cacheKey, framePanelId, query);
       if (reconciled) {
@@ -408,6 +426,7 @@ export function builtinFramePanelHost(
   let sourceReconciled = false;
   return {
     async source() {
+      warmTemplateCompiler();
       sourceReconciled = false;
       const cached = getCachedPanel(cacheKey);
       if (cached) {
@@ -510,6 +529,7 @@ export function builtinFramePanelHost(
 export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] & { pageKey: string }): PanelHostPort<CandidatePanelSource> {
   return {
     async source() {
+      warmTemplateCompiler();
       return candidatePanelSourceSchema.parse(await json(panelHostPaths.candidate(candidate.id, candidate.ref)));
     },
     pageKey: candidate.pageKey,
@@ -668,7 +688,7 @@ async function mountNested(
         panelDomainComponents: domainComponents,
       }, source),
       { element, template }, panel.content.module,
-    ), Object.keys(last ? outer.manifest.members[last.member]?.inputs ?? {} : {}));
+    ), new Set(Object.keys(last ? outer.manifest.members[last.member]?.inputs ?? {} : {})));
     return { element, mount: { ...mount, dispose() { mount.dispose(); dropStyle?.(); dropTheme(); } } };
   } catch (failure) {
     dropStyle?.();
@@ -694,16 +714,28 @@ function personalFields(manifest: PanelManifest, controlled: ReadonlySet<string>
     .map(([name]) => name);
 }
 
+function personalFieldKey(fields: string[]) {
+  return JSON.stringify([...fields].sort());
+}
+
+function readPersonalState(scope: { source: PanelReadSource; memberPath: PanelMemberPath }, fields: string[]) {
+  return json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) })
+    .catch(() => ({ values: {} }));
+}
+
+type PersonalStateRead = { fieldKey: string; response: ReturnType<typeof readPersonalState> };
+
 async function withPersonalState(
   source: PanelReadSource, memberPath: PanelMemberPath, manifest: PanelManifest, run: DirectPanelRun,
   mount: (run: DirectPanelRun) => Promise<PanelRunMount>,
-  controlled: readonly string[] = [],
+  controlled: ReadonlySet<string>, pending?: PersonalStateRead,
 ): Promise<PanelRunMount> {
-  const fields = personalFields(manifest, new Set(controlled));
+  const fields = personalFields(manifest, controlled);
   if (!fields.length || source.kind !== "registered") return mount(run);
+  warmTemplateCompiler();
   const scope = { source, memberPath };
-  const saved = await json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) })
-    .then((answer) => panelPersonalStateResponseSchema.parse(answer).values, () => ({}));
+  const answer = await (pending && pending.fieldKey === personalFieldKey(fields) ? pending.response : readPersonalState(scope, fields));
+  const saved = panelPersonalStateResponseSchema.parse(answer).values;
   const mounted = await mount({ ...run, initial: { ...saved, ...run.initial } as PanelHostState });
   const readField = (field: string) => mounted.instance.state.values.value[field] ?? null;
   const stored: Record<string, string> = Object.fromEntries(fields.map((field) => [field, JSON.stringify(readField(field))]));
@@ -752,6 +784,11 @@ function resolvedSegment(segment: ProductPanelNestedReadRequest["memberPath"][nu
   if (selection && "stateValue" in selection && !("target" in selection))
     return { ...segment, selection: { stateValue: selection.stateValue, target: { panelId } } };
   return segment as PanelMemberPath[number];
+}
+
+function warmTemplateCompiler() {
+  // Coded mounts await the same promise and report any load failure.
+  void useTemplateCompiler().catch(() => undefined);
 }
 
 /**
