@@ -15,7 +15,6 @@ await mountPanel({
     const narrow = usePanelNarrow(rootRef);
 
     const selectedNode = computed(() => values.value.selectedNode ?? null);
-    const selectedNodeKey = computed(() => selectedNode.value?.primaryKey ?? "");
     const selectedEdge = computed(() => values.value.selectedEdge ?? null);
     const selectedAttribute = computed(() => values.value.selectedAttribute ?? null);
     const dialog = computed(() => values.value.dialog ?? null);
@@ -25,12 +24,7 @@ await mountPanel({
     const nodeHeaderLabel = usePanelOutput("nodeHeader", "label");
     const edgeHeaderStatus = usePanelOutput("edgeHeader", "status");
     const edgeHeaderLabel = usePanelOutput("edgeHeader", "label");
-    const attributesOutputTotal = usePanelOutput("attributes", "total");
-    const attributesListedCount = ref(null);
-    const attributesTotal = computed(() => attributesOutputTotal.value ?? attributesListedCount.value);
-    const onAttributesListed = (refs) => {
-      attributesListedCount.value = Array.isArray(refs) ? refs.length : null;
-    };
+    const attributesTotal = usePanelOutput("attributes", "total");
 
     const selectedNodeLabel = computed(() =>
       (typeof nodeHeaderLabel.value === "string" && nodeHeaderLabel.value) || selectedNode.value?.primaryKey || "",
@@ -65,7 +59,6 @@ await mountPanel({
 
         if (nextNodeKey !== prevNodeKey) {
           nodeEverReady.value = false;
-          attributesListedCount.value = null;
         }
         if (nextEdgeKey !== prevEdgeKey) edgeEverReady.value = false;
 
@@ -189,7 +182,6 @@ await mountPanel({
       rootRef,
       narrow,
       selectedNode,
-      selectedNodeKey,
       selectedEdge,
       selectedNodeLabel,
       selectedEdgeLabel,
@@ -199,7 +191,6 @@ await mountPanel({
       edgeEverReady,
       selectedAttribute,
       attributesTotal,
-      onAttributesListed,
       classDialog,
       relationDialog,
       handleDialogClose,

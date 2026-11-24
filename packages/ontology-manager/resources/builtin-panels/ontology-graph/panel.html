@@ -694,7 +694,7 @@
                     <span>属性</span>
                     <small>{{ objectAttributesTotal ?? "" }}</small>
                   </div>
-                  <projection slot="objectAttributes" :inputs="{ className: requestedObjectKey }"></projection>
+                  <projection slot="objectAttributes"></projection>
                 </div>
                 <div class="og-section og-relations-list">
                   <div class="og-section-label">
@@ -703,7 +703,6 @@
                   </div>
                   <projection
                     slot="objectRelations"
-                    :inputs="{ className: requestedObjectKey }"
                     @choose="onRelationChosen"
                   ></projection>
                 </div>
