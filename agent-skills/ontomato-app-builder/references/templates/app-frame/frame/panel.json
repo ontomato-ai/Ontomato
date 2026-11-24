@@ -7,7 +7,8 @@
           "type": "string"
         },
         "default": "2026-fall",
-        "deepLink": true
+        "deepLink": true,
+        "external": true
       }
     },
     "members": {

@@ -1,5 +1,19 @@
 # Build a panel application
 
+**Application IDs start with `app-`. Put application and entry paths under `/applications/<app-id>/`.**
+
+Run these through `node "$SKILL/scripts/ontomato.mjs"`.
+
+```text
+sdk current
+sdk read docs/components.md
+panel type <id> [--read <name>]
+panel check <dir>
+panel register <dir>
+```
+
+Use `sdk current` for release information and `panel type` for object types. There is no `sdk list` or top-level `read ObjectType`.
+
 Follow the [Product Layer and Application Composition Standard](references/app-standard/references/standard.md) and the current SDK guide. Use current product records. Keep business logic and permission checks with the resource owners. Use the deployment, domain and authorized business scope already established with the user. Obtain technical names, IDs, parameters and relationships from the platform through its discovery commands and owner interfaces.
 
 Start with the [Vue panel skill](references/panel-authoring/SKILL.md) and choose a matching [page template](references/templates/README.md). When moving an already-built page into the product layer, read [Migrating an existing page into the product layer](references/migrate-existing-page.md) alongside the [application decomposition skill](references/app-standard/SKILL.md).
@@ -64,7 +78,7 @@ registered `target.projectionId`.
 | `panel delete application\|panel <id>` | Delete a trial application or panel through its owner |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
-| `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft a Vue management panel from the type table. Select single and batch buttons by owner operation ID. |
+| `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft `catalog/` and `detail/` from the type table. Select single and batch buttons by owner operation ID. The returned `entry` is the catalog path. |
 | `panel check <directory> [--material <file>] [--sdk-dir <release directory>]` | Check the panel source and declaration with the current SDK schemas, and resolve registered references using the author's access. With an installed release directory, check offline and list unresolved references. |
 | `panel register <directory> [--material <file>]` | Register a panel from its workspace sources, including its inline projections |
 | `panel register <JSON or @file>` | Register selected current definitions and application uses under the author's permissions |
@@ -137,6 +151,21 @@ node "$SKILL/scripts/ontomato.mjs" panel delete panel <panel-id>
 
 The panel owner also removes editable projections used only by that panel and reports their IDs. A referenced panel
 is protected by the owner's in-use check. Released or shared definitions stay under the owner's normal permissions.
+
+### Create or update an application
+
+| `applications[].input` | `mode: "create"` | `mode: "update"` |
+| --- | --- | --- |
+| `entry`, `panelUses` | Required | Required. Supply the complete set of uses. |
+| `framePanelId` | Optional | Optional. Include the frame ID to keep using it. |
+| `declaration` | Required. Supply the application identity and its `groups` and `permissions`. | Optional identity patch (`names`, `descriptions`, `icon`, `allowStandalone`). |
+| `entryAccess` | Required | Creation only |
+
+After the first registration, run `panel get <id>` for the current panel `revision`. In `registration.json`, set
+`panels[].mode` to `"update"` and set `panels[].revision` to that value. Registration writes newly assigned inline
+projection IDs into `panel.json`; it leaves `registration.json` as authored. Switch an already registered application to
+`"update"` too, removing creation fields from its input and declaration. Application registration takes no `revision`.
+For any explicitly registered projection update, use the current revision from `panel projection <id>`.
 
 ### Fix panel check and registration errors
 

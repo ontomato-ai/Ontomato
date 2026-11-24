@@ -16,7 +16,7 @@
       "mode": "create",
       "input": {
         "entry": {
-          "path": "/applications/app-student-directory",
+          "path": "/applications/app-student-directory/students",
           "renderer": "panels"
         },
         "entryAccess": [

@@ -420,7 +420,7 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const typeTable = await readPlatformTypeTable(api, checks);
     const panel = managementPanel(type, checks, typeTable, { id, operations, batches });
     await writeManagementPanel(directory, panel);
-    return print({ directory, entry: panel.material.applications[0].input.panelUses[0].path });
+    return print({ directory, entry: panel.entry });
   }
   if (command === "applications" && args.length === 0) {
     return printData(await requestJson(api, "GET", "/platform/applications?purpose=navigation"));

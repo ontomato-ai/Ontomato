@@ -193,6 +193,8 @@ const props = withDefaults(
      * How records are arranged: `"auto"` (default) draws a table when `columns` is given and a compact list otherwise;
      * `"list"` forces the compact list, `"table"` draws the table when `columns` is given, and `"cards"` draws a
      * responsive card grid showing label, subtitle, status, tags and any configured `columns`.
+     * The compact list uses the object's `label` as its main title and has no `titleField` prop. To display a
+     * different title field, use `"table"` with explicit `columns` or a row slot.
      */
     layout?: "auto" | "list" | "table" | "cards";
     /**

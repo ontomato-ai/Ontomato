@@ -8,15 +8,19 @@
   <section class="catalog-page">
     <page-header :title="t('panel.name')">
       <template #actions>
-        <sdk-button type="primary" :disabled="creating" @click="startCreate">{{ t("command.new") }}</sdk-button>
+        <sdk-button type="primary" @click="creating = true">{{ t("command.new") }}</sdk-button>
       </template>
     </page-header>
     <div class="catalog-view">
       <projection slot="list" @choose="openDetail"></projection>
     </div>
-    <sdk-dialog v-model="createDialog" :title="t('dialog.createTitle')" width="540px" append-to-body destroy-on-close>
+    <sdk-dialog v-model="creating" :title="t('command.new')" width="540px" append-to-body destroy-on-close>
       <div class="create-dialog-body">
-        <projection slot="createForm" v-if="createDialog" @saved="onCreated" @cancel="closeCreate"></projection>
+        <projection slot="createForm" v-if="creating" @saved="onCreated" @cancel="creating = false">
+          <template #default>
+            <object-form-fields :fields="['/name']"></object-form-fields>
+          </template>
+        </projection>
       </div>
     </sdk-dialog>
   </section>

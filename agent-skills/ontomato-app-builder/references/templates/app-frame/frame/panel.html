@@ -3,6 +3,7 @@
   .academic-frame.is-narrow { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .academic-nav { padding: var(--page-content-gap) var(--page-gutter); }
   .academic-entry { min-height: 0; overflow: auto; }
+  .academic-count { display: inline-flex; align-items: center; }
   .academic-count:not(:has(.sdk-object-count)) { display: none; }
 </style>
 <div id="app">
@@ -15,7 +16,9 @@
       </sdk-select>
       <app-menu :item-trailing-text="trailingText">
         <template #item-trailing="{ item }">
-          <projection v-if="countMember(item.id)" :slot="countMember(item.id)" class="academic-count"></projection>
+          <span v-if="countMember(item.id)" class="academic-count">
+            <projection :slot="countMember(item.id)"></projection>
+          </span>
         </template>
       </app-menu>
     </aside>
