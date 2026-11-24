@@ -100,4 +100,4 @@ category count and share from the complete, mutually exclusive groups. Do not ru
 numerator or denominator query. If the table is truncated, the categories overlap, or an
 independent summary table is explicitly requested, this shortcut does not apply.
 
-Outside the product, set ONTOMATO_ONTOLOGY_URL and ONTOMATO_TK (or ONTOMATO_API_KEY), optionally ONTOMATO_LANGUAGE and ONTOMATO_OUTPUT_DIR, run `begin @work/question.json` with `{"question":"..."}` before delivering and `close` when done. Inside the product these are already set. Keep work/.retrieval-*.json and work/.dataset-*.json so a lost response can be reconciled.
+Outside the product, set ONTOMATO_ONTOLOGY_URL and ONTOMATO_TK (or ONTOMATO_API_KEY), optionally ONTOMATO_LANGUAGE and ONTOMATO_OUTPUT_DIR, run `begin @work/question.json` with `{"question":"..."}` before delivering and `close` when done. In a delegated ontology session, use `--active` to deliver through the platform bridge. Keep work/.retrieval-*.json and work/.dataset-*.json for external retrieval and output reconciliation.

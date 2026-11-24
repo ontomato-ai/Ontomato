@@ -117,39 +117,27 @@ The service owns physical paths, UID allocation, output directory (`outputs/`)
 and sandbox mode; callers cannot choose a host path or UID. Limits reuse the
 existing worker policy. Model keys remain supervisor-only and are resolved from runtime-owned domain settings.
 
-The run environment is a single map formed from explicit values + secrets plus
-runtime identity. Duplicate names, NUL, invalid environment names and attempts
-to replace runtime identity are admission errors. The server constructs a small
-OS environment (PATH, HOME, TMPDIR, locale and Python library path); it does not
-inherit service/model credentials. Public values and secret *names* are stored;
-secret values live only for the admitted run. Persist no raw request body.
-Continuation must supply fresh values. Unknown environment variables are allowed
-for third-party standard skills; there is no runtime business-variable registry.
+The session engine receives a small OS environment and runtime-owned session
+variables. These include the platform scenario, session ID, language, workspace
+and output paths, the agent command URL, and the authorized business callback
+URLs. `ONTOMATO_AGENT_CALLBACK` and `ONTOMATO_EXECUTION_CALLBACK` carry the
+session callback credential. `ONTOMATO_TK` is its alias for older skills.
+Each callback resolves the active run inside the runtime. The bridge supplies
+the active run ID and the provider's declared credential header from that run's
+`businessCallbacks`. Provider credentials stay outside the engine and the
+commands it launches. Tool-call identity belongs to event metadata.
 
-Runtime-owned variables: `ONTOMATO_SKILL_SCENARIO`, `ONTOMATO_SESSION_ID`, `ONTOMATO_RUN_ID`,
-`ONTOMATO_CORRELATION_ID`, `ONTOMATO_LANGUAGE`, `ONTOMATO_WORKSPACE`,
-`ONTOMATO_SOURCE_DIR`, `ONTOMATO_OUTPUT_DIR`, `ONTOMATO_AGENT_COMMAND_URL`,
-`ONTOMATO_AGENT_CALLBACK`. The first three are owned solely by the runtime (hosts
-never supply them); `ONTOMATO_SESSION_ID` and `ONTOMATO_RUN_ID` refer to this session
-and run, never a model argument. Tool-call identity belongs to event metadata; scripts do not need an
-invocation/tool-call envelope. All sandbox worker runs receive
-`ONTOMATO_SKILL_SCENARIO=platform`; runs with a native `agent` channel and a
-script worker also receive `ONTOMATO_AGENT_COMMAND_URL` and a per-run secret
-`ONTOMATO_AGENT_CALLBACK` kept only in active runtime memory (never persisted or
-exposed to auxiliary/product-surface runs without a worker or channel). Host
-skill variables and their exact meaning are specified in the retrieval contract
-and governance design, and repeated in each skill's user documentation. File
-references are relative to the workspace.
+`ONTOMATO_RUN_ID` belongs to standalone code execution, where it identifies the
+execution and is passed to its isolated worker. Session engine processes use the
+active-run bridge for run identity. Stored run environment metadata records
+public values and secret names. File references are relative to the workspace.
 
-A session receives its workspace and UID on first run and reuses both across
-rounds and service restarts. Workspace contents persist; environment and worker
-processes do not persist between runs. Only enabled skill packages appear under
-`skills/<name>/`; a duplicate display name across namespaces rejects admission.
-At a new run boundary the runtime replaces that read-only tree using the newly
-resolved package digests, never while a tool is executing. Previous definition
-snapshots still identify the historical bytes. Session deletion kills any owned
-processes before removing the workspace; published artifacts have their own
-immutable storage. See design for ownership, crash recovery and deletion order.
+The workspace and native engine state persist. The engine process and its
+read-only `/skills/<name>/` mounts belong to the open session sandbox. Enabled
+packages are resolved before opening it. A duplicate display name across
+namespaces rejects admission. Session deletion stops its sandbox before removing
+its own files. Published artifacts have their own immutable storage. See the
+runtime design for crash recovery and deletion order.
 
 ## Standard skill publication and discovery
 

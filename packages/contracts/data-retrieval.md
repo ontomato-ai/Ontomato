@@ -137,18 +137,21 @@ service without a runtime agent or synthetic history. External snapshots have
 null runtime IDs/run and empty messages. External work uses normal user authority;
 in-product retrieval issues its exploration grant locally.
 
-Scripts use `ONTOMATO_ONTOLOGY_URL`, **`ONTOMATO_TK` as current user credential**
-(or `ONTOMATO_EXECUTION_CALLBACK` with `ONTOMATO_RETRIEVAL_CALLBACK_URL` when a
-selected execution user is configured), `ONTOMATO_RETRIEVAL_ID`, runtime
-session/run identity, language/correlation/output variables. Runtime channel
-credentials (`ONTOMATO_AGENT_COMMAND_URL` and `ONTOMATO_AGENT_CALLBACK`) are used
-only for the active run's agent channel command route. Every process uses one
-`ONTOMATO_TK`: agent calls carry a scoped user authority; Java injects a distinct,
-short-lived execution tk into its Python job. The agent cannot select or receive
-that internal credential. Environment precedes external application.yml. External
-packages download accepted bytes through the ontology proxy; platform runs read
-delivered files via the agent channel into `outputs/agents/`, and the retriever uses
-direct queries and `dataset.mjs`.
+External scripts use the ontology URL and a current user token or API key. In
+an engine session, `ONTOMATO_ONTOLOGY_URL` and
+`ONTOMATO_RETRIEVAL_CALLBACK_URL` point to session relay routes.
+`ONTOMATO_EXECUTION_CALLBACK` authenticates the session to the relay.
+The relay forwards the active run ID and the provider's current, scoped
+credential. The Java retriever declares a query grant outside the engine. Its
+`dataset.mjs --active` delivery resolves current retrieval, session and run IDs
+from `GET /ontology/retrievals/runtime-context` through the relay, then uses the
+scoped query and delivery routes. Java verifies the grant and authorizes the
+operation. A separate short-lived execution token stays inside Java's Python job.
+
+Agent channel commands apply the same active-run ownership using
+`ONTOMATO_AGENT_COMMAND_URL` and `ONTOMATO_AGENT_CALLBACK`. Platform consumers
+read delivered files via the agent channel into `outputs/agents/`. External
+packages download the accepted bytes through the ontology proxy.
 
 ## Assistant caller scope
 

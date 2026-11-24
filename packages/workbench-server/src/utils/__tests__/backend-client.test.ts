@@ -1,3 +1,4 @@
+import { withServiceLogContext } from "@ontomato/service-logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { configureI18n } from "../../i18n";
 import { appTextEn } from "../../i18n/app-text-en";
@@ -97,6 +98,19 @@ describe("backend HTTP failures and recovery", () => {
     expect(expired).toBeInstanceOf(AuthFailedError);
     expect(expired).toBeInstanceOf(HttpError);
     expect(expired).toMatchObject({ status: 401, code: "UNAUTHENTICATED", message: "Credential expired" });
+  });
+
+  it("sends one explicit run header regardless of the logging context's header casing", async () => {
+    const fetchSpy = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>(async () => fakeResponse(200, "ok"));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await withServiceLogContext({ runId: "parent-run" }, () =>
+      backendGet("explicit-retrieval-run", "http://engine/retrieval", {
+        headers: { "X-Ontomato-Run-Id": "retrieval-run" },
+      }));
+
+    const headers = new Headers(fetchSpy.mock.calls[0][1]?.headers);
+    expect(headers.get("x-ontomato-run-id")).toBe("retrieval-run");
   });
 
   it("reports cancellation before any network use", async () => {
