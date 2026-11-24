@@ -1572,7 +1572,7 @@ describe("builtin capability-map panel (PanelData-free)", () => {
         expect(canvasRecorder.nodes.map((n) => n.label)).toContain("Order");
       }, { timeout: 5000 });
 
-      // 5) relationKindsSearch filters relationKindFilter via declared public state.
+      // 5) relationKindsSearch filters relationKindFilter via declared public state, and teleported popover list keeps inline scroll bounds.
       host.applyState({ mode: "type", view: "graph", relationKindsSearch: "Binds" });
       await vi.waitFor(() => {
         const trigger = document.querySelector<HTMLButtonElement>('.panel-host-coded [data-cap-action="relation-kind-filter"]');
@@ -1580,9 +1580,27 @@ describe("builtin capability-map panel (PanelData-free)", () => {
       }, { timeout: 5000 });
       document.querySelector<HTMLButtonElement>('.panel-host-coded [data-cap-action="relation-kind-filter"]')!.click();
       await vi.waitFor(() => {
-        const list = document.querySelector(".capmap-kind-popover-list");
+        const list = document.querySelector<HTMLElement>(".capmap-kind-popover-list");
         expect(list?.textContent).toContain("Binds target");
         expect(list?.textContent).not.toContain("Uses component");
+        expect(list?.style.maxHeight).toBe("280px");
+        expect(list?.style.overflow).toBe("auto");
+      }, { timeout: 5000 });
+
+      // 6) Selecting more than 4 relation kinds caps inline toolbar tags to 4 plus an overflow badge.
+      host.applyState({
+        relationKinds: [
+          { className: ONTOLOGY_RELATION_KIND, primaryKey: "action.targets-object-type" },
+          { className: ONTOLOGY_RELATION_KIND, primaryKey: "user.holds-role" },
+          { className: ONTOLOGY_RELATION_KIND, primaryKey: "role.can-execute-action" },
+          { className: ONTOLOGY_RELATION_KIND, primaryKey: "panel.uses-component" },
+          { className: ONTOLOGY_RELATION_KIND, primaryKey: "projection.binds-target" },
+        ],
+      });
+      await vi.waitFor(() => {
+        expect(document.querySelectorAll(".panel-host-coded [data-cap-relation-kind-label]")).toHaveLength(4);
+        const overflow = document.querySelector<HTMLElement>(".panel-host-coded [data-cap-relation-kind-overflow]");
+        expect(overflow?.textContent?.trim()).toBe("+1");
       }, { timeout: 5000 });
     } finally {
       app.unmount();
