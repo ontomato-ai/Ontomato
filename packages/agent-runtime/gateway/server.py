@@ -7,6 +7,7 @@ reaches nothing but the data plane.
 
 Client requests never choose the upstream: the model name must be in the lease, and its address, key,
 timeout and retries come from the lease's entry. Anything a client sends under those names is dropped.
+The model's output limit is enforced here too: a request without one gets it, a larger one is cut to it.
 """
 
 from __future__ import annotations
@@ -97,12 +98,25 @@ def leased_model(lease, body: dict) -> Model:
     return model
 
 
-def call_params(model: Model, body: dict, stream: bool) -> dict:
+# The request fields that bound one call's output, per API; the first is filled in when none is sent.
+CHAT_OUTPUT_LIMITS = ("max_tokens", "max_completion_tokens")
+RESPONSES_OUTPUT_LIMITS = ("max_output_tokens",)
+
+
+def call_params(model: Model, body: dict, stream: bool, output_limits: tuple[str, ...]) -> dict:
     params = {key: value for key, value in model.litellm_params.items() if value is not None}
     for key, value in body.items():
         if key not in PROTECTED:
             params[key] = value
     params["stream"] = stream
+    limit = model.model_info.get("max_output_tokens")
+    if isinstance(limit, int):
+        sent = [key for key in output_limits if params.get(key) is not None]
+        for key in sent:
+            requested = params[key]
+            params[key] = min(requested, limit) if isinstance(requested, int) else limit
+        if not sent:
+            params[output_limits[0]] = limit
     return params
 
 
@@ -139,7 +153,7 @@ async def chat(request: Request) -> Response:
     body = await request.json()
     model = leased_model(authorized(request), body)
     stream = bool(body.get("stream"))
-    params = call_params(model, body, stream)
+    params = call_params(model, body, stream, CHAT_OUTPUT_LIMITS)
     if not stream:
         try:
             return JSONResponse((await litellm.acompletion(**params)).model_dump())
@@ -171,7 +185,7 @@ async def responses(request: Request) -> Response:
     body = await request.json()
     model = leased_model(authorized(request), body)
     stream = bool(body.get("stream"))
-    params = call_params(model, body, stream)
+    params = call_params(model, body, stream, RESPONSES_OUTPUT_LIMITS)
     if not stream:
         try:
             return JSONResponse((await litellm.aresponses(**params)).model_dump())
