@@ -1,0 +1,157 @@
+{
+  "manifest": {
+    "state": {
+      "domain": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:DataAdapterConfig"
+        },
+        "external": true
+      },
+      "testSourceId": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "",
+        "deepLink": false
+      }
+    },
+    "members": {
+      "adapterForm": {
+        "component": "ObjectForm",
+        "type": "platform:DataAdapterConfig",
+        "target": "domain",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:DataAdapterConfig.save",
+        "config": {
+          "actions": "none"
+        },
+        "name": "Data adapter configuration",
+        "description": "Select the domain data adapter or configure multi-source connections and ontology routing",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-500000000001"
+      },
+      "testConnection": {
+        "component": "OperationButton",
+        "type": "platform:DataAdapterConfig",
+        "operation": "dataAdapters.testConnection",
+        "draft": "adapterForm",
+        "parameters": {
+          "fields": {
+            "sourceId": {
+              "state": "testSourceId"
+            }
+          }
+        },
+        "config": {
+          "labelKey": "test.run"
+        },
+        "name": "Test connection",
+        "description": "Test the unsaved single-source adapter or selected multi-source data source without saving",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-500000000002"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Data adapters",
+        "panel.description": "Configure the data source where the ontology reads its records, or route ontology classes across multiple data sources.",
+        "saved": "Data adapter configuration saved.",
+        "test.title": "Connection test",
+        "test.description": "Test the current unsaved connection settings without saving or switching the domain adapter.",
+        "test.multiDescription": "Select one configured data source from the draft to test its connection without saving.",
+        "test.sourceLabel": "Data source to test",
+        "test.sourcePlaceholder": "Select a data source",
+        "test.noSources": "Add a data source with an ID above before testing a connection.",
+        "test.run": "Test connection"
+      },
+      "zh-CN": {
+        "panel.name": "数据适配器",
+        "panel.description": "配置本体读取数据的数据源，或在多源模式下将本体类路由到多个数据源。",
+        "saved": "数据适配器配置已保存。",
+        "test.title": "连接测试",
+        "test.description": "按当前表单草稿测试连接，不保存配置也不切换域适配器。",
+        "test.multiDescription": "从当前多源草稿中选择一个数据源测试连接，不会保存改动。",
+        "test.sourceLabel": "待测数据源",
+        "test.sourcePlaceholder": "选择要测试的数据源",
+        "test.noSources": "请先在上方添加并填写数据源 ID，再测试连接。",
+        "test.run": "测试连接"
+      },
+      "zh-TW": {
+        "panel.name": "資料轉接器",
+        "panel.description": "設定本體讀取資料的資料來源，或在多來源模式下將本體類別路由至多個資料來源。",
+        "saved": "資料轉接器設定已儲存。",
+        "test.title": "連線測試",
+        "test.description": "依目前表單草稿測試連線，不儲存設定亦不切換域轉接器。",
+        "test.multiDescription": "從目前多來源草稿選擇一個資料來源進行連線測試，不會儲存變更。",
+        "test.sourceLabel": "待測資料來源",
+        "test.sourcePlaceholder": "選擇要測試的資料來源",
+        "test.noSources": "請先於上方新增並填寫資料來源 ID，再測試連線。",
+        "test.run": "測試連線"
+      },
+      "ja": {
+        "panel.name": "データアダプター",
+        "panel.description": "オントロジーがレコードを読み取るデータソースを設定するか、マルチソースモードで複数データソースへルーティングします。",
+        "saved": "データアダプター設定を保存しました。",
+        "test.title": "接続テスト",
+        "test.description": "現在の未保存の接続設定を、保存やアダプター切替を行わずにテストします。",
+        "test.multiDescription": "下書き内のデータソースを 1 つ選択し、保存せずに接続テストを実行します。",
+        "test.sourceLabel": "テスト対象データソース",
+        "test.sourcePlaceholder": "データソースを選択",
+        "test.noSources": "接続テストの前に、上で ID を持つデータソースを追加してください。",
+        "test.run": "接続テスト"
+      },
+      "de": {
+        "panel.name": "Datenadapter",
+        "panel.description": "Konfigurieren Sie die Datenquelle der Ontologie oder leiten Sie Ontologieklassen im Multi-Source-Modus an mehrere Datenquellen weiter.",
+        "saved": "Datenadapter-Konfiguration gespeichert.",
+        "test.title": "Verbindungstest",
+        "test.description": "Testen Sie die aktuellen ungespeicherten Verbindungseinstellungen, ohne den Domänenadapter zu speichern oder umzuschalten.",
+        "test.multiDescription": "Wählen Sie eine Datenquelle aus dem Entwurf aus, um die Verbindung ohne Speichern zu testen.",
+        "test.sourceLabel": "Zu testende Datenquelle",
+        "test.sourcePlaceholder": "Datenquelle auswählen",
+        "test.noSources": "Fügen Sie oben zuerst eine Datenquelle mit ID hinzu, bevor Sie die Verbindung testen.",
+        "test.run": "Verbindung testen"
+      },
+      "fr": {
+        "panel.name": "Adaptateurs de données",
+        "panel.description": "Configurez la source de données lue par l'ontologie ou routez les classes d'ontologie entre plusieurs sources de données.",
+        "saved": "Configuration de l'adaptateur de données enregistrée.",
+        "test.title": "Test de connexion",
+        "test.description": "Testez les paramètres de connexion non enregistrés sans sauvegarder ni changer l'adaptateur du domaine.",
+        "test.multiDescription": "Sélectionnez une source de données du brouillon pour tester sa connexion sans enregistrer.",
+        "test.sourceLabel": "Source de données à tester",
+        "test.sourcePlaceholder": "Sélectionner une source de données",
+        "test.noSources": "Ajoutez d'abord une source de données avec un identifiant ci-dessus avant de tester la connexion.",
+        "test.run": "Tester la connexion"
+      },
+      "it": {
+        "panel.name": "Adattatori dati",
+        "panel.description": "Configura la sorgente dati da cui l'ontologia legge i record oppure instrada le classi dell'ontologia su più sorgenti dati.",
+        "saved": "Configurazione adattatore dati salvata.",
+        "test.title": "Test di connessione",
+        "test.description": "Verifica le impostazioni di connessione non salvate senza salvare o cambiare l'adattatore del dominio.",
+        "test.multiDescription": "Seleziona una sorgente dati dalla bozza per testarne la connessione senza salvare.",
+        "test.sourceLabel": "Sorgente dati da testare",
+        "test.sourcePlaceholder": "Seleziona una sorgente dati",
+        "test.noSources": "Aggiungi prima una sorgente dati con un ID sopra per eseguire il test di connessione.",
+        "test.run": "Testa connessione"
+      },
+      "ar": {
+        "panel.name": "محولات البيانات",
+        "panel.description": "قم بتكوين مصدر البيانات الذي تقرأ منه الأنطولوجيا سجلاتها، أو توجيه فئات الأنطولوجيا عبر عدة مصادر بيانات.",
+        "saved": "تم حفظ إعدادات محول البيانات.",
+        "test.title": "اختبار الاتصال",
+        "test.description": "اختبر إعدادات الاتصال غير المحفوظة الحالية دون حفظ أو تبديل محول النطاق.",
+        "test.multiDescription": "اختر مصدر بيانات من المسودة لاختبار اتصاله دون حفظ التغييرات.",
+        "test.sourceLabel": "مصدر البيانات للاختبار",
+        "test.sourcePlaceholder": "اختر مصدر بيانات",
+        "test.noSources": "أضف مصدر بيانات بمعرف أعلاه قبل اختبار الاتصال.",
+        "test.run": "اختبار الاتصال"
+      }
+    }
+  }
+}

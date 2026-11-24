@@ -1,5 +1,5 @@
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { Activity, Cpu, Database, ScrollText, Server, SlidersHorizontal } from "lucide-vue-next";
+import { Activity, Cable, Cpu, Database, Plug, ScrollText, Server, SlidersHorizontal } from "lucide-vue-next";
 import type { RouteRecordRaw } from "vue-router";
 import type { PlatformEntryRow, PlatformGroup, PlatformPage } from "./navigation";
 
@@ -18,18 +18,13 @@ export const platformEntryRows: readonly PlatformEntryRow[] = [
   { path: platformRoutes.usage.path, icon: Cpu },
   { path: platformRoutes.providers.path, icon: Server },
   { path: platformRoutes.general.path, icon: SlidersHorizontal },
+  { path: platformRoutes.adapters.path, icon: Database },
+  { path: platformRoutes.externalMcp.path, icon: Cable },
+  { path: platformRoutes.publishedMcp.path, icon: Plug },
   { path: platformRoutes.audit.path, icon: ScrollText },
 ];
 
 export const platformPages = {
-  dataAdapters: {
-    path: platformRoutes.adapters.path,
-    titleKey: "nav.dataAdapters",
-    descriptionKey: "platform.descriptions.dataAdapters",
-    icon: Database,
-    permissions: ["system-config"],
-    group: "platform",
-  },
   systemMonitor: {
     path: platformRoutes.monitor.path,
     titleKey: "nav.systemMonitor",
@@ -42,7 +37,6 @@ export const platformPages = {
 
 /** Lazily loaded components of the shared native pages, keyed by path. */
 export const platformPageComponents: Readonly<Record<string, () => Promise<unknown>>> = {
-  [platformPages.dataAdapters.path]: () => import("./pages/DataAdaptersPage.vue"),
   [platformPages.systemMonitor.path]: () => import("./pages/SystemMonitorPage.vue"),
 };
 
@@ -77,7 +71,6 @@ export const systemMonitorPanel = () => import("./pages/SystemMonitorPage.vue");
 
 /** The shared native settings pages, in the order of the system settings' column. */
 export const ossPlatformPages: readonly PlatformPage[] = [
-  platformPages.dataAdapters,
   platformPages.systemMonitor,
 ];
 

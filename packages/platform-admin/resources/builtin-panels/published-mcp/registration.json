@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-published-mcp",
+      "input": {
+        "name": "Published MCP services",
+        "description": "View MCP services published by the platform, copy endpoint addresses, and inspect available tools"
+      }
+    }
+  ]
+}

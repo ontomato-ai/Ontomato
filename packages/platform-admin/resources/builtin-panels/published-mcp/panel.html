@@ -1,0 +1,146 @@
+<style>
+  [v-cloak] { display: none; }
+  .pm-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: pm-page / inline-size;
+  }
+  .pm-body {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: var(--spacing-lg);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 48px);
+    min-width: 0;
+    align-items: start;
+  }
+  .pm-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .pm-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    min-width: 0;
+  }
+  .pm-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .pm-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .pm-section-title {
+    margin: 0;
+    font-size: var(--text-base, var(--text-sm));
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .pm-count {
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .pm-empty {
+    padding: var(--spacing-3xl) var(--spacing-lg);
+    text-align: center;
+    border: 1px dashed var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+  }
+  .pm-schema-details {
+    min-width: 0;
+  }
+  .pm-schema-details summary {
+    cursor: pointer;
+    font-size: var(--text-xs);
+    color: var(--sdk-color-primary);
+  }
+  .pm-schema-code {
+    margin: var(--spacing-xs) 0 0;
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    background: var(--sdk-fill-color-light);
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .pm-muted {
+    color: var(--sdk-text-color-secondary);
+  }
+  @container pm-page (max-width: 760px) {
+    .pm-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
+
+<div id="app" v-cloak>
+  <section class="pm-page">
+    <page-header
+      :title="t('panel.name')"
+      :description="t('panel.description')"
+    >
+      <template #actions>
+        <sdk-button @click="refresh">{{ t('action.refresh') }}</sdk-button>
+      </template>
+    </page-header>
+
+    <div class="pm-body">
+      <aside class="pm-sidebar">
+        <h3 class="pm-section-title">{{ t('services.title') }}</h3>
+        <projection slot="services"></projection>
+      </aside>
+
+      <div class="pm-detail">
+        <template v-if="selectedKey">
+          <section class="pm-card">
+            <projection slot="serviceSummary"></projection>
+          </section>
+
+          <section class="pm-card">
+            <div class="pm-card-head">
+              <h3 class="pm-section-title">{{ t('tools.title') }}</h3>
+              <span v-if="toolTotal !== null" class="pm-count">{{ toolTotal }}</span>
+            </div>
+            <projection slot="serviceTools">
+              <template #cell-inputSchema="{ displayText }">
+                <details v-if="displayText" class="pm-schema-details">
+                  <summary>{{ t('tools.viewSchema') }}</summary>
+                  <pre class="pm-schema-code">{{ displayText }}</pre>
+                </details>
+                <span v-else class="pm-muted">—</span>
+              </template>
+            </projection>
+          </section>
+        </template>
+
+        <div v-else class="pm-empty">
+          {{ t('detail.empty') }}
+        </div>
+      </div>
+    </div>
+  </section>
+</div>

@@ -102,6 +102,75 @@
         }
       },
       {
+        "id": "data-adapters",
+        "pageKey": "data-adapters",
+        "panelId": "builtin-product-data-adapters",
+        "path": "/settings/system-config/data-adapters",
+        "icon": "database",
+        "access": { "permissionCode": "system-config" },
+        "inputs": {
+          "domain": { "literal": { "className": "platform:DataAdapterConfig", "primaryKey": "domain" } }
+        },
+        "names": {
+          "en": "Data adapters",
+          "zh-CN": "数据适配器",
+          "zh-TW": "資料轉接器",
+          "ja": "データアダプター",
+          "de": "Datenadapter",
+          "fr": "Adaptateurs de données",
+          "it": "Adattatori dati",
+          "ar": "محولات البيانات"
+        },
+        "descriptions": {
+          "en": "Configure the domain data adapter, multi-source routing, and connection tests",
+          "zh-CN": "配置域数据适配器、多源路由规则及连接测试"
+        }
+      },
+      {
+        "id": "external-mcp",
+        "pageKey": "external-mcp",
+        "panelId": "builtin-product-external-mcp",
+        "path": "/settings/external-mcp",
+        "icon": "link",
+        "access": { "permissionCode": "mcp-service" },
+        "names": {
+          "en": "External MCP services",
+          "zh-CN": "外部 MCP 服务",
+          "zh-TW": "外部 MCP 服務",
+          "ja": "外部 MCP サービス",
+          "de": "Externe MCP-Dienste",
+          "fr": "Services MCP externes",
+          "it": "Servizi MCP esterni",
+          "ar": "خدمات MCP الخارجية"
+        },
+        "descriptions": {
+          "en": "Register external MCP services that agents can call and check available tools on demand",
+          "zh-CN": "登记智能体可调用的外部 MCP 服务并按需检查连通性与工具"
+        }
+      },
+      {
+        "id": "published-mcp",
+        "pageKey": "published-mcp",
+        "panelId": "builtin-product-published-mcp",
+        "path": "/settings/mcp-services",
+        "icon": "share-2",
+        "access": { "permissionCode": "mcp-service" },
+        "names": {
+          "en": "Published MCP services",
+          "zh-CN": "对外 MCP 服务",
+          "zh-TW": "對外 MCP 服務",
+          "ja": "公開 MCP サービス",
+          "de": "Veröffentlichte MCP-Dienste",
+          "fr": "Services MCP publiés",
+          "it": "Servizi MCP pubblicati",
+          "ar": "خدمات MCP المنشورة"
+        },
+        "descriptions": {
+          "en": "View MCP services published by the platform, copy endpoints, and inspect available tools",
+          "zh-CN": "查看平台对外开放的 MCP 服务端点、鉴权说明与可用工具"
+        }
+      },
+      {
         "id": "audit-log",
         "pageKey": "audit-log",
         "panelId": "builtin-product-audit-log",

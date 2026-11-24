@@ -4,7 +4,7 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Cable, ClipboardList, Code, FlaskConical, ListChecks, MessageSquare, Plug, Search, Terminal } from "lucide-vue-next";
+import { ClipboardList, Code, FlaskConical, ListChecks, MessageSquare, Search, Terminal } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
@@ -149,15 +149,6 @@ export function createServiceManager(options: {
 }
 
 /**
- * The system settings' connections the agent platform's pages draw: the external MCP services agents may call (its page
- * draws its own header) and the MCP services the platform publishes (under the settings' header).
- */
-const systemIntegrationPages: readonly PlatformPage[] = [
-  { path: platformRoutes.externalMcp.path, titleKey: "capabilities.mcpTitle", icon: Cable, permissions: ["mcp-service"], group: "platform", ownHeader: true },
-  { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", descriptionKey: "mcp.publishedHint", icon: Plug, permissions: ["mcp-service"], group: "platform" },
-];
-
-/**
  * Native operations diagnosis pages sharing the unified platform application frame while remaining pages are migrated
  * in Batch 2. Every entry uses the `observer` permission code so the menu and route guards stay in agreement.
  */
@@ -171,11 +162,8 @@ const operationsNativePages: readonly PlatformPage[] = [
   { path: platformRoutes.dsl.path, titleKey: "ops.dsl", icon: Code, permissions: ["observer"], group: "platform", ownHeader: true },
 ];
 
-/** The native skill, integration, and operations pages shared by the edition assemblies. */
-export const applicationPages: readonly PlatformPage[] = [
-  ...systemIntegrationPages,
-  ...operationsNativePages,
-];
+/** The native operations pages shared by the edition assemblies. */
+export const applicationPages: readonly PlatformPage[] = operationsNativePages;
 
 /**
  * The Ontology Service navigation: the Manager's groups (ontology, assets, knowledge) followed by this edition's

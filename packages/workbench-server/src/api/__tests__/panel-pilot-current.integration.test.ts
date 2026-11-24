@@ -1011,7 +1011,7 @@ it("reads agent settings and reference options with the panel viewer", async () 
       },
     },
     models: picker("platform:ModelOption"),
-    tools: picker("platform:McpServiceOption"),
+    tools: picker("platform:ExternalMcpService"),
     users: picker("platform:User", { keyword: { kind: "scalar", type: "string" }, page: { kind: "json" } },
       { keyword: { input: "keyword" }, page: { input: "page" } }),
     skills: picker("platform:Skill"),

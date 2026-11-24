@@ -140,7 +140,7 @@
       },
       "tools": {
         "component": "ReferencePicker",
-        "type": "platform:McpServiceOption",
+        "type": "platform:ExternalMcpService",
         "data": {
           "options": "options",
           "selected": "resolve"
