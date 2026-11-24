@@ -3703,8 +3703,8 @@ test("parent-scoped objects and child-objects use short URL query keys when a un
   } = await import("./panel-host");
   const dashboardManifest = {
     state: {
-      dashboardId: { type: { kind: "object" as const, objectType: "platform:Dashboard" }, deepLink: true },
-      cardId: { type: { kind: "object" as const, objectType: "platform:DashboardCard" }, deepLink: true },
+      dashboardId: { type: { kind: "object" as const, objectType: "platform:Dashboard" }, deepLink: true, personal: false, external: false },
+      cardId: { type: { kind: "object" as const, objectType: "platform:DashboardCard" }, deepLink: true, personal: false, external: false },
     },
   };
   const dashRef = { className: "platform:Dashboard", primaryKey: "dash-1" };
@@ -3738,8 +3738,8 @@ test("parent-scoped objects and child-objects use short URL query keys when a un
   // Child-object state also uses short URL query keys when a unique sibling parent deep-link exists.
   const childManifest = {
     state: {
-      dashboardId: { type: { kind: "object" as const, objectType: "platform:Dashboard" }, deepLink: true },
-      item: { type: { kind: "child-object" as const, parentType: "platform:Dashboard", collection: "cards" }, deepLink: true },
+      dashboardId: { type: { kind: "object" as const, objectType: "platform:Dashboard" }, deepLink: true, personal: false, external: false },
+      item: { type: { kind: "child-object" as const, parentType: "platform:Dashboard", collection: "cards" }, deepLink: true, personal: false, external: false },
     },
   };
   const childIdentity = { parent: { objectType: "platform:Dashboard", primaryKey: "dash-1" }, primaryKey: "card-1" };
