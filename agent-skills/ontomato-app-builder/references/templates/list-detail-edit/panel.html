@@ -1,0 +1,40 @@
+<style>
+  .student-layout { display: grid; grid-template-columns: minmax(13rem, 1fr) minmax(0, 2fr); min-height: 100%; }
+  .student-layout.is-narrow { grid-template-columns: minmax(0, 1fr); }
+  .student-list { min-width: 0; border-inline-end: 1px solid var(--sdk-border-color); }
+  .student-list, .student-detail { padding: var(--page-content-gap) var(--page-gutter); }
+</style>
+<div id="app">
+  <div ref="root" class="student-layout" :class="{ 'is-narrow': narrow }">
+    <aside v-show="!narrow || (!detailOpen && !editing)" class="student-list">
+      <page-header :title="t('panel.name')">
+        <template #actions>
+          <sdk-button type="primary" @click="create">{{ t('action.create') }}</sdk-button>
+        </template>
+      </page-header>
+      <projection slot="list" @choose="choose"></projection>
+    </aside>
+
+    <section v-show="!narrow || detailOpen || editing" class="student-detail">
+      <page-header
+        v-if="mode === 'create' || selected"
+        :title="mode === 'create' ? t('action.create') : undefined"
+        :back-label="narrow && !editing ? t('action.back') : undefined"
+        :draft="formDraft"
+        @back="back"
+      >
+        <template #title v-if="mode !== 'create'">
+          <projection slot="detail"></projection>
+        </template>
+        <template #actions>
+          <sdk-button v-if="mode === 'view' && ready" @click="edit">{{ t('action.edit') }}</sdk-button>
+          <sdk-button v-if="editing" @click="cancel">{{ t('action.cancel') }}</sdk-button>
+        </template>
+      </page-header>
+      <projection v-if="mode === 'view' && ready" slot="summary"></projection>
+      <projection v-if="formSlot === 'editForm'" slot="editForm" @saved="saved"></projection>
+      <projection v-if="formSlot === 'createForm'" slot="createForm" @saved="created"></projection>
+      <p v-if="!selected && !editing">{{ t('detail.choose') }}</p>
+    </section>
+  </div>
+</div>

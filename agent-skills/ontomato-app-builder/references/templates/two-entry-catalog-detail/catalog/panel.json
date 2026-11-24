@@ -7,7 +7,7 @@
           "type": "boolean"
         },
         "default": false,
-        "deepLink": true
+        "deepLink": false
       }
     },
     "members": {
@@ -39,9 +39,9 @@
         "dialog.createTitle": "New Agent Definition"
       },
       "zh-CN": {
-        "panel.name": "智能体定义",
-        "command.new": "新建智能体定义",
-        "dialog.createTitle": "新建智能体定义"
+        "panel.name": "\u667a\u80fd\u4f53\u5b9a\u4e49",
+        "command.new": "\u65b0\u5efa\u667a\u80fd\u4f53\u5b9a\u4e49",
+        "dialog.createTitle": "\u65b0\u5efa\u667a\u80fd\u4f53\u5b9a\u4e49"
       }
     }
   }

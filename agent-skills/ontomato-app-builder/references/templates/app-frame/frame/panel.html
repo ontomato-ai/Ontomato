@@ -1,0 +1,26 @@
+<style>
+  .academic-frame { display: grid; height: 100%; grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); }
+  .academic-frame.is-narrow { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .academic-nav { padding: var(--page-content-gap) var(--page-gutter); }
+  .academic-entry { min-height: 0; overflow: auto; }
+  .academic-count:not(:has(.sdk-object-count)) { display: none; }
+</style>
+<div id="app">
+  <div ref="root" class="academic-frame" :class="{ 'is-narrow': narrow }">
+    <aside class="academic-nav">
+      <label for="academic-term">{{ t('term.label') }}</label>
+      <sdk-select id="academic-term" v-model="term">
+        <sdk-option value="2026-fall" :label="t('term.fall')"></sdk-option>
+        <sdk-option value="2027-spring" :label="t('term.spring')"></sdk-option>
+      </sdk-select>
+      <app-menu :item-trailing-text="trailingText">
+        <template #item-trailing="{ item }">
+          <projection v-if="countMember(item.id)" :slot="countMember(item.id)" class="academic-count"></projection>
+        </template>
+      </app-menu>
+    </aside>
+    <main class="academic-entry">
+      <current-entry member="content"></current-entry>
+    </main>
+  </div>
+</div>

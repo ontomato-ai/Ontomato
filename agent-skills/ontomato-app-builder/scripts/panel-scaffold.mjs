@@ -81,14 +81,16 @@ export function managementPanel(type, checks, typeTable, {
   const create = edit && reads.createForm?.result === "panelFormDescription";
   if (requestedSaves.length && !edit) throw new Error(`${save.id} has no declared form read`);
   if (create) {
-    state.creating = { type: { kind: "scalar", type: "boolean" }, default: false, deepLink: true };
+    state.creating = { type: { kind: "scalar", type: "boolean" }, default: false, deepLink: false };
+    members.createForm = {
+      component: "ObjectForm", type, data: { createForm: "createForm" },
+      operation: save.id, config: { actions: "create-only" },
+    };
   }
   if (edit) {
     members.form = {
       component: "ObjectForm", target: "selected",
-      data: { form: "form", ...(create && { createForm: "createForm" }) },
-      operation: save.id,
-      config: { actions: create ? "create-only" : "none" },
+      data: { form: "form" }, operation: save.id, config: { actions: "none" },
     };
   }
   const singleButtons = [];
@@ -128,7 +130,7 @@ export function managementPanel(type, checks, typeTable, {
     "</style>",
     '<div id="app">',
     '  <section class="catalog-page">',
-    ...(hasDetail ? ['    <template v-if="!selectedKey">'] : []),
+    ...(hasDetail ? [`    <div v-show="!selected"${create ? ' :inert="creating"' : ""}>`] : []),
     ...(create ? [
       '      <page-header :title="t(\'panel.name\')">',
       '        <template #actions>',
@@ -140,25 +142,23 @@ export function managementPanel(type, checks, typeTable, {
     ]),
     '      <div class="catalog-view">',
     ...(toolbarControls.length ? ['        <div class="catalog-toolbar">', ...toolbarControls.map(control => `          ${control}`), "        </div>"] : []),
-    `        ${member("list", create ? ' @update:selected="stopCreating"' : "")}`,
+    `        ${member("list")}`,
     "      </div>",
     ...(hasDetail ? [
-      "    </template>",
-      '    <div v-else class="detail-view">',
+      "    </div>",
+      '    <div v-if="selected" class="detail-view">',
+      `      <page-header :title="${members.detail ? "label ?? selected.primaryKey" : "selected.primaryKey"}" :back-label="t('detail.back')"${edit ? ' :draft="formDraft"' : ""} @back="back">`,
       ...(singleButtons.length ? [
-        `      <page-header :title="selectedTitle" :back-label="t('detail.back')"${edit ? ' :draft="formDraft"' : ""} @back="back">`,
-        '        <template #actions>',
-        ...singleButtons.map(key => `          ${member(key)}`),
+        "        <template #actions>",
+        ...singleButtons.map(key => `          ${member(key, members.detail ? ' v-if="ready"' : "")}`),
         "        </template>",
-        "      </page-header>",
-      ] : [
-        `      <page-header :title="selectedTitle" :back-label="t('detail.back')"${edit ? ' :draft="formDraft"' : ""} @back="back"></page-header>`,
-      ]),
+      ] : []),
+      "      </page-header>",
       '      <div class="detail-body">',
       ...(edit ? [
-        '        <section class="detail-card">',
+        `        <section${members.detail ? ' v-if="ready"' : ""} class="detail-card">`,
         '          <h2>{{ t("detail.basicInfo") }}</h2>',
-        `          ${member("form", ' @saved="onSaved" @discarded="onDiscarded"')}`,
+        `          ${member("form")}`,
         "        </section>",
       ] : []),
       ...(members.detail ? [
@@ -173,7 +173,7 @@ export function managementPanel(type, checks, typeTable, {
     ...(create ? [
       '    <sdk-dialog v-model="createDialog" :title="t(\'dialog.createTitle\')" width="540px" append-to-body destroy-on-close>',
       '      <div class="create-dialog-body">',
-      `        ${member("form", ' v-if="createDialog" @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate"')}`,
+      `        ${member("createForm", ' v-if="createDialog" @saved="created" @cancel="closeCreate"')}`,
       "      </div>",
       "    </sdk-dialog>",
     ] : []),
@@ -187,61 +187,44 @@ export function managementPanel(type, checks, typeTable, {
     "usePanelBack",
     "usePanelContext",
     ...(edit ? ["usePanelFormDraft"] : []),
+    ...(members.detail ? ["usePanelOutput"] : []),
   ];
 
   const module = hasDetail ? [
     'import { computed } from "vue";',
     `import { ${sdkImports.join(", ")} } from "@ontomato/sdk/panel";`,
     "",
-    `const TYPE = ${JSON.stringify(type)};`,
-    "",
     "await mountPanel({",
     "  setup() {",
     "    const { instance } = usePanelContext();",
     "    const selected = computed(() => instance.state.values.value.selected);",
-    '    const selectedKey = computed(() => (selected.value ? selected.value.primaryKey : ""));',
-    "    const selectedTitle = computed(() => {",
-    "      const key = selectedKey.value;",
-    '      if (!key) return "";',
-    "      const match = instance.pageContext.value.selection.find(item => item.id === key);",
-    "      return match?.label || key;",
-    "    });",
-    ...(create ? [
-      "    const creating = computed(() => instance.state.values.value.creating === true);",
-      "    const createDialog = computed({",
-      "      get: () => creating.value && !selectedKey.value,",
-      "      set: value => {",
-      "        if (!value && creating.value) cancelCreate();",
-      "      },",
-      "    });",
-      "    function startCreate() {",
-      "      instance.state.setState({ creating: true, selected: null });",
-      "    }",
-      "    function stopCreating() {",
-      '      if (creating.value) instance.state.set("creating", false);',
-      "    }",
-      "    function cancelCreate() {",
-      "      instance.state.setState({ creating: false, selected: null });",
-      "    }",
+    ...(members.detail ? [
+      '    const label = usePanelOutput("detail", "label");',
+      ...(edit || singleButtons.length ? ['    const ready = computed(() => label.value !== null);'] : []),
     ] : []),
     ...(edit ? [
-      '    const formDraft = usePanelFormDraft("form", { when: () => Boolean(selectedKey.value) });',
-      "    function onSaved(saved) {",
-      ...(create ? ['      instance.state.set("creating", false);'] : []),
-      '      instance.state.set("selected", { className: saved.className || TYPE, primaryKey: saved.primaryKey });',
-      "    }",
-      "    function onDiscarded() {",
-      ...(create ? ['      instance.state.set("creating", false);'] : []),
+      `    const formDraft = usePanelFormDraft("form"${members.detail ? ", { when: ready }" : ""});`,
+    ] : []),
+    ...(create ? [
+      "",
+      '    const creating = computed(() => instance.state.values.value.creating === true);',
+      '    const closeCreate = () => instance.state.set("creating", false);',
+      '    const createBack = usePanelBack(creating, closeCreate, { forms: "createForm" });',
+      "    const createDialog = computed({",
+      "      get: () => creating.value,",
+      "      set: (open) => { if (!open) void createBack.back(); },",
+      "    });",
+      "    function created(target) {",
+      '      instance.state.setState({ creating: false, ...(target.primaryKey ? { selected: target } : {}) });',
       "    }",
     ] : []),
-    "    function backToCatalog() {",
-    ...(create ? ["      instance.state.setState({ selected: null, creating: false });"] : ['      instance.state.set("selected", null);']),
-    "    }",
-    `    const { back } = usePanelBack(() => Boolean(selectedKey.value), backToCatalog, { pushHistory: true${edit ? ', forms: "form"' : ""} });`,
+    "",
+    `    const { back } = usePanelBack(() => Boolean(selected.value), () => instance.state.set("selected", null)${edit ? ', { forms: "form" }' : ""});`,
     `    return { ${[
-      "selectedKey", "selectedTitle", "back",
-      ...(create ? ["creating", "createDialog", "startCreate", "stopCreating", "cancelCreate"] : []),
-      ...(edit ? ["formDraft", "onSaved", "onDiscarded"] : []),
+      "selected", "back",
+      ...(members.detail ? ["label", ...(edit || singleButtons.length ? ["ready"] : [])] : []),
+      ...(edit ? ["formDraft"] : []),
+      ...(create ? ["creating", "createDialog", "closeCreate", "created", 'startCreate: () => instance.state.set("creating", true)'] : []),
     ].join(", ")} };`,
     "  },",
     "});",

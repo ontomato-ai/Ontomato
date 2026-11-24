@@ -4,7 +4,7 @@ import { analystCommand } from "./client.mjs";
 import { authenticate } from "./identity.mjs";
 import { domainApplicationIconChoices, panelRegistrationClient } from "./panel-registration.mjs";
 import { currentSdkClient, installedPanelSdk, readLocalComponentPackages } from "./current-sdk.mjs";
-import { checkBuiltinPanelSource, checkPanelWorkspace, registerPanelWorkspace } from "./panel-check.mjs";
+import { checkBuiltinPanelSource, checkPanelWorkspace, describePanelType, registerPanelWorkspace } from "./panel-check.mjs";
 import { managementPanel, writeManagementPanel } from "./panel-scaffold.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -396,17 +396,11 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     const checks = await sdk.check(await sdk.current());
     const typeTable = await readPlatformTypeTable(api, checks);
     if (all) return print(typeTable);
-    const { objectTypes, resultSchemas } = typeTable;
-    if (!Object.hasOwn(objectTypes, id)) die(`Type ${id} is not listed in the author's type table`);
-    const { reads = {}, ...metadata } = objectTypes[id];
-    const describe = read => ({ ...read, resultSchema: resultSchemas[read.result] });
-    if (readName !== null) {
-      if (!Object.hasOwn(reads, readName)) die(`Type ${id} has no read '${readName}'`);
-      return print({ id, read: readName, ...describe(reads[readName]) });
+    try {
+      return print(describePanelType(typeTable, id, readName));
+    } catch (error) {
+      die(error.message);
     }
-    return print({
-      id, reads: Object.fromEntries(Object.entries(reads).map(([name, read]) => [name, describe(read)])), ...metadata,
-    });
   }
   if (command === "scaffold") {
     const id = takeOption(args, "--id") ?? undefined;
