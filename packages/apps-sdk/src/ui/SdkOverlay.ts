@@ -201,16 +201,29 @@ export function createSdkOverlay<T extends Component>(options: {
         });
       }
 
-      return () =>
-        h(
+      return () => {
+        const forwarded = { ...attrs };
+        if (panel?.overlayRoot) {
+          const appendTo = forwarded.appendTo ?? forwarded["append-to"];
+          delete forwarded.appendToBody;
+          delete forwarded["append-to-body"];
+          delete forwarded["append-to"];
+          forwarded.appendTo = appendTo && appendTo !== "body" ? appendTo : panel.overlayRoot;
+        }
+        if (panel?.overlayShown?.value === false) {
+          delete forwarded["close-on-press-escape"];
+          forwarded.closeOnPressEscape = false;
+        }
+        return h(
           options.target,
           {
-            ...attrs,
+            ...forwarded,
             ref: innerRef,
             beforeClose: handleBeforeClose,
           },
           forwardSlots(slots),
         );
+      };
     },
   });
 

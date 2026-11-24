@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, provide, ref } from "vue";
+import { computed, createApp, defineComponent, h, nextTick, provide, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -7,6 +7,7 @@ import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { FUNCTION } from "@ontomato/contracts/platform-object-types";
+import { createPanelOverlayRoot } from "@ontomato/platform-shell";
 import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
 import { panelContextKey, type PanelContext } from "../../../../../packages/apps-sdk/src/panel/context";
 import { usePanelBack } from "../../../../../packages/apps-sdk/src/panel/back";
@@ -162,18 +163,20 @@ describe.each([
   { label: "SdkDialog", Component: SdkDialog, closeSelector: ".el-dialog__headerbtn", overlaySelector: ".el-overlay-dialog", bodySelector: ".el-dialog__body" },
   { label: "SdkDrawer", Component: SdkDrawer, closeSelector: ".el-drawer__close-btn", overlaySelector: ".el-overlay", bodySelector: ".el-drawer__body" },
 ])("$label unsaved-changes guard", ({ label, Component, closeSelector, overlaySelector, bodySelector }) => {
-  it("guards close button, backdrop click, Escape, and handleClose before hiding or destroying a dirty form, keeps edits on cancel, and discards only overlay forms on confirm", async () => {
+  it("keeps a hidden panel's edited form open on Escape and guards closing it once shown", async () => {
     let allowLeave = false;
     const { mount, panelContext, confirmSpy } = createPanelHarness({
       confirmLeaveUnsaved: async () => allowLeave,
     });
     const open = ref(true);
+    const shown = ref(true);
+    const overlay = createPanelOverlayRoot("guarded-panel", () => shown.value);
     const overlayRef = ref<{ handleClose?: () => void } | null>(null);
     const updateCalls: boolean[] = [];
 
     const Root = defineComponent({
       setup() {
-        provide(panelContextKey, panelContext);
+        provide(panelContextKey, { ...panelContext, overlayRoot: overlay.element, overlayShown: computed(() => shown.value) });
         // Simulate a panel that also wires `usePanelBack` into the overlay's `v-model` setter.
         const overlayBack = usePanelBack(open, () => {
           open.value = false;
@@ -186,6 +189,7 @@ describe.each([
               {
                 ref: overlayRef,
                 modelValue: open.value,
+                "append-to-body": "",
                 "onUpdate:modelValue": (next: boolean) => {
                   updateCalls.push(next);
                   if (!next) {
@@ -219,12 +223,36 @@ describe.each([
 
     const outsideInput = container.querySelector<HTMLInputElement>(".outside-host input")!;
     const overlayInput = document.querySelector<HTMLInputElement>(`${bodySelector} .overlay-host input`)!;
+    expect(overlay.element.contains(overlayInput)).toBe(true);
     setInputValue(outsideInput, "Edited outside");
     setInputValue(overlayInput, "Edited inside");
     await vi.waitFor(() => {
       expect(mount.instance.forms.dirty("mainForm")).toBe(true);
       expect(mount.instance.forms.dirty("overlayForm")).toBe(true);
     });
+
+    shown.value = false;
+    expect(overlay.element.hidden).toBe(true);
+    expect(overlay.element.style.display).toBe("none");
+    expect(overlay.element.inert).toBe(true);
+    await nextTick();
+    const activePage = document.createElement("button");
+    const activeEscape = vi.fn();
+    activePage.addEventListener("keydown", activeEscape);
+    container.append(activePage);
+    activePage.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+    await flushAsync();
+    expect(activeEscape).toHaveBeenCalledOnce();
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(updateCalls).toEqual([]);
+
+    shown.value = true;
+    await nextTick();
+    expect(overlay.element.hidden).toBe(false);
+    expect(overlay.element.style.display).toBe("");
+    expect(overlay.element.inert).toBe(false);
+    expect(overlay.element.querySelector(`${bodySelector} .overlay-host input`)).toBe(overlayInput);
+    expect(overlayInput.value).toBe("Edited inside");
 
     // 1. Click close X while keeping edits -> prompts once, keeps overlay open and form intact.
     document.querySelector<HTMLButtonElement>(closeSelector)!.click();
@@ -269,6 +297,7 @@ describe.each([
 
     app.unmount();
     mount.dispose();
+    overlay.dispose();
   });
 
   it("closes immediately without prompting when overlay form is clean even if an outside form is dirty, and still calls custom beforeClose", async () => {

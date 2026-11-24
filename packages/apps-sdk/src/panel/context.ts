@@ -60,6 +60,8 @@ export interface ProjectionSlot {
  * states and two sets of registered projections.
  */
 export interface PanelContext {
+  readonly overlayRoot?: HTMLElement | null;
+  readonly overlayShown?: ComputedRef<boolean>;
   /**
    * What the panel is made of — its content, declaration and SDK version — as the host handed it over. The record's
    * identity and revision stay with the trusted host, which also runs a candidate preview this way.

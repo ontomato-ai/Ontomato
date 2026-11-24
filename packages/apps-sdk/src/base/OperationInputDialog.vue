@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from "vue";
+import { computed, inject, reactive, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElDialog } from "element-plus/es/components/dialog/index";
@@ -8,6 +8,7 @@ import { ElInput } from "element-plus/es/components/input/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { panelContextKey } from "../panel/context";
 import {
   buildOperationInput,
   initialOperationInputDraft,
@@ -38,6 +39,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const panel = inject(panelContextKey, null);
 const draft = reactive<Record<string, unknown>>({});
 const fieldErrors = reactive<Record<string, string>>({});
 
@@ -89,7 +91,9 @@ function submit() {
     :model-value="modelValue"
     :title="dialogTitle"
     width="480px"
-    append-to-body
+    :append-to="panel?.overlayRoot ?? 'body'"
+    :append-to-body="!panel?.overlayRoot"
+    :close-on-press-escape="panel?.overlayShown?.value ?? true"
     destroy-on-close
     class="sdk-operation-input-dialog"
     @update:model-value="emit('update:modelValue', $event)"
