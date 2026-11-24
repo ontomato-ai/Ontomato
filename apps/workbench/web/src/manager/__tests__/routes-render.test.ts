@@ -68,7 +68,7 @@ function answer(input: FetchInput, init?: FetchInit): Response {
   const entriesOf = /\/platform\/applications\/([^/]+)\/panel-uses$/.exec(url.pathname)?.[1];
   const declared = entriesOf && catalogFixture().find((app) => app.id === decodeURIComponent(entriesOf));
   const body = declared ? { success: true, data: { applicationId: declared.id, entry: declared.entry, panelUses: declared.panelUses ?? [] } }
-    : url.pathname.endsWith('/product-assets/counts')?{counts:{}}:url.pathname.endsWith("/platform/applications") ? { success: true, data: catalogFixture() }
+    : url.pathname.endsWith("/platform/applications") ? { success: true, data: catalogFixture() }
     : key in NODE_ANSWERS ? NODE_ANSWERS[key]
       : { success: true, data: key in DATA_ENGINE_ANSWERS ? DATA_ENGINE_ANSWERS[key] : [] };
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });

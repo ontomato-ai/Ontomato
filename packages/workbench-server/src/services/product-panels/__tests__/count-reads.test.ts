@@ -1,5 +1,5 @@
 import {
-  ACTION, AGENT_DEFINITION, ATTRIBUTE, OBJECT_TYPE, PRODUCT_ASSET, RELATIONSHIP, SDK_COMPONENT, WORKFLOW,
+  ACTION, AGENT_DEFINITION, ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP, SDK_COMPONENT, WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
 import { productProjectionSchema } from "@ontomato/contracts/product-panels";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
   resolveMember: vi.fn(),
   assertPermission: vi.fn(),
   query: vi.fn(),
-  countProductTypes: vi.fn(),
   listVisibleDomainComponents: vi.fn(),
 }));
 
@@ -32,9 +31,6 @@ vi.mock("../../../identity/installed", async importOriginal => ({
 vi.mock("../../../infrastructure/postgres", async importOriginal => ({
   ...await importOriginal<typeof import("../../../infrastructure/postgres")>(),
   getPostgresPool: () => ({ query: mocks.query }),
-}));
-vi.mock("../../product-assets/store", () => ({
-  countProductTypes: mocks.countProductTypes,
 }));
 vi.mock("../../app-builder/sdk", () => ({
   readCurrentAppSdkComponents: async () => ({
@@ -141,15 +137,9 @@ describe("platform count reads", () => {
     ), [owner.domainId]]]);
   });
 
-  it("sums authorized product asset counts by kind", async () => {
-    mocks.countProductTypes.mockResolvedValue({ page: 4, widget: 7, "object-projection": 2 });
-    await expect(readCount(PRODUCT_ASSET)).resolves.toEqual({ status: "ready", value: { rows: [], total: 13 } });
-    expect(mocks.countProductTypes).toHaveBeenCalledWith(owner);
-  });
-
   it("keeps a successful zero total ready", async () => {
-    mocks.countProductTypes.mockResolvedValue({});
-    await expect(readCount(PRODUCT_ASSET)).resolves.toEqual({ status: "ready", value: { rows: [], total: 0 } });
+    mocks.query.mockResolvedValue({ rows: [{ total: 0 }] });
+    await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 0 } });
   });
 
   it("returns forbidden when Java denies the viewer", async () => {
