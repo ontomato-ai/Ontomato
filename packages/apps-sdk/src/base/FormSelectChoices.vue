@@ -39,6 +39,7 @@ function optionKey(option: PanelFormOption, index: number): DropdownValue {
   return props.control.allowCreate && typeof option.value === "string" ? option.value : index;
 }
 
+const RETIRED = -1;
 const selectedOptions = computed(() => selected.value.map((value, index) => ({
   value, index, option: findPanelFormOption(props.control.options, value),
 })));
@@ -49,6 +50,13 @@ const dropdownValues = computed(() => selectedOptions.value.flatMap(({ option, v
 const retained = computed(() => selectedOptions.value.filter(({ option, value }) =>
   option ? option.disabled && !isList.value
     : isList.value || !props.control.allowCreate || typeof value !== "string"));
+const singleDropdownValue = computed<DropdownValue | undefined>(() => {
+  if (dropdownValues.value[0] !== undefined) return dropdownValues.value[0];
+  const held = retained.value[0];
+  if (!held) return undefined;
+  return held.option ? optionKey(held.option, props.control.options.indexOf(held.option)) : RETIRED;
+});
+const hasRetiredSingleOption = computed(() => !props.control.multiple && Boolean(retained.value[0] && !retained.value[0].option));
 const retainedEntries = computed(() => retained.value.map(({ option, value }) => ({
   label: option?.label ?? (typeof value === "string" ? value : JSON.stringify(value)),
   note: option?.disabledReason ?? t("platform.formOptionNoLonger"),
@@ -147,7 +155,7 @@ function choosePreset(preset: Preset) {
     </el-radio-group>
     <el-select
       v-else
-      :model-value="control.multiple ? dropdownValues : dropdownValues[0]"
+      :model-value="control.multiple ? dropdownValues : singleDropdownValue"
       :multiple="control.multiple"
       :filterable="control.allowCreate"
       :allow-create="control.allowCreate"
@@ -173,6 +181,12 @@ function choosePreset(preset: Preset) {
         <span class="sdk-reference-option-label">{{ option.label }}</span>
         <span v-if="optionNote(option)" class="sdk-reference-option-description">{{ optionNote(option) }}</span>
       </el-option>
+      <el-option
+        v-if="hasRetiredSingleOption"
+        :value="RETIRED"
+        :label="t('platform.formOptionNoLonger')"
+        disabled
+      ></el-option>
     </el-select>
     <el-input
       v-if="isList && control.allowCreate"
