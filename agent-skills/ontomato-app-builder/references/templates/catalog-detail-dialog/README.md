@@ -12,7 +12,7 @@ and browser back stack.
   collapses to one column below `850px`.
 - **Create dialog**: clicking New sets `creating: true` and mounts `createForm` in `<sdk-dialog>`.
   `creating` is public with `deepLink: false`. The dialog's close control, Escape and Back guard unsaved changes.
-- A linked selection opens the detail directly even in a narrow container. The header displays a missing or
+- A linked selection opens the detail directly even in a narrow container. The summary displays a missing or
   forbidden record in place. The list stays mounted behind the detail and the editor unmounts on exit.
 
 ## Check and register directly

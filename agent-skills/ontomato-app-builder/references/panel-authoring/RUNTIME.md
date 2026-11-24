@@ -486,11 +486,12 @@ Assistants beside a displayed panel operate directly through four live tools on 
 - `observe_display`: read the latest live public state and open form values (including unsaved user edits).
 - `present`: navigate to a site-relative entry path or update declared public state in place (including non-`deepLink` state such as dialogs, tabs, and selections).
 - `fill_form`: fill explicit fields into a mounted live `ObjectForm` through its own edit entry, highlighting changed fields and keeping the form unsaved (refuses to overwrite fields with unsaved user edits unless the user confirms and the agent passes `overwriteUnsaved: true`).
-- `page_action`: execute a declared operation (including form save, button actions, row actions with `rowKey`, batch actions on checked items, nested panel actions, `page.refresh`, or `<form>.discard`) through the exact same UI entry a user clicks, under the logged-in user's permissions.
+- `page_action`: execute a declared operation (including form save, button actions, row actions with `rowKey` in the exact `<ClassName>:<primaryKey>` format copied verbatim from the snapshot row, batch actions on checked items, nested panel actions, `page.refresh`, or `<form>.discard`) through the exact same UI entry a user clicks, under the logged-in user's permissions.
 
-The mounted `ObjectForm` owns its live values and submission. When an agent uses `present` to change public
-state on the same page while a form is dirty, the host returns `blocked_unsaved` without applying the change.
-Human controls that switch, close, or cancel a form use the panel's unsaved confirmation.
+The mounted `ObjectForm` owns its live values and submission. When an agent's same-page `present` would switch
+a dirty form's target or unmount it, the host returns `blocked_unsaved`. Unrelated state updates succeed while
+the dirty form stays mounted on the same target. Human controls that switch, close, or cancel a form use the
+panel's unsaved confirmation.
 
 Use `v-if` or operation availability/disabled conditions when an entry cannot be used now. Use `v-show` for
 stateful content the reader could still use after switching a tab, expanding a section, or returning to a list.

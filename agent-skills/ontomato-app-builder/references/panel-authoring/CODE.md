@@ -612,7 +612,12 @@ const { run, running, operation } = usePanelOperation("archive", "archive", {
 ```
 
 Invoke `run()` from the button, use `!operation || saving || running` for its disabled state and show the button
-only when `detailReady`. See [the operation receipt](RUNTIME.md#operation-ids-and-write-results).
+only when `detailReady`. Setting a self-managed flag to `true` in the click handler before `run()` makes the click
+a no-op if that same flag is passed as `options.busy`. Use the hook's returned `running` state to track its own run.
+See [the operation receipt](RUNTIME.md#operation-ids-and-write-results).
+
+For an assistant row action, pass `rowKey` in the exact `<ClassName>:<primaryKey>` format. Copy it verbatim from
+the snapshot row and pass it to `page_action` with the declared operation ID.
 
 ## Save a form
 
@@ -640,9 +645,9 @@ An `ObjectForm` projection binds one save operation:
 
 Use `present` to open the target page, tab or dialog beside the conversation, then `fill_form` on the mounted
 `ObjectForm`. Changed fields are marked and stay unsaved for review. When asked to save, use `page_action`
-for the form's declared save, with conversation confirmation by default. If an agent's same-page `present`
-tries to change public state while a form is dirty, the host returns `blocked_unsaved`. Human clicks go
-through the panel's unsaved confirmation.
+for the form's declared save, with conversation confirmation by default. When an agent's same-page `present` would switch a dirty form's target
+or unmount it, the host returns `blocked_unsaved`. Unrelated state updates succeed while the dirty form stays
+mounted on the same target. Human clicks go through the panel's unsaved confirmation.
 
 To split one form across sections, configure `presentation` and `groups` or place `<object-form-fields>` in
 the form's default slot. The sections share the same draft and save. A form's `saved` event gives

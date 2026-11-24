@@ -125,7 +125,8 @@ Open the registered entry beside the conversation, select a test record, pick an
    in place in the same round without reloading or writing.
 3. **Fill form directly.** “Change [field] to [value] in the form without saving yet.” Verify the agent fills the live
    form directly with `fill_form`, marks the changed field, and leaves it unsaved. Verify same-page `present`
-   is blocked with `blocked_unsaved` while the form is dirty, and a human leaving the form sees the confirmation.
+   returns `blocked_unsaved` if it would change the dirty form's target or unmount it. A human leaving the form sees
+   the confirmation.
 4. **Save / execute.** Save in the page or ask “Save this form / Run [declared operation] on this test record.” Verify
    confirmation by default (invalidated if the human edits the form while waiting) and automatic list/metric refresh
    after success.

@@ -24,8 +24,8 @@
         "data": {
           "rows": "list"
         },
-        "config": {
-          "fallbackToFirst": false
+        "state": {
+          "selected": "selected"
         }
       },
       "detail": {
@@ -38,24 +38,6 @@
           "showTitle": false
         }
       },
-      "form": {
-        "component": "ObjectForm",
-        "target": "selected",
-        "data": {
-          "form": "form"
-        },
-        "operation": "platform:AgentDefinition.save",
-        "config": {
-          "actions": "none"
-        }
-      },
-      "header": {
-        "component": "ObjectHeader",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        }
-      },
       "createForm": {
         "component": "ObjectForm",
         "type": "platform:AgentDefinition",
@@ -65,6 +47,17 @@
         "operation": "platform:AgentDefinition.save",
         "config": {
           "actions": "create-only"
+        }
+      },
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:AgentDefinition.save",
+        "config": {
+          "actions": "none"
         }
       }
     }
@@ -77,8 +70,7 @@
         "dialog.createTitle": "New Agent Definition",
         "detail.back": "Back to Agent Definition",
         "detail.basicInfo": "Basic information",
-        "detail.overview": "Overview",
-        "detail.choose": "Choose a record from the catalog."
+        "detail.overview": "Overview"
       }
     }
   }
