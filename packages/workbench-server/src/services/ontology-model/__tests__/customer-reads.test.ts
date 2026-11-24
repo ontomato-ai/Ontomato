@@ -94,7 +94,10 @@ it("queries a class's page with the declared paging and maps each row the owner 
     const route = catalogRoute(request);
     if (route) return route;
     if (request.url.pathname === "/data/getWholeClassDataByPage") {
-      expect(request.body).toMatchObject({ classname: "person", pagenum: 2, pagecount: 3, search: "ali" });
+      expect(request.body).toEqual({
+        classname: "person", pagenum: 2, pagecount: 3, search: "ali",
+        filters: [{ field: "age", operator: "gte", value: 30 }], sort: { field: "name", order: "desc" },
+      });
       return Response.json({
         success: true,
         data: [
@@ -102,7 +105,7 @@ it("queries a class's page with the declared paging and maps each row the owner 
           { id: "p2", name: null, age: null },
           { id: "p3", name: "Zed", age: { years: 30 } },
         ],
-        total_count: 42,
+        total_count: 42, readable_fields: ["id", "name", "age"],
         total_page: 14,
         cur_page: 2,
       });
@@ -110,24 +113,27 @@ it("queries a class's page with the declared paging and maps each row the owner 
     return undefined;
   });
 
-  const page = await createCustomerOntologyReadAdapter(owner, viewer).query("person", { search: "ali", page: { number: 2, size: 3 } });
+  const page = await createCustomerOntologyReadAdapter(owner, viewer).query("person", {
+    search: "ali", page: { number: 2, size: 5 }, size: 3,
+    filters: [{ field: "age", operator: "gte", value: 30 }], sort: { field: "name", order: "desc" },
+  });
   // The total is the owner's count, not the rows this page happens to hold.
   expect(page.total).toBe(42);
   panelRecordQuerySchema.parse(page);
   expect(page.rows.map(record => panelRecordSchema.parse(record))).toEqual([
     {
-      primaryKey: "p1", label: "Alice",
+      className: "person", primaryKey: "p1", label: "Alice",
       fields: { id: "p1", name: "Alice", age: "30" },
       fieldLabels: { id: "ID", name: "Name", age: "Age" },
     },
     {
       // Empty business keys fall back to the primary key, and null values become empty text.
-      primaryKey: "p2", label: "p2",
+      className: "person", primaryKey: "p2", label: "p2",
       fields: { id: "p2", name: "", age: "" },
       fieldLabels: { id: "ID", name: "Name", age: "Age" },
     },
     {
-      primaryKey: "p3", label: "Zed",
+      className: "person", primaryKey: "p3", label: "Zed",
       fields: { id: "p3", name: "Zed", age: '{"years":30}' },
       fieldLabels: { id: "ID", name: "Name", age: "Age" },
     },
@@ -139,7 +145,7 @@ it("labels a class without business keys by the primary key", async () => {
     const route = catalogRoute(request);
     if (route) return route;
     if (request.url.pathname === "/data/getWholeClassDataByPage")
-      return Response.json({ success: true, data: [{ id: "l9", message: "started" }], total_count: 1 });
+      return Response.json({ success: true, data: [{ id: "l9", message: "started" }], total_count: 1, readable_fields: ["id", "message"] });
     return undefined;
   });
 
@@ -174,7 +180,7 @@ it("reads one object and restores the primary-key value the owner omits", async 
 
   const record = panelRecordSchema.parse(await createCustomerOntologyReadAdapter(owner, viewer).record("person", "p1"));
   expect(record).toEqual({
-    primaryKey: "p1", label: "Alice",
+    className: "person", primaryKey: "p1", label: "Alice",
     fields: { id: "p1", name: "Alice", age: "30" },
     fieldLabels: { id: "ID", name: "Name", age: "Age" },
   });
@@ -426,4 +432,16 @@ it("propagates owner data permission refusals and missing objects on customer fo
 
   await expect(createCustomerOntologyReadAdapter(owner, viewer).form("person", "p1"))
     .rejects.toMatchObject({ status: 403, code: "CUSTOMER_DATA_PERMISSION" });
+});
+
+
+it("keeps Java-authorized scalar column labels on empty pages", async () => {
+  stubOwner(request => catalogRoute(request) ?? (
+    request.url.pathname === "/data/getWholeClassDataByPage"
+      ? Response.json({ success: true, data: [], total_count: 0, readable_fields: ["id", "name"] })
+      : undefined
+  ));
+  expect(await createCustomerOntologyReadAdapter(owner, viewer).query("person", {})).toEqual({
+    rows: [], total: 0, fieldLabels: { id: "ID", name: "Name" },
+  });
 });

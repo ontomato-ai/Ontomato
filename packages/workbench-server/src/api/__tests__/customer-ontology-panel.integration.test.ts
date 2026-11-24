@@ -81,7 +81,7 @@ function javaOwner(app: express.Express) {
       res.json({ success: false, code: "DATA_PERMISSION_DENIED", message: "No data permission for secret" });
       return;
     }
-    res.json({ success: true, total_count: 7, data: [
+    res.json({ success: true, total_count: 7, readable_fields: ["id", "name", "team", "tags", "note"], data: [
       objects["person:p1"],
       // Columns the viewer may not read are absent from the row; an empty business key falls back to the key.
       { id: "p3", name: "", team: "" },
@@ -211,13 +211,14 @@ it("reads a customer class page and single objects with the owner's labels, tota
   ownerCalls.length = 0;
   expect(await read("people", "rows")).toEqual({ status: "ready", value: {
     total: 7,
+    fieldLabels: { id: "ID", name: "Name", team: "Team", note: "Note" },
     rows: [
       {
-        primaryKey: "p1", label: "Alice / Ops",
+        className: "person", primaryKey: "p1", label: "Alice / Ops",
         fields: { id: "p1", name: "Alice", team: "Ops", tags: '["lead","oncall"]', note: "" },
-        fieldLabels: { id: "ID", name: "Name", team: "Team", tags: "Tags", note: "Note" },
+        fieldLabels: { id: "ID", name: "Name", team: "Team", note: "Note" },
       },
-      { primaryKey: "p3", label: "p3", fields: { id: "p3", name: "", team: "" }, fieldLabels: { id: "ID", name: "Name", team: "Team" } },
+      { className: "person", primaryKey: "p3", label: "p3", fields: { id: "p3", name: "", team: "" }, fieldLabels: { id: "ID", name: "Name", team: "Team", note: "Note" } },
     ],
   } });
   expect(ownerCalls).toEqual([`page ${JSON.stringify({ classname: "person", pagenum: 1, pagecount: 2, search: "a" })}`]);

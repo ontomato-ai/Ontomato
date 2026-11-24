@@ -91,9 +91,37 @@ export const platformOntologyNeighborsResponseSchema = z.object({
   node: platformOntologyNodeSchema,
   neighbors: z.array(platformOntologyNodeSchema),
   edges: z.array(platformOntologyEdgeSchema),
-  relations: z.array(platformOntologyRelationStatusSchema),
+  relations: z.array(platformOntologyRelationStatusSchema.extend({ truncated: z.boolean().optional() })),
+  nextOffset: recordCount.nullable().optional(),
+  total: recordCount.nullable().optional(),
+  version: z.string().optional(),
 }).strict();
 export type PlatformOntologyNeighborsResponse = z.infer<typeof platformOntologyNeighborsResponseSchema>;
+
+export const panelGraphOverviewSchema = z.object({
+  status: z.enum(["READY", "GENERATING", "NOT_GENERATED"]),
+  version: z.string().optional(),
+  generatedAt: z.string().optional(),
+  sampleToken: z.string().optional(),
+  complete: z.boolean().optional(),
+  failures: z.array(z.string()).optional(),
+  nodeCount: recordCount.optional(),
+  edgeCount: recordCount.nullable().optional(),
+  componentCount: recordCount.optional(),
+  isolatedNodeCount: recordCount.optional(),
+  largestComponentSize: recordCount.optional(),
+  relationTypes: z.array(relationKind).optional(),
+  groups: z.array(z.object({ id: typeId, label: z.string(), totalCount: recordCount, sampleCount: recordCount }).strict()),
+  nodes: z.array(platformOntologyNodeSchema.partial({ layer: true })),
+  edges: z.array(platformOntologyEdgeSchema).optional(),
+  edgesTruncated: z.boolean().optional(),
+}).strict();
+
+export const panelGraphConnectionsSchema = z.object({
+  edges: z.array(platformOntologyEdgeSchema),
+  truncated: z.boolean(),
+  version: z.string(),
+}).strict();
 
 export const platformOntologyObjectsRequestSchema = z.object({
   type: typeId,

@@ -78,19 +78,4 @@ public class PanelResources {
             throw new ResponseStatusException(failure.getStatusCode(), failure.getResponseBodyAsString(), failure);
         }
     }
-
-    public String objectDetailPanel(String domainId, String className) {
-        try {
-            var response = http.get().uri(builder -> builder.path("/internal/object-details/resolve")
-                .queryParam("domainId", "{domainId}").queryParam("className", "{className}")
-                .build(domainId, className))
-                .retrieve().body(JsonNode.class);
-            var panelId = response == null ? null : response.get("panelId");
-            if (panelId == null || (!panelId.isNull() && (!panelId.isTextual() || panelId.asText().isBlank())))
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Invalid object detail mapping response");
-            return panelId.isNull() ? null : panelId.asText();
-        } catch (RestClientResponseException failure) {
-            throw new ResponseStatusException(failure.getStatusCode(), failure.getResponseBodyAsString(), failure);
-        }
-    }
 }

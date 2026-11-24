@@ -3,13 +3,13 @@ import { once } from "node:events";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
-  OBJECT_DETAIL_INTERNAL_PATH, clearObjectDetailResponseSchema, objectDetailResponseSchema,
+  clearObjectDetailResponseSchema, objectDetailResponseSchema,
   objectDetailUsedByResponseSchema, setObjectDetailRequestSchema, setObjectDetailResponseSchema,
 } from "@ontomato/contracts/object-detail";
 import express from "express";
 import pg from "pg";
 import { errorHandler } from "../middleware/error-handler";
-import { objectDetailsInternalRouter, objectDetailsRouter } from "../routes/object-details";
+import { objectDetailsRouter } from "../routes/object-details";
 
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
@@ -39,7 +39,6 @@ if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable Po
 
 let server: Server;
 let base: string;
-const platformToken = "test-platform-service";
 const owner = { domainId: "domain", userId: "editor" };
 const credentials = { token: "caller" };
 const panel = {
@@ -58,10 +57,8 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductPanelsSchema(state.pool);
 
-  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", platformToken);
   const app = express();
   app.use(express.json());
-  app.use(objectDetailsInternalRouter);
   app.use("/api/object-details", (req, _res, next) => {
     Object.assign(req, owner, credentials);
     next();
@@ -143,22 +140,17 @@ it("requires ontology-modeling and the new panel use grant for a first mapping",
   await expect(classesUsingDetailPanel(owner.domainId, "detail")).resolves.toEqual(["Customer"]);
 });
 
-it("requires edit on the old panel to replace or clear a mapping and keeps one row per class", async () => {
+it("replaces and clears the mapping with modeling permission and only the new panel use grant", async () => {
   await addPanel("old");
   await addPanel("new");
   await mapClass("Customer", "old");
   state.requireGrant.mockImplementation(async (id, verb) => {
-    if (id === "old" && verb === "edit") throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
-  });
-  await expect(setObjectDetail(owner, credentials, "Customer", "new")).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
-  await expect(clearObjectDetail(owner, credentials, "Customer")).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
-  await expect(resolveObjectDetail(owner, credentials, "Customer")).resolves.toEqual({ kind: "configured", panelId: "old" });
-
-  state.requireGrant.mockImplementation(async (id, verb) => {
     if (id === "new" && verb === "use") throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
   });
   await expect(setObjectDetail(owner, credentials, "Customer", "new")).rejects.toMatchObject({ code: "PRODUCT_FORBIDDEN" });
-  state.requireGrant.mockResolvedValue(undefined);
+  state.requireGrant.mockImplementation(async (id, verb) => {
+    if (id !== "new" || verb !== "use") throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
+  });
   await setObjectDetail(owner, credentials, "Customer", "new");
   await expect(classesUsingDetailPanel(owner.domainId, "old")).resolves.toEqual([]);
   await expect(classesUsingDetailPanel(owner.domainId, "new")).resolves.toEqual(["Customer"]);
@@ -192,27 +184,6 @@ it("serves public mapping operations over HTTP using the shared schemas and auth
   const cleared = await fetch(url, { method: "DELETE" });
   expect(cleared.status).toBe(200);
   expect(clearObjectDetailResponseSchema.parse(await cleared.json()).panelId).toBeNull();
-});
-
-it("requires a platform token for the Java read and distinguishes absent and broken mappings", async () => {
-  await addPanel("private");
-  await mapClass("Customer", "private");
-  await mapClass("Issue", "missing");
-  state.requireGrant.mockRejectedValue(new HttpError(403, "Denied", "PRODUCT_FORBIDDEN"));
-  const url = (className: string) => `${base}${OBJECT_DETAIL_INTERNAL_PATH}?domainId=domain&className=${className}`;
-  const serviceRequest = { headers: { "X-Ontomato-Query-Service-Token": platformToken } };
-
-  expect((await fetch(url("Customer"))).status).toBe(403);
-  expect((await fetch(`${base}/api/object-details/Customer`)).status).toBe(403);
-  const configured = await fetch(url("Customer"), serviceRequest);
-  expect(configured.status).toBe(200);
-  expect(objectDetailResponseSchema.parse(await configured.json()).panelId).toBe("private");
-  const absent = await fetch(url("Invoice"), serviceRequest);
-  expect(absent.status).toBe(200);
-  expect(objectDetailResponseSchema.parse(await absent.json()).panelId).toBeNull();
-  const broken = await fetch(url("Issue"), serviceRequest);
-  expect(broken.status).toBe(404);
-  expect(await broken.json()).toMatchObject({ error: { code: "PRODUCT_NOT_FOUND" } });
 });
 
 it("rejects a remapping that closes a panel cycle without changing the old mapping", async () => {

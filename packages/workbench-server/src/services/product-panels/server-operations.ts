@@ -25,6 +25,7 @@ import { workflowServerOperations } from "../workflow/panel-operations";
 import { agentDefinitionOperations } from "./agent-definition-operations";
 import { m7ServerOperations } from "../business-knowledge/panel-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
+import { objectDetailOperations } from "./object-detail-operations";
 import { ontologyModelServerOperations } from "../ontology-model/model-operations";
 import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
 import { governanceServerOperations } from "../governance/panel-operations";
@@ -168,6 +169,7 @@ const registrations: readonly PanelServerOperation[] = [
   feedbackExportOperation,
   skillExportOperation,
   ...ontologyModelServerOperations,
+  ...objectDetailOperations,
   ...productCatalogServerOperations,
   ...governanceServerOperations,
   ...opsDiagnosisServerOperations,

@@ -9,6 +9,9 @@ const panelId = productCurrentIdParamsSchema.shape.id;
 export const objectDetailClassParamsSchema = z.object({ className }).strict();
 export type ObjectDetailClassParams = z.infer<typeof objectDetailClassParamsSchema>;
 
+/** A detail binding form clears the mapping with an empty panel ID. */
+export const saveObjectDetailValuesSchema = z.object({ panelId: z.union([panelId, z.literal(""), z.null()]) }).strict();
+
 export const setObjectDetailRequestSchema = z.object({ panelId }).strict();
 export const setObjectDetailResponseSchema = setObjectDetailRequestSchema;
 export type SetObjectDetailRequest = z.infer<typeof setObjectDetailRequestSchema>;
@@ -27,10 +30,3 @@ export const objectDetailPanelParamsSchema = z.object({ panelId }).strict();
 export const objectDetailUsedByResponseSchema = z.object({ classNames: z.array(className) }).strict();
 export type ObjectDetailPanelParams = z.infer<typeof objectDetailPanelParamsSchema>;
 export type ObjectDetailUsedByResponse = z.infer<typeof objectDetailUsedByResponseSchema>;
-
-/** GET with platform service authentication. The caller checks the reader's use grant separately. */
-export const OBJECT_DETAIL_INTERNAL_PATH = "/internal/object-details/resolve";
-export const objectDetailInternalQuerySchema = objectDetailClassParamsSchema.extend({
-  domainId: z.string().min(1),
-});
-export type ObjectDetailInternalQuery = z.infer<typeof objectDetailInternalQuerySchema>;

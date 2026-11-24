@@ -438,7 +438,7 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     expect(req.header("Accept-Language")).toBe("zh-CN");
     expect(req.body).toEqual({ classname: "person", pagenum: 2, pagecount: 3, search: "Ali" });
-    res.json({ success: true, data: [{ id: "p1", name: "Alice" }], total_count: 12 });
+    res.json({ success: true, data: [{ id: "p1", name: "Alice" }], total_count: 12, readable_fields: ["id", "name"] });
   });
   app.post("/data/queryInfoByNode", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");

@@ -9,6 +9,7 @@ import {
   type PanelRecord,
   type PanelRecordFieldValue,
   type PanelRecordQuery,
+  type PanelOptionList,
 } from "@ontomato/contracts/panel-projection";
 import {
   ACTION,
@@ -291,6 +292,16 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
   }
 
   return {
+    async options(keyword?: string, page?: { number: number; size: number }): Promise<PanelOptionList> {
+      const input = productPanelCatalogQuerySchema.parse({ q: keyword, limit: page?.size });
+      const { items, total } = await listCurrentProducts(owner, viewer, "panel", input, {
+        offset: ((page?.number ?? 1) - 1) * input.limit,
+      });
+      return {
+        options: items.map(({ id, name }) => ({ primaryKey: id, value: id, label: name })),
+        total,
+      };
+    },
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
       const listed = await listCurrentProducts(owner, viewer, "panel", productPanelCatalogQuerySchema.parse({
         ...catalogueQuery(params), template: params.template,

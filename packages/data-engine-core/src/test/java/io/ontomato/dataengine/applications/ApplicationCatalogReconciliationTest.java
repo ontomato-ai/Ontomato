@@ -558,56 +558,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
 
     }
 
-    @Test void objectBrowserDetailChecksReaderBeforeLookingUpTheClassAndChecksTheActualPanel() throws Exception {
-        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
-        var reader = new QueryAccessService.GrantUser("viewer", "domain");
-        when(identity.getCurrentUser()).thenReturn(reader);
-        http.perform(get("/platform/applications/resolve-entry").param("path", "/browser/detail/Customer"))
-            .andExpect(status().isForbidden());
-        verifyNoInteractions(panels, grants);
-
-        when(access.canEnter(any(), eq(reader))).thenReturn(true);
-        when(panels.objectDetailPanel("domain", "客户")).thenReturn("panel-customer");
-        var detail = "/browser/detail/%E5%AE%A2%E6%88%B7";
-        http.perform(get("/platform/applications/resolve-entry").param("path", detail)).andExpect(status().isForbidden());
-        when(grants.allowed("panel-customer", "use")).thenReturn(true);
-        http.perform(get("/platform/applications/resolve-entry").param("path", detail)).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.use.id").value("browser-detail:客户"))
-            .andExpect(jsonPath("$.data.use.pageKey").value("browser-detail:客户"))
-            .andExpect(jsonPath("$.data.use.path").value(detail))
-            .andExpect(jsonPath("$.data.use.access.permissionCode").value("data-browser"))
-            .andExpect(jsonPath("$.data.use.names").doesNotHaveJsonPath());
-        http.perform(get("/platform/applications/resolve-entry").param("applicationId", "browser")
-                .param("useId", "browser-detail:客户"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.data.use.path").value(detail));
-        http.perform(get("/platform/applications/resolve-entry").param("path", "/browser/detail/Unconfigured"))
-            .andExpect(status().isNotFound());
-    }
-
-    @Test void browserDetailDerivesOnlyIdsThatFitTheContractAndRejectsPercentInTheClass() throws Exception {
-        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
-        var reader = new QueryAccessService.GrantUser("viewer", "domain");
-        when(identity.getCurrentUser()).thenReturn(reader);
-        when(access.canEnter(any(), eq(reader))).thenReturn(true);
-        var root = "/browser/detail/";
-        var resolve = "/platform/applications/resolve-entry";
-        var limit = "x".repeat(185);
-        var overLimit = limit + "x";
-        when(panels.objectDetailPanel("domain", limit)).thenReturn("panel-customer");
-        when(grants.allowed("panel-customer", "use")).thenReturn(true);
-
-        http.perform(get(resolve).param("path", root + limit)).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.use.id").value("browser-detail:" + limit))
-            .andExpect(jsonPath("$.data.use.pageKey").value("browser-detail:" + limit));
-        assertAll(
-            () -> http.perform(get(resolve).param("path", root + overLimit)).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("185"))),
-            () -> http.perform(get(resolve).param("path", root + "Discount%25")).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("percent sign"))));
-        verify(panels).objectDetailPanel("domain", limit);
-        verifyNoMoreInteractions(panels);
-    }
-
     private static final String CATALOGUE = "/platform/applications/catalogue";
     private static final String CATALOGUE_APP = "/platform/applications/app-catalogue/panel-uses";
     private static final String CATALOGUE_REGISTRATION = """

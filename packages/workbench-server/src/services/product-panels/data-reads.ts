@@ -37,6 +37,8 @@ import { readPublishedMcpService, readPublishedMcpServices, readPublishedMcpServ
 import type { McpRequestLocation } from "../mcp/catalog";
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
+import { createInstanceGraphReadAdapter } from "../ontology-model/instance-graph-reads";
+import { createObjectDetailReadAdapter } from "./object-detail-reads";
 import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
 import {
@@ -83,13 +85,21 @@ function formParams(params: Record<string, unknown>) {
   };
 }
 
+const readParams = panelReadParameterSchemas;
+function customerQueryParams(params: Record<string, unknown>) {
+  return {
+    search: readParams.keyword.optional().parse(params.search),
+    page: readParams.page.optional().parse(params.page),
+    size: readParams.size.optional().parse(params.size),
+    filters: readParams.recordFilters.optional().parse(params.filters),
+    sort: readParams.recordSort.optional().parse(params.sort),
+  };
+}
+
 function customerReads(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string): Record<string, ReadAdapter> {
   const customer = createCustomerOntologyReadAdapter(owner, viewer, callerUserName);
   return {
-    query: (selection, params) => customer.query(selection.typeId, {
-      search: panelReadParameterSchemas.keyword.optional().parse(params.search),
-      page: panelReadParameterSchemas.page.optional().parse(params.page),
-    }),
+    query: (selection, params) => customer.query(selection.typeId, customerQueryParams(params)),
     record: selection => customer.record(selection.typeId, selection.primaryKey!),
     form: (selection, params) => customer.form(selection.typeId, selection.primaryKey!, formParams(params)),
     createForm: (selection, params) => customer.createForm(selection.typeId, formParams(params)),
@@ -110,6 +120,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
   const knowledge = createBusinessKnowledgeReadAdapter(viewer);
   const model = createOntologyModelReadAdapter(owner, viewer, callerUserName);
+  const customer = createCustomerOntologyReadAdapter(owner, viewer, callerUserName);
+  const graph = createInstanceGraphReadAdapter(viewer);
+  const objectDetail = createObjectDetailReadAdapter(owner, viewer);
   const actions = async () => {
     const { createActionReadAdapter } = await import("../action/panel-reads");
     return createActionReadAdapter(owner, viewer, callerUserName);
@@ -443,6 +456,29 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [OBJECT_TYPE]: {
       ...modelReads,
+      instances: (_selection, params) => customer.query(readParams.className.parse(params.className), customerQueryParams(params)),
+      instanceRecord: (_selection, params) => {
+        const { className, primaryKey } = readParams.graphNode.parse(params.object);
+        return customer.record(className, primaryKey);
+      },
+      instanceNeighbors: (_selection, params) => graph.neighbors(readParams.graphNode.parse(params.node), {
+        relationKinds: readParams.relationKinds.optional().parse(params.relationKinds),
+        targetClass: readParams.className.optional().parse(params.targetClass),
+        direction: readParams.neighborDirection.optional().parse(params.direction),
+        limit: readParams.neighborsLimit.optional().parse(params.limit),
+        offset: readParams.nonNegativeInt.optional().parse(params.offset),
+      }),
+      instanceGraphOverview: () => graph.overview(),
+      instanceGraphConnections: (_selection, params) => graph.connections(
+        readParams.keyword.parse(params.version), readParams.keyword.optional().parse(params.sampleToken),
+      ),
+      instanceGraphStatistics: () => graph.statistics(),
+      instanceGraphSearch: (_selection, params) => graph.search(
+        readParams.keyword.optional().parse(params.search), readParams.className.optional().parse(params.className),
+        readParams.keyword.optional().parse(params.version),
+      ),
+      detailPanel: selection => objectDetail.record(selection.primaryKey!),
+      detailPanelForm: (selection, params) => objectDetail.form(selection.primaryKey!, formParams(params).values),
       options: () => model.objectTypeOptions(),
       resolve: (_selection, params) => model.resolveObjectTypes(panelReadParameterSchemas.optionValues.parse(params.values)),
     },
@@ -460,6 +496,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [PRODUCT_PANEL]: {
       ...catalogueReads(panelCatalogue),
+      options: (_selection, params) => panelCatalogue.options(
+        readParams.keyword.optional().parse(params.keyword), readParams.page.optional().parse(params.page),
+      ),
       unavailable: () => panelCatalogue.unavailable(),
       usedByRows: selection => panelCatalogue.usedByRows(selection.primaryKey!),
       grantRows: selection => panelCatalogue.grantRows(selection.primaryKey!),
