@@ -16,8 +16,10 @@ function sealedCallback(
   initiatorCredentials: AssistantCredentials,
 ): RuntimeBusinessCallback {
   const root = environment.agentRuntime().callbackUrl.replace(/\/$/, "");
+  const baseUrl = root + basePath;
   return {
-    baseUrl: root + basePath,
+    owner: "workbench", baseUrl, pathPrefix: new URL(baseUrl).pathname,
+    credentialHeader: "X-Ontomato-Callback-Credential",
     credential: callbackCredential({
       pathPrefix,
       runId,

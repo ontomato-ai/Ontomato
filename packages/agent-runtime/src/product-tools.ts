@@ -1,3 +1,4 @@
+import { matchesBusinessPath } from "./business-callback";
 import type { RuntimeAgentDefinition, RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import type { RuntimeToolDeclaration } from "@ontomato/contracts/agent-runtime-messages";
 import type { RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
@@ -25,7 +26,7 @@ export function productTools(request: RuntimeStartRunRequest, runId: string): Pl
   const deploymentPath = prefix.slice(0, prefix.lastIndexOf("/api/product-assets/"));
   return definitions.map((definition) => {
     const target = new URL(deploymentPath + definition.path, base.origin);
-    if (!target.pathname.startsWith(prefix + "/"))
+    if (!matchesBusinessPath(target.pathname, callback.pathPrefix))
       throw new Error("Product tool is outside its declared callback path");
     return {
       declaration: {
@@ -38,7 +39,7 @@ export function productTools(request: RuntimeStartRunRequest, runId: string): Pl
         const response = await fetch(target, {
           method: "POST",
           redirect: "error",
-          headers: { "Content-Type": "application/json", tk: callback.credential, "X-Ontomato-Run-Id": runId },
+          headers: { "Content-Type": "application/json", [callback.credentialHeader]: callback.credential, "X-Ontomato-Run-Id": runId },
           body: JSON.stringify({ parameters: call.args }),
           signal: call.signal,
         });

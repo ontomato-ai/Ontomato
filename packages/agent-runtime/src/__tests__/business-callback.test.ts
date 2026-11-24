@@ -26,7 +26,7 @@ it.each(["PUT", "DELETE"])("authenticates %s with tk and forwards the full body 
     async withBusinessCallback(_scope, _session, kind, credential, forward) {
       if (kind !== "workbench" || credential !== sessionCredential)
         throw new RuntimeError(401, "UNAUTHENTICATED", "Invalid session credential");
-      await forward({ baseUrl: "http://workbench.test/api/executions/workbench", credential: "wbc1.fixture" },
+      await forward({ owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL("http://workbench.test/api/executions/workbench").pathname, baseUrl: "http://workbench.test/api/executions/workbench", credential: "wbc1.fixture" },
         runId, new AbortController().signal);
     },
   });
@@ -62,6 +62,40 @@ it("rejects unsupported methods before dispatching a business request", async ()
       expect(response.status).toBe(405);
     }
     expect(withBusinessCallback).not.toHaveBeenCalled();
+  } finally {
+    await callback.close();
+  }
+});
+
+it("relays a provider-owned grant and the active run only to the declared path boundary", async () => {
+  const nativeFetch = globalThis.fetch;
+  const upstream = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+    .mockResolvedValue(new Response(null, { status: 204 }));
+  vi.stubGlobal("fetch", upstream);
+  const callback = await openSkillCallback({
+    async sessionChannelCommand() {},
+    async withBusinessCallback(_scope, _session, kind, credential, forward) {
+      expect(kind).toBe("ontology");
+      expect(credential).toBe(sessionCredential);
+      await forward({
+        owner: "ontology", baseUrl: "http://ontology.test", pathPrefix: "/ontology/",
+        credentialHeader: "tk", credential: "oq.fixture.signed",
+      }, runId, new AbortController().signal);
+    },
+  });
+  try {
+    const { host, port } = callback.endpoint;
+    const url = `http://${host}:${port}/v1/channel/hosts/host/domains/domain/sessions/${sessionId}/business/ontology`;
+    const headers = { tk: sessionCredential, "X-Ontomato-Run-Id": "client-supplied" };
+    expect((await nativeFetch(url + "/ontology/retrievals/runtime-context", { headers })).status).toBe(204);
+    const [target, request] = upstream.mock.calls[0];
+    expect(String(target)).toBe("http://ontology.test/ontology/retrievals/runtime-context");
+    const forwarded = new Headers(request?.headers);
+    expect(forwarded.get("tk")).toBe("oq.fixture.signed");
+    expect(forwarded.get("X-Ontomato-Run-Id")).toBe(runId);
+    expect(forwarded.has("X-Ontomato-Callback-Credential")).toBe(false);
+    expect((await nativeFetch(url + "/ontology-admin/query", { headers })).status).toBe(403);
+    expect(upstream).toHaveBeenCalledTimes(1);
   } finally {
     await callback.close();
   }

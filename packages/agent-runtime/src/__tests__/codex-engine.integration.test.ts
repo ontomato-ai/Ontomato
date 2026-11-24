@@ -74,7 +74,7 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
       const n = modelRequests.length;
       reply(res, n, body.model, n % 2 === 1 ? `fixture-call-${n}` : null);
     } else if (req.url === productRoot + "/tools/read") {
-      toolRequests.push({ body: JSON.parse(raw), credential: req.headers.tk });
+      toolRequests.push({ body: JSON.parse(raw), credential: req.headers["x-ontomato-callback-credential"] });
       res.writeHead(200, { "Content-Type": "application/json" }).end('{"total":42}');
     } else {
       res.writeHead(404).end();
@@ -129,7 +129,7 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
           inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false },
         }],
       },
-      businessCallbacks: { product: { baseUrl: base + productRoot + "/tools", credential: "wbc1.fixture" } },
+      businessCallbacks: { product: { owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL(base + productRoot + "/tools").pathname, baseUrl: base + productRoot + "/tools", credential: "wbc1.fixture" } },
     };
     await runtime.start(host, scope, sessionId, id, id, request);
     const stopped = await runtime.runStatus(scope, id, { timeoutMs: 25000, signal: new AbortController().signal });

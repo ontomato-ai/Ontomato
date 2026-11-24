@@ -29,7 +29,7 @@ it('limits a Profile run to frozen projection tools without inherited skills or 
  expect(run.definition.skills).toEqual([]);expect(run.definition.externalMcp).toEqual([]);expect(run.definition.toolSurface).toBe('product');
  expect(run.environment).toEqual({values:{ONTOMATO_ASSISTANT_SESSION_ID:'session'},secrets:{}});
  expect(run.businessCallbacks).toEqual({
-   product:{baseUrl:'http://workbench.test/api/product-assets/profile/releases/release/tools',credential:'wbc1.sealed-callback'},
+   product:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/product-assets/profile/releases/release/tools').pathname, baseUrl:'http://workbench.test/api/product-assets/profile/releases/release/tools',credential:'wbc1.sealed-callback'},
  });
  expect(mocks.callback).toHaveBeenCalledWith(expect.objectContaining({pathPrefix:'/api/product-assets/profile/releases/release/tools/',runId:'run',token:'human-secret'}));
  expect(mocks.skills).not.toHaveBeenCalled();
@@ -42,11 +42,11 @@ it('keeps the initiator identity for caller ownership and native skills in self 
  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({executionUserId:null,classNames:['Person']}),input.credentials);
  expect(run.environment).toEqual({values:{ONTOMATO_ASSISTANT_SESSION_ID:'session'},secrets:{}});
  expect(run.businessCallbacks).toEqual({
-   workbench:{baseUrl:'http://workbench.test/api/assistant/executions/run/workbench',credential:'wbc1.sealed-callback'},
-   ontology:{baseUrl:'http://workbench.test/api/assistant/executions/run/ontology',credential:'wbc1.sealed-callback'},
-   panelOperations:{baseUrl:'http://workbench.test/api/assistant/executions/run/panels',credential:'wbc1.sealed-callback'},
-   authoring:{baseUrl:'http://workbench.test/api/assistant/executions/run/authoring',credential:'wbc1.sealed-callback'},
-   retrieval:{baseUrl:'http://workbench.test/api/assistant/executions/run/retrieval',credential:'wbc1.sealed-callback'},
+   workbench:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/run/workbench').pathname, baseUrl:'http://workbench.test/api/assistant/executions/run/workbench',credential:'wbc1.sealed-callback'},
+   ontology:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/run/ontology').pathname, baseUrl:'http://workbench.test/api/assistant/executions/run/ontology',credential:'wbc1.sealed-callback'},
+   panelOperations:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/run/panels').pathname, baseUrl:'http://workbench.test/api/assistant/executions/run/panels',credential:'wbc1.sealed-callback'},
+   authoring:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/run/authoring').pathname, baseUrl:'http://workbench.test/api/assistant/executions/run/authoring',credential:'wbc1.sealed-callback'},
+   retrieval:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/run/retrieval').pathname, baseUrl:'http://workbench.test/api/assistant/executions/run/retrieval',credential:'wbc1.sealed-callback'},
  });
  expect(JSON.stringify(run)).not.toContain('human-secret');
 });
@@ -58,11 +58,11 @@ it('uses executor business credentials while page skills and caller ownership st
  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({executionUserId:'executor'}),input.credentials);
  expect(run.environment).toEqual({values:{ONTOMATO_ASSISTANT_SESSION_ID:'session'},secrets:{}});
  expect(run.businessCallbacks).toEqual({
-   workbench:{baseUrl:'http://workbench.test/api/assistant/executions/run/workbench',credential:'wbc1.sealed-callback'},
-   ontology:{baseUrl:'http://workbench.test/api/assistant/executions/run/ontology',credential:'wbc1.sealed-callback'},
-   panelOperations:{baseUrl:'http://workbench.test/api/assistant/executions/run/panels',credential:'wbc1.sealed-callback'},
-   authoring:{baseUrl:'http://workbench.test/api/assistant/executions/run/authoring',credential:'wbc1.sealed-callback'},
-   retrieval:{baseUrl:'http://workbench.test/api/assistant/executions/run/retrieval',credential:'wbc1.sealed-callback'},
+   workbench:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/run/workbench').pathname, baseUrl:'http://workbench.test/api/assistant/executions/run/workbench',credential:'wbc1.sealed-callback'},
+   ontology:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/run/ontology').pathname, baseUrl:'http://workbench.test/api/assistant/executions/run/ontology',credential:'wbc1.sealed-callback'},
+   panelOperations:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/run/panels').pathname, baseUrl:'http://workbench.test/api/assistant/executions/run/panels',credential:'wbc1.sealed-callback'},
+   authoring:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/run/authoring').pathname, baseUrl:'http://workbench.test/api/assistant/executions/run/authoring',credential:'wbc1.sealed-callback'},
+   retrieval:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/run/retrieval').pathname, baseUrl:'http://workbench.test/api/assistant/executions/run/retrieval',credential:'wbc1.sealed-callback'},
  });
  expect(JSON.stringify(run)).not.toContain('executor-key');expect(JSON.stringify(run)).not.toContain('human-secret');
 });

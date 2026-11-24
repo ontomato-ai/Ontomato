@@ -1,18 +1,20 @@
 import { z } from "zod";
+import { runtimeKeySchema } from "./agent-runtime-values";
 
 const businessCallbackBaseUrlSchema = z.string().url().refine(value => {
   if (!URL.canParse(value)) return false;
   const url = new URL(value);
   return ["http:", "https:"].includes(url.protocol)
-    && !url.username && !url.password && !url.search && !url.hash
-    && url.pathname !== "/";
-}, "Expected an HTTP(S) callback URL with a path prefix");
+    && !url.username && !url.password && !url.search && !url.hash;
+}, "Expected an HTTP(S) callback URL");
 
 export const runtimeBusinessCallbackSchema = z.object({
-  /** Workbench URL and the boundary of the path this declaration may forward. */
+  owner: runtimeKeySchema,
   baseUrl: businessCallbackBaseUrlSchema,
-  /** Workbench seals the run, path prefix, delegated authority and expiry. */
-  credential: z.string().regex(/^wbc1\.[A-Za-z0-9_-]+$/),
+  /** Path boundary of the complete upstream URL, evaluated before forwarding. */
+  pathPrefix: z.string().min(2).startsWith("/").regex(/^[^?#\\]+$/),
+  credentialHeader: z.enum(["X-Ontomato-Callback-Credential", "tk"]),
+  credential: z.string().min(1),
 }).strict();
 
 export const runtimeBusinessCallbacksSchema = z.object({

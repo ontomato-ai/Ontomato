@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.controller;
 
 import com.alibaba.fastjson2.*;
+import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.agent.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
@@ -20,6 +21,15 @@ public class OntologyRetrievalController {
     this.retrieval = retrieval;
     this.store = store;
     this.access = access;this.tasks=tasks;
+  }
+
+  @GetMapping("/ontology/retrievals/runtime-context")
+  public Object runtimeContext(HttpServletRequest request) {
+    if (!(request.getAttribute(QueryGrantService.ATTRIBUTE) instanceof JSONObject grant)
+        || !"retrieval-exploration".equals(grant.getString("purpose")))
+      throw new AgentHttpException(403, "FORBIDDEN", "A retrieval exploration grant is required");
+    return JSONObject.of("id", grant.getString("retrievalId"),
+        "sessionId", grant.getString("sessionId"), "runId", grant.getString("runId"));
   }
 
   @GetMapping("/ontology/retrievals/{id}")

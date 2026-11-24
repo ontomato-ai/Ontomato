@@ -36,6 +36,10 @@ export function businessCallbackEnvironment(sessionUrl: string, token: string) {
   };
 }
 
+export function matchesBusinessPath(path: string, prefix: string) {
+  return path === prefix || path.startsWith(prefix.endsWith("/") ? prefix : prefix + "/");
+}
+
 /** Extend only the declared path; Workbench authorizes the operation and method. */
 export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispatcher, req: Request, res: Response) {
   const kind = callbackName.parse(req.params.kind);
@@ -53,11 +57,13 @@ export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispat
   await dispatcher.withBusinessCallback(scope, sessionId, kind, token, async (declaration, runId, signal) => {
     const target = new URL(declaration.baseUrl);
     if (segments.length) target.pathname = target.pathname.replace(/\/$/u, "") + "/" + segments.map(encodeURIComponent).join("/");
+    if (!matchesBusinessPath(target.pathname, declaration.pathPrefix))
+      throw new RuntimeError(403, "FORBIDDEN", "Business callback path is outside the declared scope");
     const queryAt = req.originalUrl.indexOf("?");
     if (queryAt !== -1) target.search = req.originalUrl.slice(queryAt);
 
     const headers = new Headers({
-      "X-Ontomato-Callback-Credential": declaration.credential,
+      [declaration.credentialHeader]: declaration.credential,
       "X-Ontomato-Run-Id": runId,
       "X-Ontomato-Session-Id": sessionId,
     });

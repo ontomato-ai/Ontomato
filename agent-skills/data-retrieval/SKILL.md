@@ -12,6 +12,8 @@ Each result table is delivered as a dataset: the host reruns your query under th
 node <this-skill>/scripts/dataset.mjs deliver @work/q.json --meta @work/delivery.json [--out outputs/name.dataset.json]
 ```
 
+In a delegated ontology retrieval session, include `--active` with the delivery options. The platform owns the active retrieval lifecycle.
+
 For a count through a direct relationship to one already resolved object, use `related-count @work/spec.json --meta @work/delivery.json` with the same script. It checks the current schema and delivers the two-step DSL in one call. The spec takes `objectClass` (the class whose objects are counted), `objectKey` (its primary key), `relatedClass` (the class that is filtered), `relatedKey` (its primary key), `value` (the resolved primary-key value), and `relationship` (the declared relationship, in either direction). Optional `groupField` adds a breakdown by an attribute of `objectClass`. Output keys are `headcount` and, when grouped, `category`. Use `deliver` with your own DSL for additional filters or other query shapes.
 
 - Run it from the workspace root. Paths inside a package are relative to the manifest's directory.
@@ -57,7 +59,7 @@ verified field, entity and value; do not restart discovery after a syntax error 
 only repeats an existing assumption.
 
 For independent probes, write a JSON array and run
-`node skills/data-retrieval/scripts/probe.mjs @work/probes.json`. Each item has a unique `id`,
+`node <this-skill>/scripts/probe.mjs @work/probes.json`. Each item has a unique `id`,
 an `operation` (`schema`, `dsl-reference`, `distinct-values`, or `execute-dsl`) and the existing
 endpoint's `input` object. The command runs up to four requests concurrently, keeps the original
 result and completeness markers under each id, and reports failures separately. Dependent

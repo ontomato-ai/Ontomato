@@ -347,9 +347,19 @@ public class OntologyRetrievalService {
     var definition=definitions.definition(context.owner().domainId(),context.language(),deadline-System.currentTimeMillis(),skills);
     definition.put("context",modelContext(id,runId,context));
     store.transaction(() -> store.gate(id,runId,context.owner()));
+    String base = runtime.ontologyUrl().replaceFirst("/$", "");
+    String contextUrl = base + "/ontology/retrievals/runtime-context";
     return JSONObject.of("language",context.language(),"input",message,"definition",definition,
       "authority", JSONObject.of("classNames", classes, "executionKind", "live"),
-      "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_RETRIEVAL_ID",id),"secrets",JSONObject.of("ONTOMATO_TK",grant)));
+      "environment",JSONObject.of("values",JSONObject.of(),"secrets",JSONObject.of()),
+      "businessCallbacks", JSONObject.of(
+        "ontology", retrievalCallback(base, java.net.URI.create(base + "/ontology/").getRawPath(), grant),
+        "retrieval", retrievalCallback(contextUrl, java.net.URI.create(contextUrl).getRawPath(), grant)));
+  }
+
+  private static JSONObject retrievalCallback(String url, String pathPrefix, String grant) {
+    return JSONObject.of("owner", "ontology", "baseUrl", url, "pathPrefix", pathPrefix,
+        "credentialHeader", "tk", "credential", grant);
   }
 
   private Object scopedOverview(QueryAccessService.Access access, List<String> classNames) {
