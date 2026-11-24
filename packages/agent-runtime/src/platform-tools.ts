@@ -1,6 +1,5 @@
 import { Compile } from "typebox/compile";
-import express, { type Express, type NextFunction, type Request, type Response } from "express";
-import { z } from "zod";
+import type { Express, NextFunction, Request, Response } from "express";
 import {
   presentationResultSchema,
   type PresentationResult,
@@ -21,13 +20,7 @@ import {
 } from "@ontomato/contracts/agent-runtime-values";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { serviceLogIdentitySchema } from "@ontomato/contracts/service-logging";
-import {
-  correlationId,
-  getServiceLogContext,
-  LogQueryError,
-  updateServiceLogContext,
-  withServiceLogContext,
-} from "@ontomato/service-logging";
+import { updateServiceLogContext } from "@ontomato/service-logging";
 import type {
   HarnessToolCall,
   HarnessToolCallResult,
@@ -35,12 +28,8 @@ import type {
   HarnessToolResult,
 } from "./adapters/contract";
 import { channelToolDeclaration } from "./channel";
-import { RuntimeError } from "./errors";
-import { runtimeDiagnostic, runtimeLogger } from "./logging";
-import { RuntimeMcpServices } from "./mcp";
 import { productToolDeclarations, productTools } from "./product-tools";
 import type { Scope } from "./store";
-import { discoverMcp, mcpToolDeclaration } from "./tools";
 
 export type PlatformToolPartialResult = HarnessToolPartialResult;
 export type PlatformToolResult = HarnessToolResult;
@@ -412,40 +401,6 @@ export function declarePlatformTools(options: DeclarePlatformToolsOptions): Plat
   return { tools, engineTools };
 }
 
-export interface DiscoverPlatformToolSurfaceOptions {
-  readonly mcp: Pick<RuntimeMcpServices, "resolve">;
-  readonly scope: Scope;
-  readonly definition: RuntimeAgentDefinition;
-  readonly correlationId: string;
-  readonly signal: AbortSignal;
-  readonly hasChannel: boolean;
-  readonly hasPresentation: boolean;
-}
-
-/** Discovers MCP declarations (when enabled) and assembles the session-open tool surface. */
-export async function discoverPlatformToolSurface(
-  options: DiscoverPlatformToolSurfaceOptions,
-): Promise<PlatformToolSurface> {
-  const engineTools = usesEngineTools(options.definition);
-  let mcpTools: RuntimeToolDeclaration[] = [];
-  if (engineTools && options.definition.externalMcp.length) {
-    const configs = await options.mcp.resolve(
-      options.scope,
-      options.definition.externalMcp.map((ref) => ref.id),
-    );
-    const discovered = await Promise.all(
-      configs.map((config) => discoverMcp(config, options.correlationId, options.signal)),
-    );
-    mcpTools = discovered.flat().map(mcpToolDeclaration);
-  }
-  return declarePlatformTools({
-    definition: options.definition,
-    mcpTools,
-    hasChannel: options.hasChannel,
-    hasPresentation: options.hasPresentation,
-  });
-}
-
 export interface BindPlatformToolsOptions {
   readonly runId: string;
   readonly request: RuntimeStartRunRequest;
@@ -495,25 +450,50 @@ function toolErrorResult(message: string): HarnessToolCallResult {
 
 /** Binds platform tools to one active run and checks authorization and schema at invocation time. */
 export function bindPlatformTools(options: BindPlatformToolsOptions): BoundPlatformTools {
-  const engineTools = usesEngineTools(options.request.definition);
+  const surface = declarePlatformTools({
+    definition: options.request.definition,
+    mcpTools: options.mcpTools?.map((tool) => tool.declaration),
+    hasChannel: Boolean(options.channelTool),
+    hasPresentation: Boolean(options.presentationCallback),
+  });
   const presentationBatch = options.presentationCallback
     ? (options.presentationBatch ?? createPresentationBatchController())
     : undefined;
-  const tools: PlatformTool[] = [
-    ...(engineTools ? (options.mcpTools ?? []) : []),
+  const candidates: PlatformTool[] = [
+    ...(surface.engineTools ? (options.mcpTools ?? []) : []),
     ...productTools(options.request, options.runId),
     ...(options.channelTool ? [options.channelTool] : []),
     ...(options.presentationCallback
       ? createPresentationTools(options.runId, options.presentationCallback, presentationBatch)
       : []),
   ];
-  const declarations = tools.map((tool) => runtimeToolDeclarationSchema.parse(tool.declaration));
-  assertUniquePlatformToolNames(declarations, engineTools);
+  const candidateByName = new Map<string, PlatformTool>();
+  for (const tool of candidates) {
+    if (candidateByName.has(tool.declaration.name)) {
+      throw new Error("Exposed tool names must be unique");
+    }
+    candidateByName.set(tool.declaration.name, tool);
+  }
+  const tools = surface.tools.map((declaration) => {
+    const tool = candidateByName.get(declaration.name);
+    if (!tool) {
+      throw new Error(`Missing platform tool implementation for "${declaration.name}"`);
+    }
+    return tool;
+  });
+  if (tools.length !== candidateByName.size) {
+    const declaredNames = new Set(surface.tools.map((declaration) => declaration.name));
+    for (const name of candidateByName.keys()) {
+      if (!declaredNames.has(name)) {
+        throw new Error(`Unexpected platform tool implementation for "${name}"`);
+      }
+    }
+  }
   const byName = new Map(tools.map((tool) => [tool.declaration.name, tool]));
 
   return {
-    declarations,
-    engineTools,
+    declarations: surface.tools,
+    engineTools: surface.engineTools,
     tools,
     beginTurn(turnToken: unknown) {
       presentationBatch?.beginTurn(turnToken);
@@ -598,73 +578,4 @@ export function registerSkillCallbackRoutes(
           handle(req, res).catch(next);
         },
   );
-}
-
-/**
- * Standalone HTTP app for the sandbox callback bridge. Only accepts run-scoped channel commands and
- * rejects every other path, ensuring the main runtime listener and service credentials stay unreachable.
- */
-export function createSkillCallbackHttp(dispatcher: SkillCallbackDispatcher): Express {
-  const app = express();
-  app.disable("x-powered-by");
-  app.use((req, res, next) => {
-    const context = { correlationId: correlationId(req.header("X-Correlation-Id")) };
-    res.setHeader("X-Correlation-Id", context.correlationId);
-    withServiceLogContext(context, () => {
-      const attribution = getServiceLogContext();
-      const started = performance.now();
-      res.once("close", () => {
-        withServiceLogContext(attribution, () =>
-          runtimeLogger.info("skill callback completed", {
-            kind: "http",
-            method: req.method,
-            path: req.path,
-            status: res.headersSent ? res.statusCode : null,
-            durationMs: Math.floor(performance.now() - started),
-            outcome: !res.writableFinished ? "cancelled" : res.statusCode >= 400 ? "failure" : "success",
-          }),
-        );
-      });
-      next();
-    });
-  });
-  app.use(express.json({ limit: "32mb" }));
-  registerSkillCallbackRoutes(app, dispatcher);
-  app.use((_req, _res, next) =>
-    next(new RuntimeError(404, "NOT_FOUND", "Skill callback endpoint not found")),
-  );
-  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    if (res.headersSent) {
-      res.end();
-      return;
-    }
-    const status =
-      error instanceof RuntimeError || error instanceof LogQueryError
-        ? error.status
-        : error instanceof z.ZodError || error instanceof SyntaxError
-          ? 400
-          : 500;
-    const code =
-      error instanceof RuntimeError || error instanceof LogQueryError
-        ? error.code
-        : status === 400
-          ? "INVALID_REQUEST"
-          : "INTERNAL_ERROR";
-    if (status >= 500 && !(error instanceof LogQueryError)) {
-      runtimeLogger.error("skill callback failed", runtimeDiagnostic(error));
-    }
-    res.status(status).json({
-      error: {
-        code,
-        message:
-          error instanceof RuntimeError || error instanceof LogQueryError
-            ? error.message
-            : status === 400
-              ? "Invalid request"
-              : "Skill callback failed",
-      },
-      correlationId: getServiceLogContext().correlationId,
-    });
-  });
-  return app;
 }

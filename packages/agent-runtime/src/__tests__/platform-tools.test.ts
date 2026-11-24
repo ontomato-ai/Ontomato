@@ -1,14 +1,13 @@
-import { createServer } from "node:http";
+import express from "express";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeAgentDefinition, RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import type { HarnessTurnHost } from "../adapters/contract";
 import {
   bindPlatformTools,
-  createSkillCallbackHttp,
   declarePlatformTools,
-  discoverPlatformToolSurface,
   type PlatformTool,
+  registerSkillCallbackRoutes,
   usesEngineTools,
 } from "../platform-tools";
 import { RuntimeError } from "../errors";
@@ -52,7 +51,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("declarePlatformTools & discoverPlatformToolSurface", () => {
+describe("declarePlatformTools", () => {
   it("assembles session-open declarations once with engineTools=true for standard surfaces", () => {
     const surface = declarePlatformTools({
       definition: baseDefinition({
@@ -163,55 +162,6 @@ describe("declarePlatformTools & discoverPlatformToolSurface", () => {
         hasPresentation: false,
       }),
     ).toThrow("Exposed tool names must be unique");
-  });
-
-  it("discovers scoped MCP declarations at session open over Streamable HTTP", async () => {
-    const mcpServer = createServer(async (req, res) => {
-      let raw = "";
-      for await (const chunk of req) raw += chunk;
-      const rpc = JSON.parse(raw);
-      const result =
-        rpc.method === "initialize"
-          ? {
-              protocolVersion: "2025-03-26",
-              capabilities: { tools: {} },
-              serverInfo: { name: "fixture", version: "1" },
-            }
-          : {
-              tools: [
-                {
-                  name: "inventory_check",
-                  description: "Check inventory",
-                  inputSchema: { type: "object", properties: { sku: { type: "string" } }, required: ["sku"] },
-                },
-              ],
-            };
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
-    });
-    await new Promise<void>((resolve) => mcpServer.listen(0, "127.0.0.1", resolve));
-    const port = (mcpServer.address() as AddressInfo).port;
-    const mcpId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    try {
-      const surface = await discoverPlatformToolSurface({
-        mcp: {
-          resolve: vi.fn(async () => [
-            { id: mcpId, name: "Inventory", url: `http://127.0.0.1:${port}/mcp`, headers: { "x-mcp-key": "s" } },
-          ]),
-        },
-        scope: { hostId: "h1", domainId: "d1" },
-        definition: baseDefinition({ externalMcp: [{ id: mcpId }] }),
-        correlationId: "corr-1",
-        signal: new AbortController().signal,
-        hasChannel: true,
-        hasPresentation: false,
-      });
-      expect(surface.engineTools).toBe(true);
-      expect(surface.tools.map((t) => t.name)).toEqual(["inventory_check", "agent"]);
-    } finally {
-      mcpServer.closeAllConnections();
-      await new Promise<void>((resolve) => mcpServer.close(() => resolve()));
-    }
   });
 });
 
@@ -369,12 +319,30 @@ describe("bindPlatformTools", () => {
     expect(res.isError).toBe(true);
     expect(mcpTool.execute).not.toHaveBeenCalled();
   });
+
+  it("throws if a declared tool has no matching implementation", () => {
+    const misnamedChannelTool: PlatformTool = {
+      declaration: { name: "not_agent", description: "Wrong name", parameters: { type: "object" } },
+      label: "Wrong",
+      execute: vi.fn(),
+    };
+    expect(() =>
+      bindPlatformTools({
+        runId: "run-3",
+        request: baseRequest(baseDefinition()),
+        channelTool: misnamedChannelTool,
+      }),
+    ).toThrow('Missing platform tool implementation for "agent"');
+  });
 });
 
-describe("createSkillCallbackHttp", () => {
-  it("bridges only run-scoped skill commands and refuses generic channel proxy routes", async () => {
+describe("registerSkillCallbackRoutes", () => {
+  it("mounts only the run-scoped skill command callback route", async () => {
     const runChannelCommand = vi.fn(async () => ({ agents: [] }));
-    const server = createSkillCallbackHttp({ runChannelCommand }).listen(0, "127.0.0.1");
+    const app = express();
+    app.use(express.json());
+    registerSkillCallbackRoutes(app, { runChannelCommand });
+    const server = app.listen(0, "127.0.0.1");
     await new Promise<void>((resolve) => server.once("listening", resolve));
     const port = (server.address() as AddressInfo).port;
     const baseUrl = `http://127.0.0.1:${port}`;
