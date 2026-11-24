@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { MetricCardView } from "./utils/metricCard";
 import { formatValue } from "./utils/metricCard";
@@ -14,6 +14,7 @@ const props = defineProps<{ card: MetricCardView | null }>();
 const visible = defineModel<boolean>({ required: true });
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 
 const STATUS: Record<string, string> = {
   PENDING_REVIEW: "dashboard.metricStatus.PENDING_REVIEW",
@@ -48,7 +49,7 @@ function openMetric() {
     </el-descriptions>
     <template #footer>
       <el-button @click="visible = false">{{ t("common.close") }}</el-button>
-      <el-button type="primary" @click="openMetric">{{ t("dashboard.openMetric") }}</el-button>
+      <el-button v-if="!route.meta.standaloneApplication" type="primary" @click="openMetric">{{ t("dashboard.openMetric") }}</el-button>
     </template>
   </el-dialog>
 </template>

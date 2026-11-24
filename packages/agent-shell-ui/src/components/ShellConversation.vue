@@ -239,16 +239,18 @@ async function send(text: string) {
 <template>
   <div class="conversation">
     <div v-if="empty" class="empty">
-      <div class="empty-inner">
-        <div v-if="agent" class="empty-agent">
-          <AgentAvatar :icon="agent.icon" :size="36" />
-          <span>{{ agent.name }}</span>
-        </div>
-        <h1 class="greeting">{{ labels.greeting }}</h1>
-        <p v-if="agent?.description" class="agent-description">{{ agent.description }}</p>
+      <div class="empty-inner" :class="{ 'custom-welcome': $slots.welcome }">
+        <slot name="welcome" :agent="agent">
+          <div v-if="agent" class="empty-agent">
+            <AgentAvatar :icon="agent.icon" :size="36" />
+            <span>{{ agent.name }}</span>
+          </div>
+          <h1 class="greeting">{{ labels.greeting }}</h1>
+          <p v-if="agent?.description" class="agent-description">{{ agent.description }}</p>
+        </slot>
         <ShellQuestions />
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" autofocus :labels="labels" :entry="entry" @send="send" @stop="emit('stop')" />
+        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" autofocus :labels="labels" :entry="entry" :send-text="$slots.welcome ? labels.send : undefined" @send="send" @stop="emit('stop')" />
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
       </div>
     </div>
@@ -340,6 +342,25 @@ async function send(text: string) {
   width: min(100%, 720px);
   margin-top: -8vh;
 }
+.empty-inner.custom-welcome {
+  max-inline-size: 520px;
+  margin-block-start: 0;
+}
+.empty:has(> .custom-welcome) {
+  min-block-size: 0;
+  overflow-y: auto;
+  align-items: safe center;
+}
+.custom-welcome :deep(.composer) {
+  border-radius: 14px;
+  box-shadow: none;
+}
+.custom-welcome :deep(.composer-body) { padding: 10px 14px; }
+@container (min-width: 420px) {
+  .custom-welcome :deep(.composer-body) { flex-direction: row; align-items: center; }
+  .custom-welcome :deep(.composer-body textarea) { flex: 1 1 auto; }
+  .custom-welcome :deep(.composer-controls) { flex: none; }
+}
 .empty-agent { display: flex; align-items: center; justify-content: center; gap: var(--spacing-sm); margin-bottom: var(--spacing-md); color: var(--el-text-color-secondary); font-size: var(--text-sm); }
 .empty-agent span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .greeting {
@@ -411,8 +432,8 @@ async function send(text: string) {
 .thread > .response + .user-turn {
   margin-top: calc(var(--conversation-turn-gap) - var(--conversation-message-gap));
 }
-/* A folded handoff and the next folded response belong to the same turn. */
-.thread > .collapsed-handoff + .response:has(> .process-region:not(.open)) {
+/* A folded handoff and the following process belong to the same turn, even when that process expands. */
+.thread > .collapsed-handoff + .response:has(> .process-region) {
   margin-block-start: calc(var(--conversation-process-gap) - var(--conversation-message-gap));
 }
 /* The question: a right-aligned sunken bubble. */

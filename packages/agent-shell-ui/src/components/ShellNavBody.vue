@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
-import { CalendarClock, Check, ExternalLink, SquarePen, Trash2, MoreHorizontal, Pencil, X } from "lucide-vue-next";
+import { CalendarClock, Check, ExternalLink, MessageSquarePlus, SquarePen, Trash2, MoreHorizontal, Pencil, X } from "lucide-vue-next";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { ShellBottomEntry, ShellLabels, ShellWorkbenchDeclaration } from "../types";
 import { featureIcon } from "../icons";
 import AgentPicker from "./AgentPicker.vue";
+import AgentAvatar from "./AgentAvatar.vue";
 
 /**
  * The navigation column of a conversation application: its head, a new conversation, the application's own pages, the
@@ -42,6 +43,9 @@ const props = withDefaults(defineProps<{
   panelConfirmation?: { sessionId: string; confirmBeforeExecute: boolean } | null;
   /** The application runs on more than one agent: the head is the agent chooser, however many it lists right now. */
   agentPicker?: boolean;
+  splitNavigation?: boolean;
+  formatSessionDate?: (date: string) => string;
+  agentActions?: { createLabel: string; editLabel: string; create(): void; edit(): void };
   /** The shell's own words; the column is drawn outside the conversation's provider, so they are passed in. */
   labels: ShellLabels;
 }>(), {
@@ -58,6 +62,7 @@ const props = withDefaults(defineProps<{
   conversations: true,
   panelConfirmation: null,
   agentPicker: false,
+  splitNavigation: false,
 });
 const emit = defineEmits<{
   newConversation: [];
@@ -194,13 +199,36 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="navRoot" class="shell-nav-body">
+  <div ref="navRoot" class="shell-nav-body" :class="{ 'split-navigation': splitNavigation }">
+    <div class="nav-entries">
     <!--
       The head: the agent the conversation runs on, chosen here — the one place in the application that changes it — or,
       for an application that runs on a single agent, its name.
     -->
+    <template v-if="splitNavigation && hasPicker">
+      <div class="column-head"><slot name="brand">{{ title }}</slot></div>
+      <div class="agent-section-title">{{ labels.agent }}</div>
+      <div class="legacy-agent-list">
+      <button v-for="agent in agents" :key="agent.id" type="button" class="agent-row"
+        :disabled="!agent.enabled"
+        :class="{ active: agent.id === agentId }" :aria-pressed="agent.id === agentId"
+        @click="emit('selectAgent', agent.id)">
+        <AgentAvatar :icon="agent.icon" :size="38" :icon-size="20" />
+        <span class="agent-row-label">
+          <span class="nav-label">{{ agent.name }}</span>
+          <span v-if="agent.description" class="agent-row-description" :title="agent.description">{{ agent.description }}</span>
+        </span>
+      </button>
+      </div>
+      <div v-if="agentActions" class="agent-add-wrap">
+        <button type="button" class="agent-add-btn" :title="agentActions.createLabel" @click="agentActions.create()">
+          <MessageSquarePlus :size="16" aria-hidden="true" />
+          <span>{{ agentActions.createLabel }}</span>
+        </button>
+      </div>
+    </template>
     <AgentPicker
-      v-if="hasPicker"
+      v-else-if="hasPicker"
       :agents="agents"
       :agent-id="agentId"
       :current-agent="currentAgent"
@@ -210,7 +238,7 @@ onBeforeUnmount(() => {
     <div v-else class="column-head">{{ title }}</div>
 
     <button
-      v-if="conversations"
+      v-if="conversations && !splitNavigation"
       type="button"
       class="nav-item primary"
       :class="{ active: featureId === null && sessionId === null }"
@@ -255,8 +283,26 @@ onBeforeUnmount(() => {
       </button>
     </template>
 
+    </div>
     <div v-if="conversations" class="sessions">
-      <div class="section-title">{{ labels.sessions }}</div>
+      <slot name="session-list">
+      <header v-if="splitNavigation" class="session-heading">
+        <div v-if="currentAgent" class="session-agent">
+          <AgentAvatar :icon="currentAgent.icon" :size="36" />
+          <div class="agent-row-label">
+            <strong class="nav-label">{{ currentAgent.name }}</strong>
+            <span v-if="currentAgent.description" class="agent-row-description" :title="currentAgent.description">{{ currentAgent.description }}</span>
+          </div>
+          <button v-if="agentActions" type="button" class="mid-edit-btn" :aria-label="agentActions.editLabel" :title="agentActions.editLabel" @click="agentActions.edit()">
+            <Pencil :size="16" aria-hidden="true" />
+          </button>
+        </div>
+        <button type="button" class="nav-item primary btn-create" @click="emit('newConversation')">
+          <MessageSquarePlus :size="16" aria-hidden="true" />
+          <span class="nav-label">{{ labels.newConversation }}</span>
+        </button>
+      </header>
+      <div class="section-title"><span v-if="splitNavigation" class="history-list-marker" aria-hidden="true" />{{ labels.sessions }}</div>
       <div v-if="sessionsState === 'loading' && sessions.length === 0" class="session-skeleton" aria-busy="true">
         <span /><span /><span />
       </div>
@@ -267,17 +313,17 @@ onBeforeUnmount(() => {
       <div v-else-if="sessions.length === 0" class="session-note">{{ labels.noSessions }}</div>
       <ul v-else class="session-list">
         <li v-for="session in sessions" :key="session.id">
-          <div class="session-item" :class="{ active: session.id === sessionId && featureId === null }">
+          <div class="session-item" :class="{ active: session.id === sessionId && (splitNavigation || featureId === null) }">
             <button
               type="button"
               class="session-open"
               :aria-current="session.id === sessionId ? 'page' : undefined"
               @click="emit('selectSession', session.id)"
             >
-              <span v-if="session.latestRun?.status === 'running' || session.latestRun?.delegatedRunning" class="running" aria-hidden="true" />
+              <span v-if="!splitNavigation && (session.latestRun?.status === 'running' || session.latestRun?.delegatedRunning)" class="running" aria-hidden="true" />
               <span class="session-title">{{ session.title || labels.newConversation }}</span>
               <span
-                v-if="session.origin === 'scheduled'"
+                v-if="!splitNavigation && session.origin === 'scheduled'"
                 class="session-origin"
                 role="img"
                 :title="labels.scheduledSession"
@@ -286,13 +332,18 @@ onBeforeUnmount(() => {
                 <CalendarClock :size="13" aria-hidden="true" />
               </span>
               <span
-                v-if="panelChoice(session)?.confirmBeforeExecute === false"
+                v-if="!splitNavigation && panelChoice(session)?.confirmBeforeExecute === false"
                 class="badge session-automatic"
                 :title="labels.panelAutomaticHint"
               >{{ labels.panelAutomatic }}</span>
+              <span v-if="splitNavigation && formatSessionDate" class="history-list-meta">{{ formatSessionDate(session.createdAt) }}</span>
             </button>
-            <button v-if="editingSession !== session.id" type="button" class="session-more" :aria-label="labels.sessionActions || labels.more" aria-haspopup="menu" :aria-expanded="sessionMenu === session.id" @click="toggleSessionMenu(session.id, $event)" @keydown.escape="closeSessionMenu"><MoreHorizontal :size="16" /></button>
-            <div v-if="sessionMenu === session.id" :ref="(element) => { sessionPopup = element as HTMLElement }" popover="manual" :style="sessionPopupStyle" class="session-menu" @keydown.escape="closeSessionMenu">
+            <div v-if="splitNavigation" class="history-list-actions">
+              <button type="button" :aria-label="labels.renameSession" :title="labels.renameSession" @click="beginRename(session)"><Pencil :size="14" /></button>
+              <button type="button" :aria-label="labels.deleteSession" :title="labels.deleteSession" @click="requestDelete(session)"><Trash2 :size="14" /></button>
+            </div>
+            <button v-if="!splitNavigation && editingSession !== session.id" type="button" class="session-more" :aria-label="labels.sessionActions || labels.more" aria-haspopup="menu" :aria-expanded="sessionMenu === session.id" @click="toggleSessionMenu(session.id, $event)" @keydown.escape="closeSessionMenu"><MoreHorizontal :size="16" /></button>
+            <div v-if="!splitNavigation && sessionMenu === session.id" :ref="(element) => { sessionPopup = element as HTMLElement }" popover="manual" :style="sessionPopupStyle" class="session-menu" @keydown.escape="closeSessionMenu">
               <button type="button" @click="beginRename(session)"><Pencil :size="14" />{{ labels.renameSession || 'Rename conversation' }}</button>
               <button
                 v-if="panelChoice(session)"
@@ -320,6 +371,7 @@ onBeforeUnmount(() => {
           </button>
         </li>
       </ul>
+      </slot>
     </div>
 
     <dialog v-if="editingSession" ref="renameDialog" class="rename-dialog" :aria-label="labels.renameSession || 'Rename conversation'" @cancel.prevent="cancelRename">
@@ -336,8 +388,10 @@ onBeforeUnmount(() => {
         <footer><button type="button" class="dialog-action delete-cancel" @click="cancelDelete">{{ labels.cancel }}</button><button type="submit" class="dialog-action delete-confirm">{{ labels.deleteSession }}</button></footer>
       </form>
     </dialog>
-    <div v-if="bottom" class="nav-foot">
+    <div v-if="bottom || $slots.account || $slots.shortcuts" class="nav-foot">
+      <slot name="shortcuts" />
       <button
+        v-if="bottom"
         type="button"
         class="nav-item"
         :class="{ active: bottom.page !== undefined && featureId === bottom.page }"
@@ -347,11 +401,74 @@ onBeforeUnmount(() => {
         <component :is="featureIcon(bottom.icon)" :size="16" aria-hidden="true" />
         <span class="nav-label">{{ bottom.label }}</span>
       </button>
+      <slot name="account" />
     </div>
   </div>
 </template>
 
 <style scoped>
+.nav-entries { display: contents; }
+.agent-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.agent-row:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
+.agent-row:disabled { cursor: default; opacity: .6; }
+.session-heading {
+  flex: none;
+  padding-block-end: var(--spacing-sm);
+  border-block-end: 1px solid var(--el-border-color);
+}
+.session-agent {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-block: var(--spacing-xs) var(--spacing-sm);
+}
+.agent-row-label { display: grid; min-width: 0; }
+.agent-row-description {
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container (min-width: 960px) {
+  .shell-nav-body.split-navigation {
+    display: grid;
+    grid-template-columns: minmax(0, 240fr) minmax(0, 400fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 0 14px;
+  }
+  .split-navigation .nav-entries,
+  .split-navigation .sessions,
+  .split-navigation .nav-foot {
+    background: var(--el-bg-color);
+    padding: var(--spacing-md);
+    min-width: 0;
+  }
+  .split-navigation .nav-entries {
+    display: flex;
+    flex-direction: column;
+    border-radius: 24px 24px 0 0;
+    overflow: auto;
+  }
+  .split-navigation .sessions {
+    grid-area: 1 / 2 / 3 / 3;
+    border-radius: 24px;
+    margin: 0;
+  }
+  .split-navigation .nav-foot { border-radius: 0 0 24px 24px; }
+  .split-navigation:not(:has(.nav-foot)) .nav-entries { border-radius: 24px; }
+}
 /*
  * 32px navigation rows (DESIGN.md "Navigation row"), the application's name or the agent switch at the top, and the
  * application's own entry at the foot behind a hairline. The current row takes the selected background of the band it
