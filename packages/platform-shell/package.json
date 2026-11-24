@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./icons": "./src/icons.ts",
     "./style.css": "./src/style.css",
     "./routes": "./src/routes.ts"
   },

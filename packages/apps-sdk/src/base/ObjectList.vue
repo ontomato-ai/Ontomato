@@ -21,8 +21,8 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { AgentAvatar } from "@ontomato/agent-shell-ui";
-import { appIcon } from "@ontomato/platform-shell";
+import AgentAvatar from "@ontomato/agent-shell-ui/agent-avatar";
+import { appIcon } from "@ontomato/platform-shell/icons";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { paramValues } from "../panel/direct";
