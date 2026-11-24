@@ -1,6 +1,10 @@
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
 import {
+  domainProductGrantsResponseSchema,
+  type DomainProductGrantEntry,
+} from "@ontomato/contracts/product-governance";
+import {
   builtinProductPanelInputSchema,
   builtinProductProjectionInputSchema,
   productPanelInputSchema,
@@ -125,6 +129,62 @@ export interface RawPlatformAccess {
   roleCode?: string | null;
   apiPermissions: string[];
   managementRole: boolean;
+}
+
+export interface RawOrgUnit {
+  id: string;
+  name: string;
+  code?: string;
+  parentId?: string;
+}
+
+export interface RawOrgPosition {
+  id: string;
+  name: string;
+  orgId: string;
+}
+
+export interface RawOrgMembership {
+  userId: string;
+  orgId: string;
+}
+
+export interface RawOrgPositionAssignment {
+  userId: string;
+  positionId: string;
+}
+
+export interface RawOrgGrant {
+  id: string;
+  grantType: "organization" | "subtree" | "position";
+  sourceId: string;
+  roleIds: string[];
+}
+
+export interface RawOrganizationSnapshot {
+  units: RawOrgUnit[];
+  positions: RawOrgPosition[];
+  memberships: RawOrgMembership[];
+  positionAssignments: RawOrgPositionAssignment[];
+  grants: RawOrgGrant[];
+}
+
+export interface RawPermissionPolicy {
+  id: string;
+  name: string;
+  type?: number;
+  fullData?: boolean;
+  parentId?: string;
+}
+
+export interface RawRolePolicy {
+  roleId: string;
+  policyId: string;
+}
+
+export interface RawPolicyDataPermission {
+  policyId: string;
+  className: string;
 }
 
 export interface RawDefinition {
@@ -537,6 +597,104 @@ export class PlatformOntologyOwnerReaders {
           : [],
         managementRole: row.managementRole === true,
       }));
+    });
+  }
+
+  organizationSnapshot(): Promise<OwnerReadResult<RawOrganizationSnapshot>> {
+    return this.memo("java:/platform/governance/organization", async () => {
+      const data = asRecord(await this.postDataEngine("/platform/governance/organization", {})) ?? {};
+      const units: RawOrgUnit[] = asArray(data.units).flatMap((row) => {
+        const id = asString(row.id);
+        if (!id) return [];
+        return [{
+          id,
+          name: asString(row.name) ?? id,
+          code: asString(row.code),
+          parentId: asString(row.parentId),
+        }];
+      });
+      const positions: RawOrgPosition[] = asArray(data.positions).flatMap((row) => {
+        const id = asString(row.id);
+        const orgId = asString(row.orgId);
+        if (!id || !orgId) return [];
+        return [{
+          id,
+          name: asString(row.name) ?? id,
+          orgId,
+        }];
+      });
+      const memberships: RawOrgMembership[] = asArray(data.memberships).flatMap((row) => {
+        const userId = asString(row.userId);
+        const orgId = asString(row.orgId);
+        return userId && orgId ? [{ userId, orgId }] : [];
+      });
+      const positionAssignments: RawOrgPositionAssignment[] = asArray(data.positionAssignments).flatMap((row) => {
+        const userId = asString(row.userId);
+        const positionId = asString(row.positionId);
+        return userId && positionId ? [{ userId, positionId }] : [];
+      });
+      const grants: RawOrgGrant[] = asArray(data.grants).flatMap((row) => {
+        const id = asString(row.id);
+        const grantType = asString(row.grantType);
+        const sourceId = asString(row.sourceId);
+        if (!id || !sourceId || (grantType !== "organization" && grantType !== "subtree" && grantType !== "position")) {
+          return [];
+        }
+        const roleIds = Array.isArray(row.roleIds)
+          ? row.roleIds.flatMap((roleId) => {
+              const parsed = asString(roleId);
+              return parsed ? [parsed] : [];
+            })
+          : [];
+        return [{ id, grantType, sourceId, roleIds }];
+      });
+      return { units, positions, memberships, positionAssignments, grants };
+    });
+  }
+
+  permissionPolicies(): Promise<OwnerReadResult<RawPermissionPolicy[]>> {
+    return this.memo("java:/platform/governance/policies", async () => {
+      const data = asRecord(await this.postDataEngine("/platform/governance/policies", {})) ?? {};
+      return asArray(data.policies).flatMap((row) => {
+        const id = asString(row.id);
+        if (!id) return [];
+        return [{
+          id,
+          name: asString(row.name) ?? id,
+          type: typeof row.type === "number" ? row.type : undefined,
+          fullData: typeof row.fullData === "boolean" ? row.fullData : undefined,
+          parentId: asString(row.parentId),
+        }];
+      });
+    });
+  }
+
+  rolePolicies(): Promise<OwnerReadResult<RawRolePolicy[]>> {
+    return this.memo("java:/platform/governance/role-policies", async () => {
+      const data = asRecord(await this.postDataEngine("/platform/governance/role-policies", {})) ?? {};
+      return asArray(data.rolePolicies).flatMap((row) => {
+        const roleId = asString(row.roleId);
+        const policyId = asString(row.policyId);
+        return roleId && policyId ? [{ roleId, policyId }] : [];
+      });
+    });
+  }
+
+  policyDataPermissions(): Promise<OwnerReadResult<RawPolicyDataPermission[]>> {
+    return this.memo("java:/platform/governance/policy-data-permissions", async () => {
+      const data = asRecord(await this.postDataEngine("/platform/governance/policy-data-permissions", {})) ?? {};
+      return asArray(data.policyDataPermissions).flatMap((row) => {
+        const policyId = asString(row.policyId);
+        const className = asString(row.className);
+        return policyId && className ? [{ policyId, className }] : [];
+      });
+    });
+  }
+
+  domainProductGrants(): Promise<OwnerReadResult<DomainProductGrantEntry[]>> {
+    return this.memo("java:/product-governance/domain-grants", async () => {
+      const raw = await this.postDataEngine("/product-governance/domain-grants", {});
+      return domainProductGrantsResponseSchema.parse(raw).grants;
     });
   }
 

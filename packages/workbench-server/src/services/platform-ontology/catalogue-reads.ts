@@ -11,6 +11,10 @@ import {
   AGENT_DEFINITION,
   APPLICATION,
   ONTOLOGY_TYPE,
+  ORG_GRANT,
+  ORG_POSITION,
+  ORG_UNIT,
+  PERMISSION_POLICY,
   PLATFORM_ONTOLOGY_LAYERS,
   PLATFORM_ONTOLOGY_RELATION_KINDS,
   PLATFORM_ONTOLOGY_TYPES,
@@ -23,6 +27,10 @@ import {
 } from "./schema";
 
 const instanceDirectories: Readonly<Partial<Record<string, { path: string; name: string }>>> = {
+  [ORG_UNIT]: { path: "/permissions/organization", name: "dirOrganization" },
+  [ORG_POSITION]: { path: "/permissions/organization", name: "dirOrganization" },
+  [PERMISSION_POLICY]: { path: "/permissions/policies", name: "dirPolicies" },
+  [ORG_GRANT]: { path: "/permissions/organization", name: "dirOrganization" },
   [SDK_COMPONENT]: { path: "/ontology/components", name: "dirComponents" },
   [PRODUCT_PROJECTION]: { path: "/ontology/projections", name: "dirProjections" },
   [PRODUCT_PANEL]: { path: "/ontology/panels", name: "dirPanels" },

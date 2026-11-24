@@ -50,12 +50,16 @@ beforeEach(async () => {
     status: 200,
     statusText: "OK",
   });
-  vi.mocked(backendPost).mockResolvedValue({
-    text: JSON.stringify({ success: true, data: [] }),
+  vi.mocked(backendPost).mockImplementation(async (_endpoint, url) => ({
+    text: JSON.stringify(
+      url.endsWith("/product-governance/domain-grants")
+        ? { grants: [] }
+        : { success: true, data: [] },
+    ),
     headers: new Headers(),
     status: 200,
     statusText: "OK",
-  });
+  }));
 
   const app = express();
   app.use(express.json());

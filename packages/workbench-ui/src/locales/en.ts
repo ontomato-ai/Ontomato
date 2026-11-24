@@ -1286,17 +1286,38 @@ export default {
       },
       "user": {
         "holds-role": "Holds role",
+        "member-of-org-unit": "Member of unit",
+        "holds-org-position": "Holds position",
         "created-action": "Created action",
         "created-workflow": "Created workflow",
         "created-metric-view": "Created metric view",
         "published-action": "Published action",
         "published-workflow": "Published workflow",
-        "published-metric-view": "Published metric view"
+        "published-metric-view": "Published metric view",
+        "can-use-product": "Can use product",
+        "can-view-product": "Can view product",
+        "can-edit-product": "Can edit product"
+      },
+      "org-unit": {
+        "has-child": "Has sub-unit",
+        "has-position": "Has position"
+      },
+      "org-grant": {
+        "applies-to-org-unit": "Applies to unit",
+        "applies-to-org-position": "Applies to position",
+        "grants-role": "Grants role"
+      },
+      "permission-policy": {
+        "governs-object-type": "Governs object type"
       },
       "role": {
+        "uses-permission-policy": "Uses permission policy",
         "can-execute-action": "Can execute action",
         "can-author-workflow": "Can author workflow",
-        "owns-workflow-step": "Owns workflow step"
+        "owns-workflow-step": "Owns workflow step",
+        "can-use-product": "Can use product",
+        "can-view-product": "Can view product",
+        "can-edit-product": "Can edit product"
       },
       "projection": {
         "uses-component": "Uses component",

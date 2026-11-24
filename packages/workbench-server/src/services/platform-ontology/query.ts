@@ -23,6 +23,8 @@ import {
   type PlatformRelationKindDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
+import type { ProductGrantVerb } from "@ontomato/contracts/product-governance";
+import { tForLocale } from "../../i18n";
 import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -45,6 +47,10 @@ import {
   METRIC_VIEW,
   OBJECT_TYPE,
   ONTOLOGY_TYPE,
+  ORG_GRANT,
+  ORG_POSITION,
+  ORG_UNIT,
+  PERMISSION_POLICY,
   PLATFORM_ONTOLOGY_LAYERS,
   PLATFORM_ONTOLOGY_RELATION_KINDS,
   PLATFORM_ONTOLOGY_TYPE_MAP,
@@ -298,10 +304,164 @@ function extractPanelContainedIds(
   return { projectionIds, panelIds };
 }
 
+async function readDomainSharedProductIds(readers: PlatformOntologyOwnerReaders): Promise<ReadonlySet<string>> {
+  const res = await readers.domainProductGrants();
+  if (!res.ok) return new Set();
+  const ids = new Set<string>();
+  for (const grant of res.data) {
+    if (grant.principalKind === "domain" && grant.principalId === "*" && grant.verb === "use") {
+      ids.add(grant.resourceId);
+    }
+  }
+  return ids;
+}
+
+function withDomainSharedDetail(
+  baseDetail: string | undefined,
+  shared: boolean,
+  locale: string | undefined,
+): string | undefined {
+  if (!shared) return baseDetail;
+  const tag = tForLocale(locale, "platformOntology.domainShared");
+  return baseDetail ? `${baseDetail} · ${tag}` : tag;
+}
+
+type ProductGrantTargetType = typeof AGENT_DEFINITION | typeof PRODUCT_PANEL | typeof APPLICATION;
+
+interface ProductGrantRelationConfig {
+  fromType: typeof ROLE | typeof USER;
+  principalKind: "role" | "principal";
+  verb: ProductGrantVerb;
+  targetTypes: readonly ProductGrantTargetType[];
+}
+
+const PRODUCT_GRANT_RELATIONS: Readonly<Record<string, ProductGrantRelationConfig>> = {
+  "role.can-use-product": {
+    fromType: ROLE,
+    principalKind: "role",
+    verb: "use",
+    targetTypes: [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION],
+  },
+  "role.can-view-product": {
+    fromType: ROLE,
+    principalKind: "role",
+    verb: "view",
+    targetTypes: [AGENT_DEFINITION],
+  },
+  "role.can-edit-product": {
+    fromType: ROLE,
+    principalKind: "role",
+    verb: "edit",
+    targetTypes: [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION],
+  },
+  "user.can-use-product": {
+    fromType: USER,
+    principalKind: "principal",
+    verb: "use",
+    targetTypes: [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION],
+  },
+  "user.can-view-product": {
+    fromType: USER,
+    principalKind: "principal",
+    verb: "view",
+    targetTypes: [AGENT_DEFINITION],
+  },
+  "user.can-edit-product": {
+    fromType: USER,
+    principalKind: "principal",
+    verb: "edit",
+    targetTypes: [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION],
+  },
+};
+
+async function readReadableProductTargets(
+  readers: PlatformOntologyOwnerReaders,
+  targetTypes: readonly ProductGrantTargetType[],
+): Promise<Map<string, { className: ProductGrantTargetType; label: string }>> {
+  const targets = new Map<string, { className: ProductGrantTargetType; label: string }>();
+  await Promise.all(
+    targetTypes.map(async (targetType) => {
+      if (targetType === AGENT_DEFINITION) {
+        const res = await readers.agentDefinitions();
+        if (res.ok) {
+          for (const agent of res.data) targets.set(agent.id, { className: AGENT_DEFINITION, label: agent.name });
+        }
+        return;
+      }
+      if (targetType === PRODUCT_PANEL) {
+        const res = await readers.productPanels();
+        if (res.ok) {
+          for (const panel of res.data) targets.set(panel.id, { className: PRODUCT_PANEL, label: panel.name });
+        }
+        return;
+      }
+      const res = await readers.applications();
+      if (res.ok) {
+        for (const app of res.data) targets.set(app.id, { className: APPLICATION, label: app.name });
+      }
+    }),
+  );
+  return targets;
+}
+
+async function evaluateProductGrantRelation(
+  readers: PlatformOntologyOwnerReaders,
+  config: ProductGrantRelationConfig,
+  node: PlatformOntologyNodeRef,
+): Promise<RelationEvalResult> {
+  const grantsRes = await readers.domainProductGrants();
+  if (!grantsRes.ok) return { status: grantsRes.status, reason: grantsRes.reason, edges: [] };
+
+  if (node.className === config.fromType) {
+    const matching = grantsRes.data.filter(
+      (grant) =>
+        grant.principalKind === config.principalKind &&
+        grant.verb === config.verb &&
+        grant.principalId === node.primaryKey,
+    );
+    if (matching.length === 0) return { status: "ok", edges: [] };
+    const productTargets = await readReadableProductTargets(readers, config.targetTypes);
+    const edges: RawEdgeCandidate[] = [];
+    for (const grant of matching) {
+      const target = productTargets.get(grant.resourceId);
+      if (!target) continue;
+      edges.push({
+        from: { className: config.fromType, primaryKey: node.primaryKey },
+        to: { className: target.className, primaryKey: grant.resourceId },
+        ...(grant.principalName ? { fromLabel: grant.principalName } : {}),
+        toLabel: target.label,
+      });
+    }
+    return { status: "ok", edges };
+  }
+
+  if (config.targetTypes.includes(node.className as ProductGrantTargetType)) {
+    const edges: RawEdgeCandidate[] = [];
+    for (const grant of grantsRes.data) {
+      if (
+        grant.principalKind !== config.principalKind ||
+        grant.verb !== config.verb ||
+        grant.resourceId !== node.primaryKey
+      ) {
+        continue;
+      }
+      edges.push({
+        from: { className: config.fromType, primaryKey: grant.principalId },
+        to: { className: node.className, primaryKey: node.primaryKey },
+        ...(grant.principalName ? { fromLabel: grant.principalName } : {}),
+      });
+    }
+    return { status: "ok", edges };
+  }
+
+  return { status: "ok", edges: [] };
+}
+
 /** Lists all objects of a single declared type for counts, object picker, and label lookup. */
 async function readObjectsOfType(
   readers: PlatformOntologyOwnerReaders,
   typeId: string,
+  includeDomainShared = true,
 ): Promise<OwnerReadResult<PlatformOntologyObjectItem[]> | { ok: false; status: "unavailable"; reason: string }> {
 
   switch (typeId) {
@@ -461,15 +621,81 @@ async function readObjectsOfType(
         })),
       };
     }
+    case ORG_UNIT: {
+      const res = await readers.organizationSnapshot();
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        data: res.data.units.map((unit) => ({
+          node: { className: ORG_UNIT, primaryKey: unit.id },
+          label: unit.name,
+          ...(unit.code ? { detail: unit.code } : {}),
+        })),
+      };
+    }
+    case ORG_POSITION: {
+      const res = await readers.organizationSnapshot();
+      if (!res.ok) return res;
+      const orgNameById = new Map(res.data.units.map((unit) => [unit.id, unit.name]));
+      return {
+        ok: true,
+        data: res.data.positions.map((position) => {
+          const detail = orgNameById.get(position.orgId);
+          return {
+            node: { className: ORG_POSITION, primaryKey: position.id },
+            label: position.name,
+            ...(detail ? { detail } : {}),
+          };
+        }),
+      };
+    }
+    case PERMISSION_POLICY: {
+      const res = await readers.permissionPolicies();
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        data: res.data.map((policy) => ({
+          node: { className: PERMISSION_POLICY, primaryKey: policy.id },
+          label: policy.name,
+        })),
+      };
+    }
+    case ORG_GRANT: {
+      const res = await readers.organizationSnapshot();
+      if (!res.ok) return res;
+      const unitNameById = new Map(res.data.units.map((unit) => [unit.id, unit.name]));
+      const positionNameById = new Map(res.data.positions.map((position) => [position.id, position.name]));
+      return {
+        ok: true,
+        data: res.data.grants.map((grant) => {
+          const scopeLabel = tForLocale(readers.credentials.locale, `platformOntology.orgGrantScope.${grant.grantType}`);
+          const targetName =
+            grant.grantType === "position"
+              ? positionNameById.get(grant.sourceId)
+              : unitNameById.get(grant.sourceId);
+          return {
+            node: { className: ORG_GRANT, primaryKey: grant.id },
+            label: `${scopeLabel} · ${targetName ?? grant.sourceId}`,
+          };
+        }),
+      };
+    }
     case AGENT_DEFINITION: {
       const res = await readers.agentDefinitions();
       if (!res.ok) return res;
+      const sharedIds = includeDomainShared && res.data.length > 0
+        ? await readDomainSharedProductIds(readers)
+        : new Set<string>();
       return {
         ok: true,
         data: res.data.map((agent) => ({
           node: { className: AGENT_DEFINITION, primaryKey: agent.id },
           label: agent.name,
-          detail: agent.enabled ? "enabled" : "disabled",
+          detail: withDomainSharedDetail(
+            agent.enabled ? "enabled" : "disabled",
+            sharedIds.has(agent.id),
+            readers.credentials.locale,
+          ),
         })),
       };
     }
@@ -500,24 +726,41 @@ async function readObjectsOfType(
     case PRODUCT_PANEL: {
       const res = await readers.productPanels();
       if (!res.ok) return res;
+      const sharedIds = includeDomainShared && res.data.length > 0
+        ? await readDomainSharedProductIds(readers)
+        : new Set<string>();
       return {
         ok: true,
-        data: res.data.map((panel) => ({
-          node: { className: PRODUCT_PANEL, primaryKey: panel.id },
-          label: panel.name,
-          ...(panel.description ? { detail: panel.description } : {}),
-        })),
+        data: res.data.map((panel) => {
+          const detail = withDomainSharedDetail(
+            panel.description || undefined,
+            sharedIds.has(panel.id),
+            readers.credentials.locale,
+          );
+          return {
+            node: { className: PRODUCT_PANEL, primaryKey: panel.id },
+            label: panel.name,
+            ...(detail ? { detail } : {}),
+          };
+        }),
       };
     }
     case APPLICATION: {
       const res = await readers.applications();
       if (!res.ok) return res;
+      const sharedIds = includeDomainShared && res.data.length > 0
+        ? await readDomainSharedProductIds(readers)
+        : new Set<string>();
       return {
         ok: true,
         data: res.data.map((app) => ({
           node: { className: APPLICATION, primaryKey: app.id },
           label: app.name,
-          detail: app.kind,
+          detail: withDomainSharedDetail(
+            app.kind,
+            sharedIds.has(app.id),
+            readers.credentials.locale,
+          ),
         })),
       };
     }
@@ -544,7 +787,7 @@ export async function readPlatformOntologyCounts(
 
   const counts = await Promise.all(
     types.map(async (spec): Promise<PlatformOntologyTypeCount> => {
-      const res = await readObjectsOfType(readers, spec.id);
+      const res = await readObjectsOfType(readers, spec.id, false);
       if (res.ok) {
         return { type: spec.id, layer: spec.layer, status: "ok", count: res.data.length };
       }
@@ -1245,6 +1488,185 @@ async function evaluateRelationKind(
       }
       return { status: "ok", edges };
     }
+
+    case "org-unit.has-child": {
+      const res = await readers.organizationSnapshot();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const unitById = new Map(res.data.units.map((unit) => [unit.id, unit]));
+      const edges: RawEdgeCandidate[] = [];
+      for (const unit of res.data.units) {
+        const parentId = unit.parentId;
+        if (!parentId || parentId === "0" || parentId === unit.id) continue;
+        const parent = unitById.get(parentId);
+        if (!parent) continue;
+        if (parentId === node.primaryKey || unit.id === node.primaryKey) {
+          edges.push({
+            from: { className: ORG_UNIT, primaryKey: parentId },
+            to: { className: ORG_UNIT, primaryKey: unit.id },
+            fromLabel: parent.name,
+            toLabel: unit.name,
+          });
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "org-unit.has-position": {
+      const res = await readers.organizationSnapshot();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const position of res.data.positions) {
+        if (
+          (node.className === ORG_UNIT && position.orgId === node.primaryKey) ||
+          (node.className === ORG_POSITION && position.id === node.primaryKey)
+        ) {
+          edges.push({
+            from: { className: ORG_UNIT, primaryKey: position.orgId },
+            to: { className: ORG_POSITION, primaryKey: position.id },
+            toLabel: position.name,
+          });
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "user.member-of-org-unit": {
+      const res = await readers.organizationSnapshot();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const membership of res.data.memberships) {
+        if (
+          (node.className === USER && membership.userId === node.primaryKey) ||
+          (node.className === ORG_UNIT && membership.orgId === node.primaryKey)
+        ) {
+          edges.push({
+            from: { className: USER, primaryKey: membership.userId },
+            to: { className: ORG_UNIT, primaryKey: membership.orgId },
+          });
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "user.holds-org-position": {
+      const res = await readers.organizationSnapshot();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const assignment of res.data.positionAssignments) {
+        if (
+          (node.className === USER && assignment.userId === node.primaryKey) ||
+          (node.className === ORG_POSITION && assignment.positionId === node.primaryKey)
+        ) {
+          edges.push({
+            from: { className: USER, primaryKey: assignment.userId },
+            to: { className: ORG_POSITION, primaryKey: assignment.positionId },
+          });
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "org-grant.applies-to-org-unit": {
+      const res = await readers.organizationSnapshot();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const grant of res.data.grants) {
+        if (grant.grantType !== "organization" && grant.grantType !== "subtree") continue;
+        if (
+          (node.className === ORG_GRANT && grant.id === node.primaryKey) ||
+          (node.className === ORG_UNIT && grant.sourceId === node.primaryKey)
+        ) {
+          edges.push({
+            from: { className: ORG_GRANT, primaryKey: grant.id },
+            to: { className: ORG_UNIT, primaryKey: grant.sourceId },
+          });
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "org-grant.applies-to-org-position": {
+      const res = await readers.organizationSnapshot();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const grant of res.data.grants) {
+        if (grant.grantType !== "position") continue;
+        if (
+          (node.className === ORG_GRANT && grant.id === node.primaryKey) ||
+          (node.className === ORG_POSITION && grant.sourceId === node.primaryKey)
+        ) {
+          edges.push({
+            from: { className: ORG_GRANT, primaryKey: grant.id },
+            to: { className: ORG_POSITION, primaryKey: grant.sourceId },
+          });
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "org-grant.grants-role": {
+      const res = await readers.organizationSnapshot();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const grant of res.data.grants) {
+        for (const roleId of grant.roleIds) {
+          if (
+            (node.className === ORG_GRANT && grant.id === node.primaryKey) ||
+            (node.className === ROLE && roleId === node.primaryKey)
+          ) {
+            edges.push({
+              from: { className: ORG_GRANT, primaryKey: grant.id },
+              to: { className: ROLE, primaryKey: roleId },
+            });
+          }
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "role.uses-permission-policy": {
+      const res = await readers.rolePolicies();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const link of res.data) {
+        if (
+          (node.className === ROLE && link.roleId === node.primaryKey) ||
+          (node.className === PERMISSION_POLICY && link.policyId === node.primaryKey)
+        ) {
+          edges.push({
+            from: { className: ROLE, primaryKey: link.roleId },
+            to: { className: PERMISSION_POLICY, primaryKey: link.policyId },
+          });
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "permission-policy.governs-object-type": {
+      const res = await readers.policyDataPermissions();
+      if (!res.ok) return { status: res.status, reason: res.reason, edges: [] };
+      const edges: RawEdgeCandidate[] = [];
+      for (const perm of res.data) {
+        if (
+          (node.className === PERMISSION_POLICY && perm.policyId === node.primaryKey) ||
+          (node.className === OBJECT_TYPE && perm.className === node.primaryKey)
+        ) {
+          edges.push({
+            from: { className: PERMISSION_POLICY, primaryKey: perm.policyId },
+            to: { className: OBJECT_TYPE, primaryKey: perm.className },
+          });
+        }
+      }
+      return { status: "ok", edges };
+    }
+
+    case "role.can-use-product":
+    case "role.can-view-product":
+    case "role.can-edit-product":
+    case "user.can-use-product":
+    case "user.can-view-product":
+    case "user.can-edit-product":
+      return evaluateProductGrantRelation(readers, PRODUCT_GRANT_RELATIONS[spec.id], node);
 
     default:
       return { status: "unavailable", reason: `Unhandled relation kind: ${spec.id}`, edges: [] };
