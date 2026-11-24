@@ -634,11 +634,14 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectTree",
     role: "control",
     meaning:
-      "Shows one object's files — a skill package's, say — as a folder/file tree, from its `files` datum (an owner's records, one per file, at the path `pathField` gives, else the record's own key). Clicking a file selects it: `selected` is the file's key, which the placement can bind to the panel's state so another member (an ObjectTextReader's `record`) reads that file. When nothing is selected (`selected` is null), `defaultKey` selects that file if present, otherwise `fallbackToFirst` selects the first file in tree order; an explicit selection is kept intact even if absent from `files` so a paired reader can report it in place. Folders open and close; they are not selected.",
+      "Shows one object's files — a skill package's, say — as a folder/file tree, from its `files` datum (an owner's records, one per file, at the path `pathField` gives, else the record's own key). Clicking a file selects it: `selected` is the file's key, which the placement can bind to the panel's state so another member (an ObjectTextReader's `record`) reads that file. When `searchable` is enabled, a local filter box filters the tree and binds its keyword to `search` public state. When nothing is selected (`selected` is null), `defaultKey` selects that file if present, otherwise `fallbackToFirst` selects the first file in tree order; an explicit selection is kept intact even if absent from `files` so a paired reader can report it in place. Folders open and close; they are not selected.",
     effects: "Reads the owner's files as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
     data: { files: { results: ["panelRecordList"], required: true } },
-    outputs: { selected: { kind: "scalar", type: "string" } },
+    outputs: {
+      selected: { kind: "scalar", type: "string" },
+      search: { kind: "scalar", type: "string" },
+    },
   }),
   defineComponentMeta({
     componentId: "ObjectTextReader",
@@ -646,7 +649,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectTextReader",
     role: "presentation",
     meaning:
-      "Shows an object's text read only, through its owner's reads. Sources read page by page: `sources` lists them as chips (one owner record per source), and `page` reads the chosen source's text one page at a time (an owner's query whose rows are the text's segments, `fields.text`, with `nextCursor` for the next page); the reader opens one source at a time and \"More\" reads the next page. One object's whole text: `record` reads it and the field `textField` names (`content` by default) is shown according to `format` (`auto` by default, inferring Markdown with optional YAML frontmatter separation or a read-only code viewer from `pathField`, `record.label`, or `record.primaryKey`, and falling back to preformatted text when no extension is present; `plain`, `markdown`, and `code` override auto-detection). Its outputs `activeSourceId` and `activeAnchor`, bound to the panel's state, are read as well as written: the page opens a source by writing it (and, for a reader with an `anchor`, that anchor), and readers sharing them on one page have only one open. Which sources it lists is the `sources` read's: an owner read of one issue's cited sources lists only those.",
+      "Shows an object's text read only, through its owner's reads. Sources read page by page: `sources` lists them as chips (one owner record per source), and `page` reads the chosen source's text one page at a time (an owner's query whose rows are the text's segments, `fields.text`, with `nextCursor` for the next page); the reader opens one source at a time and \"More\" reads the next page. One object's whole text: `record` reads it and the field `textField` names (`content` by default) is shown according to `format` (`auto` by default, inferring Markdown with optional YAML frontmatter separation, CSV/TSV table preview, or a read-only code viewer from `pathField`, `record.label`, or `record.primaryKey`, and falling back to preformatted text when no extension is present; `plain`, `markdown`, `table`, and `code` override auto-detection). Clicking a relative `.md` link inside Markdown normalizes the path against the current document and writes it to `activePath`. Its outputs `activeSourceId`, `activeAnchor`, and `activePath`, bound to the panel's state, are read as well as written: the page opens a source by writing it (and, for a reader with an `anchor`, that anchor), and readers sharing them on one page have only one open. Which sources it lists is the `sources` read's: an owner read of one issue's cited sources lists only those.",
     effects: "Reads the owner's sources, pages and records as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
@@ -658,6 +661,7 @@ export const components: readonly ComponentMetadata[] = [
     outputs: {
       activeSourceId: { kind: "scalar", type: "string" },
       activeAnchor: { kind: "scalar", type: "string" },
+      activePath: { kind: "scalar", type: "string" },
     },
   }),
   defineComponentMeta({
@@ -732,7 +736,7 @@ export const components: readonly ComponentMetadata[] = [
         runtimeParams: [
           "business", "by", "category", "changedField", "className", "cursor", "defaultAppId", "entryId", "favoritesOnly", "keyword", "layers", "limit", "node",
           "operation", "orgId", "origin", "page", "parentId", "path", "rating", "relationKinds",
-          "runId", "scope", "search", "section", "size", "sort", "source", "sourceType", "status", "template", "type", "values",
+          "runId", "scope", "search", "section", "size", "sort", "source", "sourceType", "status", "template", "type", "values", "verdict",
         ],
       },
     },

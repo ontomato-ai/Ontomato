@@ -1,0 +1,190 @@
+{
+  "manifest": {
+    "state": {
+      "filePath": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "tree": {
+        "component": "ObjectTree",
+        "type": "platform:OpsKnowledge",
+        "data": {
+          "files": "files"
+        },
+        "state": {
+          "selected": "filePath",
+          "search": "search"
+        },
+        "config": {
+          "defaultKey": "index.md",
+          "fallbackToFirst": true,
+          "searchable": true,
+          "searchPlaceholder": "panel.searchPlaceholder",
+          "label": "panel.treeTitle",
+          "emptyText": "panel.emptyTree",
+          "noMatchText": "panel.noMatch"
+        },
+        "id": "builtin-product-7e2c4a19-5b81-4f3d-9a0c-1d8e6b4a2f01"
+      },
+      "docHeader": {
+        "component": "ObjectHeader",
+        "type": "platform:OpsKnowledge",
+        "data": {
+          "record": {
+            "read": "record",
+            "params": {
+              "path": {
+                "state": "filePath"
+              }
+            }
+          }
+        },
+        "config": {
+          "subtitleField": "path"
+        },
+        "id": "builtin-product-7e2c4a19-5b81-4f3d-9a0c-1d8e6b4a2f02"
+      },
+      "updatedAt": {
+        "component": "TypedValue",
+        "type": "platform:OpsKnowledge",
+        "data": {
+          "record": {
+            "read": "record",
+            "params": {
+              "path": {
+                "state": "filePath"
+              }
+            }
+          }
+        },
+        "config": {
+          "field": "updatedAt",
+          "kind": "time",
+          "timeFormat": "relative",
+          "emptyText": ""
+        },
+        "id": "builtin-product-7e2c4a19-5b81-4f3d-9a0c-1d8e6b4a2f03"
+      },
+      "reader": {
+        "component": "ObjectTextReader",
+        "type": "platform:OpsKnowledge",
+        "data": {
+          "record": {
+            "read": "record",
+            "params": {
+              "path": {
+                "state": "filePath"
+              }
+            }
+          }
+        },
+        "state": {
+          "activePath": "filePath"
+        },
+        "config": {
+          "format": "markdown",
+          "textField": "content",
+          "pathField": "path",
+          "emptyText": "panel.selectHint"
+        },
+        "id": "builtin-product-7e2c4a19-5b81-4f3d-9a0c-1d8e6b4a2f04"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.title": "Operations knowledge",
+        "panel.treeTitle": "Knowledge files",
+        "panel.searchPlaceholder": "Search file or folder",
+        "panel.emptyTree": "No knowledge files",
+        "panel.noMatch": "No matching knowledge files",
+        "panel.selectHint": "Select a Markdown document on the left to read",
+        "panel.refresh": "Refresh",
+        "panel.back": "Back to files"
+      },
+      "zh-CN": {
+        "panel.title": "运维知识",
+        "panel.treeTitle": "知识库",
+        "panel.searchPlaceholder": "搜索文件或目录",
+        "panel.emptyTree": "暂无知识文件",
+        "panel.noMatch": "没有匹配的知识文件",
+        "panel.selectHint": "请从左侧选择 Markdown 文档阅读",
+        "panel.refresh": "刷新",
+        "panel.back": "返回目录"
+      },
+      "zh-TW": {
+        "panel.title": "維運知識",
+        "panel.treeTitle": "知識庫",
+        "panel.searchPlaceholder": "搜尋檔案或目錄",
+        "panel.emptyTree": "尚無知識檔案",
+        "panel.noMatch": "沒有符合的知識檔案",
+        "panel.selectHint": "請從左側選擇 Markdown 文件閱讀",
+        "panel.refresh": "重新整理",
+        "panel.back": "返回目錄"
+      },
+      "ja": {
+        "panel.title": "運用ナレッジ",
+        "panel.treeTitle": "ナレッジベース",
+        "panel.searchPlaceholder": "ファイルまたはフォルダを検索",
+        "panel.emptyTree": "ナレッジファイルがありません",
+        "panel.noMatch": "一致するナレッジファイルがありません",
+        "panel.selectHint": "左側から Markdown ドキュメントを選択して閲覧してください",
+        "panel.refresh": "更新",
+        "panel.back": "一覧へ戻る"
+      },
+      "de": {
+        "panel.title": "Betriebswissen",
+        "panel.treeTitle": "Wissensdateien",
+        "panel.searchPlaceholder": "Datei oder Ordner suchen",
+        "panel.emptyTree": "Keine Wissensdateien",
+        "panel.noMatch": "Keine passenden Wissensdateien",
+        "panel.selectHint": "Wählen Sie links ein Markdown-Dokument zum Lesen aus",
+        "panel.refresh": "Aktualisieren",
+        "panel.back": "Zurück zu den Dateien"
+      },
+      "fr": {
+        "panel.title": "Connaissances d'exploitation",
+        "panel.treeTitle": "Fichiers de connaissances",
+        "panel.searchPlaceholder": "Rechercher un fichier ou un dossier",
+        "panel.emptyTree": "Aucun fichier de connaissances",
+        "panel.noMatch": "Aucun fichier correspondant",
+        "panel.selectHint": "Sélectionnez un document Markdown à gauche pour le lire",
+        "panel.refresh": "Actualiser",
+        "panel.back": "Retour aux fichiers"
+      },
+      "it": {
+        "panel.title": "Conoscenze operative",
+        "panel.treeTitle": "File di conoscenza",
+        "panel.searchPlaceholder": "Cerca file o cartella",
+        "panel.emptyTree": "Nessun file di conoscenza",
+        "panel.noMatch": "Nessun file corrispondente",
+        "panel.selectHint": "Seleziona un documento Markdown a sinistra per leggerlo",
+        "panel.refresh": "Aggiorna",
+        "panel.back": "Torna ai file"
+      },
+      "ar": {
+        "panel.title": "معرفة التشغيل",
+        "panel.treeTitle": "ملفات المعرفة",
+        "panel.searchPlaceholder": "ابحث عن ملف أو مجلد",
+        "panel.emptyTree": "لا توجد ملفات معرفة",
+        "panel.noMatch": "لا توجد ملفات مطابقة",
+        "panel.selectHint": "اختر مستند Markdown من القائمة للقراءة",
+        "panel.refresh": "تحديث",
+        "panel.back": "العودة إلى الملفات"
+      }
+    }
+  }
+}

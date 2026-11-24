@@ -124,23 +124,38 @@ it("propagates framePanelId and leaves panel application menus to their frame pa
   expect(single.groups).toEqual([]);
 });
 
-describe("the operations application's user feedback", () => {
-  // The entry operations declares for user feedback (big main's ruling, 2026-11-21): no menu name, so no menu place.
-  // Production navigation does not list /ops/turn (ObserveLayout owns those routes), so test against real generatedNavigation().
+describe("the operations application's unified platform frame", () => {
   const catalog = catalogFixture();
+  const filterPanelUses = (granted: readonly string[]) =>
+    catalog.map((app) =>
+      app.id !== "operations"
+        ? app
+        : {
+            ...app,
+            panelUses: (app.panelUses ?? []).filter(
+              (entry) => !("permissionCode" in entry.access) || granted.includes(entry.access.permissionCode),
+            ),
+          },
+    );
   const withoutFeedback = catalog.map((app) => app.id !== "operations" ? app : { ...app, panelUses: [] });
   const navigation = generatedNavigation();
-  const operations = (granted: string[], apps = catalog) =>
+  const operations = (granted: string[], apps = filterPanelUses(granted)) =>
     appDeclarations(navigation, closedAccess(granted), catalogPartition(apps, "en"), t).find((app) => app.id === "operations")!;
 
-  it("opens on user feedback for a reader who may open none of its listed pages but has the entry", () => {
-    expect(operations(["user-feedback"]).home).toBe("/ops/feedback");
+  it("opens on user feedback for a reader who holds only user-feedback", () => {
+    const feedbackOnly = operations(["user-feedback"]);
+    expect(feedbackOnly.framePanelId).toBe("builtin-product-platform-frame");
+    expect(feedbackOnly.home).toBe("/ops/feedback");
+    expect(feedbackOnly.groups!.flatMap((group) => group.pages.map((page) => page.id))).toEqual(["/ops/feedback"]);
   });
 
-  it("keeps opening on turn evidence for an observer, and lists no feedback in its menu", () => {
+  it("opens on turn evidence for an observer and lists unified frame menu entries including feedback when granted", () => {
     const observer = operations(["observer", "user-feedback"]);
+    expect(observer.framePanelId).toBe("builtin-product-platform-frame");
     expect(observer.home).toBe("/ops/turn");
-    expect(observer.groups!.flatMap((group) => group.pages.map((page) => page.id))).not.toContain("/ops/feedback");
+    expect(observer.groups!.flatMap((group) => group.pages.map((page) => page.id))).toEqual(
+      expect.arrayContaining(["/ops/knowledge", "/ops/feedback"]),
+    );
   });
 
   it("does not open on user feedback for a reader the catalogue gives no such entry", () => {

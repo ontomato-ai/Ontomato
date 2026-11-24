@@ -2,7 +2,7 @@ import type {
   LocationQuery, RouteLocationRaw, RouteMeta, RouteParamsGeneric, RouteRecordRaw, RouteRecordSingleView,
 } from "vue-router";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
-import { observeRoutes } from "./observe-routes";
+import { observePageRoutes, type ObserveRouteOptions } from "./observe-routes";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
@@ -32,7 +32,7 @@ export function legacyAgentSettingsTab(to: { path: string; query: LocationQuery 
 /** Native workbench pages and legacy addresses. Both agent settings entries are mounted by the panel entry guard. */
 export function workbenchPages(
   component: PageComponent,
-  observe: { component: PageComponent; meta?: RouteMeta; props?: Record<string, unknown> },
+  observe: ObserveRouteOptions = {},
 ): RouteRecordRaw[] {
   return [
     // The capability library's earlier addresses: skills are the ontology manager's panel, external MCP the system settings'.
@@ -53,7 +53,7 @@ export function workbenchPages(
     { path: "/agents/settings/models", redirect: routes.usage.path },
     { path: "/settings/model-config/agents", redirect: routes.usage.path },
     { path: "/settings/model-config/app-builder", redirect: routes.usage.path },
-    { ...observeRoutes.root, ...observe, children: observeRoutes.children },
+    ...observePageRoutes(observe),
   ];
 }
 

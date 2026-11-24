@@ -1,30 +1,91 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
-import type { RouteRecordRaw } from "vue-router";
+import type { RouteMeta, RouteRecordRaw, RouteRecordSingleView } from "vue-router";
 
-const placeholder = () => import("./views/ObservePlaceholder.vue");
+type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
 
-/*
- * The /observe root and its child addresses. Each app assembles its own root: an app may add auth/permission meta and
- * its own shell; the open-source root has no meta. ObserveLayout renders the page an address names (turn evidence,
- * automatic tests, live logs, DSL, knowledge) inside the agent shell, so every child is a neutral placeholder; the
- * addresses exist for deep links and for the shell's browser history.
+export interface ObserveRouteOptions {
+  /** Override for the diagnosis conversation route (`/ops/diagnosis`), used by tests. */
+  component?: PageComponent;
+  /** Edition-specific override for the DSL execution page (`/ops/dsl`), e.g. enterprise MQL tab. */
+  dslComponent?: PageComponent;
+  meta?: RouteMeta;
+  props?: Record<string, unknown>;
+}
+
+const diagnosisPage: PageComponent = () =>
+  import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.ObserveLayout);
+const turnEvidencePage: PageComponent = () =>
+  import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.TurnEvidencePage);
+const autotestPage: PageComponent = () =>
+  import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.AutotestPage);
+const liveLogsPage: PageComponent = () =>
+  import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.LiveLogsPage);
+const dslTestPage: PageComponent = () =>
+  import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.DslTestPage);
+
+/**
+ * Native operations diagnosis routes still awaiting panel migration. Every route renders directly inside the shared
+ * platform application frame (`builtin-product-platform-frame`) alongside already-migrated panel entries such as
+ * `/ops/knowledge` and `/ops/feedback`, so the application keeps one menu and one persistent outer frame.
  */
+export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecordRaw[] {
+  const baseMeta: RouteMeta = { ...options.meta, ownHeader: true };
+  const routeProps = options.props;
+  return [
+    { ...routes.ops, redirect: routes.turn.path },
+    {
+      ...routes.diagnosis,
+      component: options.component ?? diagnosisPage,
+      ...(routeProps ? { props: routeProps } : {}),
+      meta: { ...baseMeta, page: routes.diagnosis.path },
+    },
+    {
+      ...routes.turn,
+      component: turnEvidencePage,
+      meta: { ...baseMeta, page: routes.turn.path },
+    },
+    {
+      ...routes.turnDetail,
+      component: turnEvidencePage,
+      meta: { ...baseMeta, page: routes.turn.path },
+    },
+    {
+      ...routes.test,
+      component: autotestPage,
+      meta: { ...baseMeta, page: routes.test.path },
+    },
+    {
+      ...routes.results,
+      component: autotestPage,
+      meta: { ...baseMeta, page: routes.results.path },
+    },
+    {
+      ...routes.cases,
+      component: autotestPage,
+      meta: { ...baseMeta, page: routes.cases.path },
+    },
+    {
+      ...routes.caseDetail,
+      component: autotestPage,
+      meta: { ...baseMeta, page: routes.results.path },
+    },
+    {
+      ...routes.logs,
+      component: liveLogsPage,
+      meta: { ...baseMeta, page: routes.logs.path },
+    },
+    {
+      ...routes.dsl,
+      component: options.dslComponent ?? dslTestPage,
+      meta: { ...baseMeta, page: routes.dsl.path },
+    },
+  ];
+}
+
 export const observeRoutes = {
   root: {
     ...routes.ops,
-    redirect: routes.diagnosis.path,
-    component: () => import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.ObserveLayout),
+    redirect: routes.turn.path,
+    component: diagnosisPage,
   },
-  children: [
-    { ...routes.diagnosis, component: placeholder },
-    { ...routes.opsKnowledge, component: placeholder },
-    { ...routes.turn, component: placeholder },
-    { ...routes.turnDetail, component: placeholder },
-    { ...routes.logs, component: placeholder },
-    { ...routes.test, component: placeholder },
-    { ...routes.results, component: placeholder },
-    { ...routes.cases, component: placeholder },
-    { ...routes.caseDetail, component: placeholder },
-    { ...routes.dsl, component: placeholder },
-  ] satisfies RouteRecordRaw[],
 };

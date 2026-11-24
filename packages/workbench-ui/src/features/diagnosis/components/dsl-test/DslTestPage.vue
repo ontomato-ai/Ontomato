@@ -236,7 +236,9 @@ async function executeDsl() {
 <style scoped>
 .dsl-test-page {
   display: flex;
+  box-sizing: border-box;
   height: 100%;
+  padding: var(--page-section-padding);
   overflow: hidden;
 }
 

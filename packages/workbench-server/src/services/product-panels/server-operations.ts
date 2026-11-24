@@ -28,6 +28,7 @@ import { m5ServerOperations } from "../metric-function/panel-operations";
 import { ontologyModelServerOperations } from "../ontology-model/model-operations";
 import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
 import { governanceServerOperations } from "../governance/panel-operations";
+import { opsDiagnosisServerOperations } from "../ops-diagnosis/panel-operations";
 import { skillExportOperation, skillServerOperations } from "../skills/panel-operations";
 import { productCatalogServerOperations } from "./catalog-operations";
 import { HttpError } from "../../utils/errors";
@@ -144,6 +145,7 @@ export interface PanelReadServerOperation extends OperationInputDescription {
   targetSchema: z.ZodType<ReadCall["target"]>;
   inputSchema: z.ZodType<ReadCall["input"]>;
   resultSchema: z.ZodType<PanelReadOperationResult>;
+  unavailable?(host: PanelOperationHost, target: PanelRecordTarget | null): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
   execute(host: PanelOperationHost, call: ReadCall): Promise<ReadResult>;
 }
 
@@ -168,6 +170,7 @@ const registrations: readonly PanelServerOperation[] = [
   ...ontologyModelServerOperations,
   ...productCatalogServerOperations,
   ...governanceServerOperations,
+  ...opsDiagnosisServerOperations,
 ];
 const jsonSchema = (schema: z.ZodTypeAny) => cachedZodToJsonSchema(schema, { effectStrategy: "input" });
 const runtimeJsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(schema, { effectStrategy: "input" });
