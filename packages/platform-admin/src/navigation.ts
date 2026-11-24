@@ -14,11 +14,6 @@ export interface PlatformPage {
   descriptionKey?: string;
   /** 16px navigation icon. */
   icon?: Component;
-  /**
-   * Legacy count source strictly for native pages not yet converted to panels (e.g. enterprise permission center);
-   * removed together with host-built menus once those pages migrate to panels + ObjectCount. Do not add new callers.
-   */
-  count?: () => number | null;
   /** The page draws its own page header (the Manager pages); otherwise the layout draws title and description. */
   ownHeader?: boolean;
   /**

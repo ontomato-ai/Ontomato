@@ -18,6 +18,10 @@ const COUNT_MEMBERS = {
   "/ontology/panels": "panels",
   "/ontology/applications": "applications",
   "/ontology/agents": "agents",
+  "/permissions/members": "members",
+  "/permissions/roles": "roles",
+  "/permissions/policies": "policies",
+  "/permissions/organization": "organizationUnits",
 };
 
 /** Curated platform icon keys matching each ontology manager menu entry. */

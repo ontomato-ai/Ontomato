@@ -276,11 +276,11 @@ describe("account menu", () => {
 });
 
 describe("the menu of an application whose pages are its own menu", () => {
-  it("lists pages by group, renders shell-internal native page counts when no #item-trailing slot is given, and marks the current one with the selected band", async () => {
+  it("lists pages by group and marks the current one with the selected band", async () => {
     const onSelect = vi.fn();
     const root = await mount(AppPanelPages, {
       groups: [
-        { key: "ontology", label: "Ontology", pages: [{ id: "/objects", label: "Object types", icon: "objects", count: 12 }] },
+        { key: "ontology", label: "Ontology", pages: [{ id: "/objects", label: "Object types", icon: "objects" }] },
         { key: "assets", label: "Assets", pages: [{ id: "/metrics", label: "Metric views", icon: "pages" }] },
       ],
       activePageId: "/objects",
@@ -289,7 +289,6 @@ describe("the menu of an application whose pages are its own menu", () => {
     expect([...root.querySelectorAll(".group-heading")].map((g) => g.textContent)).toEqual(["Ontology", "Assets"]);
     const active = root.querySelector(".page-row.active");
     expect(active?.textContent).toContain("Object types");
-    expect(active?.querySelector(".page-count")?.textContent).toBe("12");
     root.querySelector<HTMLButtonElement>(".page-row.active")?.click();
     expect(onSelect).toHaveBeenCalledWith("/objects");
   });
@@ -440,7 +439,6 @@ describe("the menu of an application whose pages are its own menu", () => {
       },
     );
 
-    expect(root.querySelectorAll(".page-count")).toHaveLength(0);
     const objectsRow = [...root.querySelectorAll(".page-row")].find((row) => row.textContent?.includes("Object types"));
     expect(objectsRow?.querySelector(".custom-trailing")?.textContent).toBe("18");
     expect(objectsRow?.querySelector(".custom-trailing")?.getAttribute("data-id")).toBe("/ontology/objects");
@@ -460,36 +458,6 @@ describe("the menu of an application whose pages are its own menu", () => {
       "Object types (18)",
       "Business knowledge",
       "Models v2",
-    ]);
-  });
-
-  it("includes shell-internal native page counts in the mobile selector when itemTrailingText is omitted", async () => {
-    const groups = [
-      {
-        key: "permissions",
-        label: "Access control",
-        items: [
-          { id: "/permissions/members", label: "Members", count: 12 },
-          { id: "/permissions/roles", label: "Roles", count: 0 },
-          { id: "/permissions/policies", label: "Policies", count: null },
-        ],
-      },
-    ];
-    const root = await mount(AppMenu, {
-      title: "Permissions",
-      groups,
-      activeId: "/permissions/members",
-      ariaLabel: "Pages",
-    });
-
-    const desktopCounts = [...root.querySelectorAll(".page-count")].map((node) => node.textContent?.trim());
-    expect(desktopCounts).toEqual(["12", "0"]);
-
-    const optionTexts = [...root.querySelectorAll(".mobile-page-select option")].map((opt) => opt.textContent?.trim());
-    expect(optionTexts).toEqual([
-      "Members (12)",
-      "Roles (0)",
-      "Policies",
     ]);
   });
 });

@@ -230,6 +230,80 @@
           "appearance": "badge"
         },
         "id": "builtin-product-om-frame-agents"
+      },
+      "members": {
+        "component": "ObjectCount",
+        "type": "platform:User",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "page": {
+                "literal": {
+                  "number": 1,
+                  "size": 1
+                }
+              }
+            }
+          }
+        },
+        "config": {
+          "appearance": "badge"
+        },
+        "id": "builtin-product-om-frame-members"
+      },
+      "roles": {
+        "component": "ObjectCount",
+        "type": "platform:Role",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "page": {
+                "literal": {
+                  "number": 1,
+                  "size": 1
+                }
+              }
+            }
+          }
+        },
+        "config": {
+          "appearance": "badge"
+        },
+        "id": "builtin-product-om-frame-roles"
+      },
+      "policies": {
+        "component": "ObjectCount",
+        "type": "platform:PermissionPolicy",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "page": {
+                "literal": {
+                  "number": 1,
+                  "size": 1
+                }
+              }
+            }
+          }
+        },
+        "config": {
+          "appearance": "badge"
+        },
+        "id": "builtin-product-om-frame-policies"
+      },
+      "organizationUnits": {
+        "component": "ObjectCount",
+        "type": "platform:OrgUnit",
+        "data": {
+          "rows": "list"
+        },
+        "config": {
+          "appearance": "badge"
+        },
+        "id": "builtin-product-om-frame-organization"
       }
     }
   },

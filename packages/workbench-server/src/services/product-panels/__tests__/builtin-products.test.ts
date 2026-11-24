@@ -117,7 +117,18 @@ describe("readBuiltinProducts", () => {
       const frame = panels.get("builtin-product-ontology-frame");
       expect(frame).toBeDefined();
       const countMembers = Object.entries(frame!.manifest.members).filter(([, member]) => "projectionId" in member.target);
-      expect(countMembers).toHaveLength(15);
+      expect(countMembers).toHaveLength(19);
+
+      expect(frame!.content.module).toContain('"/permissions/members": "members"');
+      expect(frame!.content.module).toContain('"/permissions/roles": "roles"');
+      expect(frame!.content.module).toContain('"/permissions/policies": "policies"');
+      expect(frame!.content.module).toContain('"/permissions/organization": "organizationUnits"');
+
+      const governanceQueryTypes: Record<string, string> = {
+        members: "platform:User",
+        roles: "platform:Role",
+        policies: "platform:PermissionPolicy",
+      };
 
       const expectedCountReads: Record<string, string> = {
         objectTypes: "platform:ObjectType",
@@ -137,6 +148,18 @@ describe("readBuiltinProducts", () => {
           expect(projection?.data.rows).toEqual({
             source: { type: { kind: "PlatformObjectType", id: expectedCountReads[memberKey] } },
             read: "count",
+            params: {},
+          });
+        } else if (Object.hasOwn(governanceQueryTypes, memberKey)) {
+          expect(projection?.data.rows).toEqual({
+            source: { type: { kind: "PlatformObjectType", id: governanceQueryTypes[memberKey] } },
+            read: "query",
+            params: { page: { literal: { number: 1, size: 1 } } },
+          });
+        } else if (memberKey === "organizationUnits") {
+          expect(projection?.data.rows).toEqual({
+            source: { type: { kind: "PlatformObjectType", id: "platform:OrgUnit" } },
+            read: "list",
             params: {},
           });
         } else {

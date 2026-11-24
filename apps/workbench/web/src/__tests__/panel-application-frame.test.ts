@@ -355,10 +355,11 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
     }
   }
 
-  // All 15 count projections use ObjectCount with badge appearance;
-  // 7 use count-only reads (no params) and 8 paged queries keep size: 1.
+  // All 19 count projections use ObjectCount with badge appearance:
+  // 7 use count-only reads (no params), 8 ontology paged queries keep size: 1,
+  // 3 governance paged queries pass page: { number: 1, size: 1 }, and organization units uses list.
   const countProjectionList = Object.values(frameProjections);
-  expect(countProjectionList).toHaveLength(15);
+  expect(countProjectionList).toHaveLength(19);
   const countReadMembers = [
     "builtin-product-om-frame-objects",
     "builtin-product-om-frame-attributes",
@@ -368,11 +369,22 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
     "builtin-product-om-frame-components",
     "builtin-product-om-frame-agents",
   ];
+  const governanceQueryMembers = [
+    "builtin-product-om-frame-members",
+    "builtin-product-om-frame-roles",
+    "builtin-product-om-frame-policies",
+  ];
   for (const projection of countProjectionList) {
     expect(projection.componentId).toBe("@ontomato/sdk:ObjectCount");
     expect(projection.config).toEqual({ appearance: "badge" });
     if (countReadMembers.includes(projection.id)) {
       expect(projection.data.rows?.read).toBe("count");
+      expect(projection.data.rows?.params).toEqual({});
+    } else if (governanceQueryMembers.includes(projection.id)) {
+      expect(projection.data.rows?.read).toBe("query");
+      expect(projection.data.rows?.params).toEqual({ page: { literal: { number: 1, size: 1 } } });
+    } else if (projection.id === "builtin-product-om-frame-organization") {
+      expect(projection.data.rows?.read).toBe("list");
       expect(projection.data.rows?.params).toEqual({});
     } else {
       expect(projection.data.rows?.read).toBe("query");
@@ -396,8 +408,8 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
     editable: false as const,
   };
 
-  // Expose only a subset of menu entries (omitting agents/applications/panels/workflows/etc.)
-  // to verify unmounted count members issue zero data reads even though usePanelOutput wires all 15.
+  // Expose only a subset of menu entries (omitting agents/applications/panels/workflows/roles/policies/etc.)
+  // to verify unmounted count members issue zero data reads even though usePanelOutput wires all 19.
   const ontologyUses = [
     { ...panelUse("use-playground", "om-playground", content.id, "/ontology/playground"), names: { en: "Ontology graph" }, groupKey: "facts" },
     { ...panelUse("use-objects", "om-objects", content.id, "/ontology/objects"), names: { en: "Object types" }, groupKey: "facts" },
@@ -451,6 +463,12 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
       if (member === "skills") {
         return Response.json({ status: "forbidden" });
       }
+      if (member === "members") {
+        return Response.json({
+          status: "ready",
+          value: { rows: [], total: 7 },
+        });
+      }
       return Response.json({ status: "ready", value: { rows: [], total: 0 } });
     }
     for (const [id, projection] of Object.entries(frameProjections)) {
@@ -498,16 +516,18 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
     await vi.waitFor(() => {
       const objectsBadge = mounted.element.querySelector('[data-member="objectTypes"] .sdk-object-count-badge');
       const knowledgeBadge = mounted.element.querySelector('[data-member="knowledge"] .sdk-object-count-badge');
+      const membersBadge = mounted.element.querySelector('[data-member="members"] .sdk-object-count-badge');
       expect(objectsBadge?.textContent?.trim()).toBe("3");
       expect(knowledgeBadge?.textContent?.trim()).toBe("42");
+      expect(membersBadge?.textContent?.trim()).toBe("7");
     });
 
     // Only visible count members issued data reads; unauthorized/omitted members issued zero reads.
-    expect([...new Set(readMembers)].sort()).toEqual(["knowledge", "objectTypes", "skills"]);
+    expect([...new Set(readMembers)].sort()).toEqual(["knowledge", "members", "objectTypes", "skills"]);
     const reads = sent.filter(request => request.method === "POST" && request.path.startsWith("/api/product-panels/read"));
     expect(reads).toEqual([expect.objectContaining({
       path: "/api/product-panels/read-batch",
-      body: { reads: expect.arrayContaining(["knowledge", "objectTypes", "skills"].map(member =>
+      body: { reads: expect.arrayContaining(["knowledge", "members", "objectTypes", "skills"].map(member =>
         expect.objectContaining({ memberPath: [{ member }] }))) },
     })]);
 
@@ -523,7 +543,7 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
       "Object types (3)",
       "Business knowledge (42)",
       "Skills",
-      "Members",
+      "Members (7)",
     ]);
 
     // Non-/ontology/ menu entries still append ?navigationContext=ontology on navigation.
