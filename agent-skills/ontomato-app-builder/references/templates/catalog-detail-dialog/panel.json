@@ -13,7 +13,8 @@
           "kind": "scalar",
           "type": "boolean"
         },
-        "default": false
+        "default": false,
+        "deepLink": false
       }
     },
     "members": {
@@ -23,8 +24,8 @@
         "data": {
           "rows": "list"
         },
-        "state": {
-          "selected": "selected"
+        "config": {
+          "fallbackToFirst": false
         }
       },
       "detail": {
@@ -41,7 +42,24 @@
         "component": "ObjectForm",
         "target": "selected",
         "data": {
-          "form": "form",
+          "form": "form"
+        },
+        "operation": "platform:AgentDefinition.save",
+        "config": {
+          "actions": "none"
+        }
+      },
+      "header": {
+        "component": "ObjectHeader",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        }
+      },
+      "createForm": {
+        "component": "ObjectForm",
+        "type": "platform:AgentDefinition",
+        "data": {
           "createForm": "createForm"
         },
         "operation": "platform:AgentDefinition.save",
@@ -59,7 +77,8 @@
         "dialog.createTitle": "New Agent Definition",
         "detail.back": "Back to Agent Definition",
         "detail.basicInfo": "Basic information",
-        "detail.overview": "Overview"
+        "detail.overview": "Overview",
+        "detail.choose": "Choose a record from the catalog."
       }
     }
   }

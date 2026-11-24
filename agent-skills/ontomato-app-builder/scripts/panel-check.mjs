@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { installedPanelSdk } from "./current-sdk.mjs";
 import { panelRegistrationRecords, requireApplicationId, requireDomainProductId } from "./panel-registration.mjs";
 
 function parseJson(file, source) {
@@ -567,4 +569,18 @@ export function describePanelType(typeTable, id, readName = null) {
       : "No top-level targetless operations declare this type in affects. Run `panel type --all` to list all top-level targetless operations.";
   }
   return result;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const [, , directory, sdkFlag, sdkDirectory, typeFlag, typeTableFile, ...extra] = process.argv;
+  if (!directory || sdkFlag !== "--sdk-dir" || !sdkDirectory || typeFlag !== "--type-table" || !typeTableFile || extra.length) {
+    throw new Error("Usage: node panel-check.mjs <panel-directory> --sdk-dir <installed-release> --type-table <type-table.json>");
+  }
+  const sdk = await installedPanelSdk(sdkDirectory);
+  const typeTable = sdk.checks.platformTypeTableResponseSchema.parse(await readJson(typeTableFile));
+  const { unchecked } = await checkPanelWorkspace(directory, { ...sdk, typeTable });
+  if (unchecked.length) {
+    throw new Error(`${directory}: unchecked references: ${JSON.stringify(unchecked)}`);
+  }
+  console.log(`${directory}: valid (0 errors, 0 unchecked references)`);
 }

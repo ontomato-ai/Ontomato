@@ -30,6 +30,13 @@
         "config": {
           "showTitle": false
         }
+      },
+      "header": {
+        "component": "ObjectHeader",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        }
       }
     }
   },
@@ -39,13 +46,14 @@
         "panel.name": "Agent Definition Detail",
         "detail.back": "Back to Agent Definitions",
         "detail.basicInfo": "Basic information",
-        "detail.overview": "Overview"
+        "detail.overview": "Overview",
+        "detail.choose": "Choose a record from the catalog."
       },
       "zh-CN": {
-        "panel.name": "智能体定义详情",
-        "detail.back": "返回智能体定义",
-        "detail.basicInfo": "基本信息",
-        "detail.overview": "概览"
+        "panel.name": "\u667a\u80fd\u4f53\u5b9a\u4e49\u8be6\u60c5",
+        "detail.back": "\u8fd4\u56de\u667a\u80fd\u4f53\u5b9a\u4e49",
+        "detail.basicInfo": "\u57fa\u672c\u4fe1\u606f",
+        "detail.overview": "\u6982\u89c8"
       }
     }
   }

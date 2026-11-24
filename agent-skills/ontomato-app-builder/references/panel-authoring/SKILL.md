@@ -33,20 +33,17 @@ description: Build and register an Ontomato panel from declared read functions, 
      (`manifest.state`), visibility, flat URL navigation (`panelAddress`), and read-only projection outputs
      (`usePanelOutput` / `usePanelOutputs`). Never read raw business record fields in the panel or compute business values;
      unsaved form drafts do not count as ontology data.
-3. **Pick a matching [page template](../templates/README.md)** (including the three clean reference templates:
-   [relations-catalog-detail](../templates/relations-catalog-detail/README.md),
-   [applications-catalog-detail](../templates/applications-catalog-detail/README.md), and
-   [ontology-graph-workbench](../templates/ontology-graph-workbench/README.md), plus
-   [two-entry-catalog-detail](../templates/two-entry-catalog-detail/README.md) and
-   [catalog-detail-dialog](../templates/catalog-detail-dialog/README.md) / `panel scaffold`). If you are bringing an
-   already-built page into the product layer, read
-   [Migrating an existing page into the product layer](../migrate-existing-page.md) first.
+3. **Pick a matching [page template](../templates/README.md).** Use the existing files for the chosen shape.
+   When bringing an existing page into the product layer, read
+   [Migrating an existing page into the product layer](../migrate-existing-page.md).
    - Place `<page-header>` at the top when the page needs a header, wire edit Save/Discard through
      `usePanelFormDraft("form")`, and classify buttons cleanly: `<sdk-button>` for local UI actions (dialogs, back,
      navigate, discard), `OperationButton` / declared member operations for business writes, and `ObjectForm` /
      `usePanelFormDraft` for form save.
    - Use `<sdk-*>` UI primitives, `v-sdk-*` directives, `--sdk-*` theme tokens, and `usePanelContext().notify()`.
      Never write `el-*` tags, `--el-*` tokens, `v-loading`, `element-plus` imports, or direct `fetch`/`XMLHttpRequest` calls.
+   - Unmount closed or unavailable forms/actions with `v-if`. Keep same-object tabs and off-screen lists mounted
+     with `v-show`. Confirm before leaving dirty edits.
    - Mark `deepLink: true` **only** on state needed to land on the same view (`selected`, `tab`, `search`, `filter`,
      `sort`). **Never** mark dialog toggles (`creating`, `grantDialog`, `dialog`, `compose`) or active-edit trackers
      (`editingEntryId`) with `deepLink: true`.
@@ -59,6 +56,8 @@ description: Build and register an Ontomato panel from declared read functions, 
 node "$SKILL/scripts/ontomato.mjs" panel check "$WORKSPACE"
 node "$SKILL/scripts/ontomato.mjs" panel register "$WORKSPACE"
 ```
+
+For offline checking and the installed component docs, see [the offline entry points](CODE.md#offline-check-and-component-reference).
 
 ## Registration files (`panel.json` vs. `registration.json`)
 
@@ -125,9 +124,8 @@ Open the registered entry beside the conversation, select a test record, pick an
 2. **Navigate & update state.** “Switch to [another record / tab / open the create dialog].” Verify the panel updates
    in place in the same round without reloading or writing.
 3. **Fill form directly.** “Change [field] to [value] in the form without saving yet.” Verify the agent fills the live
-   form directly in the same round (no link for the user to click), marks the changed field, triggers the same leave-page
-   unsaved-changes prompt as human typing, and asks before overwriting if the human already has unsaved edits
-   (`UNSAVED_FORM_CONFLICT`).
+   form directly with `fill_form`, marks the changed field, and leaves it unsaved. Verify same-page `present`
+   is blocked with `blocked_unsaved` while the form is dirty, and a human leaving the form sees the confirmation.
 4. **Save / execute.** Save in the page or ask “Save this form / Run [declared operation] on this test record.” Verify
    confirmation by default (invalidated if the human edits the form while waiting) and automatic list/metric refresh
    after success.

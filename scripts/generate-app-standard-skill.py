@@ -23,6 +23,8 @@ def render_standard(text):
     # Remove internal-only cross-references to implementation rules/detail annexes and internal URLs.
     body = re.sub(r"（(?:已定的例外见)?细则[^）]*）", "", body)
     body = body.replace("每条的细节见《细则》对应的节。", "")
+    body = body.replace("由哪个入口检查、识别哪些写法见细则九。", "")
+    body = body.replace("声明的结构见细则一。", "")
     body = body.replace("按细则七办理；", "遵循平台自带面板规则；")
     body = body.replace("，以《[智能体应用范式](智能体应用范式.md)》为准。", "，由平台按本轮会话与权限规则判定。")
     body = re.sub(r"\[([^\]]+)\]\(https?://infohub\.eloyzh\.de/[^)]+\)", r"\1", body)

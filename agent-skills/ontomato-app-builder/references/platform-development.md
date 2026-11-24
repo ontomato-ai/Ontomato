@@ -9,36 +9,16 @@ current owner declarations and SDK catalogue. Extend the owner or SDK where a re
 
 Scheduled tasks are a platform resource with an owner-declared form. The owner supplies the `list`, `record` and
 `form` reads and the `schedules.runNow` operation. The corresponding projections bind the list, selected task,
-owner form and operation button. Use `packages/apps-sdk/examples/panels/schedules-trial/definitions.mjs` and `p/panel.json` in that
-directory for the registered definitions and wiring.
+owner form and operation button.
 
-1. Find the existing business interface. For scheduled tasks, Workbench calls it in
-   `packages/workbench-server/src/services/scheduling/panel-reads.ts`. The result adapter in
-   `packages/platform-schedules/src/panel-reads.ts` supplies the read functions. Keep the viewer's permission, language,
-   business validation and test-data rules in the owner calls. Return the shared result, including any form field
-   errors or per-relation result the component needs to render.
-2. Register the read with the public contract owner. Give the stable type ID, read name, `type` or `object` source,
-   parameter schemas and required parameters, and the result schema. Give a
-   projection declaration using `data.<name> = { source, read, params }`. A same-named member state binding supplies
-   the parameter. Use `params` for literals or to name a different input. The named read adapter is mounted in
-   `packages/workbench-server/src/services/product-panels/data-reads.ts`. This dispatcher resolves the actual
-   placement and source and returns the result to the component under the reader's identity. The read request carries
-   `source`, `memberPath`, `dataName` and `inputs`. A ready result carries `value`; loading belongs to the
-   member while its read runs.
-3. Give a write its own registered server operation. In
-   `packages/platform-schedules/src/panel-server-operations.ts`, `platform:ScheduledTask.save` receives a form
-   submission. `schedules.runNow` has a read-only description and a separate write handler.
-   Declare the target, input and result schemas, effect and batch capability. Use the existing confirmation and
-   dispatch flow and the owner's authorization. Both the person's form or button and the agent use the registered
-   operation. Report affected objects on success so the host refreshes the appropriate data.
-4. Test the full route. Use
-   `packages/workbench-server/src/api/__tests__/panel-pilot-current.integration.test.ts` as the sample.
-   Register definitions with a test owner, read named data through `POST /api/product-panels/read`, then submit and
-   dispatch a declared operation. Verify the actual target, permission and business result. Use an empty and a denied
-   read when the page needs to tell those cases apart. The dedicated test command is
-   `pnpm --filter @ontomato/workbench-server exec vitest run src/api/__tests__/panel-pilot-current.integration.test.ts`
-   with `RUNTIME_TEST_DATABASE_URL` set to a disposable PostgreSQL database. The agent confirmation cases are in
-   `packages/workbench-server/src/services/product-panels/__tests__/operations.test.ts`.
+1. At the business owner, identify the existing read or action and its request identity, permission and result.
+2. Declare the stable type and read name, target source, required parameters, accepted input types and result shape.
+   The platform resolves the actual placement and passes the viewer identity to the owner. Return the owner's
+   read state and field errors in the shared result shape.
+3. Declare the operation's ID, input/result shape, target, effect and batch support. Connect it to the same owner
+   write and authorization for the browser and assistant. Report affected objects or types so relevant reads refresh.
+4. Test actual registration, read, confirmation and dispatch through the platform. Cover an admitted target and an
+   owner denial. Check the user-visible result and any field error or affected-object receipt.
 
 The task list declares `component: "ObjectList"`, `type: "platform:ScheduledTask"`, `data: {rows: "list"}`
 and `state: {selected: "selectedTask"}`. The summary declares `component: "ObjectSummary"`,
@@ -116,26 +96,15 @@ parts beside its implementation so authors can compose it from the released cata
 | Inputs | The typed values a placement supplies, such as the currently selected object. |
 | Outputs and operations | Events that update panel state, and the owner operations the component can trigger. |
 
-Use `packages/apps-sdk/src/base/ObjectSummary.vue` as a component example. In a directly rendered panel it consumes
-`useMemberData("record")`. A projection's `config.fields` controls which fields appear and in what order.
-The component declares the optional `fields` and `input` props and the `navigate` event. Its public export is in
-`packages/apps-sdk/src/entries/base.ts`, with the template binding in `packages/apps-sdk/src/base-components.ts`.
-The `ObjectSummary` entry in `packages/apps-sdk/src/catalogue.ts` uses `defineComponentMeta` to declare its meaning,
-binding, output and required datum `data: { record: { results: ["panelRecord"], required: true } }`.
-Controls add operations. For example, `ObjectForm` declares the owner form save
-with `client: "@binding"` and `kind: "form.save"`.
+Use `ObjectSummary` as an example of a component with one required record datum and a declared label output.
+For a new official component:
 
-Write the catalogue declaration alongside the component. Give it a package-qualified component ID for projection
-registration, such as `@ontomato/sdk:ObjectSummary`. Declare the accepted result types and whether each datum is
-required. Keep display configuration separate from the inputs supplied by a placement.
-Write JSDoc for props and events in the component source. The SDK build checks the public export against the
-catalogue, then generates `components.json`, `docs/components.md` and `docs/reference.md`. Registration uses the
-current release catalogue to check the component exists and the projection supplies the declared data keys and types.
-
-Verify the component in a projection with the real owner result. Check that its input and emitted values match the
-catalogue and that writes go through the declared operation. Reuse the host's loading, error, empty and forbidden
-states. A component may render or collect a value and request a declared action, while the owner decides what data
-and actions are available.
-
-Use `apps/workbench/web/src/__tests__/panel-direct-list-summary.test.ts` for a direct-rendering example.
-Run the Workbench web tests and `pnpm --filter @ontomato/apps-sdk test` for the catalogue and release.
+1. Expose the component through the SDK public entry, register its template name, and add its catalogue declaration.
+   Give it a package-qualified ID for projection registration and declare each accepted datum, input and operation.
+2. For a new public read result such as `annotatedCode`, register its schema with the read contract and update the
+   catalogue entries and catalogue test fixtures that enumerate supported result IDs.
+3. Document configuration in the component's `defineProps` JSDoc and declare events and slots on the component.
+   The SDK build generates catalogue configuration and component docs from those declarations. For each read-only
+   output, declare the port in `readOnlyOutputs` and publish it with `useMemberOutput`.
+4. Run the SDK catalogue/release checks and a host-level Vue test that mounts a real projection. Verify input and
+   output types, loading and owner refusal, declared operations, and the released component reference.

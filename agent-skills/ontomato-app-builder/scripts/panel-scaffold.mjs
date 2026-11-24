@@ -81,7 +81,7 @@ export function managementPanel(type, checks, typeTable, {
   const create = edit && reads.createForm?.result === "panelFormDescription";
   if (requestedSaves.length && !edit) throw new Error(`${save.id} has no declared form read`);
   if (create) {
-    state.creating = { type: { kind: "scalar", type: "boolean" }, default: false };
+    state.creating = { type: { kind: "scalar", type: "boolean" }, default: false, deepLink: false };
   }
   if (edit) {
     members.form = {
@@ -140,7 +140,7 @@ export function managementPanel(type, checks, typeTable, {
     ]),
     '      <div class="catalog-view">',
     ...(toolbarControls.length ? ['        <div class="catalog-toolbar">', ...toolbarControls.map(control => `          ${control}`), "        </div>"] : []),
-    `        ${member("list", create ? ' @update:selected="stopCreating"' : "")}`,
+    `        ${member("list")}`,
     "      </div>",
     ...(hasDetail ? [
       "    </template>",
@@ -193,8 +193,6 @@ export function managementPanel(type, checks, typeTable, {
     'import { computed } from "vue";',
     `import { ${sdkImports.join(", ")} } from "@ontomato/sdk/panel";`,
     "",
-    `const TYPE = ${JSON.stringify(type)};`,
-    "",
     "await mountPanel({",
     "  setup() {",
     "    const { instance } = usePanelContext();",
@@ -208,19 +206,17 @@ export function managementPanel(type, checks, typeTable, {
     "    });",
     ...(create ? [
       "    const creating = computed(() => instance.state.values.value.creating === true);",
+      '    const createBack = usePanelBack(creating, cancelCreate, { forms: "form" });',
       "    const createDialog = computed({",
       "      get: () => creating.value && !selectedKey.value,",
       "      set: value => {",
-      "        if (!value && creating.value) cancelCreate();",
+      "        if (!value) void createBack.back();",
       "      },",
       "    });",
       "    function startCreate() {",
       "      instance.state.setState({ creating: true, selected: null });",
       "    }",
-      "    function stopCreating() {",
-      '      if (creating.value) instance.state.set("creating", false);',
-      "    }",
-      "    function cancelCreate() {",
+        "    function cancelCreate() {",
       "      instance.state.setState({ creating: false, selected: null });",
       "    }",
     ] : []),
@@ -228,7 +224,7 @@ export function managementPanel(type, checks, typeTable, {
       '    const formDraft = usePanelFormDraft("form", { when: () => Boolean(selectedKey.value) });',
       "    function onSaved(saved) {",
       ...(create ? ['      instance.state.set("creating", false);'] : []),
-      '      instance.state.set("selected", { className: saved.className || TYPE, primaryKey: saved.primaryKey });',
+      '      if (saved.primaryKey) instance.state.set("selected", saved);',
       "    }",
       "    function onDiscarded() {",
       ...(create ? ['      instance.state.set("creating", false);'] : []),
@@ -240,7 +236,7 @@ export function managementPanel(type, checks, typeTable, {
     `    const { back } = usePanelBack(() => Boolean(selectedKey.value), backToCatalog, { pushHistory: true${edit ? ', forms: "form"' : ""} });`,
     `    return { ${[
       "selectedKey", "selectedTitle", "back",
-      ...(create ? ["creating", "createDialog", "startCreate", "stopCreating", "cancelCreate"] : []),
+      ...(create ? ["creating", "createDialog", "startCreate", "cancelCreate"] : []),
       ...(edit ? ["formDraft", "onSaved", "onDiscarded"] : []),
     ].join(", ")} };`,
     "  },",

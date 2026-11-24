@@ -7,12 +7,13 @@ and browser back stack.
 
 - **Catalog view**: `<page-header>` with a primary `+ New …` button (`@click="startCreate"`), and a full-width
   `ObjectList` with outer page gutter (`--page-gutter`).
-- **Detail view**: clicking a row hides the catalog and renders a single-row `<page-header>` (`← Back | <Title> | [Delete] [Discard] [Save]`) wired to `usePanelFormDraft("form")` and `usePanelBack` (browser Back, Escape, and unified
+- **Detail view**: clicking a row hides the catalog and renders a single-row `<page-header>` with Back, title, Discard and Save wired to `usePanelFormDraft("form")` and `usePanelBack` (browser Back, Escape, and unified
   unsaved-changes confirmation). Content renders equal-height rounded cards in a two-column `@container` grid that
   collapses to one column below `850px`.
-- **Create dialog**: clicking `+ New …` sets public state `creating: true, selected: null` and opens a centered
-  `<sdk-dialog>` hosting the same `ObjectForm` member (`config.actions: "create-only"` shows Cancel/Create in the
-  dialog while edit mode saves from `<page-header :draft="formDraft">`).
+- **Create dialog**: clicking New sets `creating: true` and mounts `createForm` in `<sdk-dialog>`.
+  `creating` is public with `deepLink: false`. The dialog's close control, Escape and Back guard unsaved changes.
+- A linked selection opens the detail directly even in a narrow container. The header displays a missing or
+  forbidden record in place. The list stays mounted behind the detail and the editor unmounts on exit.
 
 ## Check and register directly
 
@@ -27,7 +28,7 @@ Open `/applications/app-template-catalog-detail/manage` (or generate a customize
 
 ## Adapting this template to another type
 
-1. **Inspect the type**: run `node "$SKILL/scripts/ontomato.mjs" panel type <type-id>` and update `TYPE` in `panel.mjs`,
+1. **Inspect the type**: run `node "$SKILL/scripts/ontomato.mjs" panel type <type-id>` and update
    `objectType` / `type` / `data` / `operation` in `panel.json`, and IDs/paths in `registration.json`. For customer
    ontology classes, bind the platform's generic read functions parameterized by class (`list` / `record` shown by
    `panel type <class>`).

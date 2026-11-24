@@ -5,14 +5,16 @@ Minimal starter pattern for multi-column catalog + detail management application
 - **Menu entry (`catalog/`)**: appears in the application menu (`names` set on the `panelUse`). Renders a `<page-header>`
   with a primary `+ New …` button, a full-width `ObjectList` whose row click (`@choose`) navigates to the detail entry
   with flat query parameters via `panelAddress(DETAIL_PATH, { selected: item.primaryKey })`, and a centered
-  `<sdk-dialog>` hosting `ObjectForm` (`createForm`, `config.actions: "create-only"`). Notice `creating` is public state
-  **without** `deepLink: true`.
+  `<sdk-dialog>` hosting `ObjectForm` (`createForm`, `config.actions: "create-only"`). `creating` is public state with `deepLink: false`. Dialog close, Escape and Back guard unsaved edits.
 - **Detail entry (`detail/`)**: omitted from the menu (`names` omitted on the `panelUse`), opened via
   `panelAddress(DETAIL_PATH, { selected: primaryKey })` (`?selected=<primaryKey>`) or a direct deep link.
-  Renders a single-row `<page-header>` (`← Back | <Title> | [Delete] [Discard] [Save]`) wired to
+  Renders a single-row `<page-header>` with Back, title, Discard and Save wired to
   `usePanelFormDraft("form")`, plus equal-height cards in a two-column `@container` grid that collapses to one column
   below `850px`. Routing back via `navigate(CATALOG_PATH)` automatically invokes the platform's unified unsaved-changes
   confirmation.
+
+The detail entry opens directly at narrow widths and shows a missing or forbidden record in place.
+The form mounts only when the selected record is ready.
 
 ## Check and register
 

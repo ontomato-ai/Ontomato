@@ -91,7 +91,7 @@ await mountPanel({
 ## Panel controls and platform guardrails
 
 - **Allowed imports in `panel.mjs`.** Only `vue` and `@ontomato/sdk/panel` (`mountPanel`, `usePanelContext`,
-  `usePanelFormDraft`, `usePanelBack`, `usePanelData`, `usePanelOperation`, `savePanelFile`,
+  `usePanelFormDraft`, `usePanelBack`, `usePanelNarrow`, `usePanelOutput`, `usePanelOperation`, `savePanelFile`,
   `appIcon`). Never import `element-plus` or any third-party UI library, and never write `<el-*>` tags, `v-loading`,
   or `--el-*` CSS tokens.
 - **Overlays & notifications.** Use `<sdk-dialog>` / `<sdk-drawer>` for modal/drawer overlays (such as centered create
@@ -129,7 +129,7 @@ await navigate(panelAddress("/ontology/map", {
 | `list` | Repeated `<name>` parameters | `?tag=a&tag=b` |
 | Application frame `deepLink` field | `frame.<name>=<value>` | `?frame.term=2026-fall` |
 
-Shell-reserved query parameters (`draftSessionId`, `draftRunId`, `draftPath`, `standalone`, `from`, `navigationContext`)
+Shell-reserved query parameters (`standalone`, `from`, `navigationContext`)
 and `frame.*` parameters are preserved automatically by `panelAddress`; do not use them as panel state names. See
 [State in an address](RUNTIME.md#state-in-an-address) and the
 [object reference shapes table](RUNTIME.md#object-reference-shapes-quick-reference).
@@ -174,23 +174,56 @@ Advance to the next step only when the previous step cannot meet the need:
 
 ## Read-only projection outputs and official component reference
 
-Never use `usePanelData` in new panels to read raw business record fields. Instead, read declared read-only outputs with
-`usePanelOutput(member, name)` / `usePanelOutputs(member)`:
+Render business data with projections. Use `usePanelOutput(member, name)` in synchronous Vue setup for a declared
+read-only output. It starts no reads. Only mounting the projection lets its component request its data. Keep the
+producer mounted when its output controls surrounding layout. Mount dependent UI only when its inputs are ready.
+
+Wire one member's read-only output directly to another member's inputs. For example, within the consumer member:
+
+```json
+{
+  "inputs": {
+    "currentCode": { "output": { "member": "form", "name": "draft", "path": "/function/code" } }
+  }
+}
+```
+
+Use a JSON Pointer for nested values and omit `path` for the whole output. Keep outputs such as
+`usePanelOutput("list", "listed")` and `usePanelOutput("form", "draft")` outside writable `manifest.state`.
+A member's `state` shorthand maps the named component inputs or writable outputs and owner read parameters
+to public state. The shorthand expands by the component's port declaration. Formal placements can declare
+`outputs` explicitly. Inline shorthand members use `state` for that mapping.
+
+Read [the component reference](#offline-check-and-component-reference) for data ports, props, configuration, slots,
+events, output types and defaults.
 
 ### `ObjectList` counts, selection, and `rowType`
 
-- **List count outputs (do not confuse them):**
-  - `total`: strictly the owner-reported total (`number | null`). When the owner does not report a total, `total` is
-    `null` — never fake it as `0` or replace it with `rows.length`.
-  - `loadedCount`: number of rows currently loaded in this batch/page (`number`).
-  - `filteredCount`: local text-match count **only** when locally filtering a complete unpaged `panelRecordList` (matches
-    the list footer count in that mode); `null` for paged queries (`panelRecordQuery`).
-  - Other read-only outputs: `status`, `checkedCount`, `selectedLabel`, `activeLabel`.
-- **Selection guard:** Clicking a row selects it **only** when `selected` is bound to a writable public state in
-  `manifest.state`. If `selected` is unbound or bound to a fixed `{ literal: ... }`, row selection is disabled (read-only).
-  Use `@choose` for row-click navigation to a dedicated detail entry.
-- **Cross-type `rowType`:** When an owner read lists child records of a different ontology type (declared via `rowType`
-  on the read), `ObjectList` emits and selects typed references using `rowType`.
+- **List status and references:** `status` is the datum status; it starts at `null` until the member publishes.
+  `usePanelOutput("list", "listed")` reads the typed `{ className, primaryKey }` references of the current matching
+  batch or page. An empty list publishes `[]`; an unavailable or not-yet-ready batch publishes `null`.
+- **Counts:** `total` is the owner-reported total or `null`. `filteredCount` is the local match count for a complete
+  unpaged list, and is `null` when the owner declares server `search` or the read is paged.
+  Use `filteredCount.value ?? loadedCount.value` to display the current match/batch count where that is the intended
+  label. `loadedCount` counts the loaded rows and may be `null` before a result.
+- **Search and grouping:** Bind `state.search` for a shareable search. An unpaged list without server search matches
+  locally. `config.searchFields` limits matching to the named row fields, including array values.
+  `config.groupBy` groups by a returned field (e.g. category), with collapsible headings and per-group counts for
+  the current result. `groupEmptyLabel` names the empty group. Match the owner read parameter type when binding a
+  filter. For example, a boolean `template` filter uses a nullable boolean scalar, with `null` for all records.
+- **Table display:** Use `config.layout: "table"` for columns, `columns[].subtitleKey` for secondary text,
+  `wrap: true` for a multiline cell, `kind: "tag"` for an owner tone or exact-match `valueMap`, and
+  `kind: "tags"` for multiple values (empty renders an em dash). Reference cells emit `@navigate` without selecting
+  the row. Set `searchable: false` to hide search or `showFooter: false` to hide the footer.
+- **Selection:** Search, filter, sorting and paging preserve the selected object. Set `fallbackToFirst: false` and
+  use `listed` for optional initial selection only if the page opened without one. Keep a specified missing or
+  forbidden item selected and show the header's state. On an explicit successful delete, the platform may clear
+  `selected` from `affected.removed` before the list refreshes. Base any post-delete navigation on that success
+  and the refreshed list. A failed read does not tell you a record was deleted.
+- A writable `state.selected` lets the list commit selection on click. For a selection that needs unsaved
+  confirmation first, handle `@choose` and write the state after confirmation, as in the
+  [split editor](../templates/list-detail-edit/README.md). For cross-type results the owner read must declare
+  `rowType`, which supplies the type of the emitted references and the binding type for `state.selected`.
 
 ```json
 {
@@ -222,31 +255,48 @@ Never use `usePanelData` in new panels to read raw business record fields. Inste
 
 ### `ObjectHeader`
 
-- Renders object title (`record.label`), subtitle, status badge, inline `operations`, and overflow More menu.
-- Exposes read-only outputs `label`, `status`, `errorMessage`, plus any fixed named typed scalar outputs explicitly
-  declared by the bound read's owner (for example `canMaintain`, `canGrant`, `domainShared` on `platform:Application`).
-  Read them via `usePanelOutput("headerTitle", "canMaintain")`. Arbitrary raw field bags are not exposed.
+Bind `data.record` to the selected object. `config.subtitleField` displays a single truncated line by default.
+Attach named owner operations with `operations`, or use `#actions` for additional controls. The title and actions
+render when the record is ready. For other states the header renders the owner status and reason in place.
+Keep the header mounted when a specific selection is missing or forbidden.
+
+Use `usePanelOutput("header", "status")` to gate dependent editors and actions. It returns the
+[datum status](RUNTIME.md#projection-outputs-and-operations), or `null` before publication. The `label` and
+`errorMessage` outputs and the named scalar values declared by the owner read in `record.outputs` are also available.
+The header's `@done` handler receives `(operation, outcome)`, where `operation` is the local name and
+`outcome.kind === "success"` identifies successful single writes.
 
 ### `ObjectSummary`
 
-- Bind `target` to an object state (`selected`), `data: { record: "record" }`. Configure `config.fields`,
-  `config.showTitle: false` (avoid duplicating `<page-header>` / `ObjectHeader`), and `config.copyableFields`. Exposes
-  read-only output `label`.
+Bind `target` and `data: { record: "record" }`. Configure `fields`, `copyableFields` and `showTitle: false`
+when a header already shows the title. Its `label` output is `null` while no record is ready or readable.
 
 ### `OperationButton`
 
-- Binds one declared operation (`operation`, optional `target` for single object or checked list; omit `target` for
-  targetless Actions).
-- `config.hideWhenUnavailable: true` is **fail-closed**: if availability is false, loading fails, or the read errors,
-  the button stays hidden/unavailable instead of exposing an unpermitted action.
-- Example on a platform relationship:
+Bind an owner operation and its target. `config.labelKey` selects a localized label. With
+`config.hideWhenUnavailable: true`, the button stays hidden while the owner has not admitted it or describes it as
+unavailable. Let the owner decide that rule. For a batch, availability is evaluated per target through the owner
+batch availability check or the owner's single-target check. A mixed selection stays actionable. Execution skips
+unavailable rows and reports each `skipped` item and its reason. The button's `@done` receives the write
+`OperationOutcome` directly, including the batch's per-item results. Check `outcome.kind` before updating the view.
+
+Use `operationParams` to bind typed parameters such as a numeric revision or a requested status. If all required
+interactive inputs are bound, the button proceeds without the parameter dialog. An unbound optional input can
+also be offered in the dialog. Bind it if the page owns the choice. A bound optional state value of `null` is
+omitted from the request. `page_action` uses the same bound values and only accepts unbound interactive inputs. A state binding supplies the live value for this page
+operation. Any authorization or invariant on that value belongs in the owner's operation.
+
+Put a checked-target batch button inside the list's `#batch-actions` slot. The list owns the dismissible receipt
+outside that slot, so clearing the checks and unmounting the button keeps the receipt visible. Use `@done` for
+page-specific follow-up; the built-in receipt carries the batch outcomes.
 
 ```json
 {
   "component": "OperationButton",
-  "operation": "relationships.delete",
-  "target": "selected",
-  "config": { "label": "Delete", "type": "danger", "plain": true, "icon": "trash", "hideWhenUnavailable": true }
+  "operation": "orders.setStatus",
+  "target": "checked",
+  "operationParams": { "status": { "state": "batchStatus" } },
+  "config": { "labelKey": "order.changeStatus", "hideWhenUnavailable": true }
 }
 ```
 
@@ -257,6 +307,8 @@ Never use `usePanelData` in new panels to read raw business record fields. Inste
 
 ### `MetricCard`, `ObjectCount`, `RecordTemplate`, `InfoBanner`, `TypedValue`
 
+- **`InfoBanner`:** Use `<info-banner tone="warning" :text="t('page.notice')"></info-banner>` for a page message.
+  A projection can instead bind a record or result and configure the displayed `field`, `template` and `toneField`.
 - **`ObjectCount` & `MetricCard`:** Pure presentation — never compute sums or averages on the client. For paged queries
   (`panelRecordQuery`) and `panelOntologyObjects`, both display strictly the owner-returned `total` (never `rows.length`),
   showing `—` when unknown. Complete unpaged `panelRecordList` uses `rows.length`.
@@ -265,6 +317,33 @@ Never use `usePanelData` in new panels to read raw business record fields. Inste
 - **Auto-refreshing metrics after writes:** When authoring a `MetricView` read by `MetricCard` / `RecordTemplate` /
   `MetricChart`, declare `sourceObjectTypes` on the MetricView definition so any write whose `affected.objectTypes`
   includes those types automatically refreshes the metric projection.
+
+### `ReferencePicker`
+
+Use a standalone inline picker in a toolbar with `type`, `data: { rows: "list" }` and
+`state: { selected: "chosenReference" }`. The state is an object reference of the chosen type. On clear it becomes
+`null`. Use `config.placeholderKey`, `clearable`, `filterable`, `size` and `groupBy` on a returned record field.
+An unpaged read is filtered locally. For server search and pagination, bind a query read accepting the search and
+paging parameters, or use `data.options` and its optional `data.selected` to resolve held values. Dropdown text
+typed to find options stays local to the picker.
+
+### `ObjectTree` and `ObjectTextReader`
+
+Bind the parent's `files` read to `ObjectTree.data.files` and `state.selected` to a scalar `filePath`.
+Use `config.pathField` if it differs from the key and `config.fallbackToFirst: true` for an unspecified initial path.
+On the text reader bind the same parent target and a read such as
+`data: { record: { read: "file", params: { path: { state: "filePath" } } } }`.
+`config.textField: "content"` picks the text and `format: "auto"` uses the extension. An explicit unavailable file
+path stays selected and the reader shows the owner's result. For long segmented texts use `data.sources` and
+`data.page` and let the reader request subsequent pages.
+
+### `AnnotatedCode`
+
+Bind `data.content` to an owner read returning `annotatedCode`. Use the `currentCode` input to compare against
+live code, for example from `form.draft` via the output binding above. Bind `state.activeSegmentId` to coordinate
+line/segment focus. `@select-ref` emits the `refKey` string. Use it to select the matching child record or
+object-internal position and activate the relevant tab in one public state update. Keep the other tabs mounted.
+Read `status`, `activeSegmentId` and `selectedRef` as read-only outputs when needed.
 
 ### `ObjectGraph`
 
@@ -401,6 +480,8 @@ the list without replacing the whole table.
   - `#actions` receives `{ ref, index, operations, runOperation }`.
   - `#row-detail` receives `{ ref, index, collapse }` — pass `:inputs="{ target: ref }"` to a nested projection whose
     `target` is `{ "fromSlot": true }`.
+  - `#row-detail` expansion is internal to the list and is toggled by its row expansion control. Use a drawer or
+    detail projection bound to public selection when the expanded editor must be reachable via an address or `present`.
   - `runOperation(localName, overrides?)` only accepts parameters declared on that row operation's allowlist.
 
 ```json
@@ -483,10 +564,28 @@ Listen to component events directly on `<projection>` (`@choose`, `@navigate`, `
 
 ## Connect a graph and its relations
 
-Inspect `ObjectGraph`, `OntologyGraph`, and `ObjectRelations` in `sdk read docs/components.md` and named reads via
-`panel type <type-id> --read <name>`. Declare the shared [graph selection type](RUNTIME.md#graph-selection) in
-`manifest.state`, and map the graph and relation list to that same state field so selections stay synchronized. See the
-[ontology-graph-workbench template](../templates/ontology-graph-workbench/README.md) for a complete clean example.
+Inspect the graph and relation data ports in the component reference and the named reads in `panel type`.
+Declare a shared [graph selection type](RUNTIME.md#graph-selection) in `manifest.state`. `OntologyGraph` uses
+`selected` as its selection port. To connect its selection and relation filters, write:
+
+```json
+{
+  "graph": { "component": "OntologyGraph", "state": { "selected": "selected", "visibleRelationKinds": "relationKinds" } },
+  "relations": {
+    "component": "ObjectRelations",
+    "type": "platform:OntologyType",
+    "data": { "neighbors": { "read": "neighbors", "params": { "node": { "state": "selected" } } } },
+    "state": { "selected": "selected", "start": "start", "visibleRelationKinds": "relationKinds" },
+    "config": { "showRelationFilter": true, "allowSetStart": true, "showSummary": true, "collapseEmptyGroups": true }
+  }
+}
+```
+
+This fragment shows the state ports. Bind the graph's data for your mode and use the owner's available
+`neighbors` read for the relation member. The relation member reads `selected` and `visibleRelationKinds`,
+and writes those ports and `start`. Its read-only outputs include `status`, `edgeCount` and `label`.
+If a list's checked references choose the graph's visible set, map an empty check list to `null` for
+“show all” only when that is the intended graph behavior. The graph treats an explicit empty set as empty.
 
 ## Select a child record and read from its parent
 
@@ -496,13 +595,26 @@ parameters through `data.<name>.params` (see [FIELDS.md](FIELDS.md)).
 
 ## Invoke declared owner operations
 
-Use the owner's full operation ID in the member declaration and bind `target` to the selected object (or a checked list
-for batch operations; omit `target` for targetless Actions). Place `<projection slot="remove">` directly in
-`<page-header #actions>` or toolbar slots. From Vue code, call [`usePanelOperation`](RUNTIME.md#usepaneloperation) in
-synchronous `setup()` and run `handle.run(input)`. The platform handles permissions, confirmation, and write receipts
-(see [operation IDs and write results](RUNTIME.md#operation-ids-and-write-results)).
+Prefer a mounted `OperationButton`. Bind the owner's full ID and the target object or checked list. If you draw
+a custom button or menu, call `usePanelOperation(member, name, options?)` in synchronous setup. Use the same
+availability and disabled conditions for the visible control and the hook, and put shared post-operation behavior
+in `onSettled`. The mounted hook registers the action automatically, so a reader's click and `page_action` share
+its target, confirmation and settlement. Pass `entry: false` for a background flow with no human entry.
 
-## Save a form or hand off a draft
+```js
+const { run, running, operation } = usePanelOperation("archive", "archive", {
+  available: () => detailReady.value,
+  disabled: () => saving.value,
+  onSettled: (receipt) => {
+    if (receipt.response?.outcome?.kind === "success") return goBack();
+  },
+});
+```
+
+Invoke `run()` from the button, use `!operation || saving || running` for its disabled state and show the button
+only when `detailReady`. See [the operation receipt](RUNTIME.md#operation-ids-and-write-results).
+
+## Save a form
 
 An `ObjectForm` projection binds one save operation:
 - For `platform:*` types, bind the type's declared `form.save` operation (for example `platform:AgentDefinition.save`).
@@ -526,10 +638,50 @@ An `ObjectForm` projection binds one save operation:
 
 ### Assistant live form filling and saving
 
-Assistants do not write `.page-draft.json` files or draft query links. Instead, once the target page/tab/dialog is open
-beside the conversation via `present`, the assistant calls `fill_form` to edit fields directly in the mounted
-`ObjectForm` (highlighting changed fields and keeping the form unsaved) and `page_action` to invoke the form's declared
-save operation (confirming in conversation by default, or saving immediately in full-auto sessions).
+Use `present` to open the target page, tab or dialog beside the conversation, then `fill_form` on the mounted
+`ObjectForm`. Changed fields are marked and stay unsaved for review. When asked to save, use `page_action`
+for the form's declared save, with conversation confirmation by default. If an agent's same-page `present`
+tries to change public state while a form is dirty, the host returns `blocked_unsaved`. Human clicks go
+through the panel's unsaved confirmation.
+
+To split one form across sections, configure `presentation` and `groups` or place `<object-form-fields>` in
+the form's default slot. The sections share the same draft and save. A form's `saved` event gives
+`{ className, primaryKey }`; a successful create can report `primaryKey: null`.
+
+## Availability, narrow containers, and projections
+
+Use `v-if` to unmount a closed editor or an unavailable action. Where the component declares `when` or
+`disabledWhen`, use them for current availability, so the same entry is gated for humans and assistants.
+Use `v-show` for another tab of the same object, a collapsed section, or a list behind a detail view, preserving
+the forms and list interaction. Keep a named `#actions` slot declared and put conditional content inside it.
+
+Measure a container with `const root = ref(null); const narrow = usePanelNarrow(root)` and put `ref="root"`
+on the layout element. The hook reads `--pane-narrow-breakpoint` by default, or an explicit `{ token }`.
+Use the result to open the selected detail directly beside a conversation, and CSS `@container` for layout.
+Route local Back or dialog close through `usePanelBack`. Leave `<sdk-dialog>` Escape handling enabled and
+call the guarded `back()` from the dialog model's close setter.
+
+`<projection>` provides a `.sdk-panel-member` wrapper and may render a brief loading state as its component
+mounts. Constrain the wrapper in tight slots. For an app-menu badge, scope
+`.menu-count:not(:has(.sdk-object-count)) { display: none; }` to the trailing projection to suppress placeholders and
+empty spacing. Use `v-if` inside the visible menu item's slot so hidden or unauthorized entries do not mount readers.
+
+## Offline check and component reference
+
+The installed release includes `docs/components.md` (the component docs), `components.json` (the catalogue) and
+`docs/reference.md` (the `@ontomato/sdk` API reference). Open those files directly offline. Online, use
+`node "$SKILL/scripts/ontomato.mjs" sdk read docs/components.md` or `sdk read docs/reference.md`.
+
+Save the author type table with `node "$SKILL/scripts/ontomato.mjs" panel type --all > type-table.json`.
+With the installed SDK release matching the intended deployment, run:
+
+```sh
+node "$SKILL/scripts/panel-check.mjs" ./my-panel --sdk-dir "$SDK_RELEASE" --type-table ./type-table.json
+```
+
+`SDK_RELEASE` is the directory containing `sdk.json`. The command uses the installed check module and
+component catalogue, reports unchecked references, and needs no running service. Use the online
+`ontomato.mjs panel check` for already-registered references that need server lookup.
 
 ### Metric charts from dashboard cards
 

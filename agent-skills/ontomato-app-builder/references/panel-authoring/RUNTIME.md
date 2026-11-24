@@ -48,6 +48,11 @@ interface PanelContext {
    * that run directly on the platform.
    */
   notify(message: { kind: "success" | "info" | "warning" | "error"; text: string }): void;
+  /**
+   * Unified host confirmation for leaving unsaved edits (danger confirm button, Cancel focused by default). Resolves
+   * `true` immediately when the panel has no unsaved changes or the reader confirms leaving; asks at most once per turn.
+   */
+  confirmLeaveUnsaved?: () => Promise<boolean>;
 }
 ```
 
@@ -106,6 +111,11 @@ Read-only outputs stay separate from the panel's writable public `manifest.state
 ```ts
 function usePanelOutput<T extends RuntimeJsonValue = RuntimeJsonValue>(member: string, name: string): ComputedRef<T | null>
 ```
+
+Outputs are published by mounted projections. Subscribing with `usePanelOutput` alone never mounts a
+member or starts its reads. The component requests its named data when it mounts. An output with no
+published value is `null`. Use an `inputs` binding such as `{ output: { member, name, path } }` to connect
+the output directly to another member. Omit `path` for the whole value or use a JSON Pointer for a nested value.
 
 ### usePanelOutputs
 
@@ -227,6 +237,25 @@ interface PanelFormHandle {
 }
 ```
 
+### usePanelNarrow
+
+Observes a panel container element's own inline width via `ResizeObserver` and reports whether it is narrow
+(`width > 0` and `width <= breakpoint`), resolving the breakpoint from a CSS design token on that element
+(default `--pane-narrow-breakpoint`). Never reads `window.innerWidth`.
+
+```ts
+function usePanelNarrow(element: MaybeRefOrGetter<HTMLElement | null | undefined>, options?: UsePanelNarrowOptions): ComputedRef<boolean>
+```
+
+### UsePanelNarrowOptions
+
+```ts
+interface UsePanelNarrowOptions {
+  /** Design token CSS variable defining the narrow breakpoint (default `"--pane-narrow-breakpoint"`). */
+  readonly token?: `--${string}`;
+}
+```
+
 ### usePanelBack
 
 Registers a panel-local back/close layer with the enclosing host (LIFO). While `active` is truthy:
@@ -237,6 +266,11 @@ Registers a panel-local back/close layer with the enclosing host (LIFO). While `
 ```ts
 function usePanelBack(active: MaybeRefOrGetter<boolean>, onBack: () => void, options?: UsePanelBackOptions | undefined): PanelBackHandle
 ```
+
+Back layers close last-in first-out. For `<sdk-dialog>`, leave Escape handling enabled. The back handler yields
+while the dialog is open. The dialog's `v-model` setter should call the layer's `back()` on close, so clicking
+close and pressing Escape both check unsaved changes.
+
 
 ### UsePanelBackOptions
 
@@ -278,50 +312,17 @@ Saves one file for the reader, under its own name, and says what was saved.
 function savePanelFile(file: { mime: "image/png" | "text/csv" | "application/zip"; bytes: ArrayBuffer | Uint8Array<ArrayBuffer> | Blob; suggestedName: string; }): { kind: "file"; name: string; mime: "image/png" | "text/csv" | "application/zip"; }
 ```
 
-## Reads and operations
+## Projection outputs and operations
 
-### usePanelData
+A mounted `ObjectList` or `ObjectHeader` exposes its datum status as `ready`, `empty`, `error`, `forbidden`, `loading`. Before the member
+publishes, its status output is `null`. Keep the header mounted for a selected record so the component can
+display the owner's missing, forbidden, or error state in place. Owner-declared read outputs pass through to
+`usePanelOutput`, alongside the header's own `label`, `status`, and `errorMessage`.
 
-Legacy compatibility hook retained temporarily for existing built-in panels. New panels must not read raw
-records via `usePanelData`; use `usePanelOutput` / `usePanelOutputs` for read-only projection outputs, or render
-business data through an official or dedicated component.
-
-One datum of one member, kept current while the calling component is mounted. Call it in a component's setup,
-before any `await`.
-
-- `member` is a member the panel declares; `name` is a datum its projection names under `data.<name>`. The read, its
-  mappings and the object it needs are the projection's: nothing about the read is written in the page.
-- The member's inputs come from the panel state its placement binds; the datum is read again whenever that state
-  changes. A datum whose object or required parameter has no value is `awaiting`, and nothing is read.
-- `runtimeParams` are the page's own run-time values for the member (a page, a cursor, a keyword), as an object, a
-  ref or a getter: set, they reach every read of the member that takes them, and a change reads again. The platform
-  checks each against the component catalogue and the owner's read.
-- When an operation the panel runs reports what it changed (the owner's `affected`), a datum read from an object is
-  read again when that object is among the affected objects, and one read from a type when that type is among the
-  affected types; nothing is to be refreshed by hand.
-- It answers `loading`, `awaiting`, `ready` with `value` (the owner's result, checked against the result its read
-  declares), `empty`, `forbidden`, or `error` with `message` (the read failed, or the platform could not answer it).
-
-```ts
-function usePanelData(member: string, name: string, runtimeParams?: MaybeRefOrGetter<Readonly<Record<string, RuntimeJsonValue>>> | undefined): ComputedRef<MemberDataState>
-```
-
-The result type is `type MemberDataState =
-  | Exclude<PanelDataState, { status: "error" }>
-  | { status: "error"; message: string; unreachable?: true; retry?: () => void }
-  | { status: "awaiting" };`.
-
-| Status in PanelDataState | Additional fields |
-| --- | --- |
-| `ready` | `value`, `rowOperations` |
-| `empty` |  |
-| `error` | `message` |
-| `forbidden` | `reason` |
-| `loading` |  |
-
-A datum in `error` also carries `retry()`, which reads it again: offer it beside the message. When the platform never
-answered (the request reached nothing), `unreachable` is `true` and `message` already says so in the reader's language;
-show `message` as it is.
+For the current list batch, read `usePanelOutput("list", "listed")`. It returns typed references when ready,
+`[]` when empty, and `null` when unavailable or before the first result. Keep the output separate from public
+state. Searches, filters, sorting, and paging preserve the selection. Only default-select when there was no
+selection on open. Keep a specified missing or forbidden selection in place.
 
 ### usePanelOperation
 
@@ -484,10 +485,15 @@ share the host's unified unsaved-changes guard.
 Assistants beside a displayed panel operate directly through four live tools on the real-time presentation channel:
 - `observe_display`: read the latest live public state and open form values (including unsaved user edits).
 - `present`: navigate to a site-relative entry path or update declared public state in place (including non-`deepLink` state such as dialogs, tabs, and selections).
-- `fill_form`: fill explicit fields into a mounted live `ObjectForm` through its own edit entry, highlighting changed fields and keeping the form unsaved (refuses when unsaved edits exist unless `overwriteUnsaved: true` is confirmed by the user).
+- `fill_form`: fill explicit fields into a mounted live `ObjectForm` through its own edit entry, highlighting changed fields and keeping the form unsaved (refuses to overwrite fields with unsaved user edits unless the user confirms and the agent passes `overwriteUnsaved: true`).
 - `page_action`: execute a declared operation (including form save, button actions, row actions with `rowKey`, batch actions on checked items, nested panel actions, `page.refresh`, or `<form>.discard`) through the exact same UI entry a user clicks, under the logged-in user's permissions.
 
-The mounted `ObjectForm` owns its live values and submission.
+The mounted `ObjectForm` owns its live values and submission. When an agent uses `present` to change public
+state on the same page while a form is dirty, the host returns `blocked_unsaved` without applying the change.
+Human controls that switch, close, or cancel a form use the panel's unsaved confirmation.
+
+Use `v-if` or operation availability/disabled conditions when an entry cannot be used now. Use `v-show` for
+stateful content the reader could still use after switching a tab, expanding a section, or returning to a list.
 
 ## List paging
 
@@ -504,11 +510,11 @@ reader to land on the same view (selected object, tab, view mode, list search/fi
 dialog toggles (such as `creating`, `grantDialog`) and active-edit trackers (such as `editingEntryId`) must remain
 public state without `deepLink: true`.
 
-Each `deepLink: true` field is written as its own flat named query parameter (default/empty values are omitted; JSON is
-never serialized into `?state=` or `?frame=`). Single-type `object` fields use bare `primaryKey` (`?selected=my-app`),
-`object-union` fields use `className~primaryKey`, `list` fields repeat the parameter (`?tag=a&tag=b`), and application
-frame deep-link fields use the `frame.` prefix (`?frame.term=2026-fall`). Use `panelAddress(path, state)` from
-`@ontomato/sdk/panel` to build in-app links cleanly.
+Each `deepLink: true` field has its own flat query parameter. Single-type `object` fields use bare
+`primaryKey` (`?selected=my-app`), `object-union` fields use `className~primaryKey`, and list fields repeat
+the parameter (`?tag=a&tag=b`). An empty list uses `?tag=`. Frame fields use the `frame.` prefix
+(`?frame.term=2026-fall`). Build in-app links with `panelAddress(path, state)` from `@ontomato/sdk/panel`.
+The shell owns `standalone`, `from`, `navigationContext`.
 The capability-map type view uses `{"mode":"type","selectedType":"platform:SDKComponent"}` as state; the address contract encodes it as `?mode=type&selectedType=platform:SDKComponent`.
 
 ### Graph selection

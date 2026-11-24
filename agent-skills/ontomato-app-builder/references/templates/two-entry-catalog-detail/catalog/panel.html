@@ -16,7 +16,7 @@
     </div>
     <sdk-dialog v-model="createDialog" :title="t('dialog.createTitle')" width="540px" append-to-body destroy-on-close>
       <div class="create-dialog-body">
-        <projection slot="createForm" v-if="createDialog" @saved="onCreated" @discarded="cancelCreate" @cancel="cancelCreate"></projection>
+        <projection slot="createForm" v-if="createDialog" @saved="onCreated" @cancel="closeCreate"></projection>
       </div>
     </sdk-dialog>
   </section>

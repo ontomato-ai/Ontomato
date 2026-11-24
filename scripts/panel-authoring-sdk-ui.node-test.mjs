@@ -586,7 +586,8 @@ test("checkPanelWorkspace accepts official display components bound to metricOut
 
 test("every shipped skill template workspace passes checkPanelWorkspace", () => {
   const script = `
-    import { resolve } from "node:path";
+    import { readdirSync } from "node:fs";
+    import { dirname, resolve } from "node:path";
     import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
     import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
     import { componentMetadata } from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/apps-sdk/reference.mjs")).href)};
@@ -595,13 +596,25 @@ test("every shipped skill template workspace passes checkPanelWorkspace", () => 
       source: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/src/catalogue.ts"),
     }).map(({ metadata }) => ({ ...metadata, ports: { props: [], events: [], slots: [] } }));
     const catalogue = { version: "1.0.0", components };
+    import { customerOntologyReads } from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/platform-object-types.ts")).href)};
+    const objectAction = (id) => ({
+      id, kind: "action", effect: "write", target: { source: "input", input: "target" },
+      inputSchema: { type: "object" }, batch: false,
+    });
     const typeTable = {
       resultSchemas: {
         panelRecordList: { type: "array" },
+        panelRecordQuery: { type: "object" },
         panelRecord: { type: "object" },
         panelFormDescription: { type: "object", required: ["fields"] },
       },
+      operations: [{
+        ...objectAction("student.create"), target: { source: "none" }, affects: ["Student"],
+      }],
       objectTypes: {
+        Student: { reads: customerOntologyReads, operations: [objectAction("student.update")] },
+        Course: { reads: customerOntologyReads, operations: [objectAction("course.update"), objectAction("course.archive")] },
+        Enrollment: { reads: customerOntologyReads },
         "platform:AgentDefinition": {
           reads: {
             list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
@@ -613,11 +626,11 @@ test("every shipped skill template workspace passes checkPanelWorkspace", () => 
         },
       },
     };
-    const dirs = [
-      "agent-skills/ontomato-app-builder/references/templates/catalog-detail-dialog",
-      "agent-skills/ontomato-app-builder/references/templates/two-entry-catalog-detail/catalog",
-      "agent-skills/ontomato-app-builder/references/templates/two-entry-catalog-detail/detail",
-    ];
+    const root = resolve(${JSON.stringify(ROOT)}, "agent-skills/ontomato-app-builder/references/templates");
+    const dirs = readdirSync(root, { recursive: true })
+      .filter(file => file.endsWith("panel.json"))
+      .map(file => dirname(resolve(root, file)))
+      .sort();
     const results = [];
     for (const dir of dirs) {
       const res = await checkPanelWorkspace(resolve(${JSON.stringify(ROOT)}, dir), { checks, catalogue, version: "1.0.0", typeTable });
@@ -630,7 +643,7 @@ test("every shipped skill template workspace passes checkPanelWorkspace", () => 
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   }));
-  assert.equal(results.length, 3);
+  assert.ok(results.length > 0, "Expected to find shipped template workspaces");
   for (const item of results) {
     assert.equal(item.status, "valid", `${item.dir} failed checkPanelWorkspace`);
     assert.equal(item.unchecked, 0, `${item.dir} had unchecked references`);

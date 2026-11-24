@@ -1,5 +1,5 @@
 import { computed } from "vue";
-import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelBack, usePanelContext } from "@ontomato/sdk/panel";
 
 const DETAIL_PATH = "/applications/app-template-two-entry/detail";
 
@@ -7,32 +7,22 @@ await mountPanel({
   setup() {
     const { instance, navigate } = usePanelContext();
     const creating = computed(() => instance.state.values.value.creating === true);
+    const closeCreate = () => instance.state.set("creating", false);
+    const { back: cancel } = usePanelBack(creating, closeCreate, { forms: "createForm" });
     const createDialog = computed({
       get: () => creating.value,
-      set: value => {
-        if (!value && creating.value) cancelCreate();
-      },
+      set: (open) => { if (!open) void cancel(); },
     });
-    function detailAddress(primaryKey) {
-      return panelAddress(DETAIL_PATH, { selected: primaryKey });
+    function openDetail(target) {
+      return navigate(panelAddress(DETAIL_PATH, { selected: target.primaryKey }));
     }
-    function startCreate() {
-      instance.state.set("creating", true);
+    function onCreated(target) {
+      closeCreate();
+      if (target.primaryKey) return openDetail(target);
     }
-    function cancelCreate() {
-      instance.state.set("creating", false);
-    }
-    function openDetail(item) {
-      if (!item?.primaryKey) return;
-      instance.state.set("creating", false);
-      void navigate(detailAddress(item.primaryKey)).catch(() => undefined);
-    }
-    function onCreated(saved) {
-      instance.state.set("creating", false);
-      if (saved?.primaryKey) {
-        void navigate(detailAddress(saved.primaryKey)).catch(() => undefined);
-      }
-    }
-    return { creating, createDialog, startCreate, cancelCreate, openDetail, onCreated };
+    return {
+      creating, createDialog, closeCreate, openDetail, onCreated,
+      startCreate: () => instance.state.set("creating", true),
+    };
   },
 });

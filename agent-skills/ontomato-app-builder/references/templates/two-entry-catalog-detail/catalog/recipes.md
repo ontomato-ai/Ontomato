@@ -1,2 +1,5 @@
-- Browse records in the catalog list; clicking a row navigates to the detail entry using flat query parameters (`?selected=<primaryKey>`).
-- To create a new record, set public state `creating: true` (non-`deepLink`) or fill `createForm` directly in the live conversation display via `present`.
+# Browse and create records
+
+- Find a record with the catalog's declared list, then `present` the detail entry with its `selected` parameter.
+- To create a record, use `present` on this entry with `creating: true` and use `fill_form` on `createForm`.
+- Leave the changes visible for review. Request the declared save with `page_action` when asked to save.

@@ -1,0 +1,9 @@
+<style>
+  .term-content { padding: var(--page-content-gap) var(--page-gutter); }
+</style>
+<div id="app">
+  <page-header :title="t('panel.name')"></page-header>
+  <section class="term-content">
+    <projection slot="list"></projection>
+  </section>
+</div>

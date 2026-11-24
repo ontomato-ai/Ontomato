@@ -31,7 +31,7 @@ full-width detail), read the [management page wiring recipes](references/managem
    - For `platform:*` types (e.g. `platform:Relationship`, `platform:Application`), bind their built-in platform reads
      and management operations.
 2. **Respect boundaries and lookup order.**
-   - **Hierarchy**: platform sidebar → default application menu (do not hand-author custom frame panels unless needed) →
+   - **Hierarchy**: platform sidebar → default app menu or a [frame for shared state](references/templates/app-frame/README.md) →
      current entry panel → nested panels, projections, and data-free SDK UI primitives.
    - **Components first**: follow the four-step order — (1) official defaults, (2) `config` (`ObjectList` `columns` /
      `valueMap` / `rowActions`, `ObjectSummary`, `ObjectHeader`, `ObjectForm` `presentation` / `groups` / `actions`,
