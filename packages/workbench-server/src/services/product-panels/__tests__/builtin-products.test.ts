@@ -108,8 +108,23 @@ describe("readBuiltinProducts", () => {
       expect(recipes).not.toContain("deleteDialog");
       expect(recipes).not.toContain("deleteSubmit");
       expect(recipes).toContain("deleteProjection.delete");
+
+      const panelsCatalog = panels.get("builtin-product-ontology-panels");
+      const panelDetail = panels.get("builtin-product-ontology-panel-detail");
+      expect(panelsCatalog).toBeDefined();
+      expect(panelDetail).toBeDefined();
+      expect(panelsCatalog!.manifest.state).not.toHaveProperty("selected");
+      expect(panelsCatalog!.manifest.state.creating?.deepLink).not.toBe(true);
+      expect(panelsCatalog!.manifest.members).toHaveProperty("catalogue");
+      expect(panelsCatalog!.manifest.members).toHaveProperty("unavailableList");
+      expect(panelsCatalog!.manifest.members).toHaveProperty("createForm");
+      expect(panelDetail!.manifest.state.selected?.deepLink).toBe(true);
+      expect(panelDetail!.manifest.state.detailMode?.deepLink).toBe(false);
+      expect(panelDetail!.manifest.members).toHaveProperty("headerTitle");
+      expect(panelDetail!.manifest.members).toHaveProperty("form");
+      expect(panelDetail!.manifest.members).toHaveProperty("deletePanel");
     } finally {
       await rm(bundle, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

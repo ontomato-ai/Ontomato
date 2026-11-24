@@ -407,7 +407,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
   const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
   const bundle = path.join(contentRoot, "ontology-catalogues");
   const catalogues = ["projections", "panels", "applications"];
-  const shipped = [...catalogues, "application-detail", "agent-settings"];
+  const shipped = [...catalogues, "panel-detail", "application-detail", "agent-settings"];
   await mkdir(bundle);
   await writeFile(path.join(bundle, "index.json"), JSON.stringify(shipped));
   const sources = new URL("../../../../ontology-manager/resources/builtin-panels/", import.meta.url);
@@ -466,7 +466,17 @@ it("registers the shipped ontology catalogues with addressable creation, preview
     definitions.set(catalogue, panel.manifest.members);
   }
   expect(definitions.get("projections")?.preview?.target).toEqual({ fromState: "selected", candidates: { rule: "usable" } });
-  expect(definitions.get("panels")?.preview?.target).toEqual({ fromState: "previewTarget", candidates: { rule: "usable" } });
+  const panelDetailResponse = await request("GET", "product-panels/builtin-product-ontology-panel-detail");
+  expect(panelDetailResponse.status).toBe(200);
+  const { panel: panelDetail } = productPanelResponseSchema.parse(await panelDetailResponse.json());
+  expect(panelDetail).toMatchObject({ visibility: "platform", ownerId: null, editable: false });
+  expect(panelDetail.manifest.state.selected).toMatchObject({
+    type: { kind: "object", objectType: "platform:ProductPanel" }, deepLink: true,
+  });
+  expect(panelDetail.manifest.state.detailMode).toMatchObject({
+    type: { kind: "scalar", type: "string" }, deepLink: false,
+  });
+  expect(panelDetail.manifest.members.preview?.target).toEqual({ fromState: "previewTarget", candidates: { rule: "usable" } });
   const application = definitions.get("applications")!;
   const detailResponse = await request("GET", "product-panels/builtin-product-ontology-application-detail");
   expect(detailResponse.status).toBe(200);

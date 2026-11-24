@@ -253,7 +253,7 @@ const ApplicationDetailPanel = {
 
     function openPanelCatalogue(panelId) {
       if (!panelId) return;
-      void openCatalogueRecord("/ontology/panels", panelId);
+      void openCatalogueRecord("/ontology/panels/detail", panelId);
     }
 
     function onNavigateReference(reference) {
