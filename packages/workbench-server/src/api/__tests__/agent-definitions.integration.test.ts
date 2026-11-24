@@ -71,7 +71,7 @@ describe("agent definitions on PostgreSQL", () => {
     await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
     await state.pool.query(`CREATE TABLE "${state.schema}".assistant_agents (
       id uuid PRIMARY KEY, domain_id text, kind text, name text, description text, enabled boolean,
-      system_prompt text, model_selection jsonb, skills jsonb, icon text, class_names jsonb,
+      system_prompt text, engine text NOT NULL DEFAULT 'pi', model_selection jsonb, skills jsonb, icon text, class_names jsonb,
       enabled_mcp_service_ids jsonb, sort_order integer, execution_user_id text, model_reference_migrated boolean)`);
     await state.pool.query(`CREATE TABLE "${state.schema}".product_native_agent_bindings (domain_id text, agent_id text, asset_id text)`);
     await state.pool.query(`CREATE TABLE "${state.schema}".ops_diagnosis_settings (domain_id text PRIMARY KEY, model_selection jsonb NOT NULL, model_reference_migrated boolean)`);
@@ -166,6 +166,15 @@ describe("agent definitions on PostgreSQL", () => {
     const stored = await state.pool!.query(`SELECT kind FROM "${state.schema}".assistant_agents WHERE id=$1`, [id]);
     expect(stored.rows[0].kind).toBe(id);
   });
+  it("defaults to PI, stores Codex, and preserves the engine on an omitted update", async () => {
+    const id = randomUUID();
+    const input = assistantAgentInputSchema.parse({ ...form, skills: [] });
+    expect((await createAgentDefinition(id, input, owner, {})).engine).toBe("pi");
+    expect((await saveAgentDefinition(id, { ...input, engine: "codex" }, owner, {})).engine).toBe("codex");
+    const { engine: _engine, ...unchanged } = input;
+    expect((await saveAgentDefinition(id, { ...unchanged, name: "Renamed" }, owner, {})).engine).toBe("codex");
+  });
+
   it("keeps stored order on an omitted update and accepts explicit order", async () => {
     const id = randomUUID(), owner = { userId: "owner", domainId: "ordering" };
     const input = assistantAgentInputSchema.parse({ name: "Ordered", description: "", icon: null,

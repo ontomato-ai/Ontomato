@@ -8,6 +8,7 @@ import {
   RuntimeStore,
   createRuntimeHttp,
 } from "@ontomato/agent-runtime";
+import { installedHarnesses } from "@ontomato/agent-runtime/adapters/installed";
 import { ModelGatewayProcess } from "@ontomato/agent-runtime/gateway-process";
 import { ModelGatewayClient } from "@ontomato/agent-runtime/gateway-client";
 
@@ -52,6 +53,7 @@ const python = process.env.AGENT_RUNTIME_PYTHON || "python3";
 // The gateway runs the LiteLLM SDK in the skills environment's interpreter; every model call goes through it.
 const modelGateway = await ModelGatewayProcess.start(python);
 const runtime = new AgentRuntime({
+  engineRegistry: installedHarnesses,
   gateway: new ModelGatewayClient(modelGateway.addresses.controlUrl, modelGateway.addresses.dataUrl),
   worker: {
     development:

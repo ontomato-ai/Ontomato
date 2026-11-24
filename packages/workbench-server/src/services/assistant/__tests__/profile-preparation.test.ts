@@ -25,6 +25,7 @@ it('limits a Profile run to frozen projection tools without inherited skills or 
  mocks.source.mockResolvedValue({profileId:'profile'});
  mocks.profile.mockResolvedValue({id:'profile',agentId:'agent',releaseId:'release',instructions:'Instructions',tools:[],contextViews:[]});
  const run=await prepareAnalystRun(request());
+ expect(run.definition.engine).toBe('pi');
  expect(run.definition.skills).toEqual([]);expect(run.definition.externalMcp).toEqual([]);expect(run.definition.toolSurface).toBe('product');
  expect(run.environment.secrets).toEqual({ONTOMATO_PRODUCT_CALLBACK:'sealed-callback'});
  expect(mocks.environment).not.toHaveBeenCalled();expect(mocks.skills).not.toHaveBeenCalled();

@@ -1,4 +1,4 @@
-import { assistantAgentDefinitionListSchema, assistantAgentDefinitionSchema, assistantAgentPanelValuesSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
+import { assistantAgentDefinitionListSchema, assistantAgentDefinitionSchema, assistantAgentPanelValuesSchema, assistantAgentPanelUpdateValuesSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import { AGENT_DEFINITION } from "@ontomato/contracts/panel-client-requests";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -44,7 +44,7 @@ export const agentDefinitionAdapters: PlatformObjectAdapterFactory = requests =>
       const response = await definitionRequest(requests, create ? base : pathOf(target.primaryKey), {
         method: create ? "POST" : "PUT",
         headers: { "Content-Type": "application/json", ...(create ? { "Idempotency-Key": randomId() } : {}) },
-        body: JSON.stringify(assistantAgentPanelValuesSchema.parse(values)),
+        body: JSON.stringify((create ? assistantAgentPanelValuesSchema : assistantAgentPanelUpdateValuesSchema).parse(values)),
       });
       return record(assistantAgentDefinitionSchema.parse(response));
     },
