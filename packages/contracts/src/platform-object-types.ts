@@ -377,8 +377,13 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...governancePageQuery,
       ...modelReads,
       effectivePermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      effectiveOrgShares: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      effectiveApiPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      effectiveSubjectDataPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      effectiveManagedDataPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      effectiveDataPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       lookupAccount: {
-        source: "type", parameterMode: "fixed", params: { keyword: "keyword" }, requiredParams: ["keyword"], result: "panelOptionList",
+        source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList",
       },
     },
     operations: [

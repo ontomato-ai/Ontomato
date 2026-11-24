@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import {
@@ -33,6 +34,7 @@ import {
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import type {
+  PanelBatchCalls,
   PanelImpactInspector,
   PanelOperationHost,
   PanelOperationTarget,
@@ -320,6 +322,17 @@ async function removeWithAffected(
     : ownerWriteFailure(envelope, failureCode, "The owner could not delete the record");
 }
 
+async function removeUser(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
+  if (target.kind !== "object") throw new Error("Removing a member acts on a selected user");
+  return removeWithAffected(
+    host,
+    "/panel/governance/users/remove",
+    target,
+    "USER_REMOVE_FAILED",
+    [USER, ROLE, ORG_UNIT, ORG_MEMBERSHIP, ORG_POSITION, ORG_GRANT],
+  );
+}
+
 function issueUserApiKeyOperation(regenerate: boolean): PanelServerOperation {
   const handlerRef = regenerate ? REGENERATE_USER_API_KEY : GENERATE_USER_API_KEY;
   const labelKey = regenerate
@@ -407,7 +420,7 @@ export const governanceServerOperations = [
     kind: "action",
     binding: { kind: "PlatformOperation", id: REMOVE_USER },
     effect: "write",
-    batch: false,
+    batch: true,
     targetType: USER,
     targetSchema: objectTarget(USER),
     inputSchema: emptyInputSchema,
@@ -424,15 +437,16 @@ export const governanceServerOperations = [
     ),
     unavailable: (host: Host, target: PanelRecordTarget) =>
       ownerDeleteUnavailable(host, "/panel/governance/users/remove/unavailable", { id: target.primaryKey }, "USER_UNAVAILABLE"),
-    async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
-      if (target.kind !== "object") throw new Error("Removing a member acts on a selected user");
-      return removeWithAffected(
-        host,
-        "/panel/governance/users/remove",
-        target,
-        "USER_REMOVE_FAILED",
-        [USER, ROLE, ORG_UNIT, ORG_MEMBERSHIP, ORG_POSITION, ORG_GRANT],
-      );
+    execute: removeUser,
+    async executeBatch(host: Host, calls: readonly PanelBatchCalls[number][]): Promise<PanelOperationOutcome> {
+      const items = await Promise.all(calls.map(async ({ target }) => ({
+        target: { objectType: target.objectType, primaryKey: target.primaryKey },
+        outcome: await removeUser(host, target).catch((error: unknown) => ({
+          kind: "unknown" as const, message: error instanceof Error ? error.message : String(error),
+        })),
+      })));
+      const [first, ...rest] = items;
+      return { kind: "batch", items: [first!, ...rest] };
     },
   },
   {
@@ -446,9 +460,18 @@ export const governanceServerOperations = [
     targetSchema: objectTarget(USER),
     inputSchema: resetPasswordInputSchema,
     secretFields: ["/newPassword"],
-    describeInputSchema: () => ({
+    describeInputSchema: (_host, locale) => ({
       type: "object",
-      properties: { newPassword: { type: "string", minLength: 1, format: "password", "x-secret": true } },
+      properties: {
+        newPassword: {
+          type: "string",
+          minLength: 1,
+          format: "password",
+          "x-secret": true,
+          title: tForLocale(locale, "panels.governance.user.newPassword.title"),
+          description: tForLocale(locale, "panels.governance.user.newPassword.description"),
+        },
+      },
       required: ["newPassword"],
       additionalProperties: false,
     }),

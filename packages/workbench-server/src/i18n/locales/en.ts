@@ -490,6 +490,8 @@ export const en = {
   "panels.governance.user.operations.save": "Save member",
   "panels.governance.user.operations.remove": "Remove member",
   "panels.governance.user.operations.resetPassword": "Reset password",
+  "panels.governance.user.newPassword.title": "New password",
+  "panels.governance.user.newPassword.description": "Use at least 8 characters, including an uppercase letter, a lowercase letter, and a special character. This changes the password used to sign in to this account across all domains.",
   "panels.governance.user.operations.addMember": "Add existing account",
   "panels.governance.user.operations.generateApiKey": "Generate API key",
   "panels.governance.user.operations.regenerateApiKey": "Regenerate API key",
