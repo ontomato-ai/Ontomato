@@ -24,6 +24,7 @@ import {
   SCHEDULED_TASK,
   SDK_COMPONENT,
   USER,
+  WORKFLOW,
   platformObjectTypes,
   platformRelationKinds,
 } from "@ontomato/contracts/platform-object-types";
@@ -581,16 +582,22 @@ describe("platform-ontology composite query", () => {
 
     expect(res.node).toMatchObject({ className: "platform:User", primaryKey: "user-1", label: "Alice", layer: "governance" });
 
-    // Alice created & published act-1 (two distinct edges), created wf-1, created & published metric-1, holds role Approver
+    // Alice created & published act-1 (two distinct edges), created wf-1, created & published metric-1, holds role r-1 (Approver)
     const edgeKinds = res.edges.map((e) => `${e.relationKind}:${e.to.primaryKey}`).sort();
     expect(edgeKinds).toEqual([
       "user.created-action:act-1",
       "user.created-metric-view:metric-1",
       "user.created-workflow:wf-1",
-      "user.holds-role:Approver",
+      "user.holds-role:r-1",
       "user.published-action:act-1",
       "user.published-metric-view:metric-1",
     ]);
+    expect(res.neighbors).toContainEqual({
+      className: ROLE,
+      primaryKey: "r-1",
+      label: "Approver",
+      layer: "governance",
+    });
 
     const statusByKind = new Map(res.relations.map((r) => [r.relationKind, r]));
     expect(statusByKind.get("agent.executes-as-user")).toMatchObject({ status: "refused", edgeCount: 0 });
@@ -1283,6 +1290,248 @@ describe("platform-ontology composite query", () => {
     expect(incomingFromChild.edges.map((e) => e.from.primaryKey).sort()).toEqual([
       "builtin-product-parent-panel",
       "panel-domain-using-builtin",
+    ]);
+  });
+
+  it("lists platform:Role objects keyed by roleId with roleCode labels and does not synthesize roles from workflow steps", async () => {
+    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/workflow/platform-access")) {
+        return okJson([
+          { roleId: "r-1", roleCode: "Approver", apiPermissions: ["/workflow/save"], managementRole: false },
+          { roleId: "r-nameless", roleCode: null, apiPermissions: [], managementRole: false },
+        ]);
+      }
+      if (url.endsWith("/workflow/grants")) {
+        return okJson([
+          { roleId: "r-2", roleCode: "Operator", capabilityKind: "ACTION", capabilityId: "act-1", inForce: true },
+          { roleId: null, roleCode: "LegacyNoId", capabilityKind: "ACTION", capabilityId: "act-1", inForce: true },
+        ]);
+      }
+      if (url.endsWith("/workflow/query")) {
+        return okJson([
+          {
+            id: "wf-1",
+            name: "Order Approval",
+            version: 2,
+            steps: [
+              { actionId: "act-1", roleCode: "Approver" },
+              { actionId: "act-1", roleCode: "GhostStepRole" },
+            ],
+            createdBy: "user-1",
+            reviewedBy: "user-2",
+          },
+        ]);
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+
+    const rolesRes = await readPlatformOntologyObjects(owner, credentials, { type: ROLE });
+    expect(rolesRes.status).toBe("ok");
+    expect(rolesRes.items).toEqual([
+      { node: { className: ROLE, primaryKey: "r-1" }, label: "Approver" },
+      { node: { className: ROLE, primaryKey: "r-2" }, label: "Operator" },
+      { node: { className: ROLE, primaryKey: "r-nameless" }, label: "r-nameless" },
+    ]);
+  });
+
+  it("resolves all four role relations bidirectionally using roleId as primaryKey and rejects roleCode as primaryKey", async () => {
+    const roleCenter = platformOntologyNeighborsResponseSchema.parse(
+      await readPlatformOntologyNeighbors(owner, credentials, {
+        node: { className: ROLE, primaryKey: "r-1" },
+      }),
+    );
+
+    expect(roleCenter.node).toEqual({
+      className: ROLE,
+      primaryKey: "r-1",
+      label: "Approver",
+      layer: "governance",
+    });
+
+    expect(roleCenter.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relationKind: "user.holds-role",
+          direction: "incoming",
+          from: { className: USER, primaryKey: "user-1" },
+          to: { className: ROLE, primaryKey: "r-1" },
+        }),
+        expect.objectContaining({
+          relationKind: "role.can-execute-action",
+          direction: "outgoing",
+          from: { className: ROLE, primaryKey: "r-1" },
+          to: { className: ACTION, primaryKey: "act-1" },
+        }),
+        expect.objectContaining({
+          relationKind: "role.can-author-workflow",
+          direction: "outgoing",
+          from: { className: ROLE, primaryKey: "r-1" },
+          to: { className: WORKFLOW, primaryKey: "wf-1" },
+        }),
+        expect.objectContaining({
+          relationKind: "role.owns-workflow-step",
+          direction: "outgoing",
+          from: { className: ROLE, primaryKey: "r-1" },
+          to: { className: WORKFLOW, primaryKey: "wf-1" },
+        }),
+      ]),
+    );
+    expect(roleCenter.edges).toHaveLength(4);
+
+    // Reverse direction from Action and Workflow also emits roleId as primaryKey with roleCode label
+    const actionNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ACTION, primaryKey: "act-1" },
+      relationKinds: ["role.can-execute-action"],
+    });
+    expect(actionNeighbors.edges).toEqual([
+      expect.objectContaining({
+        relationKind: "role.can-execute-action",
+        direction: "incoming",
+        from: { className: ROLE, primaryKey: "r-1" },
+        to: { className: ACTION, primaryKey: "act-1" },
+      }),
+    ]);
+    expect(actionNeighbors.neighbors).toEqual([
+      { className: ROLE, primaryKey: "r-1", label: "Approver", layer: "governance" },
+    ]);
+
+    const workflowNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: WORKFLOW, primaryKey: "wf-1" },
+      relationKinds: ["role.can-author-workflow", "role.owns-workflow-step"],
+    });
+    expect(workflowNeighbors.edges.map((e) => `${e.relationKind}:${e.from.primaryKey}`).sort()).toEqual([
+      "role.can-author-workflow:r-1",
+      "role.owns-workflow-step:r-1",
+    ]);
+    expect(workflowNeighbors.neighbors).toEqual([
+      { className: ROLE, primaryKey: "r-1", label: "Approver", layer: "governance" },
+    ]);
+
+    // Legacy roleCode primaryKey is no longer accepted
+    await expect(
+      readPlatformOntologyNeighbors(owner, credentials, {
+        node: { className: ROLE, primaryKey: "Approver" },
+      }),
+    ).rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND" });
+  });
+
+  it("keeps user.holds-role edges keyed by roleId even when /workflow/platform-access is refused", async () => {
+    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/workflow/platform-access") || url.endsWith("/workflow/grants")) {
+        throw new BackendResponseError(403, JSON.stringify({ message: "Role directory forbidden" }));
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+
+    const res = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: USER, primaryKey: "user-1" },
+      relationKinds: ["user.holds-role"],
+    });
+
+    expect(res.relations).toEqual([{ relationKind: "user.holds-role", status: "ok", edgeCount: 1 }]);
+    expect(res.edges).toEqual([
+      expect.objectContaining({
+        relationKind: "user.holds-role",
+        direction: "outgoing",
+        from: { className: USER, primaryKey: "user-1" },
+        to: { className: ROLE, primaryKey: "r-1" },
+      }),
+    ]);
+    expect(res.neighbors).toEqual([
+      { className: ROLE, primaryKey: "r-1", label: "r-1", layer: "governance" },
+    ]);
+  });
+
+  it("maps workflow step roleCode to roleId, skips unknown step names, and surfaces role directory refusal/failure", async () => {
+    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/workflow/query")) {
+        return okJson([
+          {
+            id: "wf-1",
+            name: "Order Approval",
+            version: 2,
+            steps: [
+              { actionId: "act-1", roleCode: "Approver" },
+              { actionId: "act-1", roleCode: "UnmatchedStepRole" },
+            ],
+            createdBy: "user-1",
+            reviewedBy: "user-2",
+          },
+        ]);
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+
+    const okRes = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: WORKFLOW, primaryKey: "wf-1" },
+      relationKinds: ["role.owns-workflow-step"],
+    });
+    expect(okRes.relations).toEqual([{ relationKind: "role.owns-workflow-step", status: "ok", edgeCount: 1 }]);
+    expect(okRes.edges).toEqual([
+      expect.objectContaining({
+        relationKind: "role.owns-workflow-step",
+        from: { className: ROLE, primaryKey: "r-1" },
+        to: { className: WORKFLOW, primaryKey: "wf-1" },
+      }),
+    ]);
+    expect(okRes.neighbors).toEqual([
+      { className: ROLE, primaryKey: "r-1", label: "Approver", layer: "governance" },
+    ]);
+
+    // When role directory is refused, relationStatus reports refused instead of ok with 0 edges
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/workflow/platform-access") || url.endsWith("/workflow/grants")) {
+        throw new BackendResponseError(403, JSON.stringify({ message: "Role directory forbidden" }));
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+    const refusedRes = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: WORKFLOW, primaryKey: "wf-1" },
+      relationKinds: ["role.owns-workflow-step"],
+    });
+    expect(refusedRes.edges).toEqual([]);
+    expect(refusedRes.relations).toEqual([
+      expect.objectContaining({ relationKind: "role.owns-workflow-step", status: "refused", edgeCount: 0 }),
+    ]);
+
+    // When role directory fails, relationStatus reports failed
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/workflow/platform-access") || url.endsWith("/workflow/grants")) {
+        throw new BackendResponseError(500, JSON.stringify({ message: "Role directory down" }));
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+    const failedRes = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: WORKFLOW, primaryKey: "wf-1" },
+      relationKinds: ["role.owns-workflow-step"],
+    });
+    expect(failedRes.edges).toEqual([]);
+    expect(failedRes.relations).toEqual([
+      expect.objectContaining({ relationKind: "role.owns-workflow-step", status: "failed", edgeCount: 0 }),
+    ]);
+
+    // When role directory is unavailable, relationStatus reports unavailable
+    const readers: {
+      roles(): Promise<
+        Awaited<ReturnType<PlatformOntologyOwnerReaders["roles"]>> |
+        { ok: false; status: "unavailable"; reason: string }
+      >;
+    } = PlatformOntologyOwnerReaders.prototype;
+    vi.spyOn(readers, "roles").mockResolvedValueOnce({
+      ok: false,
+      status: "unavailable",
+      reason: "Roles unavailable",
+    });
+    const unavailableRes = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: WORKFLOW, primaryKey: "wf-1" },
+      relationKinds: ["role.owns-workflow-step"],
+    });
+    expect(unavailableRes.edges).toEqual([]);
+    expect(unavailableRes.relations).toEqual([
+      { relationKind: "role.owns-workflow-step", status: "unavailable", edgeCount: 0, reason: "Roles unavailable" },
     ]);
   });
 });

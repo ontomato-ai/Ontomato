@@ -16,6 +16,7 @@ import {
   ONTOLOGY_TYPE,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
+  ROLE,
   SCHEDULED_TASK,
   SDK_COMPONENT,
   TRIGGER,
@@ -208,7 +209,13 @@ describe("createPlatformOntologyReadAdapter", () => {
     );
     expect(neighbors.node).toMatchObject({ className: USER, primaryKey: "user-1", label: "Alice" });
     expect(neighbors.relations.map((r) => r.relationKind).sort()).toEqual(["user.created-action", "user.holds-role"]);
-    expect(neighbors.edges.some((e) => e.relationKind === "user.holds-role" && e.to.primaryKey === "ops")).toBe(true);
+    expect(neighbors.edges.some((e) => e.relationKind === "user.holds-role" && e.to.primaryKey === "role-1")).toBe(true);
+    expect(neighbors.neighbors).toContainEqual({
+      className: ROLE,
+      primaryKey: "role-1",
+      label: "ops",
+      layer: "governance",
+    });
     expect(neighbors.edges.some((e) => e.relationKind === "user.created-action" && e.to.primaryKey === "act-1")).toBe(true);
     expect(seenRequests.length).toBeGreaterThan(0);
     expect(seenRequests.every((req) => req.token === viewer.token)).toBe(true);
@@ -266,6 +273,14 @@ describe("createPlatformOntologyReadAdapter", () => {
     expect(users.items.map((item) => item.node)).toEqual([
       { className: USER, primaryKey: "user-1" },
       { className: USER, primaryKey: "user-2" },
+    ]);
+
+    const roles = panelReadResultSchemas.panelOntologyObjects.parse(
+      await reads.objects({ type: ROLE }),
+    );
+    expect(roles.status).toBe("ok");
+    expect(roles.items).toEqual([
+      { node: { className: ROLE, primaryKey: "role-1" }, label: "ops" },
     ]);
 
     stubOwnerHttp({
