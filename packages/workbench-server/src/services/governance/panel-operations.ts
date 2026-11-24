@@ -10,14 +10,18 @@ import {
   DELETE_ORG_UNIT,
   DELETE_PERMISSION_POLICY,
   DELETE_ROLE,
+  GENERATE_USER_API_KEY,
+  ISSUE_USER_API_KEY_BATCH,
   ORG_GRANT,
   ORG_MEMBERSHIP,
   ORG_POSITION,
   ORG_UNIT,
   PERMISSION_POLICY,
   REFRESH_POLICY_API_CATALOG,
+  REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
   REMOVE_USER,
+  RESET_USER_PASSWORD,
   REVOKE_USER_API_KEY,
   ROLE,
   SAVE_POLICY_API_PERMISSIONS,
@@ -30,6 +34,7 @@ import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import type {
   PanelImpactInspector,
+  PanelOperationHost,
   PanelOperationTarget,
   PanelRecordTarget,
   PanelServerOperation,
@@ -64,10 +69,47 @@ const permissionCountResultSchema = z.object({ id: z.string().min(1), count: z.n
 const dataPermissionResultSchema = z.object({ id: z.string().min(1), savedRuleCount: z.number().int().nonnegative() }).strict();
 const refreshCatalogResultSchema = z.object({ refreshed: z.boolean() }).strict();
 
+const resetPasswordInputSchema = z.object({
+  newPassword: z.string().min(1),
+}).strict();
+
 const addUserMemberInputSchema = z.object({
   userId: z.string().min(1).optional(),
   loginCode: z.string().min(1).optional(),
   roleIds: z.array(z.string().min(1)).optional(),
+}).strict();
+
+const apiKeyResultSchema = z.object({
+  id: z.string().min(1),
+  loginCode: z.string(),
+  userName: z.string(),
+}).strict();
+const ownerApiKeyResultSchema = apiKeyResultSchema.extend({ apiKey: z.string().min(1) });
+
+const issueApiKeyBatchInputSchema = z.object({
+  scope: z.enum(["all", "selected"]),
+  userIds: z.array(z.string().min(1)).optional(),
+  regenerate: z.boolean().optional(),
+}).strict();
+
+const issueApiKeyBatchResultSchema = z.object({
+  issuedCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+}).strict();
+const ownerApiKeyBatchResultSchema = issueApiKeyBatchResultSchema.extend({
+  issuedUserIds: z.array(z.string().min(1)),
+  csv: z.object({
+    filename: z.string().min(1),
+    contentType: z.string().min(1),
+    content: z.string(),
+  }).strict(),
+});
+
+const apiKeyBatchInspectSchema = z.object({
+  targetCount: z.number().int().nonnegative(),
+  existingKeyCount: z.number().int().nonnegative(),
+  overwriteCount: z.number().int().nonnegative(),
+  issueCount: z.number().int().nonnegative(),
 }).strict();
 
 const saveMenuPermissionsInputSchema = z.object({
@@ -222,6 +264,29 @@ const deleteOrgPositionImpact: PanelImpactInspector = {
   },
 };
 
+const issueApiKeyBatchImpact: PanelImpactInspector = {
+  handlerRef: `${ISSUE_USER_API_KEY_BATCH}.inspect-impact`,
+  async inspect(host, calls) {
+    const { scope, userIds, regenerate } = issueApiKeyBatchInputSchema.parse(calls[0]!.input);
+    const envelope = await ownerPost(
+      host,
+      "/panel/governance/users/api-key/batch/inspect",
+      { scope, ...(userIds && { userIds }), regenerate: regenerate === true },
+      ownerEnvelopeSchema,
+    );
+    if (!envelope.success) {
+      const failure = ownerWriteFailure(envelope, "USER_API_KEY_BATCH_FAILED", "The owner could not inspect batch API key issuance");
+      throw new HttpError(422, failure.message, failure.code);
+    }
+    const counts = apiKeyBatchInspectSchema.parse(envelope.data);
+    return {
+      summary: tForLocale(host.locale, "panels.confirmation.issueUserApiKeyBatchImpact", counts),
+      objects: [],
+      total: counts.targetCount,
+    };
+  },
+};
+
 async function postAction(
   host: Host,
   path: string,
@@ -255,6 +320,65 @@ async function removeWithAffected(
     : ownerWriteFailure(envelope, failureCode, "The owner could not delete the record");
 }
 
+function issueUserApiKeyOperation(regenerate: boolean): PanelServerOperation {
+  const handlerRef = regenerate ? REGENERATE_USER_API_KEY : GENERATE_USER_API_KEY;
+  const labelKey = regenerate
+    ? "panels.governance.user.operations.regenerateApiKey"
+    : "panels.governance.user.operations.generateApiKey";
+  return {
+    handlerRef,
+    labelKey,
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: handlerRef },
+    effect: "write",
+    batch: false,
+    targetType: USER,
+    targetSchema: objectTarget(USER),
+    inputSchema: emptyInputSchema,
+    resultSchema: apiKeyResultSchema,
+    targetInput: "user",
+    targetLabel: (host, target) => governanceTargetLabel(host, target, "/panel/governance/users/record", "USER_UNAVAILABLE"),
+    ...(regenerate && { inspectImpact: simpleTargetImpact(
+      `${handlerRef}.inspect-impact`,
+      "panels.confirmation.regenerateUserApiKeyImpact",
+      "/panel/governance/users/record",
+      "USER_UNAVAILABLE",
+    ) }),
+    unavailable: (host, target) => ownerDeleteUnavailable(
+      host, "/panel/governance/users/api-key/unavailable",
+      { id: target.primaryKey, mode: regenerate ? "regenerate" : "generate" }, "USER_UNAVAILABLE",
+    ),
+    async execute(host, target) {
+      const { primaryKey } = target as PanelRecordTarget;
+      return postAction(
+        host,
+        regenerate ? "/panel/governance/users/regenerate-api-key" : "/panel/governance/users/generate-api-key",
+        { id: primaryKey },
+        "USER_API_KEY_FAILED",
+        "The owner could not issue the API key",
+        data => {
+          const { apiKey, ...member } = ownerApiKeyResultSchema.parse(data);
+          const summaryKey = regenerate ? "panels.governance.user.apiKeyRegenerated" : "panels.governance.user.apiKeyGenerated";
+          return {
+            kind: "success",
+            data: member,
+            affected: affected(USER, primaryKey, [USER]),
+            secret: {
+              title: tForLocale(host.locale, labelKey),
+              summary: tForLocale(host.locale, summaryKey, { name: member.loginCode }),
+              items: [{
+                label: tForLocale(host.locale, "panels.governance.user.apiKeyLabel"),
+                value: apiKey,
+                hint: tForLocale(host.locale, "panels.governance.user.apiKeyHint"),
+              }],
+            },
+          };
+        },
+      );
+    },
+  };
+}
+
 export const governanceServerOperations = [
   // -------------------------------------------------------------------------
   // platform:User
@@ -267,11 +391,12 @@ export const governanceServerOperations = [
     effect: "write",
     batch: false,
     targetType: USER,
-    targetSchema: objectTarget(USER),
+    targetSchema: saveTarget(USER),
     inputSchema: saveInputSchema,
     resultSchema: savedIdSchema,
+    secretFields: ["/loginPasswd"],
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-
+    create: true,
     execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/panel/governance/users/save", target, saveBody(target, input), "USER_SAVE_FAILED", USER, [USER, ROLE]);
     },
@@ -311,6 +436,41 @@ export const governanceServerOperations = [
     },
   },
   {
+    handlerRef: RESET_USER_PASSWORD,
+    labelKey: "panels.governance.user.operations.resetPassword",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: RESET_USER_PASSWORD },
+    effect: "write",
+    batch: false,
+    targetType: USER,
+    targetSchema: objectTarget(USER),
+    inputSchema: resetPasswordInputSchema,
+    secretFields: ["/newPassword"],
+    describeInputSchema: () => ({
+      type: "object",
+      properties: { newPassword: { type: "string", minLength: 1, format: "password", "x-secret": true } },
+      required: ["newPassword"],
+      additionalProperties: false,
+    }),
+    resultSchema: savedIdSchema,
+    targetInput: "user",
+    targetLabel: (host: Host, target: PanelRecordTarget) =>
+      governanceTargetLabel(host, target, "/panel/governance/users/record", "USER_UNAVAILABLE"),
+    done: (host, name) => tForLocale(host.locale, "panels.governance.user.passwordReset", { name }),
+    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      const { primaryKey } = target as PanelRecordTarget;
+      const { newPassword } = resetPasswordInputSchema.parse(input);
+      return postAction(
+        host,
+        "/panel/governance/users/reset-password",
+        { id: primaryKey, newPassword },
+        "USER_RESET_PASSWORD_FAILED",
+        "The owner could not reset the user password",
+        data => ({ kind: "success", data: { id: savedIdSchema.parse(data).id }, affected: affected(USER, primaryKey, [USER]) }),
+      );
+    },
+  },
+  {
     handlerRef: ADD_USER_MEMBER,
     labelKey: "panels.governance.user.operations.addMember",
     kind: "action",
@@ -337,6 +497,8 @@ export const governanceServerOperations = [
       );
     },
   },
+  issueUserApiKeyOperation(false),
+  issueUserApiKeyOperation(true),
   {
     handlerRef: REVOKE_USER_API_KEY,
     labelKey: "panels.governance.user.operations.revokeApiKey",
@@ -372,6 +534,45 @@ export const governanceServerOperations = [
           const parsed = runtimeJsonObjectSchema.parse(data);
           savedIdSchema.parse(parsed);
           return { kind: "success", data: parsed, affected: affected(USER, target.primaryKey, [USER]) };
+        },
+      );
+    },
+  },
+  {
+    handlerRef: ISSUE_USER_API_KEY_BATCH,
+    labelKey: "panels.governance.user.operations.issueApiKeyBatch",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: ISSUE_USER_API_KEY_BATCH },
+    effect: "write",
+    batch: false,
+    targetType: USER,
+    targetSchema: z.null(),
+    inputSchema: issueApiKeyBatchInputSchema,
+    resultSchema: issueApiKeyBatchResultSchema,
+    inspectImpact: issueApiKeyBatchImpact,
+    async execute(host: PanelOperationHost, _target: null, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      const { scope, userIds, regenerate } = issueApiKeyBatchInputSchema.parse(input);
+      return postAction(
+        host,
+        "/panel/governance/users/issue-api-key-batch",
+        { scope, ...(userIds && { userIds }), regenerate: regenerate === true },
+        "USER_API_KEY_BATCH_FAILED",
+        "The owner could not issue batch API keys",
+        data => {
+          const { issuedUserIds, csv, ...counts } = ownerApiKeyBatchResultSchema.parse(data);
+          return {
+            kind: "success",
+            data: counts,
+            affected: {
+              objects: issuedUserIds.map(primaryKey => ({ objectType: USER, primaryKey })),
+              objectTypes: [USER],
+            },
+            secret: {
+              title: tForLocale(host.locale, "panels.governance.user.operations.issueApiKeyBatch"),
+              summary: tForLocale(host.locale, "panels.governance.user.apiKeysIssued", counts),
+              download: { ...csv, encoding: "utf8" },
+            },
+          };
         },
       );
     },
