@@ -6,7 +6,7 @@ import { execute, output, parseOptions } from "./build-support.mjs";
 
 // Only the deploy template goes into the pack. .env, backend_data and
 // frontend_data are onsite state and are never packed.
-export const TEMPLATE_ENTRIES = ["docker-compose.yml", "initdb.sql", "README.md", "prepare-env.py", "runtime_policy.py"];
+export const TEMPLATE_ENTRIES = ["docker-compose.yml", "initdb.sql", "README.md", "prepare-env.py"];
 // The product hands over one directory of assembled onsite entries (install.sh and any
 // other entry with its helper scripts); the whole directory lands at the pack root, so a
 // new entry needs no change here. Top-level shell entries stay executable whatever the umask.

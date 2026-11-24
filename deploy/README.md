@@ -1,10 +1,7 @@
 # Ontomato deployment
 
 Five final images run the gateway, workbench, data engine, ontology manager and agent runtime.
-PostgreSQL is a sixth service. The site needs Docker Engine 26+, Compose v2 and Python 3.8+. The sandbox
-preflight uses the agent-runtime image to install its host policy. When Docker
-reports AppArmor or SELinux, the host needs the corresponding
-`apparmor_parser` or `semodule` command and permission to load the policy.
+PostgreSQL is a sixth service. The site needs Docker Engine 26+, Compose v2 and Python 3.8+.
 
 ## Online deployment
 
@@ -15,7 +12,6 @@ echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml' >> .env
 echo 'ONTOMATO_VERSION=<version-and-build-tag>' >> .env
 python3 prepare-env.py .env
 docker compose pull
-python3 prepare-env.py .env --sandbox-preflight
 docker compose up -d --wait --wait-timeout 600
 ```
 
@@ -29,7 +25,7 @@ release that requires it.
 
 CI publishes a shared `<version>-ci<run>.<attempt>-g<commit>` tag for all four images,
 as well as `edge`, `stable`, release and `latest` aliases. Use the full build tag above so
-`docker ps` shows the deployed build. Update `ONTOMATO_VERSION`, then prepare the environment, pull the images, run the sandbox preflight and start the stack. Images come from GHCR. Build
+`docker ps` shows the deployed build. Update `ONTOMATO_VERSION`, then run `python3 prepare-env.py .env`, pull and up. Images come from GHCR. Build
 and publication happen before deployment; Compose has no build step.
 
 ### Automatic updates (optional)
@@ -48,9 +44,7 @@ GHCR; if so it pulls them, recreates those containers with their existing config
 removes the replaced images. PostgreSQL is not touched, and only this Compose project's
 containers are watched. The four images update independently, and changes to the deployment
 templates still need a manual update. Keep fixed versions without automatic updates for
-production sites. The agent runtime runs its sandbox preflight before serving requests
-on every container start. If the host sandbox policy changes, rerun the installer
-(`python3 prepare-env.py .env --sandbox-preflight` for this deployment).
+production sites.
 
 ## Offline delivery
 
@@ -95,7 +89,6 @@ cp .env.example .env
 cat images.env >> .env
 python3 prepare-env.py .env
 docker compose pull
-python3 prepare-env.py .env --sandbox-preflight
 docker compose up -d --wait --wait-timeout 600
 ```
 
@@ -110,7 +103,7 @@ Run its `tools-install` and import commands with the same state directory.
 Tool installation only loads tool images; it does not import application images, change
 application configuration, restart services or install host Docker/Compose/Python. After successful import,
 replace the image/version/architecture values in the existing `.env` with
-those in `images.env`, then prepare the environment, pull the images, run the sandbox preflight and start the stack. Keep existing secrets, data directories
+those in `images.env`, then run `python3 prepare-env.py .env`, pull and up. Keep existing secrets, data directories
 and database volumes. Import failure leaves the previous `.env` and application
 containers untouched. Retain the previous references to select a prior image;
 application/database migration compatibility must be considered separately.
