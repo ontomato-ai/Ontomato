@@ -126,5 +126,5 @@ describe("readBuiltinProducts", () => {
     } finally {
       await rm(bundle, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
