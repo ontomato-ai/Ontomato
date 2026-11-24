@@ -16,6 +16,7 @@ import { installAppHost } from "../app-host";
 import {
   clearPanelDefinitionCache,
   getCachedProjection,
+  setCachedPanel,
   setCachedProjection,
 } from "../panel-definition-cache";
 import { builtinFramePanelHost, cachedApplicationFrameManifest, framePanelHost, onPanelReadDenied, panelHostPaths, platformPanelHost, readApplicationFrameManifest, readPanelData, resolveApplicationEntry } from "../panel-host";
@@ -237,12 +238,17 @@ it("backs off consecutive failures, resets on a snapshot, and cancels a pending 
 
 describe("controlled personal state fields", () => {
   beforeEach(() => {
+    clearPanelDefinitionCache();
     installAppHost({
       credential: { type: "anonymous" },
       preferences: { locale: ref("en"), locales: ["en"], theme: ref("light"), setLocale: () => {}, setTheme: () => {} } as PlatformPreferences,
       router: createRouter({ history: createMemoryHistory(), routes: [] }),
       onAuthFailure: vi.fn(),
     });
+  });
+
+  afterEach(() => {
+    clearPanelDefinitionCache();
   });
 
   const hostLabels: PanelHostLabels = {
@@ -308,7 +314,7 @@ describe("controlled personal state fields", () => {
       revision: 1,
       name,
       description: "",
-      visibility: "domain",
+      visibility: "domain" as const,
       domainId: "domain-1",
       ownerId: "owner-1",
       editable: true,
@@ -325,6 +331,7 @@ describe("controlled personal state fields", () => {
     storage: Record<string, unknown>;
     reads: { memberPath: unknown[]; fields: string[] }[];
     writes: { memberPath: unknown[]; values: Record<string, unknown> }[];
+    beforeSnapshot?: () => Promise<void>;
   }) {
     const controlledForPath = (memberPath: { member: string }[]) => {
       if (!memberPath.length) {
@@ -386,8 +393,9 @@ describe("controlled personal state fields", () => {
         return Response.json({ panel: { id, revision, content, manifest: panelManifest } });
       }
       if (url.pathname.endsWith("/snapshot")) {
+        await options.beforeSnapshot?.();
         return Response.json({
-          panel: { id: options.use.panelId, revision: 1 },
+          panel: { id: options.use.panelId, revision: options.panels[options.use.panelId]!.revision },
           projections: [],
           pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: options.use.pageKey }, member: null },
         });
@@ -415,6 +423,79 @@ describe("controlled personal state fields", () => {
     } | undefined;
     return mount!.instance.state;
   }
+
+  it.each([
+    {
+      name: "reuses the read when the revision matches",
+      revision: 1,
+      manifest: termAndDensityManifest,
+      laterReads: [],
+      state: { term: "summer", density: "comfortable" },
+    },
+    {
+      name: "reuses the read when the revised personal fields only change order",
+      revision: 2,
+      manifest: definePanel({
+        state: { density: termAndDensityManifest.state.density!, term: termAndDensityManifest.state.term! },
+        members: {},
+      }),
+      laterReads: [],
+      state: { term: "summer", density: "comfortable" },
+    },
+    {
+      name: "reads the revised fields when the field set changes",
+      revision: 2,
+      manifest: termOnlyManifest,
+      laterReads: [{ memberPath: [], fields: ["term"] }],
+      state: { term: "summer" },
+    },
+    {
+      name: "ignores the read when the revised panel has no personal fields",
+      revision: 2,
+      manifest: definePanel({ state: {}, members: {} }),
+      laterReads: [],
+      state: {},
+    },
+  ])("starts the cached personal state read before snapshot returns and $name", async (scenario) => {
+    const use = unwiredUse;
+    const cached = panelRecord(use.panelId, "Personal External", termAndDensityManifest);
+    setCachedPanel(use.panelId, cached);
+    let releaseSnapshot!: () => void;
+    const snapshot = new Promise<void>(resolve => { releaseSnapshot = resolve; });
+    const beforeSnapshot = vi.fn(() => snapshot);
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    stubPersonalHostFetch({
+      use,
+      panels: { [use.panelId]: { ...cached, revision: scenario.revision, manifest: scenario.manifest } },
+      storage: { term: "summer", density: "comfortable" },
+      reads,
+      writes: [],
+      beforeSnapshot,
+    });
+
+    const scope = effectScope();
+    try {
+      const view = scope.run(() => usePanelInstance(platformPanelHost("app-a", use, () => {}), {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      const earlyRead = { memberPath: [], fields: ["term", "density"] };
+      try {
+        expect(beforeSnapshot).toHaveBeenCalled();
+        expect(reads).toEqual([earlyRead]);
+      } finally {
+        releaseSnapshot();
+        await view.ready;
+      }
+      expect(view.error.value).toBe("");
+      expect(reads).toEqual([earlyRead, ...scenario.laterReads]);
+      expect(mountedState(view).values.value).toEqual(scenario.state);
+    } finally {
+      scope.stop();
+    }
+  });
 
   it("excludes wired entry inputs from personal reads/writes so sibling personal fields still load and save, and withdrawn wired inputs fall back to defaults", async () => {
     const storage: Record<string, unknown> = { term: "summer", density: "comfortable" };
@@ -538,12 +619,14 @@ describe("controlled personal state fields", () => {
 
   it("issues zero personal-state reads or writes when every personal field is controlled by entry inputs", async () => {
     const onlyUse = { ...wiredUse, id: "use-personal-only", pageKey: "personal-only", panelId: "panel-personal-only" };
+    const panel = panelRecord(onlyUse.panelId, "Personal Only", termOnlyManifest);
+    setCachedPanel(onlyUse.panelId, panel);
     const storage: Record<string, unknown> = { term: "summer" };
     const reads: { memberPath: unknown[]; fields: string[] }[] = [];
     const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
     stubPersonalHostFetch({
       use: onlyUse,
-      panels: { [onlyUse.panelId]: panelRecord(onlyUse.panelId, "Personal Only", termOnlyManifest) },
+      panels: { [onlyUse.panelId]: panel },
       storage,
       reads,
       writes,
