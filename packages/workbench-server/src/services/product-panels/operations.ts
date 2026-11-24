@@ -10,7 +10,7 @@ import {
   type PanelHumanOperationConfirmation, type PanelHumanOperationDispatchResponse, type PanelHumanOperationIntent,
   type PanelHumanOperationPreparation,
   type PanelOperationIntent, type PanelOperationRef, type ReadPanelOperationRequest,
-  type PanelUseRef, type PanelOperationOutcome, type StoredPanelOperationIntent,
+  type PanelUseRef, type BatchItemOperationOutcome, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
 import { EXECUTE_OBJECT_ACTION } from "@ontomato/contracts/platform-object-types";
@@ -31,7 +31,7 @@ import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller"
 import { mergeObjectActionBoundParams } from "../action/object-actions";
 import { readCurrentPanelRecord } from "./current";
 import {
-  declaredDirectOperation, type DeclaredDirectOperationOptions, type PlacedOperationTarget,
+  declaredDirectOperation, resolveBatchUnavailableReasons, type DeclaredDirectOperationOptions, type PlacedOperationTarget,
 } from "./direct-operations";
 import { requireRegisteredPanelRoot } from "./member-path";
 import { requirePanelUseEntry } from "./application-use";
@@ -591,7 +591,7 @@ function namedTargets(labels: string[], total: number, locale?: string) {
   return `${names} (${new Intl.NumberFormat(locale).format(total)})`.trim();
 }
 
-function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOutcome {
+function batchOutcome(value: unknown, calls: readonly PanelBatchCalls[number][]): PanelOperationOutcome {
   const outcome = panelOperationOutcomeSchema.parse(value);
   // A definitive atomic receipt applies to the whole batch.
   if (outcome.kind !== "batch") return outcome;
@@ -610,6 +610,34 @@ function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOut
   const objectTypes = new Set(successes.flatMap(affected => affected.objectTypes));
   return { kind: "batch", items, affected: { objects, objectTypes: [...objectTypes], ...(removed.length && { removed }) } };
 }
+
+async function executeAvailableBatch(
+  host: PanelOperationHost, { owner, calls }: Extract<CheckedInvocation, { calls: PanelBatchCalls }>, id: string,
+): Promise<PanelOperationOutcome> {
+  if (!owner.unavailableBatch && !owner.unavailable) {
+    return batchOutcome(await owner.executeBatch(host, calls, id), calls);
+  }
+  const reasons = await resolveBatchUnavailableReasons(host, owner, calls.map(({ target }, index) =>
+    ({ target, rowKey: String(index) })));
+  const executable = calls.filter((_, index) => !reasons.get(String(index)));
+  const executed = executable.length > 0
+    ? batchOutcome(await owner.executeBatch(host, executable, id), executable)
+    : null;
+  if (executable.length === calls.length) return executed!;
+
+  let executedIndex = 0;
+  const item = ({ target }: PanelBatchCalls[number], index: number) => {
+    const unavailable = reasons.get(String(index));
+    const outcome: BatchItemOperationOutcome = unavailable
+      ? { kind: "skipped", reason: unavailable.reason }
+      : executed!.kind === "batch" ? executed!.items[executedIndex++]!.outcome : executed!;
+    return { target: { objectType: target.objectType, primaryKey: target.primaryKey }, outcome };
+  };
+  const [first, ...rest] = calls;
+  const affected = executed?.kind === "batch" || executed?.kind === "success" ? executed.affected : undefined;
+  return { kind: "batch", items: [item(first, 0), ...rest.map((call, index) => item(call, index + 1))], ...(affected && { affected }) };
+}
+
 function confirmationInputSummary(handler: PanelWriteServerOperation, invocation: CheckedInvocation): string | undefined {
   if (!("call" in invocation)) return undefined;
   const isFormSave = handler.kind === "form.save";
@@ -652,7 +680,7 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
   let outcome: PanelOperationOutcome;
   try {
     if ("calls" in prepared) {
-      outcome = batchOutcome(await prepared.owner.executeBatch(host, prepared.calls, id), prepared.calls);
+      outcome = await executeAvailableBatch(host, prepared, id);
     } else {
       outcome = await executeOwner(handler, host, prepared.target, prepared.call.input, id);
       if (done !== undefined && outcome.kind === "success" && outcome.message === undefined) outcome = { ...outcome, message: done };
@@ -676,8 +704,8 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
   return { outcome };
 }
 
-function writtenObjects(outcome: SinglePanelOperationOutcome, targets: readonly PanelObjectIdentity[]): PanelObjectIdentity[] {
-  if (outcome.kind === "unknown") return [];
+function writtenObjects(outcome: BatchItemOperationOutcome, targets: readonly PanelObjectIdentity[]): PanelObjectIdentity[] {
+  if (outcome.kind === "unknown" || outcome.kind === "skipped") return [];
   const writtenTargets = outcome.kind === "success" || Object.keys(outcome.savedFields ?? {}).length > 0 ? targets : [];
   return [...writtenTargets, ...(outcome.affected?.objects ?? []), ...(outcome.affected?.removed ?? [])];
 }

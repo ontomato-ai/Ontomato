@@ -279,7 +279,9 @@ it.each([
   });
 });
 
-function installBatchOwner() {
+function installBatchOwner(
+  availability: Pick<serverOperations.PanelWriteServerOperation, "unavailable" | "unavailableBatch"> = {},
+) {
   const objectType = "platform:ScheduledTask";
   const binding = { kind: "PlatformOperation" as const, id: "test.batch" };
   const handler = {
@@ -291,6 +293,7 @@ function installBatchOwner() {
     inspectImpact: { handlerRef: "test.batch.impact", inspect: vi.fn() },
     execute: vi.fn(),
     executeBatch: vi.fn(),
+    ...availability,
   };
   mockRegisteredOperation(handler);
   mocks.projection.mockResolvedValue({
@@ -430,6 +433,86 @@ it("keeps a definitive atomic batch receipt without inventing per-item receipts"
   handler.executeBatch.mockResolvedValue(outcome);
   expect(await executeLiveAction(request)).toMatchObject({ kind: "dispatched", outcome });
   expect(handler.executeBatch).toHaveBeenCalledTimes(1);
+});
+
+it("uses the owner's bulk availability at dispatch and restores skipped targets in the frozen order", async () => {
+  const reason = "Already approved";
+  const unavailable = vi.fn();
+  type UnavailableBatch = NonNullable<serverOperations.PanelWriteServerOperation["unavailableBatch"]>;
+  const unavailableBatch = vi.fn<Parameters<UnavailableBatch>, ReturnType<UnavailableBatch>>();
+  const { handler, request, impact } = installBatchOwner({ unavailable, unavailableBatch });
+  automatic = true;
+  const { intentId } = await prepareLiveAction(request);
+  unavailableBatch.mockImplementation(async (_host, targets) => new Map([
+    [targets[1]!.rowKey, { reason }],
+    [targets[4]!.rowKey, { reason }],
+  ]));
+  const executable = [request.calls[0], request.calls[2], request.calls[3]];
+  const targets = impact.objects.map(({ target }) => target);
+  const affected = { objects: [targets[0]!], objectTypes: [targets[0]!.objectType] };
+  const success = { kind: "success", data: {}, affected };
+  const failure = { kind: "failure", code: "STORE_ERROR", message: "Write failed" };
+  const skipped = { kind: "skipped", reason };
+  handler.executeBatch.mockResolvedValue({
+    kind: "batch", items: [
+      { target: targets[0], outcome: success },
+      { target: targets[2], outcome: failure },
+      { target: targets[3], outcome: failure },
+    ],
+  });
+  expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({
+    kind: "dispatched",
+    outcome: {
+      kind: "batch",
+      items: targets.map((target, index) => ({ target, outcome: [success, skipped, failure, failure, skipped][index] })),
+      affected,
+    },
+  });
+  expect(handler.executeBatch).toHaveBeenCalledWith(expect.anything(), executable, intentId);
+  expect(unavailable).not.toHaveBeenCalled();
+});
+
+it("uses single-target availability and maps an atomic result only to the executable items", async () => {
+  const reason = { reason: "Already approved" };
+  type Unavailable = NonNullable<serverOperations.PanelWriteServerOperation["unavailable"]>;
+  const unavailable = vi.fn<Parameters<Unavailable>, ReturnType<Unavailable>>();
+  const { handler, request, impact } = installBatchOwner({ unavailable });
+  automatic = true;
+  const ids = [request.calls[1].target.primaryKey, request.calls[3].target.primaryKey];
+  unavailable.mockImplementation(async (_host, target) => ids.includes(target.primaryKey) ? reason : undefined);
+  const success = { kind: "success", data: { updated: 3 }, affected: {
+    objects: impact.objects.filter(({ target }) => !ids.includes(target.primaryKey)).map(({ target }) => target),
+    objectTypes: [request.calls[0].target.objectType],
+  } };
+  handler.executeBatch.mockResolvedValue(success);
+  const { intentId } = await prepareLiveAction(request);
+  expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({
+    kind: "dispatched",
+    outcome: {
+      kind: "batch",
+      items: impact.objects.map(({ target }) => ({
+        target, outcome: ids.includes(target.primaryKey) ? { kind: "skipped", ...reason } : success,
+      })),
+      affected: success.affected,
+    },
+  });
+  expect(handler.executeBatch).toHaveBeenCalledWith(expect.anything(),
+    request.calls.filter(({ target }) => !ids.includes(target.primaryKey)), intentId);
+});
+
+it("records an all-skipped batch without calling the owner write or invalidating pending writes", async () => {
+  const reason = { reason: "Already approved" };
+  const { handler, request, impact } = installBatchOwner({ unavailable: async () => reason });
+  automatic = true;
+  const pending = await prepareLiveAction({ ...request, intentId: uuid(57), calls: [request.calls[0]] });
+  const { intentId } = await prepareLiveAction(request);
+  const outcome = {
+    kind: "batch",
+    items: impact.objects.map(({ target }) => ({ target, outcome: { kind: "skipped", ...reason } })),
+  };
+  expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toEqual({ kind: "dispatched", intentId, outcome });
+  expect(handler.executeBatch).not.toHaveBeenCalled();
+  expect(intents.get(pending.intentId)?.invalidated).toBeUndefined();
 });
 
 it("returns type-only changes from a successful single write", async () => {

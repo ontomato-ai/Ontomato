@@ -11,6 +11,7 @@ import {
   FEEDBACK_RECORD, IMPORT_SKILL, SKILL,
 } from "./panel-client-requests";
 import {
+  classifyPanelOperationOutcome,
   createPanelHumanOperationIntentRequestSchema,
   dispatchPanelHumanOperationIntentRequestSchema, inspectPanelOperationImpactRequestSchema,
   isPanelHumanOperationIntent, panelHumanOperationDispatchResponseSchema, panelHumanOperationPreparationSchema,
@@ -2481,6 +2482,32 @@ test("batch outcomes keep owner refusals, execution failures and unknown outcome
   assert.deepEqual(panelOperationOutcomeSchema.parse({ kind: "unknown", message: "No batch receipt" }), {
     kind: "unknown", message: "No batch receipt",
   });
+});
+
+test("batch receipts accept owner-unavailable items with or without successful writes", () => {
+  const skipped = {
+    target: { ...operationTarget, primaryKey: "already-approved" },
+    outcome: { kind: "skipped", reason: "Already approved", code: "ALREADY_APPROVED" },
+  };
+  const allSkipped = { kind: "batch", items: [skipped] };
+  const affected = { objects: [operationTarget], objectTypes: [operationTarget.objectType] };
+  const mixed = {
+    kind: "batch",
+    items: [skipped, { target: operationTarget, outcome: { kind: "success", data: {}, affected } }],
+    affected,
+  };
+  for (const batch of [allSkipped, mixed]) {
+    const parsed = panelOperationOutcomeSchema.parse(batch);
+    assert.deepEqual(parsed, batch);
+    const classified = classifyPanelOperationOutcome(parsed);
+    assert.equal(classified.kind, "executed");
+    assert.match(classified.summary, /1 skipped/u);
+  }
+  assert.equal(panelOperationOutcomeSchema.safeParse({ ...allSkipped, affected }).success, false);
+  assert.equal(panelOperationOutcomeSchema.safeParse(skipped.outcome).success, false);
+  assert.equal(panelOperationOutcomeSchema.safeParse({
+    ...allSkipped, items: [{ ...skipped, outcome: { kind: "skipped", reason: "" } }],
+  }).success, false);
 });
 
 test("legacy confirmations expire while dispatched and unknown records preserve their history", () => {

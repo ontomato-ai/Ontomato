@@ -1,8 +1,8 @@
-import { computed, onScopeDispose, ref, shallowRef, type ComputedRef, type Ref, type ShallowRef } from "vue";
+import { computed, onScopeDispose, ref, shallowRef, type ComputedRef, type InjectionKey, type Ref, type ShallowRef } from "vue";
 import type { PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
-import type { PanelManifest, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { BatchItemOperationOutcome, PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
+import type { PanelManifest, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import { slotInputState, type PanelContext, type ProjectionSlot } from "../panel/context";
 import {
@@ -31,6 +31,11 @@ export type OperationOutcome = NonNullable<
   Extract<PanelHumanOperationDispatchResponse, { kind: "dispatched" }>["outcome"]
 >;
 export type SingleOperationOutcome = Exclude<OperationOutcome, { kind: "batch" }>;
+export type OperationBatchReceipt = {
+  readonly items: Extract<OperationOutcome, { kind: "batch" }>["items"];
+  readonly named: PanelWriteResult["named"];
+};
+export const listBatchReceiptKey: InjectionKey<(receipt: OperationBatchReceipt | null) => void> = Symbol("listBatchReceipt");
 
 export interface OperationTargetInfo {
   readonly batch: boolean;
@@ -166,7 +171,8 @@ export function filterAllowedOperationInput(
 }
 
 /** Renders one single-item operation outcome in the reader's language using the owner's own message when provided. */
-export function formatOperationOutcome(outcome: SingleOperationOutcome, t: OperationTranslator): string {
+export function formatOperationOutcome(outcome: BatchItemOperationOutcome, t: OperationTranslator): string {
+  if (outcome.kind === "skipped") return t("platform.operationSkipped", { reason: outcome.reason });
   return outcome.kind === "success"
     ? outcome.message ?? t("platform.operationDone")
     : outcome.kind === "unknown"
@@ -184,14 +190,11 @@ export interface OperationRunner {
   readonly receipt: ShallowRef<PanelHumanOperationDispatchResponse | null>;
   readonly named: ShallowRef<PanelWriteResult["named"]>;
   readonly outcome: ComputedRef<OperationOutcome | null>;
-  readonly batchItems: ComputedRef<readonly Extract<OperationOutcome, { kind: "batch" }>["items"][number][]>;
-  readonly batchDone: ComputedRef<number>;
   readonly inputDialogOpen: Ref<boolean>;
   readonly pendingOperation: Ref<string | null>;
   readonly pendingDescriptor: ShallowRef<PanelOwnerOperationDescriptor | null>;
   readonly pendingInputFields: ComputedRef<readonly OperationInputField[]>;
   said(outcome: SingleOperationOutcome): string;
-  nameOf(target: PanelObjectIdentity): string;
   trigger(operationName: string, descriptor: PanelOwnerOperationDescriptor): void;
   confirmInput(providedInput: Record<string, RuntimeJsonValue>): Promise<void>;
   run(
@@ -241,13 +244,7 @@ export function useOperationRunner(options: {
   const outcome = computed<OperationOutcome | null>(() =>
     receipt.value?.kind === "dispatched" ? receipt.value.outcome ?? null : null,
   );
-  const batchItems = computed(() => (outcome.value?.kind === "batch" ? outcome.value.items : []));
-  const batchDone = computed(() => batchItems.value.filter((item) => item.outcome.kind === "success").length);
-
   const said = (single: SingleOperationOutcome) => formatOperationOutcome(single, options.t);
-  const nameOf = (target: PanelObjectIdentity) =>
-    named.value.find(({ target: known }) =>
-      known.objectType === target.objectType && known.primaryKey === target.primaryKey)?.label ?? target.primaryKey;
 
   function reset() {
     inputDialogOpen.value = false;
@@ -374,11 +371,11 @@ export function useOperationRunner(options: {
               .filter(({ outcome: itemOutcome }) => itemOutcome.kind === "success")
               .map(({ target: done }) => JSON.stringify([done.objectType, done.primaryKey])),
           );
-          panel.instance.state.set(
-            targetInfo.checkedState,
-            targetInfo.checkedObjects.filter(({ className, primaryKey }) =>
-              !changed.has(JSON.stringify([className, primaryKey]))),
-          );
+          if (changed.size > 0) {
+            const checked = stateObjects(panel.instance.state.values.value[targetInfo.checkedState]);
+            panel.instance.state.set(targetInfo.checkedState, checked.filter(({ className, primaryKey }) =>
+              !changed.has(JSON.stringify([className, primaryKey]))));
+          }
         }
         const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
         if (answered?.kind === "success") panel.notify({ kind: "success", text: said(answered) });
@@ -523,14 +520,11 @@ export function useOperationRunner(options: {
     receipt,
     named,
     outcome,
-    batchItems,
-    batchDone,
     inputDialogOpen,
     pendingOperation,
     pendingDescriptor,
     pendingInputFields,
     said,
-    nameOf,
     trigger,
     confirmInput,
     run,

@@ -51,7 +51,10 @@ export const panelObjectListColumnSchema = z.object({
     "How a time column formats its timestamp: 'relative' (default) shows relative time for recent dates, 'datetime' shows full local date and time, and 'date' shows local date.",
   ),
   subtitleKey: z.string().min(1).optional().describe(
-    "Optional field key drawn as a muted second line beneath the column's primary value in table cells (omitted when empty).",
+    "Optional field key drawn as a muted second line beneath the column's primary value in table cells.",
+  ),
+  subtitleEmptyKey: z.string().min(1).optional().describe(
+    "Panel message key shown when the subtitle field is empty. Without it, an empty subtitle is omitted.",
   ),
   iconKey: z.string().min(1).optional(),
   emptyKey: panelMessageKeySchema.optional(),
