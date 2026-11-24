@@ -368,16 +368,18 @@ it("uses owner operation names and fingerprints the names and language visible t
   expect(hidden.fingerprint).not.toBe(renamed.fingerprint);
 });
 
-it("reads the direct trial panel from the current SDK catalogue", async () => {
+it("reads the direct trial panel from the current SDK catalogue without copying generic component meaning", async () => {
   javaSources([uses[0]!]);
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
   expect(markdown).toContain(trial.panels[0]!.name);
-  expect(markdown).toContain("Summary from the current SDK release.");
+  expect(markdown).toContain("@ontomato/sdk:ObjectSummary");
   expect(markdown).toContain('Named data: {"record":');
+  expect(markdown).not.toContain("Summary from the current SDK release.");
+  expect(markdown).not.toContain("List from the current SDK release.");
 });
 
-it("describes a code panel's fixed projections using the current SDK", async () => {
+it("describes a code panel's fixed projections using the current SDK without generic component meaning", async () => {
   const source = uses[2]!;
   const id = source.panelId;
   const panel = panels.get(id)!;
@@ -392,10 +394,12 @@ it("describes a code panel's fixed projections using the current SDK", async () 
 
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
-  expect(markdown).toContain("Summary from the current SDK release.");
-  expect(markdown).toContain("List from the current SDK release.");
+  expect(markdown).toContain("@ontomato/sdk:ObjectSummary");
+  expect(markdown).toContain("@ontomato/sdk:ObjectList");
   expect(markdown).toContain('Named data: {"record":');
   expect(markdown).toContain('"read":"record","params":{},"result":"panelRecord"');
+  expect(markdown).not.toContain("Summary from the current SDK release.");
+  expect(markdown).not.toContain("List from the current SDK release.");
 });
 
 it("binds the current SDK digest to the supplied panel bytes for the lifetime of the offering", async () => {

@@ -247,8 +247,9 @@ function describePanel(
     }));
     const boundOps = boundProjectionOperations(projection);
     const customerForms = customerFormSaveModes(projection, actions);
+    const detail = projection.description.trim();
     return [{
-      text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}. ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
+      text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}.${detail ? ` ${detail}` : ""} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
       reads: Object.entries(data).map(([dataName, { read, result }]) => ({ member, dataName, read, result })),
       operations: boundOps.flatMap(bound => {
         if (!bound.owner && bound.binding.operation.kind === "PlatformOperation") {
