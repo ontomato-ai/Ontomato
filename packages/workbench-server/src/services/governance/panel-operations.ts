@@ -551,6 +551,8 @@ export const governanceServerOperations = [
     inputSchema: issueApiKeyBatchInputSchema,
     resultSchema: issueApiKeyBatchResultSchema,
     inspectImpact: issueApiKeyBatchImpact,
+    unavailable: (host: Host) =>
+      ownerDeleteUnavailable(host, "/panel/governance/users/api-key/batch/unavailable", {}, "USER_UNAVAILABLE"),
     async execute(host: PanelOperationHost, _target: null, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const { scope, userIds, regenerate } = issueApiKeyBatchInputSchema.parse(input);
       return postAction(

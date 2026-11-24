@@ -396,6 +396,16 @@ describe("governance panel server operations", () => {
     expect(batchReceipt).toMatchObject({ kind: "success", secretGenerated: true, message: expect.any(String) });
     expect(batchReceipt).not.toHaveProperty("secret");
     expect(JSON.stringify(batchReceipt)).not.toContain("otm_1");
+
+    const { host: nonAdminHost } = hostWith(path => {
+      if (path === "/api/data-query/panel/governance/users/api-key/batch/unavailable") {
+        return Response.json({ success: true, data: { reason: "Domain administrators only" } });
+      }
+      return Response.json({ success: true, data: {} });
+    });
+    const batchHandler = registeredPanelOperation(ISSUE_USER_API_KEY_BATCH)!.handler;
+    if (batchHandler.effect !== "write") throw new Error("Expected write handler");
+    expect(await batchHandler.unavailable?.(nonAdminHost, null)).toEqual({ reason: "Domain administrators only" });
   });
 
   it("handles policy permission mutations and organization membership/grant mutations", async () => {
