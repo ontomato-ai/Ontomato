@@ -182,7 +182,7 @@ describe("ObjectForm create mode with targetless customer Action", () => {
     }
   });
 
-  it("switches to the newly created object when the Action reports a unique created object in affected.objects", async () => {
+  it("switches to the object identified by the Action's create receipt", async () => {
     const harness = mountCreatePanel({
       manifest,
       projections,
@@ -218,6 +218,46 @@ describe("ObjectForm create mode with targetless customer Action", () => {
 
       expect(harness.savedEvents).toEqual([{ className: ORDER, primaryKey: "ord-99" }]);
       expect(harness.instance.state.values.value.selected).toEqual({ className: ORDER, primaryKey: "ord-99" });
+    } finally {
+      harness.unmount();
+    }
+  });
+
+  it.each([
+    { primaryKey: "ord-99", changedKeys: ["ord-1", "ord-99"] },
+    { primaryKey: null, changedKeys: ["ord-1"] },
+  ])("settles an external create completion with primary key $primaryKey", async ({ primaryKey, changedKeys }) => {
+    const harness = mountCreatePanel({
+      manifest,
+      projections,
+      answer: (request) => {
+        if (request.operations) return ready({ save: createOrderDescriptor });
+        if (request.dataName === "rows") return ready({ rows: [], total: 0 });
+        return ready(request.dataName === "form"
+          ? { ...createFormDescription, values: { customer: "New Co", amount: 55 } }
+          : createFormDescription);
+      },
+    });
+    try {
+      const customerInput = () => harness.element.querySelector<HTMLInputElement>('[data-field="/customer"] input')!;
+      await vi.waitFor(() => expect(customerInput()).not.toBeNull());
+      customerInput().value = "New Co";
+      customerInput().dispatchEvent(new Event("input"));
+      await nextTick();
+      expect(harness.instance.forms.dirty("orderForm")).toBe(true);
+
+      harness.instance.refresh({
+        objects: changedKeys.map(key => ({ objectType: ORDER, primaryKey: key })),
+        objectTypes: [ORDER],
+      }, {
+        operationId: "orderForm.save", panelId: "orders", target: null,
+        ...(primaryKey !== null && { created: { objectType: ORDER, primaryKey } }),
+      });
+
+      await vi.waitFor(() => expect(harness.savedEvents).toEqual([{ className: ORDER, primaryKey }]));
+      expect(harness.instance.state.values.value.selected).toEqual(primaryKey === null ? null : { className: ORDER, primaryKey });
+      expect(harness.instance.forms.dirty("orderForm")).toBe(false);
+      expect(harness.element.querySelector('[role="alert"]')).toBeNull();
     } finally {
       harness.unmount();
     }

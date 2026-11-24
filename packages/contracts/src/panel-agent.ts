@@ -250,6 +250,7 @@ const humanIntentFactsSchema = commonIntentFactsSchema.extend({
       sessionId: runtimeIdSchema,
       runId: runtimeIdSchema,
       toolCallId: runtimeKeySchema,
+      rootSession: agentSessionRefSchema.optional(),
       autoMode: z.boolean(),
       questionId: runtimeIdSchema.nullable(),
       confirmedBy: runtimeKeySchema.nullable().optional(),
