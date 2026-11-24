@@ -18,7 +18,9 @@ import { describeAgentDefinitionForm } from "../assistant/definition-form";
 import { readAgentDefinitionRow } from "../assistant/definitions";
 import { assistantDescription, assistantName } from "../assistant/labels";
 import { isPresetAgentKind } from "../assistant/preset-definitions";
+import { assistantService } from "../assistant/service";
 import { assistantStore, type AssistantOwner, type AgentRow } from "../assistant/store";
+import { readFavorites } from "../platform-home/service";
 import { createOpsDiagnosisDefinition } from "../ops-diagnosis/panel-model";
 import { grantedProductIds, productGrantAllowed, readProductGrantRecords, requireProductGrant } from "../product-governance/grants";
 import { ownerEnvelopeSchema } from "./data-query-operations";
@@ -161,6 +163,39 @@ export function createAgentDefinitionDirectory(owner: AssistantOwner, viewer: As
   }
 
   return {
+    async available(params: { search?: string; favoritesOnly?: boolean } = {}): Promise<PanelRecord[]> {
+      const [{ agents }, favorites] = await Promise.all([
+        assistantService.agents(owner, viewer),
+        readFavorites(owner),
+      ]);
+      const enabled = agents.filter(agent => agent.enabled);
+      const favoriteIds = favorites.filter(item => item.kind === "agent").map(item => item.id);
+      const favoriteSet = new Set(favoriteIds);
+      const ordered = params.favoritesOnly
+        ? favoriteIds.flatMap(id => enabled.find(agent => agent.id === id) ?? [])
+        : enabled;
+      const queryText = params.search?.trim().toLocaleLowerCase() ?? "";
+      return ordered.flatMap((agent): PanelRecord[] => {
+        const description = agent.description?.trim() || undefined;
+        if (queryText && !`${agent.name}\n${description ?? ""}`.toLocaleLowerCase().includes(queryText)) {
+          return [];
+        }
+        return [{
+          primaryKey: agent.id,
+          className: AGENT_DEFINITION,
+          label: agent.name,
+          ...(description && { subtitle: description }),
+          fields: {
+            category: "agents",
+            icon: agent.icon ?? "",
+            favorite: favoriteSet.has(agent.id),
+          },
+          outputs: {
+            openPath: `/agents/chat?agentId=${encodeURIComponent(agent.id)}`,
+          },
+        }];
+      });
+    },
     async list() {
       const [{ stored, builtIn }, editIds] = await Promise.all([
         visibleDefinitions(),

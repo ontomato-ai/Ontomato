@@ -3,6 +3,8 @@ import {BUILD_TEST_HEADER,BUILD_TEST_UNSUPPORTED} from '@ontomato/contracts/buil
 import { watch,createVNode,render,h,type App } from "vue";
 import { confirmDanger } from "@ontomato/platform-shell";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
+import { APPLICATION } from "@ontomato/contracts/platform-object-types";
+import { HOME_PREFERENCES_CHANGED } from "./features/home/api";
 import ProductRoute from './pages/ProductRoute.vue';
 import type { Router } from "vue-router";
 import {
@@ -327,7 +329,12 @@ export async function confirmPanelIntent(
   // What the owner reports changed reaches the page the way a conversation's change does: every shown object is read again.
   const outcome=response.kind==='dispatched'?response.outcome:null;
   const affected=outcome && 'affected' in outcome ? outcome.affected : undefined;
-  if(affected)changed({target:null,affected});
+  if(affected){
+    changed({target:null,affected});
+    if(affected.objectTypes?.includes(APPLICATION)||affected.objects?.some(item=>item.objectType===APPLICATION)){
+      window.dispatchEvent(new Event(HOME_PREFERENCES_CHANGED));
+    }
+  }
   return {decision:'confirm',response};
 }
 

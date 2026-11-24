@@ -5,6 +5,21 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import { readAndServePanelEntries, servePanelEntries } from "./panel-entries";
 
+type ApplicationAddressOpener = (address: string, options: { beside: boolean }) => boolean;
+let applicationOpener: ApplicationAddressOpener | null = null;
+
+/**
+ * Registers the active platform shell's application opener so panel navigation to an application's landing address
+ * (including external SSO launchers, standalone applications, and multi-page applications whose landing resolves to
+ * the reader's first permitted entry) goes through the same `openApplication` path as the rail.
+ */
+export function installPanelApplicationOpener(opener: ApplicationAddressOpener | null): () => void {
+  applicationOpener = opener;
+  return () => {
+    if (applicationOpener === opener) applicationOpener = null;
+  };
+}
+
 /**
  * Where a panel's code goes when it asks to open an address (big main's ruling, 2026-11-21): a page of the platform,
  * opened by the router at the panel's own address, or by the conversation's display (`beside`) when the panel is shown
@@ -17,6 +32,9 @@ import { readAndServePanelEntries, servePanelEntries } from "./panel-entries";
  */
 export function panelNavigator(router: Router, beside?: (address: string) => void) {
   return async (address: string): Promise<void> => {
+    if (address.startsWith("/") && !address.startsWith("//") && applicationOpener?.(address, { beside: Boolean(beside) })) {
+      return;
+    }
     const served = () => address.startsWith("/") && !address.startsWith("//") && router.resolve(address).name !== platformRoutes.unknown.name;
     // A panel entry's route opens on the first address that asks for it, so another page's entry is opened here too.
     if (!served()) servePanelEntries(router);

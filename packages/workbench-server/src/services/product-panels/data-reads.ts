@@ -252,6 +252,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [AGENT_DEFINITION]: {
       count: async () => (await definitions()).count(),
       list: async () => (await definitions()).list(),
+      available: async (_selection, params) => (await definitions()).available({
+        search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+        favoritesOnly: panelReadParameterSchemas.favoritesOnly.optional().parse(params.favoritesOnly),
+      }),
       record: async selection => (await definitions()).record(selection.primaryKey!),
       grants: async selection => (await definitions()).grants(selection.primaryKey!),
       grantRows: async selection => (await definitions()).grantRows(selection.primaryKey!),
@@ -416,6 +420,11 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [APPLICATION]: {
       query: (_selection, params) => applications.query(params),
+      available: (_selection, params) => applications.available({
+        category: panelReadParameterSchemas.applicationGalleryCategory.optional().parse(params.category),
+        search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+        favoritesOnly: panelReadParameterSchemas.favoritesOnly.optional().parse(params.favoritesOnly),
+      }),
       record: selection => applications.record(selection.primaryKey!),
       entries: selection => applications.entries(selection.primaryKey!),
       entryRows: selection => applications.entryRows(selection.primaryKey!),

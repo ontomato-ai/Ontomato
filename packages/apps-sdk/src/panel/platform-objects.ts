@@ -73,6 +73,8 @@ export interface PlatformObjectRecord {
   tags?: Readonly<Record<string, readonly string[]>>;
   /** Optional highlight ranges by field name (or `"label"` / `"subtitle"`), half-open `[start, end)`. */
   highlights?: Readonly<Record<string, readonly TextHighlightRange[]>>;
+  /** Optional owner-declared scalar read-only outputs for this record (for example navigation paths). */
+  outputs?: Readonly<Record<string, string | number | boolean | null>>;
 }
 
 /** Pagination input passed to a resource adapter's `query` port (offset/limit or cursor). */

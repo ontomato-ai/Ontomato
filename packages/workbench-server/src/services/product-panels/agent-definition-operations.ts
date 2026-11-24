@@ -3,6 +3,9 @@ import { agentHostErrorSchema } from "@ontomato/contracts/agent-host";
 import { assistantAgentDefinitionSchema } from "@ontomato/contracts/assistant-chat";
 import { formFieldErrorSchema } from "@ontomato/contracts/form-fields";
 import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client-requests";
+import { FAVORITE_AGENT, UNFAVORITE_AGENT } from "@ontomato/contracts/platform-object-types";
+import { addHomeFavorite, removeHomeFavorite } from "../platform-home/service";
+import { assistantService } from "../assistant/service";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema } from "@ontomato/contracts/product-governance";
@@ -133,6 +136,50 @@ function grantOperation<Input extends Record<string, unknown>>(
   } satisfies PanelServerOperation;
 }
 
+function agentFavoriteOperation(mode: "favorite" | "unfavorite"): PanelServerOperation {
+  const handlerRef = mode === "favorite" ? FAVORITE_AGENT : UNFAVORITE_AGENT;
+  return {
+    handlerRef,
+    binding: { kind: "PlatformOperation", id: handlerRef },
+    labelKey: `panels.agentDefinition.${mode}`,
+    kind: "action",
+    effect: "write",
+    batch: false,
+    targetType: AGENT_DEFINITION,
+    targetSchema,
+    targetInput: "agent",
+    async targetLabel(host, { primaryKey }) {
+      try {
+        const { agents } = await assistantService.agents(host.initiator.owner, host.initiator.credentials);
+        return agents.find(agent => agent.id === primaryKey)?.name ?? primaryKey;
+      } catch {
+        return primaryKey;
+      }
+    },
+    inputSchema: emptyResultSchema,
+    resultSchema: emptyResultSchema,
+    async execute({ executor }, target) {
+      const { primaryKey } = targetSchema.parse(target);
+      try {
+        if (mode === "favorite") {
+          const { agents } = await assistantService.agents(executor.owner, executor.credentials);
+          const agent = agents.find(item => item.id === primaryKey && item.enabled);
+          if (!agent) {
+            throw new HttpError(403, "Agent is unavailable", "AGENT_UNAVAILABLE");
+          }
+          await addHomeFavorite(executor.owner, { kind: "agent", id: primaryKey });
+        } else {
+          await removeHomeFavorite(executor.owner, { kind: "agent", id: primaryKey });
+        }
+        return { kind: "success", data: {}, affected: affectedDefinition(primaryKey) };
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.status < 400 || error.status >= 500) throw error;
+        return { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
+      }
+    },
+  };
+}
+
 export const agentDefinitionOperations = [
   {
     handlerRef: `${AGENT_DEFINITION}.save`,
@@ -223,4 +270,6 @@ export const agentDefinitionOperations = [
     setProductGrants(credentials, { id, ...principal, verbs: [] })),
   grantOperation("share", changeProductDomainGrantRequestSchema, (id, credentials, { shared }) =>
     shareProductResource(id, shared, credentials)),
+  agentFavoriteOperation("favorite"),
+  agentFavoriteOperation("unfavorite"),
 ] as const satisfies readonly PanelServerOperation[];

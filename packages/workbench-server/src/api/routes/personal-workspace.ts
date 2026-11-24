@@ -3,9 +3,10 @@ import { personalWorkspaceSchema, recentWorkInputSchema,defaultPersonalWorkspace
 import { personalWorkspaceStore, type PersonalWorkspaceOwner } from "../../services/personal-workspace/store";
 import { requireDomainId, type AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler } from "../utils/http";
-import { personalHome, saveHomeWorkspace,readProductOverlay } from "../../services/product-assets/store";
-import { wrap } from "../utils/agent-host";
-import { context } from "../utils/agent-host";
+import { personalHome, saveHomeWorkspace, readProductOverlay } from "../../services/product-assets/store";
+import { platformHomeStore } from "../../services/platform-home/store";
+import { homeItemRefSchema, homeFavoritesSchema } from "@ontomato/contracts/platform-home";
+import { wrap, context } from "../utils/agent-host";
 
 const router: ReturnType<typeof Router> = Router();
 function owner(req: AuthenticatedRequest): PersonalWorkspaceOwner {
@@ -22,19 +23,42 @@ router.post("/recent", asyncHandler(async (req, res) => {
   res.json({ data: item });
 }));
 router.get("/", wrap(async (req, res) => {
-  const asset = await personalHome(owner(req as AuthenticatedRequest),context(req).credentials);
+  const currentOwner = owner(req as AuthenticatedRequest);
+  const [asset, homePreferences] = await Promise.all([
+    personalHome(currentOwner, context(req).credentials),
+    platformHomeStore.preferences(currentOwner),
+  ]);
   if (asset.document.kind !== "page") throw new Error("Home must be a page");
-  const overlay=await readProductOverlay(owner(req as AuthenticatedRequest),asset.id);
-  res.json({ data: overlay.workspace??asset.document.workspace??defaultPersonalWorkspace(), revision:asset.revision, assetId:asset.id });
+  const overlay = await readProductOverlay(currentOwner, asset.id);
+  const base = overlay.workspace ?? asset.document.workspace ?? defaultPersonalWorkspace();
+  const data = {
+    ...base,
+    applicationIds: homePreferences.favorites.filter(item => item.kind === "application").map(item => item.id),
+    agentIds: homePreferences.favorites.filter(item => item.kind === "agent").map(item => item.id),
+    dashboardIds: homePreferences.dashboardIds,
+  };
+  res.json({ data, revision: asset.revision, assetId: asset.id });
 }));
 router.put("/", wrap(async (req, res) => {
   const parsed = personalWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "INVALID_PERSONAL_WORKSPACE" }); return; }
   const revisionHeader = req.header("If-Match");
-  if(!revisionHeader){res.status(428).json({error:{code:'REVISION_REQUIRED',message:'Read the current home and supply If-Match'}});return;}
+  if (!revisionHeader) { res.status(428).json({ error: { code: "REVISION_REQUIRED", message: "Read the current home and supply If-Match" } }); return; }
   const revision = Number(revisionHeader);
-  if (revision !== undefined && (!Number.isInteger(revision) || revision < 1)) { res.status(400).json({error:"INVALID_REVISION"}); return; }
-  const asset = await saveHomeWorkspace(owner(req as AuthenticatedRequest), parsed.data, revision,context(req).credentials);
-  res.json({ data: parsed.data, revision:asset.revision, assetId:asset.id });
+  if (revision !== undefined && (!Number.isInteger(revision) || revision < 1)) { res.status(400).json({ error: "INVALID_REVISION" }); return; }
+  const currentOwner = owner(req as AuthenticatedRequest);
+  const asset = await saveHomeWorkspace(currentOwner, parsed.data, revision, context(req).credentials);
+  const favorites = homeFavoritesSchema.shape.items.parse([
+    ...parsed.data.applicationIds.map(id => ({ kind: "application" as const, id })),
+    ...parsed.data.agentIds.flatMap(id => {
+      const candidate = homeItemRefSchema.safeParse({ kind: "agent", id });
+      return candidate.success ? [candidate.data] : [];
+    }),
+  ]);
+  await Promise.all([
+    platformHomeStore.saveFavorites(currentOwner, favorites),
+    platformHomeStore.saveDashboards(currentOwner, parsed.data.dashboardIds),
+  ]);
+  res.json({ data: parsed.data, revision: asset.revision, assetId: asset.id });
 }));
 export default router;

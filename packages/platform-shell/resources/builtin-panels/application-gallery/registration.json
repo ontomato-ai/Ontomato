@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-application-gallery",
+      "input": {
+        "name": "Application gallery",
+        "description": "Discover applications and agents, and pin shortcuts to your personal workspace."
+      }
+    }
+  ]
+}

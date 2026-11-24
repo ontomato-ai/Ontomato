@@ -6,6 +6,11 @@ import { ensureProductAssetsSchema } from "./20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "./20261118-product-panels/schema";
 import { ensureWorkspacesSchema } from "./20261109-workspaces/schema";
 import { ensurePlatformHomeSchema } from "./20261111-platform-home/schema";
+import {
+  PLATFORM_HOME_FAVORITES_NAME,
+  PLATFORM_HOME_FAVORITES_VERSION,
+  migratePlatformHomeFavorites,
+} from "./20261125-platform-home-favorites/migration";
 import { ensurePlatformEventCursorSchema } from "./20261103-platform-events/schema";
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
@@ -116,6 +121,23 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261117-agent-execution", ensureSchema: ensureAgentExecutionSchema },
   { directory: "20261109-workspaces", ensureSchema: ensureWorkspacesSchema },
   { directory: "20261111-platform-home", ensureSchema: ensurePlatformHomeSchema },
+  {
+    directory: "20261125-platform-home-favorites",
+    ensureSchema: () => Promise.resolve(),
+    migration: {
+      version: PLATFORM_HOME_FAVORITES_VERSION,
+      name: PLATFORM_HOME_FAVORITES_NAME,
+      run: async (client, migration) => {
+        if (await isMigrationApplied(client, migration.version)) return;
+        const result = await inMigrationTransaction(client, async () => {
+          const migrated = await migratePlatformHomeFavorites(client);
+          await recordMigration(client, migration.version, migration.name);
+          return migrated;
+        });
+        logger.info("Platform home favorites migrated", { version: migration.version, migrated: result.migrated });
+      },
+    },
+  },
   {
     directory: "20261105-assistant-default-prompts",
     ensureSchema: ensureAssistantDefaultPromptSchema,

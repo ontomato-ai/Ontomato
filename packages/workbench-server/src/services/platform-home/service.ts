@@ -7,10 +7,10 @@ import type {
 } from "@ontomato/contracts/platform-home";
 import { assistantStore } from "../assistant/store";
 import { platformHomeStore, type PlatformHomeOwner } from "./store";
-import { personalHome, saveHomeWorkspace,readProductOverlay } from "../product-assets/store";
-import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
-import {defaultPersonalWorkspace} from '@ontomato/contracts/personal-workspace';
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { readCurrentPanel, requireCurrentProduct } from "../product-panels/current";
+
+const favoriteKey = (item: Pick<HomeItemRef, "kind" | "id">) => `${item.kind}:${item.id}`;
 
 export async function readHomePanel(owner: PlatformHomeOwner, credentials: AssistantCredentials) {
   const homePanelId = await platformHomeStore.homePanelId(owner);
@@ -23,13 +23,35 @@ export async function saveHomePanel(owner: PlatformHomeOwner, credentials: Assis
   await platformHomeStore.saveHomePanelId(owner, homePanelId);
 }
 
-export async function readHome(owner: PlatformHomeOwner,credentials:AssistantCredentials={}): Promise<HomeState> {
+export async function readFavorites(owner: PlatformHomeOwner): Promise<HomeItemRef[]> {
+  return (await platformHomeStore.preferences(owner)).favorites;
+}
+
+export async function addHomeFavorite(owner: PlatformHomeOwner, item: HomeItemRef): Promise<HomeFavorites> {
+  const current = await readFavorites(owner);
+  const key = favoriteKey(item);
+  if (current.some(existing => favoriteKey(existing) === key)) {
+    return { items: current };
+  }
+  const items = [...current, item];
+  await platformHomeStore.saveFavorites(owner, items);
+  return { items };
+}
+
+export async function removeHomeFavorite(owner: PlatformHomeOwner, item: HomeItemRef): Promise<HomeFavorites> {
+  const current = await readFavorites(owner);
+  const key = favoriteKey(item);
+  if (!current.some(existing => favoriteKey(existing) === key)) {
+    return { items: current };
+  }
+  const items = current.filter(existing => favoriteKey(existing) !== key);
+  await platformHomeStore.saveFavorites(owner, items);
+  return { items };
+}
+
+export async function readHome(owner: PlatformHomeOwner): Promise<HomeState> {
   const [preferences, recentApplications, recentConversations] = await Promise.all([
-    personalHome(owner,credentials).then(async home => {
-      if(home.document.kind !== "page") throw new Error("Home must be a page");
-      const workspace=(await readProductOverlay(owner,home.id)).workspace??home.document.workspace??defaultPersonalWorkspace();
-      return {favorites:[...workspace.applicationIds.map(id=>({kind:"application" as const,id})),...workspace.agentIds.map(id=>({kind:"agent" as const,id}))],dashboardIds:workspace.dashboardIds};
-    }),
+    platformHomeStore.preferences(owner),
     platformHomeStore.recentApplications(owner),
     assistantStore.recentConversations(owner),
   ]);
@@ -39,24 +61,16 @@ export async function readHome(owner: PlatformHomeOwner,credentials:AssistantCre
 export async function saveFavorites(
   owner: PlatformHomeOwner,
   items: HomeItemRef[],
-  credentials:AssistantCredentials={},
 ): Promise<HomeFavorites> {
-  const home=await personalHome(owner,credentials);
-  if(home.document.kind !== "page") throw new Error("Home must be a page");
-  const workspace=(await readProductOverlay(owner,home.id)).workspace??home.document.workspace??defaultPersonalWorkspace();
-  await saveHomeWorkspace(owner,{...workspace,applicationIds:items.filter(item=>item.kind==="application").map(item=>item.id),agentIds:items.filter(item=>item.kind==="agent").map(item=>item.id)},home.revision,credentials);
+  await platformHomeStore.saveFavorites(owner, items);
   return { items };
 }
 
 export async function saveDashboards(
   owner: PlatformHomeOwner,
   ids: string[],
-  credentials:AssistantCredentials={},
 ): Promise<HomeDashboards> {
-  const home=await personalHome(owner,credentials);
-  if(home.document.kind !== "page") throw new Error("Home must be a page");
-  const workspace=(await readProductOverlay(owner,home.id)).workspace??home.document.workspace??defaultPersonalWorkspace();
-  await saveHomeWorkspace(owner,{...workspace,dashboardIds:ids},home.revision,credentials);
+  await platformHomeStore.saveDashboards(owner, ids);
   return { ids };
 }
 

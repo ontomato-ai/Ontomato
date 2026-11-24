@@ -5,6 +5,23 @@ import { defaultPersonalWorkspace, personalWorkspaceSchema } from "@ontomato/con
 
 const database = vi.hoisted(() => ({ values: new Map<string, unknown>(), query: vi.fn() }));
 const homes=vi.hoisted(()=>new Map<string,{workspace:unknown;revision:number}>());
+const homePreferences = vi.hoisted(() => new Map<string, { favorites: unknown[]; dashboardIds: string[] }>());
+vi.mock("../../../services/platform-home/store", () => ({
+  platformHomeStore: {
+    preferences: async (owner: { domainId: string; userId: string }) =>
+      homePreferences.get(JSON.stringify(owner)) ?? { favorites: [], dashboardIds: [] },
+    saveFavorites: async (owner: { domainId: string; userId: string }, favorites: unknown[]) => {
+      const key = JSON.stringify(owner);
+      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [] };
+      homePreferences.set(key, { ...current, favorites: [...favorites] });
+    },
+    saveDashboards: async (owner: { domainId: string; userId: string }, dashboardIds: string[]) => {
+      const key = JSON.stringify(owner);
+      const current = homePreferences.get(key) ?? { favorites: [], dashboardIds: [] };
+      homePreferences.set(key, { ...current, dashboardIds: [...dashboardIds] });
+    },
+  },
+}));
 vi.mock("../../../services/product-assets/validation",()=>({validateProduct:async()=>{},validatePageBindings:async()=>{}}));
 vi.mock('../../../services/product-assets/ontology',()=>({ontologyRegistration:()=>null,synchronizeProductOntology:async()=>{}}));
 vi.mock("../../../services/product-assets/store",()=>({

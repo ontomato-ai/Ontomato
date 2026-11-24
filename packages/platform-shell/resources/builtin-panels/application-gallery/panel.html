@@ -1,0 +1,184 @@
+<style>
+  [v-cloak] { display: none; }
+  .gallery-page {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    container: gallery-page / inline-size;
+  }
+  .gallery-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--spacing-md) var(--page-gutter) var(--spacing-xl);
+    box-sizing: border-box;
+  }
+  .gallery-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    width: min(100%, 1200px);
+    margin-inline: auto;
+  }
+  .gallery-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+  }
+  .gallery-segments {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--radius-md);
+    background: var(--sdk-fill-color-light);
+    border: 1px solid var(--sdk-border-color-lighter);
+  }
+  .gallery-segment {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 var(--spacing-md);
+    border: 0;
+    border-radius: calc(var(--radius-md) - 2px);
+    background: transparent;
+    color: var(--sdk-text-color-secondary);
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+    cursor: pointer;
+    transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+  .gallery-segment:hover {
+    color: var(--sdk-text-color-primary);
+  }
+  .gallery-segment.is-active {
+    background: var(--sdk-bg-color);
+    color: var(--sdk-text-color-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+  .gallery-segment:focus-visible {
+    outline: 2px solid var(--sdk-color-primary);
+    outline-offset: -2px;
+  }
+  .gallery-search {
+    width: 280px;
+    max-width: 100%;
+  }
+  .gallery-groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
+  }
+  .gallery-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .gallery-group.is-hidden {
+    display: none;
+  }
+  .gallery-group-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-secondary);
+  }
+  .gallery-list {
+    height: auto;
+  }
+  .gallery-empty {
+    display: grid;
+    justify-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-3xl) var(--spacing-lg);
+    text-align: center;
+    color: var(--sdk-text-color-secondary);
+  }
+  .gallery-empty p {
+    margin: 0;
+    font-size: var(--text-sm);
+  }
+  @container gallery-page (max-width: 34rem) {
+    .gallery-body {
+      padding: var(--spacing-sm) var(--spacing-md) var(--spacing-lg);
+    }
+    .gallery-search {
+      width: 100%;
+    }
+  }
+</style>
+<div id="app" v-cloak>
+  <section class="gallery-page">
+    <page-header :title="t('panel.title')" :description="t('panel.description')"></page-header>
+    <div class="gallery-body">
+      <div class="gallery-content">
+        <div class="gallery-toolbar">
+          <nav class="gallery-segments" :aria-label="t('panel.categoriesLabel')">
+            <button
+              v-for="item in categories"
+              :key="item"
+              type="button"
+              class="gallery-segment"
+              :class="{ 'is-active': category === item }"
+              :aria-pressed="category === item"
+              @click="selectCategory(item)"
+            >
+              {{ t(`panel.category.${item}`) }}
+            </button>
+          </nav>
+          <sdk-input
+            v-model="searchText"
+            class="gallery-search"
+            clearable
+            :placeholder="t('panel.searchPlaceholder')"
+            :aria-label="t('panel.searchPlaceholder')"
+          ></sdk-input>
+        </div>
+
+        <div class="gallery-groups">
+          <section
+            v-if="showApplications"
+            class="gallery-group"
+            :class="{ 'is-hidden': hideEmptyApplicationsInAll }"
+          >
+            <h2 v-if="showSectionHeadings" class="gallery-group-title">{{ t("panel.section.applications") }}</h2>
+            <projection
+              slot="applications"
+              class="gallery-list"
+              @clear-filters="clearFilters"
+            ></projection>
+          </section>
+
+          <section
+            v-if="showAgents"
+            class="gallery-group"
+            :class="{ 'is-hidden': hideEmptyAgentsInAll }"
+          >
+            <h2 v-if="showSectionHeadings" class="gallery-group-title">{{ t("panel.section.agents") }}</h2>
+            <projection
+              slot="agents"
+              class="gallery-list"
+              @clear-filters="clearFilters"
+            ></projection>
+          </section>
+
+          <div v-if="showCombinedEmpty" class="gallery-empty">
+            <p role="status">{{ t("panel.empty") }}</p>
+            <sdk-button v-if="filtered" text @click="clearFilters">{{ t("panel.clear") }}</sdk-button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>

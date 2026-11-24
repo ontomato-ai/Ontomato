@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
+import { appIcon } from "@ontomato/platform-shell";
 
 export interface ResolvedRowActionItem {
   readonly key: string;
@@ -10,6 +11,9 @@ export interface ResolvedRowActionItem {
   readonly id?: string;
   readonly to?: string;
   readonly label: string;
+  readonly icon?: string;
+  readonly iconOnly?: boolean;
+  readonly active?: boolean;
   readonly danger: boolean;
   readonly primary: boolean;
   readonly disabled: boolean;
@@ -67,15 +71,44 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
       :key="item.key"
       type="button"
       class="sdk-object-list-action-btn"
-      :class="{ 'is-danger': item.danger, 'is-primary': item.primary }"
+      :class="{
+        'is-danger': item.danger,
+        'is-primary': item.primary,
+        'is-icon-only': item.iconOnly,
+        'is-active': item.active,
+      }"
       :disabled="item.disabled || busy"
-      :title="item.reason"
+      :aria-label="item.iconOnly ? item.label : undefined"
+      :aria-pressed="item.active !== undefined ? item.active : undefined"
+      :title="item.reason ?? (item.iconOnly ? item.label : undefined)"
       :data-action-kind="item.kind"
       :data-operation="item.operation"
       :data-local-action="item.id"
       @click.stop="emit('trigger', item)"
     >
-      {{ item.label }}
+      <svg
+        v-if="item.icon === 'star' || item.icon === 'star-filled'"
+        class="sdk-object-list-action-icon"
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        :fill="item.icon === 'star-filled' ? 'currentColor' : 'none'"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+      </svg>
+      <component
+        :is="appIcon(item.icon)"
+        v-else-if="item.icon"
+        class="sdk-object-list-action-icon"
+        :size="14"
+        aria-hidden="true"
+      />
+      <span v-if="!item.iconOnly">{{ item.label }}</span>
     </button>
     <el-dropdown
       v-if="overflowItems.length > 0"
@@ -132,6 +165,7 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   padding: 2px var(--spacing-xs, 6px);
   border: 1px solid transparent;
   border-radius: var(--border-radius-sm, 4px);
@@ -141,6 +175,25 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
   line-height: 1.4;
   cursor: pointer;
   white-space: nowrap;
+}
+.sdk-object-list-action-btn.is-icon-only {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--el-text-color-secondary);
+}
+.sdk-object-list-action-btn.is-icon-only:hover:not(:disabled) {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.sdk-object-list-action-btn.is-active {
+  color: var(--el-color-warning);
+}
+.sdk-object-list-action-btn.is-active:hover:not(:disabled) {
+  color: var(--el-color-warning);
+}
+.sdk-object-list-action-icon {
+  flex: 0 0 auto;
 }
 .sdk-object-list-action-btn:hover:not(:disabled) {
   background: var(--el-fill-color-light);
