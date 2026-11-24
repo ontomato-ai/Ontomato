@@ -101,7 +101,7 @@ export function isOperationReady(
   running: boolean,
   forms?: Pick<PanelFormAdapters, "handle"> | null,
 ): boolean {
-  if (!descriptor || running || descriptor.unavailable) return false;
+  if (!descriptor || running || descriptor.unavailable || descriptor.target.source === "row") return false;
   if (targetInfo.checkedState !== null) return targetInfo.checkedTargets.length > 0;
   if (descriptor.target.source === "draft") {
     return forms ? Boolean(forms.handle(descriptor.target.slot)) : true;

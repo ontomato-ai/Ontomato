@@ -37,6 +37,7 @@ export const panelOwnerOperationTargetSchema = z.discriminatedUnion("source", [
   inputTarget,
   draftTarget.extend({ slot: runtimeKeySchema }),
   z.object({ source: z.literal("literal"), literal: panelObjectRefSchema }).strict(),
+  z.object({ source: z.literal("row") }).strict(),
   noTarget,
 ]);
 

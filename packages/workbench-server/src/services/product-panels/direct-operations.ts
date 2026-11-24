@@ -108,8 +108,7 @@ function resolveTarget(
     if (owner?.targetType && supplied?.kind === "object" && supplied.objectType !== owner.targetType) {
       throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
     }
-    const descriptorInput = owner?.declaration.target.source === "input" ? owner.declaration.target.input : "target";
-    return { descriptor: { source: "input" as const, input: descriptorInput }, fixed: undefined, selected: supplied };
+    return { descriptor: { source: "row" as const }, fixed: undefined, selected: supplied };
   }
 
   const { input } = target;
@@ -207,7 +206,7 @@ async function admitBoundOperation(
         describe: () => describeServerOperation(handler, host, slot, { source: "draft", slot: draftSlot }),
       };
     }
-    if (handler.target.source === "input" && selected?.kind !== "object") return undefined;
+    if (handler.target.source === "input" && descriptor.source !== "row" && selected?.kind !== "object") return undefined;
     return {
       effect: "read" as const, handler, fixedTarget: fixed, selected,
       describe: () => describeServerOperation(handler, host, slot, descriptor),

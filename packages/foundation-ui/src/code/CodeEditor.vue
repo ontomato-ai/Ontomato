@@ -10,7 +10,7 @@ import { python } from "@codemirror/lang-python";
 import { search } from "@codemirror/search";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { placeholder as editorPlaceholder } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { Annotation, EditorState } from "@codemirror/state";
 import { useDarkMode } from "../theme";
 
 /**
@@ -48,6 +48,7 @@ const { t } = useLocale();
 
 const editorRef = ref<HTMLDivElement | null>(null);
 let editor: EditorView | null = null;
+const externalSync = Annotation.define<boolean>();
 
 const selectionSelector =
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, " +
@@ -189,7 +190,7 @@ const createEditor = () => {
     extensions.push(isDark.value ? oneDark : lightTheme);
     extensions.push(
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
+        if (update.docChanged && !update.transactions.every(tr => tr.annotation(externalSync))) {
           emit("update:modelValue", update.state.doc.toString());
         }
       })
@@ -222,6 +223,7 @@ watch(
   (newValue) => {
     if (editor && newValue !== editor.state.doc.toString()) {
       editor.dispatch({
+        annotations: externalSync.of(true),
         changes: {
           from: 0,
           to: editor.state.doc.length,
