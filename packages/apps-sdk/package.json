@@ -19,7 +19,7 @@
     "./echarts": "./src/entries/echarts.js"
   },
   "scripts": {
-    "test": "node --test '*.node-test.mjs' 'examples/**/*.node-test.mjs'",
+    "test": "node --test '*.node-test.mjs' 'examples/**/*.node-test.mjs' 'src/**/*.node-test.mjs'",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
