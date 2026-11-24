@@ -15,7 +15,7 @@ the LiteLLM gateway and a deterministic local Responses upstream. Deployment acc
 | close | Supported | Stops the sandbox process and awaits its exit. The owner releases the sandbox and lease. |
 | steer | Supported | Sends `expectedTurnId` and `clientUserMessageId`. Reports consumption from the completed `userMessage.clientId`, after tool outputs where observed. |
 | platformTools | Supported | Only the server request invokes the owner. The item stream shows results and progress. Tool declarations survive native restart. |
-| gatewayModel | Supported | The configured OpenAI Responses endpoint and authorized model are from the runtime lease. Upstream-specific behavior remains a deployment check. |
+| gatewayModel | Supported | The configured OpenAI Responses endpoint and authorized model are from the runtime lease. The native catalog takes the context window. The configured response output cap needs enforcement by the gateway. |
 | skills | Unverified | Managed home exposes selected read-only mounts as skill roots. Version-isolated script execution requires the assembled sandbox. |
 | usage | Supported | Last and cumulative token usage are emitted with the native turn association and no inferred message attribution. |
 | optionalDetails | Limited | Translates file changes, compaction, model reroutes and diagnostics. Unsupported native interfaces and optional events have no platform behavior. |

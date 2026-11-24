@@ -203,7 +203,8 @@ export function createCodexPlugin(program = binary, entrypoint = launcher): Harn
       request.signal.throwIfAborted();
       if (request.previousContext?.length) throw new Error("Codex requires its native thread to resume existing context");
       const { directories, model, prompt, engineTools, engineRef, tools } = request;
-      const { token, ...access } = model;
+      const { token, baseUrl, contextWindow } = model;
+      const access = { baseUrl, contextWindow, model: model.model };
       const process = request.sandbox.spawn("/usr/local/bin/node", [entrypoint], {
         CODEX_GATEWAY_TOKEN: token,
         ONTOMATO_CODEX_BOOT: JSON.stringify({

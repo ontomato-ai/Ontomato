@@ -27,7 +27,6 @@ await writeFile(catalog, JSON.stringify({ models: [{
   base_instructions: prompt,
   context_window: model.contextWindow,
   max_context_window: model.contextWindow,
-  ...(model.maxOutputTokens === null ? {} : { max_output_tokens: model.maxOutputTokens }),
   shell_type: nativeTools ? "shell_command" : "disabled",
   apply_patch_tool_type: nativeTools ? "freeform" : null,
 }] }));
