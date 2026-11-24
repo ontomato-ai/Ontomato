@@ -18,7 +18,10 @@ import type { AppMenuGroup, AppMenuIcon, AppMenuItem } from "./app-menu-types";
  */
 const props = withDefaults(
   defineProps<{
-    /** Application heading displayed at the top of the menu column. */
+    /**
+     * Application heading displayed at the top of the menu column. Inside an application frame, omitting
+     * `title` displays the current application's name automatically. Use the menu heading as the frame title.
+     */
     title?: string;
     /** Explicit navigation groups; when omitted inside a frame panel, derived automatically from the frame's menu. */
     groups?: readonly AppMenuGroup[];

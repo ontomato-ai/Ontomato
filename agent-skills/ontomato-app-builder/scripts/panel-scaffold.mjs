@@ -38,57 +38,62 @@ export function managementPanel(type, checks, typeTable, {
 
   const title = type.split(":").at(-1).replace(/([a-z0-9])([A-Z])/gu, "$1 $2");
   const object = { kind: "object", objectType: type };
-  const state = { selected: { type: object, deepLink: true } };
-  const members = {};
+  const catalogState = {};
+  const catalogMembers = {};
+  const detailState = { selected: { type: object, deepLink: true } };
+  const detailMembers = {};
 
   const search = Object.hasOwn(list.params, "search");
   const counts = reads.counts;
   const tabs = Object.hasOwn(list.params, "status") && counts?.result === "panelGroupCounts" &&
     counts.parameterMode === "fixed" && Object.hasOwn(counts.params, "by") &&
     checks.panelReadParameterSchemas[counts.params.by].safeParse("status").success;
-  const listBindings = { selected: "selected" };
+  const listBindings = {};
   if (buttons.some(({ batch }) => batch)) {
-    state.checked = { type: { kind: "list", items: object }, default: [] };
+    catalogState.checked = { type: { kind: "list", items: object }, default: [] };
     listBindings.checked = "checked";
   }
   if (search) {
-    state.search = { type: text, deepLink: true };
+    catalogState.search = { type: text, deepLink: true };
     listBindings.search = "search";
   }
   if (tabs) {
     const status = checks.panelReadParameterSchemas[list.params.status];
-    state.status = { type: text, deepLink: true, ...(status.safeParse("all").success && { default: "all" }) };
+    catalogState.status = { type: text, deepLink: true, ...(status.safeParse("all").success && { default: "all" }) };
     listBindings.status = "status";
     const shareSearch = search && Object.hasOwn(counts.params, "search");
-    members.tabs = {
+    catalogMembers.tabs = {
       component: "SegmentedControl",
       type,
       data: { counts: { read: "counts", params: { by: { literal: "status" } } } },
       state: { value: "status", ...(shareSearch && { search: "search" }) },
     };
   }
-  members.list = { component: "ObjectList", type, data: { rows: listRead }, state: listBindings };
+  catalogMembers.list = { component: "ObjectList", type, data: { rows: listRead }, state: listBindings };
 
-  if (reads.record?.result === "panelRecord") {
-    const shareSearch = search && reads.record.parameterMode === "fixed" && Object.hasOwn(reads.record.params, "search");
-    members.detail = {
-      component: "ObjectSummary", target: "selected", data: { record: "record" },
-      config: { showTitle: false },
+  const record = reads.record?.result === "panelRecord";
+  const shareSearch = record && search && reads.record.parameterMode === "fixed" && Object.hasOwn(reads.record.params, "search");
+  if (shareSearch) detailState.search = catalogState.search;
+  if (record) {
+    const target = {
+      target: "selected", data: { record: "record" },
       ...(shareSearch && { state: { search: "search" } }),
     };
+    detailMembers.header = { component: "ObjectHeader", ...target };
+    detailMembers.detail = { component: "ObjectSummary", ...target, config: { showTitle: false } };
   }
   const edit = save?.effect === "write" && reads.form?.result === "panelFormDescription";
   const create = edit && reads.createForm?.result === "panelFormDescription";
   if (requestedSaves.length && !edit) throw new Error(`${save.id} has no declared form read`);
   if (create) {
-    state.creating = { type: { kind: "scalar", type: "boolean" }, default: false, deepLink: false };
-    members.createForm = {
+    catalogState.creating = { type: { kind: "scalar", type: "boolean" }, default: false, deepLink: false };
+    catalogMembers.createForm = {
       component: "ObjectForm", type, data: { createForm: "createForm" },
-      operation: save.id, config: { actions: "create-only" },
+      operation: save.id, config: { actions: "create-only", presentation: "cards" },
     };
   }
   if (edit) {
-    members.form = {
+    detailMembers.form = {
       component: "ObjectForm", target: "selected",
       data: { form: "form" }, operation: save.id, config: { actions: "none" },
     };
@@ -97,7 +102,7 @@ export function managementPanel(type, checks, typeTable, {
   const batchButtons = [];
   buttons.forEach(({ operation, batch }, index) => {
     const key = `${batch ? "batch" : "action"}${index + 1}`;
-    members[key] = {
+    (batch ? catalogMembers : detailMembers)[key] = {
       component: "OperationButton",
       operation: operation.id,
       target: batch ? "checked" : "selected",
@@ -106,74 +111,43 @@ export function managementPanel(type, checks, typeTable, {
     else singleButtons.push(key);
   });
 
+  const root = `/applications/${id}`;
+  const catalogPath = `${root}/catalog`;
+  const detailPath = `${root}/detail`;
   const member = (key, attrs = "") => `<projection slot="${key}"${attrs}></projection>`;
-  const toolbarControls = [...(tabs ? [member("tabs")] : []), ...batchButtons.map(key => member(key))];
-  const hasDetail = Boolean(members.detail || edit || singleButtons.length);
-  const twoCards = Boolean(members.detail && edit);
+  const toolbar = [...(tabs ? [member("tabs")] : []), ...batchButtons.map(key => member(key))];
 
-  const html = [
+  const catalogHtml = [
     "<style>",
-    "  .catalog-page { display: flex; flex-direction: column; min-width: 0; min-height: 100%; container: catalog-page / inline-size; }",
+    "  .catalog-page { display: flex; flex-direction: column; min-width: 0; min-height: 100%; }",
     "  .catalog-view { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-lg) var(--page-gutter) var(--page-content-gap); }",
-    ...(toolbarControls.length ? ["  .catalog-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }"] : []),
-    ...(hasDetail ? [
-      "  .detail-view { display: flex; flex-direction: column; min-width: 0; min-height: 100%; }",
-      `  .detail-body { display: grid; grid-template-columns: ${twoCards ? "minmax(320px, 0.85fr) minmax(420px, 1.15fr)" : "minmax(0, 1fr)"}; gap: var(--page-content-gap); padding: var(--page-content-gap) var(--page-gutter); align-items: stretch; }`,
-      "  .detail-card { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--page-section-padding, var(--spacing-lg)); border: 1px solid var(--sdk-border-color, var(--ui-border)); border-radius: var(--radius-md); background: var(--sdk-bg-color); }",
-      "  .detail-card h2 { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); }",
-      ...(create ? [
-        "  .create-dialog-body .sdk-owner-form, .create-dialog-body .sdk-owner-form-inner { height: auto; }",
-        "  .create-dialog-body .sdk-owner-form-body { overflow: visible; }",
-      ] : []),
-      "  @container catalog-page (max-width: 850px) { .detail-body { grid-template-columns: minmax(0, 1fr); } }",
+    ...(toolbar.length ? ["  .catalog-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }"] : []),
+    ...(create ? [
+      "  .create-dialog-body .sdk-owner-form, .create-dialog-body .sdk-owner-form-inner { height: auto; }",
+      "  .create-dialog-body .sdk-owner-form-body { overflow: visible; }",
     ] : []),
     "</style>",
     '<div id="app">',
     '  <section class="catalog-page">',
-    ...(hasDetail ? [`    <div v-show="!selected"${create ? ' :inert="creating"' : ""}>`] : []),
+    "    <page-header :title=\"t('panel.name')\">",
     ...(create ? [
-      '      <page-header :title="t(\'panel.name\')">',
-      '        <template #actions>',
-      '          <sdk-button type="primary" :disabled="creating" @click="startCreate">{{ t("command.new") }}</sdk-button>',
-      '        </template>',
-      '      </page-header>',
-    ] : [
-      '      <page-header :title="t(\'panel.name\')"></page-header>',
-    ]),
-    '      <div class="catalog-view">',
-    ...(toolbarControls.length ? ['        <div class="catalog-toolbar">', ...toolbarControls.map(control => `          ${control}`), "        </div>"] : []),
-    `        ${member("list")}`,
-    "      </div>",
-    ...(hasDetail ? [
-      "    </div>",
-      '    <div v-if="selected" class="detail-view">',
-      `      <page-header :title="${members.detail ? "label ?? selected.primaryKey" : "selected.primaryKey"}" :back-label="t('detail.back')"${edit ? ' :draft="formDraft"' : ""} @back="back">`,
-      ...(singleButtons.length ? [
-        "        <template #actions>",
-        ...singleButtons.map(key => `          ${member(key, members.detail ? ' v-if="ready"' : "")}`),
-        "        </template>",
-      ] : []),
-      "      </page-header>",
-      '      <div class="detail-body">',
-      ...(edit ? [
-        `        <section${members.detail ? ' v-if="ready"' : ""} class="detail-card">`,
-        '          <h2>{{ t("detail.basicInfo") }}</h2>',
-        `          ${member("form")}`,
-        "        </section>",
-      ] : []),
-      ...(members.detail ? [
-        '        <section class="detail-card">',
-        '          <h2>{{ t("detail.overview") }}</h2>',
-        `          ${member("detail")}`,
-        "        </section>",
-      ] : []),
-      "      </div>",
-      "    </div>",
+      "      <template #actions>",
+      '        <sdk-button type="primary" @click="creating = true">{{ t("command.new") }}</sdk-button>',
+      "      </template>",
     ] : []),
+    "    </page-header>",
+    '    <div class="catalog-view">',
+    ...(toolbar.length ? ['      <div class="catalog-toolbar">', ...toolbar.map(control => `        ${control}`), "      </div>"] : []),
+    `      ${member("list", ' @choose="openDetail"')}`,
+    "    </div>",
     ...(create ? [
-      '    <sdk-dialog v-model="createDialog" :title="t(\'dialog.createTitle\')" width="540px" append-to-body destroy-on-close>',
+      '    <sdk-dialog v-model="creating" :title="t(\'command.new\')" width="540px" append-to-body destroy-on-close>',
       '      <div class="create-dialog-body">',
-      `        ${member("createForm", ' v-if="createDialog" @saved="created" @cancel="closeCreate"')}`,
+      '        <projection slot="createForm" v-if="creating" @saved="onCreated" @cancel="creating = false">',
+      '          <template #default="{ groups }">',
+      '            <object-form-fields :exclude="groups.flatMap(group => group.fields.filter(field => !field.required).map(field => field.path))"></object-form-fields>',
+      '          </template>',
+      '        </projection>',
       "      </div>",
       "    </sdk-dialog>",
     ] : []),
@@ -182,87 +156,132 @@ export function managementPanel(type, checks, typeTable, {
     "",
   ].join("\n");
 
-  const sdkImports = [
-    "mountPanel",
-    "usePanelBack",
-    "usePanelContext",
-    ...(edit ? ["usePanelFormDraft"] : []),
-    ...(members.detail ? ["usePanelOutput"] : []),
-  ];
-
-  const module = hasDetail ? [
-    'import { computed } from "vue";',
-    `import { ${sdkImports.join(", ")} } from "@ontomato/sdk/panel";`,
+  const catalogModule = [
+    ...(create ? ['import { computed } from "vue";'] : []),
+    'import { mountPanel, panelAddress, usePanelContext } from "@ontomato/sdk/panel";',
+    "",
+    `const DETAIL_PATH = "${detailPath}";`,
     "",
     "await mountPanel({",
     "  setup() {",
-    "    const { instance } = usePanelContext();",
-    "    const selected = computed(() => instance.state.values.value.selected);",
-    ...(members.detail ? [
-      '    const label = usePanelOutput("detail", "label");',
-      ...(edit || singleButtons.length ? ['    const ready = computed(() => label.value !== null);'] : []),
-    ] : []),
-    ...(edit ? [
-      `    const formDraft = usePanelFormDraft("form"${members.detail ? ", { when: ready }" : ""});`,
-    ] : []),
+    `    const { ${create || shareSearch ? "instance, " : ""}navigate } = usePanelContext();`,
+    "    function openDetail({ primaryKey }) {",
+    `      return navigate(panelAddress(DETAIL_PATH, { selected: primaryKey${shareSearch ? ", search: instance.state.values.value.search" : ""} }));`,
+    "    }",
     ...(create ? [
-      "",
-      '    const creating = computed(() => instance.state.values.value.creating === true);',
-      '    const closeCreate = () => instance.state.set("creating", false);',
-      '    const createBack = usePanelBack(creating, closeCreate, { forms: "createForm" });',
-      "    const createDialog = computed({",
-      "      get: () => creating.value,",
-      "      set: (open) => { if (!open) void createBack.back(); },",
+      "    const creating = computed({",
+      '      get: () => instance.state.values.value.creating,',
+      '      set: (open) => instance.state.set("creating", open),',
       "    });",
-      "    function created(target) {",
-      '      instance.state.setState({ creating: false, ...(target.primaryKey ? { selected: target } : {}) });',
+      "    function onCreated(target) {",
+      "      creating.value = false;",
+      "      if (target.primaryKey !== null) return openDetail(target);",
       "    }",
     ] : []),
-    "",
-    `    const { back } = usePanelBack(() => Boolean(selected.value), () => instance.state.set("selected", null)${edit ? ', { forms: "form" }' : ""});`,
-    `    return { ${[
-      "selected", "back",
-      ...(members.detail ? ["label", ...(edit || singleButtons.length ? ["ready"] : [])] : []),
-      ...(edit ? ["formDraft"] : []),
-      ...(create ? ["creating", "createDialog", "closeCreate", "created", 'startCreate: () => instance.state.set("creating", true)'] : []),
-    ].join(", ")} };`,
+    `    return { openDetail${create ? ", creating, onCreated" : ""} };`,
     "  },",
     "});",
     "",
-  ].join("\n") : 'import { mountPanel } from "@ontomato/sdk/panel";\n\nawait mountPanel({});\n';
+  ].join("\n");
 
-  const manifest = { state, members };
-  checks.panelAuthoringManifestSchema.parse(manifest);
-  const messages = {
+  const detailHtml = [
+    "<style>",
+    "  .detail-page { display: flex; flex-direction: column; min-width: 0; min-height: 100%; container: detail-page / inline-size; }",
+    `  .detail-body { display: grid; grid-template-columns: ${record && edit ? "minmax(320px, 0.85fr) minmax(420px, 1.15fr)" : "minmax(0, 1fr)"}; gap: var(--page-content-gap); padding: var(--page-content-gap) var(--page-gutter); }`,
+    "  .detail-card { min-width: 0; padding: var(--page-section-padding, var(--spacing-lg)); border: 1px solid var(--sdk-border-color, var(--ui-border)); border-radius: var(--radius-md); }",
+    "  @container detail-page (max-width: 850px) { .detail-body { grid-template-columns: minmax(0, 1fr); } }",
+    "</style>",
+    '<div id="app">',
+    '  <section class="detail-page">',
+    `    <page-header :back-label="t('detail.back')"${edit ? ' :draft="formDraft"' : ""} @back="goBack">`,
+    "      <template #title>",
+    ...(record ? [`        ${member("header", ' v-if="selected"')}`, '        <span v-else>{{ t("detail.choose") }}</span>']
+      : ['        <span>{{ selected?.primaryKey ?? t("detail.choose") }}</span>']),
+    "      </template>",
+    ...(singleButtons.length ? [
+      "      <template #actions>",
+      ...singleButtons.map(key => `        ${member(key, record ? ' v-if="ready"' : ' v-if="selected"')}`),
+      "      </template>",
+    ] : []),
+    "    </page-header>",
+    ...(record || edit ? [
+      `    <div v-if="selected${record ? " && ready" : ""}" class="detail-body">`,
+      ...[...(edit ? ["form"] : []), ...(record ? ["detail"] : [])].map(key =>
+        `      <section class="detail-card">${member(key)}</section>`),
+      "    </div>",
+    ] : []),
+    "  </section>",
+    "</div>",
+    "",
+  ].join("\n");
+
+  const imports = ["mountPanel", "usePanelContext", ...(edit ? ["usePanelFormDraft"] : []), ...(record ? ["usePanelOutput"] : [])];
+  const detailModule = [
+    'import { computed } from "vue";',
+    `import { ${imports.join(", ")} } from "@ontomato/sdk/panel";`,
+    "",
+    `const CATALOG_PATH = "${catalogPath}";`,
+    "",
+    "await mountPanel({",
+    "  setup() {",
+    "    const { instance, navigate } = usePanelContext();",
+    "    const selected = computed(() => instance.state.values.value.selected);",
+    ...(record ? [
+      '    const status = usePanelOutput("header", "status");',
+      '    const ready = computed(() => status.value === "ready");',
+    ] : []),
+    ...(edit ? [`    const formDraft = usePanelFormDraft("form", { when: ${record ? "ready" : "selected"} });`] : []),
+    `    return { selected${record ? ", ready" : ""}${edit ? ", formDraft" : ""}, goBack: () => navigate(CATALOG_PATH) };`,
+    "  },",
+    "});",
+    "",
+  ].join("\n");
+
+  function panel(entry, html, module, state, members, messages) {
+    const panelId = `${id}-${entry}`;
+    const manifest = { state, members };
+    checks.panelAuthoringManifestSchema.parse(manifest);
+    const content = { messages: { en: messages } };
+    const material = {
+      panels: [{ id: panelId, mode: "create", input: { name: `${title} (${entry})`, description: "", visibility: "domain" } }],
+    };
+    return { html, module, manifest, content, material };
+  }
+
+  const catalog = panel("catalog", catalogHtml, catalogModule, catalogState, catalogMembers, {
     "panel.name": title,
-    ...(create && { "command.new": `New ${title}`, "dialog.createTitle": `New ${title}` }),
-    ...(hasDetail && { "detail.back": `Back to ${title}` }),
-    ...(edit && { "detail.basicInfo": "Basic information" }),
-    ...(members.detail && { "detail.overview": "Overview" }),
-  };
-  const content = { messages: { en: messages } };
-  const entry = `/applications/${id}`;
-  const material = {
-    panels: [{ id, mode: "create", input: { name: title, description: "", visibility: "domain" } }],
-    applications: [{
-      id, mode: "create", input: {
-        entry: { path: entry, renderer: "panels" },
-        entryAccess: ["domain-member"],
-        declaration: { names: { en: title }, descriptions: { en: `Manage ${title}` }, icon: "app-window", groups: [], permissions: [] },
-        panelUses: [{ id: `${id}-use`, pageKey: id, panelId: id, path: `${entry}/manage`, access: { kind: "domain-member" }, names: { en: title } }],
-      },
-    }],
-  };
-  return { html, module, manifest, content, material };
+    ...(create && { "command.new": `New ${title}` }),
+  });
+  const detail = panel("detail", detailHtml, detailModule, detailState, detailMembers, {
+    "detail.back": `Back to ${title}`,
+    "detail.choose": `Choose a ${title}`,
+  });
+  const use = (entry, path) => ({
+    id: `${id}-${entry}-use`, pageKey: `${id}-${entry}`, panelId: `${id}-${entry}`, path,
+    access: { kind: "domain-member" },
+  });
+  detail.material.applications = [{
+    id, mode: "create", input: {
+      entry: { path: catalogPath, renderer: "panels" },
+      entryAccess: ["domain-member"],
+      declaration: { names: { en: title }, descriptions: { en: `Manage ${title}` }, icon: "app-window", groups: [], permissions: [] },
+      panelUses: [{ ...use("catalog", catalogPath), names: { en: title } }, use("detail", detailPath)],
+    },
+  }];
+  return { catalog, detail, entry: catalogPath };
 }
 
-export async function writeManagementPanel(directory, { html, module, manifest, content, material }) {
+export async function writeManagementPanel(directory, { catalog, detail }) {
   await mkdir(directory);
   const json = value => JSON.stringify(value, null, 2) + "\n";
-  await Promise.all([
-    writeFile(join(directory, "panel.html"), html),
-    writeFile(join(directory, "panel.mjs"), module),
-    writeFile(join(directory, "panel.json"), json({ manifest, ...(content && { content }) })),
-    writeFile(join(directory, "registration.json"), json(material)),
-  ]);
+  await Promise.all(Object.entries({ catalog, detail }).map(async ([name, { html, module, manifest, content, material }]) => {
+    const entry = join(directory, name);
+    await mkdir(entry);
+    await Promise.all([
+      writeFile(join(entry, "panel.html"), html),
+      writeFile(join(entry, "panel.mjs"), module),
+      writeFile(join(entry, "panel.json"), json({ manifest, content })),
+      writeFile(join(entry, "registration.json"), json(material)),
+    ]);
+  }));
 }

@@ -16,7 +16,7 @@
       "mode": "create",
       "input": {
         "entry": {
-          "path": "/applications/app-template-two-entry",
+          "path": "/applications/app-template-two-entry/catalog",
           "renderer": "panels"
         },
         "entryAccess": [

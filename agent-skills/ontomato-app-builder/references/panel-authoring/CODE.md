@@ -76,17 +76,18 @@ await mountPanel({
     const { navigate } = usePanelContext();
     const formDraft = usePanelFormDraft("form");
     // Routing back to the catalog entry triggers the platform's unified unsaved-changes leave guard automatically.
-    const goBack = () => { void navigate(CATALOG_PATH).catch(() => undefined); };
+    const goBack = () => navigate(CATALOG_PATH);
     return { formDraft, goBack };
   },
 });
 ```
 
-- **Two-entry catalog → detail *(recommended)*.** Put the catalog in the application menu (`names` set on its
+- **Full-width catalog → full-width detail.** Put the catalog in the application menu (`names` set on its
   `panelUse`) and give the detail page its own non-menu entry (`names` omitted). Clicking a row (`@choose`) builds a
   flat URL with `panelAddress(DETAIL_PATH, { selected: item.primaryKey })` from `@ontomato/sdk/panel` and calls
-  `navigate(address)`. For a single-panel variant, toggle `v-if="!selectedKey"` and wire
-  `usePanelBack(..., { pushHistory: true, forms: "form" })`.
+  `navigate(address)`. Put New in the catalog header's top-right actions, open a centered dialog for required fields,
+  and use the saved identity to open the detail entry. Back calls `navigate(CATALOG_PATH)`; the platform retains the
+  catalog state and refreshes the list on return.
 
 ## Panel controls and platform guardrails
 
@@ -95,7 +96,8 @@ await mountPanel({
   `appIcon`). Never import `element-plus` or any third-party UI library, and never write `<el-*>` tags, `v-loading`,
   or `--el-*` CSS tokens.
 - **Overlays & notifications.** Use `<sdk-dialog>` / `<sdk-drawer>` for modal/drawer overlays (such as centered create
-  forms). Call `usePanelContext().notify({ kind: "success" | "info" | "warning" | "error", text })` for transient
+  forms). The SDK guards close-button, backdrop, Escape and `handleClose()` requests. Discard affects only dirty
+  forms inside the overlay. Bind `v-model` directly to the declared open state. Call `usePanelContext().notify({ kind: "success" | "info" | "warning" | "error", text })` for transient
   feedback.
 
 ## Open a panel with flat named URL parameters
@@ -176,9 +178,12 @@ Advance to the next step only when the previous step cannot meet the need:
 
 Render business data with projections. Use `usePanelOutput(member, name)` in synchronous Vue setup for a declared
 read-only output. It starts no reads. Only mounting the projection lets its component request its data. Keep the
-producer mounted when its output controls surrounding layout. Mount dependent UI only when its inputs are ready.
+producer mounted with `v-show` when temporarily hidden and its output controls surrounding layout. Wrap trailing
+projections in a compact container (for example an inline-flex span inside `<app-menu #item-trailing>`) so the
+projection's box fits the slot. Mount dependent UI only when its inputs are ready.
 
-Wire one member's read-only output directly to another member's inputs. For example, within the consumer member:
+Wire one member's read-only output directly to another member's inputs. For example, connect the
+`ObjectForm` member `form` to `AnnotatedCode.currentCode` inside the code member:
 
 ```json
 {
@@ -191,8 +196,9 @@ Wire one member's read-only output directly to another member's inputs. For exam
 Use a JSON Pointer for nested values and omit `path` for the whole output. Keep outputs such as
 `usePanelOutput("list", "listed")` and `usePanelOutput("form", "draft")` outside writable `manifest.state`.
 A member's `state` shorthand maps the named component inputs or writable outputs and owner read parameters
-to public state. The shorthand expands by the component's port declaration. Formal placements can declare
-`outputs` explicitly. Inline shorthand members use `state` for that mapping.
+to public state. It expands to the matching inputs and outputs declared by the component. Use `state` and,
+where explicit input sources are needed, `inputs` on inline shorthand members. The `outputs` key is reserved
+for formal placements.
 
 Read [the component reference](#offline-check-and-component-reference) for data ports, props, configuration, slots,
 events, output types and defaults.
@@ -213,13 +219,15 @@ events, output types and defaults.
   filter. For example, a boolean `template` filter uses a nullable boolean scalar, with `null` for all records.
 - **Table display:** Use `config.layout: "table"` for columns, `columns[].subtitleKey` for secondary text,
   `wrap: true` for a multiline cell, `kind: "tag"` for an owner tone or exact-match `valueMap`, and
-  `kind: "tags"` for multiple values (empty renders an em dash). Reference cells emit `@navigate` without selecting
+  `kind: "tags"` for multiple values (empty renders an em dash). For list-valued cells, use `listSeparator` to
+  set the inline separator and `listStyle` to choose the rendering (for example `"inline"` or `"tags"`).
+  Reference cells emit `@navigate` without selecting
   the row. Set `searchable: false` to hide search or `showFooter: false` to hide the footer.
 - **Selection:** Search, filter, sorting and paging preserve the selected object. Set `fallbackToFirst: false` and
   use `listed` for optional initial selection only if the page opened without one. Keep a specified missing or
-  forbidden item selected and show the header's state. On an explicit successful delete, the platform may clear
-  `selected` from `affected.removed` before the list refreshes. Base any post-delete navigation on that success
-  and the refreshed list. A failed read does not tell you a record was deleted.
+  forbidden item selected and show the header's state. On a successful delete, the SDK uses `affected.removed`
+  to invalidate bound forms and clear matching selection or checked state before refreshing the list. Base
+  post-delete navigation on the operation outcome.
 - A writable `state.selected` lets the list commit selection on click. For a selection that needs unsaved
   confirmation first, handle `@choose` and write the state after confirmation, as in the
   [split editor](../templates/list-detail-edit/README.md). For cross-type results the owner read must declare
@@ -299,6 +307,28 @@ page-specific follow-up; the built-in receipt carries the batch outcomes.
   "config": { "labelKey": "order.changeStatus", "hideWhenUnavailable": true }
 }
 ```
+
+For a read-only trial of a live form draft, bind a draft read operation and a public parameter object:
+
+```json
+{
+  "component": "OperationButton",
+  "type": "platform:MetricView",
+  "operation": "metricViews.test",
+  "draft": "definition",
+  "parameters": { "state": "testParameters" }
+}
+```
+
+```html
+<projection slot="trial" :disabled="trialDisabled" @read="onTrialRead"></projection>
+```
+
+`@read` receives the `PanelReadOperationResult`. The trial reads current form values without saving them. Vue
+placement props such as `disabled` are passed through when declared by the mounted component. Declare input
+bindings for top-level members in the manifest. Reserve `:inputs` with `fromSlot` for projections instantiated in
+repeated row slots. If a selection watcher resets trial state, consult `instance.state.lastPatchedKeys` to preserve fields set alongside the selection
+by the same `present` call.
 
 ### `ObjectRefCard`
 
@@ -455,9 +485,10 @@ Design your Actions and panel UX around these four current runtime boundaries:
    execution with `ACTION_TARGET_OUT_OF_SCOPE` for both humans and agents alike.
 2. **Missing `affects` skips post-create auto-refresh:** If a create Action omits `affects` (the affected object types),
    lists and metrics for that class will **not** auto-refresh after creation. Always declare `affects` on create Actions.
-3. **No auto-selection from plain `result` text:** Even if a targetless customer Action includes a new primary key or
-   student ID inside its plain `result` message text, the current Action adapter always returns `affected.objects: []`,
-   so the form will **not** auto-select or navigate to the newly created object.
+3. **New identity comes from `created`:** A create owner returns `{ kind: "success", created: { objectType, primaryKey }, ... }`
+   to identify the new object. The platform carries it in `operation.created`. `ObjectForm` emits `saved` with the
+   corresponding `{ className, primaryKey }`, where `primaryKey` is `null` for success without a reported identity.
+   Use that key for navigation. Plain result text and `affected.objects` carry no create identity contract.
 4. **Clearing text fields sends `""` (not SQL `NULL`):** Current nullable text clearing submits `""` (empty string) and
    cannot yet distinguish database `NULL` from `""` on text attributes.
 
@@ -584,14 +615,18 @@ Declare a shared [graph selection type](RUNTIME.md#graph-selection) in `manifest
 This fragment shows the state ports. Bind the graph's data for your mode and use the owner's available
 `neighbors` read for the relation member. The relation member reads `selected` and `visibleRelationKinds`,
 and writes those ports and `start`. Its read-only outputs include `status`, `edgeCount` and `label`.
-If a list's checked references choose the graph's visible set, map an empty check list to `null` for
-“show all” only when that is the intended graph behavior. The graph treats an explicit empty set as empty.
+Clearing `ObjectList` checks writes `[]`. If those checks filter the graph, map `[]` to `null` when clearing the filter
+should show all nodes. An explicit empty array makes the graph show an empty set.
 
 ## Select a child record and read from its parent
 
 Use the [child-object field and value shapes](RUNTIME.md#child-objects) for child selection, alongside a parent object
 state for the parent's reads. Set the read member's `target` to the parent state and pass any required child/source
-parameters through `data.<name>.params` (see [FIELDS.md](FIELDS.md)).
+parameters through `data.<name>.params` (see [FIELDS.md](FIELDS.md)). To bind `ObjectList.state.selected` to a
+`child-object` state, the parent type must declare the collection in `childCollections`, and the owner's read
+must describe the child rows. Point a column at the owner's `kind: "child-reference"` field or array of such
+references. `@navigate-child` emits the resolved `{ parent, collection, primaryKey }` reference and the column key. Update
+the matching child selection or code segment and its tab together with `instance.state.setState`.
 
 ## Invoke declared owner operations
 

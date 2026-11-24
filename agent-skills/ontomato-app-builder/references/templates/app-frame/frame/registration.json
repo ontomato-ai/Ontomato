@@ -16,7 +16,7 @@
       "mode": "create",
       "input": {
         "entry": {
-          "path": "/applications/app-academic-planner",
+          "path": "/applications/app-academic-planner/courses",
           "renderer": "panels"
         },
         "entryAccess": [
