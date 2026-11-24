@@ -22,12 +22,18 @@ export default defineComponent({
     slot: { type: String, required: true },
     inputs: { type: Object as PropType<Readonly<Record<string, RuntimeJsonValue>>>, default: undefined },
   },
-  setup(props, { attrs, slots }) {
+  setup(props, { attrs, slots, expose }) {
     const mount = inject(directMountKey);
     if (!mount) throw new Error("<Projection> runs inside a panel, which provides its context");
     // A theme given where the panel places a projection is the last word inside the placement, in the reader's mode. A
     // placed panel takes its placement's theme from the host, over that panel's own (see the nested run's `theme`).
     const place = ref<HTMLElement | null>(null);
+    const memberRef = ref<{ refresh?: () => void } | null>(null);
+    expose({
+      refresh() {
+        memberRef.value?.refresh?.();
+      },
+    });
     const declaration = mount.instance.direct.members[props.slot];
     if (declaration && "projectionId" in declaration.target) {
       const dark = useDarkMode();
@@ -42,7 +48,10 @@ export default defineComponent({
       };
       if (attrs.style !== undefined) containerProps.style = attrs.style;
       return h("div", containerProps, [
-        cloneVNode(mount.member(props.slot, slots, props.inputs), forwardDirectProjectionAttrs(attrs)),
+        cloneVNode(mount.member(props.slot, slots, props.inputs), {
+          ...forwardDirectProjectionAttrs(attrs),
+          ref: memberRef,
+        }),
       ]);
     };
   },

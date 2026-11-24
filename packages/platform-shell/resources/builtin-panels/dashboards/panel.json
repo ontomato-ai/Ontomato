@@ -1,0 +1,514 @@
+{
+  "manifest": {
+    "state": {
+      "dashboardId": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Dashboard"
+        },
+        "deepLink": true,
+        "personal": false,
+        "external": false
+      },
+      "cardId": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:DashboardCard"
+        },
+        "deepLink": true,
+        "personal": false,
+        "external": false
+      },
+      "cardDialog": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false
+      }
+    },
+    "members": {
+      "boardTabs": {
+        "component": "ObjectList",
+        "type": "platform:Dashboard",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "dashboardId"
+        },
+        "operations": {
+          "rename": "dashboards.rename",
+          "remove": "dashboards.delete"
+        },
+        "config": {
+          "layout": "tabs",
+          "searchable": false,
+          "showFooter": false,
+          "fallbackToFirst": true,
+          "emptyText": "empty.noBoards",
+          "rowActions": {
+            "maxVisible": 0,
+            "items": [
+              {
+                "operation": "rename",
+                "labelKey": "board.rename"
+              },
+              {
+                "operation": "remove",
+                "labelKey": "board.delete",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "Dashboard tabs",
+        "description": "Horizontal tab strip of saved dashboards with rename and delete actions",
+        "id": "builtin-product-db10a000-4e3b-4000-8000-000000000001"
+      },
+      "createBoard": {
+        "component": "OperationButton",
+        "type": "platform:Dashboard",
+        "operation": "dashboards.create",
+        "config": {
+          "type": "primary",
+          "plain": true,
+          "icon": "plus",
+          "size": "small",
+          "labelKey": "board.create"
+        },
+        "name": "Create dashboard",
+        "description": "Create a new empty dashboard",
+        "id": "builtin-product-db10a000-4e3b-4000-8000-000000000002"
+      },
+      "boardGrid": {
+        "component": "GroupedGrid",
+        "type": "platform:Dashboard",
+        "target": "dashboardId",
+        "data": {
+          "record": "record",
+          "rows": "cards"
+        },
+        "state": {
+          "selected": "cardId"
+        },
+        "operations": {
+          "renameCard": {
+            "operation": "dashboardCards.rename",
+            "type": "platform:DashboardCard",
+            "target": "row"
+          },
+          "deleteCard": {
+            "operation": "dashboardCards.delete",
+            "type": "platform:DashboardCard",
+            "target": "row"
+          },
+          "saveLayout": "dashboards.saveLayout",
+          "createGroup": "dashboards.createGroup",
+          "renameGroup": "dashboards.renameGroup",
+          "deleteGroup": "dashboards.deleteGroup",
+          "renameBoard": "dashboards.rename"
+        },
+        "config": {
+          "columns": 12,
+          "rowHeight": 160,
+          "gap": 16,
+          "groupsField": "groups",
+          "groupKeyField": "groupId",
+          "groupTitleField": "groupTitle",
+          "sectionField": "kind",
+          "sectionOrder": [
+            "metric",
+            "chart"
+          ],
+          "colSpanField": "colSpan",
+          "rowSpanField": "rowSpan",
+          "orderField": "order",
+          "editable": true,
+          "collapsible": true,
+          "rowActions": {
+            "maxVisible": 0,
+            "items": [
+              {
+                "operation": "renameCard",
+                "labelKey": "card.rename"
+              },
+              {
+                "operation": "deleteCard",
+                "labelKey": "card.delete",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "Dashboard grid",
+        "description": "Grouped 12-column dashboard canvas with drag reordering, resizing, and group management",
+        "id": "builtin-product-db10a000-4e3b-4000-8000-000000000003"
+      },
+      "chartCard": {
+        "component": "MetricChart",
+        "type": "platform:DashboardCard",
+        "target": {
+          "fromSlot": true
+        },
+        "data": {
+          "template": "chartTemplate",
+          "result": "result"
+        },
+        "config": {
+          "minHeight": "100%"
+        },
+        "name": "Chart card",
+        "description": "Independent chart projection for one dashboard chart card",
+        "id": "builtin-product-db10a000-4e3b-4000-8000-000000000004"
+      },
+      "metricCard": {
+        "component": "MetricCard",
+        "type": "platform:DashboardCard",
+        "target": {
+          "fromSlot": true
+        },
+        "data": {
+          "result": "result"
+        },
+        "config": {
+          "variant": "compact"
+        },
+        "name": "Metric card",
+        "description": "Independent KPI metric projection for one dashboard numeric card",
+        "id": "builtin-product-db10a000-4e3b-4000-8000-000000000005"
+      },
+      "cardParamForm": {
+        "component": "ObjectForm",
+        "type": "platform:DashboardCard",
+        "target": "cardId",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:DashboardCard.save",
+        "name": "Card parameters form",
+        "description": "Edit and save MetricView query parameters for the selected dashboard card",
+        "id": "builtin-product-db10a000-4e3b-4000-8000-000000000006"
+      },
+      "cardMetricSource": {
+        "component": "ObjectSummary",
+        "type": "platform:DashboardCard",
+        "target": "cardId",
+        "data": {
+          "record": "metricSource"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "metric",
+            "status",
+            "parameters"
+          ]
+        },
+        "name": "Card metric source",
+        "description": "Inspect the backing MetricView, status, and saved parameters of the selected card",
+        "id": "builtin-product-db10a000-4e3b-4000-8000-000000000007"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Dashboards",
+        "panel.description": "Build and review dashboards of your charts and metrics",
+        "board.create": "New dashboard",
+        "board.rename": "Rename",
+        "board.delete": "Delete",
+        "board.addGroup": "Add group",
+        "board.refreshAll": "Refresh all",
+        "group.rename": "Rename group",
+        "group.addBelow": "Add group below",
+        "group.delete": "Delete group",
+        "group.createTitle": "New group",
+        "group.renameTitle": "Rename group",
+        "group.titleLabel": "Group title",
+        "group.titlePlaceholder": "Enter group title",
+        "card.refresh": "Refresh card",
+        "card.parameters": "Edit parameters",
+        "card.metricSource": "Metric source",
+        "card.rename": "Rename card",
+        "card.delete": "Delete card",
+        "dialog.parametersTitle": "Card parameters",
+        "dialog.metricSourceTitle": "Metric source",
+        "dialog.cancel": "Cancel",
+        "dialog.confirm": "Save",
+        "empty.noBoards": "No dashboards yet",
+        "empty.noBoardsTitle": "Create your first dashboard",
+        "empty.noBoardsHint": "Collect charts and KPI metrics into organized groups that stay up to date.",
+        "empty.noGroupsTitle": "This dashboard has no groups yet",
+        "empty.noGroupsHint": "Add a group to organize charts and metric cards, or pin cards from a conversation.",
+        "empty.groupHint": "No cards in this group yet. Drag cards here or pin new ones from a conversation.",
+        "notice.layoutSaved": "Layout saved.",
+        "notice.parametersSaved": "Card parameters saved.",
+        "notice.groupCreated": "Group created.",
+        "notice.groupRenamed": "Group renamed.",
+        "notice.groupDeleted": "Group deleted.",
+        "notice.actionFailed": "Action failed: {reason}"
+      },
+      "zh-CN": {
+        "panel.name": "仪表盘",
+        "panel.description": "制作和查看由图表、指标组成的仪表盘",
+        "board.create": "新建仪表盘",
+        "board.rename": "重命名",
+        "board.delete": "删除",
+        "board.addGroup": "新增分组",
+        "board.refreshAll": "全部刷新",
+        "group.rename": "重命名分组",
+        "group.addBelow": "在下方新增分组",
+        "group.delete": "删除分组",
+        "group.createTitle": "新增分组",
+        "group.renameTitle": "重命名分组",
+        "group.titleLabel": "分组名称",
+        "group.titlePlaceholder": "请输入分组名称",
+        "card.refresh": "刷新卡片",
+        "card.parameters": "编辑参数",
+        "card.metricSource": "指标来源",
+        "card.rename": "重命名卡片",
+        "card.delete": "删除卡片",
+        "dialog.parametersTitle": "卡片参数",
+        "dialog.metricSourceTitle": "指标来源",
+        "dialog.cancel": "取消",
+        "dialog.confirm": "保存",
+        "empty.noBoards": "暂无仪表盘",
+        "empty.noBoardsTitle": "创建你的第一个仪表盘",
+        "empty.noBoardsHint": "按分组组织图表与指标卡，随时查看最新业务数据。",
+        "empty.noGroupsTitle": "当前仪表盘还没有分组",
+        "empty.noGroupsHint": "新增分组来组织图表和指标卡，或在对话中将分析结果固定到此处。",
+        "empty.groupHint": "该分组暂无卡片，可将卡片拖入此分组或从对话中固定新卡片。",
+        "notice.layoutSaved": "布局已保存。",
+        "notice.parametersSaved": "卡片参数已保存。",
+        "notice.groupCreated": "分组已创建。",
+        "notice.groupRenamed": "分组已重命名。",
+        "notice.groupDeleted": "分组已删除。",
+        "notice.actionFailed": "操作失败：{reason}"
+      },
+      "zh-TW": {
+        "panel.name": "儀表板",
+        "panel.description": "建立並檢視由圖表與指標組成的儀表板",
+        "board.create": "新增儀表板",
+        "board.rename": "重新命名",
+        "board.delete": "刪除",
+        "board.addGroup": "新增分組",
+        "board.refreshAll": "全部重新整理",
+        "group.rename": "重新命名分組",
+        "group.addBelow": "在下方新增分組",
+        "group.delete": "刪除分組",
+        "group.createTitle": "新增分組",
+        "group.renameTitle": "重新命名分組",
+        "group.titleLabel": "分組名稱",
+        "group.titlePlaceholder": "請輸入分組名稱",
+        "card.refresh": "重新整理卡片",
+        "card.parameters": "編輯參數",
+        "card.metricSource": "指標來源",
+        "card.rename": "重新命名卡片",
+        "card.delete": "刪除卡片",
+        "dialog.parametersTitle": "卡片參數",
+        "dialog.metricSourceTitle": "指標來源",
+        "dialog.cancel": "取消",
+        "dialog.confirm": "儲存",
+        "empty.noBoards": "尚無儀表板",
+        "empty.noBoardsTitle": "建立你的第一個儀表板",
+        "empty.noBoardsHint": "依分組整理圖表與指標卡，隨時掌握最新業務資料。",
+        "empty.noGroupsTitle": "此儀表板尚未建立分組",
+        "empty.noGroupsHint": "新增分組以整理圖表和指標卡，或從對話中釘選卡片。",
+        "empty.groupHint": "此分組尚無卡片，可將卡片拖曳至此或從對話中釘選新卡片。",
+        "notice.layoutSaved": "版面已儲存。",
+        "notice.parametersSaved": "卡片參數已儲存。",
+        "notice.groupCreated": "分組已建立。",
+        "notice.groupRenamed": "分組已重新命名。",
+        "notice.groupDeleted": "分組已刪除。",
+        "notice.actionFailed": "操作失敗：{reason}"
+      },
+      "ja": {
+        "panel.name": "ダッシュボード",
+        "panel.description": "チャートと指標のダッシュボードを作成・閲覧します",
+        "board.create": "新規ダッシュボード",
+        "board.rename": "名前を変更",
+        "board.delete": "削除",
+        "board.addGroup": "グループを追加",
+        "board.refreshAll": "すべて更新",
+        "group.rename": "グループ名を変更",
+        "group.addBelow": "下にグループを追加",
+        "group.delete": "グループを削除",
+        "group.createTitle": "新規グループ",
+        "group.renameTitle": "グループ名を変更",
+        "group.titleLabel": "グループ名",
+        "group.titlePlaceholder": "グループ名を入力",
+        "card.refresh": "カードを更新",
+        "card.parameters": "パラメータを編集",
+        "card.metricSource": "指標ソース",
+        "card.rename": "カード名を変更",
+        "card.delete": "カードを削除",
+        "dialog.parametersTitle": "カードパラメータ",
+        "dialog.metricSourceTitle": "指標ソース",
+        "dialog.cancel": "キャンセル",
+        "dialog.confirm": "保存",
+        "empty.noBoards": "ダッシュボードがありません",
+        "empty.noBoardsTitle": "最初のダッシュボードを作成",
+        "empty.noBoardsHint": "チャートや指標カードをグループに整理して最新データを追跡します。",
+        "empty.noGroupsTitle": "このダッシュボードにはまだグループがありません",
+        "empty.noGroupsHint": "グループを追加するか、会話からカードをピン留めしてください。",
+        "empty.groupHint": "このグループにはまだカードがありません。カードをドラッグするか会話からピン留めしてください。",
+        "notice.layoutSaved": "レイアウトを保存しました。",
+        "notice.parametersSaved": "カードパラメータを保存しました。",
+        "notice.groupCreated": "グループを作成しました。",
+        "notice.groupRenamed": "グループ名を変更しました。",
+        "notice.groupDeleted": "グループを削除しました。",
+        "notice.actionFailed": "操作に失敗しました：{reason}"
+      },
+      "de": {
+        "panel.name": "Dashboards",
+        "panel.description": "Erstellen und prüfen Sie Dashboards aus Ihren Diagrammen und Kennzahlen",
+        "board.create": "Neues Dashboard",
+        "board.rename": "Umbenennen",
+        "board.delete": "Löschen",
+        "board.addGroup": "Gruppe hinzufügen",
+        "board.refreshAll": "Alle aktualisieren",
+        "group.rename": "Gruppe umbenennen",
+        "group.addBelow": "Gruppe darunter hinzufügen",
+        "group.delete": "Gruppe löschen",
+        "group.createTitle": "Neue Gruppe",
+        "group.renameTitle": "Gruppe umbenennen",
+        "group.titleLabel": "Gruppentitel",
+        "group.titlePlaceholder": "Gruppentitel eingeben",
+        "card.refresh": "Karte aktualisieren",
+        "card.parameters": "Parameter bearbeiten",
+        "card.metricSource": "Kennzahlquelle",
+        "card.rename": "Karte umbenennen",
+        "card.delete": "Karte löschen",
+        "dialog.parametersTitle": "Kartenparameter",
+        "dialog.metricSourceTitle": "Kennzahlquelle",
+        "dialog.cancel": "Abbrechen",
+        "dialog.confirm": "Speichern",
+        "empty.noBoards": "Noch keine Dashboards",
+        "empty.noBoardsTitle": "Erstellen Sie Ihr erstes Dashboard",
+        "empty.noBoardsHint": "Ordnen Sie Diagramme und Kennzahlen in Gruppen, um aktuelle Ergebnisse im Blick zu behalten.",
+        "empty.noGroupsTitle": "Dieses Dashboard enthält noch keine Gruppen",
+        "empty.noGroupsHint": "Fügen Sie eine Gruppe hinzu oder heften Sie Karten aus einer Unterhaltung an.",
+        "empty.groupHint": "Noch keine Karten in dieser Gruppe. Ziehen Sie Karten hierher oder heften Sie neue aus einer Unterhaltung an.",
+        "notice.layoutSaved": "Layout gespeichert.",
+        "notice.parametersSaved": "Kartenparameter gespeichert.",
+        "notice.groupCreated": "Gruppe erstellt.",
+        "notice.groupRenamed": "Gruppe umbenannt.",
+        "notice.groupDeleted": "Gruppe gelöscht.",
+        "notice.actionFailed": "Aktion fehlgeschlagen: {reason}"
+      },
+      "fr": {
+        "panel.name": "Tableaux de bord",
+        "panel.description": "Créez et consultez vos tableaux de bord de graphiques et d'indicateurs",
+        "board.create": "Nouveau tableau",
+        "board.rename": "Renommer",
+        "board.delete": "Supprimer",
+        "board.addGroup": "Ajouter un groupe",
+        "board.refreshAll": "Tout actualiser",
+        "group.rename": "Renommer le groupe",
+        "group.addBelow": "Ajouter un groupe en dessous",
+        "group.delete": "Supprimer le groupe",
+        "group.createTitle": "Nouveau groupe",
+        "group.renameTitle": "Renommer le groupe",
+        "group.titleLabel": "Nom du groupe",
+        "group.titlePlaceholder": "Saisir le nom du groupe",
+        "card.refresh": "Actualiser la carte",
+        "card.parameters": "Modifier les paramètres",
+        "card.metricSource": "Source de l'indicateur",
+        "card.rename": "Renommer la carte",
+        "card.delete": "Supprimer la carte",
+        "dialog.parametersTitle": "Paramètres de la carte",
+        "dialog.metricSourceTitle": "Source de l'indicateur",
+        "dialog.cancel": "Annuler",
+        "dialog.confirm": "Enregistrer",
+        "empty.noBoards": "Aucun tableau de bord",
+        "empty.noBoardsTitle": "Créez votre premier tableau de bord",
+        "empty.noBoardsHint": "Organisez vos graphiques et indicateurs en groupes toujours à jour.",
+        "empty.noGroupsTitle": "Ce tableau de bord ne contient aucun groupe",
+        "empty.noGroupsHint": "Ajoutez un groupe ou épinglez des cartes depuis une conversation.",
+        "empty.groupHint": "Aucune carte dans ce groupe. Déposez-y des cartes ou épinglez-en depuis une conversation.",
+        "notice.layoutSaved": "Disposition enregistrée.",
+        "notice.parametersSaved": "Paramètres de la carte enregistrés.",
+        "notice.groupCreated": "Groupe créé.",
+        "notice.groupRenamed": "Groupe renommé.",
+        "notice.groupDeleted": "Groupe supprimé.",
+        "notice.actionFailed": "Échec de l'action : {reason}"
+      },
+      "it": {
+        "panel.name": "Dashboard",
+        "panel.description": "Crea e consulta dashboard con i tuoi grafici e indicatori",
+        "board.create": "Nuova dashboard",
+        "board.rename": "Rinomina",
+        "board.delete": "Elimina",
+        "board.addGroup": "Aggiungi gruppo",
+        "board.refreshAll": "Aggiorna tutto",
+        "group.rename": "Rinomina gruppo",
+        "group.addBelow": "Aggiungi gruppo sotto",
+        "group.delete": "Elimina gruppo",
+        "group.createTitle": "Nuovo gruppo",
+        "group.renameTitle": "Rinomina gruppo",
+        "group.titleLabel": "Titolo del gruppo",
+        "group.titlePlaceholder": "Inserisci il titolo del gruppo",
+        "card.refresh": "Aggiorna scheda",
+        "card.parameters": "Modifica parametri",
+        "card.metricSource": "Origine metrica",
+        "card.rename": "Rinomina scheda",
+        "card.delete": "Elimina scheda",
+        "dialog.parametersTitle": "Parametri scheda",
+        "dialog.metricSourceTitle": "Origine metrica",
+        "dialog.cancel": "Annulla",
+        "dialog.confirm": "Salva",
+        "empty.noBoards": "Nessuna dashboard",
+        "empty.noBoardsTitle": "Crea la tua prima dashboard",
+        "empty.noBoardsHint": "Raccogli grafici e metriche KPI in gruppi organizzati sempre aggiornati.",
+        "empty.noGroupsTitle": "Questa dashboard non ha ancora gruppi",
+        "empty.noGroupsHint": "Aggiungi un gruppo o fissa schede da una conversazione.",
+        "empty.groupHint": "Nessuna scheda in questo gruppo. Trascina qui una scheda o fissala da una conversazione.",
+        "notice.layoutSaved": "Layout salvato.",
+        "notice.parametersSaved": "Parametri della scheda salvati.",
+        "notice.groupCreated": "Gruppo creato.",
+        "notice.groupRenamed": "Gruppo rinominato.",
+        "notice.groupDeleted": "Gruppo eliminato.",
+        "notice.actionFailed": "Operazione non riuscita: {reason}"
+      },
+      "ar": {
+        "panel.name": "لوحات المعلومات",
+        "panel.description": "أنشئ وراجع لوحات المعلومات الخاصة بالمخططات والمؤشرات",
+        "board.create": "لوحة جديدة",
+        "board.rename": "إعادة تسمية",
+        "board.delete": "حذف",
+        "board.addGroup": "إضافة مجموعة",
+        "board.refreshAll": "تحديث الكل",
+        "group.rename": "إعادة تسمية المجموعة",
+        "group.addBelow": "إضافة مجموعة بالأسفل",
+        "group.delete": "حذف المجموعة",
+        "group.createTitle": "مجموعة جديدة",
+        "group.renameTitle": "إعادة تسمية المجموعة",
+        "group.titleLabel": "اسم المجموعة",
+        "group.titlePlaceholder": "أدخل اسم المجموعة",
+        "card.refresh": "تحديث البطاقة",
+        "card.parameters": "تعديل المعاملات",
+        "card.metricSource": "مصدر المؤشر",
+        "card.rename": "إعادة تسمية البطاقة",
+        "card.delete": "حذف البطاقة",
+        "dialog.parametersTitle": "معاملات البطاقة",
+        "dialog.metricSourceTitle": "مصدر المؤشر",
+        "dialog.cancel": "إلغاء",
+        "dialog.confirm": "حفظ",
+        "empty.noBoards": "لا توجد لوحات معلومات بعد",
+        "empty.noBoardsTitle": "أنشئ أول لوحة معلومات",
+        "empty.noBoardsHint": "نظّم المخططات وبطاقات المؤشرات في مجموعات محدثة باستمرار.",
+        "empty.noGroupsTitle": "لا توجد مجموعات في هذه اللوحة بعد",
+        "empty.noGroupsHint": "أضف مجموعة لتنظيم البطاقات أو ثبّت بطاقات من المحادثة.",
+        "empty.groupHint": "لا توجد بطاقات في هذه المجموعة بعد. اسحب البطاقات إلى هنا أو ثبّتها من المحادثة.",
+        "notice.layoutSaved": "تم حفظ التخطيط.",
+        "notice.parametersSaved": "تم حفظ معاملات البطاقة.",
+        "notice.groupCreated": "تم إنشاء المجموعة.",
+        "notice.groupRenamed": "تمت إعادة تسمية المجموعة.",
+        "notice.groupDeleted": "تم حذف المجموعة.",
+        "notice.actionFailed": "فشل الإجراء: {reason}"
+      }
+    }
+  }
+}

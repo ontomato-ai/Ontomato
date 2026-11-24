@@ -1,35 +1,4 @@
 import type { ShellFeatureDeclaration } from "@ontomato/agent-shell-ui";
-import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-
-/** The dashboards are an application of their own: this application opens one beside its conversation, not a copy. */
-export const DASHBOARDS_PAGE_ID = "dashboards";
-
-/**
- * The dashboards' own skill, by the domain membership the dashboards application itself is open to: one declaration,
- * read by the composer beside the conversation and by the page's own composer at its address.
- */
-export const DASHBOARDS_PAGE_SKILL: PageSkillContext = {
-  mode: "public",
-  locator: { pageKey: "dashboard", access: "domain-member" },
-};
-
-/**
- * The dashboards page beside the conversation. Its address is what this application's page parameter names: enlarging
- * it opens the dashboard application at that board. Its skill narrows the composer to the agents that can read and
- * update a board's cards, by the domain membership the dashboards application itself is open to.
- */
-export function dashboardsPageFeature(label: string, address: string): ShellFeatureDeclaration {
-  return {
-    id: DASHBOARDS_PAGE_ID,
-    label,
-    icon: "dashboard",
-    availability: "page",
-    listed: false,
-    withConversation: true,
-    address,
-    pageSkill: DASHBOARDS_PAGE_SKILL,
-  };
-}
 
 /** A panel application's page, opened beside the conversation. */
 export const PANEL_APPLICATION_PAGE_ID = "panel-application";
@@ -53,12 +22,10 @@ export function panelApplicationPageFeature(label: string, address: string): She
 
 export function workbenchFeatures(
   editionFeatures: readonly ShellFeatureDeclaration[],
-  dashboard: { label: string; address: string },
   /** A panel application's page, declared only while the conversation's page parameter names one. */
   panelApplication: ShellFeatureDeclaration | null = null,
 ): ShellFeatureDeclaration[] {
   return [
-    dashboardsPageFeature(dashboard.label, dashboard.address),
     ...(panelApplication ? [panelApplication] : []),
     ...editionFeatures,
   ];
