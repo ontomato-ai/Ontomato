@@ -4,7 +4,7 @@
       "id": "builtin-product-ontology-metric-views",
       "input": {
         "name": "指标视图",
-        "description": "维护业务指标定义、参数绑定与测试，批量修改发布状态"
+        "description": "浏览和搜索指标视图目录，批量修改发布状态，进入详情或新建指标视图"
       }
     }
   ]

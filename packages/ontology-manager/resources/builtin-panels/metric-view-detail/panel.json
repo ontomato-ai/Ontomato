@@ -1,0 +1,184 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:MetricView"
+        },
+        "deepLink": true
+      },
+      "mode": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "testOpen": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": false
+      },
+      "testSource": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "explicit",
+        "deepLink": false
+      },
+      "testTab": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "markdown",
+        "deepLink": false
+      },
+      "testParameters": {
+        "type": {
+          "kind": "json"
+        },
+        "default": {},
+        "deepLink": false
+      }
+    },
+    "members": {
+      "header": {
+        "component": "ObjectHeader",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitle": ""
+        },
+        "name": "当前指标标题",
+        "description": "选中指标的标题和读取状态。",
+        "id": "builtin-product-70685f91-0d45-4ee3-aa69-26a9aef2eeda"
+      },
+      "definition": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:MetricView.save",
+        "config": {
+          "actions": "none"
+        },
+        "name": "指标定义",
+        "description": "指标的名称、描述、状态、匹配问题、函数逻辑（查询包、列标签、逻辑说明与旧格式只读代码）及参数绑定。",
+        "id": "builtin-product-1d856c95-d8b9-4ade-bed9-88f912283c8c"
+      },
+      "testMarkdown": {
+        "component": "OperationButton",
+        "type": "platform:MetricView",
+        "operation": "metricViews.test",
+        "draft": "definition",
+        "parameters": {
+          "state": "testParameters"
+        },
+        "config": {
+          "type": "primary",
+          "labelKey": "metricViews.testMarkdown"
+        },
+        "name": "Markdown 试运行",
+        "description": "使用当前草稿和参数值试运行指标并返回 Markdown 预览，不保存修改。",
+        "id": "builtin-product-34c95189-34b3-40fc-9f8c-5ea7e728c95b"
+      },
+      "testJson": {
+        "component": "OperationButton",
+        "type": "platform:MetricView",
+        "operation": "metricViews.testExecute",
+        "draft": "definition",
+        "parameters": {
+          "state": "testParameters"
+        },
+        "config": {
+          "labelKey": "metricViews.testJson"
+        },
+        "name": "JSON 试运行",
+        "description": "使用当前草稿和参数值试运行指标并返回 JSON 结果与截断提示，不保存修改。",
+        "id": "builtin-product-066b6aa3-547f-409d-b2c1-6ed26dbeac70"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "target": "selected",
+        "operation": "metricViews.delete",
+        "config": {
+          "type": "danger",
+          "plain": true,
+          "icon": "trash",
+          "hideWhenUnavailable": true
+        },
+        "name": "删除指标",
+        "description": "删除选中的指标，确认中说明会连带删掉它的绑定。",
+        "id": "builtin-product-de1377ff-5e28-476a-a2fb-3bdaf9a9bbd1"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "metricViews.title": "Metric Views",
+        "metricViews.new": "New Metric View",
+        "metricViews.back": "Back to metric views",
+        "metricViews.saved": "Metric view saved",
+        "metricViews.loading": "Loading metric view...",
+        "metricViews.missing": "Metric view not found or deleted",
+        "metricViews.forbidden": "You do not have permission to view this metric view.",
+        "metricViews.loadError": "Failed to load this metric view.",
+        "metricViews.retry": "Retry",
+        "metricViews.test": "Test",
+        "metricViews.testTitle": "Metric view test",
+        "metricViews.testHint": "The test runs with the current draft and parameter values and does not save changes.",
+        "metricViews.testJsonHint": "Enter JSON values: \"text\", 12, null, or [1, 2]. Samples are hints only.",
+        "metricViews.testSource": "Choose a binding",
+        "metricViews.testExplicit": "Explicit parameters",
+        "metricViews.testBinding": "Binding: {name}",
+        "metricViews.testBindingUnnamed": "Binding {index}",
+        "metricViews.testNoParameters": "This query package declares no parameters.",
+        "metricViews.testMarkdown": "Test and generate Markdown",
+        "metricViews.testJson": "Test and return JSON",
+        "metricViews.testMarkdownTab": "Markdown test",
+        "metricViews.testJsonTab": "JSON test",
+        "metricViews.testInvalidValue": "Invalid JSON value for parameter {name}",
+        "metricViews.testNoDraft": "Open or create a metric first: the test runs the definition this page is editing.",
+        "metricViews.close": "Close"
+      },
+      "zh-CN": {
+        "metricViews.title": "指标视图",
+        "metricViews.new": "新建指标视图",
+        "metricViews.back": "返回指标视图",
+        "metricViews.saved": "指标视图已保存",
+        "metricViews.loading": "正在读取该指标视图…",
+        "metricViews.missing": "指标视图不存在或已删除",
+        "metricViews.forbidden": "当前账号无权读取该指标视图。",
+        "metricViews.loadError": "读取指标视图失败。",
+        "metricViews.retry": "重试",
+        "metricViews.test": "测试",
+        "metricViews.testTitle": "指标视图测试",
+        "metricViews.testHint": "测试会使用当前草稿和参数值执行，不会保存修改。",
+        "metricViews.testJsonHint": "按 JSON 填值，例如：\"文字\"、12、null 或 [1, 2]；示例仅供参考。",
+        "metricViews.testSource": "选择绑定",
+        "metricViews.testExplicit": "填写执行参数",
+        "metricViews.testBinding": "绑定：{name}",
+        "metricViews.testBindingUnnamed": "绑定 {index}",
+        "metricViews.testNoParameters": "当前查询包未声明参数。",
+        "metricViews.testMarkdown": "测试并生成 Markdown",
+        "metricViews.testJson": "测试并返回 JSON",
+        "metricViews.testMarkdownTab": "Markdown 测试",
+        "metricViews.testJsonTab": "JSON 测试",
+        "metricViews.testInvalidValue": "参数 {name} 不是有效的 JSON 值",
+        "metricViews.testNoDraft": "先打开或新建一个指标：测试使用的是这一页正在编辑的定义。",
+        "metricViews.close": "关闭"
+      }
+    }
+  }
+}
