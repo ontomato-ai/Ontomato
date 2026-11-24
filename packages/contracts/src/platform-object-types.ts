@@ -413,7 +413,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [`${ROLE}.save`, DELETE_ROLE],
   },
   [PERMISSION_POLICY]: {
-    ...describeType("permissionPolicy"),
+    ...describeType("permissionPolicy", "governance"),
     reads: {
       ...referenceReads,
       ...governancePageQuery,
@@ -428,7 +428,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ],
   },
   [ORG_UNIT]: {
-    ...describeType("orgUnit"),
+    ...describeType("orgUnit", "fact"),
     reads: {
       ...metadataList,
       ...referenceReads,
@@ -451,7 +451,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [SET_ORG_MEMBERSHIP_LOCKED, REMOVE_ORG_MEMBERSHIP],
   },
   [ORG_POSITION]: {
-    ...describeType("orgPosition"),
+    ...describeType("orgPosition", "fact"),
     reads: {
       record: modelReads.record,
       form: modelReads.form,
@@ -463,7 +463,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [`${ORG_POSITION}.save`, DELETE_ORG_POSITION],
   },
   [ORG_GRANT]: {
-    ...describeType("orgGrant"),
+    ...describeType("orgGrant", "governance"),
     reads: { record: modelReads.record, form: modelReads.form },
     operations: [`${ORG_GRANT}.save`, DELETE_ORG_GRANT],
   },
@@ -767,9 +767,24 @@ export const platformRelationKinds: readonly PlatformRelationKindDeclaration[] =
   relation("trigger.targets-workflow", TRIGGER, WORKFLOW, "java-trigger"),
   relation("trigger.targets-action", TRIGGER, ACTION, "java-trigger"),
   relation("user.holds-role", USER, ROLE, "java-identity"),
+  relation("org-unit.has-child", ORG_UNIT, ORG_UNIT, "java-organization"),
+  relation("org-unit.has-position", ORG_UNIT, ORG_POSITION, "java-organization"),
+  relation("user.member-of-org-unit", USER, ORG_UNIT, "java-organization"),
+  relation("user.holds-org-position", USER, ORG_POSITION, "java-organization"),
+  relation("org-grant.applies-to-org-unit", ORG_GRANT, ORG_UNIT, "java-organization"),
+  relation("org-grant.applies-to-org-position", ORG_GRANT, ORG_POSITION, "java-organization"),
+  relation("org-grant.grants-role", ORG_GRANT, ROLE, "java-organization"),
+  relation("role.uses-permission-policy", ROLE, PERMISSION_POLICY, "java-permission-policy"),
+  relation("permission-policy.governs-object-type", PERMISSION_POLICY, OBJECT_TYPE, "java-permission-policy"),
   relation("role.can-execute-action", ROLE, ACTION, "java-grants"),
   relation("role.can-author-workflow", ROLE, WORKFLOW, "java-platform-access", true),
   relation("role.owns-workflow-step", ROLE, WORKFLOW, "java-workflow", true),
+  relation("role.can-use-product", ROLE, [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION], "java-product-grants"),
+  relation("role.can-view-product", ROLE, AGENT_DEFINITION, "java-product-grants"),
+  relation("role.can-edit-product", ROLE, [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION], "java-product-grants"),
+  relation("user.can-use-product", USER, [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION], "java-product-grants"),
+  relation("user.can-view-product", USER, AGENT_DEFINITION, "java-product-grants"),
+  relation("user.can-edit-product", USER, [AGENT_DEFINITION, PRODUCT_PANEL, APPLICATION], "java-product-grants"),
   relation("user.created-action", USER, ACTION, "java-action"),
   relation("user.created-workflow", USER, WORKFLOW, "java-workflow"),
   relation("user.created-metric-view", USER, METRIC_VIEW, "java-metric"),

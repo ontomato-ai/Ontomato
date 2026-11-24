@@ -17,7 +17,13 @@ import {
   DELETE_AGENT,
   DELETE_KNOWLEDGE,
   DELETE_ROLE,
+  OBJECT_TYPE,
   ONTOLOGY_TYPE,
+  ORG_GRANT,
+  ORG_MEMBERSHIP,
+  ORG_POSITION,
+  ORG_UNIT,
+  PERMISSION_POLICY,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
   ROLE,
@@ -31,6 +37,8 @@ import {
 import { platformTypeDetails } from "@ontomato/contracts/platform-type-details";
 import { METRIC_CHART_COMPONENT } from "@ontomato/contracts/product-panels";
 import { protectedSkillRef } from "../../../core/skills/providers";
+import { configureI18n } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
 import { getPostgresPool } from "../../../infrastructure/postgres";
@@ -86,6 +94,25 @@ const owner = { domainId: "domain-1", userId: "user-1" };
 const credentials = { token: "tok-1", locale: "zh-CN" };
 const panelMainSkillRef = protectedSkillRef("product-panels", owner.domainId, "panel-main");
 const panelMainSkillKey = runtimeSkillKey(panelMainSkillRef);
+
+configureI18n({
+  defaultLocale: "en",
+  appTextLocale: "en",
+  languageSwitchEnabled: true,
+  packs: {
+    en: { ...enLocaleMeta, messages: en },
+    "zh-CN": {
+      ...enLocaleMeta,
+      messages: {
+        ...en,
+        "platformOntology.domainShared": "全本域可用",
+        "platformOntology.orgGrantScope.organization": "组织",
+        "platformOntology.orgGrantScope.subtree": "组织含下级",
+        "platformOntology.orgGrantScope.position": "岗位",
+      },
+    },
+  },
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -276,18 +303,33 @@ beforeEach(() => {
         { roleId: "r-1", roleCode: "Approver", apiPermissions: ["/workflow/save"], managementRole: false },
       ]);
     }
+    if (url.endsWith("/platform/governance/organization")) {
+      return okJson({ units: [], positions: [], memberships: [], positionAssignments: [], grants: [] });
+    }
+    if (url.endsWith("/platform/governance/policies")) {
+      return okJson({ policies: [] });
+    }
+    if (url.endsWith("/platform/governance/role-policies")) {
+      return okJson({ rolePolicies: [] });
+    }
+    if (url.endsWith("/platform/governance/policy-data-permissions")) {
+      return okJson({ policyDataPermissions: [] });
+    }
+    if (url.endsWith("/product-governance/domain-grants")) {
+      return okJson({ grants: [] });
+    }
     throw new Error(`Unexpected URL: ${url}`);
   });
 });
 
 describe("platform-ontology composite query", () => {
-  it("exposes all four layers, declared layered object types, and 29 relation kinds directly from contracts", async () => {
+  it("exposes all four layers, declared layered object types, and 44 relation kinds directly from contracts", async () => {
     const schema = await readPlatformOntologySchema();
     const expectedTypes = Object.entries(platformObjectTypes).filter(([, decl]) => Boolean(decl.layer));
     expect(schema.layers).toEqual(["fact", "capability", "governance", "product"]);
     expect(schema.objectTypes).toHaveLength(expectedTypes.length);
     expect(schema.relationKinds).toBe(platformRelationKinds);
-    expect(schema.relationKinds).toHaveLength(29);
+    expect(schema.relationKinds).toHaveLength(44);
 
     expect(schema.objectTypes.map((t) => t.id)).toEqual(expectedTypes.map(([id]) => id));
     expect(schema.objectTypes.every((t) => t.labelKey.startsWith("platformOntology.types."))).toBe(true);
@@ -1532,6 +1574,559 @@ describe("platform-ontology composite query", () => {
     expect(unavailableRes.edges).toEqual([]);
     expect(unavailableRes.relations).toEqual([
       { relationKind: "role.owns-workflow-step", status: "unavailable", edgeCount: 0, reason: "Roles unavailable" },
+    ]);
+  });
+
+  it("lists organization units, positions, permission policies, and localized org grants while excluding OrgMembership", async () => {
+    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/platform/governance/organization")) {
+        return okJson({
+          units: [
+            { id: "org-root", name: "Headquarters", code: "HQ", parentId: "0" },
+            { id: "org-rd", name: "R&D", code: "RD", parentId: "org-root" },
+            { id: "org-orphan", name: "Orphan", parentId: "missing-parent" },
+          ],
+          positions: [
+            { id: "pos-arch", name: "Architect", orgId: "org-rd" },
+          ],
+          memberships: [
+            { userId: "user-1", orgId: "org-rd" },
+          ],
+          positionAssignments: [
+            { userId: "user-1", positionId: "pos-arch" },
+          ],
+          grants: [
+            { id: "organization:org-rd", grantType: "organization", sourceId: "org-rd", roleIds: ["r-1"] },
+            { id: "subtree:org-root", grantType: "subtree", sourceId: "org-root", roleIds: ["r-1"] },
+            { id: "position:pos-arch", grantType: "position", sourceId: "pos-arch", roleIds: ["r-1"] },
+            { id: "organization:deleted-org", grantType: "organization", sourceId: "deleted-org", roleIds: [] },
+          ],
+        });
+      }
+      if (url.endsWith("/platform/governance/policies")) {
+        return okJson({
+          policies: [
+            { id: "pol-1", name: "Order Read Policy", type: 2, fullData: false, parentId: "0" },
+          ],
+        });
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+
+    const { counts } = await readPlatformOntologyCounts(owner, credentials);
+    const byType = new Map(counts.map((c) => [c.type, c]));
+    expect(byType.get(ORG_UNIT)).toMatchObject({ layer: "fact", status: "ok", count: 3 });
+    expect(byType.get(ORG_POSITION)).toMatchObject({ layer: "fact", status: "ok", count: 1 });
+    expect(byType.get(PERMISSION_POLICY)).toMatchObject({ layer: "governance", status: "ok", count: 1 });
+    expect(byType.get(ORG_GRANT)).toMatchObject({ layer: "governance", status: "ok", count: 4 });
+    expect(byType.get(ORG_MEMBERSHIP)).toBeUndefined();
+    expect(
+      vi.mocked(backendPost).mock.calls.filter(([, url]) => String(url).endsWith("/product-governance/domain-grants")),
+    ).toHaveLength(0);
+
+    const units = await readPlatformOntologyObjects(owner, credentials, { type: ORG_UNIT });
+    expect(units.items).toEqual([
+      { node: { className: ORG_UNIT, primaryKey: "org-root" }, label: "Headquarters", detail: "HQ" },
+      { node: { className: ORG_UNIT, primaryKey: "org-orphan" }, label: "Orphan" },
+      { node: { className: ORG_UNIT, primaryKey: "org-rd" }, label: "R&D", detail: "RD" },
+    ]);
+
+    const positions = await readPlatformOntologyObjects(owner, credentials, { type: ORG_POSITION });
+    expect(positions.items).toEqual([
+      { node: { className: ORG_POSITION, primaryKey: "pos-arch" }, label: "Architect", detail: "R&D" },
+    ]);
+
+    const policies = await readPlatformOntologyObjects(owner, credentials, { type: PERMISSION_POLICY });
+    expect(policies.items).toEqual([
+      { node: { className: PERMISSION_POLICY, primaryKey: "pol-1" }, label: "Order Read Policy" },
+    ]);
+
+    const zhGrants = await readPlatformOntologyObjects(owner, credentials, { type: ORG_GRANT });
+    expect(zhGrants.items.map((i) => ({ id: i.node.primaryKey, label: i.label }))).toEqual([
+      { id: "position:pos-arch", label: "岗位 · Architect" },
+      { id: "organization:deleted-org", label: "组织 · deleted-org" },
+      { id: "organization:org-rd", label: "组织 · R&D" },
+      { id: "subtree:org-root", label: "组织含下级 · Headquarters" },
+    ]);
+
+    const enGrants = await readPlatformOntologyObjects(owner, { ...credentials, locale: "en" }, { type: ORG_GRANT });
+    expect(enGrants.items.map((i) => ({ id: i.node.primaryKey, label: i.label }))).toEqual([
+      { id: "organization:deleted-org", label: "Organization · deleted-org" },
+      { id: "organization:org-rd", label: "Organization · R&D" },
+      { id: "subtree:org-root", label: "Organization & sub-units · Headquarters" },
+      { id: "position:pos-arch", label: "Position · Architect" },
+    ]);
+  });
+
+  it("evaluates all 7 organization relations bidirectionally without self-loops or root-0 edges", async () => {
+    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/platform/governance/organization")) {
+        return okJson({
+          units: [
+            { id: "org-root", name: "HQ", parentId: "0" },
+            { id: "org-rd", name: "R&D", parentId: "org-root" },
+            { id: "org-self", name: "Self", parentId: "org-self" },
+            { id: "org-dangling", name: "Dangling", parentId: "non-existent" },
+          ],
+          positions: [{ id: "pos-arch", name: "Architect", orgId: "org-rd" }],
+          memberships: [{ userId: "user-1", orgId: "org-rd" }],
+          positionAssignments: [{ userId: "user-1", positionId: "pos-arch" }],
+          grants: [
+            { id: "organization:org-rd", grantType: "organization", sourceId: "org-rd", roleIds: ["r-1"] },
+            { id: "subtree:org-root", grantType: "subtree", sourceId: "org-root", roleIds: ["r-1"] },
+            { id: "position:pos-arch", grantType: "position", sourceId: "pos-arch", roleIds: ["r-1"] },
+          ],
+        });
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+
+    const rdNeighbors = platformOntologyNeighborsResponseSchema.parse(
+      await readPlatformOntologyNeighbors(owner, credentials, {
+        node: { className: ORG_UNIT, primaryKey: "org-rd" },
+      }),
+    );
+    expect(rdNeighbors.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relationKind: "org-unit.has-child",
+          direction: "incoming",
+          from: { className: ORG_UNIT, primaryKey: "org-root" },
+          to: { className: ORG_UNIT, primaryKey: "org-rd" },
+        }),
+        expect.objectContaining({
+          relationKind: "org-unit.has-position",
+          direction: "outgoing",
+          from: { className: ORG_UNIT, primaryKey: "org-rd" },
+          to: { className: ORG_POSITION, primaryKey: "pos-arch" },
+        }),
+        expect.objectContaining({
+          relationKind: "user.member-of-org-unit",
+          direction: "incoming",
+          from: { className: USER, primaryKey: "user-1" },
+          to: { className: ORG_UNIT, primaryKey: "org-rd" },
+        }),
+        expect.objectContaining({
+          relationKind: "org-grant.applies-to-org-unit",
+          direction: "incoming",
+          from: { className: ORG_GRANT, primaryKey: "organization:org-rd" },
+          to: { className: ORG_UNIT, primaryKey: "org-rd" },
+        }),
+      ]),
+    );
+    expect(rdNeighbors.edges).toHaveLength(4);
+
+    // Self-loop and dangling parent produce no org-unit.has-child edges
+    const selfNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ORG_UNIT, primaryKey: "org-self" },
+      relationKinds: ["org-unit.has-child"],
+    });
+    expect(selfNeighbors.edges).toEqual([]);
+
+    const danglingNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ORG_UNIT, primaryKey: "org-dangling" },
+      relationKinds: ["org-unit.has-child"],
+    });
+    expect(danglingNeighbors.edges).toEqual([]);
+
+    // Root outgoing child + subtree grant incoming
+    const rootNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ORG_UNIT, primaryKey: "org-root" },
+      relationKinds: ["org-unit.has-child", "org-grant.applies-to-org-unit"],
+    });
+    expect(rootNeighbors.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relationKind: "org-unit.has-child",
+          direction: "outgoing",
+          from: { className: ORG_UNIT, primaryKey: "org-root" },
+          to: { className: ORG_UNIT, primaryKey: "org-rd" },
+        }),
+        expect.objectContaining({
+          relationKind: "org-grant.applies-to-org-unit",
+          direction: "incoming",
+          from: { className: ORG_GRANT, primaryKey: "subtree:org-root" },
+          to: { className: ORG_UNIT, primaryKey: "org-root" },
+        }),
+      ]),
+    );
+
+    // Position incoming from unit, user, and position org-grant
+    const posNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ORG_POSITION, primaryKey: "pos-arch" },
+    });
+    expect(posNeighbors.edges.map((e) => `${e.relationKind}:${e.direction}:${e.from.primaryKey}`).sort()).toEqual([
+      "org-grant.applies-to-org-position:incoming:position:pos-arch",
+      "org-unit.has-position:incoming:org-rd",
+      "user.holds-org-position:incoming:user-1",
+    ]);
+
+    // OrgGrant outgoing to position & role, and reverse from Role
+    const grantNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ORG_GRANT, primaryKey: "position:pos-arch" },
+    });
+    expect(grantNeighbors.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relationKind: "org-grant.applies-to-org-position",
+          direction: "outgoing",
+          to: { className: ORG_POSITION, primaryKey: "pos-arch" },
+        }),
+        expect.objectContaining({
+          relationKind: "org-grant.grants-role",
+          direction: "outgoing",
+          to: { className: ROLE, primaryKey: "r-1" },
+        }),
+      ]),
+    );
+    expect(grantNeighbors.neighbors).toContainEqual({
+      className: ROLE,
+      primaryKey: "r-1",
+      label: "Approver",
+      layer: "governance",
+    });
+
+    const roleGrantIncoming = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ROLE, primaryKey: "r-1" },
+      relationKinds: ["org-grant.grants-role"],
+    });
+    expect(roleGrantIncoming.edges.map((e) => e.from.primaryKey).sort()).toEqual([
+      "organization:org-rd",
+      "position:pos-arch",
+      "subtree:org-root",
+    ]);
+
+    // User outgoing to org unit and position
+    const userOrgNeighbors = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: USER, primaryKey: "user-1" },
+      relationKinds: ["user.member-of-org-unit", "user.holds-org-position"],
+    });
+    expect(userOrgNeighbors.edges.map((e) => `${e.relationKind}:${e.to.primaryKey}`).sort()).toEqual([
+      "user.holds-org-position:pos-arch",
+      "user.member-of-org-unit:org-rd",
+    ]);
+  });
+
+  it("evaluates permission policy relations bidirectionally with per-endpoint authorization isolation", async () => {
+    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/platform/governance/policies")) {
+        throw new BackendResponseError(403, JSON.stringify({ message: "Policies forbidden" }));
+      }
+      if (url.endsWith("/platform/governance/role-policies")) {
+        return okJson({ rolePolicies: [{ roleId: "r-1", policyId: "pol-1" }] });
+      }
+      if (url.endsWith("/platform/governance/policy-data-permissions")) {
+        throw new BackendResponseError(403, JSON.stringify({ message: "Data perms forbidden" }));
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+
+    // role.uses-permission-policy succeeds even when /policies and /policy-data-permissions are 403
+    const rolePolicyRes = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ROLE, primaryKey: "r-1" },
+      relationKinds: ["role.uses-permission-policy"],
+    });
+    expect(rolePolicyRes.relations).toEqual([
+      { relationKind: "role.uses-permission-policy", status: "ok", edgeCount: 1 },
+    ]);
+    expect(rolePolicyRes.edges).toEqual([
+      expect.objectContaining({
+        relationKind: "role.uses-permission-policy",
+        direction: "outgoing",
+        from: { className: ROLE, primaryKey: "r-1" },
+        to: { className: PERMISSION_POLICY, primaryKey: "pol-1" },
+      }),
+    ]);
+    expect(rolePolicyRes.neighbors).toEqual([
+      { className: PERMISSION_POLICY, primaryKey: "pol-1", label: "pol-1", layer: "governance" },
+    ]);
+
+    // permission-policy.governs-object-type from ObjectType succeeds even when /policies and /role-policies are 403
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/platform/governance/policies") || url.endsWith("/platform/governance/role-policies")) {
+        throw new BackendResponseError(403, JSON.stringify({ message: "Forbidden" }));
+      }
+      if (url.endsWith("/platform/governance/policy-data-permissions")) {
+        return okJson({ policyDataPermissions: [{ policyId: "pol-1", className: "Order" }] });
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+
+    const objectTypePolicyRes = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: OBJECT_TYPE, primaryKey: "Order" },
+      relationKinds: ["permission-policy.governs-object-type"],
+    });
+    expect(objectTypePolicyRes.relations).toEqual([
+      { relationKind: "permission-policy.governs-object-type", status: "ok", edgeCount: 1 },
+    ]);
+    expect(objectTypePolicyRes.edges).toEqual([
+      expect.objectContaining({
+        relationKind: "permission-policy.governs-object-type",
+        direction: "incoming",
+        from: { className: PERMISSION_POLICY, primaryKey: "pol-1" },
+        to: { className: OBJECT_TYPE, primaryKey: "Order" },
+      }),
+    ]);
+
+    // When /policies is readable, expanding from PermissionPolicy traverses both incoming role and outgoing object type
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/platform/governance/policies")) {
+        return okJson({ policies: [{ id: "pol-1", name: "Order Read Policy" }] });
+      }
+      if (url.endsWith("/platform/governance/role-policies")) {
+        return okJson({ rolePolicies: [{ roleId: "r-1", policyId: "pol-1" }] });
+      }
+      if (url.endsWith("/platform/governance/policy-data-permissions")) {
+        return okJson({ policyDataPermissions: [{ policyId: "pol-1", className: "Order" }] });
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+
+    const policyCenterRes = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: PERMISSION_POLICY, primaryKey: "pol-1" },
+    });
+    expect(policyCenterRes.node).toEqual({
+      className: PERMISSION_POLICY,
+      primaryKey: "pol-1",
+      label: "Order Read Policy",
+      layer: "governance",
+    });
+    expect(policyCenterRes.edges.map((e) => `${e.relationKind}:${e.direction}`).sort()).toEqual([
+      "permission-policy.governs-object-type:outgoing",
+      "role.uses-permission-policy:incoming",
+    ]);
+  });
+
+  it("evaluates all 6 product grant relations bidirectionally, skips domain:*:use and projections, and annotates domain-shared details", async () => {
+    const panelRow = {
+      id: "panel-1",
+      definition: {
+        name: "Order Overview Panel",
+        description: "Shows live orders",
+        visibility: "domain",
+        content: { html: "<section></section>", module: "export default {};" },
+        manifest: { state: {}, members: {} },
+      },
+    };
+    const barePanelRow = {
+      id: "panel-bare",
+      definition: {
+        name: "Bare Shared Panel",
+        description: "",
+        visibility: "domain",
+        content: { html: "<section></section>", module: "export default {};" },
+        manifest: { state: {}, members: {} },
+      },
+    };
+    const projRow = {
+      id: "proj-1",
+      definition: {
+        name: "Order Table Projection",
+        description: "",
+        componentId: "@ontomato/sdk:ObjectList",
+        visibility: "domain",
+        data: {},
+        config: {},
+      },
+    };
+
+    vi.mocked(grantedProductIds).mockResolvedValue(["panel-1", "panel-bare", "proj-1"]);
+    pgQueryMock.mockImplementation(async (sql: string) => {
+      if (sql.includes("product_panels")) return { rows: [panelRow, barePanelRow] };
+      if (sql.includes("product_projections")) return { rows: [projRow] };
+      return { rows: [] };
+    });
+    vi.mocked(backendGet).mockImplementation(async (_endpoint, url) => {
+      if (url.includes("/platform/applications?purpose=navigation")) {
+        return okJson([
+          {
+            id: "app-1",
+            kind: "product",
+            names: { en: "Order Workspace", "zh-CN": "订单工作台" },
+            descriptions: {},
+            icon: "grid",
+            rail: "apps",
+            category: "business",
+            sort: 1,
+            entry: { path: "/applications/app-1", renderer: "panels" },
+            entryAccess: ["app-1:enter"],
+            scheduleAdapter: null,
+            releaseId: null,
+            panelUses: [],
+          },
+        ]);
+      }
+      throw new Error(`Unexpected GET URL: ${url}`);
+    });
+
+    const domainGrants = [
+      { resourceId: "agent-1", principalKind: "domain", principalId: "*", verb: "use" },
+      { resourceId: "panel-1", principalKind: "domain", principalId: "*", verb: "use" },
+      { resourceId: "panel-bare", principalKind: "domain", principalId: "*", verb: "use" },
+      { resourceId: "app-1", principalKind: "domain", principalId: "*", verb: "use" },
+      { resourceId: "agent-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "use" },
+      { resourceId: "agent-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "view" },
+      { resourceId: "agent-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "edit" },
+      { resourceId: "panel-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "use" },
+      { resourceId: "panel-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "view" },
+      { resourceId: "app-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "edit" },
+      { resourceId: "proj-1", principalKind: "role", principalId: "r-1", principalName: "Approver", verb: "use" },
+      { resourceId: "agent-1", principalKind: "principal", principalId: "user-1", principalName: "Alice Display", verb: "use" },
+      { resourceId: "agent-1", principalKind: "principal", principalId: "user-1", principalName: "Alice Display", verb: "view" },
+      { resourceId: "panel-1", principalKind: "principal", principalId: "user-1", principalName: "Alice Display", verb: "edit" },
+      { resourceId: "proj-1", principalKind: "principal", principalId: "user-1", principalName: "Alice Display", verb: "edit" },
+    ];
+
+    const baseImpl = vi.mocked(backendPost).getMockImplementation()!;
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/product-governance/domain-grants")) {
+        return okJson({ grants: domainGrants });
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+
+    // 1. Role outgoing product grant edges
+    const roleProductEdges = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ROLE, primaryKey: "r-1" },
+      relationKinds: ["role.can-use-product", "role.can-view-product", "role.can-edit-product"],
+    });
+    expect(
+      roleProductEdges.edges.map((e) => `${e.relationKind}:${e.to.className}:${e.to.primaryKey}`).sort(),
+    ).toEqual([
+      "role.can-edit-product:platform:AgentDefinition:agent-1",
+      "role.can-edit-product:platform:Application:app-1",
+      "role.can-use-product:platform:AgentDefinition:agent-1",
+      "role.can-use-product:platform:ProductPanel:panel-1",
+      "role.can-view-product:platform:AgentDefinition:agent-1",
+    ]);
+    // Domain-shared details appear on neighbor product nodes
+    expect(roleProductEdges.neighbors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          className: AGENT_DEFINITION,
+          primaryKey: "agent-1",
+          detail: "enabled · 全本域可用",
+        }),
+        expect.objectContaining({
+          className: PRODUCT_PANEL,
+          primaryKey: "panel-1",
+          detail: "Shows live orders · 全本域可用",
+        }),
+        expect.objectContaining({
+          className: APPLICATION,
+          primaryKey: "app-1",
+          detail: "product · 全本域可用",
+        }),
+      ]),
+    );
+
+    // 2. User outgoing product grant edges (proj-1 skipped, domain:*:use never expanded)
+    const userProductEdges = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: USER, primaryKey: "user-1" },
+      relationKinds: ["user.can-use-product", "user.can-view-product", "user.can-edit-product"],
+    });
+    expect(
+      userProductEdges.edges.map((e) => `${e.relationKind}:${e.to.className}:${e.to.primaryKey}`).sort(),
+    ).toEqual([
+      "user.can-edit-product:platform:ProductPanel:panel-1",
+      "user.can-use-product:platform:AgentDefinition:agent-1",
+      "user.can-view-product:platform:AgentDefinition:agent-1",
+    ]);
+
+    // 3. Object list carries domain-shared detail for Agent, Panel (with & without base description), and Application
+    const panelList = await readPlatformOntologyObjects(owner, credentials, { type: PRODUCT_PANEL });
+    expect(panelList.items).toEqual([
+      { node: { className: PRODUCT_PANEL, primaryKey: "panel-bare" }, label: "Bare Shared Panel", detail: "全本域可用" },
+      { node: { className: PRODUCT_PANEL, primaryKey: "panel-1" }, label: "Order Overview Panel", detail: "Shows live orders · 全本域可用" },
+    ]);
+
+    // 4. Reverse direction from Agent uses principalName when subjects/roles directories are refused
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/product-governance/domain-grants")) {
+        return okJson({ grants: domainGrants });
+      }
+      if (url.endsWith("/workflow/subjects") || url.endsWith("/workflow/platform-access") || url.endsWith("/workflow/grants")) {
+        throw new BackendResponseError(403, JSON.stringify({ message: "Identity directory forbidden" }));
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+
+    const agentIncoming = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: AGENT_DEFINITION, primaryKey: "agent-1" },
+      relationKinds: [
+        "role.can-use-product", "role.can-view-product", "role.can-edit-product",
+        "user.can-use-product", "user.can-view-product", "user.can-edit-product",
+      ],
+    });
+    expect(agentIncoming.node.detail).toBe("enabled · 全本域可用");
+    expect(agentIncoming.edges.map((e) => `${e.relationKind}:${e.from.primaryKey}`).sort()).toEqual([
+      "role.can-edit-product:r-1",
+      "role.can-use-product:r-1",
+      "role.can-view-product:r-1",
+      "user.can-use-product:user-1",
+      "user.can-view-product:user-1",
+    ]);
+    expect(agentIncoming.neighbors).toEqual(
+      expect.arrayContaining([
+        { className: ROLE, primaryKey: "r-1", label: "Approver", layer: "governance" },
+        { className: USER, primaryKey: "user-1", label: "Alice Display", layer: "governance" },
+      ]),
+    );
+
+    // 5. From ProductPanel, can-view-product is not applicable; only use/edit emit edges
+    const panelIncoming = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: PRODUCT_PANEL, primaryKey: "panel-1" },
+      relationKinds: [
+        "role.can-use-product", "role.can-view-product", "role.can-edit-product",
+        "user.can-use-product", "user.can-view-product", "user.can-edit-product",
+      ],
+    });
+    expect(panelIncoming.edges.map((e) => `${e.relationKind}:${e.from.primaryKey}`).sort()).toEqual([
+      "role.can-use-product:r-1",
+      "user.can-edit-product:user-1",
+    ]);
+
+    // 6. When one product catalog (AgentDefinition) is refused, Role still gets edges to readable panels & apps
+    assertPermissionMock.mockRejectedValue(new HttpError(403, "No analysis-agent", "FORBIDDEN"));
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/product-governance/domain-grants")) {
+        return okJson({ grants: domainGrants });
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+    const partialCatalogRes = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ROLE, primaryKey: "r-1" },
+      relationKinds: ["role.can-use-product", "role.can-edit-product"],
+    });
+    expect(partialCatalogRes.edges.map((e) => `${e.relationKind}:${e.to.primaryKey}`).sort()).toEqual([
+      "role.can-edit-product:app-1",
+      "role.can-use-product:panel-1",
+    ]);
+
+    // 7. When /product-governance/domain-grants returns 403, product grant relations report refused and product nodes render without shared tag
+    assertPermissionMock.mockResolvedValue(undefined);
+    vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
+      if (url.endsWith("/product-governance/domain-grants")) {
+        throw new BackendResponseError(403, JSON.stringify({ message: "Domain grants forbidden" }));
+      }
+      return baseImpl(endpoint, url, body, opts);
+    });
+    const refusedGrants = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: ROLE, primaryKey: "r-1" },
+      relationKinds: ["role.can-use-product", "role.can-view-product"],
+    });
+    expect(refusedGrants.relations).toEqual([
+      expect.objectContaining({ relationKind: "role.can-use-product", status: "refused", edgeCount: 0 }),
+      expect.objectContaining({ relationKind: "role.can-view-product", status: "refused", edgeCount: 0 }),
+    ]);
+
+    const agentsWithoutGrants = await readPlatformOntologyObjects(owner, credentials, { type: AGENT_DEFINITION });
+    expect(agentsWithoutGrants.status).toBe("ok");
+    expect(agentsWithoutGrants.items).toEqual([
+      { node: { className: AGENT_DEFINITION, primaryKey: "agent-1" }, label: "Ops Assistant", detail: "enabled" },
     ]);
   });
 });

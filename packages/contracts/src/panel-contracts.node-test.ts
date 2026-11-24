@@ -61,7 +61,8 @@ import {
   platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
 } from "./platform-ontology";
 import {
-  APPLICATION_PANEL_USE, DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, PRODUCT_PROJECTION, USER as ONTOLOGY_USER,
+  APPLICATION_PANEL_USE, DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
+  PERMISSION_POLICY, PRODUCT_PROJECTION, ROLE, USER as ONTOLOGY_USER,
   platformObjectTypes, platformOntologyLayers, platformRelationKinds,
 } from "./platform-object-types";
 import {
@@ -2594,6 +2595,34 @@ test("the four-layer topology points to declared kinds and distinguishes stored 
   assert.equal(platformRelationKinds.find(relation => relation.id === "panel.contains-panel")?.derived, false);
   assert.equal(platformRelationKinds.find(relation => relation.id === "panel.provides-skill")?.derived, true);
   assert.equal(platformObjectTypes[APPLICATION_PANEL_USE]?.layer, undefined);
+  assert.equal(platformObjectTypes[ORG_MEMBERSHIP]?.layer, undefined);
+  assert.equal(platformObjectTypes[ORG_UNIT]?.layer, "fact");
+  assert.equal(platformObjectTypes[ORG_POSITION]?.layer, "fact");
+  assert.equal(platformObjectTypes[PERMISSION_POLICY]?.layer, "governance");
+  assert.equal(platformObjectTypes[ORG_GRANT]?.layer, "governance");
+  for (const id of [
+    "org-unit.has-child",
+    "org-unit.has-position",
+    "user.member-of-org-unit",
+    "user.holds-org-position",
+    "org-grant.applies-to-org-unit",
+    "org-grant.applies-to-org-position",
+    "org-grant.grants-role",
+    "role.uses-permission-policy",
+    "permission-policy.governs-object-type",
+    "role.can-use-product",
+    "role.can-view-product",
+    "role.can-edit-product",
+    "user.can-use-product",
+    "user.can-view-product",
+    "user.can-edit-product",
+  ]) {
+    assert.equal(platformRelationKinds.find(relation => relation.id === id)?.derived, false, id);
+  }
+  assert.equal(
+    platformRelationKinds.some(relation => relation.from === ORG_UNIT && (relation.to === ROLE || (Array.isArray(relation.to) && relation.to.includes(ROLE)))),
+    false,
+  );
 
   const projectionNode = { className: PRODUCT_PROJECTION, primaryKey: "proj-1", label: "Projection", layer: "product" as const };
   const boundTypeNode = { className: ONTOLOGY_TYPE, primaryKey: "platform:BusinessKnowledge", label: "platform:BusinessKnowledge", layer: "capability" as const };

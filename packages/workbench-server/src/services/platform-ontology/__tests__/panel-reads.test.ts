@@ -14,6 +14,10 @@ import {
   OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND,
   ONTOLOGY_TYPE,
+  ORG_GRANT,
+  ORG_POSITION,
+  ORG_UNIT,
+  PERMISSION_POLICY,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
   ROLE,
@@ -131,6 +135,24 @@ function stubOwnerHttp(overrides: Partial<Record<string, () => Response>> = {}) 
     }
     if (path === "/product-governance/resources") {
       return new Response(JSON.stringify({ ids: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (path === "/platform/governance/organization") {
+      return jsonResponse({ units: [], positions: [], memberships: [], positionAssignments: [], grants: [] });
+    }
+    if (path === "/platform/governance/policies") {
+      return jsonResponse({ policies: [] });
+    }
+    if (path === "/platform/governance/role-policies") {
+      return jsonResponse({ rolePolicies: [] });
+    }
+    if (path === "/platform/governance/policy-data-permissions") {
+      return jsonResponse({ policyDataPermissions: [] });
+    }
+    if (path === "/product-governance/domain-grants") {
+      return new Response(JSON.stringify({ grants: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -430,18 +452,22 @@ describe("platform ontology catalogue reads", () => {
   });
 
   it.each([
-    [SDK_COMPONENT, "/ontology/components", "Components"],
-    [PRODUCT_PROJECTION, "/ontology/projections", "Projections"],
-    [PRODUCT_PANEL, "/ontology/panels", "Panels"],
-    [APPLICATION, "/ontology/applications", "Applications"],
-    [AGENT_DEFINITION, "/ontology/agents", "Agents"],
-  ])("publishes scalar instance-directory outputs for %s", async (type, directoryPath, directoryName) => {
+    [ORG_UNIT, "fact", "/permissions/organization", "Organization"],
+    [ORG_POSITION, "fact", "/permissions/organization", "Organization"],
+    [PERMISSION_POLICY, "governance", "/permissions/policies", "Permission policies"],
+    [ORG_GRANT, "governance", "/permissions/organization", "Organization"],
+    [SDK_COMPONENT, "product", "/ontology/components", "Components"],
+    [PRODUCT_PROJECTION, "product", "/ontology/projections", "Projections"],
+    [PRODUCT_PANEL, "product", "/ontology/panels", "Panels"],
+    [APPLICATION, "product", "/ontology/applications", "Applications"],
+    [AGENT_DEFINITION, "product", "/ontology/agents", "Agents"],
+  ])("publishes scalar instance-directory outputs for %s", async (type, layerId, directoryPath, directoryName) => {
     stubOwnerHttp();
     const reads = createPlatformOntologyReadAdapter(owner, viewer);
     const record = panelReadResultSchemas.panelRecord.parse(await reads.record(type));
     expect(record).toMatchObject({
       primaryKey: type, className: ONTOLOGY_TYPE, outputs: { directoryPath, directoryName },
-      fields: { typeId: type, layerId: "product", directoryPath, directoryName },
+      fields: { typeId: type, layerId, directoryPath, directoryName },
     });
   });
 
