@@ -716,18 +716,26 @@ describe("standard runtime real HTTP/PG/processes", () => {
       ).toBe(false);
     }
   });
+  async function waitFor(check: () => boolean | Promise<boolean>) {
+    for (let i = 0; i < 200; i++) {
+      if (await check()) return;
+      await pause(25);
+    }
+    throw new Error("The test run did not reach the expected state: " + logs);
+  }
+
   it("cancels a real shell tree and recovers killed runtime work as aborted without replay", async () => {
     const s = await session(),
       r = await run(s, "hang");
-    await expect.poll(async () => (await api(`/v1/runs/${r.id}`)).body.toolExecutions?.some(
+    await waitFor(async () => (await api(`/v1/runs/${r.id}`)).body.toolExecutions.some(
       (tool: { toolName: string; status: string }) => tool.toolName === "bash" && tool.status === "running",
-    )).toBe(true);
+    ));
     const cancelled = await api(`/v1/runs/${r.id}/cancel`, {});
     expect(cancelled.body.run.stopReason).toBe("aborted");
     hold = true;
     const callsBefore = modelCalls;
     const pending = await run(s, "unanswered");
-    await expect.poll(() => modelCalls).toBeGreaterThan(callsBefore);
+    await waitFor(() => modelCalls > callsBefore);
     const calls = modelCalls;
     await stop("SIGKILL");
     hold = false;
