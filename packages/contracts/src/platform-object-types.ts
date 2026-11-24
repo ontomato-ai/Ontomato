@@ -279,6 +279,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [ACTION]: {
     ...describeType("action", "capability"),
+    childCollections: ["parameters", "codeSegments"],
     reads: {
       ...metadataList, count: countRead,
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },

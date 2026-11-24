@@ -6,7 +6,7 @@ import { componentIdSchema } from "./product-record-id";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { directPanelPortTypeSchema, matchesObjectType, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
+import { directPanelPortTypeSchema, matchesObjectType, panelFormTargetSchema, panelMessageKeySchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
@@ -60,6 +60,12 @@ export const panelObjectListColumnSchema = z.object({
   emptyKey: panelMessageKeySchema.optional(),
   valueMap: panelDisplayValueMapSchema.optional().describe(
     "Optional exact raw-value to display label/tone/icon mapping for cells in this column (pure presentation; no calculation or threshold expressions).",
+  ),
+  listSeparator: z.string().optional().describe(
+    "Optional separator inserted between inline array items in this column (defaults to ', '; pass '' for inline sentence fragments).",
+  ),
+  listStyle: z.enum(["inline", "tags"]).optional().describe(
+    "How array-valued cells in this column render: 'inline' joins items inline with listSeparator; 'tags' renders each item as a tag chip.",
   ),
   wrap: z.boolean().optional().describe("Allow text in this column to wrap onto multiple lines. Defaults to false."),
   width: columnWidthSchema.describe("Optional fixed column width in pixels (number) or CSS length string (for example '160px' or '20%')."),
@@ -489,6 +495,16 @@ export const panelRecordReferenceFieldValueSchema = z.object({
 }).strict();
 export type PanelRecordReferenceFieldValue = z.infer<typeof panelRecordReferenceFieldValueSchema>;
 
+/** Clickable reference to a parent-scoped child object carried directly as a record field value or inline array item. */
+export const panelRecordChildReferenceFieldValueSchema = z.object({
+  kind: z.literal("child-reference"),
+  parent: panelObjectIdentitySchema,
+  collection: z.string().min(1).max(200),
+  primaryKey: panelObjectRefSchema.shape.primaryKey,
+  label: z.string(),
+}).strict();
+export type PanelRecordChildReferenceFieldValue = z.infer<typeof panelRecordChildReferenceFieldValueSchema>;
+
 /** Structured JSON payload carried by a record field (for example nested tool lists or schemas). */
 export const panelRecordJsonFieldValueSchema = z.object({
   kind: z.literal("json"),
@@ -500,6 +516,7 @@ export type PanelRecordJsonFieldValue = z.infer<typeof panelRecordJsonFieldValue
 export const panelRecordFieldArrayItemSchema = z.union([
   panelRecordFieldScalarSchema,
   panelRecordReferenceFieldValueSchema,
+  panelRecordChildReferenceFieldValueSchema,
 ]);
 export type PanelRecordFieldArrayItem = z.infer<typeof panelRecordFieldArrayItemSchema>;
 
@@ -511,6 +528,7 @@ export const panelRecordFieldValueSchema = z.union([
   panelRecordFieldScalarSchema,
   panelRecordLocalizedFieldValueSchema,
   panelRecordReferenceFieldValueSchema,
+  panelRecordChildReferenceFieldValueSchema,
   panelRecordJsonFieldValueSchema,
   z.array(panelRecordFieldArrayItemSchema),
 ]);
@@ -655,7 +673,7 @@ export function panelRecordFieldText(
       .filter(part => part.length > 0)
       .join(", ");
   }
-  if (value.kind === "reference") return value.label || value.primaryKey;
+  if (value.kind === "reference" || value.kind === "child-reference") return value.label || value.primaryKey;
   if (value.kind === "localized") {
     for (const tag of [...localeFallbackChain(locale), ...localeFallbackChain(fallbackLocale)]) {
       const matched = lookupLocalizedValue(value.values, tag);

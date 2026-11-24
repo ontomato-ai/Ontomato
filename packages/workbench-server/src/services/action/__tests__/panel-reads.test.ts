@@ -190,7 +190,43 @@ describe("action catalog reads", () => {
         verified: false,
       },
     };
-    ownerAnswering({ "/action/queryById": ok({ ...approve, definition: richDefinition }) });
+    const codeSegments = [
+      {
+        id: "try-1",
+        kind: "TRY_CATCH",
+        kindLabel: "Try/Catch",
+        title: "Protected approval",
+        codeRange: { start: 1, end: 12 },
+        trySegs: [
+          {
+            id: "upd-1",
+            kind: "UPDATE_OBJECT",
+            kindLabel: "Update object",
+            title: "Mark approved",
+            codeRange: { start: 2, end: 5 },
+            class: "Order",
+            objectIdFrom: "order_id",
+            assignments: [{ field: "status", valueFrom: "approved" }],
+          },
+        ],
+        branchArms: [
+          {
+            condition: "order_id != ''",
+            segs: [
+              {
+                id: "edge-1",
+                kind: "CREATE_EDGE",
+                kindLabel: "Create edge",
+                title: "Link reviewer",
+                codeRange: { start: 6, end: 8 },
+                sourceObjectIdFrom: "order_id",
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    ownerAnswering({ "/action/queryById": ok({ ...approve, definition: richDefinition, codeSegments }) });
     const adapter = createActionReadAdapter(owner, viewer);
 
     const summary = await adapter.derivedSummary("approve-order");
@@ -203,6 +239,14 @@ describe("action catalog reads", () => {
       tags: { affects: ["Order", "AuditEntry"] },
     });
 
+    const orderIdRef = {
+      kind: "child-reference",
+      parent: { objectType: ACTION, primaryKey: "approve-order" },
+      collection: "parameters",
+      primaryKey: "order_id",
+      label: "order_id",
+    };
+
     const effects = await adapter.derivedEffects("approve-order");
     expect(panelRecordListSchema.parse(effects)).toEqual(effects);
     // Ordered strictly by group: Creates -> Updates -> Deletes -> Relations -> Vector fields -> Other effects.
@@ -212,17 +256,22 @@ describe("action catalog reads", () => {
     expect(effects.map(row => row.tones?.kind)).toEqual([
       "success", "info", "danger", "success", "danger", "warning",
     ]);
+    expect(effects[0]?.fields.target).toBe("AuditEntry");
     expect(effects[1]).toMatchObject({
       label: "Mark approved",
       fields: {
         group: "Updates",
         kind: "Update object",
-        target: "Order · Object ← order_id",
+        target: ["Order · Object ← ", orderIdRef],
         fields: "status ← approved",
         guards: "status == 'open'",
       },
     });
-    expect(effects[3]?.fields.target).toBe("APPROVED_BY · Order → Reviewer · ← order_id · → reviewer_id");
+    expect(effects[3]?.fields.target).toEqual([
+      "APPROVED_BY · Order → Reviewer · ← ",
+      orderIdRef,
+      " · → reviewer_id",
+    ]);
 
     const parameters = await adapter.derivedParameters("approve-order");
     expect(panelRecordListSchema.parse(parameters)).toEqual(parameters);
@@ -231,7 +280,35 @@ describe("action catalog reads", () => {
         primaryKey: "order_id",
         label: "order_id",
         subtitle: "Target order key",
-        fields: { type: "TYPE_STRING", required: "", sample: "ORD-1", constraints: "" },
+        fields: {
+          type: "TYPE_STRING",
+          required: "",
+          sample: "ORD-1",
+          constraints: "",
+          codeLocations: [
+            {
+              kind: "child-reference",
+              parent: { objectType: ACTION, primaryKey: "approve-order" },
+              collection: "codeSegments",
+              primaryKey: "try-1",
+              label: "Protected approval (L1–12)",
+            },
+            {
+              kind: "child-reference",
+              parent: { objectType: ACTION, primaryKey: "approve-order" },
+              collection: "codeSegments",
+              primaryKey: "upd-1",
+              label: "Mark approved (L2–5)",
+            },
+            {
+              kind: "child-reference",
+              parent: { objectType: ACTION, primaryKey: "approve-order" },
+              collection: "codeSegments",
+              primaryKey: "edge-1",
+              label: "Link reviewer (L6–8)",
+            },
+          ],
+        },
         tags: { objectTypes: ["Order"] },
       }),
       expect.objectContaining({
@@ -240,6 +317,7 @@ describe("action catalog reads", () => {
         fields: { type: "TYPE_STRING", required: "", objectTypes: "", sample: "ok", constraints: "" },
       }),
     ]);
+    expect(parameters[1]?.fields).not.toHaveProperty("codeLocations");
 
     const conditions = await adapter.derivedConditions("approve-order");
     expect(panelRecordListSchema.parse(conditions)).toEqual(conditions);
@@ -247,24 +325,40 @@ describe("action catalog reads", () => {
     expect(conditions[0]).toMatchObject({
       label: "order_id Order.status = open",
       subtitle: "Order must be open",
-      fields: { kind: "Rule", join: "OR", detail: "Order must be open" },
+      fields: {
+        kind: "Rule",
+        join: "OR",
+        expression: [orderIdRef, " Order.status = open"],
+        detail: "Order must be open",
+      },
       tones: { kind: "info" },
     });
     expect(conditions[2]).toMatchObject({
       label: "Reviewer has budget authority",
       subtitle: "Checked dynamically in helper",
-      fields: { kind: "Custom check", join: "", detail: "Checked dynamically in helper" },
+      fields: {
+        kind: "Custom check",
+        join: "",
+        expression: "Reviewer has budget authority",
+        detail: "Checked dynamically in helper",
+      },
       tones: { kind: "warning" },
     });
+
+    // Whitespace-only descriptions omit subtitle cleanly.
+    ownerAnswering({ "/action/queryById": ok({ ...approve, description: "   " }) });
+    const blankDescRecord = await adapter.record("approve-order");
+    expect(blankDescRecord).not.toHaveProperty("subtitle");
 
     // Targetless action with empty affects, effects, parameters, and conditions.
     ownerAnswering({
       "/action/queryById": ok({
         ...approve,
-        definition: { version: 1, source: "DERIVED", verified: false, name: "Empty", description: null, codeHash: null, explanationVersion: null },
+        definition: { version: 1, source: "DERIVED", verified: false, name: "Empty", description: "  ", codeHash: null, explanationVersion: null },
       }),
     });
     const emptySummary = await adapter.derivedSummary("empty-action");
+    expect(emptySummary).not.toHaveProperty("subtitle");
     expect(emptySummary.fields).toEqual({
       declaredTarget: "No target: the action runs on parameters alone",
       affects: "None",

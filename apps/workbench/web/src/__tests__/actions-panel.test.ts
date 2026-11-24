@@ -34,7 +34,7 @@ import { directRun, noOperations } from "./panel-frame";
  * - Catalog section (`ac-section`) stays mounted under `v-show="!detailVisible"` while viewing/creating an action so
  *   local search, checked rows, and list DOM state survive returning to the catalog.
  * - Detail tabs (`definition`, `derived`, `code`) stay mounted under `v-show` inside `ac-detail` so unsaved form edits
- *   and `draftCode` synchronization into `AnnotatedCode.currentCode` survive switching tabs.
+ *   and direct `form.draft -> AnnotatedCode.currentCode` synchronization survive switching tabs.
  */
 
 const actionTypeEntry = platformTypeTableEntrySchema.parse({
@@ -210,6 +210,13 @@ afterEach(() => {
 interface MountActionsOptions {
   initial?: Record<string, RuntimeJsonValue>;
   confirmLeave?: () => boolean | Promise<boolean>;
+  locale?: "en" | "zh-CN";
+  derivedData?: {
+    effects?: unknown[];
+    parameters?: unknown[];
+    conditions?: unknown[];
+    explanation?: unknown;
+  };
 }
 
 async function mountActionsPanel(options: MountActionsOptions | Record<string, RuntimeJsonValue> = {}) {
@@ -237,12 +244,13 @@ async function mountActionsPanel(options: MountActionsOptions | Record<string, R
     confirmLeaveUnsaved,
   });
 
+  const activeLocale = normalized.locale ?? "en";
   const panelSdk = panelModuleFor({
     element,
     template,
     install(app) {
       app
-        .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } }))
+        .use(createI18n({ legacy: false, locale: activeLocale, messages: { en: publicEn, "zh-CN": publicEn } }))
         .use(ElementPlus);
     },
     mounted(mount) {
@@ -260,7 +268,7 @@ async function mountActionsPanel(options: MountActionsOptions | Record<string, R
       confirmLeaveUnsaved,
     }),
     messages: source.content.messages,
-    locale: ref("en"),
+    locale: ref(activeLocale),
     defaultLocale: "en",
     requests: {
       request: async (path, init) => {
@@ -408,13 +416,19 @@ async function mountActionsPanel(options: MountActionsOptions | Record<string, R
           } as never,
         };
       }
-      if (member === "derivedEffects" || member === "derivedParameters" || member === "derivedConditions") {
-        return { status: "ready", value: [] as never };
+      if (member === "derivedEffects") {
+        return { status: "ready", value: (normalized.derivedData?.effects ?? []) as never };
+      }
+      if (member === "derivedParameters") {
+        return { status: "ready", value: (normalized.derivedData?.parameters ?? []) as never };
+      }
+      if (member === "derivedConditions") {
+        return { status: "ready", value: (normalized.derivedData?.conditions ?? []) as never };
       }
       if (member === "explanation") {
         return {
           status: "ready",
-          value: {
+          value: (normalized.derivedData?.explanation ?? {
             code: SAVED_CODE,
             segments: [
               {
@@ -426,7 +440,7 @@ async function mountActionsPanel(options: MountActionsOptions | Record<string, R
               },
             ],
             summary: [{ title: "Summary", kind: "text", text: "Marks the order as approved." }],
-          } as never,
+          }) as never,
         };
       }
       return { status: "empty" };
@@ -487,17 +501,16 @@ describe("builtin actions panel detail mount lifecycle", () => {
       expect(form).toBeDefined();
       expect(form!.values.value.name).toBe("Approve order");
     });
+    expect(manifest.state).not.toHaveProperty("draftCode");
     expect(element.querySelector('[data-member="catalog"]')).toBe(initialCatalogEl);
     expect(catalogSection(element).style.display).toBe("none");
-    expect(instance.state.values.value.draftCode).toBe(SAVED_CODE);
 
     // 3. Edit code in form and switch tabs (definition -> code -> derived):
-    //    form remains mounted & registered, unsaved draft and draftCode sync are preserved.
+    //    form remains mounted & registered, and direct form.draft -> AnnotatedCode.currentCode sync survives tab switches.
     const formHandle = instance.forms.handle("form")!;
     formHandle.set("/function/code", EDITED_CODE);
     await vi.waitFor(() => {
       expect(formHandle.dirty.value).toBe(true);
-      expect(instance.state.values.value.draftCode).toBe(EDITED_CODE);
     });
 
     const tabs = [...element.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
@@ -517,7 +530,6 @@ describe("builtin actions panel detail mount lifecycle", () => {
     expect(instance.forms.handle("form")).toBe(formHandle);
     expect((formHandle.values.value.function as Record<string, unknown>).code).toBe(EDITED_CODE);
     expect(formHandle.dirty.value).toBe(true);
-    expect(instance.state.values.value.draftCode).toBe(EDITED_CODE);
 
     // 4a. Clicking Back on the `code` tab with unsaved changes triggers confirmation; cancelling keeps detail & draft.
     const backButton = [...element.querySelectorAll<HTMLButtonElement>(".ac-detail-head button")]
@@ -537,7 +549,6 @@ describe("builtin actions panel detail mount lifecycle", () => {
     expect(instance.forms.handle("form")).toBe(formHandle);
     expect((formHandle.values.value.function as Record<string, unknown>).code).toBe(EDITED_CODE);
     expect(formHandle.dirty.value).toBe(true);
-    expect(instance.state.values.value.draftCode).toBe(EDITED_CODE);
 
     // 4b. Switch to `derived` tab; Escape also passes through the unsaved confirmation guard; cancelling keeps draft.
     derivedTab!.click();
@@ -553,7 +564,6 @@ describe("builtin actions panel detail mount lifecycle", () => {
     expect(instance.state.values.value.selected).toEqual({ className: ACTION, primaryKey: "approve-order" });
     expect(instance.state.values.value.activeTab).toBe("derived");
     expect(formHandle.dirty.value).toBe(true);
-    expect(instance.state.values.value.draftCode).toBe(EDITED_CODE);
 
     // 4c. Confirming Back on `derived` tab leaves detail, unmounts form, clears draft, and preserves catalog state.
     allowLeave = true;
@@ -567,7 +577,6 @@ describe("builtin actions panel detail mount lifecycle", () => {
       expect(element.querySelector(".ac-detail")).toBeNull();
       expect(instance.forms.handle("form")).toBeUndefined();
     });
-    expect(instance.state.values.value.draftCode).toBeNull();
     expect(element.querySelector('[data-member="catalog"]')).toBe(initialCatalogEl);
     expect(catalogSection(element).style.display).not.toBe("none");
     expect(instance.state.values.value.keyword).toBe("Approve");
@@ -698,6 +707,257 @@ describe("builtin actions panel detail mount lifecycle", () => {
     expect(derivedMount.mount.instance.deepLink()).toMatchObject({
       selected: { className: ACTION, primaryKey: "approve-order" },
       activeTab: "code",
+    });
+  });
+
+  it("wires child-object selectedParameter, inline parameter links, and parameter <-> code-segment bidirectional navigation", async () => {
+    expect(manifest.state.selectedParameter?.type).toEqual({
+      kind: "child-object",
+      parentType: ACTION,
+      collection: "parameters",
+    });
+
+    const parent = { objectType: ACTION, primaryKey: "approve-order" };
+    const orderParamRef = {
+      kind: "child-reference" as const,
+      parent,
+      collection: "parameters",
+      primaryKey: "order_id",
+      label: "order_id",
+    };
+    const noteParamRef = {
+      kind: "child-reference" as const,
+      parent,
+      collection: "parameters",
+      primaryKey: "note",
+      label: "note",
+    };
+    const segRef = {
+      kind: "child-reference" as const,
+      parent,
+      collection: "codeSegments",
+      primaryKey: "seg-1",
+      label: "Mark approved (L1–2)",
+    };
+
+    const { mount, element } = await mountActionsPanel({
+      initial: {
+        selected: { className: ACTION, primaryKey: "approve-order" },
+        activeTab: "derived",
+      },
+      derivedData: {
+        effects: [
+          {
+            primaryKey: "effect-update-0",
+            label: "Mark approved",
+            fieldLabels: { group: "Category", kind: "Kind", target: "Target", fields: "Fields", guards: "Checks" },
+            fields: {
+              group: "Updates",
+              kind: "Update object",
+              target: ["Order · Object ← ", orderParamRef],
+              fields: ["note ← ", noteParamRef],
+              guards: "",
+            },
+            tones: { kind: "info" },
+          },
+        ],
+        parameters: [
+          {
+            primaryKey: "order_id",
+            label: "order_id",
+            subtitle: "Target order key",
+            fieldLabels: {
+              type: "Type",
+              required: "Required",
+              objectTypes: "Object types",
+              sample: "Sample",
+              constraints: "Constraints",
+              codeLocations: "Used in code",
+            },
+            fields: {
+              type: "TYPE_STRING",
+              required: "Yes",
+              sample: "ORD-1",
+              constraints: "",
+              codeLocations: [segRef],
+            },
+            tags: { objectTypes: ["Order"] },
+          },
+          {
+            primaryKey: "note",
+            label: "note",
+            fieldLabels: {
+              type: "Type",
+              required: "Required",
+              objectTypes: "Object types",
+              sample: "Sample",
+              constraints: "Constraints",
+              codeLocations: "Used in code",
+            },
+            fields: {
+              type: "TYPE_STRING",
+              required: "",
+              objectTypes: "",
+              sample: "ok",
+              constraints: "",
+            },
+          },
+        ],
+        conditions: [
+          {
+            primaryKey: "condition-0",
+            label: "order_id Order.status = open",
+            fieldLabels: { kind: "Type", join: "Combination", expression: "Condition", detail: "Details" },
+            fields: {
+              kind: "Rule",
+              join: "",
+              expression: [orderParamRef, " Order.status = open"],
+              detail: "Order must be open",
+            },
+            tones: { kind: "info" },
+          },
+        ],
+        explanation: {
+          code: SAVED_CODE,
+          segments: [
+            {
+              id: "seg-1",
+              lineRange: { start: 1, end: 2 },
+              kind: "UPDATE_OBJECT",
+              kindLabel: "Update object",
+              title: "Mark approved",
+              details: [
+                {
+                  label: "Object from",
+                  parts: [{ text: "order_id", refKey: "order_id" }],
+                },
+              ],
+            },
+          ],
+          summary: [{ title: "Summary", kind: "text", text: "Marks the order as approved." }],
+        },
+      },
+    });
+    const { instance } = mount;
+
+    await vi.waitFor(() => {
+      expect(element.querySelectorAll('[data-member="derivedParameters"] tbody tr[data-row-item="true"]')).toHaveLength(2);
+      expect(element.querySelectorAll('[data-member="derivedEffects"] tbody tr[data-row-item="true"]')).toHaveLength(1);
+      expect(element.querySelectorAll('[data-member="derivedConditions"] tbody tr[data-row-item="true"]')).toHaveLength(1);
+    });
+
+    // Empty description on `note` parameter draws no empty subtitle; missing codeLocations renders "—".
+    const paramRows = [...element.querySelectorAll<HTMLTableRowElement>('[data-member="derivedParameters"] tbody tr[data-row-item="true"]')];
+    expect(paramRows[0]!.querySelector(".sdk-object-list-cell-sub")?.textContent?.trim()).toBe("Target order key");
+    expect(paramRows[1]!.querySelector(".sdk-object-list-cell-sub")).toBeNull();
+    expect(paramRows[1]!.textContent).toContain("—");
+
+    // Inline sentence rendering omits extra commas (listSeparator: "").
+    const effectTargetCell = element.querySelector<HTMLElement>('[data-member="derivedEffects"] tbody tr[data-row-item="true"] td:nth-child(3)');
+    expect(effectTargetCell?.textContent?.replace(/\s+/g, " ").trim()).toBe("Order · Object ← order_id");
+    expect(effectTargetCell?.textContent).not.toContain(",");
+
+    // 1. Clicking inline parameter button in derivedEffects selects child-object state and highlights & scrolls to row.
+    const scrollSpy = vi.fn();
+    paramRows[0]!.scrollIntoView = scrollSpy;
+    const effectParamBtn = effectTargetCell!.querySelector<HTMLButtonElement>("button.is-child-ref")!;
+    expect(effectParamBtn.textContent?.trim()).toBe("order_id");
+    effectParamBtn.click();
+
+    await vi.waitFor(() => {
+      expect(instance.state.values.value.selectedParameter).toEqual({
+        parent,
+        primaryKey: "order_id",
+      });
+      expect(paramRows[0]!.classList.contains("chosen")).toBe(true);
+      expect(paramRows[0]!.getAttribute("aria-selected")).toBe("true");
+      expect(scrollSpy).toHaveBeenCalled();
+    });
+
+    // 2. Clicking a parameter row directly selects its child-object identity (`note`).
+    paramRows[1]!.click();
+    await vi.waitFor(() => {
+      expect(instance.state.values.value.selectedParameter).toEqual({
+        parent,
+        primaryKey: "note",
+      });
+      expect(paramRows[1]!.classList.contains("chosen")).toBe(true);
+      expect(paramRows[0]!.classList.contains("chosen")).toBe(false);
+    });
+
+    // 3. Clicking inline parameter button in derivedConditions re-selects `order_id` child-object state.
+    const conditionExprCell = element.querySelector<HTMLElement>('[data-member="derivedConditions"] tbody tr td:nth-child(3)');
+    expect(conditionExprCell?.textContent?.replace(/\s+/g, " ").trim()).toBe("order_id Order.status = open");
+    const conditionParamBtn = conditionExprCell!.querySelector<HTMLButtonElement>("button.is-child-ref")!;
+    conditionParamBtn.click();
+    await vi.waitFor(() => {
+      expect(instance.state.values.value.selectedParameter).toEqual({
+        parent,
+        primaryKey: "order_id",
+      });
+      expect(paramRows[0]!.classList.contains("chosen")).toBe(true);
+    });
+
+    // 4. Clicking codeLocations tag button in derivedParameters jumps to `code` tab and activates `seg-1`.
+    const codeLocationBtn = paramRows[0]!.querySelector<HTMLButtonElement>("button.is-child-ref")!;
+    expect(codeLocationBtn.textContent?.trim()).toBe("Mark approved (L1–2)");
+    codeLocationBtn.click();
+    await vi.waitFor(() => {
+      expect(instance.state.values.value.activeTab).toBe("code");
+      expect(instance.state.values.value.activeSegmentId).toBe("seg-1");
+    });
+
+    // 5. Expanding seg-1 details and clicking its parameter reference jumps back to `derived` tab with child-object selectedParameter.
+    instance.state.set("selectedParameter", null);
+    await nextTick();
+    const segCard = element.querySelector<HTMLElement>('[data-member="explanation"] [data-segment-id="seg-1"]')!;
+    segCard.querySelector<HTMLButtonElement>(".sdk-annotated-code-seg-toggle")!.click();
+    await vi.waitFor(() => {
+      expect(segCard.querySelector<HTMLButtonElement>(".sdk-annotated-code-ref")).not.toBeNull();
+    });
+    const refButton = segCard.querySelector<HTMLButtonElement>(".sdk-annotated-code-ref")!;
+    expect(refButton.textContent?.trim()).toBe("order_id");
+    refButton.click();
+    await vi.waitFor(() => {
+      expect(instance.state.values.value.activeTab).toBe("derived");
+      expect(instance.state.values.value.selectedParameter).toEqual({
+        parent,
+        primaryKey: "order_id",
+      });
+    });
+  });
+
+  it("renders configured English and Chinese empty states for zero effects, parameters, and conditions without blank subtitles", async () => {
+    const enMount = await mountActionsPanel({
+      locale: "en",
+      initial: {
+        selected: { className: ACTION, primaryKey: "approve-order" },
+        activeTab: "derived",
+      },
+    });
+    await vi.waitFor(() => {
+      expect(enMount.element.querySelector('[data-member="derivedEffects"]')?.textContent)
+        .toContain("The owner derives no effect from this code.");
+      expect(enMount.element.querySelector('[data-member="derivedParameters"]')?.textContent)
+        .toContain("No parameters.");
+      expect(enMount.element.querySelector('[data-member="derivedConditions"]')?.textContent)
+        .toContain("No submission condition is derived.");
+    });
+
+    const zhMount = await mountActionsPanel({
+      locale: "zh-CN",
+      initial: {
+        selected: { className: ACTION, primaryKey: "approve-order" },
+        activeTab: "derived",
+      },
+    });
+    await vi.waitFor(() => {
+      expect(zhMount.element.querySelector('[data-member="derivedEffects"]')?.textContent)
+        .toContain("属主没有从这段代码里推导出改动。");
+      expect(zhMount.element.querySelector('[data-member="derivedParameters"]')?.textContent)
+        .toContain("没有参数。");
+      expect(zhMount.element.querySelector('[data-member="derivedConditions"]')?.textContent)
+        .toContain("没有推导出提交条件。");
     });
   });
 });

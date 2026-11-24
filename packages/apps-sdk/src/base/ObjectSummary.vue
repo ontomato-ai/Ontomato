@@ -6,13 +6,16 @@ import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { useMemberData, useMemberOutput } from "../panel/member";
-import type { PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
+import type { PlatformChildFieldReference, PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
 import {
+  childReferenceDisplayLabel,
   displayFieldText,
+  isRecordChildReference,
   isRecordReference,
   recordFieldArrayItems,
   referenceDisplayLabel,
   scalarFieldText,
+  toChildFieldReference,
   toFieldReference,
 } from "./record-field";
 import { textHighlightSegments } from "./text-highlight";
@@ -71,6 +74,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** Emitted when a reader clicks a reference field carrying an owner-supplied object reference. */
   navigate: [reference: PlatformFieldReference, fieldName: string];
+  /** Emitted when a reader clicks a parent-scoped child reference field or item. */
+  "navigate-child": [reference: PlatformChildFieldReference, fieldName: string];
 }>();
 
 const { t, locale } = useI18n();
@@ -186,6 +191,10 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
   void panel.instance.output(slot.slot, output, { className: reference.className, primaryKey: reference.primaryKey });
   emit("navigate", reference, fieldName);
 }
+
+function navigateToChild(reference: PlatformChildFieldReference, fieldName: string) {
+  emit("navigate-child", reference, fieldName);
+}
 </script>
 
 <template>
@@ -226,7 +235,15 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
           <div v-if="tagsField && recordFieldArrayItems(current, tagsField).length" class="sdk-object-summary-article-tags">
             <template v-for="(item, itemIndex) in recordFieldArrayItems(current, tagsField)" :key="itemIndex">
               <button
-                v-if="isRecordReference(item)"
+                v-if="isRecordChildReference(item)"
+                type="button"
+                class="sdk-object-ref-link"
+                @click="navigateToChild(toChildFieldReference(item), tagsField)"
+              >
+                {{ childReferenceDisplayLabel(item) }}
+              </button>
+              <button
+                v-else-if="isRecordReference(item)"
                 type="button"
                 class="sdk-object-ref-link"
                 @click="navigateTo(toFieldReference(item), tagsField)"
@@ -280,7 +297,17 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
               <dt>{{ current.fieldLabels?.[name] ?? name }}</dt>
               <dd>
                 <button
-                  v-if="isRecordReference(current.fields[name])"
+                  v-if="isRecordChildReference(current.fields[name])"
+                  type="button"
+                  class="sdk-object-ref-link"
+                  @click="navigateToChild(toChildFieldReference(current.fields[name]!), name)"
+                >
+                  <template v-for="(part, index) in textHighlightSegments(childReferenceDisplayLabel(current.fields[name]!), current.highlights?.[name])" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </button>
+                <button
+                  v-else-if="isRecordReference(current.fields[name])"
                   type="button"
                   class="sdk-object-ref-link"
                   @click="navigateTo(toFieldReference(current.fields[name]!), name)"
@@ -292,7 +319,15 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
                 <span v-else-if="recordFieldArrayItems(current, name).length" class="sdk-object-summary-tags">
                   <template v-for="(item, itemIndex) in recordFieldArrayItems(current, name)" :key="itemIndex">
                     <button
-                      v-if="isRecordReference(item)"
+                      v-if="isRecordChildReference(item)"
+                      type="button"
+                      class="sdk-object-ref-link"
+                      @click="navigateToChild(toChildFieldReference(item), name)"
+                    >
+                      {{ childReferenceDisplayLabel(item) }}
+                    </button>
+                    <button
+                      v-else-if="isRecordReference(item)"
                       type="button"
                       class="sdk-object-ref-link"
                       @click="navigateTo(toFieldReference(item), name)"
