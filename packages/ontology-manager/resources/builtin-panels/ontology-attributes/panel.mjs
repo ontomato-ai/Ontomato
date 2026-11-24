@@ -44,9 +44,32 @@ await mountPanel({
       instance.state.set("className", next || null);
     });
 
-    // An edited attribute keeps its own owner type; only creation fixes `/className` to the filtered class.
+    // Keep create mode consistent for both humans and agents:
+    // entering `creating` clears any open detail and fixes `createIn` to the active `className` filter
+    // unless the caller already specified `createIn`; leaving `creating` clears `createIn`.
+    watch(
+      creating,
+      (next) => {
+        if (next) {
+          const patch = {};
+          if (selectedKey.value) patch.selected = null;
+          const activeClass = className.value || ownerFilterKey.value;
+          if (!values.value.createIn && activeClass) patch.createIn = activeClass;
+          if (Object.keys(patch).length > 0) instance.state.setState(patch);
+          return;
+        }
+        if (values.value.createIn) instance.state.set("createIn", null);
+      },
+      { immediate: true },
+    );
+
+    // An edited attribute keeps its own owner type; switching to an existing attribute exits create mode.
     watch(selectedKey, (next) => {
-      if (next && values.value.createIn) instance.state.set("createIn", null);
+      if (!next || !selectedKey.value) return;
+      const patch = {};
+      if (creating.value) patch.creating = false;
+      if (values.value.createIn) patch.createIn = null;
+      if (Object.keys(patch).length > 0) instance.state.setState(patch);
     });
 
     // Read-only outputs published by the list and detail projections.
@@ -58,13 +81,42 @@ await mountPanel({
       if (!selectedKey.value) return "empty";
       return headerStatus.value ?? "loading";
     });
-    const isPrimaryKeyOutput = usePanelOutput("detail", "isPrimaryKey");
-    const isPrimaryKey = computed(() => isPrimaryKeyOutput.value === true);
-    // Fail closed: allow setPrimaryKey only when detail explicitly reports isPrimaryKey === false.
-    const setPrimaryKeyDisabled = computed(() => isPrimaryKeyOutput.value !== false);
+    const detailError = usePanelOutput("detail", "errorMessage");
+    const detailErrorText = computed(() => {
+      const message = typeof detailError.value === "string" ? detailError.value.trim() : "";
+      return message || t("attr.loadError");
+    });
+
+    // Track whether the currently selected attribute has loaded at least once so a transient
+    // re-read failure does not unmount the edit form or drop unsaved edits.
+    const detailEverReady = ref(false);
+    watch(
+      [selectedKey, detailStatus],
+      ([key, status], previous) => {
+        const prevKey = previous?.[0] ?? "";
+        if (!key) {
+          detailEverReady.value = false;
+          return;
+        }
+        if (key !== prevKey) {
+          detailEverReady.value = !prevKey && status === "ready";
+          return;
+        }
+        if (status === "ready") detailEverReady.value = true;
+      },
+      { immediate: true },
+    );
+
+    const showDetailBody = computed(
+      () =>
+        detailEverReady.value
+        && detailStatus.value !== "forbidden"
+        && detailStatus.value !== "empty"
+        && detailStatus.value !== "missing",
+    );
 
     const formDraft = usePanelFormDraft("form", {
-      when: () => Boolean(selectedKey.value) && detailStatus.value === "ready",
+      when: () => Boolean(selectedKey.value) && showDetailBody.value,
     });
 
     function closeDetail() {
@@ -122,11 +174,6 @@ await mountPanel({
       cancelCreate();
     }
 
-    function onSetPrimaryKeyDone(outcome) {
-      if (outcome?.kind !== "success") return;
-      instance.refreshObjects();
-    }
-
     function onRemoveDone(outcome) {
       if (outcome?.kind !== "success") return;
       closeDetail();
@@ -137,8 +184,9 @@ await mountPanel({
       narrow,
       selectedKey,
       detailStatus,
-      isPrimaryKey,
-      setPrimaryKeyDisabled,
+      detailEverReady,
+      detailErrorText,
+      showDetailBody,
       search,
       countText,
       creating,
@@ -152,7 +200,6 @@ await mountPanel({
       cancelCreate,
       onSaved,
       onDiscarded,
-      onSetPrimaryKeyDone,
       onRemoveDone,
       refresh: () => instance.refreshObjects(),
     };

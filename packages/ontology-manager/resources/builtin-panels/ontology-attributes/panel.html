@@ -113,6 +113,12 @@
   .attrs-missing {
     padding: var(--spacing-2xl) var(--page-gutter);
   }
+  .attrs-detail-error {
+    padding: var(--page-content-gap) var(--page-gutter);
+  }
+  .attrs-detail-banner {
+    grid-column: 1 / -1;
+  }
 
   @container attrs-page (max-width: 850px) {
     .attrs-detail-body {
@@ -183,23 +189,23 @@
           <h1 v-if="detailStatus !== 'ready'">{{ selectedKey }}</h1>
         </template>
         <template #actions>
-          <template v-if="detailStatus === 'ready'">
-            <sdk-tooltip :disabled="!isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
-              <span>
-                <projection slot="setPrimaryKey" :inputs="{ disabled: setPrimaryKeyDisabled }" @done="onSetPrimaryKeyDone"></projection>
-              </span>
-            </sdk-tooltip>
+          <template v-if="showDetailBody">
+            <projection slot="setPrimaryKey"></projection>
             <projection slot="remove" @done="onRemoveDone"></projection>
           </template>
         </template>
       </page-header>
 
-      <p v-if="detailStatus === 'loading'" class="attrs-note" role="status">{{ t("attr.loading") }}</p>
-      <p v-else-if="detailStatus === 'forbidden'" class="attrs-note attrs-failure">{{ t("attr.forbidden") }}</p>
-      <div v-else-if="detailStatus !== 'ready'" class="attrs-missing">
+      <p v-if="(detailStatus === 'loading' || detailStatus === 'awaiting') && !detailEverReady" class="attrs-note" role="status">{{ t("attr.loading") }}</p>
+      <p v-else-if="detailStatus === 'forbidden'" class="attrs-note attrs-failure" role="alert">{{ t("attr.forbidden") }}</p>
+      <div v-else-if="detailStatus === 'empty' || detailStatus === 'missing'" class="attrs-missing">
         <sdk-empty :description="t('attr.notFound')"></sdk-empty>
       </div>
+      <div v-else-if="detailStatus === 'error' && !detailEverReady" class="attrs-detail-error" role="alert">
+        <info-banner tone="danger" :text="detailErrorText"></info-banner>
+      </div>
       <div v-else class="attrs-detail-body">
+        <info-banner v-if="detailStatus === 'error'" class="attrs-detail-banner" tone="danger" :text="detailErrorText" role="alert"></info-banner>
         <section class="attrs-card">
           <h2>{{ t("attr.editing") }}</h2>
           <div class="attrs-form-wrap">
