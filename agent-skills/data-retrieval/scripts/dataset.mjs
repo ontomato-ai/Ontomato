@@ -103,7 +103,7 @@ if (active) {
   try { state = await json("work/.retrieval-run.json"); }
   catch (error) { if (error.code !== "ENOENT") throw error; }
 }
-if (command === "begin" || !state) {
+if (!active && (command === "begin" || !state)) {
   if (!input.question) throw new Error("External delivery requires begin @question.json first");
   const body = { question: input.question, ...(state?.id ? { retrievalId: state.id } : {}) };
   let key = randomUUID();
