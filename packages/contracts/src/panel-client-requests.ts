@@ -6,7 +6,7 @@ import {
   DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION,
   METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL,
   TRIGGER, WORKFLOW, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
-  RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, SET_TRIGGER_STATUS, DELETE_TRIGGER, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
+  RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, SET_TRIGGER_STATUS, DELETE_TRIGGER, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
   IMPORT_SKILL, EXPORT_SKILL, EXPORT_FEEDBACK, DELETE_METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_METRIC_VIEW,
   TEST_EXECUTE_METRIC_VIEW, DELETE_FUNCTION,
 } from "./platform-object-types";
@@ -15,7 +15,7 @@ export {
   DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION,
   METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL,
   TRIGGER, WORKFLOW, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
-  RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, SET_TRIGGER_STATUS, DELETE_TRIGGER, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
+  RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, SET_TRIGGER_STATUS, DELETE_TRIGGER, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
   IMPORT_SKILL, EXPORT_SKILL, EXPORT_FEEDBACK, DELETE_METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_METRIC_VIEW,
   TEST_EXECUTE_METRIC_VIEW, DELETE_FUNCTION,
 } from "./platform-object-types";
@@ -172,6 +172,13 @@ const actionDefinitionReads = [
   { ...dataQueryPost("/action/definitionForm"), instructions: formReadInstructions },
 ] as const satisfies readonly PanelClientRead[];
 
+const workflowDefinitionReads = [
+  dataQueryPost("/workflow/query"),
+  dataQueryPost("/workflow/grants"),
+  dataQueryPost("/workflow/subjects"),
+  dataQueryPost("/action/queryList"),
+] as const;
+
 const triggerDefinitionReads = [
   dataQueryPost("/trigger/queryList"),
   dataQueryPost("/trigger/queryById"),
@@ -262,7 +269,7 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(FUNCTION)]: functionDefinitionReads,
   [objectBinding(ACTION)]: actionDefinitionReads,
   [objectBinding(TRIGGER)]: triggerDefinitionReads,
-  [objectBinding(WORKFLOW)]: [dataQueryPost("/workflow/query")],
+  [objectBinding(WORKFLOW)]: workflowDefinitionReads,
   [objectBinding(ONTOLOGY_TYPE)]: platformOntologyReads,
   [objectBinding(ONTOLOGY_RELATION_KIND)]: platformOntologyReads,
 };
@@ -318,6 +325,10 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [objectBinding(FUNCTION)]: [...functionDefinitionReads, dataQueryPost("/function/save")],
   [objectBinding(ACTION)]: [...actionDefinitionReads, dataQueryPost("/action/save")],
   [objectBinding(TRIGGER)]: [...triggerDefinitionReads, dataQueryPost("/trigger/save")],
+  [objectBinding(WORKFLOW)]: [...workflowDefinitionReads, dataQueryPost("/workflow/save")],
+  [bindingKey({ kind: "PlatformOperation", id: ACTIVATE_WORKFLOW })]: [dataQueryPost("/workflow/activate"), panelOperationImpactRequest],
+  [bindingKey({ kind: "PlatformOperation", id: DEACTIVATE_WORKFLOW })]: [dataQueryPost("/workflow/deactivate"), panelOperationImpactRequest],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_WORKFLOW })]: [dataQueryPost("/workflow/delete"), panelOperationImpactRequest],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_METRIC_VIEW })]: [dataQueryPost("/metricView/delete"), panelOperationImpactRequest],
   [bindingKey({ kind: "PlatformOperation", id: SET_METRIC_VIEW_STATUS })]: [dataQueryPost("/metricView/setStatus")],
   [bindingKey({ kind: "PlatformOperation", id: TEST_METRIC_VIEW })]: [panelReadOperationRequest],

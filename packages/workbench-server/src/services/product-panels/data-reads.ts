@@ -233,6 +233,14 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [WORKFLOW]: {
       count: async () => (await workflows()).count(),
       list: async () => (await workflows()).list(),
+      query: async (_selection, params) => (await workflows()).query(params),
+      record: async selection => (await workflows()).record(selection.primaryKey!),
+      form: async selection => (await workflows()).form(selection.primaryKey!),
+      createForm: async (_selection, params) => (await workflows()).createForm(formParams(params)),
+      grantCaseScopedSteps: async selection => (await workflows()).grantCaseScopedSteps(selection.primaryKey!),
+      grantInForce: async selection => (await workflows()).grantInForce(selection.primaryKey!),
+      grantSuperseded: async selection => (await workflows()).grantSuperseded(selection.primaryKey!),
+      grantDirect: async selection => (await workflows()).grantDirect(selection.primaryKey!),
     },
     [METRIC_VIEW]: {
       query: (_selection, params) => metrics.query(params),

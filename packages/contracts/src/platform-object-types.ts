@@ -98,6 +98,9 @@ export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
 export const SET_TRIGGER_STATUS = "triggers.setStatus";
 export const DELETE_TRIGGER = "triggers.delete";
+export const ACTIVATE_WORKFLOW = "workflows.activate";
+export const DEACTIVATE_WORKFLOW = "workflows.deactivate";
+export const DELETE_WORKFLOW = "workflows.delete";
 export const DELETE_METRIC_VIEW = "metricViews.delete";
 export const SET_METRIC_VIEW_STATUS = "metricViews.setStatus";
 export const TEST_METRIC_VIEW = "metricViews.test";
@@ -144,6 +147,7 @@ const referenceReads = {
 } as const satisfies NonNullable<PlatformObjectTypeDeclaration["reads"]>;
 
 const metadataList = { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } } as const;
+const objectListRead = { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" } as const;
 const countRead = { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordQuery" } as const;
 const ontologyTypeDetailList = {
   source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
@@ -310,7 +314,17 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [WORKFLOW]: {
     ...describeType("workflow", "capability"),
-    reads: { ...metadataList, count: countRead },
+    reads: {
+      ...metadataList, ...definitionQuery, count: countRead,
+      record: modelReads.record,
+      form: { source: "object", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
+      createForm: modelReads.createForm,
+      grantCaseScopedSteps: objectListRead,
+      grantInForce: objectListRead,
+      grantSuperseded: objectListRead,
+      grantDirect: objectListRead,
+    },
+    operations: [`${WORKFLOW}.save`, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW],
   },
   [TRIGGER]: {
     ...describeType("trigger", "capability"),
