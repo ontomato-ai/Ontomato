@@ -13,15 +13,24 @@ const open = (address: string) => {
   return converted && { path: converted.split("?")[0], state: panelAddressState(converted) };
 };
 
-it("opens an action's detail address as the actions panel with the action selected", () => {
+it("opens an action's detail address and legacy selected catalog links at the non-menu action detail entry", () => {
   expect(open("/ontology/assets/actions/approve%20order?back=products")).toEqual({
-    path: "/ontology/assets/actions", state: { selected: "approve order" },
+    path: "/ontology/assets/actions/detail", state: { selected: "approve order" },
+  });
+  expect(open("/ontology/assets/actions?selected=approve%20order")).toEqual({
+    path: "/ontology/assets/actions/detail", state: { selected: "approve order" },
+  });
+  expect(open("/ontology/assets/actions?selected=platform%3AAction~approve-order")).toEqual({
+    path: "/ontology/assets/actions/detail", state: { selected: "approve-order" },
   });
 });
 
-it("opens the old creation address as the catalog, and leaves the page's own address alone", () => {
+it("opens the old creation address as the catalog, and leaves the catalog and detail addresses alone", () => {
   expect(open("/ontology/assets/actions/new")).toEqual({ path: "/ontology/assets/actions", state: {} });
   expect(open("/ontology/assets/actions")).toBeNull();
+  expect(open("/ontology/assets/actions?keyword=approve")).toBeNull();
+  expect(open("/ontology/assets/actions/detail")).toBeNull();
+  expect(open("/ontology/assets/actions/detail?selected=approve-order")).toBeNull();
 });
 
 it("opens a function's detail address as the functions panel with the function selected, and the old creation address as the catalog", () => {

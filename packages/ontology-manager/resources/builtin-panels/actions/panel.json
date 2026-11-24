@@ -1,13 +1,6 @@
 {
   "manifest": {
     "state": {
-      "selected": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:Action"
-        },
-        "deepLink": true
-      },
       "checked": {
         "type": {
           "kind": "list",
@@ -25,37 +18,6 @@
         },
         "deepLink": true,
         "default": ""
-      },
-      "activeTab": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "deepLink": true,
-        "default": "definition"
-      },
-      "creating": {
-        "type": {
-          "kind": "scalar",
-          "type": "boolean"
-        },
-        "deepLink": false,
-        "default": false
-      },
-      "activeSegmentId": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "deepLink": false
-      },
-      "selectedParameter": {
-        "type": {
-          "kind": "child-object",
-          "parentType": "platform:Action",
-          "collection": "parameters"
-        },
-        "deepLink": false
       }
     },
     "members": {
@@ -66,7 +28,6 @@
           "rows": "list"
         },
         "state": {
-          "selected": "selected",
           "checked": "checked",
           "search": "keyword"
         },
@@ -81,6 +42,7 @@
           "emptyText": "empty",
           "noMatchText": "noMatch",
           "showChevron": true,
+          "fallbackToFirst": false,
           "columns": [
             {
               "key": "label",
@@ -145,236 +107,6 @@
         "name": "New action",
         "description": "Open this page's agent input with an opening line, without sending it.",
         "id": "builtin-product-7001c601-ae24-400e-9097-ae661589c402"
-      },
-      "header": {
-        "component": "ObjectHeader",
-        "type": "platform:Action",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
-        "config": {
-          "subtitleField": "origin",
-          "statusField": "status"
-        },
-        "id": "builtin-product-53f9c124-edcb-4775-a907-a0340090a764"
-      },
-      "remove": {
-        "component": "OperationButton",
-        "type": "platform:Action",
-        "target": "selected",
-        "operation": "actions.delete",
-        "config": {
-          "type": "danger",
-          "plain": true,
-          "icon": "trash",
-          "hideWhenUnavailable": true
-        },
-        "id": "builtin-product-97a87bd6-78e8-4282-808c-a0972e2cfc2d"
-      },
-      "form": {
-        "component": "ObjectForm",
-        "type": "platform:Action",
-        "target": "selected",
-        "data": {
-          "form": "form",
-          "createForm": "createForm"
-        },
-        "operation": "platform:Action.save",
-        "id": "builtin-product-a3c180a8-d545-49d8-aa51-2b1b7e6b1dd5"
-      },
-      "derivedSummary": {
-        "component": "ObjectSummary",
-        "type": "platform:Action",
-        "target": "selected",
-        "data": {
-          "record": "derivedSummary"
-        },
-        "config": {
-          "showTitle": false,
-          "fields": [
-            "declaredTarget",
-            "affects"
-          ]
-        },
-        "id": "builtin-product-3947548c-1965-4eda-b7a7-471c7134fed7"
-      },
-      "derivedEffects": {
-        "component": "ObjectList",
-        "type": "platform:Action",
-        "target": "selected",
-        "data": {
-          "rows": "derivedEffects"
-        },
-        "config": {
-          "layout": "table",
-          "groupBy": "group",
-          "searchable": false,
-          "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "noEffects",
-          "columns": [
-            {
-              "key": "kind",
-              "kind": "tag",
-              "width": 120
-            },
-            {
-              "key": "label",
-              "labelKey": "name",
-              "subtitleKey": "subtitle",
-              "minWidth": 180,
-              "wrap": true
-            },
-            {
-              "key": "target",
-              "listSeparator": "",
-              "minWidth": 180,
-              "wrap": true
-            },
-            {
-              "key": "fields",
-              "listSeparator": "",
-              "minWidth": 200,
-              "wrap": true
-            },
-            {
-              "key": "guards",
-              "listSeparator": "",
-              "minWidth": 160,
-              "wrap": true
-            }
-          ]
-        },
-        "id": "builtin-product-9a1cbd8d-9789-4fc6-b4b9-efbb24aa90b1"
-      },
-      "derivedParameters": {
-        "component": "ObjectList",
-        "type": "platform:Action",
-        "target": "selected",
-        "data": {
-          "rows": "derivedParameters"
-        },
-        "state": {
-          "selected": "selectedParameter"
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "noParameters",
-          "columns": [
-            {
-              "key": "label",
-              "labelKey": "name",
-              "subtitleKey": "subtitle",
-              "minWidth": 180,
-              "wrap": true
-            },
-            {
-              "key": "type",
-              "width": 120
-            },
-            {
-              "key": "required",
-              "width": 90
-            },
-            {
-              "key": "objectTypes",
-              "kind": "tags",
-              "minWidth": 140
-            },
-            {
-              "key": "sample",
-              "minWidth": 120,
-              "wrap": true
-            },
-            {
-              "key": "constraints",
-              "minWidth": 140,
-              "wrap": true
-            },
-            {
-              "key": "codeLocations",
-              "listStyle": "tags",
-              "minWidth": 180,
-              "wrap": true
-            }
-          ]
-        },
-        "id": "builtin-product-04fb9db8-8c78-484a-b1a6-a7fca82b6d08"
-      },
-      "derivedConditions": {
-        "component": "ObjectList",
-        "type": "platform:Action",
-        "target": "selected",
-        "data": {
-          "rows": "derivedConditions"
-        },
-        "config": {
-          "layout": "table",
-          "searchable": false,
-          "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "noConditions",
-          "columns": [
-            {
-              "key": "kind",
-              "kind": "tag",
-              "width": 120
-            },
-            {
-              "key": "join",
-              "width": 96
-            },
-            {
-              "key": "expression",
-              "labelKey": "condition",
-              "listSeparator": "",
-              "minWidth": 220,
-              "wrap": true
-            },
-            {
-              "key": "detail",
-              "listSeparator": "",
-              "minWidth": 200,
-              "wrap": true
-            }
-          ]
-        },
-        "id": "builtin-product-65a06118-09f8-4512-9809-4cd97802222d"
-      },
-      "explanation": {
-        "component": "AnnotatedCode",
-        "type": "platform:Action",
-        "target": "selected",
-        "data": {
-          "content": "annotatedExplanation"
-        },
-        "inputs": {
-          "currentCode": {
-            "output": {
-              "member": "form",
-              "name": "draft",
-              "path": "/function/code"
-            }
-          }
-        },
-        "state": {
-          "activeSegmentId": "activeSegmentId"
-        },
-        "config": {
-          "emptyText": "noExplanation",
-          "staleLabel": "codeStale",
-          "staleHint": "codeStaleHint",
-          "segmentsTitle": "segments",
-          "summaryTitle": "businessMeaning",
-          "emptySummaryText": "noMeaning",
-          "refActionLabel": "paramLocate",
-          "legendLabel": "segKinds"
-        },
-        "id": "builtin-product-c265b2ca-24bd-4f6d-a45e-9c1cb60efdd0"
       }
     }
   },
@@ -387,30 +119,10 @@
         "keywordPlaceholder": "Filter by name or description",
         "noDescription": "No description",
         "name": "Name",
-        "condition": "Condition",
         "empty": "This domain has no actions yet.",
         "noMatch": "No action matches that keyword.",
-        "back": "Back to the catalog",
-        "definition": "Definition",
-        "derived": "Derived definition",
-        "code": "Code explanation",
-        "effects": "What it changes",
-        "parameters": "Parameters",
-        "conditions": "Submission conditions",
-        "noConditions": "No submission condition is derived.",
-        "noEffects": "The owner derives no effect from this code.",
-        "noParameters": "No parameters.",
-        "codeStale": "Explanation may be outdated",
-        "codeStaleHint": "The code in this form differs from the code this explanation was written for; save it and explain the action again if needed.",
-        "noExplanation": "This action has no code explanation yet.",
-        "businessMeaning": "Business meaning",
-        "noMeaning": "The owner recorded no business meaning for this code.",
-        "segments": "Code segments",
-        "derivedHint": "Derived from the action's explained code, not written by hand; it describes the code and does not constrain it.",
         "newAction": "New action",
-        "newActionPrefill": "Help me create an action: ",
-        "segKinds": "Segment kinds",
-        "paramLocate": "Show the parameter"
+        "newActionPrefill": "Help me create an action: "
       },
       "zh-CN": {
         "pageTitle": "动作",
@@ -419,30 +131,10 @@
         "keywordPlaceholder": "按名称或描述筛选",
         "noDescription": "未填写说明",
         "name": "名称",
-        "condition": "条件",
         "empty": "本域还没有动作。",
         "noMatch": "没有名称或描述匹配这个关键字的动作。",
-        "back": "返回目录",
-        "definition": "定义",
-        "derived": "推导定义",
-        "code": "代码解释",
-        "effects": "会做的改动",
-        "parameters": "参数",
-        "conditions": "提交条件",
-        "noConditions": "没有推导出提交条件。",
-        "noEffects": "属主没有从这段代码里推导出改动。",
-        "noParameters": "没有参数。",
-        "codeStale": "解释可能已过期",
-        "codeStaleHint": "表单里的代码和写出这份解释时的代码不一样；保存后按需重新解释这个动作。",
-        "noExplanation": "这个动作还没有代码解释。",
-        "businessMeaning": "业务含义",
-        "noMeaning": "属主没有记录这段代码的业务含义。",
-        "segments": "代码分段",
-        "derivedHint": "由动作的代码推导出来，不是手写的；它描述代码，不约束代码。",
         "newAction": "新建动作",
-        "newActionPrefill": "帮我新建一个动作：",
-        "segKinds": "分段种类",
-        "paramLocate": "查看参数说明"
+        "newActionPrefill": "帮我新建一个动作："
       }
     }
   }
