@@ -1229,6 +1229,7 @@ describe("builtin capability-map panel (PanelData-free)", () => {
 
   it("renders four-layer type names immediately while supplement countRows is loading, allows clicking into class detail, and merges counts in-place without losing selection", { timeout: 30000 }, async () => {
     let resolveSupplement!: (response: Response) => void;
+    let supplementRead: Read | null = null;
     const supplementDeferred = new Promise<Response>((resolve) => {
       resolveSupplement = resolve;
     });
@@ -1238,6 +1239,7 @@ describe("builtin capability-map panel (PanelData-free)", () => {
       [],
       (read) => {
         if (read.memberPath[0]?.member === "typeList" && read.dataName === "supplement") {
+          supplementRead = read;
           return supplementDeferred;
         }
         return undefined;
@@ -1277,10 +1279,11 @@ describe("builtin capability-map panel (PanelData-free)", () => {
       }, { timeout: 5000 });
 
       // 3) Supplement arrives: four count statuses and reasons merge in-place without losing the selected row.
+      expect(supplementRead).not.toBeNull();
       resolveSupplement(
         Response.json({
           status: "ready",
-          value: builtinMemberData({ memberPath: [{ member: "typeList" }], dataName: "supplement", inputs: {} }),
+          value: builtinMemberData(supplementRead!),
         }),
       );
 
