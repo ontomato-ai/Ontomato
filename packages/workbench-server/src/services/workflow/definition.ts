@@ -219,7 +219,7 @@ export function workflowForm(
           kind: "object",
           defaultObject: { mode: "none" },
           variantBy: "/mode",
-          fields: [field("mode", policyMode, { kind: "select", options: choices("policy", policyModes) }, {}, "actorPolicy")],
+          fields: [field("mode", policyMode, { kind: "select", options: choices("policy", policyModes) }, {}, "policyMode")],
           variants: {
             none: [],
             rule: [
@@ -235,7 +235,7 @@ export function workflowForm(
               field("instruction", optionalText, { kind: "text", multiline: true, rows: 3 }),
             ],
           },
-        }),
+        }, { required: true }),
       ],
     }),
   ];

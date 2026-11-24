@@ -660,6 +660,7 @@ export const en = {
   "panels.workflow.fields.invocationChoice": "Invocation",
   "panels.workflow.fields.caseScoped": "Per-case authorization",
   "panels.workflow.fields.actorPolicy": "Actor selection policy",
+  "panels.workflow.fields.policyMode": "Policy mode",
   "panels.workflow.fields.metricViewId": "MetricView ID",
   "panels.workflow.fields.metricRevision": "MetricView version",
   "panels.workflow.fields.principalField": "Principal field",
