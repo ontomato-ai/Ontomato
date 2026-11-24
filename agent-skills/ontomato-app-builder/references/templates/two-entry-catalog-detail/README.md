@@ -39,7 +39,19 @@ Open `/applications/app-template-two-entry/catalog`.
      top-level targetless `Action` (`target: { source: "none" }`) for create.
    - For a platform type (for example `platform:Relationship`), bind its built-in reads and operations.
 2. Add `config.columns` (and optional `valueMap` / `rowActions`) on `list` in `catalog/panel.json`.
-3. Add a Delete button in `detail/panel.json` (`OperationButton` with `config: { label: "Delete", type: "danger", plain: true, icon: "trash", hideWhenUnavailable: true }`) and place `<projection slot="remove" @done="onDeleted">` inside `<page-header #actions>`.
+3. Add a Delete button in `detail/panel.json` (`OperationButton` with `config: { label: "Delete", type: "danger", plain: true, icon: "trash", hideWhenUnavailable: true }`) and place `<projection v-show="selectedKey && ready" slot="remove" @done="onDeleted">` inside `<template #actions>`. Keep the slot declared. The button must stay mounted long enough to handle `@done` after deletion clears the selection.
 4. Update IDs, paths (`CATALOG_PATH` / `DETAIL_PATH`), and `registration.json` to match your application ID.
 5. Set `"allowStandalone": true` on the application in `detail/registration.json` if you want to share direct external
    links from the application's sidebar menu or properties.
+
+## Reuse the pair in another application
+
+Move `DETAIL_PATH` and `CATALOG_PATH` into scalar string states `detailPath` (on the catalog) and
+`catalogPath` (on detail). Set `external: true` and keep the existing paths as defaults. Use the
+states in the navigation handlers. Wire each application separately through `panelUse.inputs`, for example
+`{ detailPath: { literal: "/applications/app-examples/detail" } }` on the catalog use. The host removes
+wired inputs from the URL.
+
+For conversational creation, add a `ConversationEntry` to the catalog header. Teach the assistant to `present`
+the detail entry with `creating: true`, and declare that state on detail with `deepLink: false`.
+See the [management page wiring](../../management-pages.md#reuse-a-catalog-and-detail-across-applications).

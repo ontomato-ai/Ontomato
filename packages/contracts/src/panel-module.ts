@@ -133,6 +133,7 @@ export type SdkAuthoringViolationKind =
   | "forbidden-import"
   | "forbidden-directive"
   | "forbidden-token"
+  | "forbidden-selector"
   | "forbidden-export"
   | "forbidden-direct-api"
   | "projection-inputs-outside-slot";
@@ -449,7 +450,7 @@ function makeViolation(
 }
 
 /**
- * Check a CSS block or stylesheet for third-party `--el-*` variables.
+ * Check a CSS block or stylesheet for unsupported selectors and third-party `--el-*` variables.
  */
 export function checkAuthoringStyles(
   css: string,
@@ -459,6 +460,11 @@ export function checkAuthoringStyles(
 ): SdkAuthoringViolation[] {
   const violations: SdkAuthoringViolation[] = [];
   const stripped = stripCssCommentsAndStrings(css);
+  for (const match of stripped.matchAll(/::v-deep(?![\w-])|:deep\(/gu)) {
+    const found = match[0];
+    const message = `Panel <style> uses native browser CSS. The host scopes it to the panel instance without Vue SFC compilation. The browser silently drops rules using '${found}'. Use a descendant selector such as '.wrap .sdk-owner-form'.`;
+    violations.push(makeViolation(fullSource, file, baseOffset + match.index!, "forbidden-selector", found, null, message));
+  }
   for (const match of stripped.matchAll(/--el-[a-z0-9-]+/gu)) {
     const found = match[0];
     const replacement = sdkThemeTokenReplacement(found);

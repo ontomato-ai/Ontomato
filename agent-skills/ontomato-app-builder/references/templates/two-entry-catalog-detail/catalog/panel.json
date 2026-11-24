@@ -16,6 +16,15 @@
         "type": "platform:AgentDefinition",
         "data": {
           "rows": "list"
+        },
+        "config": {
+          "layout": "table",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "column.name"
+            }
+          ]
         }
       },
       "createForm": {
@@ -35,10 +44,12 @@
     "messages": {
       "en": {
         "panel.name": "Agent Definitions",
+        "column.name": "Name",
         "command.new": "New Agent Definition"
       },
       "zh-CN": {
         "panel.name": "\u667a\u80fd\u4f53\u5b9a\u4e49",
+        "column.name": "名称",
         "command.new": "\u65b0\u5efa\u667a\u80fd\u4f53\u5b9a\u4e49"
       }
     }

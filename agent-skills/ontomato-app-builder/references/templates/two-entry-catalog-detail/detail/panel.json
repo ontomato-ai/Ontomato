@@ -34,6 +34,9 @@
       "header": {
         "component": "ObjectHeader",
         "target": "selected",
+        "config": {
+          "subtitle": ""
+        },
         "data": {
           "record": "record"
         }
@@ -47,13 +50,22 @@
         "detail.back": "Back to Agent Definitions",
         "detail.basicInfo": "Basic information",
         "detail.overview": "Overview",
-        "detail.choose": "Choose a record from the catalog."
+        "detail.choose": "Choose a record from the catalog.",
+        "detail.loading": "Loading the record…",
+        "detail.forbidden": "You don't have permission to view this record.",
+        "detail.error": "The record could not be loaded.",
+        "detail.missing": "The record is missing."
       },
       "zh-CN": {
         "panel.name": "\u667a\u80fd\u4f53\u5b9a\u4e49\u8be6\u60c5",
         "detail.back": "\u8fd4\u56de\u667a\u80fd\u4f53\u5b9a\u4e49",
         "detail.basicInfo": "\u57fa\u672c\u4fe1\u606f",
-        "detail.overview": "\u6982\u89c8"
+        "detail.overview": "\u6982\u89c8",
+        "detail.choose": "请从目录选择一条记录。",
+        "detail.loading": "正在加载记录…",
+        "detail.forbidden": "你没有权限查看这条记录。",
+        "detail.error": "无法加载记录。",
+        "detail.missing": "记录不存在。"
       }
     }
   }

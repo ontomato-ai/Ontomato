@@ -117,7 +117,7 @@ test("agent dispatch carries build-test context and preserves the entry-point re
   } finally {await new Promise(resolve=>server.close(resolve));}
 });
 
-test("the app-builder CLI checks a workspace and registers with the current SDK", async () => {
+test("the app-builder CLI checks a workspace and registers with the current SDK", async t => {
   const workspaceId = "11111111-1111-4111-8111-111111111111";
   const ref = "f".repeat(40);
   const sdkVersion = "4.1.9-dev." + "a".repeat(64);
@@ -210,6 +210,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const componentPackageNameSchema = { parse };
     export const componentPackageResponseSchema = { parse };
     export const panelAuthoringManifestSchema = { parse, safeParse: ok };
+    export const draftReadOperationIds = [];
     export const panelAuthoringMemberSchema = { safeParse: member => member.sourceCard && member.id
       ? invalid([{ message: "MetricChart takes its projection definition from the source card" }]) : ok(member) };
     export const BUILTIN_PRODUCT_ID_PREFIX = "builtin-product-";
@@ -836,6 +837,44 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(requests.splice(0).map(([method, url]) => [method, url]), [
       ["DELETE", applicationPath], ["DELETE", inlinePanelPath],
     ]);
+
+    await t.test("inline forms require their own operation or a sibling draft binding", async () => {
+      const form = {
+        component: "ObjectForm", type: "platform:AgentDefinition",
+        data: { createForm: "createForm" }, config: { actions: "none" },
+      };
+      const operation = "platform:AgentDefinition.save";
+      const save = { component: "PanelData", type: form.type, operation };
+      const formHtml = '<div id="app"><projection slot="form"></projection></div>';
+      await writeFile(layout, formHtml);
+      await writeFile(join(builtin, "panel.html"), formHtml);
+      for (const [dir, file, args] of [
+        [directory, descriptor, []],
+        [builtin, builtinFile, ["--builtin", "--sdk-dir", offlineSdk]],
+      ]) {
+        const writeMembers = members => writeFile(file, JSON.stringify({ manifest: { state: {}, members } }));
+        await writeMembers({ form });
+        await assert.rejects(run("panel", "check", dir, ...args), error =>
+          error.stderr.includes("panel.json: member form: ObjectForm requires an operation"));
+        await writeMembers({ form: { ...form, operations: {} } });
+        await assert.rejects(run("panel", "check", dir, ...args), error =>
+          error.stderr.includes("panel.json: member form: ObjectForm requires an operation"));
+
+        for (const members of [
+          { form: { ...form, operation } },
+          { form: { ...form, operations: { save: operation } } },
+          { form, save: { ...save, draft: "form" } },
+          { form, save: { component: save.component, type: save.type, operations: { save: { operation, draft: "form" } } } },
+          { form, save: {
+            target: { projectionId: dir === builtin ? "builtin-product-reusable" : "tasks" },
+            operationDrafts: { save: { slot: "form" } },
+          } },
+        ]) {
+          await writeMembers(members);
+          await run("panel", "check", dir, ...args);
+        }
+      }
+    });
   } finally {
     await rm(directory, { recursive: true });
     await new Promise(resolve => server.close(resolve));

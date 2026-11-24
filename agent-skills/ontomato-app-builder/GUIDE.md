@@ -18,6 +18,10 @@ Follow the [Product Layer and Application Composition Standard](references/app-s
 
 Start with the [Vue panel skill](references/panel-authoring/SKILL.md) and choose a matching [page template](references/templates/README.md). When moving an already-built page into the product layer, read [Migrating an existing page into the product layer](references/migrate-existing-page.md) alongside the [application decomposition skill](references/app-standard/SKILL.md).
 
+Use the [component recipes](references/panel-authoring/CODE.md) for lists, headers, file uploads and dialog forms,
+[member fields](references/panel-authoring/FIELDS.md) for bindings and controls, and
+[panel runtime](references/panel-authoring/RUNTIME.md) for hooks, overlays and assistant interaction.
+
 ## Connection and workspace
 
 Run `node <skill>/scripts/ontomato.mjs <command>`. JSON arguments accept inline JSON or `@file`; use `--lang <tag>` for the response language.
@@ -173,7 +177,9 @@ Run `panel check <directory>` before registering. It reads `registration.json` i
 Use `--material <file>` to select a different file. The online check uses the current component catalogue and
 owner type table to expand new projections. It looks for references in the material first, then in the domain.
 With `--sdk-dir`, local material can be checked offline (supply `--type-table` for new short members).
-Unresolved registered references appear in `unchecked`.
+Unresolved registered references appear in `unchecked`. For a built-in panel with no running service, run
+`node "$SKILL/scripts/ontomato.mjs" panel check <dir> --builtin --sdk-dir <built-sdk-dir>`.
+The SDK directory contains the built `sdk.json`. See [platform checks](references/platform-development.md#check-built-in-panels).
 
 - **404 `PRODUCT_UNAVAILABLE`** names a panel or projection that is missing in the current domain. When a
   projection is also absent from the material, `panel check` reports its ID before registration. Correct the

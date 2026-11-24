@@ -107,6 +107,9 @@
         "action.edit": "Edit",
         "action.archive": "Archive",
         "action.cancel": "Cancel",
+        "action.discard": "Discard",
+        "action.save": "Save",
+        "draft.unsaved": "Unsaved changes",
         "dialog.title": "Edit course",
         "tab.details": "Details",
         "tab.capacity": "Capacity"
