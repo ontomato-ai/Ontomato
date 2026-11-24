@@ -8,15 +8,24 @@ import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authorin
 import { definePanel, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { PRODUCT_PANEL, PRODUCT_PROJECTION, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import {
+  APPLICATION,
+  PRODUCT_PANEL,
+  PRODUCT_PROJECTION,
+  USER,
+  platformObjectTypes,
+} from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import { useConversationDisplay } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
-import source from "../../../../../packages/ontology-manager/resources/builtin-panels/panels/panel.json";
-import html from "../../../../../packages/ontology-manager/resources/builtin-panels/panels/panel.html?raw";
-import module from "../../../../../packages/ontology-manager/resources/builtin-panels/panels/panel.mjs?raw";
+import catalogSource from "../../../../../packages/ontology-manager/resources/builtin-panels/panels/panel.json";
+import catalogHtml from "../../../../../packages/ontology-manager/resources/builtin-panels/panels/panel.html?raw";
+import catalogModule from "../../../../../packages/ontology-manager/resources/builtin-panels/panels/panel.mjs?raw";
+import detailSource from "../../../../../packages/ontology-manager/resources/builtin-panels/panel-detail/panel.json";
+import detailHtml from "../../../../../packages/ontology-manager/resources/builtin-panels/panel-detail/panel.html?raw";
+import detailModule from "../../../../../packages/ontology-manager/resources/builtin-panels/panel-detail/panel.mjs?raw";
 import {
   installPlatform,
   leaveFrame,
@@ -32,13 +41,22 @@ import {
 const SESSION = "11111111-1111-4111-8111-111111111111";
 const RUN = "22222222-2222-4222-8222-222222222222";
 const APP_ID = "ontology";
-const ENTRY_PATH = "/ontology/panels";
+const CATALOG_PATH = "/ontology/panels";
+const DETAIL_PATH = "/ontology/panels/detail";
+const OPEN_EDIT_KEY_PREFIX = "ontomato:open-edit:builtin-product-ontology-panel-detail:";
 
-const use = panelUse(
+const catalogUse = panelUse(
   "use-ontology-panels",
   "ontology-panels",
   "builtin-product-ontology-panels",
-  ENTRY_PATH,
+  CATALOG_PATH,
+);
+
+const detailUse = panelUse(
+  "use-ontology-panel-detail",
+  "ontology-panel-detail",
+  "builtin-product-ontology-panel-detail",
+  DETAIL_PATH,
 );
 
 const objectTypes = Object.fromEntries(
@@ -61,7 +79,6 @@ const objectTypes = Object.fromEntries(
   ]),
 );
 
-const { members: authoring, ...manifest } = panelAuthoringManifestSchema.parse(source.manifest);
 const catalogue = components.map((component) =>
   appsSdkComponentCatalogEntrySchema.parse({
     ...component,
@@ -71,46 +88,78 @@ const catalogue = components.map((component) =>
     ports: { props: [], events: [], slots: [] },
   }),
 );
-const projections = new Map<string, ProductProjection>();
-const members = Object.fromEntries(
-  Object.entries(authoring).map(([name, definition]) => {
-    if (!("component" in definition)) {
-      return [name, definition];
-    }
-    const { projection, placement } = expandPanelAuthoringMember(name, definition, {
-      state: manifest.state,
-      typeTable: { objectTypes },
-      components: catalogue,
-    });
-    projections.set(definition.id!, {
-      ...projection,
-      id: definition.id!,
-      name,
-      description: name,
-      visibility: "platform",
-      domainId: null,
-      ownerId: null,
-      editable: false,
-      revision: 1,
-      createdAt: "2026-11-23T00:00:00Z",
-      updatedAt: "2026-11-23T00:00:00Z",
-    });
-    return [name, { ...placement, target: { projectionId: definition.id! } }];
-  }),
+
+function buildPanelFixture(
+  id: string,
+  name: string,
+  source: { manifest: unknown; content: { messages: Record<string, Record<string, string>> } },
+  html: string,
+  module: string,
+) {
+  const { members: authoring, ...manifest } = panelAuthoringManifestSchema.parse(source.manifest);
+  const projections = new Map<string, ProductProjection>();
+  const members = Object.fromEntries(
+    Object.entries(authoring).map(([memberName, definition]) => {
+      if (!("component" in definition)) {
+        return [memberName, definition];
+      }
+      const { projection, placement } = expandPanelAuthoringMember(memberName, definition, {
+        state: manifest.state,
+        typeTable: { objectTypes },
+        components: catalogue,
+      });
+      projections.set(definition.id!, {
+        ...projection,
+        id: definition.id!,
+        name: memberName,
+        description: memberName,
+        visibility: "platform",
+        domainId: null,
+        ownerId: null,
+        editable: false,
+        revision: 1,
+        createdAt: "2026-11-23T00:00:00Z",
+        updatedAt: "2026-11-23T00:00:00Z",
+      });
+      return [memberName, { ...placement, target: { projectionId: definition.id! } }];
+    }),
+  );
+
+  const panel = {
+    ...panelRecord(id, name, definePanel({ ...manifest, members })),
+    visibility: "platform" as const,
+    domainId: null,
+    ownerId: null,
+    editable: false as const,
+    content: { html, module, messages: source.content.messages },
+  };
+  return { panel, projections };
+}
+
+const catalogFixture = buildPanelFixture(
+  catalogUse.panelId,
+  "Panels",
+  catalogSource,
+  catalogHtml,
+  catalogModule,
 );
 
-const panelsDirectoryPanel = {
-  ...panelRecord(use.panelId, "Panels", definePanel({ ...manifest, members })),
-  visibility: "platform" as const,
-  domainId: null,
-  ownerId: null,
-  editable: false as const,
-  content: { html, module, messages: source.content.messages },
-};
+const detailFixture = buildPanelFixture(
+  detailUse.panelId,
+  "Panel detail",
+  detailSource,
+  detailHtml,
+  detailModule,
+);
+
+const allProjections = new Map<string, ProductProjection>([
+  ...catalogFixture.projections,
+  ...detailFixture.projections,
+]);
 
 const panelRef = (primaryKey: string) => ({ className: PRODUCT_PANEL, primaryKey });
 
-function presentFrame(state: Record<string, unknown>, address = ENTRY_PATH): PresentationFrame {
+function presentFrame(state: Record<string, unknown>, address = DETAIL_PATH): PresentationFrame {
   return {
     type: "presentation",
     sessionId: SESSION,
@@ -139,11 +188,65 @@ function formDescription(mode: "create" | "edit", key: string, includeMembersFie
   return {
     fields: [
       {
+        path: "/id",
+        label: "ID",
+        required: true,
+        readOnly: mode === "edit",
+        control: { kind: "text" },
+        valueSchema: { type: "string" },
+      },
+      {
         path: "/name",
         label: "Name",
         required: true,
         readOnly: false,
         control: { kind: "text" },
+        valueSchema: { type: "string" },
+      },
+      {
+        path: "/description",
+        label: "Description",
+        required: false,
+        readOnly: false,
+        control: { kind: "text" },
+        valueSchema: { type: "string" },
+      },
+      {
+        path: "/visibility",
+        label: "Visibility",
+        required: true,
+        readOnly: mode === "edit",
+        control: {
+          kind: "select",
+          options: [
+            { value: "private", label: "Private", description: null, disabled: false, disabledReason: null },
+            { value: "domain", label: "Domain", description: null, disabled: false, disabledReason: null },
+          ],
+        },
+        valueSchema: { type: "string" },
+      },
+      {
+        path: "/template",
+        label: "Template",
+        required: false,
+        readOnly: false,
+        control: { kind: "switch" },
+        valueSchema: { type: "boolean" },
+      },
+      {
+        path: "/content/html",
+        label: "HTML",
+        required: true,
+        readOnly: false,
+        control: { kind: "code", language: "html" },
+        valueSchema: { type: "string" },
+      },
+      {
+        path: "/content/module",
+        label: "Module",
+        required: true,
+        readOnly: false,
+        control: { kind: "code", language: "javascript" },
         valueSchema: { type: "string" },
       },
       ...(includeMembersField
@@ -160,7 +263,15 @@ function formDescription(mode: "create" | "edit", key: string, includeMembersFie
         : []),
     ],
     values: {
+      id: mode === "create" ? "draft-panel" : key,
       name: mode === "create" ? "" : `Panel ${key}`,
+      description: "",
+      visibility: "private",
+      template: false,
+      content: {
+        html: '<div id="app"><section></section></div>',
+        module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
+      },
       ...(includeMembersField
         ? {
             manifest: {
@@ -181,7 +292,7 @@ function formDescription(mode: "create" | "edit", key: string, includeMembersFie
 }
 
 async function waitFor(check: () => boolean, label: string | (() => string)): Promise<void> {
-  for (let i = 0; i < 80; i += 1) {
+  for (let i = 0; i < 100; i += 1) {
     if (check()) return;
     await new Promise((resolve) => setTimeout(resolve, 15));
   }
@@ -198,11 +309,14 @@ async function clickMessageBoxButton(labelText: string): Promise<HTMLElement> {
     box = open.at(-1);
     return Boolean(box);
   }, `message box containing "${labelText}"`);
+
   const btn = [...box!.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === labelText,
   );
   if (!btn) {
-    throw new Error(`Message box button "${labelText}" not found. Buttons: ${[...box!.querySelectorAll("button")].map((b) => b.textContent?.trim()).join(", ")}`);
+    throw new Error(
+      `Message box button "${labelText}" not found. Buttons: ${[...box!.querySelectorAll("button")].map((b) => b.textContent?.trim()).join(", ")}`,
+    );
   }
   btn.click();
   await waitFor(
@@ -213,10 +327,15 @@ async function clickMessageBoxButton(labelText: string): Promise<HTMLElement> {
 }
 
 interface HarnessOptions {
+  initialAddress?: string;
   unavailableRows?: () => Record<string, unknown>[];
   recordFor?: (key: string) => Record<string, unknown>;
   includeMembersField?: boolean;
   memberRowsFor?: (key: string) => Record<string, unknown>[];
+  usedByRowsFor?: (key: string) => Record<string, unknown>[];
+  sourceFilesFor?: (key: string) => Record<string, unknown>[];
+  sourceFileFor?: (key: string, filePath: string) => Record<string, unknown>;
+  grantRowsFor?: (key: string) => Record<string, unknown>[];
   projectionRecordFor?: (key: string) => Record<string, unknown>;
   operationsFor?: (member: string, inputs: Record<string, unknown>) => Record<string, unknown>;
   prepareIntent?: (body: { operationId: string; call: PanelOperationCall }) => Record<string, unknown>;
@@ -224,33 +343,53 @@ interface HarnessOptions {
   nestedPanel?: (panelId: string, request: Sent) => Response | undefined;
 }
 
-async function mountDirectory(options: HarnessOptions = {}) {
+async function mountPanelsApp(options: HarnessOptions = {}) {
+  const initialAddress = options.initialAddress ?? CATALOG_PATH;
   const reads: DataReadRequest[] = [];
   const navigated: string[] = [];
   const dispatched: { operationId: string; call: PanelOperationCall }[] = [];
-  const preparedIntents = new Map<string, { preparation: Record<string, unknown>; operationId: string; call: PanelOperationCall }>();
+  const preparedIntents = new Map<
+    string,
+    { preparation: Record<string, unknown>; operationId: string; call: PanelOperationCall }
+  >();
   let intentCounter = 0;
 
   installPlatform((request: Sent) => {
     const { path } = request;
     if (path === `/api/data-query/platform/applications/${APP_ID}/panel-uses`) {
       return Response.json({
-        data: { applicationId: APP_ID, entry: { path: "/ontology", renderer: "panels" }, panelUses: [use] },
+        data: {
+          applicationId: APP_ID,
+          entry: { path: "/ontology", renderer: "panels" },
+          panelUses: [catalogUse, detailUse],
+        },
       });
     }
-    if (path === `/api/product-panels/${panelsDirectoryPanel.id}`) {
-      return panelAnswer(panelsDirectoryPanel, request);
+    if (path === `/api/product-panels/${catalogFixture.panel.id}`) {
+      return panelAnswer(catalogFixture.panel, request);
     }
-    if (path === `/api/product-panels/${panelsDirectoryPanel.id}/snapshot`) {
-      return panelSnapshot(panelsDirectoryPanel, Object.fromEntries(projections), request);
+    if (path === `/api/product-panels/${catalogFixture.panel.id}/snapshot`) {
+      return panelSnapshot(catalogFixture.panel, Object.fromEntries(catalogFixture.projections), request);
+    }
+    if (path === `/api/product-panels/${detailFixture.panel.id}`) {
+      return panelAnswer(detailFixture.panel, request);
+    }
+    if (path === `/api/product-panels/${detailFixture.panel.id}/snapshot`) {
+      return panelSnapshot(detailFixture.panel, Object.fromEntries(detailFixture.projections), request);
     }
     const nestedMatch = /^\/api\/product-panels\/([^/]+)(\/snapshot)?$/.exec(path);
-    if (request.method === "GET" && nestedMatch && nestedMatch[1] !== panelsDirectoryPanel.id && options.nestedPanel) {
+    if (
+      request.method === "GET"
+      && nestedMatch
+      && nestedMatch[1] !== catalogFixture.panel.id
+      && nestedMatch[1] !== detailFixture.panel.id
+      && options.nestedPanel
+    ) {
       const answered = options.nestedPanel(nestedMatch[1]!, request);
       if (answered) return answered;
     }
     if (path.startsWith("/api/product-projections/")) {
-      return Response.json({ projection: projections.get(path.split("/").at(-1)!) });
+      return Response.json({ projection: allProjections.get(path.split("/").at(-1)!) });
     }
     if (path === "/api/panel-operations/intents" && request.method === "POST") {
       const body = request.body as { operationId: string; call: PanelOperationCall };
@@ -283,7 +422,7 @@ async function mountDirectory(options: HarnessOptions = {}) {
         if (custom && Object.keys(custom).length > 0) {
           return Response.json({ status: "ready", value: custom });
         }
-        if (member === "form") {
+        if (member === "form" || member === "createForm") {
           return Response.json({
             status: "ready",
             value: {
@@ -293,18 +432,18 @@ async function mountDirectory(options: HarnessOptions = {}) {
                 label: "Save",
                 effect: "write",
                 batch: false,
-                target: { source: "draft", slot: "form" },
+                target: { source: "draft", slot: member },
                 inputSchema: {},
                 resultSchema: {},
               },
             },
           });
         }
-        return Response.json({ status: "ready", value: custom ?? {} });
+        return Response.json({ status: "ready", value: {} });
       }
       reads.push(body);
       const member = body.memberPath[0]?.member;
-      if (member === "catalogue" || member === "memberPanelPicker") {
+      if (member === "catalogue") {
         return Response.json({
           status: "ready",
           value: {
@@ -351,6 +490,31 @@ async function mountDirectory(options: HarnessOptions = {}) {
           },
         });
       }
+      if (member === "memberPanelPicker") {
+        return Response.json({
+          status: "ready",
+          value: {
+            rows: [
+              {
+                primaryKey: "panel-b",
+                className: PRODUCT_PANEL,
+                label: "Panel B",
+                subtitle: "panel-b",
+                fields: { id: "panel-b" },
+              },
+            ],
+            total: 1,
+          },
+        });
+      }
+      if (member === "userPicker") {
+        return Response.json({
+          status: "ready",
+          value: [
+            { value: "user-bob", label: "Bob", object: { className: USER, primaryKey: "user-bob" } },
+          ],
+        });
+      }
       if (member === "headerTitle" || member === "overviewSummary" || member === "unavailableSummary" || member === "shareStatusDesc") {
         const key = readTargetKey(body);
         if (!key) return Response.json({ status: "empty" });
@@ -362,9 +526,14 @@ async function mountDirectory(options: HarnessOptions = {}) {
           value: {
             primaryKey: key,
             className: PRODUCT_PANEL,
-            label: key === "panel-b" ? "Panel B" : "Panel A",
+            label: key === "panel-b" ? "Panel B" : key === "panel-a" ? "Panel A" : `Panel ${key}`,
             subtitle: key,
-            fields: { id: key, name: key === "panel-b" ? "Panel B" : "Panel A", objectType: PRODUCT_PANEL },
+            fields: {
+              id: key,
+              name: key === "panel-b" ? "Panel B" : key === "panel-a" ? "Panel A" : `Panel ${key}`,
+              domainShared: false,
+              objectType: PRODUCT_PANEL,
+            },
             fieldLabels: { id: "ID", name: "Name", objectType: "Object type" },
             outputs: {
               canEdit: true,
@@ -387,6 +556,35 @@ async function mountDirectory(options: HarnessOptions = {}) {
           status: "ready",
           value: options.memberRowsFor ? options.memberRowsFor(key) : [],
         });
+      }
+      if (member === "usedByList") {
+        const key = readTargetKey(body);
+        return Response.json({
+          status: "ready",
+          value: options.usedByRowsFor ? options.usedByRowsFor(key) : [],
+        });
+      }
+      if (member === "grantsList") {
+        const key = readTargetKey(body);
+        return Response.json({
+          status: "ready",
+          value: options.grantRowsFor ? options.grantRowsFor(key) : [],
+        });
+      }
+      if (member === "sourceTree") {
+        const key = readTargetKey(body);
+        return Response.json({
+          status: "ready",
+          value: options.sourceFilesFor ? options.sourceFilesFor(key) : [],
+        });
+      }
+      if (member === "sourceViewer") {
+        const key = readTargetKey(body);
+        const filePath = typeof body.inputs?.path === "string" ? body.inputs.path : "";
+        if (options.sourceFileFor && filePath) {
+          return Response.json({ status: "ready", value: options.sourceFileFor(key, filePath) });
+        }
+        return Response.json({ status: "empty" });
       }
       if (member === "memberProjectionHeader" || member === "memberProjectionSummary") {
         const key = readTargetKey(body);
@@ -423,17 +621,11 @@ async function mountDirectory(options: HarnessOptions = {}) {
               },
         });
       }
-      if (member === "sourceViewer") {
-        return Response.json({ status: "empty" });
-      }
-      if (member === "usedByList" || member === "grantsList" || member === "sourceTree") {
-        return Response.json({ status: "ready", value: [] });
+      if (member === "createForm") {
+        return Response.json({ status: "ready", value: formDescription("create", "", options.includeMembersField) });
       }
       if (member === "form") {
         const key = readTargetKey(body);
-        if (body.dataName === "createForm") {
-          return Response.json({ status: "ready", value: formDescription("create", "", options.includeMembersField) });
-        }
         return Response.json({
           status: "ready",
           value: formDescription("edit", key, options.includeMembersField),
@@ -458,7 +650,7 @@ async function mountDirectory(options: HarnessOptions = {}) {
       entryAccess: ["domain-member"],
       scheduleAdapter: null,
       releaseId: null,
-      panelUses: [use],
+      panelUses: [catalogUse, detailUse],
     },
   ];
 
@@ -466,15 +658,22 @@ async function mountDirectory(options: HarnessOptions = {}) {
     state?: Record<string, unknown> & {
       selected?: { primaryKey?: string } | null;
       previewTarget?: { primaryKey?: string } | null;
+      detailMode?: string;
+      creating?: boolean | null;
     };
     forms?: readonly { member: string; dirty: boolean; values: Record<string, unknown> }[];
   } | null;
   const observed = { context: null as ObservedContext };
   const display = useConversationDisplay({
-    features: () => [{ id: "panel", label: "Panels", icon: "pages", availability: "page", withConversation: true }],
+    features: () => [
+      { id: "panel", label: "Panels", icon: "pages", availability: "page", withConversation: true },
+      { id: "panel-detail", label: "Panel detail", icon: "pages", availability: "page", withConversation: true },
+    ],
     resolve: (address) => {
       const path = address.split("?")[0]!;
-      return path === ENTRY_PATH ? { featureId: "panel", address, instance: path } : null;
+      if (path === CATALOG_PATH) return { featureId: "panel", address, instance: path };
+      if (path === DETAIL_PATH) return { featureId: "panel-detail", address, instance: path };
+      return null;
     },
     serialize: async () => true,
     context: (page, reported) => ({
@@ -492,15 +691,18 @@ async function mountDirectory(options: HarnessOptions = {}) {
     sessionId: SESSION,
     runId: RUN,
     toolCallId: "open-initial",
-    target: { kind: "page", address: ENTRY_PATH },
+    target: { kind: "page", address: initialAddress },
   });
 
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: "/chat", component: { template: "<div />" } },
+      { path: CATALOG_PATH, name: "panels", component: { template: "<div />" } },
+      { path: DETAIL_PATH, name: "panel-detail", component: { template: "<div />" } },
       { path: "/ontology/projections", name: "projections", component: { template: "<div />" } },
       { path: "/ontology/applications", name: "applications", component: { template: "<div />" } },
+      { path: "/ontology/applications/detail", name: "application-detail", component: { template: "<div />" } },
     ],
   });
   await router.push("/chat");
@@ -531,10 +733,14 @@ async function mountDirectory(options: HarnessOptions = {}) {
   });
 
   const mounted = mountPlatformPage(() => h(Host), router);
-  await waitFor(
-    () => mounted.element.textContent?.includes("Panel A") === true && mounted.element.textContent?.includes("Panel B") === true,
-    "initial panel list",
-  );
+  if (initialAddress.startsWith(DETAIL_PATH)) {
+    await waitFor(() => Boolean(mounted.element.querySelector(".pd-detail-page")), "initial detail page");
+  } else {
+    await waitFor(
+      () => mounted.element.textContent?.includes("Panel A") === true && mounted.element.textContent?.includes("Panel B") === true,
+      "initial panel list",
+    );
+  }
 
   return { mounted, display, observed, reads, navigated, dispatched };
 }
@@ -542,112 +748,264 @@ async function mountDirectory(options: HarnessOptions = {}) {
 afterEach(() => {
   leaveFrame();
   useApplicationCatalog().applications.value = [];
+  sessionStorage.clear();
   document.body.innerHTML = "";
   vi.restoreAllMocks();
 });
 
-describe("panels builtin directory", () => {
-  it("lands directly on panel B's edit form in one present call without leaking detailMode to URL, exposes 100 page size, resets on human click, and creates with selected cleared", async () => {
-    const { mounted, display, observed, reads } = await mountDirectory();
-    try {
-      // Unavailable section is collapsed when there are no unavailable panels.
-      const unavailableSection = mounted.element.querySelector<HTMLElement>(".pd-unavailable-section");
-      expect(unavailableSection?.style.display).toBe("none");
+describe("panels two-entry architecture (catalog + detail)", () => {
+  it("enforces zero usePanelData, zero third-party tokens, 8-locale coverage, and non-deepLink create/edit states", () => {
+    for (const src of [catalogHtml, catalogModule, detailHtml, detailModule]) {
+      expect(src).not.toContain("usePanelData");
+      expect(src).not.toContain("/api/");
+      expect(src).not.toMatch(/\bel-[a-z]/);
+      expect(src).not.toContain("--el-");
+    }
+    expect(catalogSource.manifest.members.catalogue.config.showChevron).toBe(true);
+    expect(catalogSource.manifest.members.catalogue.config.fallbackToFirst).toBe(false);
+    expect(catalogSource.manifest.members.catalogue.config.pageSizes).toContain(100);
+    expect(catalogSource.manifest.state.creating).not.toHaveProperty("deepLink", true);
+    expect(detailSource.manifest.state.detailMode.deepLink).toBe(false);
+    expect(Object.keys(catalogSource.content.messages).sort()).toEqual(["ar", "de", "en", "fr", "it", "ja", "zh-CN", "zh-TW"]);
+    expect(Object.keys(detailSource.content.messages).sort()).toEqual(["ar", "de", "en", "fr", "it", "ja", "zh-CN", "zh-TW"]);
+  });
 
-      // Pagination page sizes include 20, 50, and 100.
+  it("renders full-width catalog, navigates to detail on row/unavailable click, and guards create dialog before jumping into detail edit mode", async () => {
+    const { mounted, display, observed, navigated, dispatched } = await mountPanelsApp({
+      unavailableRows: () => [
+        {
+          primaryKey: "broken-panel",
+          className: PRODUCT_PANEL,
+          label: "broken-panel",
+          subtitle: "manifest.members.bad: Invalid reference",
+          fields: { id: "broken-panel", reason: "manifest.members.bad: Invalid reference", revision: 3, canDelete: true },
+          fieldLabels: { id: "ID", reason: "Reason", revision: "Revision", canDelete: "Can delete" },
+          tones: { reason: "danger" },
+        },
+      ],
+      dispatchIntent: (operationId) => {
+        if (operationId === "createForm.save") {
+          return {
+            kind: "success",
+            created: { objectType: PRODUCT_PANEL, primaryKey: "new-panel-1" },
+            data: { id: "new-panel-1" },
+          };
+        }
+        return { kind: "success", data: {} };
+      },
+    });
+
+    try {
+      // Page sizes include 20, 50, and 100.
       const pageSizeOptions = [...mounted.element.querySelectorAll<HTMLOptionElement>(".sdk-object-list-page-size option")].map((o) =>
         Number(o.value),
       );
       expect(pageSizeOptions).toEqual([20, 50, 100]);
 
-      // 1. Agent asks to select Panel B and enter edit mode in a single present call.
-      reads.length = 0;
-      const editReceipt = await display.present(presentFrame({ selected: panelRef("panel-b"), detailMode: "edit" }));
-      expect(editReceipt).toMatchObject({ status: "opened" });
-
+      // Unavailable panels section is visible and clickable.
+      const unavailableSection = mounted.element.querySelector<HTMLElement>(".pd-unavailable-section");
       await waitFor(
-        () => reads.some((r) => r.memberPath[0]?.member === "form" && r.dataName === "form" && readTargetKey(r) === "panel-b"),
-        "panel-b edit form read",
-      );
-      await waitFor(
-        () => (mounted.element.querySelector(".pd-form-wrap input") as HTMLInputElement | null)?.value === "Panel panel-b",
-        "panel-b edit form input value",
+        () => unavailableSection?.style.display !== "none" && unavailableSection?.textContent?.includes("broken-panel") === true,
+        "unavailable panel list visible",
       );
 
-      expect(observed.context?.state?.selected).toEqual(panelRef("panel-b"));
-      expect(observed.context?.state?.detailMode).toBe("edit");
-      // detailMode must not be persisted into the URL address.
+      // 1. Open centered create dialog from header primary button.
+      const createBtn = mounted.element.querySelector<HTMLButtonElement>(".sdk-page-header-actions .el-button--primary");
+      expect(createBtn).toBeTruthy();
+      createBtn!.click();
+
+      await waitFor(() => Boolean(document.querySelector(".el-dialog .pd-create-body input")), "create dialog rendered");
+      expect(display.page.value?.address).not.toContain("creating");
+
+      // Only the 5 basic fields are shown — HTML / Module code editors stay in detail edit mode.
+      const dialogText = document.querySelector(".el-dialog .pd-create-body")?.textContent ?? "";
+      expect(dialogText).toContain("Name");
+      expect(dialogText).toContain("ID");
+      expect(dialogText).toContain("Description");
+      expect(dialogText).not.toContain("HTML");
+      expect(dialogText).not.toContain("Module");
+
+      // 2. Edit a field to make the dialog dirty, then click X -> unsaved guard asks before closing.
+      const nameInput = [...document.querySelectorAll<HTMLInputElement>(".el-dialog .pd-create-body input")].find(
+        (input) => input.value === "",
+      );
+      expect(nameInput).toBeTruthy();
+      nameInput!.value = "Unsaved Panel";
+      nameInput!.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => observed.context?.forms?.some((f) => f.member === "createForm" && f.dirty) === true, "createForm dirty");
+
+      const closeBtn = document.querySelector<HTMLButtonElement>(".el-dialog__headerbtn");
+      expect(closeBtn).toBeTruthy();
+      closeBtn!.click();
+      await clickMessageBoxButton("Cancel");
+      expect(document.querySelector(".el-dialog .pd-create-body")).not.toBeNull();
+      expect(nameInput!.value).toBe("Unsaved Panel");
+
+      // Click X again and discard -> closes dialog cleanly.
+      closeBtn!.click();
+      await clickMessageBoxButton("OK");
+      await waitFor(() => !document.querySelector(".el-dialog .pd-create-body"), "create dialog closed after discard");
+
+      // 3. Re-open create dialog, enter name, submit -> writes one-time sessionStorage key and navigates into detail edit mode.
+      createBtn!.click();
+      await waitFor(() => Boolean(document.querySelector(".el-dialog .pd-create-body input")), "create dialog reopened");
+      const freshNameInput = [...document.querySelectorAll<HTMLInputElement>(".el-dialog .pd-create-body input")].find(
+        (input) => input.value === "",
+      );
+      freshNameInput!.value = "Brand New Panel";
+      freshNameInput!.dispatchEvent(new Event("input", { bubbles: true }));
+
+      const submitBtn = document.querySelector<HTMLButtonElement>(".el-dialog .pd-create-body .el-button--primary");
+      expect(submitBtn).toBeTruthy();
+      await waitFor(() => !submitBtn!.disabled, "create submit button enabled");
+      submitBtn!.click();
+
+      await waitFor(() => dispatched.some((d) => d.operationId === "createForm.save"), "createForm saved");
+      await waitFor(
+        () => navigated.includes(`${DETAIL_PATH}?selected=new-panel-1`),
+        "navigated to new panel detail",
+      );
+
+      // Detail entry consumes one-time sessionStorage key and enters edit mode without leaking detailMode to URL.
+      await waitFor(
+        () =>
+          Boolean(mounted.element.querySelector(".pd-edit-mode"))
+          && observed.context?.state?.detailMode === "edit"
+          && observed.context?.state?.selected?.primaryKey === "new-panel-1",
+        "newly created panel opened directly in full-width edit mode",
+      );
+      expect(sessionStorage.getItem(`${OPEN_EDIT_KEY_PREFIX}new-panel-1`)).toBeNull();
+      expect(display.page.value?.address).toBe(`${DETAIL_PATH}?selected=new-panel-1`);
       expect(display.page.value?.address).not.toContain("detailMode");
 
-      // 2. Human clicks Panel A in the catalogue list -> leaves edit mode back to view mode.
+      // Clicking Back to panels returns to catalog.
+      const backBtn = mounted.element.querySelector<HTMLButtonElement>(".sdk-page-header-back");
+      expect(backBtn).toBeTruthy();
+      backBtn!.click();
+      await waitFor(
+        () => navigated.includes(CATALOG_PATH) && Boolean(mounted.element.querySelector(".pd-catalog")),
+        "returned to catalog",
+      );
+
+      // Clicking a normal catalog row opens detail in default view mode (since no sessionStorage key exists).
       const panelARow = [...mounted.element.querySelectorAll("tr")].find((row) => row.textContent?.includes("Panel A"));
       expect(panelARow).toBeTruthy();
       panelARow!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
       await waitFor(
-        () => !mounted.element.querySelector(".pd-form-wrap") && observed.context?.state?.detailMode === "view",
-        "human row click exits edit mode to view",
+        () =>
+          display.page.value?.address === `${DETAIL_PATH}?selected=panel-a`
+          && mounted.element.querySelector<HTMLElement>(".pd-view-mode")?.style.display !== "none"
+          && mounted.element.querySelectorAll(".pd-tab-panel").length > 0
+          && observed.context?.state?.detailMode === "view",
+        "panel-a opened in default view mode",
       );
-      expect(observed.context?.state?.selected).toEqual(panelRef("panel-a"));
 
-      // 3. While Panel A is selected in view mode, a single present call selects Panel B and enters edit mode.
-      reads.length = 0;
-      const switchEditReceipt = await display.present(
-        presentFrame({ selected: panelRef("panel-b"), detailMode: "edit" }, display.page.value!.address),
-      );
-      expect(switchEditReceipt).toMatchObject({ status: "opened" });
+      // Return to catalog and click the unavailable panel -> navigates to /ontology/panels/detail?selected=broken-panel.
+      const backBtn2 = mounted.element.querySelector<HTMLButtonElement>(".sdk-page-header-back");
+      backBtn2!.click();
+      await waitFor(() => Boolean(mounted.element.querySelector(".pd-unavailable-section .sdk-object-list-item-btn")), "unavailable row clickable");
+      mounted.element.querySelector<HTMLButtonElement>(".pd-unavailable-section .sdk-object-list-item-btn")!.click();
       await waitFor(
-        () => reads.some((r) => r.memberPath[0]?.member === "form" && r.dataName === "form" && readTargetKey(r) === "panel-b"),
-        "panel-a -> panel-b direct edit form read",
+        () => navigated.includes(`${DETAIL_PATH}?selected=broken-panel`),
+        "unavailable panel click navigated to detail",
       );
-      await waitFor(
-        () => (mounted.element.querySelector(".pd-form-wrap input") as HTMLInputElement | null)?.value === "Panel panel-b",
-        "panel-a -> panel-b edit form input value",
-      );
-      expect(observed.context?.state?.selected).toEqual(panelRef("panel-b"));
-      expect(observed.context?.state?.detailMode).toBe("edit");
-
-      // 4. Agent follows create recipe (`selected: null, creating: true`) while Panel B is selected.
-      reads.length = 0;
-      const createReceipt = await display.present(
-        presentFrame({ selected: null, creating: true }, display.page.value!.address),
-      );
-      expect(createReceipt).toMatchObject({ status: "opened" });
-
-      await waitFor(
-        () => reads.some((r) => r.memberPath[0]?.member === "form" && r.dataName === "createForm" && readTargetKey(r) === ""),
-        "createForm read with cleared selection",
-      );
-      expect(observed.context?.state?.selected ?? null).toBeNull();
-      expect(observed.context?.state?.creating).toBe(true);
-      expect(reads.some((r) => r.memberPath[0]?.member === "form" && r.dataName === "form")).toBe(false);
     } finally {
       mounted.app.unmount();
     }
   });
 
-  it("displays clickable unavailable panels, shows diagnostic summary on the right, and confirms deletion via owner inspectImpact", async () => {
+  it("opens detail in view mode, switches to full-width edit mode via Edit button, supports member picker, Cancel guard, and Save", async () => {
+    const { mounted, observed, dispatched } = await mountPanelsApp({
+      initialAddress: `${DETAIL_PATH}?selected=panel-b`,
+      includeMembersField: true,
+    });
+
+    try {
+      await waitFor(() => Boolean(mounted.element.querySelector(".pd-tabs")), "default view mode rendered");
+      expect(observed.context?.state?.detailMode).toBe("view");
+
+      // Click primary Edit button in header -> full-width edit mode with header Cancel + Save draft bar.
+      const editBtn = mounted.element.querySelector<HTMLButtonElement>(".sdk-page-header-actions .el-button--primary");
+      expect(editBtn?.textContent?.trim()).toBe("Edit");
+      editBtn!.click();
+
+      await waitFor(() => Boolean(mounted.element.querySelector(".pd-edit-mode")), "entered full-width edit mode");
+      await waitFor(
+        () => Boolean(mounted.element.querySelector(".pd-member-picker")),
+        "candidate member picker rendered when /manifest/members is editable",
+      );
+
+      // Add an existing projection into /manifest/members via the candidate picker.
+      await waitFor(
+        () => mounted.element.querySelector(".pd-member-picker")?.textContent?.includes("Summary Projection") === true,
+        "candidate projection loaded",
+      );
+      mounted.element.querySelector<HTMLButtonElement>(".pd-member-picker .sdk-object-list-item-btn")!.click();
+
+      const slotInput = mounted.element.querySelector<HTMLInputElement>(".pd-member-picker-inputs input")!;
+      slotInput.value = "orderSummary";
+      slotInput.dispatchEvent(new Event("input", { bubbles: true }));
+      const addMemberBtn = mounted.element.querySelector<HTMLButtonElement>(".pd-member-picker-inputs .el-button--primary")!;
+      await waitFor(() => !addMemberBtn.disabled, "add member enabled");
+      addMemberBtn.click();
+
+      await waitFor(() => {
+        const form = observed.context?.forms?.find((f) => f.member === "form");
+        const members = (form?.values as { manifest?: { members?: Record<string, unknown> } } | undefined)?.manifest?.members;
+        return Boolean(form?.dirty && members && "orderSummary" in members);
+      }, "added projection into /manifest/members");
+
+      // Header Save button is enabled while dirty.
+      const headerSaveBtn = mounted.element.querySelector<HTMLButtonElement>(".sdk-page-header-action.primary");
+      expect(headerSaveBtn).toBeTruthy();
+      expect(headerSaveBtn!.disabled).toBe(false);
+
+      // Click header Cancel while dirty -> triggers unsaved confirmation.
+      const cancelBtn = [...mounted.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header-actions button")].find(
+        (b) => b.textContent?.trim() === "Cancel",
+      );
+      expect(cancelBtn).toBeTruthy();
+      cancelBtn!.click();
+
+      await clickMessageBoxButton("Cancel");
+      expect(mounted.element.querySelector(".pd-edit-mode")).not.toBeNull();
+
+      // Confirming Cancel discards unsaved edits and returns to view mode.
+      cancelBtn!.click();
+      await clickMessageBoxButton("OK");
+      await waitFor(
+        () => observed.context?.state?.detailMode === "view" && !mounted.element.querySelector(".pd-edit-mode"),
+        "exited edit mode after confirming cancel",
+      );
+
+      // Re-enter edit mode, modify a field, and click Save in header -> dispatches form.save and returns to view mode.
+      const editBtnAgain = mounted.element.querySelector<HTMLButtonElement>(".sdk-page-header-actions .el-button--primary");
+      editBtnAgain!.click();
+      await waitFor(() => Boolean(mounted.element.querySelector(".pd-edit-mode input")), "re-entered edit mode");
+      const nameField = [...mounted.element.querySelectorAll<HTMLInputElement>(".pd-edit-mode .pd-form-wrap input")].find(
+        (input) => input.value === "Panel panel-b",
+      );
+      expect(nameField).toBeTruthy();
+      nameField!.value = "Panel B Updated";
+      nameField!.dispatchEvent(new Event("input", { bubbles: true }));
+      const saveBtnAgain = mounted.element.querySelector<HTMLButtonElement>(".sdk-page-header-action.primary");
+      await waitFor(() => Boolean(saveBtnAgain && !saveBtnAgain.disabled), "header save enabled after edit");
+      saveBtnAgain!.click();
+      await waitFor(() => dispatched.some((d) => d.operationId === "form.save"), "form.save dispatched");
+      await waitFor(
+        () => observed.context?.state?.detailMode === "view" && mounted.element.querySelector<HTMLElement>(".pd-view-mode")?.style.display !== "none",
+        "returned to view mode after save",
+      );
+    } finally {
+      mounted.app.unmount();
+    }
+  });
+
+  it("displays unavailable panel diagnostics on detail, confirms deletion via inspectImpact, and navigates back to catalog", async () => {
     let brokenPresent = true;
-    const { mounted, observed, dispatched } = await mountDirectory({
-      unavailableRows: () =>
-        brokenPresent
-          ? [
-              {
-                primaryKey: "broken-panel",
-                className: PRODUCT_PANEL,
-                label: "broken-panel",
-                subtitle: "manifest.members.bad: Invalid reference",
-                fields: {
-                  id: "broken-panel",
-                  reason: "manifest.members.bad: Invalid reference",
-                  revision: 3,
-                  canDelete: true,
-                },
-                fieldLabels: { id: "ID", reason: "Reason", revision: "Revision", canDelete: "Can delete" },
-                tones: { reason: "danger" },
-              },
-            ]
-          : [],
+    const { mounted, navigated, dispatched } = await mountPanelsApp({
+      initialAddress: `${DETAIL_PATH}?selected=broken-panel`,
+      unavailableRows: () => (brokenPresent ? [{ primaryKey: "broken-panel", className: PRODUCT_PANEL, label: "broken-panel", fields: {} }] : []),
       recordFor: (key) => {
         if (key === "broken-panel") {
           return {
@@ -741,187 +1099,83 @@ describe("panels builtin directory", () => {
     });
 
     try {
-      const unavailableSection = mounted.element.querySelector<HTMLElement>(".pd-unavailable-section");
-      await waitFor(
-        () => unavailableSection?.style.display !== "none" && unavailableSection?.textContent?.includes("broken-panel") === true,
-        "unavailable panel list visible",
-      );
-
-      // Click the broken panel row.
-      const brokenButton = unavailableSection!.querySelector<HTMLButtonElement>("button.sdk-object-list-item-btn");
-      expect(brokenButton).toBeTruthy();
-      brokenButton!.click();
-
-      // Right pane renders diagnostic view with reason, no edit/tabs, and exposes delete button.
       await waitFor(
         () =>
           mounted.element.querySelector(".pd-unavailable-detail")?.textContent?.includes("manifest.members.bad: Invalid reference") === true,
-        "unavailable diagnostic detail",
+        "unavailable diagnostic detail rendered",
       );
-      expect(mounted.element.querySelector(".pd-tabs")).toBeNull();
+      expect(mounted.element.querySelector<HTMLElement>(".pd-view-mode")?.style.display).toBe("none");
+      expect(mounted.element.querySelectorAll(".pd-tab-panel")).toHaveLength(0);
 
-      // Click delete -> triggers host inspectImpact confirmation dialog.
       await waitFor(
-        () => Boolean(mounted.element.querySelector<HTMLButtonElement>(".pd-detail-actions .el-button--danger")),
-        "delete button visible on unavailable panel",
+        () => Boolean(mounted.element.querySelector<HTMLButtonElement>(".sdk-page-header-actions .el-button--danger")),
+        "danger delete button visible in header for unavailable panel",
       );
-      mounted.element.querySelector<HTMLButtonElement>(".pd-detail-actions .el-button--danger")!.click();
+      const deleteBtn = mounted.element.querySelector<HTMLButtonElement>(".sdk-page-header-actions .el-button--danger")!;
 
-      // First test cancelling confirmation does not dispatch delete.
+      // Cancel confirmation does not dispatch.
+      deleteBtn.click();
       const cancelBox = await clickMessageBoxButton("Cancel");
       expect(cancelBox.textContent).toContain("Delete broken-panel?");
       expect(dispatched).toHaveLength(0);
 
-      // Click delete again and confirm.
-      mounted.element.querySelector<HTMLButtonElement>(".pd-detail-actions .el-button--danger")!.click();
+      // Confirm deletion dispatches with revision: 3 and navigates back to /ontology/panels.
+      deleteBtn.click();
       await clickMessageBoxButton("Delete panel");
 
       await waitFor(() => dispatched.length === 1, "delete dispatched after confirmation");
       expect(dispatched[0]?.call.input).toEqual({ revision: 3 });
-      await waitFor(
-        () => (observed.context?.state?.selected ?? null) === null && unavailableSection?.style.display === "none",
-        "selection cleared and unavailable list collapsed after deletion",
-      );
-
-      // Normal panel delete also routes through owner inspectImpact confirmation.
-      const panelBRow = [...mounted.element.querySelectorAll("tr")].find((row) => row.textContent?.includes("Panel B"))!;
-      panelBRow.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await waitFor(
-        () => Boolean(mounted.element.querySelector<HTMLButtonElement>(".pd-detail-actions .el-button--danger")),
-        "delete button visible on normal panel",
-      );
-      mounted.element.querySelector<HTMLButtonElement>(".pd-detail-actions .el-button--danger")!.click();
-      const normalImpactBox = await clickMessageBoxButton("Delete panel");
-      expect(normalImpactBox.textContent).toContain("Delete panel-b?");
-      await waitFor(() => dispatched.length === 2, "normal panel delete dispatched after confirmation");
-      expect(dispatched[1]?.call.input).toEqual({ revision: 1 });
+      await waitFor(() => navigated.includes(CATALOG_PATH), "navigated back to catalog after delete");
     } finally {
       mounted.app.unmount();
     }
   });
 
-  it("prompts before discarding unsaved form edits when switching rows or clicking New panel", async () => {
-    const { mounted, display, observed } = await mountDirectory();
-    try {
-      await display.present(presentFrame({ selected: panelRef("panel-b"), detailMode: "edit" }));
-      await waitFor(
-        () => (mounted.element.querySelector(".pd-form-wrap input") as HTMLInputElement | null)?.value === "Panel panel-b",
-        "panel-b form ready",
-      );
-
-      // Make the form dirty by editing the name field.
-      const input = mounted.element.querySelector<HTMLInputElement>(".pd-form-wrap input")!;
-      input.value = "Panel B Unsaved Edit";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      await waitFor(
-        () => observed.context?.forms?.some((f) => f.member === "form" && f.dirty) === true,
-        "form marked dirty",
-      );
-
-      // 1. Click Panel A while dirty -> choose "Cancel" -> stays on Panel B with edits intact.
-      const panelARow = [...mounted.element.querySelectorAll("tr")].find((row) => row.textContent?.includes("Panel A"))!;
-      panelARow.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await clickMessageBoxButton("Cancel");
-
-      await waitFor(
-        () => observed.context?.state?.selected?.primaryKey === "panel-b" && observed.context?.state?.detailMode === "edit",
-        "selection restored to panel-b on cancel",
-      );
-      expect(mounted.element.querySelector<HTMLInputElement>(".pd-form-wrap input")?.value).toBe("Panel B Unsaved Edit");
-
-      // 2. Click "New panel" while dirty -> choose "Cancel" -> stays on Panel B with edits intact.
-      const newBtn = [...mounted.element.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("New panel"),
-      )!;
-      newBtn.click();
-      await clickMessageBoxButton("Cancel");
-      expect(observed.context?.state?.detailMode).toBe("edit");
-      expect(mounted.element.querySelector<HTMLInputElement>(".pd-form-wrap input")?.value).toBe("Panel B Unsaved Edit");
-
-      // 3. Click Panel A again -> choose "OK" -> switches to Panel A in view mode and closes form.
-      panelARow.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await clickMessageBoxButton("OK");
-
-      await waitFor(
-        () => !mounted.element.querySelector(".pd-form-wrap") && observed.context?.state?.selected?.primaryKey === "panel-a",
-        "switched to panel-a after confirming discard",
-      );
-      expect(observed.context?.state?.detailMode).toBe("view");
-    } finally {
-      mounted.app.unmount();
-    }
-  });
-
-  it("lets authors search and add existing projections or panels into /manifest/members from the open form", async () => {
-    const { mounted, display, observed } = await mountDirectory({ includeMembersField: true });
-    try {
-      // Picker is not mounted before entering form mode.
-      expect(mounted.element.querySelector(".pd-member-picker")).toBeNull();
-
-      await display.present(presentFrame({ selected: panelRef("panel-b"), detailMode: "edit" }));
-      await waitFor(
-        () => Boolean(mounted.element.querySelector(".pd-member-picker")),
-        "member picker mounted when form has editable /manifest/members",
-      );
-      await waitFor(
-        () => mounted.element.querySelector(".pd-member-picker-list")?.textContent?.includes("Summary Projection") === true,
-        "candidate projections loaded via ObjectList",
-      );
-
-      // Select candidate projection and enter slot name.
-      const candidateBtn = mounted.element.querySelector<HTMLButtonElement>(".pd-member-picker-list button.sdk-object-list-item-btn")!;
-      candidateBtn.click();
-
-      const slotInput = mounted.element.querySelector<HTMLInputElement>(".pd-member-picker-inputs input")!;
-      slotInput.value = "existing";
-      slotInput.dispatchEvent(new Event("input", { bubbles: true }));
-
-      const addBtn = mounted.element.querySelector<HTMLButtonElement>(".pd-member-picker-inputs button")!;
-      await waitFor(() => !addBtn.disabled, "add button enabled");
-      addBtn.click();
-
-      // Duplicate slot name is rejected with an inline error.
-      await waitFor(
-        () => mounted.element.querySelector(".pd-member-picker .pd-error")?.textContent?.includes("/manifest/members") === true,
-        "duplicate slot name error",
-      );
-
-      // Enter a new slot name and add it into /manifest/members.
-      slotInput.value = "summaryCard";
-      slotInput.dispatchEvent(new Event("input", { bubbles: true }));
-      addBtn.click();
-
-      await waitFor(() => {
-        const formValues = observed.context?.forms?.find((f) => f.member === "form")?.values as
-          | { manifest?: { members?: Record<string, unknown> } }
-          | undefined;
-        return Boolean(formValues?.manifest?.members?.summaryCard);
-      }, "summaryCard added to form /manifest/members");
-
-      const formValues = observed.context?.forms?.find((f) => f.member === "form")?.values as {
-        manifest?: { members?: Record<string, unknown> };
-      };
-      expect(formValues.manifest?.members).toEqual({
-        existing: { target: { projectionId: "proj-0" } },
-        summaryCard: { target: { projectionId: "proj-1" } },
-      });
-    } finally {
-      mounted.app.unmount();
-    }
-  });
-
-  it("shows inline projection summary in Members tab, page skills note in Usage tab, and mounts Preview child panel on demand only", async () => {
-    const nestedRequests: string[] = [];
-    const childPanel = {
-      ...panelRecord("panel-a", "Panel A Preview", definePanel({ state: {}, members: {} })),
-      visibility: "platform" as const,
-      domainId: null,
-      ownerId: null,
-      editable: false as const,
-      content: { html: "<div class=\"child-preview-body\">Child Preview Loaded</div>", module: "import { mountPanel } from '@ontomato/sdk/panel'; await mountPanel({ setup: () => ({}) });", messages: {} },
+  it("preserves all view-mode tabs (overview, source, members, usage, grants, on-demand preview) and navigation links", async () => {
+    const nestedPreviewPanel = {
+      ...panelRecord("panel-b", "Panel B", definePanel({ state: {}, members: {} })),
+      visibility: "domain" as const,
+      domainId: "domain-1",
+      ownerId: "user-1",
+      editable: true as const,
+      content: {
+        html: '<div id="app"><section class="nested-preview-marker">Live preview content</section></div>',
+        module: 'import { mountPanel } from "@ontomato/sdk/panel"; await mountPanel({});',
+        messages: {},
+      },
     };
+    const nestedRequests: string[] = [];
 
-    const { mounted, display, observed, navigated } = await mountDirectory({
+    const { mounted, display, observed, navigated, dispatched } = await mountPanelsApp({
+      initialAddress: `${DETAIL_PATH}?selected=panel-b`,
+      recordFor: (key) => ({
+        primaryKey: key,
+        className: PRODUCT_PANEL,
+        label: `Panel ${key}`,
+        fields: { id: key, name: `Panel ${key}`, domainShared: false, objectType: PRODUCT_PANEL },
+        outputs: {
+          canEdit: true,
+          canGrant: true,
+          canDelete: true,
+          isBuiltin: false,
+          isTemplate: false,
+          domainShared: false,
+          revision: 2,
+          hiddenUsedByCount: 2,
+          unavailable: false,
+          unavailableReason: "",
+        },
+      }),
+      sourceFilesFor: () => [
+        { primaryKey: "panel.html", className: PRODUCT_PANEL, label: "panel.html", fields: { path: "panel.html" } },
+        { primaryKey: "panel.mjs", className: PRODUCT_PANEL, label: "panel.mjs", fields: { path: "panel.mjs" } },
+      ],
+      sourceFileFor: (_key, filePath) => ({
+        primaryKey: filePath,
+        className: PRODUCT_PANEL,
+        label: filePath,
+        fields: { content: `// source for ${filePath}` },
+      }),
       memberRowsFor: () => [
         {
           primaryKey: "proj-1",
@@ -937,88 +1191,144 @@ describe("panels builtin directory", () => {
             outputs: "—",
           },
         },
+        {
+          primaryKey: "panel-nested",
+          className: PRODUCT_PANEL,
+          label: "Nested Child Panel",
+          subtitle: "panel-nested",
+          fields: {
+            slot: "child",
+            kindLabel: "Panel",
+            target: { kind: "reference", className: PRODUCT_PANEL, primaryKey: "panel-nested", label: "Nested Child Panel" },
+            componentId: "—",
+            inputs: "—",
+            outputs: "—",
+          },
+        },
       ],
+      usedByRowsFor: () => [
+        {
+          primaryKey: "/applications/app-demo/home",
+          className: APPLICATION,
+          label: "Demo App",
+          subtitle: "/applications/app-demo/home",
+          fields: {
+            kindLabel: "Application entry",
+            target: { kind: "reference", className: APPLICATION, primaryKey: "app-demo", label: "Demo App" },
+            path: "/applications/app-demo/home",
+            canOpenPath: true,
+          },
+        },
+      ],
+      operationsFor: (member) => {
+        if (member === "shareEnable") {
+          return {
+            share: {
+              kind: "action",
+              handlerRef: "productPanels.share",
+              label: "Share with domain",
+              effect: "write",
+              batch: false,
+              target: { source: "input", input: "target" },
+              inputSchema: { type: "object", properties: { shared: { type: "boolean" } } },
+              resultSchema: {},
+            },
+          };
+        }
+        return {};
+      },
       nestedPanel: (panelId, request) => {
         nestedRequests.push(`${panelId}:${request.path}`);
-        if (request.path.endsWith("/snapshot")) return panelSnapshot(childPanel, {}, request);
-        return panelAnswer(childPanel, request);
+        if (request.path.endsWith("/snapshot")) return panelSnapshot(nestedPreviewPanel, {}, request);
+        return panelAnswer(nestedPreviewPanel, request);
       },
     });
 
     try {
-      // Select Panel A on Overview tab -> preview must NOT mount or request nested panel definition.
-      const panelARow = [...mounted.element.querySelectorAll("tr")].find((row) => row.textContent?.includes("Panel A"))!;
-      panelARow.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await waitFor(() => Boolean(mounted.element.querySelector(".pd-tabs")), "detail tabs shown");
+      // All 5 same-object detail tabs mounted via v-show; Preview NOT mounted until Preview tab is active.
+      await waitFor(() => mounted.element.querySelectorAll(".pd-tab-panel").length === 5, "5 detail tabs mounted");
+      expect(mounted.element.querySelector('[data-tab="preview"]')).toBeNull();
       expect(nestedRequests).toHaveLength(0);
-      expect(observed.context?.state?.previewTarget ?? null).toBeNull();
 
-      // Switch to Members tab -> click projection row -> inline summary card appears and opens Projections on click.
+      // Source tab: displays source files and source viewer content.
+      await display.present(presentFrame({ tab: "source", sourceFile: "panel.html" }, display.page.value!.address));
+      await waitFor(
+        () => mounted.element.querySelector('[data-tab="source"]')?.textContent?.includes("// source for panel.html") === true,
+        "source viewer loaded panel.html",
+      );
+
+      // Members tab: clicking projection row populates inline summary, "Open in Projections" navigates to /ontology/projections.
       await display.present(presentFrame({ tab: "members" }, display.page.value!.address));
       await waitFor(
-        () => mounted.element.textContent?.includes("Summary Projection") === true,
-        "members list rendered",
+        () => mounted.element.querySelector('[data-tab="members"]')?.textContent?.includes("Summary Projection") === true,
+        "members table loaded",
       );
-      const memberRow = [...mounted.element.querySelectorAll(".pd-section tr")].find((row) =>
+      const projRow = [...mounted.element.querySelectorAll('[data-tab="members"] tr')].find((row) =>
         row.textContent?.includes("Summary Projection"),
-      )!;
-      memberRow.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-      await waitFor(
-        () =>
-          mounted.element.querySelector(".pd-member-card")?.textContent?.includes("Displays order summary") === true
-          && mounted.element.querySelector(".pd-member-card")?.textContent?.includes("ObjectSummary") === true,
-        "inline projection summary rendered",
       );
-
+      projRow!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await waitFor(
+        () => mounted.element.querySelector(".pd-member-card")?.textContent?.includes("Open in Projections") === true,
+        "inline projection summary card populated",
+      );
       const openProjBtn = [...mounted.element.querySelectorAll<HTMLButtonElement>(".pd-member-card button")].find((b) =>
         b.textContent?.includes("Open in Projections"),
-      )!;
-      openProjBtn.click();
-      await waitFor(() => navigated.at(-1) === "/ontology/projections?selected=proj-1", () => `navigated=${JSON.stringify(navigated)}`);
-
-      // Switch to Usage tab -> page skills correspondence note is shown.
-      await display.present(presentFrame({ tab: "usage" }, display.page.value!.address));
-      await waitFor(
-        () => mounted.element.querySelector(".pd-usage-skills")?.textContent?.includes("derives a page skill") === true,
-        "usage page skills hint rendered",
       );
-      expect(nestedRequests).toHaveLength(0);
+      openProjBtn!.click();
+      await waitFor(() => navigated.includes("/ontology/projections?selected=proj-1"), "navigated to projections");
 
-      // Switch to Preview tab -> preview mounts on demand.
+      // Usage tab: hidden users banner & page skills section rendered; row action opens entry path.
+      await display.present(presentFrame({ tab: "usage" }, display.page.value!.address));
+      await waitFor(() => {
+        const text = mounted.element.querySelector('[data-tab="usage"]')?.textContent ?? "";
+        return text.includes("2 more users you may not read") && text.includes("Page skills") && text.includes("Demo App");
+      }, "usage tab rendered");
+
+      // Grants tab: domain sharing toggle dispatches productPanels.share.
+      await display.present(presentFrame({ tab: "grants" }, display.page.value!.address));
+      await waitFor(
+        () => Boolean(mounted.element.querySelector<HTMLButtonElement>('[data-tab="grants"] .pd-share-actions .sdk-operation-button button')),
+        "domain share button rendered",
+      );
+      mounted.element.querySelector<HTMLButtonElement>('[data-tab="grants"] .pd-share-actions .sdk-operation-button button')!.click();
+      await waitFor(() => dispatched.some((d) => d.operationId === "shareEnable.share"), "share dispatched");
+
+      // Preview tab: mounts live preview on demand, and unmounts when switching away.
       await display.present(presentFrame({ tab: "preview" }, display.page.value!.address));
       await waitFor(
-        () => Boolean(mounted.element.querySelector(".pd-preview-box")) && observed.context?.state?.previewTarget?.primaryKey === "panel-a",
-        "preview mounted on Preview tab",
+        () =>
+          Boolean(mounted.element.querySelector(".pd-preview-box"))
+          && observed.context?.state?.previewTarget?.primaryKey === "panel-b",
+        "inline preview mounted on demand",
       );
-
-      // Switch back to Overview -> previewTarget clears and preview unmounts.
       await display.present(presentFrame({ tab: "overview" }, display.page.value!.address));
       await waitFor(
         () => !mounted.element.querySelector(".pd-preview-box") && (observed.context?.state?.previewTarget ?? null) === null,
-        "preview unmounted when leaving Preview tab",
+        "inline preview unmounted on tab switch",
       );
     } finally {
       mounted.app.unmount();
     }
   });
 
-  it("aligns dialog permissions with detail entry rules, resets mode/dialogs on selected-only updates, and selects copied panel solely from owner receipt data.id", async () => {
+  it("aligns copy, template, grant, and editMode guards with permissions and handles agent remote control", async () => {
     let copyReceiptData: Record<string, unknown> = { id: "server-assigned-copy" };
-    const { mounted, display, observed, dispatched } = await mountDirectory({
+    const { mounted, display, observed, navigated, dispatched } = await mountPanelsApp({
+      initialAddress: `${DETAIL_PATH}?selected=panel-a`,
       recordFor: (key) => {
-        const readOnly = key === "panel-a";
+        const isEditable = key === "panel-b";
+        const isTemplate = key === "panel-tpl";
         return {
           primaryKey: key,
           className: PRODUCT_PANEL,
-          label: key === "panel-b" ? "Panel B" : "Panel A",
-          fields: { id: key, name: key === "panel-b" ? "Panel B" : "Panel A" },
+          label: isEditable ? "Panel B" : isTemplate ? "Template Panel" : "Panel A",
+          fields: { id: key, name: key, domainShared: false, objectType: PRODUCT_PANEL },
           outputs: {
-            canEdit: !readOnly,
-            canGrant: !readOnly,
-            canDelete: !readOnly,
-            isBuiltin: readOnly,
-            isTemplate: false,
+            canEdit: isEditable,
+            canGrant: isEditable,
+            canDelete: isEditable,
+            isBuiltin: false,
+            isTemplate,
             domainShared: false,
             revision: 1,
             hiddenUsedByCount: 0,
@@ -1027,8 +1337,8 @@ describe("panels builtin directory", () => {
           },
         };
       },
-      operationsFor: (member, inputs) => {
-        if (member === "copySubmit" && inputs.target) {
+      operationsFor: (member) => {
+        if (member === "copySubmit") {
           return {
             copy: {
               kind: "action",
@@ -1044,44 +1354,57 @@ describe("panels builtin directory", () => {
         }
         return {};
       },
-      dispatchIntent: () => ({ kind: "success", data: copyReceiptData }),
+      dispatchIntent: (operationId) => {
+        if (operationId === "copySubmit.copy") {
+          return { kind: "success", data: copyReceiptData };
+        }
+        return { kind: "success", data: {} };
+      },
     });
 
     try {
-      // 1. Read-only, non-template Panel A cannot open copyDialog or grantDialog via public state.
+      // 1. Read-only Panel A auto-closes unauthorized copyDialog, grantDialog, and resets detailMode to view.
       await display.present(
-        presentFrame({
-          selected: panelRef("panel-a"),
-          copyDialog: true,
-          copyId: "forced-id",
-          copyName: "Forced Name",
-          grantDialog: true,
-        }),
+        presentFrame(
+          {
+            selected: panelRef("panel-a"),
+            detailMode: "edit",
+            copyDialog: true,
+            copyId: "forced-id",
+            copyName: "Forced Name",
+            grantDialog: true,
+          },
+          display.page.value!.address,
+        ),
       );
       await waitFor(
         () =>
           observed.context?.state?.selected?.primaryKey === "panel-a"
+          && observed.context?.state?.detailMode === "view"
           && (observed.context?.state?.copyDialog ?? null) === null
           && (observed.context?.state?.grantDialog ?? null) === null,
-        "unauthorized dialogs auto-closed for read-only panel",
+        "unauthorized editMode and dialogs auto-closed for read-only panel",
       );
-      expect(document.querySelector(".el-dialog")).toBeNull();
 
-      // 2. Select editable Panel B in edit mode: detailMode stays out of URL (deepLink: false),
-      // and a subsequent selected-only update to Panel A resets back to view mode.
-      await display.present(presentFrame({ selected: panelRef("panel-b"), detailMode: "edit" }, display.page.value!.address));
-      await waitFor(() => observed.context?.state?.detailMode === "edit", "panel-b entered edit mode");
-      expect(source.manifest.state.detailMode.deepLink).toBe(false);
-      expect(source.manifest.members.catalogue.config.pageSizes).toContain(100);
-      expect(display.page.value!.address).not.toContain("detailMode");
+      // 2. Single present call selects editable Panel B and enters edit mode without leaking detailMode to URL.
+      const editReceipt = await display.present(
+        presentFrame({ selected: panelRef("panel-b"), detailMode: "edit" }, display.page.value!.address),
+      );
+      expect(editReceipt).toMatchObject({ status: "opened" });
+      await waitFor(
+        () => observed.context?.state?.selected?.primaryKey === "panel-b" && observed.context?.state?.detailMode === "edit",
+        "panel-b entered edit mode via single present call",
+      );
+      expect(display.page.value?.address).not.toContain("detailMode");
 
+      // Selected-only switch back to Panel A resets detailMode to view.
       await display.present(presentFrame({ selected: panelRef("panel-a") }, display.page.value!.address));
       await waitFor(
         () => observed.context?.state?.selected?.primaryKey === "panel-a" && observed.context?.state?.detailMode === "view",
         "selected-only update returned to view mode",
       );
 
-      // 3. Open copy dialog on editable Panel B; selected-only switch closes it; submitting takes owner receipt data.id.
+      // 3. Copy on Panel B navigates to /ontology/panels/detail?selected=<owner data.id>, never falling back to draftId.
       await display.present(
         presentFrame(
           { selected: panelRef("panel-b"), copyDialog: true, copyMode: "copy", copyId: "draft-id", copyName: "Copy B" },
@@ -1089,28 +1412,14 @@ describe("panels builtin directory", () => {
         ),
       );
       await waitFor(() => Boolean(document.querySelector(".el-dialog .el-button--primary")), "copy submit button mounted");
-
-      await display.present(presentFrame({ selected: panelRef("panel-a") }, display.page.value!.address));
-      await waitFor(
-        () => observed.context?.state?.selected?.primaryKey === "panel-a" && (observed.context?.state?.copyDialog ?? null) === null,
-        "selected-only update closed open copy dialog",
-      );
-
-      await display.present(
-        presentFrame(
-          { selected: panelRef("panel-b"), copyDialog: true, copyMode: "copy", copyId: "draft-id", copyName: "Copy B" },
-          display.page.value!.address,
-        ),
-      );
-      await waitFor(() => Boolean(document.querySelector(".el-dialog .el-button--primary")), "copy submit button mounted for dispatch");
       document.querySelector<HTMLButtonElement>(".el-dialog .el-button--primary")!.click();
 
       await waitFor(
-        () => dispatched.length === 1 && observed.context?.state?.selected?.primaryKey === "server-assigned-copy",
-        "selected panel taken from owner receipt data.id",
+        () => dispatched.length === 1 && navigated.includes(`${DETAIL_PATH}?selected=server-assigned-copy`),
+        "copy navigated to server-assigned panel detail",
       );
 
-      // 4. If owner receipt omits data.id, panel must NOT fall back to selecting the typed draftId.
+      // When owner receipt omits data.id, panel closes dialog without navigating to draftId.
       copyReceiptData = {};
       await display.present(
         presentFrame(
@@ -1123,21 +1432,29 @@ describe("panels builtin directory", () => {
 
       await waitFor(() => dispatched.length === 2, "second copy dispatched");
       await waitFor(() => (observed.context?.state?.copyDialog ?? null) === null, "copy dialog closed");
-      expect(observed.context?.state?.selected?.primaryKey).toBe("panel-b");
+      expect(navigated.some((addr) => addr.includes("never-select-draft"))).toBe(false);
 
-      // 5. Same-object detail tabs stay mounted via v-show while Preview mounts strictly on demand.
-      await display.present(presentFrame({ selected: panelRef("panel-b"), tab: "overview" }, display.page.value!.address));
-      await waitFor(
-        () => mounted.element.querySelectorAll(".pd-tab-panel").length === 5,
-        "all 5 same-object detail tabs mounted for grant-capable panel-b",
+      // 4. Read-only template panel allows fromTemplate copy mode.
+      copyReceiptData = { id: "derived-from-tpl" };
+      await display.present(
+        presentFrame(
+          {
+            selected: panelRef("panel-tpl"),
+            copyDialog: true,
+            copyMode: "fromTemplate",
+            copyId: "derived-draft",
+            copyName: "Derived Panel",
+            copyTemplate: false,
+          },
+          display.page.value!.address,
+        ),
       );
-      const usageTab = mounted.element.querySelector<HTMLElement>('.pd-tab-panel[data-tab="usage"]')!;
-      expect(usageTab.style.display).toBe("none");
-      expect(mounted.element.querySelector('[data-tab="preview"]')).toBeNull();
-
-      await display.present(presentFrame({ tab: "usage" }, display.page.value!.address));
-      await waitFor(() => usageTab.style.display !== "none", "usage tab shown via v-show without remounting");
-      expect(mounted.element.contains(usageTab)).toBe(true);
+      await waitFor(() => Boolean(document.querySelector(".el-dialog .el-button--primary")), "fromTemplate submit button mounted");
+      document.querySelector<HTMLButtonElement>(".el-dialog .el-button--primary")!.click();
+      await waitFor(
+        () => dispatched.length === 3 && navigated.includes(`${DETAIL_PATH}?selected=derived-from-tpl`),
+        "fromTemplate navigated to derived panel detail",
+      );
     } finally {
       mounted.app.unmount();
     }

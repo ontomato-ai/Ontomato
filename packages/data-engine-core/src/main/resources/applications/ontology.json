@@ -129,6 +129,9 @@
       "descriptions": {"en": "The panels this domain grants you: name, owner, sharing scope and template use; each panel's source, style, members, usage and grants.", "zh-CN": "本域授予你使用的面板：名称、所属人、共享范围与模板用途，以及每个面板的源码、样式、成员、引用与授权。"},
       "names": {"en": "Panels","zh-CN": "面板"}, "groupKey": "products"
     }, {
+      "id": "use-ontology-panel-detail", "pageKey": "ontology-panel-detail", "panelId": "builtin-product-ontology-panel-detail",
+      "path": "/ontology/panels/detail", "access": {"permissionCode": "ontology-modeling"}
+    }, {
       "id": "use-ontology-applications", "pageKey": "ontology-applications", "panelId": "builtin-product-ontology-applications",
       "path": "/ontology/applications", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Every application visible in this domain, built-in and domain-built alike. Open one to see its identity, entries and the panels it uses.", "zh-CN": "本域可见的全部应用：内置的与域内建的同列。展开一行看它的身份、入口和用到的面板。"},
