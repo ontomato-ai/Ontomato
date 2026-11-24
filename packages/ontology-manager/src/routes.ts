@@ -1,15 +1,17 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { panelAddress } from "@ontomato/contracts/panel-host";
-import { defineAsyncComponent, defineComponent, h } from "vue";
+import { defineAsyncComponent, defineComponent, h, onBeforeUnmount, watch } from "vue";
 import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import ManagerFrame from "./ManagerFrame.vue";
 import WorkflowCatalog from "./components/WorkflowCatalog.vue";
 import TriggerCatalog from "./components/TriggerCatalog.vue";
+import { useManagerClient } from "./context";
 import {
+  legacyProductAssetTarget,
+  legacyProductIdFallbackTarget,
   legacyProductIdFromRoute,
   legacyProductsDirectoryTarget,
-  LegacyProductsRedirectRoute,
 } from "./legacy-products-redirect";
 import { managerPaths } from "./navigation";
 
@@ -90,6 +92,56 @@ const TriggerPage = defineComponent({
   name: "ManagerTriggerPage",
   setup() {
     return () => h("section", { class: "asset-surface" }, [h(TriggerCatalog)]);
+  },
+});
+
+/**
+ * Redirect-only route component for retired `/ontology/products` and `/ontology/products/:productId` URLs.
+ * Performs pure address location without enforcing legacy menu permissions.
+ */
+const LegacyProductsRedirectRoute = defineComponent({
+  name: "LegacyProductsRedirectRoute",
+  setup() {
+    const route = useRoute();
+    const router = useRouter();
+    const client = useManagerClient();
+    let generation = 0;
+    let disposed = false;
+
+    onBeforeUnmount(() => {
+      disposed = true;
+      generation += 1;
+    });
+
+    async function redirect() {
+      const current = ++generation;
+      const id = legacyProductIdFromRoute(route.params, route.query);
+      if (!id) {
+        await router.replace(legacyProductsDirectoryTarget(route.query));
+        return;
+      }
+
+      let target: string;
+      try {
+        const asset = await client.products.get(id);
+        target = legacyProductAssetTarget(asset);
+      } catch {
+        target = legacyProductIdFallbackTarget(id, route.query);
+      }
+
+      if (disposed || current !== generation) return;
+      await router.replace(target);
+    }
+
+    watch(
+      () => [route.params.productId, route.query.id, route.query.kind, route.query.create, route.query.search],
+      () => {
+        void redirect();
+      },
+      { immediate: true },
+    );
+
+    return () => null;
   },
 });
 

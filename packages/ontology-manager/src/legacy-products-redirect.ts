@@ -1,9 +1,8 @@
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { ProductAsset } from "@ontomato/contracts/product-assets";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
-import { defineComponent, onBeforeUnmount, watch } from "vue";
-import { useRoute, useRouter, type LocationQuery, type RouteParamsGeneric } from "vue-router";
-import { useManagerClient } from "./context";
+
+type RouteValues = Readonly<Record<string, unknown>>;
 
 const PROJECTIONS_PATH = "/ontology/projections";
 const PANELS_PATH = "/ontology/panels";
@@ -58,12 +57,12 @@ function classifyProductKind(rawKind?: string): TargetSection {
 }
 
 /** Extract the target asset ID from a legacy `/ontology/products/:productId` or `?id=` route. */
-export function legacyProductIdFromRoute(params: RouteParamsGeneric, query: LocationQuery): string {
+export function legacyProductIdFromRoute(params: RouteValues, query: RouteValues): string {
   return firstQueryString(params.productId) || firstQueryString(query.id);
 }
 
 /** Resolve a legacy `/ontology/products` directory or `?create=<kind>` address to its new product-layer page. */
-export function legacyProductsDirectoryTarget(query: LocationQuery): string {
+export function legacyProductsDirectoryTarget(query: RouteValues): string {
   const section = classifyProductKind(firstQueryString(query.create) || firstQueryString(query.kind));
   const search = firstQueryString(query.search);
   const path = section === "projections"
@@ -99,7 +98,7 @@ export function legacyProductAssetTarget(asset: ProductAsset): string {
  * Fallback locator when a legacy asset cannot be read (e.g. 403/404): never blocks or enforces access itself,
  * leaving authorization and missing-object presentation to the destination page and object owner.
  */
-export function legacyProductIdFallbackTarget(id: string, query: LocationQuery): string {
+export function legacyProductIdFallbackTarget(id: string, query: RouteValues): string {
   const mirroredAppId = stripPrefix(id, ["platform-application-"]);
   if (mirroredAppId) return panelAddress(APPLICATION_DETAIL_PATH, { selected: mirroredAppId });
 
@@ -112,53 +111,3 @@ export function legacyProductIdFallbackTarget(id: string, query: LocationQuery):
   if (section === "agents") return panelAddress(AGENTS_PATH, { selected: id });
   return panelAddress(PANELS_PATH, { selected: id });
 }
-
-/**
- * Redirect-only route component for retired `/ontology/products` and `/ontology/products/:productId` URLs.
- * Performs pure address location without enforcing legacy menu permissions.
- */
-export const LegacyProductsRedirectRoute = defineComponent({
-  name: "LegacyProductsRedirectRoute",
-  setup() {
-    const route = useRoute();
-    const router = useRouter();
-    const client = useManagerClient();
-    let generation = 0;
-    let disposed = false;
-
-    onBeforeUnmount(() => {
-      disposed = true;
-      generation += 1;
-    });
-
-    async function redirect() {
-      const current = ++generation;
-      const id = legacyProductIdFromRoute(route.params, route.query);
-      if (!id) {
-        await router.replace(legacyProductsDirectoryTarget(route.query));
-        return;
-      }
-
-      let target: string;
-      try {
-        const asset = await client.products.get(id);
-        target = legacyProductAssetTarget(asset);
-      } catch {
-        target = legacyProductIdFallbackTarget(id, route.query);
-      }
-
-      if (disposed || current !== generation) return;
-      await router.replace(target);
-    }
-
-    watch(
-      () => [route.params.productId, route.query.id, route.query.kind, route.query.create, route.query.search],
-      () => {
-        void redirect();
-      },
-      { immediate: true },
-    );
-
-    return () => null;
-  },
-});
