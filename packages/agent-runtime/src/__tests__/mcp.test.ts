@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from "node:http";
 import { expect, it } from "vitest";
-import { connectMcp } from "../tools";
+import { connectMcp, mcpToolDeclaration } from "../tools";
 
 it("negotiates SSE only at initialization, keeps headers on both transports and never replays an action", async () => {
   let events: ServerResponse | undefined;
@@ -67,13 +67,155 @@ it("negotiates SSE only at initialization, keeps headers on both transports and 
       "fixture",
       new AbortController().signal,
     );
-    expect(connection.tools.map((tool) => tool.name)).toEqual(["side_effect"]);
+    expect(connection.tools.map((tool) => tool.declaration.name)).toEqual(["side_effect"]);
     await expect(
-      connection.tools[0].execute("call", {}, new AbortController().signal),
+      connection.tools[0].execute({
+        toolCallId: "call",
+        toolName: "side_effect",
+        args: {},
+        signal: new AbortController().signal,
+      }),
     ).rejects.toThrow();
     expect(initializations).toBe(1);
     expect(actions).toBe(1);
     expect(seen.every((value) => value === "fixture-header")).toBe(true);
+  } finally {
+    await connection?.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+it("forwards MCP progress notifications and aborts in-flight calls via signal", async () => {
+  let events: ServerResponse | undefined;
+  let releaseCall!: () => void;
+  const callStarted = new Promise<void>((resolve) => {
+    releaseCall = resolve;
+  });
+  const server = createServer(async (req, res) => {
+    if (req.url === "/sse" && req.method === "POST") {
+      res.writeHead(405).end();
+      return;
+    }
+    if (req.url === "/sse" && req.method === "GET") {
+      events = res;
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write("event: endpoint\ndata: /messages\n\n");
+      return;
+    }
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    const rpc = JSON.parse(raw);
+    res.writeHead(202).end();
+    if (rpc.id === undefined) return;
+    if (rpc.method === "initialize") {
+      events!.write(
+        `event: message\ndata: ${JSON.stringify({
+          jsonrpc: "2.0",
+          id: rpc.id,
+          result: {
+            protocolVersion: "2025-03-26",
+            capabilities: { tools: {} },
+            serverInfo: { name: "legacy", version: "1" },
+          },
+        })}\n\n`,
+      );
+      return;
+    }
+    if (rpc.method === "tools/list") {
+      events!.write(
+        `event: message\ndata: ${JSON.stringify({
+          jsonrpc: "2.0",
+          id: rpc.id,
+          result: {
+            tools: [
+              {
+                name: "long_query",
+                description: "Long running query",
+                inputSchema: { type: "object", properties: { q: { type: "string" } } },
+              },
+            ],
+          },
+        })}\n\n`,
+      );
+      return;
+    }
+    if (rpc.method === "tools/call") {
+      const token = rpc.params?._meta?.progressToken;
+      if (token !== undefined) {
+        events!.write(
+          `event: message\ndata: ${JSON.stringify({
+            jsonrpc: "2.0",
+            method: "notifications/progress",
+            params: { progressToken: token, progress: 1, total: 2, message: "halfway" },
+          })}\n\n`,
+        );
+      }
+      if (rpc.params?.arguments?.q === "cancel") {
+        releaseCall();
+        return;
+      }
+      setTimeout(() => {
+        events!.write(
+          `event: message\ndata: ${JSON.stringify({
+            jsonrpc: "2.0",
+            id: rpc.id,
+            result: { content: [{ type: "text", text: "done" }] },
+          })}\n\n`,
+        );
+      }, 20);
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Missing test address");
+  let connection: Awaited<ReturnType<typeof connectMcp>> | undefined;
+  try {
+    connection = await connectMcp(
+      [
+        {
+          id: "c75f007f-de1e-4057-bdc2-8b7983ef94f3",
+          name: "Legacy",
+          url: `http://127.0.0.1:${address.port}/sse`,
+          headers: {},
+        },
+      ],
+      "fixture",
+      new AbortController().signal,
+    );
+    const [tool] = connection.tools;
+    expect(tool.declaration).toEqual(
+      mcpToolDeclaration({
+        name: "long_query",
+        description: "Long running query",
+        inputSchema: { type: "object", properties: { q: { type: "string" } } },
+      }),
+    );
+
+    const updates: string[] = [];
+    const done = await tool.execute({
+      toolCallId: "c1",
+      toolName: "long_query",
+      args: { q: "ok" },
+      signal: new AbortController().signal,
+      onUpdate: (partial) => updates.push(partial.text),
+    });
+    expect(updates).toEqual(["halfway"]);
+    expect(done).toEqual({
+      result: { content: [{ type: "text", text: "done" }], details: {} },
+      isError: false,
+    });
+
+    const controller = new AbortController();
+    const pending = tool.execute({
+      toolCallId: "c2",
+      toolName: "long_query",
+      args: { q: "cancel" },
+      signal: controller.signal,
+    });
+    await callStarted;
+    controller.abort(new Error("stop"));
+    await expect(pending).rejects.toThrow();
   } finally {
     await connection?.close();
     server.closeAllConnections();

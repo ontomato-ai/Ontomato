@@ -1,21 +1,50 @@
-import type {RuntimeStartRunRequest} from '@ontomato/contracts/agent-runtime';
-import type {AgentTool} from './core/pi/types';
-import type {TSchema} from 'typebox';
+import type { RuntimeAgentDefinition, RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
+import type { RuntimeToolDeclaration } from "@ontomato/contracts/agent-runtime-messages";
+import type { RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
+import type { PlatformTool } from "./platform-tools";
 
-export function productTools(request:RuntimeStartRunRequest,runId:string):AgentTool[]{
-  const definitions=request.definition.productTools??[];
-  if(!definitions.length)return [];
-  const root=request.environment.values.ONTOMATO_WORKBENCH_URL;
-  const credential=request.environment.secrets.ONTOMATO_PRODUCT_CALLBACK;
-  if(!root||!credential)throw new Error('Product tool callback delegation is missing');
-  const base=new URL(root);
-  if(!['http:','https:'].includes(base.protocol)||base.search||base.hash||base.username||base.password)throw new Error('Invalid product callback origin');
-  return definitions.map(definition=>({
-    name:definition.name,label:definition.name,description:definition.description,parameters:definition.inputSchema as TSchema,
-    async execute(_id,args,signal){
-      const response=await fetch(new URL(base.toString().replace(/\/$/,'')+definition.path),{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',tk:credential,'X-Ontomato-Run-Id':runId},body:JSON.stringify({parameters:args}),signal});
-      const result=await response.json();
-      return {content:[{type:'text' as const,text:JSON.stringify(result)}],details:{},isError:!response.ok};
+/** Builds engine-neutral declarations for a definition's product tools without binding secrets. */
+export function productToolDeclarations(
+  definition: Pick<RuntimeAgentDefinition, "productTools">,
+): RuntimeToolDeclaration[] {
+  return (definition.productTools ?? []).map((definition) => ({
+    name: definition.name,
+    description: definition.description,
+    parameters: definition.inputSchema as RuntimeJsonObject,
+  }));
+}
+
+/** Binds a run's product tools to its callback origin and run-scoped credential. */
+export function productTools(request: RuntimeStartRunRequest, runId: string): PlatformTool[] {
+  const definitions = request.definition.productTools ?? [];
+  if (!definitions.length) return [];
+  const root = request.environment.values.ONTOMATO_WORKBENCH_URL;
+  const credential = request.environment.secrets.ONTOMATO_PRODUCT_CALLBACK;
+  if (!root || !credential) throw new Error("Product tool callback delegation is missing");
+  const base = new URL(root);
+  if (!["http:", "https:"].includes(base.protocol) || base.search || base.hash || base.username || base.password) {
+    throw new Error("Invalid product callback origin");
+  }
+  return definitions.map((definition) => ({
+    declaration: {
+      name: definition.name,
+      description: definition.description,
+      parameters: definition.inputSchema as RuntimeJsonObject,
+    },
+    label: definition.name,
+    async execute(call) {
+      const response = await fetch(new URL(base.toString().replace(/\/$/, "") + definition.path), {
+        method: "POST",
+        redirect: "error",
+        headers: { "Content-Type": "application/json", tk: credential, "X-Ontomato-Run-Id": runId },
+        body: JSON.stringify({ parameters: call.args }),
+        signal: call.signal,
+      });
+      const result = await response.json();
+      return {
+        result: { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} },
+        isError: !response.ok,
+      };
     },
   }));
 }
