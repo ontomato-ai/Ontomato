@@ -1,5 +1,5 @@
 // The runtime is a public-only application, including in enterprise deliveries.
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -28,6 +28,19 @@ export const app = {
   appImporter: "apps/agent-runtime",
   sources: [{ id: "ontomato", root }],
 };
+// Pinned external artifacts are listed, with their SHA256, only in these lock files.
+const PINNED_LOCKS = ["apps/agent-runtime/codex/sources.lock", "apps/agent-runtime/sandbox-policy/sources.lock"];
+// PINNED_DOWNLOADS_DIR is an optional host directory of prefetched artifacts named by
+// SHA256. Only the ones the lock files pin enter the context; the directory always
+// exists so the Dockerfile can mount it, and an empty one means "download".
+function stagePinnedDownloads(destination) {
+  mkdirSync(destination, { recursive: true });
+  const source = process.env.PINNED_DOWNLOADS_DIR;
+  if (!source) return;
+  for (const lock of PINNED_LOCKS)
+    for (const [sha] of readFileSync(join(root, lock), "utf8").matchAll(/\b[0-9a-f]{64}\b/g))
+      if (existsSync(join(source, sha))) cpSync(join(source, sha), join(destination, sha));
+}
 export function prepareContext(destination) {
   const record = collectMetadataContext({ ...app, destination });
   copyWorkspace(app, destination, record);
@@ -37,6 +50,7 @@ export function prepareContext(destination) {
   );
   cpSync(join(root, "apps/agent-runtime/sandbox-policy"), join(destination, "sandbox-policy"), { recursive: true });
   cpSync(join(root, "apps/agent-runtime/codex"), join(destination, "codex"), { recursive: true });
+  stagePinnedDownloads(join(destination, "downloads"));
   record.yamlProvider = "@ontomato/agent-runtime";
   record.web = false;
   writeFileSync(join(destination, "inputs.json"), JSON.stringify(record));
