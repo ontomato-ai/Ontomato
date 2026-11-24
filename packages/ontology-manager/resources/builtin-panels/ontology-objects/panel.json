@@ -8,12 +8,6 @@
         },
         "deepLink": true
       },
-      "className": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        }
-      },
       "selectedAttribute": {
         "type": {
           "kind": "object",
@@ -133,7 +127,7 @@
         },
         "config": {
           "variant": "compact",
-          "columns": 3,
+          "columns": 4,
           "items": [
             {
               "field": "attributeCount",
@@ -142,6 +136,10 @@
             {
               "field": "businessKeyCount",
               "labelKey": "ot.businessKeyCount"
+            },
+            {
+              "field": "primaryKeyCount",
+              "labelKey": "ot.primaryKeyCount"
             },
             {
               "field": "relationshipCount",
@@ -173,6 +171,7 @@
         },
         "config": {
           "subtitleField": "name",
+          "statusField": "type",
           "fallbackTitle": ""
         },
         "id": "builtin-product-204bb369-e608-4048-b203-e0b85918fbab"
@@ -213,12 +212,13 @@
         "component": "ObjectList",
         "type": "platform:Attribute",
         "data": {
-          "rows": {
-            "read": "list",
-            "params": {
-              "className": {
-                "state": "className"
-              }
+          "rows": "list"
+        },
+        "inputs": {
+          "className": {
+            "output": {
+              "member": "detail",
+              "name": "className"
             }
           }
         },
@@ -303,12 +303,13 @@
         "component": "ObjectList",
         "type": "platform:Relationship",
         "data": {
-          "rows": {
-            "read": "list",
-            "params": {
-              "className": {
-                "state": "className"
-              }
+          "rows": "list"
+        },
+        "inputs": {
+          "className": {
+            "output": {
+              "member": "detail",
+              "name": "className"
             }
           }
         },
@@ -375,9 +376,11 @@
         "ot.basicInfo": "基本信息",
         "ot.attributeCount": "属性",
         "ot.businessKeyCount": "业务键",
+        "ot.primaryKeyCount": "主键",
         "ot.relationCount": "关联关系",
         "ot.pkMissing": "当前对象类型未设置主键属性",
-        "ot.pkMultiple": "当前对象类型存在多个主键属性",
+        "ot.pkMultiple": "当前对象类型存在 {count} 个主键属性",
+        "ot.pkMultipleFallback": "当前对象类型存在多个主键属性",
         "ot.pkDisabled": "当前主键属性已停用",
         "ot.pkOk": "主键属性：{name}",
         "ot.pkUnknown": "主键状态：{status}",
@@ -397,6 +400,7 @@
         "ot.colTarget": "目标对象",
         "ot.noRelations": "暂无关联关系",
         "ot.missing": "对象类型不存在或已删除",
+        "ot.loadError": "读取失败，请稍后重试",
         "ot.command.create": "新建对象类型",
         "ot.create": "新建对象类型"
       },
@@ -427,9 +431,11 @@
         "ot.basicInfo": "Basic information",
         "ot.attributeCount": "Attributes",
         "ot.businessKeyCount": "Business keys",
+        "ot.primaryKeyCount": "Primary keys",
         "ot.relationCount": "Relationships",
         "ot.pkMissing": "This object type does not have a primary key property yet",
-        "ot.pkMultiple": "This object type has multiple primary key properties",
+        "ot.pkMultiple": "This object type has {count} primary key properties",
+        "ot.pkMultipleFallback": "This object type has multiple primary key properties",
         "ot.pkDisabled": "The current primary key property is disabled",
         "ot.pkOk": "Primary key property: {name}",
         "ot.pkUnknown": "Primary key status: {status}",
@@ -449,6 +455,7 @@
         "ot.colTarget": "Target object",
         "ot.noRelations": "No related relationships",
         "ot.missing": "Object type does not exist or has been deleted",
+        "ot.loadError": "Failed to load data. Please try again.",
         "ot.command.create": "New object type",
         "ot.create": "New object type"
       }

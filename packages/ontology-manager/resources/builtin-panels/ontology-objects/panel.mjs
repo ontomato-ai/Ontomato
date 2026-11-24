@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import {
   mountPanel,
   panelAddress,
@@ -11,7 +11,6 @@ import {
 
 const OBJECT_TYPE = "platform:ObjectType";
 const ATTRIBUTE = "platform:Attribute";
-const RELATIONSHIP = "platform:Relationship";
 
 /** Extract the owning class API name from an attribute primary key (`["<className>","<name>"]`). */
 function attributeClass(reference) {
@@ -35,6 +34,7 @@ await mountPanel({
     const selected = computed(() => state.value.selected ?? null);
     const selectedKey = computed(() => selected.value?.primaryKey ?? "");
     const selectedAttribute = computed(() => state.value.selectedAttribute ?? null);
+    const selectedAttributeKey = computed(() => selectedAttribute.value?.primaryKey ?? "");
     const creating = computed(() => state.value.creating === true);
     const creatingAttribute = computed(() => state.value.creatingAttribute === true);
 
@@ -47,19 +47,58 @@ await mountPanel({
     // Read-only outputs declared by projection members and owner reads.
     const catalogCount = usePanelOutput("catalog", "filteredCount");
     const detailHeaderStatus = usePanelOutput("detail", "status");
+    const detailError = usePanelOutput("detail", "errorMessage");
     const detailStatus = computed(() => (selectedKey.value ? (detailHeaderStatus.value ?? "loading") : "empty"));
+    const detailClassName = usePanelOutput("detail", "className");
     const primaryKeyStatus = usePanelOutput("detail", "primaryKeyStatus");
     const primaryKeyName = usePanelOutput("detail", "primaryKeyName");
+    const primaryKeyShowName = usePanelOutput("detail", "primaryKeyShowName");
+    const primaryKeyCount = usePanelOutput("detail", "primaryKeyCount");
     const attributeCount = usePanelOutput("attributes", "loadedCount");
     const relationCount = usePanelOutput("relations", "loadedCount");
     const attributeDetailHeaderStatus = usePanelOutput("attributeDetail", "status");
+    const attributeDetailError = usePanelOutput("attributeDetail", "errorMessage");
     const attributeDetailStatus = computed(() =>
       selectedAttribute.value ? (attributeDetailHeaderStatus.value ?? "loading") : "empty",
     );
-    const isPrimaryKey = usePanelOutput("attributeDetail", "isPrimaryKey");
+
+    // Keep mounted edit forms alive across background re-read loading or error states once the target has loaded.
+    const detailEverReady = ref(false);
+    watch(selectedKey, () => {
+      detailEverReady.value = false;
+    });
+    watch([detailStatus, detailClassName], ([status, className]) => {
+      if (selectedKey.value && status === "ready" && (!className || className === selectedKey.value)) {
+        detailEverReady.value = true;
+      }
+    }, { immediate: true });
+
+    const attributeDetailEverReady = ref(false);
+    watch(selectedAttributeKey, () => {
+      attributeDetailEverReady.value = false;
+    });
+    watch(attributeDetailStatus, status => {
+      if (selectedAttributeKey.value && status === "ready") {
+        attributeDetailEverReady.value = true;
+      }
+    }, { immediate: true });
 
     const editAttributeDrawer = computed(() =>
       Boolean(selectedKey.value && selectedAttribute.value && !creatingAttribute.value),
+    );
+    const showDetailBody = computed(() =>
+      Boolean(selectedKey.value)
+      && detailEverReady.value
+      && detailStatus.value !== "forbidden"
+      && detailStatus.value !== "empty"
+      && detailStatus.value !== "missing",
+    );
+    const showAttributeBody = computed(() =>
+      editAttributeDrawer.value
+      && attributeDetailEverReady.value
+      && attributeDetailStatus.value !== "forbidden"
+      && attributeDetailStatus.value !== "empty"
+      && attributeDetailStatus.value !== "missing",
     );
     const createObjectDialog = computed({
       get: () => creating.value && !selectedKey.value,
@@ -75,10 +114,10 @@ await mountPanel({
     });
 
     const objectDraft = usePanelFormDraft("objectForm", {
-      when: () => Boolean(selectedKey.value) && detailStatus.value === "ready",
+      when: () => showDetailBody.value,
     });
     const attributeDraft = usePanelFormDraft("attributeForm", {
-      when: () => editAttributeDrawer.value && attributeDetailStatus.value === "ready",
+      when: () => showAttributeBody.value,
     });
 
     function openClass(target) {
@@ -88,7 +127,6 @@ await mountPanel({
         creating: false,
         creatingAttribute: false,
         selected: { className: OBJECT_TYPE, primaryKey },
-        className: primaryKey,
         selectedAttribute: null,
       });
     }
@@ -96,7 +134,6 @@ await mountPanel({
     function backToCatalog() {
       instance.state.setState({
         selected: null,
-        className: null,
         selectedAttribute: null,
         creating: false,
         creatingAttribute: false,
@@ -108,7 +145,6 @@ await mountPanel({
         creating: true,
         creatingAttribute: false,
         selected: null,
-        className: null,
         selectedAttribute: null,
       });
     }
@@ -118,7 +154,6 @@ await mountPanel({
         creating: false,
         creatingAttribute: false,
         selected: null,
-        className: null,
         selectedAttribute: null,
       });
     }
@@ -155,18 +190,29 @@ await mountPanel({
       if (await attributeBack.back()) done();
     }
 
-    // Keep `className` synchronized with `selected` for attribute and relationship list reads.
     // Leaving detail clears `creatingAttribute`; entering detail keeps it so atomic present({ selected, creatingAttribute: true }) works.
     watch(selected, value => {
       const className = value?.primaryKey ?? null;
       const patch = {};
-      if ((state.value.className ?? null) !== className) patch.className = className;
       if (selectedAttribute.value && attributeClass(selectedAttribute.value) !== className) {
         patch.selectedAttribute = null;
       }
       if (value && creating.value) patch.creating = false;
       if (!value && creatingAttribute.value) patch.creatingAttribute = false;
       if (Object.keys(patch).length) instance.state.setState(patch);
+    }, { immediate: true });
+
+    // Setting `creating: true` while viewing a class clears selection so the create dialog opens
+    // instead of keeping `objectForm` bound to the previously selected object type.
+    watch(creating, value => {
+      if (!value || !creating.value) return;
+      if (selected.value || selectedAttribute.value || creatingAttribute.value) {
+        instance.state.setState({
+          selected: null,
+          selectedAttribute: null,
+          creatingAttribute: false,
+        });
+      }
     }, { immediate: true });
 
     // Keep create-attribute mode mutually exclusive with edit-attribute mode and valid only inside a class detail.
@@ -186,13 +232,6 @@ await mountPanel({
         instance.state.set("creatingAttribute", false);
       }
     });
-
-    // Re-read the selected object type's summary metrics and primary-key status when child attributes or relationships change.
-    onBeforeUnmount(instance.onObjectChanged(object => {
-      if (object && (object.objectType === ATTRIBUTE || object.objectType === RELATIONSHIP) && selectedKey.value) {
-        instance.refreshObjects();
-      }
-    }));
 
     function objectSaved(object) {
       if (!creating.value) return;
@@ -214,7 +253,6 @@ await mountPanel({
           selectedAttribute: object?.primaryKey ? { className: ATTRIBUTE, primaryKey: object.primaryKey } : null,
         });
       }
-      instance.refreshObjects();
     }
 
     function onDeleteObjectDone(outcome) {
@@ -222,15 +260,9 @@ await mountPanel({
       backToCatalog();
     }
 
-    function onSetPrimaryKeyDone(outcome) {
-      if (outcome?.kind !== "success") return;
-      instance.refreshObjects();
-    }
-
     function onDeleteAttributeDone(outcome) {
       if (outcome?.kind !== "success") return;
       closeAttribute();
-      instance.refreshObjects();
     }
 
     const configureView = () =>
@@ -252,12 +284,20 @@ await mountPanel({
       selectedKey,
       catalogCount,
       detailStatus,
+      detailError,
+      detailEverReady,
+      detailClassName,
+      showDetailBody,
       primaryKeyStatus,
       primaryKeyName,
+      primaryKeyShowName,
+      primaryKeyCount,
       attributeCount,
       relationCount,
       attributeDetailStatus,
-      isPrimaryKey,
+      attributeDetailError,
+      attributeDetailEverReady,
+      showAttributeBody,
       editAttributeDrawer,
       createObjectDialog,
       createAttributeDialog,
@@ -276,7 +316,6 @@ await mountPanel({
       handleAttributeDrawerClose,
       attributeSaved,
       onDeleteObjectDone,
-      onSetPrimaryKeyDone,
       onDeleteAttributeDone,
       configureView,
       browseData,
