@@ -33,6 +33,10 @@ const allUses = [
   panelUse("use-summary", "keep-summary", q.id, at("summary")),
   panelUse("use-more", "keep-more", p.id, at("more")),
   panelUse("use-other", "keep-other", q.id, at("other")),
+  panelUse("use-fifth", "keep-fifth", p.id, at("fifth")),
+  panelUse("use-sixth", "keep-sixth", q.id, at("sixth")),
+  panelUse("use-seventh", "keep-seventh", p.id, at("seventh")),
+  panelUse("use-eighth", "keep-eighth", q.id, at("eighth")),
 ];
 /** The relations Java answers now, and the task's label the owner answers now: tests change them while a page is kept. */
 let uses = allUses;
@@ -251,7 +255,7 @@ it("ends a kept page whose use relation was withdrawn or bound to another panel"
   }
 });
 
-it("keeps the shown page and the clean page left last, and makes room by the page left longest ago", async () => {
+it("keeps up to six clean pages and makes room by the page left longest ago", async () => {
   const { app, element, router } = await openApplication(at("tasks"));
   try {
     const tasks = await shownPanel(element);
@@ -259,18 +263,31 @@ it("keeps the shown page and the clean page left last, and makes room by the pag
     const summary = await shownPanel(element, tasks);
     await router.push(at("more"));
     const more = await shownPanel(element, summary);
+    await router.push(at("other"));
+    const other = await shownPanel(element, more);
+    await router.push(at("fifth"));
+    const fifth = await shownPanel(element, other);
+    await router.push(at("sixth"));
+    const sixth = await shownPanel(element, fifth);
+    expect(panels(element)).toEqual([tasks, summary, more, other, fifth, sixth]);
+
+    // A seventh page drops the page left longest ago (tasks).
+    await router.push(at("seventh"));
+    const seventh = await shownPanel(element, sixth);
     expect(tasks.isConnected).toBe(false);
-    expect(panels(element)).toEqual([summary, more]);
-    // Back and forth between the two kept pages keeps both.
+    expect(panels(element)).toEqual([summary, more, other, fifth, sixth, seventh]);
+
+    // Returning to summary refreshes its recency without dropping any kept page.
     await router.push(at("summary"));
     await vi.waitFor(() => expect(shown(summary)).toBe(true));
-    expect(panels(element)).toEqual([summary, more]);
-    // A new page: the one left longest ago (more) makes room, not the page being left.
-    await router.push(at("other"));
+    expect(panels(element)).toEqual([summary, more, other, fifth, sixth, seventh]);
+
+    // An eighth page drops the new oldest page (more), not summary.
+    await router.push(at("eighth"));
     await shownPanel(element, summary);
     expect(more.isConnected).toBe(false);
     expect(summary.isConnected).toBe(true);
-    expect(panels(element)).toHaveLength(2);
+    expect(panels(element)).toHaveLength(6);
   } finally {
     app.unmount();
   }
