@@ -1,37 +1,34 @@
 import { z } from "zod";
 import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
-import { agentExecutionOptionsSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
+import { agentExecutionOptionsSchema } from "@ontomato/contracts/assistant-chat";
 import { modelNameSchema } from "@ontomato/contracts/model-settings";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
-import type { PanelFormRequest, PanelOption, PanelRecord } from "@ontomato/contracts/panel-projection";
+import type { PanelFormRequest, PanelOption } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
 import { assertPermission } from "../../identity/installed";
 import { HttpError } from "../../utils/errors";
+import { agentDefinitionRecord } from "./definition-record";
+import { assistantName, assistantDescription } from "./labels";
+import { isPresetAgentKind } from "./preset-definitions";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { describeAgentDefinitionForm } from "./definition-form";
-import { agentDefinitionPermissions, listAgentDefinitions, readAgentDefinition } from "./definitions";
+import { agentDefinitionPermissions, readAgentDefinitionRow } from "./definitions";
 import { queryExecutionOptions } from "./execution-setting";
 import { readDomainModelOptions } from "./model-panel-form";
-import { assistantStore, type AssistantOwner } from "./store";
+import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 
 type FormInputs = Pick<PanelFormRequest, "values" | "changedField">;
 
 export function createAgentDefinitionReadAdapter(owner: AssistantOwner, viewer: AssistantCredentials) {
   const admit = () => assertPermission(viewer, agentDefinitionPermissions);
   const id = z.string().uuid();
-  const fieldLabels = () => ({
-    name: tForLocale(viewer.locale, "panels.agentForm.name"),
-    description: tForLocale(viewer.locale, "panels.agentForm.description"),
-    enabled: tForLocale(viewer.locale, "panels.agentForm.enabled"),
-  });
-  const record = ({ id, name, description, enabled }: AssistantAgentDefinition): PanelRecord => ({
-    primaryKey: id,
-    label: name,
-    fields: { name, description, enabled: tForLocale(viewer.locale, enabled ? "panels.agentForm.enabledOn" : "panels.agentForm.enabledOff") },
-    fieldLabels: fieldLabels(),
-    tones: { enabled: enabled ? "success" : "default" },
-  });
+  const record = (agent: AgentRow) => agentDefinitionRecord({
+    id: agent.id,
+    name: assistantName(agent, viewer.locale),
+    description: assistantDescription(agent, viewer.locale),
+    enabled: agent.enabled,
+  }, isPresetAgentKind(agent.kind) ? "preset" : "custom", viewer.locale);
   return {
     async count() {
       await admit();
@@ -39,14 +36,14 @@ export function createAgentDefinitionReadAdapter(owner: AssistantOwner, viewer: 
     },
     async list() {
       await admit();
-      return (await listAgentDefinitions(owner, viewer)).agents.map(record);
+      return (await assistantStore.agents(owner.domainId)).map(record);
     },
     async record(primaryKey: string) {
       await admit();
       if (!id.safeParse(primaryKey).success) {
         throw new HttpError(400, "Invalid agent definition target", "INVALID_REQUEST");
       }
-      return record(await readAgentDefinition(primaryKey, owner, viewer));
+      return record(await readAgentDefinitionRow(primaryKey, owner));
     },
     async form(primaryKey: string, params: FormInputs) {
       await admit();

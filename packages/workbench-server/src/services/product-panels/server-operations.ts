@@ -16,13 +16,11 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
 import { generalSettingsOperations } from "../admin/general-settings-panel";
 import { modelSettingsServerOperations } from "../admin/model-settings-panel";
-import { builderModelOperations } from "../app-builder/panel-model";
-import { diagnosisModelOperations } from "../ops-diagnosis/panel-model";
 import { feedbackExportOperation } from "../admin/feedback-panel-reads";
 import { m6ServerOperations } from "../action/panel-operations";
 import { triggerServerOperations } from "../trigger/panel-operations";
 import { workflowServerOperations } from "../workflow/panel-operations";
-import { agentDefinitionOperations } from "../assistant/definition-operations";
+import { agentDefinitionOperations } from "./agent-definition-operations";
 import { m7ServerOperations } from "../business-knowledge/panel-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
 import { ontologyModelServerOperations } from "../ontology-model/model-operations";
@@ -155,8 +153,6 @@ const registrations: readonly PanelServerOperation[] = [
   ...agentDefinitionOperations,
   ...generalSettingsOperations,
   ...modelSettingsServerOperations,
-  ...builderModelOperations,
-  ...diagnosisModelOperations,
   ...m5ServerOperations,
   ...m6ServerOperations,
   ...triggerServerOperations,

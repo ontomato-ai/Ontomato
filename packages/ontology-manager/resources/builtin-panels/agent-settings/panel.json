@@ -43,7 +43,8 @@
         "config": {
           "fields": [
             "description",
-            "enabled"
+            "enabled",
+            "category"
           ]
         },
         "id": "builtin-product-0a349e62-965d-485b-b72a-86005fc4d0dc"

@@ -10,11 +10,14 @@ import { HttpError } from "../../utils/errors";
 import { assertPermission } from "../../identity/installed";
 import {
   agentDefinitionDeletionRestriction, agentDefinitionPermissions, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, saveAgentDefinitionSnapshot,
-} from "./definitions";
-import type { AssistantSkillView } from "./skills";
-import type { PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
-import { AgentDefinitionFieldError, agentDefinitionSave, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
+} from "../assistant/definitions";
+import type { AssistantSkillView } from "../assistant/skills";
+import type { PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "./server-operations";
+import { AgentDefinitionFieldError, agentDefinitionSave, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "../assistant/definition-form-schema";
+import { modelSelectionWrite } from "../assistant/model-panel-form";
+import { createSystemAgentOwners, systemFormValues } from "./agent-definition-directory";
 
+const resultSchema = z.union([assistantAgentDefinitionSchema, modelSelectionWrite]);
 const targetSchema = panelFormTargetSchema.options[0].extend({
   objectType: z.literal(AGENT_DEFINITION),
   primaryKey: z.string().uuid(),
@@ -29,14 +32,18 @@ const affectedDefinition = (id: string) => ({
 function draftInput(input: Record<string, unknown>, target: PanelOperationTarget) {
   const { values, submittedFields } = inputSchema.parse(input);
   if (target.kind === "draft") return parseAgentDefinitionForm(values);
+  const system = systemFormValues.safeParse(values);
+  if (system.success) return { modelSelection: system.data.modelSelection };
   if (submittedFields === undefined) return parseAgentDefinitionUpdateForm(values);
   if (submittedFields.some(field => field === "/skills" || field.startsWith("/skills/"))) return values;
   const { skills: _skills, ...otherValues } = values;
   return otherValues;
 }
 
-async function ownerError(response: Response) {
-  return agentHostErrorSchema.parse(await response.json()).error;
+function parseSystemModelSelection(values: unknown) {
+  const parsed = systemFormValues.safeParse(values);
+  if (!parsed.success) throw new HttpError(400, "Invalid system agent model selection", "INVALID_REQUEST");
+  return parsed.data.modelSelection;
 }
 
 async function unsuccessfulWrite(response: Response): Promise<SinglePanelOperationOutcome> {
@@ -48,10 +55,13 @@ async function unsuccessfulWrite(response: Response): Promise<SinglePanelOperati
 }
 
 async function definitionLabel(host: PanelOperationHost, target: PanelRecordTarget) {
+  const { owner, credentials } = host.initiator;
+  const source = await createSystemAgentOwners(owner, credentials).forTarget(target.primaryKey);
+  if (source) return (await source.read()).name;
   const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "GET" });
   if (!response.ok) {
-    const { code, message } = await ownerError(response);
-    throw new HttpError(response.status, message, code);
+    const { error } = agentHostErrorSchema.parse(await response.json());
+    throw new HttpError(response.status, error.message, error.code);
   }
   return assistantAgentDefinitionSchema.parse(await response.json()).name;
 }
@@ -69,6 +79,12 @@ const deleteImpact: PanelImpactInspector = {
   },
 };
 
+async function systemDeletionRestriction(host: PanelOperationHost, target: PanelRecordTarget) {
+  const { owner, credentials } = host.initiator;
+  if (await createSystemAgentOwners(owner, credentials).forTarget(target.primaryKey))
+    return { reason: tForLocale(host.locale, "panels.agentDefinition.systemCannotDelete") };
+}
+
 export const agentDefinitionOperations = [
   {
     handlerRef: `${AGENT_DEFINITION}.save`,
@@ -80,19 +96,32 @@ export const agentDefinitionOperations = [
     targetType: AGENT_DEFINITION,
     targetSchema: z.discriminatedUnion("kind", [targetSchema, panelFormTargetSchema.options[1]]),
     inputSchema,
-    resultSchema: assistantAgentDefinitionSchema,
+    resultSchema,
     draftInput,
 
     projectResult(data: unknown, view: AssistantSkillView) {
-      return projectAgentDefinitionSkills(assistantAgentDefinitionSchema.parse(data), view);
+      const saved = resultSchema.parse(data);
+      return "id" in saved ? projectAgentDefinitionSkills(saved, view) : saved;
     },
     create: true,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome> {
       const { owner, credentials } = host.executor;
-      const selection = { credentials: host.initiator.credentials, view: host.skillView! };
+      const { values, submittedFields } = inputSchema.parse(input);
       try {
+        if (target.kind === "object") {
+          const caller = host.initiator;
+          const source = await createSystemAgentOwners(caller.owner, caller.credentials).forTarget(target.primaryKey);
+          if (source) {
+            if (submittedFields?.some(path => path !== "/modelSelection" && path !== "/modelSelection/modelId"))
+              throw new HttpError(400, "Only the model selection can be changed", "INVALID_REQUEST");
+            const data = submittedFields?.length === 0
+              ? { modelSelection: (await source.read()).modelSelection }
+              : await source.save(target.primaryKey, parseSystemModelSelection(values));
+            return { kind: "success", data, affected: affectedDefinition(target.primaryKey) };
+          }
+        }
         await assertPermission(credentials, agentDefinitionPermissions);
-        const { values, submittedFields } = inputSchema.parse(input);
+        const selection = { credentials: host.initiator.credentials, view: host.skillView! };
         const saved = target.kind === "draft"
           ? await createAgentDefinitionSnapshot(intentId, parseAgentDefinitionForm(values), owner, credentials, selection)
           : await saveAgentDefinitionSnapshot(target.primaryKey,
@@ -125,10 +154,13 @@ export const agentDefinitionOperations = [
     targetLabel: definitionLabel,
     done: (host, name) => tForLocale(host.locale, "panels.agentDefinition.deleted", { name }),
     inspectImpact: deleteImpact,
-    unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
-      return agentDefinitionDeletionRestriction(target.primaryKey, host.initiator.owner, host.locale);
+    async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
+      const restriction = await systemDeletionRestriction(host, target);
+      return restriction ?? agentDefinitionDeletionRestriction(target.primaryKey, host.initiator.owner, host.locale);
     },
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
+      const restriction = await systemDeletionRestriction(host, target);
+      if (restriction) throw new HttpError(403, restriction.reason, "SYSTEM_AGENT_READ_ONLY");
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "DELETE" });
       return response.ok
         ? { kind: "success", data: {}, affected: { ...affectedDefinition(target.primaryKey), removed: affectedDefinition(target.primaryKey).objects } }
