@@ -64,6 +64,11 @@ const save = {
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 
 const objectType = (primaryKey: string) => ({ className: OBJECT_TYPE, primaryKey });
+type FormRead = Extract<PanelMemberReadRequest, { dataName: string }>;
+
+function describeInputs({ inputs }: FormRead) {
+  return { changedField: inputs.changedField, values: inputs.values };
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -76,7 +81,8 @@ function open(
   initial: Record<string, RuntimeJsonValue>,
   options: {
     confirmLeaveUnsaved?: () => Promise<boolean>;
-    describe?: (request: Extract<PanelMemberReadRequest, { dataName: string }>) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>;
+    describe?: (request: FormRead) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>;
+    fixedFields?: Record<string, { state: string; path?: string }>;
   } = {},
 ) {
   const prepared: unknown[] = [];
@@ -93,7 +99,9 @@ function open(
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: {
       kind: "success", data: {}, affected: { objects: [{ objectType: ATTRIBUTE, primaryKey: "Device.site_id" }], objectTypes: [ATTRIBUTE] },
     } as never } }),
-    readProjection: async () => projection,
+    readProjection: async () => options.fixedFields
+      ? { ...projection, config: { fixedFields: options.fixedFields } }
+      : projection,
     confirmLeaveUnsaved: options.confirmLeaveUnsaved,
     read: async (request) => request.operations ? ready({ save }) : options.describe?.(request) ?? ready(createForm),
   });
@@ -112,7 +120,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-function describeAttributes(request: Extract<PanelMemberReadRequest, { dataName: string }>) {
+function describeAttributes(request: FormRead) {
   const { changedField, values } = request.inputs;
   const fixed = values as Record<string, RuntimeJsonValue> | undefined;
   // The owner describes around the supplied values only in its dynamic read mode.
@@ -120,7 +128,7 @@ function describeAttributes(request: Extract<PanelMemberReadRequest, { dataName:
   const options = className ? [choice(`${className}.id`)] : [];
   return ready({
     ...createForm,
-    fields: [...createForm.fields, {
+    fields: [...createForm.fields.map((field) => field.path === "/className" ? { ...field, refreshOnChange: true } : field), {
       path: "/referenceAttribute", label: "Reference", control: { kind: "select", options },
       valueSchema: {}, required: false, readOnly: !className,
     }],
@@ -218,9 +226,27 @@ it("preflights direct agent changes and rolls back derived fixed-input changes d
   }
 });
 
+it.each(["createForm", "form"])("preserves the owner's complete values with a non-refreshing fixed field in %s", async (dataName) => {
+  const name = dataName === "form" ? "stored_attribute" : "owner_default";
+  const describe = vi.fn((request: FormRead) => ready({
+    ...createForm,
+    values: request.inputs.values ?? { className: "", name },
+  }));
+  const initial: Record<string, RuntimeJsonValue> = { objectType: objectType("Device") };
+  if (dataName === "form") initial.attribute = { className: ATTRIBUTE, primaryKey: "Device.stored_attribute" };
+  const { instance } = open(initial, { describe });
+  await vi.waitFor(() => expect(instance.forms.handle("form")?.values.value).toMatchObject({ className: "Device", name }));
+  expect(describe).toHaveBeenCalledTimes(1);
+  const [request] = describe.mock.calls[0]!;
+  expect(request.dataName).toBe(dataName);
+  expect(request.inputs).not.toHaveProperty("values");
+  expect(request.inputs.changedField).toBeNull();
+});
+
 it("opens and reloads a clean form with the owner's dependent options for the fixed input", async () => {
   const confirmLeaveUnsaved = vi.fn(async () => true);
-  const { instance } = open({ objectType: objectType("Device") }, { confirmLeaveUnsaved, describe: describeAttributes });
+  const describe = vi.fn(describeAttributes);
+  const { instance } = open({ objectType: objectType("Device") }, { confirmLeaveUnsaved, describe });
   const expectDescription = (parent: string) => {
     const form = instance.forms.handle("form")!;
     expect(form.fields.value.find(({ path }) => path === "/referenceAttribute")).toMatchObject({
@@ -232,14 +258,62 @@ it("opens and reloads a clean form with the owner's dependent options for the fi
   await vi.waitFor(() => expectDescription("Device"));
   instance.state.set("objectType", objectType("Site"));
   await vi.waitFor(() => expectDescription("Site"));
+  expect(describe.mock.calls.map(([request]) => describeInputs(request))).toEqual([
+    { changedField: null, values: undefined },
+    { changedField: "/className", values: { className: "Device", name: "", referenceAttribute: "" } },
+    { changedField: null, values: undefined },
+    { changedField: "/className", values: { className: "Site", name: "", referenceAttribute: "" } },
+  ]);
   expect(confirmLeaveUnsaved).not.toHaveBeenCalled();
+});
+
+it("refreshes both fixed endpoints in order, carrying forward the owner's values", async () => {
+  const defaults = { name: "owner_default", fromclass: "", toclass: "", fromField: "", toField: "" };
+  const describe = vi.fn(({ inputs }: FormRead) => {
+    const values = { ...((inputs.values as typeof defaults | undefined) ?? defaults) };
+    // This owner refreshes only the side named by changedField.
+    if (inputs.changedField === "/fromclass") values.fromField = `${values.fromclass}.id`;
+    if (inputs.changedField === "/toclass") values.toField = `${values.toclass}.id`;
+    return ready({
+      ...createForm,
+      fields: [
+        { ...createForm.fields[0], path: "/fromclass", refreshOnChange: true },
+        { ...createForm.fields[0], path: "/toclass", refreshOnChange: true },
+        { ...createForm.fields[1], path: "/name" },
+        ...(["fromField", "toField"] as const).map((key) => ({
+          ...createForm.fields[0], path: `/${key}`, control: { kind: "select", options: values[key] ? [choice(values[key])] : [] },
+        })),
+      ],
+      values,
+    });
+  });
+  const { instance } = open({ objectType: objectType("Device"), className: "Site" }, {
+    describe,
+    fixedFields: {
+      "/fromclass": { state: "objectType", path: "/primaryKey" },
+      "/toclass": { state: "className" },
+    },
+  });
+  const fixed = { ...defaults, fromclass: "Device", toclass: "Site" };
+  await vi.waitFor(() => expect(instance.forms.handle("form")?.values.value).toMatchObject({
+    ...fixed, fromField: "Device.id", toField: "Site.id",
+  }));
+  const form = instance.forms.handle("form")!;
+  expect(form.fields.value.find(({ path }) => path === "/fromField")?.control).toMatchObject({ options: [choice("Device.id")] });
+  expect(form.fields.value.find(({ path }) => path === "/toField")?.control).toMatchObject({ options: [choice("Site.id")] });
+  expect(form.dirty.value).toBe(false);
+  expect(describe.mock.calls.map(([request]) => describeInputs(request))).toEqual([
+    { changedField: null, values: undefined },
+    { changedField: "/fromclass", values: fixed },
+    { changedField: "/toclass", values: { ...fixed, fromField: "Device.id" } },
+  ]);
 });
 
 it("keeps a late owner edit answer out of the baseline for the next parent", async () => {
   const oldAsk = deferred<ProductPanelReadResponse>();
-  const describe = vi.fn((request: Extract<PanelMemberReadRequest, { dataName: string }>) => {
+  const describe = vi.fn((request: FormRead) => {
     if (request.inputs.changedField === "/name") return oldAsk.promise;
-    if ((request.inputs.values as { className: string }).className === "Device") {
+    if ((request.inputs.values as { className: string } | undefined)?.className === "Device") {
       return ready({
         ...createForm,
         fields: createForm.fields.map((field) => field.path === "/name" ? { ...field, refreshOnChange: true } : field),

@@ -509,12 +509,19 @@ function restoreDraft(draft: PanelFormDraft) {
   agentFilledPaths.value = draft.agentFilledPaths;
 }
 
-function describeBaseline(next: PanelFormTarget) {
-  const [fixedPath] = Object.keys(fixedValues.value);
-  // With values, a field pointer requests a dynamic description. A null pointer would validate a complete draft.
-  return fixedPath === undefined
-    ? forms.describe({ target: next, changedField: null })
-    : forms.describe({ target: next, values: fixValues({}), changedField: fixedPath });
+async function describeBaseline(next: PanelFormTarget, reading: number) {
+  let current = await forms.describe({ target: next, changedField: null });
+  if (reading !== latestRead) return current;
+
+  const fixed = fixValues(current.values);
+  const refresh = Object.entries(fixedValues.value).filter(([path, value]) =>
+    !jsonValuesEqual(value, valueAt(current.values, path)) && activeFieldAt(current.fields, fixed, path)?.refreshOnChange,
+  );
+  for (const [path] of refresh) {
+    current = await forms.describe({ target: next, values: fixValues(current.values), changedField: path });
+    if (reading !== latestRead) break;
+  }
+  return current;
 }
 
 function load(next: PanelFormTarget | null) {
@@ -538,7 +545,7 @@ function load(next: PanelFormTarget | null) {
   description.value = opened.value = ownerShown.value = ownerOpened.value = null;
   values.value = {};
   loading.value = true;
-  void describeBaseline(next).then(
+  void describeBaseline(next, reading).then(
     (answer) => { if (reading === latestRead) adopt(answer); },
     (reason: unknown) => { if (reading === latestRead) fail(reason, () => load(next)); },
   );
@@ -846,7 +853,7 @@ function reread() {
   if (current === null || !description.value) return load(current);
   const reading = ++latestRead;
   failure.value = null;
-  void describeBaseline(current).then(
+  void describeBaseline(current, reading).then(
     (answer) => {
       if (reading !== latestRead) return;
       if (canSettle.value || saving.value) {
