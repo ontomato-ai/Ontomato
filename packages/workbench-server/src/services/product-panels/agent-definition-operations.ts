@@ -5,11 +5,12 @@ import { formFieldErrorSchema } from "@ontomato/contracts/form-fields";
 import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client-requests";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
+import { changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema } from "@ontomato/contracts/product-governance";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
-import { assertPermission } from "../../identity/installed";
+import { productGrantAllowed, requireProductGrant, setProductGrants, shareProductResource } from "../product-governance/grants";
 import {
-  agentDefinitionDeletionRestriction, agentDefinitionPermissions, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, saveAgentDefinitionSnapshot,
+  agentDefinitionDeletionRestriction, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, readStoredAgentDefinition, saveAgentDefinitionSnapshot,
 } from "../assistant/definitions";
 import type { AssistantSkillView } from "../assistant/skills";
 import type { PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "./server-operations";
@@ -57,7 +58,10 @@ async function unsuccessfulWrite(response: Response): Promise<SinglePanelOperati
 async function definitionLabel(host: PanelOperationHost, target: PanelRecordTarget) {
   const { owner, credentials } = host.initiator;
   const source = await createSystemAgentOwners(owner, credentials).forTarget(target.primaryKey);
-  if (source) return (await source.read()).name;
+  if (source) {
+    await requireProductGrant(target.primaryKey, "view", credentials);
+    return (await source.read()).name;
+  }
   const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "GET" });
   if (!response.ok) {
     const { error } = agentHostErrorSchema.parse(await response.json());
@@ -83,6 +87,50 @@ async function systemDeletionRestriction(host: PanelOperationHost, target: Panel
   const { owner, credentials } = host.initiator;
   if (await createSystemAgentOwners(owner, credentials).forTarget(target.primaryKey))
     return { reason: tForLocale(host.locale, "panels.agentDefinition.systemCannotDelete") };
+}
+
+const grantInput = changeProductGrantRequestSchema.omit({ remove: true });
+const grantLevels = {
+  use: ["use"],
+  view: ["use", "view"],
+  edit: ["use", "view", "edit"],
+} as const;
+
+function grantOperation<Input extends Record<string, unknown>>(
+  name: "grant" | "revoke" | "share",
+  schema: z.ZodType<Input>,
+  mutate: (id: string, credentials: PanelOperationHost["executor"]["credentials"], input: Input) => Promise<unknown>,
+) {
+  const handlerRef = `agents.${name}`;
+  return {
+    handlerRef,
+    binding: { kind: "PlatformOperation", id: handlerRef },
+    labelKey: `panels.agentDefinition.${name}`,
+    kind: "action",
+    effect: "write",
+    batch: false,
+    targetType: AGENT_DEFINITION,
+    targetSchema,
+    targetInput: "agent",
+    targetLabel: definitionLabel,
+    inputSchema: schema,
+    resultSchema: emptyResultSchema,
+    async execute({ executor }, target, input) {
+      const { primaryKey } = targetSchema.parse(target);
+      const values = schema.parse(input);
+      const { owner, credentials } = executor;
+      try {
+        await requireProductGrant(primaryKey, "edit", credentials);
+        if (!await createSystemAgentOwners(owner, credentials).forTarget(primaryKey))
+          await readStoredAgentDefinition(primaryKey, owner, credentials.locale);
+        await mutate(primaryKey, credentials, values);
+        return { kind: "success", data: {}, affected: affectedDefinition(primaryKey) };
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.status < 400 || error.status >= 500) throw error;
+        return { kind: "refusal", code: error.code ?? "PRODUCT_WRITE_REFUSED", message: error.message };
+      }
+    },
+  } satisfies PanelServerOperation;
 }
 
 export const agentDefinitionOperations = [
@@ -112,6 +160,7 @@ export const agentDefinitionOperations = [
           const caller = host.initiator;
           const source = await createSystemAgentOwners(caller.owner, caller.credentials).forTarget(target.primaryKey);
           if (source) {
+            await requireProductGrant(target.primaryKey, "edit", caller.credentials);
             if (submittedFields?.some(path => path !== "/modelSelection" && path !== "/modelSelection/modelId"))
               throw new HttpError(400, "Only the model selection can be changed", "INVALID_REQUEST");
             const data = submittedFields?.length === 0
@@ -120,7 +169,6 @@ export const agentDefinitionOperations = [
             return { kind: "success", data, affected: affectedDefinition(target.primaryKey) };
           }
         }
-        await assertPermission(credentials, agentDefinitionPermissions);
         const selection = { credentials: host.initiator.credentials, view: host.skillView! };
         const saved = target.kind === "draft"
           ? await createAgentDefinitionSnapshot(intentId, parseAgentDefinitionForm(values), owner, credentials, selection)
@@ -155,6 +203,8 @@ export const agentDefinitionOperations = [
     done: (host, name) => tForLocale(host.locale, "panels.agentDefinition.deleted", { name }),
     inspectImpact: deleteImpact,
     async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
+      if (!await productGrantAllowed(target.primaryKey, "edit", host.initiator.credentials))
+        return { reason: tForLocale(host.locale, "panels.agentForm.editReadOnly") };
       const restriction = await systemDeletionRestriction(host, target);
       return restriction ?? agentDefinitionDeletionRestriction(target.primaryKey, host.initiator.owner, host.locale);
     },
@@ -167,4 +217,10 @@ export const agentDefinitionOperations = [
         : unsuccessfulWrite(response);
     },
   },
+  grantOperation("grant", grantInput, (id, credentials, { verb, ...principal }) =>
+    setProductGrants(credentials, { id, ...principal, verbs: [...grantLevels[verb]] })),
+  grantOperation("revoke", grantInput.omit({ verb: true }), (id, credentials, principal) =>
+    setProductGrants(credentials, { id, ...principal, verbs: [] })),
+  grantOperation("share", changeProductDomainGrantRequestSchema, (id, credentials, { shared }) =>
+    shareProductResource(id, shared, credentials)),
 ] as const satisfies readonly PanelServerOperation[];

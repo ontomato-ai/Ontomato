@@ -6,7 +6,7 @@ import type { AgentHostService, AgentHostOwner } from "../agent-host/types";
 import { emptyExecution } from "./application";
 
 /** The host owns the intent; the runtime owns its outcome. Status reads never start or repair a turn. */
-export async function scheduledConversationStatus(host: AgentHostService, owner: AgentHostOwner, sessionId: string, runId: string, appId: string, path: string): Promise<PlatformScheduleExecutionState> {
+export async function scheduledConversationStatus(host: Pick<AgentHostService, "ownRun">, owner: AgentHostOwner, sessionId: string, runId: string, appId: string, path: string): Promise<PlatformScheduleExecutionState> {
   await host.ownRun(sessionId, runId, owner);
   const client = new RuntimeClient(owner.domainId);
   const run = await client.status(runId);

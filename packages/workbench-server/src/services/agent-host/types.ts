@@ -8,9 +8,9 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 export interface AgentHostOwner { domainId: string; userId: string }
 export type AgentPresentationHost = "workbench" | "observe";
 /** The common proxy has two workbench consumers; business actions stay outside it. */
-export interface AgentHostService {
+export interface AgentHostService<CreateArgs extends unknown[] = []> {
   readonly presentationHost?: AgentPresentationHost;
-  create(id: string, owner: AgentHostOwner, input: { agentId: string; workspaceId?: string }): Promise<AgentHostCreateSessionResponse>;
+  create(id: string, owner: AgentHostOwner, input: { agentId: string; workspaceId?: string }, ...args: CreateArgs): Promise<AgentHostCreateSessionResponse>;
   list(owner: AgentHostOwner, input: { agentId: string; limit: number; cursor?: string }): Promise<AgentHostSessionPage>;
   /** The entry's own session read rule, batched; returned IDs are the subset this caller may read. */
   readableSessions(owner: AgentHostOwner, ids: string[]): Promise<Set<string>>;

@@ -42,6 +42,7 @@ beforeAll(async () => {
     VALUES ($1,$2,$1::uuid::text,'Before','',true,'',$3)`,
     [agentId, server.domainId, JSON.stringify([{ namespace: { kind: "domain", domainId: server.domainId },
       name: `panel-menu-settings-${"a".repeat(24)}` }])]);
+  fixture.grants.add(agentId);
 });
 afterAll(async () => { await server?.close(); });
 

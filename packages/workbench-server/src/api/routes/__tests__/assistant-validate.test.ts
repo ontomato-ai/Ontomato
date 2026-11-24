@@ -12,7 +12,7 @@ import { errorHandler } from "../../middleware/error-handler";
 import { HttpError } from "../../../utils/errors";
 
 const mocks = vi.hoisted(() => ({ model: vi.fn(), skills: vi.fn(), references: vi.fn(),
-  setting: vi.fn(), options: vi.fn(), skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), prepare: vi.fn(), agent: vi.fn(), pool: vi.fn() }));
+  grant: vi.fn(), canEdit: vi.fn(), setting: vi.fn(), options: vi.fn(), skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), prepare: vi.fn(), agent: vi.fn(), pool: vi.fn() }));
 vi.mock("../../../platform/agent-runtime/model-selection", () => ({ validateModelSelection: mocks.model }));
 vi.mock("../../../services/assistant/skills", () => ({
   readAssistantSkillView: mocks.skillView,
@@ -25,11 +25,13 @@ vi.mock("../../../services/assistant/execution-setting", () => ({ validateExecut
 vi.mock("../../../services/assistant/store", () => ({ assistantStore: { agent: mocks.agent } }));
 vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: mocks.pool }));
 vi.mock("../../../services/skills/operations", () => ({ withDomainSkills: async (_domain: string, work: () => Promise<unknown>) => work() }));
+vi.mock("../../../services/product-governance/grants", () => ({ requireProductGrant: mocks.grant, productGrantAllowed: mocks.canEdit }));
 import assistantRouter from "../assistant";
 
 configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
 beforeEach(() => {
   mocks.skillView.mockResolvedValue({});
+  mocks.canEdit.mockResolvedValue(true);
   mocks.hiddenSkills.mockReturnValue(false);
   mocks.visibleSkills.mockImplementation(refs => refs);
 });
@@ -40,6 +42,9 @@ afterEach(async () => {
 });
 installWorkbenchIdentity({
   requireDomainId: (identity: { domainId?: string | null }) => identity.domainId ?? "domain",
+  async assertPermission({ token }: { token?: string }) {
+    if (token === "bob") throw new HttpError(403, "Denied", "FORBIDDEN");
+  },
   requirePermission: () => (req: Request, res: Response, next: NextFunction) => {
     if ((req as { userId?: string }).userId !== "alice") {
       res.status(403).json({ error: { code: "FORBIDDEN", message: "Denied" } });
@@ -54,7 +59,7 @@ async function app() {
   const router = express();
   router.use(express.json());
   router.use((req, _res, next) => {
-    Object.assign(req, { userId: req.header("x-user") ?? "alice", domainId: "domain", token: "original", apiKey: "", locale: "en" });
+    Object.assign(req, { userId: req.header("x-user") ?? "alice", domainId: "domain", token: req.header("x-user") === "bob" ? "bob" : "original", apiKey: "", locale: "en" });
     next();
   });
   router.use("/api", buildTestAccess);
@@ -252,4 +257,29 @@ it("projects stored form skills through the current caller's skill view without 
   expect(mocks.visibleSkills).toHaveBeenCalledWith([skill], skillView);
   expect(mocks.skillView).toHaveBeenCalledTimes(1);
   expect(mocks.pool).not.toHaveBeenCalled();
+});
+
+
+it("opens a view-only object form without menu permission and refuses edit validation", async () => {
+  mocks.canEdit.mockResolvedValue(false);
+  mocks.options.mockResolvedValue({ canSetExecutionUser: true, users: [] });
+  mocks.agent.mockResolvedValue({
+    id, kind: "custom", name: "Read-only assistant", description: "", icon: null, enabled: true,
+    class_names: [], enabled_mcp_service_ids: [], sort_order: 0, system_prompt: "",
+    skills: [], model_selection: { modelId: null }, execution_user_id: null,
+  });
+  const request = await app();
+  const response = await request({ target: { kind: "object", objectType: AGENT_DEFINITION, primaryKey: id }, changedField: null }, "bob", "/form");
+  expect(response.status).toBe(200);
+  const opened = await response.json();
+  expect(opened.fields.length).toBeGreaterThan(0);
+  expect(opened.fields.every((field: { readOnly: boolean }) => field.readOnly)).toBe(true);
+  expect(mocks.grant).toHaveBeenCalledWith(id, "view", expect.objectContaining({ token: "bob" }));
+
+  mocks.grant.mockRejectedValueOnce(new HttpError(403, "Product edit Grant required", "PRODUCT_FORBIDDEN"));
+  const denied = await request({ target: { ...createDraftTarget, id }, form }, "bob");
+  expect(denied.status).toBe(403);
+  expect((await denied.json()).error.code).toBe("PRODUCT_FORBIDDEN");
+  expect(mocks.grant).toHaveBeenLastCalledWith(id, "edit", expect.objectContaining({ token: "bob" }));
+  expect(mocks.model).not.toHaveBeenCalled();
 });

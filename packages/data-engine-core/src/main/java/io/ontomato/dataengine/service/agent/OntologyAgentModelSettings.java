@@ -55,6 +55,10 @@ public class OntologyAgentModelSettings {
     return JSONObject.of("agents", agents.stream().map(agent -> view(domain, agent)).toList());
   }
 
+  public JSONObject read(String domain, String id) {
+    return view(domain, agent(id));
+  }
+
   public JSONObject save(String domain, String id, JSONObject input) throws Exception {
     var agent = agent(id);
     AgentJson.fields(input, "modelSelection");

@@ -5,7 +5,9 @@ import { tForLocale } from "../../i18n";
 export function agentDefinitionRecord(
   { id, name, description, enabled }: { id: string; name: string; description: string; enabled: boolean },
   category: AgentDefinitionCategory,
-  locale?: string,
+  locale: string | undefined,
+  canEdit: boolean,
+  domainShared?: boolean,
 ): PanelRecord {
   return {
     primaryKey: id,
@@ -21,7 +23,7 @@ export function agentDefinitionRecord(
       enabled: tForLocale(locale, "panels.agentForm.enabled"),
       category: tForLocale(locale, "panels.agentDefinition.category"),
     },
-    outputs: { category },
+    outputs: { category, canEdit, canGrant: canEdit, ...(domainShared !== undefined && { domainShared }) },
     tones: { enabled: enabled ? "success" : "default" },
   };
 }

@@ -166,23 +166,20 @@ router.get("/sessions/:sessionId/tasks/:taskId/process/events", wrap(async (req,
 }));
 router.get(
   "/agent-definitions",
-  agentAdmin,
   wrap(async (req, res) => {
     res.json(await listAgentDefinitions(context(req).owner, context(req).credentials));
   }),
 );
 router.delete(
   "/agent-definitions/:agentId",
-  agentAdmin,
   wrap(async (req, res) => {
     const { owner, credentials } = context(req);
-    await deleteAgentDefinition(id(req, "agentId"), owner, credentials.locale);
+    await deleteAgentDefinition(id(req, "agentId"), owner, credentials);
     res.sendStatus(204);
   }),
 );
 router.get(
   "/agent-definitions/:agentId",
-  agentAdmin,
   wrap(async (req, res) => {
     res.json(await readAgentDefinition(id(req, "agentId"), context(req).owner, context(req).credentials));
   }),
@@ -205,7 +202,6 @@ router.post(
 );
 router.post(
   "/agent-definitions/form",
-  agentAdmin,
   validateBody(panelFormRequestSchema),
   asyncHandler(async (req, res) => {
     const { owner, credentials } = context(req);
@@ -214,7 +210,6 @@ router.post(
 );
 router.post(
   "/agent-definitions/validate",
-  agentAdmin,
   wrap(async (req, res) => {
     const c = context(req);
     await validateAgentDefinition(assistantAgentValidationSchema.parse(req.body), c.owner, c.credentials);
@@ -223,7 +218,6 @@ router.post(
 );
 router.put(
   "/agent-definitions/:agentId",
-  agentAdmin,
   wrapDefinitionWrite(async (req, res) => {
     res.json(
       await saveAgentDefinition(

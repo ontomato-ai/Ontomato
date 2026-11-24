@@ -15,6 +15,7 @@ vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class
 }}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://ontology"}}}));
 vi.mock("../../../core/skills/registry/manager",()=>({skillRegistryManager:{}}));
+vi.mock("../../product-governance/grants", () => ({ requireProductGrant: vi.fn() }));
 vi.mock("../../skills/skill-manager",()=>({skillManager:{},skillReference:vi.fn()}));
 vi.mock("../../skills/operations",()=>({withDomainSkills:async(_domain:string,work:()=>Promise<unknown>)=>work()}));
 // Admission is exercised through the real store and claim helper, without model preparation.
@@ -64,12 +65,12 @@ it("trusted preparation still refuses a session indexed by another surface",asyn
 });
 it("client and scheduler creation remain strict for an existing runtime session",async()=>{
   const id=randomUUID();state.runtimeSessions.add(id);
-  await expect(assistantService.create(id,owner,{agentId})).rejects.toMatchObject({status:409,code:"IDEMPOTENCY_CONFLICT"});
-  await expect(assistantService.create(id,owner,{agentId},"scheduled")).rejects.toMatchObject({status:409,code:"IDEMPOTENCY_CONFLICT"});
+  await expect(assistantService.create(id,owner,{agentId},{})).rejects.toMatchObject({status:409,code:"IDEMPOTENCY_CONFLICT"});
+  await expect(assistantService.create(id,owner,{agentId},{},"scheduled")).rejects.toMatchObject({status:409,code:"IDEMPOTENCY_CONFLICT"});
   await expect(assistantStore.session(id,owner)).rejects.toMatchObject({status:404});
 });
 it("diagnosis uses the same trusted-claim rule while client creation stays strict",async()=>{
   const accepted=randomUUID(),client=randomUUID();state.runtimeSessions.add(accepted);state.runtimeSessions.add(client);
-  expect((await createDiagnosis(accepted,owner,null,true)).session.id).toBe(accepted);
-  await expect(createDiagnosis(client,owner)).rejects.toMatchObject({status:409,code:"IDEMPOTENCY_CONFLICT"});
+  expect((await createDiagnosis(accepted,owner,{},null,true)).session.id).toBe(accepted);
+  await expect(createDiagnosis(client,owner,{})).rejects.toMatchObject({status:409,code:"IDEMPOTENCY_CONFLICT"});
 });

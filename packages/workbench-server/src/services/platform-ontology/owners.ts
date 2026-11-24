@@ -723,8 +723,6 @@ export class PlatformOntologyOwnerReaders {
   }
 
   async agentDefinitions(): Promise<OwnerReadResult<RawAgentDefinition[]>> {
-    const perm = await this.analysisAgentPermission();
-    if (!perm.ok) return perm;
     return this.memo("node:agent-definitions", async () => {
       const { agents } = await listAgentDefinitions(this.owner, this.credentials);
       return agents.map((agent) => ({

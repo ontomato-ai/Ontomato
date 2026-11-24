@@ -6,10 +6,12 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { runtimeStartRunRequestSchema } from "@ontomato/contracts/agent-runtime";
 import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
+import { HttpError } from "../../../utils/errors";
 import { workbenchServerResourceRoot } from "../../../content/resources";
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
+  allowed: vi.fn(),
   readModel: vi.fn(),
   publicSkills: vi.fn(),
   publishSkill: vi.fn(),
@@ -34,7 +36,14 @@ vi.mock("../../../config/query-settings", () => ({ getQueryTimeoutMs: () => 900_
 vi.mock("../../../core/prompts/loader", () => ({ renderPrompt: () => "Diagnosis prompt" }));
 vi.mock("../../../i18n", () => ({ resolveLocale: (locale?: string) => locale ?? "en", getOutputLanguageInstruction: () => "Reply in English" }));
 
-import { prepareDiagnosis } from "../service";
+vi.mock("../../product-governance/grants", () => ({
+  productGrantAllowed: mocks.allowed,
+  requireProductGrant: async (...args: unknown[]) => {
+    if (!await mocks.allowed(...args)) throw new HttpError(403, "Use Grant required", "PRODUCT_FORBIDDEN");
+  },
+}));
+
+import { diagnosisService, prepareDiagnosis } from "../service";
 import { unwrapCallbackCredential } from "../../agent-runtime/callback-credential";
 
 const sessionId = "11111111-1111-4111-8111-111111111111";
@@ -54,6 +63,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.allowed.mockResolvedValue(true);
   const createdAt = new Date();
   mocks.query.mockImplementation(async (sql: string) => {
     if (sql.includes("FROM ops_sessions")) {
@@ -219,4 +229,17 @@ it("ops.mjs uses forwarded path and callback credential in platform mode, and /a
     url: "/api/observe/evidence/health?",
     headers: { tk: "external-user-tk" },
   });
+});
+
+it("hides diagnosis and refuses conversation writes and prepare when use is revoked", async () => {
+  const owner = { domainId: "domain", userId: "user" };
+  const credentials = { token: "reader" };
+  const forbidden = { status: 403, code: "PRODUCT_FORBIDDEN" };
+  mocks.allowed.mockResolvedValue(false);
+  await expect(diagnosisService.agents(owner, credentials)).resolves.toEqual({ agents: [] });
+  await expect(diagnosisService.create(sessionId, owner, { agentId: DIAGNOSIS_AGENT_ID }, credentials)).rejects.toMatchObject(forbidden);
+  await expect(diagnosisService.send(sessionId, runId, { message: "Continue" }, owner, credentials, "human")).rejects.toMatchObject(forbidden);
+  await expect(prepareDiagnosis(sessionId, runId, { role: "user", content: "Continue", timestamp: 1 }, owner, credentials)).rejects.toMatchObject(forbidden);
+  expect(mocks.query).not.toHaveBeenCalled();
+  expect(mocks.allowed).toHaveBeenCalledWith(DIAGNOSIS_AGENT_ID, "use", credentials);
 });

@@ -345,7 +345,7 @@ const callKey = (connectionId: string, runId: string, toolCallId: string) =>
   JSON.stringify([connectionId, runId, toolCallId]);
 
 export async function requestPresentation(
-  service: AgentHostService, host: AgentPresentationHost, owner: AgentHostOwner,
+  service: Pick<AgentHostService, "ownRun" | "resolve">, host: AgentPresentationHost, owner: AgentHostOwner,
   call: PresentationBinding & Pick<PresentationFrame, "sessionId" | "runId" | "toolCallId"> & { input: PresentRequest | ObserveDisplayRequest | FillFormRequest | PageActionRequest },
   signal: AbortSignal,
 ): Promise<PresentationResult> {

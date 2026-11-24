@@ -357,7 +357,9 @@ describe("platform-ontology composite query", () => {
     const agent = byId.get(AGENT_DEFINITION);
     expect(agent?.definition).toBe(platformTypeDetails[AGENT_DEFINITION]?.definition);
     expect(Object.keys(agent?.reads ?? {})).toEqual(expect.arrayContaining(["createForm", "form", "list", "record"]));
-    expect(agent?.operations?.map((op) => op.id)).toEqual([`${AGENT_DEFINITION}.save`, DELETE_AGENT]);
+    expect(agent?.operations?.map((op) => op.id)).toEqual(expect.arrayContaining([
+      `${AGENT_DEFINITION}.save`, DELETE_AGENT, "agents.grant", "agents.revoke", "agents.share",
+    ]));
 
     const application = byId.get(APPLICATION);
     expect(application?.definition).toBe(platformTypeDetails[APPLICATION]?.definition);
@@ -498,7 +500,7 @@ describe("platform-ontology composite query", () => {
     expect(byType.get("platform:Attribute")).toMatchObject({ status: "ok", count: 1 });
     expect(byType.get("platform:Relationship")).toMatchObject({ status: "ok", count: 1 });
     expect(byType.get("platform:Skill")).toMatchObject({ status: "refused" });
-    expect(byType.get("platform:AgentDefinition")).toMatchObject({ status: "refused" });
+    expect(byType.get("platform:AgentDefinition")).toMatchObject({ status: "ok", count: 1 });
     expect(byType.get("platform:Trigger")).toMatchObject({ status: "failed" });
     expect(byType.get("platform:SDKComponent")).toMatchObject({ status: "ok", count: 3 });
     expect(byType.get("platform:ProductProjection")).toMatchObject({ status: "ok", count: 1 });
@@ -511,9 +513,7 @@ describe("platform-ontology composite query", () => {
     expect(metaCalls).toHaveLength(1);
     // grantedProductIds must be called only once across ProductProjection + ProductPanel
     expect(grantedProductIds).toHaveBeenCalledTimes(1);
-    // analysis-agent permission must be checked only once across Skill + AgentDefinition
-    expect(assertPermissionMock).toHaveBeenCalledTimes(1);
-    expect(listAgentDefinitions).not.toHaveBeenCalled();
+    expect(listAgentDefinitions).toHaveBeenCalledWith(owner, credentials);
     expect(assistantSkillCatalog).not.toHaveBeenCalled();
   });
 
@@ -627,6 +627,7 @@ describe("platform-ontology composite query", () => {
     // Alice created & published act-1 (two distinct edges), created wf-1, created & published metric-1, holds role r-1 (Approver)
     const edgeKinds = res.edges.map((e) => `${e.relationKind}:${e.to.primaryKey}`).sort();
     expect(edgeKinds).toEqual([
+      "agent.executes-as-user:user-1",
       "user.created-action:act-1",
       "user.created-metric-view:metric-1",
       "user.created-workflow:wf-1",
@@ -642,7 +643,7 @@ describe("platform-ontology composite query", () => {
     });
 
     const statusByKind = new Map(res.relations.map((r) => [r.relationKind, r]));
-    expect(statusByKind.get("agent.executes-as-user")).toMatchObject({ status: "refused", edgeCount: 0 });
+    expect(statusByKind.get("agent.executes-as-user")).toMatchObject({ status: "ok", edgeCount: 1 });
     expect(statusByKind.get("user.published-workflow")).toMatchObject({ status: "ok", edgeCount: 0 });
     expect(statusByKind.get("user.created-action")).toMatchObject({ status: "ok", edgeCount: 1 });
   });
@@ -689,7 +690,7 @@ describe("platform-ontology composite query", () => {
     expect(okRes.total).toBe(1);
     expect(okRes.items[0]).toMatchObject({ node: { className: "platform:ObjectType", primaryKey: "Order" }, label: "Order" });
 
-    assertPermissionMock.mockRejectedValueOnce(new HttpError(403, "No permission"));
+    vi.mocked(listAgentDefinitions).mockRejectedValueOnce(new HttpError(403, "Grant read refused", "PRODUCT_FORBIDDEN"));
     const refusedRes = await readPlatformOntologyObjects(owner, credentials, {
       type: "platform:AgentDefinition",
     });
@@ -2090,7 +2091,7 @@ describe("platform-ontology composite query", () => {
     ]);
 
     // 6. When one product catalog (AgentDefinition) is refused, Role still gets edges to readable panels & apps
-    assertPermissionMock.mockRejectedValue(new HttpError(403, "No analysis-agent", "FORBIDDEN"));
+    vi.mocked(listAgentDefinitions).mockRejectedValueOnce(new HttpError(403, "Grant read refused", "PRODUCT_FORBIDDEN"));
     vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
       if (url.endsWith("/product-governance/domain-grants")) {
         return okJson({ grants: domainGrants });
@@ -2107,7 +2108,6 @@ describe("platform-ontology composite query", () => {
     ]);
 
     // 7. When /product-governance/domain-grants returns 403, product grant relations report refused and product nodes render without shared tag
-    assertPermissionMock.mockResolvedValue(undefined);
     vi.mocked(backendPost).mockImplementation(async (endpoint, url, body, opts) => {
       if (url.endsWith("/product-governance/domain-grants")) {
         throw new BackendResponseError(403, JSON.stringify({ message: "Domain grants forbidden" }));

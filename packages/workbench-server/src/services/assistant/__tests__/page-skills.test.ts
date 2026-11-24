@@ -10,7 +10,8 @@ type PageSkillRegistry = Pick<SkillRegistryManager, "getSkillByRef" | "failedMan
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), post: vi.fn(), agents: vi.fn(), native: vi.fn(), profile: vi.fn(),
   publishGovernance: vi.fn(), managed: [] as { skill: RuntimeSkillRef; title: string; description: string }[],
-  grants: new Set<string>(),
+  grants: new Set<string>(), usableIds: [] as string[],
+  allowed: true,
 }));
 vi.mock("../../../utils/backend-client", () => ({ backendGet: mocks.get, backendPost: mocks.post,
   buildBackendHeaders: (token: string) => ({ tk: token }) }));
@@ -63,9 +64,13 @@ let current: PageSkillsProjection;
 beforeEach(() => {
   vi.clearAllMocks(); mocks.grants.clear(); current = projection();
   mocks.managed.length = 0;
+  mocks.usableIds = ids.slice();
+  mocks.allowed = true;
   mocks.publishGovernance.mockResolvedValue({ skill: page, digest: "b".repeat(64) });
   mocks.get.mockImplementation(async () => ({ text: JSON.stringify({ success: true, data: current }) }));
-  mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: true }) });
+  mocks.post.mockImplementation(async (operation: string) => ({
+    text: JSON.stringify(operation === "product-grant-resources" ? { ids: mocks.usableIds } : { allowed: mocks.allowed }),
+  }));
   mocks.native.mockResolvedValue(undefined); mocks.profile.mockResolvedValue(null);
   mocks.agents.mockResolvedValue([definition(0, "regular", [report]), definition(1, "custom")]);
 });
@@ -115,9 +120,9 @@ it("keeps ordinary native skills and excludes true product Profile skills from p
   expect(directory.agents.map(a => a.id)).toEqual([ids[0], ids[1]]);
   expect(directory.defaultAgentId).toBe(native.id);
   expect((await listAssistantAgents(owner, credentials)).agents.find(a => a.id === ids[2])?.effectiveSkills).toEqual([]);
-  mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: false }) });
+  mocks.allowed = false;
   expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
-  mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: true }) });
+  mocks.allowed = true;
   mocks.grants.delete(native.id);
   expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
 });
@@ -142,6 +147,10 @@ it("selects a concrete ID without treating it as a preset kind", async () => {
   mocks.agents.mockResolvedValue([definition(0, "regular"), definition(1, "custom", [page])]);
   current.pageSkills[0].defaults = [{ pageKey: "governance-report", defaultAgent: { kind: "id", id: ids[1] } }];
   expect((await listAssistantAgents(owner, credentials, query)).defaultAgentId).toBe(ids[1]);
+  mocks.usableIds = [ids[0]];
+  expect((await listAssistantAgents(owner, credentials)).agents.map(agent => agent.id)).toEqual([ids[0]]);
+  await expect(listAssistantAgents(owner, credentials, query)).rejects.toMatchObject({ status: 409, code: "PAGE_DEFAULT_AGENT_UNAVAILABLE" });
+  mocks.usableIds = ids.slice();
   current.pageSkills[0].defaults[0]!.defaultAgent = { kind: "id", id: "custom" };
   await expect(listAssistantAgents(owner, credentials, query)).rejects.toMatchObject({ code: "PAGE_DEFAULT_AGENT_UNAVAILABLE" });
 });

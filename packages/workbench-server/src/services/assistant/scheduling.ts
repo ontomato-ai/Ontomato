@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { grantedProductIds } from "../product-governance/grants";
 import { assistantService } from "./service";
 import { assistantStore } from "./store";
 import { withScheduledUserActivity } from "./scheduled-activity";
@@ -12,11 +13,17 @@ export const assistantScheduleApplication: ScheduleApplication = {
   async authorize() {},
   async form(input, { owner, credentials }) {
     const zh = credentials.locale?.startsWith("zh");
+    const usableIds = new Set(await grantedProductIds("use", credentials));
     const agents = await assistantStore.agents(owner.domainId);
-    const options = agents.map((agent) => option(agent.id, agent.name, agent.enabled ? null : zh ? "智能体已停用" : "Agent disabled", agent.description));
+    const options = agents.filter(agent => usableIds.has(agent.id))
+      .map(agent => option(agent.id, agent.name, agent.enabled ? null : zh ? "智能体已停用" : "Agent disabled", agent.description));
     const selected = input.values.agentId;
-    if (selected && !agents.some((agent) => agent.id === selected))
-      options.push(option(selected, selected, zh ? "智能体已不存在" : "Agent no longer exists"));
+    if (selected && !options.some(entry => entry.value === selected)) {
+      const reason = agents.some(agent => agent.id === selected)
+        ? zh ? "无权使用该智能体" : "Agent use permission required"
+        : zh ? "智能体已不存在" : "Agent no longer exists";
+      options.push(option(selected, selected, reason));
+    }
     return completeForm("agents", "agents-v1", [
       select("agentId", zh ? "智能体" : "Agent", options),
       instruction(zh ? "指令" : "Instruction"),
@@ -33,7 +40,7 @@ export const assistantScheduleApplication: ScheduleApplication = {
     await this.validate(input, context);
     const sessionId = scheduledSessionId(input.runId);
     await withScheduledUserActivity(context.owner.userId, async () => {
-      const created = await assistantService.create(sessionId, context.owner, { agentId: input.content.agentId }, "scheduled");
+      const created = await assistantService.create(sessionId, context.owner, { agentId: input.content.agentId }, context.credentials, "scheduled");
       try {
         await assistantService.send(sessionId, input.runId, {message:input.content.instruction}, context.owner, context.credentials, "background");
       } catch (error) {

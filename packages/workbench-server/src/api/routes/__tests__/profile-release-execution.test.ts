@@ -100,7 +100,7 @@ it.each(endpoints)("inherits the logged-in user's permissions on %s even when th
   if(method==="GET")expect(await response.json()).toMatchObject({asset:{id:profileId},releaseId,issues:[]});
   else{
     expect(await response.json()).toMatchObject({session:{ownerId:"U"}});
-    expect(state.create).toHaveBeenCalledWith(expect.any(String),owner,{agentId});
+    expect(state.create).toHaveBeenCalledWith(expect.any(String),owner,{agentId},expect.objectContaining({token:"U-token",locale:"en"}));
     expect(state.bind).toHaveBeenCalledWith(owner,expect.any(String),profileId,releaseId,[],{});
   }
   const capability=state.post.mock.calls.find(([name])=>name==="projection-object-contract")!;

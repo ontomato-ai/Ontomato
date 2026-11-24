@@ -19,6 +19,6 @@ export const agentDefinitionTypeDetail = {
     { name: "executionUserId", type: "string | null", description: "Default execution user ID for automated/unattended runs, or null. Interactive runs with a logged-in user inherit that user's permissions." },
     { name: "sortOrder", type: "integer", description: "The position used to order the definition in agent lists." },
   ],
-  rules: "Reading, creating, or maintaining definitions in the current domain requires the analysis-agent permission."
+  rules: "Creating an agent requires the analysis-agent permission. Listing agents and viewing configurations require the object view grant. Editing, deleting, and managing grants require the object edit grant. Chatting with or invoking an agent requires the object use grant."
     + " The definition service exposes only skill references the reader may use, and the execution identity service validates changes to the execution user.",
 } as const satisfies PlatformTypeDetailDeclaration;

@@ -105,7 +105,7 @@ router.post('/:id/sessions',wrap(async(req,res)=>{
   for(const value of Object.values(pageState))if(value&&typeof value==='object'&&!contextObjects.some(object=>object.className===value.className&&object.primaryKey===value.primaryKey))throw new HttpError(400,'Object Page state must have a declared Profile context view','OBJECT_CONTEXT_UNAVAILABLE');
    for(const selection of contextObjects)if(!profile.document.contextViews.some(id=>{const view=snapshotAsset(snapshot,id);return view.document.kind==='object-projection'&&['text','3d'].includes(view.document.renderer)&&view.document.fields.length>0&&view.document.renders.id===selection.className;}))throw new HttpError(400,'Profile has no context ObjectView for this selection','OBJECT_CONTEXT_UNAVAILABLE');
   const sessionId=z.string().uuid().parse(req.header('Idempotency-Key'));
-  const result=await assistantService.create(sessionId,c.owner,{agentId:profile.document.agentId});
+  const result=await assistantService.create(sessionId,c.owner,{agentId:profile.document.agentId},c.credentials);
    await bindProfileSession(c.owner,sessionId,profileId,releaseId,contextObjects,pageState);
   res.status(201).json(result);
 }));

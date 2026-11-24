@@ -334,6 +334,7 @@ it("reads a selected nested panel or projection and freezes its actual publisher
   }], dataName: "rows", inputs: {} });
   expect(await outside.json()).toMatchObject({ status: "error", message: expect.stringContaining("outside this member's candidates") });
 
+  grants.set(nestedAgentId, "author");
   const memberPath = [detail, { member: "approve" }];
   const query = new URLSearchParams({ ...use, operationId: "detail.approve.remove", memberPath: JSON.stringify(memberPath) });
   const descriptor = await request("GET", `panel-operations/descriptor?${query}`, "author");

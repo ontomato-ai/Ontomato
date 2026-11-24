@@ -1,4 +1,4 @@
-import { agentHostSendResultSchema, type AgentHostSendRequest, type AgentHostAgentList } from "@ontomato/contracts/agent-host";
+import { agentHostSendResultSchema, type AgentHostAgentList } from "@ontomato/contracts/agent-host";
 import { resolveLocale } from "../../i18n";
 import { openAgentCaller } from "../agent-host/caller";
 import type { AgentInput, AgentRunContext } from "@ontomato/contracts/agent-channel";
@@ -25,6 +25,7 @@ import { publishSkill } from "../agent-runtime/skills";
 import { callbackCredential } from "../agent-runtime/callback-credential";
 import { HttpError } from "../../utils/errors";
 import type { AgentHostOwner, AgentHostService } from "../agent-host/types";
+import { productGrantAllowed, requireProductGrant } from "../product-governance/grants";
 import { agentVisibilityPrompt, type AgentVisibilityReader } from "../agent-host/visibility";
 
 type Session = { id: string; domain_id: string; owner_id: string; title: string; target: DiagnosisTarget | null; created_at: Date; updated_at: Date };
@@ -48,7 +49,8 @@ const view = (s: Session, latest: LatestRun | null) => ({
   createdAt: new Date(s.created_at).toISOString(), updatedAt: new Date(s.updated_at).toISOString(),
   latestRun: latest ? runStatusView(latest) : null,
 });
-export async function createDiagnosis(id: string, owner: AgentHostOwner, target: DiagnosisTarget | null = null, fromChannel = false) {
+export async function createDiagnosis(id: string, owner: AgentHostOwner, credentials: AssistantCredentials, target: DiagnosisTarget | null = null, fromChannel = false) {
+  await requireProductGrant(DIAGNOSIS_AGENT_ID, "use", credentials);
   if (target) target = diagnosisTargetSchema.parse(target);
   const inserted = await transaction(async (tx) => {
     await lockSessionClaim(tx, id);
@@ -69,15 +71,16 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export const diagnosisService: AgentHostService & { agents(owner: AgentHostOwner, locale?: string): Promise<AgentHostAgentList> } = {
+export const diagnosisService: AgentHostService<[AssistantCredentials]> & { agents(owner: AgentHostOwner, credentials: AssistantCredentials): Promise<AgentHostAgentList> } = {
   presentationHost: "observe",
-  async agents(_owner, locale) {
-    const zh = locale?.startsWith("zh");
+  async agents(_owner, credentials) {
+    if (!await productGrantAllowed(DIAGNOSIS_AGENT_ID, "use", credentials)) return { agents: [] };
+    const zh = credentials.locale?.startsWith("zh");
     return { agents: [{ id: DIAGNOSIS_AGENT_ID, name: zh ? "运维诊断" : "Operations diagnosis", description: zh ? "只读取证与故障诊断" : "Read evidence and diagnose faults", icon: "wrench", enabled: true }] };
   },
-  async create(id, owner, input) {
+  async create(id, owner, input, credentials) {
     if (input.agentId !== DIAGNOSIS_AGENT_ID) throw missing();
-    return createDiagnosis(id, owner);
+    return createDiagnosis(id, owner, credentials);
   },
   async list(owner, input) {
     if (input.agentId !== DIAGNOSIS_AGENT_ID) throw missing();
@@ -123,6 +126,7 @@ export const diagnosisService: AgentHostService & { agents(owner: AgentHostOwner
     return snapshot;
   },
   async send(session, run, input, owner, credentials, entry) {
+    await requireProductGrant(DIAGNOSIS_AGENT_ID, "use", credentials);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "observe", agentId: DIAGNOSIS_AGENT_ID };
     const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await client.request(`/v1/channel/sessions/${session}/bind`, "POST", { agent, actor });
@@ -172,6 +176,7 @@ export const diagnosisService: AgentHostService & { agents(owner: AgentHostOwner
 };
 
 export async function prepareDiagnosis(session: string, run: string, input: AgentInput, owner: AgentHostOwner, credentials: AssistantCredentials, reader?: AgentVisibilityReader): Promise<RuntimeStartRunRequest> {
+  await requireProductGrant(DIAGNOSIS_AGENT_ID, "use", credentials);
   const message = input.content;
   const row = await diagnosisSession(session, owner);
   const language = credentials.locale ?? "en";

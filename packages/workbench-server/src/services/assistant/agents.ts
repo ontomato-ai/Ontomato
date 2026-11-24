@@ -4,6 +4,7 @@ import type { AssistantAgentsQuery, PageSkillEntrance, PageSkillLocator } from "
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { grantedProductIds } from "../product-governance/grants";
 import { withProductGrants } from "../product-assets/grants";
 import { nativeProfileId } from "../product-assets/platform-assets";
 import { profileIdForAgent } from "../product-assets/agent-profile";
@@ -44,7 +45,9 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
       defaultAgent: group?.defaults.find(entry => entry.pageKey === query.pageKey)?.defaultAgent ?? { kind: "preset", agentKind: "regular" },
     };
   }
-  const definitions = (await assistantStore.agents(owner.domainId)).filter(agent => agent.kind !== excludePreset);
+  const usableIds = new Set(await grantedProductIds("use", credentials));
+  const definitions = (await assistantStore.agents(owner.domainId))
+    .filter(agent => agent.kind !== excludePreset && usableIds.has(agent.id));
   return withProductGrants(owner, async () => {
     const agents = [];
     for (const agent of definitions) {

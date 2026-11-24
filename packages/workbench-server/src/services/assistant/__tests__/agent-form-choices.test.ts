@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+vi.mock("../../../identity/installed", () => ({ assertPermission: vi.fn() }));
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java" } } }));
 import { tmpdir } from "node:os";
 import { installContentLayout } from "../../../content/layout";

@@ -4,6 +4,7 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 const state=vi.hoisted(()=>({pool:undefined as pg.Pool|undefined,schema:""}));
 vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>state.pool,qualifiedTable:(name:string)=>`"${state.schema}"."${name}"`}));
+vi.mock("../../product-governance/grants", () => ({ registerProductResource: vi.fn() }));
 import { ensureAssistantSchema } from "../../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { assistantStore } from "../store";
 import { initializeDomainPresetAgents } from "../preset-initialization";
