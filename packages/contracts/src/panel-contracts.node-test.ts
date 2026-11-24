@@ -1971,6 +1971,7 @@ test("Trigger definition reads and writes use exact binding requests", () => {
 test("Workflow definition reads and writes use exact binding requests", () => {
   const workflows = binding(WORKFLOW);
   const reads = platformObjectTypes[WORKFLOW].reads;
+  assert.ok(reads);
   for (const path of ["/workflow/query", "/workflow/grants", "/workflow/subjects", "/action/queryList"]) {
     assert.ok(panelClientReads(workflows).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test(path)));
     assert.ok(clientSends([workflows], "POST", "/data-query", path));
@@ -1978,6 +1979,7 @@ test("Workflow definition reads and writes use exact binding requests", () => {
   assert.ok(clientSends([workflows], "POST", "/data-query", "/workflow/save"));
   assert.ok(!panelClientReads(workflows).some(read => read.path.test("/workflow/save")));
   assert.equal(reads.list.result, "panelRecordList");
+  assert.equal(reads.query.parameterMode, "fixed");
   assert.deepEqual(reads.query.params, { search: "keyword", cursor: "cursor", size: "size" });
   assert.equal(reads.count.result, "panelRecordQuery");
   assert.equal(reads.record.result, "panelRecord");
