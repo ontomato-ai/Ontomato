@@ -41,7 +41,7 @@ import { createAgentDefinition, filterReadableAgentDefinitions, saveAgentDefinit
 import { readAssistantSkillView } from "../../services/assistant/skills";
 import type { PanelOperationHost } from "../../services/product-panels/server-operations";
 import { tForLocale } from "../../i18n";
-import { agentDefinitionOperations } from "../../services/assistant/definition-operations";
+import { agentDefinitionOperations } from "../../services/product-panels/agent-definition-operations";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;

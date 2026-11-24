@@ -6,8 +6,6 @@ export const platformOntologyEn = {
   "platformOntology.types.publishedMcpService": "Published MCP service",
   "platformOntology.types.auditLog": "Audit log",
   "platformOntology.types.generalSettings": "General settings",
-  "platformOntology.types.diagnosisModel": "Diagnosis model",
-  "platformOntology.types.builderAgent": "App builder agent",
   "platformOntology.types.scheduledTask": "Scheduled task",
   "platformOntology.types.modelOption": "Model",
   "platformOntology.types.mcpServiceOption": "MCP service",

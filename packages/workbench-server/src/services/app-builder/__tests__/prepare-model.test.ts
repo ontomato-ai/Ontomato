@@ -8,8 +8,8 @@ vi.mock('../../assistant/prompts',()=>({effectiveSystemPrompt:()=>''}));
 vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({callbackUrl:'http://workbench.test'})}}));
 vi.mock('../../agent-runtime/callback-credential',()=>({callbackCredential:mocks.callback}));
 import {prepareAppBuilderRun} from '../prepare';
-it('uses a builder variants selected model and declares run-scoped business callbacks',async()=>{
- const run=await prepareAppBuilderRun({a:{id:'builder',kind:'app-builder:variant',model_selection:{modelId:'provider/model'}},session:{id:'session',workspace_id:'workspace'},turn:{id:'turn',created_at:new Date()},message:'Build',owner:{domainId:'domain',userId:'user'},credentials:{locale:'en',token:'human-secret'}} as Parameters<typeof prepareAppBuilderRun>[0]);
+it('uses the app-builder selected model and declares run-scoped business callbacks',async()=>{
+ const run=await prepareAppBuilderRun({a:{id:'builder',kind:'app-builder',model_selection:{modelId:'provider/model'}},session:{id:'session',workspace_id:'workspace'},turn:{id:'turn',created_at:new Date()},message:'Build',owner:{domainId:'domain',userId:'user'},credentials:{locale:'en',token:'human-secret'}} as Parameters<typeof prepareAppBuilderRun>[0]);
  expect(mocks.definition.mock.calls[0][1]).toBe('provider/model');
  expect(run.environment).toEqual({values:{ONTOMATO_WORKSPACE_ID:'workspace',ONTOMATO_EXECUTION_KIND:'build-test'},secrets:{}});
  expect(run.businessCallbacks).toEqual({

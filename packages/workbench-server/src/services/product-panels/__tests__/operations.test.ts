@@ -3,7 +3,7 @@ import { HttpError } from "../../../utils/errors";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import * as serverOperations from "../server-operations";
-import { agentDefinitionOperations } from "../../assistant/definition-operations";
+import { agentDefinitionOperations } from "../agent-definition-operations";
 import rawExamples from "../../../../../contracts/examples/platform-schedules.json";
 import {platformTaskSchema} from "@ontomato/contracts/platform-schedules";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -20,7 +20,7 @@ vi.mock("../../../infrastructure/postgres",()=>({getPostgresPool:()=>({query:moc
 vi.mock("../../../config/environment",()=>({environment:{agentRuntime:()=>({callbackUrl:"http://workbench.test"})}}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://owner.test"}}}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class{run=mocks.run;session=mocks.session;request=mocks.request;}}));
-vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({})}}));
+vi.mock("../../assistant/store",()=>({assistantStore:{turn:async()=>({}),findAgent:async()=>undefined}}));
 vi.mock("../../assistant/execution-setting",()=>({resolveAgentExecution:mocks.resolve}));
 vi.mock("../../../identity/installed", () => ({ assertPermission: mocks.assertPermission }));
 vi.mock("../../assistant/definitions", () => ({

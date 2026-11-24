@@ -10,7 +10,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, PUBLISHED_MCP_SERVICE,
+  AUDIT_LOG, GENERAL_SETTINGS, MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
   PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
@@ -30,8 +30,6 @@ import { createGeneralSettingsReads } from "../admin/general-settings-panel";
 import {
   createModelConnectionReads, createModelEntryReads, createModelUsageReads,
 } from "../admin/model-settings-panel";
-import { createBuilderModelReads } from "../app-builder/panel-model";
-import { createDiagnosisModelReads } from "../ops-diagnosis/panel-model";
 import { readPublishedMcpService, readPublishedMcpServices } from "../mcp/panel-reads";
 import type { McpRequestLocation } from "../mcp/catalog";
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
@@ -139,8 +137,8 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     grants: selection => adapter.grants(selection.primaryKey!),
   });
   const definitions = async () => {
-    const { createAgentDefinitionReadAdapter } = await import("../assistant/panel-reads");
-    return createAgentDefinitionReadAdapter(owner, viewer);
+    const { createAgentDefinitionDirectory } = await import("./agent-definition-directory");
+    return createAgentDefinitionDirectory(owner, viewer);
   };
   const options = async () => {
     const { createAgentOptionReadAdapters } = await import("../assistant/panel-reads");
@@ -164,8 +162,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const modelConnections = createModelConnectionReads({ owner, credentials: viewer });
   const modelEntries = createModelEntryReads({ owner, credentials: viewer });
   const modelUsage = createModelUsageReads({ owner, credentials: viewer });
-  const diagnosis = createDiagnosisModelReads(owner.domainId, viewer);
-  const builder = createBuilderModelReads(owner, viewer);
   return {
     [PUBLISHED_MCP_SERVICE]: {
       list: () => readPublishedMcpServices(viewer, location),
@@ -197,17 +193,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       form: (selection, params) => modelUsage.form(selection.primaryKey!, formParams(params)),
       vectorRebuild: selection => modelUsage.vectorRebuild(selection.primaryKey!),
       agentUsages: selection => modelUsage.agentUsages(selection.primaryKey!),
-    },
-    [DIAGNOSIS_MODEL]: {
-      list: () => diagnosis.list(),
-      record: selection => diagnosis.record(selection.primaryKey!),
-      form: (selection, params) => diagnosis.form(selection.primaryKey!, formParams(params)),
-    },
-    [BUILDER_AGENT]: {
-      list: () => builder.list(),
-      record: selection => builder.record(selection.primaryKey!),
-      form: (selection, params) => builder.form(selection.primaryKey!, formParams(params)),
-      createForm: (_selection, params) => builder.createForm(formParams(params)),
     },
     [ACTION]: {
       count: async () => (await actions()).count(),

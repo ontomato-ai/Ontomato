@@ -9,6 +9,7 @@ export const SET_SCHEDULED_TASK_ENABLED = `${SCHEDULED_TASK}.setEnabled`;
 export const DELETE_SCHEDULED_TASK = `${SCHEDULED_TASK}.delete`;
 export const RENEW_SCHEDULED_TASK_CREDENTIAL = "schedules.renewCredential";
 export const AGENT_DEFINITION = "platform:AgentDefinition";
+export type AgentDefinitionCategory = "custom" | "preset" | "system";
 export const SKILL = "platform:Skill";
 export const MODEL_OPTION = "platform:ModelOption";
 export const PUBLISHED_MCP_SERVICE = "platform:PublishedMcpService";
@@ -17,8 +18,6 @@ export const GENERAL_SETTINGS = "platform:GeneralSettings";
 export const MODEL_CONNECTION = "platform:ModelConnection";
 export const MODEL_ENTRY = "platform:ModelEntry";
 export const MODEL_USAGE = "platform:ModelUsage";
-export const DIAGNOSIS_MODEL = "platform:DiagnosisModel";
-export const BUILDER_AGENT = "platform:BuilderAgent";
 export const MCP_SERVICE_OPTION = "platform:McpServiceOption";
 export const USER = "platform:User";
 export const OBJECT_TYPE = "platform:ObjectType";
@@ -230,14 +229,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [GENERAL_SETTINGS]: {
     ...describeType("generalSettings"), reads: { ...metadataList, record: modelReads.record, form: modelReads.form },
     operations: [`${GENERAL_SETTINGS}.save`],
-  },
-  [DIAGNOSIS_MODEL]: {
-    ...describeType("diagnosisModel"), reads: { ...metadataList, record: modelReads.record, form: modelReads.form },
-    operations: [`${DIAGNOSIS_MODEL}.save`],
-  },
-  [BUILDER_AGENT]: {
-    ...describeType("builderAgent"), reads: { ...metadataList, ...modelReads },
-    operations: [`${BUILDER_AGENT}.save`],
   },
   [MODEL_OPTION]: { ...describeType("modelOption"), reads: referenceReads },
   [MCP_SERVICE_OPTION]: { ...describeType("mcpServiceOption"), reads: referenceReads },
@@ -603,7 +594,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("agentDefinition", "product"),
     reads: {
       ...metadataList, count: countRead,
-      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord", outputs: { category: { kind: "scalar", type: "string" } } },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
     },

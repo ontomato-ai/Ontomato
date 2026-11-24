@@ -1221,8 +1221,6 @@ export default {
       "publishedMcpService": "Published MCP service",
       "auditLog": "Audit log",
       "generalSettings": "General settings",
-      "diagnosisModel": "Diagnosis model",
-      "builderAgent": "App builder agent",
       "scheduledTask": "Scheduled task",
       "modelOption": "Model",
       "mcpServiceOption": "MCP service",

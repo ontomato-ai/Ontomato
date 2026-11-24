@@ -131,7 +131,7 @@ export const assistantService = {
     const rows = (
       await db().query(
         `SELECT s.* FROM ${table("assistant_sessions")} s WHERE s.domain_id=$1 AND s.owner_id=$2 AND ($3::uuid IS NULL OR s.agent_id=$3) AND ($7::uuid IS NULL OR s.workspace_id=$7) AND ($4::timestamptz IS NULL OR (s.updated_at,s.id)<($4,$5::uuid))
-         AND (NOT $8::boolean OR (s.workspace_id IS NULL AND EXISTS (SELECT 1 FROM ${table("assistant_agents")} a WHERE a.id=s.agent_id AND a.domain_id=s.domain_id AND a.kind NOT IN ('regular','knowledge-governance','app-builder') AND a.kind NOT LIKE 'app-builder:%')))
+         AND (NOT $8::boolean OR (s.workspace_id IS NULL AND EXISTS (SELECT 1 FROM ${table("assistant_agents")} a WHERE a.id=s.agent_id AND a.domain_id=s.domain_id AND a.kind NOT IN ('regular','knowledge-governance','app-builder'))))
          ORDER BY s.updated_at DESC,s.id DESC LIMIT $6`,
         [
           owner.domainId,

@@ -72,13 +72,13 @@ export async function filterReadableAgentDefinitions(
   return new Set(rows.filter(({ kind }) => isReadableDefinition(kind)).map(({ id }) => id));
 }
 
-async function editableAgent(id: string, owner: AssistantOwner, client?: Parameters<typeof assistantStore.agent>[2]) {
+export async function readAgentDefinitionRow(id: string, owner: AssistantOwner, client?: Parameters<typeof assistantStore.agent>[2]) {
   const agent = await assistantStore.agent(id, owner, client);
   if (!isReadableDefinition(agent.kind)) throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
   return agent;
 }
 export async function readStoredAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
-  return view(await editableAgent(id, owner), locale);
+  return view(await readAgentDefinitionRow(id, owner), locale);
 }
 
 export function projectAgentDefinitionSkills(
@@ -144,7 +144,7 @@ export async function validateAgentDefinition(
   owner: AssistantOwner,
   credentials: AssistantCredentials,
 ) {
-  const old = "id" in draft.target ? await editableAgent(draft.target.id, owner) : null;
+  const old = "id" in draft.target ? await readAgentDefinitionRow(draft.target.id, owner) : null;
   await checkedDefinition(draft.form, owner, credentials, old?.execution_user_id ?? null, old?.skills ?? []);
 }
 export async function saveAgentDefinition(
@@ -168,7 +168,7 @@ export async function saveAgentDefinitionSnapshot(
     const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
     const definition = await transaction(async client => {
       await lockProducts(client, owner);
-      const agent = await editableAgent(id, owner, client);
+      const agent = await readAgentDefinitionRow(id, owner, client);
       const current = view(agent, locale);
       const partial = "submittedFields" in update ? update : undefined;
       if (partial?.submittedFields.length === 0) return current;
@@ -306,7 +306,7 @@ export async function agentDefinitionDeletionRestriction(id: string, owner: Assi
 }
 
 export async function deleteAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
-  const agent = await editableAgent(id, owner);
+  const agent = await readAgentDefinitionRow(id, owner);
   const restriction = presetDeletionRestriction(agent.kind, locale);
   if (restriction) throw new HttpError(403, restriction.reason, "PRESET_AGENT_READ_ONLY");
   await getPostgresPool().query(

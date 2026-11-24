@@ -1,14 +1,11 @@
 import { z } from "zod";
 import { modelOptionsSchema, modelNameSchema } from "@ontomato/contracts/model-settings";
 import { MODEL_OPTION } from "@ontomato/contracts/platform-object-types";
-import type { PanelFormOption } from "@ontomato/contracts/form-fields";
-import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelOption } from "@ontomato/contracts/panel-projection";
+import type { PanelFormField, PanelOption } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
 import { tForLocale } from "../../i18n";
-import { validateModelSelection } from "../../platform/agent-runtime/model-selection";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
-import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 
 export const DOMAIN_DEFAULT_MODEL_OPTION = "@default";
@@ -38,55 +35,6 @@ export async function readDomainModelOptions(viewer: AssistantCredentials): Prom
   return [following, ...chat.map((model): PanelOption => ({ primaryKey: model.name, value: model.name, label: model.name }))];
 }
 
-export async function tryReadDomainModelOptions(viewer: AssistantCredentials): Promise<PanelOption[] | null> {
-  try {
-    return await readDomainModelOptions(viewer);
-  } catch {
-    return null;
-  }
-}
-
-export async function readDomainModelLabelMap(viewer: AssistantCredentials): Promise<Map<string | null, string>> {
-  const options = await tryReadDomainModelOptions(viewer);
-  return options ? new Map(options.map(option => [option.value as string | null, option.label])) : new Map();
-}
-
-export function missingModelWarning(
-  domainOptions: readonly PanelOption[] | null, modelId: string | null | undefined, locale?: string,
-): string | undefined {
-  if (!domainOptions || !modelId) return undefined;
-  if (domainOptions.some(option => option.value === modelId)) return undefined;
-  return tForLocale(locale, "panels.simplePages.modelMissing", { id: modelId });
-}
-
-/**
- * Builds select options for row-style model settings forms where each agent is a field:
- * `"@default"` represents following the domain default, followed by each domain chat model, plus a disabled entry if
- * the stored model ID is no longer configured.
- */
-export function buildModelSelectOptions(
-  domainOptions: readonly PanelOption[], storedModelId: string | null, locale?: string,
-): PanelFormOption[] {
-  const choices: PanelFormOption[] = domainOptions.map(option => ({
-    value: option.value === null ? DOMAIN_DEFAULT_MODEL_OPTION : String(option.value),
-    label: option.label,
-    description: null,
-    disabled: false,
-    disabledReason: null,
-  }));
-  if (storedModelId && !choices.some(choice => choice.value === storedModelId)) {
-    const unavailable = tForLocale(locale, "panels.agentOptions.unavailable");
-    choices.push({
-      value: storedModelId,
-      label: `${storedModelId} (${unavailable})`,
-      description: null,
-      disabled: true,
-      disabledReason: unavailable,
-    });
-  }
-  return choices;
-}
-
 export const formJsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(schema, { effectStrategy: "input" });
 export const modelPanelField = (locale?: string, meta?: { label?: string; help?: string; warning?: string }): PanelFormField => ({
   path: "/modelSelection/modelId",
@@ -97,32 +45,3 @@ export const modelPanelField = (locale?: string, meta?: { label?: string; help?:
   required: false, readOnly: false, defaultValue: null,
   control: { kind: "reference", objectType: MODEL_OPTION, multiple: false },
 });
-
-export async function describeModelPanelForm(
-  domainId: string, current: string | null, inputs: Pick<PanelFormRequest, "values">,
-  save: Omit<PanelFormDescription["save"], "bodySchema">, locale?: string,
-  meta?: { label?: string; help?: string; viewer?: AssistantCredentials },
-): Promise<PanelFormDescription> {
-  const values = { modelSelection: { modelId: current }, ...inputs.values };
-  const errors: PanelFormDescription["errors"] = [];
-  if (inputs.values && Object.hasOwn(inputs.values, "modelSelection")) {
-    const parsed = modelSelectionWrite.safeParse(values);
-    if (!parsed.success) {
-      errors.push({ field: "/modelSelection/modelId", code: "invalid_option" as const, message: tForLocale(locale, "panels.simplePages.invalidModel") });
-    } else {
-      try {
-        await validateModelSelection(domainId, parsed.data.modelSelection);
-      } catch (error) {
-        if (!(error instanceof HttpError) || error.status !== 400) throw error;
-        errors.push({ field: "/modelSelection/modelId", code: "invalid_option" as const, message: tForLocale(locale, "panels.simplePages.invalidModel") });
-      }
-    }
-  }
-  const activeModelId = typeof values.modelSelection?.modelId === "string" ? values.modelSelection.modelId : null;
-  const domainOptions = meta?.viewer ? await tryReadDomainModelOptions(meta.viewer) : null;
-  const warning = missingModelWarning(domainOptions, activeModelId, locale);
-  return {
-    fields: [modelPanelField(locale, { label: meta?.label, help: meta?.help, warning })], values, errors,
-    save: { ...save, bodySchema: formJsonSchema(modelSelectionWrite) },
-  };
-}

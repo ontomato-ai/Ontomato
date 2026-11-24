@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   listVisibleDomainComponents: vi.fn(),
 }));
 
+vi.mock("../../app-builder/access", () => ({
+  assertAppBuilderAccess: async () => { throw new HttpError(403, "App builder denied"); },
+}));
 vi.mock("../member-path", () => ({
   requireRegisteredPanelRoot: mocks.resolveRoot,
   resolvePanelMemberPath: mocks.resolveMember,
@@ -167,15 +170,18 @@ describe("platform count reads", () => {
   });
 
   it("counts stored agent definitions within the admitted domain", async () => {
-    mocks.query.mockResolvedValue({ rows: [{ total: 12 }] });
-    await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 12 } });
+    vi.stubGlobal("fetch", async () => Response.json({ success: false, message: "System config denied" }, { status: 403 }));
+    mocks.query.mockImplementation(async sql => ({ rows: sql.includes("COUNT(") ? [{ total: 12 }] : [] }));
+    await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 13 } });
     expect(mocks.assertPermission).toHaveBeenCalledWith(viewer, ["analysis-agent"]);
-    expect(mocks.query.mock.calls).toEqual([[expect.stringMatching(
-      /SELECT COUNT\(\*\).*WHERE domain_id=\$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%'/i,
-    ), [owner.domainId]]]);
+    expect(mocks.query).toHaveBeenCalledWith(expect.stringMatching(
+      /SELECT COUNT\(\*\).*WHERE domain_id=\$1 AND kind<>'app-builder'/i,
+    ), [owner.domainId]);
   });
 
   it("keeps a successful zero total ready", async () => {
+    vi.stubGlobal("fetch", async () => Response.json({ success: false, message: "System config denied" }, { status: 403 }));
+    mocks.assertPermission.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new HttpError(403, "Diagnosis denied"));
     mocks.query.mockResolvedValue({ rows: [{ total: 0 }] });
     await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "ready", value: { rows: [], total: 0 } });
   });
@@ -186,6 +192,7 @@ describe("platform count reads", () => {
   });
 
   it("denies the agent count before querying storage without admission", async () => {
+    vi.stubGlobal("fetch", async () => Response.json({ success: false, message: "System config denied" }, { status: 403 }));
     mocks.assertPermission.mockRejectedValue(new HttpError(403, "Permission denied"));
     await expect(readCount(AGENT_DEFINITION)).resolves.toEqual({ status: "forbidden" });
     expect(mocks.query).not.toHaveBeenCalled();

@@ -13,36 +13,11 @@ vi.mock("../../mcp/catalog", () => ({
     ],
   })),
 }));
-vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: vi.fn(async () => undefined) }));
-const saveBuilderModelMock = vi.fn();
-const createBuilderAgentMock = vi.fn();
-const listBuilderAgentsMock = vi.fn(async (): Promise<{ id: string; name: string; modelSelection: { modelId: string | null } }[]> => [
-  { id: "11111111-1111-4111-8111-111111111111", name: "App builder", modelSelection: { modelId: null } },
-  { id: "22222222-2222-4222-8222-222222222222", name: "Custom builder", modelSelection: { modelId: "deepseek-flash" } },
-]);
-vi.mock("../../app-builder/agents", async importOriginal => ({
-  ...await importOriginal<typeof import("../../app-builder/agents")>(),
-  listBuilderAgents: listBuilderAgentsMock,
-  readBuilderAgent: vi.fn(async (_owner: unknown, id: string) => ({
-    id, name: "App builder", modelSelection: { modelId: "deepseek-flash" },
-  })),
-  createBuilderAgent: createBuilderAgentMock,
-  saveBuilderModel: saveBuilderModelMock,
-}));
-const readDiagnosisModelMock = vi.fn(async (): Promise<{ modelSelection: { modelId: string | null } }> => ({ modelSelection: { modelId: null } }));
-vi.mock("../../ops-diagnosis/model-settings", () => ({
-  readDiagnosisModel: readDiagnosisModelMock,
-  saveDiagnosisModel: vi.fn(),
-}));
-
 import { tmpdir } from "node:os";
-import { DIAGNOSIS_AGENT_ID } from "@ontomato/contracts/ops-diagnosis";
-import { BUILDER_AGENT } from "@ontomato/contracts/platform-object-types";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { appTextEn } from "../../../i18n/app-text-en";
-import { HttpError } from "../../../utils/errors";
 
 installContentLayout({ runtimeRoot: tmpdir(), prompts: [], publicSkillsRoot: tmpdir(), runtimeResources: [] });
 configureI18n({
@@ -61,11 +36,6 @@ configureI18n({
         "panels.simplePages.auditOperationAdd": "添加",
         "panels.simplePages.auditOperationModify": "修改",
         "panels.simplePages.auditOperationDelete": "删除",
-        "panels.simplePages.diagnosisAgent": "运维智能体",
-        "panels.simplePages.diagnosisDescription": "依据日志与运行记录诊断问数和分析中的问题，并给出处理建议。",
-        "panels.simplePages.defaultBuilderAgentName": "应用构建",
-        "panels.simplePages.builderDescription": "应用设计、代码生成与发布对话",
-        "panels.simplePages.modelMissing": "模型“{id}”已不存在，请重新选择；在此之前该智能体无法运行。",
         "panels.agentOptions.domainDefaultModel": "域默认（{model}）",
       },
       ...enLocaleMeta,
@@ -75,13 +45,9 @@ configureI18n({
 
 const { readPublishedMcpService, readPublishedMcpServices } = await import("../../mcp/panel-reads");
 const { createAuditLogPanelReads } = await import("../../admin/audit-log-panel-reads");
-const { BUILDER_MODELS_FORM_KEY, builderModelOperations, createBuilderModelReads } = await import("../../app-builder/panel-model");
-const { createDiagnosisModelReads } = await import("../../ops-diagnosis/panel-model");
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  saveBuilderModelMock.mockReset();
-  createBuilderAgentMock.mockReset();
 });
 
 describe("simple pages owner reads", () => {
@@ -130,120 +96,5 @@ describe("simple pages owner reads", () => {
     const clamped = await reads.query({ page: { number: 5, size: 20 } });
     expect(clamped.rows).toHaveLength(3);
     expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-
-  it("provides agent name, description, defaultValue and missing-model warning on DiagnosisModel form field", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
-      success: true,
-      data: {
-        models: [{ name: "deepseek-flash", type: "chat" }],
-        defaultModel: "deepseek-flash",
-        embeddingModel: null,
-      },
-    })));
-    readDiagnosisModelMock.mockResolvedValueOnce({ modelSelection: { modelId: null } });
-    const reads = createDiagnosisModelReads("d", { token: "t", locale: "zh-CN" } as never);
-    const form = await reads.form(DIAGNOSIS_AGENT_ID, {});
-    expect(form.fields).toEqual([
-      expect.objectContaining({
-        path: "/modelSelection/modelId",
-        label: "运维智能体",
-        help: "依据日志与运行记录诊断问数和分析中的问题，并给出处理建议。",
-        defaultValue: null,
-      }),
-    ]);
-    expect(form.fields[0]!.warning).toBeUndefined();
-
-    readDiagnosisModelMock.mockResolvedValueOnce({ modelSelection: { modelId: "retired-model" } });
-    const missingForm = await reads.form(DIAGNOSIS_AGENT_ID, {});
-    expect(missingForm.fields[0]!.warning).toBe("模型“retired-model”已不存在，请重新选择；在此之前该智能体无法运行。");
-  });
-
-  it("reports the new builder agent's identity after saving a draft", async () => {
-    const primaryKey = "33333333-3333-4333-8333-333333333333";
-    const owner = { domainId: "domain", userId: "user" };
-    createBuilderAgentMock.mockResolvedValueOnce({ id: primaryKey, name: "Custom builder" });
-    const outcome = await builderModelOperations[0]!.execute(
-      { executor: { owner, credentials: {} } } as never,
-      { kind: "draft" },
-      { values: { name: "Custom builder" } },
-      "intent-1",
-    );
-    expect(outcome).toMatchObject({ kind: "success", created: { objectType: BUILDER_AGENT, primaryKey } });
-  });
-
-  it("localizes BuilderAgent list, exposes per-agent row form under 'all', and saves changed agents individually", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
-      success: true,
-      data: {
-        models: [{ name: "deepseek-flash", type: "chat" }],
-        defaultModel: "deepseek-flash",
-        embeddingModel: null,
-      },
-    })));
-    const owner = { domainId: "d", userId: "u" };
-    const viewer = { token: "t", locale: "zh-CN" } as never;
-    const reads = createBuilderModelReads(owner, viewer);
-    const rows = await reads.list();
-    expect(rows).toEqual([
-      expect.objectContaining({
-        label: "应用构建",
-        subtitle: "应用设计、代码生成与发布对话",
-        fields: { name: "应用构建", modelId: "域默认（deepseek-flash）" },
-      }),
-      expect.objectContaining({
-        label: "Custom builder",
-        fields: { name: "Custom builder", modelId: "deepseek-flash" },
-      }),
-    ]);
-
-    const batchForm = await reads.form(BUILDER_MODELS_FORM_KEY, {});
-    expect(batchForm.fields.map(field => ({ path: field.path, label: field.label, help: field.help, defaultValue: field.defaultValue }))).toEqual([
-      { path: "/11111111-1111-4111-8111-111111111111", label: "应用构建", help: "应用设计、代码生成与发布对话", defaultValue: "@default" },
-      { path: "/22222222-2222-4222-8222-222222222222", label: "Custom builder", help: "应用设计、代码生成与发布对话", defaultValue: "@default" },
-    ]);
-    expect(batchForm.values).toEqual({
-      "11111111-1111-4111-8111-111111111111": "@default",
-      "22222222-2222-4222-8222-222222222222": "deepseek-flash",
-    });
-
-    const invalidDraft = await reads.form(BUILDER_MODELS_FORM_KEY, {
-      values: { "11111111-1111-4111-8111-111111111111": "missing/model" },
-    });
-    expect(invalidDraft.errors).toEqual([
-      expect.objectContaining({ field: "/11111111-1111-4111-8111-111111111111", code: "invalid_option" }),
-    ]);
-
-    listBuilderAgentsMock.mockResolvedValueOnce([
-      { id: "11111111-1111-4111-8111-111111111111", name: "App builder", modelSelection: { modelId: "retired/builder-model" } },
-    ]);
-    const warningForm = await reads.form(BUILDER_MODELS_FORM_KEY, {});
-    expect(warningForm.fields[0]!.warning).toBe("模型“retired/builder-model”已不存在，请重新选择；在此之前该智能体无法运行。");
-    expect(warningForm.errors).toEqual([]);
-
-    // Partial save: agent 1 succeeds, agent 2 fails with 400; savedFields records agent 1 while errors reports agent 2.
-    saveBuilderModelMock.mockImplementation(async (_owner: unknown, agentId: string) => {
-      if (agentId === "22222222-2222-4222-8222-222222222222") throw new HttpError(400, "bad model", "INVALID_MODEL");
-      return { modelSelection: { modelId: "deepseek-flash" } };
-    });
-    const saveOp = builderModelOperations[0]!;
-    const outcome = await saveOp.execute(
-      { executor: { owner, credentials: viewer }, locale: "zh-CN" } as never,
-      { kind: "object", objectType: BUILDER_AGENT, primaryKey: BUILDER_MODELS_FORM_KEY },
-      {
-        values: {
-          "11111111-1111-4111-8111-111111111111": "deepseek-flash",
-          "22222222-2222-4222-8222-222222222222": "@default",
-        },
-        submittedFields: ["/11111111-1111-4111-8111-111111111111", "/22222222-2222-4222-8222-222222222222"],
-      },
-      "intent-1",
-    );
-    expect(outcome).toMatchObject({
-      kind: "refusal",
-      code: "BUILDER_MODELS_SAVE_FAILED",
-      savedFields: { "/11111111-1111-4111-8111-111111111111": "deepseek-flash" },
-      errors: [expect.objectContaining({ field: "/22222222-2222-4222-8222-222222222222", code: "invalid_option" })],
-    });
   });
 });
