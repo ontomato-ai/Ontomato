@@ -399,7 +399,6 @@ function prepareActionSaveInput(
 export function resolveFormSaveAnswer(
   answer: { readonly decision: "confirm" | "cancel"; readonly response?: import("@ontomato/contracts/panel-agent").PanelHumanOperationDispatchResponse },
   target: PanelFormTarget,
-  descriptorKind: "form.save" | "action",
   objectType: string | null,
 ): FormSaveResult {
   if (answer.decision === "cancel" || !answer.response) throw new Error("The save was cancelled");
@@ -409,12 +408,9 @@ export function resolveFormSaveAnswer(
   if (outcome === null) throw new Error("Whether the owner saved is not known");
   if (outcome.kind === "success") {
     if (target.kind === "object") return { primaryKey: target.primaryKey, message: outcome.message };
-    // A new object is the one of the form's type the owner reports it created.
-    const created = (outcome.affected?.objects ?? []).filter((object) => object.objectType === objectType);
-    if (created.length === 1) return { primaryKey: created[0]!.primaryKey, message: outcome.message };
-    // A customer Action (such as a targetless create Action) may succeed without reporting a single new primary key.
-    if (descriptorKind === "action") return { primaryKey: null, message: outcome.message };
-    throw new Error("The owner did not report the one object it created");
+    const { created } = outcome;
+    const primaryKey = created && (objectType === null || created.objectType === objectType) ? created.primaryKey : null;
+    return { primaryKey, message: outcome.message };
   }
   if (outcome.kind === "refusal" || outcome.kind === "failure") {
     // The owner names each refused field by its JSON Pointer.
@@ -498,7 +494,7 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
           )
         : await instance.writeOperation(operationId, { call: { target: callTarget, input: prepared.input } });
       const { type } = target.kind === "object" ? { type: target.objectType } : formRead(target, undefined, null);
-      return resolveFormSaveAnswer(answer, target, descriptor.kind, type);
+      return resolveFormSaveAnswer(answer, target, type);
     },
   };
 }

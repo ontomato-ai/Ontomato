@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { panelFormTargetSchema, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import { panelFormTargetSchema, type PanelObjectIdentity, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { platformTaskEnabledSchema, platformTaskRunSchema, platformTaskSchema, platformTaskUpdateSchema } from "@ontomato/contracts/platform-schedules";
 import { RUN_NOW } from "@ontomato/contracts/panel-client-requests";
@@ -36,14 +36,15 @@ function panelFieldPath(field: string): string {
 
 /** The owner interprets its own structured refusal; uncertain transport errors remain the coordinator's outcome. */
 async function outcome(
-  call: () => Promise<{ data: unknown; taskId?: string; message?: string; removed?: true }>,
+  call: () => Promise<{ data: unknown; taskId?: string; message?: string; removed?: true; created?: PanelObjectIdentity }>,
 ): Promise<Exclude<PanelOperationOutcome, { kind: "batch" }>> {
   try {
-    const { data, taskId, message, removed } = await call();
+    const { data, taskId, message, removed, created } = await call();
     const objects = taskId ? [{ objectType: SCHEDULED_TASK, primaryKey: taskId }] : [];
     return {
       kind: "success", data: JSON.parse(JSON.stringify(data)),
       ...(message && { message }),
+      ...(created && { created }),
       affected: { objects, objectTypes: [SCHEDULED_TASK], ...(removed && { removed: objects }) },
     };
   } catch (error) {
@@ -121,7 +122,7 @@ const scheduledTaskCreate = {
     const { values } = createInput.parse(input);
     return outcome(async () => {
       const data = await scheduledTaskPanelOperations(host).create(values, intentId);
-      return { data, taskId: data.id };
+      return { data, taskId: data.id, created: { objectType: SCHEDULED_TASK, primaryKey: data.id } };
     });
   },
 } as const;

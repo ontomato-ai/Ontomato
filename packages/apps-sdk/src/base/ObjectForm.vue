@@ -1762,7 +1762,6 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
   const capturedTargetKey = targetKey(into);
   const capturedOpened = ownerOpened.value;
   const capturedLabel = formObjectLabel.value;
-  const descriptorKind = override?.descriptor.kind ?? admittedSave.value?.descriptor.kind ?? "form.save";
   const saveActionLabel = override?.descriptor.label ?? admittedSave.value?.descriptor.label
     ?? (into.kind === "draft" ? t("platform.create") : t("platform.save"));
   const isStillSameForm = () =>
@@ -1870,13 +1869,13 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
             const classified = classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
             if (!classified.ok) {
               try {
-                resolveFormSaveAnswer(confirmed, into, descriptorKind, objectType);
+                resolveFormSaveAnswer(confirmed, into, objectType);
               } catch (refusalReason) {
                 handleSaveRefusal(refusalReason);
               }
               return classified;
             }
-            const saved = resolveFormSaveAnswer(confirmed, into, descriptorKind, objectType);
+            const saved = resolveFormSaveAnswer(confirmed, into, objectType);
             await finishSave(saved);
             return classified;
           } catch (dispatchReason) {

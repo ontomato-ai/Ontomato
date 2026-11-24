@@ -89,6 +89,14 @@ describe("action panel server operations", () => {
     }
   });
 
+  it("reports the identity assigned by the owner when creating an action", async () => {
+    const operation = write(`${ACTION}.save`);
+    const { host } = hostWith(() => Response.json({ success: true, data: { id: "a-new" } }));
+    await expect(operation.execute(host, { kind: "draft" }, { values: { name: "Approve order" } })).resolves.toMatchObject({
+      kind: "success", created: { objectType: ACTION, primaryKey: "a-new" },
+    });
+  });
+
   it("accepts action and draft targets for form saves", () => {
     const operation = write(`${ACTION}.save`);
     expect(operation.kind).toBe("form.save");

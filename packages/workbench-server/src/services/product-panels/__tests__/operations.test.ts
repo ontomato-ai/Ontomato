@@ -3,12 +3,13 @@ import { HttpError } from "../../../utils/errors";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import * as serverOperations from "../server-operations";
+import { agentDefinitionOperations } from "../../assistant/definition-operations";
 import rawExamples from "../../../../../contracts/examples/platform-schedules.json";
-import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts/platform-schedules";
+import {platformTaskSchema} from "@ontomato/contracts/platform-schedules";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { type CreatePanelHumanOperationIntentRequest, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
 import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import { APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
@@ -168,6 +169,20 @@ beforeEach(()=>{
 });
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
 const ownerWrites=()=>vi.mocked(fetch).mock.calls.filter(([,init])=>["POST","PUT"].includes(init?.method ?? "GET"));
+it("reports the identity assigned by the agent definition owner to a new draft", async () => {
+  const actor = { owner, credentials };
+  const unexpectedRequest = async () => { throw new Error("Unexpected request"); };
+  const host = { initiator: actor, executor: actor, request: unexpectedRequest, requestWorkbench: unexpectedRequest };
+  const primaryKey = uuid(91);
+  const values = {
+    name: "New agent", description: "", icon: null, enabled: true, skills: [], enabledMcpServiceIds: [], systemPrompt: "",
+  };
+  mocks.createDefinition.mockResolvedValueOnce({ definition: { ...values, id: primaryKey } });
+
+  const outcome = await agentDefinitionOperations[0].execute(host, { kind: "draft" }, { values }, uuid(92));
+  expect(outcome).toMatchObject({ kind: "success", created: { objectType: AGENT_DEFINITION, primaryKey } });
+});
+
 it("does not let a content page's loaded skill authorize a frame operation", async () => {
   await expect(prepareLiveAction({ ...action(), root: "frame" })).rejects.toMatchObject({
     status: 403, code: "PANEL_FRAME_SKILL_REQUIRED",

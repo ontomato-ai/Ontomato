@@ -98,7 +98,11 @@ export const agentDefinitionOperations = [
           : await saveAgentDefinitionSnapshot(target.primaryKey,
             submittedFields === undefined ? parseAgentDefinitionUpdateForm(values) : { values, submittedFields },
             owner, credentials, selection);
-        return { kind: "success", data: saved.definition, affected: affectedDefinition(saved.definition.id) };
+        return {
+          kind: "success", data: saved.definition,
+          ...(target.kind === "draft" && { created: { objectType: AGENT_DEFINITION, primaryKey: saved.definition.id } }),
+          affected: affectedDefinition(saved.definition.id),
+        };
       } catch (error) {
         if (!(error instanceof HttpError) || error.status >= 500) throw error;
         return { kind: "refusal", code: error.code ?? "INVALID_REQUEST", message: error.message,

@@ -158,7 +158,10 @@ beforeEach(() => {
     if (path === "/api/data-query/model-settings/save" && init?.method === "POST") {
       const body = JSON.parse(String(init.body));
       savedBodies.push(body);
-      storedSettings = body;
+      storedSettings = structuredClone(body) as ModelSettingsData;
+      for (const connection of Object.values(storedSettings.connections)) {
+        if (connection.apiKey) connection.apiKey = `******${connection.apiKey.slice(-4)}`;
+      }
       return Response.json({ success: true, data: storedSettings });
     }
     if (path === "/api/data-query/model-settings/discover" && init?.method === "POST") {
@@ -263,6 +266,14 @@ describe("model settings owner reads & forms", () => {
 });
 
 describe("model settings owner writes, impact confirmation, and draft reads", () => {
+  it("reports the identity of a newly created model connection", async () => {
+    const save = writeOp(`${MODEL_CONNECTION}.save`);
+    const outcome = await save.execute(makeHost(), { kind: "draft" }, {
+      values: { name: "openai-backup", provider: "openai", apiKey: "sk-backup" },
+    }, "intent-1");
+    expect(outcome).toMatchObject({ kind: "success", created: { objectType: MODEL_CONNECTION, primaryKey: "openai-backup" } });
+  });
+
   it("saves connection edits with masked key untouched through Java ModelSettingsController", async () => {
     const saveConn = writeOp(`${MODEL_CONNECTION}.save`);
     const outcome = await saveConn.execute(
@@ -310,7 +321,7 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
       { values: { name: "gpt-4.1", model: "gpt-4.1", type: "chat", contextWindow: 262144 } },
       "intent-3",
     );
-    expect(added.kind).toBe("success");
+    expect(added).toMatchObject({ kind: "success", created: { objectType: MODEL_ENTRY, primaryKey: "gpt-4.1" } });
     expect(storedSettings.models["gpt-4.1"]).toMatchObject({ connection: "openai-main", type: "chat", contextWindow: 262144 });
 
     const editModel = writeOp(`${MODEL_ENTRY}.save`);

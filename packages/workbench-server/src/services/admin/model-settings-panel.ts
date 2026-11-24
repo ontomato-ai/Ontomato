@@ -1466,6 +1466,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       return {
         kind: "success",
         data: { id: evaluated.connectionName },
+        ...(creating && { created: { objectType: MODEL_CONNECTION, primaryKey: evaluated.connectionName } }),
         affected: affected(MODEL_CONNECTION, evaluated.connectionName, [MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, MODEL_OPTION]),
       };
     },
@@ -1598,6 +1599,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       return {
         kind: "success",
         data: { id: evaluated.modelName },
+        created: { objectType: MODEL_ENTRY, primaryKey: evaluated.modelName },
         affected: affected(MODEL_CONNECTION, target.primaryKey, [MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, MODEL_OPTION]),
       };
     },

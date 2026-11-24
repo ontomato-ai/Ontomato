@@ -869,6 +869,7 @@ describe("ontology-objects cleaned builtin panel", () => {
           return {
             kind: "success",
             data: { primaryKey: createdKey },
+            created: { objectType: OBJECT_TYPE, primaryKey: createdKey },
             affected: {
               objects: [{ objectType: OBJECT_TYPE, primaryKey: createdKey }],
               objectTypes: [OBJECT_TYPE],
@@ -1254,6 +1255,7 @@ describe("ontology-objects cleaned builtin panel", () => {
           return {
             kind: "success",
             data: { primaryKey: createdKey },
+            created: { objectType: ATTRIBUTE, primaryKey: createdKey },
             affected: {
               objects: [{ objectType: ATTRIBUTE, primaryKey: createdKey }],
               objectTypes: [ATTRIBUTE],

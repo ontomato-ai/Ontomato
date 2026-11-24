@@ -218,6 +218,13 @@ describe("governance panel read adapter", () => {
 });
 
 describe("governance panel server operations", () => {
+  it.each([ROLE, PERMISSION_POLICY, ORG_UNIT, ORG_POSITION])("reports the identity of a newly created %s", async objectType => {
+    const primaryKey = "owner-created";
+    const { host } = hostWith(() => Response.json({ success: true, data: { id: primaryKey } }));
+    const outcome = await formSaveOp(`${objectType}.save`).execute(host, { kind: "draft" }, { values: { name: "New record" } }, "intent-1");
+    expect(outcome).toMatchObject({ kind: "success", created: { objectType, primaryKey } });
+  });
+
   it("handles user edit save, structured field refusal, add member, and API key revoke", async () => {
     const save = formSaveOp(`${USER}.save`);
     const { host, sent } = hostWith((path, body) => {
