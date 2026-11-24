@@ -11,7 +11,8 @@ import { ModelGatewayProcess } from "/app/packages/agent-runtime/src/gateway-pro
 import { openSessionSandbox } from "/app/packages/agent-runtime/src/sandbox/launch.ts";
 import { codeLimitsSchema } from "/app/packages/contracts/src/agent-runtime-code.ts";
 
-const prompt = "Reply with Codex ready";
+const prompt = "Run the shell probe, then reply with Codex ready";
+const nativeOutput = "CODEX_NATIVE_OK";
 const answer = "Codex ready";
 const model = "codex-smoke-model";
 const upstreamModel = "deepseek-chat";
@@ -29,8 +30,16 @@ const upstream = createServer(async (request, response) => {
     id: "codex-smoke", object: "chat.completion.chunk", created: 1, model: upstreamModel,
     choices: [{ index: 0, delta, finish_reason }],
   }) + "\n\n");
-  emit({ role: "assistant", content: answer }, null);
-  emit({}, "stop");
+  if (requests.length === 1) {
+    emit({ role: "assistant", tool_calls: [{
+      index: 0, id: "native-shell", type: "function",
+      function: { name: "exec_command", arguments: JSON.stringify({ cmd: `printf ${nativeOutput}` }) },
+    }] }, null);
+    emit({}, "tool_calls");
+  } else {
+    emit({ role: "assistant", content: answer }, null);
+    emit({}, "stop");
+  }
   response.end("data: [DONE]\n\n");
 }).listen(0, "127.0.0.1");
 
@@ -81,9 +90,15 @@ try {
   }, signal);
   assert.equal(result.stopReason, "stop", result.errorMessage);
   assert.deepEqual(consumed, ["smoke-input"]);
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0].path, "/v1/chat/completions");
-  assert.equal(requests[0].body.model, upstreamModel);
+  assert.equal(requests.length, 2);
+  for (const request of requests) {
+    assert.equal(request.path, "/v1/chat/completions");
+    assert.equal(request.body.model, upstreamModel);
+  }
+  const command = events.find(event => event.type === "tool_execution_end" && event.toolName === "exec_command");
+  assert.equal(command.isError, false);
+  assert.deepEqual(command.result.content, [{ type: "text", text: nativeOutput }]);
+  assert.ok(JSON.stringify(requests[1].body.messages).includes(nativeOutput));
   assert.ok(JSON.stringify(requests[0].body.messages).includes(prompt));
   const reply = events.find(event => event.type === "message_end" && event.message.role === "assistant" && event.message.phase === "answer");
   assert.deepEqual(reply.message.content, [{ type: "text", text: answer }]);
