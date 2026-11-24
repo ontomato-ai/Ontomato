@@ -11,14 +11,18 @@ import {
   DELETE_ORG_UNIT,
   DELETE_PERMISSION_POLICY,
   DELETE_ROLE,
+  GENERATE_USER_API_KEY,
+  ISSUE_USER_API_KEY_BATCH,
   ORG_GRANT,
   ORG_MEMBERSHIP,
   ORG_POSITION,
   ORG_UNIT,
   PERMISSION_POLICY,
   REFRESH_POLICY_API_CATALOG,
+  REGENERATE_USER_API_KEY,
   REMOVE_ORG_MEMBERSHIP,
   REMOVE_USER,
+  RESET_USER_PASSWORD,
   REVOKE_USER_API_KEY,
   ROLE,
   SAVE_POLICY_API_PERMISSIONS,
@@ -28,11 +32,13 @@ import {
   USER,
   platformObjectTypes,
 } from "@ontomato/contracts/platform-object-types";
+import { withoutPanelSecretDelivery } from "@ontomato/contracts/panel-agent";
+import { panelSchemaSecretPaths, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
 import { config } from "../../../config/application";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { platformTypeEntries } from "../../product-panels/type-table";
-import { registeredPanelOperation, type PanelOperationHost, type PanelServerOperation } from "../../product-panels/server-operations";
+import { describeServerOperation, registeredPanelOperation, type PanelOperationHost, type PanelServerOperation } from "../../product-panels/server-operations";
 import { governanceServerOperations } from "../panel-operations";
 import { createGovernanceReadAdapters } from "../panel-reads";
 
@@ -159,6 +165,15 @@ describe("governance panel read adapter", () => {
           },
         };
       }
+      if (path === "/panel/governance/users/form") {
+        return {
+          success: true,
+          data: {
+            fields: [], values: {}, errors: [],
+            save: { method: "POST", path: "/panel/governance/users/save", bodySchema: { type: "object" } },
+          },
+        };
+      }
       if (path === "/panel/governance/org-units/form") {
         return {
           success: true,
@@ -214,6 +229,12 @@ describe("governance panel read adapter", () => {
       code: "USER_NOT_FOUND",
       message: "Member not found",
     });
+
+    await adapter.users.createForm({});
+    expect(requests).toContainEqual({
+      path: "/panel/governance/users/form",
+      body: { changedField: null },
+    });
   });
 });
 
@@ -225,7 +246,16 @@ describe("governance panel server operations", () => {
     expect(outcome).toMatchObject({ kind: "success", created: { objectType, primaryKey } });
   });
 
-  it("handles user edit save, structured field refusal, add member, and API key revoke", async () => {
+  it("declares password inputs as secrets and displays a masked reset input", async () => {
+    const { host } = hostWith(() => Response.json({}));
+    expect(registeredPanelOperation(`${USER}.save`)?.declaration.secretFields).toEqual(["/loginPasswd"]);
+    const reset = await describeServerOperation(targetedActionOp(RESET_USER_PASSWORD), host);
+    expect(reset.secretFields).toEqual(["/newPassword"]);
+    expect(panelSchemaSecretPaths(reset.inputSchema)).toEqual(["/newPassword"]);
+    expect(splitPanelSecrets({ newPassword: "FixturePassword!" }, reset.secretFields!).redacted).toEqual({});
+  });
+
+  it("handles user save, structured field refusal, reset password, add member, and API key lifecycle", async () => {
     const save = formSaveOp(`${USER}.save`);
     const { host, sent } = hostWith((path, body) => {
       if (path === "/api/data-query/panel/governance/users/save" && body.loginCode === "") {
@@ -239,17 +269,37 @@ describe("governance panel server operations", () => {
       if (path === "/api/data-query/panel/governance/users/save") {
         return Response.json({ success: true, data: { id: "u-2" } });
       }
+      if (path === "/api/data-query/panel/governance/users/reset-password") {
+        return Response.json({ success: true, data: { id: "u-2" } });
+      }
       if (path === "/api/data-query/panel/governance/users/add-member") {
         return Response.json({ success: true, data: { id: "u-3" } });
+      }
+      if (path === "/api/data-query/panel/governance/users/generate-api-key"
+        || path === "/api/data-query/panel/governance/users/regenerate-api-key") {
+        return Response.json({
+          success: true,
+          data: { id: "u-2", loginCode: "bob", userName: "Bob", apiKey: "otm_secret" },
+        });
       }
       if (path === "/api/data-query/panel/governance/users/revoke-api-key") {
         return Response.json({ success: true, data: { id: "u-2" } });
       }
+      if (path === "/api/data-query/panel/governance/users/issue-api-key-batch") {
+        return Response.json({
+          success: true,
+          data: {
+            issuedCount: 1,
+            skippedCount: 1,
+            issuedUserIds: ["u-1"],
+            csv: { filename: "api-keys-d1.csv", contentType: "text/csv;charset=utf-8", content: "loginCode,apiKey\nalice,otm_1\nbob," },
+          },
+        });
+      }
       return Response.json({ success: true, data: { id: "u-2" } });
     });
 
-    const userTarget = { kind: "object" as const, objectType: USER, primaryKey: "u-2" };
-    const invalid = await save.execute(host, userTarget, { values: { loginCode: "" } }, "intent-1");
+    const invalid = await save.execute(host, { kind: "draft" }, { values: { loginCode: "" } }, "intent-1");
     expect(invalid).toEqual({
       kind: "refusal",
       code: "USER_INVALID",
@@ -257,11 +307,39 @@ describe("governance panel server operations", () => {
       errors: [{ field: "/loginCode", code: "required", message: "Login code is required" }],
     });
 
-    const updated = await save.execute(host, userTarget, { values: { loginCode: "bob" } }, "intent-2");
-    expect(updated).toMatchObject({
+    const created = await save.execute(host, { kind: "draft" }, {
+      values: { loginCode: "bob", userName: "Bob", loginPasswd: "FixturePassword!" },
+      submittedFields: ["/loginCode", "/userName", "/loginPasswd"],
+    }, "intent-2");
+    expect(created).toMatchObject({
       kind: "success",
       data: { id: "u-2" },
+      created: { objectType: USER, primaryKey: "u-2" },
       affected: { objects: [{ objectType: USER, primaryKey: "u-2" }], objectTypes: [USER, ROLE] },
+    });
+
+    expect(sent).toContainEqual({
+      path: "/api/data-query/panel/governance/users/save",
+      body: {
+        loginCode: "bob", userName: "Bob", loginPasswd: "FixturePassword!",
+        submittedFields: ["/loginCode", "/userName", "/loginPasswd"],
+      },
+    });
+
+    const reset = await targetedActionOp(RESET_USER_PASSWORD).execute(
+      host,
+      { kind: "object", objectType: USER, primaryKey: "u-2" },
+      { newPassword: "NewPassword123!" },
+      "intent-3",
+    );
+    expect(reset).toEqual({
+      kind: "success",
+      data: { id: "u-2" },
+      affected: { objects: [{ objectType: USER, primaryKey: "u-2" }], objectTypes: [USER] },
+    });
+    expect(sent).toContainEqual({
+      path: "/api/data-query/panel/governance/users/reset-password",
+      body: { id: "u-2", newPassword: "NewPassword123!" },
     });
 
     const added = await untargetedActionOp(ADD_USER_MEMBER).execute(host, null, { loginCode: "carol", roleIds: ["r-1"] }, "intent-4");
@@ -271,14 +349,50 @@ describe("governance panel server operations", () => {
       affected: { objects: [{ objectType: USER, primaryKey: "u-3" }], objectTypes: [USER, ROLE] },
     });
 
+    for (const operation of [GENERATE_USER_API_KEY, REGENERATE_USER_API_KEY]) {
+      const outcome = await targetedActionOp(operation).execute(
+        host, { kind: "object", objectType: USER, primaryKey: "u-2" }, {}, "intent-5",
+      );
+      expect(outcome).toMatchObject({
+        kind: "success",
+        data: { id: "u-2", loginCode: "bob", userName: "Bob" },
+        secret: { items: [{ label: "API key", value: "otm_secret", hint: expect.any(String) }] },
+      });
+      const receipt = withoutPanelSecretDelivery(outcome);
+      expect(receipt).toMatchObject({ kind: "success", secretGenerated: true, message: expect.any(String) });
+      expect(receipt).not.toHaveProperty("secret");
+      expect(JSON.stringify(receipt)).not.toContain("otm_secret");
+    }
+
     const revoked = await targetedActionOp(REVOKE_USER_API_KEY).execute(
       host,
-      userTarget,
+      { kind: "object", objectType: USER, primaryKey: "u-2" },
       {},
       "intent-6",
     );
     expect(revoked).toMatchObject({ kind: "success", data: { id: "u-2" } });
-    expect(sent.map(item => item.path)).toContain("/api/data-query/panel/governance/users/revoke-api-key");
+
+    const batch = await untargetedActionOp(ISSUE_USER_API_KEY_BATCH).execute(host, null, {
+      scope: "selected",
+      userIds: ["u-1", "u-2"],
+      regenerate: false,
+    }, "intent-7");
+    expect(batch).toMatchObject({
+      kind: "success",
+      data: { issuedCount: 1, skippedCount: 1 },
+      secret: { download: {
+        filename: "api-keys-d1.csv", contentType: "text/csv;charset=utf-8",
+        encoding: "utf8", content: expect.stringContaining("alice,otm_1"),
+      } },
+      affected: {
+        objects: [{ objectType: USER, primaryKey: "u-1" }],
+        objectTypes: [USER],
+      },
+    });
+    const batchReceipt = withoutPanelSecretDelivery(batch);
+    expect(batchReceipt).toMatchObject({ kind: "success", secretGenerated: true, message: expect.any(String) });
+    expect(batchReceipt).not.toHaveProperty("secret");
+    expect(JSON.stringify(batchReceipt)).not.toContain("otm_1");
   });
 
   it("handles policy permission mutations and organization membership/grant mutations", async () => {
@@ -430,7 +544,7 @@ describe("governance panel server operations", () => {
     // Sanity-check destructive operation refs exist
     for (const opRef of [
       REMOVE_USER,
-      REVOKE_USER_API_KEY,
+      REGENERATE_USER_API_KEY,
       DELETE_ROLE,
       DELETE_PERMISSION_POLICY,
       DELETE_ORG_UNIT,

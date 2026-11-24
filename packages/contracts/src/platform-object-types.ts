@@ -121,8 +121,12 @@ export const DELETE_ATTRIBUTE = "attributes.delete";
 export const DELETE_RELATIONSHIP = "relationships.delete";
 export const SET_PRIMARY_KEY = "attributes.setPrimaryKey";
 export const REMOVE_USER = "users.remove";
+export const RESET_USER_PASSWORD = "users.resetPassword";
 export const ADD_USER_MEMBER = "users.addMember";
+export const GENERATE_USER_API_KEY = "users.generateApiKey";
+export const REGENERATE_USER_API_KEY = "users.regenerateApiKey";
 export const REVOKE_USER_API_KEY = "users.revokeApiKey";
+export const ISSUE_USER_API_KEY_BATCH = "users.issueApiKeyBatch";
 export const DELETE_ROLE = "roles.delete";
 export const DELETE_PERMISSION_POLICY = "permissionPolicies.delete";
 export const SAVE_POLICY_MENU_PERMISSIONS = "permissionPolicies.saveMenuPermissions";
@@ -357,14 +361,16 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...referenceReads,
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
       ...governancePageQuery,
-      record: modelReads.record,
-      form: modelReads.form,
+      ...modelReads,
       effectivePermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       lookupAccount: {
         source: "type", parameterMode: "fixed", params: { keyword: "keyword" }, requiredParams: ["keyword"], result: "panelOptionList",
       },
     },
-    operations: [`${USER}.save`, REMOVE_USER, ADD_USER_MEMBER, REVOKE_USER_API_KEY],
+    operations: [
+      `${USER}.save`, REMOVE_USER, RESET_USER_PASSWORD, ADD_USER_MEMBER,
+      GENERATE_USER_API_KEY, REGENERATE_USER_API_KEY, REVOKE_USER_API_KEY, ISSUE_USER_API_KEY_BATCH,
+    ],
   },
   [ROLE]: {
     ...describeType("role", "governance"),

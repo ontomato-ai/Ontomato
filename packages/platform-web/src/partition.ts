@@ -64,6 +64,7 @@ export function appDeclarations(
   // also the address the router serves the page at.
   const base = (path: string) => path.split("/:")[0]!;
   const byPath = new Map(pages.map((page) => [base(page.path), page]));
+  const allEntries = new Map(partition.flatMap(app => [...app.entries ?? []]));
   const entryRows = new Map((navigation.entries ?? []).map((row) => [row.path, row]));
   const panelPage = (page: PlatformPage, countsActive: boolean): PlatformPanelPage => ({
     id: base(page.path),
@@ -81,7 +82,7 @@ export function appDeclarations(
         label: section.titleKey ? t(section.titleKey) : undefined,
         pages: section.paths
           .map((path) => {
-            const entry = app.entries?.get(path);
+            const entry = app.entries?.get(path) ?? allEntries.get(path);
             const listed = byPath.get(base(path));
             if (!entry) return listed ? panelPage(listed, countsActive) : undefined;
             // The entry stands where a native page stood: its row keeps only that page's icon (never legacy counts).

@@ -62,3 +62,28 @@ it("draws an entry's row with the look of the native page it replaced: the liste
     .toMatchObject({ icon: Network });
   expect(row(pageGone)).toMatchObject({ icon: "pages" });
 });
+
+it("lists a permissions panel entry in both the owning menu and ontology governance after native removal", () => {
+  const path = "/permissions/organization";
+  const catalog = catalogFixture([{
+    id: "permissions", kind: "native", rail: "bottom", category: "admin", sort: 10,
+    entry: { path: "/permissions", renderer: "permissions" },
+    entryAccess: ["user-management"], scheduleAdapter: null, allowStandalone: false,
+    declaration: {
+      names: { en: "Permissions" }, descriptions: {}, icon: "permissions", groups: [], permissions: [],
+      panelUses: [{
+        id: "organization", pageKey: "organization", panelId: "builtin-organization", path,
+        access: { permissionCode: "user-management" }, names: { en: "Organization" },
+      }],
+    },
+  }]);
+  const partition = catalogPartition(catalog, "en", {
+    permissions: { sections: [{ key: "permissions:pages", paths: [path] }] },
+  });
+  const navigation = { ...generatedNavigation(), entries: [{ path, icon: Network }] };
+  const apps = appDeclarations(navigation, access, partition, t);
+  for (const [id, group] of [["permissions", "permissions:pages"], ["ontology", "ontology:governance"]]) {
+    expect(apps.find(app => app.id === id)?.groups?.find(section => section.key === group)?.pages)
+      .toContainEqual({ id: path, label: "Organization", icon: Network });
+  }
+});

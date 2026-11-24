@@ -296,6 +296,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       query: (_selection, params) => governance.users.query(params),
       record: selection => governance.users.record(selection.primaryKey!),
       form: (selection, params) => governance.users.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => governance.users.createForm(formParams(params)),
       effectivePermissions: selection => governance.users.effectivePermissions(selection.primaryKey!),
       lookupAccount: (_selection, params) => governance.users.lookupAccount(panelReadParameterSchemas.keyword.parse(params.keyword)),
     },

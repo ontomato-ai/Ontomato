@@ -91,6 +91,9 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials) {
       form(id: string, params: GovernanceFormParams): Promise<PanelFormDescription> {
         return owner("governance-user-form", "/panel/governance/users/form", formBody(id, params), panelFormDescriptionSchema);
       },
+      createForm(params: GovernanceFormParams): Promise<PanelFormDescription> {
+        return owner("governance-user-create-form", "/panel/governance/users/form", formBody(undefined, params), panelFormDescriptionSchema);
+      },
       effectivePermissions(id: string): Promise<PanelRecord> {
         return owner("governance-user-effective-permissions", "/panel/governance/users/effective-permissions", { id }, panelRecordSchema);
       },
