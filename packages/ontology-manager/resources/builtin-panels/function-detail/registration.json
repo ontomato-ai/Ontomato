@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-function-detail",
+      "input": {
+        "name": "函数详情",
+        "description": "一条函数的整宽详情、新建、编辑与删除；名称只编辑一次，页头承接保存、放弃与删除"
+      }
+    }
+  ]
+}

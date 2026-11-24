@@ -1,0 +1,131 @@
+<!--
+  Function detail panel: full-width editor for reading, creating, editing, and deleting a single
+  platform:Function. PageHeader owns the back button, object title, delete button, and Save/Discard
+  draft bar wired to the single owner-described ObjectForm (definition) where /name appears once.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .fn-detail-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: fn-detail-page / inline-size;
+  }
+  .fn-detail-title {
+    margin: 0;
+    min-width: 0;
+  }
+  .fn-detail-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+  }
+  .fn-detail-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+  .fn-detail-form {
+    min-width: 0;
+  }
+  .fn-detail-form .sdk-owner-form,
+  .fn-detail-form .sdk-owner-form-inner {
+    height: auto;
+  }
+  .fn-detail-form .sdk-owner-form-body {
+    overflow: visible;
+  }
+  .fn-detail-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-2xl) var(--page-gutter);
+    text-align: center;
+  }
+  .fn-detail-state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--spacing-sm);
+  }
+  .fn-detail-note {
+    margin: 0;
+    padding: var(--spacing-lg) var(--page-gutter);
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+  .fn-detail-failure {
+    color: var(--sdk-color-danger-text);
+  }
+
+  @container fn-detail-page (max-width: 640px) {
+    .fn-detail-body {
+      padding-block: var(--spacing-md) calc(var(--page-content-gap) + 56px);
+    }
+    .fn-detail-card {
+      padding: var(--spacing-md);
+    }
+  }
+</style>
+<div id="app" v-cloak>
+  <section class="fn-detail-page">
+    <page-header :back-label="t('detail.back')" :draft="detailDraft" @back="goBack">
+      <template #title>
+        <projection v-if="selectedKey" slot="header" :fallback-title="selectedKey"></projection>
+        <h1 v-else-if="isCreate" class="fn-detail-title">{{ t("newFunction") }}</h1>
+        <h1 v-else class="fn-detail-title">{{ t("panel.name") }}</h1>
+      </template>
+      <template #actions>
+        <!-- Keep remove mounted with v-show so PageHeader slots stay active and @done still fires after letGo. -->
+        <div v-show="detailReady">
+          <projection slot="remove" @done="onRemoveDone"></projection>
+        </div>
+      </template>
+    </page-header>
+
+    <div v-if="formMounted" class="fn-detail-body">
+      <section class="fn-detail-card">
+        <div class="fn-detail-form">
+          <projection
+            slot="definition"
+            @saved="onSaved"
+            @discarded="onDiscarded"
+            @cancel="onCancel"
+          ></projection>
+        </div>
+      </section>
+    </div>
+    <div v-else-if="!selectedKey" class="fn-detail-state">
+      <sdk-empty :description="t('detail.missing')"></sdk-empty>
+      <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
+    </div>
+    <p v-else-if="recordStatus === 'loading' || recordStatus === 'awaiting'" class="fn-detail-note" role="status">
+      {{ t("detail.loading") }}
+    </p>
+    <div v-else-if="recordStatus === 'forbidden'" class="fn-detail-state">
+      <p class="fn-detail-note fn-detail-failure" role="alert">{{ t("detail.forbidden") }}</p>
+      <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
+    </div>
+    <div v-else-if="recordStatus === 'error'" class="fn-detail-state">
+      <p class="fn-detail-note fn-detail-failure" role="alert">{{ recordErrorText }}</p>
+      <div class="fn-detail-state-actions">
+        <sdk-button @click="retry">{{ t("action.retry") }}</sdk-button>
+        <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
+      </div>
+    </div>
+    <div v-else class="fn-detail-state">
+      <sdk-empty :description="t('detail.missing')"></sdk-empty>
+      <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
+    </div>
+  </section>
+</div>

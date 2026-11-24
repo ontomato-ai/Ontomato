@@ -1,39 +1,17 @@
-# 函数面板：这一页上的活怎么干
+# 函数目录面板：这一页上的活怎么干
 
-这一页管本域的函数：一条一条看，按名称和说明搜，改一个读函数的查询逻辑包或列标签，改一个写函数的参数和代码，
-新建一个，删掉不要的。页面的声明（状态和它组成的投影）与每个投影都说明了哪里有什么，这里只补页面看不出来的几件事。
+这一页是本域函数的整宽目录（`/ontology/assets/functions`）：按名称和说明搜索函数、浏览名称/操作类型/说明，点击任意一行进入整宽详情入口（`/ontology/assets/functions/detail?selected=<id>`），或点击页头「新建函数」进入整宽新建态（`/ontology/assets/functions/detail?mode=create`）。
 
 ## 这一页有什么
 
-- 左侧列表是 `platform:Function` 的函数，显示名称、说明和操作类型（读 / 写），搜索框按名称和说明匹配，右上角是条数。
-- 选中一条写进面板状态 `selected`，右侧是它的表单，字段由属主按操作类型给出。
-- 页头的「新建函数」命令（`newFunction`）把 `selected` 清空、`creating` 设为 true，打开空白表单；保存后新建一条，撤下后回到没选中的状态。
+- 整宽表格 `list` 读 `platform:Function` 的 `query`，展示名称、操作类型（读 / 写 / 产品）和说明；搜索框绑定面板状态 `search`（进地址深链），页码由表格内部管理不进地址。
+- 不默认选中第一条；点行通过 `@choose` 跳转到详情入口。
+- 页头右侧提供刷新与主按钮「新建函数」，点「新建函数」直接打开详情入口的新建态。
 
-## 读取当前数据
+## 读取与导航
 
-- 列表：面板声明里的 `query` 读，参数 `search` 就是面板状态 `search`（按名称和说明匹配，不区分大小写）。
-- 一条函数的全部字段：读它的 `form`，目标的 `primaryKey` 是这一条的 id。`values` 里是属主现在存的值：
-  名称 `name`、说明 `description`、操作类型 `operation`（`OPERATION_READ` / `OPERATION_WRITE`）、逻辑说明 `logic`；
-  读函数还有查询逻辑包 `queryPackage` 和列标签 `returnDef.columnLabels`，写函数还有参数 `parameters`、
-  返回类 `returnDef.classNames` 和代码 `code`。表单读的 `errors` 是属主对当前值的意见，`fields[].readOnlyReason`
-  说明哪些字段为什么不能改。
-- 想按操作类型或类名找函数，用平台的 `function list` 过滤，不要自己遍历全部再筛。
+- 搜索函数：用 `present` 打开 `/ontology/assets/functions` 并设置 `search`（按名称和说明匹配，不区分大小写）。
+- 想按操作类型或类名筛选函数，用平台的 `function list` 过滤，不要自己遍历全部再筛。
+- 查看、修改、新建或删除某条函数：直接用 `present` 打开详情入口 `/ontology/assets/functions/detail`，传入 `{ selected: { className: "platform:Function", primaryKey: "<id>" } }`（查看/编辑）或 `{ mode: "create" }`（新建），具体表单填写与保存见函数详情面板的 `recipes.md`。
 
-## 填写修改与新建表单
-
-修改时先用 `present` 选中目标函数（`selected`），新建时用 `present` 设 `{ selected: null, creating: true }`；再用
-`fill_form` 往 `form` 里填入要改的字段（页面标出改动并保持未保存），需要保存时用 `page_action` 调用表单保存操作。
-
-读函数的 `queryPackage` 要写整份查询逻辑包（含 `manifest` 和 `files`）；写函数的 `parameters` 是
-`[{name, type, description, sample, classNames}]` 的数组，`type` 只能是 `TYPE_STRING`、`TYPE_NUMBER`、`TYPE_TIME`、
-`TYPE_STRING_ARRAY`、`TYPE_NUMBER_ARRAY`、`TYPE_TIME_ARRAY`。`returnDef` 里读函数用 `columnLabels`，写函数用
-`classNames`（返回类）。
-
-## 保存、删除与只读
-
-- 保存就是表单自己的保存（`platform:Function.save`），读者在表单上按保存，平台按属主的字段逐条显示错误。
-- 删除用 `functions.delete`，作用在面板状态 `selected` 上；平台先请读者确认，属主拒绝时把原因显示出来。
-- 系统来源的函数、产品函数、被指标视图、动作或写任务引用的函数只能看，不能改也不能删：属主会在对应字段上
-  说明原因，或拒绝保存与删除。遇到这种拒绝就如实告诉读者原因，不要换别的办法去写。
-
-函数页没有测试或执行，这一页也不提供。
+函数目录页本身不执行写入，也不提供测试或执行。

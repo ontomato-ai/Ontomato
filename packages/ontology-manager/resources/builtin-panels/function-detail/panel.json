@@ -1,0 +1,95 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Function"
+        },
+        "deepLink": true
+      },
+      "mode": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "header": {
+        "component": "ObjectHeader",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitle": "",
+          "statusField": "operation"
+        },
+        "name": "函数标题",
+        "description": "当前选中函数的名称与操作类型。",
+        "id": "builtin-product-d11edbb7-1aee-43ae-8be6-c48fc40614a8"
+      },
+      "definition": {
+        "component": "ObjectForm",
+        "type": "platform:Function",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:Function.save",
+        "config": {
+          "actions": "none"
+        },
+        "name": "函数定义",
+        "description": "属主给出的读/写函数字段；读函数有查询逻辑包和列标签，写函数有参数、返回类和代码，保存走 platform:Function.save。",
+        "id": "builtin-product-c13d625c-cb14-45d3-8d6c-2765c8616a11"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "operation": "functions.delete",
+        "target": "selected",
+        "config": {
+          "type": "danger",
+          "plain": true,
+          "icon": "trash",
+          "labelKey": "action.delete",
+          "hideWhenUnavailable": true
+        },
+        "name": "删除函数",
+        "description": "删除选中的函数，平台先请读者确认；被指标、动作或写任务引用的函数由属主拒绝。",
+        "id": "builtin-product-6c49c425-f3cc-4d7c-a623-19134c7b92a0"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Function detail",
+        "detail.back": "Back to functions",
+        "newFunction": "New function",
+        "action.delete": "Delete",
+        "action.retry": "Retry",
+        "detail.loading": "Loading function...",
+        "detail.forbidden": "You do not have permission to view this function.",
+        "detail.loadError": "Failed to load this function.",
+        "detail.missing": "Function not found or has been deleted.",
+        "saved": "Function saved"
+      },
+      "zh-CN": {
+        "panel.name": "函数详情",
+        "detail.back": "返回函数",
+        "newFunction": "新建函数",
+        "action.delete": "删除",
+        "action.retry": "重试",
+        "detail.loading": "正在读取该函数…",
+        "detail.forbidden": "当前账号无权读取该函数。",
+        "detail.loadError": "读取该函数失败。",
+        "detail.missing": "函数不存在或已删除。",
+        "saved": "函数已保存"
+      }
+    }
+  }
+}

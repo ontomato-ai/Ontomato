@@ -1,45 +1,30 @@
-import { computed, watch } from "vue";
-import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelContext } from "@ontomato/sdk/panel";
+
+const DETAIL_PATH = "/ontology/assets/functions/detail";
 
 /*
- * Functions page: the selected function, search keyword, and `creating` toggle are declared panel state.
- * The header's "New Function" button clears `selected` and sets `creating` to true.
- * Reads, saves, and deletes run through the projections' declared owner operations.
+ * Functions catalog: full-width searchable table without default row selection.
+ * Selecting a row navigates to the non-menu detail entry; clicking "New function"
+ * navigates to the detail entry in create mode.
  */
-
 await mountPanel({
   setup() {
-    const panel = usePanelContext();
-    const { instance } = panel;
-    const values = instance.state.values;
-    const selected = computed(() => values.value.selected ?? null);
-    const creating = computed(() => values.value.creating === true);
-    const setCreating = (value) => instance.state.set("creating", value);
+    const { instance, navigate, t } = usePanelContext();
 
-    // Selecting an item leaves create mode, except the initial auto-selection when opened directly in create mode.
-    let openedToCreate = creating.value && !selected.value;
-    watch(selected, (next) => {
-      if (!next) return;
-      if (openedToCreate) {
-        openedToCreate = false;
-        instance.state.set("selected", null);
-        return;
-      }
-      setCreating(false);
-    });
-    // The owner saved it: say so, as the page always did, and go back to reading it.
-    function saved() {
-      setCreating(false);
-      panel.notify({ kind: "success", text: panel.t("saved") });
-    }
-    function discard() {
-      setCreating(false);
+    function openDetail(item) {
+      if (!item?.primaryKey) return;
+      void navigate(panelAddress(DETAIL_PATH, { selected: item.primaryKey })).catch(() => undefined);
     }
 
     function startCreate() {
-      instance.state.setState({ selected: null, creating: true });
+      void navigate(panelAddress(DETAIL_PATH, { mode: "create" })).catch(() => undefined);
     }
 
-    return { selected, creating, saved, discard, startCreate, refresh: () => instance.refreshObjects() };
+    return {
+      t,
+      openDetail,
+      startCreate,
+      refresh: () => instance.refreshObjects(),
+    };
   },
 });

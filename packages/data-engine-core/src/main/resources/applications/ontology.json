@@ -81,6 +81,9 @@
       "descriptions": {"en": "Read functions keep a query package and column labels; write functions keep parameters and Python code. A name is edited once, here.", "zh-CN": "读函数维护查询逻辑包和列标签，写函数维护参数和 Python 代码；名称只在这里编辑一次。"},
       "names": {"en": "Functions", "zh-CN": "函数"}, "groupKey": "capabilities"
     }, {
+      "id": "ontology-function-detail", "pageKey": "function-detail", "panelId": "builtin-product-ontology-function-detail",
+      "path": "/ontology/assets/functions/detail", "access": {"permissionCode": "ontology-modeling"}
+    }, {
       "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
       "path": "/ontology/assets/actions", "access": {"permissionCode": "action-management"},
       "descriptions": {"en": "Every action of this domain: its definition, the definition its code derives, the explanation of that code, status and deletion.", "zh-CN": "本域的全部动作：定义、由代码推导的定义、代码解释，以及状态和删除。"},

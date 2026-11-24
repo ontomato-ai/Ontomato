@@ -33,12 +33,27 @@ it("opens the old creation address as the catalog, and leaves the catalog and de
   expect(open("/ontology/assets/actions/detail?selected=approve-order")).toBeNull();
 });
 
-it("opens a function's detail address as the functions panel with the function selected, and the old creation address as the catalog", () => {
+it("opens function detail, create, and legacy selected catalog links at the non-menu function detail entry", () => {
   expect(open("/ontology/assets/functions/fn%201?back=products")).toEqual({
-    path: "/ontology/assets/functions", state: { selected: "fn 1" },
+    path: "/ontology/assets/functions/detail", state: { selected: "fn 1" },
   });
-  expect(open("/ontology/assets/functions/new")).toEqual({ path: "/ontology/assets/functions", state: {} });
+  expect(open("/ontology/assets/functions/new")).toEqual({
+    path: "/ontology/assets/functions/detail", state: { mode: "create" },
+  });
+  expect(open("/ontology/assets/functions?selected=fn-1")).toEqual({
+    path: "/ontology/assets/functions/detail", state: { selected: "fn-1" },
+  });
+  expect(open("/ontology/assets/functions?selected=platform%3AFunction~fn-2")).toEqual({
+    path: "/ontology/assets/functions/detail", state: { selected: "fn-2" },
+  });
+
+  // The catalog itself (bare or searching) and the detail entry itself are not redirected.
   expect(open("/ontology/assets/functions")).toBeNull();
+  expect(open("/ontology/assets/functions?search=revenue")).toBeNull();
+  expect(open("/ontology/assets/functions?selected=platform%3AFunction~")).toBeNull();
+  expect(open("/ontology/assets/functions/detail")).toBeNull();
+  expect(open("/ontology/assets/functions/detail?selected=fn-1")).toBeNull();
+  expect(open("/ontology/assets/functions/detail?mode=create")).toBeNull();
 });
 
 it("opens metric view detail, creation, and legacy selected catalog links at the non-menu detail entry", () => {

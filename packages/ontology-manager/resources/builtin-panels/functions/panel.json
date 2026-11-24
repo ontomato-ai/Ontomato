@@ -1,26 +1,12 @@
 {
   "manifest": {
     "state": {
-      "selected": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:Function"
-        },
-        "deepLink": true
-      },
       "search": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
         "deepLink": true
-      },
-      "creating": {
-        "type": {
-          "kind": "scalar",
-          "type": "boolean"
-        },
-        "default": false
       }
     },
     "members": {
@@ -31,55 +17,73 @@
           "rows": "query"
         },
         "state": {
-          "selected": "selected",
           "search": "search"
         },
         "config": {
-          "statusField": "operation",
-          "fallbackToFirst": true,
-          "emptyText": "empty"
+          "layout": "table",
+          "pagination": "pages",
+          "pageSize": 20,
+          "showChevron": true,
+          "fallbackToFirst": false,
+          "searchPlaceholder": "search.placeholder",
+          "emptyText": "empty",
+          "noMatchText": "noMatch",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "col.name",
+              "minWidth": 200
+            },
+            {
+              "key": "operation",
+              "labelKey": "col.operation",
+              "kind": "tag",
+              "width": 110
+            },
+            {
+              "key": "subtitle",
+              "labelKey": "col.description",
+              "emptyKey": "col.emptyDash",
+              "minWidth": 220
+            }
+          ]
         },
         "name": "函数目录",
-        "description": "按名称和说明搜索的函数列表，每条显示名称、说明和操作类型。",
+        "description": "按名称和说明搜索的整宽函数表格，每行显示名称、操作类型与说明，点行进入函数详情。",
         "id": "builtin-product-81ef1a93-e1ac-4ce7-af21-953f8d714bc3"
-      },
-      "form": {
-        "component": "ObjectForm",
-        "target": "selected",
-        "data": {
-          "form": "form",
-          "createForm": "createForm"
-        },
-        "operation": "platform:Function.save",
-        "name": "函数详情与编辑",
-        "description": "属主给出的读/写函数字段；读函数有查询逻辑包和列标签，写函数有参数、返回类和代码，保存走 platform:Function.save。",
-        "id": "builtin-product-c13d625c-cb14-45d3-8d6c-2765c8616a11"
-      },
-      "remove": {
-        "component": "OperationButton",
-        "operation": "functions.delete",
-        "target": "selected",
-        "config": {
-          "type": "danger"
-        },
-        "name": "删除函数",
-        "description": "删除选中的函数，平台先请读者确认；被指标、动作或写任务引用的函数由属主拒绝。",
-        "id": "builtin-product-6c49c425-f3cc-4d7c-a623-19134c7b92a0"
       }
     }
   },
   "content": {
     "messages": {
       "en": {
+        "panel.name": "Functions",
+        "panel.description": "Maintain query packages and column labels for read functions, or parameters and code for write functions",
+        "action.refresh": "Refresh",
         "newFunction": "New function",
-        "choose": "Choose a function on the left to read or change it, or create one.",
+        "search.placeholder": "Search functions by name or description",
+        "col.name": "Name",
+        "col.operation": "Operation",
+        "col.description": "Description",
+        "col.emptyDash": "-",
+        "choose": "Choose a function from the catalog to read or change it, or create one.",
         "empty": "No functions found",
+        "noMatch": "No matching functions",
         "saved": "Function saved"
       },
       "zh-CN": {
+        "panel.name": "函数",
+        "panel.description": "维护读函数的查询逻辑包与列标签，或写函数的参数与代码",
+        "action.refresh": "刷新",
         "newFunction": "新建函数",
-        "choose": "选择左侧的一个函数查看或修改，也可以新建一个。",
-        "empty": "未找到函数",
+        "search.placeholder": "按名称或说明搜索函数",
+        "col.name": "名称",
+        "col.operation": "操作类型",
+        "col.description": "说明",
+        "col.emptyDash": "-",
+        "choose": "从目录中选择一个函数查看或修改，也可以新建一个。",
+        "empty": "暂无函数",
+        "noMatch": "未找到匹配的函数",
         "saved": "函数已保存"
       }
     }

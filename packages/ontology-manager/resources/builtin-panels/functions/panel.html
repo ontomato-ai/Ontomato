@@ -1,46 +1,64 @@
 <!--
-  函数页：左边是函数目录（名称、说明、操作类型，可按名称和说明搜索），右边是选中那一条的详情与编辑；
-  新建、保存、删除都走属主自己的接口，页面不另写业务规则。「新建函数」是 <page-header> 里的按钮，
-  由宿主画成主按钮：它清空 selected、把 creating 设为 true，打开属主的空白表单。
-
-  - list：platform:Function 的 query 读，搜索词和选中的那一条都是本面板声明的状态。
-  - form：platform:Function 的 form / createForm 读，保存用属主声明的 platform:Function.save。
-    属主按操作类型（读/写）给出不同的字段，读函数给查询逻辑包与列标签，写函数给参数、返回类和代码；
-    名称只有一个字段。只读的函数由属主在每个字段上说明原因，保存被拒时属主按字段给出原因。
-  - remove：functions.delete，平台先向读者确认，属主拒绝删除时把原因显示在按钮下面。
-
-  The form stays mounted (hidden via v-show) for live editing when selecting or creating a function.
+  Functions catalog panel: full-width ObjectList table backed by platform:Function.query.
+  Clicking a row opens /ontology/assets/functions/detail?selected=<id>; clicking "New function"
+  opens /ontology/assets/functions/detail?mode=create.
 -->
 <style>
   [v-cloak] { display: none; }
-  .fn { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px); }
-  .fn-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
-  .fn-detail { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
-  .fn-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--spacing-sm); }
+  .fn-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: fn-page / inline-size;
+  }
+  .fn-catalog {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+  }
+  .fn-list-slot {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .fn-btn-icon {
+    margin-inline-end: 6px;
+    flex-shrink: 0;
+  }
+
+  @container fn-page (max-width: 560px) {
+    .fn-catalog {
+      padding-block: var(--spacing-md) calc(var(--page-content-gap) + 56px);
+    }
+  }
 </style>
 <div id="app" v-cloak>
-  <page-header title="函数" description="维护读函数的查询逻辑包与写函数的参数与代码">
-    <template #actions>
-      <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-      </sdk-button>
-      <sdk-button type="primary" :disabled="creating && !selected" @click="startCreate">{{ t("newFunction") }}</sdk-button>
-    </template>
-  </page-header>
-  <section class="fn">
-    <two-pane-layout>
-      <template #aside>
-        <projection slot="list"></projection>
+  <section class="fn-page">
+    <page-header :title="t('panel.name')" :description="t('panel.description')">
+      <template #actions>
+        <sdk-button text :aria-label="t('action.refresh')" :title="t('action.refresh')" @click="refresh">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+            <path d="M8 16H3v5" />
+          </svg>
+        </sdk-button>
+        <sdk-button type="primary" @click="startCreate">
+          <svg class="fn-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
+          </svg>
+          <span>{{ t("newFunction") }}</span>
+        </sdk-button>
       </template>
-
-      <div class="fn-detail">
-        <p class="fn-hint" v-if="!selected && !creating">{{ t("choose") }}</p>
-        <div class="fn-detail-head" v-if="selected">
-          <projection slot="remove"></projection>
-        </div>
-        <!-- Keep the form mounted (toggled with v-show) for live editing and assistant remote control. -->
-        <projection slot="form" v-show="selected || creating" @saved="saved" @discarded="discard"></projection>
-      </div>
-    </two-pane-layout>
+    </page-header>
+    <div class="fn-catalog">
+      <projection slot="list" class="fn-list-slot" @choose="openDetail"></projection>
+    </div>
   </section>
 </div>
