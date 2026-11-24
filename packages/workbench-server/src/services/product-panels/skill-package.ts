@@ -320,7 +320,7 @@ function describeSkill({ name, description, content, state, projections, operati
         "For a batch-capable operation on checked items, first select/check the target items through declared public state (`present({ target, state })`), then invoke the batch operation with `page_action({ operation })`.",
       ] : []),
       ...(operations.some(operation => operation.rowScoped) ? [
-        "For a row-scoped operation declared on a list projection, pass `rowKey` set to the loaded row's primary key (`page_action({ operation: \"<listMember>.<opName>\", rowKey, input? })`). The list verifies per-row availability and bound parameters directly on that mounted row.",
+        "For a row-scoped operation declared on a list projection, pass the full `<className>:<primaryKey>` row key as `rowKey` (for example, `platform:ApplicationPanelUse:<id>`). Copy the full key verbatim from the corresponding row in the page snapshot. A bare primary key omits the class name. The list verifies per-row availability and bound parameters directly on that mounted row.",
       ] : []),
       ...(hasPlacedMembers ? [
         "To inspect a nested panel's declared operations, send a `/read` request with `operations: true` in place of `dataName`.",
@@ -354,7 +354,7 @@ function describeOperation({ id, label, binding, owner, rowScoped, customerForm 
     if (!binding.target) {
       return `- ${label} (${id}), Action ${binding.operation.id}, target null.${suffix} No object selection is required. Invoke with \`page_action({ operation: "${id}", input? })\`.`;
     }
-    return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}.${suffix} Invoke with \`page_action({ operation: "${id}"${rowScoped ? ', rowKey: "<row primaryKey>"' : ""}, input? })\`.`;
+    return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}.${suffix} Invoke with \`page_action({ operation: "${id}"${rowScoped ? ", rowKey" : ""}, input? })\`.`;
   }
   const { handler, declaration } = owner;
   const summary = `- ${label} (${id}), kind ${handler.kind}, handlerRef ${handler.handlerRef}, target ${target}.${suffix}`;

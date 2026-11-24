@@ -473,6 +473,7 @@ async function send(input: string) {
   const agent = agentId.value;
   if (!agent) return;
   const page = pairedPage.value ? display.pageContext.value : null;
+  const initialPage = page === null ? undefined : display.pageSnapshot(page);
   const shown = display.target.value;
   const file = shown?.kind === "artifact" ? { label: shown.open.title || fileName(shown.open.artifact.path), path: shown.open.artifact.path } : null;
   // The target rides on the conversation's first message or when it changed: the reader already knows what is beside
@@ -489,7 +490,7 @@ async function send(input: string) {
       ? (told === file.path ? "" : fileContextLine(file, props.labels.fileContext))
       : closes ? props.labels.pageContextClosed : "";
   const text = line ? `${input}\n\n${line}` : input;
-  const result = await conversation.send(agent, text);
+  const result = await conversation.send(agent, text, { initialPage });
   if (!result) return;
   // Only a message the host accepted moved the conversation's page; a refused one carries it again next time. It went to
   // the conversation this send started, or to the one it was written in.

@@ -1,11 +1,12 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, ref, type App } from "vue";
-import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
+import { createApp, defineComponent, h, nextTick, provide, ref, type App } from "vue";
+import type { AgentHostRunSnapshot, AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import AgentShell from "../components/AgentShell.vue";
 import { testDisplay } from "./display";
 import { useAgentNav } from "../useAgentNav";
 import type { PageContext } from "../page-context";
+import { pageSessionStream } from "../session-run-notices";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 
 /*
@@ -19,6 +20,7 @@ import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const createdSessionId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const runId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const viewId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 
 const workbench: ShellWorkbenchDeclaration = {
   id: "agents",
@@ -69,20 +71,26 @@ async function settle() {
  * The shell beside a page, over a host that creates the conversation on its first message and admits every run. A host
  * may answer a conversation's history instead, to open one that already exists.
  */
-function render(history?: { agentId: string; messages: { id: string; content: string }[] }, beside: PageContext = page) {
+function render(
+  history?: { agentId: string; messages: { id: string; content: string }[] },
+  beside: PageContext = page,
+  bindStream = false,
+) {
   const sent: string[] = [];
+  const send = vi.fn(async (_sessionId: string, input: AgentHostSendRequest) => {
+    sent.push(input.message);
+    return {
+      delivery: { messageId: runId, sessionRef: { providerId: "workbench", sessionId: createdSessionId }, runId, delivery: "run", status: "stopped" },
+      input: { id: runId, runId, messageSeq: 1, contextSeq: 1, message: { role: "user", content: input.message, timestamp: 1 } },
+      snapshot: admitted, pendingQuestions: [], replayed: false,
+    };
+  });
+  const createSession = vi.fn().mockResolvedValue(created);
   const client = {
     listAgents: vi.fn().mockResolvedValue([]),
     listSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
-    createSession: vi.fn().mockResolvedValue(created),
-    send: vi.fn(async (_sessionId: string, input: { message: string }) => {
-      sent.push(input.message);
-      return {
-        delivery: { messageId: runId, sessionRef: { providerId: "workbench", sessionId: createdSessionId }, runId, delivery: "run", status: "stopped" },
-        input: { id: runId, runId, messageSeq: 1, contextSeq: 1, message: { role: "user", content: input.message, timestamp: 1 } },
-        snapshot: admitted, pendingQuestions: [], replayed: false,
-      };
-    }),
+    createSession,
+    send,
     subscribe: () => () => {},
     sessionRuns: { read: vi.fn().mockResolvedValue({ sessions: [] }), subscribe: () => () => {} },
     readHistory: vi.fn().mockResolvedValue({
@@ -105,6 +113,7 @@ function render(history?: { agentId: string; messages: { id: string; content: st
   });
   const Host = defineComponent({
     setup() {
+      if (bindStream) provide(pageSessionStream, { binding: { viewId }, attach: () => () => {} });
       const nav = useAgentNav({
         client: () => client, agentId: () => shownAgent.value, setAgentId: (id) => (shownAgent.value = id),
         sessionId: () => sessionId.value, setSessionId: (id) => (sessionId.value = id),
@@ -121,8 +130,51 @@ function render(history?: { agentId: string; messages: { id: string; content: st
   document.body.appendChild(root);
   app = createApp(Host);
   app.mount(root);
-  return { sent, sessionId, shell, shownAgent, display };
+  return { sent, send, createSession, sessionId, shell, shownAgent, display };
 }
+
+it("sends the page snapshot captured before session creation and omits it for files or empty display", async () => {
+  const forms: PageContext["forms"] = [{
+    member: "contact", formInstanceId: "edit-contact", dirty: true, values: { phone: "123" },
+    target: { kind: "object", objectType: "crm:Contact", primaryKey: "alice" },
+  }];
+  const state = { tab: "contact" };
+  const { send, createSession, shell, display } = render(undefined, { ...page, forms, state }, true);
+  const meta = {
+    panelInstanceId: "contacts",
+    memberInstances: { detail: "contact-details" },
+    entryInstances: { "contact.save": "contact-save" },
+    checkedKeys: { checked: ["crm:Contact:alice"] },
+    dashboardId: "board-a",
+    cardId: "card-1",
+  };
+  display.registerPageController("dashboards", {
+    applyState: () => {},
+    snapshotMeta: () => ({ ...meta, mountId: "mounted" }),
+  });
+  const pageInstanceId = display.pageInstanceId.value;
+  let finishSession!: (session: typeof created) => void;
+  createSession.mockReturnValueOnce(new Promise<typeof created>((resolve) => { finishSession = resolve; }));
+  await settle();
+
+  const sending = shell.value!.send("update this contact");
+  await display.openArtifact({
+    key: "run:outputs/result.dataset.json",
+    artifact: { id: viewId, runId, path: "outputs/result.dataset.json" } as never,
+    title: "Result",
+  });
+  finishSession(created);
+  await sending;
+  await settle();
+  expect(send.mock.calls[0]?.[1].presentationBinding).toEqual({
+    viewId, initialPage: { kind: "page", ...page, forms, state, ...meta, pageInstanceId },
+  });
+
+  await shell.value!.send("read this file");
+  await display.close();
+  await shell.value!.send("nothing beside");
+  expect(send.mock.calls.slice(1).map(([, input]) => input.presentationBinding)).toEqual([{ viewId }, { viewId }]);
+});
 
 it("names the page on the conversation's first message, and only the selection after it", async () => {
   const { sent, sessionId, shell } = render();

@@ -162,7 +162,11 @@ function stepFailureSummary(toolName: string, result: PresentationResult): strin
     return `${result.status}/${result.reason}`;
   }
   if (toolName === "fill_form") {
-    if (result.status === "filled") return null;
+    if (result.status === "filled") {
+      return result.rejectedFields?.length
+        ? `filled/partial_rejected:${result.rejectedFields.map((item) => item.path).join(",")}`
+        : null;
+    }
     return `${result.status}/${result.reason}`;
   }
   if (toolName === "page_action") {
@@ -292,7 +296,7 @@ export function createPresentationTools(
   const fillForm: AgentTool = {
     name: "fill_form",
     label: "Fill form",
-    description: "Fill explicit fields into a live form currently displayed on the page beside the conversation, using the form's own editing entry so changed fields are highlighted, owner-driven dynamic updates run, and the form remains unsaved until saved. Does not navigate or save; observe the current page with `observe_display` or open the target page/tab/dialog with `present` first. The platform automatically binds this call to the latest page snapshot delivered in this round and rejects as `stale` if the page, panel, form, target, or dashboard board/card changed. Keys in `values` are JSON Pointer field paths (e.g. \"/name\") or top-level field names (e.g. \"name\"). When the form has unsaved edits made by the user on any target field, refuses without overwriting (not_filled / blocked_unsaved) — ask the user first and pass overwriteUnsaved: true only after explicit user confirmation.",
+    description: "Fill explicit fields into a live form currently displayed on the page beside the conversation, using the form's own editing entry so changed fields are highlighted, owner-driven dynamic updates run, and the form remains unsaved until saved. Does not navigate or save. The platform binds this call to the latest page snapshot in this round, starting with the page context attached to the user message. If no page context was attached, use `observe_display` or `present` first. It rejects as `stale` if the page, panel, form, target, or dashboard board/card changed. Keys in `values` are JSON Pointer field paths (e.g. \"/name\") or top-level field names (e.g. \"name\"). When the form has unsaved edits made by the user on any target field, refuses without overwriting (not_filled / blocked_unsaved) — ask the user first and pass overwriteUnsaved: true only after explicit user confirmation.",
     parameters: Type.Object({
       member: Type.Optional(Type.String()),
       memberPath: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
@@ -320,7 +324,7 @@ export function createPresentationTools(
   const pageAction: AgentTool = {
     name: "page_action",
     label: "Page action",
-    description: "Execute a declared operation or local page action on the page currently displayed beside the conversation, through the exact same UI entry a user clicks (for example saving a live form with its current contents, clicking a bound action button, running a list row/batch action, refreshing data with \"page.refresh\", or discarding form edits with \"<form>.discard\"). Never pass form field values here — fill the form with `fill_form` first, then invoke its save operation. Observe the page with `observe_display` or `present` first: the platform automatically binds this call to the latest page snapshot delivered in this round and rejects as `stale` if the page, panel, entry, target object, checked rows, or dashboard board/card changed. For business writes in default mode (and discarding dirty form edits), this asks the user to confirm in the conversation (`awaiting_confirmation`); in full-auto sessions writes execute immediately (`executed`) after verifying page state is unchanged. For list row actions, pass `rowKey` using `<className>:<primaryKey>` (required for mixed-type or dynamic-type lists; plain `<primaryKey>` is allowed on single-type lists). If receipt is missing (`unknown`), check the returned `intentId` instead of retrying.",
+    description: "Execute a declared operation or local page action on the page currently displayed beside the conversation, through the exact same UI entry a user clicks (for example saving a live form with its current contents, clicking a bound action button, running a list row/batch action, refreshing data with \"page.refresh\", or discarding form edits with \"<form>.discard\"). Never pass form field values here — fill the form with `fill_form` first, then invoke its save operation. The platform binds this call to the latest page snapshot in this round, starting with the page context attached to the user message. If no page context was attached, use `observe_display` or `present` first. It rejects as `stale` if the page, panel, entry, target object, checked rows, or dashboard board/card changed. For business writes in default mode (and discarding dirty form edits), this asks the user to confirm in the conversation (`awaiting_confirmation`); in full-auto sessions writes execute immediately (`executed`) after verifying page state is unchanged. For list row actions, pass `rowKey` using `<className>:<primaryKey>` (required for mixed-type or dynamic-type lists; plain `<primaryKey>` is allowed on single-type lists). If receipt is missing (`unknown`), check the returned `intentId` instead of retrying.",
     parameters: Type.Object({
       operation: Type.String(),
       memberPath: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),

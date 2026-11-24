@@ -126,6 +126,25 @@ const observedDisplaySchema = z.object({
   known: z.literal(true),
   observedAt: runtimeTimestampSchema,
 }).strict();
+export const observedPageTargetSchema = pageContextSchema.extend({
+  kind: z.literal("page"),
+  /** Unique ID of this mounted page instance; changes on remount or switching pages. */
+  pageInstanceId: runtimeKeySchema.optional(),
+  /** Unique ID of the mounted top-level direct panel instance; changes when the panel definition is swapped in place. */
+  panelInstanceId: runtimeKeySchema.optional(),
+  /** Unique instance IDs of mounted nested panel members keyed by dotted member path. */
+  memberInstances: z.record(runtimeKeySchema, runtimeKeySchema).optional(),
+  /** Unique instance IDs of mounted action/list/form entries keyed by full operation ID (or `row:<opId>`). */
+  entryInstances: z.record(runtimeKeySchema, runtimeKeySchema).optional(),
+  /** Current checked row keys (`<className>:<primaryKey>`) per list-of-object state field. */
+  checkedKeys: z.record(runtimeKeySchema, z.array(runtimeKeySchema)).optional(),
+  /** Current dashboard board ID on dashboard pages. */
+  dashboardId: runtimeKeySchema.optional(),
+  /** Current selected or parameter-dialog card ID on dashboard pages. */
+  cardId: runtimeKeySchema.optional(),
+});
+export type ObservedPageTarget = z.infer<typeof observedPageTargetSchema>;
+
 const selectedDisplaySchema = observedDisplaySchema.extend({
   placement: z.enum(["side", "overlay", "full-page"]),
   target: z.discriminatedUnion("kind", [
@@ -135,24 +154,7 @@ const selectedDisplaySchema = observedDisplaySchema.extend({
       path: outputPathSchema,
       title: z.string(),
     }).strict(),
-    pageContextSchema.extend({
-      kind: z.literal("page"),
-      state: runtimeJsonObjectSchema.optional(),
-      /** Unique ID of this mounted page instance; changes on remount or switching pages. */
-      pageInstanceId: runtimeKeySchema.optional(),
-      /** Unique ID of the mounted top-level direct panel instance; changes when the panel definition is swapped in place. */
-      panelInstanceId: runtimeKeySchema.optional(),
-      /** Unique instance IDs of mounted nested panel members keyed by dotted member path. */
-      memberInstances: z.record(runtimeKeySchema, runtimeKeySchema).optional(),
-      /** Unique instance IDs of mounted action/list/form entries keyed by full operation ID (or `row:<opId>`). */
-      entryInstances: z.record(runtimeKeySchema, runtimeKeySchema).optional(),
-      /** Current checked row keys (`<className>:<primaryKey>`) per list-of-object state field. */
-      checkedKeys: z.record(runtimeKeySchema, z.array(runtimeKeySchema)).optional(),
-      /** Current dashboard board ID on dashboard pages. */
-      dashboardId: runtimeKeySchema.optional(),
-      /** Current selected or parameter-dialog card ID on dashboard pages. */
-      cardId: runtimeKeySchema.optional(),
-    }),
+    observedPageTargetSchema,
   ]),
   load: displayLoadSchema,
 });
@@ -453,8 +455,11 @@ const observedResultSchema = z.discriminatedUnion("status", [
 export const presentationResultSchema = z.union([observedResultSchema, unknownResultSchema]);
 export type PresentationResult = z.infer<typeof presentationResultSchema>;
 
-/** A view keeps its ID for the lifetime of its mount, across session-run streams. */
-export const presentationBindingSchema = z.object({ viewId: runtimeIdSchema }).strict();
+/** The view ID lasts for the mount. The initial page belongs only to the run started by this message. */
+export const presentationBindingSchema = z.object({
+  viewId: runtimeIdSchema,
+  initialPage: observedPageTargetSchema.optional(),
+}).strict();
 export type PresentationBinding = z.infer<typeof presentationBindingSchema>;
 
 /** Live-only payload on the host's session-run stream, carried as event: presentation. */
