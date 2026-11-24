@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { panelOperationOutcomeSchema } from "@ontomato/contracts/panel-agent";
+import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
 import { ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
@@ -20,7 +21,12 @@ const objectTypeView = {
   attributeCount: 1,
   businessKeyCount: 0,
   relationshipCount: 0,
-  primaryKey: { status: "ok", name: "pump_no" },
+  primaryKey: { status: "ok", count: 1, name: "pump_no", showName: "pump_no" },
+};
+
+const deviceView = {
+  ...objectTypeView, className: "Device", showName: "Device display", attributeCount: 2, relationshipCount: 1,
+  primaryKey: { status: "ok", count: 1, name: "id", showName: "ID" },
 };
 
 const attributeView = {
@@ -212,11 +218,11 @@ describe("ontology model server operations", () => {
       },
     ]);
     expect(created.kind === "success" && created.affected).toEqual({
-      objects: [{ objectType: ATTRIBUTE, primaryKey: '["Device","size"]' }],
+      objects: [{ objectType: ATTRIBUTE, primaryKey: '["Device","size"]' }, { objectType: OBJECT_TYPE, primaryKey: "Device" }],
       objectTypes: [ATTRIBUTE, OBJECT_TYPE],
     });
     expect(updated.kind === "success" && updated.affected).toEqual({
-      objects: [{ objectType: ATTRIBUTE, primaryKey: '["Device","size"]' }],
+      objects: [{ objectType: ATTRIBUTE, primaryKey: '["Device","size"]' }, { objectType: OBJECT_TYPE, primaryKey: "Device" }],
       objectTypes: [ATTRIBUTE, OBJECT_TYPE],
     });
   });
@@ -273,11 +279,19 @@ describe("ontology model server operations", () => {
       },
     ]);
     expect(created.kind === "success" && created.affected).toEqual({
-      objects: [{ objectType: RELATIONSHIP, primaryKey: "owns" }],
+      objects: [
+        { objectType: RELATIONSHIP, primaryKey: "owns" },
+        { objectType: OBJECT_TYPE, primaryKey: "Device" },
+        { objectType: OBJECT_TYPE, primaryKey: "Site" },
+      ],
       objectTypes: [RELATIONSHIP, OBJECT_TYPE],
     });
     expect(updated.kind === "success" && updated.affected).toEqual({
-      objects: [{ objectType: RELATIONSHIP, primaryKey: "owns" }],
+      objects: [
+        { objectType: RELATIONSHIP, primaryKey: "owns" },
+        { objectType: OBJECT_TYPE, primaryKey: "Device" },
+        { objectType: OBJECT_TYPE, primaryKey: "Site" },
+      ],
       objectTypes: [RELATIONSHIP],
     });
   });
@@ -415,7 +429,9 @@ describe("ontology model server operations", () => {
   });
 
   it("deletes attributes and relationships and reports affected records", async () => {
-    const { host, requests } = owner(() => ({ status: 200, body: {} }));
+    const { host, requests } = owner(path => ({
+      status: 200, body: path.includes("/relationship?") ? { ...relationshipView, toclass: "Device" } : {},
+    }));
 
     const attribute = panelOperationOutcomeSchema.parse(
       await deleteAttribute.execute(host, { kind: "object", objectType: ATTRIBUTE, primaryKey: '["Device","site_id"]' }),
@@ -426,13 +442,14 @@ describe("ontology model server operations", () => {
 
     expect(requests).toEqual([
       { path: "/api/data-query/ontology/model/attribute/delete", method: "POST", body: { className: "Device", name: "site_id" } },
+      { path: "/api/data-query/ontology/model/relationship?relationship=owns", method: "GET", body: {} },
       { path: "/api/data-query/ontology/model/relationship/delete", method: "POST", body: { relationship: "owns" } },
     ]);
     expect(attribute).toEqual({
       kind: "success",
       data: {},
       affected: {
-        objects: [{ objectType: ATTRIBUTE, primaryKey: '["Device","site_id"]' }],
+        objects: [{ objectType: ATTRIBUTE, primaryKey: '["Device","site_id"]' }, { objectType: OBJECT_TYPE, primaryKey: "Device" }],
         objectTypes: [ATTRIBUTE, OBJECT_TYPE],
         removed: [{ objectType: ATTRIBUTE, primaryKey: '["Device","site_id"]' }],
       },
@@ -442,7 +459,7 @@ describe("ontology model server operations", () => {
       data: {},
       affected: {
         removed: [{ objectType: RELATIONSHIP, primaryKey: "owns" }],
-        objects: [{ objectType: RELATIONSHIP, primaryKey: "owns" }],
+        objects: [{ objectType: RELATIONSHIP, primaryKey: "owns" }, { objectType: OBJECT_TYPE, primaryKey: "Device" }],
         objectTypes: [RELATIONSHIP, OBJECT_TYPE],
       },
     });
@@ -489,6 +506,7 @@ describe("ontology model server operations", () => {
         objects: [
           { objectType: ATTRIBUTE, primaryKey: '["Device","site_id"]' },
           { objectType: ATTRIBUTE, primaryKey: '["Device","id"]' },
+          { objectType: OBJECT_TYPE, primaryKey: "Device" },
         ],
         objectTypes: [ATTRIBUTE, OBJECT_TYPE],
       },
@@ -497,18 +515,18 @@ describe("ontology model server operations", () => {
 
   it("reads target labels for confirmation and falls back to the key on 403/404", async () => {
     const { host } = owner(path => {
-      if (path.includes("/object-type?className=Device")) return { status: 200, body: objectTypeView };
+      if (path.includes("/object-type?className=Device")) return { status: 200, body: deviceView };
       if (path.includes("/attributes?className=Device")) return { status: 200, body: [attributeView] };
       if (path.includes("/relationship?relationship=owns")) return { status: 200, body: relationshipView };
       return { status: 404, body: { error: { code: "NOT_FOUND", message: "Not found" } } };
     });
 
-    expect(await deleteObjectType.targetLabel(host, objectTarget)).toBe("Pump display");
+    expect(await deleteObjectType.targetLabel(host, objectTarget)).toBe("Device display");
     expect(await deleteObjectType.targetLabel(host, { kind: "object", objectType: OBJECT_TYPE, primaryKey: "Gone" })).toBe("Gone");
-    expect(await deleteAttribute.targetLabel(host, attributeTarget)).toBe("Size");
+    expect(await deleteAttribute.targetLabel(host, attributeTarget)).toBe("Device display · Size");
     expect(
       await deleteAttribute.targetLabel(host, { kind: "object", objectType: ATTRIBUTE, primaryKey: '["Device","gone"]' }),
-    ).toBe('["Device","gone"]');
+    ).toBe("Device display · gone");
     expect(await deleteRelationship.targetLabel(host, relationshipTarget)).toBe("owns");
     expect(
       await deleteRelationship.targetLabel(host, { kind: "object", objectType: RELATIONSHIP, primaryKey: "missing" }),
@@ -518,11 +536,11 @@ describe("ontology model server operations", () => {
   it("describes a single attribute or relationship delete by the record's owner-read name", async () => {
     const { host } = owner(path => ({
       status: 200,
-      body: path.includes("/attributes?") ? [attributeView] : relationshipView,
+      body: path.includes("/object-type?") ? deviceView : path.includes("/attributes?") ? [attributeView] : relationshipView,
     }));
     expect(await deleteAttribute.inspectImpact!.inspect(host, [{ target: attributeTarget, input: {} }])).toEqual({
       summary: "This deletes the selected attribute; the owner refuses the primary key and an attribute a relationship joins on.",
-      objects: [{ target: { objectType: ATTRIBUTE, primaryKey: attributeTarget.primaryKey }, label: "Size" }],
+      objects: [{ target: { objectType: ATTRIBUTE, primaryKey: attributeTarget.primaryKey }, label: "Device display · Size" }],
       total: 1,
     });
     expect(await deleteRelationship.inspectImpact!.inspect(host, [{ target: relationshipTarget, input: {} }])).toEqual({
@@ -535,22 +553,66 @@ describe("ontology model server operations", () => {
   });
 
   it("names the attribute that becomes the primary key and the one that stops being it", async () => {
-    const { host } = owner(() => ({
+    const { host } = owner(path => ({
       status: 200,
-      body: [
+      body: path.includes("/object-type?") ? deviceView : [
         { ...attributeView, name: "id", showName: "ID", primaryKey: true },
         attributeView,
         { ...attributeView, name: "note", showName: "Note" },
       ],
     }));
     expect(await setPrimaryKey.inspectImpact!.inspect(host, [{ target: attributeTarget, input: {} }])).toEqual({
-      summary: "This makes the selected attribute the primary key of its object type; the current primary key stops being one.",
+      summary: expect.stringContaining("Device display"),
       objects: [
-        { target: { objectType: ATTRIBUTE, primaryKey: '["Device","id"]' }, label: "ID" },
-        { target: { objectType: ATTRIBUTE, primaryKey: '["Device","size"]' }, label: "Size" },
+        { target: { objectType: ATTRIBUTE, primaryKey: '["Device","size"]' }, label: expect.stringMatching(/Device display · Size.*becomes/) },
+        { target: { objectType: ATTRIBUTE, primaryKey: '["Device","id"]' }, label: expect.stringMatching(/Device display · ID.*lose/) },
       ],
       total: 2,
     });
+  });
+
+  it("previews primary key replacement on create and reports the old key as affected", async () => {
+    const old = { ...attributeView, name: "id", showName: "ID", primaryKey: true };
+    const next = { ...attributeView, name: "external_id", showName: "External ID", type: "varchar", primaryKey: true };
+    const { host } = owner(path => ({
+      status: 200, body: path.includes("/object-type?") ? deviceView : path.includes("/attributes?") ? [old] : next,
+    }));
+    const target = { kind: "draft" } as const;
+    const input = { values: next };
+    const impact = panelOperationImpactSchema.parse(await saveAttribute.inspectImpact!.inspect(host, [{ target, input }]));
+    const objects = [
+      { objectType: ATTRIBUTE, primaryKey: '["Device","external_id"]' },
+      { objectType: ATTRIBUTE, primaryKey: '["Device","id"]' },
+    ];
+    expect(impact.objects.map(item => item.target)).toEqual(objects);
+    expect(await saveAttribute.inspectImpact!.inspect(host, [{ target, input: { values: { ...next, name: "" } } }])).toBeNull();
+    expect(await saveAttribute.execute(host, target, input, "create-key")).toMatchObject({
+      kind: "success",
+      affected: { objects: [objects[0], { objectType: OBJECT_TYPE, primaryKey: "Device" }, objects[1]] },
+    });
+  });
+
+  it("blocks setting existing, disabled or non-text keys and deleting referenced or primary-key attributes", async () => {
+    const eligible = { ...attributeView, type: "varchar" };
+    const choices = [eligible, { ...eligible, primaryKey: true }, { ...eligible, enable: false }, attributeView];
+    for (const [index, attribute] of choices.entries()) {
+      const { host } = owner(() => ({ status: 200, body: [attribute] }));
+      expect(Boolean(await setPrimaryKey.unavailable!(host, attributeTarget))).toBe(index !== 0);
+      if (attribute.primaryKey) expect(await deleteAttribute.unavailable!(host, attributeTarget)).toBeDefined();
+    }
+    const { host } = owner(path => ({
+      status: 200,
+      body: path.includes("/attributes?") ? [eligible] : [
+        { ...relationshipView, fromField: "size" },
+        { ...relationshipView, relationship: "reverse", fromclass: "Site", toclass: "Device", toField: "size" },
+        { ...relationshipView, relationship: "unrelated", toField: "size" },
+      ],
+    }));
+    const unavailable = await deleteAttribute.unavailable!(host, attributeTarget);
+    expect(unavailable?.reason).toContain("owns, reverse");
+    expect(unavailable?.reason).not.toContain("unrelated");
+    const failed = owner(() => ({ status: 500, body: { error: { code: "OWNER_FAILURE", message: "Failed" } } }));
+    await expect(deleteAttribute.unavailable!(failed.host, attributeTarget)).rejects.toMatchObject({ status: 500, code: "OWNER_FAILURE" });
   });
 
   it("inspects object type deletion impact and propagates 404 errors", async () => {
@@ -563,13 +625,13 @@ describe("ontology model server operations", () => {
       path.includes("/object-type/deletion-impact") && path.includes("className=Device")
         ? { status: 200, body: impact }
         : path.includes("/object-type?") && path.includes("className=Device")
-          ? { status: 200, body: { className: "Device", showName: "Device display", classDesc: "", attributeCount: 2, businessKeyCount: 0, relationshipCount: 1, primaryKey: { status: "ok", name: "id" } } }
+          ? { status: 200, body: deviceView }
           : { status: 404, body: { error: { code: "OBJECT_TYPE_NOT_FOUND", message: "Class not found" } } },
     );
 
     const inspected = await deleteObjectType.inspectImpact!.inspect(host, [{ target: objectTarget, input: {} }]);
     expect(inspected).toEqual({
-      summary: "This deletes the selected object type, together with the relationships that touch it (1 in total).",
+      summary: expect.stringMatching(/2 attributes.*1 in total/),
       objects: [
         { target: { objectType: OBJECT_TYPE, primaryKey: "Device" }, label: "Device display" },
         { target: { objectType: RELATIONSHIP, primaryKey: "owns" }, label: "owns the site" },

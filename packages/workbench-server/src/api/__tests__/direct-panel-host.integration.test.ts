@@ -166,7 +166,7 @@ beforeAll(async () => {
     }
     res.json(["expense", "CostCenter"].map(className => ({
       className, showName: className, classDesc: "", attributeCount: 1,
-      businessKeyCount: 0, relationshipCount: 0, primaryKey: { status: "ok", name: "id" },
+      businessKeyCount: 0, relationshipCount: 0, primaryKey: { status: "ok", count: 1, name: "id", showName: "id" },
     })));
   });
   app.post("/action/queryList", (req, res) => {

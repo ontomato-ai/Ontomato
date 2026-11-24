@@ -210,8 +210,11 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       record: {
         ...modelReads.record,
         outputs: {
+          className: { kind: "scalar", type: "string" },
           primaryKeyStatus: { kind: "scalar", type: "string" },
           primaryKeyName: { kind: "scalar", type: "string" },
+          primaryKeyShowName: { kind: "scalar", type: "string" },
+          primaryKeyCount: { kind: "scalar", type: "number" },
           attributeCount: { kind: "scalar", type: "number" },
           businessKeyCount: { kind: "scalar", type: "number" },
           relationshipCount: { kind: "scalar", type: "number" },

@@ -965,6 +965,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	 */
 	private static final Map<String, String> OBJECT_TYPE_LABEL_KEYS = Map.of(
 			"className", "Admin.form.className",
+			"primaryKeyCount", "Admin.form.primaryKey",
 			"primaryKeyName", "Admin.form.primaryKeyName",
 			"showName", "Admin.form.showName",
 			"classDesc", "Admin.form.businessDesc");
@@ -1236,14 +1237,18 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	private Map<String, Object> primaryKeyView(Map<String, Object> classDef) {
 		List<Map<String, Object>> keys = attrs(classDef).stream().filter(OntologyModelServiceImpl::primaryKey).toList();
 		Map<String, Object> view = new LinkedHashMap<>();
+		view.put("count", keys.size());
 		if (keys.isEmpty()) {
 			view.put("status", "missing");
 		} else if (keys.size() > 1) {
 			view.put("status", "multiple");
 		} else {
 			Map<String, Object> key = keys.get(0);
+			String name = text(key.get("name"));
+			String showName = trim(text(key.get("showName")));
 			view.put("status", enabled(key.get("enable")) ? "ok" : "disabled");
-			view.put("name", key.get("name"));
+			view.put("name", name);
+			view.put("showName", blank(showName) ? name : showName);
 		}
 		return view;
 	}

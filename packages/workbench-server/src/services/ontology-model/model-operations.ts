@@ -29,6 +29,8 @@ import {
   objectTypeViewSchema,
   parseAttributePrimaryKey,
   relationshipViewSchema,
+  type AttributeView,
+  type RelationshipView,
 } from "./model-views";
 
 const modelPath = `${DATA_QUERY_GATEWAY}/ontology/model`;
@@ -38,6 +40,12 @@ const emptyResultSchema = z.object({}).strict();
 const classDeletionSchema = z.object({ relationships: z.array(z.string()) }).strict();
 const deletionImpactSchema = z.object({ relationships: z.array(relationshipViewSchema) }).strict();
 const setPrimaryKeyResultSchema = z.object({ attributes: z.array(attributeViewSchema) }).strict();
+const attributeListSchema = z.array(attributeViewSchema);
+const relationshipListSchema = z.array(relationshipViewSchema);
+
+const objectTypePath = (className: string) => `/object-type?className=${encodeURIComponent(className)}`;
+const attributesPath = (className: string) => `/attributes?className=${encodeURIComponent(className)}`;
+const relationshipPath = (name: string) => `/relationship?relationship=${encodeURIComponent(name)}`;
 
 const targets = (type: string) => z.discriminatedUnion("kind", [
   panelFormTargetSchema.options[0].extend({ objectType: z.literal(type), primaryKey: z.string().min(1) }).strict(),
@@ -49,6 +57,13 @@ const recordTarget = (type: string) =>
 
 const attributeIdentity = (view: { className: string; name: string }): PanelObjectIdentity =>
   ({ objectType: ATTRIBUTE, primaryKey: JSON.stringify([view.className, view.name]) });
+
+const objectTypeIdentity = (className: string): PanelObjectIdentity =>
+  ({ objectType: OBJECT_TYPE, primaryKey: className });
+
+function relationshipEndpoints({ fromclass, toclass }: RelationshipView): PanelObjectIdentity[] {
+  return [...new Set([fromclass, toclass])].map(objectTypeIdentity);
+}
 
 async function refused(response: Response): Promise<SinglePanelOperationOutcome> {
   const { error } = modelErrorSchema.parse(await response.json());
@@ -106,56 +121,73 @@ async function editedValues(
     [key, submitted.has(key) ? values[key] : value])) };
 }
 
+async function modelReadError(response: Response): Promise<HttpError> {
+  const { error } = modelErrorSchema.parse(await response.json());
+  return new HttpError(response.status, error.message, error.code);
+}
+
+async function readModelView<T>(host: PanelOperationHost, path: string, schema: z.ZodType<T>): Promise<T> {
+  const response = await host.request(`${modelPath}${path}`, {});
+  if (!response.ok) throw await modelReadError(response);
+  return schema.parse(await response.json());
+}
+
 /** Reads an existing model record's display name for confirmation, falling back to its key when unreadable. */
 async function ownerName(
   host: PanelOperationHost,
-  target: PanelRecordTarget,
+  key: string,
   path: string,
   name: (body: unknown) => string,
 ): Promise<string> {
-  const response = await host.request(path, {});
+  const response = await host.request(`${modelPath}${path}`, {});
   if (response.ok) return name(await response.json());
-  if (response.status === 403 || response.status === 404) return target.primaryKey;
-  const { error } = modelErrorSchema.parse(await response.json());
-  throw new HttpError(response.status, error.message, error.code);
+  if (response.status === 403 || response.status === 404) return key;
+  throw await modelReadError(response);
 }
 
-const objectTypeTargetLabel = (host: PanelOperationHost, target: PanelRecordTarget) =>
-  ownerName(host, target, `${modelPath}/object-type?className=${encodeURIComponent(target.primaryKey)}`, body => {
+const objectTypeLabel = (host: PanelOperationHost, className: string) =>
+  ownerName(host, className, objectTypePath(className), body => {
     const view = objectTypeViewSchema.parse(body);
     return view.showName || view.className;
   });
 
-const attributeTargetLabel = (host: PanelOperationHost, target: PanelRecordTarget) => {
+const objectTypeTargetLabel = (host: PanelOperationHost, target: PanelRecordTarget) => objectTypeLabel(host, target.primaryKey);
+
+async function attributeTargetLabel(host: PanelOperationHost, target: PanelRecordTarget) {
   const { className, name } = parseAttributePrimaryKey(target.primaryKey);
-  return ownerName(host, target, `${modelPath}/attributes?className=${encodeURIComponent(className)}`, body => {
-    const view = z.array(attributeViewSchema).parse(body).find(attribute => attribute.name === name);
-    return view ? view.showName || view.name : target.primaryKey;
-  });
-};
+  const [classLabel, attributeLabel] = await Promise.all([
+    objectTypeLabel(host, className),
+    ownerName(host, name, attributesPath(className), body => {
+      const view = attributeListSchema.parse(body).find(attribute => attribute.name === name);
+      return view?.showName || name;
+    }),
+  ]);
+  return `${classLabel} · ${attributeLabel}`;
+}
 
 const relationshipTargetLabel = (host: PanelOperationHost, target: PanelRecordTarget) =>
-  ownerName(host, target, `${modelPath}/relationship?relationship=${encodeURIComponent(target.primaryKey)}`, body => {
+  ownerName(host, target.primaryKey, relationshipPath(target.primaryKey), body => {
     const view = relationshipViewSchema.parse(body);
     return view.desc || view.relationship;
   });
+
+async function attributeForAvailability(host: PanelOperationHost, className: string, name: string) {
+  const response = await host.request(`${modelPath}${attributesPath(className)}`, {});
+  if (response.status === 403 || response.status === 404) return undefined;
+  if (!response.ok) throw await modelReadError(response);
+  return attributeListSchema.parse(await response.json()).find(view => view.name === name);
+}
 
 const deleteObjectTypeImpact: PanelImpactInspector = {
   handlerRef: `${DELETE_OBJECT_TYPE}.inspect-impact`,
   async inspect(host, calls) {
     const target = calls[0]!.target as PanelRecordTarget;
-    const response = await host.request(
-      `${modelPath}/object-type/deletion-impact?className=${encodeURIComponent(target.primaryKey)}`,
-      {},
-    );
-    if (!response.ok) {
-      const { error } = modelErrorSchema.parse(await response.json());
-      throw new HttpError(response.status, error.message, error.code);
-    }
-    const impact = deletionImpactSchema.parse(await response.json());
-    const targetName = await objectTypeTargetLabel(host, target);
+    const [impact, view] = await Promise.all([
+      readModelView(host, `/object-type/deletion-impact?className=${encodeURIComponent(target.primaryKey)}`, deletionImpactSchema),
+      readModelView(host, objectTypePath(target.primaryKey), objectTypeViewSchema),
+    ]);
     const objects = [
-      { target: { objectType: OBJECT_TYPE, primaryKey: target.primaryKey }, label: targetName },
+      { target: objectTypeIdentity(view.className), label: view.showName || view.className },
       ...impact.relationships.map(view => ({
         target: { objectType: RELATIONSHIP, primaryKey: view.relationship },
         label: view.desc || view.relationship,
@@ -163,6 +195,7 @@ const deleteObjectTypeImpact: PanelImpactInspector = {
     ];
     return {
       summary: tForLocale(host.locale, "panels.confirmation.deleteObjectTypeImpact", {
+        attributes: view.attributeCount,
         relationships: impact.relationships.length,
       }),
       objects,
@@ -171,27 +204,65 @@ const deleteObjectTypeImpact: PanelImpactInspector = {
   },
 };
 
-/**
- * The impact of making an attribute the primary key: the attribute itself and the class's current primary key, which
- * stops being one. Both are named so the confirming human or agent sees which key moves.
- */
+function primaryKeyImpact(
+  host: PanelOperationHost,
+  classLabel: string,
+  next: Pick<AttributeView, "className" | "name" | "showName">,
+  replaced: readonly AttributeView[],
+  summaryKey: string,
+) {
+  const objects = [{
+    target: attributeIdentity(next),
+    label: tForLocale(host.locale, "panels.confirmation.setPrimaryKeyNewTarget", {
+      className: classLabel, attribute: next.showName || next.name,
+    }),
+  }, ...replaced.map(view => ({
+    target: attributeIdentity(view),
+    label: tForLocale(host.locale, "panels.confirmation.setPrimaryKeyReplacedTarget", {
+      className: classLabel, attribute: view.showName || view.name,
+    }),
+  }))];
+  return { summary: tForLocale(host.locale, summaryKey, { className: classLabel }), objects, total: objects.length };
+}
+
 const setPrimaryKeyImpact: PanelImpactInspector = {
   handlerRef: `${SET_PRIMARY_KEY}.inspect-impact`,
   async inspect(host, calls) {
     const target = calls[0]!.target as PanelRecordTarget;
     const { className, name } = parseAttributePrimaryKey(target.primaryKey);
-    const response = await host.request(`${modelPath}/attributes?className=${encodeURIComponent(className)}`, {});
-    if (!response.ok) {
-      const { error } = modelErrorSchema.parse(await response.json());
-      throw new HttpError(response.status, error.message, error.code);
-    }
-    const attributes = z.array(attributeViewSchema).parse(await response.json());
-    const moved = attributes.filter(view => view.name === name || view.primaryKey);
-    return {
-      summary: tForLocale(host.locale, "panels.confirmation.setPrimaryKeyImpact"),
-      objects: moved.map(view => ({ target: attributeIdentity(view), label: view.showName || view.name })),
-      total: moved.length,
-    };
+    const [classView, attributes] = await Promise.all([
+      readModelView(host, objectTypePath(className), objectTypeViewSchema),
+      readModelView(host, attributesPath(className), attributeListSchema),
+    ]);
+    const next = attributes.find(view => view.name === name);
+    if (!next) throw new HttpError(404, "Attribute not found", "ATTRIBUTE_NOT_FOUND");
+    return primaryKeyImpact(host, classView.showName || classView.className, next,
+      attributes.filter(view => view.primaryKey && view.name !== name), "panels.confirmation.setPrimaryKeyImpact");
+  },
+};
+
+function draftPrimaryKeyClass(target: PanelOperationTarget | null, values: Record<string, unknown>) {
+  if (target?.kind === "draft" && values.primaryKey === true && typeof values.className === "string") {
+    return values.className.trim();
+  }
+}
+
+const createPrimaryKeyImpact: PanelImpactInspector = {
+  handlerRef: `${ATTRIBUTE}.save.inspect-impact`,
+  async inspect(host, [call]) {
+    const { values } = saveInputSchema.parse(call!.input);
+    const className = draftPrimaryKeyClass(call!.target, values);
+    const name = typeof values.name === "string" ? values.name.trim() : "";
+    if (!className || !name) return null;
+    const [classView, attributes] = await Promise.all([
+      readModelView(host, objectTypePath(className), objectTypeViewSchema),
+      readModelView(host, attributesPath(className), attributeListSchema),
+    ]);
+    const replaced = attributes.filter(view => view.primaryKey);
+    if (!replaced.length) return null;
+    const showName = typeof values.showName === "string" ? values.showName.trim() : "";
+    return primaryKeyImpact(host, classView.showName || classView.className, { className, name, showName },
+      replaced, "panels.confirmation.createPrimaryKeyImpact");
   },
 };
 
@@ -247,7 +318,7 @@ export const ontologyModelServerOperations = [
         body = { className: values.className, primaryKeyName: values.primaryKeyName, showName: values.showName, classDesc: values.classDesc };
       } else {
         const edited = await editedValues(save, async () => {
-          const view = await getModelView(host, `/object-type?className=${encodeURIComponent(target.primaryKey)}`, objectTypeViewSchema);
+          const view = await getModelView(host, objectTypePath(target.primaryKey), objectTypeViewSchema);
           return view.ok ? { ok: true, data: { showName: view.data.showName, classDesc: view.data.classDesc } } : view;
         });
         if (!edited.ok) return edited.outcome;
@@ -282,6 +353,7 @@ export const ontologyModelServerOperations = [
     inputSchema: saveInputSchema,
     resultSchema: attributeViewSchema,
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
+    inspectImpact: createPrimaryKeyImpact,
 
     create: true,
     async execute(
@@ -292,6 +364,13 @@ export const ontologyModelServerOperations = [
     ): Promise<SinglePanelOperationOutcome> {
       const save = saveInputSchema.parse(input);
       const { values } = save;
+      const primaryKeyClass = draftPrimaryKeyClass(target, values);
+      let replaced: PanelObjectIdentity[] = [];
+      if (primaryKeyClass) {
+        const attributes = await getModelView(host, attributesPath(primaryKeyClass), attributeListSchema);
+        if (!attributes.ok) return attributes.outcome;
+        replaced = attributes.data.filter(view => view.primaryKey).map(attributeIdentity);
+      }
       let body: Record<string, unknown>;
       if (target.kind === "draft") {
         body = {
@@ -307,9 +386,7 @@ export const ontologyModelServerOperations = [
       } else {
         const key = parseAttributePrimaryKey(target.primaryKey);
         const edited = await editedValues(save, async () => {
-          const views = await getModelView(
-            host, `/attributes?className=${encodeURIComponent(key.className)}`, z.array(attributeViewSchema),
-          );
+          const views = await getModelView(host, attributesPath(key.className), attributeListSchema);
           if (!views.ok) return views;
           const view = views.data.find(attribute => attribute.name === key.name);
           if (view === undefined) {
@@ -337,7 +414,7 @@ export const ontologyModelServerOperations = [
         kind: "success",
         data: runtimeJsonObjectSchema.parse(result.data),
         affected: {
-          objects: [attributeIdentity(result.data)],
+          objects: [attributeIdentity(result.data), objectTypeIdentity(result.data.className), ...replaced],
           objectTypes: [ATTRIBUTE, OBJECT_TYPE],
         },
       };
@@ -378,7 +455,7 @@ export const ontologyModelServerOperations = [
       } else {
         const edited = await editedValues(save, async () => {
           const view = await getModelView(
-            host, `/relationship?relationship=${encodeURIComponent(target.primaryKey)}`, relationshipViewSchema,
+            host, relationshipPath(target.primaryKey), relationshipViewSchema,
           );
           return view.ok ? { ok: true, data: { desc: view.data.desc, fromField: view.data.fromField, toField: view.data.toField } } : view;
         });
@@ -396,7 +473,7 @@ export const ontologyModelServerOperations = [
         kind: "success",
         data: runtimeJsonObjectSchema.parse(result.data),
         affected: {
-          objects: [{ objectType: RELATIONSHIP, primaryKey: result.data.relationship }],
+          objects: [{ objectType: RELATIONSHIP, primaryKey: result.data.relationship }, ...relationshipEndpoints(result.data)],
           objectTypes: target.kind === "draft" ? [RELATIONSHIP, OBJECT_TYPE] : [RELATIONSHIP],
         },
       };
@@ -451,14 +528,34 @@ export const ontologyModelServerOperations = [
     targetLabel: attributeTargetLabel,
     done: (host, name) => tForLocale(host.locale, "panels.ontologyModel.attributeDeleted", { name }),
     inspectImpact: deleteImpact(DELETE_ATTRIBUTE, "panels.confirmation.deleteAttributeImpact", ATTRIBUTE, attributeTargetLabel),
+    async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
+      const { className, name } = parseAttributePrimaryKey(target.primaryKey);
+      const view = await attributeForAvailability(host, className, name);
+      if (!view) return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.attributeUnavailable") };
+      if (view.primaryKey) return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.cannotDeletePrimaryKey") };
+      const relationships = (await readModelView(host,
+        `/relationships?className=${encodeURIComponent(className)}`, relationshipListSchema))
+        .filter(rel => (rel.fromclass === className && rel.fromField === name) ||
+          (rel.toclass === className && rel.toField === name));
+      if (relationships.length) {
+        return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.attributeInUse", {
+          relationships: relationships.map(rel => rel.relationship).join(", "),
+        }) };
+      }
+    },
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const key = parseAttributePrimaryKey(target.primaryKey);
       const result = await postModelWrite(host, "/attribute/delete", key, emptyResultSchema);
       if (!result.ok) return result.outcome;
+      const attribute = attributeIdentity(key);
       return {
         kind: "success",
         data: {},
-        affected: { objects: [attributeIdentity(key)], objectTypes: [ATTRIBUTE, OBJECT_TYPE], removed: [attributeIdentity(key)] },
+        affected: {
+          objects: [attribute, objectTypeIdentity(key.className)],
+          objectTypes: [ATTRIBUTE, OBJECT_TYPE],
+          removed: [attribute],
+        },
       };
     },
   },
@@ -480,6 +577,8 @@ export const ontologyModelServerOperations = [
       DELETE_RELATIONSHIP, "panels.confirmation.deleteRelationshipImpact", RELATIONSHIP, relationshipTargetLabel,
     ),
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
+      const view = await getModelView(host, relationshipPath(target.primaryKey), relationshipViewSchema);
+      if (!view.ok) return view.outcome;
       const result = await postModelWrite(
         host,
         "/relationship/delete",
@@ -491,7 +590,7 @@ export const ontologyModelServerOperations = [
         kind: "success",
         data: {},
         affected: {
-          objects: [{ objectType: RELATIONSHIP, primaryKey: target.primaryKey }],
+          objects: [{ objectType: RELATIONSHIP, primaryKey: target.primaryKey }, ...relationshipEndpoints(view.data)],
           objectTypes: [RELATIONSHIP, OBJECT_TYPE],
           removed: [{ objectType: RELATIONSHIP, primaryKey: target.primaryKey }],
         },
@@ -513,18 +612,31 @@ export const ontologyModelServerOperations = [
     inspectImpact: setPrimaryKeyImpact,
     targetLabel: attributeTargetLabel,
     done: (host, name) => tForLocale(host.locale, "panels.ontologyModel.primaryKeySet", { name }),
+    async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
+      const { className, name } = parseAttributePrimaryKey(target.primaryKey);
+      const view = await attributeForAvailability(host, className, name);
+      if (!view) return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.attributeUnavailable") };
+      if (view.primaryKey) return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.alreadyPrimaryKey") };
+      if (view.type !== "varchar" || !view.enable) {
+        return { reason: tForLocale(host.locale, "panels.ontologyModel.unavailable.primaryKeyInvalid") };
+      }
+    },
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
+      const key = parseAttributePrimaryKey(target.primaryKey);
       const result = await postModelWrite(
         host,
         "/attribute/primary-key",
-        parseAttributePrimaryKey(target.primaryKey),
-        z.array(attributeViewSchema),
+        key,
+        attributeListSchema,
       );
       if (!result.ok) return result.outcome;
       return {
         kind: "success",
         data: runtimeJsonObjectSchema.parse({ attributes: result.data }),
-        affected: { objects: result.data.map(attributeIdentity), objectTypes: [ATTRIBUTE, OBJECT_TYPE] },
+        affected: {
+          objects: [...result.data.map(attributeIdentity), objectTypeIdentity(key.className)],
+          objectTypes: [ATTRIBUTE, OBJECT_TYPE],
+        },
       };
     },
   },
