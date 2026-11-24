@@ -5,6 +5,13 @@ import { nodeApiRequest } from "@ontomato/workbench-ui";
 const applications = shallowRef<CatalogApplication[]>([]);
 const error = shallowRef<string | null>(null);
 const loading = shallowRef(true);
+
+export function resetApplicationCatalog(): void {
+  applications.value = [];
+  error.value = null;
+  loading.value = true;
+}
+
 export async function readApplicationCatalog(purpose = "navigation") {
   const response = await nodeApiRequest(`/api/data-query/platform/applications?purpose=${purpose}`, {});
   const body = await response.json();

@@ -20,7 +20,9 @@ export function useTemplateCompiler(): Promise<void> {
   return compiler ??= import("@vue/compiler-dom").then(({ compile }) => {
     Vue.registerRuntimeCompiler((template: string | object, options?: CompilerOptions) => {
       const { code } = compile(template as string, { hoistStatic: true, ...options });
-      return new Function("Vue", code)(Vue);
+      const render: Vue.RenderFunction & { _rc?: boolean } = new Function("Vue", code)(Vue);
+      render._rc = true;
+      return render;
     });
   });
 }
