@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { h, ref } from "vue";
-import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import { createMemoryHistory, createRouter } from "vue-router";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { provideApplicationFrame, providePageHeading } from "@ontomato/platform-shell";
 import PlatformLayout from "../../../../../packages/platform-web/src/PlatformLayout.vue";
@@ -104,11 +104,15 @@ describe("host content-box height stylesheets", () => {
     expect(entryUnitCss).toMatch(/\.panel-entry-unit-body\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s);
     expect(entryUnitCss).toMatch(/\.panel-entry-unit-foot\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*0;[^}]*pointer-events:\s*none;/s);
 
+    const frameHostCss = stylesOf("../../../../../packages/platform-web/src/ApplicationFrameHost.vue");
+    expect(frameHostCss).toMatch(/\.application-frame-host\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*min-width:\s*0;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s);
+    expect(frameHostCss).toMatch(/\.application-frame-slot\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;[^}]*min-width:\s*0;[^}]*min-height:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;/s);
+
     const routeCss = stylesOf("../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue");
     expect(routeCss).toMatch(/\.panel-application-area\s*\{[^}]*position:\s*relative;/s);
     expect(routeCss).not.toContain("--pane-dock-space");
     expect(routeCss).not.toContain("--panel-host-padding-");
-    expect(routeCss).toMatch(/\.panel-page-foot\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*0;[^}]*pointer-events:\s*none;/s);
+    expect(routeCss).not.toContain(".panel-page-foot");
 
     const paneCss = stylesOf("../../../../../packages/agent-shell-ui/src/components/ShellPagePane.vue");
     expect(paneCss).toContain(".pane-dock:has(> .composer-unfold:only-child)");
@@ -198,15 +202,17 @@ describe("host content-box structure across full-page, beside-conversation, and 
 
       const body = element.querySelector<HTMLElement>(".platform-page-body")!;
       const area = body.querySelector<HTMLElement>(":scope > .panel-application-area")!;
-      const host = area.querySelector<HTMLElement>(":scope > .panel-host.panel-host-page")!;
+      const unit = area.querySelector<HTMLElement>(":scope > .panel-entry-unit")!;
+      const unitBody = unit.querySelector<HTMLElement>(":scope > .panel-entry-unit-body")!;
+      const host = unitBody.querySelector<HTMLElement>(":scope > .panel-host.panel-host-page")!;
       const direct = host.querySelector<HTMLElement>(":scope > .panel-host-direct")!;
       const notice = host.querySelector<HTMLElement>(":scope > .panel-host-notice")!;
-      const foot = area.querySelector<HTMLElement>(":scope > .panel-page-foot")!;
+      const foot = unit.querySelector<HTMLElement>(":scope > .panel-entry-unit-foot")!;
 
       expect(direct.querySelector(".panel-host-notice")).toBeNull();
       expect(notice.compareDocumentPosition(direct) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(direct.querySelector(":scope > .panel-host-coded > [data-panel-bare-root] > .work-root")).not.toBeNull();
-      // PageComposer sits below PanelHost inside the flex column foot, never inside the scrolling content box.
+      // PageComposer sits below PanelHost inside the entry unit's foot, never inside the scrolling content box.
       expect(direct.querySelector(".page-ask")).toBeNull();
       expect(foot.querySelector(":scope > .page-ask")).not.toBeNull();
       expect(host.compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -227,10 +233,11 @@ describe("host content-box structure across full-page, beside-conversation, and 
     try {
       await vi.waitFor(() => expect(element.querySelector(".work-root")).not.toBeNull());
       const area = element.querySelector<HTMLElement>(".panel-application-area")!;
-      const host = area.querySelector<HTMLElement>(":scope > .panel-host")!;
+      const host = area.querySelector<HTMLElement>(":scope > .panel-entry-unit > .panel-entry-unit-body > .panel-host")!;
       expect(host.classList.contains("panel-host-page")).toBe(false);
       expect(host.querySelector(":scope > .panel-host-direct > .panel-host-coded > [data-panel-bare-root] > .work-root")).not.toBeNull();
       expect(area.querySelector(".page-ask")).toBeNull();
+      expect(area.querySelector(".panel-entry-unit-foot")).toBeNull();
     } finally {
       app.unmount();
     }
@@ -253,8 +260,18 @@ describe("host content-box structure across full-page, beside-conversation, and 
       () =>
         h({
           setup() {
-            provideApplicationFrame();
-            return () => h(RouterView);
+            const heading = providePageHeading();
+            const framed = provideApplicationFrame();
+            return () =>
+              h(PlatformLayout, {
+                apps: [],
+                shownPage: heading.value ? { title: heading.value.title, named: true } : null,
+                account: null,
+                preferences: { locales: ["en"], locale: "en", setLocale: () => {}, theme: "light", setTheme: () => {} },
+                labels: layoutLabels,
+                pageActions: null,
+                appFramed: framed.value,
+              });
           },
         }),
       router,
@@ -264,27 +281,33 @@ describe("host content-box structure across full-page, beside-conversation, and 
       await vi.waitFor(() => expect(element.querySelector(".panel-application-frame .panel-entry-unit .work-root")).not.toBeNull());
       await vi.waitFor(() => expect(element.querySelector(".panel-application-frame .panel-entry-unit .page-ask")).not.toBeNull());
 
-      const area = element.querySelector<HTMLElement>(".panel-application-area")!;
-      const frameHost = area.querySelector<HTMLElement>(":scope > .panel-host.panel-application-frame")!;
+      const frameHostContainer = element.querySelector<HTMLElement>(".application-frame-host")!;
+      const frameHost = frameHostContainer.querySelector<HTMLElement>(":scope > .panel-host.panel-application-frame")!;
       expect(frameHost.classList.contains("panel-host-page")).toBe(false);
       // Styled `#app` roots keep their own box (no `data-panel-bare-root`), while bare `#app` entries are layout-transparent.
       const frameRoot = frameHost.querySelector<HTMLElement>(":scope > .panel-host-direct > .panel-host-coded > .frame-app")!;
       expect(frameRoot).not.toBeNull();
       expect(frameRoot.hasAttribute("data-panel-bare-root")).toBe(false);
-      // The frame's own CurrentEntry slot chains straight into EntryUnit (header + entry content box + PageComposer).
+      // The frame's own CurrentEntry slot chains through ApplicationFrameHost's slot and PlatformLayout's body into EntryUnit.
       const slot = frameRoot.querySelector<HTMLElement>(":scope > [data-member='content'].sdk-current-entry-slot")!;
       expect(slot).not.toBeNull();
-      const unit = slot.querySelector<HTMLElement>(":scope > .sdk-panel-member-nested > .sdk-current-entry > .panel-entry-unit")!;
+      const appPage = slot.querySelector<HTMLElement>(
+        ":scope > .sdk-panel-member-nested > .sdk-current-entry > .application-frame-slot > .platform-app-page",
+      )!;
+      expect(appPage).not.toBeNull();
+      expect(appPage.querySelector(":scope > .platform-page-header")).toBeNull();
+      const body = appPage.querySelector<HTMLElement>(":scope > .platform-page-body.own-frame")!;
+      expect(body).not.toBeNull();
+      const unit = body.querySelector<HTMLElement>(":scope > .panel-application-area > .panel-entry-unit")!;
       expect(unit).not.toBeNull();
-      expect(unit.querySelector(":scope > .platform-page-header")).toBeNull();
       const entryBody = unit.querySelector<HTMLElement>(":scope > .panel-entry-unit-body")!;
       expect(
         entryBody.querySelector(":scope > .panel-host.panel-host-page > .panel-host-direct > .panel-host-coded > [data-panel-bare-root] > .work-root"),
       ).not.toBeNull();
       const entryFoot = unit.querySelector<HTMLElement>(":scope > .panel-entry-unit-foot")!;
       expect(entryFoot.querySelector(":scope > .page-ask")).not.toBeNull();
-      // PageComposer stays inside the entry unit rather than below the outer frame navigation.
-      expect(area.querySelector(":scope > .panel-page-foot")).toBeNull();
+      // PageComposer stays inside the entry unit rather than outside the outer frame.
+      expect(frameHostContainer.querySelector(":scope > .panel-entry-unit-foot")).toBeNull();
     } finally {
       app.unmount();
     }

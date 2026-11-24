@@ -17,7 +17,7 @@ import {
   type PlatformPreferences,
   type PlatformShellLabels,
 } from "@ontomato/platform-shell";
-import NativeFrameHost, { type NativeFrameSpec } from "./NativeFrameHost.vue";
+import ApplicationFrameHost, { type ApplicationFrameSpec } from "./ApplicationFrameHost.vue";
 import type { PlatformAppDeclaration } from "./apps";
 import { railApp } from "./apps";
 import {applicationShortcuts} from './application-shortcuts';
@@ -146,15 +146,16 @@ watch(
 const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
 
 /**
- * Native Vue routes belonging to a built-in application with a declared frame panel (Ontology manager's remaining
- * native pages, System settings, Permissions) run inside that frame panel rather than a shell-drawn menu.
+ * Any route belonging to an application with a declared frame panel (hybrid built-in applications such as Ontology
+ * manager, native built-in applications such as System settings, or pure panel applications) runs inside the single
+ * persistent outer frame host so switching between native pages and panel entries never tears down the frame.
  */
 const activePageId = computed(() => (route.meta.page as string | undefined) ?? route.path);
-const nativeFrame = computed<NativeFrameSpec | null>(() => {
-  if (props.blocked || props.appFramed) return null;
+const applicationFrame = computed<ApplicationFrameSpec | null>(() => {
+  if (props.blocked) return null;
   const app = activeApp.value;
-  if (!app?.framePanelId || !app.groups?.length) return null;
-  const groups: AppMenuGroup[] = app.groups.map((group) => ({
+  if (!app?.framePanelId) return null;
+  const groups: AppMenuGroup[] = (app.groups ?? []).map((group) => ({
     key: group.key,
     ...(group.label ? { label: group.label } : {}),
     items: group.pages,
@@ -163,7 +164,7 @@ const nativeFrame = computed<NativeFrameSpec | null>(() => {
     applicationId: app.id,
     framePanelId: app.framePanelId,
     title: app.label,
-    groups,
+    groups: groups.length > 0 ? groups : null,
     activePageId: activePageId.value,
   };
 });
@@ -174,10 +175,10 @@ const nativeFrame = computed<NativeFrameSpec | null>(() => {
  * (the ontology manager's, the external MCP services) is left to draw it, so no page has two.
  */
 const headerTitle = computed(() =>
-  (props.shownPage?.named || nativeFrame.value ? props.shownPage?.title : activeApp.value?.label) ?? props.shownPage?.title ?? "");
+  (props.shownPage?.named || applicationFrame.value ? props.shownPage?.title : activeApp.value?.label) ?? props.shownPage?.title ?? "");
 // A page that names itself with a description of its own (a panel entry's) says it, as the page it names.
 const headerDescription = computed(() =>
-  (nativeFrame.value || (props.shownPage?.named && props.shownPage.description) ? props.shownPage?.description : activeApp.value?.description)
+  (applicationFrame.value || (props.shownPage?.named && props.shownPage.description) ? props.shownPage?.description : activeApp.value?.description)
     ?? props.shownPage?.description ?? null,
 );
 const headerShown = computed(() => !props.blocked && props.shownPage !== null && !props.shownPage.ownHeader && !props.appFramed);
@@ -204,10 +205,10 @@ const headerLabels = computed(() => ({
   >
     <!--
       One page area for every application, so the page is mounted once even when the catalog arrives after initial
-      render: NativeFrameHost keeps the page in place and moves it into `<current-entry>` once the frame attaches.
+      render: ApplicationFrameHost keeps the page in place and moves it into `<current-entry>` once the frame attaches.
     -->
     <div ref="appBody" class="platform-app-body">
-      <NativeFrameHost :frame="nativeFrame">
+      <ApplicationFrameHost :frame="applicationFrame" :blocked="Boolean(blocked)">
         <div class="platform-app-page">
           <PlatformPageHeader
             v-if="headerShown"
@@ -235,7 +236,7 @@ const headerLabels = computed(() => ({
             <RouterView />
           </div>
         </div>
-      </NativeFrameHost>
+      </ApplicationFrameHost>
     </div>
   </PlatformShell>
 </template>

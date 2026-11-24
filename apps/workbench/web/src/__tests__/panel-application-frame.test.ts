@@ -10,6 +10,7 @@ import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import { provideApplicationFrame } from "@ontomato/platform-shell";
 import { components as sdkCatalogueComponents } from "../../../../../packages/apps-sdk/src/catalogue";
+import ApplicationFrameHost from "../../../../../packages/platform-web/src/ApplicationFrameHost.vue";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
@@ -97,7 +98,7 @@ it("holds the entry's page, header and content, in the frame; shares the frame's
   const { app: mounted, element } = mountPlatformPage(() => h(defineComponent({
     setup() {
       framed = provideApplicationFrame();
-      return () => h(RouterView);
+      return () => h(ApplicationFrameHost, null, { default: () => h(RouterView) });
     },
   })), router);
   try {
@@ -210,7 +211,7 @@ it("shipped platform-frame renders grouped app menu for multi-entry apps, hides 
   const multiMount = mountPlatformPage(() => h(defineComponent({
     setup() {
       provideApplicationFrame();
-      return () => h(RouterView);
+      return () => h(ApplicationFrameHost, null, { default: () => h(RouterView) });
     },
   })), router);
   try {
@@ -228,7 +229,7 @@ it("shipped platform-frame renders grouped app menu for multi-entry apps, hides 
   const singleMount = mountPlatformPage(() => h(defineComponent({
     setup() {
       provideApplicationFrame();
-      return () => h(RouterView);
+      return () => h(ApplicationFrameHost, null, { default: () => h(RouterView) });
     },
   })), router);
   try {
@@ -489,7 +490,7 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
   const mounted = mountPlatformPage(() => h(defineComponent({
     setup() {
       provideApplicationFrame();
-      return () => h(RouterView);
+      return () => h(ApplicationFrameHost, null, { default: () => h(RouterView) });
     },
   })), router);
 

@@ -88,6 +88,11 @@ vi.mock("../panel-host", () => ({
   resolveApplicationEntry: (query: { path?: string; useId?: string }) => resolveApplicationEntryMock(query),
   readApplicationFrameManifest: vi.fn(),
   cachedApplicationFrameManifest: vi.fn(() => null),
+  builtinFramePanelHost: (applicationId: string, framePanelId: string) => ({
+    kind: "frame",
+    applicationId,
+    framePanelId,
+  }),
   framePanelHost: (applicationId: string, _use: ApplicationPanelUse, framePanelId: string) => ({
     kind: "frame",
     applicationId,
@@ -126,7 +131,7 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
         framePortRef: port,
       };
       mountedHosts.push(record);
-      if (manualSurfaceReady && port.kind === "content") {
+      if (manualSurfaceReady) {
         emit("surface-ready", false);
       }
       return () => {
@@ -148,6 +153,7 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
   }),
 }));
 
+const ApplicationFrameHost = (await import("../ApplicationFrameHost.vue")).default;
 const PanelApplicationRoute = (await import("../pages/PanelApplicationRoute.vue")).default;
 
 function resolutionOf(
@@ -187,7 +193,9 @@ async function mountRoute(initialPath: string, routeProps: Record<string, unknow
   });
   await router.push(initialPath);
   await router.isReady();
-  const wrapper = mount(defineComponent({ render: () => h(RouterView) }), {
+  const wrapper = mount(defineComponent({
+    render: () => h(ApplicationFrameHost, null, { default: () => h(RouterView) }),
+  }), {
     global: { plugins: [router, workbenchI18n()] },
   });
   await nextTick();
@@ -340,6 +348,7 @@ describe("entry-table admission, refresh, and transition experience", () => {
   });
 
   it("resets previous resolution, frame port, and retained page immediately on cross-application switch and shows loading placeholder", async () => {
+    manualSurfaceReady = true;
     catalogApplications.value = [
       { id: appA, framePanelId: "frame-a", panelUses: [tasksUse] },
       { id: appB, framePanelId: "frame-b", panelUses: [appBUse] },
@@ -351,18 +360,26 @@ describe("entry-table admission, refresh, and transition experience", () => {
 
     const { router, wrapper } = await mountRoute(tasksUse.path);
     await flushPromises();
+    mountedHosts.find((host) => host.key === "frame:frame-a")!.emitSurfaceReady(true);
+    mountedHosts.find((host) => host.key === "use-tasks")!.emitSurfaceReady(true);
+    await nextTick();
     expect(wrapper.find('[data-frame-panel="frame-a"]').exists()).toBe(true);
 
-    // Switch to another framed application: old frame must vanish immediately and placeholder must appear.
+    // Switch to another framed application: old frame and content vanish immediately while the new frame loads in
+    // parallel with resolve-entry behind the loading placeholder.
     await router.push(appBUse.path);
     await nextTick();
 
     expect(wrapper.find('[data-frame-panel="frame-a"]').exists()).toBe(false);
     expect(wrapper.find('[data-content-use="use-tasks"]').exists()).toBe(false);
     expect(wrapper.find("[data-panel-loading-placeholder]").exists()).toBe(true);
+    expect(mountedHosts.some((host) => host.key === "frame:frame-b")).toBe(true);
 
     pendingB.resolve(resolutionOf(appB, appBUse, [appBUse], "frame-b"));
     await flushPromises();
+    mountedHosts.find((host) => host.key === "frame:frame-b")!.emitSurfaceReady(true);
+    mountedHosts.find((host) => host.key === "use-b-home")!.emitSurfaceReady(true);
+    await nextTick();
 
     expect(wrapper.find("[data-panel-loading-placeholder]").exists()).toBe(false);
     expect(wrapper.get('[data-frame-panel="frame-b"]').attributes("data-frame-app")).toBe(appB);
