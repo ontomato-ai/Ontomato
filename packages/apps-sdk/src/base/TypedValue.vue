@@ -7,7 +7,7 @@ import type { PanelFieldTone, PanelRecordFieldArrayItem, PanelRecordFieldValue }
 import { appIcon } from "@ontomato/platform-shell";
 import { panelContextKey, projectionKey } from "../panel/context";
 import { panelMemberKey } from "../panel/member";
-import type { PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
+import type { PlatformChildFieldReference, PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
 import {
   asTone,
   extractMetricCell,
@@ -24,12 +24,15 @@ import {
 } from "./display-value";
 import { resolveLocalizedText } from "./localized-text";
 import {
+  childReferenceDisplayLabel,
   displayFieldText,
+  isRecordChildReference,
   isRecordReference,
   rawRecordField,
   recordFieldArrayItems,
   referenceDisplayLabel,
   scalarFieldText,
+  toChildFieldReference,
   toFieldReference,
 } from "./record-field";
 
@@ -91,6 +94,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** Emitted when a reader clicks an object reference value (or a reference item inside a list). */
   navigate: [reference: PlatformFieldReference, fieldName?: string];
+  /** Emitted when a reader clicks a parent-scoped child reference value (or an inline child reference item inside a list). */
+  "navigate-child": [payload: PlatformChildFieldReference & { readonly fieldName?: string }];
 }>();
 
 const i18n = (() => {
@@ -246,6 +251,14 @@ const isEmptyValue = computed(() => {
   return false;
 });
 
+const childReferenceValue = computed<PlatformChildFieldReference | null>(() => {
+  const raw = resolved.value.raw;
+  if (isRecordChildReference(raw as PanelRecordFieldValue | undefined)) {
+    return toChildFieldReference(raw as Extract<PanelRecordFieldValue, { kind: "child-reference" }>);
+  }
+  return null;
+});
+
 const referenceValue = computed<PlatformFieldReference | null>(() => {
   const raw = resolved.value.raw;
   if (isRecordReference(raw as PanelRecordFieldValue | undefined)) {
@@ -271,6 +284,7 @@ const referenceValue = computed<PlatformFieldReference | null>(() => {
 interface NormalizedListItem {
   readonly text: string;
   readonly reference: PlatformFieldReference | null;
+  readonly childReference: PlatformChildFieldReference | null;
 }
 
 const listItems = computed<readonly NormalizedListItem[]>(() => {
@@ -286,17 +300,30 @@ const listItems = computed<readonly NormalizedListItem[]>(() => {
   return source
     .map((item): NormalizedListItem | null => {
       if (item === undefined || item === null) return null;
+      if (isRecordChildReference(item as PanelRecordFieldArrayItem)) {
+        const refObj = item as Extract<PanelRecordFieldArrayItem, { kind: "child-reference" }>;
+        return {
+          text: childReferenceDisplayLabel(refObj),
+          reference: null,
+          childReference: toChildFieldReference(refObj),
+        };
+      }
       if (isRecordReference(item as PanelRecordFieldArrayItem)) {
         const refObj = item as Extract<PanelRecordFieldArrayItem, { kind: "reference" }>;
         return {
           text: referenceDisplayLabel(refObj),
           reference: toFieldReference(refObj),
+          childReference: null,
         };
       }
       if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
-        return { text: scalarFieldText(item, translate), reference: null };
+        return { text: scalarFieldText(item, translate), reference: null, childReference: null };
       }
-      return { text: displayFieldText(item as PanelRecordFieldValue, locale.value, translate), reference: null };
+      return {
+        text: displayFieldText(item as PanelRecordFieldValue, locale.value, translate, props.separator),
+        reference: null,
+        childReference: null,
+      };
     })
     .filter((entry): entry is NormalizedListItem => entry !== null && entry.text.length > 0);
 });
@@ -343,7 +370,7 @@ const displayText = computed<string>(() => {
   if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
     return scalarFieldText(raw, translate);
   }
-  return displayFieldText(raw as PanelRecordFieldValue, locale.value, translate);
+  return displayFieldText(raw as PanelRecordFieldValue, locale.value, translate, props.separator);
 });
 
 const tooltipTitle = computed<string | undefined>(() => {
@@ -366,6 +393,17 @@ function navigateTo(reference: PlatformFieldReference) {
   }
   emit("navigate", reference, fieldName);
 }
+
+function navigateToChild(reference: PlatformChildFieldReference) {
+  const fieldName = resolved.value.fieldKey;
+  emit("navigate-child", {
+    parent: reference.parent,
+    collection: reference.collection,
+    primaryKey: reference.primaryKey,
+    label: reference.label,
+    ...(fieldName !== undefined ? { fieldName } : {}),
+  });
+}
 </script>
 
 <template>
@@ -385,10 +423,17 @@ function navigateTo(reference: PlatformFieldReference) {
     <span v-else-if="resolved.state === 'empty' || isEmptyValue" class="sdk-typed-value-empty">{{ resolvedEmptyText }}</span>
 
     <button
+      v-else-if="effectiveKind === 'reference' && childReferenceValue"
+      type="button"
+      class="sdk-typed-value-link is-child-ref"
+      @click.stop="navigateToChild(childReferenceValue)"
+    >{{ childReferenceValue.label || childReferenceValue.primaryKey }}</button>
+
+    <button
       v-else-if="effectiveKind === 'reference' && referenceValue"
       type="button"
       class="sdk-typed-value-link"
-      @click="navigateTo(referenceValue)"
+      @click.stop="navigateTo(referenceValue)"
     >{{ referenceValue.label || referenceValue.primaryKey }}</button>
 
     <span
@@ -411,26 +456,43 @@ function navigateTo(reference: PlatformFieldReference) {
     <span v-else-if="effectiveKind === 'tags' || (effectiveKind === 'list' && listStyle === 'tags')" class="sdk-typed-value-tags">
       <template v-for="(item, idx) in listItems" :key="idx">
         <button
-          v-if="item.reference"
+          v-if="item.childReference"
+          type="button"
+          class="sdk-typed-value-tag is-link is-child-ref"
+          :data-tone="effectiveTone ?? 'info'"
+          @click.stop="navigateToChild(item.childReference)"
+        >{{ item.text }}</button>
+        <button
+          v-else-if="item.reference"
           type="button"
           class="sdk-typed-value-tag is-link"
           :data-tone="effectiveTone ?? 'info'"
-          @click="navigateTo(item.reference)"
+          @click.stop="navigateTo(item.reference)"
         >{{ item.text }}</button>
         <span v-else class="sdk-typed-value-tag" :data-tone="effectiveTone ?? 'default'">{{ item.text }}</span>
       </template>
     </span>
 
-    <span v-else-if="effectiveKind === 'list'" class="sdk-typed-value-list">
+    <span
+      v-else-if="effectiveKind === 'list'"
+      class="sdk-typed-value-list"
+      :class="{ 'is-inline-sentence': separator === '' }"
+    >
       <template v-for="(item, idx) in listItems" :key="idx">
-        <span v-if="idx > 0" class="sdk-typed-value-sep">{{ separator }}</span>
+        <span v-if="idx > 0 && separator !== ''" class="sdk-typed-value-sep">{{ separator }}</span>
         <button
-          v-if="item.reference"
+          v-if="item.childReference"
+          type="button"
+          class="sdk-typed-value-link is-child-ref"
+          @click.stop="navigateToChild(item.childReference)"
+        >{{ item.text }}</button>
+        <button
+          v-else-if="item.reference"
           type="button"
           class="sdk-typed-value-link"
-          @click="navigateTo(item.reference)"
+          @click.stop="navigateTo(item.reference)"
         >{{ item.text }}</button>
-        <span v-else>{{ item.text }}</span>
+        <span v-else class="sdk-typed-value-fragment">{{ item.text }}</span>
       </template>
     </span>
 
@@ -538,6 +600,23 @@ function navigateTo(reference: PlatformFieldReference) {
   box-shadow: var(--focus-ring);
 }
 
+.sdk-typed-value-link.is-child-ref {
+  display: inline;
+  padding: 0 3px;
+  border-radius: var(--radius-xs);
+  background: var(--ui-fill-tertiary);
+  color: var(--brand-link, var(--el-color-primary));
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  line-height: inherit;
+  vertical-align: baseline;
+}
+
+.sdk-typed-value-link.is-child-ref:hover {
+  background: var(--el-color-primary-light-9);
+  text-decoration: underline;
+}
+
 .sdk-typed-value-tags {
   display: inline-flex;
   flex-wrap: wrap;
@@ -599,6 +678,14 @@ function navigateTo(reference: PlatformFieldReference) {
   flex-wrap: wrap;
   align-items: baseline;
   min-width: 0;
+}
+
+.sdk-typed-value-list.is-inline-sentence {
+  display: inline;
+}
+
+.sdk-typed-value-list.is-inline-sentence .sdk-typed-value-fragment {
+  white-space: pre-wrap;
 }
 
 .sdk-typed-value-sep {

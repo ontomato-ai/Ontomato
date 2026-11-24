@@ -6,7 +6,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
-import type { PanelChildObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { PanelChildObjectIdentity, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import {
   authoredReadParameterSource,
@@ -15,6 +15,7 @@ import {
   panelRecordItemKey,
   panelRecordObjectRef,
   panelRowOperationKey,
+  type PanelRecordChildReferenceFieldValue,
   type PanelRecordQuery,
   type PanelRecordReferenceFieldValue,
 } from "@ontomato/contracts/panel-projection";
@@ -41,6 +42,7 @@ import {
 import { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam } from "../panel/member";
 import { admittedOperations, missingOperationDescriptorResult } from "../panel/member-operations";
 import type {
+  PlatformChildFieldReference,
   PlatformFieldReference,
   PlatformGraphStatus,
   PlatformObjectRecord,
@@ -56,6 +58,7 @@ import ObjectListRowActions, { type ResolvedRowActionItem } from "./ObjectListRo
 import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
+import TypedValue from "./TypedValue.vue";
 import {
   formatOperationOutcome,
   resolveOperationInputFields,
@@ -98,12 +101,15 @@ import {
   VIRTUAL_ROW_THRESHOLD,
 } from "./object-list-virtual";
 import {
+  childReferenceDisplayLabel,
   displayFieldText,
+  isRecordChildReference,
   isRecordReference,
   rawRecordField,
   recordFieldArrayItems,
   referenceDisplayLabel,
   scalarFieldText,
+  toChildFieldReference,
   toFieldReference,
 } from "./record-field";
 import { textHighlightSegments } from "./text-highlight";
@@ -315,6 +321,8 @@ const emit = defineEmits<{
   "update:listed": [value: readonly ObjectListRef[]];
   /** Emitted when a reader clicks a reference cell carrying an owner-supplied object reference. */
   navigate: [reference: PlatformFieldReference, columnKey: string];
+  /** Emitted when a reader clicks a parent-scoped child reference cell or inline child reference item. */
+  "navigate-child": [reference: PlatformChildFieldReference, columnKey: string];
   /** Emitted when the reader clicks Clear filters from the narrowed empty state. */
   "clear-filters": [];
   /** Emitted when the reader clicks a local button (`kind: "local"`) in the built-in row action column. */
@@ -439,6 +447,10 @@ const canSearch = computed(
   () => props.searchable !== false && (hasServerSearch || (isLocalSearchActive.value && isWritableParam("search"))),
 );
 const canCheck = Boolean(slotOutputState(panel.manifest, member.key, "checked"));
+const selectedStateName = slotOutputState(panel.manifest, member.key, "selected")
+  ?? (placement.inputs?.selected && "state" in placement.inputs.selected ? placement.inputs.selected.state : undefined);
+const selectedStateType = selectedStateName ? panel.manifest.state[selectedStateName]?.type : undefined;
+const isChildObjectSelection = selectedStateType?.kind === "child-object";
 const canSelect = Boolean(slotOutputState(panel.manifest, member.key, "selected"));
 const hasWritableSelectedInput = Boolean(
   placement.inputs?.selected && "state" in placement.inputs.selected,
@@ -909,21 +921,44 @@ const queryStatus = computed(() => parsedData.value.status);
 const diagnostics = computed(() => parsedData.value.diagnostics);
 const queryReason = computed(() => parsedData.value.reason);
 
-function rowSelectionValue(row: PlatformObjectRecord) {
+const childSelectionParent = computed<PanelObjectIdentity | null>(() => {
+  if (!isChildObjectSelection || !("object" in datum.source)) return null;
+  if ("literal" in datum.source.object) {
+    const literal = datum.source.object.literal;
+    return { objectType: literal.className, primaryKey: literal.primaryKey };
+  }
+  const inputRef = stateObject(member.inputs.value[datum.source.object.input] as PanelFieldValue | undefined);
+  if (!inputRef) return null;
+  return { objectType: inputRef.className, primaryKey: inputRef.primaryKey };
+});
+
+function rowObjectRef(row: PlatformObjectRecord) {
   return panelRecordObjectRef(row, activeType.value ?? rowObjectType);
 }
-const listedRefs = computed(() => rows.value.map(rowSelectionValue));
+
+function rowSelectionValue(row: PlatformObjectRecord): ObjectListSelection {
+  const parent = childSelectionParent.value;
+  if (parent) {
+    return { parent, primaryKey: row.primaryKey };
+  }
+  return rowObjectRef(row);
+}
+const listedRefs = computed(() => rows.value.map(rowObjectRef));
 
 function rowItemKey(row: PlatformObjectRecord) {
   return panelRecordItemKey(row, { fallbackClassName: activeType.value ?? rowObjectType });
 }
 
 function rowClassName(row: PlatformObjectRecord): string {
-  return rowSelectionValue(row).className;
+  return rowObjectRef(row).className;
 }
 
 function refKey(refValue: ObjectListRef): string {
   return `${refValue.className}\u0000${refValue.primaryKey}`;
+}
+
+function rowCheckKey(row: PlatformObjectRecord): string {
+  return refKey(rowObjectRef(row));
 }
 
 function selectionIdentity(value: ObjectListSelection | null): string | null {
@@ -933,7 +968,7 @@ function selectionIdentity(value: ObjectListSelection | null): string | null {
 }
 
 function rowIdentityKey(row: PlatformObjectRecord): string {
-  return refKey(rowSelectionValue(row));
+  return selectionIdentity(rowSelectionValue(row))!;
 }
 
 const chosenRef = computed<ObjectListSelection | null>(() => {
@@ -948,10 +983,10 @@ const checkedRefs = computed<readonly ObjectListRef[]>(() =>
 );
 const checkedIdentityKeys = computed(() => new Set(checkedRefs.value.map(refKey)));
 const allVisibleChecked = computed(
-  () => rows.value.length > 0 && rows.value.every((row) => checkedIdentityKeys.value.has(rowIdentityKey(row))),
+  () => rows.value.length > 0 && rows.value.every((row) => checkedIdentityKeys.value.has(rowCheckKey(row))),
 );
 const someVisibleChecked = computed(
-  () => !allVisibleChecked.value && rows.value.some((row) => checkedIdentityKeys.value.has(rowIdentityKey(row))),
+  () => !allVisibleChecked.value && rows.value.some((row) => checkedIdentityKeys.value.has(rowCheckKey(row))),
 );
 
 const effectiveLayout = computed<"list" | "table" | "cards">(() => {
@@ -966,7 +1001,7 @@ const isCards = computed(() => effectiveLayout.value === "cards");
 const LONG_TEXT = 24;
 /** A column's text in a row, as the cell shows it. */
 function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string {
-  return fieldValue(row, column.key);
+  return displayFieldText(rawRecordField(row, column.key), locale.value, t, column.listSeparator ?? ", ");
 }
 /**
  * How a column is laid out, with no width of its own: one line at its own width by default, so a short value never
@@ -1258,17 +1293,21 @@ watch(
       return;
     }
     const allLoaded = rawRows.value;
-    const byType = new Map<string, { primaryKey: string; label: string }[]>();
-    for (const item of allLoaded) {
-      const itemType = rowClassName(item);
-      let bucket = byType.get(itemType);
-      if (!bucket) {
-        bucket = [];
-        byType.set(itemType, bucket);
+    if (isChildObjectSelection && selectedStateType?.kind === "child-object" && childSelectionParent.value) {
+      panel.instance.nameChildObjects(childSelectionParent.value, selectedStateType.collection, allLoaded);
+    } else {
+      const byType = new Map<string, { primaryKey: string; label: string }[]>();
+      for (const item of allLoaded) {
+        const itemType = rowClassName(item);
+        let bucket = byType.get(itemType);
+        if (!bucket) {
+          bucket = [];
+          byType.set(itemType, bucket);
+        }
+        bucket.push(item);
       }
-      bucket.push(item);
+      for (const [itemType, items] of byType) panel.instance.nameObjects(itemType, items);
     }
-    for (const [itemType, items] of byType) panel.instance.nameObjects(itemType, items);
     publishListed(listedRefs.value);
     selectInitially(rows.value);
     if (pendingScrollToTop) {
@@ -1737,21 +1776,21 @@ function onListItemKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
 }
 
 function toggleChecked(row: PlatformObjectRecord, checked: boolean) {
-  const identity = rowIdentityKey(row);
+  const identity = rowCheckKey(row);
   if (checked) {
     if (checkedIdentityKeys.value.has(identity)) return;
-    setChecked([...checkedRefs.value, rowSelectionValue(row)]);
+    setChecked([...checkedRefs.value, rowObjectRef(row)]);
   } else {
     setChecked(checkedRefs.value.filter((item) => refKey(item) !== identity));
   }
 }
 
 function toggleAllVisible(checked: boolean) {
-  const visibleKeys = new Set(rows.value.map(rowIdentityKey));
+  const visibleKeys = new Set(rows.value.map(rowCheckKey));
   if (checked) {
     const added = rows.value
-      .filter((row) => !checkedIdentityKeys.value.has(rowIdentityKey(row)))
-      .map(rowSelectionValue);
+      .filter((row) => !checkedIdentityKeys.value.has(rowCheckKey(row)))
+      .map(rowObjectRef);
     setChecked([...checkedRefs.value, ...added]);
   } else {
     setChecked(checkedRefs.value.filter((item) => !visibleKeys.has(refKey(item))));
@@ -1766,6 +1805,15 @@ function navigateTo(reference: PlatformFieldReference, columnKey: string) {
   const output = placement.outputs?.[columnKey] ? columnKey : "navigate";
   void panel.instance.output(member.key, output, { className: reference.className, primaryKey: reference.primaryKey });
   emit("navigate", reference, columnKey);
+}
+
+function navigateToChild(reference: PlatformChildFieldReference, columnKey: string) {
+  emit("navigate-child", {
+    parent: reference.parent,
+    collection: reference.collection,
+    primaryKey: reference.primaryKey,
+    label: reference.label,
+  }, columnKey);
 }
 
 /** The field each compact item's summary line shows: the one configured, else the owner's own subtitle. */
@@ -1788,6 +1836,27 @@ function fieldValue(row: PlatformObjectRecord, key: string): string {
 function referenceField(row: PlatformObjectRecord, key: string): PanelRecordReferenceFieldValue | null {
   const raw = rawRecordField(row, key);
   return isRecordReference(raw) ? raw : null;
+}
+
+function childReferenceField(row: PlatformObjectRecord, key: string): PanelRecordChildReferenceFieldValue | null {
+  const raw = rawRecordField(row, key);
+  return isRecordChildReference(raw) ? raw : null;
+}
+
+function arrayHasChildReference(row: PlatformObjectRecord, key: string): boolean {
+  const raw = rawRecordField(row, key);
+  return Array.isArray(raw) && raw.some((item) => isRecordChildReference(item));
+}
+
+function usesTypedValueCell(row: PlatformObjectRecord, column: ObjectListColumn): boolean {
+  if (column.kind !== "text" && childReferenceField(row, column.key)) return true;
+  const raw = rawRecordField(row, column.key);
+  if (Array.isArray(raw)) {
+    return column.listSeparator !== undefined
+      || column.listStyle !== undefined
+      || arrayHasChildReference(row, column.key);
+  }
+  return false;
 }
 
 function highlightRangesFor(row: PlatformObjectRecord, key: string, text: string): readonly TextHighlightRange[] | undefined {
@@ -2208,7 +2277,7 @@ async function executeRowOperation(
       const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
       if (answered?.kind === "success") panel.notify({ kind: "success", text: saidRowOp(answered) });
       else rowOpReceipt.value = answer.response;
-      if (answered) emit("operation-done", operationName, answered, rowSelectionValue(row));
+      if (answered) emit("operation-done", operationName, answered, rowObjectRef(row));
       return answered;
     };
     let answer: PanelWriteResult;
@@ -2387,8 +2456,8 @@ watch(
             const resolvedTarget = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
             const effectiveTarget = resolvedTarget ?? {
               kind: "object" as const,
-              objectType: rowSelectionValue(row).className,
-              primaryKey: rowSelectionValue(row).primaryKey,
+              objectType: rowObjectRef(row).className,
+              primaryKey: rowObjectRef(row).primaryKey,
             };
             if (!matchesExpectedTarget(effectiveTarget, expectedTarget)) {
               return {
@@ -2475,7 +2544,7 @@ function triggerRowAction(row: PlatformObjectRecord, index: number, item: Resolv
     return;
   }
   if (item.kind === "local" && item.id) {
-    const ref = rowSelectionValue(row);
+    const ref = rowObjectRef(row);
     if (item.to) {
       const address = resolveRowActionAddress(item.to, row, activeType.value ?? rowObjectType);
       void panel.navigate(address);
@@ -2506,7 +2575,7 @@ function cellSlotProps(row: PlatformObjectRecord, index: number, column: ObjectL
     ...rowActionsSlotProps(row, index),
     column,
     value: rawRecordField(row, column.key),
-    displayText: fieldValue(row, column.key),
+    displayText: columnText(row, column),
     tone: columnTone(row, column),
   };
 }
@@ -2725,7 +2794,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <input
                       type="checkbox"
                       :aria-label="entry.row.label"
-                      :checked="checkedIdentityKeys.has(entry.key)"
+                      :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
                       @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                     />
                   </td>
@@ -2739,7 +2808,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <list-row-slot-host
                       v-if="columnCellSlot(column.key)"
                       :list-slot="member.key"
-                      :row-ref="rowSelectionValue(entry.row)"
+                      :row-ref="rowObjectRef(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -2747,8 +2816,19 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                       :slot-props="cellSlotProps(entry.row, entry.rowIndex, column)"
                       :fallback-to-default="true"
                     >
+                      <TypedValue
+                        v-if="usesTypedValueCell(entry.row, column)"
+                        :value="rawRecordField(entry.row, column.key)"
+                        :field="column.key"
+                        :kind="Array.isArray(rawRecordField(entry.row, column.key)) ? (column.kind === 'tags' ? 'tags' : 'list') : 'reference'"
+                        :list-style="column.kind === 'tags' ? 'tags' : (column.listStyle ?? 'inline')"
+                        :separator="column.listSeparator ?? ', '"
+                        :empty-text="columnEmpty(column)"
+                        @navigate="(ref) => navigateTo(ref, column.key)"
+                        @navigate-child="(ref) => navigateToChild(ref, column.key)"
+                      />
                       <button
-                        v-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
+                        v-else-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
                         type="button"
                         class="sdk-object-ref-link"
                         @click.stop="navigateTo(toFieldReference(referenceField(entry.row, column.key)!), column.key)"
@@ -2760,7 +2840,15 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                       <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
                         <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
                           <button
-                            v-if="isRecordReference(item)"
+                            v-if="isRecordChildReference(item)"
+                            type="button"
+                            class="sdk-object-ref-link"
+                            @click.stop="navigateToChild(toChildFieldReference(item), column.key)"
+                          >
+                            {{ childReferenceDisplayLabel(item) }}
+                          </button>
+                          <button
+                            v-else-if="isRecordReference(item)"
                             type="button"
                             class="sdk-object-ref-link"
                             @click.stop="navigateTo(toFieldReference(item), column.key)"
@@ -2808,6 +2896,17 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                         </div>
                       </div>
                     </list-row-slot-host>
+                    <TypedValue
+                      v-else-if="usesTypedValueCell(entry.row, column)"
+                      :value="rawRecordField(entry.row, column.key)"
+                      :field="column.key"
+                      :kind="Array.isArray(rawRecordField(entry.row, column.key)) ? (column.kind === 'tags' ? 'tags' : 'list') : 'reference'"
+                      :list-style="column.kind === 'tags' ? 'tags' : (column.listStyle ?? 'inline')"
+                      :separator="column.listSeparator ?? ', '"
+                      :empty-text="columnEmpty(column)"
+                      @navigate="(ref) => navigateTo(ref, column.key)"
+                      @navigate-child="(ref) => navigateToChild(ref, column.key)"
+                    />
                     <button
                       v-else-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
                       type="button"
@@ -2821,7 +2920,15 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
                       <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
                         <button
-                          v-if="isRecordReference(item)"
+                          v-if="isRecordChildReference(item)"
+                          type="button"
+                          class="sdk-object-ref-link"
+                          @click.stop="navigateToChild(toChildFieldReference(item), column.key)"
+                        >
+                          {{ childReferenceDisplayLabel(item) }}
+                        </button>
+                        <button
+                          v-else-if="isRecordReference(item)"
                           type="button"
                           class="sdk-object-ref-link"
                           @click.stop="navigateTo(toFieldReference(item), column.key)"
@@ -2879,7 +2986,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <list-row-slot-host
                       v-if="hasActionsSlot"
                       :list-slot="member.key"
-                      :row-ref="rowSelectionValue(entry.row)"
+                      :row-ref="rowObjectRef(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -2918,7 +3025,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell sdk-object-list-detail-host">
                     <list-row-slot-host
                       :list-slot="member.key"
-                      :row-ref="rowSelectionValue(entry.row)"
+                      :row-ref="rowObjectRef(entry.row)"
                       :item-key="rowItemKey(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
@@ -2984,7 +3091,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
             <list-row-slot-host
               v-if="slots.card"
               :list-slot="member.key"
-              :row-ref="rowSelectionValue(entry.row)"
+              :row-ref="rowObjectRef(entry.row)"
               :index="entry.rowIndex"
               :operations="rowOperationsFor(entry.row)"
               :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -2992,8 +3099,8 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
               :slot-props="{
                 ...rowActionsSlotProps(entry.row, entry.rowIndex),
                 selected: entry.key === chosenIdentity,
-                checked: checkedIdentityKeys.has(entry.key),
-                toggleCheck: (next?: boolean) => toggleChecked(entry.row, next ?? !checkedIdentityKeys.has(entry.key)),
+                checked: checkedIdentityKeys.has(rowCheckKey(entry.row)),
+                toggleCheck: (next?: boolean) => toggleChecked(entry.row, next ?? !checkedIdentityKeys.has(rowCheckKey(entry.row))),
                 expanded: isRowExpanded(entry.row),
                 toggleExpand: () => toggleRowExpanded(entry.row),
               }"
@@ -3015,7 +3122,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   type="checkbox"
                   class="sdk-object-list-card-check"
                   :aria-label="entry.row.label"
-                  :checked="checkedIdentityKeys.has(entry.key)"
+                  :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
                   @click.stop
                   @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                 />
@@ -3058,7 +3165,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   type="checkbox"
                   class="sdk-object-list-card-check"
                   :aria-label="entry.row.label"
-                  :checked="checkedIdentityKeys.has(entry.key)"
+                  :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
                   @click.stop
                   @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                 />
@@ -3090,7 +3197,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <list-row-slot-host
                       v-if="columnCellSlot(column.key)"
                       :list-slot="member.key"
-                      :row-ref="rowSelectionValue(entry.row)"
+                      :row-ref="rowObjectRef(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -3102,6 +3209,17 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                         <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                       </template>
                     </list-row-slot-host>
+                    <TypedValue
+                      v-else-if="usesTypedValueCell(entry.row, column)"
+                      :value="rawRecordField(entry.row, column.key)"
+                      :field="column.key"
+                      :kind="Array.isArray(rawRecordField(entry.row, column.key)) ? (column.kind === 'tags' ? 'tags' : 'list') : 'reference'"
+                      :list-style="column.kind === 'tags' ? 'tags' : (column.listStyle ?? 'inline')"
+                      :separator="column.listSeparator ?? ', '"
+                      :empty-text="columnEmpty(column)"
+                      @navigate="(ref) => navigateTo(ref, column.key)"
+                      @navigate-child="(ref) => navigateToChild(ref, column.key)"
+                    />
                     <button
                       v-else-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
                       type="button"
@@ -3115,7 +3233,15 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                     <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
                       <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
                         <button
-                          v-if="isRecordReference(item)"
+                          v-if="isRecordChildReference(item)"
+                          type="button"
+                          class="sdk-object-ref-link"
+                          @click.stop="navigateToChild(toChildFieldReference(item), column.key)"
+                        >
+                          {{ childReferenceDisplayLabel(item) }}
+                        </button>
+                        <button
+                          v-else-if="isRecordReference(item)"
                           type="button"
                           class="sdk-object-ref-link"
                           @click.stop="navigateTo(toFieldReference(item), column.key)"
@@ -3165,7 +3291,15 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
               <div v-if="tagsField && recordFieldArrayItems(entry.row, tagsField).length" class="sdk-object-list-card-tags">
                 <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, tagsField)" :key="itemIndex">
                   <button
-                    v-if="isRecordReference(item)"
+                    v-if="isRecordChildReference(item)"
+                    type="button"
+                    class="sdk-object-ref-link"
+                    @click.stop="navigateToChild(toChildFieldReference(item), tagsField)"
+                  >
+                    {{ childReferenceDisplayLabel(item) }}
+                  </button>
+                  <button
+                    v-else-if="isRecordReference(item)"
                     type="button"
                     class="sdk-object-ref-link"
                     @click.stop="navigateTo(toFieldReference(item), tagsField)"
@@ -3179,7 +3313,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                 <list-row-slot-host
                   v-if="hasActionsSlot"
                   :list-slot="member.key"
-                  :row-ref="rowSelectionValue(entry.row)"
+                  :row-ref="rowObjectRef(entry.row)"
                   :index="entry.rowIndex"
                   :operations="rowOperationsFor(entry.row)"
                   :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -3213,7 +3347,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
             >
               <list-row-slot-host
                 :list-slot="member.key"
-                :row-ref="rowSelectionValue(entry.row)"
+                :row-ref="rowObjectRef(entry.row)"
                 :item-key="rowItemKey(entry.row)"
                 :index="entry.rowIndex"
                 :operations="rowOperationsFor(entry.row)"
@@ -3288,7 +3422,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                 type="checkbox"
                 class="sdk-object-list-row-check"
                 :aria-label="entry.row.label"
-                :checked="checkedIdentityKeys.has(entry.key)"
+                :checked="checkedIdentityKeys.has(rowCheckKey(entry.row))"
                 @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
               />
               <component
@@ -3344,7 +3478,17 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   <span v-if="tagsField && recordFieldArrayItems(entry.row, tagsField).length" class="sdk-object-list-item-tags">
                     <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, tagsField)" :key="itemIndex">
                       <span
-                        v-if="isRecordReference(item)"
+                        v-if="isRecordChildReference(item)"
+                        role="link"
+                        tabindex="0"
+                        class="sdk-object-ref-link"
+                        @click.stop="navigateToChild(toChildFieldReference(item), tagsField)"
+                        @keydown.enter.stop.prevent="navigateToChild(toChildFieldReference(item), tagsField)"
+                      >
+                        {{ childReferenceDisplayLabel(item) }}
+                      </span>
+                      <span
+                        v-else-if="isRecordReference(item)"
                         role="link"
                         tabindex="0"
                         class="sdk-object-ref-link"
@@ -3363,7 +3507,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                 <list-row-slot-host
                   v-if="hasActionsSlot"
                   :list-slot="member.key"
-                  :row-ref="rowSelectionValue(entry.row)"
+                  :row-ref="rowObjectRef(entry.row)"
                   :index="entry.rowIndex"
                   :operations="rowOperationsFor(entry.row)"
                   :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -3397,7 +3541,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
             >
               <list-row-slot-host
                 :list-slot="member.key"
-                :row-ref="rowSelectionValue(entry.row)"
+                :row-ref="rowObjectRef(entry.row)"
                 :item-key="rowItemKey(entry.row)"
                 :index="entry.rowIndex"
                 :operations="rowOperationsFor(entry.row)"

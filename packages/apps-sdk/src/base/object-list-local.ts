@@ -1,7 +1,9 @@
 import type { PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
 import type { PlatformObjectRecord, TextHighlightRange } from "../panel/platform-objects";
 import {
+  childReferenceDisplayLabel,
   displayFieldText,
+  isRecordChildReference,
   isRecordReference,
   rawRecordField,
   referenceDisplayLabel,
@@ -62,7 +64,7 @@ function collectFieldSearchTexts(
   }
   if (Array.isArray(value)) {
     for (const item of value) {
-      if (isRecordReference(item)) {
+      if (isRecordReference(item) || isRecordChildReference(item)) {
         if (item.label) out.push(item.label);
         if (item.primaryKey) out.push(item.primaryKey);
       } else if (typeof item === "object" && item !== null) {
@@ -71,9 +73,13 @@ function collectFieldSearchTexts(
         collectFieldSearchTexts(item, locale, translate, out);
       }
     }
+    if (value.length > 1 && value.some((item) => isRecordChildReference(item))) {
+      const joined = displayFieldText(value, locale, translate, "").trim();
+      if (joined) out.push(joined);
+    }
     return;
   }
-  if (isRecordReference(value)) {
+  if (isRecordReference(value) || isRecordChildReference(value)) {
     if (value.label) out.push(value.label);
     if (value.primaryKey) out.push(value.primaryKey);
     return;
@@ -237,7 +243,7 @@ function matchesSingleFilterValue(
     if (typeof candidate === "string" || typeof candidate === "number") {
       return String(candidate) === expectedText;
     }
-    if (isRecordReference(candidate as PanelRecordFieldValue)) {
+    if (isRecordReference(candidate as PanelRecordFieldValue) || isRecordChildReference(candidate as PanelRecordFieldValue)) {
       const refVal = candidate as { primaryKey: string; label: string };
       return refVal.primaryKey === expectedText || refVal.label === expectedText;
     }
@@ -299,6 +305,11 @@ export function resolveGroupForRecord(
   const raw = resolveRecordField(row, groupBy, fallbackClassName);
   if (isRecordReference(raw)) {
     const label = referenceDisplayLabel(raw).trim();
+    if (!label) return { key: "", label: emptyLabel, isEmpty: true };
+    return { key: raw.primaryKey || label, label, isEmpty: false };
+  }
+  if (isRecordChildReference(raw)) {
+    const label = childReferenceDisplayLabel(raw).trim();
     if (!label) return { key: "", label: emptyLabel, isEmpty: true };
     return { key: raw.primaryKey || label, label, isEmpty: false };
   }

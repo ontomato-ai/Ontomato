@@ -29,6 +29,7 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
  */
 
 const panel = panelRecord("builtin-components", "Base components", definePanel({ state: {}, members: {} }));
+const catalogPath = "/api/data-query/platform/applications";
 const components: ApplicationPanelUse = {
   id: "use-components", pageKey: "ontology-components", panelId: panel.id, path: "/ontology/components",
   access: { permissionCode: "ontology-modeling" }, names: { en: "Base components" },
@@ -47,14 +48,22 @@ function answer(request: Sent) {
   return nothingAt(request);
 }
 
+function answerWithCatalog(panelUses: ApplicationPanelUse[]) {
+  return (request: Sent) => request.path === catalogPath
+    ? Response.json({ success: true, data: catalogWith(panelUses) })
+    : answer(request);
+}
+
 /** The platform's router as far as entries go: its layout, a page of its own, and the catch-all. */
-async function open(address: string, landing = "/home") {
+async function open(address: string, landing: string | null = "/home") {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     // The root lands where the deployment's start page says, as the platform's layout route does.
     { ...platformRoutes.layout, component: RouterView, redirect: () => startPage(), children: [
       { path: "/home", component: { render: () => h("p", { class: "home" }, "Home") } },
       // Where the platform's page guard sends a reader whose landing they may not open: their first page, the home here.
-      { ...platformRoutes.ontology, redirect: landing },
+      landing === null
+        ? { ...platformRoutes.ontology, component: { render: () => null } }
+        : { ...platformRoutes.ontology, redirect: landing },
     ] },
     unknownAddressRoute,
   ] });
@@ -67,30 +76,79 @@ async function open(address: string, landing = "/home") {
 
 afterEach(() => {
   leaveFrame();
-  useApplicationCatalog().applications.value = [];
+  const catalog = useApplicationCatalog();
+  catalog.applications.value = [];
+  catalog.loading.value = true;
   window.__APP_CONFIG__ = {};
 });
 
 it("opens a built-in application's entry at its original address, through the panel route", async () => {
-  installPlatform(answer);
+  const sent = installPlatform(answerWithCatalog([components]));
   useApplicationCatalog().applications.value = catalogWith([components]);
   const { router, app, element } = await open("/ontology/components");
   try {
     expect(router.currentRoute.value.path).toBe("/ontology/components");
     await vi.waitFor(() => expect(element.querySelector(".panel-host-coded")).not.toBeNull());
+    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(0);
+  } finally {
+    app.unmount();
+  }
+});
+
+it.each([
+  ["a cold link", []],
+  ["a newly granted entry", catalogWith([])],
+] as const)("reads the catalog once to open %s", async (_scenario, initialCatalog) => {
+  const sent = installPlatform(answerWithCatalog([components]));
+  useApplicationCatalog().applications.value = [...initialCatalog];
+  const { router, app } = await open(components.path);
+  try {
+    expect(router.currentRoute.value.path).toBe(components.path);
+    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(1);
   } finally {
     app.unmount();
   }
 });
 
 it("goes where an address no page serves goes for a reader the entry does not admit", async () => {
-  installPlatform(answer);
+  const sent = installPlatform(answerWithCatalog([]));
   // The catalog lists only the entries the reader may open: without the code, this one is not there.
   useApplicationCatalog().applications.value = catalogWith([]);
   const { router, app, element } = await open("/ontology/components");
   try {
     expect(router.currentRoute.value.path).toBe("/home");
     expect(element.querySelector(".home")).not.toBeNull();
+    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(1);
+  } finally {
+    app.unmount();
+  }
+});
+
+it.each([
+  ["/ontology", 0],
+  ["/ontology/unavailable", 1],
+] as const)("uses the available catalog to select a permitted landing from %s", async (address, expectedRequests) => {
+  const sent = installPlatform(answerWithCatalog([components]));
+  window.__APP_CONFIG__ = { INITIAL_ROUTE: "/ontology/unavailable" };
+  if (address === "/ontology") useApplicationCatalog().applications.value = catalogWith([components]);
+  const { router, app } = await open(address, null);
+  try {
+    expect(router.currentRoute.value.path).toBe(components.path);
+    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(expectedRequests);
+  } finally {
+    app.unmount();
+  }
+});
+
+it("does not read the catalog again at the landing after an empty response", async () => {
+  const sent = installPlatform(request => request.path === catalogPath
+    ? Response.json({ success: true, data: [] })
+    : answer(request));
+  window.__APP_CONFIG__ = { INITIAL_ROUTE: "/ontology/unavailable" };
+  const { router, app } = await open("/ontology/unavailable", null);
+  try {
+    expect(router.currentRoute.value.path).toBe("/ontology");
+    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(1);
   } finally {
     app.unmount();
   }
@@ -132,11 +190,7 @@ it("goes home when the landing picks back the very address nothing serves for th
 
 it("reads the catalog once before calling an address a page's code asks for missing", async () => {
   // A page asks from a native start page: nothing has read the catalog yet, so no entry is known.
-  installPlatform((request) => {
-    if (request.path === "/api/data-query/platform/applications")
-      return Response.json({ success: true, data: catalogWith([components]) });
-    return answer(request);
-  });
+  installPlatform(answerWithCatalog([components]));
   const { router, app } = await open("/home");
   try {
     expect(useApplicationCatalog().applications.value).toEqual([]);

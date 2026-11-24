@@ -132,13 +132,13 @@
         <projection slot="derivedSummary"></projection>
 
         <h3>{{ t("effects") }}</h3>
-        <projection slot="derivedEffects"></projection>
+        <projection slot="derivedEffects" @navigate-child="onNavigateChild"></projection>
 
         <h3>{{ t("parameters") }}</h3>
-        <projection slot="derivedParameters"></projection>
+        <projection slot="derivedParameters" @navigate-child="onNavigateChild"></projection>
 
         <h3>{{ t("conditions") }}</h3>
-        <projection slot="derivedConditions"></projection>
+        <projection slot="derivedConditions" @navigate-child="onNavigateChild"></projection>
       </section>
 
       <!-- Code explanation tab: generic AnnotatedCode bound to owner-projected annotatedExplanation. -->
