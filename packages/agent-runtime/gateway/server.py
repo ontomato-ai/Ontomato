@@ -128,6 +128,9 @@ def embedding_params(model: Model, body: dict) -> dict:
     params["input"] = body.get("input")
     if model.model_info.get("dimensions") is not None:
         params["dimensions"] = model.model_info["dimensions"]
+        # LiteLLM's OpenAI path drops dimensions for arbitrary model IDs unless explicitly allowed.
+        if prefix in ("openai", "custom_openai"):
+            params["allowed_openai_params"] = ["dimensions"]
     return params
 
 

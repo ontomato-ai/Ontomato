@@ -17,7 +17,7 @@ import {
   TEST_MODEL_CONNECTION,
 } from "@ontomato/contracts/platform-object-types";
 import type { ModelSettingsData } from "@ontomato/contracts/model-settings";
-import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
+import { panelFormDescriptionSchema, type PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en } from "../../../i18n/locales/en";
 import {
@@ -262,6 +262,18 @@ describe("model settings owner reads & forms", () => {
     expect(embedForm.fields.some((f) => f.path === "/supportsVision")).toBe(false);
   });
 
+  it("opens model usage with unset defaults and preserves omissions when checking a draft", async () => {
+    const usage = createModelUsageReads(actor);
+    const draft = panelFormDescriptionSchema.parse(await usage.form("domain", { values: {} }));
+    expect(draft.values).toEqual({});
+    expect(draft.errors).toEqual([]);
+
+    storedSettings.defaultModel = null;
+    storedSettings.embeddingModel = null;
+    const opened = panelFormDescriptionSchema.parse(await usage.form("domain", {}));
+    expect(opened.values).toEqual({});
+  });
+
   it("exposes vector rebuild outputs and ontology agent usages", async () => {
     const usage = createModelUsageReads(actor);
     const rebuild = await usage.vectorRebuild("domain");
@@ -387,12 +399,45 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
     expect(storedSettings.defaultModel).toBeNull();
   });
 
+  it.each<{ description: string; values: PanelFormValues }>([
+    { description: "omitted defaults", values: {} },
+    { description: "null defaults", values: { defaultModel: null, embeddingModel: null } },
+  ])("clears stored model selections when saving $description", async ({ values }) => {
+    const saveUsage = writeOp(`${MODEL_USAGE}.save`);
+    const result = await saveUsage.execute(
+      makeHost(),
+      { kind: "object", objectType: MODEL_USAGE, primaryKey: "domain" },
+      { values, submittedFields: ["/defaultModel", "/embeddingModel"] },
+      "intent-clear",
+    );
+    expect(result).toMatchObject({ kind: "success", data: {} });
+    expect(result.kind === "success" && result.data).toEqual({});
+    expect(savedBodies).toEqual([expect.objectContaining({ defaultModel: null, embeddingModel: null })]);
+  });
+
+  it("preserves an unsubmitted embedding selection in the impact preview and save", async () => {
+    const saveUsage = writeOp(`${MODEL_USAGE}.save`);
+    const host = makeHost();
+    const target = { kind: "object", objectType: MODEL_USAGE, primaryKey: "domain" } as const;
+    const input = { values: { defaultModel: "claude-sonnet" }, submittedFields: ["/defaultModel"] };
+
+    const fullImpact = await saveUsage.inspectImpact!.inspect(host, [{
+      target,
+      input: { values: { defaultModel: "claude-sonnet", embeddingModel: "embed-3" } },
+    }]);
+    expect(fullImpact).not.toBeNull();
+    expect(await saveUsage.inspectImpact!.inspect(host, [{ target, input }])).toEqual(fullImpact);
+
+    expect((await saveUsage.execute(host, target, input, "intent-partial")).kind).toBe("success");
+    expect(savedBodies).toEqual([expect.objectContaining({ defaultModel: "claude-sonnet", embeddingModel: "embed-3" })]);
+  });
+
   it("confirms default chat/embedding changes and vector rebuild actions", async () => {
     const saveUsage = writeOp(`${MODEL_USAGE}.save`);
     const impact = await saveUsage.inspectImpact!.inspect(makeHost(), [
       {
         target: { kind: "object", objectType: MODEL_USAGE, primaryKey: "domain" },
-        input: { values: { defaultModel: "claude-sonnet", embeddingModel: "" } },
+        input: { values: { defaultModel: "claude-sonnet", embeddingModel: null } },
       },
     ]);
     expect(impact?.summary).toContain("claude-sonnet");
@@ -401,7 +446,7 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
     const saved = await saveUsage.execute(
       makeHost(),
       { kind: "object", objectType: MODEL_USAGE, primaryKey: "domain" },
-      { values: { defaultModel: "claude-sonnet", embeddingModel: "" } },
+      { values: { defaultModel: "claude-sonnet", embeddingModel: null } },
       "intent-6",
     );
     expect(saved.kind).toBe("success");

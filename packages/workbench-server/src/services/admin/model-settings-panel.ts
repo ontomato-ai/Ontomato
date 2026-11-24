@@ -157,8 +157,8 @@ const modelFormValuesSchema = z.object({
 type ModelFormValues = z.infer<typeof modelFormValuesSchema>;
 
 const usageFormValuesSchema = z.object({
-  defaultModel: z.string(),
-  embeddingModel: z.string(),
+  defaultModel: z.string().optional(),
+  embeddingModel: z.string().optional(),
 }).strict();
 
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
@@ -1024,24 +1024,32 @@ function requireDomainKey(primaryKey: string) {
   if (primaryKey !== DOMAIN_KEY) throw new HttpError(404, "Domain model usage not found", "NOT_FOUND");
 }
 
+function usageFormValues(settings: ModelSettingsData): z.infer<typeof usageFormValuesSchema> {
+  return {
+    ...(settings.defaultModel === null ? {} : { defaultModel: settings.defaultModel }),
+    ...(settings.embeddingModel === null ? {} : { embeddingModel: settings.embeddingModel }),
+  };
+}
+
 function parseUsageDraft(
   raw: Record<string, unknown>,
   settings: ModelSettingsData,
+  submittedFields?: readonly string[],
 ): {
-  values: Record<string, unknown>;
   next?: ModelSettingsWrite;
   errors: FormFieldError[];
 } {
-  const defaultModel = raw.defaultModel === "" ? null : raw.defaultModel;
-  const embeddingModel = raw.embeddingModel === "" ? null : raw.embeddingModel;
   const checked = modelSettingsWriteSchema.safeParse({
     ...settingsWriteFromData(settings),
-    defaultModel,
-    embeddingModel,
+    defaultModel: submittedFields === undefined || submittedFields.includes("/defaultModel")
+      ? raw.defaultModel ?? null
+      : settings.defaultModel,
+    embeddingModel: submittedFields === undefined || submittedFields.includes("/embeddingModel")
+      ? raw.embeddingModel ?? null
+      : settings.embeddingModel,
   });
   if (!checked.success) {
     return {
-      values: raw,
       errors: checked.error.issues
         .filter((issue) => issue.path[0] === "defaultModel" || issue.path[0] === "embeddingModel")
         .map((issue) => ({
@@ -1051,7 +1059,7 @@ function parseUsageDraft(
         })),
     };
   }
-  return { values: raw, next: checked.data, errors: [] };
+  return { next: checked.data, errors: [] };
 }
 
 export function createModelUsageReads(actor: PanelOperationActor) {
@@ -1066,26 +1074,19 @@ export function createModelUsageReads(actor: PanelOperationActor) {
       const chatModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "chat");
       const embeddingModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "embedding");
 
-      const baseValues = {
-        defaultModel: settings.defaultModel ?? "",
-        embeddingModel: settings.embeddingModel ?? "",
-      };
-      const merged: Record<string, unknown> = { ...baseValues, ...(inputs.values ?? {}) };
-      const evaluated = parseUsageDraft(merged, settings);
-      const defaultModel = typeof merged.defaultModel === "string" ? merged.defaultModel : "";
-      const embeddingModel = typeof merged.embeddingModel === "string" ? merged.embeddingModel : "";
+      const values = inputs.values ?? usageFormValues(settings);
+      const defaultModel = typeof values.defaultModel === "string" ? values.defaultModel : undefined;
+      const embeddingModel = typeof values.embeddingModel === "string" ? values.embeddingModel : undefined;
 
-      const chatOptions: PanelFormOption[] = [
-        { value: "", label: t("panels.modelSettings.usage.noDefaultChat"), description: null, disabled: false, disabledReason: null },
-        ...chatModels.map(([name, entry]) => ({
+      const chatOptions: PanelFormOption[] = chatModels
+        .map(([name, entry]) => ({
           value: name,
           label: name,
           description: `${entry.connection} · ${entry.model}`,
           disabled: false,
           disabledReason: null,
-        })),
-      ];
-      const chatMissing = Boolean(defaultModel) && !chatModels.some(([name]) => name === defaultModel);
+        }));
+      const chatMissing = !!defaultModel && !chatModels.some(([name]) => name === defaultModel);
       if (chatMissing) {
         chatOptions.push({
           value: defaultModel,
@@ -1096,17 +1097,15 @@ export function createModelUsageReads(actor: PanelOperationActor) {
         });
       }
 
-      const embeddingOptions: PanelFormOption[] = [
-        { value: "", label: t("panels.modelSettings.usage.noEmbedding"), description: null, disabled: false, disabledReason: null },
-        ...embeddingModels.map(([name, entry]) => ({
+      const embeddingOptions: PanelFormOption[] = embeddingModels
+        .map(([name, entry]) => ({
           value: name,
           label: `${name} · ${t("panels.modelSettings.specs.dimensions", { n: entry.type === "embedding" ? entry.dimensions : 0 })}`,
           description: `${entry.connection} · ${entry.model}`,
           disabled: false,
           disabledReason: null,
-        })),
-      ];
-      const embeddingMissing = Boolean(embeddingModel) && !embeddingModels.some(([name]) => name === embeddingModel);
+        }));
+      const embeddingMissing = !!embeddingModel && !embeddingModels.some(([name]) => name === embeddingModel);
       if (embeddingMissing) {
         embeddingOptions.push({
           value: embeddingModel,
@@ -1117,7 +1116,7 @@ export function createModelUsageReads(actor: PanelOperationActor) {
         });
       }
 
-      const errors = inputs.values ? evaluated.errors : [];
+      const errors = inputs.values ? parseUsageDraft(values, settings).errors : [];
 
       const fields: PanelFormField[] = [
         {
@@ -1132,7 +1131,7 @@ export function createModelUsageReads(actor: PanelOperationActor) {
               ? { warning: t("panels.modelSettings.usage.defaultChatUnset") }
               : {}),
           valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-          control: { kind: "select", options: chatOptions },
+          control: { kind: "select", options: chatOptions, placeholder: t("panels.modelSettings.usage.noDefaultChat") },
         },
         {
           path: "/embeddingModel",
@@ -1142,12 +1141,12 @@ export function createModelUsageReads(actor: PanelOperationActor) {
           readOnly: false,
           ...(embeddingMissing ? { warning: t("panels.modelSettings.usage.missingWarning", { name: embeddingModel }) } : {}),
           valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-          control: { kind: "select", options: embeddingOptions },
+          control: { kind: "select", options: embeddingOptions, placeholder: t("panels.modelSettings.usage.noEmbedding") },
         },
       ];
 
       return {
-        values: merged as Record<string, RuntimeJsonValue>,
+        values,
         fields,
         errors,
         save: {
@@ -1374,11 +1373,8 @@ const saveUsageImpact: PanelImpactInspector = {
   handlerRef: `${SAVE_USAGE_OP}.inspect-impact`,
   async inspect(host, calls) {
     const settings = await readSettings(host, host.executor.credentials);
-    const { values } = saveInputSchema.parse(calls[0]!.input);
-    const evaluated = parseUsageDraft(
-      { defaultModel: settings.defaultModel ?? "", embeddingModel: settings.embeddingModel ?? "", ...values },
-      settings,
-    );
+    const { values, submittedFields } = saveInputSchema.parse(calls[0]!.input);
+    const evaluated = parseUsageDraft(values, settings, submittedFields);
     if (!evaluated.next) return null;
     const nextDefault = evaluated.next.defaultModel;
     const nextEmbedding = evaluated.next.embeddingModel;
@@ -1717,11 +1713,8 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     inspectImpact: saveUsageImpact,
     async execute(host: PanelOperationHost, _target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const settings = await readSettings(host, host.executor.credentials);
-      const { values } = saveInputSchema.parse(input);
-      const evaluated = parseUsageDraft(
-        { defaultModel: settings.defaultModel ?? "", embeddingModel: settings.embeddingModel ?? "", ...values },
-        settings,
-      );
+      const { values, submittedFields } = saveInputSchema.parse(input);
+      const evaluated = parseUsageDraft(values, settings, submittedFields);
       if (evaluated.errors.length > 0 || !evaluated.next) {
         return {
           kind: "refusal",
@@ -1734,7 +1727,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       if (!saved.ok) return saved.outcome;
       return {
         kind: "success",
-        data: { defaultModel: saved.data.defaultModel ?? "", embeddingModel: saved.data.embeddingModel ?? "" },
+        data: usageFormValues(saved.data),
         affected: affected(MODEL_USAGE, DOMAIN_KEY, [MODEL_USAGE, MODEL_CONNECTION, MODEL_OPTION]),
       };
     },

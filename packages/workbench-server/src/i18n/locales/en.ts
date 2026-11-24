@@ -326,7 +326,7 @@ export const en = {
   "panels.modelSettings.providers.deepseek": "DeepSeek",
   "panels.modelSettings.providers.dashscope": "Alibaba DashScope",
   "panels.modelSettings.providers.moonshot": "Moonshot (Kimi)",
-  "panels.modelSettings.providers.custom_openai": "OpenAI Compatible (Chat only)",
+  "panels.modelSettings.providers.custom_openai": "OpenAI Compatible (Chat Completions)",
   "panels.modelSettings.providers.anthropic": "Anthropic",
   "panels.modelSettings.providers.gemini": "Google Gemini",
   "panels.modelSettings.types.chat": "Chat",
