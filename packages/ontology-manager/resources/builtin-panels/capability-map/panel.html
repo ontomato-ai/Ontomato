@@ -288,13 +288,13 @@
               {{ relationKindsCount > 0 ? t('cm.kindFilterActive', { count: relationKindsCount }) : t('cm.kindFilter') }}
             </sdk-button>
           </template>
-          <div class="capmap-kind-popover" style="display: flex; flex-direction: column; gap: var(--spacing-xs);">
-            <div v-if="relationKindsCount > 0" class="capmap-kind-popover-bar" style="display: flex; justify-content: flex-end;">
+          <div class="capmap-kind-popover">
+            <div v-if="relationKindsCount > 0" class="capmap-kind-popover-bar">
               <sdk-button size="small" link data-cap-action="clear-relation-kinds" @click="clearRelationKinds">
                 {{ t('cm.clearFilter') }}
               </sdk-button>
             </div>
-            <div class="capmap-kind-popover-list" style="max-height: 280px; overflow: auto;">
+            <div class="capmap-kind-popover-list">
               <projection slot="relationKindFilter"></projection>
             </div>
           </div>

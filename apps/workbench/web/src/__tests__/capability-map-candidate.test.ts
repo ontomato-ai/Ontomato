@@ -1581,7 +1581,7 @@ describe("builtin capability-map panel (PanelData-free)", () => {
         expect(canvasRecorder.nodes.map((n) => n.label)).toContain("Order");
       }, { timeout: 5000 });
 
-      // 5) relationKindsSearch filters relationKindFilter via declared public state, and teleported popover list keeps inline scroll bounds.
+      // 5) relationKindsSearch filters relationKindFilter via declared public state, and popover mounts inside the panel's scoped overlay root.
       host.applyState({ mode: "type", view: "graph", relationKindsSearch: "Binds" });
       await vi.waitFor(() => {
         const trigger = document.querySelector<HTMLButtonElement>('.panel-host-coded [data-cap-action="relation-kind-filter"]');
@@ -1592,8 +1592,8 @@ describe("builtin capability-map panel (PanelData-free)", () => {
         const list = document.querySelector<HTMLElement>(".capmap-kind-popover-list");
         expect(list?.textContent).toContain("Binds target");
         expect(list?.textContent).not.toContain("Uses component");
-        expect(list?.style.maxHeight).toBe("280px");
-        expect(list?.style.overflow).toBe("auto");
+        expect(list?.getAttribute("style")).toBeNull();
+        expect(list?.closest("[data-panel-overlay-root][data-panel-instance]")).not.toBeNull();
       }, { timeout: 5000 });
 
       // 6) Selecting more than 4 relation kinds caps inline toolbar tags to 4 plus an overflow badge.
