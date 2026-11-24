@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { computed, shallowRef, watch } from "vue";
+import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElInput } from "element-plus/es/components/input/index";
-import { ElRadio, ElRadioGroup } from "element-plus/es/components/radio/index";
-import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
@@ -12,7 +10,6 @@ import {
   panelFormObjectActiveVariant,
   type PanelFormField,
 } from "@ontomato/contracts/panel-projection";
-import { findPanelFormOption, type PanelFormOption } from "@ontomato/contracts/form-fields";
 import { admitsNull, cloneJsonValue, valueAt } from "../panel/form-values";
 import { agentAvatar, avatarIconOptions, darkAvatarColorOptions, lightAvatarColorOptions, storedAgentAvatar } from "@ontomato/agent-shell-ui/avatar";
 import { useDarkMode } from "@ontomato/foundation-ui/theme";
@@ -22,6 +19,9 @@ import FormLocalizedText from "./FormLocalizedText.vue";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
 import FormFieldFrame from "./FormFieldFrame.vue";
 import FormRowField from "./FormRowField.vue";
+import FormSelectChoices from "./FormSelectChoices.vue";
+import FormChoiceMatrix from "./FormChoiceMatrix.vue";
+import FormTextVariables from "./FormTextVariables.vue";
 import { ApplicationIconPicker } from "@ontomato/platform-shell";
 import { ScheduleFrequency, frequencyDraft, frequencyOf, type FrequencyDraft } from "@ontomato/platform-schedules/frequency-control";
 import type { PlatformTaskFrequency } from "@ontomato/contracts/platform-schedules";
@@ -43,39 +43,24 @@ const value = computed(() => valueAt(controls.values.value, props.path));
 const off = computed(() => props.disabled || props.field.readOnly || controls.busy.value);
 const control = computed(() => props.field.control);
 const set = (next: RuntimeJsonValue) => controls.set(props.path, next);
-const isObject = (held: RuntimeJsonValue | undefined) => held !== null && typeof held === "object" && !Array.isArray(held);
-const optionNote = ({ description, disabledReason }: PanelFormOption) => [description, disabledReason].filter(Boolean).join(" · ");
-/**
- * A choice whose values are objects (A's contract): its options are objects — the same options never mix them with plain
- * values — or it has none left and holds an object still.
- */
-const objectOptions = computed(() => control.value.kind === "select"
-  && (control.value.options.some((option) => typeof option.value === "object")
-    || (control.value.multiple ? rows.value.some(isObject) : isObject(value.value))));
-/** The place of an object the options no longer offer: shown as such, and kept until the reader clears it. */
-const RETIRED = -1;
-/** The declared option a value is, by its place among the options, whatever order its keys come in; none, or no longer offered. */
-function optionIndex(held: RuntimeJsonValue | undefined): number | "" {
-  if (control.value.kind !== "select" || held === undefined || held === null) return "";
-  const found = findPanelFormOption(control.value.options, held);
-  return found ? control.value.options.indexOf(found) : RETIRED;
-}
-const holdsRetired = computed(() => (control.value.kind === "select" && control.value.multiple ? rows.value.map(optionIndex) : [optionIndex(value.value)]).includes(RETIRED));
-/** Writes the chosen options' own values (an object no longer offered stays as it was); a choice cleared leaves the field out. */
-function chooseObject(chosen: number | "" | number[] | undefined) {
-  if (control.value.kind !== "select") return;
-  const { options } = control.value;
-  if (Array.isArray(chosen)) {
-    const retired = rows.value.filter((held) => optionIndex(held) === RETIRED);
-    const offered: RuntimeJsonValue[] = chosen.flatMap((index) => (index === RETIRED ? [] : [options[index]!.value as RuntimeJsonValue]));
-    set([...offered, ...(chosen.includes(RETIRED) ? retired : [])]);
-  } else if (chosen === "" || chosen === undefined) controls.remove(props.path);
-  else if (chosen !== RETIRED) set(options[chosen]!.value);
-}
-
 const text = computed(() => (typeof value.value === "string" ? value.value : ""));
 const rows = computed<RuntimeJsonValue[]>(() => (Array.isArray(value.value) ? value.value : []));
 const object = computed(() => (value.value !== null && typeof value.value === "object" && !Array.isArray(value.value) ? value.value : null));
+
+const textInput = useTemplateRef<InstanceType<typeof ElInput>>("textInput");
+
+async function insertVariable(token: string) {
+  if (off.value) return;
+  const editor = (textInput.value!.textarea ?? textInput.value!.input)!;
+  const focused = editor.ownerDocument.activeElement === editor;
+  const current = focused ? editor.value : text.value;
+  const start = focused ? editor.selectionStart! : current.length;
+  const end = focused ? editor.selectionEnd! : start;
+  set(current.slice(0, start) + token + current.slice(end));
+  await nextTick();
+  editor.focus();
+  editor.setSelectionRange(start + token.length, start + token.length);
+}
 
 /** A row's identity: the owner's, when the description names where it is and the row has one; else its position. */
 function rowKey(row: RuntimeJsonValue, index: number): string {
@@ -168,6 +153,7 @@ function setFrequency(next: FrequencyDraft) {
   >
     <template v-if="control.kind === 'text' || control.kind === 'markdown'">
       <el-input
+        ref="textInput"
         :model-value="text"
         :type="control.kind === 'markdown' || control.multiline ? 'textarea' : (control.kind === 'text' && control.secret ? 'password' : 'text')"
         :show-password="control.kind === 'text' && control.secret === true && !control.multiline"
@@ -179,71 +165,32 @@ function setFrequency(next: FrequencyDraft) {
         :disabled="off"
         @update:model-value="set($event)"
       ></el-input>
+      <form-text-variables
+        v-if="control.kind === 'text' && control.variables?.length"
+        :groups="control.variables"
+        :disabled="off"
+        @insert="insertVariable"
+      ></form-text-variables>
       <!-- Markdown says how long it is as the reader writes it, as the agent settings page did for its prompt. -->
       <p v-if="control.kind === 'markdown'" class="sdk-form-field-count">{{ t("platform.formCharacters", { count: text.length }) }} · Markdown</p>
     </template>
-    <el-radio-group
-      v-else-if="control.kind === 'select' && !control.multiple && !objectOptions && control.presentation === 'radio'"
-      :model-value="typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : ''"
-      :disabled="off"
-      @update:model-value="set($event as RuntimeJsonValue)"
-    >
-      <el-radio
-        v-for="(option, index) in control.options"
-        :key="index"
-        :value="typeof option.value === 'string' || typeof option.value === 'number' || typeof option.value === 'boolean' ? option.value : ''"
-        :disabled="option.disabled"
-      >{{ option.label }}</el-radio>
-    </el-radio-group>
-    <!-- Options whose values are objects: chosen by place, shown as the declared option the value is, written whole. -->
-    <el-select
-      v-else-if="control.kind === 'select' && objectOptions"
-      :model-value="control.multiple ? rows.map(optionIndex) : optionIndex(value)"
-      :multiple="control.multiple"
-      :clearable="!field.required"
-      :placeholder="control.placeholder ?? undefined"
-      :disabled="off"
-      class="sdk-form-field-wide"
-      @update:model-value="chooseObject"
-    >
-      <el-option
-        v-for="(option, index) in control.options"
-        :key="index"
-        :value="index"
-        :label="option.label"
-        :disabled="option.disabled"
-        :title="option.disabledReason ?? option.description ?? undefined"
-      ></el-option>
-      <el-option v-if="holdsRetired" :value="RETIRED" :label="t('platform.formOptionNoLonger')" disabled></el-option>
-    </el-select>
-    <el-select
+    <form-select-choices
       v-else-if="control.kind === 'select'"
-      :model-value="control.multiple ? rows : value ?? ''"
-      :multiple="control.multiple"
-      :filterable="control.allowCreate"
-      :allow-create="control.allowCreate"
-      :clearable="!field.required && !control.multiple"
-      :value-on-clear="() => undefined"
-      :default-first-option="control.allowCreate"
-      :fit-input-width="control.options.some(optionNote)"
-      :placeholder="control.placeholder ?? undefined"
+      :control="control"
+      :value="value"
+      :label="field.label"
+      :required="field.required"
       :disabled="off"
-      class="sdk-form-field-wide"
-      @update:model-value="$event === undefined ? controls.remove(path) : set($event)"
-    >
-      <el-option
-        v-for="(option, index) in control.options"
-        :key="index"
-        :value="option.value"
-        :label="option.label"
-        :disabled="option.disabled"
-        :title="optionNote(option) || undefined"
-        :class="{ 'sdk-reference-option-described': optionNote(option) }"
-      >
-        <span class="sdk-reference-option-label">{{ option.label }}</span>
-        <span v-if="optionNote(option)" class="sdk-reference-option-description">{{ optionNote(option) }}</span>
-      </el-option>
-    </el-select>
+      @change="set"
+      @clear="controls.remove(path)"
+    ></form-select-choices>
+    <form-choice-matrix
+      v-else-if="control.kind === 'choice-matrix'"
+      :control="control"
+      :value="object ?? {}"
+      :disabled="off"
+      @change="set"
+    ></form-choice-matrix>
     <el-switch
       v-else-if="control.kind === 'switch'"
       :model-value="value === true"
@@ -473,5 +420,3 @@ function setFrequency(next: FrequencyDraft) {
   align-self: flex-start;
 }
 </style>
-
-<style scoped src="./form-option.css"></style>
