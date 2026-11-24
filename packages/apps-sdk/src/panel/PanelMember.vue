@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef, useAttrs, watch, type Component } from "vue";
+import { computed, inject, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef, useAttrs, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState } from "@ontomato/foundation-ui/data-state";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
+import { projectionSlotInputsGuidance } from "@ontomato/contracts/panel-module";
 import { componentFor } from "../catalogue-components";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance, type MemberInputs } from "./direct";
 import { memberComponentId } from "./projection-element";
 import { declaredComponentProps, pickProjectionPlacementAttrs } from "./projection-attrs";
 import { panelMemberKey, type PanelMemberContext } from "./member";
-import { useListRowSlot } from "./slot-context";
+import { hasDeclaredComponentAncestor, useFormFieldSlot, useListRowSlot } from "./slot-context";
 import { useDataStateLabels } from "../base/data-state-labels";
 
 defineOptions({ inheritAttrs: false });
@@ -28,6 +29,10 @@ const { t } = useI18n();
 const declaration = props.instance.direct.members[props.member];
 if (!declaration) throw new Error(`The panel declares no member '${props.member}'`);
 const listRowSlot = useListRowSlot();
+if (props.inputs !== undefined && listRowSlot === null && inject(projectionKey, null) === null
+  && useFormFieldSlot() === null && !hasDeclaredComponentAncestor(props.instance.direct.components)) {
+  throw new Error(`Panel member '${props.member}': ${projectionSlotInputsGuidance}`);
+}
 const isScoped = props.inputs !== undefined || listRowSlot !== null;
 let disposeScoped: (() => void) | undefined;
 onBeforeUnmount(() => {

@@ -1,9 +1,19 @@
-import { inject, type ComputedRef, type InjectionKey } from "vue";
+import { getCurrentInstance, inject, type ComputedRef, type InjectionKey } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
+import type { PanelDeclaredComponents, PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
 import type { PanelObjectRef } from "./state";
+
+/** Direct panels register manifest components under their local names in the panel app. */
+export function hasDeclaredComponentAncestor(components: PanelDeclaredComponents = {}): boolean {
+  const current = getCurrentInstance()!;
+  const declared = Object.keys(components).map(name => current.appContext.components[name]);
+  for (let parent = current.parent; parent !== null; parent = parent.parent) {
+    if (declared.includes(parent.type)) return true;
+  }
+  return false;
+}
 
 /**
  * Context provided by `ObjectForm` inside `#field-<path>`, `#field-<arrayPath>/*<itemPath>`, and `#field` Vue slots.
