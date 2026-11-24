@@ -7,6 +7,8 @@ import { HttpError } from "../../../utils/errors";
 
 const applicationRecord = vi.hoisted(() => vi.fn());
 const applicationCreate = vi.hoisted(() => vi.fn());
+const applicationForm = vi.hoisted(() => vi.fn());
+const applicationSaveEntries = vi.hoisted(() => vi.fn());
 vi.mock("../application-catalogue", async importOriginal => {
   const actual = await importOriginal<typeof import("../application-catalogue")>();
   return {
@@ -15,6 +17,8 @@ vi.mock("../application-catalogue", async importOriginal => {
       ...actual.applicationCatalogueClient(viewer),
       record: applicationRecord,
       create: applicationCreate,
+      form: applicationForm,
+      saveEntries: applicationSaveEntries,
     }),
   };
 });
@@ -52,6 +56,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   applicationRecord.mockReset();
+  applicationForm.mockReset();
+  applicationSaveEntries.mockReset();
 });
 
 const impactReader = { owner: { domainId: "domain", userId: "reader" }, credentials: { locale: "en" } };
@@ -294,4 +300,69 @@ it("marks applications.delete unavailable for read-only applications and availab
 
   applicationRecord.mockResolvedValueOnce({ id: "app-1", canMaintain: true });
   expect((await readOps()).delete?.unavailable).toBeUndefined();
+});
+
+it("preserves existing entry icons when saving entries from a form that does not submit icon", async () => {
+  const save = productCatalogServerOperations.find(op => op.handlerRef === `${APPLICATION}.save`)!;
+  if (save.kind !== "form.save") throw new Error("Expected a form save");
+  const existingEntry = {
+    id: "entry-roles",
+    pageKey: "roles",
+    panelId: "panel-roles",
+    path: "/applications/app-1/roles",
+    access: { kind: "domain-member" as const },
+    names: { en: "Roles" },
+    icon: "user-cog",
+  };
+  applicationForm.mockResolvedValue({
+    values: {
+      entry: { path: "/applications/app-1", renderer: "panels" },
+      panelUses: [existingEntry],
+    },
+    fields: [],
+  });
+  applicationSaveEntries.mockResolvedValue(undefined);
+
+  await save.execute(
+    impactHost,
+    { kind: "object", objectType: APPLICATION, primaryKey: "app-1" },
+    {
+      values: {
+        id: "entry-roles",
+        pageKey: "roles",
+        panelId: "panel-roles",
+        path: "/applications/app-1/roles",
+        access: { kind: "domain-member" },
+        names: { en: "Roles updated" },
+      },
+    },
+    "intent-icon-single",
+  );
+  expect(applicationSaveEntries).toHaveBeenCalledWith("app-1", expect.objectContaining({
+    panelUses: [expect.objectContaining({ id: "entry-roles", icon: "user-cog", names: { en: "Roles updated" } })],
+  }));
+
+  applicationSaveEntries.mockClear();
+  await save.execute(
+    impactHost,
+    { kind: "object", objectType: APPLICATION, primaryKey: "app-1" },
+    {
+      values: {
+        entry: { path: "/applications/app-1", renderer: "panels" },
+        panelUses: [{
+          id: "entry-roles",
+          pageKey: "roles",
+          panelId: "panel-roles",
+          path: "/applications/app-1/roles",
+          access: { kind: "domain-member" },
+          names: { en: "Roles bulk" },
+        }],
+      },
+      submittedFields: ["/entry", "/panelUses"],
+    },
+    "intent-icon-bulk",
+  );
+  expect(applicationSaveEntries).toHaveBeenCalledWith("app-1", expect.objectContaining({
+    panelUses: [expect.objectContaining({ id: "entry-roles", icon: "user-cog", names: { en: "Roles bulk" } })],
+  }));
 });

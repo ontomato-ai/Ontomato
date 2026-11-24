@@ -81,11 +81,11 @@ export function appDeclarations(
             const entry = app.entries?.get(path) ?? allEntries.get(path);
             const listed = byPath.get(base(path));
             if (!entry) return listed ? panelPage(listed) : undefined;
-            // The entry stands where a native page stood: its row keeps only that page's icon.
+            // The entry stands where a native page stood: prefer its declared icon, falling back to the legacy page row.
             const row = listed ?? entryRows.get(path);
             return {
               ...entry,
-              icon: row?.icon ?? "pages",
+              icon: entry.icon ?? row?.icon ?? "pages",
             };
           })
           .filter((page): page is PlatformPanelPage => page !== undefined),

@@ -127,6 +127,7 @@ export const workbenchApplications: BuiltinApplication[] = [
       "domain-member"
     ],
     "scheduleAdapter": null,
+    "framePanelId": "builtin-product-platform-frame",
     "declaration": {
       "names": {
         "en": "Scheduled tasks",
@@ -145,6 +146,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-scheduled-tasks",
         "path": "/schedules",
         "access": { "kind": "domain-member" },
+        "icon": "schedule",
         "inputs": { "schedulesApplication": { "literal": { "className": "platform:Application", "primaryKey": "schedules" } } },
         "names": {
           "en": "Scheduled tasks",

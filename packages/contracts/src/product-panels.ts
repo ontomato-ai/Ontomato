@@ -288,6 +288,8 @@ export const applicationPanelUseSchema = z.object({
   /** Optional page heading text, independent of whether the entry is in the menu. */
   descriptions: z.record(z.string().refine(text => text.trim().length > 0, "Expected a nonblank description"))
     .refine(text => Object.keys(text).length > 0, "At least one localized description is required").optional(),
+  /** Optional curated icon key rendered beside this entry in the application menu. */
+  icon: z.string().refine(text => text.trim().length > 0, "Expected a nonblank icon").optional(),
   inputs: applicationPanelInputsSchema.optional(),
   groupKey: applicationMetadataSchema.shape.groups.element.shape.key.optional(),
 }).strict();
@@ -365,7 +367,9 @@ export const applicationPanelReferencesRequestSchema = z.object({
   /** Submit on creation or when the icon changes. Unchanged stored values are not checked here. */
   icon: domainApplicationIconSchema.optional(),
   framePanelId: id.optional(),
-  uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true, defaultAgent: true })),
+  uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true, defaultAgent: true }).extend({
+    icon: domainApplicationIconSchema.optional(),
+  })),
   theme: applicationEntrySettings.theme,
   delivery: applicationDeliverySchema.pick({ panels: true, projections: true }),
 }).strict();

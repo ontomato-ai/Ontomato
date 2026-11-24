@@ -153,8 +153,8 @@ it("shipped platform-frame renders grouped app menu for multi-entry apps, hides 
   const multiApp = "app-multi";
   const singleApp = "app-single";
   const multiUses = [
-    { ...panelUse("use-overview", "multi-overview", content.id, `/applications/${multiApp}/overview`), names: { en: "Overview" }, groupKey: "main" },
-    { ...panelUse("use-reports", "multi-reports", content.id, `/applications/${multiApp}/reports`), names: { en: "Reports" }, groupKey: "main" },
+    { ...panelUse("use-overview", "multi-overview", content.id, `/applications/${multiApp}/overview`), names: { en: "Overview" }, icon: "users", groupKey: "main" },
+    { ...panelUse("use-reports", "multi-reports", content.id, `/applications/${multiApp}/reports`), names: { en: "Reports" }, icon: "chart-column", groupKey: "main" },
   ];
   const singleUses = [
     { ...panelUse("use-only", "single-only", content.id, `/applications/${singleApp}/only`), names: { en: "Only page" } },
@@ -220,6 +220,9 @@ it("shipped platform-frame renders grouped app menu for multi-entry apps, hides 
     const activeRows = multiMount.element.querySelectorAll('.platform-app-menu .page-row[aria-current="page"]');
     expect(activeRows).toHaveLength(1);
     expect(activeRows[0]?.textContent).toContain("Overview");
+    // Entry icons declared on panelUses render directly in AppMenu without hostMenu or frame :icons prop.
+    const rowIcons = multiMount.element.querySelectorAll(".platform-app-menu .page-row .page-icon");
+    expect(rowIcons).toHaveLength(2);
   } finally {
     multiMount.app.unmount();
   }

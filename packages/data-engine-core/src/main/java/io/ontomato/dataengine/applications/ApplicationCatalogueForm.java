@@ -48,7 +48,7 @@ final class ApplicationCatalogueForm {
         "path", STRING, "renderer", JSONObject.of("const", "panels")), List.of("path", "renderer"));
     private static final JSONObject USE_SCHEMA = objectSchema(JSONObject.of(
         "id", STRING, "pageKey", STRING, "panelId", STRING, "path", STRING, "access", ACCESS,
-        "names", STRING_MAP, "descriptions", STRING_MAP, "groupKey", STRING, "inputs", INPUTS, "defaultAgent", DEFAULT_AGENT),
+        "names", STRING_MAP, "descriptions", STRING_MAP, "icon", STRING, "groupKey", STRING, "inputs", INPUTS, "defaultAgent", DEFAULT_AGENT),
         List.of("id", "pageKey", "panelId", "path", "access"));
 
     private static final List<Locale> LOCALES = List.of("en", "zh-CN", "zh-TW", "ja", "fr", "de", "it", "ar")
@@ -394,6 +394,9 @@ final class ApplicationCatalogueForm {
                 }
             }
         }
+        if (use.containsKey("icon") && (!(use.get("icon") instanceof String text) || text.isBlank())) {
+            errors.invalidObject("/icon", "Expected a nonblank icon");
+        }
         validatePath(use, "/path", root, errors);
         var access = errors.requiredObject(use, "access", "/access");
         if (access != null && (access.size() != 1 || !(DOMAIN_MEMBER.equals(access.get("kind"))
@@ -447,6 +450,9 @@ final class ApplicationCatalogueForm {
                             errors.invalidObject(pointer + "/" + PanelFormFields.pointer(description.getKey()), "Expected a nonblank description");
                     }
                 }
+            }
+            if (use.containsKey("icon") && (!(use.get("icon") instanceof String text) || text.isBlank())) {
+                errors.invalidObject(path + "/icon", "Expected a nonblank icon");
             }
             validatePath(use, path + "/path", root, errors);
             var access = errors.requiredObject(use, "access", path + "/access");
