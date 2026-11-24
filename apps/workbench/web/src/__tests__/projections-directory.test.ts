@@ -16,9 +16,12 @@ import { useConversationDisplay } from "../../../../../packages/agent-shell-ui/s
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
-import source from "../../../../../packages/ontology-manager/resources/builtin-panels/projections/panel.json";
-import html from "../../../../../packages/ontology-manager/resources/builtin-panels/projections/panel.html?raw";
-import module from "../../../../../packages/ontology-manager/resources/builtin-panels/projections/panel.mjs?raw";
+import catalogSource from "../../../../../packages/ontology-manager/resources/builtin-panels/projections/panel.json";
+import catalogHtml from "../../../../../packages/ontology-manager/resources/builtin-panels/projections/panel.html?raw";
+import catalogModule from "../../../../../packages/ontology-manager/resources/builtin-panels/projections/panel.mjs?raw";
+import detailSource from "../../../../../packages/ontology-manager/resources/builtin-panels/projection-detail/panel.json";
+import detailHtml from "../../../../../packages/ontology-manager/resources/builtin-panels/projection-detail/panel.html?raw";
+import detailModule from "../../../../../packages/ontology-manager/resources/builtin-panels/projection-detail/panel.mjs?raw";
 import {
   installPlatform,
   leaveFrame,
@@ -34,13 +37,22 @@ import {
 const SESSION = "11111111-1111-4111-8111-111111111111";
 const RUN = "22222222-2222-4222-8222-222222222222";
 const APP_ID = "ontology";
-const ENTRY_PATH = "/ontology/projections";
+const CATALOG_PATH = "/ontology/projections";
+const DETAIL_PATH = "/ontology/projections/detail";
+const OPEN_EDIT_KEY_PREFIX = "ontomato:open-edit:builtin-product-ontology-projection-detail:";
 
-const use = panelUse(
+const catalogUse = panelUse(
   "use-ontology-projections",
   "ontology-projections",
   "builtin-product-ontology-projections",
-  ENTRY_PATH,
+  CATALOG_PATH,
+);
+
+const detailUse = panelUse(
+  "use-ontology-projection-detail",
+  "ontology-projection-detail",
+  "builtin-product-ontology-projection-detail",
+  DETAIL_PATH,
 );
 
 const objectTypes = Object.fromEntries(
@@ -63,7 +75,6 @@ const objectTypes = Object.fromEntries(
   ]),
 );
 
-const { members: authoring, ...manifest } = panelAuthoringManifestSchema.parse(source.manifest);
 const catalogue = components.map((component) =>
   appsSdkComponentCatalogEntrySchema.parse({
     ...component,
@@ -73,42 +84,69 @@ const catalogue = components.map((component) =>
     ports: { props: [], events: [], slots: [] },
   }),
 );
+
 const projections = new Map<string, ProductProjection>();
-const members = Object.fromEntries(
-  Object.entries(authoring).map(([name, definition]) => {
-    if (!("component" in definition)) {
-      return [name, definition];
-    }
-    const { projection, placement } = expandPanelAuthoringMember(name, definition, {
-      state: manifest.state,
-      typeTable: { objectTypes },
-      components: catalogue,
-    });
-    projections.set(definition.id!, {
-      ...projection,
-      id: definition.id!,
-      name,
-      description: name,
-      visibility: "platform",
-      domainId: null,
-      ownerId: null,
-      editable: false,
-      revision: 1,
-      createdAt: "2026-11-23T00:00:00Z",
-      updatedAt: "2026-11-23T00:00:00Z",
-    });
-    return [name, { ...placement, target: { projectionId: definition.id! } }];
-  }),
+
+function buildPanelRecord(
+  panelId: string,
+  name: string,
+  source: { manifest: unknown; content: { messages: Record<string, Record<string, string>> } },
+  html: string,
+  module: string,
+) {
+  const { members: authoring, ...manifest } = panelAuthoringManifestSchema.parse(source.manifest);
+  const members = Object.fromEntries(
+    Object.entries(authoring).map(([memberName, definition]) => {
+      if (!("component" in definition)) {
+        return [memberName, definition];
+      }
+      const { projection, placement } = expandPanelAuthoringMember(memberName, definition, {
+        state: manifest.state,
+        typeTable: { objectTypes },
+        components: catalogue,
+      });
+      projections.set(definition.id!, {
+        ...projection,
+        id: definition.id!,
+        name: memberName,
+        description: memberName,
+        visibility: "platform",
+        domainId: null,
+        ownerId: null,
+        editable: false,
+        revision: 1,
+        createdAt: "2026-11-24T00:00:00Z",
+        updatedAt: "2026-11-24T00:00:00Z",
+      });
+      return [memberName, { ...placement, target: { projectionId: definition.id! } }];
+    }),
+  );
+
+  return {
+    ...panelRecord(panelId, name, definePanel({ ...manifest, members })),
+    visibility: "platform" as const,
+    domainId: null,
+    ownerId: null,
+    editable: false as const,
+    content: { html, module, messages: source.content.messages },
+  };
+}
+
+const projectionsCatalogPanel = buildPanelRecord(
+  catalogUse.panelId,
+  "Projections",
+  catalogSource,
+  catalogHtml,
+  catalogModule,
 );
 
-const projectionsDirectoryPanel = {
-  ...panelRecord(use.panelId, "Projections", definePanel({ ...manifest, members })),
-  visibility: "platform" as const,
-  domainId: null,
-  ownerId: null,
-  editable: false as const,
-  content: { html, module, messages: source.content.messages },
-};
+const projectionDetailPanel = buildPanelRecord(
+  detailUse.panelId,
+  "Projection Detail",
+  detailSource,
+  detailHtml,
+  detailModule,
+);
 
 const projRef = (primaryKey: string) => ({ className: PRODUCT_PROJECTION, primaryKey });
 
@@ -120,7 +158,10 @@ interface ProjectionFixture {
   readonly canGrant: boolean;
   readonly canDelete: boolean;
   readonly isChart: boolean;
+  readonly domainShared?: boolean;
   readonly revision: number;
+  readonly status?: "ready" | "forbidden" | "error" | "empty";
+  readonly errorMessage?: string;
   readonly usedByPanels?: readonly { readonly id: string; readonly name: string }[];
   readonly hiddenUsedByCount?: number;
 }
@@ -134,6 +175,7 @@ const FIXTURES: Record<string, ProjectionFixture> = {
     canGrant: true,
     canDelete: true,
     isChart: false,
+    domainShared: false,
     revision: 3,
     usedByPanels: [
       { id: "panel-sales", name: "Sales Dashboard" },
@@ -149,7 +191,21 @@ const FIXTURES: Record<string, ProjectionFixture> = {
     canGrant: true,
     canDelete: true,
     isChart: false,
+    domainShared: false,
     revision: 2,
+    usedByPanels: [],
+    hiddenUsedByCount: 0,
+  },
+  "proj-created": {
+    id: "proj-created",
+    name: "Created Projection",
+    canEdit: true,
+    canCopy: true,
+    canGrant: true,
+    canDelete: true,
+    isChart: false,
+    domainShared: false,
+    revision: 1,
     usedByPanels: [],
     hiddenUsedByCount: 0,
   },
@@ -161,6 +217,7 @@ const FIXTURES: Record<string, ProjectionFixture> = {
     canGrant: true,
     canDelete: true,
     isChart: true,
+    domainShared: false,
     revision: 4,
     usedByPanels: [],
   },
@@ -172,8 +229,32 @@ const FIXTURES: Record<string, ProjectionFixture> = {
     canGrant: false,
     canDelete: false,
     isChart: false,
+    domainShared: true,
     revision: 1,
     usedByPanels: [],
+  },
+  "proj-forbidden": {
+    id: "proj-forbidden",
+    name: "Secret Projection",
+    canEdit: false,
+    canCopy: false,
+    canGrant: false,
+    canDelete: false,
+    isChart: false,
+    revision: 1,
+    status: "forbidden",
+  },
+  "proj-error": {
+    id: "proj-error",
+    name: "Broken Projection",
+    canEdit: false,
+    canCopy: false,
+    canGrant: false,
+    canDelete: false,
+    isChart: false,
+    revision: 1,
+    status: "error",
+    errorMessage: "Projection storage temporarily unavailable",
   },
   "owner-assigned-copy": {
     id: "owner-assigned-copy",
@@ -204,8 +285,8 @@ function previewStubProjection(id: string): ProductProjection {
     inputs: {},
     outputs: {},
     operations: {},
-    createdAt: "2026-11-23T00:00:00Z",
-    updatedAt: "2026-11-23T00:00:00Z",
+    createdAt: "2026-11-24T00:00:00Z",
+    updatedAt: "2026-11-24T00:00:00Z",
   };
 }
 
@@ -217,7 +298,7 @@ function selectedPrimaryKey(state: Record<string, unknown> | undefined): string 
   return null;
 }
 
-function presentFrame(state: Record<string, unknown>, address = ENTRY_PATH): PresentationFrame {
+function presentFrame(address: string, state?: Record<string, unknown>): PresentationFrame {
   return {
     type: "presentation",
     sessionId: SESSION,
@@ -226,7 +307,7 @@ function presentFrame(state: Record<string, unknown>, address = ENTRY_PATH): Pre
     target: {
       kind: "page",
       address,
-      state: state as PresentationFrame["target"] extends { state?: infer S } ? S : never,
+      ...(state ? { state: state as PresentationFrame["target"] extends { state?: infer S } ? S : never } : {}),
     },
   };
 }
@@ -236,17 +317,31 @@ type DataReadRequest = Extract<ProductPanelReadRequest, { dataName: string }>;
 function formDescription(mode: "create" | "edit", key: string) {
   return {
     fields: [
-      {
-        path: "/name",
-        label: "Name",
-        required: true,
-        readOnly: false,
-        control: { kind: "text" },
-        valueSchema: { type: "string" },
-      },
+      { path: "/name", label: "Name", required: true, readOnly: false, control: { kind: "text" }, valueSchema: { type: "string" } },
+      { path: "/id", label: "ID", required: false, readOnly: mode === "edit", control: { kind: "text" }, valueSchema: { type: "string" } },
+      { path: "/description", label: "Description", required: false, readOnly: false, control: { kind: "text" }, valueSchema: { type: "string" } },
+      { path: "/visibility", label: "Visibility", required: false, readOnly: false, control: { kind: "text" }, valueSchema: { type: "string" } },
+      { path: "/componentId", label: "Component", required: true, readOnly: false, control: { kind: "text" }, valueSchema: { type: "string" } },
+      { path: "/data", label: "Data", required: true, readOnly: false, control: { kind: "text" }, valueSchema: { type: "string" } },
+      { path: "/config", label: "Config", required: false, readOnly: false, control: { kind: "text" }, valueSchema: { type: "string" } },
+      { path: "/inputs", label: "Inputs", required: false, readOnly: false, control: { kind: "text" }, valueSchema: { type: "string" } },
+      { path: "/outputs", label: "Outputs", required: false, readOnly: false, control: { kind: "text" }, valueSchema: { type: "string" } },
+      { path: "/operations", label: "Operations", required: false, readOnly: false, control: { kind: "text" }, valueSchema: { type: "string" } },
     ],
-    values: { name: mode === "create" ? "" : (FIXTURES[key]?.name ?? `Projection ${key}`) },
+    values: {
+      name: mode === "create" ? "" : (FIXTURES[key]?.name ?? `Projection ${key}`),
+      id: mode === "create" ? "" : key,
+      description: "",
+      visibility: "private",
+      componentId: "@ontomato/sdk:ObjectSummary",
+      data: "{}",
+      config: "{}",
+      inputs: "{}",
+      outputs: "{}",
+      operations: "{}",
+    },
     errors: [],
+    revision: mode === "create" ? undefined : (FIXTURES[key]?.revision ?? 1),
     save: {
       method: mode === "create" ? "POST" : "PUT",
       path: `/api/product-projections/${key || "new"}`,
@@ -256,7 +351,7 @@ function formDescription(mode: "create" | "edit", key: string) {
 }
 
 async function waitFor(check: () => boolean, label: string | (() => string)): Promise<void> {
-  for (let i = 0; i < 100; i += 1) {
+  for (let i = 0; i < 120; i += 1) {
     if (check()) return;
     await new Promise((resolve) => setTimeout(resolve, 15));
   }
@@ -279,38 +374,49 @@ function findButton(root: HTMLElement, text: string): HTMLButtonElement | undefi
   );
 }
 
-function setFormNameInput(root: HTMLElement, value: string) {
-  const input = root.querySelector<HTMLInputElement>(".proj-form-wrap input");
+function setFieldInput(root: HTMLElement, fieldPath: string, value: string) {
+  const input = root.querySelector<HTMLInputElement>(`[data-field="${fieldPath}"] input`);
   expect(input).toBeTruthy();
   input!.value = value;
   input!.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 interface MountOptions {
+  initialAddress?: string;
   confirmLeave?: () => Promise<boolean>;
   copyOutcome?: () => { kind: "success"; data: Record<string, unknown> };
   deleteOutcome?: (primaryKey: string) => { kind: "success"; data: Record<string, unknown> } | { kind: "refusal"; code: string; message: string };
+  createdKey?: string;
 }
 
-async function mountProjectionsDirectory(options: MountOptions = {}) {
+async function mountProjectionsApp(options: MountOptions = {}) {
   const reads: DataReadRequest[] = [];
+  const navigated: string[] = [];
+  const savedRequests: Array<{ operationId: string; targetKey: string; input: Record<string, unknown> }> = [];
   const preparedIntents = new Map<string, { preparation: PanelHumanOperationPreparation; targetKey: string; input: Record<string, unknown> }>();
   const dispatchedIntents: Array<{ intentId: string; operationId: string; targetKey: string; input: Record<string, unknown> }> = [];
   let intentSeq = 0;
+  let sharedState = false;
   const confirmLeaveUnsaved = vi.fn(async () => (options.confirmLeave ? options.confirmLeave() : true));
 
   const sent = installPlatform((request: Sent) => {
     const { method, path } = request;
     if (path === `/api/data-query/platform/applications/${APP_ID}/panel-uses`) {
       return Response.json({
-        data: { applicationId: APP_ID, entry: { path: "/ontology", renderer: "panels" }, panelUses: [use] },
+        data: { applicationId: APP_ID, entry: { path: "/ontology", renderer: "panels" }, panelUses: [catalogUse, detailUse] },
       });
     }
-    if (path === `/api/product-panels/${projectionsDirectoryPanel.id}`) {
-      return panelAnswer(projectionsDirectoryPanel, request);
+    if (path === `/api/product-panels/${projectionsCatalogPanel.id}`) {
+      return panelAnswer(projectionsCatalogPanel, request);
     }
-    if (path === `/api/product-panels/${projectionsDirectoryPanel.id}/snapshot`) {
-      return panelSnapshot(projectionsDirectoryPanel, Object.fromEntries(projections), request);
+    if (path === `/api/product-panels/${projectionsCatalogPanel.id}/snapshot`) {
+      return panelSnapshot(projectionsCatalogPanel, Object.fromEntries(projections), request);
+    }
+    if (path === `/api/product-panels/${projectionDetailPanel.id}`) {
+      return panelAnswer(projectionDetailPanel, request);
+    }
+    if (path === `/api/product-panels/${projectionDetailPanel.id}/snapshot`) {
+      return panelSnapshot(projectionDetailPanel, Object.fromEntries(projections), request);
     }
     if (path.startsWith("/api/product-projections/")) {
       const id = path.split("/").at(-1)!;
@@ -356,6 +462,8 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
         }
       } else if (body.operationId === "copySubmit.copy") {
         label = "Copy";
+      } else if (body.operationId === "createForm.save" || body.operationId === "form.save") {
+        label = "Save";
       }
       const preparation: PanelHumanOperationPreparation = {
         intentId,
@@ -380,6 +488,32 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
         targetKey: stored.targetKey,
         input: stored.input,
       });
+      if (stored.preparation.operationId === "createForm.save") {
+        const createdId = options.createdKey ?? "proj-created";
+        savedRequests.push({ operationId: stored.preparation.operationId, targetKey: createdId, input: stored.input });
+        return Response.json({
+          kind: "dispatched",
+          intentId,
+          outcome: {
+            kind: "success",
+            created: { objectType: PRODUCT_PROJECTION, primaryKey: createdId },
+            data: { id: createdId },
+            affected: { objects: [], objectTypes: [] },
+          },
+        });
+      }
+      if (stored.preparation.operationId === "form.save") {
+        savedRequests.push({ operationId: stored.preparation.operationId, targetKey: stored.targetKey, input: stored.input });
+        return Response.json({
+          kind: "dispatched",
+          intentId,
+          outcome: {
+            kind: "success",
+            data: { id: stored.targetKey },
+            affected: { objects: [], objectTypes: [] },
+          },
+        });
+      }
       if (stored.preparation.operationId === "deleteProjection.delete") {
         const outcome = options.deleteOutcome
           ? options.deleteOutcome(stored.targetKey)
@@ -392,12 +526,34 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
           : { kind: "success" as const, data: { id: "owner-assigned-copy" } };
         return Response.json({ kind: "dispatched", intentId, outcome });
       }
+      if (stored.preparation.operationId === "shareEnable.share") {
+        sharedState = true;
+      } else if (stored.preparation.operationId === "shareDisable.share") {
+        sharedState = false;
+      }
       return Response.json({ kind: "dispatched", intentId, outcome: { kind: "success", data: {} } });
     }
     if (path === "/api/product-panels/read") {
       const body = request.body as ProductPanelReadRequest;
       if ("operations" in body) {
         const member = body.memberPath[0]?.member;
+        if (member === "createForm" || member === "form") {
+          return Response.json({
+            status: "ready",
+            value: {
+              save: {
+                handlerRef: "platform:ProductProjection.save",
+                label: "Save",
+                kind: "form.save",
+                effect: "write",
+                batch: false,
+                target: { source: "draft", slot: member },
+                inputSchema: {},
+                resultSchema: {},
+              },
+            },
+          });
+        }
         if (member === "deleteProjection") {
           return Response.json({
             status: "ready",
@@ -449,6 +605,23 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
             },
           });
         }
+        if (member === "shareEnable" || member === "shareDisable") {
+          return Response.json({
+            status: "ready",
+            value: {
+              share: {
+                handlerRef: "productProjections.share",
+                label: "Share",
+                kind: "action",
+                effect: "write",
+                batch: false,
+                target: { source: "input", input: "target" },
+                inputSchema: { type: "object", properties: { shared: { type: "boolean" } } },
+                resultSchema: {},
+              },
+            },
+          });
+        }
         return Response.json({ status: "ready", value: {} });
       }
       reads.push(body);
@@ -461,7 +634,7 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
               primaryKey: item.id,
               label: item.name,
               subtitle: item.id,
-              fields: { component: "ObjectSummary", owner: "Alice", scope: "Private", updatedAt: "2026-11-23T00:00:00Z" },
+              fields: { component: "ObjectSummary", owner: "Alice", scope: "Private", updatedAt: "2026-11-24T00:00:00Z" },
             })),
             total: 4,
           },
@@ -471,6 +644,9 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
         const key = readTargetKey(body);
         const fixture = FIXTURES[key];
         if (!fixture) return Response.json({ status: "empty" });
+        if (fixture.status === "forbidden") return Response.json({ status: "forbidden" });
+        if (fixture.status === "error") return Response.json({ status: "error", message: fixture.errorMessage });
+        const domainShared = fixture.id === "proj-a" ? sharedState : Boolean(fixture.domainShared);
         return Response.json({
           status: "ready",
           value: {
@@ -480,10 +656,10 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
             fields: {
               id: fixture.id,
               component: fixture.isChart ? "MetricChart" : "ObjectSummary",
-              scope: "Private",
+              scope: domainShared ? "Domain" : "Private",
               owner: "Alice",
               revision: fixture.revision,
-              domainShared: false,
+              domainShared,
               definitionJson: JSON.stringify({ id: fixture.id }),
             },
             fieldLabels: { id: "ID", component: "Component", scope: "Scope", owner: "Owner", revision: "Revision" },
@@ -494,7 +670,7 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
               canCopy: fixture.canCopy,
               isBuiltin: false,
               isChart: fixture.isChart,
-              domainShared: false,
+              domainShared,
               revision: fixture.revision,
               usedByCount: (fixture.usedByPanels?.length ?? 0) + (fixture.hiddenUsedByCount ?? 0),
               hiddenUsedByCount: fixture.hiddenUsedByCount ?? 0,
@@ -508,12 +684,25 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
         }
         return Response.json({ status: "empty" });
       }
+      if (member === "createForm") {
+        return Response.json({ status: "ready", value: formDescription("create", "") });
+      }
       if (member === "form") {
         const key = readTargetKey(body);
-        if (body.dataName === "createForm") {
-          return Response.json({ status: "ready", value: formDescription("create", "") });
-        }
         return Response.json({ status: "ready", value: formDescription("edit", key) });
+      }
+      if (member === "usedByList") {
+        const key = readTargetKey(body);
+        const fixture = FIXTURES[key];
+        const rows = (fixture?.usedByPanels ?? []).map((panel) => ({
+          primaryKey: panel.id,
+          label: panel.name,
+          fields: {
+            panel: { kind: "reference", className: PRODUCT_PANEL, primaryKey: panel.id, label: panel.name },
+            id: panel.id,
+          },
+        }));
+        return Response.json({ status: "ready", value: rows });
       }
       if (
         member === "dataList"
@@ -521,7 +710,6 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
         || member === "inputsList"
         || member === "outputsList"
         || member === "operationsList"
-        || member === "usedByList"
         || member === "grantsList"
       ) {
         return Response.json({ status: "ready", value: [] });
@@ -545,16 +733,16 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
       entryAccess: ["domain-member"],
       scheduleAdapter: null,
       releaseId: null,
-      panelUses: [use],
+      panelUses: [catalogUse, detailUse],
     },
   ];
 
-  const observed = { context: null as { state?: Record<string, unknown> } | null };
+  const observed = { context: null as { url?: string; state?: Record<string, unknown> } | null };
   const display = useConversationDisplay({
     features: () => [{ id: "panel", label: "Projections", icon: "pages", availability: "page", withConversation: true }],
     resolve: (address) => {
       const path = address.split("?")[0]!;
-      return path === ENTRY_PATH ? { featureId: "panel", address, instance: path } : null;
+      return path === CATALOG_PATH || path === DETAIL_PATH ? { featureId: "panel", address, instance: path } : null;
     },
     serialize: async () => true,
     context: (page, reported) => ({
@@ -567,13 +755,8 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
   });
   display.placed(() => "side");
 
-  await display.present({
-    type: "presentation",
-    sessionId: SESSION,
-    runId: RUN,
-    toolCallId: "open-initial",
-    target: { kind: "page", address: ENTRY_PATH },
-  });
+  const startAddress = options.initialAddress ?? CATALOG_PATH;
+  await display.present(presentFrame(startAddress));
 
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { template: "<div />" } }] });
   await router.push("/");
@@ -586,14 +769,21 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
           ? h(PanelApplicationRoute, {
               key: display.page.value.instance,
               applicationId: APP_ID,
-              useId: use.id,
+              useId: display.page.value.instance === DETAIL_PATH ? detailUse.id : catalogUse.id,
               address: display.page.value.address,
               liveState: display.liveState.value,
+              navigate: (address: string) => {
+                navigated.push(address);
+                const path = address.split("?")[0]!;
+                if (path === CATALOG_PATH || path === DETAIL_PATH) {
+                  void display.present(presentFrame(address));
+                }
+              },
               registerPageController: (controller: unknown) =>
                 display.registerPageController(display.page.value!.instance, controller as never),
               onDisplayAddress: display.address,
               onDisplayLoaded: display.loaded,
-              onContext: (reported: { state?: Record<string, unknown> } | null) => {
+              onContext: (reported: { url?: string; state?: Record<string, unknown> } | null) => {
                 observed.context = reported;
                 display.context(reported as never);
               },
@@ -603,12 +793,19 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
   });
 
   const mounted = mountPlatformPage(() => h(Host), router);
-  await waitFor(
-    () =>
-      mounted.element.textContent?.includes("Projection A") === true
-      && mounted.element.textContent?.includes("Projection B") === true,
-    "initial projections list",
-  );
+  if (startAddress.startsWith(DETAIL_PATH)) {
+    await waitFor(
+      () => Boolean(mounted.element.querySelector(".proj-detail-page")),
+      "initial projection detail page",
+    );
+  } else {
+    await waitFor(
+      () =>
+        mounted.element.textContent?.includes("Projection A") === true
+        && mounted.element.textContent?.includes("Projection B") === true,
+      "initial projections catalog list",
+    );
+  }
 
   return {
     mounted,
@@ -616,372 +813,432 @@ async function mountProjectionsDirectory(options: MountOptions = {}) {
     observed,
     reads,
     sent,
+    navigated,
+    savedRequests,
     dispatchedIntents,
     confirmLeaveUnsaved,
-    present: (state: Record<string, unknown>) => display.present(presentFrame(state, display.page.value!.address)),
+    present: (state: Record<string, unknown>, address = display.page.value!.address) =>
+      display.present(presentFrame(address, state)),
   };
 }
 
 afterEach(() => {
   leaveFrame();
   useApplicationCatalog().applications.value = [];
+  window.sessionStorage.clear();
   document.body.innerHTML = "";
   vi.restoreAllMocks();
 });
 
-describe("projections builtin directory R3 fixes", () => {
-  it("guards dirty edit and create forms on list row switch and create button: cancel keeps draft, confirm switches to view mode", { timeout: 20000 }, async () => {
+describe("projections two-entry catalog & detail panels", () => {
+  it("avoids usePanelData, third-party element names, and direct /api/ calls, and keeps creating/detailMode off deepLink URLs", () => {
+    for (const [html, mod] of [
+      [catalogHtml, catalogModule],
+      [detailHtml, detailModule],
+    ]) {
+      expect(mod).not.toContain("usePanelData");
+      expect(mod).not.toContain("/api/");
+      expect(html).not.toMatch(/<el-[a-z]|--el-/i);
+    }
+    expect(catalogSource.manifest.state.creating.deepLink).toBe(false);
+    expect(detailSource.manifest.state.detailMode.deepLink).toBe(false);
+    expect(catalogSource.manifest.members.catalogue.config.showChevron).toBe(true);
+    expect(catalogSource.manifest.members.catalogue.config.fallbackToFirst).toBe(false);
+  });
+
+  it("navigates from full-width catalog row click to /ontology/projections/detail?selected=...", { timeout: 20000 }, async () => {
+    const harness = await mountProjectionsApp();
+    const { mounted, navigated, observed } = harness;
+    try {
+      // Single primary button in catalog page-header.
+      const primaryButtons = mounted.element.querySelectorAll(".sdk-page-header .el-button--primary");
+      expect(primaryButtons.length).toBe(1);
+
+      // Click Projection A row -> navigates to detail entry in default view mode.
+      const rowA = Array.from(mounted.element.querySelectorAll("tr")).find((tr) => tr.textContent?.includes("Projection A"));
+      expect(rowA).toBeTruthy();
+      rowA!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      await waitFor(
+        () => navigated.includes(`${DETAIL_PATH}?selected=proj-a`),
+        () => `navigated=${JSON.stringify(navigated)}`,
+      );
+      await waitFor(
+        () => Boolean(mounted.element.querySelector(".proj-detail-page")) && observed.context?.state?.detailMode === "view" && Boolean(findButton(mounted.element, "Edit")),
+        "detail page mounted in default view mode with Edit button",
+      );
+      expect(Boolean(findButton(mounted.element, "Back to projections"))).toBe(true);
+    } finally {
+      mounted.app.unmount();
+    }
+  });
+
+  it("opens centered create dialog with minimal fields, guards unsaved close via confirmLeaveUnsaved, and hands off created projection to detail edit mode once", { timeout: 20000 }, async () => {
     let resolveConfirm: ((ok: boolean) => void) | null = null;
-    const harness = await mountProjectionsDirectory({
+    const harness = await mountProjectionsApp({
       confirmLeave: () =>
         new Promise<boolean>((resolve) => {
           resolveConfirm = resolve;
         }),
     });
-    const { mounted, observed, reads, confirmLeaveUnsaved, present } = harness;
+    const { mounted, observed, navigated, savedRequests, dispatchedIntents, confirmLeaveUnsaved } = harness;
     try {
-      // Enter edit mode on Projection A.
-      await present({ selected: projRef("proj-a"), detailMode: "edit" });
-      await waitFor(
-        () => (mounted.element.querySelector<HTMLInputElement>(".proj-form-wrap input")?.value ?? "") === "Projection A",
-        "proj-a edit form loaded",
-      );
-
-      // Make an unsaved edit to Projection A.
-      setFormNameInput(mounted.element, "Unsaved Projection A Draft");
-      await waitFor(
-        () => (mounted.element.querySelector<HTMLInputElement>(".proj-form-wrap input")?.value ?? "") === "Unsaved Projection A Draft",
-        "unsaved edit applied",
-      );
-
-      // Click Projection B in the catalogue list -> must ask confirmation once without loading B's form.
-      const readsBeforeClick = reads.length;
-      const rowB = Array.from(mounted.element.querySelectorAll("tr")).find((tr) => tr.textContent?.includes("Projection B"));
-      expect(rowB).toBeTruthy();
-      rowB!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 1 && resolveConfirm !== null, "confirm leave dialog on row click");
-      expect(
-        reads.slice(readsBeforeClick).some((r) => r.memberPath[0]?.member === "form" && readTargetKey(r) === "proj-b"),
-      ).toBe(false);
-      expect(mounted.element.querySelector<HTMLInputElement>(".proj-form-wrap input")?.value).toBe("Unsaved Projection A Draft");
-
-      // Cancel leaving -> stays in Projection A edit form with unsaved draft intact.
-      resolveConfirm!(false);
-      resolveConfirm = null;
-      await new Promise((resolve) => setTimeout(resolve, 40));
-
-      expect(observed.context?.state?.selected).toEqual(projRef("proj-a"));
-      expect(observed.context?.state?.detailMode).toBe("edit");
-      expect(mounted.element.querySelector<HTMLInputElement>(".proj-form-wrap input")?.value).toBe("Unsaved Projection A Draft");
-
-      // Clicking "New projection" while dirty also asks confirmation; cancel stays on Projection A draft.
-      const createBtn = findButton(mounted.element, "New projection");
-      expect(createBtn).toBeTruthy();
-      createBtn!.click();
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 2 && resolveConfirm !== null, "confirm leave dialog on create button");
-      resolveConfirm!(false);
-      resolveConfirm = null;
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      expect(observed.context?.state?.selected).toEqual(projRef("proj-a"));
-      expect(observed.context?.state?.creating ?? null).toBeNull();
-      expect(mounted.element.querySelector<HTMLInputElement>(".proj-form-wrap input")?.value).toBe("Unsaved Projection A Draft");
-
-      // Clicking "Close" in the form header while dirty also triggers confirmation; cancel keeps draft intact.
-      const closeBtn = findButton(mounted.element, "Close");
-      expect(closeBtn).toBeTruthy();
-      closeBtn!.click();
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 3 && resolveConfirm !== null, "confirm leave dialog on close button");
-      resolveConfirm!(false);
-      resolveConfirm = null;
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      expect(observed.context?.state?.selected).toEqual(projRef("proj-a"));
-      expect(observed.context?.state?.detailMode).toBe("edit");
-      expect(mounted.element.querySelector<HTMLInputElement>(".proj-form-wrap input")?.value).toBe("Unsaved Projection A Draft");
-
-      // Click Projection B again and confirm -> discards draft, exits edit mode, and views Projection B.
-      rowB!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 4 && resolveConfirm !== null, "second confirm leave on row click");
-      resolveConfirm!(true);
-      resolveConfirm = null;
-
-      await waitFor(
-        () => !mounted.element.querySelector(".proj-form-wrap") && observed.context?.state?.detailMode === "view" && selectedPrimaryKey(observed.context?.state) === "proj-b",
-        "switched to proj-b view mode after confirming discard",
-      );
-
-      // Now enter create mode, make an unsaved draft, click Projection A -> cancel keeps create draft, confirm views Projection A.
+      // Open create dialog from header primary button.
       findButton(mounted.element, "New projection")!.click();
       await waitFor(
-        () => observed.context?.state?.creating === true && Boolean(mounted.element.querySelector(".proj-form-wrap input")),
-        "create form mounted",
+        () => Boolean(document.querySelector(".el-dialog")) && Boolean(document.querySelector('.el-dialog [data-field="/name"] input')),
+        "centered create dialog mounted with minimal fields",
       );
-      setFormNameInput(mounted.element, "New Draft Projection");
+      const dialog = document.querySelector<HTMLElement>(".el-dialog")!;
+
+      // Only the 6 minimal required/core fields render; advanced fields stay out of the create dialog.
+      for (const path of ["/name", "/id", "/description", "/visibility", "/componentId", "/data"]) {
+        expect(dialog.querySelector(`[data-field="${path}"]`)).not.toBeNull();
+      }
+      for (const excluded of ["/config", "/inputs", "/outputs", "/operations"]) {
+        expect(dialog.querySelector(`[data-field="${excluded}"]`)).toBeNull();
+      }
+
+      // Edit name -> form becomes dirty.
+      setFieldInput(dialog, "/name", "Draft Projection");
       await waitFor(
-        () => (mounted.element.querySelector<HTMLInputElement>(".proj-form-wrap input")?.value ?? "") === "New Draft Projection",
-        "create draft typed",
+        () => dialog.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value === "Draft Projection",
+        "create form name typed",
       );
 
-      const rowA = Array.from(mounted.element.querySelectorAll("tr")).find((tr) => tr.textContent?.includes("Projection A"));
-      rowA!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 5 && resolveConfirm !== null, "confirm leave on create draft row switch");
+      // 1. Clicking Cancel while dirty asks confirmLeaveUnsaved; declining keeps dialog & draft intact.
+      findButton(dialog, "Cancel")!.click();
+      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 1 && resolveConfirm !== null, "confirmLeaveUnsaved on Cancel");
       resolveConfirm!(false);
       resolveConfirm = null;
       await new Promise((resolve) => setTimeout(resolve, 40));
       expect(observed.context?.state?.creating).toBe(true);
-      expect(observed.context?.state?.selected ?? null).toBeNull();
-      expect(mounted.element.querySelector<HTMLInputElement>(".proj-form-wrap input")?.value).toBe("New Draft Projection");
+      expect(document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input')?.value).toBe("Draft Projection");
 
-      rowA!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 6 && resolveConfirm !== null, "confirm discard on create draft row switch");
+      // 2. Clicking dialog close (X) while dirty asks confirmLeaveUnsaved; declining keeps dialog & draft intact.
+      const closeBtn = dialog.querySelector<HTMLButtonElement>(".el-dialog__headerbtn");
+      expect(closeBtn).toBeTruthy();
+      closeBtn!.click();
+      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 2 && resolveConfirm !== null, "confirmLeaveUnsaved on X");
+      resolveConfirm!(false);
+      resolveConfirm = null;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(observed.context?.state?.creating).toBe(true);
+      expect(document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input')?.value).toBe("Draft Projection");
+
+      // 3. Pressing Escape while dirty asks confirmLeaveUnsaved; declining keeps dialog & draft intact.
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 3 && resolveConfirm !== null, "confirmLeaveUnsaved on Escape");
+      resolveConfirm!(false);
+      resolveConfirm = null;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(observed.context?.state?.creating).toBe(true);
+      expect(document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input')?.value).toBe("Draft Projection");
+
+      // 4. Clicking Cancel again and confirming discards and closes dialog.
+      findButton(dialog, "Cancel")!.click();
+      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 4 && resolveConfirm !== null, "confirmLeaveUnsaved on Cancel confirm");
+      resolveConfirm!(true);
+      resolveConfirm = null;
+      await waitFor(() => observed.context?.state?.creating === false && !document.querySelector(".el-dialog"), "dialog closed after confirming discard");
+
+      // 5. Assistant remote control `present({ creating: true })` opens the dialog, fill name, and submit Create ->
+      // writes one-time sessionStorage handoff and opens detail in edit mode!
+      await harness.present({ creating: true });
+      await waitFor(
+        () => Boolean(document.querySelector('.el-dialog [data-field="/name"] input')),
+        "re-opened create dialog",
+      );
+      const dialog2 = document.querySelector<HTMLElement>(".el-dialog")!;
+      setFieldInput(dialog2, "/name", "Created Projection");
+      findButton(dialog2, "Create")!.click();
+
+      await waitFor(
+        () => savedRequests.length === 1,
+        () => `createForm.save dispatched; intents=${JSON.stringify(dispatchedIntents)}, sent=${JSON.stringify(harness.sent.filter((s) => s.path.includes("intents")))}`,
+      );
+      await waitFor(
+        () => navigated.includes(`${DETAIL_PATH}?selected=proj-created`),
+        () => `expected detail navigation, got ${JSON.stringify(navigated)}`,
+      );
+      // Detail entry consumes the one-time sessionStorage key and automatically enters full-width edit mode.
+      await waitFor(
+        () =>
+          Boolean(mounted.element.querySelector(".proj-detail-page .proj-form-wrap"))
+          && observed.context?.state?.detailMode === "edit",
+        "created projection opened automatically in detail edit mode",
+      );
+      // The one-time sessionStorage key is already consumed and URL never carries detailMode.
+      expect(window.sessionStorage.getItem(`${OPEN_EDIT_KEY_PREFIX}proj-created`)).toBeNull();
+      expect(displayUrlOf(harness)).toBe(`${DETAIL_PATH}?selected=proj-created`);
+    } finally {
+      mounted.app.unmount();
+    }
+
+    // 5. Remounting the exact same detail URL (simulating reload/shared link without sessionStorage key) stays in view mode.
+    const reloaded = await mountProjectionsApp({ initialAddress: `${DETAIL_PATH}?selected=proj-created` });
+    try {
+      await waitFor(
+        () => Boolean(reloaded.mounted.element.querySelector(".proj-detail-page")) && reloaded.observed.context?.state?.detailMode === "view",
+        "reloaded detail page stays in view mode",
+      );
+      expect(reloaded.mounted.element.querySelector(".proj-form-wrap")).toBeNull();
+    } finally {
+      reloaded.mounted.app.unmount();
+    }
+  });
+
+  it("guards edit mode Cancel with confirmLeaveUnsaved, saves via header draft Save, and navigates Back to catalog", { timeout: 20000 }, async () => {
+    let resolveConfirm: ((ok: boolean) => void) | null = null;
+    const harness = await mountProjectionsApp({
+      initialAddress: `${DETAIL_PATH}?selected=proj-a`,
+      confirmLeave: () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirm = resolve;
+        }),
+    });
+    const { mounted, observed, savedRequests, navigated, confirmLeaveUnsaved } = harness;
+    try {
+      await waitFor(() => Boolean(findButton(mounted.element, "Edit")), "view mode Edit button ready");
+      expect(observed.context?.state?.detailMode).toBe("view");
+
+      // Click Edit -> full-width edit form opens, header switches to Cancel / Save (Save disabled while clean).
+      findButton(mounted.element, "Edit")!.click();
+      await waitFor(
+        () =>
+          observed.context?.state?.detailMode === "edit"
+          && (mounted.element.querySelector<HTMLInputElement>('.proj-form-wrap [data-field="/name"] input')?.value ?? "") === "Projection A",
+        "full-width edit form loaded",
+      );
+      const saveBtn = findButton(mounted.element, "Save");
+      expect(saveBtn).toBeTruthy();
+      expect(saveBtn!.disabled).toBe(true);
+
+      // Edit name -> Save becomes enabled via usePanelFormDraft("form").
+      setFieldInput(mounted.element, "/name", "Projection A Updated");
+      await waitFor(
+        () => findButton(mounted.element, "Save")?.disabled === false,
+        () => `header Save button enabled when dirty; ops=${JSON.stringify(harness.sent.filter((s) => s.path === "/api/product-panels/read" && "operations" in (s.body as object)))}`,
+      );
+
+      // Click Cancel -> confirmLeaveUnsaved fires; declining preserves edit mode & draft.
+      findButton(mounted.element, "Cancel")!.click();
+      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 1 && resolveConfirm !== null, "confirmLeaveUnsaved on edit Cancel");
+      resolveConfirm!(false);
+      resolveConfirm = null;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(observed.context?.state?.detailMode).toBe("edit");
+      expect(mounted.element.querySelector<HTMLInputElement>('.proj-form-wrap [data-field="/name"] input')?.value).toBe("Projection A Updated");
+
+      // Confirming Cancel discards the draft and returns to view mode.
+      findButton(mounted.element, "Cancel")!.click();
+      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 2 && resolveConfirm !== null, "confirmLeaveUnsaved on edit Cancel confirm");
       resolveConfirm!(true);
       resolveConfirm = null;
       await waitFor(
-        () => !mounted.element.querySelector(".proj-form-wrap") && observed.context?.state?.creating === null && selectedPrimaryKey(observed.context?.state) === "proj-a",
-        "switched to proj-a view mode after discarding create draft",
+        () => observed.context?.state?.detailMode === "view" && !mounted.element.querySelector(".proj-form-wrap"),
+        "returned to view mode after confirming edit Cancel",
       );
+
+      // Re-enter Edit, modify name, and click Save in page-header -> submits form.save and returns to view mode.
+      await waitFor(() => Boolean(findButton(mounted.element, "Edit")), "Edit button restored in view mode");
+      findButton(mounted.element, "Edit")!.click();
+      await waitFor(
+        () => (mounted.element.querySelector<HTMLInputElement>('.proj-form-wrap [data-field="/name"] input')?.value ?? "") === "Projection A",
+        "re-entered edit form with clean baseline",
+      );
+      setFieldInput(mounted.element, "/name", "Projection A Saved");
+      await waitFor(() => findButton(mounted.element, "Save")?.disabled === false, "Save enabled on second edit");
+      findButton(mounted.element, "Save")!.click();
+      await waitFor(() => savedRequests.length === 1, "form.save dispatched via page-header draft Save");
+      await waitFor(
+        () => observed.context?.state?.detailMode === "view" && !mounted.element.querySelector(".proj-form-wrap"),
+        "returned to view mode after saving",
+      );
+
+      // Click Back to projections -> navigates back to /ontology/projections.
+      findButton(mounted.element, "Back to projections")!.click();
+      await waitFor(() => navigated.includes(CATALOG_PATH), "navigated back to catalog");
     } finally {
       mounted.app.unmount();
     }
   });
 
-  it("deletes via owner inspectImpact confirmation dialog showing known using panel names", { timeout: 20000 }, async () => {
-    const harness = await mountProjectionsDirectory();
-    const { mounted, observed, dispatchedIntents, present } = harness;
-    try {
-      // Select Projection A (used by Sales Dashboard & Ops Overview + 1 hidden).
-      await present({ selected: projRef("proj-a") });
-      await waitFor(() => Boolean(findButton(mounted.element, "Delete")), "delete OperationButton ready for proj-a");
-
-      // Click Delete directly (no custom panel delete dialog); platform inspectImpact dialog opens with panel names.
-      findButton(mounted.element, "Delete")!.click();
-      await waitFor(() => Boolean(document.querySelector(".el-message-box")), "owner inspectImpact confirmation dialog");
-      const box = document.querySelector<HTMLElement>(".el-message-box")!;
-      const listedPanels = Array.from(box.querySelectorAll("li")).map((item) => item.textContent);
-      expect(listedPanels).toEqual(["Sales Dashboard", "Ops Overview"]);
-      expect(box.textContent).toContain("deletion will be refused");
-      expect(box.textContent).toContain("1 additional panel(s)");
-
-      // Cancel -> nothing dispatched, Projection A stays selected.
-      findButton(box, "Cancel")!.click();
-      await waitFor(() => !document.querySelector(".el-message-box"), "confirmation dialog closed after cancel");
-      expect(dispatchedIntents).toHaveLength(0);
-      expect(observed.context?.state?.selected).toEqual(projRef("proj-a"));
-
-      // Select unused Projection B -> confirm delete -> dispatches delete with revision and clears selection.
-      await present({ selected: projRef("proj-b") });
-      await waitFor(
-        () => observed.context?.state?.deleteRevision === 2 && Boolean(findButton(mounted.element, "Delete")),
-        "delete OperationButton ready for proj-b with revision 2",
-      );
-      findButton(mounted.element, "Delete")!.click();
-      await waitFor(() => Boolean(document.querySelector(".el-message-box")), "delete impact dialog for proj-b");
-      const boxB = document.querySelector<HTMLElement>(".el-message-box")!;
-      expect(boxB.textContent).toContain("Projection B");
-      findButton(boxB, "Delete")!.click();
-
-      await waitFor(() => dispatchedIntents.length === 1, "delete intent dispatched");
-      expect(dispatchedIntents[0]).toMatchObject({
-        operationId: "deleteProjection.delete",
-        targetKey: "proj-b",
-        input: { revision: 2 },
-      });
-      await waitFor(() => (observed.context?.state?.selected ?? null) === null, "selection cleared after delete");
-    } finally {
-      mounted.app.unmount();
-    }
-  });
-
-  it("aligns copy and grant dialogs and submit buttons with detail entry permissions even when toggled via public state", { timeout: 20000 }, async () => {
-    const harness = await mountProjectionsDirectory();
-    const { mounted, present } = harness;
-    try {
-      // 1. No selection -> forcing copyDialog & grantDialog via public state mounts neither dialog nor submit buttons.
-      await present({ selected: null, copyDialog: true, copyId: "x", copyName: "X", grantDialog: true });
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(document.querySelector(".el-dialog")).toBeNull();
-      expect(findButton(document.body, "Grant")).toBeUndefined();
-
-      // 2. Chart projection -> no Copy button, and forcing copyDialog: true renders neither copy dialog nor copySubmit.
-      await present({ selected: projRef("proj-chart"), copyDialog: true, copyId: "chart-copy", copyName: "Chart Copy" });
-      await waitFor(() => mounted.element.textContent?.includes("Revenue Chart") === true, "chart projection loaded");
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(findButton(mounted.element, "Copy")).toBeUndefined();
-      expect(document.querySelector(".el-dialog")).toBeNull();
-
-      // 3. Read-only (use-only) projection -> no Edit/Copy/Delete buttons, no Grants tab, and forcing copyDialog/grantDialog renders no dialogs.
-      await present({ selected: projRef("proj-readonly"), copyDialog: true, grantDialog: true });
-      await waitFor(() => mounted.element.textContent?.includes("Shared Projection") === true, "readonly projection loaded");
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(findButton(mounted.element, "Edit")).toBeUndefined();
-      expect(findButton(mounted.element, "Copy")).toBeUndefined();
-      expect(findButton(mounted.element, "Delete")).toBeUndefined();
-      expect(document.querySelector(".el-dialog")).toBeNull();
-      expect(findButton(document.body, "Grant")).toBeUndefined();
-
-      // 4. Editable ordinary projection -> opening copyDialog and grantDialog legitimately renders both dialogs and submit buttons.
-      await present({ selected: projRef("proj-a"), copyDialog: true, copyId: "copy-a", copyName: "Copy A" });
-      await waitFor(
-        () => Boolean(document.querySelector(".el-dialog")) && Boolean(findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Copy")),
-        "copy dialog rendered for editable ordinary projection",
-      );
-
-      await present({ copyDialog: null, grantDialog: true });
-      await waitFor(
-        () => Boolean(document.querySelector(".el-dialog")) && Boolean(findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Grant")),
-        "grant dialog rendered for editable projection",
-      );
-    } finally {
-      mounted.app.unmount();
-    }
-  });
-
-  it("returns to view mode and closes open dialogs when only selected changes, while preserving atomic selected + detailMode edit", { timeout: 20000 }, async () => {
-    const harness = await mountProjectionsDirectory();
-    const { mounted, observed, reads, present } = harness;
-    try {
-      // Open Projection A in edit mode (clean) and verify.
-      await present({ selected: projRef("proj-a"), detailMode: "edit" });
-      await waitFor(
-        () => (mounted.element.querySelector<HTMLInputElement>(".proj-form-wrap input")?.value ?? "") === "Projection A",
-        "proj-a edit form opened",
-      );
-
-      // Update ONLY `selected` to Projection B -> automatically returns to view mode on B.
-      await present({ selected: projRef("proj-b") });
-      await waitFor(
-        () => !mounted.element.querySelector(".proj-form-wrap") && observed.context?.state?.detailMode === "view" && selectedPrimaryKey(observed.context?.state) === "proj-b",
-        "switching only selected exits edit mode to view",
-      );
-
-      // Open Copy dialog on Projection B, then update ONLY `selected` to Projection A -> dialog closes automatically.
-      await present({ copyDialog: true, copyId: "tmp-copy", copyName: "Tmp Copy" });
-      await waitFor(() => Boolean(document.querySelector(".el-dialog")), "copy dialog opened on proj-b");
-
-      await present({ selected: projRef("proj-a") });
-      await waitFor(
-        () =>
-          selectedPrimaryKey(observed.context?.state) === "proj-a"
-          && (observed.context?.state?.copyDialog ?? null) === null
-          && (observed.context?.state?.copyId ?? null) === null
-          && !document.querySelector(".el-dialog"),
-        "switching only selected closes open copy dialog",
-      );
-
-      // Open Grant dialog on Projection A, then update ONLY `selected` to Projection B -> grantDialog closes automatically.
-      await present({ grantDialog: true });
-      await waitFor(() => Boolean(document.querySelector(".el-dialog")), "grant dialog opened on proj-a");
-
-      await present({ selected: projRef("proj-b") });
-      await waitFor(
-        () =>
-          selectedPrimaryKey(observed.context?.state) === "proj-b"
-          && (observed.context?.state?.grantDialog ?? null) === null
-          && !document.querySelector(".el-dialog"),
-        "switching only selected closes open grant dialog",
-      );
-
-      // Atomic `{ selected: proj-a, detailMode: "edit" }` lands directly in Projection A edit form.
-      reads.length = 0;
-      await present({ selected: projRef("proj-a"), detailMode: "edit" });
-      await waitFor(
-        () =>
-          reads.some((r) => r.memberPath[0]?.member === "form" && r.dataName === "form" && readTargetKey(r) === "proj-a")
-          && (mounted.element.querySelector<HTMLInputElement>(".proj-form-wrap input")?.value ?? "") === "Projection A",
-        "atomic selected + detailMode edit opens proj-a form directly",
-      );
-      expect(observed.context?.state?.detailMode).toBe("edit");
-
-      // Create recipe `{ selected: null, creating: true }` opens createForm with cleared selection.
-      reads.length = 0;
-      await present({ selected: null, creating: true });
-      await waitFor(
-        () =>
-          reads.some((r) => r.memberPath[0]?.member === "form" && r.dataName === "createForm" && readTargetKey(r) === "")
-          && observed.context?.state?.creating === true
-          && (observed.context?.state?.selected ?? null) === null,
-        "create recipe opens createForm with cleared selection",
-      );
-    } finally {
-      mounted.app.unmount();
-    }
-  });
-
-  it("selects only the owner-returned data.id after copy and never falls back to draft copyId", { timeout: 20000 }, async () => {
+  it("supports More menu operations: openClass, Copy (strict owner data.id), Delete via inspectImpact, usage link to /ontology/panels, and grants/share", { timeout: 20000 }, async () => {
     let nextCopyResponse: { kind: "success"; data: Record<string, unknown> } = {
       kind: "success",
       data: { id: "owner-assigned-copy" },
     };
-    const harness = await mountProjectionsDirectory({
+    const harness = await mountProjectionsApp({
+      initialAddress: `${DETAIL_PATH}?selected=proj-a`,
       copyOutcome: () => nextCopyResponse,
     });
-    const { mounted, observed, dispatchedIntents, present } = harness;
+    const { mounted, observed, navigated, dispatchedIntents, present } = harness;
     try {
-      // 1. Owner returns `data.id` different from draft `copyId` -> selects `data.id`.
-      await present({ selected: projRef("proj-a"), copyDialog: true, copyId: "draft-id-ignored", copyName: "Copy A" });
+      await waitFor(() => Boolean(findButton(mounted.element, "More")), "More menu button ready");
+
+      // Overview & definition tabs render summary, preview, and binding tables.
+      expect(mounted.element.querySelector('[data-tab="overview"]')?.textContent).toContain("Inline preview");
+      expect(mounted.element.querySelector('[data-tab="definition"]')?.textContent).toContain("Data sources & reads");
+      expect(mounted.element.querySelector('[data-tab="definition"]')?.textContent).toContain("Registered operations");
+
+      // 1. Keep same-object tabs mounted via v-show while unmounting grants tab when unauthorized.
+      await present({ tab: "grants" });
+      await waitFor(() => mounted.element.querySelectorAll(".proj-tab-panel").length === 4, "4 tab panels mounted for authorized projection");
+      const tabPanels = Array.from(mounted.element.querySelectorAll<HTMLElement>(".proj-tab-panel"));
+      const grantsPanel = tabPanels[3]!;
+      expect(grantsPanel.style.display).not.toBe("none");
+
+      // Domain share toggle & Add grant dialog work inside grants tab.
+      const shareBtn = findButton(grantsPanel, "Enable domain sharing");
+      expect(shareBtn).toBeTruthy();
+      shareBtn!.click();
+      await waitFor(() => dispatchedIntents.some((i) => i.operationId === "shareEnable.share"), "shareEnable dispatched");
+      findButton(grantsPanel, "Add grant")!.click();
+      await waitFor(() => observed.context?.state?.grantDialog === true && Boolean(document.querySelector(".el-dialog")), "add grant dialog opened");
+      findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Cancel")!.click();
+      await waitFor(() => observed.context?.state?.grantDialog === false, "add grant dialog closed");
+
+      // Switch to usage tab -> shows visible panels and hidden count hint; clicking panel navigates to /ontology/panels?selected=...
+      await present({ tab: "usage" });
+      await waitFor(
+        () =>
+          mounted.element.textContent?.includes("Sales Dashboard") === true
+          && mounted.element.textContent?.includes("1 additional panel") === true,
+        "usage tab shows panels and hidden count",
+      );
+      const usagePanel = tabPanels[2]!;
+      const panelRow = Array.from(usagePanel.querySelectorAll("tr")).find((tr) => tr.textContent?.includes("Sales Dashboard"));
+      expect(panelRow).toBeTruthy();
+      panelRow!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await waitFor(
+        () => navigated.includes("/ontology/panels?selected=panel-sales"),
+        () => `navigated=${JSON.stringify(navigated)}`,
+      );
+
+      // 2. Open More menu -> click View object type -> navigates to capability map.
+      findButton(mounted.element, "More")!.click();
+      await waitFor(() => Boolean(findMenuItem("View object type")), "More dropdown opened");
+      findMenuItem("View object type")!.click();
+      await waitFor(
+        () => navigated.some((addr) => addr.startsWith("/ontology/assets/capability-map") && addr.includes("selectedType=platform:ProductProjection")),
+        () => `navigated=${JSON.stringify(navigated)}`,
+      );
+
+      // 3. Copy selects only owner-returned data.id and never falls back to draft copyId.
+      await present({ copyDialog: true, copyId: "draft-id-ignored", copyName: "Copy A" });
       await waitFor(
         () => Boolean(document.querySelector(".el-dialog")) && Boolean(findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Copy")),
         "copy dialog submit ready",
       );
       findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Copy")!.click();
-
-      await waitFor(() => dispatchedIntents.length === 1, "copy intent dispatched");
       await waitFor(
         () =>
           selectedPrimaryKey(observed.context?.state) === "owner-assigned-copy"
-          && (observed.context?.state?.copyDialog ?? null) === null,
+          && observed.context?.state?.copyDialog === false,
         "selected switched strictly to owner-returned data.id",
       );
 
-      // 2. Owner returns success without `data.id` -> does NOT fall back to draft `copyId`.
       nextCopyResponse = { kind: "success", data: {} };
       await present({ selected: projRef("proj-a"), copyDialog: true, copyId: "draft-id-must-not-be-selected", copyName: "Copy Without ID" });
       await waitFor(
         () => Boolean(document.querySelector(".el-dialog")) && Boolean(findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Copy")),
-        "second copy dialog submit ready",
+        "second copy dialog ready",
       );
       findButton(document.querySelector<HTMLElement>(".el-dialog")!, "Copy")!.click();
+      await waitFor(() => observed.context?.state?.copyDialog === false, "copy dialog closed when receipt has no id");
+      expect(selectedPrimaryKey(observed.context?.state)).toBe("proj-a");
 
-      await waitFor(() => dispatchedIntents.length === 2, "second copy intent dispatched");
+      // 4. Delete from More menu triggers owner inspectImpact dialog showing known using panels & hidden count.
+      await waitFor(() => observed.context?.state?.deleteRevision === 3, "deleteRevision synced for proj-a");
+      findButton(mounted.element, "More")!.click();
+      await waitFor(() => Boolean(findMenuItem("Delete")), "More menu Delete item visible");
+      findMenuItem("Delete")!.click();
+      await waitFor(() => Boolean(document.querySelector(".el-message-box")), "inspectImpact dialog opened for proj-a");
+      const boxA = document.querySelector<HTMLElement>(".el-message-box")!;
+      expect(Array.from(boxA.querySelectorAll("li")).map((el) => el.textContent)).toEqual(["Sales Dashboard", "Ops Overview"]);
+      expect(boxA.textContent).toContain("1 additional panel(s)");
+      findButton(boxA, "Cancel")!.click();
+      await waitFor(() => !document.querySelector(".el-message-box"), "inspectImpact dialog closed on cancel");
+
+      // Switch to unused Projection B, confirm Delete -> dispatches with revision 2 and navigates back to /ontology/projections.
+      await present({ selected: projRef("proj-b") });
+      await waitFor(() => observed.context?.state?.deleteRevision === 2, "deleteRevision synced for proj-b");
+      findButton(mounted.element, "More")!.click();
+      await waitFor(() => Boolean(findMenuItem("Delete")), "Delete menu item ready for proj-b");
+      findMenuItem("Delete")!.click();
+      await waitFor(() => Boolean(document.querySelector(".el-message-box")), "delete impact dialog for proj-b");
+      const boxB = document.querySelector<HTMLElement>(".el-message-box")!;
+      findButton(boxB, "Delete")!.click();
       await waitFor(
-        () => (observed.context?.state?.copyDialog ?? null) === null && (observed.context?.state?.copyId ?? null) === null,
-        "copy dialog closed after receipt without id",
+        () => dispatchedIntents.some((i) => i.operationId === "deleteProjection.delete" && i.targetKey === "proj-b" && i.input.revision === 2),
+        "deleteProjection.delete dispatched with revision 2",
       );
-      expect(observed.context?.state?.selected).toEqual(projRef("proj-a"));
+      await waitFor(() => navigated.includes(CATALOG_PATH), "navigated back to catalog after delete");
     } finally {
       mounted.app.unmount();
     }
   });
 
-  it("keeps same-object tabs mounted via v-show while unmounting grants tab when unauthorized", { timeout: 20000 }, async () => {
-    const harness = await mountProjectionsDirectory();
-    const { mounted, present } = harness;
+  it("handles readonly, chart, forbidden, error, missing states and atomic remote-control edit switches cleanly", { timeout: 20000 }, async () => {
+    // Even if sessionStorage has an edit handoff flag for a readonly projection, it must NOT enter edit mode.
+    window.sessionStorage.setItem(`${OPEN_EDIT_KEY_PREFIX}proj-readonly`, "1");
+    const harness = await mountProjectionsApp({ initialAddress: `${DETAIL_PATH}?selected=proj-readonly` });
+    const { mounted, observed, present } = harness;
     try {
-      await present({ selected: projRef("proj-a"), tab: "grants" });
-      await waitFor(
-        () => mounted.element.querySelectorAll(".proj-tab-panel").length === 4,
-        "all 4 same-object tab panels mounted for authorized projection",
-      );
-      const tabPanels = Array.from(mounted.element.querySelectorAll<HTMLElement>(".proj-tab-panel"));
-      const grantsPanel = tabPanels[3]!;
-      expect(grantsPanel.style.display).not.toBe("none");
+      await waitFor(() => mounted.element.querySelectorAll(".proj-tab-panel").length === 3, "readonly projection unmounts grants tab");
+      expect(observed.context?.state?.detailMode).toBe("view");
+      expect(findButton(mounted.element, "Edit")).toBeUndefined();
+      expect(window.sessionStorage.getItem(`${OPEN_EDIT_KEY_PREFIX}proj-readonly`)).toBeNull();
 
-      // Switching away to overview hides grants with v-show instead of unmounting it.
-      await present({ tab: "overview" });
-      await waitFor(
-        () => grantsPanel.style.display === "none" && tabPanels[0]!.style.display !== "none",
-        "grants tab hidden via v-show when switching to overview",
-      );
-      expect(mounted.element.contains(grantsPanel)).toBe(true);
+      // Chart projection shows chart hint and hides Copy in More menu.
+      await present({ selected: projRef("proj-chart") });
+      await waitFor(() => mounted.element.textContent?.includes("Chart projections are registered") === true, "chart hint shown");
+      findButton(mounted.element, "More")!.click();
+      await waitFor(() => Boolean(findMenuItem("View object type")), "More menu opened for chart");
+      expect(findMenuItem("Copy")).toBeUndefined();
 
-      // Selecting a readonly projection without grant permission unmounts the grants tab panel.
-      await present({ selected: projRef("proj-readonly") });
+      // Atomic remote control `{ selected: proj-a, detailMode: "edit" }` enters edit mode directly.
+      await present({ selected: projRef("proj-a"), detailMode: "edit" });
       await waitFor(
-        () => mounted.element.querySelectorAll(".proj-tab-panel").length === 3,
-        "grants tab panel unmounted when viewer lacks grant permission",
+        () =>
+          observed.context?.state?.detailMode === "edit"
+          && (mounted.element.querySelector<HTMLInputElement>('.proj-form-wrap [data-field="/name"] input')?.value ?? "") === "Projection A",
+        "atomic selected + detailMode edit opens edit form directly",
+      );
+
+      // Forbidden & error states render in place.
+      await present({ selected: projRef("proj-forbidden"), detailMode: "view" });
+      await waitFor(
+        () => mounted.element.textContent?.includes("You do not have permission to use this projection.") === true,
+        () => `forbidden state rendered in place; text=${JSON.stringify(mounted.element.textContent?.slice(0, 300))}, state=${JSON.stringify(observed.context?.state)}`,
+      );
+
+      await present({ selected: projRef("proj-error") });
+      await waitFor(
+        () =>
+          mounted.element.textContent?.includes("Projection storage temporarily unavailable") === true
+          && Boolean(findButton(mounted.element, "Retry")),
+        "error state rendered in place with Retry button",
+      );
+
+      await present({ selected: projRef("proj-missing") });
+      await waitFor(
+        () => mounted.element.textContent?.includes("This projection is no longer available.") === true,
+        "missing state rendered in place",
       );
     } finally {
       mounted.app.unmount();
     }
   });
 });
+
+function displayUrlOf(harness: Awaited<ReturnType<typeof mountProjectionsApp>>): string {
+  return harness.display.page.value?.address ?? "";
+}
+
+function findMenuItem(text: string): HTMLElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLElement>(".el-dropdown-menu__item")).find(
+    (item) => item.textContent?.trim() === text && item.offsetParent !== null || (item.textContent?.trim() === text && getComputedStyle(item).display !== "none"),
+  );
+}

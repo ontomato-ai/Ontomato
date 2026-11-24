@@ -49,6 +49,7 @@ async function mountStandalone(initialAddress: string, fetchImpl?: (url: string)
       { path: "/ontology/panels", component: { template: '<div class="dest">panels</div>' } },
       { path: "/ontology/panels/detail", component: { template: '<div class="dest">panel-detail</div>' } },
       { path: "/ontology/projections", component: { template: '<div class="dest">projections</div>' } },
+      { path: "/ontology/projections/detail", component: { template: '<div class="dest">projection-detail</div>' } },
       { path: "/ontology/applications", component: { template: '<div class="dest">applications</div>' } },
       { path: "/ontology/applications/detail", component: { template: '<div class="dest">application-detail</div>' } },
       { path: "/ontology/agents", component: { template: '<div class="dest">agents</div>' } },
@@ -115,12 +116,12 @@ describe("retired /ontology/products redirect routes", () => {
     [
       "/ontology/products/proj-1",
       asset("proj-1", { kind: "object-projection", renders: { kind: "ObjectType", id: "Order" }, renderer: "summary", fields: ["id"] }),
-      "/ontology/projections?selected=proj-1",
+      "/ontology/projections/detail?selected=proj-1",
     ],
     [
       "/ontology/products?id=proj-2",
       asset("proj-2", { kind: "metric-widget", renders: { kind: "MetricView", id: "sales" }, renderer: "number", parameters: {}, valueField: "total" }),
-      "/ontology/projections?selected=proj-2",
+      "/ontology/projections/detail?selected=proj-2",
     ],
     [
       "/ontology/products/platform-application-0123456789abcdef01234567",
@@ -159,7 +160,7 @@ describe("retired /ontology/products redirect routes", () => {
   it.each([
     [403, "/ontology/products/secret-panel", "/ontology/panels/detail?selected=secret-panel"],
     [404, "/ontology/products/missing-panel", "/ontology/panels/detail?selected=missing-panel"],
-    [403, "/ontology/products/secret-proj?kind=projection", "/ontology/projections?selected=secret-proj"],
+    [403, "/ontology/products/secret-proj?kind=projection", "/ontology/projections/detail?selected=secret-proj"],
     [404, "/ontology/products/platform-application-hr-portal", "/ontology/applications/detail?selected=hr-portal"],
     [403, "/ontology/products/default-agent-profile-agent-9", "/ontology/agents?selected=agent-9"],
     [404, "/ontology/products/platform-agent-agent-7", "/ontology/agents?selected=agent-7"],

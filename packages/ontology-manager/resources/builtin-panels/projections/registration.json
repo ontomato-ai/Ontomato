@@ -4,7 +4,7 @@
       "id": "builtin-product-ontology-projections",
       "input": {
         "name": "投影",
-        "description": "本体管理器产品层的投影目录：检索、筛选、排序、查看每一条投影的来处与读法，并新建、编辑、复制、授权与删除。"
+        "description": "本体管理器产品层的投影目录：检索、筛选、排序投影，点击进入整宽详情，并通过居中弹窗新建投影。"
       }
     }
   ]

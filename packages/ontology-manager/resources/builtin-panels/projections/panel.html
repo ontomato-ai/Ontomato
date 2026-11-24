@@ -1,4 +1,4 @@
-<!-- Projections directory panel: official projections, read-only outputs, and bound operations. -->
+<!-- Projections catalog panel: opens projection details on /ontology/projections/detail and creates in a centered dialog. -->
 <style>
   [v-cloak] { display: none; }
   .proj-page {
@@ -10,25 +10,17 @@
     container: proj-page / inline-size;
   }
 
-  .proj-body {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--spacing-lg);
-    align-items: start;
-    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + 56px);
-    min-width: 0;
-  }
-  @container proj-page (min-width: 960px) {
-    .proj-body.with-detail {
-      grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-    }
-  }
-
-  .proj-list-pane {
+  .proj-catalog {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm);
+    flex: 1 1 auto;
     min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+  }
+  .proj-list-slot {
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .proj-filter-select {
     width: 9.5rem;
@@ -38,153 +30,18 @@
     flex-shrink: 0;
   }
 
-  .proj-detail-pane {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md);
-    min-width: 0;
-  }
-  .proj-detail-view {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md);
-    min-width: 0;
-  }
-  .proj-detail-header-card {
-    padding: var(--spacing-md) var(--spacing-lg);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-    min-width: 0;
-  }
-  .proj-tabs {
-    margin-bottom: calc(var(--spacing-xs) * -1);
-  }
-  .proj-tab-panel {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md);
-    min-width: 0;
-  }
-
-  .proj-card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md);
-    padding: var(--page-section-padding, var(--spacing-lg));
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-    min-width: 0;
-  }
-  .proj-card-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-sm);
-  }
-  .proj-card-title {
-    margin: 0;
-    font-size: var(--text-base, var(--text-sm));
-    font-weight: var(--font-semibold);
-    color: var(--sdk-text-color-primary);
-  }
-  .proj-card-subtitle {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--sdk-text-color-secondary);
-  }
-  .proj-muted {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--sdk-text-color-secondary);
-  }
-
-  .proj-io-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--spacing-md);
-  }
-  @container proj-page (min-width: 720px) {
-    .proj-io-grid {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    }
-  }
-
-  .proj-definition-details {
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    padding: var(--spacing-sm) var(--spacing-md);
-    background: var(--sdk-bg-color);
-  }
-  .proj-definition-details > summary {
-    cursor: pointer;
-    font-size: var(--text-sm);
-    font-weight: var(--font-semibold);
-    color: var(--sdk-text-color-primary);
-  }
-  .proj-definition-body {
-    margin-top: var(--spacing-sm);
-  }
-  .proj-definition-body :deep(.sdk-object-summary-text) {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: var(--text-xs);
-    max-height: 20rem;
-    overflow: auto;
-    display: block;
-  }
-
-  .proj-share-bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md) var(--spacing-lg);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-  }
-  .proj-share-left {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-  .proj-share-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-sm);
-  }
-
-  .proj-form-wrap {
-    width: 100%;
-    min-width: 0;
-  }
-  .proj-form-wrap :deep(.sdk-owner-form),
-  .proj-form-wrap :deep(.sdk-owner-form-inner) {
+  .proj-create-body :deep(.sdk-owner-form),
+  .proj-create-body :deep(.sdk-owner-form-inner) {
     height: auto;
   }
-  .proj-form-wrap :deep(.sdk-owner-form-body) {
+  .proj-create-body :deep(.sdk-owner-form-body) {
     overflow: visible;
   }
 
-  .proj-state-box {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-lg);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-  }
-  .proj-dialog-footer {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: var(--spacing-sm);
+  @container proj-page (max-width: 760px) {
+    .proj-filter-select {
+      width: 8.5rem;
+    }
   }
 </style>
 
@@ -210,212 +67,41 @@
       </template>
     </page-header>
 
-    <div class="proj-body" :class="{ 'with-detail': showDetail }">
-      <div class="proj-list-pane">
-        <projection slot="catalogue" @choose="onChooseProjection">
-          <template #filters>
-            <sdk-segmented v-model="scopeModel" :options="scopeOptions" size="default"></sdk-segmented>
-            <sdk-select v-model="sortModel" class="proj-filter-select" :aria-label="t('sort.label')">
-              <sdk-option value="updated" :label="t('sort.updated')"></sdk-option>
-              <sdk-option value="name" :label="t('sort.name')"></sdk-option>
-            </sdk-select>
+    <div class="proj-catalog">
+      <projection slot="catalogue" class="proj-list-slot" @choose="openDetail">
+        <template #filters>
+          <sdk-segmented v-model="scopeModel" :options="scopeOptions" size="default"></sdk-segmented>
+          <sdk-select v-model="sortModel" class="proj-filter-select" :aria-label="t('sort.label')">
+            <sdk-option value="updated" :label="t('sort.updated')"></sdk-option>
+            <sdk-option value="name" :label="t('sort.name')"></sdk-option>
+          </sdk-select>
+        </template>
+      </projection>
+    </div>
+
+    <sdk-dialog
+      v-model="createDialog"
+      :title="t('form.createTitle')"
+      width="640px"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="proj-create-body">
+        <projection
+          v-if="creating"
+          slot="createForm"
+          @saved="onCreated"
+          @cancel="requestCloseCreate"
+        >
+          <template #default>
+            <object-form-fields :fields="['/name', '/id', '/description', '/visibility', '/componentId', '/data']"></object-form-fields>
+          </template>
+          <template #actions="{ saving, asking, save }">
+            <sdk-button text :disabled="saving" @click="requestCloseCreate">{{ t('action.cancel') }}</sdk-button>
+            <sdk-button type="primary" :disabled="asking" :loading="saving" @click="save">{{ t('action.createSubmit') }}</sdk-button>
           </template>
         </projection>
       </div>
-
-      <div v-if="showDetail" class="proj-detail-pane">
-        <!-- Create / Edit form mode -->
-        <section v-if="isFormMode" class="proj-card">
-          <div class="proj-card-head">
-            <div>
-              <h2 class="proj-card-title">{{ selectedKey ? t('form.editTitle') : t('form.createTitle') }}</h2>
-              <p class="proj-card-subtitle">{{ t('form.partialHint') }}</p>
-            </div>
-            <sdk-button size="small" @click="closeFormGuarded">{{ t('action.close') }}</sdk-button>
-          </div>
-          <div class="proj-form-wrap">
-            <projection slot="form" @saved="onSaved" @discarded="onFormDiscarded" @cancel="closeForm"></projection>
-          </div>
-        </section>
-
-        <!-- Selected projection detail view -->
-        <div v-else-if="selectedKey" class="proj-detail-view">
-          <div class="proj-detail-header-card">
-            <projection slot="headerTitle" :fallback-title="selectedKey">
-              <template #actions>
-                <sdk-button size="small" @click="openClass">{{ t('action.openClass') }}</sdk-button>
-                <sdk-button v-if="canStartEdit" size="small" @click="startEdit">{{ t('action.edit') }}</sdk-button>
-                <sdk-button v-if="canOpenCopy" size="small" @click="openCopy">{{ t('action.copy') }}</sdk-button>
-                <projection v-if="canTriggerDelete" slot="deleteProjection" :disabled="deleteRevision == null" @done="onDeleteDone"></projection>
-              </template>
-            </projection>
-          </div>
-
-          <div v-if="recordStatus === 'loading'" class="proj-state-box">
-            <sdk-alert type="info" :closable="false" :title="t('detail.loading')"></sdk-alert>
-          </div>
-          <div v-else-if="recordStatus === 'forbidden'" class="proj-state-box">
-            <sdk-alert type="warning" :closable="false" :title="t('detail.forbidden')"></sdk-alert>
-          </div>
-          <div v-else-if="recordStatus === 'error'" class="proj-state-box">
-            <sdk-alert type="error" :closable="false" :title="recordErrorText"></sdk-alert>
-            <div>
-              <sdk-button size="small" @click="refresh">{{ t('action.retry') }}</sdk-button>
-            </div>
-          </div>
-          <div v-else-if="recordStatus === 'empty'" class="proj-state-box">
-            <sdk-alert type="warning" :closable="false" :title="t('detail.missing')"></sdk-alert>
-          </div>
-
-          <template v-else-if="recordReady">
-            <sdk-alert v-if="isChart" type="info" :closable="false" :title="t('detail.chartHint')"></sdk-alert>
-
-            <sdk-tabs v-model="tabModel" class="proj-tabs">
-              <sdk-tab-pane name="overview" :label="t('tab.overview')"></sdk-tab-pane>
-              <sdk-tab-pane name="definition" :label="t('tab.definition')"></sdk-tab-pane>
-              <sdk-tab-pane name="usage" :label="t('tab.usage')"></sdk-tab-pane>
-              <sdk-tab-pane v-if="canOpenGrant" name="grants" :label="t('tab.grants')"></sdk-tab-pane>
-            </sdk-tabs>
-
-            <!-- Tab 1: Overview & inline preview -->
-            <div v-show="tabModel === 'overview'" class="proj-tab-panel">
-              <section class="proj-card">
-                <h3 class="proj-card-title">{{ t('section.summary') }}</h3>
-                <projection slot="summary" @navigate="onNavigateReference"></projection>
-              </section>
-
-              <section class="proj-card">
-                <h3 class="proj-card-title">{{ t('section.preview') }}</h3>
-                <projection slot="preview"></projection>
-              </section>
-            </div>
-
-            <!-- Tab 2: Definition & bindings -->
-            <div v-show="tabModel === 'definition'" class="proj-tab-panel">
-              <section class="proj-card">
-                <h3 class="proj-card-title">{{ t('section.data') }}</h3>
-                <projection slot="dataList" @navigate="onNavigateReference"></projection>
-              </section>
-
-              <section class="proj-card">
-                <h3 class="proj-card-title">{{ t('section.config') }}</h3>
-                <projection slot="configList"></projection>
-              </section>
-
-              <div class="proj-io-grid">
-                <section class="proj-card">
-                  <h3 class="proj-card-title">{{ t('section.inputs') }}</h3>
-                  <projection slot="inputsList"></projection>
-                </section>
-                <section class="proj-card">
-                  <h3 class="proj-card-title">{{ t('section.outputs') }}</h3>
-                  <projection slot="outputsList"></projection>
-                </section>
-              </div>
-
-              <section class="proj-card">
-                <h3 class="proj-card-title">{{ t('section.operations') }}</h3>
-                <projection slot="operationsList" @navigate="onNavigateReference"></projection>
-              </section>
-
-              <details class="proj-definition-details">
-                <summary>{{ t('source.definition') }}</summary>
-                <div class="proj-definition-body">
-                  <projection slot="definitionSummary"></projection>
-                </div>
-              </details>
-            </div>
-
-            <!-- Tab 3: Used by panels -->
-            <div v-show="tabModel === 'usage'" class="proj-tab-panel">
-              <section class="proj-card">
-                <div class="proj-card-head">
-                  <h3 class="proj-card-title">{{ t('section.usedBy') }}</h3>
-                  <span class="proj-muted">{{ t('usedBy.count', { count: usedByCount }) }}</span>
-                </div>
-                <projection slot="usedByList" @choose="onChoosePanel" @navigate="onNavigateReference"></projection>
-                <p v-if="hiddenUsedByCount > 0" class="proj-muted">
-                  {{ t('usedBy.hiddenHint', { count: hiddenUsedByCount }) }}
-                </p>
-              </section>
-            </div>
-
-            <!-- Tab 4: Permissions & sharing -->
-            <div v-if="canOpenGrant" v-show="tabModel === 'grants'" class="proj-tab-panel">
-              <div class="proj-share-bar">
-                <div class="proj-share-left">
-                  <strong class="proj-card-title">{{ t('grants.shareTitle') }}</strong>
-                  <span class="proj-muted"><projection slot="shareStatusDesc"></projection></span>
-                </div>
-                <div class="proj-share-actions">
-                  <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>
-                  <projection v-else slot="shareEnable" @done="onShareDone"></projection>
-                  <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t('grants.add') }}</sdk-button>
-                </div>
-              </div>
-
-              <projection slot="grantsList"></projection>
-            </div>
-          </template>
-        </div>
-      </div>
-    </div>
-
-    <!-- Copy projection dialog using bound OperationButton -->
-    <sdk-dialog
-      v-if="canOpenCopy"
-      v-model="copyDialogOpen"
-      :title="t('copy.title')"
-      width="440px"
-      append-to-body
-      destroy-on-close
-    >
-      <sdk-form label-position="top">
-        <sdk-form-item :label="t('copy.nameLabel')">
-          <sdk-input v-model="copyNameModel"></sdk-input>
-        </sdk-form-item>
-        <sdk-form-item :label="t('copy.idLabel')">
-          <sdk-input v-model="copyIdModel"></sdk-input>
-        </sdk-form-item>
-      </sdk-form>
-      <template #footer>
-        <div class="proj-dialog-footer">
-          <sdk-button @click="copyDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection v-if="canOpenCopy && copyDialogOpen" slot="copySubmit" :disabled="!copyReady" @done="onCopyDone"></projection>
-        </div>
-      </template>
-    </sdk-dialog>
-
-    <!-- Add grant dialog using official ReferencePicker & bound OperationButton -->
-    <sdk-dialog
-      v-if="canOpenGrant"
-      v-model="grantDialogOpen"
-      :title="t('grants.dialogTitle')"
-      width="480px"
-      append-to-body
-      destroy-on-close
-    >
-      <sdk-form label-position="top">
-        <sdk-form-item :label="t('grants.kind')">
-          <sdk-segmented v-model="grantPrincipalKindModel" :options="grantKindOptions" size="default"></sdk-segmented>
-        </sdk-form-item>
-        <sdk-form-item :label="grantPrincipalKindModel === 'role' ? t('grants.role') : t('grants.principal')">
-          <projection v-if="canOpenGrant && grantDialogOpen && grantPrincipalKindModel === 'role'" slot="rolePicker"></projection>
-          <projection v-else-if="canOpenGrant && grantDialogOpen" slot="userPicker"></projection>
-        </sdk-form-item>
-        <sdk-form-item :label="t('grants.verb')">
-          <sdk-select v-model="grantVerbModel" style="width: 100%">
-            <sdk-option value="use" :label="t('grants.use')"></sdk-option>
-            <sdk-option value="edit" :label="t('grants.edit')"></sdk-option>
-          </sdk-select>
-        </sdk-form-item>
-      </sdk-form>
-      <template #footer>
-        <div class="proj-dialog-footer">
-          <sdk-button @click="grantDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection v-if="canOpenGrant && grantDialogOpen" slot="grantSubmit" :disabled="!grantPrincipalId" @done="onGrantAdded"></projection>
-        </div>
-      </template>
     </sdk-dialog>
   </section>
 </div>

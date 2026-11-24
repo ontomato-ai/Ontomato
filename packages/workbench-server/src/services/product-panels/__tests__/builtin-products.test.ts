@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { components } from "../../../../../apps-sdk/src/catalogue";
+import * as panelCheck from "@ontomato/contracts/panel-check";
 import { installContentLayout } from "../../../content/layout";
 
 vi.mock("../../app-builder/sdk", () => ({
@@ -90,12 +91,21 @@ describe("readBuiltinProducts", () => {
       }
       expect(frame!.content.html).not.toContain(".sdk-object-count");
 
-      const projectionsPanel = panels.get("builtin-product-ontology-projections");
-      expect(projectionsPanel).toBeDefined();
-      expect(projectionsPanel!.manifest.state).not.toHaveProperty("deleteDialog");
-      expect(projectionsPanel!.manifest.members).not.toHaveProperty("deleteSubmit");
-      expect(projectionsPanel!.manifest.members).toHaveProperty("deleteProjection");
-      const deleteMember = projectionsPanel!.manifest.members.deleteProjection;
+      const projectionsCatalogPanel = panels.get("builtin-product-ontology-projections");
+      expect(projectionsCatalogPanel).toBeDefined();
+      expect(projectionsCatalogPanel!.manifest.members).toHaveProperty("catalogue");
+      expect(projectionsCatalogPanel!.manifest.members).toHaveProperty("createForm");
+      expect(projectionsCatalogPanel!.manifest.members).not.toHaveProperty("deleteProjection");
+      expect(projectionsCatalogPanel!.manifest.state).not.toHaveProperty("selected");
+      expect(projectionsCatalogPanel!.manifest.state.creating?.deepLink).not.toBe(true);
+
+      const projectionDetailPanel = panels.get("builtin-product-ontology-projection-detail");
+      expect(projectionDetailPanel).toBeDefined();
+      expect(projectionDetailPanel!.manifest.state.detailMode?.deepLink).not.toBe(true);
+      expect(projectionDetailPanel!.manifest.state).not.toHaveProperty("deleteDialog");
+      expect(projectionDetailPanel!.manifest.members).not.toHaveProperty("deleteSubmit");
+      expect(projectionDetailPanel!.manifest.members).toHaveProperty("deleteProjection");
+      const deleteMember = projectionDetailPanel!.manifest.members.deleteProjection;
       expect(deleteMember && "target" in deleteMember && "projectionId" in deleteMember.target).toBe(true);
       const deleteProjection = deleteMember && "target" in deleteMember && "projectionId" in deleteMember.target
         ? projections.get(deleteMember.target.projectionId)
@@ -104,7 +114,7 @@ describe("readBuiltinProducts", () => {
         kind: "PlatformOperation",
         id: "productProjections.delete",
       });
-      const recipes = projectionsPanel!.content.recipes ?? "";
+      const recipes = projectionDetailPanel!.content.recipes ?? "";
       expect(recipes).not.toContain("deleteDialog");
       expect(recipes).not.toContain("deleteSubmit");
       expect(recipes).toContain("deleteProjection.delete");
@@ -123,6 +133,21 @@ describe("readBuiltinProducts", () => {
       expect(panelDetail!.manifest.members).toHaveProperty("headerTitle");
       expect(panelDetail!.manifest.members).toHaveProperty("form");
       expect(panelDetail!.manifest.members).toHaveProperty("deletePanel");
+
+      const repoRoot = path.resolve(packagesRoot, "..");
+      const { checkBuiltinPanelSource } = await import(
+        path.join(repoRoot, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs")
+      );
+      await checkBuiltinPanelSource(
+        path.join(packagesRoot, "ontology-manager/resources/builtin-panels/projections"),
+        { ...panelCheck, draftReadOperationIds: [] },
+      );
+      await checkBuiltinPanelSource(
+        path.join(packagesRoot, "ontology-manager/resources/builtin-panels/projection-detail"),
+        { ...panelCheck, draftReadOperationIds: [] },
+      );
+      expect(projectionsCatalogPanel!.content.module).not.toContain("usePanelData");
+      expect(projectionDetailPanel!.content.module).not.toContain("usePanelData");
     } finally {
       await rm(bundle, { recursive: true, force: true });
     }
