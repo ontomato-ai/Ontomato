@@ -20,10 +20,12 @@ import {
   filterAllowedOperationInput,
   isOperationReady,
   resolveMemberOperationTarget,
+  agentOperationSecretRefusal,
 } from "../base/operation-dispatch";
 import {
   isActionValuesEnvelope,
   operationInputFields,
+  hasAgentOperationSecretInput,
   wrapActionOperationInput,
   type OperationInputField,
 } from "../base/operation-input-schema";
@@ -434,6 +436,7 @@ export function usePanelOperation(
     if (!desc) {
       return missingOperationDescriptorResult(operationsState.value, name);
     }
+    if (agentContext && hasAgentOperationSecretInput(desc, input)) return agentOperationSecretRefusal;
     const targetInfo = resolveMemberOperationTarget(manifest, member, desc, instance.state.values.value);
     if (expectedCheckedKeys !== undefined && targetInfo.checkedState !== null) {
       if (!matchesExpectedCheckedKeys(targetInfo.checkedTargets, expectedCheckedKeys)) {
@@ -542,7 +545,7 @@ export function usePanelOperation(
               desc.target.source === "draft" ? instance.forms.handle(desc.target.slot)?.values.value ?? {} : {},
             )
           : effectiveInput;
-        const readResult = await instance.readOperation(id, { target: targetInfo.target, input: readInput });
+        const readResult = await instance.readOperation(id, { target: targetInfo.target, input: readInput }, agentContext?.agentRun);
         await options.onSettled?.(readResult, {
           operationId: id,
           input: readInput as Readonly<Record<string, RuntimeJsonValue>>,

@@ -52,7 +52,7 @@ export interface PanelHumanOperations {
   /** The owner's description of one operation of this panel: its effect, schemas, target, batch and confirmation. */
   describe(operationId: string, memberPath?: PanelMemberPath): Promise<PanelOperationDescriptor>;
   /** Runs a read-only operation and returns what it read; nothing is written and nothing reported changed. */
-  read(operationId: string, call: PanelReadCall, memberPath?: PanelMemberPath): Promise<PanelReadOperationResult>;
+  read(operationId: string, call: PanelReadCall, memberPath?: PanelMemberPath, agentRun?: PanelAgentRunRef): Promise<PanelReadOperationResult>;
   /**
    * Stages a file the reader picked for an operation that declares an upload. The receipt's `uploadId`, as
    * `{ kind: "upload", uploadId }`, is the value of the declared file input in the write it is then prepared for.
@@ -135,11 +135,11 @@ export function panelHumanOperations(use: PanelOperationUse | null, requests: Pl
       const query = new URLSearchParams({ ...ref, ...(path ? { memberPath: JSON.stringify(path) } : {}) });
       return panelOperationDescriptorResponseSchema.parse(await answer(requests.request(`/panel-operations/descriptor?${query}`, {}, "")));
     },
-    async read(operationId, { target, input }, memberPath) {
+    async read(operationId, { target, input }, memberPath, agentRun) {
       // A read acts on the chosen object or the draft, or on nothing, which the call then leaves out.
       const call = { ...(target ? { target } : {}), input };
       const response = await sent(requests.request("/panel-operations/read", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...of(operationId, memberPath), call }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...of(operationId, memberPath), call, ...(agentRun && { agentRun }) }),
       }, ""));
       // An owner's file comes as its bytes, an attachment of one of the allowed types: the reader saves it.
       const disposition = response.headers.get("Content-Disposition");

@@ -65,9 +65,11 @@ import {
   type OperationBatchReceipt as BatchReceipt,
   type OperationOutcome,
   type SingleOperationOutcome,
+  agentOperationSecretRefusal,
 } from "./operation-dispatch";
 import {
   isActionValuesEnvelope,
+  hasAgentOperationSecretInput,
   wrapActionOperationInput,
   type OperationInputField,
 } from "./operation-input-schema";
@@ -2086,7 +2088,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
     const disabledByCondition = item.disabledWhen ? matchesRowActionWhen(row, item.disabledWhen, false) : false;
     if (item.kind === "operation") {
       const op = rowOps[item.operation];
-      if (!op) return;
+      if (!op || (item.hideWhenUnavailable && !op.available)) return;
       const label = item.labelKey ? panel.t(item.labelKey) : item.label ?? op.label;
       resolved.push({
         key: `op:${item.operation}:${index}`,
@@ -2364,7 +2366,7 @@ async function executeRowOperation(
   rowOpReceipt.value = null;
   try {
     if (descriptor.effect === "read") {
-      rowOpRead.value = await panel.instance.readOperation(operationId, { target, input });
+      rowOpRead.value = await panel.instance.readOperation(operationId, { target, input }, agentContext?.agentRun);
       return "executed";
     }
     const applyRowAnswer = (
@@ -2588,6 +2590,7 @@ watch(
               message: rowOp?.unavailable?.reason ?? `Operation '${operationName}' is not available on row '${rowKey}'.`,
             };
           }
+          if (agentContext && hasAgentOperationSecretInput(descriptor, input)) return agentOperationSecretRefusal;
           const boundInput = resolveRowOperationParams(binding, row, member.inputs.value);
           const allFields = resolveOperationInputFields(panel, slot, operationName, descriptor);
           const allowedKeys = allowedRowOperationInputKeys(binding, allFields);

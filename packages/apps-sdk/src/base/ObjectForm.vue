@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { PanelSecretDelivery } from "@ontomato/contracts/panel-agent";
 import { panelSecretValuePresent, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
 import { projectionElement } from "../panel/projection-element";
 import { Comment, computed, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowReactive, shallowRef, useSlots, watch, type VNode } from "vue";
@@ -58,7 +57,6 @@ import {
 } from "../panel/member-forms";
 import { formControlsKey } from "./form-controls";
 import { formSecretPaths } from "./form-secret-fields";
-import SecretDeliveryDialog from "./SecretDeliveryDialog.vue";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
 import FormFieldPlace from "./FormFieldPlace.vue";
 import {
@@ -274,7 +272,6 @@ const ownerOpened = shallowRef<PanelFormDescription | null>(null);
 /** The owner's reading when the form opened: what discard returns to and the revision a save is sent with. */
 const opened = shallowRef<PanelFormDescription | null>(null);
 const values = shallowRef<PanelFormValues>({});
-const deliveries = shallowRef<readonly PanelSecretDelivery[]>([]);
 const changed = shallowRef<ReadonlySet<string>>(new Set());
 const errors = shallowRef<Readonly<Record<string, string>>>({});
 /** Fields holding text that is not a value of the owner's (JSON that does not parse), by absolute path. */
@@ -1528,6 +1525,7 @@ useProjectionForm({
   },
   submit: (override) => write(override),
   dirty: () => dirty.value,
+  editingTarget: () => target.value,
   discard,
   draft: {
     identity: draftIdentity,
@@ -1728,7 +1726,6 @@ function saveInput(payloadValues: PanelFormValues) {
 function saveContext(agentContext?: PanelAgentActionContext, evaluateSubmission?: SubmissionEvaluator) {
   return {
     secretFields: formSecretPaths(fields.value, values.value),
-    onSecretDelivery: (value: readonly PanelSecretDelivery[]) => { deliveries.value = value; },
     fixedFieldPaths: Object.keys(fixedValues.value),
     changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
     baselineValues: opened.value!.values,
@@ -2271,7 +2268,6 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
       </div>
     </el-form>
     </data-state>
-    <secret-delivery-dialog v-if="deliveries.length" :deliveries="deliveries" @close="deliveries = []" />
   </div>
 </template>
 

@@ -2232,6 +2232,11 @@ test("a read-only trial carries the current draft and parameters without a write
     call: { target: { kind: "draft" }, input },
   };
   assert.deepEqual(readPanelOperationRequestSchema.parse(request), request);
+  const agentRequest = {
+    ...request, agentRun: { runId: "00000000-0000-4000-8000-000000000001", sessionId: "00000000-0000-4000-8000-000000000002", toolCallId: "read-1" },
+  };
+  assert.deepEqual(readPanelOperationRequestSchema.parse(agentRequest), agentRequest);
+  assert.equal(readPanelOperationRequestSchema.safeParse({ ...request, agentRun: { runId: "run-1" } }).success, false);
   assert.equal(readPanelOperationRequestSchema.safeParse({ ...request, effect: "read" }).success, false);
   const owner = {
     handlerRef: "metricViews.testExecute", label: "Test", kind: "action", effect: "read", batch: false, target: { source: "draft", slot: "definition" },

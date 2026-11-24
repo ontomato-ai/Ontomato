@@ -1,12 +1,15 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { computed, nextTick, ref } from "vue";
+import { computed, h, nextTick, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import { createPanelOverlayRoot } from "@ontomato/platform-shell";
+import { randomId } from "@ontomato/contracts/random-id";
 import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { panelModuleFor, type DirectPanelMount, type DirectPanelModuleExports } from "../../../../../packages/apps-sdk/src/direct";
+import type { DirectPanelComponentPort } from "../../../../../packages/apps-sdk/src/panel/direct-run";
 import { noOperations, directRun } from "./panel-frame";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
@@ -46,12 +49,26 @@ async function evaluate(entry: DirectPanelModuleExports, words: string) {
   return await entry.mountPanel(Panel);
 }
 
-function run(template: string) {
+function run(template: string, options: {
+  overlayRoot?: HTMLElement;
+  shown?: () => boolean;
+  descriptor?: Record<string, unknown>;
+  confirmOperation?: DirectPanelComponentPort["confirmOperation"];
+} = {}) {
   const reads: PanelMemberReadRequest[] = [];
   const element = document.createElement("div");
   document.body.append(element);
-  const requests = {
-    request: async (path: string) => {
+  const intentId = randomId();
+  const readOperationBodies: unknown[] = [];
+  const requests: DirectPanelComponentPort["requests"] = {
+    request: async (path, init) => {
+      if (path === "/panel-operations/intents") {
+        return Response.json({ intentId, operationId: "run.runNow", label: "Run now", confirmation: { kind: "none" } });
+      }
+      if (path === "/panel-operations/read") {
+        readOperationBodies.push(JSON.parse(String(init?.body)));
+        return Response.json({ kind: "json", value: { done: true } });
+      }
       if (path !== `/product-projections/${runNow.id}`) throw new Error(`Nothing at ${path}`);
       return Response.json({ projection: runNow });
     },
@@ -68,17 +85,19 @@ function run(template: string) {
     run: directRun({
       pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
       failed: (reason) => { throw reason; },
+      overlayRoot: options.overlayRoot,
+      shown: options.shown,
     }),
     messages: {}, locale: ref("en"), defaultLocale: "en",
     requests, use: { applicationId: "app-tasks", useId: "tasks" },
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
-    confirmOperation: noOperations.confirmOperation,
+    confirmOperation: options.confirmOperation ?? noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       reads.push(request);
-      return { status: "ready", value: (request.operations ? { runNow: describedRunNow } : null) as never };
+      return { status: "ready", value: (request.operations ? { runNow: options.descriptor ?? describedRunNow } : null) as never };
     },
   });
-  return { module, mount, element, reads };
+  return { module, mount, element, reads, readOperationBodies };
 }
 
 const drawn = (element: HTMLElement) => vi.waitFor(() => {
@@ -152,4 +171,110 @@ it("mounts a module's component once", async () => {
   await evaluate(module, "once");
   await expect(evaluate(module, "twice")).rejects.toThrow("A panel's module mounts its component once");
   (await mount).dispose();
+});
+
+it("scopes a custom operation's one-time delivery to the panel overlay and preserves it while hidden", async () => {
+  const showing = ref(true);
+  const overlay = createPanelOverlayRoot("secret-test", () => showing.value);
+  const secret = {
+    items: [{ label: "Temporary key", value: "one-time-fixture-key" }],
+    download: { filename: "key.txt", contentType: "text/plain", content: "a2V5", encoding: "base64" as const },
+  };
+  const { module, mount } = run("", {
+    overlayRoot: overlay.element,
+    shown: () => showing.value,
+    confirmOperation: async (preparation) => ({
+      decision: "confirm",
+      response: { kind: "dispatched", intentId: preparation.intentId, outcome: { kind: "success", data: {}, secret } },
+    }),
+  });
+  let receipt: unknown;
+  const { context } = await module.mountPanel({
+    setup() {
+      const operation = module.usePanelOperation("run", "runNow", { onSettled: (value) => { receipt = value; } });
+      return () => h("button", { disabled: !operation.operation.value, onClick: () => operation.run() }, "Generate");
+    },
+  });
+  const mounted = await mount;
+  try {
+    context.instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-1" });
+    const button = await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>("button");
+      expect(button?.disabled).toBe(false);
+      return button!;
+    });
+    button.click();
+    const dialog = await vi.waitFor(() => {
+      const dialog = overlay.element.querySelector(".sdk-secret-delivery-dialog");
+      expect(dialog?.querySelector<HTMLInputElement>("input[type=password]")?.value).toBe(secret.items[0]!.value);
+      return dialog!;
+    });
+    expect(document.querySelectorAll(".sdk-secret-delivery-dialog")).toHaveLength(1);
+    expect(receipt).toMatchObject({ response: { outcome: { secretGenerated: true } } });
+    expect(JSON.stringify(receipt)).not.toContain(secret.items[0]!.value);
+    showing.value = false;
+    await nextTick();
+    expect(overlay.element.hidden).toBe(true);
+    expect(overlay.element.inert).toBe(true);
+    showing.value = true;
+    await nextTick();
+    expect(overlay.element.hidden).toBe(false);
+    expect(overlay.element.contains(dialog)).toBe(true);
+    const downloads: string[] = [];
+    const clickLink = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download);
+    });
+    try {
+      expect(downloads).toEqual([]);
+      [...dialog.querySelectorAll("button")].find(button => button.textContent?.includes(secret.download.filename))!.click();
+      expect(downloads).toEqual([secret.download.filename]);
+    } finally {
+      clickLink.mockRestore();
+    }
+    dialog.querySelector<HTMLButtonElement>(".el-dialog__headerbtn")!.click();
+    await vi.waitFor(() => expect(overlay.element.querySelector(".sdk-secret-delivery-dialog")).toBeNull());
+    expect(context.instance.secretDeliveries.value).toEqual([]);
+  } finally {
+    mounted.dispose();
+    overlay.dispose();
+  }
+});
+
+it("blocks agent-supplied read secrets and forwards the run when a custom read has ordinary input", async () => {
+  const { module, mount, readOperationBodies } = run("", {
+    descriptor: {
+      ...describedRunNow, effect: "read", target: { source: "none" },
+      secretFields: ["password"],
+      inputSchema: { properties: { password: { type: "string" }, token: { type: "string", format: "password" } } },
+    },
+  });
+  const { context } = await module.mountPanel({
+    setup() {
+      const operation = module.usePanelOperation("run", "runNow");
+      return () => h("button", { disabled: !operation.operation.value, onClick: () => operation.run({ password: "human" }) }, "Read");
+    },
+  });
+  const mounted = await mount;
+  try {
+    const agentRun = { sessionId: randomId(), runId: randomId(), toolCallId: "read" };
+    const button = await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>("button");
+      expect(button?.disabled).toBe(false);
+      return button!;
+    });
+    const secretInputs: readonly Record<string, string>[] = [{ password: "agent" }, { token: "agent" }];
+    for (const input of secretInputs) {
+      expect(await context.instance.executeAction({ operation: "run.runNow", input, agentRun })).toMatchObject({
+        ok: false, code: "PANEL_SECRET_HUMAN_INPUT_REQUIRED",
+      });
+    }
+    expect(readOperationBodies).toEqual([]);
+    expect(await context.instance.executeAction({ operation: "run.runNow", agentRun })).toMatchObject({ ok: true });
+    expect(readOperationBodies[0]).toMatchObject({ agentRun, call: { input: {} } });
+    button.click();
+    await vi.waitFor(() => expect(readOperationBodies[1]).toMatchObject({ call: { input: { password: "human" } } }));
+    expect(readOperationBodies[1]).not.toHaveProperty("agentRun");
+  } finally {
+    mounted.dispose();
+  }
 });

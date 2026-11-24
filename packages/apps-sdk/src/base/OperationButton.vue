@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -21,12 +21,12 @@ import {
   resolveOperationTarget,
   useOperationRunner,
   type OperationOutcome,
+  agentOperationSecretRefusal,
 } from "./operation-dispatch";
+import { hasAgentOperationSecretInput } from "./operation-input-schema";
 import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
-import SecretDeliveryDialog from "./SecretDeliveryDialog.vue";
-import type { PanelSecretDelivery } from "@ontomato/contracts/panel-agent";
 
 /**
  * The button of one operation a projection names, run as the reader the way an agent's call runs: the platform's
@@ -90,7 +90,6 @@ const emit = defineEmits<{
   read: [result: PanelReadOperationResult];
 }>();
 
-const deliveries = shallowRef<readonly PanelSecretDelivery[]>([]);
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
@@ -145,7 +144,6 @@ const {
     }
     return { ok: true };
   },
-  onSecretDelivery: value => { deliveries.value = value; },
   onDone: (_name, answered) => {
     if (answered.kind === "batch") publishBatchReceipt?.({ items: answered.items, named: named.value });
     emit("done", answered);
@@ -283,6 +281,7 @@ const unregisterAction = panel.instance.registerActionHandler(
         message: descriptor.value.unavailable?.reason ?? `Operation '${props.operation}' is currently disabled.`,
       };
     }
+    if (agentContext && hasAgentOperationSecretInput(descriptor.value, input)) return agentOperationSecretRefusal;
     const filteredInput = filterAllowedOperationInput(input, inputFields.value);
     const missing = inputFields.value
       .filter((field) => field.required && !(field.name in filteredInput))
@@ -320,8 +319,7 @@ onBeforeUnmount(unregisterAction);
 </script>
 
 <template>
-  <div v-if="!hiddenByAvailability || deliveries.length" class="sdk-operation-button">
-    <template v-if="!hiddenByAvailability">
+  <template v-if="!hiddenByAvailability"><div class="sdk-operation-button">
       <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
       <!-- A removal is drawn quiet unless `plain` requests a tinted bordered button; the owner still decides and confirms it. -->
       <el-button
@@ -389,9 +387,7 @@ onBeforeUnmount(unregisterAction);
         </template>
         <p v-else role="alert" :data-outcome="outcome.kind">{{ said(outcome) }}</p>
       </template>
-    </template>
-    <secret-delivery-dialog v-if="deliveries.length" :deliveries="deliveries" @close="deliveries = []" />
-  </div>
+  </div></template>
 </template>
 
 <style scoped>

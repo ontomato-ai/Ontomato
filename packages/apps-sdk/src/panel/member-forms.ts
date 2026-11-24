@@ -32,7 +32,6 @@ import type { SubmissionEvaluator } from "./operation-binding";
 /** Extra context for routing a form submission to its save operation. */
 export interface FormSaveContext {
   readonly secretFields?: readonly string[];
-  readonly onSecretDelivery?: import("./instance").PanelWriteOperationOptions["onSecretDelivery"];
   readonly fixedFieldPaths?: readonly string[];
   readonly changedFields?: readonly string[];
   readonly baselineValues?: PanelFormValues;
@@ -514,7 +513,6 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
         call: { target: callTarget, input: prepared.input },
         ...(secretFields.length && { secretFields }),
       }, {
-        ...(context?.onSecretDelivery && { onSecretDelivery: context.onSecretDelivery }),
         ...(agentContext && { agentContext }),
         ...(context?.evaluateSubmission && { evaluateSubmission: context.evaluateSubmission }),
       });

@@ -1,5 +1,6 @@
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { normalizePanelSecretPointer, panelInputPointer, panelSchemaSecretPaths, panelSecretPathsOverlap } from "@ontomato/contracts/panel-secrets";
+import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
+import { hasPanelSecretInput, normalizePanelSecretPointer, panelInputPointer, panelSchemaSecretPaths, panelSecretPathsOverlap } from "@ontomato/contracts/panel-secrets";
 import { cloneJsonValue, jsonValuesEqual } from "../panel/form-values";
 
 export type OperationInputFieldKind = "text" | "password" | "textarea" | "select" | "number" | "integer" | "boolean";
@@ -171,6 +172,16 @@ export function wrapActionOperationInput(
   }
 
   return { values };
+}
+
+/** Agent action parameters are flat even when the owner takes an Action values envelope. */
+export function hasAgentOperationSecretInput(
+  descriptor: PanelOwnerOperationDescriptor,
+  input: Readonly<Record<string, RuntimeJsonValue>> | undefined,
+): boolean {
+  if (!input) return false;
+  return hasPanelSecretInput(input, descriptor)
+    || (isActionValuesEnvelope(descriptor.inputSchema) && hasPanelSecretInput({ values: input }, descriptor));
 }
 
 /**

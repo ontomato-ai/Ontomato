@@ -50,6 +50,7 @@ function stubAdapter(options: {
   dirty: boolean;
   canSettle?: boolean;
   target?: { kind: "object"; objectType: string; primaryKey: string } | { kind: "draft"; objectType: string };
+  snapshotUnavailable?: boolean;
   inputStateKeys?: readonly string[];
   onDiscard?: () => void;
 }) {
@@ -79,7 +80,8 @@ function stubAdapter(options: {
     submit: vi.fn(async () => ({})),
     dirty: () => dirtyState,
     discard,
-    snapshot: () => ({
+    editingTarget: () => options.target?.kind === "draft" ? { kind: "draft" } : options.target ?? null,
+    snapshot: () => options.snapshotUnavailable ? null : ({
       ...(options.target ? { target: options.target } : {}),
       dirty: dirtyState,
       values: {},
@@ -115,6 +117,7 @@ describe("PanelFormAdapters.discardRemoved and PanelInstance.letGo", () => {
     const forms = new PanelFormAdapters(["removedEdit", "canSettleOnly", "cleanRemoved", "sameKeyOtherType", "otherObject", "fixedChild"]);
     const removedEdit = stubAdapter({
       dirty: true,
+      snapshotUnavailable: true,
       target: { kind: "object", objectType: ATTRIBUTE, primaryKey: "attr-1" },
     });
     const canSettleOnly = stubAdapter({

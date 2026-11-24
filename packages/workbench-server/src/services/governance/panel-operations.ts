@@ -357,7 +357,7 @@ function issueUserApiKeyOperation(regenerate: boolean): PanelServerOperation {
       "/panel/governance/users/record",
       "USER_UNAVAILABLE",
     ) }),
-    unavailable: (host, target) => ownerDeleteUnavailable(
+    unavailable: (host, target: PanelRecordTarget) => ownerDeleteUnavailable(
       host, "/panel/governance/users/api-key/unavailable",
       { id: target.primaryKey, mode: regenerate ? "regenerate" : "generate" }, "USER_UNAVAILABLE",
     ),

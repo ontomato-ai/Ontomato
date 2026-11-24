@@ -64,7 +64,7 @@ const workflowActions = actions.map((action): PanelWriteServerOperation => ({
   resultSchema: action.verb === "delete" ? empty : savedIdSchema,
   targetInput: "workflow",
   targetLabel: async (host, target) => (await readTarget(host, target)).name,
-  async unavailable(host, target) {
+  async unavailable(host, target: PanelRecordTarget) {
     if (action.unavailable(await readTarget(host, target))) {
       return { reason: workflowText(host.locale)(`unavailable.${action.reason}`) };
     }

@@ -5,6 +5,7 @@ import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
+import * as panelProjection from "@ontomato/contracts/panel-projection";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import {
   AGENT_DEFINITION,
@@ -710,4 +711,48 @@ it("groups inline rows by a generic record field (groupBy) preserving owner orde
   await vi.waitFor(() => {
     expect(instance.state.values.value.subject).toEqual({ className: OBJECT_TYPE, primaryKey: "t-2" });
   });
+});
+
+it.each([false, true])("obeys a fixed options signature without page when keyword required=%s", async (required) => {
+  const declaration = panelProjection.directReadDeclaration;
+  const mocked = vi.spyOn(panelProjection, "directReadDeclaration").mockImplementation((projection, data) =>
+    data.read === "lookupAccount"
+      ? { source: "type", parameterMode: "fixed", params: { keyword: "keyword" }, requiredParams: required ? ["keyword"] : [], result: "panelOptionList" }
+      : declaration(projection, data),
+  );
+  try {
+    const picker: DirectProjection = {
+      ...meta, id: "accounts", name: "Accounts", componentId: "@ontomato/sdk:ReferencePicker",
+      inputs: {}, outputs: { selected: { kind: "object", objectType: USER } }, config: {},
+      data: { options: { source: { type: { kind: "PlatformObjectType", id: USER } }, read: "lookupAccount", params: {} } },
+    };
+    const { container, reads } = mountPanel({
+      state: { account: { type: { kind: "object", objectType: USER }, personal: false, deepLink: false, external: false } },
+      members: { picker: { target: { projectionId: picker.id }, outputs: { selected: { state: "account" } } } },
+    }, { [picker.id]: picker }, () => ready({ options: [{ primaryKey: "alice", value: "alice", label: "Alice" }] }));
+    const input = await vi.waitFor(() => {
+      const input = container.querySelector<HTMLInputElement>(".sdk-inline-reference-picker input.el-select__input");
+      expect(input).not.toBeNull();
+      return input!;
+    });
+    const optionReads = () => reads.filter(read => read.dataName === "options");
+    if (required) {
+      expect(optionReads()).toEqual([]);
+    } else {
+      await vi.waitFor(() => expect(optionReads()).toHaveLength(1));
+      expect(optionReads()[0]?.runtimeParams?.page).toBeUndefined();
+    }
+    container.querySelector<HTMLElement>(".el-select__wrapper")!.click();
+    input.value = "Alice";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.waitFor(() => expect(optionReads().at(-1)?.runtimeParams).toEqual({ keyword: "Alice" }));
+    if (required) {
+      input.value = "   ";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await vi.waitFor(() => expect(document.querySelector(".el-select-dropdown__item")).toBeNull());
+      expect(optionReads()).toHaveLength(1);
+    }
+  } finally {
+    mocked.mockRestore();
+  }
 });

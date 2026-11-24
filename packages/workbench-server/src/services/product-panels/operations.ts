@@ -9,16 +9,16 @@ import {
   type CreatePanelHumanOperationIntentRequest,
   type PanelHumanOperationConfirmation, type PanelHumanOperationDispatchResponse, type PanelHumanOperationIntent,
   type PanelHumanOperationPreparation,
-  type PanelOperationIntent, type PanelOperationRef, type ReadPanelOperationRequest,
+  type PanelAgentRunRef, type PanelOperationIntent, type PanelOperationRef, type ReadPanelOperationRequest,
   type PanelUseRef, type BatchItemOperationOutcome, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
-import { normalizePanelSecretPointer, panelSchemaSecretPaths, panelSecretPathsOverlap, panelSecretValuePresent, restorePanelSecrets, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
+import { hasPanelSecretInput, normalizePanelSecretPointer, panelSchemaSecretPaths, panelSecretPathsOverlap, panelSecretValuePresent, restorePanelSecrets, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
 import { EXECUTE_OBJECT_ACTION } from "@ontomato/contracts/platform-object-types";
 import {
   AGENT_UPLOAD_UNSUPPORTED, panelFileInputSchema, panelUploadAccepted, panelUploadFileSchema, type PanelUploadFile, type PanelUploadReceipt,
 } from "@ontomato/contracts/panel-upload";
-import type { PanelMemberPath, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { HttpError } from "../../utils/errors";
@@ -64,6 +64,19 @@ export async function requirePanelSkillForRun(owner: AssistantOwner, credentials
   if (!skill || !loadedPageSkillVersion(skill, run.resolvedSkills))
     throw new HttpError(403,"This run does not have this panel's skill","FORBIDDEN");
   return { use, framePanelId, view };
+}
+
+async function requireActivePageRun(owner: AssistantOwner, agentRun: PanelAgentRunRef) {
+  const run = await runForOwner(owner, agentRun.runId);
+  if (!run.channel || run.status !== "running") throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+  if (run.sessionId !== agentRun.sessionId) throw new HttpError(403, "Run session mismatch", "FORBIDDEN");
+  const root = run.channel.userRecipient?.session;
+  if (!root) throw new HttpError(409, "Execution has no authenticated human session", "USER_SESSION_UNAVAILABLE");
+  return { run, channel: run.channel, root };
+}
+
+function requireHumanSecretInput(locale: AssistantCredentials["locale"]): never {
+  throw new HttpError(400, tForLocale(locale, "panels.secret.humanInput"), "PANEL_SECRET_HUMAN_INPUT_REQUIRED");
 }
 
 async function declaredOperation(
@@ -189,9 +202,21 @@ export async function readPanelOperationDescriptor(owner: AssistantOwner, creden
 }
 
 export async function readPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, request: ReadPanelOperationRequest) {
-  const current = await operationForUse(owner, credentials, request, request.call.target, { mode: "read" });
+  let current: Awaited<ReturnType<typeof operationForUse>>;
+  if (request.agentRun) {
+    const { run } = await requireActivePageRun(owner, request.agentRun);
+    const { use, framePanelId } = await requirePanelSkillForRun(owner, credentials, run, request);
+    current = await declaredOperation(owner, credentials, use, request, request.call.target, undefined, { mode: "read", framePanelId });
+  } else {
+    current = await operationForUse(owner, credentials, request, request.call.target, { mode: "read" });
+  }
   if (current.effect !== "read") throw new HttpError(422, "This operation requires a write intent", "OPERATION_READ_REQUIRED");
   const { handler, fixedTarget } = current;
+  if (request.agentRun) {
+    const { draft: _draft, ...nonDraftInput } = request.call.input;
+    const input = current.descriptor.target.source === "draft" ? nonDraftInput : request.call.input;
+    if (hasPanelSecretInput(input, current.descriptor)) requireHumanSecretInput(credentials.locale);
+  }
   const target = handler.targetSchema.parse(request.call.target);
   if (fixedTarget !== undefined && !isDeepStrictEqual(target, fixedTarget))
     throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
@@ -461,12 +486,8 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     if (existing?.kind === "current") {
       return humanPreparation(existing.intent);
     }
-    const run = await runForOwner(owner, input.agentRun.runId);
-    if (!run.channel || run.status !== "running") throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
-    if (run.sessionId !== input.agentRun.sessionId) throw new HttpError(403, "Run session mismatch", "FORBIDDEN");
-    const root = run.channel.userRecipient?.session;
-    if (!root) throw new HttpError(409, "Execution has no authenticated human session", "USER_SESSION_UNAVAILABLE");
-    if (run.channel.authority.executionKind !== "live")
+    const { run, channel, root } = await requireActivePageRun(owner, input.agentRun);
+    if (channel.authority.executionKind !== "live")
       throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
     const { use, framePanelId } = await requirePanelSkillForRun(owner, credentials, run, input);
     const current = writeOperation(await declaredOperation(owner, credentials, use, input, invocationTarget(input), undefined, {
@@ -476,9 +497,9 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     refuseAgentUpload(current.handler, credentials.locale);
     const concrete = materializeWriteInvocation(input, current);
     const secrets = redactInvocation(concrete, current, input.secretFields);
-    if (current.handler.kind !== "form.save" &&
+    if (!(current.isFormSave && "call" in concrete) &&
         secrets.secrets.some(values => [...values.values()].some(panelSecretValuePresent))) {
-      throw new HttpError(400, tForLocale(credentials.locale, "panels.secret.humanInput"), "PANEL_SECRET_HUMAN_INPUT_REQUIRED");
+      requireHumanSecretInput(credentials.locale);
     }
     const prepared = confirmationInvocation(validateInvocation(current.handler, concrete, current.fixedTarget), secrets.redacted);
     const host = operationHost({ owner, credentials });
@@ -540,7 +561,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     if (questionPrompt && questionId) {
       try {
         await new RuntimeClient(owner.domainId, undefined, owner.userId).request("/v1/channel/user-questions", "POST", {
-          source: { session: { providerId: run.channel.agent.providerId, sessionId: run.sessionId }, runId: input.agentRun.runId },
+          source: { session: { providerId: channel.agent.providerId, sessionId: run.sessionId }, runId: input.agentRun.runId },
           ...questionPrompt,
         }, questionId);
       } catch (error) {

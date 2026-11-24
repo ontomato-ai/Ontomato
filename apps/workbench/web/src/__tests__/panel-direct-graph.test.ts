@@ -501,6 +501,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
     },
     submit: async () => ({}),
     dirty: () => false,
+    editingTarget: () => null,
     discard: () => {},
   });
 

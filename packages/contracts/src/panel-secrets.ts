@@ -74,6 +74,17 @@ export function panelSchemaSecretPaths(schema: unknown, input?: unknown, base = 
   return paths;
 }
 
+export function hasPanelSecretInput(
+  input: Record<string, unknown>,
+  descriptor: { inputSchema: unknown; secretFields?: readonly string[] },
+): boolean {
+  const paths = [
+    ...descriptor.secretFields?.map(normalizePanelSecretPointer) ?? [],
+    ...panelSchemaSecretPaths(descriptor.inputSchema, input),
+  ];
+  return [...splitPanelSecrets(input, paths).secrets.values()].some(panelSecretValuePresent);
+}
+
 export function panelSecretPathsOverlap(left: string, right: string): boolean {
   return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }

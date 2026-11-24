@@ -6,7 +6,7 @@ import {
 } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import {
-  panelRecordObjectRef, panelRowOperationKey, projectionOperationTargetMatches,
+  declaredCustomerFormSaveName, panelRecordObjectRef, panelRowOperationKey, projectionOperationTargetMatches,
   type PanelRecord, type ProjectionOperationBinding,
 } from "@ontomato/contracts/panel-projection";
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -101,7 +101,7 @@ function resolveTarget(
     requirePinnedObject(fixed, selection());
     return { descriptor: { source: "literal" as const, literal: target.literal }, fixed, selected: fixed };
   }
-  if (!target) return { descriptor: { source: "none" as const }, fixed: undefined, selected: undefined };
+  if (!target) return { descriptor: { source: "none" as const }, fixed: undefined, selected: null };
 
   if ("row" in target || "rowField" in target) {
     const supplied = selection();
@@ -270,7 +270,7 @@ async function resolveAdmittedOperationUnavailable(
 ): Promise<PanelOwnerOperationDescriptor["unavailable"]> {
   const isRowTarget = bound.binding.target !== undefined && ("row" in bound.binding.target || "rowField" in bound.binding.target);
   if (isRowTarget || result.effect !== "write") return undefined;
-  if (result.selected?.kind === "object") {
+  if (result.selected?.kind === "object" || (result.selected === null && bound.binding.target === undefined)) {
     return result.handler.unavailable?.(operationHost(actor), result.selected);
   }
   const targetInput = bound.binding.target && "input" in bound.binding.target ? bound.binding.target.input : undefined;
@@ -459,10 +459,16 @@ export async function declaredDirectOperation(
   const operation = panelWriteOperationSnapshotSchema.parse({
     ...descriptor, ...placement.nested, id, slot, ...(action && { action }),
   });
+  const creating = descriptor.target.source === "none";
+  const formDatum = creating ? "createForm" : "form";
+  const isCustomerFormSave = current.handler.kind === "action"
+    && placement.projection.data[formDatum]?.read === formDatum
+    && declaredCustomerFormSaveName(placement.projection.operations, creating) === name;
   return {
     ...current,
     descriptor,
     operation,
+    isFormSave: current.handler.kind === "form.save" || isCustomerFormSave,
     acceptsDraftSecretFields: current.handler.kind === "form.save" ||
       placement.member.operationDrafts?.[name] !== undefined ||
       Object.values(placement.projection.data).some(datum => datum.read === "form" || datum.read === "createForm"),

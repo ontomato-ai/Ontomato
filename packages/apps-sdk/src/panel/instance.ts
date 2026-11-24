@@ -105,7 +105,6 @@ export interface PanelWriteOperationOptions {
   memberPath?: PanelMemberPath;
   /** Called right after confirmation passes (or immediately when no confirmation is required), before dispatch begins. */
   onConfirmed?: () => void;
-  onSecretDelivery?: (deliveries: readonly PanelSecretDelivery[]) => void;
   /** Present only when this write was initiated by an agent `page_action` call. */
   agentContext?: PanelAgentActionContext;
   /**
@@ -324,6 +323,8 @@ export interface PanelInstance {
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
   /** The mounted form adapters its projections registered for live filling, submission, and visibility. */
   readonly forms: PanelFormAdapters;
+  readonly secretDeliveries: Readonly<Ref<readonly PanelSecretDelivery[]>>;
+  clearSecretDeliveries(): void;
   blocksFormInputChange(fields: ReadonlySet<string>): boolean;
   applyStatePreservingDrafts(patch: Readonly<Record<string, RuntimeJsonValue>>): Promise<boolean>;
   formRegistries(): PanelFormAdapters[];
@@ -339,7 +340,7 @@ export interface PanelInstance {
   /** Stages a file the reader picked for one of this panel's operations that declares an upload (see `PanelHumanOperations.upload`). */
   uploadFile(operationId: string, file: File): Promise<PanelUploadReceipt>;
   /** Runs a read-only operation as the reader: what it read, with nothing written and nothing reported changed. */
-  readOperation(operationId: string, call: PanelReadCall): Promise<PanelReadOperationResult>;
+  readOperation(operationId: string, call: PanelReadCall, agentRun?: PanelAgentRunRef): Promise<PanelReadOperationResult>;
   /**
    * Runs a write as the reader, the way an agent's runs: one intent freezes the calls, the host confirms it where the
    * owner or a batch asks and dispatches it once. What the owner reports changed comes back through the host's refresh
@@ -443,6 +444,7 @@ function namedTargets(confirmation: PanelHumanOperationPreparation["confirmation
 export function createPanelInstance(manifest: PanelManifest, options: PanelInstanceOptions): PanelInstance {
   const instanceId = randomId();
   let disposed = false;
+  const secretDeliveries = shallowRef<readonly PanelSecretDelivery[]>([]);
   const state = createPanelState(manifest, options.initial);
   const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
   const operationCompletedListeners = new Set<(event: PanelOperationCompletion) => void>();
@@ -519,7 +521,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const items = outcome.kind === "batch" ? outcome.items.map(item => item.outcome) : [outcome];
       const deliveries = items.flatMap(item => item.kind === "success" && item.secret ? [item.secret] : []);
       if (!deliveries.length) return answer;
-      writeOptions?.onSecretDelivery?.(deliveries);
+      secretDeliveries.value = [...secretDeliveries.value, ...deliveries];
       return { ...answer, response: { ...answer.response, outcome: withoutPanelSecretDelivery(outcome) } };
     }
     const named = namedTargets(preparation.confirmation);
@@ -1063,6 +1065,11 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     isDisposed: () => disposed,
     markDisposed() {
       disposed = true;
+      secretDeliveries.value = [];
+    },
+    secretDeliveries: computed(() => secretDeliveries.value),
+    clearSecretDeliveries() {
+      secretDeliveries.value = [];
     },
     manifest,
     state,
@@ -1117,7 +1124,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       return result;
     },
     describeOperation: (operationId) => options.operations.describe(operationId, operationPath(operationId)),
-    readOperation: (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
+    readOperation: (operationId, call, agentRun) => options.operations.read(operationId, call, operationPath(operationId), agentRun),
     uploadFile: (operationId, file) => options.operations.upload(operationId, file, operationPath(operationId)),
     writeOperation,
     objectChanged,
