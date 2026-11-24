@@ -791,4 +791,65 @@ describe("the panel host", () => {
     expect(actionCalls).toEqual([{ operation: "taskForm.save", agentRun }]);
     scope.stop();
   });
+
+  it("does not overwrite panel-reported state when parent re-renders with a fresh equal initial object", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
+    const basePort = port.port("use-a");
+    const pushedAddresses: string[] = [];
+    const wrappedPort: typeof basePort = {
+      ...basePort,
+      async coded(source, run, target) {
+        const mount = await basePort.coded(source, run, target);
+        return {
+          ...mount,
+          address(next) {
+            pushedAddresses.push(next);
+            mount.address(next);
+          },
+        };
+      },
+    };
+    const initial = ref<Record<string, unknown>>({});
+    const scope = effectScope();
+    const a = scope.run(() =>
+      usePanelInstance(wrappedPort, {
+        labels,
+        label: (source) => (source.kind === "registered" ? source.panel.name : ""),
+        address: () => "/applications/app-a/a/schedules",
+        initial: () => initial.value,
+      }),
+    )!;
+    await a.ready;
+    const started = port.started("use-a");
+    pushedAddresses.length = 0;
+
+    // Panel reports a new selection (e.g. clicking a row in ObjectList beside a conversation).
+    started.run.state(
+      { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } },
+      "/applications/app-a/a/schedules",
+    );
+    expect(panelAddressState(a.address.value, panelP)).toEqual({
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" },
+    });
+
+    // Parent re-renders before `@display-address` has echoed back, handing down a fresh `{}` reference.
+    initial.value = {};
+    await nextTick();
+
+    expect(pushedAddresses).toEqual([]);
+    expect(panelAddressState(a.address.value, panelP)).toEqual({
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" },
+    });
+
+    // A genuine external state change still pushes the new address down to the instance.
+    initial.value = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" } };
+    await nextTick();
+
+    expect(pushedAddresses).toHaveLength(1);
+    expect(panelAddressState(pushedAddresses[0]!, panelP)).toEqual({
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" },
+    });
+    scope.stop();
+  });
 });
