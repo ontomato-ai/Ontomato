@@ -177,7 +177,7 @@ describe("PI 1.4.0 RPC plugin", () => {
     }, new AbortController().signal);
   }
 
-  it("runs through the session owner, releases the lease after idle and resumes the real PI reference", async () => {
+  it("rebuilds uncommitted PI state, preserves workspace files and resumes the committed reference after idle", async () => {
     const requests = await configure(() => ({ status: "answer", text: "From the model" }));
     const gatewayBaseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const id = randomUUID();
@@ -185,6 +185,7 @@ describe("PI 1.4.0 RPC plugin", () => {
     const refs: string[] = [];
     const store = {
       session: async () => ({ workspaceId: null }),
+      sessionEngine: async () => ({ engineRef: refs.at(-1) ?? null }),
       saveEngineRef: async (_scope: unknown, _id: string, ref: string) => { refs.push(ref); },
     } as unknown as RuntimeStore;
     const released = deferred<void>();
@@ -194,7 +195,7 @@ describe("PI 1.4.0 RPC plugin", () => {
     } as unknown as ModelGatewayClient;
     const owner = new SessionEngines(store, root, gateway, new HarnessRegistry([piPlugin]),
       async ({ callback }) => ({
-        ...fixtureSandbox(), directories, hostWorkspace: directories.workspace,
+        ...fixtureSandbox(), directories, hostWorkspace: directories.workspace, hostState: directories.state,
         gatewayBaseUrl: gatewayBaseUrl + "/v1", callbackBaseUrl: `http://${callback.host}:${callback.port}`,
         async stop() {},
       }), async (_scope, _id, operation) => operation(), {
@@ -213,8 +214,19 @@ describe("PI 1.4.0 RPC plugin", () => {
     };
 
     try {
-      const opened = await owner.open(scope, id, { ...options, engineRef: null });
+      const uncommitted = await open();
+      expect(await readFile(join(directories.state, "pi.jsonl"), "utf8")).toContain(uncommitted.engineRef);
+      const interruptedProcess = processes.at(-1)!;
+      interruptedProcess.kill();
+      await interruptedProcess.exited;
+      const output = join(directories.workspace, "outputs", "keep.txt");
+      await mkdir(join(directories.workspace, "outputs"));
+      await writeFile(output, "A workspace artifact");
+
+      const opened = await owner.open(scope, id, options);
       expect(refs).toEqual([opened.handle.engineRef]);
+      expect(opened.handle.engineRef).not.toBe(uncommitted.engineRef);
+      expect(await readFile(output, "utf8")).toBe("A workspace artifact");
       const first = host();
       expect(await turn(opened.handle, first, input("first", "Keep this context"))).toMatchObject({ stopReason: "stop" });
       expect(first.consumed).toEqual(["first"]);
@@ -229,7 +241,7 @@ describe("PI 1.4.0 RPC plugin", () => {
       vi.useRealTimers();
       await released.promise;
 
-      const resumed = await owner.open(scope, id, { ...options, engineRef: refs[0] });
+      const resumed = await owner.open(scope, id, options);
       expect(resumed.handle.engineRef).toBe(opened.handle.engineRef);
       expect(await turn(resumed.handle, host(), input("second", "Use earlier context"))).toMatchObject({ stopReason: "stop" });
       expect(JSON.stringify(requests.at(-1)?.messages)).toContain("Keep this context");

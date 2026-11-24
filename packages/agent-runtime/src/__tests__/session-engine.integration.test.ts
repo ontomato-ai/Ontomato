@@ -78,7 +78,7 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     let kill: (() => void) | undefined;
     let exited: Promise<number | null> | undefined;
     return {
-      directories: { workspace, state, skills: [] }, hostWorkspace: workspace,
+      directories: { workspace, state, skills: [] }, hostWorkspace: workspace, hostState: state,
       gatewayBaseUrl: base + "/v1", callbackBaseUrl: `http://${callback.host}:${callback.port}`,
       spawn(_command, _args, env) {
         expect(env).not.toHaveProperty("ONTOMATO_TK");

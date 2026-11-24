@@ -18,6 +18,7 @@ export interface SessionSandboxOptions extends SandboxFiles {
 export interface OpenSessionSandbox extends HarnessSandbox {
   readonly directories: HarnessDirectories;
   readonly hostWorkspace: string;
+  readonly hostState: string;
   readonly gatewayBaseUrl: string;
   readonly callbackBaseUrl: string;
   stop(): Promise<void>;
@@ -49,6 +50,7 @@ export async function openSessionSandbox(options: SessionSandboxOptions): Promis
   return {
     directories: prepared.directories,
     hostWorkspace: prepared.workspace,
+    hostState: prepared.state,
     gatewayBaseUrl: `http://127.0.0.1:${gatewayPort}/v1`,
     callbackBaseUrl: `http://127.0.0.1:${callbackPort}`,
     spawn(command, args, env) {

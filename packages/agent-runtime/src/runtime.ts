@@ -310,7 +310,6 @@ export class AgentRuntime {
       );
       let config: ResolvedChatModel | undefined;
       let plugin: HarnessPlugin | undefined;
-      let engineRef: string | null = null;
       let skills: InstalledSkill[] = [];
       // Read-only checks for unusable dependencies belong before admission, so a new run fails with
       // 422/503 instead of starting and reporting the same problem as a stopped run.
@@ -318,7 +317,6 @@ export class AgentRuntime {
         if (this.options.openEngineSandbox) {
           const binding = await this.store.sessionEngine(scope, sessionId);
           plugin = this.sessionEngines.plugin(binding.engine ?? request.definition.engine ?? piPlugin.id);
-          engineRef = binding.engineRef;
           if (this.sessionEngines.needsOpen(scope, sessionId))
             config = await this.models.resolve(scope.domainId, request.definition.modelId);
         } else {
@@ -418,7 +416,7 @@ export class AgentRuntime {
         await loading;
         const presentation = reserved ? presentationCallback : undefined;
         await withServiceLogContext(logContext, () => plugin
-          ? this.execute(active, plugin, engineRef, config, accepted.inputId!, request, skills, presentation)
+          ? this.execute(active, plugin, config, accepted.inputId!, request, skills, presentation)
           : this.executeLegacy(active, config!, request, skills, presentation));
       })().finally(() => this.active.delete(key(scope, runId)));
       void active.done.catch(() =>
@@ -750,7 +748,6 @@ export class AgentRuntime {
   private async execute(
     active: Active,
     plugin: HarnessPlugin,
-    engineRef: string | null,
     config: ResolvedChatModel | undefined,
     openingInputId: string,
     request: RuntimeStartRunRequest,
@@ -781,7 +778,7 @@ export class AgentRuntime {
       });
       closeMcp = () => bound.close();
       const engine = await this.sessionEngines.open(scope, run.sessionId, {
-        plugin, engineRef,
+        plugin,
         config: () => config ? Promise.resolve(config) : this.models.resolve(scope.domainId, request.definition.modelId),
         skills: skills.map(skill => ({ name: skill.skill.name, directory: skill.directory })),
         language: run.language,

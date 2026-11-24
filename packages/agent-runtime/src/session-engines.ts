@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import type { RuntimeAgentDefinition } from "@ontomato/contracts/agent-runtime";
 import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
@@ -28,7 +29,7 @@ export type SessionEngineSandboxFactory = (request: SessionEngineSandboxRequest)
 
 type SessionLock = <T>(scope: Scope, id: string, operation: () => Promise<T>) => Promise<T>;
 
-type EngineOpen = Pick<HarnessOpenRequest, "engineRef" | "language" | "limits" | "signal" | "tools" | "engineTools"> & {
+type EngineOpen = Pick<HarnessOpenRequest, "language" | "limits" | "signal" | "tools" | "engineTools"> & {
   plugin: HarnessPlugin;
   config(): Promise<ResolvedChatModel>;
   skills: SessionEngineSandboxRequest["skills"];
@@ -104,6 +105,14 @@ export class SessionEngines {
         skills: request.skills, limits: request.limits, gatewayUrl: lease.url, callback,
       });
       const processSpace = sandbox;
+      const engineRef = await this.locked(scope, id, async () => {
+        const { engineRef } = await this.store.sessionEngine(scope, id);
+        if (engineRef === null) {
+          for (const name of await readdir(processSpace.hostState))
+            await removeWorkerFiles(path.join(processSpace.hostState, name));
+        }
+        return engineRef;
+      });
       let exited = false;
       const token = randomBytes(32).toString("base64url");
       const credential = Buffer.from(token);
@@ -115,8 +124,8 @@ export class SessionEngines {
       handle = await request.plugin.open({
         sessionId: id,
         domainId: scope.domainId,
-        engineRef: request.engineRef,
-        previousContext: request.engineRef === null ? await request.previousContext() : null,
+        engineRef,
+        previousContext: engineRef === null ? await request.previousContext() : null,
         sandbox: {
           spawn(command, args, env) {
             const child = processSpace.spawn(command, args, {
@@ -151,7 +160,9 @@ export class SessionEngines {
         language: request.language,
         signal: request.signal,
       });
-      await this.store.saveEngineRef(scope, id, handle.engineRef);
+      // The caller can submit the first prompt only after its native reference is committed.
+      // Without that reference, no prompt used the native files and the next open can rebuild them.
+      if (engineRef === null) await this.store.saveEngineRef(scope, id, handle.engineRef);
       const entry = { scope, id, handle, sandbox, lease, credential, exited: () => exited };
       this.live.set(sessionKey, entry);
       return entry;
