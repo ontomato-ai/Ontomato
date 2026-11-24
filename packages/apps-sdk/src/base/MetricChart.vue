@@ -4,8 +4,11 @@ import { useI18n } from "vue-i18n";
 import type { chartProjectionTemplateSchema, DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import { MetricChart as ChartView } from "@ontomato/foundation-ui/chart";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { useMemberData } from "../panel/member";
+import { useMemberData, useMemberRefresh } from "../panel/member";
 import { useDataStateLabels } from "./data-state-labels";
+
+/** The source card's chart file and saved parameters, as its owner hands them over. */
+type ChartTemplate = ReturnType<typeof chartProjectionTemplateSchema.parse>;
 
 /**
  * One chart, drawn as its source card draws it: the card's chart file (the member's `template`) filled with a
@@ -17,12 +20,23 @@ import { useDataStateLabels } from "./data-state-labels";
  */
 defineOptions({ inheritAttrs: false });
 
+const props = withDefaults(
+  defineProps<{
+    /** Optional chart file override for live unsaved draft preview instead of the saved template's chart file. */
+    fileOverride?: ChartTemplate["chartFile"]["content"] | null;
+    /** Minimum height of the chart container; defaults to `"320px"` standalone and can be set to `"100%"` or `"220px"` inside fixed-height grid cells. */
+    minHeight?: string;
+  }>(),
+  {
+    fileOverride: null,
+    minHeight: "320px",
+  },
+);
+
 const { t } = useI18n();
 const template = useMemberData("template");
 const result = useMemberData("result");
-
-/** The source card's chart file and saved parameters, as its owner hands them over. */
-type ChartTemplate = ReturnType<typeof chartProjectionTemplateSchema.parse>;
+const refreshMember = useMemberRefresh();
 
 /** What the chart draws: the card's chart file and the output, the owner's note when it was cut. */
 interface ChartDrawing {
@@ -31,20 +45,28 @@ interface ChartDrawing {
 }
 
 const chart = computed<DataStateResult<ChartDrawing>>(() => {
-  if (template.value.status !== "ready") return template.value;
+  if (!props.fileOverride && template.value.status !== "ready") return template.value;
   if (result.value.status !== "ready") return result.value;
-  const { chartFile } = template.value.value as unknown as ChartTemplate;
+  const file = props.fileOverride
+    ?? (template.value.status === "ready" ? (template.value.value as unknown as ChartTemplate).chartFile.content : null);
+  if (!file) return { status: "empty" };
   const { columns, rows, truncation } = result.value.value as unknown as DashboardMetricOutput;
   return {
     status: "ready",
-    value: { file: chartFile.content, metric: { columns, rows, ...(truncation ? { truncation: { truncationHint: truncation.truncationHint } } : {}) } },
+    value: { file, metric: { columns, rows, ...(truncation ? { truncation: { truncationHint: truncation.truncationHint } } : {}) } },
   };
 });
 const labels = useDataStateLabels(() => t("ontology.ovNoChartData"));
+
+function refresh() {
+  refreshMember();
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>
-  <div class="sdk-metric-chart">
+  <div class="sdk-metric-chart" :style="{ minHeight: props.minHeight }">
     <DataState :result="chart" :labels="labels">
       <template #default="{ value }">
         <ChartView

@@ -139,6 +139,17 @@ const bound = computed(() => {
   return { ...fromProjection, ...placementProps, ...listeners };
 });
 const labels = useDataStateLabels();
+const innerRef = ref<{ refresh?: () => void } | null>(null);
+
+function refresh() {
+  if (typeof innerRef.value?.refresh === "function") {
+    innerRef.value.refresh();
+    return;
+  }
+  loaded.value?.member.data.refresh?.();
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>
@@ -147,7 +158,7 @@ const labels = useDataStateLabels();
   <p v-else-if="outsideFrame" class="sdk-panel-member-outside-frame" role="status">{{ t("platform.currentEntryOutsideFrame") }}</p>
   <div v-else-if="nested" ref="container" class="sdk-panel-member-nested"></div>
   <data-state v-else-if="!loaded" :result="{ status: 'loading' }" :labels="labels"></data-state>
-  <component :is="loaded.component" v-else v-bind="bound">
+  <component :is="loaded.component" v-else ref="innerRef" v-bind="bound">
     <!-- What the panel's template placed in the component's slots, drawn where the component puts each slot. -->
     <template v-for="(_, name) in $slots" #[name]="scope"><slot :name="name" v-bind="scope ?? {}"></slot></template>
   </component>

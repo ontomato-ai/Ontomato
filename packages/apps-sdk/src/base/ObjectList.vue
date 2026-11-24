@@ -212,12 +212,13 @@ const props = withDefaults(
   defineProps<{
     /**
      * How records are arranged: `"auto"` (default) draws a table when `columns` is given and a compact list otherwise;
-     * `"list"` forces the compact list, `"table"` draws the table when `columns` is given, and `"cards"` draws a
-     * responsive card grid showing label, subtitle, status, tags and any configured `columns`.
+     * `"list"` forces the compact list, `"table"` draws the table when `columns` is given, `"cards"` draws a
+     * responsive card grid showing label, subtitle, status, tags and any configured `columns`, and `"tabs"` draws a
+     * single-row horizontal tab strip with overflow scroll buttons and compact per-tab row actions.
      * The compact list uses the object's `label` as its main title and has no `titleField` prop. To display a
      * different title field, use `"table"` with explicit `columns` or a row slot.
      */
-    layout?: "auto" | "list" | "table" | "cards";
+    layout?: "auto" | "list" | "table" | "cards" | "tabs";
     /**
      * The table's columns, each a field of the owner's records (`key`, its header `labelKey`, and how it is drawn); absent,
      * the list is compact: each item shows its label, then `statusField`, `subtitleField` and `tagsField` as configured.
@@ -423,6 +424,8 @@ defineSlots<{
   "row-detail"?(props: RowRefSlotScope & { collapse: () => void }): unknown;
   /** Decorative leading badge or icon rendered before each compact list item's title and subtitle. */
   "item-leading"?(): unknown;
+  /** Trailing inline controls placed at the end of the horizontal tab bar in `"tabs"` layout (for example a create button). */
+  "tabs-extra"?(): unknown;
   /** Custom card renderer in `"cards"` layout; falls back to the default card when empty. */
   card?(
     props: RowActionsSlotScope & {
@@ -1210,13 +1213,91 @@ function closeColumnToggle() {
   columnToggleOpen.value = false;
 }
 
-const effectiveLayout = computed<"list" | "table" | "cards">(() => {
+const effectiveLayout = computed<"list" | "table" | "cards" | "tabs">(() => {
+  if (props.layout === "tabs") return "tabs";
   if (props.layout === "cards") return "cards";
   if (props.layout === "list") return "list";
   return props.columns?.length || props.dynamicColumns ? "table" : "list";
 });
 const isTable = computed(() => effectiveLayout.value === "table");
 const isCards = computed(() => effectiveLayout.value === "cards");
+const isTabs = computed(() => effectiveLayout.value === "tabs");
+
+const tabsScrollerRef = ref<HTMLElement | null>(null);
+const tabsCanScrollLeft = ref(false);
+const tabsCanScrollRight = ref(false);
+let tabsResizeObserver: ResizeObserver | null = null;
+
+function updateTabsOverflow() {
+  const el = tabsScrollerRef.value;
+  if (!el || !isTabs.value) {
+    tabsCanScrollLeft.value = false;
+    tabsCanScrollRight.value = false;
+    return;
+  }
+  tabsCanScrollLeft.value = el.scrollLeft > 1;
+  tabsCanScrollRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+}
+
+function scrollTabsBy(direction: -1 | 1) {
+  const el = tabsScrollerRef.value;
+  if (!el) return;
+  const step = Math.max(160, Math.floor(el.clientWidth * 0.6));
+  if (typeof el.scrollBy === "function") {
+    el.scrollBy({ left: direction * step, behavior: "smooth" });
+  } else {
+    el.scrollLeft += direction * step;
+  }
+  updateTabsOverflow();
+}
+
+function onTabKeydown(row: PlatformObjectRecord, index: number, event: KeyboardEvent) {
+  if (event.key === "Enter" || event.key === " ") {
+    if (rowActivatable.value) {
+      event.preventDefault();
+      choose(row);
+    }
+    return;
+  }
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  const list = rows.value;
+  if (list.length <= 1) return;
+  event.preventDefault();
+  const nextIndex = event.key === "ArrowRight"
+    ? (index + 1) % list.length
+    : (index - 1 + list.length) % list.length;
+  const nextRow = list[nextIndex];
+  if (!nextRow) return;
+  const el = tabsScrollerRef.value?.querySelectorAll<HTMLElement>('[role="tab"]')[nextIndex];
+  el?.focus();
+}
+
+watch(tabsScrollerRef, (el) => {
+  tabsResizeObserver?.disconnect();
+  tabsResizeObserver = null;
+  if (!el) {
+    tabsCanScrollLeft.value = false;
+    tabsCanScrollRight.value = false;
+    return;
+  }
+  if (typeof ResizeObserver !== "undefined") {
+    tabsResizeObserver = new ResizeObserver(() => updateTabsOverflow());
+    tabsResizeObserver.observe(el);
+  }
+  void nextTick(updateTabsOverflow);
+});
+
+watch(
+  [isTabs, () => rows.value.length],
+  () => {
+    if (isTabs.value) void nextTick(updateTabsOverflow);
+  },
+);
+
+onBeforeUnmount(() => {
+  tabsResizeObserver?.disconnect();
+  tabsResizeObserver = null;
+});
 
 /** From this many characters a text column shrinks to the table's room and ends in an ellipsis rather than set its width. */
 const LONG_TEXT = 24;
@@ -1353,12 +1434,13 @@ const showLoadMore = computed(
 
 const showFooter = computed(
   () =>
-    props.showFooter !== false
+    !isTabs.value
+    && props.showFooter !== false
     && (showFooterTotal.value || showPageControls.value || showCursorPageControls.value || showLoadMore.value),
 );
 
 const showCheckRow = computed(
-  () => canCheck && !isTable.value && (rows.value.length > 0 || checkedRefs.value.length > 0),
+  () => canCheck && !isTable.value && !isTabs.value && (rows.value.length > 0 || checkedRefs.value.length > 0),
 );
 
 const showBuiltInColumnToggle = computed(() => Boolean(props.showColumnToggle) && isTable.value);
@@ -2962,7 +3044,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="sdk-object-list" :class="{ 'sdk-object-list-compact': !isTable && !isCards }">
+  <div class="sdk-object-list" :class="{ 'sdk-object-list-compact': !isTable && !isCards && !isTabs, 'sdk-object-list-tabs-mode': isTabs }">
     <div v-if="showToolbar" class="sdk-object-list-toolbar" :class="{ 'sdk-object-list-toolbar-sticky': isStickyCheckBar }">
       <div v-if="canSearch" class="sdk-object-list-search-wrap">
         <svg class="sdk-object-list-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -3065,6 +3147,15 @@ defineExpose({
       class="sdk-object-list-custom-empty"
     >
       <slot name="empty" :narrowed="narrowed" :clear-filters="clearFilters"></slot>
+    </div>
+    <div
+      v-else-if="isTabs && listResult.status === 'empty' && $slots['tabs-extra']"
+      class="sdk-object-list-tabs-bar is-empty"
+    >
+      <span class="sdk-object-list-tabs-empty-text">{{ emptyText ? panel.t(emptyText) : t("platform.dataEmpty") }}</span>
+      <div class="sdk-object-list-tabs-extra">
+        <slot name="tabs-extra"></slot>
+      </div>
     </div>
     <data-state v-else :result="tableDataResult" :labels="dataStateLabels">
       <div
@@ -3419,6 +3510,100 @@ defineExpose({
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-else-if="isTabs" class="sdk-object-list-tabs-bar">
+        <button
+          v-if="tabsCanScrollLeft"
+          type="button"
+          class="sdk-object-list-tabs-scroll-btn"
+          data-testid="object-list-tabs-scroll-left"
+          aria-label="Scroll tabs left"
+          @click="scrollTabsBy(-1)"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+        <div
+          ref="tabsScrollerRef"
+          class="sdk-object-list-tabs-scroller"
+          role="tablist"
+          @scroll="updateTabsOverflow"
+        >
+          <div
+            v-for="(row, rowIndex) in rows"
+            :key="rowIdentityKey(row)"
+            :ref="(el) => setRowElement(rowIdentityKey(row), el)"
+            role="tab"
+            class="sdk-object-list-tab"
+            :aria-selected="rowIdentityKey(row) === chosenIdentity"
+            :tabindex="rowIdentityKey(row) === chosenIdentity || (chosenIdentity === null && rowIndex === 0) ? 0 : -1"
+            :class="{
+              chosen: rowIdentityKey(row) === chosenIdentity,
+              'is-non-selectable': !rowActivatable,
+              'has-actions': hasActionColumn && (Boolean(slots.actions) || resolvedRowActionsFor(row).length > 0),
+            }"
+            @click="rowActivatable ? choose(row) : undefined"
+            @keydown="onTabKeydown(row, rowIndex, $event)"
+          >
+            <span
+              v-if="statusField && statusStyle === 'dot' && fieldValue(row, statusField) !== ''"
+              class="sdk-object-list-status-dot"
+              :data-tone="row.tones?.[statusField] ?? 'default'"
+              :title="fieldValue(row, statusField)"
+            ></span>
+            <span class="sdk-object-list-tab-label" :title="row.label">
+              <template v-for="(part, index) in textSegmentsFor(row, 'label', row.label)" :key="index">
+                <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+              </template>
+            </span>
+            <span
+              v-if="statusField && statusStyle !== 'dot' && fieldValue(row, statusField) !== ''"
+              class="sdk-object-list-tag"
+              :data-tone="row.tones?.[statusField] ?? 'default'"
+            >{{ fieldValue(row, statusField) }}</span>
+            <div
+              v-if="hasActionColumn && (slots.actions || resolvedRowActionsFor(row).length > 0)"
+              class="sdk-object-list-tab-actions"
+              @click.stop
+            >
+              <list-row-slot-host
+                v-if="slots.actions"
+                :list-slot="member.key"
+                :row-ref="rowObjectRef(row)"
+                :index="rowIndex"
+                :operations="rowOperationsFor(row)"
+                :run-operation="(opName, extra) => runRowOperation(row, opName, extra)"
+                :render-slot="slots.actions!"
+                :slot-props="rowActionsSlotProps(row, rowIndex)"
+              />
+              <ObjectListRowActions
+                v-else
+                :items="resolvedRowActionsFor(row)"
+                :max-visible="0"
+                :busy="rowOpRunning"
+                :row-label="row.label || row.primaryKey"
+                @trigger="(item) => triggerRowAction(row, rowIndex, item)"
+              />
+            </div>
+          </div>
+        </div>
+        <button
+          v-if="tabsCanScrollRight"
+          type="button"
+          class="sdk-object-list-tabs-scroll-btn"
+          data-testid="object-list-tabs-scroll-right"
+          aria-label="Scroll tabs right"
+          @click="scrollTabsBy(1)"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+        <div v-if="$slots['tabs-extra']" class="sdk-object-list-tabs-extra">
+          <slot name="tabs-extra"></slot>
+        </div>
       </div>
 
       <div
@@ -4948,5 +5133,128 @@ mark {
 .sdk-object-list-table td.sdk-object-list-virtual-spacer-cell {
   border-bottom: 0;
   padding: 0;
+}
+.sdk-object-list-tabs-mode {
+  flex: none;
+  min-height: 0;
+}
+.sdk-object-list-tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs, 4px);
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border-bottom: 1px solid var(--ui-divider, var(--el-border-color-lighter));
+  box-sizing: border-box;
+}
+.sdk-object-list-tabs-bar.is-empty {
+  justify-content: space-between;
+  padding: var(--spacing-xs, 4px) 0;
+}
+.sdk-object-list-tabs-empty-text {
+  color: var(--el-text-color-secondary);
+  font-size: var(--font-size-sm, 13px);
+}
+.sdk-object-list-tabs-scroller {
+  display: flex;
+  align-items: stretch;
+  gap: var(--spacing-xs, 4px);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.sdk-object-list-tabs-scroller::-webkit-scrollbar {
+  display: none;
+}
+.sdk-object-list-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs, 6px);
+  flex: 0 0 auto;
+  max-width: 240px;
+  height: 38px;
+  padding: 0 var(--spacing-md, 12px);
+  border-radius: var(--border-radius-sm, 6px) var(--border-radius-sm, 6px) 0 0;
+  color: var(--el-text-color-regular);
+  font-size: var(--font-size-sm, 13px);
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.sdk-object-list-tab.has-actions {
+  padding-inline-end: var(--spacing-xs, 6px);
+}
+.sdk-object-list-tab:hover:not(.is-non-selectable) {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+}
+.sdk-object-list-tab:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+.sdk-object-list-tab.chosen {
+  color: var(--el-color-primary);
+  font-weight: 600;
+  background: var(--el-color-primary-light-9);
+}
+.sdk-object-list-tab.chosen::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--el-color-primary);
+  border-radius: 2px 2px 0 0;
+}
+.sdk-object-list-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.sdk-object-list-tab-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.sdk-object-list-tab:hover .sdk-object-list-tab-actions,
+.sdk-object-list-tab:focus-within .sdk-object-list-tab-actions,
+.sdk-object-list-tab.chosen .sdk-object-list-tab-actions {
+  opacity: 1;
+}
+.sdk-object-list-tabs-scroll-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--ui-divider, var(--el-border-color-lighter));
+  border-radius: var(--border-radius-sm, 6px);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+}
+.sdk-object-list-tabs-scroll-btn:hover {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+}
+.sdk-object-list-tabs-extra {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  margin-inline-start: auto;
+  padding-inline-start: var(--spacing-xs, 4px);
 }
 </style>

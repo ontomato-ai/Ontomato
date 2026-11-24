@@ -4,7 +4,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { MemberData, MemberDataState, MemberInputs } from "./direct";
-import { usePanelContext } from "./context";
+import { panelContextKey, usePanelContext } from "./context";
 import type { MemberOperationsState } from "./member-operations";
 
 /*
@@ -83,6 +83,19 @@ export function useMemberParam(name: string): MemberParam {
 export function useMemberRead(name: string): (params: Readonly<Record<string, RuntimeJsonValue>>) => Promise<MemberDataState> {
   const { data } = member();
   return (params) => data.read(name, params);
+}
+
+/** Re-read one named datum (or all active data of this member) without reloading unrelated panel members. */
+export function useMemberRefresh(name?: string): () => void {
+  const current = member();
+  const panel = inject(panelContextKey, null);
+  return () => {
+    if (current.data.refresh) {
+      current.data.refresh(name);
+    } else {
+      panel?.instance.refreshObjects();
+    }
+  };
 }
 
 /**
