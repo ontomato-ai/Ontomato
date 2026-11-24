@@ -164,8 +164,13 @@
     }, {
       "id": "ontology-agent-settings", "pageKey": "agent-settings", "panelId": "builtin-product-agent-settings",
       "path": "/ontology/agents", "access": {"permissionCode": "ontology-modeling"},
-      "descriptions": {"en": "The agents of this domain: choose one to read or change its name, avatar, instructions, model and skills, or create one.", "zh-CN": "本域的智能体：选中一个查看或修改它的名称、头像、提示词、模型和技能，也可以新建一个。"},
-      "names": {"en": "Agent settings", "zh-CN": "智能体设置"}, "groupKey": "products"
+      "inputs": {"detailPath": {"literal": "/ontology/agents/detail"}},
+      "descriptions": {"en": "Browse, search and create domain agents, or open one to edit its instructions, model, skills and data scope.", "zh-CN": "浏览、搜索并新建域内智能体，点开一条修改它的提示词、模型、技能和数据范围。"},
+      "names": {"en": "Agents", "zh-CN": "智能体"}, "groupKey": "products"
+    }, {
+      "id": "ontology-agent-detail", "pageKey": "agent-detail", "panelId": "builtin-product-agent-detail",
+      "path": "/ontology/agents/detail", "access": {"permissionCode": "ontology-modeling"},
+      "inputs": {"catalogPath": {"literal": "/ontology/agents"}}
     }]
   }
 }

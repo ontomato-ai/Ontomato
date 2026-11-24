@@ -169,7 +169,10 @@ watch(
 const pilotPage = computed(() => (display.page.value ? pilot(display.page.value.address) : null));
 const pageAddress = computed(() => display.page.value?.address ?? null);
 const inDashboards = computed(() => display.page.value?.featureId === DASHBOARDS_PAGE_ID);
-const inAgentSettings = computed(() => pageAddress.value?.split("?")[0] === routes.agents.path);
+const inAgentSettings = computed(() => {
+  const path = pageAddress.value?.split("?")[0];
+  return path === routes.agents.path || path === `${routes.agents.path}/detail`;
+});
 const inPanelApplication = computed(() => display.page.value?.featureId === PANEL_APPLICATION_PAGE_ID);
 const editorTitle = computed(() => {
   const address = pageAddress.value;
@@ -347,9 +350,7 @@ const agentActions = computed(() => props.internalPages && editsAgents.value ? {
 
 function openSettings() {
   if (!editsAgents.value) return void router.push(routes.usage.path);
-  void router.push(agentId.value
-    ? panelAddress(routes.agents.path, { selected: agentId.value, mode: "edit" })
-    : routes.agents.path);
+  void router.push(routes.agents.path);
 }
 
 const showingTasks = ref(false);

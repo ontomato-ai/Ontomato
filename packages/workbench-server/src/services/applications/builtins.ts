@@ -71,6 +71,14 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-agent-settings",
         "path": "/agents/settings",
         "access": { "permissionCode": "analysis-agent" },
+        "inputs": { "detailPath": { "literal": "/agents/settings/detail" } },
+      }, {
+        "id": "agents-agent-detail",
+        "pageKey": "agents-agent-detail",
+        "panelId": "builtin-product-agent-detail",
+        "path": "/agents/settings/detail",
+        "access": { "permissionCode": "analysis-agent" },
+        "inputs": { "catalogPath": { "literal": "/agents/settings" } },
       }],
     }
   },

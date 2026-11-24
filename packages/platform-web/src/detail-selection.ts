@@ -1,7 +1,7 @@
 import type { RouteLocation } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ACTION, FUNCTION, METRIC_VIEW, RELATIONSHIP, SKILL } from "@ontomato/contracts/platform-object-types";
+import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, RELATIONSHIP, SKILL } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -34,19 +34,39 @@ export interface DetailSelection {
  * page's own.
  */
 export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
+  // Agent catalog & detail (shared across /ontology/agents and /agents/settings):
+  // legacy `/new` opens the catalog (which hosts the centered creation dialog), `:agentId` (exempting `detail` and
+  // separate agent-platform subpages) and legacy catalog `?selected=` links forward straight to the non-menu detail entry.
   ...[
-    { path: platformRoutes.ontologyAgent.path, use: platformRoutes.ontologyAgents.path },
-    { path: platformRoutes.agentSettings.path, use: platformRoutes.agents.path },
-  ].map(({ path, use }): DetailSelection => ({
-    path,
-    use,
-    state({ agentId }): Record<string, PanelStateValue> | null {
-      if (use === platformRoutes.agents.path && ["capabilities", "skills", "mcp", "models"].includes(agentId!)) return null;
-      return agentId === "new"
-        ? { mode: "create" }
-        : { selected: agentId!, mode: "edit" };
+    { path: platformRoutes.ontologyAgent.path, catalog: platformRoutes.ontologyAgents.path },
+    { path: platformRoutes.agentSettings.path, catalog: platformRoutes.agents.path },
+  ].flatMap(({ path, catalog }): DetailSelection[] => [
+    {
+      path: `${catalog}/new`,
+      use: catalog,
+      state: (): Record<string, PanelStateValue> => ({}),
     },
-  })),
+    {
+      path,
+      use: `${catalog}/detail`,
+      state({ agentId }): Record<string, PanelStateValue> | null {
+        if (agentId === "detail" || agentId === "new") return null;
+        if (catalog === platformRoutes.agents.path && ["capabilities", "skills", "mcp", "models"].includes(agentId!)) return null;
+        return { selected: agentId! };
+      },
+    },
+    {
+      path: catalog,
+      use: `${catalog}/detail`,
+      state: (_params, query): Record<string, PanelStateValue> | null => {
+        const selected = query.get("selected");
+        if (!selected || !selected.trim()) return null;
+        const prefix = `${AGENT_DEFINITION}~`;
+        const primaryKey = selected.startsWith(prefix) ? selected.slice(prefix.length) : selected;
+        return primaryKey.trim() ? { selected: primaryKey } : null;
+      },
+    },
+  ]),
   {
     path: platformRoutes.relation.path,
     use: `${platformRoutes.relations.path}/detail`,

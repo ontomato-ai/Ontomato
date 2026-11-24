@@ -1,0 +1,139 @@
+<!--
+  Agent detail panel: full-width edit entry for a single platform:AgentDefinition.
+  PageHeader owns Back, ObjectHeader (with category badge), optional "View class" (ontology manager),
+  Delete (hidden when unavailable for preset/system agents), and the Save/Discard draft bar wired to `form`.
+  Shared by /ontology/agents/detail and /agents/settings/detail via entry-wired `catalogPath`.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .agent-detail-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: agent-detail-page / inline-size;
+  }
+  .agent-detail-title {
+    margin: 0;
+    min-width: 0;
+  }
+  .agent-detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-content-gap);
+    min-width: 0;
+    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+  }
+  .agent-detail-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+  .agent-detail-form {
+    min-width: 0;
+  }
+  .agent-detail-form .sdk-owner-form,
+  .agent-detail-form .sdk-owner-form-inner {
+    height: auto;
+  }
+  .agent-detail-form .sdk-owner-form-body {
+    overflow: visible;
+  }
+  .agent-detail-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-2xl) var(--page-gutter);
+    text-align: center;
+  }
+  .agent-detail-state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--spacing-sm);
+  }
+  .agent-detail-note {
+    margin: 0;
+    padding: var(--spacing-lg) var(--page-gutter);
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+  .agent-detail-failure {
+    color: var(--sdk-color-danger-text);
+  }
+
+  @container agent-detail-page (max-width: 640px) {
+    .agent-detail-body {
+      padding-block: var(--spacing-md) calc(var(--page-content-gap) + 56px);
+    }
+    .agent-detail-card {
+      padding: var(--spacing-md);
+    }
+  }
+</style>
+<div id="app" v-cloak>
+  <section class="agent-detail-page">
+    <page-header :back-label="t('detail.back')" :draft="detailDraft" @back="goBack">
+      <template #title>
+        <projection v-if="selectedKey" slot="header" :fallback-title="selectedKey"></projection>
+        <h1 v-else class="agent-detail-title">{{ t("panel.name") }}</h1>
+      </template>
+      <template #actions>
+        <sdk-button v-if="detailReady && isOntologyEntry" text size="small" @click="viewType">{{ t("agents.viewType") }}</sdk-button>
+        <!-- Keep remove mounted with v-show so PageHeader slots stay active and @done still fires after delete. -->
+        <div v-show="detailReady">
+          <projection slot="remove" @done="onRemoveDone"></projection>
+        </div>
+      </template>
+    </page-header>
+
+    <div v-if="detailReady" class="agent-detail-body">
+      <info-banner
+        v-if="agentCategory === 'system'"
+        tone="info"
+        :text="t('detail.systemNotice')"
+      ></info-banner>
+      <section class="agent-detail-card">
+        <div class="agent-detail-form">
+          <projection slot="form" @saved="onSaved">
+            <template #field-modelSelection.modelId><projection slot="model"></projection></template>
+            <template #field-skills><projection slot="skills"></projection></template>
+            <template #field-enabledMcpServiceIds><projection slot="tools"></projection></template>
+            <template #field-executionUserId><projection slot="executor"></projection></template>
+            <template #field-classNames><projection slot="scope"></projection></template>
+          </projection>
+        </div>
+      </section>
+    </div>
+    <div v-else-if="!selectedKey" class="agent-detail-state">
+      <sdk-empty :description="t('detail.missing')"></sdk-empty>
+      <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
+    </div>
+    <p v-else-if="recordStatus === 'loading' || recordStatus === 'awaiting'" class="agent-detail-note" role="status">
+      {{ t("detail.loading") }}
+    </p>
+    <div v-else-if="recordStatus === 'forbidden'" class="agent-detail-state">
+      <p class="agent-detail-note agent-detail-failure" role="alert">{{ t("detail.forbidden") }}</p>
+      <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
+    </div>
+    <div v-else-if="recordStatus === 'error'" class="agent-detail-state">
+      <p class="agent-detail-note agent-detail-failure" role="alert">{{ recordErrorText }}</p>
+      <div class="agent-detail-state-actions">
+        <sdk-button @click="retry">{{ t("action.retry") }}</sdk-button>
+        <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
+      </div>
+    </div>
+    <div v-else class="agent-detail-state">
+      <sdk-empty :description="t('detail.missing')"></sdk-empty>
+      <sdk-button @click="goBack">{{ t("detail.back") }}</sdk-button>
+    </div>
+  </section>
+</div>

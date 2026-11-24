@@ -63,6 +63,24 @@ describe("readBuiltinProducts", () => {
       expect(panels.has("builtin-product-ontology-metric-view-detail")).toBe(true);
       expect(panels.has("builtin-product-ontology-functions")).toBe(true);
       expect(panels.has("builtin-product-ontology-function-detail")).toBe(true);
+      expect(panels.has("builtin-product-agent-settings")).toBe(true);
+      expect(panels.has("builtin-product-agent-detail")).toBe(true);
+
+      const agentsCatalog = panels.get("builtin-product-agent-settings")!;
+      expect(agentsCatalog.manifest.state).toHaveProperty("search");
+      expect(agentsCatalog.manifest.state).toHaveProperty("creating");
+      expect(agentsCatalog.manifest.state).toHaveProperty("detailPath");
+      expect(agentsCatalog.manifest.state).not.toHaveProperty("selected");
+      expect(agentsCatalog.manifest.state).not.toHaveProperty("mode");
+      expect(agentsCatalog.content.html).not.toContain("two-pane-layout");
+
+      const agentDetail = panels.get("builtin-product-agent-detail")!;
+      expect(agentDetail.manifest.state).toHaveProperty("selected");
+      expect(agentDetail.manifest.state).toHaveProperty("catalogPath");
+      expect(agentDetail.manifest.members).toHaveProperty("header");
+      expect(agentDetail.manifest.members).toHaveProperty("form");
+      expect(agentDetail.manifest.members).toHaveProperty("remove");
+      expect(agentDetail.content.html).not.toContain('v-if="detailReady" #actions');
 
       const functionsCatalog = panels.get("builtin-product-ontology-functions")!;
       expect(functionsCatalog.manifest.state).not.toHaveProperty("selected");

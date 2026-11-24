@@ -1,0 +1,235 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AgentDefinition"
+        },
+        "deepLink": true
+      },
+      "catalogPath": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "external": true,
+        "default": "/ontology/agents"
+      }
+    },
+    "members": {
+      "header": {
+        "component": "ObjectHeader",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitle": "",
+          "statusField": "category"
+        },
+        "name": "智能体页头",
+        "description": "展示当前智能体名称与分类标签，并透出记录加载状态与分类输出。",
+        "id": "builtin-product-0a349e62-965d-485b-b72a-86005fc4d0dc"
+      },
+      "form": {
+        "component": "ObjectForm",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:AgentDefinition.save",
+        "config": {
+          "actions": "none"
+        },
+        "name": "智能体定义表单",
+        "description": "承载属主声明的智能体定义六段长表单（系统内置智能体仅返回基础只读信息与模型段），保存与放弃挂载至页头。",
+        "id": "builtin-product-798632e2-0ae8-4b4b-9dfe-602940dd6ef5"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "type": "platform:AgentDefinition",
+        "target": "selected",
+        "operation": "agents.delete",
+        "config": {
+          "type": "danger",
+          "plain": true,
+          "icon": "trash",
+          "hideWhenUnavailable": true
+        },
+        "name": "删除智能体",
+        "description": "删除当前自建智能体；预置与系统内置智能体由属主标为不可用并隐藏。",
+        "id": "builtin-product-8a1b2e98-239b-4c0b-878a-5cfa141eeed1"
+      },
+      "model": {
+        "component": "ReferencePicker",
+        "type": "platform:ModelOption",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "name": "模型选择",
+        "description": "选择智能体使用的对话模型。",
+        "id": "builtin-product-cc37f7cd-0a61-4b15-a2a1-64b2d571dc08"
+      },
+      "skills": {
+        "component": "ReferencePicker",
+        "type": "platform:Skill",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "name": "技能选择",
+        "description": "选择智能体可加载的技能。",
+        "id": "builtin-product-b79c7ca3-8287-4fd7-97d5-94c27a818455"
+      },
+      "tools": {
+        "component": "ReferencePicker",
+        "type": "platform:McpServiceOption",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "name": "外部 MCP 工具选择",
+        "description": "选择智能体启用的外部 MCP 服务。",
+        "id": "builtin-product-733252d6-8534-4654-944a-a1f5f8ce0a27"
+      },
+      "executor": {
+        "component": "ReferencePicker",
+        "type": "platform:User",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "name": "执行身份选择",
+        "description": "选择智能体运行所依据的域成员身份。",
+        "id": "builtin-product-cddb5180-ef56-46cc-a1b1-f933d08f904a"
+      },
+      "scope": {
+        "component": "ObjectGraph",
+        "data": {
+          "nodes": {
+            "type": "platform:ObjectType",
+            "read": "list"
+          },
+          "edges": {
+            "type": "platform:Relationship",
+            "read": "list"
+          }
+        },
+        "config": {
+          "edgeEnds": {
+            "source": "/fromclass",
+            "target": "/toclass"
+          }
+        },
+        "name": "数据范围图谱",
+        "description": "在对象类型与关系图上圈选智能体可见的本体范围。",
+        "id": "builtin-product-4476e525-bcc6-47a8-9cfa-ae78ecabb8d6"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Agent",
+        "detail.back": "Back to agents",
+        "detail.loading": "Loading agent…",
+        "detail.forbidden": "Your account does not have permission to read this agent.",
+        "detail.loadError": "Failed to load agent.",
+        "detail.missing": "This agent does not exist or has been deleted.",
+        "detail.saved": "Agent saved.",
+        "detail.systemNotice": "System built-in agents only support changing their model configuration and cannot be deleted.",
+        "action.retry": "Retry",
+        "agents.viewType": "View class"
+      },
+      "zh-CN": {
+        "panel.name": "智能体",
+        "detail.back": "返回智能体",
+        "detail.loading": "正在读取智能体…",
+        "detail.forbidden": "当前账号无权读取这个智能体。",
+        "detail.loadError": "读取智能体失败。",
+        "detail.missing": "智能体不存在或已删除。",
+        "detail.saved": "智能体已保存。",
+        "detail.systemNotice": "系统内置智能体仅支持修改模型配置，不可删除。",
+        "action.retry": "重试",
+        "agents.viewType": "查看所属类"
+      },
+      "zh-TW": {
+        "panel.name": "智慧體",
+        "detail.back": "返回智慧體",
+        "detail.loading": "正在讀取智慧體…",
+        "detail.forbidden": "目前帳號無權讀取此智慧體。",
+        "detail.loadError": "讀取智慧體失敗。",
+        "detail.missing": "智慧體不存在或已刪除。",
+        "detail.saved": "智慧體已儲存。",
+        "detail.systemNotice": "系統內建智慧體僅支援修改模型設定，不可刪除。",
+        "action.retry": "重試",
+        "agents.viewType": "查看所屬類"
+      },
+      "ja": {
+        "panel.name": "エージェント",
+        "detail.back": "エージェント一覧へ戻る",
+        "detail.loading": "エージェントを読み込み中…",
+        "detail.forbidden": "このエージェントを参照する権限がありません。",
+        "detail.loadError": "エージェントの読み込みに失敗しました。",
+        "detail.missing": "エージェントは存在しないか、削除されました。",
+        "detail.saved": "エージェントを保存しました。",
+        "detail.systemNotice": "システム内蔵エージェントはモデル設定のみ変更でき、削除できません。",
+        "action.retry": "再試行",
+        "agents.viewType": "所属クラスを表示"
+      },
+      "ar": {
+        "panel.name": "الوكيل",
+        "detail.back": "العودة إلى الوكلاء",
+        "detail.loading": "جارٍ تحميل الوكيل…",
+        "detail.forbidden": "لا يملك حسابك صلاحية قراءة هذا الوكيل.",
+        "detail.loadError": "تعذر تحميل الوكيل.",
+        "detail.missing": "هذا الوكيل غير موجود أو تم حذفه.",
+        "detail.saved": "تم حفظ الوكيل.",
+        "detail.systemNotice": "لا تدعم الوكلاء المضمنة في النظام سوى تعديل إعداد النموذج ولا يمكن حذفها.",
+        "action.retry": "إعادة المحاولة",
+        "agents.viewType": "عرض الفئة"
+      },
+      "fr": {
+        "panel.name": "Agent",
+        "detail.back": "Retour aux agents",
+        "detail.loading": "Chargement de l'agent…",
+        "detail.forbidden": "Votre compte n'a pas l'autorisation de lire cet agent.",
+        "detail.loadError": "Échec du chargement de l'agent.",
+        "detail.missing": "Cet agent n'existe pas ou a été supprimé.",
+        "detail.saved": "Agent enregistré.",
+        "detail.systemNotice": "Les agents système intégrés permettent uniquement de modifier le modèle et ne peuvent pas être supprimés.",
+        "action.retry": "Réessayer",
+        "agents.viewType": "Voir la classe"
+      },
+      "de": {
+        "panel.name": "Agent",
+        "detail.back": "Zurück zu Agenten",
+        "detail.loading": "Agent wird geladen…",
+        "detail.forbidden": "Ihr Konto hat keine Berechtigung zum Lesen dieses Agenten.",
+        "detail.loadError": "Agent konnte nicht geladen werden.",
+        "detail.missing": "Dieser Agent existiert nicht oder wurde gelöscht.",
+        "detail.saved": "Agent gespeichert.",
+        "detail.systemNotice": "Systemintegrierte Agenten erlauben nur das Ändern der Modellkonfiguration und können nicht gelöscht werden.",
+        "action.retry": "Erneut versuchen",
+        "agents.viewType": "Klasse anzeigen"
+      },
+      "it": {
+        "panel.name": "Agente",
+        "detail.back": "Torna agli agenti",
+        "detail.loading": "Caricamento agente…",
+        "detail.forbidden": "Il tuo account non dispone dell'autorizzazione per leggere questo agente.",
+        "detail.loadError": "Impossibile caricare l'agente.",
+        "detail.missing": "Questo agente non esiste o è stato eliminato.",
+        "detail.saved": "Agente salvato.",
+        "detail.systemNotice": "Gli agenti di sistema integrati consentono solo di modificare la configurazione del modello e non possono essere eliminati.",
+        "action.retry": "Riprova",
+        "agents.viewType": "Visualizza classe"
+      }
+    }
+  }
+}

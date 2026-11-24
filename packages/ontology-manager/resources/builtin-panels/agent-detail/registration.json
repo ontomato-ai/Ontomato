@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-agent-detail",
+      "input": {
+        "name": "智能体详情",
+        "description": "查看、编辑或删除单个智能体定义（系统内置仅可修改模型，预置与系统内置不可删除）"
+      }
+    }
+  ]
+}
