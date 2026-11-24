@@ -149,20 +149,6 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials) {
       createForm(params: GovernanceFormParams): Promise<PanelFormDescription> {
         return owner("governance-policy-create-form", "/panel/governance/policies/form", formBody(undefined, params), panelFormDescriptionSchema);
       },
-      menuPermissions(id: string): Promise<PanelRecord> {
-        return owner("governance-policy-menu-permissions", "/panel/governance/policies/menu-permissions", { id }, panelRecordSchema);
-      },
-      apiPermissions(id: string, search?: string): Promise<PanelRecord> {
-        return owner(
-          "governance-policy-api-permissions",
-          "/panel/governance/policies/api-permissions",
-          { id, ...(search !== undefined && { search }) },
-          panelRecordSchema,
-        );
-      },
-      dataPermissions(id: string): Promise<PanelRecord> {
-        return owner("governance-policy-data-permissions", "/panel/governance/policies/data-permissions", { id }, panelRecordSchema);
-      },
     },
     orgUnits: {
       list(): Promise<PanelRecord[]> {

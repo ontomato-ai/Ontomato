@@ -25,9 +25,6 @@ import {
   RESET_USER_PASSWORD,
   REVOKE_USER_API_KEY,
   ROLE,
-  SAVE_POLICY_API_PERMISSIONS,
-  SAVE_POLICY_DATA_PERMISSIONS,
-  SAVE_POLICY_MENU_PERMISSIONS,
   SET_ORG_MEMBERSHIP_LOCKED,
   USER,
 } from "@ontomato/contracts/platform-object-types";
@@ -67,8 +64,6 @@ const recordLabelSchema = z.object({ label: z.string().min(1) }).passthrough();
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const emptyInputSchema = z.object({}).strict();
 const emptyResultSchema = z.object({}).strict();
-const permissionCountResultSchema = z.object({ id: z.string().min(1), count: z.number().int().nonnegative() }).strict();
-const dataPermissionResultSchema = z.object({ id: z.string().min(1), savedRuleCount: z.number().int().nonnegative() }).strict();
 const refreshCatalogResultSchema = z.object({ refreshed: z.boolean() }).strict();
 
 const resetPasswordInputSchema = z.object({
@@ -112,23 +107,6 @@ const apiKeyBatchInspectSchema = z.object({
   existingKeyCount: z.number().int().nonnegative(),
   overwriteCount: z.number().int().nonnegative(),
   issueCount: z.number().int().nonnegative(),
-}).strict();
-
-const saveMenuPermissionsInputSchema = z.object({
-  menuIds: z.array(z.string().min(1)),
-  preserveOutsideTree: z.boolean().optional(),
-}).strict();
-
-const saveApiPermissionsInputSchema = z.object({
-  apiIds: z.array(z.string().min(1)),
-}).strict();
-
-const saveDataPermissionsInputSchema = z.object({
-  items: z.array(z.object({
-    className: z.string().min(1),
-    fieldPermissions: runtimeJsonValueSchema.optional(),
-    rowPermission: runtimeJsonValueSchema.optional(),
-  }).strict()),
 }).strict();
 
 const addOrgUnitMemberInputSchema = z.object({
@@ -676,7 +654,7 @@ export const governanceServerOperations = [
         saveBody(target, input),
         "PERMISSION_POLICY_SAVE_FAILED",
         PERMISSION_POLICY,
-        [PERMISSION_POLICY, ROLE],
+        [PERMISSION_POLICY, ROLE, USER],
       );
     },
   },
@@ -715,82 +693,6 @@ export const governanceServerOperations = [
     },
   },
   {
-    handlerRef: SAVE_POLICY_MENU_PERMISSIONS,
-    labelKey: "panels.governance.policy.operations.saveMenuPermissions",
-    kind: "action",
-    binding: { kind: "PlatformOperation", id: SAVE_POLICY_MENU_PERMISSIONS },
-    effect: "write",
-    batch: false,
-    targetType: PERMISSION_POLICY,
-    targetSchema: objectTarget(PERMISSION_POLICY),
-    inputSchema: saveMenuPermissionsInputSchema,
-    resultSchema: permissionCountResultSchema,
-    targetInput: "policy",
-    targetLabel: (host: Host, target: PanelRecordTarget) =>
-      governanceTargetLabel(host, target, "/panel/governance/policies/record", "PERMISSION_POLICY_UNAVAILABLE"),
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      ownerDeleteUnavailable(
-        host,
-        "/panel/governance/policies/permission-write/unavailable",
-        { id: target.primaryKey, kind: "menu" },
-        "PERMISSION_POLICY_UNAVAILABLE",
-      ),
-    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      if (target.kind !== "object") throw new Error("Menu permissions save acts on a selected permission policy");
-      const { menuIds, preserveOutsideTree } = saveMenuPermissionsInputSchema.parse(input);
-      return postAction(
-        host,
-        "/panel/governance/policies/menu-permissions/save",
-        { id: target.primaryKey, menuIds, ...(preserveOutsideTree !== undefined && { preserveOutsideTree }) },
-        "POLICY_MENU_PERMISSIONS_SAVE_FAILED",
-        "The owner could not save menu permissions",
-        data => ({
-          kind: "success",
-          data: permissionCountResultSchema.parse(data),
-          affected: affected(PERMISSION_POLICY, target.primaryKey, [PERMISSION_POLICY, USER]),
-        }),
-      );
-    },
-  },
-  {
-    handlerRef: SAVE_POLICY_API_PERMISSIONS,
-    labelKey: "panels.governance.policy.operations.saveApiPermissions",
-    kind: "action",
-    binding: { kind: "PlatformOperation", id: SAVE_POLICY_API_PERMISSIONS },
-    effect: "write",
-    batch: false,
-    targetType: PERMISSION_POLICY,
-    targetSchema: objectTarget(PERMISSION_POLICY),
-    inputSchema: saveApiPermissionsInputSchema,
-    resultSchema: permissionCountResultSchema,
-    targetInput: "policy",
-    targetLabel: (host: Host, target: PanelRecordTarget) =>
-      governanceTargetLabel(host, target, "/panel/governance/policies/record", "PERMISSION_POLICY_UNAVAILABLE"),
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      ownerDeleteUnavailable(
-        host,
-        "/panel/governance/policies/permission-write/unavailable",
-        { id: target.primaryKey, kind: "api" },
-        "PERMISSION_POLICY_UNAVAILABLE",
-      ),
-    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      if (target.kind !== "object") throw new Error("API permissions save acts on a selected permission policy");
-      const { apiIds } = saveApiPermissionsInputSchema.parse(input);
-      return postAction(
-        host,
-        "/panel/governance/policies/api-permissions/save",
-        { id: target.primaryKey, apiIds },
-        "POLICY_API_PERMISSIONS_SAVE_FAILED",
-        "The owner could not save API permissions",
-        data => ({
-          kind: "success",
-          data: permissionCountResultSchema.parse(data),
-          affected: affected(PERMISSION_POLICY, target.primaryKey, [PERMISSION_POLICY, USER]),
-        }),
-      );
-    },
-  },
-  {
     handlerRef: REFRESH_POLICY_API_CATALOG,
     labelKey: "panels.governance.policy.operations.refreshApiCatalog",
     kind: "action",
@@ -804,7 +706,7 @@ export const governanceServerOperations = [
     execute(host: Host): Promise<SinglePanelOperationOutcome> {
       return postAction(
         host,
-        "/panel/governance/policies/api-catalog/refresh",
+        "/panel/governance/policies/api-permissions/refresh",
         {},
         "POLICY_API_CATALOG_REFRESH_FAILED",
         "The owner could not refresh the API permission catalog",
@@ -812,44 +714,6 @@ export const governanceServerOperations = [
           kind: "success",
           data: refreshCatalogResultSchema.parse(data),
           affected: { objects: [], objectTypes: [PERMISSION_POLICY] },
-        }),
-      );
-    },
-  },
-  {
-    handlerRef: SAVE_POLICY_DATA_PERMISSIONS,
-    labelKey: "panels.governance.policy.operations.saveDataPermissions",
-    kind: "action",
-    binding: { kind: "PlatformOperation", id: SAVE_POLICY_DATA_PERMISSIONS },
-    effect: "write",
-    batch: false,
-    targetType: PERMISSION_POLICY,
-    targetSchema: objectTarget(PERMISSION_POLICY),
-    inputSchema: saveDataPermissionsInputSchema,
-    resultSchema: dataPermissionResultSchema,
-    targetInput: "policy",
-    targetLabel: (host: Host, target: PanelRecordTarget) =>
-      governanceTargetLabel(host, target, "/panel/governance/policies/record", "PERMISSION_POLICY_UNAVAILABLE"),
-    unavailable: (host: Host, target: PanelRecordTarget) =>
-      ownerDeleteUnavailable(
-        host,
-        "/panel/governance/policies/permission-write/unavailable",
-        { id: target.primaryKey, kind: "data" },
-        "PERMISSION_POLICY_UNAVAILABLE",
-      ),
-    async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      if (target.kind !== "object") throw new Error("Data permissions save acts on a selected permission policy");
-      const { items } = saveDataPermissionsInputSchema.parse(input);
-      return postAction(
-        host,
-        "/panel/governance/policies/data-permissions/save",
-        { id: target.primaryKey, items },
-        "POLICY_DATA_PERMISSIONS_SAVE_FAILED",
-        "The owner could not save data permissions",
-        data => ({
-          kind: "success",
-          data: dataPermissionResultSchema.parse(data),
-          affected: affected(PERMISSION_POLICY, target.primaryKey, [PERMISSION_POLICY, USER]),
         }),
       );
     },

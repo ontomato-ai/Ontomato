@@ -61,8 +61,8 @@ import {
   platformOntologySchemaResponseSchema, platformOntologyStartResponseSchema,
 } from "./platform-ontology";
 import {
-  APPLICATION_PANEL_USE, DEFINITION, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
-  PERMISSION_POLICY, PRODUCT_PROJECTION, ROLE, USER as ONTOLOGY_USER,
+  APPLICATION_PANEL_USE, DEFINITION, DELETE_PERMISSION_POLICY, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT,
+  PERMISSION_POLICY, PRODUCT_PROJECTION, REFRESH_POLICY_API_CATALOG, ROLE, USER as ONTOLOGY_USER,
   platformObjectTypes, platformOntologyLayers, platformRelationKinds,
 } from "./platform-object-types";
 import {
@@ -792,6 +792,14 @@ test("feedback, governance records and the skill library read through their owne
   assert.deepEqual(required(SKILL, "file"), ["path"]);
   assert.deepEqual(platformObjectTypes[SKILL].operations, [IMPORT_SKILL, DELETE_SKILL, EXPORT_SKILL]);
   assert.deepEqual(platformObjectTypes[FEEDBACK_RECORD].operations, [EXPORT_FEEDBACK]);
+});
+
+test("permission policy describes and saves all grants through its owner form", () => {
+  const policy = platformObjectTypes[PERMISSION_POLICY];
+  assert.deepEqual(Object.keys(policy.reads ?? {}).sort(), ["createForm", "form", "options", "query", "record", "resolve"]);
+  assert.deepEqual(policy.operations, [
+    `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY, REFRESH_POLICY_API_CATALOG,
+  ]);
 });
 
 test("model reads and operations use their owner's fixed signatures", async () => {
