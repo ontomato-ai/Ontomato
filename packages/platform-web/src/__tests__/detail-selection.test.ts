@@ -106,6 +106,28 @@ it("opens a relationship's detail address and selected catalog links at the non-
   expect(open("/ontology/relations/detail?selected=belongs_to")).toBeNull();
 });
 
+it("opens a skill's detail address and selected catalog links at the non-menu skill detail entry", () => {
+  expect(open("/ontology/skills/code-review?back=catalog")).toEqual({
+    path: "/ontology/skills/detail", state: { selected: "code-review" },
+  });
+  expect(open("/ontology/skills/my%20skill")).toEqual({
+    path: "/ontology/skills/detail", state: { selected: "my skill" },
+  });
+
+  expect(open("/ontology/skills?selected=code-review")).toEqual({
+    path: "/ontology/skills/detail", state: { selected: "code-review" },
+  });
+  expect(open("/ontology/skills?selected=platform%3ASkill~code-review")).toEqual({
+    path: "/ontology/skills/detail", state: { selected: "code-review" },
+  });
+
+  // The catalog itself (bare or searching) and the detail entry itself are not redirected.
+  expect(open("/ontology/skills")).toBeNull();
+  expect(open("/ontology/skills?search=review")).toBeNull();
+  expect(open("/ontology/skills/detail")).toBeNull();
+  expect(open("/ontology/skills/detail?selected=code-review")).toBeNull();
+});
+
 it.each(["/ontology/agents", "/agents/settings"])("routes the settings detail at %s to the shared panel state", (prefix) => {
   expect(open(`${prefix}/new`)).toEqual({ path: prefix, state: { mode: "create" } });
   expect(open(`${prefix}/agent-1`)).toEqual({

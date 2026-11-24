@@ -1,13 +1,6 @@
 {
   "manifest": {
     "state": {
-      "selected": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:Skill"
-        },
-        "deepLink": true
-      },
       "search": {
         "type": {
           "kind": "scalar",
@@ -15,12 +8,11 @@
         },
         "deepLink": true
       },
-      "filePath": {
+      "importing": {
         "type": {
           "kind": "scalar",
-          "type": "string"
-        },
-        "deepLink": true
+          "type": "boolean"
+        }
       }
     },
     "members": {
@@ -30,16 +22,7 @@
         "operation": "skills.import",
         "config": {
           "type": "primary",
-          "label": "panel.import",
-          "dialogTitle": "panel.import",
-          "intro": "panel.importIntro",
-          "rules": [
-            "panel.importRuleRoot",
-            "panel.importRuleFrontmatter",
-            "panel.importRuleText",
-            "panel.importRuleOverwrite"
-          ],
-          "chooseLabel": "panel.importChoose",
+          "label": "panel.importChoose",
           "overwriteOn": "SKILL_EXISTS"
         },
         "id": "builtin-product-2a6e3f81-9b14-4d72-8c5a-1e7f4b2d9031"
@@ -51,79 +34,54 @@
           "rows": "query"
         },
         "state": {
-          "selected": "selected",
           "search": "search"
         },
-        "config": {
-          "statusField": "source",
-          "subtitleLines": 2,
-          "emptyText": "panel.empty"
-        },
-        "id": "builtin-product-e22c6690-9ea4-43cc-974a-9dd77eb068a0"
-      },
-      "detail": {
-        "component": "ObjectHeader",
-        "type": "platform:Skill",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
         "operations": {
-          "export": "skills.export",
-          "remove": "skills.delete"
-        },
-        "config": {
-          "subtitleField": "description",
-          "statusField": "source",
-          "dangerOperations": [
-            "remove"
-          ]
-        },
-        "id": "builtin-product-ca166b98-1ea4-4411-b040-a439f78e0e49"
-      },
-      "tree": {
-        "component": "ObjectTree",
-        "type": "platform:Skill",
-        "target": "selected",
-        "data": {
-          "files": "files"
-        },
-        "state": {
-          "selected": "filePath"
-        },
-        "config": {
-          "defaultKey": "SKILL.md",
-          "fallbackToFirst": true,
-          "label": "panel.files",
-          "emptyText": "panel.filesEmpty"
-        },
-        "id": "builtin-product-5db41e11-ed8d-4818-99d0-3d771512e693"
-      },
-      "content": {
-        "component": "ObjectTextReader",
-        "type": "platform:Skill",
-        "target": "selected",
-        "data": {
-          "record": {
-            "read": "file",
-            "params": {
-              "path": {
-                "state": "filePath"
-              }
+          "export": {
+            "operation": "skills.export",
+            "target": {
+              "row": true
+            }
+          },
+          "remove": {
+            "operation": "skills.delete",
+            "target": {
+              "row": true
             }
           }
         },
         "config": {
-          "textField": "content",
-          "emptyText": "panel.fileChoose"
+          "layout": "cards",
+          "statusField": "source",
+          "subtitleLines": 2,
+          "searchPlaceholder": "panel.searchPlaceholder",
+          "emptyText": "panel.empty",
+          "noMatchText": "panel.noMatch",
+          "rowActions": {
+            "maxVisible": 2,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "export"
+              },
+              {
+                "kind": "operation",
+                "operation": "remove",
+                "danger": true
+              }
+            ]
+          }
         },
-        "id": "builtin-product-43c6d315-fab6-48cd-8c9c-fcd47ec12e15"
+        "id": "builtin-product-e22c6690-9ea4-43cc-974a-9dd77eb068a0"
       }
     }
   },
   "content": {
     "messages": {
       "zh-CN": {
+        "panel.title": "技能",
+        "panel.description": "管理智能体可用的技能包与文件",
+        "panel.refresh": "刷新",
         "panel.import": "导入技能",
         "panel.importIntro": "上传一个 .zip 格式的技能包。",
         "panel.importRuleRoot": "SKILL.md 放在包的根目录：直接放在 zip 根部，或放在 zip 里唯一的顶层文件夹中。",
@@ -131,13 +89,15 @@
         "panel.importRuleText": "脚本、参考资料等放在同一个包里；所有文件都要是 UTF-8 文本，不能放图片等二进制文件。",
         "panel.importRuleOverwrite": "已有同名技能时会先询问，确认后整包覆盖。",
         "panel.importChoose": "选择 ZIP 文件",
-        "panel.select": "从左侧选择一条技能，查看它的技能包",
+        "panel.cancel": "取消",
+        "panel.searchPlaceholder": "搜索技能名称或描述",
         "panel.empty": "暂无技能",
-        "panel.files": "技能包文件",
-        "panel.filesEmpty": "这个技能包没有文件",
-        "panel.fileChoose": "从左侧文件树中选择一个文件"
+        "panel.noMatch": "未找到匹配的技能"
       },
       "en": {
+        "panel.title": "Skills",
+        "panel.description": "Manage skill packages and files available to agents",
+        "panel.refresh": "Refresh",
         "panel.import": "Import Skill",
         "panel.importIntro": "Upload one skill package as a .zip file.",
         "panel.importRuleRoot": "SKILL.md sits at the package root: directly in the zip, or inside its single top-level folder.",
@@ -145,13 +105,15 @@
         "panel.importRuleText": "Scripts and references go in the same package; every file must be UTF-8 text, so images and other binary files cannot be included.",
         "panel.importRuleOverwrite": "If a skill with the same name exists, you are asked first; confirming replaces the whole package.",
         "panel.importChoose": "Choose ZIP file",
-        "panel.select": "Select a skill on the left to inspect its package",
+        "panel.cancel": "Cancel",
+        "panel.searchPlaceholder": "Search skills by name or description",
         "panel.empty": "No skills yet",
-        "panel.files": "Package files",
-        "panel.filesEmpty": "This package has no files",
-        "panel.fileChoose": "Choose a file in the tree"
+        "panel.noMatch": "No matching skills"
       },
       "zh-TW": {
+        "panel.title": "技能",
+        "panel.description": "管理智慧體可用的技能包與檔案",
+        "panel.refresh": "重新整理",
         "panel.import": "匯入技能",
         "panel.importIntro": "上傳一個 .zip 格式的技能包。",
         "panel.importRuleRoot": "SKILL.md 放在包的根目錄：直接放在 zip 根部，或放在 zip 裡唯一的頂層資料夾中。",
@@ -159,13 +121,15 @@
         "panel.importRuleText": "腳本、參考資料等放在同一個包裡；所有檔案都要是 UTF-8 文字，不能放圖片等二進位檔案。",
         "panel.importRuleOverwrite": "已有同名技能時會先詢問，確認後整包覆蓋。",
         "panel.importChoose": "選擇 ZIP 檔案",
-        "panel.select": "從左側選擇一條技能，查看它的技能包",
+        "panel.cancel": "取消",
+        "panel.searchPlaceholder": "搜尋技能名稱或描述",
         "panel.empty": "尚無 Skill",
-        "panel.files": "技能包檔案",
-        "panel.filesEmpty": "這個技能包沒有檔案",
-        "panel.fileChoose": "從左側檔案樹中選擇一個檔案"
+        "panel.noMatch": "找不到符合條件的技能"
       },
       "ja": {
+        "panel.title": "スキル",
+        "panel.description": "エージェントが利用できるスキルパッケージとファイルを管理します",
+        "panel.refresh": "更新",
         "panel.import": "スキルをインポート",
         "panel.importIntro": "スキルパッケージを .zip ファイルで 1 つアップロードします。",
         "panel.importRuleRoot": "SKILL.md はパッケージのルートに置きます（zip の直下、または zip 内の唯一の最上位フォルダー）。",
@@ -173,13 +137,15 @@
         "panel.importRuleText": "スクリプトや参考資料は同じパッケージに入れます。すべて UTF-8 テキストである必要があり、画像などのバイナリファイルは入れられません。",
         "panel.importRuleOverwrite": "同名のスキルがある場合は先に確認し、確定するとパッケージ全体を置き換えます。",
         "panel.importChoose": "ZIP ファイルを選択",
-        "panel.select": "左側からスキルを選択すると、パッケージ内容を確認できます",
+        "panel.cancel": "キャンセル",
+        "panel.searchPlaceholder": "スキル名または説明で検索",
         "panel.empty": "Skill はまだありません",
-        "panel.files": "パッケージファイル",
-        "panel.filesEmpty": "このパッケージにファイルはありません",
-        "panel.fileChoose": "左側のファイルツリーからファイルを選択してください"
+        "panel.noMatch": "一致するスキルが見つかりません"
       },
       "ar": {
+        "panel.title": "المهارات",
+        "panel.description": "إدارة حزم المهارات وملفاتها المتاحة للوكلاء",
+        "panel.refresh": "تحديث",
         "panel.import": "استيراد مهارة",
         "panel.importIntro": "ارفع حزمة مهارة واحدة بصيغة zip.",
         "panel.importRuleRoot": "يوضع SKILL.md في جذر الحزمة: مباشرة داخل ملف zip أو داخل المجلد الوحيد في مستواه الأعلى.",
@@ -187,13 +153,15 @@
         "panel.importRuleText": "توضع البرامج النصية والمراجع في الحزمة نفسها؛ ويجب أن تكون كل الملفات نصًا بترميز UTF-8، فلا يمكن تضمين الصور أو الملفات الثنائية.",
         "panel.importRuleOverwrite": "إذا وُجدت مهارة بالاسم نفسه فسيُطلب التأكيد أولًا، والتأكيد يستبدل الحزمة كاملة.",
         "panel.importChoose": "اختيار ملف ZIP",
-        "panel.select": "اختر مهارة من القائمة لعرض حزمتها",
+        "panel.cancel": "إلغاء",
+        "panel.searchPlaceholder": "ابحث باسم المهارة أو وصفها",
         "panel.empty": "لا توجد مهارات بعد",
-        "panel.files": "ملفات الحزمة",
-        "panel.filesEmpty": "لا تحتوي هذه الحزمة على ملفات",
-        "panel.fileChoose": "اختر ملفًا من شجرة الملفات"
+        "panel.noMatch": "لم يتم العثور على مهارات مطابقة"
       },
       "fr": {
+        "panel.title": "Compétences",
+        "panel.description": "Gérer les paquets de compétences et leurs fichiers pour les agents",
+        "panel.refresh": "Actualiser",
         "panel.import": "Importer une compétence",
         "panel.importIntro": "Importez un paquet de compétence au format .zip.",
         "panel.importRuleRoot": "SKILL.md se trouve à la racine du paquet : directement dans le zip, ou dans son unique dossier de premier niveau.",
@@ -201,13 +169,15 @@
         "panel.importRuleText": "Les scripts et références vont dans le même paquet ; tous les fichiers doivent être du texte UTF-8, les images et autres fichiers binaires ne sont pas acceptés.",
         "panel.importRuleOverwrite": "Si une compétence du même nom existe, une confirmation est demandée ; confirmer remplace tout le paquet.",
         "panel.importChoose": "Choisir un fichier ZIP",
-        "panel.select": "Sélectionnez une compétence à gauche pour inspecter son paquet",
+        "panel.cancel": "Annuler",
+        "panel.searchPlaceholder": "Rechercher par nom ou description",
         "panel.empty": "Aucun Skill pour le moment",
-        "panel.files": "Fichiers du paquet",
-        "panel.filesEmpty": "Ce paquet ne contient aucun fichier",
-        "panel.fileChoose": "Choisissez un fichier dans l'arborescence"
+        "panel.noMatch": "Aucune compétence correspondante"
       },
       "de": {
+        "panel.title": "Skills",
+        "panel.description": "Verfügbare Skill-Pakete und Dateien für Agenten verwalten",
+        "panel.refresh": "Aktualisieren",
         "panel.import": "Skill importieren",
         "panel.importIntro": "Laden Sie ein Skill-Paket als .zip-Datei hoch.",
         "panel.importRuleRoot": "SKILL.md liegt im Stammverzeichnis des Pakets: direkt im ZIP oder in dessen einzigem Ordner der obersten Ebene.",
@@ -215,13 +185,15 @@
         "panel.importRuleText": "Skripte und Referenzen gehören in dasselbe Paket; alle Dateien müssen UTF-8-Text sein, Bilder und andere Binärdateien sind nicht möglich.",
         "panel.importRuleOverwrite": "Gibt es bereits einen Skill mit diesem Namen, wird zuerst nachgefragt; nach Bestätigung wird das ganze Paket ersetzt.",
         "panel.importChoose": "ZIP-Datei auswählen",
-        "panel.select": "Wählen Sie links einen Skill aus, um sein Paket anzusehen",
+        "panel.cancel": "Abbrechen",
+        "panel.searchPlaceholder": "Skills nach Name oder Beschreibung suchen",
         "panel.empty": "Noch keine Skills",
-        "panel.files": "Paketdateien",
-        "panel.filesEmpty": "Dieses Paket enthält keine Dateien",
-        "panel.fileChoose": "Wählen Sie eine Datei im Baum aus"
+        "panel.noMatch": "Keine passenden Skills gefunden"
       },
       "it": {
+        "panel.title": "Skill",
+        "panel.description": "Gestisci i pacchetti skill e i file disponibili per gli agenti",
+        "panel.refresh": "Aggiorna",
         "panel.import": "Importa skill",
         "panel.importIntro": "Carica un pacchetto skill in formato .zip.",
         "panel.importRuleRoot": "SKILL.md si trova nella radice del pacchetto: direttamente nello zip o nella sua unica cartella di primo livello.",
@@ -229,11 +201,10 @@
         "panel.importRuleText": "Script e riferimenti vanno nello stesso pacchetto; tutti i file devono essere testo UTF-8, quindi immagini e altri file binari non sono ammessi.",
         "panel.importRuleOverwrite": "Se esiste già una skill con lo stesso nome viene chiesta conferma; confermando si sostituisce l'intero pacchetto.",
         "panel.importChoose": "Scegli file ZIP",
-        "panel.select": "Seleziona una skill a sinistra per ispezionarne il pacchetto",
+        "panel.cancel": "Annulla",
+        "panel.searchPlaceholder": "Cerca skill per nome o descrizione",
         "panel.empty": "Nessuno Skill presente",
-        "panel.files": "File del pacchetto",
-        "panel.filesEmpty": "Questo pacchetto non contiene file",
-        "panel.fileChoose": "Seleziona un file dall'albero"
+        "panel.noMatch": "Nessuno Skill corrispondente"
       }
     }
   }

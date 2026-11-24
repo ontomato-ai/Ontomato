@@ -1,0 +1,208 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Skill"
+        },
+        "deepLink": true
+      },
+      "filePath": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "headerTitle": {
+        "component": "ObjectHeader",
+        "type": "platform:Skill",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitle": "",
+          "statusField": "source"
+        },
+        "id": "builtin-product-ca166b98-1ea4-4411-b040-a439f78e0e49"
+      },
+      "summary": {
+        "component": "TypedValue",
+        "type": "platform:Skill",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "description",
+          "emptyText": ""
+        },
+        "id": "builtin-product-9f4e2a18-6d31-4b85-a72c-1c5e8f3b4d01"
+      },
+      "exportSkill": {
+        "component": "OperationButton",
+        "type": "platform:Skill",
+        "target": "selected",
+        "operation": "skills.export",
+        "config": {
+          "type": "default"
+        },
+        "id": "builtin-product-3c7b5d29-8a42-4e91-b63d-4f8a2c7e9102"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "type": "platform:Skill",
+        "target": "selected",
+        "operation": "skills.delete",
+        "config": {
+          "type": "danger",
+          "plain": true,
+          "icon": "trash"
+        },
+        "id": "builtin-product-6a1d8f47-2e53-4c76-9b1e-7d4c6a9f5203"
+      },
+      "tree": {
+        "component": "ObjectTree",
+        "type": "platform:Skill",
+        "target": "selected",
+        "data": {
+          "files": "files"
+        },
+        "state": {
+          "selected": "filePath"
+        },
+        "config": {
+          "defaultKey": "SKILL.md",
+          "fallbackToFirst": true,
+          "label": "panel.files",
+          "emptyText": "panel.filesEmpty"
+        },
+        "id": "builtin-product-5db41e11-ed8d-4818-99d0-3d771512e693"
+      },
+      "content": {
+        "component": "ObjectTextReader",
+        "type": "platform:Skill",
+        "target": "selected",
+        "data": {
+          "record": {
+            "read": "file",
+            "params": {
+              "path": {
+                "state": "filePath"
+              }
+            }
+          }
+        },
+        "config": {
+          "textField": "content",
+          "emptyText": "panel.fileChoose"
+        },
+        "id": "builtin-product-43c6d315-fab6-48cd-8c9c-fcd47ec12e15"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "zh-CN": {
+        "panel.detailTitle": "技能详情",
+        "panel.back": "返回技能库",
+        "panel.loading": "正在读取技能…",
+        "panel.forbidden": "当前账号无权查看此技能。",
+        "panel.notFound": "技能不存在或已删除",
+        "panel.loadFailed": "读取技能失败",
+        "panel.retry": "重试",
+        "panel.files": "技能包文件",
+        "panel.filesEmpty": "这个技能包没有文件",
+        "panel.fileChoose": "从左侧文件树中选择一个文件"
+      },
+      "en": {
+        "panel.detailTitle": "Skill Detail",
+        "panel.back": "Back to skills",
+        "panel.loading": "Loading skill…",
+        "panel.forbidden": "You do not have permission to view this skill.",
+        "panel.notFound": "Skill not found or deleted",
+        "panel.loadFailed": "Failed to load skill",
+        "panel.retry": "Retry",
+        "panel.files": "Package files",
+        "panel.filesEmpty": "This package has no files",
+        "panel.fileChoose": "Choose a file in the tree"
+      },
+      "zh-TW": {
+        "panel.detailTitle": "技能詳情",
+        "panel.back": "返回技能庫",
+        "panel.loading": "正在讀取技能…",
+        "panel.forbidden": "目前帳號無權檢視此技能。",
+        "panel.notFound": "技能不存在或已刪除",
+        "panel.loadFailed": "讀取技能失敗",
+        "panel.retry": "重試",
+        "panel.files": "技能包檔案",
+        "panel.filesEmpty": "這個技能包沒有檔案",
+        "panel.fileChoose": "從左側檔案樹中選擇一個檔案"
+      },
+      "ja": {
+        "panel.detailTitle": "スキルの詳細",
+        "panel.back": "スキル一覧に戻る",
+        "panel.loading": "スキルを読み込み中…",
+        "panel.forbidden": "このスキルを表示する権限がありません。",
+        "panel.notFound": "スキルが見つからないか、削除されています",
+        "panel.loadFailed": "スキルの読み込みに失敗しました",
+        "panel.retry": "再試行",
+        "panel.files": "パッケージファイル",
+        "panel.filesEmpty": "このパッケージにファイルはありません",
+        "panel.fileChoose": "左側のファイルツリーからファイルを選択してください"
+      },
+      "ar": {
+        "panel.detailTitle": "تفاصيل المهارة",
+        "panel.back": "العودة إلى المهارات",
+        "panel.loading": "جارٍ تحميل المهارة…",
+        "panel.forbidden": "ليست لديك صلاحية عرض هذه المهارة.",
+        "panel.notFound": "المهارة غير موجودة أو تم حذفها",
+        "panel.loadFailed": "تعذر تحميل المهارة",
+        "panel.retry": "إعادة المحاولة",
+        "panel.files": "ملفات الحزمة",
+        "panel.filesEmpty": "لا تحتوي هذه الحزمة على ملفات",
+        "panel.fileChoose": "اختر ملفًا من شجرة الملفات"
+      },
+      "fr": {
+        "panel.detailTitle": "Détails de la compétence",
+        "panel.back": "Retour aux compétences",
+        "panel.loading": "Chargement de la compétence…",
+        "panel.forbidden": "Vous n'avez pas l'autorisation de consulter cette compétence.",
+        "panel.notFound": "Compétence introuvable ou supprimée",
+        "panel.loadFailed": "Impossible de charger la compétence",
+        "panel.retry": "Réessayer",
+        "panel.files": "Fichiers du paquet",
+        "panel.filesEmpty": "Ce paquet ne contient aucun fichier",
+        "panel.fileChoose": "Choisissez un fichier dans l'arborescence"
+      },
+      "de": {
+        "panel.detailTitle": "Skill-Details",
+        "panel.back": "Zurück zu Skills",
+        "panel.loading": "Skill wird geladen…",
+        "panel.forbidden": "Sie haben keine Berechtigung, diesen Skill anzusehen.",
+        "panel.notFound": "Skill nicht gefunden oder gelöscht",
+        "panel.loadFailed": "Skill konnte nicht geladen werden",
+        "panel.retry": "Erneut versuchen",
+        "panel.files": "Paketdateien",
+        "panel.filesEmpty": "Dieses Paket enthält keine Dateien",
+        "panel.fileChoose": "Wählen Sie eine Datei im Baum aus"
+      },
+      "it": {
+        "panel.detailTitle": "Dettagli skill",
+        "panel.back": "Torna alle skill",
+        "panel.loading": "Caricamento skill…",
+        "panel.forbidden": "Non disponi dell'autorizzazione per visualizzare questa skill.",
+        "panel.notFound": "Skill non trovata o eliminata",
+        "panel.loadFailed": "Impossibile caricare la skill",
+        "panel.retry": "Riprova",
+        "panel.files": "File del pacchetto",
+        "panel.filesEmpty": "Questo pacchetto non contiene file",
+        "panel.fileChoose": "Seleziona un file dall'albero"
+      }
+    }
+  }
+}

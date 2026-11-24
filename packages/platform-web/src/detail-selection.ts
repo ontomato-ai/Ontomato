@@ -1,7 +1,7 @@
 import type { RouteLocation } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ACTION, FUNCTION, METRIC_VIEW, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { ACTION, FUNCTION, METRIC_VIEW, RELATIONSHIP, SKILL } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -169,13 +169,25 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
       return primaryKey.trim() ? { selected: primaryKey } : null;
     },
   },
-  // The skill library: a skill's detail address opens the library with that skill selected.
+  // The skill library: a skill's detail address opens the non-menu skill detail entry.
   {
     path: platformRoutes.ontologySkill.path,
-    use: platformRoutes.ontologySkills.path,
-    state: ({ skillId }): Record<string, PanelStateValue> => ({
-      selected: skillId!,
-    }),
+    use: `${platformRoutes.ontologySkills.path}/detail`,
+    state: ({ skillId }): Record<string, PanelStateValue> | null => skillId === "detail"
+      ? null
+      : { selected: skillId! },
+  },
+  // Legacy catalog links carrying `selected` forward straight to the non-menu skill detail entry.
+  {
+    path: platformRoutes.ontologySkills.path,
+    use: `${platformRoutes.ontologySkills.path}/detail`,
+    state: (_params, query): Record<string, PanelStateValue> | null => {
+      const selected = query.get("selected");
+      if (!selected || !selected.trim()) return null;
+      const prefix = `${SKILL}~`;
+      const primaryKey = selected.startsWith(prefix) ? selected.slice(prefix.length) : selected;
+      return primaryKey ? { selected: primaryKey } : null;
+    },
   },
 ];
 
