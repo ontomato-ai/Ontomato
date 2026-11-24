@@ -17,32 +17,17 @@ export const platformGroups = {
 export const platformEntryRows: readonly PlatformEntryRow[] = [
   { path: platformRoutes.usage.path, icon: Cpu },
   { path: platformRoutes.providers.path, icon: Server },
+  { path: platformRoutes.general.path, icon: SlidersHorizontal },
+  { path: platformRoutes.audit.path, icon: ScrollText },
 ];
 
 export const platformPages = {
-  general: {
-    path: platformRoutes.general.path,
-    // Not "System settings": that is the application's own name, and a page that repeats it says nothing.
-    titleKey: "nav.systemGeneral",
-    descriptionKey: "platform.descriptions.general",
-    icon: SlidersHorizontal,
-    permissions: ["system-config"],
-    group: "platform",
-  },
   dataAdapters: {
     path: platformRoutes.adapters.path,
     titleKey: "nav.dataAdapters",
     descriptionKey: "platform.descriptions.dataAdapters",
     icon: Database,
     permissions: ["system-config"],
-    group: "platform",
-  },
-  auditLog: {
-    path: platformRoutes.audit.path,
-    titleKey: "nav.auditLog",
-    descriptionKey: "platform.descriptions.auditLog",
-    icon: ScrollText,
-    permissions: ["audit-logs"],
     group: "platform",
   },
   systemMonitor: {
@@ -57,9 +42,7 @@ export const platformPages = {
 
 /** Lazily loaded components of the shared native pages, keyed by path. */
 export const platformPageComponents: Readonly<Record<string, () => Promise<unknown>>> = {
-  [platformPages.general.path]: () => import("./pages/GeneralSettingsPage.vue"),
   [platformPages.dataAdapters.path]: () => import("./pages/DataAdaptersPage.vue"),
-  [platformPages.auditLog.path]: () => import("./pages/AuditLogPage.vue"),
   [platformPages.systemMonitor.path]: () => import("./pages/SystemMonitorPage.vue"),
 };
 
@@ -94,9 +77,7 @@ export const systemMonitorPanel = () => import("./pages/SystemMonitorPage.vue");
 
 /** The shared native settings pages, in the order of the system settings' column. */
 export const ossPlatformPages: readonly PlatformPage[] = [
-  platformPages.general,
   platformPages.dataAdapters,
-  platformPages.auditLog,
   platformPages.systemMonitor,
 ];
 

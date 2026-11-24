@@ -1,0 +1,65 @@
+<style>
+  [v-cloak] { display: none; }
+  .gs-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: gs-page / inline-size;
+  }
+  .gs-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    max-width: 960px;
+    width: 100%;
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 64px);
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  .gs-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .gs-form-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .gs-form-wrap .sdk-owner-form,
+  .gs-form-wrap .sdk-owner-form-inner {
+    height: auto;
+  }
+  .gs-form-wrap .sdk-owner-form-body {
+    overflow: visible;
+  }
+  @container gs-page (max-width: 680px) {
+    .gs-card {
+      padding: var(--spacing-md);
+    }
+  }
+</style>
+
+<div id="app" v-cloak>
+  <section class="gs-page">
+    <page-header
+      :title="t('panel.name')"
+      :description="t('panel.description')"
+      :draft="generalDraft"
+    ></page-header>
+
+    <div class="gs-body">
+      <section class="gs-card">
+        <div class="gs-form-wrap">
+          <projection slot="generalForm" @saved="onSettingsSaved"></projection>
+        </div>
+      </section>
+    </div>
+  </section>
+</div>

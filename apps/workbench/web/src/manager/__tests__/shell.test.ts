@@ -60,6 +60,8 @@ describe("open-source Ontology Service page", () => {
       // The platform's own answers: the catalog and the agent platform's agent list, which the
       // pages' composer reads (a page at its own address shows it).
       const body = url.includes("/assistant/agents") ? { agents: [] }
+        : url.includes("/businessConfig/dataAdapters") ? { success: true, data: { adapters: [], currentType: "" } }
+        : url.includes("/businessConfig/getConfig") ? { success: true, data: { knowledgeMaxResult: 10, dslCookerTimeout: 300000, lang: "en", dataAdapter: "", dataAdapterConnections: {} } }
         : { success: true, data: url.includes("/platform/applications") ? catalogFixture() : [] };
       return new Response(JSON.stringify(body), { status: statusFor(url) });
     });
@@ -76,7 +78,7 @@ describe("open-source Ontology Service page", () => {
     ["/?view=assets", "#/ontology/assets/metrics", null],
     ["/#/data/Order", "#/browser/data/Order", "data Order"],
     ["/#/objects", "#/ontology/objects", null],
-    ["/#/admin", "#/settings/system-config/general", null],
+    ["/#/admin", "#/settings/system-config/data-adapters", null],
     ["/#/admin/audit-log", "#/settings/records/audit-log", null],
     ["/#/no-such-page", "#/home", null],
   ])("old address %s lands on %s", async (url, landed, page) => {

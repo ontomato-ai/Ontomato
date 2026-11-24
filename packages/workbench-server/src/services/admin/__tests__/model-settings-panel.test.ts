@@ -635,7 +635,9 @@ describe("built-in model panels validation", () => {
     await validateBuiltinProductReferences(panels, projections, readCatalogue as never);
 
     const settings = JSON.parse(readFileSync(resolve(repoRoot, "packages/data-engine-core/src/main/resources/applications/settings.json"), "utf8"));
-    const uses = settings.declaration.panelUses;
+    const uses = settings.declaration.panelUses.filter(
+      (use: { id: string }) => use.id === "model-usage" || use.id === "model-connections",
+    );
     expect(uses).toHaveLength(2);
     for (const use of uses) {
       panelCheck.builtinApplicationPanelUseSchema.parse(use);

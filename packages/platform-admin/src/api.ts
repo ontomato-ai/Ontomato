@@ -1,9 +1,5 @@
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
-import {
-  generalConfigSaveEndpoints,
-  ontologyOutlineSchema,
-  type GeneralConfigKey,
-} from "./config/types";
+import { ontologyOutlineSchema } from "./config/types";
 
 /**
  * Platform area requests. The platform pages live next to the Ontology Manager and call the Java service through the
@@ -130,7 +126,6 @@ export function createPlatformClient(context: PlatformRequestContext) {
 /** Java platform endpoints the shared platform pages use; enterprise pages add their own above this object. */
 export function platformApi(client: PlatformClient) {
   return {
-    queryAuditLogs: (params: unknown) => client.post("/auditLog/queryPage", params),
     getServiceInfo: () => client.get("/maintenance/getserviceinfo"),
     getBusinessConfig: () => client.get("/businessConfig/getConfig"),
     listDataAdapters: () => client.get("/businessConfig/dataAdapters"),
@@ -138,8 +133,6 @@ export function platformApi(client: PlatformClient) {
     useMultiDataSource: (definition: unknown) =>
       client.post("/businessConfig/useMultiDataSource", definition),
     testDataAdapter: (payload: unknown) => client.post("/businessConfig/testDataAdapter", payload),
-    saveGeneralConfig: (key: GeneralConfigKey, value: unknown) =>
-      client.post(generalConfigSaveEndpoints[key], { [key]: value }),
     getOntologyOutline: async () =>
       ontologyOutlineSchema.parse((await client.get("/admin/getSchema")).data),
   };
