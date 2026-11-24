@@ -9,7 +9,12 @@ export const objectTypeViewSchema = z.object({
   attributeCount: z.number(),
   businessKeyCount: z.number(),
   relationshipCount: z.number(),
-  primaryKey: z.object({ status: z.string(), name: z.string().optional() }),
+  primaryKey: z.object({
+    status: z.string(),
+    count: z.number().int().nonnegative(),
+    name: z.string().optional(),
+    showName: z.string().optional(),
+  }).strict(),
   searchableAttributes: z.array(z.string()).optional(),
 }).strict();
 

@@ -34,7 +34,7 @@ const objectTypes = [
     attributeCount: 3,
     businessKeyCount: 1,
     relationshipCount: 2,
-    primaryKey: { status: "ok", name: "id" },
+    primaryKey: { status: "ok", count: 1, name: "id", showName: "Device ID" },
     searchableAttributes: ["id", "Site", "site_id"],
   },
   {
@@ -44,7 +44,7 @@ const objectTypes = [
     attributeCount: 1,
     businessKeyCount: 0,
     relationshipCount: 1,
-    primaryKey: { status: "missing" },
+    primaryKey: { status: "missing", count: 0 },
     searchableAttributes: [],
   },
 ];
@@ -244,12 +244,16 @@ describe("ontology model read adapter", () => {
           businessKeyCount: "1",
           relationshipCount: "2",
           primaryKey: "ok",
+          primaryKeyCount: "1",
           primaryKeyName: "id",
           searchableAttributes: ["id", "Site", "site_id"],
         },
         fieldLabels: { className: "API name", primaryKeyName: "Primary key name", showName: "Display name", classDesc: "Description" },
         tones: { primaryKey: "success" },
-        outputs: { primaryKeyStatus: "ok", primaryKeyName: "id", attributeCount: 3, businessKeyCount: 1, relationshipCount: 2 },
+        outputs: {
+          className: "Device", primaryKeyStatus: "ok", primaryKeyName: "id", primaryKeyShowName: "Device ID",
+          primaryKeyCount: 1, attributeCount: 3, businessKeyCount: 1, relationshipCount: 2,
+        },
       },
       {
         primaryKey: "Site",
@@ -262,10 +266,14 @@ describe("ontology model read adapter", () => {
           businessKeyCount: "0",
           relationshipCount: "1",
           primaryKey: "missing",
+          primaryKeyCount: "0",
         },
         fieldLabels: { className: "API name", showName: "Display name", classDesc: "Description" },
         tones: { primaryKey: "warning" },
-        outputs: { primaryKeyStatus: "missing", primaryKeyName: "", attributeCount: 1, businessKeyCount: 0, relationshipCount: 1 },
+        outputs: {
+          className: "Site", primaryKeyStatus: "missing", primaryKeyName: "", primaryKeyShowName: "",
+          primaryKeyCount: 0, attributeCount: 1, businessKeyCount: 0, relationshipCount: 1,
+        },
       },
     ]);
 
@@ -457,15 +465,19 @@ describe("ontology model read adapter", () => {
       .rejects.toMatchObject({ status: 404, message: "Relationship not found" });
   });
 
-  it.each([["multiple", "danger"], ["disabled", "warning"]])("marks a %s primary key with %s tone", async (status, tone) => {
+  it.each([
+    [{ status: "multiple", count: 2 }, "danger"],
+    [{ status: "disabled", count: 1, name: "id", showName: "Device ID" }, "warning"],
+  ])("reports the owner's primary key state and count", async (primaryKey, tone) => {
     stubOwner(request => request.url.pathname === "/ontology/model/object-type"
-      ? Response.json({ ...objectTypes[0], primaryKey: { status } })
+      ? Response.json({ ...objectTypes[0], primaryKey })
       : catalogRoute(request));
     const adapter = createOntologyModelReadAdapter(owner, viewer);
 
     expect(await adapter.record(OBJECT_TYPE, "Device")).toMatchObject({
       tones: { primaryKey: tone },
-      outputs: { primaryKeyStatus: status },
+      fields: { primaryKeyCount: String(primaryKey.count) },
+      outputs: { primaryKeyStatus: primaryKey.status, primaryKeyCount: primaryKey.count },
     });
   });
 
@@ -605,15 +617,17 @@ describe("ontology model read adapter", () => {
   });
 
   it("offers the classes as picker options and resolves chosen class names, keeping a vanished one as unavailable", async () => {
-    stubOwner(request => catalogRoute(request));
+    stubOwner(request => request.url.pathname === "/ontology/model/object-types"
+      ? Response.json([{ ...objectTypes[0], showName: "Site" }, objectTypes[1]])
+      : catalogRoute(request));
     const adapter = createOntologyModelReadAdapter(owner, viewer);
 
     expect(panelOptionListSchema.parse(await adapter.objectTypeOptions())).toEqual({ options: [
-      { primaryKey: "Device", value: "Device", label: "Device", description: "A device" },
+      { primaryKey: "Device", value: "Device", label: "Site (Device)", description: "A device" },
       { primaryKey: "Site", value: "Site", label: "Site", description: "A site" },
     ] });
-    expect(panelOptionListSchema.parse(await adapter.resolveObjectTypes(["Site", "Gone"]))).toEqual({ options: [
-      { primaryKey: "Site", value: "Site", label: "Site", description: "A site" },
+    expect(panelOptionListSchema.parse(await adapter.resolveObjectTypes(["Device", "Gone"]))).toEqual({ options: [
+      { primaryKey: "Device", value: "Device", label: "Site (Device)", description: "A device" },
       { primaryKey: "Gone", value: "Gone", label: "Gone", unavailable: { reason: "This object type no longer exists." } },
     ] });
   });

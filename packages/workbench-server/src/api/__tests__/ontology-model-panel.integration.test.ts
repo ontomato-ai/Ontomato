@@ -72,7 +72,9 @@ function objectTypeView(className: string) {
   return {
     className, showName, classDesc, attributeCount: attrs.length,
     businessKeyCount: attrs.filter(attr => attr.businessKey).length, relationshipCount: touching(className).length,
-    primaryKey: keys.length === 1 ? { status: "ok", name: keys[0]!.name } : { status: "missing" },
+    primaryKey: keys.length === 1
+      ? { status: "ok", count: 1, name: keys[0]!.name, showName: keys[0]!.showName }
+      : { status: keys.length ? "multiple" : "missing", count: keys.length },
     searchableAttributes,
   };
 }
@@ -308,10 +310,14 @@ it("serves the ontology model's catalog reads to a panel viewer through the owne
     {
       primaryKey: "warehouse", label: "Warehouse",
       fields: { className: "warehouse", showName: "Warehouse", classDesc: "", attributeCount: "2", businessKeyCount: "0",
-        relationshipCount: "1", primaryKey: "ok", primaryKeyName: "id", searchableAttributes: ["ID", "id", "CODE", "code"] },
+        relationshipCount: "1", primaryKey: "ok", primaryKeyCount: "1", primaryKeyName: "id",
+        searchableAttributes: ["ID", "id", "CODE", "code"] },
       fieldLabels: { className: "API name", primaryKeyName: "Primary key name", showName: "Display name", classDesc: "Description" },
       tones: { primaryKey: "success" },
-      outputs: { primaryKeyStatus: "ok", primaryKeyName: "id", attributeCount: 2, businessKeyCount: 0, relationshipCount: 1 },
+      outputs: {
+        className: "warehouse", primaryKeyStatus: "ok", primaryKeyName: "id", primaryKeyShowName: "ID",
+        primaryKeyCount: 1, attributeCount: 2, businessKeyCount: 0, relationshipCount: 1,
+      },
     },
     expect.objectContaining({ primaryKey: "item", label: "item" }),
   ]);
@@ -406,7 +412,7 @@ it("creates, refuses and deletes model objects through the panel coordinator aga
     ({ kind: "object", objectType: literal.className, primaryKey: literal.primaryKey });
   const inUse = await operate("removeAttribute.delete", { target: target(joinAttribute), input: {} });
   expect(inUse.confirmation).toMatchObject({ kind: "impact", impact: {
-    objects: [{ target: { objectType: ATTRIBUTE, primaryKey: joinAttribute.primaryKey }, label: "CODE" }], total: 1,
+    objects: [{ target: { objectType: ATTRIBUTE, primaryKey: joinAttribute.primaryKey }, label: "Warehouse · CODE" }], total: 1,
   } });
   expect(inUse.receipt).toMatchObject({ outcome: {
     kind: "refusal", code: "ATTRIBUTE_IN_USE", message: "Attribute code joins relationship contains",

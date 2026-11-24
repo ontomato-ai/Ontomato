@@ -123,7 +123,7 @@ class OntologyModelServiceImplTest {
 		assertEquals(List.of(3, 1, 1), List.of(device.attributeCount(), device.businessKeyCount(),
 				device.relationshipCount()));
 		assertEquals("", device.classDesc());
-		assertEquals(Map.of("status", "ok", "name", "id"), device.primaryKey());
+		assertEquals(Map.of("status", "ok", "name", "id", "count", 1, "showName", "id"), device.primaryKey());
 		assertEquals(List.of("id", "Site", "site_id", "Size", "size"), device.searchableAttributes());
 		var site = objectTypes.get(1);
 		assertEquals(List.of(1, 0, 1), List.of(site.attributeCount(), site.businessKeyCount(),
@@ -152,15 +152,15 @@ class OntologyModelServiceImplTest {
 		var device = (JSONObject) rule.getJSONArray("classDef").get(0);
 		var attrs = device.getJSONArray("attrs");
 		attrs.getJSONObject(0).put("primaryKey", false);
-		assertEquals(Map.of("status", "missing"), service.objectType("Device", user, "en").primaryKey());
+		assertEquals(Map.of("status", "missing", "count", 0), service.objectType("Device", user, "en").primaryKey());
 
 		attrs.getJSONObject(1).put("primaryKey", true);
 		attrs.getJSONObject(2).put("primaryKey", true);
-		assertEquals(Map.of("status", "multiple"), service.objectType("Device", user, "en").primaryKey());
+		assertEquals(Map.of("status", "multiple", "count", 2), service.objectType("Device", user, "en").primaryKey());
 
 		attrs.getJSONObject(2).put("primaryKey", false);
 		attrs.getJSONObject(1).put("enable", false);
-		assertEquals(Map.of("status", "disabled", "name", "site_id"),
+		assertEquals(Map.of("status", "disabled", "name", "site_id", "count", 1, "showName", "Site"),
 				service.objectType("Device", user, "en").primaryKey());
 	}
 
@@ -211,7 +211,7 @@ class OntologyModelServiceImplTest {
 		var created = service.createObjectType(new ObjectTypeCreate("Pump", "pump_no", "Pump", ""), user, "en");
 
 		assertEquals("Pump", created.className());
-		assertEquals(Map.of("status", "ok", "name", "pump_no"), created.primaryKey());
+		assertEquals(Map.of("status", "ok", "name", "pump_no", "count", 1, "showName", "pump_no"), created.primaryKey());
 		Map<String, Object> saved = savedRule();
 		var classDef = findClass(saved, "Pump");
 		assertEquals("", classDef.get("classDesc"));
@@ -545,7 +545,8 @@ class OntologyModelServiceImplTest {
 	void theFieldLabelsNameEachModelFieldWithTheLabelItsFormShows() {
 		var labels = service.fieldLabels("en");
 
-		assertEquals(Map.of("className", "Admin.form.className", "primaryKeyName", "Admin.form.primaryKeyName",
+		assertEquals(Map.of("className", "Admin.form.className", "primaryKeyCount", "Admin.form.primaryKey",
+				"primaryKeyName", "Admin.form.primaryKeyName",
 				"showName", "Admin.form.showName", "classDesc", "Admin.form.businessDesc"), labels.objectType());
 		assertEquals(Map.of("className", "Admin.form.ownerType", "name", "Admin.form.name", "type", "Admin.form.type",
 				"showName", "Admin.form.showName", "attrDesc", "Admin.form.desc", "enable", "Admin.form.enable",

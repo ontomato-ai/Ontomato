@@ -91,7 +91,7 @@ afterEach(() => {
 describe("platform count reads", () => {
   const objectType = {
     className: "Device", showName: "Device", classDesc: "", attributeCount: 7,
-    businessKeyCount: 0, relationshipCount: 4, primaryKey: { status: "ok", name: "id" },
+    businessKeyCount: 0, relationshipCount: 4, primaryKey: { status: "ok", count: 1, name: "id", showName: "id" },
   };
   const attribute = {
     className: "Device", name: "id", showName: "", type: "varchar",

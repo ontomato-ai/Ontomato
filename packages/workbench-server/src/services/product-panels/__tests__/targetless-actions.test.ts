@@ -20,12 +20,12 @@ describe("type table and registration check for targetless customer Actions", ()
             {
               className: "Order", showName: "Order", classDesc: "",
               attributeCount: 2, businessKeyCount: 1, relationshipCount: 0,
-              primaryKey: { status: "present", name: "order_id" },
+              primaryKey: { status: "present", count: 1, name: "order_id", showName: "order_id" },
             },
             {
               className: "AuditLog", showName: "Audit Log", classDesc: "",
               attributeCount: 1, businessKeyCount: 0, relationshipCount: 0,
-              primaryKey: { status: "present", name: "log_id" },
+              primaryKey: { status: "present", count: 1, name: "log_id", showName: "log_id" },
             },
           ]),
         };

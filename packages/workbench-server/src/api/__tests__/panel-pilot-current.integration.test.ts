@@ -239,7 +239,7 @@ beforeAll(async () => {
   app.get("/ontology/model/object-types", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
     res.json([{ className: "warehouse", showName: "Warehouse", classDesc: "", attributeCount: 1,
-      businessKeyCount: 0, relationshipCount: 1, primaryKey: { status: "ok", name: "id" } }]);
+      businessKeyCount: 0, relationshipCount: 1, primaryKey: { status: "ok", count: 1, name: "id", showName: "id" } }]);
   });
   app.get("/ontology/model/relationships", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");

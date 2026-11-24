@@ -216,12 +216,15 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [OBJECT_TYPE]: {
     ...describeType("objectType", "fact"),
     reads: {
-      ...modelReads, ...metadataList, count: countRead,
+      ...modelReads, ...metadataList, ...referenceReads, count: countRead,
       record: {
         ...modelReads.record,
         outputs: {
+          className: { kind: "scalar", type: "string" },
           primaryKeyStatus: { kind: "scalar", type: "string" },
           primaryKeyName: { kind: "scalar", type: "string" },
+          primaryKeyShowName: { kind: "scalar", type: "string" },
+          primaryKeyCount: { kind: "scalar", type: "number" },
           attributeCount: { kind: "scalar", type: "number" },
           businessKeyCount: { kind: "scalar", type: "number" },
           relationshipCount: { kind: "scalar", type: "number" },

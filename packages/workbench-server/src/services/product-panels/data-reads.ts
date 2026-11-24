@@ -381,7 +381,11 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
         return (await skillLibrary()).file(selection.primaryKey!, params);
       },
     },
-    [OBJECT_TYPE]: modelReads,
+    [OBJECT_TYPE]: {
+      ...modelReads,
+      options: () => model.objectTypeOptions(),
+      resolve: (_selection, params) => model.resolveObjectTypes(panelReadParameterSchemas.optionValues.parse(params.values)),
+    },
     [ATTRIBUTE]: modelReads,
     [RELATIONSHIP]: modelReads,
     [PRODUCT_PROJECTION]: {

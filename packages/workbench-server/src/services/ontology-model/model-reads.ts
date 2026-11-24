@@ -87,13 +87,13 @@ function objectTypeOption(view: ObjectTypeView): PanelOption {
   return {
     primaryKey: view.className,
     value: view.className,
-    label: view.showName || view.className,
+    label: view.showName && view.showName !== view.className ? `${view.showName} (${view.className})` : view.className,
     ...(view.classDesc && { description: view.classDesc }),
   };
 }
 
 function objectTypeRecord(view: ObjectTypeView): Omit<PanelRecord, "fieldLabels"> {
-  const { status, name } = view.primaryKey;
+  const { status, name, showName, count } = view.primaryKey;
   return {
     primaryKey: view.className,
     label: view.showName || view.className,
@@ -106,6 +106,7 @@ function objectTypeRecord(view: ObjectTypeView): Omit<PanelRecord, "fieldLabels"
       relationshipCount: String(view.relationshipCount),
       // The owner's derived primary-key state: missing, multiple, disabled or ok.
       primaryKey: status,
+      primaryKeyCount: String(count),
       ...(name !== undefined && { primaryKeyName: name }),
       ...(view.searchableAttributes && view.searchableAttributes.length > 0 && {
         searchableAttributes: view.searchableAttributes,
@@ -113,8 +114,11 @@ function objectTypeRecord(view: ObjectTypeView): Omit<PanelRecord, "fieldLabels"
     },
     tones: { primaryKey: status === "ok" ? "success" : status === "multiple" ? "danger" : "warning" },
     outputs: {
+      className: view.className,
       primaryKeyStatus: status,
       primaryKeyName: name ?? "",
+      primaryKeyShowName: showName ?? name ?? "",
+      primaryKeyCount: count,
       attributeCount: view.attributeCount,
       businessKeyCount: view.businessKeyCount,
       relationshipCount: view.relationshipCount,
