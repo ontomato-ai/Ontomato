@@ -47,4 +47,5 @@ stream_max_retries = 0
 `);
 process.chdir(codexHome);
 const args = [binary, "app-server", "--stdio", "--strict-config", "-c", `features.shell_tool=${nativeTools}`];
-process.execve(binary, args, { ...environment, CODEX_HOME: codexHome, HOME: home, CODEX_GATEWAY_TOKEN });
+// Tokio's host-sized worker pool can exhaust the session's process limit before app-server starts.
+process.execve(binary, args, { ...environment, CODEX_HOME: codexHome, HOME: home, CODEX_GATEWAY_TOKEN, TOKIO_WORKER_THREADS: "4" });

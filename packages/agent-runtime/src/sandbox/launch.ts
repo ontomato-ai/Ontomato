@@ -77,7 +77,7 @@ export async function openSessionSandbox(options: SessionSandboxOptions): Promis
           "--user", String(options.uid), "--group", String(options.uid),
           "--cwd", "/workspace", "--proc_path", "/proc",
           "--time_limit", "0", "--rlimit_cpu", "inf", "--rlimit_as", "inf",
-          "--rlimit_fsize", "inf", "--rlimit_nproc", String(options.processCount),
+          "--rlimit_fsize", "inf", "--rlimit_nofile", "1024", "--rlimit_nproc", String(options.processCount),
           "--pass_fd", "3", "--pass_fd", "4", "--pass_fd", "5", "--",
           "/usr/local/bin/python3", "-IS", `${sandboxPolicyDirectory}/engine.py`,
           String(gatewayPort), String(callbackPort), String(options.fileBytes), command, ...args,

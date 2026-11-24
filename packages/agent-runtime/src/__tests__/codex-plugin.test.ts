@@ -3,7 +3,7 @@ import { PassThrough } from "node:stream";
 import { createInterface } from "node:readline";
 import { expect, it, vi } from "vitest";
 import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
-import type { HarnessEvent, HarnessProcess, HarnessTurnHost, HarnessTurnInput } from "../adapters/contract";
+import type { HarnessEvent, HarnessOpenRequest, HarnessProcess, HarnessTurnHost, HarnessTurnInput } from "../adapters/contract";
 import { codexPlugin } from "../adapters/codex";
 import { deferred } from "../adapters/codex/transport";
 
@@ -40,9 +40,9 @@ function fixture(onSend: (frame: Frame, send: (frame: Frame) => void) => void) {
       default: onSend(frame, send);
     }
   });
-  function open(engineRef: string | null = null) {
+  function open(engineRef: string | null = null, previousContext: HarnessOpenRequest["previousContext"] = null) {
     return codexPlugin.open({
-      sessionId: "session", domainId: "domain", engineRef, previousContext: null,
+      sessionId: "session", domainId: "domain", engineRef, previousContext,
       sandbox: { spawn: () => process },
       model: { model: "test", baseUrl: "http://127.0.0.1:9999/v1", contextWindow: 128000, maxOutputTokens: null, token: "lease" },
       directories: { workspace: "/workspace", state: "/state", skills: [] },
@@ -53,6 +53,22 @@ function fixture(onSend: (frame: Frame, send: (frame: Frame) => void) => void) {
   }
   return { open, frames, process };
 }
+
+it("opens the first native thread after an aborted startup but still requires a reference for real prior context", async () => {
+  const subject = fixture(() => {});
+  await expect(subject.open(null, [input("consumed", "Existing model input").message]))
+    .rejects.toThrow("Codex requires its native thread to resume existing context");
+  const engine = await subject.open(null, [{
+    role: "assistant", origin: "runtime", stopReason: "aborted", timestamp: 1, content: [],
+    api: null, provider: null, model: null, usage: null,
+  }]);
+  try {
+    expect(engine.engineRef).toBe("thread");
+    expect(subject.frames.map(frame => frame.method)).toEqual(["initialize", "initialized", "thread/start"]);
+  } finally {
+    await engine.close();
+  }
+});
 
 it("replays Codex 0.171.0 parallel tool calls, consumes identical steers by client ID and uses the final item once", async () => {
   const opened = deferred<void>();
