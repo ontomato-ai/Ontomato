@@ -137,6 +137,7 @@ const connectionFormValuesSchema = z.object({
   apiKey: z.string(),
   extraHeaders: z.array(headerRowSchema).optional(),
 }).strict();
+const connectionEditFormValuesSchema = connectionFormValuesSchema.partial({ apiKey: true });
 type ConnectionFormValues = z.infer<typeof connectionFormValuesSchema>;
 
 const modelFormValuesSchema = z.object({
@@ -338,9 +339,13 @@ function toConnectionFormValues(name: string, connection: ModelConnection): Conn
     name,
     provider: connection.provider,
     apiBase: connection.apiBase ?? "",
-    apiKey: connection.apiKey,
+    apiKey: "",
     extraHeaders: Object.entries(connection.extraHeaders ?? {}).map(([headerName, value]) => ({ name: headerName, value })),
   };
+}
+
+function connectionDraftApiKey(value: unknown, saved: ModelConnection | undefined): unknown {
+  return saved && (value === "" || value === undefined) ? saved.apiKey : value;
 }
 
 function parseConnectionDraft(
@@ -383,7 +388,7 @@ function parseConnectionDraft(
   const parsed = modelConnectionWriteSchema.safeParse({
     provider: values.provider,
     ...(apiBase !== undefined ? { apiBase } : {}),
-    apiKey: values.apiKey,
+    apiKey: connectionDraftApiKey(values.apiKey, existingName === null ? undefined : settings.connections[existingName]),
     ...(headers.extraHeaders ? { extraHeaders: headers.extraHeaders } : {}),
   });
   if (!parsed.success) {
@@ -478,9 +483,9 @@ function buildConnectionForm(
       help: creating
         ? t("panels.modelSettings.fields.apiKeyHelpCreate")
         : t("panels.modelSettings.fields.apiKeyHelpEdit"),
-      required: true,
+      required: creating,
       readOnly: false,
-      valueSchema: cachedZodToRuntimeJsonSchema(z.string().min(1)),
+      valueSchema: cachedZodToRuntimeJsonSchema(creating ? z.string().min(1) : z.string()),
       control: { kind: "text", secret: true, placeholder: "sk-..." },
     },
     {
@@ -524,7 +529,7 @@ function buildConnectionForm(
     save: {
       method: "POST",
       path: "/api/data-query/model-settings/save",
-      bodySchema: cachedZodToRuntimeJsonSchema(connectionFormValuesSchema),
+      bodySchema: cachedZodToRuntimeJsonSchema(creating ? connectionFormValuesSchema : connectionEditFormValuesSchema),
     },
   };
 }
@@ -1219,6 +1224,7 @@ export function createModelUsageReads(actor: PanelOperationActor) {
 
 function buildConnectionDraftFromForm(
   draft: Record<string, unknown>,
+  settings: ModelSettingsData,
   locale?: string,
 ): { connectionName: string; connection: ModelConnectionWrite } {
   const headers = parseExtraHeaders(draft.extraHeaders, locale);
@@ -1228,12 +1234,13 @@ function buildConnectionDraftFromForm(
   const apiBase = draft.apiBase === "" || draft.apiBase === null || draft.apiBase === undefined
     ? undefined
     : draft.apiBase;
+  const saved = typeof draft.name === "string" ? settings.connections[draft.name] : undefined;
   const parsed = runtimeModelDiscoveryRequestSchema.safeParse({
     connectionName: draft.name,
     connection: {
       provider: draft.provider,
       ...(apiBase !== undefined ? { apiBase } : {}),
-      apiKey: draft.apiKey,
+      apiKey: connectionDraftApiKey(draft.apiKey, saved),
       ...(headers.extraHeaders ? { extraHeaders: headers.extraHeaders } : {}),
     },
   });
@@ -1526,9 +1533,9 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     inputSchema: discoverInputSchema,
     resultSchema: z.object({ kind: z.literal("json"), value: runtimeModelDiscoveryResponseSchema }).strict(),
     async execute(host: PanelOperationHost, call) {
-      await assertPermission(host.executor.credentials, ["system-config"]);
+      const settings = await readSettings(host, host.executor.credentials);
       const { draft } = discoverInputSchema.parse(call.input);
-      const request = buildConnectionDraftFromForm(draft, host.locale);
+      const request = buildConnectionDraftFromForm(draft, settings, host.locale);
       const value = await ownerData(host, "/model-settings/discover", runtimeModelDiscoveryResponseSchema, request);
       return { kind: "json", value };
     },
@@ -1547,7 +1554,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     async execute(host: PanelOperationHost, call) {
       const settings = await readSettings(host, host.executor.credentials);
       const { draft, parameters } = testInputSchema.parse(call.input);
-      const { connectionName, connection } = buildConnectionDraftFromForm(draft, host.locale);
+      const { connectionName, connection } = buildConnectionDraftFromForm(draft, settings, host.locale);
       const existing = settings.models[parameters.modelName];
       if (!existing) throw new HttpError(404, `Model '${parameters.modelName}' not found`, "NOT_FOUND");
       const request = runtimeModelTestRequestSchema.parse({
