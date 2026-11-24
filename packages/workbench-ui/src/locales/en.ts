@@ -1232,7 +1232,7 @@ export default {
       "generalSettings": "General settings",
       "scheduledTask": "Scheduled task",
       "modelOption": "Model",
-      "mcpServiceOption": "MCP service",
+      "externalMcpService": "External MCP service",
       "objectType": "Object type",
       "attribute": "Attribute",
       "relationship": "Relationship",

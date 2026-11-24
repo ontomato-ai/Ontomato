@@ -1,6 +1,6 @@
 import { FUNCTION, METRIC_VIEW } from "@ontomato/contracts/panel-client-requests";
 import {
-  ACTION, AGENT_DEFINITION, DASHBOARD_CARD, ATTRIBUTE, MCP_SERVICE_OPTION, MODEL_OPTION, OBJECT_TYPE, ONTOLOGY_RELATION_KIND,
+  ACTION, AGENT_DEFINITION, DASHBOARD_CARD, ATTRIBUTE, EXTERNAL_MCP_SERVICE, MODEL_OPTION, OBJECT_TYPE, ONTOLOGY_RELATION_KIND,
   ONTOLOGY_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL, USER,
 } from "@ontomato/contracts/platform-object-types";
 import type { PlatformResources } from "../panel/platform-objects";
@@ -19,7 +19,7 @@ export const platformResources: PlatformResources = {
     [AGENT_DEFINITION]: () => import("../panel/agent-definition").then((module) => module.agentDefinitionAdapters),
     [SKILL]: () => import("../panel/skill").then((module) => module.skillAdapters),
     [MODEL_OPTION]: () => import("../panel/model-option").then((module) => module.modelOptionAdapters),
-    [MCP_SERVICE_OPTION]: () => import("../panel/mcp-service-option").then((module) => module.mcpServiceOptionAdapters),
+    [EXTERNAL_MCP_SERVICE]: () => import("../panel/external-mcp-service").then((module) => module.externalMcpServiceAdapters),
     [USER]: () => import("../panel/user").then((module) => module.userAdapters),
     // Classes, attributes and relationships come from one metadata read, so one module answers all three.
     [OBJECT_TYPE]: ontologyMetadata,

@@ -8,7 +8,7 @@ export const platformOntologyEn = {
   "platformOntology.types.generalSettings": "General settings",
   "platformOntology.types.scheduledTask": "Scheduled task",
   "platformOntology.types.modelOption": "Model",
-  "platformOntology.types.mcpServiceOption": "MCP service",
+  "platformOntology.types.externalMcpService": "External MCP service",
   "platformOntology.types.objectType": "Object type",
   "platformOntology.types.attribute": "Attribute",
   "platformOntology.types.relationship": "Relationship",

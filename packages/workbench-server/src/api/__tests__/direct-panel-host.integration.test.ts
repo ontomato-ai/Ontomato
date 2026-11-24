@@ -446,7 +446,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
   for (const [slot, slotName, ownerType] of [
     ["model", "#field-modelSelection.modelId", "platform:ModelOption"],
     ["skills", "#field-skills", "platform:Skill"],
-    ["tools", "#field-enabledMcpServiceIds", "platform:McpServiceOption"],
+    ["tools", "#field-enabledMcpServiceIds", "platform:ExternalMcpService"],
     ["executor", "#field-executionUserId", "platform:User"],
   ]) {
     const member = agentDetail.manifest.members[slot];

@@ -13,12 +13,14 @@ export type AgentDefinitionCategory = "custom" | "preset" | "system";
 export const SKILL = "platform:Skill";
 export const MODEL_OPTION = "platform:ModelOption";
 export const PUBLISHED_MCP_SERVICE = "platform:PublishedMcpService";
+export const EXTERNAL_MCP_SERVICE = "platform:ExternalMcpService";
+export const CREATE_EXTERNAL_MCP_SERVICE = `${EXTERNAL_MCP_SERVICE}.create`;
+export const DELETE_EXTERNAL_MCP_SERVICE = "externalMcp.delete";
 export const AUDIT_LOG = "platform:AuditLog";
 export const GENERAL_SETTINGS = "platform:GeneralSettings";
 export const MODEL_CONNECTION = "platform:ModelConnection";
 export const MODEL_ENTRY = "platform:ModelEntry";
 export const MODEL_USAGE = "platform:ModelUsage";
-export const MCP_SERVICE_OPTION = "platform:McpServiceOption";
 export const USER = "platform:User";
 export const OBJECT_TYPE = "platform:ObjectType";
 export const ATTRIBUTE = "platform:Attribute";
@@ -215,7 +217,20 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [`${SCHEDULED_TASK}.save`, RUN_NOW, CREATE_SCHEDULED_TASK, SET_SCHEDULED_TASK_ENABLED, DELETE_SCHEDULED_TASK],
   },
-  [PUBLISHED_MCP_SERVICE]: { ...describeType("publishedMcpService"), reads: { ...metadataList, record: modelReads.record } },
+  [PUBLISHED_MCP_SERVICE]: {
+    ...describeType("publishedMcpService"),
+    reads: { ...metadataList, record: modelReads.record, tools: objectListRead },
+  },
+  [EXTERNAL_MCP_SERVICE]: {
+    ...describeType("externalMcpService"),
+    reads: {
+      ...referenceReads,
+      ...metadataList,
+      ...modelReads,
+      tools: objectListRead,
+    },
+    operations: [CREATE_EXTERNAL_MCP_SERVICE, `${EXTERNAL_MCP_SERVICE}.save`, DELETE_EXTERNAL_MCP_SERVICE],
+  },
   [AUDIT_LOG]: {
     ...describeType("auditLog"),
     reads: {
@@ -232,7 +247,6 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [`${GENERAL_SETTINGS}.save`],
   },
   [MODEL_OPTION]: { ...describeType("modelOption"), reads: referenceReads },
-  [MCP_SERVICE_OPTION]: { ...describeType("mcpServiceOption"), reads: referenceReads },
   [OBJECT_TYPE]: {
     ...describeType("objectType", "fact"),
     reads: {
@@ -729,7 +743,11 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
 };
 
 /** Form saves that create a new object rather than edit the selected one's `${typeId}.save`. */
-const platformCreateFormSaves: ReadonlySet<string> = new Set([CREATE_SCHEDULED_TASK, ADD_MODEL_ENTRY]);
+const platformCreateFormSaves: ReadonlySet<string> = new Set([
+  CREATE_SCHEDULED_TASK,
+  ADD_MODEL_ENTRY,
+  CREATE_EXTERNAL_MCP_SERVICE,
+]);
 
 /** Platform operation IDs whose server handler is a `form.save` rather than an action. */
 export const platformFormSaveOperations: ReadonlySet<string> = new Set(

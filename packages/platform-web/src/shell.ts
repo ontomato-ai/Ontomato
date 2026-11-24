@@ -4,8 +4,6 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Cable, Plug } from "lucide-vue-next";
-import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
 import { managerDestination } from "@ontomato/platform-admin/legacy-manager";
@@ -148,19 +146,8 @@ export function createServiceManager(options: {
   });
 }
 
-/**
- * The system settings' connections the agent platform's pages draw: the external MCP services agents may call (its page
- * draws its own header) and the MCP services the platform publishes (under the settings' header).
- */
-const systemIntegrationPages: readonly PlatformPage[] = [
-  { path: platformRoutes.externalMcp.path, titleKey: "capabilities.mcpTitle", icon: Cable, permissions: ["mcp-service"], group: "platform", ownHeader: true },
-  { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", descriptionKey: "mcp.publishedHint", icon: Plug, permissions: ["mcp-service"], group: "platform" },
-];
-
-/** The native skill and integration pages shared by the edition assemblies. */
-export const applicationPages: readonly PlatformPage[] = [
-  ...systemIntegrationPages,
-];
+/** The native integration pages shared by the edition assemblies (all migrated to built-in panels). */
+export const applicationPages: readonly PlatformPage[] = [];
 
 /**
  * The Ontology Service navigation: the Manager's groups (ontology, assets, knowledge) followed by this edition's

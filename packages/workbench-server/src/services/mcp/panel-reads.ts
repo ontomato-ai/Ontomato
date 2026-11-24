@@ -1,3 +1,4 @@
+import type { McpToolDesc } from "@ontomato/contracts/mcp";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { assertPermission } from "../../identity/installed";
 import { tForLocale } from "../../i18n";
@@ -6,6 +7,29 @@ import { workbenchProduct } from "../../product/installed";
 import { HttpError } from "../../utils/errors";
 import { publishedMcpCatalogue, type McpRequestLocation } from "./catalog";
 
+/** Converts one MCP tool descriptor into a panel record row for `tools` reads. */
+export function mcpToolToPanelRecord(tool: McpToolDesc, locale?: string): PanelRecord {
+  const text = (key: string) => tForLocale(locale, `panels.mcpTools.${key}`);
+  const inputSchema = tool.inputSchema !== undefined && tool.inputSchema !== null
+    ? JSON.stringify(tool.inputSchema, null, 2)
+    : "";
+  return {
+    primaryKey: tool.name,
+    label: tool.title || tool.name,
+    ...(tool.title && tool.title !== tool.name ? { subtitle: tool.name } : {}),
+    fields: {
+      name: tool.name,
+      description: tool.description ?? "",
+      inputSchema,
+    },
+    fieldLabels: {
+      name: text("name"),
+      description: text("description"),
+      inputSchema: text("inputSchema"),
+    },
+  };
+}
+
 export async function readPublishedMcpServices(viewer: AssistantCredentials, location?: McpRequestLocation): Promise<PanelRecord[]> {
   await assertPermission(viewer, ["mcp-service"]);
   const text = (key: string) => tForLocale(viewer.locale, `panels.simplePages.${key}`);
@@ -13,16 +37,26 @@ export async function readPublishedMcpServices(viewer: AssistantCredentials, loc
   const product = workbenchProduct();
   return services.map(({ name, title, mcpUrl, tools }) => {
     const known = name === product.analysisMcpServerName
-      ? { label: text("analysisMcpTitle"), subtitle: text("analysisMcpAuth") }
+      ? { label: text("analysisMcpTitle"), authHint: text("analysisMcpAuth") }
       : name === product.opsMcpServerName
-        ? { label: text("opsMcpTitle"), subtitle: text("opsMcpAuth") }
+        ? { label: text("opsMcpTitle"), authHint: text("opsMcpAuth") }
         : null;
     return {
       primaryKey: name,
       label: known ? known.label : (title || name),
-      ...(known && { subtitle: known.subtitle }),
-      fields: { mcpUrl, status: text("published"), toolCount: String(tools.length), tools: JSON.stringify(tools) },
-      fieldLabels: { mcpUrl: text("mcpUrl"), status: text("status"), toolCount: text("availableTools"), tools: text("availableTools") },
+      ...(known && { subtitle: known.authHint }),
+      fields: {
+        mcpUrl,
+        status: text("published"),
+        toolCount: String(tools.length),
+        ...(known && { authHint: known.authHint }),
+      },
+      fieldLabels: {
+        mcpUrl: text("mcpUrl"),
+        status: text("status"),
+        toolCount: text("availableTools"),
+        ...(known && { authHint: text("authHint") }),
+      },
       tones: { status: "success" },
     };
   });
@@ -34,4 +68,14 @@ export async function readPublishedMcpService(
   const service = (await readPublishedMcpServices(viewer, location)).find(row => row.primaryKey === primaryKey);
   if (!service) throw new HttpError(404, "Published MCP service not found", "NOT_FOUND");
   return service;
+}
+
+export async function readPublishedMcpServiceTools(
+  viewer: AssistantCredentials, primaryKey: string, location?: McpRequestLocation,
+): Promise<PanelRecord[]> {
+  await assertPermission(viewer, ["mcp-service"]);
+  const { services } = await publishedMcpCatalogue(location, viewer.locale);
+  const service = services.find(item => item.name === primaryKey);
+  if (!service) throw new HttpError(404, "Published MCP service not found", "NOT_FOUND");
+  return service.tools.map(tool => mcpToolToPanelRecord(tool, viewer.locale));
 }
