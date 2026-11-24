@@ -475,6 +475,20 @@ export class AgentChannel {
     if(kind==="progress" || intent.status==="starting") { await this.announce(intent);return; }
     await this.notify(scope,runId);
   }
+  async prepareSteer(scope: Scope, run: RuntimeRun, row: MessageRow, signal?: AbortSignal) {
+    const channel = run.channel!;
+    const prepared = agentSteerPreparationSchema.parse(await this.post(this.provider(channel.agent.providerId), "/prepare", {
+      mode: "steer", executionActor: run.executionUserId ? {userId:run.executionUserId,domainId:scope.domainId} : null,
+      language: run.language, agent: channel.agent, actor: channel.actor, sessionId: run.sessionId, runId: run.id,
+      inputId: row.id, input: row.message, authority: channel.authority, requestedBy: channel.requestedBy,
+      root: channel.root, userRecipient: channel.userRecipient ?? null,
+    }, scope.domainId, this.credential(channel), signal));
+    return {
+      id: row.id,
+      message: await this.modelMessage(scope.domainId, row.message, isDirectUserRun(channel, run.sessionId)) as RuntimeMessage,
+      context: prepared.context ?? null,
+    };
+  }
   followUp(scope: Scope, run: RuntimeRun) { return this.consumeInputs(scope,run,"followup"); }
   steering(scope: Scope, run: RuntimeRun) { return this.consumeInputs(scope,run,"steer"); }
   private async consumeInputs(scope: Scope, run: RuntimeRun, mode: "followup" | "steer"): Promise<Message[]> {

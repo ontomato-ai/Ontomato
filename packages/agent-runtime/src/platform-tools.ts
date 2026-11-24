@@ -540,10 +540,20 @@ export interface SkillCallbackDispatcher {
   ): Promise<unknown>;
 }
 
-/** Mounts the run-scoped skill callback command endpoint onto an Express app. */
+export interface SessionSkillCallbackDispatcher {
+  sessionChannelCommand(
+    scope: Scope,
+    sessionId: string,
+    credential: string | undefined,
+    executionContextHeader: string | undefined,
+    body: unknown,
+  ): Promise<unknown>;
+}
+
+/** Mounts only the callback command endpoint for the supplied dispatcher. */
 export function registerSkillCallbackRoutes(
   app: Express,
-  dispatcher: SkillCallbackDispatcher,
+  dispatcher: SkillCallbackDispatcher | SessionSkillCallbackDispatcher,
   wrap?: (handler: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => void,
 ): void {
   const handle = async (req: Request, res: Response) => {
@@ -551,6 +561,13 @@ export function registerSkillCallbackRoutes(
       hostId: runtimeKeySchema.parse(req.params.hostId),
       domainId: runtimeKeySchema.parse(req.params.domainId),
     };
+    const credential = req.header("X-Ontomato-Callback-Credential");
+    const executionContext = req.header(BUILD_TEST_HEADER);
+    if ("sessionChannelCommand" in dispatcher) {
+      const sessionId = runtimeIdSchema.parse(req.params.sessionId);
+      res.json(await dispatcher.sessionChannelCommand(commandScope, sessionId, credential, executionContext, req.body));
+      return;
+    }
     const runId = runtimeIdSchema.parse(req.params.runId);
     const sessionHeader = serviceLogIdentitySchema.safeParse(req.header("X-Ontomato-Session-Id"));
     updateServiceLogContext({
@@ -562,16 +579,18 @@ export function registerSkillCallbackRoutes(
       await dispatcher.runChannelCommand(
         commandScope,
         runId,
-        req.header("X-Ontomato-Callback-Credential"),
+        credential,
         req.header("X-Ontomato-Run-Id"),
-        req.header(BUILD_TEST_HEADER),
+        executionContext,
         req.body,
       ),
     );
   };
 
   app.post(
-    "/v1/channel/hosts/:hostId/domains/:domainId/runs/:runId/commands",
+    "sessionChannelCommand" in dispatcher
+      ? "/v1/channel/hosts/:hostId/domains/:domainId/sessions/:sessionId/commands"
+      : "/v1/channel/hosts/:hostId/domains/:domainId/runs/:runId/commands",
     wrap
       ? wrap(handle)
       : (req, res, next) => {

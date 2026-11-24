@@ -7,6 +7,7 @@ import { pageSkillContextSchema } from "./page-skills";
 import {
   runtimeMessageRecordSchema,
   runtimeRunSnapshotSchema,
+  runtimeRunPresentationSchema,
   runtimeRunViewSchema,
 } from "./agent-runtime";
 import { sessionHistoryBoundsSchema } from "./session-history";
@@ -96,6 +97,7 @@ export const agentHostRunSnapshotSchema = z
     pendingMessages: runtimeRunSnapshotSchema.shape.pendingMessages,
     toolExecutions: runtimeRunSnapshotSchema.shape.toolExecutions,
     artifacts: z.array(runtimeArtifactSchema),
+    ...runtimeRunPresentationSchema.shape,
   })
   .strict();
 export const agentHostSessionSchema = z
@@ -123,7 +125,7 @@ export const agentHostSessionHistorySchema = z.object({
   session: agentHostSessionSchema,
   messages: z.array(agentHostMessageSchema),
     pendingQuestions: z.array(agentPendingQuestionSchema),
-  runs: z.array(agentHostRunSchema),
+  runs: z.array(agentHostRunSchema.merge(runtimeRunPresentationSchema)),
   latestRun: agentHostRunSnapshotSchema.nullable(),
   page: sessionHistoryBoundsSchema,
 }).strict();

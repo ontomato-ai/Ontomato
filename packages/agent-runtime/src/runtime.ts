@@ -3,20 +3,29 @@ import { processLanguageInstruction } from "./process-language";
 import { agentChannelCommandSchema, agentNotificationSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
 import type { RuntimePresentationCallback } from "@ontomato/contracts/agent-presentation";
-import type { TSchema } from "typebox";
 import { Workspaces } from "./workspaces";
 import type { RuntimeSessionHistory, SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { ServiceLogStore, withServiceLogContext, getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
 import { runtimeLogging, runtimeLogger, runtimeDiagnostic } from "./logging";
 import { ArtifactFiles } from "./files";
+import type { BusinessCallbackDispatcher } from "./business-callback";
+import type { RuntimeBusinessCallbacks } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { SessionSandbox } from "./sandbox";
+import { SessionEngines, type SessionEngineSandboxFactory } from "./session-engines";
+import { HarnessRegistry } from "./adapters/registry";
+import { piPlugin } from "./adapters/pi";
+import type { HarnessEvent, HarnessPlugin, HarnessSession } from "./adapters/contract";
 import { mkdir, chmod, readFile, writeFile, rename } from "node:fs/promises";
 import { CodeExecutor } from "./code";
 import { signalUid, assertWorkerPolicy, type WorkerPolicy } from "./worker";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { bindPlatformTools, usesEngineTools, type BoundPlatformTools } from "./platform-tools";
 import path from "node:path";
+import type { TSchema } from "typebox";
 import { normalizeContext, type Message } from "@earendil-works/pi-ai";
+import { runAgentLoopContinue } from "./core/pi/agent-loop";
+import type { AgentEvent, AgentTool } from "./core/pi/types";
+import { contextTokens, cutPoint, serializeConversation } from "./compaction";
 import {
   runtimeStartRunRequestSchema,
   type RuntimeStartRunRequest,
@@ -31,36 +40,30 @@ import {
   runtimeUserMessageSchema,
   runtimeToolResultMessageSchema,
   runtimeToolCallSchema,
+  runtimeAssistantStreamEventSchema,
+  runtimeSettledMessageSchema,
   type RuntimeMessage,
+  type RuntimeToolResultMessage,
 } from "@ontomato/contracts/agent-runtime-messages";
-import { runtimeAssistantStreamEventSchema } from "@ontomato/contracts/agent-runtime-messages";
+import { runtimeRunDetailSchema } from "@ontomato/contracts/agent-runtime-details";
 import type {
   RuntimeAgentEvent,
   RuntimeEventEnvelope,
   RuntimeSessionRunFrame,
   RuntimeStreamFrame,
+  RuntimeToolResult,
 } from "@ontomato/contracts/agent-runtime-events";
 import type { RuntimeJsonObject, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
-import { runAgentLoopContinue } from "./core/pi/agent-loop";
-import type { AgentEvent, AgentTool } from "./core/pi/types";
-import { RuntimeStore, digest, canonical, type Scope } from "./store";
+import { RuntimeStore, digest, canonical, type MessageRow, type Scope } from "./store";
 import {
   SkillRegistry,
   skillCatalog,
   type RuntimeHost,
   type InstalledSkill,
 } from "./skills";
-import {
-  piModel,
-  litellmEntry,
-  modelStream,
-  completeSummary,
-  recoverContext,
-  type ResolvedChatModel,
-} from "./model";
+import { piModel, litellmEntry, modelStream, completeSummary, recoverContext, type ResolvedChatModel } from "./model";
 import type { ModelGatewayClient } from "./gateway-client";
 import { RuntimeError, safeMessage } from "./errors";
-import { contextTokens, cutPoint, serializeConversation } from "./compaction";
 import { connectMcp } from "./tools";
 import { RuntimeMcpServices } from "./mcp";
 import { RuntimeModelSettings } from "./model-settings";
@@ -76,10 +79,22 @@ interface Active {
   frames: RuntimeEventEnvelope[];
   lostThrough: number;
   pending: Map<string, RuntimeMessage>;
-  currentMessageId?: string;
+  messageIds: Map<string, string>;
+  turnMessage?: RuntimeMessage;
+  turnToolResults: RuntimeToolResultMessage[];
+  toolResults: Map<string, RuntimeToolResult>;
+  sentInputs: Map<string, { message: RuntimeMessage; context: string | null }>;
+  engine?: HarnessSession;
+  inputPump?: Promise<void>;
+  inputPending: boolean;
+  readonly steering: AbortController;
+  inputError?: Error;
+  skillCommands: Set<Promise<unknown>>;
+  businessCallbacks: RuntimeBusinessCallbacks | undefined;
   turnIndex: number;
   subscribers: Set<Subscriber>;
-  sandbox?: SessionSandbox;
+  workspace?: string;
+  currentMessageId?: string;
   outputBaseline: Map<string, string>;
   toolCalls: number;
   toolShapes: Map<string, number>;
@@ -142,6 +157,8 @@ export interface RuntimeOptions {
   modelSeed?: { baseUrl?: string; apiKey?: string; modelName?: string };
   eventBufferSize?: number;
   agentProviders?: AgentProvider[];
+  engineRegistry?: HarnessRegistry;
+  openEngineSandbox?: SessionEngineSandboxFactory;
 }
 
 /** Only the wire profile is persisted; provider diagnostics are deliberately not part of it. */
@@ -181,6 +198,7 @@ export class AgentRuntime {
   readonly mcp: RuntimeMcpServices;
   readonly models: RuntimeModelSettings;
   readonly gateway: ModelGatewayClient;
+  private readonly sessionEngines: SessionEngines;
   private active = new Map<string, Active>();
   private locks = new Map<string, Promise<unknown>>();
   private waiters = new Map<string, Set<() => void>>();
@@ -193,6 +211,11 @@ export class AgentRuntime {
     this.mcp = new RuntimeMcpServices(this.store);
     this.models = new RuntimeModelSettings(this.store, options.modelRuntimeToken, options.modelSeed);
     this.gateway = options.gateway;
+    this.sessionEngines = new SessionEngines(
+      this.store, options.root, this.gateway, options.engineRegistry ?? new HarnessRegistry([piPlugin]),
+      options.openEngineSandbox, this.locked.bind(this), this,
+      error => runtimeLogger.error("Session engine release failed", runtimeDiagnostic(error)),
+    );
     this.worker = {
       ...(options.worker ?? {
         development: process.env.NODE_ENV === "test",
@@ -271,6 +294,9 @@ export class AgentRuntime {
     const fingerprint = digest({
       sessionId,
       ...request,
+      businessCallbacks: request.businessCallbacks && Object.fromEntries(
+        Object.entries(request.businessCallbacks).map(([name, callback]) => [name, callback.baseUrl]),
+      ),
       environment: {
         values: request.environment.values,
         secretNames: Object.keys(request.environment.secrets).sort(),
@@ -283,12 +309,22 @@ export class AgentRuntime {
         [scope.hostId, scope.domainId, runId],
       );
       let config: ResolvedChatModel | undefined;
+      let plugin: HarnessPlugin | undefined;
+      let engineRef: string | null = null;
       let skills: InstalledSkill[] = [];
       // Read-only checks for unusable dependencies belong before admission, so a new run fails with
       // 422/503 instead of starting and reporting the same problem as a stopped run.
       if (!admitted.rowCount || reserved) {
-        config = await this.models.resolve(scope.domainId, request.definition.modelId);
-        assertWorkerPolicy(this.worker);
+        if (this.options.openEngineSandbox) {
+          const binding = await this.store.sessionEngine(scope, sessionId);
+          plugin = this.sessionEngines.plugin(binding.engine ?? request.definition.engine ?? piPlugin.id);
+          engineRef = binding.engineRef;
+          if (this.sessionEngines.needsOpen(scope, sessionId))
+            config = await this.models.resolve(scope.domainId, request.definition.modelId);
+        } else {
+          config = await this.models.resolve(scope.domainId, request.definition.modelId);
+          assertWorkerPolicy(this.worker);
+        }
         skills = await Promise.all(
           request.definition.skills.map((version) =>
             this.registry.resolve(host, scope.domainId, version),
@@ -331,6 +367,7 @@ export class AgentRuntime {
         fingerprint,
         request.input,
         reserved,
+        plugin?.id,
       );
       if (accepted.replayed) {
         const persisted = await this.store.pool.query(`SELECT log_context FROM ${this.store.table("runs")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, runId]);
@@ -338,6 +375,7 @@ export class AgentRuntime {
         updateServiceLogContext({ correlationId: accepted.run.correlationId, runId: accepted.run.id, sessionId: accepted.run.sessionId });
         return accepted;
       }
+      this.sessionEngines.admitted(scope, sessionId);
       // The admission is committed and this is not a retry: the session has a new run.
       this.publishSessionRun(scope, { type: "run_started", sessionId, runId });
       const logContext = { correlationId: run.correlationId, domainId: scope.domainId,
@@ -351,6 +389,14 @@ export class AgentRuntime {
         frames: [],
         lostThrough: 0,
         pending: new Map(),
+        messageIds: new Map(),
+        turnToolResults: [],
+        toolResults: new Map(),
+        sentInputs: new Map(),
+        inputPending: false,
+        steering: new AbortController(),
+        skillCommands: new Set(),
+        businessCallbacks: request.businessCallbacks,
         turnIndex: -1,
         subscribers: new Set(),
         outputBaseline: new Map(),
@@ -370,8 +416,10 @@ export class AgentRuntime {
       // The first execution begins after this admission lock is released, never on a read/retry.
       active.done = (async () => {
         await loading;
-        await withServiceLogContext(logContext, () => this.execute(active, config!, request, skills,
-          reserved ? presentationCallback : undefined));
+        const presentation = reserved ? presentationCallback : undefined;
+        await withServiceLogContext(logContext, () => plugin
+          ? this.execute(active, plugin, engineRef, config, accepted.inputId!, request, skills, presentation)
+          : this.executeLegacy(active, config!, request, skills, presentation));
       })().finally(() => this.active.delete(key(scope, runId)));
       void active.done.catch(() =>
         withServiceLogContext(logContext, () => runtimeLogger.error("Runtime execution finalization failed")),
@@ -382,12 +430,12 @@ export class AgentRuntime {
         this.active.delete(key(scope, runId));
         throw error;
       }
-      return accepted;
+      return { run: accepted.run, replayed: false };
     });
   }
   async importAgentFile(scope:Scope,runId:string,taskId:string,file:{id:string;name:string},data:Buffer) {
-    const sandbox=this.active.get(key(scope,runId))!.sandbox!;
-    const relative=path.posix.join("outputs","agents",taskId,`${file.id}-${file.name}`),destination=path.join(sandbox.workspace,relative),temporary=destination+`.${randomUUID()}.download`;
+    const workspace=this.active.get(key(scope,runId))!.workspace!;
+    const relative=path.posix.join("outputs","agents",taskId,`${file.id}-${file.name}`),destination=path.join(workspace,relative),temporary=destination+`.${randomUUID()}.download`;
     await mkdir(path.dirname(destination),{recursive:true});
     await writeFile(temporary,data);await rename(temporary,destination);
     return relative;
@@ -425,6 +473,42 @@ export class AgentRuntime {
       throw new RuntimeError(422, BUILD_TEST_UNSUPPORTED, "The agent channel is not available in a build-test execution");
     return this.channel.execute(active.scope, active.run, agentChannelCommandSchema.parse(body));
   }
+  private activeForSkillCallback(scope: Scope, sessionId: string, credential: string | undefined) {
+    const runId = this.sessionEngines.callbackRun(scope, sessionId, credential);
+    const active = this.active.get(key(scope, runId))!;
+    if (active.sealed || active.controller.signal.aborted)
+      throw new RuntimeError(409, "RUN_CLOSED", "No active run accepts skill commands");
+    updateServiceLogContext({ domainId: scope.domainId, runId, sessionId, userId: active.run.executionUserId ?? null });
+    return active;
+  }
+
+  private async trackSkillCommand<T>(active: Active, command: Promise<T>): Promise<T> {
+    active.skillCommands.add(command);
+    try {
+      return await command;
+    } finally {
+      active.skillCommands.delete(command);
+    }
+  }
+
+  async sessionChannelCommand(scope: Scope, sessionId: string, credential: string | undefined, executionContext: string | undefined, body: unknown) {
+    const active = this.activeForSkillCallback(scope, sessionId, credential);
+    const { run, controller } = active;
+    if (executionContext !== undefined || run.channel?.authority.executionKind === "build-test")
+      throw new RuntimeError(422, BUILD_TEST_UNSUPPORTED, "The agent channel is not available in a build-test execution");
+    if (!run.channel || !usesEngineTools(run.definition))
+      throw new RuntimeError(403, "FORBIDDEN", "Skill commands are not authorized for this run");
+    return this.trackSkillCommand(active, this.channel.execute(scope, run, agentChannelCommandSchema.parse(body), controller.signal));
+  }
+
+  readonly withBusinessCallback: BusinessCallbackDispatcher["withBusinessCallback"] = async (scope, sessionId, kind, credential, forward) => {
+    const active = this.activeForSkillCallback(scope, sessionId, credential);
+    const target = active.businessCallbacks?.[kind];
+    if (!target || !usesEngineTools(active.run.definition))
+      throw new RuntimeError(403, "FORBIDDEN", "Business callback is not authorized for this run");
+    await this.trackSkillCommand(active, forward(target, active.run.id, active.controller.signal));
+  };
+
   async questionsChanged(scope: Scope, sessionId: string) {
     await this.locked(scope,sessionId,async()=>{
       const session=await this.store.session(scope,sessionId);
@@ -439,6 +523,7 @@ export class AgentRuntime {
     if (!active || active.sealed) return;
     const envelope = await this.store.append(scope, runId, { type: "input_received", messageId: row.id, messageSeq: row.messageSeq, message: row.message as import("@ontomato/contracts/agent-channel").AgentInput });
     this.publish(active, envelope);
+    if (this.options.openEngineSandbox) this.pushInputs(active);
   }
   private publish(active: Active, envelope: RuntimeEventEnvelope) {
     active.frames.push(envelope);
@@ -470,7 +555,303 @@ export class AgentRuntime {
       return envelope;
     });
   }
-  private async receive(active: Active, event: AgentEvent) {
+  private async receive(active: Active, event: HarnessEvent, beginTurn: (turn: number) => void) {
+    if (event.type === "turn_start") {
+      active.turnIndex++;
+      active.turnMessage = undefined;
+      active.turnToolResults = [];
+      beginTurn(active.turnIndex);
+      await this.emit(active, { type: "turn_start", turnIndex: active.turnIndex });
+      return;
+    }
+    if (event.type === "turn_end") {
+      if (active.turnMessage) await this.emit(active, {
+        type: "turn_end", turnIndex: active.turnIndex,
+        message: active.turnMessage, toolResults: active.turnToolResults,
+      });
+      return;
+    }
+    if (event.type === "message_start") {
+      const id = randomUUID();
+      active.messageIds.set(event.nativeId, id);
+      const message = structuredClone(event.message);
+      if (message.role === "assistant" && message.stopReason === "pending") message.content = [];
+      await this.locked(active.scope, active.run.sessionId, async () => {
+        const envelope = await this.store.append(active.scope, active.run.id, { type: "message_start", messageId: id, message });
+        active.pending.set(id, structuredClone(message));
+        this.publish(active, envelope);
+      });
+      return;
+    }
+    if (event.type === "message_update") {
+      const id = this.platformMessageId(active, event.nativeId);
+      const change = event.assistantMessageEvent;
+      const { type } = change;
+      const wire = runtimeAssistantStreamEventSchema.parse({
+        type,
+        ...("contentIndex" in change ? { contentIndex: change.contentIndex } : {}),
+        ...("delta" in change ? { delta: change.delta } : {}),
+        ...("reason" in change ? { reason: change.reason } : {}),
+      });
+      await this.locked(active.scope, active.run.sessionId, async () => {
+        const envelope = await this.store.append(active.scope, active.run.id, {
+          type: "message_update", messageId: id, assistantMessageEvent: wire,
+        });
+        const partial = active.pending.get(id);
+        if (partial?.role === "assistant" && "contentIndex" in change) {
+          const index = change.contentIndex;
+          const block = partial.content[index];
+          switch (change.type) {
+            case "text_start": partial.content[index] = { type: "text", text: "" }; break;
+            case "thinking_start": partial.content[index] = { type: "thinking", thinking: "" }; break;
+            case "text_delta": if (block?.type === "text") block.text += change.delta; break;
+            case "thinking_delta": if (block?.type === "thinking") block.thinking += change.delta; break;
+            case "text_end": partial.content[index] = { type: "text", text: change.content }; break;
+            case "thinking_end": partial.content[index] = { type: "thinking", thinking: change.content }; break;
+            case "toolcall_start":
+              partial.content[index] = { type: "toolCall", id: change.id, name: change.toolName, arguments: {} };
+              break;
+            case "toolcall_end": partial.content[index] = change.toolCall; break;
+          }
+        }
+        this.publish(active, envelope);
+      });
+      return;
+    }
+    if (event.type === "message_end") {
+      const id = this.platformMessageId(active, event.nativeId);
+      const source = event.message;
+      const message = runtimeSettledMessageSchema.parse(source.role === "toolResult"
+        ? { ...source, details: active.toolResults.get(source.toolCallId)?.details, outcome: source.isError ? "failure" : "success" }
+        : source);
+      if (message.role === "assistant") active.turnMessage = message;
+      if (message.role === "toolResult") active.turnToolResults.push(message);
+      await this.emit(active, { type: "message_end", messageId: id, messageSeq: 0, contextSeq: null, message });
+      return;
+    }
+    if (event.type === "tool_execution_end") {
+      const result = {
+        content: event.result.content,
+        details: { ...event.result.details, artifactIds: await this.collect(active, event.toolCallId) },
+      };
+      if (!active.toolArgs.has(event.toolCallId)) throw new Error("Tool ended without a recorded start");
+      await this.emit(active, { ...event, result, outcome: event.isError ? "failure" : "success" });
+      active.toolResults.set(event.toolCallId, result);
+      const args = active.toolArgs.get(event.toolCallId);
+      active.toolArgs.delete(event.toolCallId);
+      this.enforceToolCallPolicy(active, event.toolName, args);
+      return;
+    }
+    if (event.type === "tool_execution_start") active.toolArgs.set(event.toolCallId, event.args);
+    if (event.type === "run_detail") {
+      const detail = event.detail.scope === "message"
+        ? { ...event.detail, ref: this.platformMessageId(active, event.detail.ref!) }
+        : event.detail;
+      await this.emit(active, { type: "run_detail", detail: runtimeRunDetailSchema.parse(detail) });
+      return;
+    }
+    if (event.type === "usage_updated") {
+      const { nativeId, ...usage } = event.usage;
+      await this.emit(active, {
+        type: "usage_updated",
+        usage: { ...usage, messageId: nativeId === null ? null : this.platformMessageId(active, nativeId) },
+      });
+      return;
+    }
+    await this.emit(active, event);
+  }
+
+  private platformMessageId(active: Active, nativeId: string) {
+    const id = active.messageIds.get(nativeId);
+    if (!id) throw new Error("Engine referenced a message before its start");
+    return id;
+  }
+
+  private pushInputs(active: Active) {
+    active.inputPending = true;
+    if (!active.engine || active.inputPump || active.sealed) return;
+    active.inputPump = this.sendInputs(active).catch(error => {
+      if (!active.sealed && !active.controller.signal.aborted) {
+        active.inputError = new Error(safeMessage(error));
+        active.controller.abort(active.inputError);
+      }
+    }).finally(() => { active.inputPump = undefined; });
+  }
+
+  private async sendInputs(active: Active) {
+    const { scope, run } = active;
+    const signal = AbortSignal.any([active.controller.signal, active.steering.signal]);
+    while (active.inputPending && !active.sealed && !signal.aborted) {
+      active.inputPending = false;
+      const pending = await this.locked(scope, run.sessionId, async () => {
+        if ((await this.channel.facts.intent(scope, run.id)).cancelled) return [];
+        return this.channel.facts.pending(scope, run.sessionId, undefined, run.id);
+      });
+      for (const row of pending) {
+        if (active.sealed || signal.aborted) return;
+        if (active.sentInputs.has(row.id)) continue;
+        const input = await this.channel.prepareSteer(scope, run, row, signal);
+        if (active.sealed || signal.aborted) return;
+        active.sentInputs.set(row.id, { message: row.message, context: input.context });
+        const receipt = await active.engine!.steer(input);
+        if (!receipt.accepted) {
+          active.sentInputs.delete(row.id);
+          active.sealed = true;
+          return;
+        }
+      }
+    }
+  }
+
+  private async consumed(active: Active, inputId: string) {
+    const { scope, run } = active;
+    await this.locked(scope, run.sessionId, async () => {
+      const input = active.sentInputs.get(inputId);
+      if (!input) throw new Error("Engine acknowledged an input that was not sent");
+      const envelope = await this.store.append(scope, run.id, {
+        type: "message_end", messageId: inputId, messageSeq: 0, contextSeq: null, message: input.message,
+      }, true);
+      active.sentInputs.delete(inputId);
+      if (input.context !== null) await this.updateHostContext(scope, run.id, input.context);
+      this.publish(active, envelope);
+    });
+  }
+
+  private async previousContext(scope: Scope, sessionId: string) {
+    const rows = await this.store.contextMessages(scope, sessionId);
+    if (!rows.length) return null;
+    const { rows: [summary] } = await this.store.pool.query(
+      `SELECT covered_seq,summary FROM ${this.store.table("compactions")}
+       WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 ORDER BY covered_seq DESC LIMIT 1`,
+      [scope.hostId, scope.domainId, sessionId],
+    );
+    const messages = await Promise.all(rows
+      .filter(row => row.contextSeq! > Number(summary?.covered_seq ?? 0) && row.message.role !== "system")
+      .map(row => this.channel.modelMessage(scope.domainId, row.message)));
+    if (summary) messages.unshift({
+      role: "user", timestamp: Date.now(), content: `Previous conversation summary:\n${summary.summary}`,
+    });
+    return messages;
+  }
+
+  /** Counted after the call is recorded; aborting from the event sink lets the loop end and settle normally. */
+  private enforceToolCallPolicy(active: Active, toolName: string, args: unknown) {
+    const policy = active.run.definition.toolCallPolicy;
+    if (!policy || active.controller.signal.aborted) return;
+    active.toolCalls++;
+    const key = shape(toolName) + ":" + shape(JSON.stringify(args ?? null));
+    const same = (active.toolShapes.get(key) ?? 0) + 1;
+    active.toolShapes.set(key, same);
+    if (active.toolCalls > policy.maxCalls)
+      active.controller.abort(new RunStop(`Stopped after more than ${policy.maxCalls} tool calls`));
+    else if (same >= policy.maxSameShape)
+      active.controller.abort(new RunStop(`Stopped after ${same} repeated ${toolName} calls without progress`));
+  }
+  private async execute(
+    active: Active,
+    plugin: HarnessPlugin,
+    engineRef: string | null,
+    config: ResolvedChatModel | undefined,
+    openingInputId: string,
+    request: RuntimeStartRunRequest,
+    skills: InstalledSkill[],
+    presentationCallback?: RuntimePresentationCallback,
+  ) {
+    const { scope, run, controller } = active;
+    const signal = controller.signal;
+    let reason: RuntimeStopReason = "error";
+    let failure: string | null = null;
+    let closeMcp: (() => Promise<void>) | undefined;
+    try {
+      signal.throwIfAborted();
+      runtimeLogger.info("run started");
+      const engineTools = usesEngineTools(request.definition);
+      const mcp = await connectMcp(engineTools
+        ? await this.mcp.resolve(scope, request.definition.externalMcp.map(ref => ref.id))
+        : [], run.correlationId, signal);
+      closeMcp = mcp.close;
+      const bound = bindPlatformTools({
+        runId: run.id,
+        request,
+        mcpTools: mcp.tools,
+        channelTool: run.channel ? this.channel.tool(scope, run) : undefined,
+        presentationCallback,
+        authorize: () => signal.throwIfAborted(),
+        onClose: mcp.close,
+      });
+      closeMcp = () => bound.close();
+      const engine = await this.sessionEngines.open(scope, run.sessionId, {
+        plugin, engineRef,
+        config: () => config ? Promise.resolve(config) : this.models.resolve(scope.domainId, request.definition.modelId),
+        skills: skills.map(skill => ({ name: skill.skill.name, directory: skill.directory })),
+        language: run.language,
+        limits: request.definition.sandbox.limits,
+        tools: bound.tools.map(tool => tool.declaration),
+        engineTools,
+        signal,
+        previousContext: () => this.previousContext(scope, run.sessionId),
+        prompt: () => ({
+          system: [request.definition.systemPrompt, processLanguageInstruction(run.language)].filter(Boolean).join("\n\n"),
+        }),
+      });
+      active.workspace = engine.sandbox.hostWorkspace;
+      for (const file of await this.files.scan(active.workspace))
+        active.outputBaseline.set(file.path, file.sha256);
+      signal.throwIfAborted();
+      const input = await this.channel.modelMessage(scope.domainId, request.input);
+      active.sentInputs.set(openingInputId, { message: request.input, context: null });
+      this.sessionEngines.beginRun(scope, run.sessionId, run.id);
+      const pending = engine.handle.startTurn({
+        runId: run.id,
+        context: run.definition.context ?? null,
+        inputs: [{ id: openingInputId, message: input, context: null }],
+        host: {
+          emit: event => this.receive(active, event, turn => bound.beginTurn(turn)),
+          invokeTool: call => bound.invoke({ ...call, signal: AbortSignal.any([signal, call.signal]) }),
+          consumed: id => this.consumed(active, id),
+        },
+      }, signal);
+      active.engine = engine.handle;
+      if (run.channel) this.pushInputs(active);
+      const result = await pending;
+      reason = active.inputError ? "error" : signal.aborted ? "aborted" : result.stopReason;
+      failure = active.inputError?.message ?? (signal.aborted ? stopMessage(signal) : result.errorMessage);
+    } catch (error) {
+      if (!signal.aborted) runtimeLogger.error("run execution failed", runtimeDiagnostic(error));
+      reason = signal.aborted ? "aborted" : "error";
+      failure = signal.aborted ? stopMessage(signal) : safeMessage(error);
+    } finally {
+      active.sealed = true;
+      active.steering.abort();
+      this.sessionEngines.endRun(scope, run.sessionId);
+    }
+    const cleanup = async () => {
+      try {
+        await active.inputPump;
+        await Promise.allSettled(active.skillCommands);
+        await closeMcp?.();
+      } finally {
+        if (reason === "aborted" || reason === "error")
+          await this.sessionEngines.release(scope, run.sessionId);
+      }
+    };
+    try {
+      await cleanup();
+    } catch (error) {
+      runtimeLogger.error("Run resource release failed", runtimeDiagnostic(error));
+    }
+    try {
+      await this.collect(active, null);
+    } catch (error) {
+      if (reason !== "aborted") {
+        reason = "error";
+        failure = safeMessage(error);
+      }
+    }
+    await this.settle(active, reason, failure);
+  }
+  // The current app has no session-engine factory until the coordinated engine switch.
+  private async receiveLegacy(active: Active, event: AgentEvent) {
     if (event.type === "agent_end" || event.type === "agent_start") return;
     if (event.type === "turn_start") {
       active.turnIndex++;
@@ -609,20 +990,7 @@ export class AgentRuntime {
       });
     return this.emit(active, event as RuntimeAgentEvent);
   }
-  /** Counted after the call is recorded; aborting from the event sink lets the loop end and settle normally. */
-  private enforceToolCallPolicy(active: Active, toolName: string, args: unknown) {
-    const policy = active.run.definition.toolCallPolicy;
-    if (!policy || active.controller.signal.aborted) return;
-    active.toolCalls++;
-    const key = shape(toolName) + ":" + shape(JSON.stringify(args ?? null));
-    const same = (active.toolShapes.get(key) ?? 0) + 1;
-    active.toolShapes.set(key, same);
-    if (active.toolCalls > policy.maxCalls)
-      active.controller.abort(new RunStop(`Stopped after more than ${policy.maxCalls} tool calls`));
-    else if (same >= policy.maxSameShape)
-      active.controller.abort(new RunStop(`Stopped after ${same} repeated ${toolName} calls without progress`));
-  }
-  private async execute(
+  private async executeLegacy(
     active: Active,
     config: ResolvedChatModel,
     request: RuntimeStartRunRequest,
@@ -640,6 +1008,7 @@ export class AgentRuntime {
     let failure: string | null = null;
     let closeMcp = async () => {};
     const lease = await this.gateway.lease({ [config.name]: litellmEntry(config) });
+    let sandbox: SessionSandbox | undefined;
     try {
       const engineTools = usesEngineTools(request.definition);
       const mcpConfigs = engineTools
@@ -669,7 +1038,7 @@ export class AgentRuntime {
           content: `Previous conversation summary:\n${summary}`,
           timestamp: Date.now(),
         });
-      const sandbox = new SessionSandbox(
+      sandbox = new SessionSandbox(
         this.store,
         this.options.root,
         this.worker,
@@ -677,7 +1046,7 @@ export class AgentRuntime {
         run.sessionId,
       );
       const uid = await sandbox.prepare(skills);
-      active.sandbox = sandbox;
+      active.workspace = sandbox.workspace;
       for (const file of await this.files.scan(sandbox.workspace))
         active.outputBaseline.set(file.path, file.sha256);
       let channelEnv: { commandUrl: string; callbackSecret: string } | undefined;
@@ -740,7 +1109,7 @@ export class AgentRuntime {
             const system = [
               request.definition.systemPrompt,
               request.definition.context,
-              skillCatalog(sandbox.workspace, skills),
+              skillCatalog(active.workspace!, skills),
               processLanguageInstruction(request.language),
             ]
               .filter(Boolean)
@@ -859,7 +1228,7 @@ export class AgentRuntime {
           },
         },
         async (event) => {
-          await this.receive(active, event);
+          await this.receiveLegacy(active, event);
         },
         signal,
         modelStream(
@@ -883,7 +1252,7 @@ export class AgentRuntime {
       failure = signal.aborted ? stopMessage(signal) : safeMessage(error);
     }
     await closeMcp();
-    await active.sandbox?.stop();
+    await sandbox?.stop();
     try {
       await this.collect(active, null);
     } catch (error) {
@@ -914,6 +1283,7 @@ export class AgentRuntime {
       active.pending.clear();
       const before = (await this.store.run(scope, run.id)).seq;
       await this.store.finish(scope, run.id, reason, failure, workspaceCommit);
+      this.sessionEngines.idle(scope, run.sessionId);
       // The lifecycle notice follows the finish commit, independently of subsequent intent preparation.
       this.publishSessionRun(scope, { type: "run_stopped", sessionId: run.sessionId, runId: run.id });
       const stopped = (await this.store.run(scope, run.id)).run;
@@ -926,11 +1296,11 @@ export class AgentRuntime {
     for (const wake of this.waiters.get(key(scope, run.id)) ?? []) wake();
   }
   private async collect(active: Active, toolCallId: string | null) {
-    const sandbox = active.sandbox;
-    if (!sandbox) return [];
+    if (!active.workspace) return [];
+    const workspace = active.workspace;
     return this.files.withLock(async () => {
       const ids: string[] = [];
-      const current = await this.files.scan(sandbox.workspace);
+      const current = await this.files.scan(workspace);
       const paths = new Set(current.map((f) => f.path));
       for (const name of active.outputBaseline.keys())
         if (!paths.has(name)) active.outputBaseline.delete(name);
@@ -962,14 +1332,8 @@ export class AgentRuntime {
             [scope.hostId, scope.domainId, id],
           )
         ).rows;
-        await this.store.deleteSession(scope, id);
-        await new SessionSandbox(
-          this.store,
-          this.options.root,
-          this.worker,
-          scope,
-          id,
-        ).remove();
+        await this.store.deleteSession(scope, id, () => this.sessionEngines.release(scope, id));
+        await this.sessionEngines.remove(scope, id);
         for (const { sha256 } of hashes) {
           const referenced = (
             await this.store.pool.query(
@@ -990,6 +1354,7 @@ export class AgentRuntime {
     const state = await this.store.run(scope, runId);
     const active = this.active.get(key(scope, runId));
     const events = await this.store.toolEvents(scope, runId, !includeHistory);
+    const presentation = (await this.store.runPresentation(scope, [runId])).get(runId);
     const tools = new Map<
       string,
       RuntimeRunSnapshot["toolExecutions"][number]
@@ -1037,6 +1402,7 @@ export class AgentRuntime {
         : [],
       toolExecutions: [...tools.values()],
       artifacts: includeHistory ? await this.store.artifacts(scope, runId) : [],
+      ...presentation,
     };
   }
   /**
@@ -1111,7 +1477,13 @@ export class AgentRuntime {
           pendingMessages: snapshot.pendingMessages.filter(entry => entry.message.role !== "system"),
         };
       }
-      return { pendingQuestions:await this.channel.facts.pendingQuestions(scope,sessionId), session: { ...session, latestRun: currentRun }, ...window, runs: runs.filter(run => ids.has(run.id)), latestRun };
+      const presentation = await this.store.runPresentation(scope, [...ids].filter(id => id !== latestRun?.run.id));
+      return {
+        pendingQuestions: await this.channel.facts.pendingQuestions(scope,sessionId),
+        session: { ...session, latestRun: currentRun }, ...window,
+        runs: runs.filter(run => ids.has(run.id)).map(run => ({ ...run, ...presentation.get(run.id) })),
+        latestRun,
+      };
     });
   }
   /**
@@ -1193,6 +1565,7 @@ export class AgentRuntime {
   async close() {
     for (const active of this.active.values()) active.controller.abort();
     await Promise.allSettled([...this.active.values()].map((a) => a.done));
+    await this.sessionEngines.close();
     await this.code.close();
     await runtimeLogging.close();
     await this.store.close();

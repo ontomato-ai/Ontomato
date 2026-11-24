@@ -12,7 +12,9 @@ import { runtimePresentationCallbackSchema } from "./agent-presentation";
 import {
   runtimeCursorSchema,
   runtimeToolExecutionSchema,
+  runtimeUsageUpdateSchema,
 } from "./agent-runtime-events";
+import { runtimeRunDetailSchema } from "./agent-runtime-details";
 import {
   runtimeMessageSchema,
   runtimeSettledMessageSchema,
@@ -51,6 +53,7 @@ export const runtimeAdmissionHeadersSchema = runtimeRequestHeadersSchema.extend(
 export const runtimeAgentDefinitionSchema = z
   .object({
     agentId: runtimeKeySchema.optional(),
+    engine: runtimeKeySchema.optional(),
     systemPrompt: z.string(),
     context: z.string().optional(),
     modelId: modelSelectionSchema.shape.modelId,
@@ -159,6 +162,14 @@ export const runtimeRunViewSchema = z.object({
   executionUserId: runtimeRunFields.executionUserId,
 }).strict();
 export type RuntimeRunView = z.infer<typeof runtimeRunViewSchema>;
+export const runtimeRunPresentationSchema = z.object({
+  details: z.array(z.object({
+    detail: runtimeRunDetailSchema,
+    timestamp: z.number(),
+  }).strict()).optional(),
+  usageUpdate: runtimeUsageUpdateSchema.nullable().optional(),
+}).strict();
+export type RuntimeRunPresentation = z.infer<typeof runtimeRunPresentationSchema>;
 export const runtimeAdmissionResponseSchema = z
   .object({
     run: runtimeRunSchema,
@@ -195,6 +206,7 @@ export const runtimeRunSnapshotSchema = z
     ),
     toolExecutions: z.array(runtimeToolExecutionSchema),
     artifacts: z.array(runtimeArtifactSchema),
+    ...runtimeRunPresentationSchema.shape,
   })
   .strict();
 export const runtimeSessionSnapshotSchema = z

@@ -688,7 +688,7 @@ it("enforces run-scoped channel command authentication, rejection order, build-t
       controller: new AbortController(),
       sealed: false,
       channelSecret: secret,
-      sandbox: { workspace },
+      workspace,
     }],
     [canonical([scope.hostId, scope.domainId, auxRunId]), {
       scope,
