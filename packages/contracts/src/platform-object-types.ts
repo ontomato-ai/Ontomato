@@ -206,7 +206,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [OBJECT_TYPE]: {
     ...describeType("objectType", "fact"),
     reads: {
-      ...modelReads, ...metadataList, count: countRead,
+      ...modelReads, ...metadataList, ...referenceReads, count: countRead,
       record: {
         ...modelReads.record,
         outputs: {
