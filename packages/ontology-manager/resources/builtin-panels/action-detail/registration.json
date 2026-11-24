@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-action-detail",
+      "input": {
+        "name": "Action detail",
+        "description": "View and edit one action's definition, inspect its derived definition and code explanation, or delete it."
+      }
+    }
+  ]
+}

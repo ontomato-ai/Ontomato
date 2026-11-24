@@ -57,6 +57,7 @@ describe("readBuiltinProducts", () => {
       expect(panels.size).toBe(entries.length);
       expect(projections.size).toBeGreaterThan(0);
       expect(panels.has("builtin-product-ontology-actions")).toBe(true);
+      expect(panels.has("builtin-product-ontology-action-detail")).toBe(true);
 
       const frame = panels.get("builtin-product-ontology-frame");
       expect(frame).toBeDefined();

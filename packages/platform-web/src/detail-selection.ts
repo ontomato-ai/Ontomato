@@ -1,7 +1,7 @@
 import type { RouteLocation } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { ACTION, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -96,12 +96,29 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     use: platformRoutes.objects.path,
     state: ({ className }) => ({ selected: className! }),
   },
-  // The actions page: an action's detail selects it; the old page's `new` opens the catalog.
+  // The actions page: old `/new` opens the catalog; `:id` (other than `detail`/`new`) and legacy catalog `?selected=`
+  // links forward straight to the non-menu action detail entry.
+  {
+    path: `${platformRoutes.actions.path}/new`,
+    use: platformRoutes.actions.path,
+    state: (): Record<string, PanelStateValue> => ({}),
+  },
   {
     path: platformRoutes.action.path,
-    use: platformRoutes.actions.path,
-    state: ({ id }): Record<string, PanelStateValue> =>
-      id === "new" ? {} : { selected: id! },
+    use: `${platformRoutes.actions.path}/detail`,
+    state: ({ id }): Record<string, PanelStateValue> | null =>
+      id === "detail" || id === "new" ? null : { selected: id! },
+  },
+  {
+    path: platformRoutes.actions.path,
+    use: `${platformRoutes.actions.path}/detail`,
+    state: (_params, query): Record<string, PanelStateValue> | null => {
+      const selected = query.get("selected");
+      if (!selected || !selected.trim()) return null;
+      const prefix = `${ACTION}~`;
+      const primaryKey = selected.startsWith(prefix) ? selected.slice(prefix.length) : selected;
+      return primaryKey ? { selected: primaryKey } : null;
+    },
   },
   // The functions page: a function's detail selects it; the old page's `new` opens the catalog (creating is not deep-linked).
   {
