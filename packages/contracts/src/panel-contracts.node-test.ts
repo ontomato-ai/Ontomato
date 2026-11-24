@@ -80,6 +80,36 @@ const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id 
 const platformOperation = (id: string) => ({ kind: "PlatformOperation" as const, id });
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
 
+test("member inputs allow only identity fields on declared single-object state", () => {
+  const input = { state: "selection", field: "primaryKey" } as const;
+  assert.deepEqual(panelMemberInputSchema.parse(input), input);
+  assert.equal(panelMemberInputSchema.safeParse({ ...input, field: "label" }).success, false);
+  assert.equal(panelMemberInputSchema.safeParse({ ...input, path: [] }).success, false);
+
+  const members = { list: { target: { projectionId: "list" }, inputs: { className: input } } };
+  for (const type of [
+    { kind: "object", objectType: "Order" },
+    { kind: "object-union", objectTypes: ["Order", "Customer"] },
+    { kind: "child-object", parentType: "Order", collection: "lines" },
+  ]) {
+    assert.equal(panelManifestSchema.safeParse({ state: { selection: { type } }, members }).success, true);
+  }
+  for (const type of [
+    { kind: "scalar", type: "string" },
+    { kind: "list", items: { kind: "object", objectType: "Order" } },
+  ]) {
+    const parsed = panelManifestSchema.safeParse({ state: { selection: { type } }, members });
+    assert.equal(parsed.success, false);
+    if (!parsed.success)
+      assert.deepEqual(parsed.error.issues[0]?.path, ["members", "list", "inputs", "className", "field"]);
+  }
+  assert.equal(panelManifestSchema.safeParse({ state: {}, members }).success, false);
+  assert.equal(panelManifestSchema.safeParse({
+    state: { selection: { type: { kind: "object", objectType: "Order" } } },
+    members: { list: { target: { projectionId: "list" }, outputs: { selected: input } } },
+  }).success, false);
+});
+
 test("member inputs reference a sibling's read-only output and optional JSON Pointer", () => {
   const target = { projectionId: "projection" };
   const output = { member: "form", name: "draft" };

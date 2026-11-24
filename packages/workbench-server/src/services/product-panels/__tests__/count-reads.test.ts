@@ -1,7 +1,7 @@
 import {
   ACTION, AGENT_DEFINITION, ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP, SDK_COMPONENT, WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
-import { productProjectionSchema } from "@ontomato/contracts/product-panels";
+import { applicationPanelUseSchema, productProjectionSchema } from "@ontomato/contracts/product-panels";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
@@ -11,13 +11,14 @@ import { readProductPanelData } from "../data-reads";
 
 const mocks = vi.hoisted(() => ({
   resolveMember: vi.fn(),
+  resolveRoot: vi.fn(),
   assertPermission: vi.fn(),
   query: vi.fn(),
   listVisibleDomainComponents: vi.fn(),
 }));
 
 vi.mock("../member-path", () => ({
-  requireRegisteredPanelRoot: async () => ({}),
+  requireRegisteredPanelRoot: mocks.resolveRoot,
   resolvePanelMemberPath: mocks.resolveMember,
 }));
 vi.mock("../../../config/application", async importOriginal => {
@@ -80,6 +81,7 @@ function readCount(typeId: string) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.resolveRoot.mockResolvedValue({});
 });
 beforeAll(() => {
   installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
@@ -118,6 +120,42 @@ describe("platform count reads", () => {
       return Response.json(post ? { success: true, data: rows } : rows);
     }));
     await expect(readCount(type)).resolves.toEqual({ status: "ready", value: { rows: [], total: rows.length } });
+  });
+
+  it("projects a fixed object state key before reading the selected class's attributes", async () => {
+    const projection = productProjectionSchema.parse({
+      id: "builtin-product-test-attributes", domainId: null, ownerId: null, editable: false,
+      name: "Attributes", description: "", visibility: "platform", revision: 1,
+      createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z",
+      componentId: "@ontomato/sdk:ObjectList", inputs: { className: { kind: "scalar", type: "string" } }, outputs: {}, config: {},
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: ATTRIBUTE } }, read: "list", params: { className: { input: "className" } } } },
+    });
+    mocks.resolveRoot.mockResolvedValue({ entry: applicationPanelUseSchema.parse({
+      id: "attributes", pageKey: "attributes", panelId: "model", path: "/attributes", access: { kind: "domain-member" },
+      inputs: { selectedNode: { literal: { className: OBJECT_TYPE, primaryKey: "Device" } } },
+    }) });
+    mocks.resolveMember.mockResolvedValue({
+      kind: "projection", projection, trail: [],
+      member: { inputs: { className: { state: "selectedNode", field: "primaryKey" } } },
+    });
+    const classNames: (string | null)[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      const path = new URL(url);
+      switch (path.pathname) {
+        case "/ontology/model/attributes":
+          classNames.push(path.searchParams.get("className"));
+          return Response.json([attribute]);
+        case "/ontology/model/object-types": return Response.json([objectType]);
+        case "/ontology/model/field-labels": return Response.json({ attribute: {}, objectType: {}, relationship: {} });
+        default: throw new Error(`Unexpected owner read: ${path.pathname}`);
+      }
+    });
+
+    await expect(readProductPanelData(owner, viewer, {
+      source: { kind: "registered", applicationId: "ontology", useId: "attributes" },
+      memberPath: [{ member: "attributes" }], dataName: "rows", inputs: { className: "Site" },
+    })).resolves.toMatchObject({ status: "ready" });
+    expect(classNames).toEqual(["Device"]);
   });
 
   it("counts distinct SDK entries including visible domain registrations", async () => {

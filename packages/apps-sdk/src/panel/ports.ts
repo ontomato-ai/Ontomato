@@ -1,5 +1,5 @@
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelMemberInput, PanelOperation, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import { panelStateIdentityField, type PanelChildObjectIdentity, type PanelMemberInput, type PanelObjectRef, type PanelOperation, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { ProjectionOperationBinding, ProjectionPorts } from "@ontomato/contracts/panel-projection";
 import { stateObject, stateObjects, type PanelFieldValue } from "./state";
 import type { PanelWriteInvocation } from "./human-operations";
@@ -78,8 +78,13 @@ type InputContext = Pick<PanelInstance, "manifest" | "state" | "outputs">;
 export function memberInputValue(
   { state, outputs }: Pick<InputContext, "state" | "outputs">,
   source: PanelMemberInput,
-): RuntimeJsonValue {
-  if ("state" in source) return state.values.value[source.state] ?? null;
+): RuntimeJsonValue | undefined {
+  if ("state" in source) {
+    const value = state.values.value[source.state];
+    if ("field" in source)
+      return panelStateIdentityField(source.field, value as PanelObjectRef | PanelChildObjectIdentity | null | undefined);
+    return value ?? null;
+  }
   if ("literal" in source) return source.literal;
   const { member, name, path } = source.output;
   const value = outputs[member]?.[name] ?? null;
@@ -97,5 +102,7 @@ export function slotInputValues(
   // An output bound to a state reads that state back as the input of the same name.
   const outputs = Object.entries(declaration.outputs ?? {}).filter(([name]) => !Object.hasOwn(declaration.inputs ?? {}, name))
     .map(([name, source]) => [name, memberInputValue(instance, source)] as const);
-  return Object.fromEntries([...inputs, ...outputs]);
+  return Object.fromEntries([...inputs, ...outputs].filter(
+    (entry): entry is readonly [string, RuntimeJsonValue] => entry[1] !== undefined,
+  ));
 }
