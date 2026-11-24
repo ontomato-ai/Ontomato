@@ -60,8 +60,8 @@ import type { PanelOperationBinding } from "./types";
  * There is one API — `usePanelOperation(member, name, options?)`. By default (`options.entry !== false`), calling it
  * in a component's synchronous `setup()` registers a mounted UI action entry for that component's lifetime so human
  * clicks and agent `page_action` calls share one availability check, input schema filter, preparation, universal
- * 4-tuple confirmation verification, dispatch, and `onSettled` callback. For non-UI automated background flows
- * (such as credential renewal on mount), pass `{ entry: false }` explicitly.
+ * 4-tuple confirmation verification, dispatch, and `onSettled` callback. Pass `{ entry: false }` for background flows
+ * or to subscribe to the operation's availability before its button mounts.
  */
 
 /** Availability check answer for a panel operation entry. */
@@ -82,7 +82,7 @@ export interface PanelOperationContext {
 export interface UsePanelOperationOptions {
   /**
    * Whether this handle represents a mounted page UI entry reachable by `page_action` (default `true`).
-   * Pass `false` only for non-UI automated flows (for example automatic credential renewal on mount).
+   * Pass `false` for background flows or when another control provides the page action entry.
    */
   entry?: boolean;
   /**
@@ -144,7 +144,7 @@ export interface PanelOperationHandle {
  * By default (`options.entry !== false`), this also registers the calling component as a mounted page action entry so
  * human clicks and agent `page_action` calls share the exact same availability guards, input filtering, preparation,
  * 4-tuple confirmation verification, dispatch, and `onSettled` callback, unregistering automatically on unmount.
- * Pass `{ entry: false }` for non-UI background flows (such as credential renewal on mount).
+ * Pass `{ entry: false }` for background flows or to subscribe to an operation with its own UI entry.
  */
 export function usePanelOperation(
   member: string,

@@ -152,7 +152,8 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       const workspace = join(out, "builtin-panel");
       mkdirSync(workspace);
       writeFileSync(join(workspace, "registration.json"), JSON.stringify({ panels: [{ id: "builtin-product-metric-check" }] }));
-      const editor = { component: "ObjectForm", type: "platform:MetricView", data: { createForm: "createForm" } };
+      const editor = { component: "ObjectForm", type: "platform:MetricView", data: { createForm: "createForm" },
+        operation: "platform:MetricView.save" };
       const trial = { component: "OperationButton", operation: "metricViews.test" };
       const descriptor = join(workspace, "panel.json");
       const document = { manifest: { state: {}, members: { metricEditor: editor, preview: trial } } };
@@ -168,11 +169,8 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       assert.equal(readFileSync(descriptor, "utf8"), withoutDraft);
 
       trial.draft = "metricEditor";
-      const save = { component: "ObjectForm", type: "platform:MetricView", data: { createForm: "createForm" },
-        operation: "platform:MetricView.save" };
-      document.manifest.members.saveEditor = save;
       writeFileSync(descriptor, JSON.stringify(document));
-      assert.deepEqual(Object.keys(JSON.parse(check()).assigned), ["metricEditor", "preview", "saveEditor"]);
+      assert.deepEqual(Object.keys(JSON.parse(check()).assigned), ["metricEditor", "preview"]);
       assert.equal(JSON.parse(readFileSync(descriptor, "utf8")).manifest.members.preview.draft, "metricEditor");
     });
 

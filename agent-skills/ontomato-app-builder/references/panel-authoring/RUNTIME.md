@@ -239,6 +239,13 @@ interface PanelFormHandle {
 }
 ```
 
+`PanelFormHandle.refreshDraft()` refreshes the owner's fields, options and errors in place while the form is dirty,
+preserving the unsaved draft and its baseline. A clean form adopts the new description and baseline.
+
+On `<object-form-fields>`, use either `:parent` or `:fields`. Setting `:parent` makes the component ignore `:fields`.
+Use `:parent="activeClassParent" :exclude="['/rowPermission']"` to omit a child of that parent, or omit `:parent`
+and pass full absolute JSON pointers in `:fields`.
+
 ### usePanelNarrow
 
 Observes a panel container element's own inline width via `ResizeObserver` and reports whether it is narrow
@@ -271,9 +278,9 @@ function usePanelBack(active: MaybeRefOrGetter<boolean>, onBack: () => void, opt
 
 Back layers close last-in first-out. `<sdk-dialog>` and `<sdk-drawer>` automatically guard dirty forms registered
 through `useProjectionForm` before closing via the close button, backdrop, Escape, or `handleClose()`. Discarding
-clears only the dirty forms inside that overlay. Bind `v-model` directly to its open state. Use `usePanelBack` for
-an in-panel sub-view with its own Back action.
-
+clears only the dirty forms inside that overlay. For a form dialog with a Back layer, bind `:model-value` and
+`:before-close`. Call `done()` only when `await dialogBack.back()` returns true. Drive a custom Save button with
+`usePanelFormDraft`. Use the same Back layer for the dialog's Cancel button.
 
 ### UsePanelBackOptions
 
@@ -339,7 +346,7 @@ Binds a declared member operation (`operations.<name>`) to the calling component
 By default (`options.entry !== false`), this also registers the calling component as a mounted page action entry so
 human clicks and agent `page_action` calls share the exact same availability guards, input filtering, preparation,
 4-tuple confirmation verification, dispatch, and `onSettled` callback, unregistering automatically on unmount.
-Pass `{ entry: false }` for non-UI background flows (such as credential renewal on mount).
+Pass `{ entry: false }` for background flows or to subscribe to an operation with its own UI entry.
 
 ```ts
 function usePanelOperation(member: string, name: string, options?: UsePanelOperationOptions): PanelOperationHandle
@@ -353,7 +360,7 @@ Options for `usePanelOperation(member, name, options?)`.
 interface UsePanelOperationOptions {
   /**
    * Whether this handle represents a mounted page UI entry reachable by `page_action` (default `true`).
-   * Pass `false` only for non-UI automated flows (for example automatic credential renewal on mount).
+   * Pass `false` for background flows or when another control provides the page action entry.
    */
   entry?: boolean;
   /**
@@ -420,7 +427,11 @@ interface PanelOperationHandle {
 The member declaration's `operation` is the owner's full ID. Invoke using the member-qualified ID from the page
 skill's Declared operations. For a member `opRunNow` declaring `schedules.runNow`, pass `opRunNow.runNow`
 as `operation` to `page_action`. In Vue, the same binding is `usePanelOperation("opRunNow", "runNow", options?)`,
-which registers a mounted page action entry automatically (pass `{ entry: false }` only for non-UI background flows).
+which registers a mounted page action entry automatically. Pass `{ entry: false }` for a background flow or
+to subscribe ahead of time to an operation behind a dialog. For example,
+`usePanelOperation("submit", "apply", { entry: false })` exposes the operation read through `state`. Once
+`state.value.status === "ready"`, use `state.value.value.apply?.unavailable?.reason` in the outer toolbar.
+Only the dialog's `OperationButton` registers a `page_action`.
 
 In Vue, call the hook’s `run(input)`. The SDK obtains the target from the binding and the host
 handles confirmation and requests. For an action write, the hook resolves to a receipt. Read these fields before
@@ -433,6 +444,11 @@ updating the editor or announcing a successful write.
 - A successful create carries the owner-reported `created: { objectType, primaryKey }`, also available as
   `operation.created` on completion. Without it, the success has no key to navigate to. Use `affected` for refresh.
 - A null or `unknown` outcome leaves the result unconfirmed. A batch receipt reports one outcome per item.
+
+`OperationInputDialog` uses password inputs for owner fields with `secret: true`. `PanelHost` mounts
+`SecretDeliveryDialog` once per panel and delivers one-time secrets from all write entries, including
+`ObjectForm`, `OperationButton`, `ObjectList` row actions and `usePanelOperation`. The operator receives the
+secret. Assistant observation hides the plaintext, and the assistant leaves secret entry and delivery to the person.
 
 ## Page header and navigation
 
@@ -489,6 +505,10 @@ rather than `window.innerWidth` or viewport units so the layout stays comfortabl
 and use `<sdk-dialog>` / `<sdk-drawer>` for overlays. When a single panel hosts an editable in-panel sub-view (rather
 than navigating to a separate detail entry), wire `usePanelBack` so browser Back, Escape, and in-page back buttons
 share the host's unified unsaved-changes guard.
+
+`SdkPopover`, `SdkDialog` and `SdkDrawer` mount inside the panel's `[data-panel-overlay-root][data-panel-instance]`.
+Panel `<style>` is native browser CSS and applies to these overlays directly. The host scopes it to the panel
+instance. Use ordinary descendant selectors and omit the Vue SFC selectors `:deep` and `::v-deep`.
 
 ## Live remote control by assistants
 

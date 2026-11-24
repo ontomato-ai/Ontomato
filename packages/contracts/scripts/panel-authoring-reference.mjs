@@ -80,6 +80,14 @@ const contents = [
   "| --- | --- | --- |",
   ...rows,
   "",
+  "## Form controls and operation inputs",
+  "",
+  '- `choice-matrix` locks individual rows with `disabled: boolean` and `disabledReason: string | null`. Supply a reason for a disabled row and `null` for an enabled row. Field-level `readOnly` applies to the whole field.',
+  '- `select` supports `presentation: "dropdown" | "radio" | "checklist" | "tree"` and `presets`. The `text` control supports `variables` and marks secret input with `secret: true`. Operation input schema properties can also declare `secret: true`.',
+  '- In `OperationButton`, bind each top-level `inputSchema` property that the button should supply, including optional properties. `OperationInputDialog` prompts for any unbound properties. To omit an optional value, bind a scalar state whose default is `null`.',
+  '- For an `operationParams` state binding, use a scalar state directly. To pass a reference\'s primary key, use `watch` in `panel.mjs` to extract `primaryKey` into that state. The `{ state, field: "primaryKey" }` read-parameter shorthand is unavailable in `operationParams`.',
+  '- Use `ObjectList.config.rowActions` for per-row operations. It supports `hideWhenUnavailable` and the host\'s one-time secret delivery. `OperationButton` targets cannot come from `{ fromSlot: true }`.',
+  "",
 ].join("\n");
 
 if (process.argv.includes("--check")) {

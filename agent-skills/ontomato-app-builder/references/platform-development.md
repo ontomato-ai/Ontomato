@@ -63,6 +63,29 @@ endpoint under the logged-in user's permissions, asks for confirmation in the co
 instance and target have not changed. In full-auto sessions it dispatches immediately. A repeated lookup by intent ID
 reports the existing result without re-executing.
 
+## Check built-in panels
+
+Build the SDK release from the checkout, then run:
+
+```sh
+node "$SKILL/scripts/ontomato.mjs" panel check <panel-dir> --builtin --sdk-dir <built-sdk-dir>
+```
+
+Use the release directory containing `sdk.json`. In Vitest, call `checkBuiltinPanelSource(directory, checks)`
+directly with the contracts checks and the owner draft-read operation IDs derived from the type table. Use
+the SDK catalogue and platform type entries when testing projection expansion.
+In an enterprise test, call `installContentLayout(...)` in `beforeAll`, then dynamically
+`await import(...)` the modules exporting `readBuiltinProducts` and `platformTypeEntries` inside the test.
+Their module initialization requires the installed layout.
+
+For a component test mounted directly with `panelModuleFor`:
+
+- The direct host routes `ctx.notify` to `ElMessage`. Assert the visible message where feedback is relevant.
+- Mock `PanelFormDescription` with `valueSchema`. Select options supply both `disabled` and `disabledReason`.
+- Put the form member key in `target: { source: "draft", slot: "form" }` for a `form.save` descriptor.
+- For a successful create, set `outcome.created: { objectType, primaryKey }` in the mock response.
+  `ObjectForm` takes the `@saved` key from `created`.
+
 ## Write the page skill's common tasks
 
 In `recipes.md`, describe how to use the declared reads, forms and operations for common tasks. Use the business

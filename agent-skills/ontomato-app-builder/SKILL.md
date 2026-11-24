@@ -31,6 +31,7 @@ Authoring panels:
 1. **Container-driven layout.** Lay out by container width and height (`@container` / flex / grid), never by browser window width or hardcoded viewport subtractions. The same code must work full-page, embedded in another panel, and beside a conversation. When the container has no definite height, grow naturally with content; when it has a definite height, either grow and let the outer area scroll or fill the container and scroll the needed sub-region.
 2. **Reads through projections, writes through declared operations.** Never call business APIs directly. Every button that performs a business write must invoke a named operation bound on a projection member of this panel; buttons for local UI interaction only (open dialog, go back, navigate, discard unsaved draft) are written directly in the panel as `<sdk-button>` or component buttons.
    - Whether rendered in `<page-header>`, a table slot, or a form, the button calls the same declared binding so target and parameter sources are traceable.
+   - Every inline `ObjectForm`, including a read-only form with `config.actions: "none"`, needs an operation or a sibling operation that references its draft.
    - A save bound on a form projection submits that form's live draft; a write operation on another member that submits a form's draft must explicitly name that form member (`draft: "<formMember>"`).
    - Post-action UI updates or navigation must rely on the operation's success outcome; any new object ID needed afterward (for example navigating to a newly created record) must be declared and returned by the operation owner. Never infer success or guess a new ID from list changes.
 3. **Never render ontology data in the panel.** Business data is rendered by base components according to projection declarations so every displayed result, field, or object is traceable.
@@ -46,7 +47,10 @@ Authoring panels:
    - Always declare as public state: (a) state deciding which business content the reader sees (tabs, filters, selections, view modes); (b) state opening or switching an editable business form (including blank create dialogs such as `creating`). Leave pure transient UI state (hover, help tooltips, scroll position) in Vue.
    - Mark `deepLink: true` **only** on state needed for another reader to return to the same view (selected object, tab, view mode, list search/filter/sort). **Never** mark dialog toggles (`creating`, `grantDialog`, `dialog`, `compose`) or active-edit trackers (`editingEntryId`) with `deepLink: true`.
    - Use `present` to open the page or editor, `fill_form` to enter unsaved values in the live form, and `page_action` to request the declared save when asked. The same form, operation and permissions apply to humans and assistants. Write typical flows in `recipes.md`.
+   - Only the person chooses files from their device and submits uploads or imports. Assistants can open the entry. Secret fields and one-time secrets stay with the operator. Assistants neither read nor fill them (standard §2.4.2).
 10. **Reuse first, escalate missing capabilities.** Search for existing base components, projections, and panels first. Missing business reads, forms, or Actions are added by the capability owner; missing generic UI primitives belong in the official SDK. When migrating an existing page, verify every visible item and user action against the original page.
+
+Give each `ObjectList` table column an explicit `labelKey` in `content.messages` so headers stay localized when empty or filtered to no matches.
 
 Authoring components:
 
@@ -54,7 +58,7 @@ Authoring components:
 
 **Machine-checked rules (`panel check` catches these automatically)**
 
-- Panel code uses Vue templates, standard CSS, and scripts importing only `vue` and `@ontomato/sdk/panel`. Direct network calls (`fetch`, `XMLHttpRequest`, `EventSource`, `WebSocket`) are rejected.
+- `panel.html` styles are native browser CSS scoped by the host. Use descendant selectors and omit Vue SFC pseudo-selectors `:deep` and `::v-deep`. Panel code uses Vue templates, and scripts importing only `vue` and `@ontomato/sdk/panel`. Direct network calls (`fetch`, `XMLHttpRequest`, `EventSource`, `WebSocket`) are rejected.
 - Data-free UI primitives use `<page-header>`, `<sdk-*>`, `v-sdk-*`, and `--sdk-*` tokens. Third-party library names (`el-*`, `v-loading`, `--el-*`, `element-plus`) are rejected.
 - Manifest structure, typed public states, member bindings, and component declarations (including `bindsElement` meaning applicable ontology types; actual bindings always go through reads or operations) are validated against the SDK catalogue and type table.
 

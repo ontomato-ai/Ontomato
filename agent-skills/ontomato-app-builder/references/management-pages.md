@@ -40,7 +40,7 @@ and `--batch <owner operation ID>` for a toolbar button targeting checked rows. 
 | New in centered dialog, edit in `<page-header>` | Declare `creating` in `manifest.state` **without** `deepLink: true`. Open a centered `<sdk-dialog>` from the catalog header’s primary New button. Mount `createForm` with `v-if`, required fields only and `config.actions: "create-only"`. On `@saved`, close the dialog and navigate to detail using the owner-reported key when present. Wire the separate edit form to `usePanelFormDraft` for header actions. |
 | Customer class edit & create forms | Bind `data: { form: "form" }` + an object-targeted write `Action` for edit (not just `form.save`; use `{ formField: "/ptr" }` / `{ formFields: { k: "/ptr" } }` when parameter names differ; unmapped attributes become read-only). Bind `data: { createForm: "createForm" }` + a targetless `Action` (`target: { source: "none" }`) for create. Review the 4 current runtime boundaries (restricted-scope `ACTION_TARGET_OUT_OF_SCOPE`, required `affects` for auto-refresh, `affected.objects: []` on targetless Actions, text clear submits `""`) in [CODE.md](panel-authoring/CODE.md#customer-objecttype-forms-and-targetless-actions). |
 | Single operation in `<page-header>` | Declare an `OperationButton` member (`operation`, `target: "selected"`, optional `config: { label: "Delete", type: "danger", plain: true, icon: "trash", hideWhenUnavailable: true }`) and place `<projection slot="remove">` directly inside `<page-header #actions>`. |
-| Batch operation | Connect the list's `state.checked` and the button's `target` to the same list of object references on a batch-capable operation. Put the button in `#batch-actions` so the list retains the dismissible receipt after the checks clear. |
+| Batch operation | Run `panel type <type-id>` to confirm the owner operation declares `batch: true`. Connect the list's `state.checked` and the button's `target` to the same list of object references. Put the button in `#batch-actions` so the list retains the dismissible receipt after the checks clear. |
 | Detail header inside split/card views | Use `ObjectHeader` with `target: "selected"`, `data.record`, and declared `operations`. Read `usePanelOutput("header", "label" \| "status" \| "errorMessage")` and any owner-declared scalar outputs. Pair with `ObjectSummary` (`config.showTitle: false`, optional `config.copyableFields`). |
 | Multi-metric KPI or sentence display | Bind `MetricCard` or `RecordTemplate` to a `platform:MetricView` (`data.result`) — owner provides numbers, component fills fixed `{field}` templates (`RecordTemplate`) or exact-match `valueMap`. Declare `sourceObjectTypes` on the metric so writes auto-refresh it. |
 | Carry view state in the address | Mark **only** view-restoration state (`selected`, `tab`, `search`, `filter`, `sort`) with `deepLink: true` in `manifest.state`. Never mark dialog toggles or active-edit trackers as `deepLink: true`. |
@@ -55,3 +55,48 @@ Keep an explicitly selected object in place on missing or forbidden reads. Keep 
 filters, sort and paging. Close a dirty form through the panel's confirmation first. See
 [availability and narrow containers](panel-authoring/CODE.md#availability-narrow-containers-and-projections)
 and the [component contracts](panel-authoring/CODE.md#read-only-projection-outputs-and-official-component-reference).
+
+## Guard a form dialog
+
+Bind the declared open state one way. The same Back layer handles Cancel and close requests. The form's
+`@saved` handler can close immediately after success. Use `config.actions: "none"` when the footer owns Save.
+
+```js
+const draft = usePanelFormDraft("form");
+const dialogBack = usePanelBack(() => dialogOpen.value, closeDialog, { forms: "form" });
+async function beforeClose(done) {
+  if (await dialogBack.back()) done();
+}
+const cancel = () => dialogBack.back();
+```
+
+```html
+<sdk-dialog :model-value="dialogOpen" :before-close="beforeClose">
+  <projection v-if="dialogOpen" slot="form" @saved="closeDialog"></projection>
+  <template #footer>
+    <sdk-button @click="cancel">{{ t('action.cancel') }}</sdk-button>
+    <sdk-button type="primary" :disabled="!draft?.canSave" :loading="draft?.saving" @click="draft?.save()">
+      {{ t('action.save') }}
+    </sdk-button>
+  </template>
+</sdk-dialog>
+```
+
+To edit separate subsets of one owner form in different dialogs, configure each form's `groups` with its
+field pointers and set `unassignedFields: "omit"`. The owner applies the subset in `submittedFields`.
+
+## Reuse a catalog and detail across applications
+
+Declare `detailPath` on the catalog and `catalogPath` on the detail as scalar string states with
+`external: true` and default paths. Read these states when navigating. Each application's `panelUse.inputs`
+can wire a sibling path, for example `{ detailPath: { literal: "/applications/app-examples/detail" } }`.
+The host removes wired inputs from the URL.
+
+- To offer conversational creation, place a `ConversationEntry` in the catalog header and teach the
+  assistant to `present` the detail entry with `creating: true`. The detail panel declares `creating`
+  as public state with `deepLink: false`.
+- For a detail page with `detailMode` defaulting to `"view"` and `deepLink: false`, open the created object
+  with `navigate(panelAddress(detailPath, { selected: primaryKey }))` using the owner-reported key. The destination
+  starts in its default view mode. Keep the navigation state in declared inputs rather than in `sessionStorage`.
+- Use `ObjectList` with `showHeader: false`, `fallbackToFirst: true` and `#cell-path` for a selectable
+  hierarchy of object references. Use `ObjectTree` for an owner's `files` read and scalar file-path selection.

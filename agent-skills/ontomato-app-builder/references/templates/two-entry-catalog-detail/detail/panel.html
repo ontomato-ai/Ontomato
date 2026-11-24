@@ -3,17 +3,21 @@
   .detail-body { display: grid; grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr); gap: var(--page-content-gap); padding: var(--page-content-gap) var(--page-gutter); align-items: stretch; }
   .detail-card { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--page-section-padding, var(--spacing-lg)); border: 1px solid var(--sdk-border-color, var(--ui-border)); border-radius: var(--radius-md); background: var(--sdk-bg-color); }
   .detail-card h2 { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); }
+  .detail-status { margin: var(--page-content-gap) var(--page-gutter); }
   @container detail-page (max-width: 850px) { .detail-body { grid-template-columns: minmax(0, 1fr); } }
 </style>
 <div id="app">
   <section class="detail-page">
     <page-header :back-label="t('detail.back')" :draft="formDraft" @back="goBack">
       <template #title>
-        <projection v-if="selected" slot="header"></projection>
+        <projection v-if="selectedKey" slot="header" :fallback-title="selectedKey"></projection>
         <span v-else>{{ t('detail.choose') }}</span>
       </template>
+      <template #actions>
+        <!-- Add actions here. Keep completion handlers mounted with v-show="ready" for delete operations. -->
+      </template>
     </page-header>
-    <div v-if="selected && ready" class="detail-body">
+    <div v-if="selectedKey && ready" class="detail-body">
       <section class="detail-card">
         <h2>{{ t("detail.basicInfo") }}</h2>
         <projection slot="form"></projection>
@@ -23,5 +27,11 @@
         <projection slot="detail"></projection>
       </section>
     </div>
+    <template v-else-if="selectedKey">
+      <sdk-alert v-if="!status || status === 'awaiting' || status === 'loading'" class="detail-status" type="info" :closable="false" :title="t('detail.loading')"></sdk-alert>
+      <sdk-alert v-else-if="status === 'forbidden'" class="detail-status" type="warning" :closable="false" :title="t('detail.forbidden')"></sdk-alert>
+      <sdk-alert v-else-if="status === 'error'" class="detail-status" type="error" :closable="false" :title="t('detail.error')"></sdk-alert>
+      <sdk-alert v-else class="detail-status" type="warning" :closable="false" :title="t('detail.missing')"></sdk-alert>
+    </template>
   </section>
 </div>

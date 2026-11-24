@@ -79,7 +79,7 @@ export function managementPanel(type, checks, typeTable, {
       target: "selected", data: { record: "record" },
       ...(shareSearch && { state: { search: "search" } }),
     };
-    detailMembers.header = { component: "ObjectHeader", ...target };
+    detailMembers.header = { component: "ObjectHeader", ...target, config: { subtitle: "" } };
     detailMembers.detail = { component: "ObjectSummary", ...target, config: { showTitle: false } };
   }
   const edit = save?.effect === "write" && reads.form?.result === "panelFormDescription";
@@ -195,20 +195,28 @@ export function managementPanel(type, checks, typeTable, {
     '  <section class="detail-page">',
     `    <page-header :back-label="t('detail.back')"${edit ? ' :draft="formDraft"' : ""} @back="goBack">`,
     "      <template #title>",
-    ...(record ? [`        ${member("header", ' v-if="selected"')}`, '        <span v-else>{{ t("detail.choose") }}</span>']
-      : ['        <span>{{ selected?.primaryKey ?? t("detail.choose") }}</span>']),
+    ...(record ? [`        ${member("header", ' v-if="selectedKey" :fallback-title="selectedKey"')}`, '        <span v-else>{{ t("detail.choose") }}</span>']
+      : ['        <span>{{ selectedKey ?? t("detail.choose") }}</span>']),
     "      </template>",
     ...(singleButtons.length ? [
       "      <template #actions>",
-      ...singleButtons.map(key => `        ${member(key, record ? ' v-if="ready"' : ' v-if="selected"')}`),
+      ...singleButtons.map(key => `        ${member(key, record ? ' v-show="selectedKey && ready"' : ' v-show="selectedKey"')}`),
       "      </template>",
     ] : []),
     "    </page-header>",
     ...(record || edit ? [
-      `    <div v-if="selected${record ? " && ready" : ""}" class="detail-body">`,
+      `    <div v-if="selectedKey${record ? " && ready" : ""}" class="detail-body">`,
       ...[...(edit ? ["form"] : []), ...(record ? ["detail"] : [])].map(key =>
         `      <section class="detail-card">${member(key)}</section>`),
       "    </div>",
+    ] : []),
+    ...(record ? [
+      '    <template v-else-if="selectedKey">',
+      '      <sdk-alert v-if="!status || status === \'awaiting\' || status === \'loading\'" type="info" :closable="false" :title="t(\'detail.loading\')"></sdk-alert>',
+      '      <sdk-alert v-else-if="status === \'forbidden\'" type="warning" :closable="false" :title="t(\'detail.forbidden\')"></sdk-alert>',
+      '      <sdk-alert v-else-if="status === \'error\'" type="error" :closable="false" :title="t(\'detail.error\')"></sdk-alert>',
+      '      <sdk-alert v-else type="warning" :closable="false" :title="t(\'detail.missing\')"></sdk-alert>',
+      "    </template>",
     ] : []),
     "  </section>",
     "</div>",
@@ -225,13 +233,13 @@ export function managementPanel(type, checks, typeTable, {
     "await mountPanel({",
     "  setup() {",
     "    const { instance, navigate } = usePanelContext();",
-    "    const selected = computed(() => instance.state.values.value.selected);",
+    "    const selectedKey = computed(() => instance.state.values.value.selected?.primaryKey);",
     ...(record ? [
       '    const status = usePanelOutput("header", "status");',
       '    const ready = computed(() => status.value === "ready");',
     ] : []),
-    ...(edit ? [`    const formDraft = usePanelFormDraft("form", { when: ${record ? "ready" : "selected"} });`] : []),
-    `    return { selected${record ? ", ready" : ""}${edit ? ", formDraft" : ""}, goBack: () => navigate(CATALOG_PATH) };`,
+    ...(edit ? [`    const formDraft = usePanelFormDraft("form", { when: ${record ? "ready" : "selectedKey"} });`] : []),
+    `    return { selectedKey${record ? ", status, ready" : ""}${edit ? ", formDraft" : ""}, goBack: () => navigate(CATALOG_PATH) };`,
     "  },",
     "});",
     "",
@@ -255,6 +263,12 @@ export function managementPanel(type, checks, typeTable, {
   const detail = panel("detail", detailHtml, detailModule, detailState, detailMembers, {
     "detail.back": `Back to ${title}`,
     "detail.choose": `Choose a ${title}`,
+    ...(record && {
+      "detail.loading": "Loading the record…",
+      "detail.forbidden": "You don't have permission to view this record.",
+      "detail.error": "The record could not be loaded.",
+      "detail.missing": "The record is missing.",
+    }),
   });
   const use = (entry, path) => ({
     id: `${id}-${entry}-use`, pageKey: `${id}-${entry}`, panelId: `${id}-${entry}`, path,

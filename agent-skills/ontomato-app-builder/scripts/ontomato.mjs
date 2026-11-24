@@ -662,12 +662,23 @@ async function main() {
   }
   const platformAuthoring = ["action", "metric-view"].includes(cmd) && ["context", "generate"].includes(argv[1])
     && isPlatformAuthoring();
-  const cfg = loadConfig();
-  if (!cfg.envUrl) die("Set ONTOMATO_URL or envUrl in application.yml");
-  const identity = process.env.ONTOMATO_API_KEY ? { apiKey: process.env.ONTOMATO_API_KEY }
-    : process.env.ONTOMATO_TK ? { tk: process.env.ONTOMATO_TK }
-      : platformAuthoring ? {} : await authenticate(cfg, lang);
-  const api = { ...cfg, lang, ...identity };
+  async function commandApi() {
+    const cfg = loadConfig();
+    if (!cfg.envUrl) die("Set ONTOMATO_URL or envUrl in application.yml");
+    const identity = process.env.ONTOMATO_API_KEY ? { apiKey: process.env.ONTOMATO_API_KEY }
+      : process.env.ONTOMATO_TK ? { tk: process.env.ONTOMATO_TK }
+        : platformAuthoring ? {} : await authenticate(cfg, lang);
+    return { ...cfg, lang, ...identity };
+  }
+  if (checkingPanel) {
+    try {
+      return await checkCurrentPanel(await commandApi(), argv[2], materialPath);
+    } catch (error) {
+      if (error.message !== "fetch failed") throw error;
+      throw new Error(`${error.message}. To check a built-in panel offline, pass --builtin --sdk-dir <built-sdk-dir>.`, { cause: error });
+    }
+  }
+  const api = await commandApi();
   if(cmd==="test") {
     if(!workspaceId) die("BUILD_TEST_WORKSPACE_REQUIRED: pass --workspace <id>");
     const sub=argv[1], samplePath=takeOption(argv,"--sample") ?? "test-data/sample.json";
@@ -679,7 +690,6 @@ async function main() {
     await bindTestTarget(api,workspaceId);
   }
   if (cmd === "sdk") return sdkCommand(api, argv.slice(1));
-  if (checkingPanel) return checkCurrentPanel(api, argv[2], materialPath);
   if (cmd === "component") return componentCommand(api, argv.slice(1));
   if (cmd === "panel") return panelCommand(api, workspaceId, argv.slice(1));
   if (cmd === "workspace") return workspaceCommand(api, argv.slice(1));

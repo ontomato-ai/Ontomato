@@ -299,6 +299,24 @@ test("checkAuthoringStyles and checkAuthoringTemplate allow CSS viewport units",
   assert.deepEqual(checkAuthoringTemplate(html, "panel.html"), []);
 });
 
+test("panel styles reject Vue deep selectors without flagging comments or strings", () => {
+  const css = [
+    "/* :deep(.example) and ::v-deep */",
+    '.example::before { content: ":deep(.example) ::v-deep"; }',
+    ".wrap :deep(.sdk-owner-form) { padding: 0; }",
+    ".wrap ::v-deep .sdk-owner-form { padding: 0; }",
+  ].join("\n");
+  const stylesheet = checkAuthoringStyles(css, "panel.css");
+  const template = checkAuthoringTemplate(`<style>\n${css}\n</style>`, "panel.html");
+  const locations = (violations: ReturnType<typeof checkAuthoringStyles>) =>
+    violations.map(({ found, line, column, kind }) => ({ found, line, column, kind }));
+  assert.deepEqual(locations(stylesheet), [
+    { found: ":deep(", line: 3, column: 7, kind: "forbidden-selector" },
+    { found: "::v-deep", line: 4, column: 7, kind: "forbidden-selector" },
+  ]);
+  assert.deepEqual(locations(template), locations(stylesheet).map(item => ({ ...item, line: item.line + 1 })));
+});
+
 test("checkAuthoringTemplate and checkAuthoringStyles allow normal HTML/CSS, SDK UI primitives, and ignore comments, scripts, strings, and mustaches", async () => {
   const allowedCss = [
     "#beef { color: #333; background: rgba(15, 23, 42, 0.12); border-color: hsl(210, 50%, 50%); }",

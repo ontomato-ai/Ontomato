@@ -55,15 +55,19 @@ use `content.messages`.
 - **Pure presentational `<page-header>`.** Place `<page-header>` at the top of `panel.html` when the page needs a
   header (omit it for headerless pages):
   - `title` (string) or `#title` slot (for example `<projection slot="headerTitle"></projection>` using `ObjectHeader`)
-  - optional `description` (string) or `#description` slot
+  - Keep `#title` on one horizontal line. For an `ObjectHeader` title, set `config.subtitle: ""` and the owner field
+    for `config.statusField`, and pass `:fallback-title="selectedKey"` to the projection. Place descriptive content
+    in `#description` with `TypedValue`.
   - optional `back-label` + `@back` (wired to `navigate(CATALOG_PATH)` or `usePanelBack`)
-  - `#actions` slot for right-side controls (`<sdk-button>`, `<projection slot="remove">`, inline counts, search inputs)
+  - Always declare `<template #actions>` for custom actions and put visibility conditions inside. Use `v-show`
+    on the delete projection: `letGo` can clear `selected` before `@done` runs, so keep the button mounted
+    until completion can navigate.
   - `:draft="formDraft"` wired to `usePanelFormDraft("form")` for automatic Save, Discard, and unsaved-changes feedback
 
 ```html
 <page-header :title="selectedTitle" :back-label="t('detail.back')" :draft="formDraft" @back="goBack">
   <template #actions>
-    <projection slot="remove" @done="onRemoveDone"></projection>
+    <projection v-show="selectedKey && ready" slot="remove" @done="onRemoveDone"></projection>
   </template>
 </page-header>
 ```
@@ -97,8 +101,12 @@ await mountPanel({
   or `--el-*` CSS tokens.
 - **Overlays & notifications.** Use `<sdk-dialog>` / `<sdk-drawer>` for modal/drawer overlays (such as centered create
   forms). The SDK guards close-button, backdrop, Escape and `handleClose()` requests. Discard affects only dirty
-  forms inside the overlay. Bind `v-model` directly to the declared open state. Call `usePanelContext().notify({ kind: "success" | "info" | "warning" | "error", text })` for transient
-  feedback.
+  forms inside the overlay. For an `ObjectForm` with dialog Back handling, bind `:model-value` one way and use
+  `:before-close` to call `done()` only when `await dialogBack.back()` succeeds. Drive a custom footer Save with
+  `usePanelFormDraft`. See the [dialog recipe](../management-pages.md#guard-a-form-dialog).
+- **Native panel CSS.** `SdkPopover`, `SdkDialog` and `SdkDrawer` mount in the panel's
+  `[data-panel-overlay-root][data-panel-instance]`. Panel `<style>` applies directly there. Use ordinary
+  descendant selectors such as `.wrap .sdk-owner-form`. Omit Vue SFC selectors `:deep` and `::v-deep`.
 
 ## Open a panel with flat named URL parameters
 
@@ -222,7 +230,20 @@ events, output types and defaults.
   `kind: "tags"` for multiple values (empty renders an em dash). For list-valued cells, use `listSeparator` to
   set the inline separator and `listStyle` to choose the rendering (for example `"inline"` or `"tags"`).
   Reference cells emit `@navigate` without selecting
-  the row. Set `searchable: false` to hide search or `showFooter: false` to hide the footer.
+  the row. Give every column a `labelKey` defined in `content.messages`. Owner row labels cannot supply table
+  headers when there are no rows. `showFooter: false` hides the footer.
+- **Cards:** Use `layout: "cards"` for the row `label`, an optional `statusField`, and secondary text
+  (configure `subtitleField` and use `subtitleLines` to clamp it). Cards render `rowActions` with owner
+  `unavailable.reason` on disabled actions. `ObjectList` displays the read owner's `diagnostics` directly.
+- **Empty and no match:** Set `emptyText` and `noMatchText` to `panel.t` message keys. To replace the built-in
+  search box, set `searchable: false` and bind an external `<sdk-input>` to the same state as `state.search`.
+  Active search still narrows the list and no-match results keep the table headers.
+- **Selectable hierarchy:** Use a table with `showHeader: false`, `fallbackToFirst: true`, and a `#cell-path`
+  slot to indent owner-provided paths while selecting object rows. `ObjectTree` consumes a `files` read and
+  selects scalar file keys. Use it for file navigation.
+- **Multi-select outside a form:** Bind `ObjectList.data.rows` to a list/query of references and
+  `state.checked` to a list of those references. For an operation input requiring IDs, watch the checked state
+  in `panel.mjs` and map its `primaryKey` values to a list of scalar IDs for the binding.
 - **Selection:** Search, filter, sorting and paging preserve the selected object. Set `fallbackToFirst: false` and
   use `listed` for optional initial selection only if the page opened without one. Keep a specified missing or
   forbidden item selected and show the header's state. On a successful delete, the SDK uses `affected.removed`
@@ -271,6 +292,7 @@ Keep the header mounted when a specific selection is missing or forbidden.
 Use `usePanelOutput("header", "status")` to gate dependent editors and actions. It returns the
 [datum status](RUNTIME.md#projection-outputs-and-operations), or `null` before publication. The `label` and
 `errorMessage` outputs and the named scalar values declared by the owner read in `record.outputs` are also available.
+`ObjectHeader` publishes those owner outputs automatically, for example `usePanelOutput("header", "category")`.
 The header's `@done` handler receives `(operation, outcome)`, where `operation` is the local name and
 `outcome.kind === "success"` identifies successful single writes.
 
@@ -288,11 +310,11 @@ batch availability check or the owner's single-target check. A mixed selection s
 unavailable rows and reports each `skipped` item and its reason. The button's `@done` receives the write
 `OperationOutcome` directly, including the batch's per-item results. Check `outcome.kind` before updating the view.
 
-Use `operationParams` to bind typed parameters such as a numeric revision or a requested status. If all required
-interactive inputs are bound, the button proceeds without the parameter dialog. An unbound optional input can
-also be offered in the dialog. Bind it if the page owns the choice. A bound optional state value of `null` is
-omitted from the request. `page_action` uses the same bound values and only accepts unbound interactive inputs. A state binding supplies the live value for this page
-operation. Any authorization or invariant on that value belongs in the owner's operation.
+Use `operationParams` to bind typed parameters such as a numeric revision or a requested status. Bind every
+top-level `inputSchema` property you want to keep out of `OperationInputDialog`, including optional properties.
+An optional state value of `null` is omitted from the request. For an object reference, watch the selection
+and extract its `primaryKey` into scalar state for the binding. `page_action` uses the same bound values and
+only accepts unbound interactive inputs. The owner operation enforces authorization and invariants on those values.
 
 Put a checked-target batch button inside the list's `#batch-actions` slot. The list owns the dismissible receipt
 outside that slot, so clearing the checks and unmounting the button keeps the receipt visible. Use `@done` for
@@ -307,6 +329,8 @@ page-specific follow-up; the built-in receipt carries the batch outcomes.
   "config": { "labelKey": "order.changeStatus", "hideWhenUnavailable": true }
 }
 ```
+
+For row actions, use `ObjectList.config.rowActions`. `OperationButton` does not accept a `{ fromSlot: true }` target.
 
 For a read-only trial of a live form draft, bind a draft read operation and a public parameter object:
 
@@ -342,6 +366,7 @@ by the same `present` call.
 - **`ObjectCount` & `MetricCard`:** Pure presentation — never compute sums or averages on the client. For paged queries
   (`panelRecordQuery`) and `panelOntologyObjects`, both display strictly the owner-returned `total` (never `rows.length`),
   showing `—` when unknown. Complete unpaged `panelRecordList` uses `rows.length`.
+  Use `ObjectCount` with `appearance: "badge"` for compact counts and `omitWhenUnavailable` to hide an unknown count.
 - **`RecordTemplate`:** Fills values from `data.record` or one row of `data.result` (`metricOutput`) into a fixed
   `{fieldKey}` template (`template`, `templateKey`, or `templates`, with per-field `fieldFormats` including `valueMap`).
 - **Auto-refreshing metrics after writes:** When authoring a `MetricView` read by `MetricCard` / `RecordTemplate` /
@@ -355,7 +380,18 @@ Use a standalone inline picker in a toolbar with `type`, `data: { rows: "list" }
 `null`. Use `config.placeholderKey`, `clearable`, `filterable`, `size` and `groupBy` on a returned record field.
 An unpaged read is filtered locally. For server search and pagination, bind a query read accepting the search and
 paging parameters, or use `data.options` and its optional `data.selected` to resolve held values. Dropdown text
-typed to find options stays local to the picker.
+typed to find options stays local to the picker. In options mode, `InlineReferencePicker` respects the read's
+`page` and `keyword` declarations and waits for a nonblank keyword when required. Its selected reference's
+`className` comes from the projection's `objectType` for option results. Inside `<sdk-form-item>`, the picker
+fills the available width. Use `ObjectList` with `state.checked` for multiple references outside a form.
+
+### `FileUploadControl`
+
+Bind the owner's upload operation to this projection and render the control where the user can choose a file.
+If a centered `<sdk-dialog>` already explains the upload, omit `intro` and `rules` to avoid opening a second
+instructions dialog. Set `overwriteOn` to the owner's overwrite refusal code when replacing a file is supported.
+Listen for `@uploaded` to close the dialog or use the successful receipt. The user chooses and submits the
+local file. An assistant can open the entry.
 
 ### `ObjectTree` and `ObjectTextReader`
 
@@ -470,8 +506,8 @@ through the platform's generic `form` / `createForm` reads paired with published
 
 1. **Action owner returns the new object identity (`saved?.primaryKey`):** You may close the create dialog and select
    or navigate to the newly created object's detail view (`panelAddress(DETAIL_PATH, { selected: saved.primaryKey })`).
-2. **Action owner does NOT return a new identity (`saved === null`):** **Never guess the new ID or infer it by diffing
-   the list.** Show success (`notify`), close/reset the create form/dialog, and let `affected.objectTypes` (`affects`)
+2. **Action owner returns no new identity (`saved.primaryKey === null`):** Close/reset the create form or
+   dialog and let `affected.objectTypes` (`affects`)
    auto-refresh sibling lists and metrics (both humans and agents follow the same behavior). If your flow requires
    "jump straight to the newly created record's detail page", have the Action owner return the created object identity in
    the capability layer.
@@ -504,6 +540,11 @@ Use `ObjectList`'s built-in `config.rowActions` for per-row operation buttons an
 and standard Vue slots (`#cell-<key>`, `#cell`, `#actions`, `#row-detail`, `#card`, `#empty`) to customize a piece of
 the list without replacing the whole table.
 
+- **Action layout:** `rowActions.items` holds operations (`kind: "operation"`, `operation`) or local actions
+  (`kind: "local"`, `id`, optional `to`). Items accept `labelKey` or `label`, `primary`, `danger`, `when`
+  and `disabledWhen`. Conditions match owner fields against `equals`, `notEquals`, `in`, `notIn` or `truthy`.
+  Operation items also accept `hideWhenUnavailable`. The action column accepts `labelKey` or `label`,
+  `maxVisible` (overflow after two by default), `fixed: "right" | false`, `align`, `width` and `minWidth`.
 - **Rowless slots & events:** `ObjectList` never passes raw `row` objects to panel slots or events.
   - `#cell-<columnKey>` and `#cell` receive `{ ref, index, column, value, displayText, tone, operations, runOperation }`
     — pass only `value` / `displayText` / `tone` to your display component; never read raw row record fields or calculate in the
@@ -634,7 +675,10 @@ Prefer a mounted `OperationButton`. Bind the owner's full ID and the target obje
 a custom button or menu, call `usePanelOperation(member, name, options?)` in synchronous setup. Use the same
 availability and disabled conditions for the visible control and the hook, and put shared post-operation behavior
 in `onSettled`. The mounted hook registers the action automatically, so a reader's click and `page_action` share
-its target, confirmation and settlement. Pass `entry: false` for a background flow with no human entry.
+its target, confirmation and settlement. Pass `entry: false` for a background flow or to read a dialog operation before its button mounts.
+For example, subscribe with `usePanelOperation("submit", "apply", { entry: false })`. When its `state.value.status`
+is `"ready"`, read `state.value.value.apply?.unavailable?.reason` for the outer toolbar button. The dialog's
+`OperationButton` is the entry registered for `page_action`.
 
 ```js
 const { run, running, operation } = usePanelOperation("archive", "archive", {
@@ -656,7 +700,9 @@ the snapshot row and pass it to `page_action` with the declared operation ID.
 
 ## Save a form
 
-An `ObjectForm` projection binds one save operation:
+An `ObjectForm` projection needs its own operation or a sibling write that binds its draft (inline
+`draft: "form"` or formal `operationDrafts`). This also applies to a read-only form with
+`config.actions: "none"`. For a form with its own save:
 - For `platform:*` types, bind the type's declared `form.save` operation (for example `platform:AgentDefinition.save`).
 - For customer ontology `ObjectType`s (such as `Student`, `Order`), bind a published write `Action`: an object-targeted
   `Action` for edit (`data: { form: "form" }`, `target: "<selectedState>"`) or a top-level targetless `Action`
@@ -675,7 +721,22 @@ An `ObjectForm` projection binds one save operation:
 - `ObjectForm` automatically renders word counters for schema `maxLength` fields, password masking (`show-password`) for
   single-line `text` fields declaring `secret: true`, and disables cascading select fields
   when the owner declares `disabledWhenEmpty`.
-- The `saved` event carries `{ className, primaryKey }`.
+- For separate dialogs editing different parts of one owner form, use `config.groups` with
+  `unassignedFields: "omit"` on each form. Include only that dialog's fields and let the owner apply its
+  `submittedFields`.
+- Use either `:parent="activeClassParent" :exclude="['/rowPermission']"` on `<object-form-fields>` or pass
+  absolute JSON pointers with `:fields` and omit `:parent`. The component ignores `:fields` when `:parent` is set.
+- Call `refreshDraft()` through the form handle or `usePanelFormDraft` controls to refresh owner options,
+  fields and errors while preserving a dirty draft and its baseline. A clean form adopts the new baseline.
+- The `saved` event carries `{ className, primaryKey }`. On create the key comes from the successful operation's
+  `outcome.created` and is `null` when no identity was returned. Use the SDK's save feedback and avoid a second
+  success `panel.notify` from `@saved`.
+
+### Secret input and delivery
+
+The owner marks secret inputs with `secret: true`. `OperationInputDialog` uses a password field.
+`PanelHost` shows one-time secrets through `SecretDeliveryDialog` for all write entries, including row actions
+and `usePanelOperation` writes. Assistant observation hides plaintext. People enter and receive the secrets.
 
 ### Assistant live form filling and saving
 

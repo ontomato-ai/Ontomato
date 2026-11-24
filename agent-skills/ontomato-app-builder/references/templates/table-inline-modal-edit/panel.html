@@ -7,13 +7,10 @@
     <projection slot="courses" @row-action="rowAction"></projection>
   </div>
 
-  <sdk-dialog v-model="dialog" :title="t('dialog.title')" width="min(36rem, calc(100% - 2rem))" append-to-body destroy-on-close>
+  <sdk-dialog :model-value="dialog" :before-close="beforeClose" :title="t('dialog.title')" width="min(36rem, calc(100% - 2rem))" destroy-on-close>
     <div v-if="dialog" :key="editing.primaryKey">
-      <page-header :draft="draft">
+      <page-header>
         <template #title><projection slot="header"></projection></template>
-        <template #actions>
-          <sdk-button @click="cancel">{{ t('action.cancel') }}</sdk-button>
-        </template>
       </page-header>
       <template v-if="ready">
         <sdk-tabs v-model="tab">
@@ -32,5 +29,13 @@
         </projection>
       </template>
     </div>
+    <template #footer>
+      <span v-if="draft?.dirty" role="status">{{ t('draft.unsaved') }}</span>
+      <sdk-button :disabled="draft?.saving" @click="cancel">{{ t('action.cancel') }}</sdk-button>
+      <sdk-button v-if="draft?.dirty" :disabled="draft.saving" @click="draft.discard()">{{ t('action.discard') }}</sdk-button>
+      <sdk-button type="primary" :disabled="!draft?.canSave" :loading="draft?.saving" @click="draft?.save()">
+        {{ t('action.save') }}
+      </sdk-button>
+    </template>
   </sdk-dialog>
 </div>

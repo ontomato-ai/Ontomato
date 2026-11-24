@@ -28,6 +28,22 @@ function formatAuthoringViolations(violations) {
   return violations.map(v => `${v.file}:${v.line}:${v.column}: ${v.message}`).join("\n");
 }
 
+function checkObjectFormOperations(file, members) {
+  const entries = Object.entries(members);
+  for (const [member, declaration] of entries) {
+    if (declaration.component !== "ObjectForm" && declaration.component !== "@ontomato/sdk:ObjectForm") continue;
+    if (declaration.operation !== undefined || Object.keys(declaration.operations ?? {}).length) continue;
+    const hasSiblingDraft = entries.some(([name, sibling]) => name !== member && (
+      sibling.draft === member ||
+      Object.values(sibling.operationDrafts ?? {}).some(draft => draft.slot === member) ||
+      Object.values(sibling.operations ?? {}).some(operation => operation.draft === member)
+    ));
+    if (!hasSiblingDraft) {
+      throw new Error(`${file}: member ${member}: ObjectForm requires an operation or a sibling operation that references this form through draft or operationDrafts, even with config.actions: "none".`);
+    }
+  }
+}
+
 async function checkPanelAuthoringSources({
   directory, files, descriptorFile, theme, html, module, checks,
 }) {
@@ -72,6 +88,7 @@ export async function checkBuiltinPanelSource(
   const document = parseJson(file, source);
   const parsed = checks.panelAuthoringManifestSchema.safeParse(document?.manifest);
   if (!parsed.success) throw new Error(`${file}: ${parsed.error.message}`);
+  checkObjectFormOperations(file, parsed.data.members);
   for (const [member, declaration] of Object.entries(parsed.data.members)) {
     if (!("component" in declaration) || declaration.operation === undefined) continue;
     if (!Array.isArray(checks.draftReadOperationIds)) {
@@ -189,6 +206,7 @@ async function expandInlineProjections(descriptorFile, manifest, panel, checks, 
     throw new Error(formatManifestIssues(descriptorFile, manifest, parsedManifest.error));
   }
   const { state, members, ...definition } = parsedManifest.data;
+  checkObjectFormOperations(descriptorFile, members);
   const { catalogue, typeTable } = await loadAuthoring();
   const packages = new Set(declared.map(([, member]) => componentPackageName(member.component)).filter(Boolean));
   const installed = await Promise.all([...packages].map(name => loadPackage?.(name)));
