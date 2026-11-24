@@ -61,6 +61,19 @@ describe("readBuiltinProducts", () => {
       expect(panels.has("builtin-product-ontology-action-detail")).toBe(true);
       expect(panels.has("builtin-product-ontology-metric-views")).toBe(true);
       expect(panels.has("builtin-product-ontology-metric-view-detail")).toBe(true);
+      expect(panels.has("builtin-product-ontology-functions")).toBe(true);
+      expect(panels.has("builtin-product-ontology-function-detail")).toBe(true);
+
+      const functionsCatalog = panels.get("builtin-product-ontology-functions")!;
+      expect(functionsCatalog.manifest.state).not.toHaveProperty("selected");
+      expect(functionsCatalog.manifest.state).not.toHaveProperty("creating");
+      expect(functionsCatalog.content.html).not.toContain("two-pane-layout");
+
+      const functionDetail = panels.get("builtin-product-ontology-function-detail")!;
+      expect(functionDetail.manifest.members).toHaveProperty("header");
+      expect(functionDetail.manifest.members).toHaveProperty("definition");
+      expect(functionDetail.manifest.members).toHaveProperty("remove");
+      expect(functionDetail.content.html).not.toContain('v-if="detailReady" #actions');
 
       const frame = panels.get("builtin-product-ontology-frame");
       expect(frame).toBeDefined();

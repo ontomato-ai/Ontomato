@@ -1,7 +1,7 @@
 import type { RouteLocation } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ACTION, METRIC_VIEW, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { ACTION, FUNCTION, METRIC_VIEW, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -120,12 +120,28 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
       return primaryKey ? { selected: primaryKey } : null;
     },
   },
-  // The functions page: a function's detail selects it; the old page's `new` opens the catalog (creating is not deep-linked).
+  // The functions page: legacy `/new`, `/:id`, and catalog `?selected=` links forward to the non-menu detail entry.
+  {
+    path: `${platformRoutes.functions.path}/new`,
+    use: `${platformRoutes.functions.path}/detail`,
+    state: (): Record<string, PanelStateValue> => ({ mode: "create" }),
+  },
   {
     path: platformRoutes.function.path,
-    use: platformRoutes.functions.path,
-    state: ({ id }): Record<string, PanelStateValue> =>
-      id === "new" ? {} : { selected: id! },
+    use: `${platformRoutes.functions.path}/detail`,
+    state: ({ id }): Record<string, PanelStateValue> | null =>
+      id === "detail" || id === "new" ? null : { selected: id! },
+  },
+  {
+    path: platformRoutes.functions.path,
+    use: `${platformRoutes.functions.path}/detail`,
+    state: (_params, query): Record<string, PanelStateValue> | null => {
+      const selected = query.get("selected");
+      if (!selected || !selected.trim()) return null;
+      const prefix = `${FUNCTION}~`;
+      const primaryKey = selected.startsWith(prefix) ? selected.slice(prefix.length) : selected;
+      return primaryKey ? { selected: primaryKey } : null;
+    },
   },
   // The metric views page: `/new` opens the non-menu detail entry in create mode, `:id` selects a metric (exempting
   // `detail` and `new`), and legacy catalog links carrying `selected` forward straight to the detail entry.
