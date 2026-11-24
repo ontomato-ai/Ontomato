@@ -1086,15 +1086,24 @@ const LONG_TEXT = 24;
 function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string {
   return displayFieldText(rawRecordField(row, column.key), locale.value, t, column.listSeparator ?? ", ");
 }
+/** A column's secondary line text in a row, when `subtitleKey` is configured. */
+function columnSubtitleText(row: PlatformObjectRecord, column: ObjectListColumn): string {
+  if (!column.subtitleKey) return "";
+  const text = fieldValue(row, column.subtitleKey);
+  if (text !== "") return text;
+  return column.subtitleEmptyKey ? panel.t(column.subtitleEmptyKey) : "";
+}
 /**
  * How a column is laid out, with no width of its own: one line at its own width by default, so a short value never
- * breaks; a text column whose values run long shrinks to the room left and ends in an ellipsis; a column the panel marks
- * `wrap` runs onto several lines. A table wider than its frame scrolls inside it.
+ * breaks; a text column whose values (including its optional `subtitleKey` line) run long shrinks to the room left and
+ * ends in an ellipsis; a column the panel marks `wrap` runs onto several lines. A table wider than its frame scrolls
+ * inside it.
  */
 const columnFit = computed(() => new Map((props.columns ?? []).map((column) => [column.key,
   columnCellSlot(column.key) ? (column.wrap ? "sdk-object-list-col-wrap" : "")
     : column.wrap ? "sdk-object-list-col-wrap"
-      : (column.kind === undefined || column.kind === "text" || column.kind === "reference") && rows.value.some((row) => columnText(row, column).length > LONG_TEXT)
+      : (column.kind === undefined || column.kind === "text" || column.kind === "reference")
+        && rows.value.some((row) => columnText(row, column).length > LONG_TEXT || columnSubtitleText(row, column).length > LONG_TEXT)
         ? "sdk-object-list-col-shrink" : ""])));
 /**
  * Format a time column's ISO value in the reader's locale and time zone: relative by default (`formatListTime`), or
@@ -1137,7 +1146,12 @@ function cellTitle(row: PlatformObjectRecord, column: ObjectListColumn): string 
     const value = fieldValue(row, column.key);
     return value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString(locale.value) : undefined;
   }
-  return columnFit.value.get(column.key) === "sdk-object-list-col-shrink" ? columnText(row, column) : undefined;
+  if (columnFit.value.get(column.key) === "sdk-object-list-col-shrink") {
+    const main = columnText(row, column);
+    const sub = columnSubtitleText(row, column);
+    return sub ? (main ? `${main}\n${sub}` : sub) : main;
+  }
+  return undefined;
 }
 const totalPages = computed(() => Math.max(1, Math.ceil((total.value ?? 0) / effectivePageSize.value)));
 

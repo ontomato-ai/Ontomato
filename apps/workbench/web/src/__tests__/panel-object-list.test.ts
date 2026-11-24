@@ -1046,6 +1046,47 @@ it("keeps short columns on one line, ends long text in an ellipsis, and wraps on
   expect([...element.querySelectorAll<HTMLElement>("thead th")].map((th) => th.className)).toEqual(["", "sdk-object-list-col-shrink", "sdk-object-list-col-wrap"]);
 });
 
+it("applies shrink sizing and full title when a column's subtitleKey runs long even if its primary label is short", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "panel-catalog": {
+      ...meta,
+      id: "panel-catalog",
+      name: "Panels",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+      config: {
+        columns: [
+          { key: "label", subtitleKey: "subtitle" },
+          { key: "owner", subtitleKey: "detail" },
+          { key: "scope" },
+        ],
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
+    members: { list: { target: { projectionId: "panel-catalog" }, outputs: { selected: { state: "selectedTask" } } } },
+  });
+  const subtitle = "A detailed description that far exceeds twenty-four characters and should shrink cleanly with an ellipsis.";
+  const detail = "Secondary field text that also exceeds twenty-four characters and triggers shrink sizing.";
+  const record = { primaryKey: "p-1", label: "Panels", subtitle, fields: { owner: "Platform", detail, scope: "Domain" } };
+  const { element } = mountDirect(manifest, projections, () => ready([record]));
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody td")).toHaveLength(3));
+  const [nameCell, ownerCell, scopeCell] = [...element.querySelectorAll<HTMLElement>("tbody td")];
+  expect(nameCell!.classList.contains("sdk-object-list-col-shrink")).toBe(true);
+  expect(nameCell!.title).toBe(`Panels\n${subtitle}`);
+  expect(ownerCell!.classList.contains("sdk-object-list-col-shrink")).toBe(true);
+  expect(ownerCell!.title).toBe(`Platform\n${detail}`);
+  expect(scopeCell!.className).toBe("");
+  expect([...element.querySelectorAll<HTMLElement>("thead th")].map((th) => th.className)).toEqual([
+    "sdk-object-list-col-shrink",
+    "sdk-object-list-col-shrink",
+    "",
+  ]);
+});
+
 // A time column (the feedback page, 2026-11-22, A's contract; rule by the panelisation lead): the owner gives an ISO
 // time; the list shows it in the reader's language and time zone so that neighbours keep their order at a glance — within
 // a minute "just now", within an hour minutes ago, today's and yesterday's by their clock time, an older one by its date

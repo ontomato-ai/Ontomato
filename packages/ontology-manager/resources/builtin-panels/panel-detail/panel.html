@@ -50,7 +50,41 @@
   }
 
   .pd-tabs {
-    margin-bottom: calc(var(--spacing-sm) * -1);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-lg);
+    border-bottom: 1px solid var(--sdk-border-color, var(--ui-border));
+  }
+
+  .pd-tab {
+    position: relative;
+    padding: var(--spacing-sm) 0;
+    border: 0;
+    background: none;
+    color: var(--sdk-text-color-secondary);
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+
+  .pd-tab:hover {
+    color: var(--sdk-text-color-primary);
+  }
+
+  .pd-tab.active {
+    color: var(--sdk-color-primary, var(--brand-link));
+  }
+
+  .pd-tab.active::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--sdk-color-primary, var(--brand-link));
   }
 
   .pd-card {
@@ -392,21 +426,27 @@
       </section>
     </div>
 
-    <!-- Full-width view mode (default); keep sdk-tabs shell mounted via v-show to avoid ElTabs mid-mount teardown -->
+    <!-- Full-width view mode (default) -->
     <div
       v-show="selectedKey && recordReady && !recordUnavailable && !showEditForm && !pendingAutoEdit"
       class="pd-detail-body pd-view-mode"
     >
       <info-banner v-if="selectedKey && recordReady && !recordUnavailable && !canEdit" tone="info" :text="t('detail.readonly')"></info-banner>
 
-      <sdk-tabs v-model="tabModel" class="pd-tabs">
-        <sdk-tab-pane name="overview" :label="t('tab.overview')"></sdk-tab-pane>
-        <sdk-tab-pane name="source" :label="t('tab.source')"></sdk-tab-pane>
-        <sdk-tab-pane name="members" :label="t('tab.members')"></sdk-tab-pane>
-        <sdk-tab-pane name="usage" :label="t('tab.usage')"></sdk-tab-pane>
-        <sdk-tab-pane v-if="canGrant" name="grants" :label="t('tab.grants')"></sdk-tab-pane>
-        <sdk-tab-pane name="preview" :label="t('tab.preview')"></sdk-tab-pane>
-      </sdk-tabs>
+      <div class="pd-tabs" role="tablist">
+        <button
+          v-for="item in tabItems"
+          :key="item.name"
+          type="button"
+          role="tab"
+          class="pd-tab"
+          :class="{ active: tabModel === item.name }"
+          :aria-selected="tabModel === item.name"
+          @click="tabModel = item.name"
+        >
+          {{ item.label }}
+        </button>
+      </div>
 
       <template v-if="selectedKey && recordReady && !recordUnavailable && !showEditForm && !pendingAutoEdit">
         <!-- Tab 1: Overview -->

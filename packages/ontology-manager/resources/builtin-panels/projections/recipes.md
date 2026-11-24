@@ -14,6 +14,6 @@
 
 - 点击页头主按钮「新建投影」或通过 `present({ creating: true })` 切入**整宽新建视图**（目录退场保活，原位呈现整宽表单），挂载属主的创建表单 `createForm`（`platform:ProductProjection.save`）。
 - 表单完整呈现属主声明的全部字段（名称、ID、描述、可见性、所用组件、数据读取、组件配置、输入/输出端口、操作等），按所选组件填齐必填内容后由页头保存。
-- 页头左侧提供「返回投影」，右侧提供「取消」以及由 `usePanelFormDraft("createForm")` 驱动的保存/放弃控制条。存在未保存改动时，点击「返回投影」、「取消」或按 ESC 均通过平台统一的未保存离开确认弹窗询问，确认放弃后才退回目录。
+- 页头左侧提供「返回投影」，右侧呈现由 `usePanelFormDraft("createForm")` 驱动的保存/放弃控制条。存在未保存改动时，点击「返回投影」或按 ESC 均通过平台统一的未保存离开确认弹窗询问，确认放弃后才退回目录。
 - 创建成功后，页面退出新建态、刷新目录，并直接跳转到 `/ontology/projections/detail?selected=<primaryKey>` 查看新建的投影详情（默认查看态）。
 - 协助新建：用 `present({ creating: true })` 打开整宽新建表单，再用 `fill_form` 填入实时表单；确认提交时调用 `page_action({ operation: "createForm.save" })`（默认经读者确认后提交）。

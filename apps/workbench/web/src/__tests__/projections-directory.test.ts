@@ -897,9 +897,9 @@ describe("projections two-entry catalog & detail panels", () => {
       expect(document.querySelector(".el-dialog")).toBeNull();
       expect((mounted.element.querySelector<HTMLElement>(".proj-catalog")?.style.display)).toBe("none");
 
-      // Header renders Back to projections, Cancel, and disabled Save driven by usePanelFormDraft("createForm").
+      // Header renders Back to projections and disabled Save driven by usePanelFormDraft("createForm"), without a redundant Cancel button.
       expect(Boolean(findButton(mounted.element, "Back to projections"))).toBe(true);
-      expect(Boolean(findButton(mounted.element, "Cancel"))).toBe(true);
+      expect(findButton(mounted.element, "Cancel")).toBeUndefined();
       expect(findButton(mounted.element, "Save")?.disabled).toBe(true);
 
       // All owner-declared fields render in full without field slicing.
@@ -907,14 +907,16 @@ describe("projections two-entry catalog & detail panels", () => {
         expect(mounted.element.querySelector(`.proj-create-body [data-field="${path}"]`)).not.toBeNull();
       }
 
-      // Edit name -> form becomes dirty and header Save becomes enabled.
+      // Edit name -> form becomes dirty and header shows Discard + enabled Save (still no duplicate Cancel).
       setFieldInput(mounted.element, "/name", "Draft Projection");
       await waitFor(
         () =>
           mounted.element.querySelector<HTMLInputElement>('.proj-create-body [data-field="/name"] input')?.value === "Draft Projection"
-          && findButton(mounted.element, "Save")?.disabled === false,
-        "create form name typed and header Save enabled",
+          && findButton(mounted.element, "Save")?.disabled === false
+          && Boolean(findButton(mounted.element, "Discard")),
+        "create form name typed and header Discard/Save enabled",
       );
+      expect(findButton(mounted.element, "Cancel")).toBeUndefined();
 
       // 1. Clicking Back to projections while dirty asks confirmLeaveUnsaved; declining keeps create form & draft intact.
       findButton(mounted.element, "Back to projections")!.click();
@@ -925,18 +927,9 @@ describe("projections two-entry catalog & detail panels", () => {
       expect(observed.context?.state?.creating).toBe(true);
       expect(mounted.element.querySelector<HTMLInputElement>('.proj-create-body [data-field="/name"] input')?.value).toBe("Draft Projection");
 
-      // 2. Clicking Cancel while dirty asks confirmLeaveUnsaved; declining keeps create form & draft intact.
-      findButton(mounted.element, "Cancel")!.click();
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 2 && resolveConfirm !== null, "confirmLeaveUnsaved on Cancel");
-      resolveConfirm!(false);
-      resolveConfirm = null;
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      expect(observed.context?.state?.creating).toBe(true);
-      expect(mounted.element.querySelector<HTMLInputElement>('.proj-create-body [data-field="/name"] input')?.value).toBe("Draft Projection");
-
-      // 3. Clicking Cancel again and confirming discards draft and returns to catalog.
-      findButton(mounted.element, "Cancel")!.click();
-      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 3 && resolveConfirm !== null, "confirmLeaveUnsaved on Cancel confirm");
+      // 2. Clicking Back to projections again and confirming discards draft and returns to catalog.
+      findButton(mounted.element, "Back to projections")!.click();
+      await waitFor(() => confirmLeaveUnsaved.mock.calls.length === 2 && resolveConfirm !== null, "confirmLeaveUnsaved on Back confirm");
       resolveConfirm!(true);
       resolveConfirm = null;
       await waitFor(

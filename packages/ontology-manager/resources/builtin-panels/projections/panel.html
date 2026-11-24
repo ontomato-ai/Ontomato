@@ -75,11 +75,7 @@
         :title="t('form.createTitle')"
         :draft="createDraft"
         @back="cancelCreate"
-      >
-        <template #actions>
-          <sdk-button :disabled="Boolean(createDraft?.saving)" @click="cancelCreate">{{ t('action.cancel') }}</sdk-button>
-        </template>
-      </page-header>
+      ></page-header>
 
       <div class="proj-create-body">
         <section class="proj-create-card">

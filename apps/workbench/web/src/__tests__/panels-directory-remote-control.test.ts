@@ -1251,6 +1251,17 @@ describe("panels two-entry architecture (catalog + detail)", () => {
       expect(mounted.element.querySelector('[data-tab="preview"]')).toBeNull();
       expect(nestedRequests).toHaveLength(0);
 
+      // Semantic tab bar activates the clicked tab immediately on first click without deferred active-bar measurement.
+      const memberTabBtn = [...mounted.element.querySelectorAll<HTMLButtonElement>('.pd-tabs button[role="tab"]')].find((btn) =>
+        btn.textContent?.includes("Members"),
+      );
+      expect(memberTabBtn).toBeTruthy();
+      memberTabBtn!.click();
+      await waitFor(
+        () => memberTabBtn!.classList.contains("active") && memberTabBtn!.getAttribute("aria-selected") === "true",
+        "Members tab became active immediately on first click",
+      );
+
       // Source tab: displays source files and source viewer content.
       await display.present(presentFrame({ tab: "source", sourceFile: "panel.html" }, display.page.value!.address));
       await waitFor(
