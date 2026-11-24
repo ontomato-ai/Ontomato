@@ -69,4 +69,35 @@ describe("PathTree", () => {
     expect(wrapper.find('[data-path="README.md"]').attributes("aria-selected")).toBe("true");
     expect(wrapper.find('[data-path="SKILL.md"]').attributes("aria-selected")).toBe("false");
   });
+
+  it("filters tree items locally when searchable and emits search updates", async () => {
+    const wrapper = mount(PathTree, {
+      props: {
+        items: [
+          { key: "index.md", path: "index.md" },
+          { key: "ops/guide.md", path: "ops/guide.md" },
+          { key: "ops/logs.md", path: "ops/logs.md" },
+        ],
+        searchable: true,
+        search: "",
+        searchPlaceholder: "Search files",
+        noMatchText: "No matching files",
+      },
+    });
+
+    const input = wrapper.find('input[type="search"]');
+    expect(input.exists()).toBe(true);
+    await input.setValue("guide");
+    expect(wrapper.emitted("update:search")).toEqual([["guide"]]);
+
+    await wrapper.setProps({ search: "guide" });
+    expect(wrapper.findAll('[role="treeitem"]').map((el) => el.attributes("data-path"))).toEqual([
+      "ops",
+      "ops/guide.md",
+    ]);
+
+    await wrapper.setProps({ search: "missing-term" });
+    expect(wrapper.find('[role="tree"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("No matching files");
+  });
 });

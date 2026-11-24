@@ -269,7 +269,15 @@ async function resolveAdmittedOperationUnavailable(
   pinnedInputs: ReadonlyMap<string, unknown>,
 ): Promise<PanelOwnerOperationDescriptor["unavailable"]> {
   const isRowTarget = bound.binding.target !== undefined && ("row" in bound.binding.target || "rowField" in bound.binding.target);
-  if (isRowTarget || result.effect !== "write") return undefined;
+  if (isRowTarget) return undefined;
+  if (result.effect === "read") {
+    const selected = result.selected?.kind === "object"
+      ? result.selected
+      : result.selected === null && bound.binding.target === undefined
+        ? null
+        : undefined;
+    return selected !== undefined ? result.handler.unavailable?.(operationHost(actor), selected) : undefined;
+  }
   if (result.selected?.kind === "object" || (result.selected === null && bound.binding.target === undefined)) {
     return result.handler.unavailable?.(operationHost(actor), result.selected);
   }

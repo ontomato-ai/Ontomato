@@ -208,6 +208,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     ],
     "scheduleAdapter": "workbench:operations",
     "allowStandalone": false,
+    "framePanelId": "builtin-product-platform-frame",
     "declaration": {
       "names": {
         "en": "Operations diagnosis",
@@ -221,11 +222,33 @@ export const workbenchApplications: BuiltinApplication[] = [
       "groups": [],
       "permissions": [],
       "panelUses": [{
+        "id": "ops-knowledge",
+        "pageKey": "ops-knowledge",
+        "panelId": "builtin-product-ops-knowledge",
+        "path": "/ops/knowledge",
+        "access": { "permissionCode": "observer" },
+        "icon": "knowledge",
+        "names": {
+          "en": "Operations knowledge",
+          "zh-CN": "运维知识",
+          "zh-TW": "維運知識",
+          "ja": "運用ナレッジ",
+          "de": "Betriebswissen",
+          "fr": "Connaissances d'exploitation",
+          "it": "Conoscenze operative",
+          "ar": "معرفة التشغيل"
+        },
+        "descriptions": {
+          "en": "Browse operations diagnosis knowledge documents and cross-document references",
+          "zh-CN": "浏览运维诊断知识文档与文内关联说明"
+        }
+      }, {
         "id": "user-feedback",
         "pageKey": "user-feedback",
         "panelId": "builtin-product-feedback",
         "path": "/ops/feedback",
         "access": { "permissionCode": "user-feedback" },
+        "icon": "clipboard-list",
         "names": {
           "en": "User feedback",
           "zh-CN": "用户反馈",

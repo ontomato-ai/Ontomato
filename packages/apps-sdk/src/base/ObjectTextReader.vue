@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { SegmentedTextReader, type SegmentedTextPage, type SegmentedTextSource } from "@ontomato/foundation-ui/reader";
+import { parseCsv } from "@ontomato/foundation-ui/preview";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { panelRecordFieldText, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { usePanelContext } from "../panel/context";
@@ -46,6 +47,36 @@ function fileExtension(path: string | null): string | null {
 
 const MarkdownView = defineAsyncComponent(() => import("@ontomato/foundation-ui/markdown").then((module) => module.MarkdownView));
 const CodeEditor = defineAsyncComponent(() => import("@ontomato/foundation-ui/code").then((module) => module.CodeEditor));
+const TablePreview = defineAsyncComponent(() => import("@ontomato/foundation-ui/preview").then((module) => module.TablePreview));
+
+function normalizeRelativeMarkdownPath(currentPath: string | null, href: string): string | null {
+  const raw = href.split("#")[0]?.split("?")[0] ?? "";
+  let cleanHref: string;
+  try {
+    cleanHref = decodeURIComponent(raw).replace(/\\/g, "/").trim();
+  } catch {
+    cleanHref = raw.replace(/\\/g, "/").trim();
+  }
+  if (!cleanHref || cleanHref.startsWith("#") || cleanHref.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(cleanHref)) {
+    return null;
+  }
+  const lower = cleanHref.toLowerCase();
+  if (!lower.endsWith(".md") && !lower.endsWith(".markdown")) return null;
+  const base = (currentPath ?? "").replace(/\\/g, "/");
+  const currentDir = base.includes("/") ? base.slice(0, base.lastIndexOf("/")) : "";
+  const rawTarget = cleanHref.startsWith("/") ? cleanHref.slice(1) : (currentDir ? `${currentDir}/${cleanHref}` : cleanHref);
+  const normalized: string[] = [];
+  for (const part of rawTarget.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (normalized.length === 0) return null;
+      normalized.pop();
+      continue;
+    }
+    normalized.push(part);
+  }
+  return normalized.length > 0 ? normalized.join("/") : null;
+}
 
 /**
  * An object's text, read only, through its owner's reads (the platform's one read entry). Two shapes, by the data its
@@ -64,8 +95,8 @@ const props = withDefaults(
   defineProps<{
     /** The field of the `record` datum that holds the text (`content` by default). */
     textField?: string;
-    /** How whole-record text is rendered: `"auto"` infers Markdown or read-only code from the file path, `"plain"` renders preformatted text, `"markdown"` renders Markdown (with YAML frontmatter separated when present), and `"code"` renders a read-only code viewer. */
-    format?: "auto" | "plain" | "markdown" | "code";
+    /** How whole-record text is rendered: `"auto"` infers Markdown, CSV/TSV table preview, or read-only code from the file path, `"plain"` renders preformatted text, `"markdown"` renders Markdown (with YAML frontmatter separated when present), `"table"` renders a delimited table preview, and `"code"` renders a read-only code viewer. */
+    format?: "auto" | "plain" | "markdown" | "code" | "table";
     /** Optional field of the `record` datum holding the path or filename used to infer language; falls back to `record.label`, then `record.primaryKey`. */
     pathField?: string;
     /** This reader's key on the page; with a shared `activeAnchor`, only the reader it names is open. */
@@ -91,6 +122,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** The reader was closed. */
   close: [anchor?: string];
+  /** A relative Markdown link inside whole-record Markdown content was activated. */
+  "open-file": [path: string];
 }>();
 
 const { t, locale } = useI18n();
@@ -102,6 +135,7 @@ const recordData = Object.hasOwn(declared, "record") ? useMemberData("record") :
 
 const activeSource = useMemberParam("activeSourceId");
 const activeAnchor = useMemberParam("activeAnchor");
+const activePath = useMemberParam("activePath");
 const page = shallowRef<SegmentedTextPage | null>(null);
 const loading = ref(false);
 const failure = shallowRef<Error | null>(null);
@@ -197,18 +231,23 @@ const recordPath = computed<string | null>(() => {
   return label ?? primaryKey;
 });
 const extension = computed(() => fileExtension(recordPath.value));
-const renderMode = computed<"plain" | "markdown" | "code">(() => {
-  if (props.format === "plain" || props.format === "markdown" || props.format === "code") {
+const renderMode = computed<"plain" | "markdown" | "code" | "table">(() => {
+  if (props.format === "plain" || props.format === "markdown" || props.format === "code" || props.format === "table") {
     return props.format;
   }
   const ext = extension.value;
   if (!ext) return "plain";
   if (ext === "md" || ext === "markdown") return "markdown";
+  if (ext === "csv" || ext === "tsv") return "table";
   return "code";
 });
 const codeLanguage = computed<CodeLanguage>(() => {
   const ext = extension.value;
   return (ext ? CODE_LANGUAGES[ext] : undefined) ?? "text";
+});
+const tablePreview = computed(() => {
+  if (renderMode.value !== "table" || wholeText.value === null) return null;
+  return parseCsv(wholeText.value, extension.value === "tsv" ? "\t" : ",");
 });
 const markdownSections = computed(() => {
   const value = wholeText.value;
@@ -216,6 +255,16 @@ const markdownSections = computed(() => {
   const match = value.match(FRONTMATTER_PATTERN);
   return match ? { frontmatter: match[1]!, body: match[2]! } : { frontmatter: null, body: value };
 });
+function onMarkdownClick(event: MouseEvent) {
+  const target = event.target instanceof Element ? event.target : null;
+  const link = target?.closest("a");
+  if (!(link instanceof HTMLAnchorElement)) return;
+  const nextPath = normalizeRelativeMarkdownPath(recordPath.value, link.getAttribute("href") || "");
+  if (!nextPath) return;
+  event.preventDefault();
+  activePath.set(nextPath);
+  emit("open-file", nextPath);
+}
 const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyText!) : undefined);
 </script>
 
@@ -223,9 +272,16 @@ const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyTex
   <div class="sdk-object-text-reader">
     <template v-if="recordData">
       <data-state :result="recordData as DataStateResult" :labels="labels">
-        <div v-if="renderMode === 'markdown' && markdownSections" class="sdk-object-text-reader-markdown">
+        <div
+          v-if="renderMode === 'markdown' && markdownSections"
+          class="sdk-object-text-reader-markdown"
+          @click="onMarkdownClick"
+        >
           <pre v-if="markdownSections.frontmatter" class="sdk-object-text-reader-frontmatter">{{ markdownSections.frontmatter }}</pre>
           <MarkdownView :content="markdownSections.body" />
+        </div>
+        <div v-else-if="renderMode === 'table' && tablePreview" class="sdk-object-text-reader-table">
+          <TablePreview :table="tablePreview" :page-size="50" />
         </div>
         <div v-else-if="renderMode === 'code'" class="sdk-object-text-reader-code">
           <CodeEditor

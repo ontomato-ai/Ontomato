@@ -4,7 +4,7 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Cable, Plug } from "lucide-vue-next";
+import { Cable, ClipboardList, Code, FlaskConical, ListChecks, MessageSquare, Plug, Search, Terminal } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
@@ -157,9 +157,24 @@ const systemIntegrationPages: readonly PlatformPage[] = [
   { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", descriptionKey: "mcp.publishedHint", icon: Plug, permissions: ["mcp-service"], group: "platform" },
 ];
 
-/** The native skill and integration pages shared by the edition assemblies. */
+/**
+ * Native operations diagnosis pages sharing the unified platform application frame while remaining pages are migrated
+ * in Batch 2. Every entry uses the `observer` permission code so the menu and route guards stay in agreement.
+ */
+const operationsNativePages: readonly PlatformPage[] = [
+  { path: platformRoutes.diagnosis.path, titleKey: "ops.diagnosis", icon: MessageSquare, permissions: ["observer"], group: "platform", ownHeader: true },
+  { path: platformRoutes.turn.path, titleKey: "ops.turns", icon: Search, permissions: ["observer"], group: "platform", ownHeader: true },
+  { path: platformRoutes.test.path, titleKey: "ops.tests", icon: FlaskConical, permissions: ["observer"], group: "platform", ownHeader: true },
+  { path: platformRoutes.results.path, titleKey: "ops.results", icon: ClipboardList, permissions: ["observer"], group: "platform", ownHeader: true },
+  { path: platformRoutes.cases.path, titleKey: "ops.cases", icon: ListChecks, permissions: ["observer"], group: "platform", ownHeader: true },
+  { path: platformRoutes.logs.path, titleKey: "ops.logs", icon: Terminal, permissions: ["observer"], group: "platform", ownHeader: true },
+  { path: platformRoutes.dsl.path, titleKey: "ops.dsl", icon: Code, permissions: ["observer"], group: "platform", ownHeader: true },
+];
+
+/** The native skill, integration, and operations pages shared by the edition assemblies. */
 export const applicationPages: readonly PlatformPage[] = [
   ...systemIntegrationPages,
+  ...operationsNativePages,
 ];
 
 /**

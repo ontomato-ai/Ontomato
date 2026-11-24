@@ -28,6 +28,10 @@ export const FUNCTION = "platform:Function";
 
 export const BUSINESS_KNOWLEDGE = "platform:BusinessKnowledge";
 export const FEEDBACK_RECORD = "platform:FeedbackRecord";
+export const OPS_KNOWLEDGE = "platform:OpsKnowledge";
+export const TURN_EVIDENCE = "platform:TurnEvidence";
+export const AUTOTEST_RUN = "platform:AutotestRun";
+export const AUTOTEST_CASE_ARTIFACT = "platform:AutotestCaseArtifact";
 
 export const ACTION = "platform:Action";
 export const WORKFLOW = "platform:Workflow";
@@ -115,6 +119,17 @@ export const DELETE_SKILL = "skills.delete";
 export const IMPORT_SKILL = "skills.import";
 export const EXPORT_SKILL = "skills.export";
 export const EXPORT_FEEDBACK = "feedback.export";
+export const BUILD_TURN_EVIDENCE = "turnEvidence.build";
+export const REFRESH_TURN_EVIDENCE = "turnEvidence.refresh";
+export const KEEP_TURN_EVIDENCE = "turnEvidence.keep";
+export const UNKEEP_TURN_EVIDENCE = "turnEvidence.unkeep";
+export const DELETE_TURN_EVIDENCE = "turnEvidence.delete";
+export const DOWNLOAD_TURN_EVIDENCE = "turnEvidence.download";
+export const KEEP_AUTOTEST_RUN = "autotestRun.keep";
+export const UNKEEP_AUTOTEST_RUN = "autotestRun.unkeep";
+export const DOWNLOAD_AUTOTEST_RUN = "autotestRun.download";
+export const DELETE_AUTOTEST_RUN = "autotestRun.delete";
+export const DOWNLOAD_AUTOTEST_CASE_ARTIFACT = "autotestCaseArtifact.download";
 export const DELETE_MODEL_CONNECTION = "modelConnections.delete";
 export const DISCOVER_MODEL_CONNECTION = "modelConnections.discover";
 export const TEST_MODEL_CONNECTION = "modelConnections.test";
@@ -725,6 +740,92 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       },
     },
     operations: [`${MODEL_USAGE}.save`, REBUILD_VECTORS, PAUSE_VECTOR_REBUILD],
+  },
+  [OPS_KNOWLEDGE]: {
+    ...describeType("opsKnowledge"),
+    reads: {
+      files: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      record: {
+        source: "type", parameterMode: "fixed", params: { path: "opsFilePath" }, requiredParams: ["path"], result: "panelRecord",
+      },
+    },
+  },
+  [TURN_EVIDENCE]: {
+    ...describeType("turnEvidence"),
+    childCollections: ["files", "evidenceRuns", "evidenceGaps"],
+    reads: {
+      list: { source: "type", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecordList" },
+      record: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          status: { kind: "scalar", type: "string" },
+          kept: { kind: "scalar", type: "boolean" },
+          hasEvidence: { kind: "scalar", type: "boolean" },
+        },
+      },
+      evidenceRuns: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      evidenceGaps: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      files: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      file: {
+        source: "object", parameterMode: "fixed", params: { path: "opsFilePath" }, requiredParams: ["path"], result: "panelRecord",
+      },
+    },
+    operations: [
+      BUILD_TURN_EVIDENCE,
+      REFRESH_TURN_EVIDENCE,
+      KEEP_TURN_EVIDENCE,
+      UNKEEP_TURN_EVIDENCE,
+      DELETE_TURN_EVIDENCE,
+      DOWNLOAD_TURN_EVIDENCE,
+    ],
+  },
+  [AUTOTEST_RUN]: {
+    ...describeType("autotestRun"),
+    childCollections: ["results"],
+    reads: {
+      list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      record: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          status: { kind: "scalar", type: "string" },
+          active: { kind: "scalar", type: "boolean" },
+          kept: { kind: "scalar", type: "boolean" },
+        },
+      },
+      results: {
+        source: "object", parameterMode: "fixed",
+        params: { verdict: "autotestVerdict" },
+        result: "panelRecordList",
+        rowType: AUTOTEST_CASE_ARTIFACT,
+      },
+    },
+    operations: [
+      KEEP_AUTOTEST_RUN,
+      UNKEEP_AUTOTEST_RUN,
+      DOWNLOAD_AUTOTEST_RUN,
+      DELETE_AUTOTEST_RUN,
+    ],
+  },
+  [AUTOTEST_CASE_ARTIFACT]: {
+    ...describeType("autotestCaseArtifact"),
+    childCollections: ["files", "evidenceRuns", "evidenceGaps"],
+    reads: {
+      record: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          runId: { kind: "scalar", type: "string" },
+          caseId: { kind: "scalar", type: "string" },
+          hasEvidence: { kind: "scalar", type: "boolean" },
+        },
+      },
+      evidenceRuns: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      evidenceGaps: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      files: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      file: {
+        source: "object", parameterMode: "fixed", params: { path: "opsFilePath" }, requiredParams: ["path"], result: "panelRecord",
+      },
+    },
+    operations: [DOWNLOAD_AUTOTEST_CASE_ARTIFACT],
   },
 };
 

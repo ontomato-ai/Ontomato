@@ -10,7 +10,6 @@ import {
   dashboardPages,
   personalWorkspacePages,
   legacyAdminRoutes,
-  observeRoutes,
   PlatformShellLayout,
   platformLayoutRoute,
   schedulePages,
@@ -54,7 +53,6 @@ export function startPlatform() {
       // One layout for every application: the platform shell draws the rail and the column, the routes fill it.
       platformLayoutRoute([
         ...workbenchPages(() => import("@ontomato/workbench-ui/features/workbench").then((m) => m.BusinessWorkbench), {
-          ...observeRoutes.root,
           props: { account: null },
         }),
         ...dashboardPages(),

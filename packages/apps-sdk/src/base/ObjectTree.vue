@@ -27,15 +27,32 @@ const props = withDefaults(
     emptyText?: string;
     /** The panel's message key for the tree's accessible name. */
     label?: string;
+    /** Whether to show a local search filter box above the tree (bound to public state `search`). */
+    searchable?: boolean;
+    /** Optional panel message key for the search box placeholder. */
+    searchPlaceholder?: string;
+    /** Optional panel message key shown when the search matches no files. */
+    noMatchText?: string;
   }>(),
-  { pathField: "path", defaultKey: undefined, fallbackToFirst: false, emptyText: undefined, label: undefined },
+  {
+    pathField: "path",
+    defaultKey: undefined,
+    fallbackToFirst: false,
+    emptyText: undefined,
+    label: undefined,
+    searchable: false,
+    searchPlaceholder: undefined,
+    noMatchText: undefined,
+  },
 );
 
-const { locale } = useI18n();
+const { locale, t } = useI18n();
 const panel = usePanelContext();
 const files = useMemberData("files");
 /** The selected file's key: the panel state the placement binds, else the tree's own. */
 const selected = useMemberParam("selected");
+/** The search keyword: bound to panel public state when wired so readers and agents share it. */
+const search = useMemberParam("search");
 
 const records = computed(() => (files.value.status === "ready" ? (files.value.value as unknown as PlatformObjectRecord[]) : []));
 const items = computed<readonly PathTreeItem[]>(() =>
@@ -45,6 +62,7 @@ const items = computed<readonly PathTreeItem[]>(() =>
     label: record.label,
   })));
 const selectedKey = computed(() => (typeof selected.value.value === "string" ? selected.value.value : null));
+const searchText = computed(() => (typeof search.value.value === "string" ? search.value.value : ""));
 
 /**
  * Each time the owner answers with the files and nothing is selected (`selectedKey === null`), auto-select `defaultKey`
@@ -66,13 +84,27 @@ function onSelect(key: string) {
   selected.set(key);
 }
 
+function onSearch(value: string) {
+  search.set(value);
+}
+
 const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyText!) : undefined);
 </script>
 
 <template>
   <div class="sdk-object-tree">
     <data-state :result="files as DataStateResult" :labels="labels">
-      <PathTree :items="items" :selected-key="selectedKey" :label="label ? panel.t(label) : undefined" @update:selected-key="onSelect" />
+      <PathTree
+        :items="items"
+        :selected-key="selectedKey"
+        :label="label ? panel.t(label) : undefined"
+        :searchable="searchable"
+        :search="searchText"
+        :search-placeholder="searchPlaceholder ? panel.t(searchPlaceholder) : t('common.search')"
+        :no-match-text="noMatchText ? panel.t(noMatchText) : undefined"
+        @update:selected-key="onSelect"
+        @update:search="onSearch"
+      />
     </data-state>
   </div>
 </template>

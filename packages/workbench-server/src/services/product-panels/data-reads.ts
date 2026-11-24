@@ -10,7 +10,8 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AUDIT_LOG, GENERAL_SETTINGS, MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, PUBLISHED_MCP_SERVICE,
+  AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_RUN, GENERAL_SETTINGS, MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE,
+  OPS_KNOWLEDGE, PUBLISHED_MCP_SERVICE, TURN_EVIDENCE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
   PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
@@ -36,6 +37,12 @@ import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
 import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
+import {
+  createAutotestCaseArtifactReadAdapter,
+  createAutotestRunReadAdapter,
+  createOpsKnowledgeReadAdapter,
+  createTurnEvidenceReadAdapter,
+} from "../ops-diagnosis/panel-reads";
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import { createGovernanceReadAdapters } from "../governance/panel-reads";
@@ -162,6 +169,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const modelConnections = createModelConnectionReads({ owner, credentials: viewer });
   const modelEntries = createModelEntryReads({ owner, credentials: viewer });
   const modelUsage = createModelUsageReads({ owner, credentials: viewer });
+  const opsKnowledge = createOpsKnowledgeReadAdapter(owner, viewer);
+  const turnEvidence = createTurnEvidenceReadAdapter(owner, viewer);
+  const autotestRun = createAutotestRunReadAdapter(owner, viewer);
+  const autotestCaseArtifact = createAutotestCaseArtifactReadAdapter(owner, viewer);
   return {
     [PUBLISHED_MCP_SERVICE]: {
       list: () => readPublishedMcpServices(viewer, location),
@@ -192,6 +203,40 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [MODEL_USAGE]: {
       form: (selection, params) => modelUsage.form(selection.primaryKey!, formParams(params)),
       vectorRebuild: selection => modelUsage.vectorRebuild(selection.primaryKey!),
+    },
+    [OPS_KNOWLEDGE]: {
+      files: () => opsKnowledge.files(),
+      record: (_selection, params) => opsKnowledge.record(panelReadParameterSchemas.opsFilePath.parse(params.path)),
+    },
+    [TURN_EVIDENCE]: {
+      list: (_selection, params) => turnEvidence.list({
+        search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+      }),
+      record: selection => turnEvidence.record(selection.primaryKey!),
+      evidenceRuns: selection => turnEvidence.evidenceRuns(selection.primaryKey!),
+      evidenceGaps: selection => turnEvidence.evidenceGaps(selection.primaryKey!),
+      files: selection => turnEvidence.files(selection.primaryKey!),
+      file: (selection, params) => turnEvidence.file(
+        selection.primaryKey!,
+        panelReadParameterSchemas.opsFilePath.parse(params.path),
+      ),
+    },
+    [AUTOTEST_RUN]: {
+      list: () => autotestRun.list(),
+      record: selection => autotestRun.record(selection.primaryKey!),
+      results: (selection, params) => autotestRun.results(selection.primaryKey!, {
+        verdict: panelReadParameterSchemas.autotestVerdict.optional().parse(params.verdict),
+      }),
+    },
+    [AUTOTEST_CASE_ARTIFACT]: {
+      record: selection => autotestCaseArtifact.record(selection.primaryKey!),
+      evidenceRuns: selection => autotestCaseArtifact.evidenceRuns(selection.primaryKey!),
+      evidenceGaps: selection => autotestCaseArtifact.evidenceGaps(selection.primaryKey!),
+      files: selection => autotestCaseArtifact.files(selection.primaryKey!),
+      file: (selection, params) => autotestCaseArtifact.file(
+        selection.primaryKey!,
+        panelReadParameterSchemas.opsFilePath.parse(params.path),
+      ),
     },
     [ACTION]: {
       count: async () => (await actions()).count(),

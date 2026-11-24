@@ -75,21 +75,24 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   },
   {
     renderer: "operations",
-    // Observers enter on turn evidence (its routes live in ObserveLayout rather than PlatformNavigation); a reader with
-    // user feedback alone opens on it, and since it has no menu name the menu does not list it.
+    // Operations diagnosis runs inside the shared platform frame: one menu lists remaining native pages and migrated
+    // panel entries together. Observers open on turn evidence; readers with user feedback alone open on feedback.
     home: platformRoutes.turn.path,
     homePermission: "observer",
     entryHome: platformRoutes.feedback.path,
     sections: [
       {
         key: "operations:pages",
-        titleKey: "platform.operations",
         paths: [
+          platformRoutes.diagnosis.path,
           platformRoutes.turn.path,
           platformRoutes.test.path,
+          platformRoutes.results.path,
+          platformRoutes.cases.path,
           platformRoutes.logs.path,
           platformRoutes.dsl.path,
           platformRoutes.opsKnowledge.path,
+          platformRoutes.feedback.path,
         ],
       },
     ],

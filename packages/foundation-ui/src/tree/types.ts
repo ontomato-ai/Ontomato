@@ -76,3 +76,26 @@ export function firstTreeFile(nodes: readonly PathTreeNode[]): PathTreeFile | nu
   }
   return null;
 }
+
+/** Filters a path tree by case-insensitive substring match against node labels and full paths. */
+export function filterPathTree(nodes: readonly PathTreeNode[], keyword: string): readonly PathTreeNode[] {
+  const query = keyword.trim().toLowerCase();
+  if (!query) return nodes;
+  const matched: PathTreeNode[] = [];
+  for (const node of nodes) {
+    const selfHit = node.label.toLowerCase().includes(query) || node.path.toLowerCase().includes(query);
+    if (node.kind === "file") {
+      if (selfHit) matched.push(node);
+      continue;
+    }
+    if (selfHit) {
+      matched.push(node);
+      continue;
+    }
+    const children = node.children ? filterPathTree(node.children, query) : [];
+    if (children.length > 0) {
+      matched.push({ ...node, children });
+    }
+  }
+  return matched;
+}

@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ops-knowledge",
+      "input": {
+        "name": "Operations knowledge",
+        "description": "Browse operations diagnosis knowledge documents and follow cross-document Markdown links."
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ParsedLogRecord } from "@ontomato/contracts/observe";
-import { nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useDocumentVisible } from "@ontomato/foundation-ui/visibility";
 import { authHost } from "../../../../utils/auth";
 import { diagnosisApi } from "../../api";
@@ -281,6 +281,10 @@ watch(documentVisible, (shown) => {
   if (right.connected) openPanelStream(right, "backend", rightContainer);
 });
 
+onMounted(() => {
+  void diagnosisApi.initializeLogSourceConfig().catch((error) => console.warn("Failed to initialize observe backend config", error));
+});
+
 onBeforeUnmount(() => {
   clearLogs(left);
   clearLogs(right);
@@ -429,7 +433,9 @@ onBeforeUnmount(() => {
 <style scoped>
 .live-logs-page {
   display: flex;
+  box-sizing: border-box;
   height: 100%;
+  padding: var(--page-section-padding);
   overflow: hidden;
 }
 

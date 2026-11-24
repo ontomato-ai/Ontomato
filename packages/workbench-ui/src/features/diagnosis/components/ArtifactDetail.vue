@@ -11,7 +11,7 @@ import { authHost } from "../../../utils/auth";
 import ArtifactRetentionButton from "./ArtifactRetentionButton.vue";
 const props = defineProps<{ apiPrefix: string; title?: string; question?: string; subtitle?: string; triggerBuildBody?: Record<string, unknown>; triggerBuildPath?: string; kept?: boolean; retentionLoading?: boolean }>();
 const emit = defineEmits<{ loaded: []; "toggle-retention": [] }>();
-const { t } = useI18n(), diagnose = inject(diagnosisActionKey);
+const { t } = useI18n(), diagnose = inject(diagnosisActionKey, undefined);
 const manifest = ref<WorkspaceManifest | null>(null), files = ref<ArtifactFileTreeNode[]>([]), preview = ref<ArtifactFilePreview | null>(null), selected = ref<ArtifactFileTreeNode | null>(null);
 const loading = ref(false), refreshing = ref(false), error = ref("");
 let generation = 0;
