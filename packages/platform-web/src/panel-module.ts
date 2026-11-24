@@ -14,14 +14,90 @@ import type { CompilerOptions } from "@vue/compiler-dom";
  * global that two instances could race for.
  */
 
+const MAX_TEMPLATE_CACHE_ENTRIES = 128;
+const MAX_IMPORT_CACHE_ENTRIES = 128;
+const templateCache = new Map<string, Vue.RenderFunction>();
+const panelImportCache = new Map<string, Awaited<ReturnType<typeof panelModuleImports>>>();
+const componentImportCache = new Map<string, Awaited<ReturnType<typeof componentModuleImports>>>();
+
+export function clearPanelModuleCaches(): void {
+  templateCache.clear();
+  panelImportCache.clear();
+  componentImportCache.clear();
+}
+
+function readLru<T>(cache: Map<string, T>, key: string): T | undefined {
+  const value = cache.get(key);
+  if (value !== undefined) {
+    cache.delete(key);
+    cache.set(key, value);
+  }
+  return value;
+}
+
+function writeLru<T>(cache: Map<string, T>, key: string, value: T, limit: number): T {
+  cache.delete(key);
+  cache.set(key, value);
+  if (cache.size > limit) cache.delete(cache.keys().next().value!);
+  return value;
+}
+
+// Preserve undefined properties and distinguish arrays from objects when building a key.
+function serializeCompilerOption(value: unknown, ancestors = new Set<object>()): string | undefined {
+  if (value === null) return "null";
+  switch (typeof value) {
+    case "string": return JSON.stringify(value);
+    case "boolean":
+    case "undefined": return String(value);
+    case "number": return Object.is(value, -0) ? "-0" : String(value);
+    case "bigint": return `${value}n`;
+    case "object": break;
+    default: return undefined;
+  }
+
+  const array = Array.isArray(value);
+  const prototype = Object.getPrototypeOf(value);
+  if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) return undefined;
+  if (ancestors.has(value)) return undefined;
+
+  const properties = Object.getOwnPropertyDescriptors(value);
+  const keys = Reflect.ownKeys(properties);
+  if (!keys.every(key => typeof key === "string")) return undefined;
+
+  ancestors.add(value);
+  const entries: string[] = [];
+  for (const key of keys.sort()) {
+    const property = properties[key];
+    const entry = Object.hasOwn(property, "value") ? serializeCompilerOption(property.value, ancestors) : undefined;
+    if (entry === undefined) {
+      ancestors.delete(value);
+      return undefined;
+    }
+    entries.push(`${JSON.stringify(key)}:${property.enumerable ? "" : "!"}${entry}`);
+  }
+  ancestors.delete(value);
+  const body = entries.join(",");
+  if (array) return `[${body}]`;
+  return `${prototype === null ? "null" : ""}{${body}}`;
+}
+
 /** The platform's Vue compiles a template the way Vue's full build does, once the first panel with one runs. */
 let compiler: Promise<void> | undefined;
 export function useTemplateCompiler(): Promise<void> {
   return compiler ??= import("@vue/compiler-dom").then(({ compile }) => {
     Vue.registerRuntimeCompiler((template: string | object, options?: CompilerOptions) => {
+      const serializedOptions = typeof template === "string" ? serializeCompilerOption(options) : undefined;
+      const key = typeof template === "string" && serializedOptions !== undefined
+        ? `${template.length}:${template}${serializedOptions}`
+        : undefined;
+      if (key !== undefined) {
+        const cached = readLru(templateCache, key);
+        if (cached) return cached;
+      }
       const { code } = compile(template as string, { hoistStatic: true, ...options });
       const render: Vue.RenderFunction & { _rc?: boolean } = new Function("Vue", code)(Vue);
       render._rc = true;
+      if (key !== undefined) writeLru(templateCache, key, render, MAX_TEMPLATE_CACHE_ENTRIES);
       return render;
     });
   });
@@ -49,7 +125,8 @@ function namespaceModule(key: string, namespace: Readonly<Record<string, unknown
  * The module's import address belongs to this evaluation even if it has no imports.
  */
 export async function evaluatePanelModule(source: string, modules: PanelModules): Promise<Record<string, unknown>> {
-  const imports = await panelModuleImports(source);
+  const imports = readLru(panelImportCache, source)
+    ?? writeLru(panelImportCache, source, await panelModuleImports(source), MAX_IMPORT_CACHE_ENTRIES);
   const run = `panel-${++instances}`;
   const specifiers = Object.values(panelModuleSpecifiers);
   const addresses = new Map<PanelModuleSpecifier, string>();
@@ -79,7 +156,8 @@ export async function evaluateComponentModule(
   source: string,
   loaders: Readonly<Record<ComponentOfficialSpecifier, () => Promise<Readonly<Record<string, unknown>>> | Readonly<Record<string, unknown>>>>,
 ): Promise<Record<string, unknown>> {
-  const imports = await componentModuleImports(source, { allowRelative: false });
+  const imports = readLru(componentImportCache, source)
+    ?? writeLru(componentImportCache, source, await componentModuleImports(source, { allowRelative: false }), MAX_IMPORT_CACHE_ENTRIES);
   const run = `component-${++instances}`;
   const needed = [...new Set(imports.map(entry => entry.specifier as ComponentOfficialSpecifier))];
   const addresses = new Map<string, string>();
