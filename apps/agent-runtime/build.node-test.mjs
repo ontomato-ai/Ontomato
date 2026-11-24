@@ -85,7 +85,7 @@ test("build prepares an empty context before adding Python requirements and invo
     `
 import childProcess from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const nativeSpawn = childProcess.spawnSync;
 const calls = [];
@@ -100,6 +100,7 @@ childProcess.spawnSync = (command, args, options) => {
       inputs: JSON.parse(readFileSync(join(context, "inputs.json"), "utf8")),
       requirements: readFileSync(join(context, "requirements-py310.txt"), "utf8"),
       codexLock: readFileSync(join(context, "codex/sources.lock"), "utf8"),
+      downloads: readdirSync(join(context, "downloads")),
       launcher: readFileSync(join(context, "workspace/ontomato/packages/agent-runtime/src/worker-launch.py"), "utf8"),
       stale: existsSync(join(context, "stale-marker")),
     };
@@ -116,6 +117,12 @@ syncBuiltinESMExports();
 `,
   );
   const context = join(root, ".build/contexts/agent-runtime/arm64/image");
+  // Prefetched artifacts are named by SHA256; only the pinned ones enter the context.
+  const prefetched = join(temporary, "prefetched");
+  const codexArm64 = readFileSync(join(root, "apps/agent-runtime/codex/sources.lock"), "utf8").match(/^arm64 \S+ ([0-9a-f]{64}) /m)[1];
+  mkdirSync(prefetched);
+  writeFileSync(join(prefetched, codexArm64), "codex");
+  writeFileSync(join(prefetched, "f".repeat(64)), "unrelated");
   for (let attempt = 0; attempt < 2; attempt++) {
     mkdirSync(context, { recursive: true });
     writeFileSync(join(context, "stale-marker"), "previous build");
@@ -135,6 +142,7 @@ syncBuiltinESMExports();
           ...process.env,
           DOCKER_API_VERSION: "1.49",
           RUNTIME_BUILD_TEST_LOG: log,
+          PINNED_DOWNLOADS_DIR: prefetched,
         },
       },
     );
@@ -158,6 +166,7 @@ syncBuiltinESMExports();
     assert.equal(build.context.inputs.web, false);
     assert.match(build.context.codexLock, /^amd64 0\.171\.0 [0-9a-f]{64} https:\/\//m);
     assert.match(build.context.codexLock, /^arm64 0\.171\.0 [0-9a-f]{64} https:\/\//m);
+    assert.deepEqual(build.context.downloads, [codexArm64]);
     assert.equal(
       build.context.requirements,
       readFileSync(
