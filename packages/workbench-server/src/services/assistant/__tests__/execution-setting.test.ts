@@ -12,7 +12,9 @@ it("carries original operator and service credentials to validation and preparat
   await validateExecutionSetting(owner, "selected", "other", original);
   await prepareExecutionSetting(owner, "selected", "other", original);
   for (const [, init] of fetch.mock.calls) {
-    expect(init.headers).toMatchObject({ tk: "original", "X-Ontomato-Query-Service-Token": "service" });
+    const headers = new Headers(init.headers);
+    expect(headers.get("tk")).toBe("original");
+    expect(headers.get("X-Ontomato-Query-Service-Token")).toBe("service");
     expect(JSON.parse(init.body)).toEqual({ domainId: "domain", operatorId: "alice", oldExecutionUserId: "selected", executionUserId: "other" });
   }
 });

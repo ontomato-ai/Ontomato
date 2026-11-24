@@ -269,8 +269,10 @@ async function backendRequest(
     const started = performance.now();
     let outcome = "success";
     try {
-      const headers = { ...logHeaders(), ...(options.headers ?? buildBackendHeaders(token, userId, locale, apiKey)) };
-      if (body instanceof FormData) delete headers["Content-Type"];
+      const headers = new Headers(logHeaders());
+      for (const [name, value] of Object.entries(options.headers ?? buildBackendHeaders(token, userId, locale, apiKey)))
+        headers.set(name, value);
+      if (body instanceof FormData) headers.delete("Content-Type");
       const response = await fetch(url, {
         method,
         headers,

@@ -36,10 +36,10 @@ async function openMcp(
   signal.throwIfAborted();
   const client = new Client({ name: "ontomato-agent-runtime", version: "1" });
   const fetchWithHeaders: typeof fetch = async (url, init) => {
-    const headers = new Headers(init?.headers);
+    const headers = new Headers(logHeaders());
+    new Headers(init?.headers).forEach((value, name) => headers.set(name, value));
     for (const [name, value] of Object.entries(config.headers))
       headers.set(name, value);
-    for (const [name, value] of Object.entries(logHeaders())) headers.set(name, value);
     headers.set("X-Correlation-Id", correlationId);
     const started = performance.now();
     let outcome = "failure";

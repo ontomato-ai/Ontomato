@@ -35,15 +35,19 @@ export async function probeBatch(items, env = process.env, request = fetch, sche
   }
   const base = env.ONTOMATO_ONTOLOGY_URL?.replace(/\/$/, "");
   if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL (see SKILL.md)");
+  const authority = env.ONTOMATO_SKILL_SCENARIO === "platform"
+    ? { "X-Ontomato-Callback-Credential": env.ONTOMATO_EXECUTION_CALLBACK }
+    : {
+        ...(env.ONTOMATO_TK ? { tk: env.ONTOMATO_TK } : {}),
+        ...(env.ONTOMATO_API_KEY ? { "X-API-Key": env.ONTOMATO_API_KEY } : {}),
+        ...(env.ONTOMATO_RUN_ID ? { "X-Ontomato-Run-Id": env.ONTOMATO_RUN_ID } : {}),
+        ...(env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": env.ONTOMATO_SESSION_ID } : {}),
+        ...(env.ONTOMATO_RETRIEVAL_CALLER_ID ? { "X-Ontomato-Retrieval-Caller-Id": env.ONTOMATO_RETRIEVAL_CALLER_ID } : {}),
+      };
   const headers = {
     "Content-Type": "application/json", "Accept-Language": env.ONTOMATO_LANGUAGE ?? "en",
-    ...(env.ONTOMATO_TK ? { tk: env.ONTOMATO_TK } : {}),
-    ...(env.ONTOMATO_API_KEY ? { "X-API-Key": env.ONTOMATO_API_KEY } : {}),
-    ...(env.ONTOMATO_EXECUTION_CALLBACK ? { "X-Ontomato-Callback-Credential": env.ONTOMATO_EXECUTION_CALLBACK } : {}),
-    ...(env.ONTOMATO_RUN_ID ? { "X-Ontomato-Run-Id": env.ONTOMATO_RUN_ID } : {}),
-    ...(env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": env.ONTOMATO_SESSION_ID } : {}),
+    ...authority,
     ...(env.ONTOMATO_CORRELATION_ID ? { "X-Correlation-Id": env.ONTOMATO_CORRELATION_ID } : {}),
-    ...(env.ONTOMATO_RETRIEVAL_CALLER_ID ? { "X-Ontomato-Retrieval-Caller-Id": env.ONTOMATO_RETRIEVAL_CALLER_ID } : {}),
   };
   const results = new Array(items.length);
   let next = 0;

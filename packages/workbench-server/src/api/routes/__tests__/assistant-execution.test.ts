@@ -416,16 +416,16 @@ it("resolves retrieval_scope_id from the server turn on retrieval and ontology c
  // Status/close retrieval operations look up the turn's retrieval_scope_id via ownedRun.
  const statusRes=await nativeFetch(base+`/api/assistant/executions/${run}/retrieval`,{method:'POST',headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':credential(),'X-Ontomato-Run-Id':run,'X-Ontomato-Retrieval-Caller-Id':other},body:JSON.stringify({operation:'status',retrievalId:other,retrievalRunId:other,key:other})});
  expect(statusRes.status).toBe(200);
- expect(upstream.mock.calls[0]![1]?.headers).toMatchObject({'X-Ontomato-Retrieval-Caller-Id':scope});
+ expect(new Headers(upstream.mock.calls[0]![1]?.headers).get('X-Ontomato-Retrieval-Caller-Id')).toBe(scope);
 
  // Ontology proxy forwards the resolved retrievalScopeId and never caller-supplied IDs.
  const ontoRes=await call('ontology/ontology/query/execute-dsl',{'X-Ontomato-Retrieval-Caller-Id':other});
  expect(ontoRes.status).toBe(200);
- expect(upstream.mock.calls[1]![1]?.headers).toMatchObject({'X-Ontomato-Retrieval-Caller-Id':scope});
+ expect(new Headers(upstream.mock.calls[1]![1]?.headers).get('X-Ontomato-Retrieval-Caller-Id')).toBe(scope);
 
  // When the turn has no retrieval scope (e.g. app-builder), no X-Ontomato-Retrieval-Caller-Id header is sent.
  mocks.restore.mockResolvedValue({executionUserId:null,retrievalScopeId:null,credentials:{token:'initiator-token',locale:'en'}});
  const appBuilderRes=await call('ontology/ontology/query/overview',{},'GET');
  expect(appBuilderRes.status).toBe(200);
- expect(upstream.mock.calls[2]![1]?.headers).not.toHaveProperty('X-Ontomato-Retrieval-Caller-Id');
+ expect(new Headers(upstream.mock.calls[2]![1]?.headers).has('X-Ontomato-Retrieval-Caller-Id')).toBe(false);
 });
