@@ -643,6 +643,30 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     }
     assert.equal(requests.filter(([method]) => method === "PUT").length, 0);
 
+    await writeFile(detailMaterialFile, JSON.stringify({
+      ...detailMaterial,
+      applications: [{
+        ...app,
+        input: {
+          ...updateInput,
+          panelUses: updateInput.panelUses.map((use, index) => index === 0 ? { ...use, pageComposer: "inline" } : use),
+        },
+      }],
+    }));
+    await assert.rejects(run("panel", "check", detailDir), error =>
+      error.stderr.includes("panelUses[0].pageComposer 'inline' must be 'bottom' or 'none'"));
+    await writeFile(detailMaterialFile, JSON.stringify({
+      ...detailMaterial,
+      applications: [{
+        ...app,
+        input: {
+          ...updateInput,
+          panelUses: updateInput.panelUses.map((use, index) => index === 0 ? { ...use, pageComposer: "none" } : use),
+        },
+      }],
+    }));
+    assert.equal(JSON.parse((await run("panel", "check", detailDir)).stdout).status, "valid");
+
     const detailPanelFile = join(detailDir, "panel.json");
     const detailPanel = JSON.parse(await readFile(detailPanelFile, "utf8"));
     const frameState = { type: { kind: "scalar", type: "string" } };

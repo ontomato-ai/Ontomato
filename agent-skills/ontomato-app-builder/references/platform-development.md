@@ -14,8 +14,14 @@ owner form and operation button.
 1. At the business owner, identify the existing read or action and its request identity, permission and result.
 2. Declare the stable type and read name, target source, required parameters, accepted input types and result shape.
    The platform resolves the actual placement and passes the viewer identity to the owner. Return the owner's
-   read state and field errors in the shared result shape.
-3. Declare the operation's ID, input/result shape, target, effect and batch support. Connect it to the same owner
+   read state and field errors in the shared result shape. When introducing a new fixed read parameter name, also add it
+   to `PanelData.data["*"].runtimeParams` in `packages/apps-sdk/src/catalogue.ts` so `component-catalogue.node-test.mjs`
+   stays green.
+3. Declare the operation's ID, input/result shape, target (single `targetType`, or declarative `targetTypes: { platformTypes?, customerObjects? }`
+   for multi-target platform operations — never non-serializable callbacks), effect and batch support. For every
+   `form.save` write operation, reuse `panelFormSaveInputSchema` from `@ontomato/contracts/panel-projection` (rather than
+   hand-writing a `.strict()` schema without `submittedFields`, which `ObjectForm` always sends), and include
+   `submittedFields` in unit tests. Connect it to the same owner
    write and authorization for the browser and assistant. Report affected objects or types so relevant reads refresh.
    A create owner must return explicit `created: { objectType, primaryKey }` on its `kind: "success"` receipt
    when it creates an identifiable object. The platform forwards that identity as `operation.created` in the
@@ -132,6 +138,8 @@ For a new official component:
    catalogue entries and catalogue test fixtures that enumerate supported result IDs.
 3. Document configuration in the component's `defineProps` JSDoc and declare events and slots on the component.
    The SDK build generates catalogue configuration and component docs from those declarations. For each read-only
-   output, declare the port in `readOnlyOutputs` and publish it with `useMemberOutput`.
+   output, declare the port in `readOnlyOutputs` and publish it with `useMemberOutput`. When a component declares both a
+   parent `record` datum and a `rows` datum (with `rowType`), type row-oriented ports with `objectType: "@data:rows"` so
+   expansion does not fall back to the parent type.
 4. Run the SDK catalogue/release checks and a host-level Vue test that mounts a real projection. Verify input and
    output types, loading and owner refusal, declared operations, and the released component reference.
