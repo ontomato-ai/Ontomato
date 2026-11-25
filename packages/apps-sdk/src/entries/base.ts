@@ -9,7 +9,6 @@ export type {
   ObjectListRenameCancelPayload,
   ObjectListRenameCommitPayload,
   ObjectListRowActionCondition,
-  ObjectListRowActionErrorEvent,
   ObjectListRowActionItem,
   ObjectListRowActionPrefill,
   ObjectListRowActionResultEvent,
@@ -18,7 +17,6 @@ export type {
   ObjectListRowOperationState,
   ObjectListRowTone,
   ObjectListSearchSubmit,
-  ObjectListSelectionRecord,
   ObjectListStateSnapshot,
   ObjectListTabsVariant,
 } from "../base/object-list-types";

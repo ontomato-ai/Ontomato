@@ -483,7 +483,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         assert.ok(!componentsDoc.includes(overviewLink), `non-panel ${component.componentId} must be excluded from docs/components.md`);
       }
     }
-    for (const excluded of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "DashboardMetricPreview", "ScheduledTaskSummaryList", "ScheduledTaskRunDetail", "EffectivePermissionsView", "TestcaseWorkbench"]) {
+    for (const excluded of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "DashboardMetricPreview", "ScheduledTaskSummaryList", "ScheduledTaskRunDetail", "EffectivePermissionsView", "TestcaseWorkbench", "DataAdapterTestReport"]) {
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
     }

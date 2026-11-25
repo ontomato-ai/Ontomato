@@ -679,6 +679,12 @@ describe("platform:DataAdapterConfig.save operation", () => {
     if (rejected.kind !== "refusal") throw new Error("expected refusal");
     expect(rejected.message).toContain("classDef[Order]");
     expect(rejected.errors?.[0]?.field).toBe("/dataSources/0/adapter/adapterType");
+    expect(rejected.details).toEqual({
+      problems: [
+        { path: "dataSources[crm]", message: "data source crm has invalid adapter type" },
+        { path: "classDef[Order]", message: "class Order is not routed to a data source" },
+      ],
+    });
   });
 
   it("saves routing-only changes through platform:DataAdapterConfig.saveRouting and maps routing rejection problems to exact fields", async () => {
@@ -737,6 +743,13 @@ describe("platform:DataAdapterConfig.save operation", () => {
       "/relationshipRoutes/1",
       "/relationshipRoutes/0/edge/realEdge",
     ]);
+    expect(rejected.details).toEqual({
+      problems: [
+        { path: "classDef[Order]", message: "class Order is not routed to a data source" },
+        { path: "relationshipDef[ORDER_DEVICE]", message: "the relationship crosses data sources" },
+        { path: "relationships[MOUNTED_ON]", message: "physical edge name conflict" },
+      ],
+    });
   });
 });
 

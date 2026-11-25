@@ -635,9 +635,27 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         if (!click?.isTrusted || !click.currentTarget || !entry.slot) {
           throw new Error("This conversation entry requires a reader click");
         }
-        const declared = (await directInstance.projectionOf(entry.slot)).conversationEntry;
-        if (!declared || JSON.stringify(declared.target) !== JSON.stringify(entry.target)
-          || declared.submit !== entry.submit || declared.newSession !== entry.newSession) {
+        const projection = await directInstance.projectionOf(entry.slot);
+        const matchesEntry = (candidate: { target: unknown; submit?: boolean; newSession?: boolean } | undefined) =>
+          Boolean(
+            candidate
+            && JSON.stringify(candidate.target) === JSON.stringify(entry.target)
+            && candidate.submit === entry.submit
+            && candidate.newSession === entry.newSession,
+          );
+        const declared = projection.conversationEntry;
+        const rowActionItems = (projection.config as { rowActions?: { items?: readonly unknown[] } } | undefined)?.rowActions?.items;
+        const matchedRowAction = Array.isArray(rowActionItems) && rowActionItems.some((raw) => {
+          if (!raw || typeof raw !== "object") return false;
+          const item = raw as { kind?: unknown; target?: unknown; submit?: boolean; newSession?: boolean };
+          if (item.kind !== "conversation") return false;
+          return matchesEntry({
+            target: item.target ?? declared?.target ?? { kind: "page-default" },
+            submit: item.submit ?? declared?.submit,
+            newSession: item.newSession ?? declared?.newSession,
+          });
+        });
+        if (!matchesEntry(declared) && !matchedRowAction) {
           throw new Error("This conversation entry is not declared by the panel");
         }
       }

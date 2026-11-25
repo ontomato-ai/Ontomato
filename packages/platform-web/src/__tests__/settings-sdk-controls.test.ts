@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { computed, h, nextTick, shallowRef } from "vue";
+import { computed, defineComponent, h, nextTick, shallowRef } from "vue";
 import { createI18n } from "vue-i18n";
 import { describe, expect, it, vi } from "vitest";
 import { ElMessageBox } from "element-plus/es/components/message-box/index";
@@ -12,6 +12,7 @@ import ObjectForm from "../../../apps-sdk/src/base/ObjectForm.vue";
 import PageHeader from "../../../apps-sdk/src/base/PageHeader.vue";
 import { SdkButton } from "../../../apps-sdk/src/ui/SdkButton";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
+import { usePanelFormDraft } from "../../../apps-sdk/src/panel/form-draft";
 import { PanelFormAdapters } from "../../../apps-sdk/src/panel/forms";
 import { createPanelInstance, type PanelInstance, type PanelWriteResult } from "../../../apps-sdk/src/panel/instance";
 import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/panel/member";
@@ -331,7 +332,7 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
     expect(wrapper.find(".sdk-form-row-footer .custom-source-test").text()).toBe("test:0:pg-main");
   });
 
-  it("renders aggregated red el-alert problems list on multi-field save refusal (DA-08)", async () => {
+  it("auto-derives aggregated red el-alert problems list from structured details.problems without a prop switch (DA-08)", async () => {
     const initialForm: PanelFormDescription = {
       values: { host: "bad" },
       fields: [
@@ -343,7 +344,6 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
 
     const { wrapper } = mountObjectForm({
       initialForm,
-      props: { refusalPresentation: "alert" },
       onSave: async () => ({
         decision: "confirm",
         named: [],
@@ -358,6 +358,12 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
               { field: "/sources/0/host", code: "required", message: "主机不能为空" },
               { field: "/routes/0/sourceId", code: "invalid_option", message: "引用了不存在的数据源" },
             ],
+            details: {
+              problems: [
+                { path: "dataSources[crm]", message: "主机不能为空" },
+                { path: "classDef[Order]", message: "引用了不存在的数据源" },
+              ],
+            },
           },
         },
       }),
@@ -380,6 +386,35 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
     expect(items).toHaveLength(2);
     expect(items[0]?.text()).toContain("主机不能为空");
     expect(items[1]?.text()).toContain("引用了不存在的数据源");
+
+    // Plain field validation refusal without structured details.problems renders standard summary (no ElAlert).
+    const plain = mountObjectForm({
+      initialForm,
+      onSave: async () => ({
+        decision: "confirm",
+        named: [],
+        response: {
+          kind: "dispatched",
+          intentId: "i-plain-refuse",
+          outcome: {
+            kind: "refusal",
+            code: "validation_failed",
+            message: "字段校验失败",
+            errors: [
+              { field: "/host", code: "required", message: "主机不能为空" },
+            ],
+          },
+        },
+      }),
+    });
+    await flushPromises();
+    await plain.wrapper.find("input").setValue("127.0.0.1");
+    await flushPromises();
+    const plainSaveBtn = plain.wrapper.findAll("button").find((b) => b.text().includes("保存"));
+    await plainSaveBtn!.trigger("click");
+    await flushPromises();
+    expect(plain.wrapper.findComponent({ name: "ElAlert" }).exists()).toBe(false);
+    expect(plain.wrapper.find(".sdk-owner-form-refusal-count").exists()).toBe(true);
   });
 
   it("preserves unsaved per-branch edits locally when refreshOnChange switches branches (DA-09)", async () => {
@@ -438,35 +473,76 @@ describe("Settings & Data Adapter SDK controls (Package 1)", () => {
     expect((wrapper.find('[data-field="/singleHost"] input').element as HTMLInputElement).value).toBe("pg-custom-draft");
   });
 
-  it("asks confirmation before discarding when PageHeader draft.confirmDiscard is true (GS-04 / DA-10)", async () => {
+  it("uses unified usePanelFormDraft + ObjectForm.reset({ confirm: true }) for header discard confirmation (GS-04 / DA-10)", async () => {
     const confirmSpy = vi.spyOn(ElMessageBox, "confirm");
-    const discard = vi.fn();
-
-    // 1. User cancels confirmation -> discard is NOT called
-    confirmSpy.mockRejectedValueOnce("cancel");
-    const wrapper = mount(PageHeader, {
-      props: {
-        title: "通用设置",
-        draft: { dirty: true, confirmDiscard: true, discard },
+    const reset = vi.fn(async (options?: { confirm?: boolean }) => {
+      if (options?.confirm) {
+        try {
+          await ElMessageBox.confirm("确定放弃当前未保存的修改吗？", "放弃", {});
+        } catch {
+          return false;
+        }
+      }
+      dirty.value = false;
+      return true;
+    });
+    const dirty = shallowRef(true);
+    const forms = new PanelFormAdapters();
+    forms.register("settings", {
+      handle: {
+        fields: computed(() => []),
+        values: computed(() => ({})),
+        errors: computed(() => ({})),
+        changed: computed(() => new Set<string>()),
+        busy: computed(() => false),
+        dirty: computed(() => dirty.value),
+        dirtyFields: computed(() => new Set<string>()),
+        submitting: computed(() => false),
+        canSubmit: computed(() => dirty.value),
+        set: vi.fn(),
+        submit: vi.fn(async () => ({ ok: true as const })),
+        reset,
+        refreshDraft: vi.fn(async () => {}),
       },
-      global: { plugins: [makeI18n()] },
+    } as unknown as Parameters<PanelFormAdapters["register"]>[1]);
+
+    const manifest = panelManifestSchema.parse({ state: {}, members: {} });
+    const panel = {
+      manifest,
+      instance: { forms, manifest } as unknown as PanelInstance,
+      t: (k: string) => k,
+    } as unknown as PanelContext;
+
+    const Host = defineComponent({
+      setup() {
+        const draft = usePanelFormDraft("settings");
+        return () => h(PageHeader, { title: "通用设置", draft: draft.value });
+      },
+    });
+
+    // 1. User cancels confirmation -> reset({ confirm: true }) was called and dirty stays true.
+    confirmSpy.mockRejectedValueOnce("cancel");
+    const wrapper = mount(Host, {
+      global: {
+        plugins: [makeI18n()],
+        provide: { [panelContextKey as symbol]: panel },
+      },
     });
 
     const discardBtn = wrapper.findAll("button").find((b) => b.text().includes("放弃"));
     expect(discardBtn).toBeDefined();
     await discardBtn!.trigger("click");
     await flushPromises();
+    expect(reset).toHaveBeenCalledWith({ confirm: true });
     expect(confirmSpy).toHaveBeenCalledTimes(1);
-    expect(discard).not.toHaveBeenCalled();
-    expect(wrapper.emitted("discard")).toBeUndefined();
+    expect(dirty.value).toBe(true);
 
-    // 2. User confirms -> discard IS called and event emitted
+    // 2. User confirms -> reset({ confirm: true }) clears dirty.
     confirmSpy.mockResolvedValueOnce("confirm" as never);
     await discardBtn!.trigger("click");
     await flushPromises();
     expect(confirmSpy).toHaveBeenCalledTimes(2);
-    expect(discard).toHaveBeenCalledTimes(1);
-    expect(wrapper.emitted("discard")).toHaveLength(1);
+    expect(dirty.value).toBe(false);
     confirmSpy.mockRestore();
   });
 

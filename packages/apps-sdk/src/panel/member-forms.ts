@@ -15,7 +15,7 @@ import type { MemberDataState } from "./direct";
 import type { PanelAgentActionContext, PanelInstance } from "./instance";
 import type { PanelMemberContext } from "./member";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { PlatformObjectRefusal } from "./platform-objects";
+import { PlatformObjectRefusal, type PlatformObjectRefusalDetail } from "./platform-objects";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { FormSubmitOverride } from "./forms";
 import type { MemberOperationsState } from "./member-operations";
@@ -400,6 +400,20 @@ function prepareActionSaveInput(
   return { input: { values: serialized } };
 }
 
+function structuredRefusalProblems(details: RuntimeJsonObject | undefined): PlatformObjectRefusalDetail[] {
+  const raw = details?.problems;
+  if (!Array.isArray(raw)) return [];
+  const problems: PlatformObjectRefusalDetail[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    if (typeof record.message !== "string" || record.message.trim() === "") continue;
+    const path = typeof record.path === "string" && record.path.trim() !== "" ? record.path : undefined;
+    problems.push(path !== undefined ? { path, message: record.message } : { message: record.message });
+  }
+  return problems;
+}
+
 export function resolveFormSaveAnswer(
   answer: { readonly decision: "confirm" | "cancel"; readonly response?: import("@ontomato/contracts/panel-agent").PanelHumanOperationDispatchResponse },
   target: PanelFormTarget,
@@ -418,8 +432,8 @@ export function resolveFormSaveAnswer(
     return { primaryKey, ...receipt };
   }
   if (outcome.kind === "refusal" || outcome.kind === "failure") {
-    // The owner names each refused field by its JSON Pointer.
-    const details = (outcome.errors ?? []).map((item) => ({ path: item.field, message: item.message }));
+    // Structured problem lists are carried explicitly on `outcome.details.problems`, never synthesized from plain field errors.
+    const details = structuredRefusalProblems(outcome.details);
     throw new PlatformObjectRefusal(outcome.message, fieldMessages(outcome.errors), undefined, outcome.savedFields, details);
   }
   if (outcome.kind === "batch") throw new Error("A form's save is one call, not a batch");

@@ -174,8 +174,6 @@ const props = withDefaults(defineProps<{
   showToc?: boolean;
   /** Grid column count for fields rendered inside the form (`1` default or `2`). */
   columns?: 1 | 2;
-  /** How save refusals render at the foot of the form: compact `"summary"` (default) or an aggregated `"alert"` with a problems list. */
-  refusalPresentation?: "summary" | "alert";
   /**
    * Renders a compact bordered comparison table below the form fields whenever any editable field differs from its
    * initial baseline value, showing field label, strikethrough previous value, and bold new value. Defaults to `false`.
@@ -209,7 +207,6 @@ const props = withDefaults(defineProps<{
   showRequiredMark: true,
   showToc: true,
   columns: 1,
-  refusalPresentation: "summary",
   showChangeSummary: false,
   changeSummaryTitle: undefined,
   persistDraft: undefined,
@@ -2052,25 +2049,25 @@ async function saveFromForm() {
 const refusalFoot = computed(() => {
   if (!refusal.value) return null;
   if (!(refusal.value instanceof PlatformObjectRefusal)) {
-    return { title: refusal.value.message, fields: [] as string[], said: [refusal.value.message], problems: [] as { path: string; message: string }[] };
+    return { title: refusal.value.message, fields: [] as string[], said: [refusal.value.message], problems: [] as { path?: string; message: string }[] };
   }
   const details = refusal.value.details;
   const named = Object.entries(errors.value);
   if (!named.length && !details.length) {
-    return { title: refusal.value.message, fields: [] as string[], said: [refusal.value.message], problems: [] as { path: string; message: string }[] };
+    return { title: refusal.value.message, fields: [] as string[], said: [refusal.value.message], problems: [] as { path?: string; message: string }[] };
   }
   const onFields = new Set<string>();
   const said: string[] = [];
-  const problems: { path: string; message: string }[] = [];
+  const problems: { path?: string; message: string }[] = [];
   for (const [path, message] of named) {
     const field = fieldShowing(fields.value, values.value, path);
     if (field === null) said.push(message);
     else onFields.add(field);
   }
-  // Surface an aggregated structured problem alert when requested (`refusalPresentation: "alert"`).
-  if (props.refusalPresentation === "alert" && details.length > 0) {
+  // Automatically surface an aggregated structured problem alert when the owner returned structured `details.problems`.
+  if (details.length > 0) {
     for (const detail of details) {
-      problems.push({ path: detail.path, message: detail.message });
+      problems.push(detail.path !== undefined ? { path: detail.path, message: detail.message } : { message: detail.message });
     }
   }
   return { title: refusal.value.message, fields: [...onFields], said, problems };
@@ -2764,7 +2761,7 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
               {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
             </button>
             <ul class="sdk-owner-form-refusal-problems">
-              <li v-for="(problem, index) in refusalFoot.problems" :key="`${problem.path}-${index}`">
+              <li v-for="(problem, index) in refusalFoot.problems" :key="`${problem.path ?? ''}-${index}`">
                 <code v-if="problem.path" class="sdk-owner-form-refusal-path">{{ problem.path }}</code>
                 <span>{{ problem.message }}</span>
               </li>

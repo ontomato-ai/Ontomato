@@ -4189,3 +4189,52 @@ test("value-carried tag field values, form option tones, and ObjectList column t
   assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", tagEffect: "dark" }).success, false);
   assert.equal(panelObjectListColumnSchema.safeParse({ key: "status", headerTooltipKey: "" }).success, false);
 });
+
+test("ObjectList rowActions align conversation fields with PanelConversationEntry and reject tone", async () => {
+  const { panelObjectListRowActionItemSchema } = await import("./panel-projection");
+
+  // Conversation action accepts PanelConversationEntry-aligned fields.
+  const validConv = panelObjectListRowActionItemSchema.parse({
+    kind: "conversation",
+    id: "ask",
+    target: { kind: "id", id: "analyst-agent" },
+    prefillKey: "gallery.askPrompt",
+    submit: false,
+    newSession: true,
+    primary: true,
+  });
+  assert.equal(validConv.kind, "conversation");
+  assert.deepEqual(validConv.target, { kind: "id", id: "analyst-agent" });
+  assert.equal(validConv.prefillKey, "gallery.askPrompt");
+  assert.equal(validConv.submit, false);
+  assert.equal(validConv.newSession, true);
+
+  // Mutual exclusion between prefill and prefillKey.
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "conversation",
+      id: "ask",
+      prefill: "Hello",
+      prefillKey: "gallery.askPrompt",
+    }).success,
+    false,
+  );
+
+  // Legacy prompt/promptKey/agent and duplicate tone are rejected.
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "conversation",
+      id: "ask",
+      prompt: "Legacy",
+    }).success,
+    false,
+  );
+  assert.equal(
+    panelObjectListRowActionItemSchema.safeParse({
+      kind: "operation",
+      operation: "remove",
+      tone: "danger",
+    }).success,
+    false,
+  );
+});

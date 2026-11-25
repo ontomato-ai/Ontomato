@@ -109,7 +109,6 @@ const rowActionBaseFields = {
   icon: z.string().min(1).optional(),
   iconOnly: z.boolean().optional(),
   active: z.boolean().optional(),
-  tone: z.enum(["default", "primary", "danger"]).optional(),
   danger: z.boolean().optional(),
   primary: z.boolean().optional(),
   when: rowActionWhenSchema,
@@ -132,12 +131,22 @@ export const panelObjectListRowActionItemSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("conversation"),
     id: z.string().min(1),
-    prompt: z.string().optional(),
-    promptKey: panelMessageKeySchema.optional(),
-    agent: z.union([z.string().min(1), pageComposerAgentTargetSchema]).optional(),
+    target: pageComposerAgentTargetSchema.optional(),
+    prefill: z.string().optional(),
+    prefillKey: panelMessageKeySchema.optional(),
+    submit: z.boolean().optional(),
+    newSession: z.boolean().optional(),
     ...rowActionBaseFields,
   }).strict(),
-]);
+]).superRefine((item, ctx) => {
+  if (item.kind === "conversation" && item.prefill !== undefined && item.prefillKey !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Write the opening sentence out or name its message key, not both",
+      path: ["prefillKey"],
+    });
+  }
+});
 export type PanelObjectListRowActionItem = z.infer<typeof panelObjectListRowActionItemSchema>;
 
 /** Built-in action column configuration for ObjectList. */

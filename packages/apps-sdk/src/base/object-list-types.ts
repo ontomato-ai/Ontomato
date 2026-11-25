@@ -43,15 +43,7 @@ export interface ObjectListRef {
   readonly primaryKey: string;
 }
 
-/** Selected row summary emitted by `ObjectList`'s `selection-record` event. */
-export interface ObjectListSelectionRecord {
-  readonly className: string;
-  readonly primaryKey: string;
-  readonly label: string;
-  readonly subtitle?: string;
-}
-
-/** Pagination and loading snapshot exposed by `ObjectList`'s `state-change` event and `#status` slot. */
+/** Pagination and loading snapshot exposed by `ObjectList`'s `#status` slot. */
 export interface ObjectListStateSnapshot {
   readonly page: number;
   readonly pageSize: number;
@@ -64,19 +56,11 @@ export interface ObjectListStateSnapshot {
   readonly retry: (() => void) | null;
 }
 
-/** Safe row summary carried by `row-action-error` and `row-action-result` events. */
+/** Safe row summary carried by `row-action-result` events. */
 export interface ObjectListRowActionRowSummary {
   readonly className: string;
   readonly primaryKey: string;
   readonly label: string;
-}
-
-/** Payload emitted by `ObjectList`'s `row-action-error` event. */
-export interface ObjectListRowActionErrorEvent {
-  readonly actionId: string;
-  readonly row: ObjectListRowActionRowSummary;
-  readonly ref: ObjectListRef;
-  readonly message: string;
 }
 
 /** Payload emitted by `ObjectList`'s `row-action-result` event. */

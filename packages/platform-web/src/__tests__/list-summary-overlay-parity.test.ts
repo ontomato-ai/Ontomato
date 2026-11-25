@@ -10,11 +10,11 @@ import { curatedIcon } from "@ontomato/platform-shell";
 import ObjectList from "../../../apps-sdk/src/base/ObjectList.vue";
 import ObjectSummary from "../../../apps-sdk/src/base/ObjectSummary.vue";
 import ObjectTitle from "../../../apps-sdk/src/base/ObjectTitle.vue";
-import type { ObjectListRowActionErrorEvent, ObjectListRowActionResultEvent, ObjectListSelectionRecord, ObjectListStateSnapshot } from "../../../apps-sdk/src/base/object-list-types";
+import type { ObjectListRowActionResultEvent, ObjectListStateSnapshot } from "../../../apps-sdk/src/base/object-list-types";
 import { createSdkOverlay } from "../../../apps-sdk/src/ui/SdkOverlay";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
 import { PanelFormAdapters } from "../../../apps-sdk/src/panel/forms";
-import type { PanelInstance, PanelWriteResult } from "../../../apps-sdk/src/panel/instance";
+import { createPanelInstance, type PanelInstance, type PanelWriteResult } from "../../../apps-sdk/src/panel/instance";
 import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/panel/member";
 import type { MemberOperationsState } from "../../../apps-sdk/src/panel/member-operations";
 import type { PlatformObjectRecord } from "../../../apps-sdk/src/panel/platform-objects";
@@ -102,6 +102,7 @@ interface MountListOptions {
   refresh?: () => void;
   stateInit?: Record<string, unknown>;
   bindSelected?: boolean;
+  sharedInstance?: PanelInstance;
 }
 
 function mountObjectList(options: MountListOptions = {}) {
@@ -151,13 +152,14 @@ function mountObjectList(options: MountListOptions = {}) {
   const namedObjects = new Map<string, string>();
   const memberParams = new Map<string, Ref<unknown>>();
   const memberOutputStore = ref<Record<string, Record<string, unknown>>>({});
-  const instance = {
+  const instance = options.sharedInstance ?? ({
     instanceId: `inst-${slotKey}-${Math.random().toString(36).slice(2, 8)}`,
-    isDisposed: false,
+    isDisposed: () => false,
     manifest,
     state,
     forms,
     writeOperation,
+    isObjectWriteInFlight: () => false,
     readOperation,
     onObjectChanged: () => () => {},
     onOperationCompleted: () => () => {},
@@ -203,12 +205,12 @@ function mountObjectList(options: MountListOptions = {}) {
     get outputs() {
       return memberOutputStore.value;
     },
-  } as unknown as PanelInstance;
+  } as unknown as PanelInstance);
 
   const i18n = createTestI18n();
   const panel = {
     instance,
-    manifest,
+    manifest: options.sharedInstance?.manifest ?? manifest,
     notify: vi.fn(),
     navigate: vi.fn(),
     expandPageComposer,
@@ -254,10 +256,12 @@ function mountObjectList(options: MountListOptions = {}) {
         }),
         ElAlert: defineComponent({
           name: "ElAlert",
-          props: { title: String, type: String },
-          setup(p, { slots }) {
+          props: { title: String, type: String, closable: { type: Boolean, default: true } },
+          emits: ["close"],
+          setup(p, { slots, emit }) {
             return () => h("div", { class: "el-alert-stub", "data-type": p.type }, [
               h("span", { class: "el-alert-title" }, p.title),
+              p.closable ? h("button", { type: "button", class: "el-alert__close-btn", onClick: () => emit("close") }, "×") : null,
               slots.default?.(),
             ]);
           },
@@ -388,10 +392,40 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     expect(customSlot.findAll(".sdk-object-list-card-skeleton")).toHaveLength(0);
   });
 
-  it("G-07: shares cross-list actionLockGroup mutex, sets aria-busy on active button, and routes errors via @row-action-error when inlineActionError is false", async () => {
-    const pendingWrite = deferred<PanelWriteResult>();
-    const writeA = vi.fn().mockReturnValueOnce(pendingWrite.promise);
-    const writeB = vi.fn().mockRejectedValueOnce(new Error("Pin service unavailable"));
+  it("G-07: enforces platform-level same-object same-write-operation in-flight mutex across sibling lists and renders dismissible top error banner for actionErrorPlacement='top'", async () => {
+    const pendingConfirm = deferred<{ decision: "confirm"; response: { kind: "dispatched"; intentId: string; outcome: { kind: "success"; data: Record<string, never>; message: string } } }>();
+    const prepare = vi.fn().mockImplementation(async (operationId: string) => ({
+      intentId: `intent-${operationId}`,
+      operationId,
+      label: "Pin",
+      confirmation: { required: false, message: "", targets: [] },
+      hasSecretInput: false,
+    }));
+    const confirmOperation = vi.fn()
+      .mockReturnValueOnce(pendingConfirm.promise)
+      .mockRejectedValueOnce(new Error("Pin service unavailable"));
+
+    const sharedManifest = panelManifestSchema.parse({
+      state: {},
+      members: {
+        appsList: { target: { projectionId: "appsList-projection" } },
+        favoritesList: { target: { projectionId: "favoritesList-projection" } },
+      },
+    });
+    const sharedInstance = createPanelInstance(sharedManifest, {
+      pageKey: "gallery",
+      url: () => "/gallery",
+      label: () => "Gallery",
+      readProjection: async () => { throw new Error("unused"); },
+      text: (k: string) => k,
+      operations: {
+        describe: async () => { throw new Error("unused"); },
+        read: async () => ({ kind: "json", value: null }),
+        upload: async () => { throw new Error("unused"); },
+        prepare,
+      },
+      confirmOperation,
+    });
 
     const opDescriptor: PanelOwnerOperationDescriptor = {
       kind: "action",
@@ -411,55 +445,82 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     const rowA = makeRecord({ primaryKey: "app-a", className: APP_TYPE, label: "App A" });
     const rowB = makeRecord({ primaryKey: "app-b", className: APP_TYPE, label: "App B" });
 
+    // Mount two sibling lists on the SAME panel instance with ZERO lock group configuration.
     const listA = mountObjectList({
       slotKey: "appsList",
+      sharedInstance,
       datumState: shallowRef<MemberDataState>({ status: "ready", value: [rowA] as never }),
-      declaredOps: { pin: { operation: { kind: "PlatformOperation", id: "workspace.pin" } } },
+      declaredOps: { pin: { operation: { kind: "PlatformOperation", id: "workspace.pin" }, target: { row: true } } },
       admittedOps: { pin: opDescriptor },
-      writeOperation: writeA,
-      props: { layout: "cards", rowActions, actionLockGroup: "gallery-pins", inlineActionError: false },
+      props: { layout: "cards", rowActions, actionErrorPlacement: "top" },
     });
     const listB = mountObjectList({
-      slotKey: "agentsList",
-      datumState: shallowRef<MemberDataState>({ status: "ready", value: [rowB] as never }),
-      declaredOps: { pin: { operation: { kind: "PlatformOperation", id: "workspace.pin" } } },
+      slotKey: "favoritesList",
+      sharedInstance,
+      datumState: shallowRef<MemberDataState>({ status: "ready", value: [rowA, rowB] as never }),
+      declaredOps: { pin: { operation: { kind: "PlatformOperation", id: "workspace.pin" }, target: { row: true } } },
       admittedOps: { pin: opDescriptor },
-      writeOperation: writeB,
-      props: { layout: "cards", rowActions, actionLockGroup: "gallery-pins", inlineActionError: false },
+      props: { layout: "cards", rowActions, actionErrorPlacement: "top" },
     });
     await flushPromises();
 
     const btnA = listA.wrapper.find(".sdk-object-list-action-btn");
-    const btnB = listB.wrapper.find(".sdk-object-list-action-btn");
+    const listBButtons = listB.wrapper.findAll(".sdk-object-list-action-btn");
+    const btnBSameObject = listBButtons[0];
+    const btnBOtherObject = listBButtons[1];
 
     await btnA.trigger("click");
     await nextTick();
 
+    // Same object + same handlerRef automatically becomes busy/disabled in BOTH lists; other object stays idle.
     expect(btnA.attributes("aria-busy")).toBe("true");
-    expect(btnB.attributes("disabled")).toBeDefined();
+    expect(btnBSameObject.attributes("aria-busy")).toBe("true");
+    expect(btnBSameObject.attributes("disabled")).toBeDefined();
+    expect(btnBOtherObject.attributes("aria-busy")).toBeUndefined();
+    expect(btnBOtherObject.attributes("disabled")).toBeUndefined();
 
-    // Clicking list B while list A holds the group lock must not dispatch writeB.
-    await btnB.trigger("click");
-    expect(writeB).not.toHaveBeenCalled();
+    // Direct platform-layer duplicate dispatch for the same (objectType, primaryKey, handlerRef) is refused without calling prepare.
+    const dupAnswer = await sharedInstance.writeOperation(
+      "favoritesList.pin",
+      { call: { target: { kind: "object", objectType: APP_TYPE, primaryKey: "app-a" }, input: {} } },
+      { handlerRef: "workspace.pin" },
+    );
+    expect(dupAnswer).toMatchObject({
+      decision: "confirm",
+      response: { kind: "not-dispatched", code: "OPERATION_IN_FLIGHT" },
+    });
+    expect(prepare).toHaveBeenCalledTimes(1);
 
-    pendingWrite.resolve(writeSuccess());
+    pendingConfirm.resolve({
+      decision: "confirm",
+      response: {
+        kind: "dispatched",
+        intentId: "intent-appsList.pin",
+        outcome: { kind: "success", data: {}, message: "Done" },
+      },
+    });
     await flushPromises();
 
     expect(btnA.attributes("aria-busy")).toBeUndefined();
-    expect(btnB.attributes("disabled")).toBeUndefined();
+    expect(btnBSameObject.attributes("aria-busy")).toBeUndefined();
+    expect(btnBSameObject.attributes("disabled")).toBeUndefined();
 
-    // Now list B can run; verify error event emitted and inline alert suppressed.
-    await btnB.trigger("click");
+    // Trigger error on list B: unified dismissible error banner renders at top, inline error alert is suppressed.
+    await btnBOtherObject.trigger("click");
     await flushPromises();
 
-    expect(writeB).toHaveBeenCalledTimes(1);
-    const errorEvents = listB.wrapper.emitted("row-action-error") as [ObjectListRowActionErrorEvent][] | undefined;
-    expect(errorEvents?.[0]?.[0]).toMatchObject({
-      actionId: "pin",
-      message: "Pin service unavailable",
-      row: { className: APP_TYPE, primaryKey: "app-b", label: "App B" },
-    });
-    expect(listB.wrapper.find(".sdk-object-list-row-op-error").exists()).toBe(false);
+    expect(prepare).toHaveBeenCalledTimes(2);
+    const topAlert = listB.wrapper.findComponent({ name: "ElAlert" });
+    expect(topAlert.exists()).toBe(true);
+    expect(topAlert.classes()).toContain("sdk-object-list-op-top-alert");
+    expect(topAlert.props("closable")).toBe(true);
+    expect(topAlert.props("title")).toBe("Pin service unavailable");
+    expect(listB.wrapper.find(".sdk-object-list-op-alert").exists()).toBe(false);
+
+    // Dismissing the top banner clears the error alert.
+    topAlert.vm.$emit("close");
+    await nextTick();
+    expect(listB.wrapper.find(".sdk-object-list-op-top-alert").exists()).toBe(false);
   });
 
   it("G-09 & W-14: switches leading icon per row className in auto mode and applies default/custom leadingIconSize", async () => {
@@ -529,8 +590,10 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
           kind: "conversation",
           id: "ask",
           labelKey: "gallery.askAgent",
-          promptKey: "gallery.askPrompt",
-          agent: "analyst-agent",
+          prefillKey: "gallery.askPrompt",
+          target: { kind: "id", id: "analyst-agent" },
+          submit: false,
+          newSession: true,
         },
       ],
     };
@@ -558,6 +621,8 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     expect(call.prefill).toContain("Quarterly Revenue Report");
     expect(call.prefill).toContain("doc-42");
     expect(call.prefill).toContain("platform:WorkspaceResource");
+    expect(call.submit).toBe(false);
+    expect(call.newSession).toBe(true);
 
     const results = wrapper.emitted("row-action-result") as [ObjectListRowActionResultEvent][] | undefined;
     expect(results?.[0]?.[0]).toMatchObject({
@@ -567,7 +632,7 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     });
   });
 
-  it("W-15: emits @selection-record with display label/subtitle and resolves ObjectTitle from slot, target, and fallback", async () => {
+  it("W-15: resolves ObjectTitle from selected slot, explicit target, and fallback", async () => {
     const row = makeRecord({
       primaryKey: "res-9",
       className: APP_TYPE,
@@ -585,14 +650,6 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
 
     await wrapper.find(".sdk-object-list-item-btn").trigger("click");
     await flushPromises();
-
-    const emitted = wrapper.emitted("selection-record") as [ObjectListSelectionRecord | null][] | undefined;
-    expect(emitted?.at(-1)?.[0]).toEqual({
-      className: APP_TYPE,
-      primaryKey: "res-9",
-      label: "Customer Portal",
-      subtitle: "External self-service app",
-    });
 
     const i18n = createTestI18n();
     const titleFromSlot = mount(ObjectTitle, {
@@ -624,7 +681,7 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     expect(titleFallback.text()).toBe("Untitled resource");
   });
 
-  it("AL-06 & AL-07: emits @state-change, renders #status, preserves prior rows on error with retry bar, and applies table border/stripe", async () => {
+  it("AL-06 & AL-07: renders #status, preserves prior rows on error with retry bar, and applies table border/stripe", async () => {
     const rows = [
       makeRecord({ primaryKey: "log-1", label: "Login", fields: { actor: "alice", status: "ok" } }),
       makeRecord({ primaryKey: "log-2", label: "Update", fields: { actor: "bob", status: "ok" } }),
@@ -672,14 +729,6 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
 
     await alert.find("button").trigger("click");
     expect(retryFn).toHaveBeenCalledTimes(1);
-
-    const stateEvents = wrapper.emitted("state-change") as [ObjectListStateSnapshot][] | undefined;
-    expect(stateEvents?.at(-1)?.[0]).toMatchObject({
-      count: 2,
-      total: 12,
-      error: "Audit query timed out",
-      loading: false,
-    });
   });
 
   it("AL-08: renders ObjectSummary in presentation='pre' mode and restores trigger focus after SdkOverlay closes", async () => {
@@ -895,7 +944,7 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
       maxVisible: 3,
       items: [
         { kind: "operation", operation: "probe", labelKey: "gallery.probe", icon: "Plug" },
-        { kind: "operation", operation: "remove", labelKey: "gallery.delete", icon: "Trash2", iconOnly: true, tone: "danger" },
+        { kind: "operation", operation: "remove", labelKey: "gallery.delete", icon: "Trash2", iconOnly: true, danger: true },
       ],
     };
 

@@ -120,26 +120,18 @@ import {
   matchesLocalSearch,
   type ObjectListGroup,
 } from "./object-list-local";
-import {
-  acquireActionLock,
-  isActionLockGroupBusy,
-  releaseActionLock,
-  releaseActionLocksForInstance,
-} from "./object-list-action-locks";
 import type {
   ObjectListColumn,
   ObjectListRef,
   ObjectListRenameCancelPayload,
   ObjectListRenameCommitPayload,
   ObjectListRowActionCondition,
-  ObjectListRowActionErrorEvent,
   ObjectListRowActionPrefill,
   ObjectListRowActionResultEvent,
   ObjectListRowActions as ObjectListRowActionsConfig,
   ObjectListRowOperationState,
   ObjectListRowTone,
   ObjectListSearchSubmit,
-  ObjectListSelectionRecord,
   ObjectListStateSnapshot,
   ObjectListTabsVariant,
 } from "./object-list-types";
@@ -228,8 +220,7 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "exportable",
   "exportFileName",
   "skeletonCount",
-  "actionLockGroup",
-  "inlineActionError",
+  "actionErrorPlacement",
   "preserveOnError",
   "border",
   "stripe",
@@ -400,10 +391,8 @@ const props = withDefaults(
     exportFileName?: string;
     /** Number of card skeleton placeholders shown during initial loading in `"cards"` layout; defaults to `6`. */
     skeletonCount?: number;
-    /** Optional shared mutex group name; while any row action runs in any `ObjectList` with the same group name, row action buttons across the group lock with wait cursor. */
-    actionLockGroup?: string;
-    /** Whether to render inline row-action error alerts inside this list; defaults to `true`. Set to `false` when the page renders a unified alert from `@row-action-error`. */
-    inlineActionError?: boolean;
+    /** Where row-action errors render: `"inline"` (default, below the list) or `"top"` (a dismissible error banner at the top of the list). */
+    actionErrorPlacement?: "inline" | "top";
     /** When `true`, keeps the previous successful result visible and overlays an error retry alert above the list if a subsequent read fails. Defaults to `false`. */
     preserveOnError?: boolean;
     /** Draw vertical cell borders in `"table"` layout. Defaults to `false`. */
@@ -513,8 +502,7 @@ const props = withDefaults(
     exportable: false,
     exportFileName: undefined,
     skeletonCount: 6,
-    actionLockGroup: undefined,
-    inlineActionError: true,
+    actionErrorPlacement: "inline",
     preserveOnError: false,
     border: false,
     stripe: false,
@@ -548,8 +536,6 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** Emitted when the single viewing selection changes (including automatic fallback). */
   "update:selected": [value: ObjectListSelection | null];
-  /** Emitted when the single selection changes, carrying the selected row's display title and optional subtitle. */
-  "selection-record": [record: ObjectListSelectionRecord | null];
   /** Emitted only when the reader explicitly clicks or activates a row/card to select it. */
   choose: [value: ObjectListSelection | null];
   /** Emitted when the explicit multi-selection set changes. */
@@ -559,8 +545,6 @@ const emit = defineEmits<{
    * pages (`cursor` or `page`), or all matching rows when the read does not page; empty when no rows are shown.
    */
   "update:listed": [value: readonly ObjectListRef[]];
-  /** Emitted whenever paging, count, loading, refreshing, or error state changes. */
-  "state-change": [state: ObjectListStateSnapshot];
   /** Emitted when a reader clicks a reference cell carrying an owner-supplied object reference. */
   navigate: [reference: PlatformFieldReference, columnKey: string];
   /** Emitted when a reader clicks a parent-scoped child reference cell or inline child reference item. */
@@ -569,8 +553,6 @@ const emit = defineEmits<{
   "clear-filters": [];
   /** Emitted when the reader clicks a local button (`kind: "local"`) in the built-in row action column. */
   "row-action": [payload: { id: string; ref: ObjectListRef; index: number }];
-  /** Emitted when a row action fails or is refused. */
-  "row-action-error": [payload: ObjectListRowActionErrorEvent];
   /** Emitted when a row operation or conversation action settles (read or write, success or failure). */
   "row-action-result": [payload: ObjectListRowActionResultEvent];
   /** Emitted after a declared row operation dispatches and the owner answers. */
@@ -649,7 +631,7 @@ defineSlots<{
       expanded: boolean;
       toggleExpand: () => void;
       rowActions: readonly ResolvedRowActionItem[];
-      triggerAction: (item: ResolvedRowActionItem) => void;
+      triggerAction: (item: ResolvedRowActionItem, event?: MouseEvent) => void;
     },
   ): unknown;
 }>();
@@ -2302,17 +2284,6 @@ const listStateSnapshot = computed<ObjectListStateSnapshot>(() => {
   };
 });
 
-watch(
-  () => {
-    const s = listStateSnapshot.value;
-    return [s.page, s.pageSize, s.total, s.totalPages, s.count, s.loading, s.refreshing, s.error] as const;
-  },
-  () => {
-    emit("state-change", listStateSnapshot.value);
-  },
-  { immediate: true },
-);
-
 const dataStateLabels = useDataStateLabels(
   () => (props.emptyText ? panel.t(props.emptyText) : t("platform.dataEmpty")),
   () => resolvedEmptyHint.value || undefined,
@@ -3093,41 +3064,6 @@ function accordionDetailText(row: PlatformObjectRecord): string {
   return "";
 }
 
-function buildSelectionRecord(row: PlatformObjectRecord): ObjectListSelectionRecord {
-  const ref = rowObjectRef(row);
-  const subtitle = fieldValue(row, summaryKey.value) || row.subtitle;
-  return {
-    className: ref.className,
-    primaryKey: ref.primaryKey,
-    label: row.label || ref.primaryKey,
-    ...(subtitle ? { subtitle } : {}),
-  };
-}
-
-let lastEmittedSelectionRecordSig = "null";
-function emitSelectionRecord(record: ObjectListSelectionRecord | null) {
-  const sig = JSON.stringify(record);
-  if (sig === lastEmittedSelectionRecordSig) return;
-  lastEmittedSelectionRecordSig = sig;
-  emit("selection-record", record);
-}
-
-const selectedRecord = computed<ObjectListSelectionRecord | null>(() => {
-  const identity = chosenIdentity.value;
-  if (!identity) return null;
-  const match = mergedRows.value.find((row) => rowIdentityKey(row) === identity)
-    ?? rawRows.value.find((row) => rowIdentityKey(row) === identity);
-  return match ? buildSelectionRecord(match) : null;
-});
-
-watch(
-  selectedRecord,
-  (next) => {
-    emitSelectionRecord(next);
-  },
-  { immediate: true },
-);
-
 function choose(row: PlatformObjectRecord) {
   highlightedIdentity.value = rowIdentityKey(row);
   const openTarget = rowOpenPath(row);
@@ -3142,7 +3078,6 @@ function choose(row: PlatformObjectRecord) {
   if (hasSelectedBinding || hasUpdateSelectedListener) {
     setSelected(next);
   }
-  emitSelectionRecord(next ? buildSelectionRecord(row) : null);
   if (hasChooseListener) {
     activeRowLabel.value = next ? (row.label || row.primaryKey) : null;
     emit("choose", next);
@@ -3598,7 +3533,6 @@ const busyRowActions = ref<ReadonlySet<string>>(new Set());
 const busyWriteRowActions = ref<ReadonlySet<string>>(new Set());
 const rowOpRunning = computed(() => busyRowActions.value.size > 0);
 const writeRowOpRunning = computed(() => busyWriteRowActions.value.size > 0);
-const isGroupLocked = computed(() => isActionLockGroupBusy(props.actionLockGroup));
 
 function rowActionBusyKey(row: PlatformObjectRecord, actionId: string): string {
   const fallbackClassName = activeType.value ?? rowObjectType;
@@ -3607,6 +3541,20 @@ function rowActionBusyKey(row: PlatformObjectRecord, actionId: string): string {
 
 function isRowActionBusy(row: PlatformObjectRecord, actionId: string): boolean {
   return busyRowActions.value.has(rowActionBusyKey(row, actionId));
+}
+
+function isRowWriteOperationInFlight(row: PlatformObjectRecord, operationName: string): boolean {
+  const descriptor = admittedOpMap.value[operationName];
+  if (descriptor?.effect === "read") return false;
+  const binding = member.projection.operations?.[operationName];
+  const fallbackClassName = activeType.value ?? rowObjectType;
+  const ref = rowObjectRef(row);
+  const target = binding
+    ? resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value)
+    : { kind: "object" as const, objectType: ref.className, primaryKey: ref.primaryKey };
+  if (target?.kind !== "object") return false;
+  const operationKey = descriptor?.handlerRef ?? panel.instance.operationIdOf(slot.slot, operationName);
+  return Boolean(panel.instance.isObjectWriteInFlight?.(target, operationKey));
 }
 
 function markRowActionBusy(busyKey: string, busy: boolean, isWrite = false) {
@@ -3644,9 +3592,9 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         icon: item.icon,
         iconOnly: item.iconOnly,
         active: item.active,
-        busy: isRowActionBusy(row, opName),
-        danger: item.danger ?? (item.tone === "danger" ? true : op.danger),
-        primary: Boolean(item.primary || item.tone === "primary"),
+        busy: isRowActionBusy(row, opName) || isRowWriteOperationInFlight(row, opName),
+        danger: item.danger ?? op.danger,
+        primary: Boolean(item.primary),
         disabled: disabledByCondition || !op.available,
         running: Boolean(op.running),
         reason: op.unavailable?.reason,
@@ -3659,16 +3607,18 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         key: `conv:${item.id}:${index}`,
         kind: "conversation",
         id: item.id,
-        prompt: item.prompt,
-        promptKey: item.promptKey,
-        agent: item.agent,
+        target: item.target,
+        conversationPrefill: item.prefill,
+        prefillKey: item.prefillKey,
+        submit: item.submit,
+        newSession: item.newSession,
         label,
         icon: item.icon ?? "Sparkles",
         iconOnly: item.iconOnly,
         active: item.active,
         busy: isRowActionBusy(row, item.id),
-        danger: Boolean(item.danger || item.tone === "danger"),
-        primary: Boolean(item.primary || item.tone === "primary"),
+        danger: Boolean(item.danger),
+        primary: Boolean(item.primary),
         disabled: disabledByCondition,
       });
       return;
@@ -3684,8 +3634,8 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
       iconOnly: item.iconOnly,
       active: item.active,
       busy: isRowActionBusy(row, item.id),
-      danger: Boolean(item.danger || item.tone === "danger"),
-      primary: Boolean(item.primary || item.tone === "primary"),
+      danger: Boolean(item.danger),
+      primary: Boolean(item.primary),
       disabled: disabledByCondition,
     });
   });
@@ -3711,6 +3661,29 @@ const rowOpPendingInputFields = computed<readonly OperationInputField[]>(() => {
 });
 
 const saidRowOp = (single: SingleOperationOutcome) => formatOperationOutcome(single, t);
+
+const topRowActionErrorMessage = computed<string | null>(() => {
+  if (props.actionErrorPlacement !== "top") return null;
+  const feedback = noneModeFeedbackState.value;
+  if (!feedback) return null;
+  if (feedback.error) return feedback.error;
+  const receipt = feedback.receipt;
+  if (!receipt) return null;
+  if (receipt.kind === "not-dispatched") return receipt.message;
+  const outcome = receipt.outcome;
+  if (!outcome) return t("platform.operationUnknown", { message: "" });
+  if (outcome.kind === "success" || outcome.kind === "batch") return null;
+  return saidRowOp(outcome);
+});
+
+function dismissRowActionError() {
+  const info = lastNoneModeFeedback.value;
+  if (info) {
+    clearRowOperationResult(info.rowKey, info.operationName);
+  } else {
+    lastNoneModeFeedback.value = null;
+  }
+}
 
 const hasCustomRowActionSlot = computed(() =>
   Boolean(
@@ -3760,7 +3733,6 @@ function rowActionButtonState(
 let listUnmounted = false;
 onBeforeUnmount(() => {
   listUnmounted = true;
-  releaseActionLocksForInstance(listInstanceId.value);
 });
 
 /** Unique mounted list instance ID; rotates on remount, dynamic type switch, or parent/member input change. */
@@ -3888,13 +3860,13 @@ async function executeRowOperation(
   const target = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
   if (target === undefined) return { status: "skipped" };
   const operationId = panel.instance.operationIdOf(slot.slot, operationName);
+  const operationKey = descriptor.handlerRef ?? operationId;
   const capturedCompositeKey = panelRowOperationKey(row, fallbackClassName);
   const busyKey = `${capturedCompositeKey}\0${operationName}`;
   const isWriteOp = descriptor.effect !== "read";
-  const lockGroup = props.actionLockGroup;
-  const lock = { instanceId: listInstanceId.value, rowKey: capturedCompositeKey, actionId: operationName };
-  if (busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value)) return { status: "skipped" };
-  if (lockGroup && !acquireActionLock(lockGroup, lock)) return { status: "skipped" };
+  const isSharedWriteBusy = () =>
+    isWriteOp && target?.kind === "object" && Boolean(panel.instance.isObjectWriteInFlight?.(target, operationKey));
+  if (busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value) || isSharedWriteBusy()) return { status: "skipped" };
   const ref = rowObjectRef(row);
   const rowSummary = { className: ref.className, primaryKey: ref.primaryKey, label: row.label || ref.primaryKey };
   const input: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
@@ -3905,7 +3877,7 @@ async function executeRowOperation(
     if (listUnmounted || panel.instance.isDisposed()) {
       return { ok: false, message: "The list was closed or unmounted." };
     }
-    if (phase === "confirm" && (isRowBusyKey(rowIdKey) || busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value) || (lockGroup && isActionLockGroupBusy(lockGroup)))) {
+    if (phase === "confirm" && (isRowBusyKey(rowIdKey) || busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value) || isSharedWriteBusy())) {
       return { ok: false, message: "Another operation is currently running on this row." };
     }
     const liveFallback = activeType.value ?? rowObjectType;
@@ -4005,12 +3977,6 @@ async function executeRowOperation(
           : answered && answered.kind !== "batch"
             ? saidRowOp(answered)
             : t("platform.operationUnknown", { message: "" });
-        emit("row-action-error", {
-          actionId: operationName,
-          row: rowSummary,
-          ref,
-          message,
-        });
         emit("row-action-result", {
           actionId: operationName,
           row: rowSummary,
@@ -4030,9 +3996,13 @@ async function executeRowOperation(
         ? await panel.instance.writeOperation(
             operationId,
             { call: { target, input } },
-            { agentContext, evaluateSubmission: evaluateRowSubmission },
+            { agentContext, evaluateSubmission: evaluateRowSubmission, handlerRef: descriptor.handlerRef },
           )
-        : await panel.instance.writeOperation(operationId, { call: { target, input } });
+        : await panel.instance.writeOperation(
+            operationId,
+            { call: { target, input } },
+            { handlerRef: descriptor.handlerRef },
+          );
     } catch (reason) {
       if (reason instanceof PanelOperationDeferred) {
         const deferred = reason;
@@ -4047,7 +4017,7 @@ async function executeRowOperation(
           isStillValid: deferred.isStillValid,
           cancel: deferred.cancelNow,
           async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
-            if (writeRowOpRunning.value || (lockGroup && !acquireActionLock(lockGroup, lock))) {
+            if (writeRowOpRunning.value || isSharedWriteBusy()) {
               return { ok: false, intentId: preparation.intentId, reason: "failed", message: "Another row action is currently running." };
             }
             markRowActionBusy(busyKey, true, true);
@@ -4077,12 +4047,6 @@ async function executeRowOperation(
               } else if (effectiveRowResultDisplay.value === "none") {
                 lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName };
               }
-              emit("row-action-error", {
-                actionId: operationName,
-                row: rowSummary,
-                ref,
-                message,
-              });
               emit("row-action-result", {
                 actionId: operationName,
                 row: rowSummary,
@@ -4100,7 +4064,6 @@ async function executeRowOperation(
               };
             } finally {
               markRowActionBusy(busyKey, false, true);
-              if (lockGroup) releaseActionLock(lockGroup, lock);
               const current = rowOperationResults.value[rowIdKey]?.[operationName];
               if (current?.running) {
                 setRowOpState(rowIdKey, operationName, { ...current, running: false });
@@ -4133,12 +4096,6 @@ async function executeRowOperation(
     } else if (effectiveRowResultDisplay.value === "none") {
       lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName };
     }
-    emit("row-action-error", {
-      actionId: operationName,
-      row: rowSummary,
-      ref,
-      message,
-    });
     emit("row-action-result", {
       actionId: operationName,
       row: rowSummary,
@@ -4151,7 +4108,6 @@ async function executeRowOperation(
     return { status: "executed", error: message };
   } finally {
     markRowActionBusy(busyKey, false, isWriteOp);
-    if (lockGroup) releaseActionLock(lockGroup, lock);
     const current = rowOperationResults.value[rowIdKey]?.[operationName];
     if (current?.running) {
       setRowOpState(rowIdKey, operationName, { ...current, running: false });
@@ -4172,7 +4128,7 @@ async function runRowOperation(
   extraInput?: Readonly<Record<string, RuntimeJsonValue>>,
   prefillOverride?: ObjectListRowActionPrefill,
 ): Promise<void> {
-  if (isGroupLocked.value || isRowActionBusy(row, operationName) || isRowBusy(row)) return;
+  if (isRowActionBusy(row, operationName) || isRowBusy(row) || isRowWriteOperationInFlight(row, operationName)) return;
   const descriptor = admittedOpMap.value[operationName];
   const binding = member.projection.operations?.[operationName];
   if (!descriptor || !binding) return;
@@ -4291,7 +4247,7 @@ watch(
           if (!descriptor) {
             return missingOperationDescriptorResult(memberOperationsState.value, operationName);
           }
-          if (isGroupLocked.value || isRowActionBusy(row, operationName) || isRowBusy(row) || (descriptor.effect !== "read" && writeRowOpRunning.value)) {
+          if (isRowActionBusy(row, operationName) || isRowBusy(row) || isRowWriteOperationInFlight(row, operationName) || (descriptor.effect !== "read" && writeRowOpRunning.value)) {
             return {
               ok: false,
               reason: "action_unavailable",
@@ -4359,29 +4315,23 @@ watch(
 onBeforeUnmount(clearRowActionHandlers);
 
 function resolveConversationTarget(item: ResolvedRowActionItem): PanelConversationEntry["target"] {
-  if (item.agent && typeof item.agent === "object" && "kind" in item.agent) {
-    return item.agent;
-  }
-  if (typeof item.agent === "string" && item.agent.trim() !== "" && item.agent !== "page-default") {
-    return { kind: "id", id: item.agent.trim() };
-  }
-  return slot.projection.conversationEntry?.target ?? { kind: "page-default" };
+  return item.target ?? slot.projection.conversationEntry?.target ?? { kind: "page-default" };
 }
 
 function resolveConversationPrompt(row: PlatformObjectRecord, item: ResolvedRowActionItem): string {
   const ref = rowObjectRef(row);
   const refJson = JSON.stringify({ className: ref.className, primaryKey: ref.primaryKey });
   const rawTemplate = (() => {
-    if (item.promptKey) {
-      const translated = panel.t(item.promptKey, {
+    if (item.prefillKey !== undefined) {
+      const translated = panel.t(item.prefillKey, {
         label: row.label,
         primaryKey: ref.primaryKey,
         className: ref.className,
         ref: refJson,
       });
-      if (translated !== item.promptKey) return translated;
+      if (translated !== item.prefillKey) return translated;
     }
-    if (item.prompt !== undefined) return item.prompt;
+    if (item.conversationPrefill !== undefined) return item.conversationPrefill;
     const declared = slot.projection.conversationEntry;
     if (declared?.prefillKey !== undefined) {
       const keyed = panel.t(declared.prefillKey, {
@@ -4413,20 +4363,24 @@ function resolveConversationPrompt(row: PlatformObjectRecord, item: ResolvedRowA
   return interpolated;
 }
 
-async function runConversationRowAction(row: PlatformObjectRecord, item: ResolvedRowActionItem): Promise<void> {
+async function runConversationRowAction(
+  row: PlatformObjectRecord,
+  item: ResolvedRowActionItem,
+  event?: MouseEvent,
+): Promise<void> {
   const actionId = item.id ?? "conversation";
   const fallbackClassName = activeType.value ?? rowObjectType;
   const capturedCompositeKey = panelRowOperationKey(row, fallbackClassName);
   const busyKey = `${capturedCompositeKey}\0${actionId}`;
-  const lockGroup = props.actionLockGroup;
-  const lock = { instanceId: listInstanceId.value, rowKey: capturedCompositeKey, actionId };
   if (busyRowActions.value.has(busyKey)) return;
-  if (lockGroup && !acquireActionLock(lockGroup, lock)) return;
 
   const ref = rowObjectRef(row);
   const rowSummary = { className: ref.className, primaryKey: ref.primaryKey, label: row.label || ref.primaryKey };
   const target = resolveConversationTarget(item);
   const prefill = resolveConversationPrompt(row, item);
+  const declared = slot.projection.conversationEntry;
+  const submit = item.submit ?? declared?.submit;
+  const newSession = item.newSession ?? declared?.newSession;
 
   const rowIdKey = rowIdentityKey(row);
   markRowActionBusy(busyKey, true);
@@ -4435,7 +4389,9 @@ async function runConversationRowAction(row: PlatformObjectRecord, item: Resolve
       slot: slot.slot,
       target,
       prefill,
-    });
+      ...(submit !== undefined ? { submit } : {}),
+      ...(newSession !== undefined ? { newSession } : {}),
+    }, event);
     emit("row-action-result", {
       actionId,
       row: rowSummary,
@@ -4449,12 +4405,6 @@ async function runConversationRowAction(row: PlatformObjectRecord, item: Resolve
     if (effectiveRowResultDisplay.value === "none") {
       lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName: actionId };
     }
-    emit("row-action-error", {
-      actionId,
-      row: rowSummary,
-      ref,
-      message: error.message,
-    });
     emit("row-action-result", {
       actionId,
       row: rowSummary,
@@ -4466,11 +4416,10 @@ async function runConversationRowAction(row: PlatformObjectRecord, item: Resolve
     });
   } finally {
     markRowActionBusy(busyKey, false);
-    if (lockGroup) releaseActionLock(lockGroup, lock);
   }
 }
 
-function triggerRowAction(row: PlatformObjectRecord, index: number, item: ResolvedRowActionItem) {
+function triggerRowAction(row: PlatformObjectRecord, index: number, item: ResolvedRowActionItem, event?: MouseEvent) {
   activeRowLabel.value = row.label || row.primaryKey;
   if (item.kind === "operation" && item.operation) {
     if (isTabs.value && props.inlineRename && props.inlineRenameOperation === item.operation) {
@@ -4481,7 +4430,7 @@ function triggerRowAction(row: PlatformObjectRecord, index: number, item: Resolv
     return;
   }
   if (item.kind === "conversation") {
-    void runConversationRowAction(row, item);
+    void runConversationRowAction(row, item, event);
     return;
   }
   if (item.kind === "local" && item.id) {
@@ -4509,7 +4458,7 @@ function cardSlotProps(row: PlatformObjectRecord, index: number, entryKey: strin
     expanded: isRowExpanded(row),
     toggleExpand: () => toggleRowExpanded(row),
     rowActions: resolvedRowActionsFor(row),
-    triggerAction: (item: ResolvedRowActionItem) => triggerRowAction(row, index, item),
+    triggerAction: (item: ResolvedRowActionItem, event?: MouseEvent) => triggerRowAction(row, index, item, event),
   };
 }
 
@@ -4684,6 +4633,16 @@ defineExpose({
     <div v-if="$slots.status" class="sdk-object-list-status-bar">
       <slot name="status" v-bind="listStateSnapshot"></slot>
     </div>
+
+    <el-alert
+      v-if="topRowActionErrorMessage"
+      class="sdk-object-list-op-top-alert"
+      type="error"
+      :closable="true"
+      show-icon
+      :title="topRowActionErrorMessage"
+      @close="dismissRowActionError"
+    />
 
     <el-alert
       v-if="isPreservingOnError && currentErrorMessage"
@@ -5178,22 +5137,20 @@ defineExpose({
                       <ObjectListRowActions
                         :items="resolvedRowActionsFor(entry.row)"
                         :max-visible="rowActions?.maxVisible ?? 2"
-                        :locked="isGroupLocked"
                         :busy="isRowBusy(entry.row)"
                         :row-label="entry.row.label || entry.row.primaryKey"
                         :icon-variant="effectiveRowActionIconVariant"
-                        @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                        @trigger="(item, ev) => triggerRowAction(entry.row, entry.rowIndex, item, ev)"
                       />
                     </list-row-slot-host>
                     <ObjectListRowActions
                       v-else
                       :items="resolvedRowActionsFor(entry.row)"
                       :max-visible="rowActions?.maxVisible ?? 2"
-                      :locked="isGroupLocked"
                       :busy="isRowBusy(entry.row)"
                       :row-label="entry.row.label || entry.row.primaryKey"
                       :icon-variant="effectiveRowActionIconVariant"
-                      @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                      @trigger="(item, ev) => triggerRowAction(entry.row, entry.rowIndex, item, ev)"
                     />
                   </td>
                   <td v-if="showRowChevron" class="sdk-object-list-chevron-col" aria-hidden="true">
@@ -5363,12 +5320,11 @@ defineExpose({
                   v-else
                   :items="resolvedRowActionsFor(row)"
                   :max-visible="0"
-                  :locked="isGroupLocked"
                   :busy="isRowBusy(row)"
                   :row-label="row.label || row.primaryKey"
                   :icon-variant="effectiveRowActionIconVariant"
                   @menu-open-change="(open) => onTabMenuOpenChange(rowIdentityKey(row), open)"
-                  @trigger="(item) => triggerRowAction(row, rowIndex, item)"
+                  @trigger="(item, ev) => triggerRowAction(row, rowIndex, item, ev)"
                 />
               </div>
             </template>
@@ -5419,10 +5375,9 @@ defineExpose({
               <ObjectListRowActions
                 :items="resolvedRowActionsFor(row)"
                 :max-visible="rowActions?.maxVisible ?? 2"
-                :locked="isGroupLocked"
                 :row-label="row.label || row.primaryKey"
                 :icon-variant="effectiveRowActionIconVariant"
-                @trigger="(item) => triggerRowAction(row, rowIndex, item)"
+                @trigger="(item, ev) => triggerRowAction(row, rowIndex, item, ev)"
               />
             </div>
           </summary>
@@ -5643,11 +5598,10 @@ defineExpose({
                   <ObjectListRowActions
                     :items="resolvedRowActionsFor(entry.row)"
                     :max-visible="rowActions?.maxVisible ?? 2"
-                    :locked="isGroupLocked"
                     :busy="isRowBusy(entry.row)"
                     :row-label="entry.row.label || entry.row.primaryKey"
                     :icon-variant="effectiveRowActionIconVariant"
-                    @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                    @trigger="(item, ev) => triggerRowAction(entry.row, entry.rowIndex, item, ev)"
                   />
                 </div>
               </div>
@@ -5833,22 +5787,20 @@ defineExpose({
                   <ObjectListRowActions
                     :items="resolvedRowActionsFor(entry.row)"
                     :max-visible="rowActions?.maxVisible ?? 2"
-                    :locked="isGroupLocked"
                     :busy="isRowBusy(entry.row)"
                     :row-label="entry.row.label || entry.row.primaryKey"
                     :icon-variant="effectiveRowActionIconVariant"
-                    @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                    @trigger="(item, ev) => triggerRowAction(entry.row, entry.rowIndex, item, ev)"
                   />
                 </list-row-slot-host>
                 <ObjectListRowActions
                   v-else
                   :items="resolvedRowActionsFor(entry.row)"
                   :max-visible="rowActions?.maxVisible ?? 2"
-                  :locked="isGroupLocked"
                   :busy="isRowBusy(entry.row)"
                   :row-label="entry.row.label || entry.row.primaryKey"
                   :icon-variant="effectiveRowActionIconVariant"
-                  @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                  @trigger="(item, ev) => triggerRowAction(entry.row, entry.rowIndex, item, ev)"
                 />
               </div>
             </template>
@@ -6135,22 +6087,20 @@ defineExpose({
                   <ObjectListRowActions
                     :items="resolvedRowActionsFor(entry.row)"
                     :max-visible="rowActions?.maxVisible ?? 2"
-                    :locked="isGroupLocked"
                     :busy="isRowBusy(entry.row)"
                     :row-label="entry.row.label || entry.row.primaryKey"
                     :icon-variant="effectiveRowActionIconVariant"
-                    @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                    @trigger="(item, ev) => triggerRowAction(entry.row, entry.rowIndex, item, ev)"
                   />
                 </list-row-slot-host>
                 <ObjectListRowActions
                   v-else
                   :items="resolvedRowActionsFor(entry.row)"
                   :max-visible="rowActions?.maxVisible ?? 2"
-                  :locked="isGroupLocked"
                   :busy="isRowBusy(entry.row)"
                   :row-label="entry.row.label || entry.row.primaryKey"
                   :icon-variant="effectiveRowActionIconVariant"
-                  @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                  @trigger="(item, ev) => triggerRowAction(entry.row, entry.rowIndex, item, ev)"
                 />
               </div>
             </div>
@@ -6339,21 +6289,23 @@ defineExpose({
     ></operation-input-dialog>
 
     <div
-      v-if="noneModeFeedbackState && ((inlineActionError !== false && (noneModeFeedbackState.error || (noneModeFeedbackState.receipt && !(noneModeFeedbackState.receipt.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'success')))) || (noneModeFeedbackState.result && !hasRowActionResultListener))"
+      v-if="noneModeFeedbackState && ((actionErrorPlacement !== 'top' && (noneModeFeedbackState.error || (noneModeFeedbackState.receipt && !(noneModeFeedbackState.receipt.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'success')))) || (noneModeFeedbackState.receipt?.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'batch') || (noneModeFeedbackState.result && !hasRowActionResultListener))"
       class="sdk-object-list-op-feedback"
     >
-      <p v-if="inlineActionError !== false && noneModeFeedbackState.error" class="sdk-object-list-op-alert" role="alert">{{ noneModeFeedbackState.error }}</p>
+      <p v-if="actionErrorPlacement !== 'top' && noneModeFeedbackState.error" class="sdk-object-list-op-alert" role="alert">{{ noneModeFeedbackState.error }}</p>
       <OperationResult
         v-if="noneModeFeedbackState.result && !hasRowActionResultListener"
         :result="noneModeFeedbackState.result"
         :operation-slot="member.key"
         :operation-name="lastNoneModeFeedback?.operationName"
       />
-      <template v-if="inlineActionError !== false && noneModeFeedbackState.receipt && !(noneModeFeedbackState.receipt.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'success')">
-        <p v-if="noneModeFeedbackState.receipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ noneModeFeedbackState.receipt.message }}</p>
-        <p v-else-if="!noneModeFeedbackState.receipt.outcome" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
-        <OperationBatchReceipt v-else-if="noneModeFeedbackState.receipt.outcome.kind === 'batch'" :items="noneModeFeedbackState.receipt.outcome.items" :named="noneModeFeedbackState.named ?? []" />
-        <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="noneModeFeedbackState.receipt.outcome.kind">{{ saidRowOp(noneModeFeedbackState.receipt.outcome) }}</p>
+      <template v-if="noneModeFeedbackState.receipt && !(noneModeFeedbackState.receipt.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'success')">
+        <OperationBatchReceipt v-if="noneModeFeedbackState.receipt.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'batch'" :items="noneModeFeedbackState.receipt.outcome.items" :named="noneModeFeedbackState.named ?? []" />
+        <template v-else-if="actionErrorPlacement !== 'top'">
+          <p v-if="noneModeFeedbackState.receipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ noneModeFeedbackState.receipt.message }}</p>
+          <p v-else-if="!noneModeFeedbackState.receipt.outcome" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
+          <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="noneModeFeedbackState.receipt.outcome.kind">{{ saidRowOp(noneModeFeedbackState.receipt.outcome) }}</p>
+        </template>
       </template>
     </div>
   </div>
