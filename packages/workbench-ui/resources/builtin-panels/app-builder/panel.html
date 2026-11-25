@@ -318,9 +318,9 @@
     flex-shrink: 0;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacing-md);
+    gap: var(--spacing-sm);
     height: 44px;
-    padding: 0 var(--spacing-md);
+    padding: 0 12px;
     border-bottom: 1px solid var(--sdk-border-color-lighter);
     background: var(--sdk-bg-color);
     box-sizing: border-box;
@@ -330,17 +330,24 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: var(--spacing-xs);
+    gap: 2px;
     height: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .ab-tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .ab-tab {
     position: relative;
     display: inline-flex;
+    flex-shrink: 0;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     height: 100%;
-    padding: 0 10px;
+    padding: 0 8px;
     border: 0;
     background: transparent;
     color: var(--sdk-text-color-regular);
@@ -374,7 +381,7 @@
     display: flex;
     flex-shrink: 0;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
   }
 
   .ab-tool-btn {
@@ -719,6 +726,7 @@
         ref="projectsRef"
         slot="projects"
         @row-action="onProjectRowAction"
+        @update:listed="onProjectsListed"
       >
         <template #row-detail="{ ref: appRef }">
           <div class="ab-rail-sessions">

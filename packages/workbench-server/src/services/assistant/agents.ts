@@ -67,7 +67,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
   const summary = (agent: AgentRow) => ({
     id: agent.id, name: assistantName(agent, credentials.locale), description: assistantDescription(agent, credentials.locale),
     icon: agent.icon, enabled: agent.enabled,
-    ...(isPresetAgentKind(agent.kind) || isOpsDiagnosisKind(agent.kind) ? { kind: agent.kind } : {}),
+    ...(isPresetAgentKind(agent.kind) || isOpsDiagnosisKind(agent.kind) || isAppBuilderKind(agent.kind) ? { kind: agent.kind } : {}),
     ...(isAppBuilderKind(agent.kind) && { workspaceBound: true }),
   });
   if (!entrance || !page) return assistantAgentListSchema.parse({
