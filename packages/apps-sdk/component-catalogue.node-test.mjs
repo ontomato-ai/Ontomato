@@ -421,37 +421,68 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       "UI catalogue must not leak third-party identifiers",
     );
     const componentsDoc = readFileSync(join(out, version, "docs/components.md"), "utf8");
-    assert.doesNotMatch(componentsDoc, /^Binds:/mu, "docs/components.md must not emit misleading bare 'Binds:' lines");
-    assert.match(
-      componentsDoc,
-      /## ObjectForm[\s\S]*?Applicable object types \(bind through a projection's declared reads or operations\): `PlatformObjectType:\*`, `ObjectType:\*`/u,
-      "docs/components.md must explain that applicable object types bind through a projection's declared reads or operations",
+    const componentsDocBytes = Buffer.byteLength(componentsDoc, "utf8");
+    assert.ok(
+      componentsDocBytes < 10_000,
+      `docs/components.md overview must stay within a few KB (got ${componentsDocBytes} bytes)`,
     );
-    assert.match(componentsDoc, /`<sdk-button>`/);
-    assert.match(componentsDoc, /`v-sdk-loading`/);
-    assert.match(componentsDoc, /`--sdk-color-primary`/);
-    const objectRefCardDoc = componentsDoc.split(/^## /mu).find((section) => section.startsWith("ObjectRefCard\n"));
+    assert.doesNotMatch(componentsDoc, /^Binds:/mu, "docs/components.md must not emit misleading bare 'Binds:' lines");
+    // Every component carries a purpose group and derived panelUsable flag; only panel-usable components appear in the overview.
+    for (const component of catalogue.components) {
+      assert.equal(typeof component.group, "string", `${component.componentId} must declare a group`);
+      assert.equal(typeof component.panelUsable, "boolean", `${component.componentId} must derive panelUsable`);
+      const singlePage = readFileSync(join(out, version, "docs/components", `${component.componentId}.md`), "utf8");
+      assert.match(singlePage, new RegExp(`^# ${component.componentId}\\b`, "mu"));
+      assert.doesNotMatch(singlePage, /^Binds:/mu, `${component.componentId}.md must not emit misleading bare 'Binds:' lines`);
+      const overviewLink = `[**${component.componentId}**](components/${component.componentId}.md)`;
+      if (component.panelUsable) {
+        assert.ok(componentsDoc.includes(overviewLink), `panel-usable ${component.componentId} must appear in docs/components.md`);
+      } else {
+        assert.ok(!componentsDoc.includes(overviewLink), `non-panel ${component.componentId} must be excluded from docs/components.md`);
+      }
+    }
+    for (const excluded of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection"]) {
+      const entry = catalogue.components.find((c) => c.componentId === excluded);
+      assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
+    }
+    for (const included of ["ObjectList", "ObjectForm", "ConversationEntry", "AgentChat", "PageHeader", "MarkdownView"]) {
+      const entry = catalogue.components.find((c) => c.componentId === included);
+      assert.equal(entry?.panelUsable, true, `${included} must derive panelUsable === true`);
+    }
+    const uiPrimitivesDoc = readFileSync(join(out, version, "docs/components/ui-primitives.md"), "utf8");
+    const themeTokensDoc = readFileSync(join(out, version, "docs/components/theme-tokens.md"), "utf8");
+    assert.match(uiPrimitivesDoc, /`<sdk-button>`/);
+    assert.match(uiPrimitivesDoc, /`v-sdk-loading`/);
+    assert.match(themeTokensDoc, /`--sdk-color-primary`/);
+    const objectFormDoc = readFileSync(join(out, version, "docs/components/ObjectForm.md"), "utf8");
+    assert.match(
+      objectFormDoc,
+      /# ObjectForm[\s\S]*?Applicable object types \(bind through a projection's declared reads or operations\): `PlatformObjectType:\*`, `ObjectType:\*`/u,
+      "docs/components/ObjectForm.md must explain that applicable object types bind through a projection's declared reads or operations",
+    );
+    const objectRefCardDoc = readFileSync(join(out, version, "docs/components/ObjectRefCard.md"), "utf8");
     assert.match(
       objectRefCardDoc,
       /Hands over \(bindable to the panel's state\):\n\n[\s\S]*?- `navigate`: one object of the fact, capability, governance, product layers or platform:OntologyType\n/u,
-      "docs/components.md must print both layers and objectTypes for object-union ports",
+      "docs/components/ObjectRefCard.md must print both layers and objectTypes for object-union ports",
     );
-    const ontologyGraphDoc = componentsDoc.split(/^## /mu).find((section) => section.startsWith("OntologyGraph\n"));
+    const ontologyGraphDoc = readFileSync(join(out, version, "docs/components/OntologyGraph.md"), "utf8");
     assert.match(
       ontologyGraphDoc,
       /Inputs:\n\n[\s\S]*?- `selected`: any ontology object\n[\s\S]*?Hands over \(bindable to the panel's state\):\n\n[\s\S]*?- `selectedNode`: any ontology object\n/u,
-      "docs/components.md must print any ontology object for OntologyGraph @any node ports",
+      "docs/components/OntologyGraph.md must print any ontology object for OntologyGraph @any node ports",
     );
+    const objectListDoc = readFileSync(join(out, version, "docs/components/ObjectList.md"), "utf8");
     assert.match(
-      componentsDoc,
-      /## ObjectList[\s\S]*?Configuration types:\n\n```ts\n[\s\S]*?type ObjectListColumn = \{[\s\S]*?key: string;[\s\S]*?labelKey\?:[\s\S]*?subtitleKey\?:[\s\S]*?emptyKey\?:[\s\S]*?wrap\?:/u,
-      "docs/components.md must expand ObjectListColumn fields beside ObjectList config",
+      objectListDoc,
+      /# ObjectList[\s\S]*?Configuration types:\n\n```ts\n[\s\S]*?type ObjectListColumn = \{[\s\S]*?key: string;[\s\S]*?labelKey\?:[\s\S]*?subtitleKey\?:[\s\S]*?emptyKey\?:[\s\S]*?wrap\?:/u,
+      "docs/components/ObjectList.md must expand ObjectListColumn fields beside ObjectList config",
     );
-    const columnTypeLine = componentsDoc.match(/type ObjectListColumn = [^\n]+/u)?.[0] ?? "";
+    const columnTypeLine = objectListDoc.match(/type ObjectListColumn = [^\n]+/u)?.[0] ?? "";
     for (const kind of ['"text"', '"tag"', '"tags"', '"reference"', '"time"']) {
-      assert.ok(columnTypeLine.includes(kind), `ObjectListColumn in docs/components.md must include kind ${kind}: ${columnTypeLine}`);
+      assert.ok(columnTypeLine.includes(kind), `ObjectListColumn in docs/components/ObjectList.md must include kind ${kind}: ${columnTypeLine}`);
     }
-    const relationsDoc = componentsDoc.match(/^## ObjectRelations\n([\s\S]*?)(?=^## )/mu)?.[1] ?? "";
+    const relationsDoc = readFileSync(join(out, version, "docs/components/ObjectRelations.md"), "utf8");
     assert.match(relationsDoc, /`selected`: any ontology object/u);
     assert.match(relationsDoc, /`visibleRelationKinds`: a list of relation kind IDs or object references/u);
     assert.doesNotMatch(relationsDoc, /@any/u);

@@ -66,9 +66,26 @@ export const componentDeclarationSchema = componentDeclarationBaseSchema.extend(
 });
 export type ComponentDeclaration = z.infer<typeof componentDeclarationSchema>;
 
+export const appsSdkComponentGroupSchema = z.enum([
+  "list",
+  "detail",
+  "form",
+  "action",
+  "chart",
+  "graph",
+  "content",
+  "conversation",
+  "layout",
+]);
+export type AppsSdkComponentGroup = z.infer<typeof appsSdkComponentGroupSchema>;
+
 export const appsSdkComponentCatalogEntrySchema = componentDeclarationBaseSchema.extend({
   module: z.string().min(1),
   exportName: z.string().min(1),
+  /** Purpose group used to organize the component catalogue overview. */
+  group: appsSdkComponentGroupSchema.optional(),
+  /** Whether a registered panel may use this component (derived at build time from runtime facts unless explicitly set). */
+  panelUsable: z.boolean().optional(),
 });
 export type AppsSdkComponentCatalogEntry = z.infer<typeof appsSdkComponentCatalogEntrySchema>;
 

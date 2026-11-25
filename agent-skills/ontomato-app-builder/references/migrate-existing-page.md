@@ -189,7 +189,7 @@ async function saveStudent(form) {
 由详情头部原位显示原因。切换学员或新建前先确认未保存的修改。
 
 待审数用由属主定义口径的指标投影显示。删除如需加入页面，绑定本域的删除动作和选中学员，使用
-[操作按钮](panel-authoring/CODE.md#operationbutton)展示是否可以执行。写入成功后平台依据操作声明的影响重读。
+[操作按钮](panel-authoring/recipes/invoke-owner-operations.md)（组件单页 `sdk read docs/components/OperationButton.md`）展示是否可以执行。写入成功后平台依据操作声明的影响重读。
 
 在对话旁验证 `present` 能打开指定学员和编辑模式，`fill_form` 能填入挂载的表单并保留待确认的改动，
 `page_action` 能通过同一个保存入口发起用户确认。关闭编辑时卸载表单。列表仅被详情盖住时保留挂载。

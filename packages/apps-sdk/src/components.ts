@@ -1,4 +1,5 @@
 import type { Component } from "vue";
+import type { AppsSdkComponentGroup } from "@ontomato/contracts/apps-sdk";
 import type { DirectPanelPortType } from "@ontomato/contracts/panel-manifest";
 import type { PanelReadResultId } from "@ontomato/contracts/platform-object-types";
 
@@ -16,6 +17,9 @@ import type { PanelReadResultId } from "@ontomato/contracts/platform-object-type
 /** What a component is for: something drawn, or something the reader operates. */
 export type ComponentRole = "presentation" | "control";
 
+/** Purpose group used to organize the component catalogue overview. */
+export type ComponentGroup = AppsSdkComponentGroup;
+
 export interface ComponentMetadata {
   /** The identity the catalogue and the graph use, e.g. `ScheduledTaskTable`. */
   readonly componentId: string;
@@ -23,6 +27,13 @@ export interface ComponentMetadata {
   readonly module: string;
   readonly exportName: string;
   readonly role: ComponentRole;
+  /** Purpose group for the component catalogue overview (list, detail, form, action, chart, graph, content, conversation, layout). */
+  readonly group: ComponentGroup;
+  /**
+   * Optional override for whether a registered panel may use this component. Omit to let the SDK build derive it
+   * automatically from whether the component declares projection `data` or is registered in `baseComponents`.
+   */
+  readonly panelUsable?: boolean;
   /**
    * What the component means in one sentence, as its readers and an agent need it: what it draws or does, and what it
    * does not. The catalogue's description is this text; a second copy is not kept.

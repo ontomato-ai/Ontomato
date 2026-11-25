@@ -560,7 +560,7 @@ function usage() {
   test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
   sdk current
   sdk icons
-  sdk read <relative path, e.g. docs/components.md>
+  sdk read <relative path, e.g. docs/components.md or docs/components/ObjectList.md>
   sdk package <name>
   component list
   component read <id>

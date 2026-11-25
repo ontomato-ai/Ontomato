@@ -18,4 +18,4 @@ that are closed or unavailable. Leave missing or forbidden selections in place a
 Put the selected record and shareable view state in flat named address parameters. Keep dialog and active-edit
 state public with `deepLink: false`.
 
-See [Vue authoring](../panel-authoring/CODE.md) for graph wiring, the offline checker, and component contracts.
+See the [task-indexed recipes](../../SKILL.md#what-you-want-to-do--where-to-look) (`../panel-authoring/recipes/`) for graph wiring, the offline checker, and projection outputs, and `sdk read docs/components.md` / `docs/components/<Name>.md` for component contracts.

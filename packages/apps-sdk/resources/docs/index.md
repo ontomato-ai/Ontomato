@@ -18,7 +18,10 @@ release there: every panel runs on the release of the platform that shows it.
 | `sdk.json` | The version, the product, the module files, the stylesheet, the check module and the versions of the libraries |
 | `docs/index.md` | This guide |
 | `docs/reference.md` | The API of every `@ontomato/sdk` module, generated from their sources |
-| `components.json`, `docs/components.md` | Official components, UI primitives (`uiPrimitives`), UI directives (`uiDirectives`) and theme tokens (`themeTokens`) for this exact SDK |
+| `docs/components.md` | Compact grouped overview of panel-usable components (one line each, linking to per-component pages) |
+| `docs/components/<Name>.md` | Full single-page reference for one component (data ports, configuration, slots, events) |
+| `docs/components/ui-primitives.md`, `docs/components/theme-tokens.md` | `<sdk-*>` UI primitives, `v-sdk-*` directives, and `--sdk-*` theme tokens |
+| `components.json` | Machine-readable component, UI primitive (`uiPrimitives`, `uiDirectives`) and theme token (`themeTokens`) catalogue |
 | `node/panel-check.mjs` | The platform's own panel validation module run by `ontomato panel check` before registration |
 | `node/package-components.mjs` | The standalone Node tool that generates a component package's catalogue from its declared components and Vue source |
 
@@ -30,7 +33,7 @@ A panel's module (`panel.mjs`) imports only `vue` and `@ontomato/sdk/panel`. Nev
 Use the platform's data-free interface components directly as template tags in `panel.html` (no script import needed):
 
 - **Page header**: `<page-header>` (pure presentational header with `title`, `description`, `back-label`, `#actions`, and `:draft` wired to `usePanelFormDraft`).
-- **UI primitives & directives**: `<sdk-*>` tags (`<sdk-button>`, `<sdk-input>`, `<sdk-dialog>`, `<sdk-drawer>`, `<sdk-tag>`, `<sdk-tabs>`, …) and `v-sdk-*` directives (`v-sdk-loading`, `v-sdk-infinite-scroll`, `v-sdk-popover`). See `docs/components.md` for the full list.
+- **UI primitives & directives**: `<sdk-*>` tags (`<sdk-button>`, `<sdk-input>`, `<sdk-dialog>`, `<sdk-drawer>`, `<sdk-tag>`, `<sdk-tabs>`, …) and `v-sdk-*` directives (`v-sdk-loading`, `v-sdk-infinite-scroll`, `v-sdk-popover`). See `docs/components/ui-primitives.md` for the full list.
 - **Data-free display widgets**: `<markdown-view>`, `<code-editor readonly>`, `<e-chart>`, `<table-preview>`, `<html-preview>`, `<form-fields>`.
 
 ## Compose a panel

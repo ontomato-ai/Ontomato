@@ -15,7 +15,18 @@ import { elementComponents } from "./element-components.mjs";
 import { panelAppearance } from "./panel-appearance.mjs";
 import { writePackageComponentsRelease } from "./package-components-release.mjs";
 import { sdkChunks } from "./sdk-chunks.mjs";
-import { catalogueMarkdown, checkCatalogue, componentMetadata, componentPorts, exportedTypeDefinitions, referenceMarkdown } from "./reference.mjs";
+import {
+  baseComponentIds,
+  catalogueMarkdown,
+  checkCatalogue,
+  componentMetadata,
+  componentPageMarkdown,
+  componentPorts,
+  exportedTypeDefinitions,
+  referenceMarkdown,
+  themeTokensMarkdown,
+  uiPrimitivesMarkdown,
+} from "./reference.mjs";
 import { buildUiCatalogue } from "./ui-catalogue.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -207,23 +218,36 @@ async function main() {
   // placement supplies at run time. The contract's own schema accepts the catalogue before it ships, so a component this
   // version cannot describe, or a datum naming a read result no owner registers, fails the build rather than the reader.
   const ports = componentPorts({ root: HERE, tsconfig: join(HERE, "tsconfig.json"), entries: publicEntries });
+  const panelBaseIds = baseComponentIds(join(HERE, "src/base-components.ts"));
   const { uiPrimitives, uiDirectives, themeTokens } = buildUiCatalogue();
   const catalogue = check.appsSdkComponentCatalogSchema.parse({
     version,
     components: components.map(({ metadata }) => {
       const declared = ports.get(`${metadata.module}#${metadata.exportName}`);
+      // Derive panel usability from runtime facts unless explicitly overridden: a component is usable in a registered
+      // panel if it declares projection `data` or is registered in `baseComponents` as a panel template tag.
+      const panelUsable = metadata.panelUsable ?? (metadata.data !== undefined || panelBaseIds.has(metadata.componentId));
       // A component with no props sets nothing: it declares no configuration rather than an empty one.
-      return { ...metadata, ...(declared.props.length ? { config: declared.props } : {}), ports: declared };
+      return { ...metadata, panelUsable, ...(declared.props.length ? { config: declared.props } : {}), ports: declared };
     }),
     uiPrimitives,
     uiDirectives,
     themeTokens,
   });
   writeFileSync(join(outDir, "components.json"), `${JSON.stringify(catalogue, null, 2)}\n`);
-  // The document reads the catalogue as it ships: each component's data, configuration (with referenced config structs
-  // expanded) and events beside its meaning.
+  // Two-layer component docs: a compact overview (`docs/components.md`) listing panel-usable components by group, plus
+  // one standalone page per component (`docs/components/<ComponentId>.md`) with full data, config, slots, and events.
   const configTypes = exportedTypeDefinitions({ root: HERE, tsconfig: join(HERE, "tsconfig.json"), entries: publicEntries });
-  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, catalogue, configTypes), version));
+  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, catalogue), version));
+  mkdirSync(join(outDir, "docs/components"), { recursive: true });
+  for (const component of catalogue.components) {
+    writeFileSync(
+      join(outDir, "docs/components", `${component.componentId}.md`),
+      render(componentPageMarkdown(version, component, configTypes), version),
+    );
+  }
+  writeFileSync(join(outDir, "docs/components/ui-primitives.md"), render(uiPrimitivesMarkdown(version, catalogue), version));
+  writeFileSync(join(outDir, "docs/components/theme-tokens.md"), render(themeTokensMarkdown(version, catalogue), version));
   writeFileSync(join(outDir, "docs/reference.md"), [
     `# @ontomato/sdk ${version}: reference`,
     "",
