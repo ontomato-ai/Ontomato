@@ -146,14 +146,14 @@ await mountPanel({
       return appTitle.value;
     });
 
-    // Panel state accessors.
+    // Panel state accessors (instance.state.values is a Vue Ref holding declared panel state).
     const sessionId = computed(() => {
-      const raw = state.values.sessionId;
+      const raw = state.values.value.sessionId;
       return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
     });
-    const paneMode = computed(() => (state.values.pane === "side" ? "side" : "full"));
+    const paneMode = computed(() => (state.values.value.pane === "side" ? "side" : "full"));
     const sessionLimit = computed(() => {
-      const raw = state.values.sessionLimit;
+      const raw = state.values.value.sessionLimit;
       return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : 20;
     });
 
@@ -172,7 +172,7 @@ await mountPanel({
     watch(
       [sessionId, isConversationEntry],
       ([id, pure]) => {
-        const current = state.values.selectedSession;
+        const current = state.values.value.selectedSession;
         const currentKey = current && typeof current === "object" ? current.primaryKey : null;
         const desiredKey = pure && id ? id : null;
         if (currentKey === desiredKey) return;
@@ -180,7 +180,7 @@ await mountPanel({
         try {
           state.set(
             "selectedSession",
-            desiredKey ? { objectType: "platform:AgentSession", primaryKey: desiredKey } : null,
+            desiredKey ? { className: "platform:AgentSession", primaryKey: desiredKey } : null,
           );
         } finally {
           syncingSelection = false;
@@ -190,7 +190,7 @@ await mountPanel({
     );
 
     watch(
-      () => state.values.selectedSession,
+      () => state.values.value.selectedSession,
       (next) => {
         if (syncingSelection) return;
         const key = next && typeof next === "object" && typeof next.primaryKey === "string" ? next.primaryKey : null;
