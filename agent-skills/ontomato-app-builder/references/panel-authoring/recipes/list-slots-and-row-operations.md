@@ -81,10 +81,9 @@ For `ObjectForm`, place field-level pickers or custom inputs inside `#field-<dot
 `#field-modelSelection.modelId`, or `#field-items.*.skillId` for array rows). `ReferencePicker` and `ObjectGraph`
 connect automatically to the enclosing form field.
 
-Register a domain component and check/register the panel workspace:
+Prepare the domain component and check the application source. Publish through Application Builder after preview and confirmation.
 
 ```sh
 node "$SKILL/scripts/ontomato.mjs" component register ./status-pill-cell
 node "$SKILL/scripts/ontomato.mjs" panel check ./apps-panel
-node "$SKILL/scripts/ontomato.mjs" panel register ./apps-panel
 ```

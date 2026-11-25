@@ -61,36 +61,8 @@ export const schedulePages = (): RouteRecordRaw[] => [
   { path: routes.agentSchedules.path, redirect: { path: routes.schedules.path, query: { app: "agents" } } },
 ];
 
-/**
- * App builder preview routes and legacy workspace URL redirects.
- * `/app-builder` and `/app-builder/workspace` are served by the panel entry guard via
- * `builtin-product-app-builder-workspaces` and `builtin-product-app-builder-workspace`.
- */
-const WORKSPACE_UUID_PATTERN = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
-
+/** Preview containers also serve legacy source formats. */
 export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
-  {
-    path: `/app-builder/:workspaceId(${WORKSPACE_UUID_PATTERN})`,
-    redirect: (to) => {
-      const workspaceId = String(to.params.workspaceId);
-      const sessionId = typeof to.query.sessionId === "string" && to.query.sessionId.trim()
-        ? to.query.sessionId
-        : null;
-      if (sessionId) {
-        return {
-          path: routes.chat.path,
-          query: {
-            sessionId,
-            page: `/app-builder/workspace?workspace=${workspaceId}`,
-          },
-        };
-      }
-      return {
-        path: "/app-builder/workspace",
-        query: { workspace: workspaceId },
-      };
-    },
-  },
   {
     name: "AppBuilderHostedPreview",
     path: "/app-builder/:workspaceId/hosted-preview",
@@ -104,6 +76,16 @@ export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
     component: () => import("./pages/PanelCandidateRoute.vue"),
     props: (route) => ({ workspaceId: route.params.workspaceId, revision: route.params.ref, pageKey: route.params.pageKey }),
     meta: { workbench: true, ...meta },
+  },
+  {
+    path: "/app-builder/:appId",
+    redirect: (to) => ({
+      path: "/app-builder",
+      query: {
+        app: String(to.params.appId),
+        ...(typeof to.query.sessionId === "string" && to.query.sessionId ? { session: to.query.sessionId } : {}),
+      },
+    }),
   },
 ];
 

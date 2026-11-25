@@ -9,7 +9,7 @@ import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescrip
 import { AGENT_DEFINITION, APPLICATION, APPLICATION_PANEL_USE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { allowsStandalone, applicationCatalogSchema, applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { applicationPanelUseSchema, isApplicationPanelUse, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { applicationPanelUseSchema, isApplicationPanelUse, registerApplicationPanelUsesRequestSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { applicationCatalogueScopeSchema, applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
 import { readFavorites } from "../platform-home/service";
 import { config } from "../../config/application";
@@ -217,6 +217,11 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
     async saveEntries(id: string, values: unknown) {
       const response = await backendPut("application-catalogue-entries", url(`${entryPath(id)}/panel-uses`),
         applicationEntriesUpdateSchema.parse(values), options());
+      ownerSuccessSchema.parse(JSON.parse(response.text));
+    },
+    async publishSource(id: string, values: unknown) {
+      const response = await backendPut("application-catalogue-publish-source", url(`${entryPath(id)}/panel-uses`),
+        registerApplicationPanelUsesRequestSchema.parse(values), options());
       ownerSuccessSchema.parse(JSON.parse(response.text));
     },
     async remove(id: string) {

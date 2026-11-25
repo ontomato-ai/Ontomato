@@ -42,7 +42,7 @@ const skillReadPath = /^\/api\/skills(?:\/[^/]+\/(?:references|files|file))?$/u;
 const initiatorPanelReads = [AGENT_DEFINITION, SKILL, ONTOLOGY_TYPE]
   .flatMap(type => panelClientReads(bindingKey({ kind: "PlatformObjectType", id: type })));
 async function panelReader(req: Request, runId: string, source: ProductPanelReadSource, memberPath: DirectPanelMemberPath) {
-  if (source.kind === "candidate")
+  if (source.kind === "candidate" || source.kind === "app-candidate")
     throw new HttpError(400, "A page skill reads a registered application entry", "INVALID_REQUEST");
   const { owner, credentials } = context(req);
   const run = await runForOwner(owner, runId);

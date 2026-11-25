@@ -547,41 +547,29 @@ export const workbenchApplications: BuiltinApplication[] = [
       ],
       "panelUses": [
         {
-          "id": "app-builder-workspaces",
-          "pageKey": "app-builder-workspaces",
-          "panelId": "builtin-product-app-builder-workspaces",
+          "id": "app-builder",
+          "pageKey": "app-builder",
+          "panelId": "builtin-product-app-builder",
           "path": "/app-builder",
-          "access": { "permissionCode": "app-builder" },
+          "access": {
+            "permissionCode": "app-builder"
+          },
           "icon": "builder",
-          "defaultAgent": { "kind": "preset", "agentKind": "app-builder" },
+          "pageComposer": "none",
           "names": {
-            "en": "Workspaces",
-            "zh-CN": "工作区",
-            "zh-TW": "工作區",
-            "ja": "ワークスペース",
-            "de": "Arbeitsbereiche",
-            "fr": "Espaces de travail",
-            "it": "Aree di lavoro",
-            "ar": "مساحات العمل"
+            "en": "App builder",
+            "zh-CN": "应用构建",
+            "zh-TW": "應用構建",
+            "ja": "アプリ構築",
+            "de": "App-Builder",
+            "fr": "Constructeur d'applications",
+            "it": "Generatore di app",
+            "ar": "منشئ التطبيقات"
           },
           "descriptions": {
-            "en": "Create and manage App Builder workspaces",
-            "zh-CN": "创建和管理应用构建工作区",
-            "zh-TW": "建立並管理應用建構工作區",
-            "ja": "アプリビルダーのワークスペースを作成・管理します",
-            "de": "App-Builder-Arbeitsbereiche erstellen und verwalten",
-            "fr": "Créer et gérer des espaces de travail du constructeur d'applications",
-            "it": "Crea e gestisci le aree di lavoro del generatore di applicazioni",
-            "ar": "إنشاء وإدارة مساحات عمل منشئ التطبيقات"
+            "en": "Build and publish applications from conversations",
+            "zh-CN": "通过对话构建并发布应用"
           }
-        },
-        {
-          "id": "app-builder-workspace",
-          "pageKey": "app-builder-workspace",
-          "panelId": "builtin-product-app-builder-workspace",
-          "path": "/app-builder/workspace",
-          "access": { "permissionCode": "app-builder" },
-          "defaultAgent": { "kind": "preset", "agentKind": "app-builder" }
         }
       ]
     }

@@ -91,13 +91,26 @@ async function registerHostedSourceFunction(
   await writeFile(reference, JSON.stringify({ functionId }));
 }
 
-export async function publishWorkspace(owner: AssistantOwner, workspaceId: string, commit: string, declaration: Record<string, unknown>, credentials: AssistantCredentials) {
-  const registered=await db().query(`SELECT app_id FROM ${t('hosted_apps')} WHERE domain_id=$1 AND owner_id=$2 AND workspace_id=$3`,[owner.domainId,owner.userId,workspaceId]);
+export async function publishWorkspace(
+  owner: AssistantOwner,
+  workspaceId: string,
+  commit: string,
+  declaration: Record<string, unknown>,
+  credentials: AssistantCredentials,
+  options?: { appId?: string; workspaceOwnerId?: string },
+) {
+  const registered = options?.appId
+    ? await db().query(`SELECT app_id FROM ${t('hosted_apps')} WHERE domain_id=$1 AND app_id=$2`, [owner.domainId, options.appId])
+    : await db().query(`SELECT app_id FROM ${t('hosted_apps')} WHERE domain_id=$1 AND owner_id=$2 AND workspace_id=$3`, [owner.domainId, owner.userId, workspaceId]);
   if(registered.rows.length)await assertLegacyApplicationWrite(credentials,registered.rows[0].app_id);
   if(!declaration.icon){const names=declaration.names as Record<string,string>|undefined;const descriptions=declaration.descriptions as Record<string,string>|undefined;declaration={...declaration,icon:recommendApplicationIcon([...Object.values(names??{}),...Object.values(descriptions??{})].join(' '))};}
-  const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
+  const client = new RuntimeClient(owner.domainId, undefined, owner.userId, options?.workspaceOwnerId ?? owner.userId);
   await client.request(`/v1/workspaces/${workspaceId}`);
-  const previousRelease=(await db().query(`SELECT release.id,app.app_id FROM ${t('hosted_apps')} app JOIN ${t('hosted_app_releases')} release ON release.app_id=app.app_id WHERE app.domain_id=$1 AND app.owner_id=$2 AND app.workspace_id=$3 AND release.commit_id=$4`,[owner.domainId,owner.userId,workspaceId,commit])).rows[0];
+  const previousRelease = (
+    options?.appId
+      ? await db().query(`SELECT release.id,app.app_id FROM ${t('hosted_apps')} app JOIN ${t('hosted_app_releases')} release ON release.app_id=app.app_id WHERE app.domain_id=$1 AND app.app_id=$2 AND release.commit_id=$3`, [owner.domainId, options.appId, commit])
+      : await db().query(`SELECT release.id,app.app_id FROM ${t('hosted_apps')} app JOIN ${t('hosted_app_releases')} release ON release.app_id=app.app_id WHERE app.domain_id=$1 AND app.owner_id=$2 AND app.workspace_id=$3 AND release.commit_id=$4`, [owner.domainId, owner.userId, workspaceId, commit])
+  ).rows[0];
   if(previousRelease){
     const { files, sdkVersion } = await requireHostedReleasePolicy(previousRelease.app_id, previousRelease.id);
     const snapshot=await readProductRelease(owner,previousRelease.id);
@@ -122,8 +135,13 @@ export async function publishWorkspace(owner: AssistantOwner, workspaceId: strin
   }
   const productSnapshot=await captureProductRelease(owner,productIds,credentials,triggerIds);
   const release = await transaction(async c => {
-    await c.query(`INSERT INTO ${t("hosted_apps")} (app_id,domain_id,owner_id,workspace_id) VALUES($1,$2,$3,$4) ON CONFLICT(domain_id,workspace_id) DO NOTHING`, [`app-${randomUUID()}`, owner.domainId, owner.userId, workspaceId]);
-    const app = (await c.query(`SELECT app_id FROM ${t("hosted_apps")} WHERE domain_id=$1 AND owner_id=$2 AND workspace_id=$3`, [owner.domainId, owner.userId, workspaceId])).rows[0];
+    const targetAppId = options?.appId ?? `app-${randomUUID()}`;
+    await c.query(`INSERT INTO ${t("hosted_apps")} (app_id,domain_id,owner_id,workspace_id) VALUES($1,$2,$3,$4) ON CONFLICT(domain_id,workspace_id) DO NOTHING`, [targetAppId, owner.domainId, owner.userId, workspaceId]);
+    const app = (
+      options?.appId
+        ? await c.query(`SELECT app_id FROM ${t("hosted_apps")} WHERE domain_id=$1 AND (app_id=$2 OR workspace_id=$3)`, [owner.domainId, options.appId, workspaceId])
+        : await c.query(`SELECT app_id FROM ${t("hosted_apps")} WHERE domain_id=$1 AND owner_id=$2 AND workspace_id=$3`, [owner.domainId, owner.userId, workspaceId])
+    ).rows[0];
     const existing = (await c.query(`SELECT id FROM ${t("hosted_app_releases")} WHERE app_id=$1 AND commit_id=$2`, [app.app_id, commit])).rows[0];
     if (existing) return { appId: app.app_id as string, releaseId: existing.id as string, commit };
     const releaseId = randomUUID();
@@ -155,8 +173,22 @@ async function registerApplicationProduct(owner:AssistantOwner,appId:string,work
 export async function workspaceReleases(owner: AssistantOwner, workspaceId: string) {
   return (await db().query(`SELECT r.id AS "releaseId",a.app_id AS "appId",r.commit_id AS commit,r.created_at AS "createdAt" FROM ${t("hosted_apps")} a JOIN ${t("hosted_app_releases")} r ON r.app_id=a.app_id WHERE a.domain_id=$1 AND a.owner_id=$2 AND a.workspace_id=$3 ORDER BY r.created_at DESC`, [owner.domainId, owner.userId, workspaceId])).rows;
 }
-export async function rollbackWorkspace(owner: AssistantOwner, workspaceId: string, releaseId: string, declaration: Record<string, unknown>, credentials: AssistantCredentials) {
-  const release = (await workspaceReleases(owner, workspaceId)).find(r => r.releaseId === releaseId);
+export async function rollbackWorkspace(
+  owner: AssistantOwner,
+  workspaceId: string,
+  releaseId: string,
+  declaration: Record<string, unknown>,
+  credentials: AssistantCredentials,
+  options?: { appId?: string },
+) {
+  const release = options?.appId
+    ? (await db().query(
+        `SELECT r.id AS "releaseId", a.app_id AS "appId", r.commit_id AS commit, r.created_at AS "createdAt"
+         FROM ${t("hosted_apps")} a JOIN ${t("hosted_app_releases")} r ON r.app_id=a.app_id
+         WHERE a.domain_id=$1 AND a.app_id=$2 AND r.id=$3`,
+        [owner.domainId, options.appId, releaseId],
+      )).rows[0]
+    : (await workspaceReleases(owner, workspaceId)).find(r => r.releaseId === releaseId);
   if (!release) throw new HttpError(404, "Release not found", "NOT_FOUND");
   await assertLegacyApplicationWrite(credentials,release.appId);
   await requireHostedReleasePolicy(release.appId,releaseId);

@@ -1,14 +1,5 @@
 import { z } from "zod";
 
-export const APP_WORKSPACE = "platform:AppWorkspace";
-export const APP_WORKSPACE_CREATE = "appWorkspaces.create";
-export const APP_WORKSPACE_SAVE = "appWorkspaces.save";
-export const APP_WORKSPACE_DELETE = "appWorkspaces.delete";
-export const APP_WORKSPACE_RESTORE_COMMIT = "appWorkspaces.restoreCommit";
-export const APP_WORKSPACE_RESTART_BUILD_TEST = "appWorkspaces.restartBuildTest";
-export const APP_WORKSPACE_PUBLISH = "appWorkspaces.publish";
-export const APP_WORKSPACE_ROLLBACK_RELEASE = "appWorkspaces.rollbackRelease";
-export const APP_WORKSPACE_UPDATE_PUBLISHED_ICON = "appWorkspaces.updatePublishedIcon";
 
 export const DASHBOARD = "platform:Dashboard";
 export const DASHBOARD_CARD = "platform:DashboardCard";
@@ -65,6 +56,14 @@ export const SDK_COMPONENT = "platform:SDKComponent";
 export const PRODUCT_PROJECTION = "platform:ProductProjection";
 export const PRODUCT_PANEL = "platform:ProductPanel";
 export const APPLICATION = "platform:Application";
+export const APPLICATION_CREATE_DRAFT = "applications.createDraft";
+export const APPLICATION_UPDATE_BUILDER_META = "applications.updateBuilderMeta";
+export const APPLICATION_DELETE_DRAFT = "applications.deleteDraft";
+export const APPLICATION_RESTORE_SOURCE_COMMIT = "applications.restoreSourceCommit";
+export const APPLICATION_SYNC_BUILDER_SOURCE = "applications.syncBuilderSource";
+export const APPLICATION_PUBLISH_BUILDER_SOURCE = "applications.publishBuilderSource";
+export const APPLICATION_ROLLBACK_BUILDER_RELEASE = "applications.rollbackBuilderRelease";
+export const APPLICATION_RESTART_BUILD_TEST = "applications.restartBuildTest";
 export const APPLICATION_PANEL_USE = "platform:ApplicationPanelUse";
 export const ONTOLOGY_TYPE = "platform:OntologyType";
 export const ONTOLOGY_RELATION_KIND = "platform:OntologyRelationKind";
@@ -424,54 +423,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [`${METRIC_VIEW}.save`, SET_METRIC_VIEW_STATUS, DELETE_METRIC_VIEW, TEST_METRIC_VIEW, TEST_EXECUTE_METRIC_VIEW],
   },
-  [APP_WORKSPACE]: {
-    ...describeType("appWorkspace", "product"),
-    reads: {
-      list: { source: "type", parameterMode: "fixed", params: { search: "keyword", offset: "offset", limit: "limit" }, result: "panelRecordQuery" },
-      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
-        outputs: {
-          name: { kind: "scalar", type: "string" },
-          busy: { kind: "scalar", type: "boolean" },
-          headCommit: { kind: "scalar", type: "string" },
-          shortHeadCommit: { kind: "scalar", type: "string" },
-          hasPanelCandidate: { kind: "scalar", type: "boolean" },
-          candidatePreviewPath: { kind: "scalar", type: "string" },
-          hasHostedIndex: { kind: "scalar", type: "boolean" },
-          hostedPreviewPath: { kind: "scalar", type: "string" },
-          published: { kind: "scalar", type: "boolean" },
-          publishedAppId: { kind: "scalar", type: "string" },
-          publishedAppName: { kind: "scalar", type: "string" },
-          publishedAppPath: { kind: "scalar", type: "string" },
-          buildTestStatus: { kind: "scalar", type: "string" },
-          buildTestCanRestart: { kind: "scalar", type: "boolean" },
-          canManagePermissions: { kind: "scalar", type: "boolean" },
-          permissionsPath: { kind: "scalar", type: "string" },
-          privateWorkspaces: { kind: "scalar", type: "boolean" },
-        },
-      },
-      form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
-      createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
-      files: { source: "object", parameterMode: "fixed", params: { commit: "workspaceCommit" }, result: "panelRecordList" },
-      file: { source: "object", parameterMode: "fixed", params: { path: "workspacePath", commit: "workspaceCommit" }, result: "panelRecord", requiredParams: ["path"] },
-      commits: { source: "object", parameterMode: "fixed", params: { offset: "offset", limit: "limit" }, result: "panelRecordQuery" },
-      diff: { source: "object", parameterMode: "fixed", params: { target: "workspaceDiffTarget" }, result: "panelRecord" },
-      sessions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList",
-        rowType: AGENT_SESSION, outputs: { openPath: { kind: "scalar", type: "string" } },
-      },
-      releases: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
-      publishForm: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
-    },
-    operations: [
-      APP_WORKSPACE_CREATE,
-      APP_WORKSPACE_SAVE,
-      APP_WORKSPACE_DELETE,
-      APP_WORKSPACE_RESTORE_COMMIT,
-      APP_WORKSPACE_RESTART_BUILD_TEST,
-      APP_WORKSPACE_PUBLISH,
-      APP_WORKSPACE_ROLLBACK_RELEASE,
-      APP_WORKSPACE_UPDATE_PUBLISHED_ICON,
-    ],
-  },
+
   [DASHBOARD]: {
     ...describeType("dashboard"),
     childCollections: ["cards"],
@@ -855,10 +807,111 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         requiredParams: ["section"],
       },
       createForm: modelReads.createForm,
+      builderProjects: {
+        source: "type",
+        parameterMode: "fixed",
+        params: { search: "keyword" },
+        result: "panelRecordList",
+      },
+      builderProject: {
+        source: "object",
+        parameterMode: "fixed",
+        params: {},
+        result: "panelRecord",
+        outputs: {
+          appId: { kind: "scalar", type: "string" },
+          name: { kind: "scalar", type: "string" },
+          icon: { kind: "scalar", type: "string" },
+          published: { kind: "scalar", type: "boolean" },
+          workspaceId: { kind: "scalar", type: "string" },
+          busy: { kind: "scalar", type: "boolean" },
+          materialized: { kind: "scalar", type: "boolean" },
+          sourceKind: { kind: "scalar", type: "string" },
+          headCommit: { kind: "scalar", type: "string" },
+          shortHeadCommit: { kind: "scalar", type: "string" },
+          openPath: { kind: "scalar", type: "string" },
+          managePath: { kind: "scalar", type: "string" },
+          hasDrift: { kind: "scalar", type: "boolean" },
+          driftCount: { kind: "scalar", type: "number" },
+          hasConflicts: { kind: "scalar", type: "boolean" },
+          conflictCount: { kind: "scalar", type: "number" },
+          buildTestStatus: { kind: "scalar", type: "string" },
+          buildTestSampleName: { kind: "scalar", type: "string" },
+          buildTestExpiresAt: { kind: "scalar", type: "string" },
+          buildTestCanRestart: { kind: "scalar", type: "boolean" },
+          canEditEntries: { kind: "scalar", type: "boolean" },
+          canGrant: { kind: "scalar", type: "boolean" },
+          currentReleaseId: { kind: "scalar", type: "string" },
+          activeRunId: { kind: "scalar", type: "string" },
+          driftItemsJson: { kind: "scalar", type: "string" },
+          conflictFilesJson: { kind: "scalar", type: "string" },
+          previewEntriesJson: { kind: "scalar", type: "string" },
+        },
+      },
+      builderSessions: {
+        source: "object",
+        parameterMode: "fixed",
+        params: { cursor: "cursor", size: "size", limit: "limit" },
+        result: "panelRecordQuery",
+        rowType: AGENT_SESSION,
+      },
+      sourceFiles: {
+        source: "object",
+        parameterMode: "fixed",
+        params: { commit: "workspaceCommit" },
+        result: "panelRecordList",
+      },
+      sourceFile: {
+        source: "object",
+        parameterMode: "fixed",
+        params: { path: "workspacePath", commit: "workspaceCommit" },
+        requiredParams: ["path"],
+        result: "panelRecord",
+      },
+      sourceCommits: {
+        source: "object",
+        parameterMode: "fixed",
+        params: { cursor: "cursor", size: "size", offset: "offset", limit: "limit" },
+        result: "panelRecordQuery",
+      },
+      sourceDiff: {
+        source: "object",
+        parameterMode: "fixed",
+        params: { target: "workspaceDiffTarget" },
+        result: "panelRecord",
+      },
+      sourceReleases: {
+        source: "object",
+        parameterMode: "fixed",
+        params: {},
+        result: "panelRecordList",
+      },
+      builderCreateForm: {
+        source: "type",
+        parameterMode: "fixed",
+        params: definitionFormParams,
+        result: "panelFormDescription",
+      },
+      builderMetaForm: {
+        source: "object",
+        parameterMode: "fixed",
+        params: definitionFormParams,
+        result: "panelFormDescription",
+      },
+      builderPublishForm: {
+        source: "object",
+        parameterMode: "fixed",
+        params: { ...definitionFormParams, defaultCommit: "workspaceCommit" },
+        result: "panelFormDescription",
+      },
     },
     operations: [
       `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
       "applications.deleteEntry", "applications.grant", "applications.share",
+      APPLICATION_CREATE_DRAFT, APPLICATION_UPDATE_BUILDER_META, APPLICATION_DELETE_DRAFT,
+      APPLICATION_RESTORE_SOURCE_COMMIT, APPLICATION_SYNC_BUILDER_SOURCE,
+      APPLICATION_PUBLISH_BUILDER_SOURCE, APPLICATION_ROLLBACK_BUILDER_RELEASE,
+      APPLICATION_RESTART_BUILD_TEST,
       RENEW_SCHEDULED_TASK_CREDENTIAL,
     ],
   },
@@ -1206,9 +1259,9 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
 
 /** Form save IDs other than the default `${typeId}.save`. */
 const platformNamedFormSaves: ReadonlySet<string> = new Set([
-  APP_WORKSPACE_CREATE,
-  APP_WORKSPACE_SAVE,
-  APP_WORKSPACE_PUBLISH,
+  APPLICATION_CREATE_DRAFT,
+  APPLICATION_UPDATE_BUILDER_META,
+  APPLICATION_PUBLISH_BUILDER_SOURCE,
   CREATE_SCHEDULED_TASK,
   ADD_MODEL_ENTRY,
   CREATE_EXTERNAL_MCP_SERVICE,

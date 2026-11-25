@@ -1,4 +1,4 @@
-import { appWorkspaceEn, appWorkspaceZhCN } from "./locales/app-workspace";
+import { appBuilderEn, appBuilderZhCN } from "./locales/app-builder";
 import { createLogger } from "../logging/logger";
 export type Locale = "zh-CN" | "en" | "ja" | "ar" | "zh-TW" | "fr" | "de" | "it";
 
@@ -99,7 +99,7 @@ export function getConclusionPrefix(locale?: string): string {
 function translate(locale: Locale, key: string, params?: Record<string, any>): string {
   assertConfigured();
   const message = packs.get(locale)?.messages[key] || packs.get(defaultLocale)?.messages[key]
-    || (locale === "zh-CN" ? appWorkspaceZhCN : appWorkspaceEn)[key];
+    || (locale === "zh-CN" ? appBuilderZhCN : appBuilderEn)[key];
   if (!message) {
     createLogger("i18n").warn(`Missing translation key: ${key}`);
     return key;

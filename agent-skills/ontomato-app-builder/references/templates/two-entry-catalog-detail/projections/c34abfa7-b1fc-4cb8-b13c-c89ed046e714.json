@@ -1,0 +1,29 @@
+{
+  "componentId": "@ontomato/sdk:ObjectList",
+  "inputs": {},
+  "outputs": {},
+  "data": {
+    "rows": {
+      "source": {
+        "type": {
+          "kind": "PlatformObjectType",
+          "id": "platform:AgentDefinition"
+        }
+      },
+      "read": "list",
+      "params": {}
+    }
+  },
+  "config": {
+    "layout": "table",
+    "columns": [
+      {
+        "key": "label",
+        "labelKey": "column.name"
+      }
+    ]
+  },
+  "name": "list",
+  "description": "list",
+  "visibility": "domain"
+}

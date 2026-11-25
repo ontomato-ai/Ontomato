@@ -5,7 +5,7 @@ import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
 
 export function isAppBuilderEntrance(locator: PageSkillLocator) {
   return "permissionCode" in locator ? locator.permissionCode === "app-builder"
-    : locator.pageKey === "app-builder-workspaces" || locator.pageKey === "app-builder-workspace";
+    : locator.pageKey === "app-builder";
 }
 
 /** Callers supply only the page skills visible to the initiator. */

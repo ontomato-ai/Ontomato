@@ -13,10 +13,10 @@ import {
   type ProductDefinitionRevision, type ProductDefinitionTarget,
 } from "@ontomato/contracts/product-subscriptions";
 import {
-  candidatePanelSourceSchema, PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH,
+  appCandidatePanelSourceSchema, candidatePanelSourceSchema, PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH,
   PANEL_READ_BATCH_MAX, PANEL_READ_BATCH_PATH,
   panelPersonalStateResponseSchema, productPanelNestedReadResponseSchema, productPanelReadBatchResponseSchema, productPanelReadResponseSchema,
-  type ProductPanelNestedReadRequest,
+  type AppCandidatePanelSource, type ProductPanelNestedReadRequest,
   type CandidatePanelSource, type DirectPanelHostSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
@@ -148,7 +148,9 @@ function panelReadBatchKey(request: ProductPanelReadRequest): string {
   const { source } = request;
   const identity = source.kind === "candidate"
     ? [source.kind, source.workspace.id, source.workspace.ref]
-    : [source.kind, source.applicationId, source.useId];
+    : source.kind === "app-candidate"
+      ? [source.kind, source.app.id, source.app.ref, source.app.entryId]
+      : [source.kind, source.applicationId, source.useId];
   // ObjectList renders its primary rows while the supplement is still loading.
   const supplement = "dataName" in request && request.dataName === "supplement";
   return JSON.stringify([...identity, supplement]);
@@ -747,6 +749,67 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
 }
 
 /**
+ * Application-scoped candidate preview host: runs a panel from an application's source (or unmaterialized live definition)
+ * in author mode under build-test context, reading nested members through `source.kind === "app-candidate"`.
+ */
+export function appCandidatePanelHost(
+  initial: AppCandidatePanelSource,
+  pageKey: string,
+): PanelHostPort<AppCandidatePanelSource> {
+  let cached: AppCandidatePanelSource | null = initial;
+  const query = new URLSearchParams({ ref: initial.app.ref });
+  if (initial.app.entryId) query.set("entryId", initial.app.entryId);
+  const refreshPath = `/product-panels/preview/app/${encodeURIComponent(initial.app.id)}?${query}`;
+  return {
+    async source() {
+      warmTemplateCompiler();
+      if (cached !== null) {
+        const current = cached;
+        cached = null;
+        return current;
+      }
+      const descriptor = await json(refreshPath) as { kind?: string; candidate?: unknown };
+      if (descriptor?.kind !== "panel") {
+        throw new Error("Application preview no longer resolves to a panel candidate");
+      }
+      return appCandidatePanelSourceSchema.parse(descriptor.candidate);
+    },
+    pageKey,
+    use: null,
+    panel,
+    release,
+    frame: (frame, source, open) => registerCandidateFrame(
+      frame,
+      buildExecutionContext(source.app.id, source.previewContext.test),
+      { id: source.app.id, ref: source.app.ref },
+      { pageKey, manifest: source.panel.manifest },
+      open,
+    ),
+    coded: (source, run, target) => {
+      const { global } = workbenchI18n();
+      return mountCoded(withNested({
+        manifest: source.panel.manifest,
+        run,
+        requests: platformRequests,
+        readProjection: readPlatformProjection,
+        ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
+        use: null,
+        read: request => readPanelData({ source: { kind: "app-candidate", app: source.app }, ...request }),
+        confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
+        expandPageComposer: expandDeclaredComposer,
+        navigate: panelNavigator(platformRouter()),
+        messages: source.panel.content.messages ?? {},
+        locale: global.locale,
+        defaultLocale: String(global.fallbackLocale.value),
+        translate: (key, params) => global.t(key, params ?? {}),
+      }, { kind: "app-candidate", app: source.app }), target, source.panel.content.module);
+    },
+    snapshot,
+    mode: { kind: "author", definitions: panelAuthorDefinitions() },
+  };
+}
+
+/**
  * The platform's requests as the reader, for a panel run in this document: the same paths a frame's SDK asks through
  * the bridge, sent here directly, Node's at `/api` and Java's under its data-query prefix.
  */
@@ -865,7 +928,7 @@ async function mountNested(
   const shown = () => outer.run.shown?.() ?? true;
   const overlay = createPanelOverlayRoot(instance, shown);
   try {
-    const nestedReadProjection = source.kind === "candidate"
+    const nestedReadProjection = source.kind === "candidate" || source.kind === "app-candidate"
       ? (id: string) => readPlatformProjection(id)
       : (id: string) => readCachedProjection(id, () => readPlatformProjection(id), { verifyAccess: true });
     const last = memberPath.at(-1);

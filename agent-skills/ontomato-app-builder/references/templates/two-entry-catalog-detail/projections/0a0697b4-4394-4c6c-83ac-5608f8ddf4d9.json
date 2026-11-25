@@ -1,0 +1,27 @@
+{
+  "componentId": "@ontomato/sdk:ObjectSummary",
+  "inputs": {
+    "target": {
+      "kind": "object",
+      "objectType": "platform:AgentDefinition"
+    }
+  },
+  "outputs": {},
+  "data": {
+    "record": {
+      "source": {
+        "object": {
+          "input": "target"
+        }
+      },
+      "read": "record",
+      "params": {}
+    }
+  },
+  "config": {
+    "showTitle": false
+  },
+  "name": "detail",
+  "description": "detail",
+  "visibility": "domain"
+}

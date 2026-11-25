@@ -1,0 +1,55 @@
+{
+  "entry": {
+    "path": "/applications/app-academic-planner/courses",
+    "renderer": "panels"
+  },
+  "entryAccess": [
+    "domain-member"
+  ],
+  "declaration": {
+    "descriptions": {},
+    "groups": [],
+    "permissions": [],
+    "names": {
+      "en": "Academic planner"
+    },
+    "icon": "graduation-cap"
+  },
+  "panelUses": [
+    {
+      "id": "app-academic-planner-courses",
+      "pageKey": "app-academic-planner-courses",
+      "panelId": "template-academic-courses",
+      "path": "/applications/app-academic-planner/courses",
+      "access": {
+        "kind": "domain-member"
+      },
+      "names": {
+        "en": "Courses"
+      },
+      "inputs": {
+        "term": {
+          "frameState": "term"
+        }
+      }
+    },
+    {
+      "id": "app-academic-planner-enrollments",
+      "pageKey": "app-academic-planner-enrollments",
+      "panelId": "template-academic-enrollments",
+      "path": "/applications/app-academic-planner/enrollments",
+      "access": {
+        "kind": "domain-member"
+      },
+      "names": {
+        "en": "Enrollments"
+      },
+      "inputs": {
+        "term": {
+          "frameState": "term"
+        }
+      }
+    }
+  ],
+  "framePanelId": "template-academic-frame"
+}

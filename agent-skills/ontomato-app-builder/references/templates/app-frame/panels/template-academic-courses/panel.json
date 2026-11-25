@@ -1,0 +1,39 @@
+{
+  "name": "Courses",
+  "description": "Courses for the selected term",
+  "visibility": "domain",
+  "manifest": {
+    "state": {
+      "term": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "personal": false,
+        "deepLink": false,
+        "external": true,
+        "default": "2026-fall"
+      }
+    },
+    "members": {
+      "list": {
+        "inputs": {
+          "search": {
+            "state": "term"
+          }
+        },
+        "target": {
+          "projectionId": "60fdf07c-b95d-46c2-9d48-db24e53b28f8"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Courses",
+        "col.name": "Course"
+      }
+    }
+  }
+}

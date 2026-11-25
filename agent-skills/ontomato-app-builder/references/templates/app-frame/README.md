@@ -13,15 +13,9 @@ The example expects customer types `Course` and `Enrollment` with term codes sea
 `query.search` and owner totals in query responses. Use a dedicated term read parameter if your owner offers one,
 binding it identically on the list and its matching count. The sample terms are Fall 2026 and Spring 2027.
 
-Check all three panels, then register the two content panels before the frame, whose registration also creates the
-application.
+Check the application root, then preview and publish its committed source through Application Builder.
 
 ```sh
 template="$SKILL/references/templates/app-frame"
-for panel in courses enrollments frame; do
-  node "$SKILL/scripts/ontomato.mjs" panel check "$template/$panel" || exit
-done
-for panel in courses enrollments frame; do
-  node "$SKILL/scripts/ontomato.mjs" panel register "$template/$panel" || exit
-done
+node "$SKILL/scripts/ontomato.mjs" panel check "$template"
 ```

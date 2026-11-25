@@ -1,0 +1,59 @@
+{
+  "name": "Academic planner frame",
+  "description": "Academic navigation and term selection",
+  "visibility": "domain",
+  "manifest": {
+    "state": {
+      "term": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "personal": false,
+        "deepLink": true,
+        "external": true,
+        "default": "2026-fall"
+      }
+    },
+    "members": {
+      "content": {
+        "target": {
+          "fromPlatform": "currentEntry",
+          "candidates": {
+            "rule": "applicationEntry"
+          }
+        }
+      },
+      "courses": {
+        "inputs": {
+          "search": {
+            "state": "term"
+          }
+        },
+        "target": {
+          "projectionId": "b9a90fbd-bb2d-4c3f-b6ef-fec7fbedb6bc"
+        }
+      },
+      "enrollments": {
+        "inputs": {
+          "search": {
+            "state": "term"
+          }
+        },
+        "target": {
+          "projectionId": "8d50ec25-9dc9-4ae6-a7ad-12504335e61e"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Academic planner",
+        "term.label": "Academic term",
+        "term.fall": "Fall 2026",
+        "term.spring": "Spring 2027"
+      }
+    }
+  }
+}

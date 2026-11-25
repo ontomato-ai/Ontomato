@@ -850,7 +850,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    * form.
    */
   function resume(shown: HostedPanelSource) {
-    if (shown.kind === "candidate") {
+    if (shown.kind !== "registered") {
       void rereadCandidate(shown);
       return;
     }
@@ -872,7 +872,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
    * relation withdrawn or bound elsewhere ends the instance; a refused check is shown where the panel is.
    */
   async function reopen(shown: HostedPanelSource) {
-    if (shown.kind === "candidate") {
+    if (shown.kind !== "registered") {
       openBridge(true);
       follow(shown);
       void rereadCandidate(shown);

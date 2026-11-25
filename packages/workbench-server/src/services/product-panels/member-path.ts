@@ -3,6 +3,7 @@ import {
   type PanelMember, type PanelMemberPath, type PanelMemberTarget, type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
+  productPanelSchema,
   productProjectionSchema,
   isApplicationPanelUse, type ApplicationPanelUse, type PanelUseRef, type ProductPanel,
 } from "@ontomato/contracts/product-panels";
@@ -25,6 +26,7 @@ import { panelStateKey, type PanelStatePathKey } from "./personal-state-key";
 
 type QueryClient = Pick<PoolClient, "query">;
 type Target = { kind: CurrentProductKind; id: string };
+type CandidateDefinition = (target: Target) => ReturnType<typeof currentProductRecord> | undefined;
 type PanelPathRoot = Pick<ProductPanel, "manifest"> & { id?: string };
 type ReadPathSegment = ProductPanelNestedReadRequest["memberPath"][number];
 type AnyPathSegment = ReadPathSegment | PanelMemberPath[number];
@@ -221,15 +223,17 @@ function pathKey(segment: Pick<PanelMemberPath[number], "member" | "itemKey">): 
 
 /** Re-resolve the requested path from an authorized root. A denied member never supplies its definition. */
 export function resolvePanelMemberPath<Root extends PanelPathRoot>(
-  owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: PanelMemberPath,
+  owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: readonly AnyPathSegment[],
   entry?: ApplicationPanelUse, client?: QueryClient, batchCache?: PanelReadBatchCache,
+  candidateDefinition?: CandidateDefinition,
 ) {
-  return resolveMemberPath(owner, viewer, root, memberPath, entry, client, batchCache);
+  return resolveMemberPath(owner, viewer, root, memberPath, entry, client, batchCache, candidateDefinition);
 }
 
 async function resolveMemberPath<Root extends PanelPathRoot>(
   owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: readonly AnyPathSegment[],
   entry?: ApplicationPanelUse, client?: QueryClient, batchCache?: PanelReadBatchCache,
+  candidateDefinition?: CandidateDefinition,
 ) {
   let panel: Root | ProductPanel = root;
   const ancestors = new Set(root.id === undefined ? [] : [root.id]);
@@ -253,12 +257,13 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
     const target = await declaredTarget(owner, panel, member.target, placement ? undefined : segment.selection, entry, client);
     if (target.kind === "panel" && ancestors.has(target.id))
       throw new HttpError(409, `Panel member '${segment.member}' forms a cycle`, "PANEL_REFERENCE_CYCLE");
-    const row = await requireTarget(owner, viewer, target, client, batchCache);
+    const candidate = candidateDefinition?.(target);
+    const row = candidate ? undefined : await requireTarget(owner, viewer, target, client, batchCache);
     if (target.kind === "projection") {
       if (!isFinal) unavailable();
       return {
         kind: "projection" as const,
-        projection: parseStoredDefinition(productProjectionSchema, currentProductRecord(row, false), "Projection"),
+        projection: parseStoredDefinition(productProjectionSchema, candidate ?? currentProductRecord(row!, false), "Projection"),
         panel, member, keys, trail,
       };
     }
@@ -266,7 +271,9 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
       throw new HttpError(422, "Row itemKey is only allowed on a projection member", "ROW_OPERATION_MEMBER_INVALID");
     }
     ancestors.add(target.id);
-    const childPanel = panelDefinition(row, false);
+    const childPanel = candidate
+      ? parseStoredDefinition(productPanelSchema, candidate, "Panel")
+      : panelDefinition(row!, false);
     trail.push({ parentPanel: panel, childPanel, member, selection: placement ? undefined : segment.selection });
     panel = childPanel;
     controlled = Object.keys("fromPlatform" in member.target ? entry?.inputs ?? {} : member.inputs ?? {});
@@ -282,6 +289,10 @@ export async function readNestedPanel(
       const { loadWorkspacePanel } = await import("../workspaces/panel-candidate");
       const { panel } = await loadWorkspacePanel(owner, credentials, source.workspace);
       return resolveMemberPath(owner, credentials, panel, memberPath);
+    }
+    if (source.kind === "app-candidate") {
+      const { resolveApplicationPreviewPath } = await import("../app-builder/preview-service");
+      return resolveApplicationPreviewPath(owner, credentials, source.app.id, source.app, memberPath);
     }
     const { panel, entry } = await requireRegisteredPanelRoot(owner, credentials, source);
     return resolveMemberPath(owner, credentials, panel, memberPath, entry);

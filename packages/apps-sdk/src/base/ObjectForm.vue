@@ -260,7 +260,8 @@ const forms: FormSource = memberFormSource(member, panel.instance);
 
 const editInput = editedInput(member.projection);
 /** Whether the projection reads a type-level draft form (`createForm`, or `form` sourced from the type rather than an object). */
-const creates = Object.values(member.projection.data).some((data) => data.read === "createForm")
+const creates = member.projection.data.createForm !== undefined
+  || Object.values(member.projection.data).some((data) => data.read === "createForm")
   || (member.projection.data.form !== undefined && "type" in member.projection.data.form.source);
 /** The panel state the edited object is held in; a form that only creates or binds no state holds none. */
 const state = computed(() => (editInput === undefined ? null : slotInputState(panel.manifest, slot.slot, editInput)));

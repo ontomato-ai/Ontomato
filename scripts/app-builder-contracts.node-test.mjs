@@ -24,7 +24,7 @@ for (const [command, option] of [
 
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -198,10 +198,12 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const invalid = issues => ({ success: false, error: { issues } });
     const parse = value => value;
     export const registerProductPanelRequestSchema = {
+      omit: () => panelDefinitionContentSchema,
       safeParse: value => "sdkVersion" in value
         ? invalid([{ path: ["sdkVersion"], message: "The current SDK refuses sdkVersion" }])
         : ok(value),
     };
+    export const productProjectionInputSchema = { safeParse: ok };
     export const registerProductProjectionRequestSchema = {
       safeParse: value => value.data !== undefined ? ok(value) : invalid([{
         code: "invalid_union",
@@ -226,8 +228,11 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       ? ok(id) : invalid([{ message: "Expected a platform product ID with prefix builtin-product-" }]) };
     export const appsSdkComponentCatalogSchema = { parse };
     export const domainApplicationIconKeys = ["app-window", "folder", "calendar"];
-    export const applicationCatalogueRecordSchema = { parse };
-    export const applicationIdentityUpdateSchema = { parse, partial: () => ({ strict: () => ({ parse }) }) };
+    const applicationDeclaration = { extend: () => applicationDeclaration, passthrough: () => applicationDeclaration };
+    export const applicationCatalogueRecordSchema = {
+      parse, shape: {}, pick: () => ({ extend: () => ({ safeParse: ok }) }),
+    };
+    export const applicationIdentityUpdateSchema = { parse, omit: () => applicationDeclaration, partial: () => ({ strict: () => ({ parse }) }) };
     export async function panelModuleImports(source) {
       if (source.includes("element-plus")) throw new Error("A panel's module imports element-plus, which the platform does not give it");
     }
@@ -592,58 +597,58 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.equal(requests.some(([method]) => method !== "GET"), false);
     requests.length = 0;
     const draft = join(directory, "manager");
-    const catalogDir = join(draft, "catalog");
-    const detailDir = join(draft, "detail");
     const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "app-template-two-entry", "--operation", "platform:AgentDefinition.save");
-    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/app-template-two-entry/catalog");
-    assert.deepEqual(requests.map(([method, url]) => [method, url]), [
-      ["GET", "/api/apps-sdk/current"], ["GET", `${sdkPath}/node/panel-check.mjs`], ["GET", "/api/app-builder/type-table"],
-    ]);
-    const template = "agent-skills/ontomato-app-builder/references/templates/two-entry-catalog-detail";
-    for (const [name, entryDir] of [["catalog", catalogDir], ["detail", detailDir]]) {
-      assert.equal(await readFile(join(entryDir, "panel.mjs"), "utf8"), await readFile(join(template, name, "panel.mjs"), "utf8"));
-      assert.equal(JSON.parse((await run("panel", "check", entryDir)).stdout).status, "valid");
-    }
+    const readJson = async file => JSON.parse(await readFile(file, "utf8"));
+    const scaffoldApp = await readJson(join(draft, "application.json"));
+    assert.equal(JSON.parse(scaffold.stdout).entry, scaffoldApp.entry.path);
+    assert.equal(requests.some(([method]) => method !== "GET"), false);
+    assert.equal(JSON.parse((await run("panel", "check", draft)).stdout).status, "valid");
+    await assert.rejects(run("panel", "register", draft), error =>
+      error.stderr.includes("Publish application source through the Application Builder page"));
+    assert.equal(requests.some(([method]) => method !== "GET"), false);
 
     const review = join(directory, "review");
-    const reviewCatalog = join(review, "catalog");
-    const reviewDetail = join(review, "detail");
     await run("panel", "scaffold", "platform:ReviewQueue", review, "--operation", "reviews.approve", "--batch", "reviews.approve");
-    const { manifest: reviewManifest } = JSON.parse(await readFile(join(reviewCatalog, "panel.json"), "utf8"));
-    const { manifest: detailManifest } = JSON.parse(await readFile(join(reviewDetail, "panel.json"), "utf8"));
-    const reviewMaterial = join(reviewCatalog, "registration.json");
-    const generatedRegistration = JSON.parse(await readFile(reviewMaterial, "utf8"));
-    assert.equal(generatedRegistration.projections, undefined);
-    assert.equal(generatedRegistration.panels[0].input.content, undefined);
-    assert.deepEqual(reviewManifest.members.list, {
-      component: "ObjectList", type: "platform:ReviewQueue", data: { rows: "query" },
-      state: { checked: "checked", search: "search", status: "status" },
-    });
-    assert.deepEqual(reviewManifest.members.tabs.data.counts, { read: "counts", params: { by: { literal: "status" } } });
-    assert.equal(reviewManifest.members.tabs.state.value, "status");
-    assert.equal(detailManifest.members.detail.state.search, "search");
-    assert.deepEqual(detailManifest.members.action1, {
-      component: "OperationButton", operation: "reviews.approve", target: "selected",
-    });
-    assert.deepEqual(reviewManifest.members.batch2, { component: "OperationButton", operation: "reviews.approve", target: "checked" });
-    const reviewLayout = await readFile(join(reviewCatalog, "panel.html"), "utf8");
-    assert(reviewLayout.indexOf('slot="batch2"') < reviewLayout.indexOf('slot="list"'));
-    await run("panel", "check", reviewCatalog, "--material", reviewMaterial);
-    await run("panel", "check", reviewDetail);
+    const reviewApp = await readJson(join(review, "application.json"));
+    const [reviewCatalog, reviewDetail] = reviewApp.panelUses.map(({ panelId }) => join(review, "panels", panelId));
     const reviewPanel = join(reviewCatalog, "panel.json");
-    const rejected = structuredClone(reviewManifest);
-    rejected.members.batch2.target = "search";
-    await writeFile(reviewPanel, JSON.stringify({ manifest: rejected }));
-    await assert.rejects(run("panel", "check", reviewCatalog, "--material", reviewMaterial), error =>
-      error.stderr.includes("member batch2: invalid target search"));
-    await assert.rejects(run("panel", "register", reviewCatalog), error =>
-      error.stderr.includes("member batch2: invalid target search"));
-    assert.equal(requests.some(([method]) => method !== "GET"), false);
-    rejected.members.batch2.target = "checked";
-    rejected.members.batch2.operation = "reviews.undeclared";
-    await writeFile(reviewPanel, JSON.stringify({ manifest: rejected }));
-    await assert.rejects(run("panel", "check", reviewCatalog, "--material", reviewMaterial), error =>
-      error.stderr.includes("member batch2: operation reviews.undeclared is not declared"));
+    const reviewDescriptor = await readJson(reviewPanel);
+    const { manifest: reviewManifest } = reviewDescriptor;
+    const { manifest: detailManifest } = await readJson(join(reviewDetail, "panel.json"));
+    assert.equal(detailManifest.state.search.type.type, "string");
+    const batchId = reviewManifest.members.batch2.target.projectionId;
+    const batchPath = join(review, "projections", batchId + ".json");
+    const batch = await readJson(batchPath);
+    assert.equal(batch.operations.approve.operation.id, "reviews.approve");
+    assert.equal(reviewManifest.members.batch2.inputs.review.state, "checked");
+    await run("panel", "check", review);
+    reviewManifest.members.batch2.inputs.review.state = "search";
+    await writeFile(reviewPanel, JSON.stringify(reviewDescriptor));
+    await assert.rejects(run("panel", "check", review), error =>
+      error.stderr.includes("bind operation approve (reviews.approve)"));
+    reviewManifest.members.batch2.inputs.review.state = "checked";
+    await writeFile(reviewPanel, JSON.stringify(reviewDescriptor));
+    batch.operations.approve.operation.id = "reviews.undeclared";
+    await writeFile(batchPath, JSON.stringify(batch));
+    await assert.rejects(run("panel", "check", review), error =>
+      error.stderr.includes("operation approve (reviews.undeclared) is not declared"));
+
+    // The legacy registration validator is still exercised with a legacy input fixture.
+    const detailDir = join(directory, "legacy-detail");
+    await mkdir(detailDir);
+    const detailId = scaffoldApp.panelUses.at(-1).panelId;
+    const { name, description, visibility, ...legacyDescriptor } = await readJson(join(draft, "panels", detailId, "panel.json"));
+    await writeFile(join(detailDir, "panel.json"), JSON.stringify(legacyDescriptor));
+    await writeFile(join(detailDir, "panel.html"), await readFile(join(draft, "panels", detailId, "panel.html")));
+    const projectionsDir = join(draft, "projections");
+    const projections = await Promise.all((await readdir(projectionsDir)).map(async file => ({
+      id: file.slice(0, -5), mode: "create", input: await readJson(join(projectionsDir, file)),
+    })));
+    await writeFile(join(detailDir, "registration.json"), JSON.stringify({
+      panels: [{ id: detailId, mode: "create", input: { name, description, visibility } }],
+      applications: [{ id: "app-template-two-entry", mode: "create", input: scaffoldApp }],
+      projections,
+    }));
 
     const detailMaterialFile = join(detailDir, "registration.json");
     const detailMaterial = JSON.parse(await readFile(detailMaterialFile, "utf8"));

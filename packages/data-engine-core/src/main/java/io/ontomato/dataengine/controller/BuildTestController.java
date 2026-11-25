@@ -6,6 +6,8 @@ import com.alibaba.fastjson2.JSON;
 import org.springframework.web.server.ResponseStatusException;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.DataSandboxService;
+import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -14,7 +16,20 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/ontology/build-tests")
 public class BuildTestController {
   private final DataSandboxService contexts;
-  public BuildTestController(DataSandboxService contexts) { this.contexts=contexts; }
+  private final WorkbenchServiceAuthentication authentication;
+
+  public BuildTestController(DataSandboxService contexts, WorkbenchServiceAuthentication authentication) {
+    this.contexts = contexts;
+    this.authentication = authentication;
+  }
+
+  @DeleteMapping("/internal/workspaces/{workspaceId}")
+  public ResponseEntity<Void> closeWorkspace(@PathVariable UUID workspaceId, @RequestParam String domainId,
+      HttpServletRequest request) {
+    authentication.authenticate(request);
+    contexts.closeWorkspace(domainId, workspaceId.toString());
+    return ResponseEntity.noContent().build();
+  }
   @ExceptionHandler(ResponseStatusException.class)
   public ResponseEntity<JSONObject> failure(ResponseStatusException failure) {
     String message=failure.getReason();

@@ -52,9 +52,11 @@ export class Workspaces {
       return result;
     });
   }
-  async replace(scope: Scope, owner: string, id: string, files: WorkspaceFile[], message: string) {
+  async replace(scope: Scope, owner: string, id: string, files: WorkspaceFile[], message: string, baseline?: WorkspaceFile[]) {
     return this.write(scope, owner, id, async (git, uid) => {
-      await git.replace(files, this.policy.development ? undefined : uid);
+      const worker = this.policy.development ? undefined : uid;
+      if (baseline !== undefined) return git.importMerge(files, baseline, message, worker);
+      await git.replace(files, worker);
       return { commit: await git.commit(message) };
     });
   }

@@ -21,7 +21,7 @@ export async function loadWorkspacePanel(
   owner: AssistantOwner, credentials: AssistantCredentials, { id, ref }: CandidatePanelSource["workspace"],
 ) {
   await assertAppBuilderAccess(credentials);
-  const tests = new WorkspaceBuildTests(owner, credentials, id);
+  const tests = new WorkspaceBuildTests(owner, credentials, id, owner.userId);
   const workspace = `/v1/workspaces/${id}`;
   const revision: Record<string, string> = ref === "working" ? {} : { commit: ref };
   // Runtime checks the author and, for a commit, membership in the workspace history.

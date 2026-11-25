@@ -37,7 +37,7 @@ Inside a registered panel, choose between two official projection members:
 ```
 
 ```json
-// registration.json (applications[].input.panelUses[] entry)
+// application.json (panelUses[] entry)
 {
   "id": "home",
   "pageKey": "home",

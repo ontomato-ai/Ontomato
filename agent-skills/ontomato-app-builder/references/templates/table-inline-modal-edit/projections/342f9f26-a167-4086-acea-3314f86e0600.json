@@ -1,0 +1,75 @@
+{
+  "componentId": "@ontomato/sdk:ObjectList",
+  "inputs": {
+    "search": {
+      "kind": "scalar",
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "search": {
+      "kind": "scalar",
+      "type": "string"
+    }
+  },
+  "data": {
+    "rows": {
+      "source": {
+        "type": {
+          "kind": "ObjectType",
+          "id": "Course"
+        }
+      },
+      "read": "query",
+      "params": {
+        "search": {
+          "input": "search"
+        }
+      }
+    }
+  },
+  "config": {
+    "layout": "table",
+    "columns": [
+      {
+        "key": "label",
+        "labelKey": "course.name",
+        "minWidth": 200
+      },
+      {
+        "key": "capacity",
+        "labelKey": "course.capacity",
+        "width": 120
+      }
+    ],
+    "rowActions": {
+      "items": [
+        {
+          "kind": "local",
+          "id": "edit",
+          "labelKey": "action.edit"
+        },
+        {
+          "kind": "operation",
+          "operation": "archive",
+          "labelKey": "action.archive",
+          "danger": true
+        }
+      ]
+    }
+  },
+  "operations": {
+    "archive": {
+      "operation": {
+        "kind": "Action",
+        "id": "course.archive"
+      },
+      "target": {
+        "row": true
+      }
+    }
+  },
+  "name": "courses",
+  "description": "courses",
+  "visibility": "domain"
+}

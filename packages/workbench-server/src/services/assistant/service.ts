@@ -1,10 +1,11 @@
-import { workspaceIdSchema, workspaceSchema } from "@ontomato/contracts/workspaces";
+import { appWorkspaceSlot, appBuilderProjectStore } from "../app-builder/project-store";
+import { authorizeBuilderProject, ensureMaterializedWorkspace } from "../app-builder/project-service";
 import { requireProductGrant } from "../product-governance/grants";
 import { closeGovernanceWindow } from "./governance";
 import { closeAuthoringRun } from "./authoring";
 import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
 import { agentHostSendResultSchema, type AgentHostCreateSession, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
-import { tForLocale, resolveLocale } from "../../i18n";
+import { resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { ChannelProcessClient } from "../agent-host/process";
 import { agentExecutionCredentials, executionActor } from "./execution";
@@ -59,7 +60,7 @@ const db = () => getPostgresPool(),
   ADMISSION_GRACE_MS = 10 * 60_000,
   RECONCILE_PAGE = 200;
 export { publicSnapshot } from "../../platform/agent-runtime/projection";
-import { publicMessages, publicSnapshot, publicRun, runStatusView } from "../../platform/agent-runtime/projection";
+import { publicHistoryRuns, publicMessages, publicSnapshot, publicRun, runStatusView } from "../../platform/agent-runtime/projection";
 type LatestRun = Parameters<typeof runStatusView>[0];
 const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
   agentHostSessionSchema.parse({
@@ -73,6 +74,12 @@ const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
     origin: s.origin,
   });
 export { sessionView };
+function requiredBuilderAppId(context: AgentHostCreateSession["context"]) {
+  const parsed = z.string().min(1).max(128).safeParse(context?.appId);
+  if (!parsed.success)
+    throw new HttpError(400, "App Builder requires context.appId", "CONTEXT_REQUIRED");
+  return parsed.data;
+}
 export const assistantService = {
   presentationHost: "workbench" as const,
   async isAppBuilder(owner: AssistantOwner, input: { agentId: string } | { sessionId: string }) {
@@ -83,30 +90,15 @@ export const assistantService = {
   /** Scheduled tasks start their conversations here too, marked with their origin. */
   async create(id: string, owner: AssistantOwner, input: AgentHostCreateSession, credentials: AssistantCredentials, origin: SessionRow["origin"] = "user") {
     const { agent } = await this.admitAgent(input.agentId, owner, credentials);
-    const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId);
     const builder = isAppBuilderKind(agent.kind);
-    const contextSchema = z.object({ workspaceId: builder ? workspaceIdSchema.optional() : z.never().optional() }).strict();
-    const context = contextSchema.optional().safeParse(input.context);
-    if (!context.success)
-      throw new HttpError(400, "Invalid session context for this agent", "INVALID_SESSION_CONTEXT", context.error.issues);
-    const workspaceId = input.workspaceId ?? context.data?.workspaceId;
-    if (builder && workspaceId) {
-      await runtime.request(`/v1/workspaces/${workspaceIdSchema.parse(workspaceId)}`);
-    }
-    const createWorkspace = builder && workspaceId === undefined
-      ? async () => workspaceSchema.parse(await runtime.request("/v1/workspaces", "POST", {
-        name: tForLocale(credentials.locale, "panels.appWorkspace.defaultName"),
-      })).id
-      : undefined;
-    const { row, replayed } = await assistantStore.create(
-      id,
-      owner,
-      input.agentId,
-      origin,
-      workspaceId,
-      false,
-      createWorkspace,
-    );
+    if (!builder && input.context !== undefined && Object.keys(input.context).length > 0)
+      throw new HttpError(400, "Invalid session context for this agent", "INVALID_SESSION_CONTEXT");
+    const appId = builder ? requiredBuilderAppId(input.context) : undefined;
+    const project = appId ? await ensureMaterializedWorkspace(owner, credentials, appId) : undefined;
+    if (project && input.workspaceId !== undefined && input.workspaceId !== project.workspaceId)
+      throw new HttpError(409, "Session workspace does not match context.appId", "WORKSPACE_CHANGED");
+    const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId, appId ? appWorkspaceSlot(appId) : owner.userId);
+    const { row, replayed } = await assistantStore.create(id, owner, input.agentId, origin, project?.workspaceId ?? input.workspaceId);
     try {
       await runtime.createSession(id, row.workspace_id ?? undefined);
     } catch (e) {
@@ -205,7 +197,11 @@ export const assistantService = {
   async history(id: string, owner: AssistantOwner, query: SessionHistoryQuery) {
     await assistantStore.session(id, owner);
     const page = await new RuntimeClient(owner.domainId, undefined, owner.userId).history(id, query);
-    return { ...page, session: sessionView(await assistantStore.session(id, owner), page.session.latestRun) };
+    return {
+      ...page,
+      runs: publicHistoryRuns(page.runs),
+      session: sessionView(await assistantStore.session(id, owner), page.session.latestRun),
+    };
   },
   async snapshot(id: string, owner: AssistantOwner) {
     const row = await assistantStore.session(id, owner),
@@ -310,11 +306,14 @@ export const assistantService = {
     // both reads and writes inherit that user's permissions. `execution_user_id` is only for unattended automation.
     const executionUserId = isAppBuilderKind(a.kind) || isOpsDiagnosisKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
     const executionCredentials = await agentExecutionCredentials(a.id, executionUserId, owner, credentials);
-    const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid(), variables: z.record(z.unknown()).optional(), pageSkillContext: pageSkillContextSchema.optional() }).strict().safeParse(body.context) : null;
-    if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
-    const workspace = context?.success ? context.data.workspaceId : undefined;
-    if (workspace) await new RuntimeClient(owner.domainId,undefined,owner.userId).request(`/v1/channel/sessions/${sessionId}/workspace`,"POST",{ workspaceId: workspace,ownerId: owner.userId });
-    const { row: session } = await assistantStore.create(sessionId,owner,a.id,"delegated",workspace,true);
+    const appId = isAppBuilderKind(a.kind) ? requiredBuilderAppId(body.context) : undefined;
+    const project = appId ? await ensureMaterializedWorkspace(owner, credentials, appId) : undefined;
+    if (project) {
+      const slot = appWorkspaceSlot(project.appId);
+      const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId, slot);
+      await runtime.request(`/v1/channel/sessions/${sessionId}/workspace`, "POST", { workspaceId: project.workspaceId, ownerId: slot });
+    }
+    const { row: session } = await assistantStore.create(sessionId, owner, a.id, "delegated", project?.workspaceId, true);
     const message = input.content;
     const { row: turn } = await assistantStore.reserve(sessionId,id,message,owner,a.class_names);
     const request = await withDomainSkills(owner.domainId,async () => {
@@ -329,7 +328,7 @@ export const assistantService = {
       const reader = visibilityReader(body);
       const pageSkillContext = reader === "user" && input.role === "user" && body.root.runId === id
         ? pageSkillContextSchema.optional().parse(body.context?.pageSkillContext) : undefined;
-      return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader });
+      return prepare({ a,session,turn,message,input,pageSkillContext,inputId:body.inputId,ontologyContext:null,owner,credentials,executionUserId,executionCredentials,externalVariables:variables.success?variables.data:undefined,reader }, appId);
     });
     await assistantStore.admitted(id,message);
     return { ...request,input,executionActor:executionActor(executionUserId,owner.domainId),authority: { classNames: a.class_names,executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" } };
@@ -356,12 +355,21 @@ export const assistantService = {
   async send(sessionId: string, id: string, input: AgentHostSendRequest, owner: AssistantOwner, credentials: AssistantCredentials, entry: "human" | "background" | "external") {
     const session = await assistantStore.session(sessionId, owner);
     const { agent: a } = await this.admitAgent(session.agent_id, owner, credentials);
-    const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
+    let appId: string | undefined;
+    if (isAppBuilderKind(a.kind)) {
+      const project = session.workspace_id
+        ? await appBuilderProjectStore.findByWorkspaceId(owner.domainId, session.workspace_id)
+        : null;
+      if (!project) throw new HttpError(404, "Application project not found", "NOT_FOUND");
+      await authorizeBuilderProject(owner, credentials, project.appId, { skipLiveRead: true });
+      appId = project.appId;
+    }
+    const client = new RuntimeClient(owner.domainId, undefined, owner.userId, appId ? appWorkspaceSlot(appId) : owner.userId);
     const actor = await openAgentCaller(owner, credentials), agent = { providerId: "workbench", agentId: session.agent_id };
     await client.request(`/v1/channel/sessions/${sessionId}/bind`, "POST", { agent, actor });
     const channel: AgentRunContext = { agent, actor, authority: { classNames: a.class_names, executionKind: isAppBuilderKind(a.kind) ? "build-test" : "live" }, requestedBy: null, root: { session: { providerId: "workbench", sessionId }, runId: id }, userRecipient: entry === "human" ? {session: {providerId: "workbench",sessionId: sessionId},actor} : null };
     const context = {
-      ...(session.workspace_id ? { workspaceId: session.workspace_id } : {}),
+      ...(appId ? { appId } : {}),
       ...(input.variables ? { variables: input.variables } : {}),
       ...(entry === "human" && input.pageSkillContext
         ? { pageSkillContext: input.pageSkillContext } : {}),
@@ -469,6 +477,13 @@ export const assistantService = {
       if (e instanceof HttpError && e.status === 404) return { run: null };
       throw e;
     }
+  },
+  async deleteWorkspaceSessions(domainId: string, workspaceId: string) {
+    const { rows } = await db().query<{ id: string; owner_id: string }>(
+      `SELECT id,owner_id FROM ${table("assistant_sessions")} WHERE domain_id=$1 AND workspace_id=$2`,
+      [domainId, workspaceId],
+    );
+    for (const row of rows) await this.delete(row.id, { domainId, userId: row.owner_id });
   },
   async delete(sessionId: string, owner: AssistantOwner) {
     await assistantStore.session(sessionId, owner);
