@@ -4,6 +4,9 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -125,7 +128,7 @@ public class TriggerController {
 		try {
 			User user = SystemUtils.getCurUser();
 			Trigger saved = service.saveDefinition(param, user, lang);
-			ret.put("data", withDisplay(saved, displayContext(user.getDomainId()), lang));
+			ret.put("data", withDisplay(saved, displayContext(user.getDomainId(), List.of(saved)), lang));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
@@ -170,7 +173,7 @@ public class TriggerController {
 			// answer, because the caller has no way to tell the difference and should not learn that it exists.
 			if (trigger == null || !user.getDomainId().equals(trigger.getDomainId()))
 				throw new OwnerRefusal("TRIGGER_NOT_FOUND", langService.get(lang, "Trigger.notFound"));
-			ret.put("data", withDisplay(trigger, displayContext(user.getDomainId()), lang));
+			ret.put("data", withDisplay(trigger, displayContext(user.getDomainId(), List.of(trigger)), lang));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
@@ -228,7 +231,7 @@ public class TriggerController {
 					param == null ? null : param.getBoolean("enabled"),
 					user,
 					lang);
-			ret.put("data", withDisplay(saved, displayContext(user.getDomainId()), lang));
+			ret.put("data", withDisplay(saved, displayContext(user.getDomainId(), List.of(saved)), lang));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
@@ -269,13 +272,17 @@ public class TriggerController {
 			Map<String, String> actionNames,
 			Map<String, String> workflowNames) {}
 
-	private DisplayContext displayContext(String domainId) {
-		return new DisplayContext(subjectNames(domainId), actionNames(domainId), workflowNames(domainId));
+	private DisplayContext displayContext(String domainId, List<Trigger> list) {
+		var ids = list.stream().flatMap(row -> Stream.of(row.getCreatedBy(), row.getReviewedBy(), service.executorOf(row)))
+				.filter(Objects::nonNull).collect(Collectors.toSet());
+		return new DisplayContext(subjectDirectory.displayNamesInDomain(domainId, ids),
+				actionNames(domainId), workflowNames(domainId));
 	}
 
 	private ArrayNode withDisplay(List<Trigger> list, String domainId, String lang) {
-		DisplayContext context = displayContext(domainId);
 		ArrayNode items = objectMapper.createArrayNode();
+		if (list.isEmpty()) return items;
+		DisplayContext context = displayContext(domainId, list);
 		for (Trigger trigger : list) items.add(withDisplay(trigger, context, lang));
 		return items;
 	}
@@ -327,18 +334,6 @@ public class TriggerController {
 		if (kindLabel == null || kindLabel.isBlank()) return target == null ? "" : target;
 		if (target == null || target.isBlank()) return kindLabel;
 		return kindLabel + " · " + target;
-	}
-
-	private Map<String, String> subjectNames(String domainId) {
-		Map<String, String> names = new HashMap<>();
-		for (SubjectDirectory.Subject subject : subjectDirectory.subjectsInDomain(domainId)) {
-			names.put(
-					subject.id(),
-					subject.displayName() == null || subject.displayName().isBlank()
-							? subject.loginCode()
-							: subject.displayName());
-		}
-		return names;
 	}
 
 	private Map<String, String> actionNames(String domainId) {

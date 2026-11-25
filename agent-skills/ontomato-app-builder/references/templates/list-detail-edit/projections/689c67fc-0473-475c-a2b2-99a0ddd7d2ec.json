@@ -1,0 +1,25 @@
+{
+  "componentId": "@ontomato/sdk:ObjectHeader",
+  "inputs": {
+    "target": {
+      "kind": "object",
+      "objectType": "Student"
+    }
+  },
+  "outputs": {},
+  "data": {
+    "record": {
+      "source": {
+        "object": {
+          "input": "target"
+        }
+      },
+      "read": "record",
+      "params": {}
+    }
+  },
+  "config": {},
+  "name": "detail",
+  "description": "detail",
+  "visibility": "domain"
+}

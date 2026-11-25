@@ -1,0 +1,31 @@
+{
+  "componentId": "@ontomato/sdk:ObjectForm",
+  "inputs": {},
+  "outputs": {},
+  "data": {
+    "createForm": {
+      "source": {
+        "type": {
+          "kind": "ObjectType",
+          "id": "Student"
+        }
+      },
+      "read": "createForm",
+      "params": {}
+    }
+  },
+  "config": {
+    "actions": "none"
+  },
+  "operations": {
+    "save": {
+      "operation": {
+        "kind": "Action",
+        "id": "student.create"
+      }
+    }
+  },
+  "name": "createForm",
+  "description": "createForm",
+  "visibility": "domain"
+}

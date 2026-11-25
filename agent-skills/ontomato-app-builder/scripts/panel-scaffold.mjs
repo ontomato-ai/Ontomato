@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { expandInlineProjections } from "./panel-check.mjs";
 import { requireApplicationId } from "./panel-registration.mjs";
 
 const text = { kind: "scalar", type: "string" };
@@ -246,14 +247,11 @@ export function managementPanel(type, checks, typeTable, {
   ].join("\n");
 
   function panel(entry, html, module, state, members, messages) {
-    const panelId = `${id}-${entry}`;
     const manifest = { state, members };
-    checks.panelAuthoringManifestSchema.parse(manifest);
-    const content = { messages: { en: messages } };
-    const material = {
-      panels: [{ id: panelId, mode: "create", input: { name: `${title} (${entry})`, description: "", visibility: "domain" } }],
+    return {
+      id: `${id}-${entry}`, html, module,
+      descriptor: { name: `${title} (${entry})`, description: "", visibility: "domain", manifest, content: { messages: { en: messages } } },
     };
-    return { html, module, manifest, content, material };
   }
 
   const catalog = panel("catalog", catalogHtml, catalogModule, catalogState, catalogMembers, {
@@ -274,28 +272,37 @@ export function managementPanel(type, checks, typeTable, {
     id: `${id}-${entry}-use`, pageKey: `${id}-${entry}`, panelId: `${id}-${entry}`, path,
     access: { kind: "domain-member" },
   });
-  detail.material.applications = [{
-    id, mode: "create", input: {
-      entry: { path: catalogPath, renderer: "panels" },
-      entryAccess: ["domain-member"],
-      declaration: { names: { en: title }, descriptions: { en: `Manage ${title}` }, icon: "app-window", groups: [], permissions: [] },
-      panelUses: [{ ...use("catalog", catalogPath), names: { en: title } }, use("detail", detailPath)],
-    },
-  }];
-  return { catalog, detail, entry: catalogPath };
+  const application = {
+    entry: { path: catalogPath, renderer: "panels" },
+    entryAccess: ["domain-member"],
+    declaration: { names: { en: title }, descriptions: { en: `Manage ${title}` }, icon: "app-window", groups: [], permissions: [] },
+    panelUses: [{ ...use("catalog", catalogPath), names: { en: title } }, use("detail", detailPath)],
+  };
+  return { application, panels: [catalog, detail], entry: catalogPath };
 }
 
-export async function writeManagementPanel(directory, { catalog, detail }) {
+export async function writeManagementPanel(directory, { application, panels }, checks, authoring) {
+  const sources = await Promise.all(panels.map(async ({ id, html, module, descriptor }) => {
+    const path = join(directory, "panels", id);
+    const { manifest, inline } = await expandInlineProjections(
+      join(path, "panel.json"), descriptor.manifest, { id }, checks, () => authoring,
+    );
+    return { path, html, module, descriptor: { ...descriptor, manifest }, projections: inline };
+  }));
   await mkdir(directory);
   const json = value => JSON.stringify(value, null, 2) + "\n";
-  await Promise.all(Object.entries({ catalog, detail }).map(async ([name, { html, module, manifest, content, material }]) => {
-    const entry = join(directory, name);
-    await mkdir(entry);
+  const projectionsDir = join(directory, "projections");
+  await mkdir(projectionsDir);
+  await writeFile(join(directory, "application.json"), json(application));
+  await Promise.all(sources.map(async ({ path, html, module, descriptor, projections }) => {
+    await mkdir(path, { recursive: true });
     await Promise.all([
-      writeFile(join(entry, "panel.html"), html),
-      writeFile(join(entry, "panel.mjs"), module),
-      writeFile(join(entry, "panel.json"), json({ manifest, content })),
-      writeFile(join(entry, "registration.json"), json(material)),
+      writeFile(join(path, "panel.html"), html),
+      writeFile(join(path, "panel.mjs"), module),
+      writeFile(join(path, "panel.json"), json(descriptor)),
+      ...projections.map(({ id, member, input }) => writeFile(join(projectionsDir, `${id}.json`), json({
+        ...input, name: input.name ?? member, description: input.description ?? member, visibility: descriptor.visibility,
+      }))),
     ]);
   }));
 }

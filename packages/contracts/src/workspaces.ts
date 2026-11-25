@@ -7,7 +7,7 @@ export const workspacePathSchema = z.string().min(1).refine(value =>
   value.split("/").every(part => part !== "" && part !== "." && part !== ".." && part.toLowerCase() !== ".git"), "Invalid source path");
 export const workspaceNameSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict();
 export const workspaceFileSchema = z.object({ path: workspacePathSchema, content: z.string(), encoding: z.enum(["utf8", "base64"]) }).strict();
-export const workspaceImportSchema = z.object({ files: z.array(workspaceFileSchema), message: z.string().trim().min(1).max(200) }).strict();
+export const workspaceImportSchema = z.object({ files: z.array(workspaceFileSchema), baseline: z.array(workspaceFileSchema).optional(), message: z.string().trim().min(1).max(200) }).strict();
 export const workspaceRestoreSchema = z.object({ commit: workspaceCommitSchema }).strict();
 export const workspaceReadSchema = z.object({ commit: workspaceCommitSchema.optional() }).strict();
 export const workspaceContentSchema = workspaceReadSchema.extend({ path: workspacePathSchema });

@@ -18,7 +18,7 @@ import type { ProductOwner } from "../product-governance/grants";
 import { requireDirectPanelMember } from "./current";
 import { resolvePinnedInputs } from "./input-wiring";
 import { resolvePanelMemberPath, type ResolvedPanelPathStep } from "./member-path";
-import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
+import { allowsOperationDraft, boundProjectionOperations, isCreateFormRead, type BoundProjectionOperation } from "./operation-bindings";
 import { operationHost } from "./operation-host";
 import {
   describeServerOperation, type PanelOperationActor, type PanelOperationTarget, type PanelRecordTarget,
@@ -192,7 +192,7 @@ async function admitBoundOperation(
     const resolved = await resolveObjectAction(operationHost(actor), { actionId: binding.operation.id });
     const handler: PanelWriteServerOperation = objectActionOperation(resolved);
     const createFormTypes = Object.values(projection.data).flatMap(datum =>
-      datum.read === "createForm" && "type" in datum.source ? [datum.source.type.id] : []);
+      isCreateFormRead(datum.source, datum.read) && "type" in datum.source ? [datum.source.type.id] : []);
     const affects = [...new Set([...resolved.affects, ...createFormTypes])];
     return {
       effect: "write" as const,

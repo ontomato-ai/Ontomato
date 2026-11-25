@@ -11,7 +11,7 @@ const props = defineProps<{ workspaceId: string }>();
 const { locale, t } = useI18n();
 
 const workspacePath = computed(() => `/workspaces/${encodeURIComponent(props.workspaceId)}`);
-const back = computed(() => ({ path: "/app-builder/workspace", query: { workspace: props.workspaceId } }));
+const back = "/app-builder";
 const refresh = ref(0);
 const preview = shallowRef<{ src: string; context: ReturnType<typeof buildExecutionContext> } | null>(null);
 const context = shallowRef<ReturnType<typeof buildExecutionContext> | null>(null);

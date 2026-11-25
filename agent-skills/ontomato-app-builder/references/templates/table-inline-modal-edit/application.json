@@ -1,0 +1,32 @@
+{
+  "entry": {
+    "path": "/applications/app-course-catalogue/courses",
+    "renderer": "panels"
+  },
+  "entryAccess": [
+    "domain-member"
+  ],
+  "declaration": {
+    "descriptions": {},
+    "groups": [],
+    "permissions": [],
+    "names": {
+      "en": "Course catalogue"
+    },
+    "icon": "book"
+  },
+  "panelUses": [
+    {
+      "id": "app-course-catalogue-courses",
+      "pageKey": "app-course-catalogue-courses",
+      "panelId": "template-course-catalogue",
+      "path": "/applications/app-course-catalogue/courses",
+      "access": {
+        "kind": "domain-member"
+      },
+      "names": {
+        "en": "Courses"
+      }
+    }
+  ]
+}

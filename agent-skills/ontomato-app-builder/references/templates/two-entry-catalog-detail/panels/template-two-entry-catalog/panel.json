@@ -1,0 +1,45 @@
+{
+  "name": "Agent Definitions (Catalog)",
+  "description": "Catalog entry template with centered create dialog",
+  "visibility": "domain",
+  "manifest": {
+    "state": {
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "personal": false,
+        "deepLink": false,
+        "external": false,
+        "default": false
+      }
+    },
+    "members": {
+      "list": {
+        "target": {
+          "projectionId": "c34abfa7-b1fc-4cb8-b13c-c89ed046e714"
+        }
+      },
+      "createForm": {
+        "target": {
+          "projectionId": "d368bfd0-f151-4822-b993-9d074007546c"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Agent Definitions",
+        "column.name": "Name",
+        "command.new": "New Agent Definition"
+      },
+      "zh-CN": {
+        "panel.name": "智能体定义",
+        "column.name": "名称",
+        "command.new": "新建智能体定义"
+      }
+    }
+  }
+}

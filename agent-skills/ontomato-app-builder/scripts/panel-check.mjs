@@ -191,7 +191,7 @@ function formatManifestIssues(descriptorFile, manifest, error) {
   return lines.join("\n");
 }
 
-async function expandInlineProjections(descriptorFile, manifest, panel, checks, loadAuthoring, loadPackage, loadDomainComponent) {
+export async function expandInlineProjections(descriptorFile, manifest, panel, checks, loadAuthoring, loadPackage, loadDomainComponent) {
   const declared = Object.entries(manifest?.members ?? {}).filter(([, member]) => member?.component !== undefined);
   if (!declared.length) return { manifest, inline: [], charts: new Map() };
   for (const [member, item] of declared) {
@@ -236,7 +236,7 @@ async function expandInlineProjections(descriptorFile, manifest, panel, checks, 
 }
 
 async function workspaceDefinition(
-  directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent,
+  directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent, appSource = false,
 ) {
   const descriptorFile = resolve(directory, "panel.json");
   const source = await readFile(descriptorFile, "utf8");
@@ -253,6 +253,7 @@ async function workspaceDefinition(
   const sources = [
     ["html", "panel.html"],
     ...(files.includes("panel.mjs") ? [["module", "panel.mjs"]] : []),
+    ...(files.includes("panel.css") ? [["style", "panel.css"]] : []),
     ...(files.includes("recipes.md") ? [["recipes", "recipes.md"]] : []),
   ];
   const contents = await Promise.all(sources.map(async ([key, file]) => [
@@ -263,7 +264,8 @@ async function workspaceDefinition(
     : [];
   if (themeViolations.length) throw new Error(formatAuthoringViolations(themeViolations));
 
-  const result = checks.panelDefinitionContentSchema.safeParse({
+  const schema = appSource ? checks.registerProductPanelRequestSchema.omit({ revision: true }) : checks.panelDefinitionContentSchema;
+  const result = schema.safeParse({
     ...descriptor, manifest: expanded.manifest, content: { ...content, ...Object.fromEntries(contents) },
   });
   if (result.success) {
@@ -433,6 +435,9 @@ async function workspaceRegistration({ panel, inline, material, definition }, cl
 }
 
 export async function registerPanelWorkspace(directory, materialPath, checks, client, onRegistered, loadAuthoring, loadPackage, loadDomainComponent) {
+  if ((await readdir(directory)).includes("application.json")) {
+    throw new Error("Publish application source through the Application Builder page after user confirmation.");
+  }
   const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent);
   const material = await workspaceRegistration(workspace, client, checks);
   const { document, descriptorFile, source, inline, charts } = workspace;
@@ -463,33 +468,109 @@ export async function registerPanelWorkspace(directory, materialPath, checks, cl
   return result;
 }
 
-export async function checkPanelWorkspace(directory, {
-  checks, catalogue, version, digest, typeTable, lookup, findChartSource, materialPath, loadPackage, loadDomainComponent,
-}) {
+async function sourceEntries(directory) {
+  try {
+    return await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return [];
+  }
+}
+
+async function readApplicationWorkspace(directory, checks) {
+  const file = resolve(directory, "application.json");
+  const application = await readJson(file);
+  if (application?.entry?.renderer !== "panels" || !application.declaration?.names) {
+    throw new Error(`${file}: expected an application declaration and a panels entry`);
+  }
+  const { shape } = checks.applicationCatalogueRecordSchema;
+  const result = checks.applicationCatalogueRecordSchema.pick({
+    entry: true, panelUses: true, entryAccess: true, allowStandalone: true, framePanelId: true, theme: true, delivery: true,
+  }).extend({
+    declaration: checks.applicationIdentityUpdateSchema.omit({ allowStandalone: true }).extend({ groups: shape.groups }).passthrough(),
+  }).safeParse(application);
+  if (!result.success) throw new Error(`${file}: ${result.error.message}`);
+
+  const panelsDir = resolve(directory, "panels");
+  const workspaces = [];
+  const panels = new Map();
+  for (const entry of await sourceEntries(panelsDir)) {
+    if (!entry.isDirectory()) continue;
+    const panelDir = resolve(panelsDir, entry.name);
+    const files = await readdir(panelDir);
+    if (!files.includes("panel.json")) continue;
+    requireDomainProductId(panelDir, entry.name, checks);
+    const workspace = await workspaceDefinition(panelDir, files, checks, undefined, undefined, undefined, undefined, true);
+    workspace.panel = { id: entry.name };
+    workspaces.push(workspace);
+    panels.set(entry.name, workspace.definition);
+  }
+  const projections = new Map();
+  const projectionsDir = resolve(directory, "projections");
+  for (const entry of await sourceEntries(projectionsDir)) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const file = resolve(projectionsDir, entry.name);
+    const id = entry.name.slice(0, -5);
+    requireDomainProductId(file, id, checks);
+    const result = checks.productProjectionInputSchema.safeParse(await readJson(file));
+    if (!result.success) throw new Error(`${file}: ${result.error.message}`);
+    projections.set(id, result.data);
+  }
+  return { application, workspaces, records: new Map([["panel", panels], ["projection", projections]]) };
+}
+
+export async function checkPanelWorkspace(directory, options) {
+  const { checks, catalogue, version, digest, typeTable, lookup, materialPath, loadPackage, loadDomainComponent } = options;
   if (catalogue.version !== version) {
     throw new Error(`Expected SDK catalogue ${version}, found ${catalogue.version}`);
+  }
+  const unchecked = [];
+  if ((await readdir(directory)).includes("application.json")) {
+    if (materialPath !== undefined) throw new Error("--material is only for legacy panel directories");
+    const { application, workspaces, records } = await readApplicationWorkspace(directory, checks);
+    const applications = [{ id: directory, input: application }];
+    await checkFrameBindings(applications, records, lookup, unchecked);
+    for (const workspace of workspaces) {
+      await checkWorkspacePanel(workspace, applications, records, options, unchecked);
+    }
+    const references = [
+      ["panel", new Set([application.framePanelId, ...application.panelUses.map(use => use.panelId), ...application.delivery?.panels ?? []])],
+      ["projection", new Set(application.delivery?.projections)],
+    ];
+    for (const [kind, ids] of references) {
+      for (const id of ids) {
+        if (id === undefined || records.get(kind).has(id) || unchecked.some(item => item.kind === kind && item.id === id)) continue;
+        const record = await lookup?.(kind, id);
+        if (record === null) throw new Error(`${resolve(directory, "application.json")}: ${kind} ${id} was not found in the source or on the platform`);
+        if (record === undefined) unchecked.push({ kind, id });
+      }
+    }
+    return { status: "valid", version, ...(digest && { digest }), unchecked };
   }
   const loadAuthoring = typeTable && (() => ({ catalogue, typeTable }));
   const workspace = await readPanelWorkspace(
     directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent,
   );
-  const { manifest } = workspace.definition;
   const material = workspace.panel ? await workspaceRegistration(workspace) : workspace.material;
   const records = new Map(
     panelRegistrationRecords(material, checks).map(([kind, items]) => [
       kind, new Map(items.map(({ id, body }) => [id, body])),
     ]),
   );
-  const unchecked = [];
-  for (const { id, input: { framePanelId, panelUses } } of material.applications ?? []) {
+  const applications = material.applications ?? [];
+  await checkFrameBindings(applications, records, lookup, unchecked);
+  await checkWorkspacePanel(workspace, applications, records, options, unchecked);
+  return { status: "valid", version, ...(digest && { digest }), unchecked };
+}
+
+async function checkFrameBindings(applications, records, lookup, unchecked) {
+  for (const { id, input: { framePanelId, panelUses } } of applications) {
     if (!framePanelId) continue;
     const bindings = panelUses.flatMap(({ pageKey, inputs }) =>
       Object.entries(inputs ?? {}).filter(([, source]) => "frameState" in source)
         .map(([name, { frameState }]) => [pageKey, name, frameState]));
     if (!bindings.length) continue;
-    const frame = framePanelId === workspace.panel?.id
-      ? manifest
-      : (records.get("panel").get(framePanelId) ?? await lookup?.("panel", framePanelId))?.manifest;
+    const frame = (records.get("panel").get(framePanelId) ?? await lookup?.("panel", framePanelId))?.manifest;
     if (!frame) {
       unchecked.push({ kind: "panel", id: framePanelId, reason: "Frame state bindings require the frame manifest" });
       continue;
@@ -500,6 +581,13 @@ export async function checkPanelWorkspace(directory, {
       }
     }
   }
+}
+
+async function checkWorkspacePanel(workspace, applications, records, {
+  checks, catalogue, typeTable, lookup, findChartSource, loadPackage, loadDomainComponent,
+}, unchecked) {
+  const { manifest } = workspace.definition;
+  const { descriptorFile } = workspace;
   const unregisteredCharts = new Set();
   for (const [member, declaration] of workspace.charts) {
     const projection = await findChartSource?.(declaration.sourceCard);
@@ -535,7 +623,7 @@ export async function checkPanelWorkspace(directory, {
     const record = records.get(kind)?.get(id) ?? (lookup && await lookup(kind, id));
     resolvedReferences.set(`${kind}:${id}`, record);
     if (record === null) {
-      throw new Error(`${resolve(directory, "panel.json")}: ${kind} ${id} was not found in the material or on the platform`);
+      throw new Error(`${descriptorFile}: ${kind} ${id} was not found in the material or on the platform`);
     } else if (record === undefined) {
       unchecked.push({ kind, id });
     } else if (kind === "projection") {
@@ -547,7 +635,7 @@ export async function checkPanelWorkspace(directory, {
           ? release.components.find(entry => entry.componentId === record.componentId)
           : components.get(record.componentId);
       if (!component) {
-        throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable component ${record.componentId}`);
+        throw new Error(`${descriptorFile}: projection ${id} uses unavailable component ${record.componentId}`);
       }
       checkProjectionData(id, record, component, checks);
       if (typeTable) checkOperations(id, record, typeTable, placements.get(id), manifest.state, checks);
@@ -558,7 +646,7 @@ export async function checkPanelWorkspace(directory, {
         if (missing.length) {
           const members = placements.get(id).map(([member]) => member).join(", ");
           const where = missing.map(({ locale }) => locale ?? "any locale").join(", ");
-          throw new Error(`${resolve(directory, "panel.json")}: member ${members} (projection ${id}) prefillKey '${missing[0].key}' is not in content.messages (${where})`);
+          throw new Error(`${descriptorFile}: member ${members} (projection ${id}) prefillKey '${missing[0].key}' is not in content.messages (${where})`);
         }
       }
     }
@@ -567,7 +655,7 @@ export async function checkPanelWorkspace(directory, {
   async function resolveReference(kind, id) {
     const key = `${kind}:${id}`;
     if (!resolvedReferences.has(key)) {
-      resolvedReferences.set(key, records.get(kind).get(id) ?? await lookup?.(kind, id));
+      resolvedReferences.set(key, records.get(kind)?.get(id) ?? await lookup?.(kind, id));
     }
     return resolvedReferences.get(key);
   }
@@ -595,9 +683,9 @@ export async function checkPanelWorkspace(directory, {
     return unresolved ? undefined : false;
   }
 
-  for (const { id: appId, input: { framePanelId, panelUses } } of material.applications ?? []) {
+  for (const { id: appId, input: { framePanelId, panelUses } } of applications) {
     const frameHasAgentChat = framePanelId === undefined ? false : await panelContainsAgentChat(framePanelId);
-    for (const use of panelUses) {
+    for (const use of panelUses ?? []) {
       if (use.kind === "frame-conversation") {
         checks.frameConversationEntrySchema.parse(use);
         if (frameHasAgentChat === false) {
@@ -616,7 +704,6 @@ export async function checkPanelWorkspace(directory, {
       unchecked.push({ kind: "panel", id: framePanelId, reason: "Application entry validation requires the frame's AgentChat placements" });
     }
   }
-  const descriptorFile = resolve(directory, "panel.json");
   for (const [tag, componentId] of Object.entries(manifest.components ?? {})) {
     if (loadDomainComponent) {
       const component = await loadDomainComponent(componentId);
@@ -625,7 +712,6 @@ export async function checkPanelWorkspace(directory, {
       }
     }
   }
-  return { status: "valid", version, ...(digest && { digest }), unchecked };
 }
 
 export function describePanelType(typeTable, id, readName = null) {

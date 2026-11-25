@@ -10,7 +10,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AGENT_SESSION, APP_WORKSPACE, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, DSL_QUERY, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
+  AGENT_SESSION, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, DSL_QUERY, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
   MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, OPS_KNOWLEDGE, PUBLISHED_MCP_SERVICE, RECENT_VISIT, TURN_EVIDENCE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD, DASHBOARD_CARD, FUNCTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
@@ -35,7 +35,7 @@ import {
 import { createExternalMcpReads } from "../mcp/external-mcp-panel";
 import { readPublishedMcpService, readPublishedMcpServices, readPublishedMcpServiceTools } from "../mcp/panel-reads";
 import type { McpRequestLocation } from "../mcp/catalog";
-import { AppWorkspaceOwner } from "../app-builder/panel-reads";
+import { createApplicationBuilderReadAdapter } from "../app-builder/application-panel-reads";
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
 import { createDashboardCardOwnerReadAdapter, createDashboardReadAdapter } from "../dashboard/panel-reads";
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
@@ -149,7 +149,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
   const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
   const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
-  const workspaces = new AppWorkspaceOwner(owner, viewer);
   const dashboards = createDashboardReadAdapter(owner, viewer);
   const cards = createDashboardCardReadAdapter(owner, viewer);
   const cardOwnerReads = createDashboardCardOwnerReadAdapter(owner, viewer);
@@ -165,6 +164,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const projectionCatalogue = createProductProjectionReadAdapter(owner, viewer);
   const panelCatalogue = createProductPanelReadAdapter(owner, viewer);
   const applications = createApplicationReadAdapter(owner, viewer);
+  const appBuilder = createApplicationBuilderReadAdapter(owner, viewer);
   const catalogueReads = (adapter: typeof projectionCatalogue | typeof panelCatalogue): Record<string, ReadAdapter> => ({
     query: (_selection, params) => adapter.query(params),
     record: selection => adapter.record(selection.primaryKey!),
@@ -348,19 +348,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       record: selection => functions.record(selection.primaryKey!),
       form: (selection, params) => functions.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => functions.createForm(formParams(params)),
-    },
-    [APP_WORKSPACE]: {
-      list: (_selection, params) => workspaces.list(params),
-      record: ({ primaryKey }) => workspaces.record(primaryKey!),
-      createForm: (_selection, params) => workspaces.createForm(formParams(params).values),
-      form: ({ primaryKey }, params) => workspaces.form(primaryKey!, formParams(params).values),
-      files: ({ primaryKey }, params) => workspaces.files(primaryKey!, params),
-      file: ({ primaryKey }, params) => workspaces.file(primaryKey!, params),
-      commits: ({ primaryKey }, params) => workspaces.commits(primaryKey!, params),
-      diff: ({ primaryKey }, params) => workspaces.diff(primaryKey!, params),
-      sessions: ({ primaryKey }) => workspaces.sessions(primaryKey!),
-      releases: ({ primaryKey }) => workspaces.releases(primaryKey!),
-      publishForm: ({ primaryKey }, params) => workspaces.publishForm(primaryKey!, formParams(params).values),
     },
     [DASHBOARD]: {
       list: () => dashboards.list(),
@@ -613,6 +600,21 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
         entryId: panelReadParameterSchemas.applicationEntryId.optional().parse(params.entryId),
       }),
       createForm: (_selection, params) => applications.createForm(formParams(params)),
+      builderProjects: (_selection, params) => appBuilder.builderProjects(params),
+      builderProject: selection => appBuilder.builderProject(selection.primaryKey!),
+      builderSessions: (selection, params) => appBuilder.builderSessions(selection.primaryKey!, params),
+      sourceFiles: (selection, params) => appBuilder.sourceFiles(selection.primaryKey!, params),
+      sourceFile: (selection, params) => appBuilder.sourceFile(selection.primaryKey!, params),
+      sourceCommits: (selection, params) => appBuilder.sourceCommits(selection.primaryKey!, params),
+      sourceDiff: (selection, params) => appBuilder.sourceDiff(selection.primaryKey!, params),
+      sourceReleases: selection => appBuilder.sourceReleases(selection.primaryKey!),
+      builderCreateForm: (_selection, params) => appBuilder.builderCreateForm(formParams(params).values),
+      builderMetaForm: (selection, params) => appBuilder.builderMetaForm(selection.primaryKey!, formParams(params).values),
+      builderPublishForm: (selection, params) => appBuilder.builderPublishForm(
+        selection.primaryKey!,
+        formParams(params).values,
+        panelReadParameterSchemas.workspaceCommit.optional().parse(params.defaultCommit),
+      ),
     },
     [ONTOLOGY_TYPE]: {
       schema: async () => (await ontology()).schema(),
@@ -667,6 +669,16 @@ async function resolveReadMember(
   if (source.kind === "candidate") {
     const { resolvePanelCandidateMember } = await import("../workspaces/panel-candidate");
     const { panel, member, projection, previewContext } = await resolvePanelCandidateMember(owner, viewer, source.workspace, memberPath);
+    const headers = { ...viewer.headers, [BUILD_TEST_HEADER]: JSON.stringify({
+      kind: "build-test", contextId: previewContext.test?.contextId ?? null,
+    }) };
+    return { member, projection, panel, inputs: request.inputs, viewer: { ...viewer, headers } };
+  }
+  if (source.kind === "app-candidate") {
+    const { resolveApplicationPreviewMember } = await import("../app-builder/preview-service");
+    const { panel, member, projection, previewContext } = await resolveApplicationPreviewMember(
+      owner, viewer, source.app.id, { ref: source.app.ref, entryId: source.app.entryId }, memberPath,
+    );
     const headers = { ...viewer.headers, [BUILD_TEST_HEADER]: JSON.stringify({
       kind: "build-test", contextId: previewContext.test?.contextId ?? null,
     }) };
@@ -854,7 +866,9 @@ export async function readProductPanelData(
     }
     const readScopeKey = request.source.kind === "candidate"
       ? JSON.stringify(["candidate", request.source.workspace.id, request.source.workspace.ref, readViewer.headers?.[BUILD_TEST_HEADER] ?? null])
-      : "registered";
+      : request.source.kind === "app-candidate"
+        ? JSON.stringify(["app-candidate", request.source.app.id, request.source.app.ref, request.source.app.entryId ?? null, readViewer.headers?.[BUILD_TEST_HEADER] ?? null])
+        : "registered";
     const outcome = await executeProjectionDataRead(
       owner, readViewer, { member, projection, slot }, request.dataName, submittedInputs, request.runtimeParams, callerUserName, location,
       batchCache, readScopeKey,
@@ -928,7 +942,9 @@ export async function readProductPanelDataBatch(
   const registeredViewer = previewHeader === undefined ? credentials
     : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: previewHeader } };
   const batchCache = new PanelReadBatchCache(owner, registeredViewer);
-  const registered = requests.flatMap(({ source, memberPath }) => source.kind === "candidate" ? [] : [{ source, memberPath }]);
+  const registered = requests.flatMap(({ source, memberPath }) =>
+    source.kind === "candidate" || source.kind === "app-candidate" ? [] : [{ source, memberPath }],
+  );
 
   const entries = await Promise.allSettled(registered.map(async request =>
     registeredPanelRootId(request.source, await batchCache.entry(request.source))));
@@ -948,6 +964,8 @@ export async function readProductPanelDataBatch(
     member.status === "fulfilled" && member.value ? [member.value] : []));
 
   return Promise.all(requests.map(request => readProductPanelData(
-    owner, request.source.kind === "candidate" ? credentials : registeredViewer, request, callerUserName, location, batchCache,
+    owner,
+    request.source.kind === "candidate" || request.source.kind === "app-candidate" ? credentials : registeredViewer,
+    request, callerUserName, location, batchCache,
   )));
 }

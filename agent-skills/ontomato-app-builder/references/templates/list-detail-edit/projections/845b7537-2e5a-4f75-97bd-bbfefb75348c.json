@@ -1,0 +1,38 @@
+{
+  "componentId": "@ontomato/sdk:ObjectForm",
+  "inputs": {
+    "target": {
+      "kind": "object",
+      "objectType": "Student"
+    }
+  },
+  "outputs": {},
+  "data": {
+    "form": {
+      "source": {
+        "object": {
+          "input": "target"
+        }
+      },
+      "read": "form",
+      "params": {}
+    }
+  },
+  "config": {
+    "actions": "none"
+  },
+  "operations": {
+    "save": {
+      "operation": {
+        "kind": "Action",
+        "id": "student.update"
+      },
+      "target": {
+        "input": "target"
+      }
+    }
+  },
+  "name": "editForm",
+  "description": "editForm",
+  "visibility": "domain"
+}

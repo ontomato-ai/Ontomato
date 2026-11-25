@@ -1,6 +1,6 @@
 ---
 name: ontomato-app-builder
-description: "Compose, check and register panel applications with the Ontomato SDK. Use when building a panel or moving an existing page into the product layer."
+description: "Compose and check panel application source with the Ontomato SDK. Use when building a panel or moving an existing page into the product layer."
 ---
 
 # Ontomato app builder
@@ -17,9 +17,9 @@ Build an application in three stages:
 1. **Model the ontology and load data** — classes, properties, relations, and business records.
 2. **Define capabilities, workflows, agents, and permissions** — MetricViews for calculated reads, Actions/Workflows
    for writes, roles/grants, and Agents where needed.
-3. **Assemble, check, and register panels (this skill)** — inspect available reads and operations (`panel type`), pick
+3. **Assemble and check application source (this skill)** — inspect available reads and operations (`panel type`), pick
    components from the two-layer SDK catalogue (`sdk read docs/components.md` → `sdk read docs/components/<Name>.md`),
-   author panels, run `panel check`, and register with `panel register`.
+   write the [application source tree](GUIDE.md#application-source), run `panel check`, and commit the changes.
 
 **What other skills handle:**
 
@@ -31,9 +31,15 @@ Build an application in three stages:
 | Set up organizations, roles, and API/menu/data permissions | `ontomato-process-admin` |
 | Data retrieval, Q&A, and agent analysis | `ontomato-analyst`, `ontomato-analyst-assistant` (configure agents in platform agent settings / `platform:AgentDefinition`) |
 
+## Publishing and synchronization
+
+Edit and commit application source files. Publish and synchronize through the registered Application Builder
+page operations. Under section 2.4.2 an agent may request either operation, and the page submits it after
+the user confirms. Use this flow for changes to a published application.
+
 ## Essential commands
 
-Run through `node "$SKILL/scripts/ontomato.mjs"` (run `panel check` before registering — it validates manifest
+Run through `node "$SKILL/scripts/ontomato.mjs"` (the checker validates manifest
 structure, allowed imports, CSS/UI guardrails, and bindings automatically):
 
 ```text
@@ -42,9 +48,8 @@ sdk read docs/components.md              # grouped overview of panel-usable comp
 sdk read docs/components/<Name>.md       # one component's full data, config, slots, and events
 panel type <id> [--read <name>]          # object type reads, parameters, resultSchema, and operations
 panel projections [--component <id>] [--object-type <typeId>] [--q <text>]  # find reusable projections
-panel scaffold <type> <new-dir>          # scaffold catalog/ and detail/ panels
+panel scaffold <type> <new-dir>          # scaffold an application with catalog and detail panels
 panel check <dir>                        # validate sources, declarations, and bindings
-panel register <dir>                     # register projections, panel, and application
 ```
 
 There is no `sdk list` or top-level `read ObjectType`. For `<sdk-*>` UI primitives and `--sdk-*` theme tokens, read
@@ -79,7 +84,7 @@ Start here: pick the row for your task and read only that recipe or component pa
 | Put a conversation entry or embedded agent chat pointing to an agent on a page | [Conversation entries](references/panel-authoring/recipes/conversation-entries.md) · `sdk read docs/components/ConversationEntry.md` · `sdk read docs/components/AgentChat.md` |
 | Handle narrow containers, availability gating, and compact slot projections | [Availability & narrow containers](references/panel-authoring/recipes/availability-and-narrow-containers.md) |
 | Run `panel check` offline against an installed SDK release | [Offline check & SDK docs](references/panel-authoring/recipes/offline-check-and-sdk-docs.md) |
-| Register projections, panels, and application entries (`panel.json` / `registration.json`) | [Register & open](references/panel-authoring/recipes/register-and-open.md) · [Member fields](references/panel-authoring/FIELDS.md) |
+| Check, preview, and publish application source | [Check & open](references/panel-authoring/recipes/register-and-open.md) · [Application source](GUIDE.md#application-source) |
 | Debug a blank panel, empty list, or form that will not fill or save | [Troubleshooting](references/panel-authoring/recipes/troubleshooting.md) |
 | Understand what the page assistant receives and verify assistant control | [Assistant context](references/panel-authoring/recipes/assistant-context.md) · [Runtime hooks](references/panel-authoring/RUNTIME.md) |
 | Author customer Actions / MetricViews, CLI contract, or business tests | [Technical guide](GUIDE.md) · [Management page recipes](references/management-pages.md) · [Full standard](references/app-standard/references/standard.md) |

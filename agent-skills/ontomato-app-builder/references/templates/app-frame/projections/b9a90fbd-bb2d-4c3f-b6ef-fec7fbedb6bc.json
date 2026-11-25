@@ -1,0 +1,32 @@
+{
+  "componentId": "@ontomato/sdk:ObjectCount",
+  "inputs": {
+    "search": {
+      "kind": "scalar",
+      "type": "string"
+    }
+  },
+  "outputs": {},
+  "data": {
+    "rows": {
+      "source": {
+        "type": {
+          "kind": "ObjectType",
+          "id": "Course"
+        }
+      },
+      "read": "query",
+      "params": {
+        "search": {
+          "input": "search"
+        }
+      }
+    }
+  },
+  "config": {
+    "appearance": "badge"
+  },
+  "name": "courses",
+  "description": "courses",
+  "visibility": "domain"
+}

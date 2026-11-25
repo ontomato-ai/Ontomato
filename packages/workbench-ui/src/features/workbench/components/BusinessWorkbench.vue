@@ -20,8 +20,7 @@ import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import { useDashboardStore } from "../../dashboard";
 import { formatRelativeTime } from "../../../utils/relative-time";
-import { ChevronDown, ClipboardList, GitCommitHorizontal, LayoutDashboard, ListTodo, MoreHorizontal, X } from "lucide-vue-next";
-import { workspaceIdSchema } from "@ontomato/contracts/workspaces";
+import { ChevronDown, ClipboardList, LayoutDashboard, ListTodo, MoreHorizontal, X } from "lucide-vue-next";
 import { agentHostSessionPageSchema, type AgentHostSession } from "@ontomato/contracts/agent-host";
 import { nodeApiGet } from "../../../utils/api";
 import DatasetActions from "./DatasetActions.vue";
@@ -63,8 +62,6 @@ const route = useRoute();
 const router = useRouter();
 const client = createAssistantClient(undefined, {
   excludeGovernance: Boolean(props.internalPages),
-  workspaceIdForAgent: id => nav.currentAgent.value?.id === id && nav.currentAgent.value.workspaceBound
-    ? workspaceFromPage(pageAddress.value) : undefined,
 });
 const feedback = createAssistantFeedback();
 const panelOperations = createPanelOperationSettings();
@@ -177,16 +174,6 @@ watch(
 const pilotPage = computed(() => (display.page.value ? pilot(display.page.value.address) : null));
 const pageAddress = computed(() => display.page.value?.address ?? null);
 
-function workspaceFromPage(address: string | null) {
-  if (!address) return;
-  const resolved = router.resolve(address);
-  if (resolved.path === "/app-builder/workspace") return workspaceIdSchema.safeParse(resolved.query.workspace).data;
-}
-
-function openWorkspaceCommit(workspaceId: string, commit: string) {
-  const query = new URLSearchParams({ workspace: workspaceId, tab: "changes", diffTarget: commit });
-  void display.navigate(`/app-builder/workspace?${query}`, { view: "side", history: "push" });
-}
 const inAgentSettings = computed(() => {
   const path = pageAddress.value?.split("?")[0];
   return path === routes.agents.path || path === `${routes.agents.path}/detail`;
@@ -596,10 +583,7 @@ async function openRequestedAgent() {
       placingFrom = null;
       return;
     }
-    const workspaceId = workspaceFromPage(page);
-    const continuing = held !== null && nav.sessions.value.some((row) =>
-      row.id === held && (!workspaceId || row.workspaceId === workspaceId),
-    );
+    const continuing = held !== null && nav.sessions.value.some((row) => row.id === held);
     if (continuing) nav.selectSession(held);
     else nav.startNew();
   }
@@ -790,17 +774,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <DatasetActions :artifact="artifact" :title="title" @open-dashboard="openDashboardApplication" />
       <ChartFileActions :artifact="artifact" :title="title" :caption="caption" @open-dashboard="openDashboardApplication" />
     </template>
-    <template #message-actions="{ sessionId, runId, workspaceCommit, workspaceId }">
-      <button
-        v-if="workspaceCommit && workspaceId"
-        class="workspace-commit"
-        type="button"
-        :title="t('appBuilder.viewChanges')"
-        @click="openWorkspaceCommit(workspaceId, workspaceCommit)"
-      >
-        <GitCommitHorizontal :size="15" aria-hidden="true" />
-        {{ workspaceCommit.slice(0, 7) }}
-      </button>
+    <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="!internalPages && sessionId && runId" :session-id="sessionId" :run-id="runId" />
     </template>
   </AgentShell>
@@ -814,23 +788,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
 </template>
 
 <style scoped>
-.workspace-commit {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--radius-sm);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-.workspace-commit:hover {
-  color: var(--el-color-primary);
-}
-
 .brand {
   display: flex;
   align-items: center;

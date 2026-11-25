@@ -144,7 +144,7 @@ const readCurrentUser = () => {
 const view = usePanelInstance(props.port, {
   labels: props.labels,
   label: (source) => {
-    if (source.kind === "candidate") return props.label!;
+    if (source.kind !== "registered") return props.label!;
     const name = productPanelDisplayName(source.panel, props.language.locale, props.language.fallback);
     return props.label ? `${props.label} · ${name}` : name;
   },

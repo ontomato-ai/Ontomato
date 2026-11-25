@@ -8,7 +8,7 @@ import { currentAppSdk } from "./sdk";
 import { agentVisibilityPrompt } from "../agent-host/visibility";
 import { publishSkill, workbenchBuiltinSkillRoot } from "../agent-runtime/skills";
 
-export async function prepareAppBuilderRun({ a, session, turn, input, owner, credentials, reader, pageSkillContext }: AssistantPreparation): Promise<RuntimeStartRunRequest> {
+export async function prepareAppBuilderRun({ a, turn, input, owner, credentials, reader, pageSkillContext }: AssistantPreparation, appId?: string): Promise<RuntimeStartRunRequest> {
   const sdk = await currentAppSdk();
   const prepared = pageSkillContext
     ? await (await import("../assistant/skills")).prepareCurrentPageSkill(owner.domainId, credentials, pageSkillContext, owner.userId)
@@ -17,14 +17,13 @@ export async function prepareAppBuilderRun({ a, session, turn, input, owner, cre
   const currentPage = prepared?.currentPage;
   const pageControl = prepared !== null;
   const skills = [...intrinsic, ...(prepared ? [prepared.skill] : [])].map(({ skill, digest }) => ({ skill, digest }));
-  const workspacePage = `/app-builder/workspace?workspace=${session.workspace_id}`;
   return {
     language: credentials.locale ?? "en",
     input,
     definition: { agentId: a.id, ...runDefinition(
-      [effectiveSystemPrompt({...a,kind:APP_BUILDER.kind}), ...(reader ? [agentVisibilityPrompt(reader)] : []),
+      [effectiveSystemPrompt({ ...a, kind: APP_BUILDER.kind }, credentials.locale), ...(reader ? [agentVisibilityPrompt(reader)] : []),
+        ...(appId ? ["Application ID: " + appId] : []),
         "Current SDK (browser paths):\n" + JSON.stringify(sdk),
-        `Use the present tool to open ${workspacePage} beside the conversation when the user needs to inspect this workspace.`,
         ...(currentPage ? ["Current panel placement for this turn (data):\n" + JSON.stringify(currentPage)] : [])].join("\n\n"),
       a.model_selection.modelId, skills, credentials.locale, [], pageControl,
     ) },

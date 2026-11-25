@@ -23,10 +23,8 @@ import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/p
 
 const mocks = vi.hoisted(() => ({
   nodeApiGet: vi.fn(),
-  nodeApiPost: vi.fn(),
   registerBuildPreview: vi.fn(),
-  candidateSource: vi.fn(),
-  candidatePanelHost: vi.fn(),
+  appCandidatePanelHost: vi.fn(),
   panelHostHandlers: null as null | {
     emitContext: (ctx: PageContext) => void;
     emitAddress: (input: DisplayPageAddressInput) => void;
@@ -41,7 +39,6 @@ vi.mock("@ontomato/workbench-ui", async (importOriginal) => {
     ...actual,
     apiUrl: (path: string) => `about:blank#${encodeURIComponent("/api" + path)}`,
     nodeApiGet: mocks.nodeApiGet,
-    nodeApiPost: mocks.nodeApiPost,
   };
 });
 
@@ -50,7 +47,7 @@ vi.mock("../app-host", () => ({
 }));
 
 vi.mock("../panel-host", () => ({
-  candidatePanelHost: mocks.candidatePanelHost,
+  appCandidatePanelHost: mocks.appCandidatePanelHost,
 }));
 
 vi.mock("@ontomato/platform-shell", async (importOriginal) => {
@@ -159,9 +156,9 @@ function mountPreview(
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.panelHostHandlers = null;
-  mocks.candidatePanelHost.mockImplementation((candidate: { id: string; ref: string; pageKey: string }) => ({
-    source: mocks.candidateSource,
-    pageKey: candidate.pageKey,
+  mocks.appCandidatePanelHost.mockImplementation((candidate: unknown, pageKey: string) => ({
+    source: async () => candidate,
+    pageKey,
     use: null,
     panel: vi.fn(),
     release: vi.fn(),
@@ -518,31 +515,53 @@ describe("Platform createPanelPreviewHost", () => {
     expect(disposeBinding).toHaveBeenCalledTimes(1);
   });
 
-  it("defaultResolvePreview resolves candidate panel, falls back to hosted preview on 404, detects legacy-sdk, and never falls back on 403", async () => {
+  it("defaultResolvePreview resolves application panel candidate, hosted preview, empty, legacy-sdk, and 403 error", async () => {
+    const appId = "app-demo";
     const workspaceId = "22222222-2222-4222-8222-222222222222";
+    const candidatePayload = {
+      kind: "app-candidate" as const,
+      app: { id: appId, ref: "working", entryId: "main" },
+      panel: {
+        manifest: {
+          state: {},
+          members: {},
+        },
+        content: {
+          html: "<div>Preview</div>",
+          messages: {},
+        },
+      },
+      previewContext: { kind: "build-test" as const, test: null },
+    };
 
-    // 1. Candidate panel present -> resolves kind="panel" and memoizes initial source().
-    const candidateSourcePayload = { kind: "candidate", workspace: { id: workspaceId, ref: "working" } };
-    mocks.candidateSource.mockResolvedValueOnce(candidateSourcePayload);
-    const panelTarget = await defaultResolvePreview({ appId: workspaceId, revision: "working", entryId: "main" });
+    // 1. Panel candidate descriptor -> resolves kind="panel" with appCandidatePanelHost.
+    mocks.nodeApiGet.mockResolvedValueOnce({
+      kind: "panel",
+      appId,
+      activeEntryId: "main",
+      candidate: candidatePayload,
+    });
+    const panelTarget = await defaultResolvePreview({ appId, revision: "working", entryId: "main" });
+    expect(mocks.nodeApiGet).toHaveBeenLastCalledWith(`/product-panels/preview/app/${appId}?ref=working&entryId=main`);
     expect(panelTarget.kind).toBe("panel");
     if (panelTarget.kind === "panel") {
-      expect(await panelTarget.port.source()).toBe(candidateSourcePayload);
-      expect(mocks.candidateSource).toHaveBeenCalledTimes(1);
+      expect(await panelTarget.port.source()).toEqual(candidatePayload);
     }
 
-    // 2. Authorization denied (403) on candidate -> immediately returns error without calling build-tests or preview-token.
-    mocks.candidateSource.mockRejectedValueOnce(new ApiRequestError("Forbidden", 403, { code: "FORBIDDEN" }));
-    const deniedTarget = await defaultResolvePreview({ appId: workspaceId, revision: "working", entryId: null });
+    // 2. Authorization denied (403) -> returns error immediately.
+    mocks.nodeApiGet.mockRejectedValueOnce(new ApiRequestError("Forbidden", 403, { code: "FORBIDDEN" }));
+    const deniedTarget = await defaultResolvePreview({ appId, revision: "working", entryId: null });
     expect(deniedTarget).toEqual({ kind: "error", message: "Forbidden" });
-    expect(mocks.nodeApiGet).not.toHaveBeenCalled();
-    expect(mocks.nodeApiPost).not.toHaveBeenCalled();
 
-    // 3. Candidate 404 -> falls back to hosted preview (build-tests + preview-token).
-    mocks.candidateSource.mockRejectedValueOnce(new ApiRequestError("Not found", 404));
-    mocks.nodeApiGet.mockResolvedValueOnce(null);
-    mocks.nodeApiPost.mockResolvedValueOnce({ token: "tok-hosted" });
-    const hostedTarget = await defaultResolvePreview({ appId: workspaceId, revision: "working", entryId: null });
+    // 3. Hosted descriptor -> resolves kind="hosted" with build-test execution context.
+    mocks.nodeApiGet.mockResolvedValueOnce({
+      kind: "hosted",
+      appId,
+      workspaceId,
+      hostedPreviewUrl: `/api/workspaces/${workspaceId}/preview/tok-hosted/index.html`,
+      previewContext: { kind: "build-test", test: null },
+    });
+    const hostedTarget = await defaultResolvePreview({ appId, revision: "working", entryId: null });
     expect(hostedTarget.kind).toBe("hosted");
     if (hostedTarget.kind === "hosted") {
       expect(hostedTarget.executionContext).toMatchObject({ kind: "build-test", workspaceId, status: "NONE" });
@@ -551,10 +570,8 @@ describe("Platform createPanelPreviewHost", () => {
       );
     }
 
-    // 4. Candidate 404 + preview-token 409 BUILD_TEST_SDK_UPGRADE_REQUIRED -> resolves kind="legacy-sdk".
-    mocks.candidateSource.mockRejectedValueOnce(new ApiRequestError("Not found", 404));
-    mocks.nodeApiGet.mockResolvedValueOnce(null);
-    mocks.nodeApiPost.mockRejectedValueOnce(
+    // 4. 409 BUILD_TEST_SDK_UPGRADE_REQUIRED -> resolves kind="legacy-sdk".
+    mocks.nodeApiGet.mockRejectedValueOnce(
       new ApiRequestError("Upgrade the workspace SDK references before previewing", 409, {
         code: "BUILD_TEST_SDK_UPGRADE_REQUIRED",
         details: {
@@ -569,18 +586,16 @@ describe("Platform createPanelPreviewHost", () => {
         },
       }),
     );
-    const legacyTarget = await defaultResolvePreview({ appId: workspaceId, revision: "working", entryId: null });
+    const legacyTarget = await defaultResolvePreview({ appId, revision: "working", entryId: null });
     expect(legacyTarget).toEqual({
       kind: "legacy-sdk",
       requiredVersion: "1.1.2",
       foundVersions: ["0.8.4"],
     });
 
-    // 5. Candidate 404 + preview-token 404 -> resolves kind="empty".
-    mocks.candidateSource.mockRejectedValueOnce(new ApiRequestError("Not found", 404));
-    mocks.nodeApiGet.mockResolvedValueOnce(null);
-    mocks.nodeApiPost.mockRejectedValueOnce(new ApiRequestError("index.html not found", 404));
-    const emptyTarget = await defaultResolvePreview({ appId: workspaceId, revision: "working", entryId: null });
+    // 5. Empty descriptor -> resolves kind="empty".
+    mocks.nodeApiGet.mockResolvedValueOnce({ kind: "empty", appId });
+    const emptyTarget = await defaultResolvePreview({ appId, revision: "working", entryId: null });
     expect(emptyTarget).toEqual({ kind: "empty" });
   });
 

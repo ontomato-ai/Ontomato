@@ -446,7 +446,7 @@ function applicationAction<Input extends Record<string, unknown>>(
   name: "delete" | "grant" | "share" | "addEntry" | "updateEntry" | "deleteEntry",
   inputSchema: z.ZodType<Input>,
   run: (actor: PanelOperationHost["executor"], id: string, input: Input) => Promise<void>,
-  extra?: Pick<PanelWriteServerOperation, "unavailable">,
+  extra?: Pick<PanelWriteServerOperation, "unavailable" | "inspectImpact">,
 ): PanelWriteServerOperation {
   const handlerRef = `applications.${name}`;
   return {
@@ -461,7 +461,7 @@ function applicationAction<Input extends Record<string, unknown>>(
     targetSchema: applicationTarget,
     inputSchema,
     resultSchema: noData,
-    ...(extra?.unavailable && { unavailable: extra.unavailable }),
+    ...extra,
     async targetLabel(host, { primaryKey }, input) {
       const locale = host.locale ?? "en";
       const record = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
@@ -570,8 +570,30 @@ const applicationOperations: readonly PanelWriteServerOperation[] = [
   applicationAction(
     "delete",
     noData,
-    async ({ credentials }, id) => applicationCatalogueClient(credentials).remove(id),
+    async ({ owner, credentials }, id) => {
+      const { assertPublishedBuilderWorkspaceIdle, cleanupApplicationBuilderArtifacts } = await import("../app-builder/project-service");
+      await assertPublishedBuilderWorkspaceIdle(owner, credentials, id);
+      await applicationCatalogueClient(credentials).remove(id);
+      await cleanupApplicationBuilderArtifacts(owner, credentials, id);
+    },
     {
+      inspectImpact: {
+        handlerRef: "applications.delete.inspect-impact",
+        async inspect({ initiator, locale }, [call]) {
+          const { primaryKey } = applicationTarget.parse(call.target);
+          const detail = await applicationCatalogueClient(initiator.credentials).record(primaryKey);
+          if (!detail.canMaintain) throw new HttpError(403, "Application edit permission required", "PRODUCT_FORBIDDEN");
+          const { appBuilderProjectStore } = await import("../app-builder/project-store");
+          const project = await appBuilderProjectStore.findByAppId(initiator.owner.domainId, primaryKey);
+          const language = locale ?? initiator.credentials.locale;
+          const label = localizedApplicationText(detail.names, language) ?? primaryKey;
+          return {
+            summary: tForLocale(language, project ? "panels.appBuilder.deletePublishedWithSource" : "panels.appBuilder.deletePublished", { name: label }),
+            total: 1,
+            objects: [{ target: { objectType: APPLICATION, primaryKey }, label }],
+          };
+        },
+      },
       async unavailable(host, { primaryKey }: PanelRecordTarget) {
         const locale = host.locale ?? host.initiator.credentials.locale;
         try {

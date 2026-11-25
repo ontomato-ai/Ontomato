@@ -53,3 +53,16 @@ it("deleting a session's source mapping preserves the global repository", async 
   await git.commit("Next session");
   expect((await git.history(0, 10))[0].message).toBe("Next session");
 });
+
+it("keeps a sync's live snapshot readable as an ancestor without replacing the working history", async () => {
+  const git = await repository();
+  const file = (content: string) => ({ path: "application.json", content, encoding: "utf8" as const });
+  await git.replace([file("Unpublished")]);
+  const previous = await git.commit("Unpublished change");
+  const result = await git.importMerge([file("Merged source")], [file("Live definition")], "Sync");
+  expect(await git.head()).toBe(result.commit);
+  expect((await git.history(0, 1))[0]?.parentIds).toEqual([previous, result.baselineCommit]);
+  expect(await git.content("application.json", result.baselineCommit)).toEqual(Buffer.from("Live definition"));
+  expect(await git.content("application.json", previous)).toEqual(Buffer.from("Unpublished"));
+  expect(await git.content("application.json")).toEqual(Buffer.from("Merged source"));
+});

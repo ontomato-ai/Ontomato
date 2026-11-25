@@ -318,7 +318,7 @@ class BuildTestPostgresIntegrationTest {
      DataAdapterConnection connection,JdbcTemplate jdbc,JdbcTemplate admin,String schema,VectorResourceDao vectors,
      JSONObject sample,IdentityService identity,QueryGrantService grants,ABCProgramServiceImpl programs,Function function,
      UserDataPermission permission,WriteFunctionOperationService writes,JSONObject rule) throws Exception {
-   var mvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new io.ontomato.dataengine.controller.BuildTestController(contexts)).build();
+   var mvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new io.ontomato.dataengine.controller.BuildTestController(contexts,mock(io.ontomato.dataengine.service.WorkbenchServiceAuthentication.class))).build();
    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ontology/build-tests/current").param("workspaceId","not-started"))
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string("null"));

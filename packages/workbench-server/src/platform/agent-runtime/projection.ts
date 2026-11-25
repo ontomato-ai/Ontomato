@@ -1,4 +1,5 @@
 import type { RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
   agentHostRunSchema,
   type AgentHostRun,
@@ -36,18 +37,46 @@ export function runOutcome(run: { status: "running" | "stopped"; stopReason: str
   if (run.stopReason === "aborted") return "cancelled";
   return "failed";
 }
+function commitOutcome(
+  workspaceCommit: string | null | undefined,
+  outcome: RuntimeJsonValue | undefined,
+): { outcome?: RuntimeJsonValue } {
+  if (outcome !== undefined) return { outcome };
+  return workspaceCommit ? { outcome: { commit: workspaceCommit } } : {};
+}
+
 export const publicMessages = (messages: RuntimeRunSnapshot["messages"]) => messages.filter((m) => m.message.role !== "system");
 export const publicSnapshot = (s: RuntimeRunSnapshot | AgentHostRunSnapshot) => ({
   ...s,
+  ...commitOutcome(s.run.workspaceCommit, s.outcome),
   run: publicRun(s.run),
   messages: publicMessages(s.messages),
 });
+
+export function publicHistoryRuns<T extends { workspaceCommit: string | null; outcome?: RuntimeJsonValue }>(runs: readonly T[]): T[] {
+  return runs.map((run) => ({
+    ...run,
+    ...commitOutcome(run.workspaceCommit, run.outcome),
+  }));
+}
 
 /** The host projection excludes supervisor prompts in both live and history reads. */
 export function publicFrame(frame: RuntimeStreamFrame): RuntimeStreamFrame | null {
   if (frame.type !== "event") return frame;
   const event = frame.envelope.event;
   if ((event.type === "message_start" || event.type === "message_end" || event.type === "turn_end") && event.message.role === "system") return null;
-  if (event.type === "agent_end") return { ...frame, envelope: { ...frame.envelope, event: { ...event, messages: event.messages.filter((m) => m.role !== "system") } } };
+  if (event.type === "agent_end") {
+    return {
+      ...frame,
+      envelope: {
+        ...frame.envelope,
+        event: {
+          ...event,
+          ...commitOutcome(event.workspaceCommit, event.outcome),
+          messages: event.messages.filter((m) => m.role !== "system"),
+        },
+      },
+    };
+  }
   return frame;
 }

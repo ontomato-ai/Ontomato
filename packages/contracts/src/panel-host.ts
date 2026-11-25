@@ -51,9 +51,30 @@ export const candidatePanelSourceSchema = z.object({
   }).strict(),
 }).strict();
 
-export const panelHostSourceSchema = z.discriminatedUnion("kind", [registeredPanelSourceSchema, candidatePanelSourceSchema]);
+/** Application-scoped preview source (materialized workspace or unmaterialized live definition). */
+export const appCandidatePanelSourceSchema = z.object({
+  kind: z.literal("app-candidate"),
+  app: z.object({
+    id: z.string().min(1).max(128),
+    ref: workspaceDiffSchema.shape.to,
+    entryId: z.string().min(1).optional(),
+  }).strict(),
+  panel: panelDefinitionContentSchema,
+  domainComponents: z.record(domainComponentIdSchema, domainComponentRuntimeSchema).optional(),
+  previewContext: z.object({
+    kind: z.literal("build-test"),
+    test: buildTestContextSchema.nullable(),
+  }).strict(),
+}).strict();
+
+export const panelHostSourceSchema = z.discriminatedUnion("kind", [
+  registeredPanelSourceSchema,
+  candidatePanelSourceSchema,
+  appCandidatePanelSourceSchema,
+]);
 export type PanelHostSource = z.infer<typeof panelHostSourceSchema>;
 export type CandidatePanelSource = z.infer<typeof candidatePanelSourceSchema>;
+export type AppCandidatePanelSource = z.infer<typeof appCandidatePanelSourceSchema>;
 
 export const directPanelHostSourceSchema = panelHostSourceSchema;
 export type DirectPanelHostSource = PanelHostSource;
@@ -63,6 +84,7 @@ export const productPanelReadSourceSchema = z.discriminatedUnion("kind", [
   registeredPanelReadSourceSchema,
   applicationFrameSourceSchema,
   candidatePanelSourceSchema.pick({ kind: true, workspace: true }),
+  appCandidatePanelSourceSchema.pick({ kind: true, app: true }),
 ]);
 export type ProductPanelReadSource = z.infer<typeof productPanelReadSourceSchema>;
 

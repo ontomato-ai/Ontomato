@@ -22,7 +22,9 @@ import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.agent.AgentExecutionScope;
 import io.ontomato.dataengine.util.SpringBeanUtil;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -88,9 +90,8 @@ class MetricViewPanelEndpointTest {
     second.setOrigin(MetricView.ORIGIN_SYSTEM);
     second.setCreatedBy("u3");
     when(metricViewService.queryList(isNull(), isNull(), isNull(), eq("domain"))).thenReturn(List.of(first, second));
-    when(subjectDirectory.subjectsInDomain("domain")).thenReturn(List.of(
-        new SubjectDirectory.Subject("u1", "alice", "Alice", Set.of()),
-        new SubjectDirectory.Subject("u2", "bob", null, Set.of())));
+    when(subjectDirectory.displayNamesInDomain("domain", Set.of("u1", "u2", "u3")))
+        .thenReturn(new HashMap<>(Map.of("u1", "Alice", "u2", "bob")));
 
     JSONObject body = perform("/metricView/queryList", "{}");
 
@@ -107,7 +108,8 @@ class MetricViewPanelEndpointTest {
     assertTrue(data.getJSONObject(1).containsKey("createdByName"));
     assertNull(data.getJSONObject(1).get("createdByName"));
     assertNull(data.getJSONObject(1).get("reviewedByName"));
-    verify(subjectDirectory, times(1)).subjectsInDomain("domain");
+    verify(subjectDirectory).displayNamesInDomain("domain", Set.of("u1", "u2", "u3"));
+    verify(subjectDirectory, never()).subjectsInDomain(any());
   }
 
   @Test
@@ -124,7 +126,6 @@ class MetricViewPanelEndpointTest {
     systemMetric.setOrigin(MetricView.ORIGIN_SYSTEM);
     when(metricViewService.queryList(eq(MetricView.STATUS_PUBLISHED), isNull(), isNull(), eq("domain")))
         .thenReturn(List.of(userMetric, systemMetric));
-    when(subjectDirectory.subjectsInDomain("domain")).thenReturn(List.of());
 
     JSONObject body = perform("/metricView/queryList", """
         {"status":"PUBLISHED","origin":"SYSTEM"}""");
@@ -391,9 +392,8 @@ class MetricViewPanelEndpointTest {
   }
 
   private void stubSubjects() {
-    when(subjectDirectory.subjectsInDomain("domain")).thenReturn(List.of(
-        new SubjectDirectory.Subject("u1", "alice", "Alice", Set.of()),
-        new SubjectDirectory.Subject("u2", "bob", null, Set.of())));
+    when(subjectDirectory.displayNamesInDomain("domain", Set.of("u1", "u2")))
+        .thenReturn(new HashMap<>(Map.of("u1", "Alice", "u2", "bob")));
   }
 
   private static JSONObject field(JSONObject form, String path) {

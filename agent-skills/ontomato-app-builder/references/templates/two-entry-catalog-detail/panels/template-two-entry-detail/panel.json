@@ -1,0 +1,76 @@
+{
+  "name": "Agent Definition Detail",
+  "description": "Full-width detail entry with single-row page header and form draft controls",
+  "visibility": "domain",
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AgentDefinition"
+        },
+        "personal": false,
+        "deepLink": true,
+        "external": false
+      }
+    },
+    "members": {
+      "form": {
+        "inputs": {
+          "target": {
+            "state": "selected"
+          }
+        },
+        "target": {
+          "projectionId": "221b788e-0fd0-432c-87c3-83f8a5f2540c"
+        }
+      },
+      "detail": {
+        "inputs": {
+          "target": {
+            "state": "selected"
+          }
+        },
+        "target": {
+          "projectionId": "0a0697b4-4394-4c6c-83ac-5608f8ddf4d9"
+        }
+      },
+      "header": {
+        "inputs": {
+          "target": {
+            "state": "selected"
+          }
+        },
+        "target": {
+          "projectionId": "b50a4917-6bc2-43aa-a700-d308d39aafb2"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Agent Definition Detail",
+        "detail.back": "Back to Agent Definitions",
+        "detail.basicInfo": "Basic information",
+        "detail.overview": "Overview",
+        "detail.choose": "Choose a record from the catalog.",
+        "detail.loading": "Loading the record…",
+        "detail.forbidden": "You don't have permission to view this record.",
+        "detail.error": "The record could not be loaded.",
+        "detail.missing": "The record is missing."
+      },
+      "zh-CN": {
+        "panel.name": "智能体定义详情",
+        "detail.back": "返回智能体定义",
+        "detail.basicInfo": "基本信息",
+        "detail.overview": "概览",
+        "detail.choose": "请从目录选择一条记录。",
+        "detail.loading": "正在加载记录…",
+        "detail.forbidden": "你没有权限查看这条记录。",
+        "detail.error": "无法加载记录。",
+        "detail.missing": "记录不存在。"
+      }
+    }
+  }
+}

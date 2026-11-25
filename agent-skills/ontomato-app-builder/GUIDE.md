@@ -10,7 +10,6 @@ sdk read docs/components.md
 sdk read docs/components/<Name>.md
 panel type <id> [--read <name>]
 panel check <dir>
-panel register <dir>
 ```
 
 Use `sdk current` for release information and `panel type` for object types. There is no `sdk list` or top-level `read ObjectType`.
@@ -65,7 +64,7 @@ full-width detail), read the [management page wiring recipes](references/managem
      never compute business calculations in panel/component code, never call `fetch`/`XMLHttpRequest`, and never write
      `el-*` tags, `--el-*` tokens, `v-loading`, or `element-plus` imports.
 3. Run `panel check <workspace directory>` to validate the panel source, declarations, and references.
-4. Submit projections, panels, and application uses with `panel register`, then open the application's declared entry.
+4. Keep the source commit, preview it in Application Builder, and use the page to publish after user confirmation.
 
 Create short members from the reads listed by `panel type`. For views backed by an existing projection, reuse its
 registered `target.projectionId`.
@@ -86,10 +85,8 @@ registered `target.projectionId`.
 | `panel projections [--q <text>] [--component <componentId>] [--object-type <typeId>] [--scope all\|mine\|shared] [--sort updated\|name] [--limit <n>] [--cursor <token>]` | Search and filter authorized projections across the full visible catalogue before paging, by keyword, component ID, and bound object type |
 | `panel projection <id>`, `panel get <id>` | Authorized current projection or panel, including its revision |
 | `panel applications`, `panel uses <applicationId>` | Java navigation catalog and visible use relations |
-| `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft `catalog/` and `detail/` from the type table. Select single and batch buttons by owner operation ID. The returned `entry` is the catalog path. |
-| `panel check <directory> [--material <file>] [--sdk-dir <release directory>]` | Check the panel source and declaration with the current SDK schemas, and resolve registered references using the author's access. With an installed release directory, check offline and list unresolved references. |
-| `panel register <directory> [--material <file>]` | Register a panel from its workspace sources, including its inline projections |
-| `panel register <JSON or @file>` | Register selected current definitions and application uses under the author's permissions |
+| `panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]` | Draft an application with catalog and detail panels from the type table. Select single and batch buttons by owner operation ID. The returned `entry` is the catalog path. |
+| `panel check <application-root> [--sdk-dir <release directory>]` | Check application source using the current SDK and resolve registered references using the author's access. With an installed release directory, check offline and list unresolved references. |
 
 ### Custom components
 
@@ -101,98 +98,64 @@ under `manifest.components` in `panel.json` and place it directly inside an offi
 Third-party component package installation is not currently available to authors (`sdk package <name>` is read-only
 inspection only; there is no author package upload endpoint).
 
-### Write projections inside the panel
+## Application source
 
-In `panel.json`, define each new projection directly in `manifest.members`. For the chosen official component,
-read its single page via `sdk read docs/components/<Name>.md` (find candidates in `sdk read docs/components.md`). Use `panel type <type-id>` and `--read <name>` for the
-owner's read signatures, result shapes and operations. A member uses the parts that apply to its component.
+Use the same tree for a platform project and for local authoring with this skill. Start from one of the
+[application templates](references/templates/README.md) or from `panel scaffold`.
 
-| What to fill | What registration derives and what to change |
-| --- | --- |
-| **Component.** Set `component` to the name in the SDK catalogue. | `componentId` is the qualified SDK identifier. Picking a different component changes its available data names, settings and ports. |
-| **Data source.** Set `type` or connect the object state via `target`. For each component datum in `data`, choose an owner read with an accepted result and bind its read parameters as needed. | Stored `data` expands to names with `source`, `read` and `params`. The owner type, object target, read and bindings determine those fields. |
-| **Component settings.** Use the component's Configuration section for `config` keys and values. | Stored `config` takes those settings. For a component with an operation setting, the tool derives `config.operation` from the selected owner's operation. |
-| **Operation.** Use the type table's full `operation` ID (object-targeted or top-level targetless `target: { source: "none" }`). Set `target` for an object target, `operationParams` / `operations.<name>.params` (including `{ formField: "/ptr" }` and `{ formFields: { key: "/ptr" } }` for customer Action forms), and `draft: "<formMember>"` when an operation reads or submits another form member's draft. | Stored `operations` identifies the owner operation, target, parameter wiring, and optional draft form member. Changing the operation or its bindings updates these fields. |
-| **State connections.** Map the component ports and named read parameters to declared fields using `state`. | The tool derives projection `inputs` and `outputs` from the state types, selected owner type and component ports. Changing bindings or their types can change those fields and the member's placement connections. |
-
-Run `panel projection <id>` after registration to inspect the resulting projection. Use the
-[member field reference](references/panel-authoring/FIELDS.md) for the short form and its optional fields.
-
-```json
-{
-  "component": "ObjectList",
-  "type": "platform:AgentDefinition",
-  "data": {"rows": "list"},
-  "state": {"selected": "selected"}
-}
+```text
+application.json
+panels/
+  <panelId>/
+    panel.json
+    panel.html
+    panel.mjs     # optional
+    panel.css     # optional, when the definition has a separate stylesheet
+    recipes.md    # optional
+projections/
+  <projectionId>.json
 ```
 
-In `registration.json`, put one item in `panels`, with its `id`, `mode` and `input` containing `name`,
-`description` and `visibility`. For updates, put the current panel `revision` on the item. Keep the manifest,
-layout and instructions in the workspace files. Run `panel check <directory>` and `panel register <directory>`
-with the same workspace and registration material.
+- `application.json` contains the complete application definition. `declaration` contains localized `names`
+  and `descriptions`, `icon`, `groups` and `permissions`. `entry` contains `path`, `renderer: "panels"`
+  and optional `home`. Keep `panelUses`, and preserve `entryAccess`, `allowStandalone`, `framePanelId`,
+  `theme` (theme overrides) and `delivery` whenever present. The host supplies the application ID from the
+  project identity. Retain all declared values, including translations, so a source round trip preserves the definition.
+- A panel's directory name is its ID. `panel.json` contains `name`, `description`, `visibility` and
+  `manifest`, plus optional `template`, `theme` and `content.messages`. HTML, module, stylesheet and recipes
+  travel as source files. `manifest.members` places a projection with `target: { projectionId: "…" }` or
+  places a panel by ID. Use the [member field reference](references/panel-authoring/FIELDS.md) for bindings.
+- Each owned projection has its registered definition in `projections/<projectionId>.json`, including its
+  component, owner reads and operations, and input and output declarations as applicable. Place it by ID in the
+  panel manifest. Use `panel projection <id>` to inspect an existing definition. The directory has no files
+  when the application owns no projections.
+- Each panel and projection belongs to one application's source. A consuming application keeps the shared
+  panel's ID in `panelUses`. A panel that consumes a shared projection uses its registered projection ID.
+  Keep shared source files in the owner application's tree so its commits govern changes.
 
-The first successful domain projection write saves its UUID as `id` on the member in `panel.json`. The tool
-uses it as the registered member's `target.projectionId`. Keep it when renaming or moving that member.
-New projections default `name` and `description` to the member key and take the panel's initial sharing scope.
-Set a member's `name` or `description` explicitly to change those catalogue fields. Later sharing follows the
-projection's grants. To reuse a registered projection, specify `target.projectionId`. Every use of a shared
-projection sees its updates.
+Each panel use has `id`, `pageKey`, `panelId`, `path` and `access`. Keep the page key unique in the
+domain. Include localized `names` to display a use in the application menu. Detail uses opened through
+navigation or a deep link can omit `names`. Use `{ "kind": "domain-member" }` for domain members or
+`{ "permissionCode": "…" }` with a permission declared by the application. Choose the icon with `sdk icons`.
 
-In `registration.json`, each panel or application item is `{id,mode,input}` with `mode` set to `create` or `update`.
-For workspace registration, keep the panel definition in `panel.json`, `panel.html`, `panel.mjs` and optional
-`recipes.md`. The tool sends the expanded projection and panel records.
+### Check, preview, and publish
 
-- Projection and panel updates carry the owner-returned current `revision` on the item alongside `mode`. Creation omits it. Only the chosen records should appear in the material. Updating a shared definition affects every use of that record.
-- Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses` (plus optional `allowStandalone: true` to enable external `standalone=1` links from the sidebar app menu or app properties). Create with an ID starting with `app-`, plus `declaration` and `entryAccess`. For a domain-member application, use `entryAccess: ["domain-member"]` and `access: {kind: "domain-member"}` on each use open to the domain. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` (include `names` to show the entry in the menu; omit `names` for a detail entry opened via navigation or deep link) and optional `defaultAgent`. Domain app paths start with `/applications/<applicationId>/`. Use the application's real `{permissionCode}` for a restricted use. Omit `defaultAgent` to use the general assistant. An update replaces the use set, so preserve the uses required by the app. In `mode: "update"`, include `input.declaration` with any changed `names`, `descriptions` or `icon`. Registration reads the existing identity and writes it through the owner only when it differs. Omit identity fields to keep their current values. If you supply a localized map, supply its full set of translations. The platform derives page skills from use access.
+Run `panel check <application-root>` to check the source and its bindings. The checker resolves owned
+definitions from the tree and shared references under the author's platform access. With `--sdk-dir` it
+checks offline and reports references it could not resolve in `unchecked`. Use `--type-table` to also check
+operations against the owner's declarations.
 
-The command submits projections, panels and uses in that order. It prints each completed item and exits nonzero at the first failure. On a stale revision, compare the owner's current definition with the requested change before preparing a new update. After re-running `panel register` or `component register <dir> --revision <n>` to update an existing panel, projection, or domain component, hard-reload any already-open browser tab (or reopen the entry) so the browser loads the new revision and freshly compiled module instead of a cached version.
+Review the candidate in Application Builder and retain the source commit. Use the page's registered Publish
+operation to apply the commit. If the platform reports drift, use the registered Sync operation and resolve
+any merge conflicts in source before publishing. The agent may request Publish or Sync under section 2.4.2.
+The page submits the operation after the user confirms. Open the declared entry after publishing to verify the
+result.
 
-### Delete a trial application or panel
+The checker can also read old single-panel roots containing `panel.json` and `panel.html`, with optional
+`panel.mjs`, `panel.css`, `recipes.md` and legacy registration material. Use this mode for existing sources.
+New apps and templates use the application tree above.
 
-Delete a trial application first to remove its entry references. Then delete a panel by its exact registered ID.
-
-```sh
-node "$SKILL/scripts/ontomato.mjs" panel delete application <application-id>
-node "$SKILL/scripts/ontomato.mjs" panel delete panel <panel-id>
-```
-
-The panel owner also removes editable projections used only by that panel and reports their IDs. A referenced panel
-is protected by the owner's in-use check. Released or shared definitions stay under the owner's normal permissions.
-
-### Create or update an application
-
-| `applications[].input` | `mode: "create"` | `mode: "update"` |
-| --- | --- | --- |
-| `entry`, `panelUses` | Required | Required. Supply the complete set of uses. |
-| `framePanelId` | Optional | Optional. Include the frame ID to keep using it. |
-| `declaration` | Required. Supply the application identity and its `groups` and `permissions`. | Optional identity patch (`names`, `descriptions`, `icon`, `allowStandalone`). |
-| `entryAccess` | Required | Creation only |
-
-After the first registration, run `panel get <id>` for the current panel `revision`. In `registration.json`, set
-`panels[].mode` to `"update"` and set `panels[].revision` to that value. Registration writes newly assigned inline
-projection IDs into `panel.json`; it leaves `registration.json` as authored. Switch an already registered application to
-`"update"` too, removing creation fields from its input and declaration. Application registration takes no `revision`.
-For any explicitly registered projection update, use the current revision from `panel projection <id>`.
-
-### Fix panel check and registration errors
-
-Run `panel check <directory>` before registering. It reads `registration.json` in that directory by default.
-Use `--material <file>` to select a different file. The online check uses the current component catalogue and
-owner type table to expand new projections. It looks for references in the material first, then in the domain.
-With `--sdk-dir`, local material can be checked offline (supply `--type-table` for new short members).
-Unresolved registered references appear in `unchecked`. For a built-in panel with no running service, run
-`node "$SKILL/scripts/ontomato.mjs" panel check <dir> --builtin --sdk-dir <built-sdk-dir>`.
-The SDK directory contains the built `sdk.json`. See [platform checks](references/platform-development.md#check-built-in-panels).
-
-- **404 `PRODUCT_UNAVAILABLE`** names a panel or projection that is missing in the current domain. When a
-  projection is also absent from the material, `panel check` reports its ID before registration. Correct the
-  reference or include the projection definition in the material. A panel save with a missing projection fails
-  before saving that panel.
-- **403 `PRODUCT_FORBIDDEN`** on an author lookup means an existing record requires a use Grant. Ask the
-  record owner to grant access or choose a projection that the current author can use.
-- **A member error** identifies the declaration to fix. Check the component's catalogue entry, the owner's read
-  or operation signature, and the state named in that member.
+For built-in panel checks, see [platform development](references/platform-development.md#check-built-in-panels).
 
 ## Discover and save business capabilities
 
@@ -249,7 +212,7 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 | `vector-upload`, `vector-delete` | Required class, attribute and object ID; upload requires text and optionally file, delete requires resource path. Vector fields are rejected by ordinary object insert/update. |
 | `sdk current/read` | current has no body. read requires one file path relative to the current SDK release. |
 | `component list/read/register` | list takes no arguments; read requires one `domain-component:<uuid>` ID; register requires a directory with `component.json`, `component.html` and optional `component.mjs`, plus `--revision <n>` when updating an existing component. |
-| `panel check` | Requires an authoring directory. Optional `--material` supplies registration JSON and `--sdk-dir` selects an installed SDK release for offline checks. The command reports structural errors, third-party UI/token violations (`el-*`, `v-loading`, `--el-*`, `element-plus`), and unresolved projection or `manifest.components` references without writing to the platform. |
+| `panel check` | Requires an authoring directory. For a legacy root `--material` supplies registration JSON. `--sdk-dir` selects an installed SDK release for offline checks. The command reports structural errors, third-party UI/token violations (`el-*`, `v-loading`, `--el-*`, `element-plus`), and unresolved projection or `manifest.components` references without writing to the platform. |
 | `workspace list/commits/sessions/tree` | Optional page/query JSON defaults to `{}`. IDs are required except for list. Page/query fields are checked by the workspace HTTP schema. |
 | `workspace create/get/rename/delete/content/diff/restore` | Required string positional arguments listed above; content's omitted commit reads the working tree. No body defaults invent missing IDs or commits. |
 | `workspace import` | Use a workspace ID, directory and explicit commit message to import a panel source tree. |

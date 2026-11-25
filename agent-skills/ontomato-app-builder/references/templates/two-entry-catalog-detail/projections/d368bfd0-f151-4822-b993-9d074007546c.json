@@ -1,0 +1,31 @@
+{
+  "componentId": "@ontomato/sdk:ObjectForm",
+  "inputs": {},
+  "outputs": {},
+  "data": {
+    "createForm": {
+      "source": {
+        "type": {
+          "kind": "PlatformObjectType",
+          "id": "platform:AgentDefinition"
+        }
+      },
+      "read": "createForm",
+      "params": {}
+    }
+  },
+  "config": {
+    "actions": "create-only"
+  },
+  "operations": {
+    "save": {
+      "operation": {
+        "kind": "PlatformOperation",
+        "id": "platform:AgentDefinition.save"
+      }
+    }
+  },
+  "name": "createForm",
+  "description": "createForm",
+  "visibility": "domain"
+}

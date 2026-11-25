@@ -1,0 +1,38 @@
+{
+  "componentId": "@ontomato/sdk:ObjectForm",
+  "inputs": {
+    "target": {
+      "kind": "object",
+      "objectType": "platform:AgentDefinition"
+    }
+  },
+  "outputs": {},
+  "data": {
+    "form": {
+      "source": {
+        "object": {
+          "input": "target"
+        }
+      },
+      "read": "form",
+      "params": {}
+    }
+  },
+  "config": {
+    "actions": "none"
+  },
+  "operations": {
+    "save": {
+      "operation": {
+        "kind": "PlatformOperation",
+        "id": "platform:AgentDefinition.save"
+      },
+      "target": {
+        "input": "target"
+      }
+    }
+  },
+  "name": "form",
+  "description": "form",
+  "visibility": "domain"
+}

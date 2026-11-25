@@ -263,7 +263,7 @@ export const assistantStore = {
       updatedAt: row.updatedAt.toISOString(),
     };
   },
-  async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string, fromChannel = false, createWorkspace?: () => Promise<string>) {
+  async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string, fromChannel = false) {
     return transaction(async (tx) => {
     await lockSessionClaim(tx, id);
     const existing = await tx.query(
@@ -272,7 +272,7 @@ export const assistantStore = {
     );
     if (existing.rowCount) {
       const row = await this.session(id, owner, tx);
-      if (row.agent_id !== agentId || (!createWorkspace && row.workspace_id !== (workspaceId ?? null)))
+      if (row.agent_id !== agentId || row.workspace_id !== (workspaceId ?? null))
         throw new HttpError(
           409,
           "Idempotency key reused",
@@ -284,8 +284,7 @@ export const assistantStore = {
     const a = await this.agent(agentId, owner);
     if (!a.enabled)
       throw new HttpError(409, "Agent disabled", "AGENT_DISABLED");
-    // Allocate under the session claim so a replay reuses the same workspace.
-    const boundWorkspace = workspaceId ?? await createWorkspace?.() ?? null;
+    const boundWorkspace = workspaceId ?? null;
     if (isAppBuilderKind(a.kind) && !boundWorkspace)
       throw new HttpError(400, "App builder conversations require a workspace", "INVALID_REQUEST");
     const r = await tx.query(

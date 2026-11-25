@@ -4,6 +4,7 @@ import { buildTestContextSchema, type BuildTestSdkUpgradeDetails, BUILD_TEST_SDK
 import { workspacePathSchema } from "@ontomato/contracts/workspaces";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { backendGet, backendPost, backendDelete } from "../../utils/backend-client";
+import { environment } from "../../config/environment";
 import { buildUrl, getApiConfig } from "../../config/data-query-api";
 import { assistantStore, type AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -17,6 +18,15 @@ export async function sessionBuildTestWorkspace(owner: AssistantOwner, sessionId
   return session.workspace_id;
 }
 
+export async function closeWorkspaceBuildTests(domainId: string, workspaceId: string, locale?: string) {
+  const query = new URLSearchParams({ domainId });
+  const url = buildUrl(getApiConfig(), `/ontology/build-tests/internal/workspaces/${workspaceId}?${query}`);
+  await backendDelete("app-builder-close-workspace-tests", url, {
+    headers: { "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken },
+    locale,
+  });
+}
+
 function sampleFilePath(file: string) {
   const value=workspacePathSchema.safeParse(file);
   if(!value.success) throw new HttpError(400,`Invalid sample file path: ${file}`,"BUILD_TEST_SAMPLE_INVALID");
@@ -24,11 +34,27 @@ function sampleFilePath(file: string) {
 }
 /** Node owns workspace access and bytes; Java owns context state and all execution decisions. */
 export class WorkspaceBuildTests {
-  readonly runtime: RuntimeClient;
-  constructor(readonly owner: AssistantOwner, readonly credentials: AssistantCredentials, readonly workspaceId: string) {
-    this.runtime = new RuntimeClient(owner.domainId, undefined, owner.userId);
+  runtime: RuntimeClient;
+  constructor(
+    readonly owner: AssistantOwner,
+    readonly credentials: AssistantCredentials,
+    readonly workspaceId: string,
+    readonly workspaceOwnerId?: string,
+  ) {
+    this.runtime = new RuntimeClient(owner.domainId, undefined, owner.userId, workspaceOwnerId ?? owner.userId);
   }
-  async authorize() { await this.runtime.request(`/v1/workspaces/${this.workspaceId}`); }
+  async authorize() {
+    if (this.workspaceOwnerId === undefined) {
+      const { appBuilderProjectStore, appWorkspaceSlot } = await import("./project-store");
+      const project = await appBuilderProjectStore.findByWorkspaceId(this.owner.domainId, this.workspaceId);
+      if (project) {
+        const { authorizeBuilderProject } = await import("./project-service");
+        await authorizeBuilderProject(this.owner, this.credentials, project.appId, { skipLiveRead: true });
+        this.runtime = new RuntimeClient(this.owner.domainId, undefined, this.owner.userId, appWorkspaceSlot(project.appId));
+      }
+    }
+    await this.runtime.request(`/v1/workspaces/${this.workspaceId}`);
+  }
   async java(method: "GET" | "POST" | "DELETE", suffix: string, body?: FormData) {
     const url = buildUrl(getApiConfig(), "/ontology/build-tests" + suffix);
     const options = { ...this.credentials, retries: 1, errorDetailLimit: 4096 };

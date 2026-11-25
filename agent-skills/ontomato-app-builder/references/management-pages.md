@@ -13,10 +13,10 @@ Generate a catalog and detail pair from the type table:
 node "$SKILL/scripts/ontomato.mjs" panel scaffold platform:AgentDefinition ./agents-panel --id app-my-agent-management
 ```
 
-Both `catalog/` and `detail/` contain `panel.html`, `panel.mjs`, `panel.json` and `registration.json`.
-Check both, then register `catalog/` before `detail/`: the detail registration creates the application with
-both entries. Open the catalog at the path returned in `entry`. Review the owner reads, columns and access
-before registration. Use `panel type <type-id>` to inspect reads and operations:
+The application root has `application.json`, separate catalog and detail directories in `panels/`, and their definitions in `projections/`.
+Run `panel check ./agents-panel` and review the owner reads, columns and access in the candidate.
+After publishing through Application Builder, open the catalog at the path returned in `entry`.
+Use `panel type <type-id>` to inspect reads and operations:
 - For customer ontology classes (e.g., `Student`, `Order`), `panel type <class>` lists the platform's generic reads
   (`query`, `record`, `form`, `createForm`), object-targeted Actions, and top-level targetless Actions whose `affects`
   include `<class>` (under `targetlessOperations`, with `target: { source: "none" }` and `callTarget: null`). Run

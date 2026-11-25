@@ -2,7 +2,6 @@ import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-busine
 import { WorkspaceBuildTests } from "../../services/app-builder/build-tests";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
-import { randomBytes } from "node:crypto";
 import path from "node:path";
 import {readFile} from 'node:fs/promises';
 import express, { Router, type Request, type Response, type NextFunction } from "express";
@@ -21,6 +20,7 @@ import {backendGet,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
 import {SOURCE_APPLICATION_CSP} from '../../services/workspaces/product-admission';
 import { HOSTED_SDK_MARKER, injectHostedSdkHtml } from "../../services/workspaces/hosted-sdk";
+import { issueHostedPreviewToken, lookupHostedPreviewToken } from "../../services/workspaces/preview-tokens";
 import { mountAppsSdkStatic } from "./apps-sdk";
 import type { AssistantOwner } from "../../services/assistant/store";
 
@@ -28,16 +28,18 @@ const wrap = (fn: (req: Request, res: Response) => Promise<void>) =>
   (req: Request, res: Response, next: NextFunction) => {
     void fn(req, res).catch(error => next(error instanceof z.ZodError ? new HttpError(400, error.message, "INVALID_REQUEST") : error));
   };
-const previews = new Map<string, { workspaceId: string; owner: AssistantOwner; expiresAt: number }>();
-const runtime = (owner: AssistantOwner) => new RuntimeClient(owner.domainId, undefined, owner.userId);
+const runtime = (owner: AssistantOwner, workspaceOwnerId?: string) =>
+  new RuntimeClient(owner.domainId, undefined, owner.userId, workspaceOwnerId ?? owner.userId);
+
 export const workspacePreviewRouter = Router();
 workspacePreviewRouter.get("/:id/preview/:token/*", wrap(async (req, res) => {
-  const preview = previews.get(req.params.token);
+  const preview = lookupHostedPreviewToken(req.params.token);
   if (!preview || preview.workspaceId !== workspaceIdSchema.parse(req.params.id) || preview.expiresAt <= Date.now())
     throw new HttpError(404, "Preview expired", "NOT_FOUND");
   const file = workspacePathSchema.parse(req.params[0] || "index.html");
-  const sdk = /\.html$/i.test(file) ? await new WorkspaceBuildTests(preview.owner, {}, preview.workspaceId).requirePreviewSdk() : undefined;
-  const bytes = await runtime(preview.owner).bytes(`/v1/workspaces/${preview.workspaceId}/files/content?${new URLSearchParams({ path: file })}`);
+  const slot = preview.workspaceOwnerId ?? preview.owner.userId;
+  const sdk = /\.html$/i.test(file) ? await new WorkspaceBuildTests(preview.owner, {}, preview.workspaceId, slot).requirePreviewSdk() : undefined;
+  const bytes = await runtime(preview.owner, slot).bytes(`/v1/workspaces/${preview.workspaceId}/files/content?${new URLSearchParams({ path: file })}`);
   const source = sdk ? bytes.toString("utf8") : undefined;
   res.type(path.extname(file)).set({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" })
     .send(sdk && source?.includes(HOSTED_SDK_MARKER) ? injectHostedSdkHtml(source, sdk, file) : bytes);
@@ -79,12 +81,7 @@ workspaceRouter.post("/:id/preview-token", wrap(async (req, res) => {
   }
   const { owner, credentials } = context(req), workspaceId = id(req, "id");
   await assertAppBuilderAccess(credentials);
-  const tests = new WorkspaceBuildTests(owner, credentials, workspaceId);
-  await tests.requirePreviewSdk();
-  const token = randomBytes(32).toString("base64url"), expiresAt = Date.now() + 10 * 60_000;
-  previews.set(token, { workspaceId, owner, expiresAt });
-  setTimeout(() => previews.delete(token), 10 * 60_000).unref();
-  res.json({ token, expiresAt: new Date(expiresAt).toISOString() });
+  res.json(await issueHostedPreviewToken(owner, credentials, workspaceId));
 }));
 workspaceRouter.get("/:id/sessions", wrap(async (req, res) => {
   res.json(await workspaceSessions(context(req).owner, id(req, "id"), agentHostSessionPageQuerySchema.parse(req.query)));

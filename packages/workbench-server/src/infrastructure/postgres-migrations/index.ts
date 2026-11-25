@@ -5,6 +5,7 @@ import { ensurePanelOperationUploadsSchema } from "./20261122-panel-operation-up
 import { ensureAgentExecutionSchema } from "./20261117-agent-execution/schema";
 import { ensureProductAssetsSchema } from "./20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "./20261118-product-panels/schema";
+import { ensureAppBuilderProjectsSchema } from "./20261125-app-builder-projects/schema";
 import { ensureWorkspacesSchema } from "./20261109-workspaces/schema";
 import { ensurePlatformHomeSchema } from "./20261111-platform-home/schema";
 import {
@@ -140,6 +141,7 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261121-assistant-preset-upgrades", ensureSchema: ensureAssistantPresetUpgradesSchema },
   { directory: "20261117-agent-execution", ensureSchema: ensureAgentExecutionSchema },
   { directory: "20261109-workspaces", ensureSchema: ensureWorkspacesSchema },
+  { directory: "20261125-app-builder-projects", ensureSchema: ensureAppBuilderProjectsSchema },
   { directory: "20261111-platform-home", ensureSchema: ensurePlatformHomeSchema },
   {
     directory: "20261125-platform-home-favorites",

@@ -1,0 +1,27 @@
+{
+  "componentId": "@ontomato/sdk:ObjectSummary",
+  "inputs": {
+    "target": {
+      "kind": "object",
+      "objectType": "Student"
+    }
+  },
+  "outputs": {},
+  "data": {
+    "record": {
+      "source": {
+        "object": {
+          "input": "target"
+        }
+      },
+      "read": "record",
+      "params": {}
+    }
+  },
+  "config": {
+    "showTitle": false
+  },
+  "name": "summary",
+  "description": "summary",
+  "visibility": "domain"
+}

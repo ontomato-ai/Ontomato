@@ -1313,7 +1313,6 @@ export default {
       "product": "Product"
     },
     "types": {
-      "appWorkspace": "App workspace",
       "publishedMcpService": "Published MCP service",
       "auditLog": "Audit log",
       "generalSettings": "General settings",

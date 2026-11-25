@@ -5,6 +5,10 @@ import { WorkspaceBuildTests } from "../build-tests";
 import { backendGet, backendPost } from "../../../utils/backend-client";
 import { RuntimeClient } from "../../../infrastructure/agent-runtime/client";
 
+vi.mock("../project-store", async original => ({
+  ...await original<typeof import("../project-store")>(),
+  appBuilderProjectStore: { findByWorkspaceId: async () => null },
+}));
 vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:vi.fn()}));
 vi.mock("../../../utils/backend-client",async original=>({...await original<typeof import("../../../utils/backend-client")>(),backendGet:vi.fn(),backendPost:vi.fn(),backendDelete:vi.fn()}));
 vi.mock("../../../config/data-query-api",()=>({getApiConfig:()=>({}),buildUrl:(_:unknown,url:string)=>"http://java"+url}));

@@ -1,6 +1,6 @@
 ---
 name: ontomato-panel-authoring
-description: Build and register an Ontomato panel from declared read functions, operations, and official SDK components.
+description: Build an Ontomato application panel from declared read functions, operations, and official SDK components.
 ---
 
 # Author an Ontomato panel
@@ -47,73 +47,19 @@ description: Build and register an Ontomato panel from declared read functions, 
    - Mark `deepLink: true` **only** on state needed to land on the same view (`selected`, `tab`, `search`, `filter`,
      `sort`). **Never** mark dialog toggles (`creating`, `grantDialog`, `dialog`, `compose`) or active-edit trackers
      (`editingEntryId`) with `deepLink: true`.
-4. **Check, register, and verify.** Run `panel check` and `panel register`, then open the registered entry in both
-   full-page and beside-conversation widths. After updating via `panel register` or `component register`, hard-reload open
-   browser tabs. Use the page's input box for the [assistant check](#check-the-assistant-from-the-page), and check
+4. **Check, preview, and publish.** Run `panel check "$WORKSPACE"` on the application root and review the
+   candidate in Application Builder. Keep the source commit. Use the [page publishing flow](../../GUIDE.md#check-preview-and-publish),
+   then open the published entry at full-page and beside-conversation widths. Check
    [troubleshooting](recipes/troubleshooting.md) if anything looks off.
 
-```sh
-node "$SKILL/scripts/ontomato.mjs" panel check "$WORKSPACE"
-node "$SKILL/scripts/ontomato.mjs" panel register "$WORKSPACE"
-```
+Keep each owned panel in `panels/<panelId>/`. Its `panel.json` holds the manifest and panel metadata, and its
+members reference projections by ID. Store owned projection definitions in `projections/<projectionId>.json`.
+Define the uses and application metadata in the root `application.json`. See the
+[application source format](../../GUIDE.md#application-source) and the
+[two-entry template](../templates/two-entry-catalog-detail/README.md) for a menu catalog and a hidden detail use.
 
-For offline checking and the installed component docs, see [the offline entry points](recipes/offline-check-and-sdk-docs.md).
-
-## Registration files (`panel.json` vs. `registration.json`)
-
-Keep the panel definition separate from registration metadata:
-
-- **`panel.json`**: `{ manifest: { state, members, components? }, content?: { messages }, theme?, template? }` — the
-  panel's own declaration and optional multi-locale message table.
-- **`registration.json`**: the registration envelope naming the panel (`id`, `mode: "create" | "update"`, `revision` on
-  update only, `input: { name, description, visibility }`) and optionally the application (`id` starting with `app-`,
-  `entry`, `declaration`, `entryAccess`, `allowStandalone`, `panelUses`).
-
-Each entry in `panelUses` declares a domain-unique `pageKey`, `panelId`, `path` (`/applications/<app-id>/...`), and
-`access` (`{ "kind": "domain-member" }` or `{ "permissionCode": "..." }`). Include `names` to show the entry in the
-application menu; **omit `names`** for a detail entry reached only by navigation or deep link.
-
-Example application item in `registration.json` (two entries: menu catalog + hidden detail):
-
-```json
-{
-  "id": "app-my-management-page",
-  "mode": "create",
-  "input": {
-    "entry": { "path": "/applications/app-my-management-page/catalog", "renderer": "panels" },
-    "declaration": {
-      "names": { "en": "Management", "zh-CN": "管理应用" },
-      "descriptions": { "en": "Management example", "zh-CN": "管理应用示例" },
-      "icon": "app-window",
-      "groups": [],
-      "permissions": []
-    },
-    "entryAccess": ["domain-member"],
-    "allowStandalone": true,
-    "panelUses": [
-      {
-        "id": "catalog-use",
-        "pageKey": "app-my-management-page-catalog",
-        "panelId": "my-catalog-panel",
-        "path": "/applications/app-my-management-page/catalog",
-        "access": { "kind": "domain-member" },
-        "names": { "en": "Catalog", "zh-CN": "目录" }
-      },
-      {
-        "id": "detail-use",
-        "pageKey": "app-my-management-page-detail",
-        "panelId": "my-detail-panel",
-        "path": "/applications/app-my-management-page/detail",
-        "access": { "kind": "domain-member" }
-      }
-    ]
-  }
-}
-```
-
-For a development handoff, give the registered entry's site-relative path (for example
-`/applications/app-my-management-page/catalog`). Reserve `standalone=1` for external sharing; enable it with
-`"allowStandalone": true` and copy the external link from the sidebar application menu or application properties.
+For a development handoff, give the published entry's site-relative path. To enable external
+`standalone=1` links, set `"allowStandalone": true` in `application.json`.
 
 ## Check the assistant from the page
 
