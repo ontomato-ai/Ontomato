@@ -19,10 +19,13 @@ import { useDataStateLabels } from "./data-state-labels";
 import {
   buildGroupedGridGroups,
   buildLayoutChangePayload,
+  buildStaticGroupedGridState,
   clampGridSpan,
   moveGridItem,
   reorderGridGroups,
   resizeGridItem,
+  serializeStaticGridLayout,
+  setStaticGridItemHidden,
 } from "./grouped-grid-model";
 import type {
   GroupedGridGroup,
@@ -31,6 +34,9 @@ import type {
   GroupedGridItem,
   GroupedGridItemSlotScope,
   GroupedGridLayoutChange,
+  GroupedGridLayoutState,
+  GroupedGridStaticGroupConfig,
+  GroupedGridStaticItemConfig,
 } from "./grouped-grid-types";
 import {
   allowedRowOperationInputKeys,
@@ -94,6 +100,16 @@ const props = withDefaults(
     editable?: boolean;
     /** Allow collapsing/expanding groups from the group header (default `true`). */
     collapsible?: boolean;
+    /** Static item definitions for fixed-member mode (when no `rows` datum is bound). */
+    items?: readonly GroupedGridStaticItemConfig[];
+    /** Static group definitions for fixed-member mode (when no `rows` datum is bound). */
+    groups?: readonly GroupedGridStaticGroupConfig[];
+    /** Whether to render group header chrome (default `true`). Set `false` for a seamless single-group canvas. */
+    showGroupHeaders?: boolean;
+    /** Whether to render item header chrome (default `true`). */
+    showItemHeaders?: boolean;
+    /** Whether hideable static items show a hide button in their item header (default `false`). */
+    allowHide?: boolean;
     /** Optional per-item row actions (same shape as `ObjectList.rowActions`). */
     rowActions?: ObjectListRowActionsConfig;
     /** Fallback text shown when there are no groups and no items. */
@@ -122,6 +138,11 @@ const props = withDefaults(
     maxRowSpan: 6,
     editable: true,
     collapsible: true,
+    items: undefined,
+    groups: undefined,
+    showGroupHeaders: true,
+    showItemHeaders: true,
+    allowHide: false,
     rowActions: undefined,
     emptyText: undefined,
     emptyGroupText: undefined,
@@ -155,19 +176,18 @@ const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const member = useMember();
-const objectType = projectionElement(slot.projection).id;
 
-const rowsDatum = member.projection.data.rows;
-if (!rowsDatum) {
-  throw new Error(`Projection ${member.projection.id} declares no 'rows' datum for GroupedGrid`);
-}
-const rowObjectType = directReadRowType(member.projection, rowsDatum) ?? objectType;
+const isRecordMode = "rows" in member.projection.data;
+const objectType = isRecordMode ? projectionElement(slot.projection).id : "grid:item";
+const rowsDatum = isRecordMode ? member.projection.data.rows : undefined;
+const rowObjectType = isRecordMode && rowsDatum ? (directReadRowType(member.projection, rowsDatum) ?? objectType) : "grid:item";
 
-const rowsState = useMemberData("rows");
-const hasRecordDatum = "record" in member.projection.data;
+const rowsState = isRecordMode ? useMemberData("rows") : null;
+const hasRecordDatum = isRecordMode && "record" in member.projection.data;
 const recordState = hasRecordDatum ? useMemberData("record") : null;
 const operationsState = useMemberOperations();
-const selectedParam = useMemberParam("selected");
+const selectedParam = isRecordMode ? useMemberParam("selected") : null;
+const layoutParam = !isRecordMode ? useMemberParam("layout") : null;
 
 const effectiveColumns = computed(() => Math.max(1, Math.min(24, Math.floor(props.columns || 12))));
 const effectiveRowHeight = computed(() => Math.max(48, Math.floor(props.rowHeight || 160)));
@@ -181,7 +201,7 @@ const effectiveGap = computed(() => Math.max(0, Math.floor(props.gap ?? 16)));
 const effectiveMaxColSpan = computed(() => Math.max(1, Math.min(effectiveColumns.value, Math.floor(props.maxColSpan || effectiveColumns.value))));
 const effectiveMinColSpan = computed(() => Math.max(1, Math.min(effectiveMaxColSpan.value, Math.floor(props.minColSpan || 1))));
 const effectiveMinRowSpan = computed(() => Math.max(1, Math.floor(props.minRowSpan || 1)));
-const effectiveMaxRowSpan = computed(() => Math.max(effectiveMinRowSpan.value, Math.floor(props.maxRowSpan || 6)));
+const effectiveMaxRowSpan = computed(() => Math.max(effectiveMinRowSpan.value, Math.min(24, Math.floor(props.maxRowSpan || 6))));
 
 const containerRecord = computed<PlatformObjectRecord | null>(() => {
   if (!recordState) return null;
@@ -193,19 +213,57 @@ const containerRecord = computed<PlatformObjectRecord | null>(() => {
 });
 
 const rawRows = computed<readonly PlatformObjectRecord[]>(() => {
+  if (!rowsState) return [];
   const current = rowsState.value;
   if (current.status !== "ready") return [];
   return Array.isArray(current.value) ? (current.value as unknown as readonly PlatformObjectRecord[]) : [];
 });
 
 const rowOperationsMap = computed<PanelRowOperationsMap | undefined>(() => {
+  if (!rowsState) return undefined;
   const current = rowsState.value;
   if (current.status !== "ready") return undefined;
   return current.rowOperations;
 });
 
-const sourceGroups = computed<GroupedGridGroup[]>(() =>
-  buildGroupedGridGroups({
+function resolveStaticTitle(entry: { readonly id: string; readonly title?: string; readonly titleKey?: string }): string {
+  if (entry.titleKey) {
+    const translated = typeof panel.t === "function" ? panel.t(entry.titleKey) : "";
+    if (translated && translated !== entry.titleKey) return translated;
+    if (entry.title?.trim()) return entry.title.trim();
+    return translated || entry.id;
+  }
+  return entry.title?.trim() || "";
+}
+
+const externalLayoutState = computed<GroupedGridLayoutState | null>(() => {
+  if (isRecordMode || !layoutParam) return null;
+  const raw = layoutParam.value.value;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  if (!Array.isArray((raw as { groups?: unknown }).groups)) return null;
+  return raw as unknown as GroupedGridLayoutState;
+});
+
+const sourceStaticState = computed(() => {
+  if (isRecordMode) {
+    return { visibleGroups: [] as GroupedGridGroup[], layoutState: { groups: [] } as GroupedGridLayoutState, hiddenCount: 0 };
+  }
+  return buildStaticGroupedGridState({
+    items: props.items ?? [],
+    groups: props.groups,
+    layout: externalLayoutState.value,
+    columns: effectiveColumns.value,
+    minColSpan: effectiveMinColSpan.value,
+    maxColSpan: effectiveMaxColSpan.value,
+    minRowSpan: effectiveMinRowSpan.value,
+    maxRowSpan: effectiveMaxRowSpan.value,
+    resolveTitle: resolveStaticTitle,
+  });
+});
+
+const sourceGroups = computed<GroupedGridGroup[]>(() => {
+  if (!isRecordMode) return sourceStaticState.value.visibleGroups;
+  return buildGroupedGridGroups({
     record: containerRecord.value,
     rows: rawRows.value,
     rowObjectType,
@@ -222,21 +280,42 @@ const sourceGroups = computed<GroupedGridGroup[]>(() =>
     colSpanField: props.colSpanField,
     rowSpanField: props.rowSpanField,
     orderField: props.orderField,
-  }),
-);
-
-/** Local optimistic layout applied immediately after a user drag/resize until fresh server data arrives. */
-const localGroups = shallowRef<GroupedGridGroup[] | null>(null);
-watch([rawRows, containerRecord], () => {
-  localGroups.value = null;
+  });
 });
 
-const groups = computed<readonly GroupedGridGroup[]>(() => localGroups.value ?? sourceGroups.value);
+/** Local optimistic layout applied immediately after a user drag/resize/hide until fresh data or state arrives. */
+const localGroups = shallowRef<GroupedGridGroup[] | null>(null);
+const localStaticLayout = shallowRef<GroupedGridLayoutState | null>(null);
+watch([rawRows, containerRecord], () => {
+  if (isRecordMode) localGroups.value = null;
+});
+watch([externalLayoutState, () => props.items, () => props.groups], () => {
+  if (!isRecordMode) {
+    localGroups.value = null;
+    localStaticLayout.value = null;
+  }
+});
 
-const totalItems = computed(() => groups.value.reduce((sum, group) => sum + group.items.length, 0));
+const renderedGroups = computed<readonly GroupedGridGroup[]>(() => localGroups.value ?? sourceGroups.value);
+const currentStaticLayout = computed<GroupedGridLayoutState>(() => localStaticLayout.value ?? sourceStaticState.value.layoutState);
+
+const totalItems = computed(() => renderedGroups.value.reduce((sum, group) => sum + group.items.length, 0));
+const hiddenCount = computed(() => {
+  if (isRecordMode) return 0;
+  return currentStaticLayout.value.groups.reduce(
+    (sum, group) => sum + group.items.filter((item) => item.hidden === true).length,
+    0,
+  );
+});
 
 const gridDataResult = computed<DataStateResult<readonly GroupedGridGroup[]>>(() => {
-  const r = rowsState.value;
+  if (!isRecordMode) {
+    if (renderedGroups.value.length === 0 || (totalItems.value === 0 && (!props.showGroupHeaders || !props.groups?.length))) {
+      return { status: "empty" };
+    }
+    return { status: "ready", value: renderedGroups.value };
+  }
+  const r = rowsState!.value;
   if (r.status === "loading" || r.status === "awaiting" || r.status === "forbidden" || r.status === "error") {
     return r;
   }
@@ -246,21 +325,23 @@ const gridDataResult = computed<DataStateResult<readonly GroupedGridGroup[]>>(()
       return rec;
     }
   }
-  if (groups.value.length === 0) {
+  if (renderedGroups.value.length === 0) {
     return { status: "empty" };
   }
-  return { status: "ready", value: groups.value };
+  return { status: "ready", value: renderedGroups.value };
 });
 
 const dataStateLabels = useDataStateLabels(() => props.emptyText || t("platform.dataEmpty"));
 
 useMemberOutput("status", () => gridDataResult.value.status);
-useMemberOutput("groupCount", () => (gridDataResult.value.status === "ready" ? groups.value.length : 0));
+useMemberOutput("groupCount", () => (gridDataResult.value.status === "ready" ? renderedGroups.value.length : 0));
 useMemberOutput("itemCount", () => (gridDataResult.value.status === "ready" ? totalItems.value : 0));
+useMemberOutput("hiddenCount", () => hiddenCount.value);
 
 /* ── Selection & highlight ────────────────────────────────────────────────────────────────── */
 
 const selectedKey = computed<string | null>(() => {
+  if (!selectedParam) return null;
   const obj = stateObject(selectedParam.value.value as PanelFieldValue);
   if (!obj) return null;
   return `${obj.className}:${obj.primaryKey}`;
@@ -269,7 +350,7 @@ const selectedKey = computed<string | null>(() => {
 const highlightedSet = computed(() => new Set(props.highlightedIds ?? []));
 
 function selectItem(item: GroupedGridItem) {
-  selectedParam.set({ className: item.itemRef.className, primaryKey: item.itemRef.primaryKey });
+  selectedParam?.set({ className: item.itemRef.className, primaryKey: item.itemRef.primaryKey });
   emit("select", item.itemRef);
 }
 
@@ -505,7 +586,32 @@ function clearDragState() {
 function commitLayoutChange(next: GroupedGridGroup[] | null) {
   if (!next) return;
   localGroups.value = next;
+  if (!isRecordMode) {
+    const nextLayout = serializeStaticGridLayout(next, currentStaticLayout.value, props.items ?? []);
+    localStaticLayout.value = nextLayout;
+    layoutParam?.set(nextLayout as unknown as RuntimeJsonValue);
+  }
   emit("layout-change", buildLayoutChangePayload(next));
+}
+
+function hideStaticItem(item: GroupedGridItem) {
+  if (isRecordMode) return;
+  const nextLayout = setStaticGridItemHidden(currentStaticLayout.value, item.itemId, true);
+  const built = buildStaticGroupedGridState({
+    items: props.items ?? [],
+    groups: props.groups,
+    layout: nextLayout,
+    columns: effectiveColumns.value,
+    minColSpan: effectiveMinColSpan.value,
+    maxColSpan: effectiveMaxColSpan.value,
+    minRowSpan: effectiveMinRowSpan.value,
+    maxRowSpan: effectiveMaxRowSpan.value,
+    resolveTitle: resolveStaticTitle,
+  });
+  localGroups.value = built.visibleGroups;
+  localStaticLayout.value = nextLayout;
+  layoutParam?.set(nextLayout as unknown as RuntimeJsonValue);
+  emit("layout-change", buildLayoutChangePayload(built.visibleGroups));
 }
 
 function onGroupDragStart(groupId: string, event: DragEvent) {
@@ -543,13 +649,13 @@ function onGroupDrop(targetGroupId: string, event: DragEvent) {
   event.preventDefault();
   if (draggingGroupId.value) {
     const position = dropGroupTarget.value?.groupId === targetGroupId ? dropGroupTarget.value.position : "before";
-    const next = reorderGridGroups(groups.value, draggingGroupId.value, targetGroupId, position);
+    const next = reorderGridGroups(renderedGroups.value, draggingGroupId.value, targetGroupId, position);
     clearDragState();
     commitLayoutChange(next);
     return;
   }
   if (draggingItemKey.value) {
-    const next = moveGridItem(groups.value, draggingItemKey.value, targetGroupId, {
+    const next = moveGridItem(renderedGroups.value, draggingItemKey.value, targetGroupId, {
       sectionField: props.sectionField,
       sectionOrder: props.sectionOrder,
     });
@@ -585,7 +691,7 @@ function onItemDrop(groupId: string, targetItem: GroupedGridItem, event: DragEve
   event.preventDefault();
   event.stopPropagation();
   const position = dropItemTarget.value?.itemKey === targetItem.key ? dropItemTarget.value.position : "before";
-  const next = moveGridItem(groups.value, draggingItemKey.value, groupId, {
+  const next = moveGridItem(renderedGroups.value, draggingItemKey.value, groupId, {
     targetItemKey: targetItem.key,
     position,
     sectionField: props.sectionField,
@@ -603,6 +709,10 @@ interface ResizeSession {
   readonly startY: number;
   readonly startColSpan: number;
   readonly startRowSpan: number;
+  readonly minColSpan: number;
+  readonly maxColSpan: number;
+  readonly minRowSpan: number;
+  readonly maxRowSpan: number;
   readonly colUnit: number;
   readonly rowUnit: number;
   colSpan: number;
@@ -623,12 +733,29 @@ function startItemResize(item: GroupedGridItem, event: PointerEvent) {
   const colUnit = Math.max(24, (trackWidth - gap * (cols - 1)) / cols + gap);
   const rowUnit = Math.max(48, sectionRowHeight(item.section) + gap);
 
+  const itemMaxCol = item.maxColSpan !== undefined
+    ? Math.max(1, Math.min(cols, Math.floor(item.maxColSpan)))
+    : effectiveMaxColSpan.value;
+  const itemMinCol = item.minColSpan !== undefined
+    ? Math.max(1, Math.min(itemMaxCol, Math.floor(item.minColSpan)))
+    : Math.min(itemMaxCol, effectiveMinColSpan.value);
+  const itemMaxRow = item.maxRowSpan !== undefined
+    ? Math.max(1, Math.min(24, Math.floor(item.maxRowSpan)))
+    : effectiveMaxRowSpan.value;
+  const itemMinRow = item.minRowSpan !== undefined
+    ? Math.max(1, Math.min(itemMaxRow, Math.floor(item.minRowSpan)))
+    : Math.min(itemMaxRow, effectiveMinRowSpan.value);
+
   activeResize.value = {
     itemKey: item.key,
     startX: event.clientX,
     startY: event.clientY,
     startColSpan: item.colSpan,
     startRowSpan: item.rowSpan,
+    minColSpan: itemMinCol,
+    maxColSpan: itemMaxCol,
+    minRowSpan: itemMinRow,
+    maxRowSpan: itemMaxRow,
     colUnit,
     rowUnit,
     colSpan: item.colSpan,
@@ -647,14 +774,14 @@ function onResizeMove(event: PointerEvent) {
   const deltaRows = Math.round((event.clientY - session.startY) / session.rowUnit);
   session.colSpan = clampGridSpan(
     session.startColSpan + deltaCols,
-    effectiveMinColSpan.value,
-    effectiveMaxColSpan.value,
+    session.minColSpan,
+    session.maxColSpan,
     session.startColSpan,
   );
   session.rowSpan = clampGridSpan(
     session.startRowSpan + deltaRows,
-    effectiveMinRowSpan.value,
-    effectiveMaxRowSpan.value,
+    session.minRowSpan,
+    session.maxRowSpan,
     session.startRowSpan,
   );
 }
@@ -670,7 +797,7 @@ function onResizeEnd() {
   const session = activeResize.value;
   activeResize.value = null;
   if (!session) return;
-  const next = resizeGridItem(groups.value, session.itemKey, session.colSpan, session.rowSpan);
+  const next = resizeGridItem(renderedGroups.value, session.itemKey, session.colSpan, session.rowSpan);
   commitLayoutChange(next);
 }
 
@@ -695,6 +822,8 @@ function itemSlotScope(group: GroupedGridGroup, item: GroupedGridItem): GroupedG
   const colSpan = displayColSpan(item);
   const rowSpan = displayRowSpan(item);
   return {
+    itemId: item.itemId,
+    title: item.title,
     row: item.row,
     itemRef: item.itemRef,
     group: { id: group.id, title: group.title, order: group.order },
@@ -745,7 +874,7 @@ const gridCssVars = computed(() => ({
     <DataState v-else :result="gridDataResult" :labels="dataStateLabels">
       <div class="sdk-grouped-grid-groups">
         <section
-          v-for="(group, groupIndex) in groups"
+          v-for="(group, groupIndex) in renderedGroups"
           :key="group.id"
           class="sdk-grouped-grid-group"
           :data-group-id="group.id"
@@ -758,7 +887,7 @@ const gridCssVars = computed(() => ({
           @dragover="onGroupDragOver(group.id, $event)"
           @drop="onGroupDrop(group.id, $event)"
         >
-          <header class="sdk-grouped-grid-group-header">
+          <header v-if="showGroupHeaders" class="sdk-grouped-grid-group-header">
             <span
               v-if="editable"
               class="sdk-grouped-grid-group-handle"
@@ -788,8 +917,8 @@ const gridCssVars = computed(() => ({
               <span class="sdk-grouped-grid-collapse-icon" :class="{ collapsed: isGroupCollapsed(group.id) }" aria-hidden="true">▾</span>
             </button>
 
-            <h3 class="sdk-grouped-grid-group-title" :title="group.title">
-              {{ group.title }}
+            <h3 class="sdk-grouped-grid-group-title" :title="group.title || group.id">
+              {{ group.title || group.id }}
             </h3>
 
             <div v-if="$slots['group-header-actions']" class="sdk-grouped-grid-group-actions">
@@ -797,7 +926,7 @@ const gridCssVars = computed(() => ({
             </div>
           </header>
 
-          <div v-if="!isGroupCollapsed(group.id)" class="sdk-grouped-grid-group-body">
+          <div v-if="!showGroupHeaders || !isGroupCollapsed(group.id)" class="sdk-grouped-grid-group-body">
             <div v-if="group.items.length === 0" class="sdk-grouped-grid-group-empty">
               <slot name="group-empty" :group="{ id: group.id, title: group.title, order: group.order }">
                 <span class="sdk-grouped-grid-group-empty-text">{{ emptyGroupText || t("platform.dataEmpty") }}</span>
@@ -818,6 +947,7 @@ const gridCssVars = computed(() => ({
                   :ref="(el) => setItemElement(item.key, el)"
                   class="sdk-grouped-grid-item"
                   :data-item-key="item.key"
+                  :data-item-id="item.itemId"
                   :data-primary-key="item.primaryKey"
                   :class="{
                     'is-selected': selectedKey === item.key,
@@ -835,7 +965,7 @@ const gridCssVars = computed(() => ({
                   @dragover="onItemDragOver(group.id, item, $event)"
                   @drop="onItemDrop(group.id, item, $event)"
                 >
-                  <div class="sdk-grouped-grid-item-header">
+                  <div v-if="showItemHeaders" class="sdk-grouped-grid-item-header">
                     <span
                       v-if="editable"
                       class="sdk-grouped-grid-item-handle"
@@ -856,8 +986,8 @@ const gridCssVars = computed(() => ({
                       </svg>
                     </span>
 
-                    <span class="sdk-grouped-grid-item-title" :title="item.row.label">
-                      {{ item.row.label }}
+                    <span class="sdk-grouped-grid-item-title" :title="item.title">
+                      {{ item.title }}
                     </span>
 
                     <div class="sdk-grouped-grid-item-actions" @click.stop>
@@ -866,12 +996,28 @@ const gridCssVars = computed(() => ({
                         name="item-header-actions"
                         v-bind="itemSlotScope(group, item)"
                       ></slot>
+                      <button
+                        v-if="!isRecordMode && allowHide && item.hideable !== false"
+                        type="button"
+                        class="sdk-grouped-grid-hide-btn"
+                        data-testid="grouped-grid-item-hide"
+                        aria-label="Hide item"
+                        title="Hide item"
+                        @click.stop="hideStaticItem(item)"
+                      >
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M2 2l12 12" />
+                          <path d="M6.5 6.6A2 2 0 0 0 9.4 9.5" />
+                          <path d="M9.9 4.2A7.5 7.5 0 0 1 14 8c-.6 1-1.5 1.9-2.5 2.5" />
+                          <path d="M6.1 11.8A7.5 7.5 0 0 1 2 8c.6-1 1.5-1.9 2.5-2.5" />
+                        </svg>
+                      </button>
                       <ObjectListRowActions
                         v-if="resolvedRowActionsFor(item.row).length > 0"
                         :items="resolvedRowActionsFor(item.row)"
                         :max-visible="rowActions?.maxVisible ?? 0"
                         :busy="rowOpRunning"
-                        :row-label="item.row.label || item.primaryKey"
+                        :row-label="item.title || item.primaryKey"
                         @trigger="(action) => triggerRowAction(item, action)"
                       />
                     </div>
@@ -1146,6 +1292,25 @@ const gridCssVars = computed(() => ({
   align-items: center;
   gap: 2px;
   flex: none;
+}
+
+.sdk-grouped-grid-hide-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+}
+
+.sdk-grouped-grid-hide-btn:hover {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
 }
 
 .sdk-grouped-grid-item-body {

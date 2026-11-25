@@ -1,5 +1,5 @@
 import type { Component } from "vue";
-import type { DirectPanelPortType, OntologyParameterType } from "@ontomato/contracts/panel-manifest";
+import type { DirectPanelPortType } from "@ontomato/contracts/panel-manifest";
 import type { PanelReadResultId } from "@ontomato/contracts/platform-object-types";
 
 /*
@@ -47,7 +47,7 @@ export interface ComponentMetadata {
    */
   readonly bindsElement?: readonly string[];
   /** The parameters it takes, by name; a projection's `inputs` are these. */
-  readonly inputs?: Readonly<Record<string, OntologyParameterType>>;
+  readonly inputs?: Readonly<Record<string, DirectPanelPortType>>;
   /**
    * The values it hands its panel that a placement can bind to the panel's state, by name and type. An object of the
    * projection's own type is `objectType: "@binding"`, which registration resolves to the type the projection binds.

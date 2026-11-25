@@ -810,6 +810,16 @@ function formatPortType(port: DirectPanelPortType, locale: string): string {
       return word("portScalar", { type: port.type });
     case "placement":
       return word("portPlacement");
+    case "grid-layout": {
+      const details = [
+        port.columns !== undefined ? `columns<=${port.columns}` : "",
+        port.maxRowSpan !== undefined ? `maxRowSpan<=${port.maxRowSpan}` : "",
+        port.groupIds ? `groups=[${port.groupIds.join(", ")}]` : "",
+        port.itemIds ? `items=[${port.itemIds.join(", ")}]` : "",
+      ].filter(Boolean);
+      const base = word("portGridLayout");
+      return details.length ? `${base} (${details.join("; ")})` : base;
+    }
     case "json":
       return word("portJson");
   }

@@ -17,7 +17,10 @@ export type {
   GroupedGridLayoutChange,
   GroupedGridLayoutGroup,
   GroupedGridLayoutItem,
+  GroupedGridLayoutState,
   GroupedGridSection,
+  GroupedGridStaticGroupConfig,
+  GroupedGridStaticItemConfig,
 } from "../base/grouped-grid-types";
 export { default as ObjectCount } from "../base/ObjectCount.vue";
 export type { ObjectCountItem } from "../base/object-count-types";

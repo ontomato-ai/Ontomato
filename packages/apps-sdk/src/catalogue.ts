@@ -223,24 +223,27 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "GroupedGrid",
     role: "control",
     meaning:
-      "Arranges records from its `rows` (`panelRecordList`) datum into collapsible groups (optionally preserving empty groups and group order from a parent container `record` datum's `groupsField`) on a responsive CSS grid (`columns`, `rowHeight`, `gap`) with optional stacked section tracks (`sectionField`, `sectionOrder`), drag-and-drop group and item reordering (within or across groups), pointer-driven cell resizing (`colSpanField`, `rowSpanField`), selection highlight and scroll-into-view (`selected`), and built-in per-item `rowActions`. Renders each cell body via the scoped `#item` slot (alongside `#item-header-actions`, `#group-header-actions`, `#group-empty`, and `#empty`) and never fetches cell body content itself. Emits `layout-change` only when the reader finishes a drag or resize interaction, never on initial load or restore.",
+      "Arranges either records from its `rows` (`panelRecordList`) datum (optionally preserving empty groups and group order from a parent container `record` datum's `groupsField`) or fixed static items from `items` (with optional `groups` and typed `layout` state) into collapsible groups on a responsive CSS grid (`columns`, `rowHeight`, `gap`) with optional stacked section tracks (`sectionField`, `sectionOrder`), drag-and-drop group and item reordering (within or across groups), pointer-driven cell resizing (`colSpanField`, `rowSpanField`, or per-item span bounds), optional item hiding (`allowHide`) and header toggles (`showGroupHeaders`, `showItemHeaders`), selection highlight and scroll-into-view (`selected`), and built-in per-item `rowActions`. Renders each cell body via the scoped `#item` slot (alongside `#item-header-actions`, `#group-header-actions`, `#group-empty`, and `#empty`) and never fetches cell body content itself. Writes `layout` state and emits `layout-change` only when the reader finishes a drag, resize, or hide interaction, never on initial load or restore.",
     effects:
-      "Reads its `rows` list and optional container `record` datum as the reader; writes only the panel's `selected` state and runs declared per-item operations through the platform coordinator.",
+      "In record mode, reads its `rows` list and optional container `record` datum as the reader, writes the panel's `selected` state, and runs declared per-item operations through the platform coordinator. In fixed-member mode, reads and writes the panel's typed `layout` state without querying any datum.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     data: {
       record: { results: ["panelRecord"], required: false },
-      rows: { results: ["panelRecordList"], required: true },
+      rows: { results: ["panelRecordList"], required: false },
     },
     inputs: {
       selected: { kind: "object", objectType: "@data:rows" },
+      layout: { kind: "grid-layout" },
     },
     outputs: {
       selected: { kind: "object", objectType: "@data:rows" },
+      layout: { kind: "grid-layout" },
     },
     readOnlyOutputs: {
       status: { kind: "scalar", type: "string" },
       groupCount: { kind: "scalar", type: "number" },
       itemCount: { kind: "scalar", type: "number" },
+      hiddenCount: { kind: "scalar", type: "number" },
     },
   }),
   defineComponentMeta({

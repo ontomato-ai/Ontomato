@@ -91,6 +91,16 @@ function formatSdkPortType(
       return word("portList", { items: formatSdkPortType(type.items, locale) });
     case "placement":
       return word("portPlacement");
+    case "grid-layout": {
+      const details = [
+        type.columns !== undefined ? `columns<=${type.columns}` : "",
+        type.maxRowSpan !== undefined ? `maxRowSpan<=${type.maxRowSpan}` : "",
+        type.groupIds ? `groups=[${type.groupIds.join(", ")}]` : "",
+        type.itemIds ? `items=[${type.itemIds.join(", ")}]` : "",
+      ].filter(Boolean);
+      const base = word("portGridLayout");
+      return details.length ? `${base} (${details.join("; ")})` : base;
+    }
     case "json":
       return word("portJson");
   }

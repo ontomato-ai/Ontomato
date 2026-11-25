@@ -3,6 +3,43 @@ import type { PanelRowOperationAvailability } from "@ontomato/contracts/panel-ho
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import type { ObjectListRef } from "./object-list-types";
 
+/** Static group definition for fixed-member mode of `GroupedGrid` (when no `rows` datum is bound). */
+export interface GroupedGridStaticGroupConfig {
+  readonly id: string;
+  readonly title?: string;
+  readonly titleKey?: string;
+}
+
+/** Static item definition for fixed-member mode of `GroupedGrid` (when no `rows` datum is bound). */
+export interface GroupedGridStaticItemConfig {
+  readonly id: string;
+  readonly title?: string;
+  readonly titleKey?: string;
+  readonly groupId?: string;
+  readonly colSpan?: number;
+  readonly rowSpan?: number;
+  readonly minColSpan?: number;
+  readonly maxColSpan?: number;
+  readonly minRowSpan?: number;
+  readonly maxRowSpan?: number;
+  readonly hidden?: boolean;
+  readonly hideable?: boolean;
+}
+
+/** Typed `grid-layout` state value read from and written back to the panel's `layout` port. */
+export interface GroupedGridLayoutState {
+  readonly groups: readonly {
+    readonly id: string;
+    readonly title?: string;
+    readonly items: readonly {
+      readonly id: string;
+      readonly colSpan: number;
+      readonly rowSpan: number;
+      readonly hidden?: boolean;
+    }[];
+  }[];
+}
+
 /** Metadata for one group extracted from the parent record or derived from item records. */
 export interface GroupedGridGroupSummary {
   readonly id: string;
@@ -13,6 +50,8 @@ export interface GroupedGridGroupSummary {
 /** One resolved item inside a group or section of `GroupedGrid`. */
 export interface GroupedGridItem {
   readonly key: string;
+  readonly itemId: string;
+  readonly title: string;
   readonly primaryKey: string;
   readonly row: PlatformObjectRecord;
   readonly itemRef: ObjectListRef;
@@ -22,6 +61,11 @@ export interface GroupedGridItem {
   readonly order: number;
   readonly colSpan: number;
   readonly rowSpan: number;
+  readonly minColSpan?: number;
+  readonly maxColSpan?: number;
+  readonly minRowSpan?: number;
+  readonly maxRowSpan?: number;
+  readonly hideable?: boolean;
 }
 
 /** One section track inside a group (present when `sectionField` partitions items into separate grid tracks). */
@@ -63,6 +107,8 @@ export interface GroupedGridLayoutChange {
 
 /** Scoped props passed to `#item` and `#item-header-actions` slots. */
 export interface GroupedGridItemSlotScope {
+  readonly itemId: string;
+  readonly title: string;
   readonly row: PlatformObjectRecord;
   readonly itemRef: ObjectListRef;
   readonly group: GroupedGridGroupSummary;

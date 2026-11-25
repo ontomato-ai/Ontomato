@@ -277,6 +277,13 @@ export function expandPanelAuthoringMember(
   }));
   for (const [name, datum] of Object.entries(componentData))
     if (datum.required && !Object.hasOwn(data, name)) fail(`data.${name}`, "The component requires this datum");
+  if (
+    componentId === "@ontomato/sdk:GroupedGrid"
+    && !Object.hasOwn(data, "rows")
+    && !(Array.isArray(member.config?.items) || member.state?.layout !== undefined || member.inputs?.layout !== undefined)
+  ) {
+    fail("data.rows", "GroupedGrid requires 'data.rows' in record mode, or 'config.items' / 'state.layout' in fixed-member mode");
+  }
 
   const owners = new Set(dataTypes.values());
   const bindingType = typeId ?? (owners.size === 1 ? [...owners][0] : undefined);
@@ -370,6 +377,8 @@ export function expandPanelAuthoringMember(
         } else {
           offered = boundComponentPort(port, output, actual, path);
         }
+      } else if (componentId === "@ontomato/sdk:GroupedGrid" && port === "layout" && actual.kind === "grid-layout") {
+        offered = actual;
       } else if (componentId === "@ontomato/sdk:ObjectRefCard" && port === "navigate") {
         const targetClassName = typeof member.config?.targetClassName === "string" ? member.config.targetClassName.trim() : "";
         if (targetClassName) {
@@ -391,6 +400,56 @@ export function expandPanelAuthoringMember(
   }
 
   const config = { ...member.config };
+  if (componentId === "@ontomato/sdk:GroupedGrid" && config.items !== undefined) {
+    const items = config.items;
+    if (!Array.isArray(items)) {
+      return fail("config.items", "GroupedGrid 'config.items' must be an array");
+    }
+    const layoutStatePort = member.state?.layout !== undefined ? state[member.state.layout]?.type : undefined;
+    const allowedItems = layoutStatePort?.kind === "grid-layout" && layoutStatePort.itemIds
+      ? new Set(layoutStatePort.itemIds)
+      : null;
+    const allowedGroups = layoutStatePort?.kind === "grid-layout" && layoutStatePort.groupIds
+      ? new Set(layoutStatePort.groupIds)
+      : null;
+    const seenItems = new Set<string>();
+    for (let index = 0; index < items.length; index++) {
+      const entry = items[index];
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return fail(`config.items.${index}`, "Each GroupedGrid static item must be an object with an 'id'");
+      }
+      const itemId = typeof (entry as Record<string, unknown>).id === "string"
+        ? ((entry as Record<string, unknown>).id as string).trim()
+        : "";
+      if (!itemId) {
+        return fail(`config.items.${index}.id`, "Each GroupedGrid static item requires a non-empty string 'id'");
+      }
+      if (seenItems.has(itemId)) {
+        return fail(`config.items.${index}.id`, `Duplicate GroupedGrid static item id '${itemId}'`);
+      }
+      seenItems.add(itemId);
+      if (allowedItems && !allowedItems.has(itemId)) {
+        return fail(`config.items.${index}.id`, `Static item '${itemId}' is not declared in layout state's itemIds`);
+      }
+      const groupId = typeof (entry as Record<string, unknown>).groupId === "string"
+        ? ((entry as Record<string, unknown>).groupId as string).trim()
+        : "";
+      if (groupId && allowedGroups && !allowedGroups.has(groupId)) {
+        return fail(`config.items.${index}.groupId`, `Static item group '${groupId}' is not declared in layout state's groupIds`);
+      }
+    }
+    if (allowedGroups && Array.isArray(config.groups)) {
+      for (let index = 0; index < config.groups.length; index++) {
+        const entry = config.groups[index];
+        const groupId = entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as Record<string, unknown>).id === "string"
+          ? ((entry as Record<string, unknown>).id as string).trim()
+          : "";
+        if (groupId && !allowedGroups.has(groupId)) {
+          return fail(`config.groups.${index}.id`, `Static group '${groupId}' is not declared in layout state's groupIds`);
+        }
+      }
+    }
+  }
   if (componentId === "@ontomato/sdk:ObjectList" && typeof config.openOutput === "string") {
     const rowsType = dataTypes.get("rows");
     const rowsRead = data.rows?.read;

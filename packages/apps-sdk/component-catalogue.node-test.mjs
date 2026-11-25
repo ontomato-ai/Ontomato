@@ -342,10 +342,22 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.ok(metricChartConfigNames.includes("min-height"), "MetricChart exposes min-height for grid cell sizing");
     const groupedGrid = declared.get("GroupedGrid");
     assert.ok(groupedGrid, "GroupedGrid is published in the SDK component catalogue");
-    assert.deepEqual(groupedGrid.inputs, { selected: { kind: "object", objectType: "@data:rows" } });
-    assert.deepEqual(groupedGrid.outputs, { selected: { kind: "object", objectType: "@data:rows" } });
+    assert.deepEqual(groupedGrid.inputs, {
+      selected: { kind: "object", objectType: "@data:rows" },
+      layout: { kind: "grid-layout" },
+    });
+    assert.deepEqual(groupedGrid.outputs, {
+      selected: { kind: "object", objectType: "@data:rows" },
+      layout: { kind: "grid-layout" },
+    });
+    assert.deepEqual(Object.keys(groupedGrid.readOnlyOutputs ?? {}).sort(), [
+      "groupCount", "hiddenCount", "itemCount", "status",
+    ]);
     const groupedGridConfigNames = (groupedGrid.config ?? []).map((prop) => prop.name);
-    for (const expectedProp of ["columns", "row-height", "gap", "group-key-field", "groups-field", "section-field", "editable", "row-actions"]) {
+    for (const expectedProp of [
+      "columns", "row-height", "gap", "group-key-field", "groups-field", "section-field",
+      "editable", "row-actions", "items", "groups", "show-group-headers", "show-item-headers", "allow-hide",
+    ]) {
       assert.ok(groupedGridConfigNames.includes(expectedProp), `GroupedGrid config includes ${expectedProp}`);
     }
 

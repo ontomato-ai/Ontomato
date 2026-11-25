@@ -362,6 +362,181 @@ it("GroupedGrid renders groups (preserving empty groups), sections, slots, selec
   expect(resized.rowSpan).toBeGreaterThan(2);
 });
 
+it("GroupedGrid fixed-member mode mounts without data.rows, reads/writes typed layout state on drag/resize/hide, and reacts to external state updates", async () => {
+  const manifest = definePanel({
+    state: {
+      layout: {
+        type: {
+          kind: "grid-layout",
+          columns: 12,
+          maxRowSpan: 6,
+          groupIds: ["main"],
+          itemIds: ["first", "second", "third"],
+        },
+        personal: true,
+      },
+    },
+    members: {
+      canvas: {
+        target: { projectionId: "proj-static-grid" },
+        inputs: { layout: { state: "layout" } },
+        outputs: { layout: { state: "layout" } },
+      },
+    },
+  });
+
+  const projections: Record<string, DirectProjection> = {
+    "proj-static-grid": {
+      ...meta,
+      id: "proj-static-grid",
+      name: "Static Grid",
+      componentId: "@ontomato/sdk:GroupedGrid",
+      data: {},
+      config: {
+        columns: 12,
+        rowHeight: 160,
+        gap: 16,
+        showGroupHeaders: false,
+        allowHide: true,
+        items: [
+          { id: "first", title: "First Block", groupId: "main", colSpan: 6, rowSpan: 2, minColSpan: 3, maxColSpan: 9 },
+          { id: "second", title: "Second Block", groupId: "main", colSpan: 6, rowSpan: 2 },
+          { id: "third", title: "Third Block", groupId: "main", colSpan: 4, rowSpan: 1, hidden: true },
+        ],
+      },
+      inputs: {
+        layout: {
+          kind: "grid-layout",
+          columns: 12,
+          maxRowSpan: 6,
+          groupIds: ["main"],
+          itemIds: ["first", "second", "third"],
+        },
+      },
+      outputs: {
+        layout: {
+          kind: "grid-layout",
+          columns: 12,
+          maxRowSpan: 6,
+          groupIds: ["main"],
+          itemIds: ["first", "second", "third"],
+        },
+      },
+    },
+  };
+
+  const layoutChanges: unknown[] = [];
+  const dataReadSpy = vi.fn(() => {
+    throw new Error("Fixed-member GroupedGrid must not trigger any data read");
+  });
+
+  const { container, instance } = mountDirect(
+    manifest,
+    projections,
+    dataReadSpy,
+    (inst) =>
+      h(
+        PanelMember,
+        {
+          instance: inst,
+          member: "canvas",
+          onLayoutChange: (payload: unknown) => layoutChanges.push(payload),
+        },
+        {
+          item: ({ itemId, title, colSpan, rowSpan }: { itemId: string; title: string; colSpan: number; rowSpan: number }) =>
+            h("div", { class: "static-slot-body", "data-static-id": itemId }, `${title}:${colSpan}x${rowSpan}`),
+        },
+      ),
+  );
+
+  await vi.waitFor(() => {
+    expect(container.querySelectorAll<HTMLElement>(".sdk-grouped-grid-item").length).toBe(2);
+  });
+
+  // Zero data reads, no group headers, hidden item omitted, read-only outputs published
+  expect(dataReadSpy).not.toHaveBeenCalled();
+  expect(container.querySelector(".sdk-grouped-grid-group-header")).toBeNull();
+  expect([...container.querySelectorAll<HTMLElement>(".sdk-grouped-grid-item")].map((el) => el.getAttribute("data-item-id"))).toEqual([
+    "first",
+    "second",
+  ]);
+  expect(container.querySelector('[data-static-id="first"]')?.textContent).toBe("First Block:6x2");
+  expect(instance.outputs.canvas?.itemCount).toBe(2);
+  expect(instance.outputs.canvas?.hiddenCount).toBe(1);
+  expect(layoutChanges).toHaveLength(0);
+
+  // Dragging 'second' before 'first' writes valid grid-layout state and preserves hidden 'third'
+  const firstEl = container.querySelector<HTMLElement>('[data-item-id="first"]')!;
+  const secondEl = container.querySelector<HTMLElement>('[data-item-id="second"]')!;
+  const secondHandle = secondEl.querySelector<HTMLElement>('[data-testid="grouped-grid-item-handle"]')!;
+  secondHandle.dispatchEvent(new Event("dragstart", { bubbles: true }));
+  firstEl.dispatchEvent(new Event("dragover", { bubbles: true, cancelable: true }));
+  firstEl.dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
+  await flush();
+
+  expect(layoutChanges).toHaveLength(1);
+  expect(instance.state.values.value.layout).toEqual({
+    groups: [
+      {
+        id: "main",
+        items: [
+          { id: "second", colSpan: 6, rowSpan: 2 },
+          { id: "first", colSpan: 6, rowSpan: 2 },
+          { id: "third", colSpan: 4, rowSpan: 1, hidden: true },
+        ],
+      },
+    ],
+  });
+
+  // Resizing 'first' respects per-item maxColSpan=9 and updates layout state
+  const firstResizeHandle = container.querySelector<HTMLElement>('[data-item-id="first"] [data-testid="grouped-grid-resize-handle"]')!;
+  firstResizeHandle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 0, clientY: 0 }));
+  window.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 800, clientY: 200 }));
+  window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  await flush();
+
+  expect(layoutChanges).toHaveLength(2);
+  const afterResize = instance.state.values.value.layout as { groups: Array<{ items: Array<{ id: string; colSpan: number; rowSpan: number; hidden?: boolean }> }> };
+  const resizedFirst = afterResize.groups[0]!.items.find((item) => item.id === "first")!;
+  expect(resizedFirst.colSpan).toBe(9);
+  expect(resizedFirst.rowSpan).toBeGreaterThan(2);
+
+  // Clicking hide on 'second' marks it hidden in layout state and removes it from the rendered grid
+  const hideBtn = container.querySelector<HTMLElement>('[data-item-id="second"] [data-testid="grouped-grid-item-hide"]')!;
+  hideBtn.click();
+  await flush();
+
+  expect(layoutChanges).toHaveLength(3);
+  expect([...container.querySelectorAll<HTMLElement>(".sdk-grouped-grid-item")].map((el) => el.getAttribute("data-item-id"))).toEqual(["first"]);
+  expect(instance.outputs.canvas?.itemCount).toBe(1);
+  expect(instance.outputs.canvas?.hiddenCount).toBe(2);
+  const afterHide = instance.state.values.value.layout as { groups: Array<{ items: Array<{ id: string; hidden?: boolean }> }> };
+  expect(afterHide.groups[0]!.items.find((item) => item.id === "second")?.hidden).toBe(true);
+
+  // External state update immediately re-renders order, spans, and visibility
+  instance.state.set("layout", {
+    groups: [
+      {
+        id: "main",
+        items: [
+          { id: "third", colSpan: 8, rowSpan: 3 },
+          { id: "first", colSpan: 4, rowSpan: 2 },
+          { id: "second", colSpan: 6, rowSpan: 2, hidden: true },
+        ],
+      },
+    ],
+  });
+  await flush();
+
+  expect([...container.querySelectorAll<HTMLElement>(".sdk-grouped-grid-item")].map((el) => el.getAttribute("data-item-id"))).toEqual([
+    "third",
+    "first",
+  ]);
+  expect(container.querySelector('[data-static-id="third"]')?.textContent).toBe("Third Block:8x3");
+  expect(instance.outputs.canvas?.itemCount).toBe(2);
+  expect(instance.outputs.canvas?.hiddenCount).toBe(1);
+});
+
 it("MetricChart supports fileOverride, minHeight, and exposed refresh()", async () => {
   const savedFile = dashboardChartFileSchema.parse({
     name: "saved.chart.json",
