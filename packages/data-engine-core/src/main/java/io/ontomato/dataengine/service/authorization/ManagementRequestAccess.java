@@ -63,7 +63,8 @@ public final class ManagementRequestAccess {
         if (domain == null || domain.isBlank())
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A current domain credential is required");
 
-        var actor = new AuthorizationService.VerifiedIdentity(domain, user.getId(), AuthorizationService.CredentialLimit.UNRESTRICTED);
+        var actor = new AuthorizationService.VerifiedIdentity(domain, identity.workbenchSubjectId(user),
+                AuthorizationService.CredentialLimit.UNRESTRICTED);
         var decision = authorization.decide(authorization.resolveSubject(actor), new AuthorizationService.Management(operationId));
         if (!decision.allowed()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
         return user;

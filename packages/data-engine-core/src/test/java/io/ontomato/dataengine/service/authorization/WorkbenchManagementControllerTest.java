@@ -37,7 +37,7 @@ class WorkbenchManagementControllerTest {
         var policies = mock(AuthorizationStore.class);
         var mapper = new ObjectMapper();
         var operations = new ManagementOperations(List.of(new WorkbenchManagementOperations(mapper)));
-        when(subjects.resolveRoles("domain-a", "user-a")).thenReturn(
+        when(subjects.resolveRoles("domain-a", "canonical-user-a")).thenReturn(
             new RoleResolution(Set.of("reader"), Set.of("reader"), List.of(), Set.of(), Map.of(), false));
         when(policies.policies("domain-a", Set.of("reader"))).thenReturn(
             List.of(new PolicyRef("reader", "mcp-reader", PolicyKind.MANAGEMENT)));
@@ -78,6 +78,7 @@ class WorkbenchManagementControllerTest {
         user.setId("user-a");
         user.setDomainId("domain-a");
         when(identity.getCurrentUser()).thenReturn(user);
+        when(identity.workbenchSubjectId(user)).thenReturn("canonical-user-a");
     }
 
     private static MockHttpServletRequestBuilder request(String operation, String domain) {
