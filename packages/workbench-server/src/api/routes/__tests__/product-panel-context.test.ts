@@ -67,7 +67,7 @@ it.each([
   expect(readOwner).toHaveBeenCalledTimes(1);
   expect(mocks.member).toHaveBeenCalledTimes(1);
   expect(mocks.member).toHaveBeenCalledWith({
-    domainId: owner.domainId, initiatorCredentials: expect.objectContaining({ token: "caller-token" }),
+    domainId: owner.domainId, userId: owner.userId, initiatorCredentials: expect.objectContaining({ token: "caller-token" }),
   }, entrance, source, loaded, expect.objectContaining({ id: "product-panels", findByUse: expect.any(Function) }));
   expect(mocks.member.mock.calls[0]![3]).toBe(loaded);
 });

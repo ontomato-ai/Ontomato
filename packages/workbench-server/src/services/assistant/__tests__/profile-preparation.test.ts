@@ -38,7 +38,7 @@ it('limits a Profile run to frozen projection tools without inherited skills or 
 it('keeps the initiator identity for caller ownership and native skills in self mode',async()=>{
  const input=request();const run=await prepareAnalystRun(input);
  expect(run.definition.skills).toEqual([{skill:analyst,digest}]);expect(run.definition.externalMcp).toEqual([{id:'external'}]);expect(run.definition.toolSurface).toBeUndefined();
- expect(mocks.skills).toHaveBeenCalledWith('domain',input.a,input.credentials,undefined);
+ expect(mocks.skills).toHaveBeenCalledWith('domain',input.a,input.credentials,undefined,input.owner.userId);
  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({executionUserId:null,classNames:['Person']}),input.credentials);
  expect(run).not.toHaveProperty("environment");
  expect(run.businessCallbacks).toEqual({
@@ -52,7 +52,7 @@ it('keeps the initiator identity for caller ownership and native skills in self 
 });
 it('uses executor business credentials while page skills and caller ownership stay with the initiator',async()=>{
  const input=request('executor');const run=await prepareAnalystRun(input);
- expect(mocks.skills).toHaveBeenCalledWith('domain',input.a,input.credentials,undefined);
+ expect(mocks.skills).toHaveBeenCalledWith('domain',input.a,input.credentials,undefined,input.owner.userId);
  expect(mocks.overview).toHaveBeenCalledWith(input.a,expect.objectContaining({apiKey:'executor-key',headers:{'X-Ontomato-Retrieval-Caller-Id':'run'}}));
  expect(mocks.profile).toHaveBeenCalledWith(input.owner,input.credentials,'session','agent',expect.objectContaining({apiKey:'executor-key'}),null);
  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({executionUserId:'executor'}),input.credentials);

@@ -23,7 +23,7 @@ export async function readPanelSkillSources(domainId: string) {
 }
 
 export const panelSkillProvider: SkillProvider<ProtectedSkillOffering> & {
-  findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials, panelIdOverride?: string): Promise<ProtectedSkillOffering | SkillSourceFailure | null>;
+  findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials, userId?: string): Promise<ProtectedSkillOffering | SkillSourceFailure | null>;
 } = {
   id: PANEL_SKILL_PROVIDER_ID,
   name: "Panels",
@@ -46,11 +46,14 @@ export const panelSkillProvider: SkillProvider<ProtectedSkillOffering> & {
     }
     return offerings;
   },
-  async findByUse(domainId, { applicationId, useId }, reader, panelIdOverride) {
+  async findByUse(domainId, { applicationId, useId }, reader, userId) {
     const source = (await readPanelSkillSources(domainId)).find(entry => entry.applicationId === applicationId && entry.useId === useId);
     if (!source) return null;
-    const resolved = panelIdOverride !== undefined && panelIdOverride !== source.panelId
-      ? { ...source, panelId: panelIdOverride }
+    const homePanelId = applicationId === "home" && useId === "home" && userId
+      ? await platformHomeStore.homePanelId({ domainId, userId })
+      : null;
+    const resolved = homePanelId !== null && homePanelId !== source.panelId
+      ? { ...source, panelId: homePanelId }
       : source;
     const { panelSkillSources } = await import("./skill-package");
     const [result] = await panelSkillSources(domainId, [resolved], reader);

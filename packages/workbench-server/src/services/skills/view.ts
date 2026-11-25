@@ -196,14 +196,14 @@ export async function readRegisteredPanelPageSkillContext(
   entrance: PageSkillEntrance,
   source: ApplicationUseSkillSource,
   loadedPanel: { id: string },
-  provider: { id: string; findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials, panelIdOverride?: string):
+  provider: { id: string; findByUse(domainId: string, use: PanelUseRef, reader: AssistantCredentials, userId?: string):
     Promise<ProtectedSkillOffering | SkillSourceFailure | null> },
 ): Promise<PageSkillContext> {
   const absent = { mode: "member" as const, locator: entrance, member: null };
   const actual = await currentApplicationPanel(caller, entrance, source);
   if (!actual || actual.use.panelId !== loadedPanel.id) return absent;
   const use = { applicationId: actual.applicationId, useId: actual.use.id };
-  const sourceFact = await provider.findByUse(caller.domainId, use, caller.initiatorCredentials, actual.use.panelId);
+  const sourceFact = await provider.findByUse(caller.domainId, use, caller.initiatorCredentials, caller.userId);
   if (!sourceFact || sourceFact.sourceKey !== loadedPanel.id) return absent;
 
   const ref = protectedSourceSkillRef(provider.id, caller.domainId, sourceFact);
