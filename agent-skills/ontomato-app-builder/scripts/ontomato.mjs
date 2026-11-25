@@ -153,7 +153,7 @@ async function withAuthoring(api, kind, workspaceId, work) {
     })));
   }
 
-  if (workspaceId || process.env.ONTOMATO_EXECUTION_KIND === "build-test") {
+  if (workspaceId) {
     await bindTestTarget(api, workspaceId);
   }
   const root = "/ontology/ai/generation";
@@ -620,10 +620,15 @@ async function bindTestTarget(api,workspaceId) {
   api.executionContext=JSON.stringify({kind:"build-test",contextId:context?.contextId ?? null});
 }
 
+async function resolveWorkspace(api, workspaceId) {
+  if (workspaceId || !isPlatformAuthoring()) return workspaceId;
+  return (await workbench(api, "GET", "/app-builder/workspace")).workspaceId;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const lang = takeOption(argv, "--lang") ?? "en";
-  const workspaceId=takeOption(argv,"--workspace") ?? process.env.ONTOMATO_WORKSPACE_ID;
+  const explicitWorkspaceId = takeOption(argv, "--workspace");
   const cmd = argv[0];
   if (!cmd || cmd === "--help") return usage();
   const checkingPanel = cmd === "panel" && argv[1] === "check";
@@ -677,6 +682,10 @@ async function main() {
     }
   }
   const api = await commandApi();
+  const needsWorkspace = ["test", "vector-upload", "vector-delete", "distinct-values", "execute-dsl"].includes(cmd) ||
+    (["action", "metric-view"].includes(cmd) && argv[1] === "execute") ||
+    (cmd === "panel" && argv[1] === "preview");
+  const workspaceId = needsWorkspace ? await resolveWorkspace(api, explicitWorkspaceId) : explicitWorkspaceId;
   if(cmd==="test") {
     if(!workspaceId) die("BUILD_TEST_WORKSPACE_REQUIRED: pass --workspace <id>");
     const sub=argv[1], samplePath=takeOption(argv,"--sample") ?? "test-data/sample.json";

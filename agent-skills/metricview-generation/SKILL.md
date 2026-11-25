@@ -56,7 +56,6 @@ and do not substitute row counts for zero, missing or nonnumeric results.
 Ordinary natural-language creation still uses the original tested-package result,
 without a reuse outcome. Java alone saves, adopts, publishes and adds bindings.
 
-Hosted runs supply ONTOMATO_ONTOLOGY_URL, ONTOMATO_GENERATION_ID,
-ONTOMATO_GENERATION_KIND and scoped ONTOMATO_TK. External agents run `begin` with
-an authorized user credential (or API key) before testing, then `close`. Ordinary
-external credentials do not become internal computation credentials.
+Use the session credential and `ONTOMATO_GENERATION_URL` for generation calls.
+The script resolves the active Java gate through that callback. Java opens and
+closes the gate and keeps its grant outside the session.

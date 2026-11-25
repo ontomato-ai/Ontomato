@@ -254,7 +254,6 @@ export async function startPanelSkillEntryServer(options: {
       createdAt: new Date().toISOString(), finishedAt: null, stopReason: null, errorMessage: null,
       answerMessageId: null, workspaceCommit: null, definition: prepared.definition,
       resolvedSkills: installed.map(({ skill, digest, description }) => ({ skill, digest, description })),
-      environment: { values: prepared.environment.values, secretNames: Object.keys(prepared.environment.secrets) },
     }, runId, input, "pi");
     installedSessions.set(sessionId, { installed, systemPrompt: prepared.definition.systemPrompt });
     res.status(202).json({

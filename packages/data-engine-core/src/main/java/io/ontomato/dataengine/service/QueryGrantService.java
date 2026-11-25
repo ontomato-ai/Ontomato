@@ -232,7 +232,8 @@ public class QueryGrantService {
       // it never reaches final output delivery or another run's actions.
       case "user-read", "ontology-generation" ->
           read(path) || ("ontology-generation".equals(purpose)
-              && path.startsWith("/ontology/ai/generation/" + runId + "/"));
+              && (path.equals("/ontology/ai/generation/runtime-context")
+                  || path.startsWith("/ontology/ai/generation/" + runId + "/")));
       case "knowledge-governance" ->
           path.matches("/ontology/ai/knowledge-governance/[^/]+/runs/" + runId + "/actions/[^/]+");
       default -> false;

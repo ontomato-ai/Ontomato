@@ -111,7 +111,6 @@ export async function prepareOpsDiagnosisRun({
     language,
     input,
     definition,
-    environment: { values: {}, secrets: {} },
     businessCallbacks,
   };
 }

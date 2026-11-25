@@ -58,6 +58,11 @@ test("shared analyst numeric options reject invalid values before HTTP", async (
 test("skill Action execution preserves complete explicit parameters and owner errors", async () => {
   let sent;
   const server = createServer(async (request, response) => {
+    if (request.url === "/api/app-builder/workspace") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({workspaceId:"11111111-1111-4111-8111-111111111111"}));
+      return;
+    }
     if(request.url.endsWith("/build-tests")) {
       response.setHeader("content-type","application/json");response.end(JSON.stringify({contextId:"22222222-2222-4222-8222-222222222222"}));return;
     }
@@ -73,7 +78,7 @@ test("skill Action execution preserves complete explicit parameters and owner er
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const run = parameters => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/scripts/ontomato.mjs", "action", "execute", "test", JSON.stringify(parameters)], {
-    env: { ...process.env, ONTOMATO_URL: `http://127.0.0.1:${server.address().port}`, ONTOMATO_API_KEY: "test-only", ONTOMATO_WORKSPACE_ID:"11111111-1111-4111-8111-111111111111" },
+    env: { ...process.env, ONTOMATO_URL: `http://127.0.0.1:${server.address().port}`, ONTOMATO_TK: "session-callback", ONTOMATO_EXECUTION_CALLBACK: "session-callback" },
   });
   try {
     const parameters = { optional: null, text: "", count: 0 };
@@ -91,8 +96,8 @@ for(const command of ["status","stop"]) {
     });
     await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
     try {
-      const result=await promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/scripts/ontomato.mjs","test",command],{
-        env:{...process.env,ONTOMATO_URL:`http://127.0.0.1:${server.address().port}`,ONTOMATO_API_KEY:"test-only",ONTOMATO_WORKSPACE_ID:"11111111-1111-4111-8111-111111111111"},
+      const result=await promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/scripts/ontomato.mjs","test",command,"--workspace","11111111-1111-4111-8111-111111111111"],{
+        env:{...process.env,ONTOMATO_URL:`http://127.0.0.1:${server.address().port}`,ONTOMATO_API_KEY:"test-only"},
       });
       assert.deepEqual(JSON.parse(result.stdout),{workspaceId:"11111111-1111-4111-8111-111111111111",contextId:null,status:"NONE"});
       assert.deepEqual(methods,[command==="status"?"GET":"DELETE"]);
@@ -110,8 +115,8 @@ test("agent dispatch carries build-test context and preserves the entry-point re
   });
   await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
   try {
-    await assert.rejects(promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/scripts/ontomato.mjs","agent","list"],{
-      env:{...process.env,ONTOMATO_URL:`http://127.0.0.1:${server.address().port}`,ONTOMATO_API_KEY:"test-only",ONTOMATO_WORKSPACE_ID:"11111111-1111-4111-8111-111111111111"},
+    await assert.rejects(promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/scripts/ontomato.mjs","agent","list","--workspace","11111111-1111-4111-8111-111111111111"],{
+      env:{...process.env,ONTOMATO_URL:`http://127.0.0.1:${server.address().port}`,ONTOMATO_API_KEY:"test-only"},
     }),error=>error.stderr.includes("Agent commands are unavailable in build tests"));
     assert.equal(paths.length,2);assert.ok(paths[1].endsWith("/platform/agent-channel/commands"));
   } finally {await new Promise(resolve=>server.close(resolve));}
@@ -384,9 +389,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const directory = await mkdtemp(join(tmpdir(), "ontomato-panel-check-"));
-  const run = (...args) => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/scripts/ontomato.mjs", ...args], {
+  const run = (...args) => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/scripts/ontomato.mjs", ...args, "--workspace", workspaceId], {
     env: { ...process.env, ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base + "/owner",
-      ONTOMATO_API_KEY: "author-key", ONTOMATO_WORKSPACE_ID: workspaceId },
+      ONTOMATO_API_KEY: "author-key" },
   });
   try {
     const catalog = await run("sdk", "read", "components.json");

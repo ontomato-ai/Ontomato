@@ -137,10 +137,7 @@ it("declares narrowed observe-evidence businessCallback and strips addresses/cre
   const prepared = runtimeStartRunRequestSchema.parse(await prepare());
 
   expect(prepared.definition.agentId).toBe(DIAGNOSIS_AGENT_ID);
-  expect(prepared.environment).toEqual({ values: {}, secrets: {} });
-  for (const key of [...Object.keys(prepared.environment.values), ...Object.keys(prepared.environment.secrets)]) {
-    expect(key).not.toMatch(/(?:TK|API_KEY|CALLBACK|_URL|RUN_ID|CORRELATION_ID)$/);
-  }
+  expect(prepared).not.toHaveProperty("environment");
   expect(JSON.stringify(prepared)).not.toContain("diagnosis-secret");
   expect(prepared.businessCallbacks).toMatchObject({
     workbench: {

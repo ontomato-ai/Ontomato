@@ -5,6 +5,7 @@ import { pipeline } from "node:stream/promises";
 import { runtimeBusinessCallbacksSchema, type RuntimeBusinessCallback } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import { runtimeIdSchema, runtimeKeySchema } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeError } from "./errors";
+import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import type { Scope } from "./store";
 
 const callbackName = runtimeBusinessCallbacksSchema.keyof();
@@ -27,6 +28,7 @@ export function businessCallbackEnvironment(sessionUrl: string, token: string) {
     ONTOMATO_ONTOLOGY_URL: base + "/ontology",
     ONTOMATO_PANEL_OPERATIONS_URL: base + "/panelOperations",
     ONTOMATO_AUTHORING_URL: base + "/authoring",
+    ONTOMATO_GENERATION_URL: base + "/generation",
     ONTOMATO_RETRIEVAL_CALLBACK_URL: base + "/retrieval",
     ONTOMATO_GOVERNANCE_WINDOW_URL: base + "/governance",
     // Published skills use this name for their callback header. It carries the session credential.
@@ -67,7 +69,9 @@ export async function forwardBusinessCallback(dispatcher: BusinessCallbackDispat
       "X-Ontomato-Run-Id": runId,
       "X-Ontomato-Session-Id": sessionId,
     });
-    for (const name of ["Accept", "Accept-Language", "Content-Type", "Idempotency-Key"]) {
+    const permitted = ["Accept", "Accept-Language", "Content-Type", "Idempotency-Key"];
+    if (declaration.owner === "workbench") permitted.push(BUILD_TEST_HEADER);
+    for (const name of permitted) {
       const value = req.header(name);
       if (value) headers.set(name, value);
     }

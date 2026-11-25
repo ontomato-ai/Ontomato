@@ -7,7 +7,7 @@ description: Generate or explain ontology Actions and describe or quality-check 
 
 Use the task-specific definition and its business rules. Use standard `read`, `write`, `edit` and `bash` tools for workspace files. Explore schema, relationships, distinct values and DSL with the `ontomato-analyst` skill. Java paths are never workspace paths.
 
-Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime supplies `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_GENERATION_ID`, `ONTOMATO_GENERATION_KIND`, and one scoped `ONTOMATO_TK` for both metadata queries and generation operations. When the user only asks to refresh the structured explanation, run `explain`; do not edit the action.
+Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. The script uses the session credential and `ONTOMATO_GENERATION_URL` to resolve the active Java gate. Metadata queries use the separate ontology callback. Java opens and closes the gate. When the user only asks to refresh the structured explanation, run `explain`; do not edit the action.
 
 | Command | Use |
 | --- | --- |
@@ -19,8 +19,6 @@ Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime su
 | `reset` | Clear the Action sandbox and import the prepared fixture. Repeat before independent Action tests. |
 | `query dsl.json` | Query the Action sandbox to verify side effects. |
 | `helpers` | Return the exact Python helper signatures and parameter rules for the current gate, generated from the single `python/query_runtime.py` source. |
-| `begin kind [source.py]` | External agents only: open a business gate using `ONTOMATO_TK` or `ONTOMATO_API_KEY`; no runtime history is invented. |
-| `close` | External agents close their gate and remove its sandbox. Hosted runs are closed by the host. |
 
 Never put credentials, identity, URLs, local paths or transport parameters in generated business parameter definitions. Python uses protocol `# ontomato-python:2`. Java alone injects the private `query_runtime` helper and execution tk; do not run query programs with local Python. Run `node <this-skill>/scripts/generation.mjs helpers` for Action helper signatures before writing an Action program; read query programs follow the package reference directly. In particular, `query(dsl)` takes one DSL object, not a class name or `where`; `where` belongs only to `update`/`delete`. All test output is already filtered for the current user. For read programs, follow [query packages](references/query-package.md). Use `execute_dsl_file`, keep DSL in declared JSON files and declare only the Python computation fragment. Java derives DSL sources. Reusable filters are parameterized by JSON value bindings. Do not submit a second full sourceAnalysis. Action programs retain their existing source and parameter protocol. Test errors are feedback for correcting the source; a bash success is not a business test receipt.
 

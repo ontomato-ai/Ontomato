@@ -22,6 +22,7 @@ export const runtimeBusinessCallbacksSchema = z.object({
   ontology: runtimeBusinessCallbackSchema.optional(),
   panelOperations: runtimeBusinessCallbackSchema.optional(),
   authoring: runtimeBusinessCallbackSchema.optional(),
+  generation: runtimeBusinessCallbackSchema.optional(),
   retrieval: runtimeBusinessCallbackSchema.optional(),
   governance: runtimeBusinessCallbackSchema.optional(),
   product: runtimeBusinessCallbackSchema.optional(),

@@ -11,7 +11,7 @@ import {prepareAppBuilderRun} from '../prepare';
 it('uses the app-builder selected model and declares run-scoped business callbacks',async()=>{
  const run=await prepareAppBuilderRun({a:{id:'builder',kind:'app-builder',model_selection:{modelId:'provider/model'}},session:{id:'session',workspace_id:'workspace'},turn:{id:'turn',created_at:new Date()},message:'Build',owner:{domainId:'domain',userId:'user'},credentials:{locale:'en',token:'human-secret'}} as Parameters<typeof prepareAppBuilderRun>[0]);
  expect(mocks.definition.mock.calls[0][1]).toBe('provider/model');
- expect(run.environment).toEqual({values:{ONTOMATO_WORKSPACE_ID:'workspace',ONTOMATO_EXECUTION_KIND:'build-test'},secrets:{}});
+ expect(run).not.toHaveProperty("environment");
  expect(run.businessCallbacks).toEqual({
    workbench:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/turn/workbench').pathname, baseUrl:'http://workbench.test/api/assistant/executions/turn/workbench',credential:'wbc1.sealed'},
    ontology:{owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL('http://workbench.test/api/assistant/executions/turn/ontology').pathname, baseUrl:'http://workbench.test/api/assistant/executions/turn/ontology',credential:'wbc1.sealed'},

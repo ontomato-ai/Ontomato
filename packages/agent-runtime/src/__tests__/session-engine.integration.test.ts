@@ -114,7 +114,7 @@ it("runs real PI through the runtime, relays a skill callback and resumes the sa
     const id = randomUUID();
     const request: RuntimeStartRunRequest = {
       input: { role: "user", content: text, timestamp: Date.now() },
-      language: "en", environment: { values: {}, secrets: { ONTOMATO_TK: "host-only-credential" } },
+      language: "en",
       definition: {
         ...(engine ? { engine } : {}), systemPrompt: "Use the fixture tool when requested.",
         modelId: null, skills: [], externalMcp: [], sandbox: { limits: codeLimitsSchema.parse({}) },

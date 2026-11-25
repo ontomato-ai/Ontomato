@@ -122,12 +122,6 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
     definition: {agentId:session.agent_id,engine:assistantAgentDefinitionSchema.shape.engine.parse(a.engine),...runDefinition(instructions+"\n\n"+artifactInstructions+"\n"+ASSISTANT_INTERACTION_CONTEXT,
       a.model_selection.modelId,skills,credentials.locale,profile?[]:a.enabled_mcp_service_ids.map(id=>({id})),prepared?.pageControl??false),
       ...(profile?{productTools:profileRuntimeTools(profile,sessionId),toolSurface:"product" as const}:{})},
-    environment: {
-      values: {
-        ONTOMATO_ASSISTANT_SESSION_ID: session.id,
-      },
-      secrets: {},
-    },
     businessCallbacks,
   };
 }

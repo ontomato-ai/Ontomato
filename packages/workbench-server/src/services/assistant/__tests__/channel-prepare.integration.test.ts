@@ -20,7 +20,7 @@ vi.mock("../../skills/skill-manager",()=>({skillManager:{},skillReference:vi.fn(
 vi.mock("../../skills/operations",()=>({withDomainSkills:async(_domain:string,work:()=>Promise<unknown>)=>work()}));
 // Admission is exercised through the real store and claim helper, without model preparation.
 vi.mock("../prepare",()=>({prepareAnalystRun:async({a,input}:{a:{id:string};input:unknown})=>({
-  language:"en",definition:{agentId:a.id},input,environment:{values:{},secrets:{}},
+  language:"en",definition:{agentId:a.id},input,
 })}));
 import { ensureAgentExecutionSchema } from "../../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { ensureAssistantSchema } from "../../../infrastructure/postgres-migrations/20261028-assistant/schema";

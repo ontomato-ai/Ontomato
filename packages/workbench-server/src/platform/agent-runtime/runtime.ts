@@ -6,7 +6,6 @@ import type {
   RuntimeRunSnapshot,
 } from "@ontomato/contracts/agent-runtime";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import type { RuntimeEnvironment } from "@ontomato/contracts/agent-runtime-skills";
 import { getQueryTimeoutMs } from "../../config/query-settings";
 import { getLogContext } from "../../logging/log-context";
 import {
@@ -102,7 +101,6 @@ interface AuxiliaryInput {
   domainId?: string;
   userId?: string;
   credentials?: AssistantCredentials;
-  environment?: RuntimeEnvironment;
 }
 export async function startAuxiliary(input: AuxiliaryInput) {
   const ctx = getLogContext(),
@@ -138,7 +136,6 @@ export async function startAuxiliary(input: AuxiliaryInput) {
       [],
       credentials.locale,
     ),
-    environment: input.environment ?? { values: {}, secrets: {} },
   });
   return { client, runId, sessionId };
 }

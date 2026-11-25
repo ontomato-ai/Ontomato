@@ -534,9 +534,7 @@ class OntologyRetrievalContractTest {
     assertEquals(first.getString("runtimeSessionId"), retrievalId);
     assertEquals(1, requests.size());
     var prepared = requests.get(run);
-    var environment = prepared.getJSONObject("environment");
-    assertTrue(environment.getJSONObject("values").isEmpty());
-    assertTrue(environment.getJSONObject("secrets").isEmpty());
+    assertFalse(prepared.containsKey("environment"));
     var callbacks = prepared.getJSONObject("businessCallbacks");
     var contextCallback = callbacks.getJSONObject("retrieval");
     assertEquals("ontology", contextCallback.getString("owner"));

@@ -6,12 +6,12 @@ import { HttpError } from "../../utils/errors";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import { restoreAgentCaller } from "../agent-host/caller";
-import { WorkspaceBuildTests } from "../app-builder/build-tests";
+import { sessionBuildTestWorkspace, WorkspaceBuildTests } from "../app-builder/build-tests";
 import type { PageSkillEntrance, PageSkillSource } from "@ontomato/contracts/page-skills";
 import { authoringAdoptionResponseSchema, type AuthoringKind, type AuthoringHostRun, type AuthoringHistoricalRun, type authoringOperations } from "@ontomato/contracts/authoring";
 import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource } from "./skills";
 import { agentExecutionCredentials, ownedRun } from "./execution";
-import { assistantStore, type AssistantOwner } from "./store";
+import type { AssistantOwner } from "./store";
 
 const AUTHORING_PATH = "/ontology/ai/generation/platform";
 export type AuthoringOperation = keyof typeof authoringOperations.action;
@@ -138,9 +138,8 @@ export async function executeAuthoring(
   const executor = await agentExecutionCredentials(agentId, run.executionUserId ?? null, owner, credentials);
   let target: AuthoringHostRun["target"] = { kind: "live" };
   if (authority.executionKind === "build-test") {
-    const session = await assistantStore.session(binding.sessionId, owner);
-    if (!session.workspace_id) throw new HttpError(422, "Build-test requires the run's workspace", "BUILD_TEST_WORKSPACE_REQUIRED");
-    const context = await new WorkspaceBuildTests(owner, credentials, session.workspace_id).current();
+    const workspaceId = await sessionBuildTestWorkspace(owner, binding.sessionId);
+    const context = await new WorkspaceBuildTests(owner, credentials, workspaceId).current();
     if (!context) throw new HttpError(422, "Start a build-test for this workspace", "BUILD_TEST_CONTEXT_REQUIRED");
     target = { kind: "build-test", contextId: context.contextId };
   }

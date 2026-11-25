@@ -83,10 +83,6 @@ describe("standard runtime real HTTP/PG/processes", () => {
         }),
       },
     },
-    environment: {
-      values: { FIXTURE_URL: base },
-      secrets: { ONTOMATO_TK: "fixture-tk" },
-    },
   });
   async function freePort() {
     const probe = createNetServer();
@@ -280,7 +276,6 @@ describe("standard runtime real HTTP/PG/processes", () => {
               externalMcp: [],
               sandbox: { limits: codeLimitsSchema.parse({ memoryBytes: codeExecutionVirtualAddressSpaceBytes, wallTimeMs: 15000 }) },
             },
-            environment: { values: {}, secrets: {} },
           }));
           return;
         }

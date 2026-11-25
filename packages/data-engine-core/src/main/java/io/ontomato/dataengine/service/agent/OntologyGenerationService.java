@@ -317,7 +317,20 @@ public class OntologyGenerationService {
     String token=grants.issue(context.access().user().getId(),context.owner().domainId(),"ontology-generation",run,deadline,context.access().classNames(),null,JSONObject.of("executionUserId",context.executionUserId(),"initiatorUserId",context.owner().userId()));
     store.transaction(() -> store.gate(session,run,context.owner()));
     return JSONObject.of("language",context.language(),"input",input,"definition",definition,
-      "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_GENERATION_ID",run,"ONTOMATO_GENERATION_KIND",kind),"secrets",JSONObject.of("ONTOMATO_TK",token)));
+      "businessCallbacks", callbacks(runtime.ontologyUrl(), token, token));
+  }
+
+  static JSONObject callbacks(String ontologyUrl, String generationGrant, String queryGrant) {
+    String base = ontologyUrl.replaceFirst("/$", "");
+    String generation = base + "/ontology/ai/generation";
+    return JSONObject.of(
+        "generation", callback(generation, generation, generationGrant),
+        "ontology", callback(base, base + "/ontology/query", queryGrant));
+  }
+
+  private static JSONObject callback(String url, String scope, String grant) {
+    return JSONObject.of("owner", "ontology", "baseUrl", url,
+        "pathPrefix", java.net.URI.create(scope).getRawPath(), "credentialHeader", "tk", "credential", grant);
   }
   public void settleProvider(String session,String run,Owner owner) throws Exception {
     store.run(session,run,owner);

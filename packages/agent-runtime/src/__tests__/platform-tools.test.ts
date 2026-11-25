@@ -39,7 +39,6 @@ function baseRequest(definition: RuntimeAgentDefinition): RuntimeStartRunRequest
     language: "en",
     definition,
     input: { role: "user", content: "hi", timestamp: 1 },
-    environment: { values: {}, secrets: {} },
     businessCallbacks: { product: { owner: "workbench", credentialHeader: "X-Ontomato-Callback-Credential", pathPrefix: new URL("http://workbench.test/api/product-assets/orders/releases/12345678-1234-4234-8234-123456789012/tools").pathname, baseUrl: "http://workbench.test/api/product-assets/orders/releases/12345678-1234-4234-8234-123456789012/tools", credential: "wbc1.prod-secret" } },
   };
 }

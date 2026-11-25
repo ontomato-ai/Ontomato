@@ -141,11 +141,16 @@ class OntologyGenerationContractTest {
                 session = path.split("/")[3];
                 run = call.getArgument(5);
                 JSONObject request = call.getArgument(4);
-                String token = request.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK");
+                assertFalse(request.containsKey("environment"));
+                var callbacks = request.getJSONObject("businessCallbacks");
+                var generationCallback = callbacks.getJSONObject("generation");
+                assertEquals("tk", generationCallback.getString("credentialHeader"));
+                assertEquals("/ontology/ai/generation", generationCallback.getString("pathPrefix"));
+                String token = generationCallback.getString("credential");
                 assertEquals(
                     owner.domainId(),
                     grants
-                        .verify(token, run, "/ontology/ai/generation/" + run + "/context")
+                        .verify(token, run, "/ontology/ai/generation/runtime-context")
                         .getString("domainId"));
                 operations.test(run, owner, packageBody());
               }
