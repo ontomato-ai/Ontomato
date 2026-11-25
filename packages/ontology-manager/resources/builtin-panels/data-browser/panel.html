@@ -1,0 +1,650 @@
+<style>
+  .db-root {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    container: data-browser-page / inline-size;
+  }
+
+  .db-probe {
+    display: none;
+  }
+
+  .db-btn-icon {
+    margin-inline-end: 6px;
+    flex-shrink: 0;
+  }
+
+  .db-graph-workspace,
+  .db-table-workspace {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .db-graph-bar,
+  .db-table-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--page-gutter, var(--spacing-lg));
+    border-bottom: 1px solid var(--sdk-border-color-light, var(--ui-divider));
+    background: var(--sdk-bg-color, transparent);
+  }
+
+  .db-graph-search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    flex: 0 1 420px;
+    min-width: 0;
+  }
+
+  .db-graph-search-input {
+    flex: 1 1 220px;
+    min-width: 140px;
+  }
+
+  .db-graph-search-class {
+    flex: 0 0 172px;
+    min-width: 0;
+  }
+
+  .db-graph-search-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    inset-inline-start: 0;
+    z-index: 20;
+    width: min(440px, 92vw);
+    max-height: 320px;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--sdk-border-color);
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color-overlay, var(--sdk-bg-color));
+    box-shadow: var(--elevation-overlay);
+    overflow: hidden;
+  }
+
+  .db-graph-search-popover-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-bottom: 1px solid var(--sdk-border-color-lighter);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-secondary);
+  }
+
+  .db-graph-search-popover-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .db-graph-stats-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-inline-start: auto;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+    white-space: nowrap;
+  }
+
+  .db-graph-stage {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .db-graph-canvas {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-sm) var(--page-gutter, var(--spacing-lg));
+  }
+
+  .db-graph-canvas > .sdk-panel-member {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .db-overlay-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    max-width: min(460px, 70vw);
+    pointer-events: auto;
+  }
+
+  .db-overlay-stat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border: 1px solid var(--sdk-border-color-light);
+    border-radius: var(--radius-full);
+    background: var(--sdk-bg-color-overlay, var(--sdk-bg-color));
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-regular);
+  }
+
+  .db-overlay-stat-count {
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .db-node-inspector {
+    display: flex;
+    flex: 0 0 360px;
+    width: 360px;
+    max-width: 100%;
+    flex-direction: column;
+    min-height: 0;
+    border-inline-start: 1px solid var(--sdk-border-color-light, var(--ui-divider));
+    background: var(--sdk-bg-color);
+  }
+
+  .db-node-inspector-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--sdk-border-color-lighter);
+  }
+
+  .db-node-inspector-title {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .db-node-inspector-title h2 {
+    margin: 0;
+    font-size: var(--text-base);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+    overflow-wrap: anywhere;
+  }
+
+  .db-node-inspector-class {
+    margin: 2px 0 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+
+  .db-node-inspector-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--sdk-border-color-lighter);
+  }
+
+  .db-node-inspector-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--spacing-md);
+  }
+
+  .db-node-section-title {
+    margin: 0 0 var(--spacing-sm);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-secondary);
+  }
+
+  .db-table-class-picker {
+    flex: 0 1 220px;
+    width: 220px;
+    min-width: 160px;
+  }
+
+  .db-table-search {
+    flex: 0 1 260px;
+    width: 260px;
+    min-width: 160px;
+  }
+
+  .db-table-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    margin-inline-start: auto;
+    flex-wrap: wrap;
+  }
+
+  .db-filter-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    margin-inline-start: 6px;
+    border-radius: var(--radius-full);
+    background: var(--sdk-color-primary);
+    color: #fff;
+    font-size: 11px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .db-table-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: var(--spacing-md) var(--page-gutter, var(--spacing-lg));
+  }
+
+  .db-table-body > .sdk-panel-member {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .db-table-empty {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+  }
+
+  .db-drawer-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    min-width: 0;
+  }
+
+  .db-drawer-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .db-drawer-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+
+  .db-drawer-section-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+
+  .db-filter-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm);
+    border: 1px solid var(--sdk-border-color-light);
+    border-radius: var(--radius-sm);
+  }
+
+  .db-filter-row-wide {
+    grid-column: 1 / -1;
+  }
+
+  .db-drawer-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+  }
+
+  .db-dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+  }
+
+  .db-dialog-section-label {
+    margin: 0 0 var(--spacing-xs);
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+  }
+
+  .db-dialog-summary {
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color-light, var(--ui-divider));
+    border-radius: var(--radius-md);
+    background: var(--sdk-fill-color-lighter, var(--ui-fill-quaternary));
+  }
+
+  .db-dialog-form .sdk-owner-form,
+  .db-dialog-form .sdk-owner-form-inner {
+    height: auto;
+  }
+
+  .db-dialog-form .sdk-owner-form-body {
+    overflow: visible;
+  }
+
+  .db-dialog-extras {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--sdk-border-color-light, var(--ui-divider));
+  }
+
+  @container data-browser-page (max-width: 880px) {
+    .db-node-inspector {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-end: 0;
+      z-index: 15;
+      width: min(360px, 100%);
+      box-shadow: var(--elevation-overlay);
+    }
+  }
+</style>
+<div id="app">
+  <section ref="rootRef" class="db-root">
+    <!-- Hidden probes: default class auto-selection, class attribute list for filters, and presentation capability. -->
+    <div v-if="isTableMode" class="db-probe" aria-hidden="true">
+      <projection slot="classCatalogProbe"></projection>
+    </div>
+    <div v-if="isTableMode && selectedClassKey" class="db-probe" aria-hidden="true">
+      <projection slot="classAttributesProbe" @update:listed="onAttributesListed"></projection>
+      <projection slot="detailBinding"></projection>
+    </div>
+
+    <page-header :title="t('db.title')" :description="t('db.description')">
+      <template #actions>
+        <segmented-control
+          state="viewMode"
+          default-value="graph"
+          :options="viewModeOptions"
+          :aria-label="t('db.modeSwitchLabel')"
+        ></segmented-control>
+        <sdk-button
+          v-if="isTableMode && selectedClassKey && canConfigure"
+          @click="openConfigureDialog"
+        >
+          <svg class="db-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+          <span>{{ t("db.configurePresentation") }}</span>
+        </sdk-button>
+        <sdk-button text :aria-label="t('db.refresh')" :title="t('db.refresh')" @click="refresh">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+        </sdk-button>
+      </template>
+    </page-header>
+
+    <!-- Instance graph mode -->
+    <div v-if="isGraphMode" class="db-graph-workspace">
+      <div class="db-graph-bar">
+        <div class="db-graph-search-wrap">
+          <sdk-input
+            v-model="graphQueryInput"
+            class="db-graph-search-input"
+            size="small"
+            clearable
+            :placeholder="t('db.graphSearchPlaceholder')"
+            @focus="graphSearchOpen = Boolean(graphQueryInput.trim())"
+            @input="onGraphQueryInput"
+            @clear="onGraphQueryClear"
+          ></sdk-input>
+          <div class="db-graph-search-class">
+            <projection slot="graphSearchClassPicker"></projection>
+          </div>
+          <div v-if="showGraphSearchPopover" class="db-graph-search-popover" role="region" :aria-label="t('db.graphSearchResults')">
+            <div class="db-graph-search-popover-head">
+              <span>{{ t("db.graphSearchResults") }}</span>
+              <sdk-button text size="small" @click="graphSearchOpen = false">×</sdk-button>
+            </div>
+            <div class="db-graph-search-popover-body">
+              <projection slot="graphSearchResults" @choose="focusSearchedInstance"></projection>
+            </div>
+          </div>
+        </div>
+        <div v-if="graphStatsLabel" class="db-graph-stats-bar" data-graph-stats-summary>
+          <span>{{ graphStatsLabel }}</span>
+        </div>
+      </div>
+
+      <div class="db-graph-stage">
+        <div class="db-graph-canvas">
+          <projection slot="instanceGraph">
+            <template #overlay="{ groups }">
+              <div v-if="groups && groups.length > 0" class="db-overlay-stats" data-graph-class-stats>
+                <span v-for="group in groups" :key="group.id" class="db-overlay-stat-chip">
+                  <span>{{ group.label }}</span>
+                  <span class="db-overlay-stat-count">{{ group.totalCount }}</span>
+                </span>
+              </div>
+            </template>
+          </projection>
+        </div>
+
+        <aside v-if="hasSelectedNode" class="db-node-inspector" :aria-label="t('db.nodeAttributes')" data-node-inspector>
+          <div class="db-node-inspector-head">
+            <div class="db-node-inspector-title">
+              <span v-show="nodeHeaderStatus === 'ready'">
+                <projection slot="nodeHeader"></projection>
+              </span>
+              <h2 v-if="nodeHeaderStatus !== 'ready'">{{ selectedNodeFallbackTitle }}</h2>
+              <p class="db-node-inspector-class">{{ selectedNode?.className }}</p>
+            </div>
+            <sdk-button
+              text
+              size="small"
+              :aria-label="t('db.closeInspector')"
+              :title="t('db.closeInspector')"
+              @click="clearSelectedNode"
+            >
+              ×
+            </sdk-button>
+          </div>
+          <div class="db-node-inspector-actions">
+            <sdk-button type="primary" size="small" @click="openSelectedNodeDetail">
+              {{ t("db.viewFullDetail") }}
+            </sdk-button>
+            <sdk-button size="small" @click="exploreSelectedNode">
+              {{ t("db.exploreNeighborhood") }}
+            </sdk-button>
+          </div>
+          <div class="db-node-inspector-body">
+            <p class="db-node-section-title">{{ t("db.nodeAttributes") }}</p>
+            <projection slot="nodeSummary"></projection>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- Table mode -->
+    <div v-else class="db-table-workspace">
+      <div class="db-table-toolbar">
+        <div class="db-table-class-picker">
+          <projection slot="classPicker"></projection>
+        </div>
+        <sdk-input
+          v-model="tableSearchInput"
+          class="db-table-search"
+          clearable
+          :placeholder="t('db.tableSearchPlaceholder')"
+          @clear="tableSearchInput = ''"
+        ></sdk-input>
+        <div class="db-table-toolbar-actions">
+          <sdk-button :disabled="!selectedClassKey" @click="openFilterDrawer">
+            <span>{{ t("db.filterAndSort") }}</span>
+            <span v-if="activeFilterSortCount > 0" class="db-filter-badge">{{ activeFilterSortCount }}</span>
+          </sdk-button>
+          <sdk-button v-if="activeFilterSortCount > 0" text @click="resetAppliedFilters">
+            {{ t("db.resetFilters") }}
+          </sdk-button>
+        </div>
+      </div>
+
+      <div class="db-table-body">
+        <projection
+          v-if="selectedClassKey"
+          slot="instanceTable"
+          :export-file-name="exportFileName"
+          @choose="openInstanceDetail"
+          @clear-filters="onListClearFilters"
+        ></projection>
+        <div v-else class="db-table-empty">
+          {{ t("db.noClassSelected") }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter & Sort drawer (local UI toggle only, never enters URL) -->
+    <sdk-drawer
+      v-model="filterDrawerOpen"
+      :title="t('db.filterAndSort')"
+      :size="drawerSize"
+      append-to-body
+    >
+      <div class="db-drawer-body">
+        <section class="db-drawer-section">
+          <div class="db-drawer-section-head">
+            <h3 class="db-drawer-section-title">{{ t("db.filterConditions") }}</h3>
+            <sdk-button size="small" plain @click="addFilterCondition">
+              + {{ t("db.addCondition") }}
+            </sdk-button>
+          </div>
+          <div v-for="(cond, idx) in draftFilters" :key="idx" class="db-filter-row">
+            <sdk-select
+              v-model="cond.field"
+              filterable
+              allow-create
+              default-first-option
+              :placeholder="t('db.selectField')"
+            >
+              <sdk-option
+                v-for="attr in attributeOptions"
+                :key="attr.name"
+                :label="attr.label"
+                :value="attr.name"
+              ></sdk-option>
+            </sdk-select>
+            <sdk-button
+              text
+              type="danger"
+              :aria-label="t('db.removeCondition')"
+              @click="removeFilterCondition(idx)"
+            >
+              ×
+            </sdk-button>
+            <sdk-select
+              v-model="cond.operator"
+              class="db-filter-row-wide"
+              :placeholder="t('db.selectOperator')"
+            >
+              <sdk-option
+                v-for="op in filterOperators"
+                :key="op.value"
+                :label="op.label"
+                :value="op.value"
+              ></sdk-option>
+            </sdk-select>
+            <sdk-input
+              v-if="cond.operator !== 'null' && cond.operator !== 'notnull'"
+              v-model="cond.value"
+              class="db-filter-row-wide"
+              :placeholder="t('db.filterValuePlaceholder')"
+            ></sdk-input>
+          </div>
+        </section>
+
+        <section class="db-drawer-section">
+          <h3 class="db-drawer-section-title">{{ t("db.sortSection") }}</h3>
+          <sdk-select
+            v-model="draftSortField"
+            clearable
+            filterable
+            allow-create
+            default-first-option
+            :placeholder="t('db.selectSortField')"
+          >
+            <sdk-option
+              v-for="attr in attributeOptions"
+              :key="attr.name"
+              :label="attr.label"
+              :value="attr.name"
+            ></sdk-option>
+          </sdk-select>
+          <sdk-radio-group v-model="draftSortOrder">
+            <sdk-radio value="asc">{{ t("db.sortAsc") }}</sdk-radio>
+            <sdk-radio value="desc">{{ t("db.sortDesc") }}</sdk-radio>
+          </sdk-radio-group>
+        </section>
+      </div>
+      <template #footer>
+        <div class="db-drawer-footer">
+          <sdk-button @click="resetAppliedFilters">{{ t("db.resetFilters") }}</sdk-button>
+          <sdk-button type="primary" @click="applyFilters">{{ t("db.applyFilters") }}</sdk-button>
+        </div>
+      </template>
+    </sdk-drawer>
+
+    <!-- In-page presentation configuration dialog (local UI state only, never enters URL) -->
+    <sdk-dialog
+      v-model="configureDialog"
+      :title="t('db.configureTitle')"
+      :width="dialogWidth"
+      :before-close="handleConfigureDialogClose"
+      append-to-body
+      destroy-on-close
+    >
+      <div v-if="configureDialog && selectedClassKey" class="db-dialog-body">
+        <div class="db-dialog-summary">
+          <p class="db-dialog-section-label">{{ t("db.currentBinding") }}</p>
+          <projection slot="detailBindingSummary"></projection>
+        </div>
+        <div class="db-dialog-form">
+          <projection slot="detailPanelForm" @saved="onDetailPanelSaved">
+            <template #field-panelId>
+              <projection slot="detailPanelPicker"></projection>
+            </template>
+          </projection>
+        </div>
+        <div class="db-dialog-extras">
+          <projection slot="clearDetailPanel" @done="onDetailPanelCleared"></projection>
+          <sdk-button text type="primary" @click="openPanelsDirectory">
+            {{ t("db.managePanels") }}
+          </sdk-button>
+        </div>
+      </div>
+    </sdk-dialog>
+  </section>
+</div>

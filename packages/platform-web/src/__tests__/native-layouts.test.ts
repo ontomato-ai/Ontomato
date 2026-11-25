@@ -46,6 +46,11 @@ describe("the platform's applications", () => {
     expect(schedules.home).toBe("/schedules");
     expect(schedules.framePanelId).toBe("builtin-product-platform-frame");
     expect(schedules.groups).toEqual([]);
+    const browser = declarations.find((app) => app.id === "browser")!;
+    expect(browser.prefix).toBe("/browser");
+    expect(browser.home).toBe("/browser/data");
+    expect(browser.framePanelId).toBe("builtin-product-platform-frame");
+    expect(browser.groups).toEqual([]);
   });
 
   it("admits fully panel-backed built-in applications without native-layouts and lands home on the first visible named entry", () => {
