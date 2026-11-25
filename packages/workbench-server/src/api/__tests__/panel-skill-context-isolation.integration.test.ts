@@ -350,7 +350,7 @@ it("derives SDK catalogue reads from the page and serves them through the run's 
   state.credentialsForRun.mockResolvedValue({ executionUserId: "second-user", credentials: { token: "executor", locale: "en" } });
   const { callbackCredential } = await import("../../services/agent-runtime/callback-credential");
   const pathPrefix = `/api/assistant/executions/${runId}/`;
-  const credential = callbackCredential({ pathPrefix, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
+  const credential = callbackCredential({ scope: { purpose: "execution", capability: "panels" }, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
   const readFromRun = (dataName: string) => fetch(state.base + pathPrefix + "panels/read", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential.value,
       "X-Ontomato-Run-Id": runId },
@@ -414,7 +414,7 @@ it("reads header.record and detail table rows on the real builtin component entr
   state.credentialsForRun.mockResolvedValue({ executionUserId: "second-user", credentials: { token: "executor", locale: "en" } });
   const { callbackCredential } = await import("../../services/agent-runtime/callback-credential");
   const pathPrefix = `/api/assistant/executions/${runId}/`;
-  const credential = callbackCredential({ pathPrefix, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
+  const credential = callbackCredential({ scope: { purpose: "execution", capability: "panels" }, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
   const readMember = (member: string, dataName: string) => fetch(state.base + pathPrefix + "panels/read", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential.value,
       "X-Ontomato-Run-Id": runId },

@@ -240,7 +240,7 @@ export async function prepareDiagnosis(session: string, run: string, input: Agen
         owner: "workbench", baseUrl, pathPrefix: new URL(baseUrl).pathname,
         credentialHeader: "X-Ontomato-Callback-Credential",
         credential: callbackCredential({
-          pathPrefix: `${evidencePath}/`,
+          scope: { purpose: "diagnosis-evidence" },
           runId: run,
           expiresAt: Date.now() + definition.data.sandbox.limits.wallTimeMs,
           token: credentials.token ?? "",

@@ -53,7 +53,10 @@ public class OntologyQueryService {
 
   private String checkedClass(String name, QueryAccessService.Access access) {
     String normalized = DBSchemaUtil.normalizeClassName(name, classes(access));
-    if(access.target().testing()) access.target().requireClasses(List.of(normalized));
+    if (access.target().testing()) access.target().requireClasses(List.of(normalized));
+    if (!access.verifiedIdentity().limit().permits(
+        new io.ontomato.dataengine.service.authorization.AuthorizationService.Data(List.of(normalized))))
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Class is outside this grant's scope");
     List<String> scope =
         access.classNames();
     if (scope != null && !scope.isEmpty() && !scope.contains(normalized))
@@ -270,7 +273,7 @@ public class OntologyQueryService {
 
   private Map<String, Object> executeQuery(JSONObject query, QueryAccessService.Access access, JSONObject predicate) throws Exception {
     validateQuery(query, access);
-    if (access.target().testing() || access.grant() != null && "sandbox-write".equals(access.grant().getString("purpose"))) {
+    if (access.target().mode() == ExecutionTarget.Mode.SANDBOX || access.grant() != null && "sandbox-write".equals(access.grant().getString("purpose"))) {
       var definitions = classes(access);
       var analysis = QuerySourceAnalysis.fromDsl(query, definitions);
       QueryPermissions.authorizeInputs(analysis, access.permission(), definitions);
@@ -279,9 +282,7 @@ public class OntologyQueryService {
           .put("conditions", JSONObject.of("properties", predicate));
       var restricted = (JSONObject) io.ontomato.dataengine.util.DslPermissionUtil.addRowPermission(
           "[" + query.toJSONString() + "]", definitions, access.permission())[0];
-      String sandbox = access.target().testing() ? access.target().sandboxId() : access.grant().getString("sandboxId");
-      if (io.ontomato.dataengine.config.ServiceConst.NOT_SANDBOX.equals(sandbox)) sandbox = null;
-      return QueryPermissions.response(writes.query(restricted, sandbox, access.user().getDomainId()), analysis, access.permission(), true);
+      return QueryPermissions.response(writes.query(restricted, access.target().sandboxId(), access.user().getDomainId()), analysis, access.permission(), true);
     }
     if (predicate != null) return dsl.executeGovernedRead(query, predicate, access.permission(), access.user());
     boolean internal = access.grant() != null && ("user-read".equals(access.grant().getString("purpose")) || "package-read".equals(access.grant().getString("purpose")));

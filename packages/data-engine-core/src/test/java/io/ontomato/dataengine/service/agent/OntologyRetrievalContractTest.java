@@ -218,8 +218,7 @@ class OntologyRetrievalContractTest {
     when(executions.require(owner.domainId(), executor.getId())).thenReturn(executor);
     var callers = new AgentCaller(jdbc, scheduleIdentity, identity, productGrants);
     ReflectionTestUtils.setField(callers, "executions", executions);
-    var grantFilter = new QueryGrantFilter(grants);
-    ReflectionTestUtils.setField(grantFilter, "executions", executions);
+    var grantFilter = new QueryGrantFilter(grants, executions, identity);
     var channelController = new AgentChannelController(callers, mock(AgentDirectory.class), store, runtime,
         new WorkbenchServiceAuthentication("fixture-service"), retrieval, tasks, mock(ActionCreationService.class),
         mock(OntologyGenerationService.class), authorization, mock(LangService.class), new RuntimeCodeClient(runtime));
@@ -341,8 +340,8 @@ class OntologyRetrievalContractTest {
   }
 
   private JSONObject explorationClaims(JSONObject prepared, String run) {
-    return grants.verify(prepared.getJSONObject("businessCallbacks").getJSONObject("ontology").getString("credential"),
-        run, "/ontology/query/overview");
+    return grants.verifyRequest(prepared.getJSONObject("businessCallbacks").getJSONObject("ontology").getString("credential"),
+        run, "GET", "/ontology/query/overview");
   }
 
   private void assertNoRetrievalRun(String run) {
@@ -895,8 +894,7 @@ class OntologyRetrievalContractTest {
     var authorization = new OntologyAgentAccess(queries, identity, grants, store);
     var executions = mock(AgentExecutionAccess.class);
     when(executions.require(owner.domainId(), executor.getId())).thenReturn(executor);
-    var filter = new QueryGrantFilter(grants);
-    org.springframework.test.util.ReflectionTestUtils.setField(filter, "executions", executions);
+    var filter = new QueryGrantFilter(grants, executions, identity);
     http = MockMvcBuilders.standaloneSetup(new OntologyRetrievalController(retrieval, store, authorization, tasks))
         .setControllerAdvice(new OntologyAgentErrors((language, key) -> key))
         .setMessageConverters(new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter())

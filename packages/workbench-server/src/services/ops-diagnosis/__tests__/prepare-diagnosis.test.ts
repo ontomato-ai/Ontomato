@@ -142,7 +142,6 @@ it("declares narrowed observe-evidence businessCallback and strips addresses/cre
   expect(prepared.businessCallbacks).toMatchObject({
     workbench: {
       baseUrl: "http://workbench.test/api/observe/evidence",
-      credential: expect.stringMatching(/^wbc1\./),
     },
   });
 

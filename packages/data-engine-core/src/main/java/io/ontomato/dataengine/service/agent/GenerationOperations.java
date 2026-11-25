@@ -288,7 +288,7 @@ public class GenerationOperations {
     var authority = PythonAuthority.write(access.user().getId(), window.owner().domainId(), sandbox(row))
         .withClasses(access.classNames()).withExecution(access.executionUserId(), window.owner().userId())
         .withTarget(access.target()).withAuthorSandbox(sandbox(row));
-    String grant = startTest(window, execution, digest);
+    String grant = startTest(window, execution, digest, authority);
     var result = python.execute(
         window.run(), code, 10, "en",
         authority.forExecution(execution).withParent(new PythonAuthority.ParentGrant(grant, window.run(), access.expiresAt())),
@@ -325,15 +325,13 @@ public class GenerationOperations {
         defs == null || defs.isEmpty() ? List.of() : actionParameters(domainId, defs));
   }
 
-  private String startTest(Window window, String execution, String digest) throws Exception {
+  private String startTest(Window window, String execution, String digest, PythonAuthority authority) throws Exception {
     window.recheck().run();
     return store.transaction(() -> {
       window.gate().get();
       var access = window.access();
       var target = access.target();
-      var binding = JSONObject.of("executionUserId", access.executionUserId(), "initiatorUserId", window.owner().userId());
-      String grant = grants.issueAuthoringParent(access.user().getId(), window.owner().domainId(),
-          window.run(), access.expiresAt(), access.classNames(), target, binding);
+      String grant = grants.issueAuthoringParent(authority, window.run(), access.expiresAt());
       store.update("INSERT INTO ontology_generation_tests(run_id,digest,execution_id,result,kind,evidence_scope,target_context)"
               + " VALUES(?,?,?,NULL,?,?,?)", uuid(window.run()), digest, uuid(execution), window.kind(),
           window.evidenceScope(), target.contextId());
@@ -370,9 +368,12 @@ public class GenerationOperations {
     var bundle = QueryPackage.accept(body.getJSONObject("queryPackage"));
     var parameters = QueryPackage.parameters(bundle, null);
     String digest = packageTestDigest(window.kind(), bundle), execution = UUID.randomUUID().toString();
-    String token = startTest(window, execution, digest);
     var binding = window.access();
-    var grant = grants.verify(token, window.run(), "/ontology/query/execute-dsl");
+    var authority = PythonAuthority.read(binding.user().getId(), window.owner().domainId())
+        .withExecution(binding.executionUserId(), binding.initiatorUserId())
+        .withClasses(binding.classNames()).withTarget(binding.target());
+    String token = startTest(window, execution, digest, authority);
+    var grant = grants.verify(token, window.run());
     var access = new QueryAccessService.Access(binding.user(), binding.permission(), grant, token, binding.expiresAt(),
         binding.classNames(), binding.target(), binding.executionUserId(), binding.initiatorUserId());
     var labels = body.getJSONObject("columnLabels");

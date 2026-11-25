@@ -150,7 +150,8 @@ class QueryPermissionPolicyTest {
     org.springframework.test.util.ReflectionTestUtils.setField(ontology, "grants", grants);
     for (String purpose : List.of("retrieval-exploration", "user-read")) {
       var permission = permission();
-      var grant = JSONObject.of("jti", "grant", "runId", "execution", "domainId", "domain", "purpose", purpose);
+      var grant = JSONObject.of("jti", "grant", "runId", "execution", "domainId", "domain", "purpose", purpose,
+          "classNames", List.of(), "operations", List.of("DATA_QUERY"), "expiresAt", Long.MAX_VALUE);
       var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("user", "domain"), permission, grant, null, null);
       var unknown = query("", "salary");
       unknown.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("output")
@@ -194,7 +195,8 @@ class QueryPermissionPolicyTest {
       when(engine.executeInternal(any(), any(), any())).thenReturn(filtered);
       when(engine.executeV1(any(), any(), any())).thenReturn(filtered);
       var grant = JSONObject.of("jti", "grant", "runId", "execution", "domainId", "domain",
-          "purpose", internal ? "user-read" : "retrieval-exploration");
+          "purpose", internal ? "user-read" : "retrieval-exploration",
+          "classNames", List.of(), "operations", List.of("DATA_QUERY"), "expiresAt", Long.MAX_VALUE);
       var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("user", "domain"), permission(), grant, null, null);
       var error = assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> ontology.execute(dsl, access));
       assertEquals("column t.hj_dj does not exist", error.getReason());

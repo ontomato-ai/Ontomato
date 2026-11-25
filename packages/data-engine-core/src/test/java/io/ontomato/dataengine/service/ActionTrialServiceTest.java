@@ -190,7 +190,7 @@ class ActionTrialServiceTest {
           assertTrue(authority.classNames().isEmpty());
           var token = grants.issueExecution(authority, run, System.currentTimeMillis() + 60_000);
           for (String path : List.of("/ontology/query/execute-dsl", "/writeFunctionOperation/insert")) {
-            var error = assertThrows(BuildTestException.class, () -> grants.verify(token, run, path));
+            var error = assertThrows(ResponseStatusException.class, () -> grants.verifyRequest(token, run, "POST", path));
             assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
           }
           return new PythonExecuteResult();
@@ -220,13 +220,13 @@ class ActionTrialServiceTest {
     String token = grants.issueExecution(authority, "trial-run", expires);
 
     for (String path : List.of("/ontology/query/execute-dsl", "/writeFunctionOperation/insert")) {
-      var claims = grants.verify(token, "trial-run", path);
+      var claims = grants.verifyRequest(token, "trial-run", "POST", path);
       assertEquals(SANDBOX, claims.getString("contextId"));
       assertEquals(SANDBOX, claims.getString("sandboxId"));
       assertEquals(List.of("Order"), claims.getList("classNames", String.class));
     }
     var error = assertThrows(ResponseStatusException.class,
-        () -> grants.verify(token, "trial-run", "/ontology/query/metrics/execute"));
+        () -> grants.verifyRequest(token, "trial-run", "POST", "/ontology/query/metrics/execute"));
     assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
   }
 

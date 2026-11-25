@@ -77,7 +77,7 @@ export async function prepareOpsDiagnosisRun({
       pathPrefix: new URL(evidenceUrl).pathname,
       credentialHeader: "X-Ontomato-Callback-Credential",
       credential: callbackCredential({
-        pathPrefix: `${evidencePath}/`,
+        scope: { purpose: "diagnosis-evidence" },
         runId: turn.id,
         expiresAt,
         token: credentials.token ?? "",
@@ -95,7 +95,7 @@ export async function prepareOpsDiagnosisRun({
               pathPrefix: new URL(panelUrl).pathname,
               credentialHeader: "X-Ontomato-Callback-Credential",
               credential: callbackCredential({
-                pathPrefix: `${panelPath}/`,
+                scope: { purpose: "execution", capability: "panels" },
                 runId: turn.id,
                 expiresAt,
                 token: credentials.token ?? "",

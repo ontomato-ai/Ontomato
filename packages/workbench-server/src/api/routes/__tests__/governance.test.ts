@@ -69,7 +69,7 @@ it("requires a verified run callback instead of caller-supplied identity headers
   const url=await listen(),path=`/api/assistant/sessions/${sessionId}/governance-window`;
   const plain=await fetch(url+path,{method:"POST",headers:{"content-type":"application/json",tk:"user","X-Ontomato-Run-Id":runId},body:"{}"});
   expect(plain.status).toBe(403);
-  const credential=callbackCredential({pathPrefix:path,runId,expiresAt:Date.now()+60_000,token:"user",apiKey:""}).value;
+  const credential=callbackCredential({scope:{purpose:"governance",sessionId},runId,expiresAt:Date.now()+60_000,token:"user",apiKey:""}).value;
   const forged=await fetch(url+path,{method:"POST",headers:{"content-type":"application/json",tk:credential,"X-Ontomato-Run-Id":recordId},body:"{}"});
   expect(forged.status).toBe(401);
   expect(mocks.post).not.toHaveBeenCalled();

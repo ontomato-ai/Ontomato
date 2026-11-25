@@ -620,7 +620,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
                       .getJSONObject("secrets")
                       .getString("ONTOMATO_TK");
               String run = exchange.getRequestHeaders().getFirst("Idempotency-Key");
-              claims.set(grants.verify(token, run, "/writeFunctionOperation/update"));
+              claims.set(grants.verifyRequest(token, run, "POST", "/writeFunctionOperation/update"));
               assertEquals("alice", claims.get().getString("userId"));
               assertEquals("sales", claims.get().getString("domainId"));
               assertEquals("sandbox-write", claims.get().getString("purpose"));

@@ -170,7 +170,8 @@ class QueryPackageContractTest {
     var ontology = new OntologyQueryService(admin, dsl, mock(MetricViewService.class), mock(KnowledgeDao.class));
     var grants = mock(QueryGrantService.class);
     ReflectionTestUtils.setField(ontology, "grants", grants);
-    var claim = JSONObject.of("purpose", "package-read", "runId", "execution");
+    var claim = JSONObject.of("purpose", "package-read", "runId", "execution",
+        "classNames", List.of("/Employee"), "operations", List.of("DATA_QUERY"), "expiresAt", Long.MAX_VALUE);
     var restricted = new QueryAccessService.Access(access().user(), permission(), claim, "opaque", null, List.of("/Employee"));
     when(grants.packageInput(any())).thenAnswer(c -> JSONObject.of("package", QueryPackage.copy(pkg), "parameters", JSONObject.of("threshold", 20)));
     ontology.executePackage(JSONObject.of("path", "queries/employees.json", "parameters", JSONObject.of("threshold", 35)), restricted);

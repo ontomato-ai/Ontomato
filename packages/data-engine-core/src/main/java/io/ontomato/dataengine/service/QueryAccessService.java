@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter.Feature;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -30,14 +31,14 @@ public class QueryAccessService {
     long expiresAt = java.time.Instant.parse(body.getString("expiresAt")).toEpochMilli();
     Long userExpiry = access.expiresAt();
     if (userExpiry != null) expiresAt = Math.min(expiresAt, userExpiry);
-    return grants.issue(
-        access.user().getId(),
-        access.user().getDomainId(),
-        "retrieval-exploration",
-        body.getString("runtimeRunId"),
-        expiresAt,
-        classScope(access.permission(), body.getList("classNames", String.class)),
-        null,
+    if (access.grant() != null)
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Exploration requires an authenticated caller");
+    var scoped = new Access(access.user(), access.permission(), null, null, access.expiresAt(),
+        QueryGrantService.intersectClasses(access.classNames(),
+            classScope(access.permission(), body.getList("classNames", String.class))), access.target(),
+        access.executionUserId(), access.initiatorUserId());
+    return grants.issueForTarget(
+        "retrieval-exploration", body.getString("runtimeRunId"), expiresAt, scoped,
         JSONObject.of(
             "servicePrincipal",
             "ontology",
@@ -84,6 +85,11 @@ public class QueryAccessService {
     public Access(User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt, java.util.List<String> classNames, ExecutionTarget target) {
       this(user,permission,grant,credential,expiresAt,classNames,target,grant==null?null:grant.getString("executionUserId"),grant==null?null:grant.getString("initiatorUserId"));
     }
+    public AuthorizationService.VerifiedIdentity verifiedIdentity() {
+      return new AuthorizationService.VerifiedIdentity(
+          user.getDomainId(), user.getId(), QueryGrantService.limit(grant));
+    }
+
     public Access withExecution(String userId, String initiator) {
       return new Access(user,permission,grant,credential,expiresAt,classNames,target,userId,initiator);
     }
@@ -97,7 +103,7 @@ public class QueryAccessService {
     public Access(User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt) {
       this(user, permission, grant, credential, expiresAt,
           grant == null ? java.util.List.of() : grant.getList("classNames", String.class),
-          grant!=null && grant.getString("contextId")!=null ? new ExecutionTarget(grant.getString("contextId"),grant.getString("sandboxId"),grant.getList("classNames",String.class),grant.getLong("expiresAt")) : ExecutionTarget.LIVE);
+          grant == null ? ExecutionTarget.LIVE : QueryGrantService.target(grant));
     }
     public Access {
       user = new CapturedUser(

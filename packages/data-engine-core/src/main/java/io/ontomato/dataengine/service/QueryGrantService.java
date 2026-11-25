@@ -7,7 +7,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import com.alibaba.fastjson2.JSONException;
+import io.ontomato.dataengine.config.ServiceConst;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -25,6 +32,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @DependsOn("jdbcInitDb")
 public class QueryGrantService {
+  private static final int VERSION = 2;
   public static final String ATTRIBUTE = QueryGrantService.class.getName();
   private final JdbcTemplate jdbc;
   private final String signingKey;
@@ -58,21 +66,61 @@ public class QueryGrantService {
     jdbc.update("UPDATE query_runtime_grants SET revoked=true WHERE context_id=?",contextId);
     return executions;
   }
-  public String issueExecution(PythonAuthority authority,String execution,long expiresAt) {
-    var target=authority.target();
-    JSONObject binding=JSONObject.of("executionUserId",authority.executionUserId(),"initiatorUserId",authority.initiatorUserId());
-    if(target.testing()) {
-      var current = target.actionTrial()
-          ? contexts.requireActionTrial(target.contextId(), authority.userId(), authority.domainId())
-          : contexts.require(target.contextId(), authority.userId(), authority.domainId());
-      if (!current.actionTrial() || !authority.classNames().isEmpty()) current.requireClasses(authority.classNames());
-      expiresAt=Math.min(expiresAt,Math.min(current.expiresAt(),target.expiresAt()));
-      binding.put("contextId",current.contextId());
-      binding.put("executionKind", current.actionTrial() ? "action-trial" : "build-test");
-      if (!current.sandboxId().equals(authority.sandboxId()))
-        binding.put("contextSandboxId",current.sandboxId());
+  public String issueExecution(PythonAuthority authority, String execution, long expiresAt) {
+    return issueDerived(authority, execution, expiresAt, executionBinding(authority));
+  }
+
+  private JSONObject executionBinding(PythonAuthority authority) {
+    var target = authority.target();
+    var binding = JSONObject.of("executionUserId", authority.executionUserId(),
+        "initiatorUserId", authority.initiatorUserId());
+    if (target.contextId() != null) {
+      binding.put("contextId", target.contextId());
+      binding.put("executionKind", target.actionTrial() ? "action-trial" : "build-test");
+      binding.put("contextSandboxId", target.sandboxId());
     }
-    return issue(authority.userId(),authority.domainId(),authority.purpose(),execution,expiresAt,authority.classNames(),authority.sandboxId(),binding);
+    return binding;
+  }
+
+  private String issueDerived(PythonAuthority authority, String run, long expiresAt, JSONObject binding) {
+    var sandbox = sandboxId(authority.sandboxId());
+    var classes = authority.classNames();
+    var operations = operations(authority.purpose(), binding);
+    var target = authority.target();
+    if (target.expiresAt() != null) expiresAt = Math.min(expiresAt, target.expiresAt());
+    if (target.contextId() != null)
+      expiresAt = Math.min(expiresAt, requireContext(binding, authority.userId(), authority.domainId(), classes).expiresAt());
+    if (authority.parentGrant() != null) {
+      var reference = authority.parentGrant();
+      var parent = verify(reference.token(), reference.runId());
+      if (!allowsDelegation(parent, authority.purpose())
+          || !authority.userId().equals(parent.getString("userId"))
+          || !authority.domainId().equals(parent.getString("domainId"))
+          || !Objects.equals(authority.executionUserId(), parent.getString("executionUserId"))
+          || !Objects.equals(authority.initiatorUserId(), parent.getString("initiatorUserId"))
+          || !Objects.equals(sandbox, parent.getString("sandboxId"))
+          || !Objects.equals(binding.getString("contextId"), parent.getString("contextId")))
+        throw forbidden();
+      var parentClasses = parent.getList("classNames", String.class);
+      classes = intersectClasses(parentClasses, classes);
+      operations.retainAll(operationKeys(parent));
+      if (operations.isEmpty()) throw forbidden();
+      expiresAt = Math.min(expiresAt, parent.getLongValue("expiresAt"));
+      var ancestors = new ArrayList<>(parent.getList("ancestors", String.class));
+      ancestors.add(parent.getString("jti"));
+      binding.put("ancestors", ancestors);
+      binding.put("requiresQueryAccess", parent.getBooleanValue("requiresQueryAccess"));
+    }
+    return issue(authority.userId(), authority.domainId(), authority.purpose(), run, expiresAt,
+        classes, sandbox, binding, operations, true);
+  }
+
+  static List<String> intersectClasses(List<String> ceiling, List<String> requested) {
+    if (ceiling.isEmpty()) return requested;
+    if (requested.isEmpty()) return ceiling;
+    var intersection = requested.stream().filter(ceiling::contains).toList();
+    if (intersection.isEmpty()) throw forbidden();
+    return intersection;
   }
 
   public void requireWorkbench(HttpServletRequest request) {
@@ -119,35 +167,47 @@ public class QueryGrantService {
       List<String> classNames,
       String sandboxId,
       JSONObject binding) {
-    return issue(userId, domainId, purpose, runId, expiresAt, classNames, sandboxId, binding, true);
+    var claims = binding == null ? new JSONObject() : binding;
+    return issue(userId, domainId, purpose, runId, expiresAt, classNames, sandboxId(sandboxId),
+        claims, operations(purpose, claims), true);
   }
 
-  /** The target limits the grant, while only derived code executions belong to build-test cleanup. */
-  public String issueAuthoringParent(String userId, String domainId, String runId, long expiresAt,
-      List<String> classNames, ExecutionTarget target, JSONObject binding) {
-    if (target.testing()) {
+  public String issueForTarget(String purpose, String runId, long expiresAt,
+      QueryAccessService.Access access, JSONObject binding) {
+    var target = access.target();
+    if (target.expiresAt() != null) expiresAt = Math.min(expiresAt, target.expiresAt());
+    if (target.contextId() != null) {
       binding.put("contextId", target.contextId());
+      binding.put("contextSandboxId", target.sandboxId());
       binding.put("executionKind", "build-test");
+      expiresAt = Math.min(expiresAt, requireContext(
+          binding, access.user().getId(), access.user().getDomainId(), access.classNames()).expiresAt());
     }
-    return issue(userId, domainId, "user-read", runId, expiresAt, classNames, target.sandboxId(), binding, false);
+    return issue(access.user().getId(), access.user().getDomainId(), purpose, runId,
+        expiresAt, access.classNames(), target.sandboxId(), binding, operations(purpose, binding), false);
+  }
+
+  /** The authoring owner binds the child to its actual write sandbox before issuing the parent. */
+  public String issueAuthoringParent(PythonAuthority authority, String runId, long expiresAt) {
+    var binding = executionBinding(authority);
+    var target = authority.target();
+    if (target.contextId() != null)
+      expiresAt = Math.min(expiresAt, Math.min(target.expiresAt(),
+          requireContext(binding, authority.userId(), authority.domainId(), authority.classNames()).expiresAt()));
+    binding.put("delegatedPurpose", authority.purpose());
+    return issue(authority.userId(), authority.domainId(), "authoring-test", runId, expiresAt,
+        authority.classNames(), sandboxId(authority.sandboxId()), binding,
+        operations(authority.purpose(), binding), false);
   }
 
   private String issue(String userId, String domainId, String purpose, String runId,
-      long expiresAt, List<String> classNames, String sandboxId, JSONObject binding, boolean codeExecution) {
-    if (userId == null
-        || domainId == null
-        || runId == null
-        || expiresAt <= System.currentTimeMillis())
-      throw new IllegalArgumentException(
-          "Query grant requires a valid subject, domain, run and deadline");
-    if (!List.of("retrieval-exploration", "user-read", "package-read", "sandbox-write", "ontology-generation", "knowledge-governance")
-        .contains(purpose)) throw new IllegalArgumentException("Invalid grant purpose");
-    if (binding != null && binding.getString("contextId") != null
-        && (sandboxId == null || classNames == null || (classNames.isEmpty()
-            && !"action-trial".equals(binding.getString("executionKind")))))
-      throw new IllegalArgumentException("BUILD_TEST_FORBIDDEN: test grant requires target and finite classes");
+      long expiresAt, List<String> classNames, String sandboxId, JSONObject binding,
+      Set<QueryGrantOperation> operations, boolean codeExecution) {
+    if (userId == null || domainId == null || runId == null || expiresAt <= System.currentTimeMillis())
+      throw new IllegalArgumentException("Query grant requires a valid subject, domain, run and deadline");
     String id = UUID.randomUUID().toString();
-    JSONObject claims = new JSONObject();
+    JSONObject claims = new JSONObject(binding);
+    claims.put("version", VERSION);
     claims.put("iss", "ontology");
     claims.put("aud", "ontology-query");
     claims.put("jti", id);
@@ -157,7 +217,12 @@ public class QueryGrantService {
     claims.put("runId", runId);
     claims.put("issuedAt", System.currentTimeMillis());
     claims.put("expiresAt", expiresAt);
-    if (binding != null) claims.putAll(binding);
+    if (sandboxId != null) operations.retainAll(QueryGrantOperation.SANDBOX);
+    claims.put("operations", operations.stream().map(Enum::name).sorted().toList());
+    if ("retrieval-exploration".equals(purpose))
+      claims.put("requiresQueryAccess", true);
+    claims.putIfAbsent("ancestors", List.of());
+    claims.put("target", sandboxId == null ? "live" : "sandbox");
     claims.put("classNames", classNames == null ? List.of() : classNames);
     claims.put("sandboxId", sandboxId);
     String encoded =
@@ -172,109 +237,163 @@ public class QueryGrantService {
         runId,
         domainId,
         expiresAt);
-    if(codeExecution && binding!=null && binding.getString("contextId")!=null)
+    if (codeExecution && binding.getString("contextId") != null)
       jdbc.update("UPDATE query_runtime_grants SET context_id=? WHERE id=?",binding.getString("contextId"),id);
     return token;
   }
 
-  public JSONObject verify(String token, String runId, String path) {
+  public JSONObject verifyRequest(String token, String runId, String method, String path) {
+    return verifyRequest(token, runId, QueryGrantOperation.resolve(method, path));
+  }
+
+  /** Resolve an admitted HTTP operation before publishing a grant to downstream handlers. */
+  public JSONObject verifyRequest(String token, String runId, QueryGrantOperation.Call call) {
+    var claims = verify(token, runId);
+    if (call == null || "authoring-test".equals(claims.getString("purpose"))
+        || !operationKeys(claims).contains(call.operation()) || !call.matches(claims)
+        || "action-trial".equals(claims.getString("executionKind")) && claims.getList("classNames", String.class).isEmpty())
+      throw forbidden();
+    return claims;
+  }
+
+  /** Check a parent internally without giving it an HTTP capability. */
+  public JSONObject verify(String token, String runId) {
+    var claims = decode(token);
+    long now = System.currentTimeMillis();
+    if (!Integer.valueOf(VERSION).equals(claims.getInteger("version"))
+        || !"ontology".equals(claims.getString("iss")) || !"ontology-query".equals(claims.getString("aud"))
+        || !runIdMatches(runId, claims) || claims.getLongValue("expiresAt") <= now)
+      throw invalid();
+    String domain = claims.getString("domainId");
+    Integer count = jdbc.queryForObject(
+        "SELECT count(*) FROM query_runtime_grants WHERE id=? AND run_id=? AND domain_id=?"
+            + " AND expires_at>? AND revoked=false",
+        Integer.class, claims.getString("jti"), runId, domain, now);
+    if (count == null || count != 1) throw invalid();
+    for (String id : claims.getList("ancestors", String.class)) {
+      Integer active = jdbc.queryForObject(
+          "SELECT count(*) FROM query_runtime_grants WHERE id=? AND domain_id=? AND expires_at>? AND revoked=false",
+          Integer.class, id, domain, now);
+      if (active == null || active != 1) throw invalid();
+    }
+
+    if (claims.getString("executionKind") != null && (claims.getString("contextId") == null
+        || !"sandbox".equals(claims.getString("target")))) throw invalid();
+    if (claims.getString("contextId") != null)
+      requireContext(claims, claims.getString("userId"), domain, claims.getList("classNames", String.class));
+    return claims;
+  }
+
+  private JSONObject decode(String token) {
+    String[] parts = token.split("\\.");
+    if (parts.length != 3 || !parts[0].equals("oq") || !equal(sign(parts[1]), parts[2])) throw invalid();
     try {
-      String[] parts = token.split("\\.");
-      if (parts.length != 3 || !parts[0].equals("oq") || !equal(sign(parts[1]), parts[2]))
-        throw new IllegalArgumentException();
-      JSONObject claims = JSON.parseObject(Base64.getUrlDecoder().decode(parts[1]));
-      if (!"ontology".equals(claims.getString("iss"))
-          || !"ontology-query".equals(claims.getString("aud"))
-          || !claims.getString("runId").equals(runId)
-          || claims.getLongValue("expiresAt") <= System.currentTimeMillis())
-        throw new IllegalArgumentException();
-      Integer count =
-          jdbc.queryForObject(
-              "SELECT count(*) FROM query_runtime_grants WHERE id=? AND run_id=? AND domain_id=?"
-                  + " AND expires_at>? AND revoked=false",
-              Integer.class,
-              claims.getString("jti"),
-              runId,
-              claims.getString("domainId"),
-              System.currentTimeMillis());
-      if (count == null || count != 1) throw new IllegalArgumentException();
-      String kind = claims.getString("executionKind");
-      String contextId = claims.getString("contextId");
-      boolean actionTrial = "action-trial".equals(kind);
-      if ((actionTrial || "build-test".equals(kind)) && contextId == null) throw new IllegalArgumentException();
-      if (contextId != null) {
-        String user = claims.getString("userId"), domain = claims.getString("domainId");
-        var target = actionTrial ? contexts.requireActionTrial(contextId, user, domain) : contexts.require(contextId, user, domain);
-        // An empty action trial can run Python but cannot call any data operation.
-        target.requireClasses(claims.getList("classNames",String.class));
-        String contextSandbox = claims.getString("contextSandboxId");
-        if(!target.sandboxId().equals(contextSandbox == null ? claims.getString("sandboxId") : contextSandbox))
-          throw new IllegalArgumentException();
-      }
-      if (!allows(claims, runId, path))
-        throw new ResponseStatusException(
-            HttpStatus.FORBIDDEN, "This grant cannot call this operation");
-      return claims;
-    } catch (ResponseStatusException e) {
-      throw e;
-    } catch (Exception e) {
-      throw new ResponseStatusException(
-          HttpStatus.UNAUTHORIZED, "Invalid, expired or revoked query grant");
+      return JSON.parseObject(Base64.getUrlDecoder().decode(parts[1]));
+    } catch (IllegalArgumentException | JSONException error) {
+      throw invalid();
     }
   }
 
-  /** The one place that maps a grant purpose to the paths it may call. */
-  private static boolean allows(JSONObject claims, String runId, String path) {
-    String purpose = claims.getString("purpose");
-    if (purpose == null) return false;
-    if ("action-trial".equals(claims.getString("executionKind")))
-      return "sandbox-write".equals(purpose) && (requiresWriteGrant(path)
-          || "/ontology/query/execute-dsl".equals(path) || "/ontology/query/distinct-values".equals(path));
-    return switch (purpose) {
-      case "retrieval-exploration" ->
-          path.equals("/ontology/retrievals/runtime-context") || read(path)
-              || (claims.getString("retrievalId") != null
-                  && path.matches("/ontology/retrievals/" + claims.getString("retrievalId")
-                      + "/runs/" + runId + "/outputs(?:/[^/]+(?:/content)?)?"));
-      // Sandbox and saved read programs query through the same protocol, which applies the owner's
-      // row and column permissions; only the sandbox one may also write through its own grant.
-      case "package-read" -> path.equals("/ontology/query/execute-dsl");
-      case "sandbox-write" -> read(path) || path.startsWith("/writeFunctionOperation/");
-      // A generation agent reads the ontology as its owner so that it can author valid definitions;
-      // it never reaches final output delivery or another run's actions.
-      case "user-read", "ontology-generation" ->
-          read(path) || ("ontology-generation".equals(purpose)
-              && (path.equals("/ontology/ai/generation/runtime-context")
-                  || path.startsWith("/ontology/ai/generation/" + runId + "/")));
-      case "knowledge-governance" ->
-          path.matches("/ontology/ai/knowledge-governance/[^/]+/runs/" + runId + "/actions/[^/]+");
+  private static boolean runIdMatches(String runId, JSONObject claims) {
+    return runId != null && runId.equals(claims.getString("runId"));
+  }
+
+  private ExecutionTarget requireContext(JSONObject binding, String user, String domain, List<String> classes) {
+    String context = binding.getString("contextId");
+    boolean trial = "action-trial".equals(binding.getString("executionKind"));
+    var owner = binding.getString("initiatorUserId");
+    var target = trial ? contexts.requireActionTrial(context, user, domain)
+        : contexts.require(context, owner == null ? user : owner, domain);
+    if (!classes.isEmpty() || !trial) target.requireClasses(classes);
+    if (!target.sandboxId().equals(binding.getString("contextSandboxId"))) throw forbidden();
+    return target;
+  }
+
+  private static String sandboxId(String sandbox) {
+    return ServiceConst.NOT_SANDBOX.equals(sandbox) ? null : sandbox;
+  }
+
+  private static Set<QueryGrantOperation> operationKeys(JSONObject claims) {
+    var keys = new HashSet<QueryGrantOperation>();
+    for (String key : claims.getList("operations", String.class)) keys.add(QueryGrantOperation.valueOf(key));
+    return keys;
+  }
+
+  private static boolean allowsDelegation(JSONObject parent, String childPurpose) {
+    return switch (parent.getString("purpose")) {
+      case "package-read", "knowledge-governance" -> false;
+      case "authoring-test" -> childPurpose.equals(parent.getString("delegatedPurpose"))
+          || "user-read".equals(parent.getString("delegatedPurpose")) && "package-read".equals(childPurpose);
+      case "retrieval-exploration", "ontology-generation", "user-read", "sandbox-write" ->
+          "user-read".equals(childPurpose) || "package-read".equals(childPurpose);
       default -> false;
     };
   }
 
-  /** Query reads; final output delivery always needs the end user credential. */
-  private static boolean read(String path) {
-    return path.startsWith("/ontology/query/") && !path.startsWith("/ontology/query/outputs");
+  private static Set<QueryGrantOperation> operations(String purpose, JSONObject binding) {
+    var operations = new HashSet<QueryGrantOperation>();
+    switch (purpose) {
+      case "retrieval-exploration" -> {
+        operations.addAll(QueryGrantOperation.QUERY);
+        operations.addAll(QueryGrantOperation.RETRIEVAL);
+      }
+      case "user-read" -> operations.addAll(QueryGrantOperation.QUERY);
+      case "package-read" -> operations.add(QueryGrantOperation.DATA_QUERY);
+      case "sandbox-write" -> {
+        operations.addAll(QueryGrantOperation.WRITE);
+        if ("action-trial".equals(binding.getString("executionKind"))) {
+          operations.add(QueryGrantOperation.DATA_QUERY);
+          operations.add(QueryGrantOperation.DATA_DISTINCT);
+        } else operations.addAll(QueryGrantOperation.QUERY);
+      }
+      case "ontology-generation" -> {
+        operations.addAll(QueryGrantOperation.QUERY);
+        operations.addAll(QueryGrantOperation.GENERATION);
+      }
+      case "knowledge-governance" -> operations.add(QueryGrantOperation.GOVERNANCE_ACTION);
+      default -> throw new IllegalArgumentException("Invalid grant purpose");
+    }
+    return operations;
   }
 
-  /** Whether this path needs a scoped write grant rather than an ordinary credential. */
-  public static boolean requiresWriteGrant(String path) {
-    return path.startsWith("/writeFunctionOperation/");
+  public static ExecutionTarget target(JSONObject claims) {
+    return new ExecutionTarget(claims.getString("contextId"), claims.getString("sandboxId"),
+        claims.getList("classNames", String.class), claims.getLong("expiresAt"),
+        claims.getString("executionUserId"), claims.getString("initiatorUserId"),
+        "action-trial".equals(claims.getString("executionKind")));
+  }
+
+  /** Adapt scope at a trusted request boundary; ordinary identities are still resolved by their owner. */
+  public static AuthorizationService.CredentialLimit limit(HttpServletRequest request) {
+    return limit((JSONObject) request.getAttribute(ATTRIBUTE));
+  }
+
+  static AuthorizationService.CredentialLimit limit(JSONObject claims) {
+    if (claims == null) return AuthorizationService.CredentialLimit.UNRESTRICTED;
+    var target = target(claims);
+    var operations = operationKeys(claims);
+    return operation -> operation instanceof AuthorizationService.Data data
+        && (operations.stream().anyMatch(QueryGrantOperation.QUERY::contains)
+            || operations.stream().anyMatch(QueryGrantOperation.WRITE::contains))
+        && target.expiresAt() > System.currentTimeMillis()
+        && (!target.testing() && target.classNames().isEmpty()
+            || !data.classes().isEmpty() && target.classNames().containsAll(data.classes()));
+  }
+
+  private static ResponseStatusException invalid() {
+    return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid, expired or revoked query grant");
+  }
+
+  private static ResponseStatusException forbidden() {
+    return new ResponseStatusException(HttpStatus.FORBIDDEN, "This grant cannot call this operation");
   }
 
   public String issuePackage(PythonAuthority authority, String execution, long expiresAt) {
     var input = authority.packageInput();
     QueryPackage.validate(input.getJSONObject("package"));
-    String digest = OntologyQueryService.digest(input);
-    var binding=JSONObject.of("packageInputSha256",digest,"executionUserId",authority.executionUserId(),"initiatorUserId",authority.initiatorUserId());
-    if(authority.target().testing()) {
-      var target=contexts.require(authority.target().contextId(),authority.userId(),authority.domainId());
-      target.requireClasses(authority.classNames());
-      binding.put("executionKind","build-test");
-      binding.put("contextId",target.contextId()); expiresAt=Math.min(expiresAt,Math.min(target.expiresAt(),authority.target().expiresAt()));
-    }
-    String token = issue(authority.userId(), authority.domainId(), "package-read", execution,
-        expiresAt, authority.classNames(), authority.sandboxId(), binding);
+    var binding = executionBinding(authority);
+    binding.put("packageInputSha256", OntologyQueryService.digest(input));
+    String token = issueDerived(authority, execution, expiresAt, binding);
     String grantId = JSON.parseObject(Base64.getUrlDecoder().decode(token.split("\\.")[1])).getString("jti");
     jdbc.update("UPDATE query_runtime_grants SET package_input=?::jsonb WHERE id=? AND run_id=? AND domain_id=? AND revoked=false",
         JSON.toJSONString(input, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue), grantId, execution, authority.domainId());

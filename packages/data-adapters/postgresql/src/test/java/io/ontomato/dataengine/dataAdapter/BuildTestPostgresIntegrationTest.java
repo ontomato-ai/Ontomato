@@ -81,7 +81,7 @@ class BuildTestPostgresIntegrationTest {
     ontologyHttp=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
     ontologyHttp.createContext("/",exchange->{
       try {
-        var claims=grants.verify(exchange.getRequestHeaders().getFirst("tk"),exchange.getRequestHeaders().getFirst("X-Ontomato-Run-Id"),exchange.getRequestURI().getPath());
+        var claims=grants.verifyRequest(exchange.getRequestHeaders().getFirst("tk"),exchange.getRequestHeaders().getFirst("X-Ontomato-Run-Id"),exchange.getRequestMethod(),exchange.getRequestURI().getPath());
         var request=new MockHttpServletRequest();request.setAttribute(QueryGrantService.ATTRIBUTE,claims);RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
         var body=JSON.parseObject(exchange.getRequestBody().readAllBytes());
         Object result=switch(exchange.getRequestURI().getPath()) {
@@ -384,12 +384,12 @@ class BuildTestPostgresIntegrationTest {
    String token=grants.issueExecution(PythonAuthority.read("builder","contract").withTarget(target),grantRun,target.expiresAt());
    var claims=JSON.parseObject(Base64.getUrlDecoder().decode(token.split("\\.")[1]));
    claims.put("classNames",new JSONArray());String emptyScope=signedClaims(claims);
-   expectCode("BUILD_TEST_FORBIDDEN",()->grants.verify(emptyScope,grantRun,"/ontology/query/execute-dsl"));
+   expectCode("BUILD_TEST_FORBIDDEN",()->grants.verifyRequest(emptyScope, grantRun, "POST", "/ontology/query/execute-dsl"));
    claims.remove("contextId");String noContext=signedClaims(claims);
-   expectCode("Invalid, expired or revoked query grant",()->grants.verify(noContext,grantRun,"/ontology/query/execute-dsl"));
+   expectCode("Invalid, expired or revoked query grant",()->grants.verifyRequest(noContext, grantRun, "POST", "/ontology/query/execute-dsl"));
    jdbc.update("UPDATE data_sandboxes SET expires_at=0 WHERE id=?",id);
    expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->contexts.require(id,"builder","contract"));
-   expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->grants.verify(token,grantRun,"/ontology/query/execute-dsl"));
+   expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->grants.verifyRequest(token, grantRun, "POST", "/ontology/query/execute-dsl"));
    // This protocol-only credential never started a runtime execution; remove its fixture row.
    jdbc.update("DELETE FROM query_runtime_grants WHERE run_id=? AND context_id=?",grantRun,id);
    contexts.cleanupExpired();
