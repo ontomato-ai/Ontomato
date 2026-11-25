@@ -64,6 +64,8 @@ const props = withDefaults(
      * two-column layout with `12px` row gap and `16px` column gap; `"compact"` uses tighter `auto 1fr` spacing for dense containers.
      */
     density?: "comfortable" | "compact";
+    /** Field keys whose structured map or `{ key, label?, value }` entry list renders as an aligned two-column `<dl>` grid instead of raw JSON text. */
+    keyValueFields?: readonly string[];
     /** Renders the field list as a bordered description table with subtle cell borders and a muted label column background. Defaults to `false`. */
     bordered?: boolean;
     /** Number of label/value column pairs per row in `"fields"` layout. Defaults to `1`. */
@@ -79,6 +81,7 @@ const props = withDefaults(
     missingText: undefined,
     copyableFields: undefined,
     density: "comfortable",
+    keyValueFields: undefined,
     bordered: false,
     columns: 1,
   },
@@ -151,7 +154,12 @@ function fieldText(current: PlatformObjectRecord, name: string): string {
   return displayFieldText(current.fields[name], locale.value, t);
 }
 
+function isKeyValueField(name: string): boolean {
+  return Boolean(props.keyValueFields?.includes(name));
+}
+
 function keyValueEntries(current: PlatformObjectRecord, name: string): readonly SummaryKeyValueEntry[] | null {
+  if (!isKeyValueField(name)) return null;
   return extractSummaryKeyValueEntries(current.fields[name], t);
 }
 

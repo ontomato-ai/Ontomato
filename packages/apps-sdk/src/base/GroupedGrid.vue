@@ -54,9 +54,14 @@ import {
   matchesRowActionWhen,
   resolveRowActionAddress,
   resolveRowOperationParams,
+  resolveRowOperationPrefill,
   resolveRowOperationTarget,
 } from "./object-list-actions";
-import type { ObjectListRef, ObjectListRowActions as ObjectListRowActionsConfig } from "./object-list-types";
+import type {
+  ObjectListRef,
+  ObjectListRowActionPrefill,
+  ObjectListRowActions as ObjectListRowActionsConfig,
+} from "./object-list-types";
 import ObjectListRowActions, { type ResolvedRowActionItem } from "./ObjectListRowActions.vue";
 import {
   formatOperationOutcome,
@@ -743,6 +748,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
       iconOnly: item.iconOnly,
       danger: Boolean(item.danger),
       primary: Boolean(item.primary),
+      prefill: item.prefill,
       disabled: unavailable,
       reason,
     });
@@ -759,12 +765,25 @@ const pendingInputDialog = shallowRef<{
   fields: readonly OperationInputField[];
   boundInput: Record<string, RuntimeJsonValue>;
   extraInput: Record<string, RuntimeJsonValue>;
+  initialValues?: Record<string, unknown>;
 } | null>(null);
+
+function configuredRowActionPrefill(operation: string): ObjectListRowActionPrefill | undefined {
+  const items = props.rowActions?.items;
+  if (!items) return undefined;
+  for (const item of items) {
+    if (item.kind !== "local" && item.operation === operation && item.prefill !== undefined) {
+      return item.prefill;
+    }
+  }
+  return undefined;
+}
 
 async function dispatchRowOperation(
   row: PlatformObjectRecord,
   operation: string,
   extraInput: Readonly<Record<string, RuntimeJsonValue>> = {},
+  prefillOverride?: ObjectListRowActionPrefill,
 ) {
   if (rowOpRunning.value) return;
   const descriptor = admittedOperationDescriptors.value[operation];
@@ -781,6 +800,7 @@ async function dispatchRowOperation(
   const suppliedKeys = new Set([...Object.keys(boundInput), ...Object.keys(filteredExtra)]);
   const missingFields = allFields.filter((field) => allowedKeys.has(field.name) && !suppliedKeys.has(field.name));
   if (missingFields.length > 0) {
+    const effectivePrefill = prefillOverride !== undefined ? prefillOverride : configuredRowActionPrefill(operation);
     pendingInputDialog.value = {
       row,
       operation,
@@ -788,6 +808,7 @@ async function dispatchRowOperation(
       fields: missingFields,
       boundInput,
       extraInput: filteredExtra,
+      initialValues: resolveRowOperationPrefill(row, missingFields, effectivePrefill),
     };
     return;
   }
@@ -858,7 +879,7 @@ function triggerRowAction(item: GroupedGridItem, action: ResolvedRowActionItem) 
     return;
   }
   if (action.kind === "operation" && action.operation) {
-    void dispatchRowOperation(item.row, action.operation);
+    void dispatchRowOperation(item.row, action.operation, {}, action.prefill);
   }
 }
 
@@ -1471,6 +1492,7 @@ const gridCssVars = computed(() => ({
       :model-value="true"
       :title="pendingInputDialog.descriptor.label || pendingInputDialog.operation"
       :fields="pendingInputDialog.fields"
+      :initial-values="pendingInputDialog.initialValues"
       :busy="rowOpRunning"
       @update:model-value="(open) => { if (!open) pendingInputDialog = null; }"
       @confirm="submitPendingInputDialog"
