@@ -348,6 +348,23 @@ describe("built-in model panels", () => {
               },
             });
           }
+          if (slot === "createModelForm") {
+            return Response.json({
+              status: "ready",
+              value: {
+                save: {
+                  kind: "form.save",
+                  handlerRef: ADD_MODEL_ENTRY,
+                  label: "Add model",
+                  effect: "write",
+                  target: { source: "draft" },
+                  inputSchema: {},
+                  resultSchema: {},
+                  batch: false,
+                },
+              },
+            });
+          }
           return Response.json({ status: "ready", value: {} });
         }
         if (slot === "connections") {
@@ -414,6 +431,20 @@ describe("built-in model panels", () => {
         if (slot === "usagesList") {
           return Response.json({ status: "empty" });
         }
+        if (slot === "createModelForm") {
+          return Response.json({
+            status: "ready",
+            value: {
+              values: { name: "", model: "" },
+              fields: [
+                { path: "/name", label: "Public name", required: true, readOnly: false, valueSchema: { type: "string" }, control: { kind: "text" } },
+                { path: "/model", label: "Upstream model ID", required: true, readOnly: false, valueSchema: { type: "string" }, control: { kind: "text" } },
+              ],
+              errors: [],
+              save: { method: "POST", path: "/api/data-query/model-settings/add-model", bodySchema: {} },
+            },
+          });
+        }
         return Response.json({ status: "empty" });
       },
       readOperation(body) {
@@ -451,6 +482,24 @@ describe("built-in model panels", () => {
       expect(document.body.textContent).toContain("gpt-4.1");
     });
     expect(readOps.some((entry) => String(entry.operationId).endsWith(".discover"))).toBe(true);
+
+    const addManuallyBtn = [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.trim() === "Add manually");
+    expect(addManuallyBtn).toBeDefined();
+    addManuallyBtn!.click();
+
+    const cancelBtn = await vi.waitFor(() => {
+      const actions = document.querySelector(".sdk-owner-form-actions");
+      expect(actions).not.toBeNull();
+      const buttons = [...actions!.querySelectorAll<HTMLButtonElement>("button")];
+      expect(buttons.map((button) => button.textContent?.trim())).toEqual(["Cancel", "Add model"]);
+      return buttons[0]!;
+    }, { timeout: 3000 });
+    cancelBtn.click();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector(".sdk-owner-form-actions")).toBeNull();
+    });
   });
 
   it("mounts model-usage panel, shows domain defaults, vector rebuild banner/button from owner outputs, and agent usages", async () => {

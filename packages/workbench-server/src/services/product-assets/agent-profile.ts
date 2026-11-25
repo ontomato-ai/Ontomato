@@ -159,8 +159,9 @@ async function profileIdForAgent(owner: ProductOwner, agentId: string): Promise<
 }
 
 /** Native bindings take precedence when selecting agents that can use a page skill. */
-export async function agentsWithProductProfiles(domainId: string, agentIds: readonly string[], use: ReadonlySet<string>) {
-  return agentIds.length ? activeProfileIds(domainId, agentIds, use, true) : new Map<string, string>();
+export async function agentsWithProductProfiles(owner: ProductOwner, agentIds: readonly string[]) {
+  if (!agentIds.length) return new Map<string, string>();
+  return withProductGrants(owner, () => activeProfileIds(owner.domainId, agentIds, currentProductGrants(owner).use, true));
 }
 export async function executeProfileTool(owner:ProductOwner,credentials:AssistantCredentials,profileId:string,assetId:string,parameters:Record<string,unknown>,releaseId?:string,sessionId?:string,executionCredentials?:AssistantCredentials){
   await requireProductUse(owner,profileId);

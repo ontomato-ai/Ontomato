@@ -48,9 +48,15 @@ public final class PanelFormFields {
   }
 
   public static JSONObject objectArray(JSONArray itemFields, JSONObject defaultItem, String itemKeyPath) {
+    return objectArray(itemFields, defaultItem, itemKeyPath, null);
+  }
+
+  public static JSONObject objectArray(
+      JSONArray itemFields, JSONObject defaultItem, String itemKeyPath, String presentation) {
     JSONObject control =
         JSONObject.of("kind", "object-array", "itemFields", itemFields, "defaultItem", defaultItem);
     if (itemKeyPath != null) control.put("itemKeyPath", itemKeyPath);
+    if (presentation != null && !presentation.isBlank()) control.put("presentation", presentation);
     return control;
   }
 

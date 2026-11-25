@@ -242,6 +242,8 @@ export interface ProjectionFormField {
   /** Whether the reader may change it now: the owner's read-only rule and the form's own busy state. */
   readonly disabled: ComputedRef<boolean>;
   set(value: RuntimeJsonValue): void;
+  setFromControl(value: RuntimeJsonValue): void;
+  blurFromControl(): void;
 }
 
 /**
@@ -275,6 +277,14 @@ export function formFieldAt(instance: PanelInstance, formSlot: string, path: () 
     error: computed(() => handle.value?.errors.value[path()]),
     changed: computed(() => handle.value?.changed.value.has(path()) === true),
     disabled: computed(() => !resolved.value || resolved.value.readOnly || handle.value!.busy.value),
+    setFromControl(value) {
+      const form = handle.value;
+      if (form?.setFromControl) form.setFromControl(path(), value);
+      else form?.set(path(), value);
+    },
+    blurFromControl() {
+      handle.value?.blurFromControl?.(path());
+    },
     set(value) {
       if (!handle.value) throw new Error(`Slot '${formSlot}' holds no form yet`);
       handle.value.set(path(), value);

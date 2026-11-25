@@ -108,6 +108,9 @@ class ActionFormTest {
     assertEquals(2, keyOptions.size());
     assertEquals("orderNo", keyOptions.getJSONObject(0).getString("value"));
     assertEquals("code", keyOptions.getJSONObject(1).getString("value"));
+    JSONObject parametersControl = field(form, "/function/parameters").getJSONObject("control");
+    assertEquals("object-array", parametersControl.getString("kind"));
+    assertEquals("inline", parametersControl.getString("presentation"));
   }
 
   @Test

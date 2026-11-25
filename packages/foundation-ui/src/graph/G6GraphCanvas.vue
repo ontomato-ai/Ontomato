@@ -7,10 +7,13 @@ import { MARGIN, NODE_HEIGHT, NODE_WIDTH, placeNodes } from "./layout";
 import type {
   GraphCanvasEdge,
   GraphCanvasElement,
+  GraphCanvasExportOptions,
   GraphCanvasLayout,
   GraphCanvasNode,
+  GraphCanvasNodeViewportBox,
   GraphCanvasPoint,
   GraphCanvasSelection,
+  GraphCanvasStyleOverrides,
   GraphCanvasViewport,
 } from "./types";
 
@@ -63,8 +66,10 @@ const props = withDefaults(
      * plain drag still moves the node. The canvas draws no edge of its own: the caller adds one if its owner creates it.
      */
     editable?: boolean;
+    /** Optional visual styling overrides applied by specialized platform canvases. */
+    styleOverrides?: GraphCanvasStyleOverrides;
   }>(),
-  { edges: () => [], selected: () => [], selectedEdges: () => [], selection: "single", layout: () => ({ type: "grid" }), maxHeight: undefined, categories: () => [], labelWidth: G6_LABEL_WIDTH, nodeSize: G6_NODE_SIZE, labelSize: G6_LABEL_SIZE, readableLabels: false, editable: false },
+  { edges: () => [], selected: () => [], selectedEdges: () => [], selection: "single", layout: () => ({ type: "grid" }), maxHeight: undefined, categories: () => [], labelWidth: G6_LABEL_WIDTH, nodeSize: G6_NODE_SIZE, labelSize: G6_LABEL_SIZE, readableLabels: false, editable: false, styleOverrides: undefined },
 );
 const emit = defineEmits<{
   /** The selection a reader's choice results in: every chosen ID, in the order they were chosen. */
@@ -81,6 +86,8 @@ const emit = defineEmits<{
   activate: [element: GraphCanvasElement];
   /** A reader dragged a node and let go here. The canvas keeps it there until its caller gives it another position. */
   move: [id: string, position: GraphCanvasPoint];
+  /** The node currently under the reader's pointer (`null` once the pointer leaves). */
+  hoverNode: [id: string | null];
   /** How many of the elements being added are drawn so far, while a change is drawn in batches; ends with drawn = total. */
   progress: [drawn: number, total: number];
   /** The canvas took a new size (its container grew or shrank), once G6 has been resized to it. */
@@ -130,8 +137,8 @@ async function sync(target: Graph) {
   const nodes = new Map(props.nodes.map((node) => [node.id, node]));
   const positions = positionsOf(props.nodes);
   const choosable = props.selection !== "none";
-  const nodeStyles = new Map(props.nodes.map((node) => [node.id, g6NodeStyle(node, colors, props.categories, choosable, look())]));
-  const edges = g6Edges(props.edges, nodes, colors);
+  const nodeStyles = new Map(props.nodes.map((node) => [node.id, g6NodeStyle(node, colors, props.categories, choosable, look(), props.styleOverrides)]));
+  const edges = g6Edges(props.edges, nodes, colors, props.styleOverrides);
   const edgeKeys = new Map(edges.map((edge) => [String(edge.id), JSON.stringify(edge)]));
 
   const goneEdges = [...drawnEdges.keys()].filter((id) => edgeKeys.get(id) === undefined);
@@ -226,26 +233,54 @@ function reportViewport(target: Graph) {
 }
 
 function edgeOptions() {
+  const overrides = props.styleOverrides;
+  const pillLabels = overrides?.edgeLabelShape === "pill";
   return {
     type: "line",
     state: {
       selected: {
         stroke: colors.primary,
-        lineWidth: 3.5,
+        lineWidth: overrides?.selectedEdgeLineWidth ?? 3.5,
         opacity: 1,
         labelFill: colors.text,
         labelFontWeight: 600,
         labelBackground: true,
         labelBackgroundFill: colors.surface,
         labelBackgroundOpacity: 1,
-        labelBackgroundPadding: [2, 5],
+        labelBackgroundPadding: pillLabels ? [3, 8] : [2, 5],
+        ...(pillLabels
+          ? {
+              labelBackgroundStroke: colors.primary,
+              labelBackgroundLineWidth: 1,
+              labelBackgroundRadius: overrides?.edgeLabelRadius ?? 999,
+            }
+          : {}),
       },
     },
   };
 }
 
 function nodeOptions() {
-  return { type: "circle", state: { selected: { stroke: colors.primary, lineWidth: 6, lineDash: [] } } };
+  const overrides = props.styleOverrides;
+  return {
+    type: "circle",
+    state: {
+      selected: {
+        stroke: colors.primary,
+        lineWidth: overrides?.selectedNodeLineWidth ?? 6,
+        lineDash: [],
+        ...(overrides?.selectedNodeHalo
+          ? {
+              halo: true,
+              haloStroke: colors.primary,
+              haloLineWidth: overrides.selectedNodeHaloWidth ?? 12,
+              haloStrokeOpacity: 0.25,
+              haloPointerEvents: "none" as const,
+            }
+          : {}),
+      },
+    },
+  };
 }
 
 /** Which of two nodes keeps its name where names must give way: a chosen one, else the one with more relations. */
@@ -317,6 +352,11 @@ async function create(width: number, height: number) {
   target.on("canvas:click", () => emit("blank"));
   target.on("node:dblclick", (event: any) => emit("activate", { kind: "node", id: String(event.target.id) }));
   target.on("edge:dblclick", (event: any) => emit("activate", { kind: "edge", id: String(event.target.id) }));
+  target.on("node:pointerenter", (event: any) => {
+    const id = event?.target?.id;
+    if (id !== undefined && id !== null) emit("hoverNode", String(id));
+  });
+  target.on("node:pointerleave", () => emit("hoverNode", null));
   // A drag with Shift on an editable canvas draws a relation (`create-edge`), and G6 still ends a drag for the node it
   // started from: that node moved nowhere, so its end is no move.
   let drawingRelation = false;
@@ -361,6 +401,16 @@ function restyle() {
 watch(
   () => [props.nodes, props.edges, props.layout.type, props.categories, props.selection, props.labelWidth, props.nodeSize, props.labelSize],
   () => void enqueue(sync),
+);
+watch(
+  () => props.styleOverrides,
+  () =>
+    void enqueue(async (target) => {
+      target.setNode(nodeOptions());
+      target.setEdge(edgeOptions());
+      await sync(target);
+    }),
+  { deep: true },
 );
 watch(
   () => [props.selected, props.selectedEdges],
@@ -475,6 +525,20 @@ function namesApartZoom(target: Graph) {
   return needed;
 }
 
+function resolveExportBackground(background: string | undefined): string {
+  const trimmed = background?.trim();
+  if (!trimmed) return colors.surface;
+  const varMatch = /^var\(\s*(--[^,\s)]+)\s*(?:,\s*([^)]+))?\)$/u.exec(trimmed);
+  if (varMatch && host.value) {
+    const resolved = getComputedStyle(host.value).getPropertyValue(varMatch[1]!).trim();
+    if (resolved) return resolved;
+    const fallback = varMatch[2]?.trim();
+    if (fallback) return fallback;
+    return colors.surface;
+  }
+  return trimmed;
+}
+
 defineExpose({
   /**
    * Shows the whole graph, no larger than `maxZoom`, keeping `padding` pixels clear (one value, or top, right, bottom,
@@ -535,15 +599,42 @@ defineExpose({
         .filter((node) => !node.data?.anchor)
         .map((node) => [String(node.id), { x: Number(node.style!.x), y: Number(node.style!.y) }]),
     ),
-  /** The view as drawn now, as a PNG on the canvas's surface colour: what to save is the caller's. */
-  exportImage: () =>
+  /** Current viewport center and radius (in canvas frame pixels) of one drawn node, or `null` when unavailable. */
+  nodeViewportBox: (id: string): GraphCanvasNodeViewportBox | null => {
+    if (!graph) return null;
+    const datum = graph.getNodeData().find((node) => !node.data?.anchor && String(node.id) === id);
+    if (!datum?.style) return null;
+    const [vx, vy] = graph.getViewportByCanvas([Number(datum.style.x), Number(datum.style.y)]);
+    const radius = (props.nodeSize * graph.getZoom()) / 2;
+    return { id, x: vx, y: vy, radius };
+  },
+  /** Current viewport centers and radii (in canvas frame pixels) of all drawn non-anchor nodes. */
+  nodeViewportRects: (): GraphCanvasNodeViewportBox[] => {
+    if (!graph) return [];
+    const radius = (props.nodeSize * graph.getZoom()) / 2;
+    return graph
+      .getNodeData()
+      .filter((node) => !node.data?.anchor && node.style)
+      .map((node) => {
+        const [vx, vy] = graph!.getViewportByCanvas([Number(node.style!.x), Number(node.style!.y)]);
+        return { id: String(node.id), x: vx, y: vy, radius };
+      });
+  },
+  /** Bounding client rect of the canvas frame container for converting pointer coordinates. */
+  frameRect: (): DOMRect | null => frame.value?.getBoundingClientRect() ?? null,
+  /** The view as drawn now, as a PNG composited onto the requested background (or the canvas surface colour). */
+  exportImage: (options?: GraphCanvasExportOptions) =>
     new Promise<Blob>((resolve, reject) => {
       const layers = Array.from(host.value!.querySelectorAll("canvas"));
+      if (!layers.length) {
+        reject(new Error("The graph could not be exported as PNG"));
+        return;
+      }
       const output = document.createElement("canvas");
       output.width = Math.max(...layers.map((layer) => layer.width));
       output.height = Math.max(...layers.map((layer) => layer.height));
       const context = output.getContext("2d")!;
-      context.fillStyle = colors.surface;
+      context.fillStyle = resolveExportBackground(options?.background);
       context.fillRect(0, 0, output.width, output.height);
       for (const layer of layers) context.drawImage(layer, 0, 0, output.width, output.height);
       output.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("The graph could not be exported as PNG"))), "image/png");

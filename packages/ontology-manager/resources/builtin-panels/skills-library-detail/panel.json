@@ -49,7 +49,8 @@
         "target": "selected",
         "operation": "skills.export",
         "config": {
-          "type": "default"
+          "type": "default",
+          "icon": "download"
         },
         "id": "builtin-product-3c7b5d29-8a42-4e91-b63d-4f8a2c7e9102"
       },

@@ -280,7 +280,17 @@ describe("action catalog reads", () => {
         ],
       },
     ];
-    ownerAnswering({ "/action/queryById": ok({ ...approve, definition: richDefinition, codeSegments }) });
+    ownerAnswering({
+      "/action/queryById": ok({
+        ...approve,
+        definition: richDefinition,
+        codeSegments,
+        businessMeaning: {
+          operations: ["Update order status to approved"],
+          negativeEffect: "Cannot be reversed once dispatched",
+        },
+      }),
+    });
     const adapter = createActionReadAdapter(owner, viewer);
 
     const summary = await adapter.derivedSummary("approve-order");
@@ -289,9 +299,19 @@ describe("action catalog reads", () => {
       primaryKey: "approve-order",
       label: "Approve order",
       subtitle: "Approves and links an order",
-      fields: { declaredTarget: "Order ← order_id" },
+      fields: {
+        derivationStatus: "Derived · unverified",
+        declaredTarget: "Order ← order_id",
+        negativeEffect: "Cannot be reversed once dispatched",
+      },
+      tones: {
+        derivationStatus: "info",
+        negativeEffect: "warning",
+      },
       tags: { affects: ["Order", "AuditEntry"] },
     });
+    // When derived rules are present, duplicate operation summary is suppressed while negativeEffect stays.
+    expect(summary.fields).not.toHaveProperty("businessOperations");
 
     const orderIdRef = {
       kind: "child-reference",
@@ -316,15 +336,17 @@ describe("action catalog reads", () => {
       fields: {
         group: "Updates",
         kind: "Update object",
-        target: ["Order · Object ← ", orderIdRef],
+        target: "Order",
+        locate: ["Object ← ", orderIdRef],
         fields: "status ← approved",
         guards: "status == 'open'",
       },
     });
-    expect(effects[3]?.fields.target).toEqual([
-      "APPROVED_BY · Order → Reviewer · ← ",
+    expect(effects[3]?.fields.target).toBe("Order —APPROVED_BY→ Reviewer");
+    expect(effects[3]?.fields.locate).toEqual([
+      "Source ← ",
       orderIdRef,
-      " · → reviewer_id",
+      " · Target ← reviewer_id",
     ]);
 
     const parameters = await adapter.derivedParameters("approve-order");
@@ -414,12 +436,94 @@ describe("action catalog reads", () => {
     const emptySummary = await adapter.derivedSummary("empty-action");
     expect(emptySummary).not.toHaveProperty("subtitle");
     expect(emptySummary.fields).toEqual({
+      derivationStatus: "Derived · unverified",
       declaredTarget: "No target: the action runs on parameters alone",
       affects: "None",
     });
+    expect(emptySummary.tones).toEqual({ derivationStatus: "info" });
     expect(await adapter.derivedEffects("empty-action")).toEqual([]);
     expect(await adapter.derivedParameters("empty-action")).toEqual([]);
     expect(await adapter.derivedConditions("empty-action")).toEqual([]);
+  });
+
+  it("keeps business operations in derivedSummary when no effects exist and formats structured effect guards", async () => {
+    ownerAnswering({
+      "/action/queryById": ok({
+        ...approve,
+        definition: {
+          version: 1,
+          source: "DERIVED",
+          verified: false,
+          name: "Notify warehouse",
+          description: "Sends a notification without direct object writes",
+          codeHash: null,
+          explanationVersion: null,
+          affects: [],
+          effects: [],
+          parameters: [{ name: "order_id", type: "TYPE_STRING", description: null, objectTypes: [], required: null, constraints: null }],
+        },
+        businessMeaning: {
+          operations: ["Notify warehouse webhook", "Log dispatch request"],
+          negativeEffect: "External notification cannot be recalled",
+        },
+      }),
+    });
+    const adapter = createActionReadAdapter(owner, viewer);
+    const summaryWithoutRules = await adapter.derivedSummary("approve-order");
+    expect(summaryWithoutRules.fields).toMatchObject({
+      derivationStatus: "Derived · unverified",
+      businessOperations: "• Notify warehouse webhook\n• Log dispatch request",
+      negativeEffect: "External notification cannot be recalled",
+    });
+    expect(summaryWithoutRules.tones).toEqual({
+      derivationStatus: "info",
+      negativeEffect: "warning",
+    });
+
+    ownerAnswering({
+      "/action/queryById": ok({
+        ...approve,
+        definition: {
+          version: 1,
+          source: "DERIVED",
+          verified: false,
+          name: "Approve order",
+          codeHash: null,
+          explanationVersion: null,
+          affects: ["Order"],
+          parameters: [{ name: "order_id", type: "TYPE_STRING", description: null, objectTypes: [], required: null, constraints: null }],
+          effects: [
+            {
+              kind: "UPDATE_OBJECT",
+              kindLabel: "Update object",
+              className: "Order",
+              objectIdFrom: "order_id",
+              guards: {
+                properties: {
+                  operator: "logic",
+                  and: [
+                    { field: "Order.status", operator: "=", value: "PENDING" },
+                    { field: "Order.id", operator: "=", value: "order_id" },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const [effect] = await adapter.derivedEffects("approve-order");
+    expect(effect?.fields.target).toBe("Order");
+    expect(effect?.fields.guards).toEqual([
+      "Order.status = PENDING AND Order.id = ",
+      {
+        kind: "child-reference",
+        parent: { objectType: ACTION, primaryKey: "approve-order" },
+        collection: "parameters",
+        primaryKey: "order_id",
+        label: "order_id",
+      },
+    ]);
   });
 
   it("maps annotatedExplanation recursively across segs, trySegs, catchs, finallySegs, and branchArms with pre-split parameter refs", async () => {

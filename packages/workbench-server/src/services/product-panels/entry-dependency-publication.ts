@@ -7,7 +7,7 @@ import type { PoolClient } from "pg";
 import { z } from "zod";
 import { config } from "../../config/application";
 import { environment } from "../../config/environment";
-import { qualifiedTable as t } from "../../infrastructure/postgres";
+import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { backendPost } from "../../utils/backend-client";
@@ -58,7 +58,7 @@ const detailRoots = (panel: string | null): EntryRoots => ({ panelIds: panel ===
 const detailEntryId = (className: string) => `object-detail:${className}`;
 
 async function publish(client: PoolClient, domainId: string, { source, panels, detail }: EntryDependencyPublication,
-  later: EntryDependencyPublication[]) {
+  sequence: string, later: EntryDependencyPublication[]) {
   const panelIds = panels.map(panel => panel.panelId);
   const roots = [];
   if (panelIds.length) {
@@ -89,7 +89,16 @@ async function publish(client: PoolClient, domainId: string, { source, panels, d
   const entries = roots.map(({ entryId, before, after }) => ({
     entryId, before: mergeRoots(before, oldLists), after: mergeRoots(after, newLists),
   })).filter(({ before, after }) => !sameDependencies(before, after));
-  await submit({ domainId, source, entries });
+  await submit({ domainId, source: { kind: source.kind, actorId: source.actorId, sequence }, entries });
+}
+
+export async function deliverPendingEntryDependencyPublications() {
+  const { rows } = await getPostgresPool().query<{ domain_id: string }>(
+    `SELECT DISTINCT domain_id FROM ${t("product_publication_outbox")} WHERE dependency_change IS NOT NULL ORDER BY domain_id`,
+  );
+  const results = await Promise.allSettled(rows.map(({ domain_id }) => deliverEntryDependencyPublications(domain_id)));
+  const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
+  if (failures.length) throw new AggregateError(failures, "Could not deliver all entry dependency publications");
 }
 
 export async function deliverEntryDependencyPublications(domainId: string) {
@@ -102,7 +111,7 @@ export async function deliverEntryDependencyPublications(domainId: string) {
     );
     const [next, ...later] = rows;
     if (!next) return false;
-    await publish(client, domainId, next.dependency_change, later.map(row => row.dependency_change));
+    await publish(client, domainId, next.dependency_change, next.dependency_sequence, later.map(row => row.dependency_change));
     await client.query(`DELETE FROM ${outbox} WHERE domain_id=$1 AND dependency_sequence=$2`, [domainId, next.dependency_sequence]);
     return later.length > 0;
   })) {
@@ -110,7 +119,7 @@ export async function deliverEntryDependencyPublications(domainId: string) {
   }
 }
 
-export async function publishApplicationEntryRoots({ domainId, actorId, entryId, before, after }: ApplicationEntryRootsChanged) {
+export async function publishApplicationEntryRoots({ domainId, actorId, entryId, sequence, before, after }: ApplicationEntryRootsChanged) {
   await transaction(async client => {
     await lockProducts(client, { domainId });
     const panels = await readPanelDependencies(client, domainId, [...new Set([...before.panelIds, ...after.panelIds])]);
@@ -119,7 +128,7 @@ export async function publishApplicationEntryRoots({ domainId, actorId, entryId,
     // The permission owner reconciles waiting proposals against the complete new list.
     const previous = mergeRoots({ ...before, panelIds: before.panelIds.filter(id => panels.has(id)) }, panels);
     await submit({
-      domainId, source: { kind: "application", id: entryId, actorId },
+      domainId, source: { kind: "application", sequence, actorId },
       entries: [{ entryId, before: previous, after: next }],
     });
   });

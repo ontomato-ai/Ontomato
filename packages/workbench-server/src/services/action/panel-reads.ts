@@ -167,6 +167,33 @@ function formatJsonValue(value: unknown): string {
   }
 }
 
+function formatGuardCondition(value: unknown, translate: (key: string) => string): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value !== "object") return formatJsonValue(value);
+  const condition = value as Record<string, unknown>;
+  if (condition.properties && typeof condition.properties === "object") {
+    return formatGuardCondition(condition.properties, translate);
+  }
+  if (condition.operator === "logic") {
+    const and = Array.isArray(condition.and)
+      ? condition.and.map(item => formatGuardCondition(item, translate)).filter(Boolean)
+      : [];
+    if (and.length > 0) return and.join(` ${translate("panels.action.derived.and")} `);
+    const or = Array.isArray(condition.or)
+      ? condition.or.map(item => formatGuardCondition(item, translate)).filter(Boolean)
+      : [];
+    if (or.length > 0) return or.join(` ${translate("panels.action.derived.or")} `);
+    return "";
+  }
+  if (typeof condition.field === "string" && condition.field) {
+    const operator = typeof condition.operator === "string" ? condition.operator : "";
+    const operand = condition.value === undefined ? "" : ` ${formatJsonValue(condition.value)}`;
+    return `${condition.field}${operator ? ` ${operator}` : ""}${operand}`.trim();
+  }
+  return formatJsonValue(value);
+}
+
 function formatAssignments(assignments: unknown): string {
   if (Array.isArray(assignments)) {
     const formatted = assignments
@@ -590,27 +617,56 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
         z.object({ definition: actionDefinitionSchema }).passthrough());
       return action.definition;
     },
-    /** Standard summary record for the action's derived definition (declared target and affected object types). */
+    /**
+     * Standard summary record for the action's derived definition: unverified status, declared target, affected object
+     * types, and curated business meaning (suppressing redundant operation summary when derived rules are present while
+     * preserving negative effect).
+     */
     async derivedSummary(primaryKey: string): Promise<PanelRecord> {
       const action = await owner("action-derived-summary", "/action/queryById", { id: primaryKey },
-        z.object({ definition: actionDefinitionSchema }).passthrough());
+        explainedActionSchema.extend({ definition: actionDefinitionSchema }));
       const definition = action.definition;
       const affects = definition.affects ?? [];
       const description = definition.description?.trim() ?? "";
       const declaredTarget = definition.declaredTarget
         ? `${definition.declaredTarget.className} ← ${definition.declaredTarget.keyParameter}`
         : translate("panels.action.derived.noTarget");
+      const hasRules = (definition.effects?.length ?? 0) > 0;
+      const parsedMeaning = action.businessMeaning != null
+        ? actionBusinessMeaningSchema.safeParse(action.businessMeaning)
+        : null;
+      const meaning = parsedMeaning?.success ? parsedMeaning.data : null;
+      const curatedOperations = !hasRules && meaning
+        ? meaning.operations.map(item => item.trim()).filter(Boolean)
+        : [];
+      const negativeEffect = meaning ? meaning.negativeEffect.trim() : "";
       return {
         primaryKey,
         label: definition.name,
         ...(description ? { subtitle: description } : {}),
         fieldLabels: {
+          derivationStatus: translate("panels.action.derived.fields.derivationStatus"),
           declaredTarget: translate("panels.action.derived.fields.declaredTarget"),
           affects: translate("panels.action.derived.fields.affects"),
+          ...(curatedOperations.length > 0
+            ? { businessOperations: translate("panels.action.explanation.summary.operations") }
+            : {}),
+          ...(negativeEffect
+            ? { negativeEffect: translate("panels.action.explanation.summary.negativeEffect") }
+            : {}),
         },
         fields: {
+          derivationStatus: translate("panels.action.derived.unverified"),
           declaredTarget,
           ...(affects.length === 0 ? { affects: translate("panels.action.derived.noAffects") } : {}),
+          ...(curatedOperations.length > 0
+            ? { businessOperations: curatedOperations.map(item => `• ${item}`).join("\n") }
+            : {}),
+          ...(negativeEffect ? { negativeEffect } : {}),
+        },
+        tones: {
+          derivationStatus: "info",
+          ...(negativeEffect ? { negativeEffect: "warning" as const } : {}),
         },
         ...(affects.length > 0 ? { tags: { affects } } : {}),
       };
@@ -636,8 +692,11 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
         target: translate("panels.action.derived.fields.target"),
         fields: translate("panels.action.derived.fields.fields"),
         guards: translate("panels.action.derived.fields.guards"),
+        locate: translate("panels.action.derived.fields.locate"),
       };
       const objectWord = translate("panels.action.derived.targetObject");
+      const sourceWord = translate("panels.action.derived.targetSource");
+      const targetWord = translate("panels.action.derived.targetTarget");
       const textWord = translate("panels.action.derived.targetText");
       const fileWord = translate("panels.action.derived.targetFile");
       const rows: PanelRecord[] = [];
@@ -648,17 +707,21 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
         for (let index = 0; index < items.length; index++) {
           const effect = items[index]!;
           const targetParts: string[] = [];
-          if (effect.className) targetParts.push(effect.className);
-          if (effect.relation) targetParts.push(effect.relation);
-          if (effect.sourceClass || effect.targetClass) {
-            targetParts.push(`${effect.sourceClass ?? "?"} → ${effect.targetClass ?? "?"}`);
+          if (effect.relation) {
+            targetParts.push(`${effect.sourceClass ?? "?"} —${effect.relation}→ ${effect.targetClass ?? "?"}`);
+          } else {
+            if (effect.className) targetParts.push(effect.className);
+            if (effect.sourceClass || effect.targetClass) {
+              targetParts.push(`${effect.sourceClass ?? "?"} → ${effect.targetClass ?? "?"}`);
+            }
           }
-          if (effect.objectIdFrom) targetParts.push(`${objectWord} ← ${effect.objectIdFrom}`);
-          if (effect.sourceObjectIdFrom) targetParts.push(`← ${effect.sourceObjectIdFrom}`);
-          if (effect.targetObjectIdFrom) targetParts.push(`→ ${effect.targetObjectIdFrom}`);
           if (effect.attrName) targetParts.push(effect.attrName);
-          if (effect.textFrom) targetParts.push(`${textWord} ← ${effect.textFrom}`);
-          if (effect.fileIdFrom) targetParts.push(`${fileWord} ← ${effect.fileIdFrom}`);
+          const locateParts: string[] = [];
+          if (effect.objectIdFrom) locateParts.push(`${objectWord} ← ${effect.objectIdFrom}`);
+          if (effect.sourceObjectIdFrom) locateParts.push(`${sourceWord} ← ${effect.sourceObjectIdFrom}`);
+          if (effect.targetObjectIdFrom) locateParts.push(`${targetWord} ← ${effect.targetObjectIdFrom}`);
+          if (effect.textFrom) locateParts.push(`${textWord} ← ${effect.textFrom}`);
+          if (effect.fileIdFrom) locateParts.push(`${fileWord} ← ${effect.fileIdFrom}`);
           const narrative = effect.narrative?.trim() ?? "";
           rows.push({
             primaryKey: `effect-${group.key}-${index}`,
@@ -670,7 +733,8 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
               kind: effect.kindLabel,
               target: splitParameterFieldValue(targetParts.join(" · "), paramPattern, primaryKey),
               fields: splitParameterFieldValue(formatAssignments(effect.assignments), paramPattern, primaryKey),
-              guards: splitParameterFieldValue(formatJsonValue(effect.guards), paramPattern, primaryKey),
+              guards: splitParameterFieldValue(formatGuardCondition(effect.guards, translate), paramPattern, primaryKey),
+              locate: splitParameterFieldValue(locateParts.join(" · "), paramPattern, primaryKey),
             },
             tones: { kind: effectKindTone(effect.kind) },
           });

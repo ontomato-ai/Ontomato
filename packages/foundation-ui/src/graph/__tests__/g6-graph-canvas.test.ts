@@ -438,3 +438,139 @@ it("creates the graph and emits resized when a canvas mounted at 0x0 later recei
     globalThis.ResizeObserver = OriginalResizeObserver;
   }
 });
+
+it("applies style overrides for ontology dimming, halo selection, and pill edge labels without changing defaults", async () => {
+  const withPathColor: G6Colors = { ...colors, path: "#e6a23c", shadow: "rgba(0,0,0,0.2)" };
+  const look = { nodeSize: 62, labelSize: 13, labelWidth: 160 };
+
+  const ontologyNode = g6NodeStyle(
+    { id: "n1", label: "Node 1", tone: "muted" },
+    withPathColor,
+    [],
+    true,
+    look,
+    { nodeLineWidth: 5, highlightedNodeLineWidth: 7, mutedNodeOpacity: 0.16, nodeShadowBlur: 12 },
+  );
+  expect(ontologyNode).toMatchObject({ lineWidth: 5, opacity: 0.16, shadowBlur: 12 });
+
+  const ontologyPathNode = g6NodeStyle(
+    { id: "n2", label: "Node 2", tone: "path" },
+    withPathColor,
+    [],
+    true,
+    look,
+    { nodeLineWidth: 5, highlightedNodeLineWidth: 7, mutedNodeOpacity: 0.16 },
+  );
+  expect(ontologyPathNode).toMatchObject({ lineWidth: 7, opacity: 1 });
+
+  const nodes = new Map([node("A"), node("B")]);
+  const ontologyEdges = g6Edges(
+    [
+      { id: "e-muted", source: "A", target: "B", tone: "muted", label: "links" },
+      { id: "e-path", source: "A", target: "B", tone: "path", label: "route" },
+    ],
+    nodes,
+    withPathColor,
+    { edgeLineWidth: 2, highlightedEdgeLineWidth: 4, mutedEdgeOpacity: 0.12 },
+  );
+  expect(ontologyEdges[0]!.style).toMatchObject({ opacity: 0.12, lineWidth: 2 });
+  expect(ontologyEdges[1]!.style).toMatchObject({ opacity: 1, lineWidth: 4 });
+
+  const pillEdges = g6Edges(
+    [{ id: "e-pill", source: "A", target: "B", label: "owns" }],
+    nodes,
+    withPathColor,
+    { edgeLabelShape: "pill", edgeLabelFontSize: 12, edgeLabelRadius: 999 },
+  );
+  expect(pillEdges[0]!.style).toMatchObject({
+    labelFontSize: 12,
+    labelBackground: true,
+    labelBackgroundStroke: "e",
+    labelBackgroundLineWidth: 1,
+    labelBackgroundRadius: 999,
+    labelBackgroundPadding: [3, 8],
+  });
+
+  const wrapper = mount(G6GraphCanvas, {
+    props: {
+      label: "Visual Modeling",
+      nodes: placed(2),
+      layout: { type: "preset" },
+      nodeSize: 62,
+      styleOverrides: { selectedNodeHalo: true, selectedNodeHaloWidth: 12, selectedEdgeLineWidth: 4, edgeLabelShape: "pill" },
+    },
+  });
+  await flushPromises();
+  expect(view.options.node.state.selected).toMatchObject({ halo: true, haloLineWidth: 12 });
+  expect(view.options.edge.state.selected).toMatchObject({ lineWidth: 4, labelBackgroundRadius: 999 });
+  wrapper.unmount();
+});
+
+it("emits hoverNode and exposes node viewport boxes for port connection overlays", async () => {
+  const wrapper = mount(G6GraphCanvas, {
+    props: {
+      label: "Modeling",
+      nodes: [{ id: "a", label: "A", x: 100, y: 50 }],
+      layout: { type: "preset" },
+      nodeSize: 62,
+    },
+  });
+  await flushPromises();
+  handlers["node:pointerenter"]?.({ target: { id: "a" } });
+  handlers["node:pointerleave"]?.({});
+  expect(wrapper.emitted("hoverNode")).toEqual([["a"], [null]]);
+
+  const vm = wrapper.vm as unknown as {
+    nodeViewportBox(id: string): { id: string; x: number; y: number; radius: number } | null;
+    nodeViewportRects(): Array<{ id: string; x: number; y: number; radius: number }>;
+  };
+  expect(vm.nodeViewportBox("a")).toEqual({ id: "a", x: 500, y: 350, radius: 31 });
+  expect(vm.nodeViewportRects()).toEqual([{ id: "a", x: 500, y: 350, radius: 31 }]);
+  wrapper.unmount();
+});
+
+it("composites a custom background on exportImage({ background }) while keeping default exportImage() intact", async () => {
+  const wrapper = mount(G6GraphCanvas, {
+    props: { label: "Graph", nodes: placed(1), layout: { type: "preset" } },
+  });
+  await flushPromises();
+  const host = wrapper.element.querySelector(".g6-graph-host")!;
+  const layer = document.createElement("canvas");
+  layer.width = 200;
+  layer.height = 120;
+  host.appendChild(layer);
+
+  const ops: Array<[string, unknown]> = [];
+  const fakeContext = {
+    set fillStyle(value: string) {
+      ops.push(["fillStyle", value]);
+    },
+    fillRect: (...args: number[]) => ops.push(["fillRect", args]),
+    drawImage: (...args: unknown[]) => ops.push(["drawImage", args.slice(1)]),
+  };
+  const origCreateElement = document.createElement.bind(document);
+  vi.spyOn(document, "createElement").mockImplementation(((tagName: string) => {
+    const el = origCreateElement(tagName);
+    if (tagName === "canvas") {
+      Object.defineProperty(el, "getContext", { value: () => fakeContext });
+      Object.defineProperty(el, "toBlob", { value: (cb: BlobCallback) => cb(new Blob(["png"], { type: "image/png" })) });
+    }
+    return el;
+  }) as typeof document.createElement);
+
+  const vm = wrapper.vm as unknown as { exportImage(options?: { background?: string }): Promise<Blob> };
+  const blob = await vm.exportImage({ background: "#f5f7fa" });
+  expect(blob.type).toBe("image/png");
+  expect(ops).toEqual([
+    ["fillStyle", "#f5f7fa"],
+    ["fillRect", [0, 0, 200, 120]],
+    ["drawImage", [0, 0, 200, 120]],
+  ]);
+
+  ops.length = 0;
+  const defaultBlob = await vm.exportImage();
+  expect(defaultBlob.type).toBe("image/png");
+  expect(ops[0]?.[0]).toBe("fillStyle");
+  expect(ops[1]).toEqual(["fillRect", [0, 0, 200, 120]]);
+  wrapper.unmount();
+});

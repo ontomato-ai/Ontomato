@@ -1,4 +1,5 @@
 import type { EntryDependency } from "@ontomato/contracts/entry-dependencies";
+import { pageComposerAgentTargetSchema } from "@ontomato/contracts/panel-conversation-entry";
 import { panelObjectRefSchema, panelStateIdentityField, type PanelMemberInput } from "@ontomato/contracts/panel-manifest";
 import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, WORKFLOW } from "@ontomato/contracts/platform-object-types";
 import {
@@ -27,14 +28,28 @@ export function agentDependency(id: string): EntryDependency {
   return { objectType: "AGENT", objectKey: id, verb: "USE" };
 }
 
+export function* declaredProjectionAgents(projection: Projection) {
+  const target = projection.conversationEntry?.target;
+  if (target && target.kind !== "page-default") yield { target, field: "conversationEntry.target" };
+
+  if (projection.componentId !== "@ontomato/sdk:ObjectList" && projection.componentId !== "@ontomato/sdk:GroupedGrid") return;
+  const rowActions = projection.config.rowActions;
+  if (!rowActions || typeof rowActions !== "object" || Array.isArray(rowActions) || !Array.isArray(rowActions.items)) return;
+  for (const [index, item] of rowActions.items.entries()) {
+    if (!item || typeof item !== "object" || Array.isArray(item) || item.kind !== "conversation" || item.target === undefined) continue;
+    const agent = pageComposerAgentTargetSchema.parse(item.target, { path: ["config", "rowActions", "items", index, "target"] });
+    if (agent.kind !== "page-default") yield { target: agent, field: `config.rowActions.items.${index}.target` };
+  }
+}
+
 function inputValues(wiring: Record<string, PanelMemberInput | { item: true }>, state: Inputs): Inputs {
   const inputs = new Map<string, unknown>();
   for (const [name, value] of Object.entries(wiring)) {
     if ("literal" in value) inputs.set(name, value.literal);
-    else if ("state" in value && state.has(value.state)) {
+    else if ("state" in value) {
       const input = state.get(value.state);
       inputs.set(name, "field" in value ? panelStateIdentityField(value.field, input as Parameters<typeof panelStateIdentityField>[1]) : input);
-    }
+    } else inputs.set(name, undefined);
   }
   return inputs;
 }
@@ -47,9 +62,9 @@ function projectionDependencies(id: string, projection: Projection, inputs: Inpu
   if ("metricId" in projection) {
     dependencies.push({ objectType: "METRIC", objectKey: projection.metricId, verb: "USE" });
   }
-  const conversation = projection.conversationEntry?.target;
-  if (conversation?.kind === "id") dependencies.push(agentDependency(conversation.id));
-  if (conversation?.kind === "preset") dependencies.push(agentDependency(`preset:${conversation.agentKind}`));
+  for (const { target } of declaredProjectionAgents(projection)) {
+    dependencies.push(agentDependency(target.kind === "id" ? target.id : `preset:${target.agentKind}`));
+  }
 
   for (const { source, read } of Object.values(projection.data)) {
     if (!("object" in source)) continue;
@@ -98,6 +113,7 @@ export function entryDependencyCompiler(client: PoolClient, domainId: string | n
     const state = new Map<string, unknown>(Object.entries(panel.manifest.state)
       .filter(([, field]) => !field.personal && field.default != null)
       .map(([key, field]) => [key, field.default] as const));
+    // A wired field is controlled by its parent even when its value cannot be compiled.
     for (const [key, value] of input) state.set(key, value);
     const dependencies: EntryDependency[] = [{ objectType: "PANEL", objectKey: panelId, verb: "USE" }];
     for (const componentId of Object.values(panel.manifest.components ?? {})) {
@@ -107,7 +123,9 @@ export function entryDependencyCompiler(client: PoolClient, domainId: string | n
     // Object detail rules select a separate entry by class. Open-ended usable rules
     // and the application content slot require no statically declared member here.
     for (const { key, target, wiring } of collectReferences(panel, new Map())) {
-      const field = `Panel '${panelId}' manifest ${key.startsWith("$state.") ? key.slice(1) : `members.${key}.target`}`;
+      const statePlacement = key.startsWith("$state.");
+      if (statePlacement && input.has(key.slice("$state.".length))) continue;
+      const field = `Panel '${panelId}' manifest ${statePlacement ? key.slice(1) : `members.${key}.target`}`;
       const inputs = inputValues(wiring.inputs ?? {}, state);
       if (target.kind === "panel") {
         dependencies.push(...await compile(target.id, inputs, active, field));

@@ -31,6 +31,7 @@ import { ensureWorkspacesSchema } from "../../infrastructure/postgres-migrations
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { agentObjectDecisions } from "./agent-object-decisions";
 import { writeBundledAppSdkFixture } from "./bundled-app-sdk";
 import { vuePanelContent } from "./vue-panel";
 
@@ -216,6 +217,14 @@ export async function startPanelSkillEntryServer(options: {
   app.post("/product-governance/resources", (req, res) => {
     expect(req.header("tk")).toBe("editor");
     res.json({ ids: [...grants] });
+  });
+  app.post("/authorization/objects/decide-batch", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");
+    expect(req.header("tk")).toBe("editor");
+    res.json(agentObjectDecisions(req.body, request =>
+      "target" in request && request.target.domainId === domainId &&
+      request.target.kind === "AGENT" && grants.has(request.target.id),
+    ));
   });
   app.post("/product-governance/service-resources", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");

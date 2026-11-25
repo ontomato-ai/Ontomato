@@ -3,7 +3,7 @@ import { runtimeJsonObjectSchema } from "./agent-runtime-values";
 import { dashboardMetricDescriptionSchema } from "./dashboard";
 import { platformSchedulesPath } from "./platform-schedules";
 import {
-  DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, EXTERNAL_MCP_SERVICE, FUNCTION,
+  DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, CHECK_EXTERNAL_MCP_SERVICE, EXTERNAL_MCP_SERVICE, FUNCTION,
   METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL,
   TRIGGER, WORKFLOW, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
   RUN_NOW, SET_ACTION_STATUS, TRIAL_ACTION, DELETE_ACTION, SET_TRIGGER_STATUS, DELETE_TRIGGER, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
@@ -13,7 +13,7 @@ import {
 } from "./platform-object-types";
 
 export {
-  DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, EXTERNAL_MCP_SERVICE, FUNCTION,
+  DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, CHECK_EXTERNAL_MCP_SERVICE, EXTERNAL_MCP_SERVICE, FUNCTION,
   METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL,
   TRIGGER, WORKFLOW, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
   RUN_NOW, SET_ACTION_STATUS, TRIAL_ACTION, DELETE_ACTION, SET_TRIGGER_STATUS, DELETE_TRIGGER, ACTIVATE_WORKFLOW, DEACTIVATE_WORKFLOW, DELETE_WORKFLOW, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
@@ -333,6 +333,7 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [bindingKey({ kind: "PlatformOperation", id: DELETE_WORKFLOW })]: [dataQueryPost("/workflow/delete"), panelOperationImpactRequest],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_METRIC_VIEW })]: [dataQueryPost("/metricView/delete"), panelOperationImpactRequest],
   [bindingKey({ kind: "PlatformOperation", id: SET_METRIC_VIEW_STATUS })]: [dataQueryPost("/metricView/setStatus")],
+  [bindingKey({ kind: "PlatformOperation", id: CHECK_EXTERNAL_MCP_SERVICE })]: [panelReadOperationRequest],
   [bindingKey({ kind: "PlatformOperation", id: TEST_METRIC_VIEW })]: [panelReadOperationRequest],
   [bindingKey({ kind: "PlatformOperation", id: TEST_EXECUTE_METRIC_VIEW })]: [panelReadOperationRequest],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_FUNCTION })]: [dataQueryPost("/function/delete"), panelOperationImpactRequest],

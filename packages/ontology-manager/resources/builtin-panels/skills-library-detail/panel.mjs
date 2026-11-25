@@ -17,6 +17,11 @@ await mountPanel({
       const value = instance.state.values.value.filePath;
       return typeof value === "string" && value.length > 0 ? value : null;
     });
+    // Keep CSV/TSV files in the read-only text/code editor instead of table preview, while preserving auto format for Markdown and code files.
+    const contentFormat = computed(() => {
+      const normalized = filePath.value?.trim().toLowerCase() ?? "";
+      return normalized.endsWith(".csv") || normalized.endsWith(".tsv") ? "code" : "auto";
+    });
 
     const headerStatus = usePanelOutput("headerTitle", "status");
     const headerError = usePanelOutput("headerTitle", "errorMessage");
@@ -73,6 +78,7 @@ await mountPanel({
       detailStatus,
       detailReady,
       detailErrorText,
+      contentFormat,
       goBack,
       onRemoveDone,
       retry,

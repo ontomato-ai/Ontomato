@@ -1018,17 +1018,21 @@ public class ApplicationCatalog {
     }
 
     public List<ApplicationEntryEvents.EntryRoots> affectedEntryRoots(String domainId, Set<String> panelIds) {
-        return applicationsInDomain(domainId).stream()
+        var applications = applicationsInDomain(domainId);
+        var pageKeys = new BuiltinPageKeys(applications);
+        return applications.stream()
             .filter(ApplicationCatalog::hasPanelUseRegistration)
-            .flatMap(app -> ApplicationEntryEvents.roots(app).entrySet().stream())
+            .flatMap(app -> ApplicationEntryEvents.roots(app, pageKeys.activeUses(app)).entrySet().stream())
             .filter(entry -> entry.getValue().panelIds().stream().anyMatch(panelIds::contains))
             .map(entry -> new ApplicationEntryEvents.EntryRoots(entry.getKey(), entry.getValue()))
             .toList();
     }
 
     public boolean ownsEntry(String domainId, String entryId) {
-        return applicationsInDomain(domainId).stream().anyMatch(app ->
-            app.getList("panelUses", ApplicationPanelUse.class).stream().anyMatch(use ->
+        var applications = applicationsInDomain(domainId);
+        var pageKeys = new BuiltinPageKeys(applications);
+        return applications.stream().anyMatch(app ->
+            pageKeys.activeUses(app).stream().anyMatch(use ->
                 ApplicationEntryEvents.entryId(app.getString("id"), use.id()).equals(entryId)));
     }
 
@@ -1117,12 +1121,13 @@ public class ApplicationCatalog {
         return result;
     }
 
-    private static String entryFramePanelId(JSONObject app) {
+    static String entryFramePanelId(JSONObject app) {
         var settings = app.getJSONObject("panelSettings");
-        if (settings != null && settings.containsKey("framePanelId")) {
-            var framePanelId = settings.getString("framePanelId");
-            if (framePanelId != null && (panelManaged(app) || BuiltinProductIds.isValid(framePanelId))) return framePanelId;
-        }
+        return entryFramePanelId(panelManaged(app), settings == null ? null : settings.getString("framePanelId"));
+    }
+
+    private static String entryFramePanelId(boolean panelManaged, String framePanelId) {
+        if (framePanelId != null && (panelManaged || BuiltinProductIds.isValid(framePanelId))) return framePanelId;
         return DEFAULT_FRAME_PANEL_ID;
     }
 
@@ -1263,7 +1268,7 @@ public class ApplicationCatalog {
             }
             ApplicationEntryEvents.append(db, user.getDomainId(), user.getId(),
                 old == null ? Map.of() : ApplicationEntryEvents.roots(old),
-                ApplicationEntryEvents.roots(id, uses, settings.framePanelId()));
+                ApplicationEntryEvents.roots(id, uses, entryFramePanelId(true, settings.framePanelId())));
             return JSONObject.of("applicationId", id, "entry", entry, "panelUses", uses);
         });
     }

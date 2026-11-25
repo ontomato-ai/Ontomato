@@ -1,15 +1,16 @@
-import { mountPanel, panelAddress, usePanelContext } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 const DETAIL_PATH = "/ontology/assets/functions/detail";
 
 /*
- * Functions catalog: full-width searchable table without default row selection.
+ * Functions catalog: full-width unpaged searchable table without default row selection.
  * Selecting a row navigates to the non-menu detail entry; clicking "New function"
  * navigates to the detail entry in create mode.
  */
 await mountPanel({
   setup() {
-    const { instance, navigate, t } = usePanelContext();
+    const { navigate, t } = usePanelContext();
+    const listTotal = usePanelOutput("list", "total");
 
     function openDetail(item) {
       if (!item?.primaryKey) return;
@@ -22,9 +23,9 @@ await mountPanel({
 
     return {
       t,
+      listTotal,
       openDetail,
       startCreate,
-      refresh: () => instance.refreshObjects(),
     };
   },
 });

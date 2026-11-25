@@ -9,6 +9,10 @@ import { runtimeIdSchema, type RuntimeJsonValue } from "@ontomato/contracts/agen
 import type { FormFieldError } from "@ontomato/contracts/form-fields";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import {
+  panelReadOperationJsonResultSchema,
+  type panelReadOperationCallSchema,
+} from "@ontomato/contracts/panel-operations";
+import {
   panelFormSaveInputSchema,
   type PanelFormDescription,
   type PanelFormField,
@@ -17,6 +21,7 @@ import {
   type PanelRecord,
 } from "@ontomato/contracts/panel-projection";
 import {
+  CHECK_EXTERNAL_MCP_SERVICE,
   CREATE_EXTERNAL_MCP_SERVICE,
   DELETE_EXTERNAL_MCP_SERVICE,
   EXTERNAL_MCP_SERVICE,
@@ -51,6 +56,7 @@ const SAVE_EXTERNAL_MCP_OP = `${EXTERNAL_MCP_SERVICE}.save`;
 const emptyInputSchema = z.object({}).strict();
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const savedIdSchema = z.object({ id: runtimeIdSchema }).strict();
+const checkResultSchema = panelReadOperationJsonResultSchema.options[1];
 const objectTargetSchema = z.object({
   kind: z.literal("object"),
   objectType: z.literal(EXTERNAL_MCP_SERVICE),
@@ -309,6 +315,9 @@ function buildFormDescription(
       valueSchema: cachedZodToRuntimeJsonSchema(z.array(headerRowSchema)),
       control: {
         kind: "object-array",
+        presentation: "inline",
+        reorderable: false,
+        addLabel: t("fields.addHeader"),
         defaultItem: { name: "", value: "" },
         itemFields: [
           {
@@ -612,6 +621,64 @@ export const externalMcpServerOperations: readonly PanelServerOperation[] = [
         };
       } catch (error) {
         return mapSaveError(error, host.locale);
+      }
+    },
+  },
+  {
+    handlerRef: CHECK_EXTERNAL_MCP_SERVICE,
+    labelKey: "panels.externalMcp.operations.check",
+    kind: "action",
+    effect: "read",
+    batch: false,
+    binding: { kind: "PlatformOperation", id: CHECK_EXTERNAL_MCP_SERVICE },
+    target: { source: "input", input: "service" },
+    targetType: EXTERNAL_MCP_SERVICE,
+    targetSchema: objectTargetSchema,
+    inputSchema: emptyInputSchema,
+    resultSchema: checkResultSchema,
+    async execute(
+      host: PanelOperationHost,
+      call: z.infer<typeof panelReadOperationCallSchema>,
+    ): Promise<z.infer<typeof checkResultSchema>> {
+      if (call.target?.kind !== "object") {
+        throw new Error("Checking an external MCP service requires a selected service");
+      }
+      await assertPermission(host.executor.credentials, ["mcp-service"]);
+      const id = validateServiceId(call.target.primaryKey);
+      const t = (key: string, params?: Record<string, unknown>) =>
+        tForLocale(host.locale, `panels.externalMcp.${key}`, params);
+      const runtime = createRuntime(host.executor.owner);
+      try {
+        const { tools } = await runtime.mcpTools(id, new AbortController().signal);
+        return {
+          kind: "json" as const,
+          value: {
+            reachable: true,
+            toolCount: tools.length,
+            status: {
+              label: t("status.available"),
+              tone: "success",
+            },
+          },
+          message: t("check.ok", { count: tools.length }),
+        };
+      } catch (error) {
+        const reason = error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : t("status.unreachable");
+        return {
+          kind: "json" as const,
+          value: {
+            reachable: false,
+            toolCount: 0,
+            error: reason,
+            status: {
+              label: t("status.unreachable"),
+              tone: "danger",
+            },
+          },
+          message: t("check.failed", { reason }),
+        };
       }
     },
   },

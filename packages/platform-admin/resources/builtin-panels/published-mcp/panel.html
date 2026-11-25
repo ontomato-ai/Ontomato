@@ -51,30 +51,6 @@
     margin-top: var(--spacing-sm);
     min-width: 0;
   }
-  .pm-schema-details {
-    min-width: 0;
-  }
-  .pm-schema-details summary {
-    cursor: pointer;
-    font-size: var(--text-xs);
-    color: var(--sdk-color-primary);
-  }
-  .pm-schema-code {
-    margin: var(--spacing-xs) 0 0;
-    padding: var(--spacing-sm);
-    border-radius: var(--radius-sm);
-    background: var(--sdk-fill-color-light);
-    font-family: var(--font-mono, monospace);
-    font-size: var(--text-xs);
-    line-height: 1.5;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    max-height: 260px;
-    overflow-y: auto;
-  }
-  .pm-muted {
-    color: var(--sdk-text-color-secondary);
-  }
 </style>
 
 <div id="app" v-cloak>
@@ -84,7 +60,7 @@
       :description="t('panel.description')"
     >
       <template #actions>
-        <sdk-button @click="refresh">{{ t('action.refresh') }}</sdk-button>
+        <sdk-button icon="refresh-cw" :loading="refreshing" @click="refresh">{{ t('action.refresh') }}</sdk-button>
       </template>
     </page-header>
 
@@ -96,19 +72,12 @@
 
             <details
               class="pm-tools-details"
+              :open="Boolean(expandedCards[serviceRef.primaryKey])"
               @toggle="onToolsToggle(serviceRef.primaryKey, $event)"
             >
               <summary class="pm-tools-summary">{{ t('tools.title') }}</summary>
               <div v-if="expandedCards[serviceRef.primaryKey]" class="pm-tools-body">
-                <projection slot="serviceTools" :inputs="{ target: serviceRef }">
-                  <template #cell-inputSchema="{ displayText }">
-                    <details v-if="displayText" class="pm-schema-details">
-                      <summary>{{ t('tools.viewSchema') }}</summary>
-                      <pre class="pm-schema-code">{{ displayText }}</pre>
-                    </details>
-                    <span v-else class="pm-muted">—</span>
-                  </template>
-                </projection>
+                <projection slot="serviceTools" :inputs="{ target: serviceRef }"></projection>
               </div>
             </details>
           </div>

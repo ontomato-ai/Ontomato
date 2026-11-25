@@ -778,6 +778,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       }
       return forms.fill(request.member, request.values, {
         overwriteUnsaved: request.overwriteUnsaved,
+        ...(request.agentRun && { executeWrite: (operation, submit) =>
+          runAgentAction(operation, request.agentRun!, async (context) => ({ ok: true, outcome: await submit(context) })) }),
         ...(request.expectedFormInstanceId !== undefined ? { expectedFormInstanceId: request.expectedFormInstanceId } : {}),
         ...(request.expectedTarget ? { expectedTarget: request.expectedTarget } : {}),
       });
@@ -905,92 +907,99 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
 
     const matchedHandler = matchedEntry.handler;
 
-    const agentContext: PanelAgentActionContext = { agentRun: request.agentRun };
-    try {
-      const result = await matchedHandler({
+    return runAgentAction(request.operation, request.agentRun, (agentContext) => matchedHandler({
         ...(request.rowKey !== undefined ? { rowKey: request.rowKey } : {}),
         ...(request.input !== undefined ? { input: request.input } : {}),
         ...(request.expectedEntryInstanceId !== undefined ? { expectedEntryInstanceId: request.expectedEntryInstanceId } : {}),
         ...(request.expectedTarget !== undefined ? { expectedTarget: request.expectedTarget } : {}),
         ...(request.expectedCheckedKeys !== undefined ? { expectedCheckedKeys: request.expectedCheckedKeys } : {}),
         agentContext,
-      });
-      const toPageActionOutcome = (mountedResult: PanelMountedActionResult): PageActionOutcome => {
-        if (!mountedResult.ok) {
-          if (mountedResult.reason === "unknown") {
-            const unknownOutcome = mountedResult.outcome !== undefined
-              ? mountedResult.outcome
-              : agentContext.completed?.response.kind === "dispatched"
-                ? agentContext.completed.response.outcome
-                : undefined;
-            return {
-              ok: false,
-              kind: "unknown",
-              reason: "outcome_unknown",
-              operation: request.operation,
-              ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
-              ...(unknownOutcome !== undefined ? { outcome: unknownOutcome } : {}),
-              ...(mountedResult.message ? { message: mountedResult.message } : {}),
-            };
-          }
-          if (mountedResult.reason === "partial") {
-            const partialOutcome = mountedResult.outcome !== undefined
-              ? mountedResult.outcome
-              : agentContext.completed?.response.kind === "dispatched"
-                ? agentContext.completed.response.outcome
-                : undefined;
-            return {
-              ok: false,
-              kind: "partially_executed",
-              reason: "partial_completion",
-              operation: request.operation,
-              ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
-              code: mountedResult.code ?? "PARTIAL_COMPLETION",
-              message: mountedResult.message ?? "Operation partially completed with refusals or failures.",
-              ...(mountedResult.savedFields?.length ? { savedFields: mountedResult.savedFields } : {}),
-              outcome: partialOutcome,
-            };
-          }
+      }));
+  }
+
+  async function runAgentAction(
+    operation: string,
+    agentRun: PageActionRequestInput["agentRun"],
+    execute: (context: PanelAgentActionContext) => Promise<PanelMountedActionResult>,
+  ): Promise<PageActionOutcome> {
+    const agentContext: PanelAgentActionContext = { agentRun };
+    const toPageActionOutcome = (mountedResult: PanelMountedActionResult): PageActionOutcome => {
+      if (!mountedResult.ok) {
+        if (mountedResult.reason === "unknown") {
+          const unknownOutcome = mountedResult.outcome !== undefined
+            ? mountedResult.outcome
+            : agentContext.completed?.response.kind === "dispatched"
+              ? agentContext.completed.response.outcome
+              : undefined;
           return {
             ok: false,
-            reason: mountedResult.reason,
-            operation: request.operation,
+            kind: "unknown",
+            reason: "outcome_unknown",
+            operation: operation,
             ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
-            ...(mountedResult.code ? { code: mountedResult.code } : {}),
+            ...(unknownOutcome !== undefined ? { outcome: unknownOutcome } : {}),
             ...(mountedResult.message ? { message: mountedResult.message } : {}),
           };
         }
-        if ("confirmation" in mountedResult) {
+        if (mountedResult.reason === "partial") {
+          const partialOutcome = mountedResult.outcome !== undefined
+            ? mountedResult.outcome
+            : agentContext.completed?.response.kind === "dispatched"
+              ? agentContext.completed.response.outcome
+              : undefined;
           return {
-            ok: true,
-            kind: "awaiting_confirmation",
-            operation: request.operation,
-            intentId: mountedResult.confirmation.intentId,
-            questionId: mountedResult.confirmation.questionId,
-            label: mountedResult.confirmation.label,
-            confirmation: mountedResult.confirmation,
+            ok: false,
+            kind: "partially_executed",
+            reason: "partial_completion",
+            operation: operation,
+            ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+            code: mountedResult.code ?? "PARTIAL_COMPLETION",
+            message: mountedResult.message ?? "Operation partially completed with refusals or failures.",
+            ...(mountedResult.savedFields?.length ? { savedFields: mountedResult.savedFields } : {}),
+            outcome: partialOutcome,
           };
         }
-        if (agentContext.completed) {
-          const classified = classifyDispatchResponseForAction(agentContext.completed.response);
-          if (!classified.ok) return toPageActionOutcome(classified);
-        }
+        return {
+          ok: false,
+          reason: mountedResult.reason,
+          operation: operation,
+          ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+          ...(mountedResult.code ? { code: mountedResult.code } : {}),
+          ...(mountedResult.message ? { message: mountedResult.message } : {}),
+        };
+      }
+      if ("confirmation" in mountedResult) {
         return {
           ok: true,
-          kind: "executed",
-          operation: request.operation,
-          ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
-          outcome: mountedResult.outcome ?? (agentContext.completed?.response.kind === "dispatched" ? agentContext.completed.response.outcome : agentContext.completed?.response),
+          kind: "awaiting_confirmation",
+          operation: operation,
+          intentId: mountedResult.confirmation.intentId,
+          questionId: mountedResult.confirmation.questionId,
+          label: mountedResult.confirmation.label,
+          confirmation: mountedResult.confirmation,
         };
+      }
+      if (agentContext.completed) {
+        const classified = classifyDispatchResponseForAction(agentContext.completed.response);
+        if (!classified.ok) return toPageActionOutcome(classified);
+      }
+      return {
+        ok: true,
+        kind: "executed",
+        operation: operation,
+        ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+        outcome: mountedResult.outcome ?? (agentContext.completed?.response.kind === "dispatched" ? agentContext.completed.response.outcome : agentContext.completed?.response),
       };
-      return toPageActionOutcome(result);
+    };
+    try {
+      return toPageActionOutcome(await execute(agentContext));
     } catch (error) {
       if (error instanceof PanelConfirmationDeferred) {
         const { confirmation } = error;
         return {
           ok: true,
           kind: "awaiting_confirmation",
-          operation: request.operation,
+          operation: operation,
           intentId: confirmation.intentId,
           questionId: confirmation.questionId,
           label: confirmation.label,
@@ -1001,52 +1010,19 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
         return {
           ok: false,
           reason: "stale",
-          operation: request.operation,
+          operation: operation,
           ...(error.intentId ? { intentId: error.intentId } : {}),
           message: error.message,
         };
       }
       if (agentContext.completed) {
         const classified = classifyDispatchResponseForAction(agentContext.completed.response);
-        if (!classified.ok) {
-          if (classified.reason === "unknown") {
-            return {
-              ok: false,
-              kind: "unknown",
-              reason: "outcome_unknown",
-              operation: request.operation,
-              intentId: agentContext.completed.intentId,
-              ...(classified.outcome !== undefined ? { outcome: classified.outcome } : {}),
-              ...(classified.message ? { message: classified.message } : {}),
-            };
-          }
-          if (classified.reason === "partial") {
-            return {
-              ok: false,
-              kind: "partially_executed",
-              reason: "partial_completion",
-              operation: request.operation,
-              intentId: agentContext.completed.intentId,
-              code: classified.code ?? "PARTIAL_COMPLETION",
-              message: classified.message ?? "Operation partially completed with refusals or failures.",
-              ...(classified.savedFields?.length ? { savedFields: classified.savedFields } : {}),
-              outcome: classified.outcome,
-            };
-          }
-          return {
-            ok: false,
-            reason: classified.reason,
-            operation: request.operation,
-            intentId: agentContext.completed.intentId,
-            ...(classified.code ? { code: classified.code } : {}),
-            ...(classified.message ? { message: classified.message } : {}),
-          };
-        }
+        if (!classified.ok) return toPageActionOutcome(classified);
       }
       return {
         ok: false,
         reason: "failed",
-        operation: request.operation,
+        operation: operation,
         ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
         message: error instanceof Error ? error.message : String(error),
       };

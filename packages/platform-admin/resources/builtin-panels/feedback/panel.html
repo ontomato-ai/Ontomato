@@ -1,77 +1,111 @@
 <style>
-  .feedback { display: flex; flex-direction: column; gap: var(--spacing-md); min-height: 0; padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px)); container-type: inline-size; }
-  .feedback-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-md) var(--spacing-xl); }
-  .feedback-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm) var(--spacing-xl); }
-  .feedback-filter-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .feedback-filter-label { color: var(--sdk-text-color-secondary); font-size: var(--text-xs); font-weight: var(--font-medium); white-space: nowrap; }
-  .feedback-actions { margin-inline-start: auto; display: flex; align-items: center; gap: var(--spacing-sm); }
-  .feedback-error { margin: 0; color: var(--sdk-color-danger-text); font-size: var(--text-base); }
-  .feedback-body {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) clamp(18rem, 32%, 24rem);
-    height: max(24rem, calc(100vh - 15rem));
+  [v-cloak] { display: none; }
+  .feedback {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
     min-height: 0;
-    overflow: hidden;
-    border: 1px solid var(--ui-divider);
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
+    container-type: inline-size;
   }
-  .feedback-list {
+  .feedback-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .feedback-filter-source {
+    width: 140px;
+  }
+  .feedback-filter-rating {
+    width: 120px;
+  }
+  .feedback-filter-keyword {
+    width: 280px;
+    max-width: 100%;
+  }
+  .feedback-toolbar-actions {
+    margin-inline-start: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .feedback-error {
+    margin: 0;
+    color: var(--sdk-color-danger-text);
+    font-size: var(--text-sm);
+  }
+  .feedback-table-wrap {
     min-width: 0;
     min-height: 0;
-    overflow: auto;
-    padding: var(--spacing-md);
-    border-right: 1px solid var(--ui-divider);
   }
-  .feedback-detail {
+  .feedback-dialog-detail {
     min-width: 0;
-    min-height: 0;
-    overflow-y: auto;
-    padding: var(--spacing-lg);
-  }
-  .feedback-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-sm); }
-  @container (max-width: 48rem) {
-    .feedback-body { grid-template-columns: minmax(0, 1fr); height: auto; overflow: visible; }
-    .feedback-list { border-right: 0; border-bottom: 1px solid var(--ui-divider); }
   }
 </style>
-<div id="app">
-  <page-header :title="t('panel.name')">
-    <template #actions>
-      <sdk-button text @click="refresh">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-      </sdk-button>
-    </template>
-  </page-header>
+
+<div id="app" v-cloak>
+  <page-header :title="t('panel.name')"></page-header>
   <section class="feedback">
     <div class="feedback-toolbar">
-      <div class="feedback-filters">
-        <div class="feedback-filter-group">
-          <span class="feedback-filter-label">{{ t("panel.filterSource") }}</span>
-          <projection slot="source"></projection>
-        </div>
-        <div class="feedback-filter-group">
-          <span class="feedback-filter-label">{{ t("panel.filterRating") }}</span>
-          <projection slot="rating"></projection>
-        </div>
-      </div>
-      <div class="feedback-actions">
-        <sdk-button :loading="exporting" :disabled="exporting" @click="runExport">
+      <sdk-select
+        v-model="draftSourceType"
+        clearable
+        :placeholder="t('panel.filterSource')"
+        class="feedback-filter-source"
+      >
+        <sdk-option value="qa" :label="t('panel.source.qa')"></sdk-option>
+        <sdk-option value="analysis_task" :label="t('panel.source.analysis_task')"></sdk-option>
+      </sdk-select>
+      <sdk-select
+        v-model="draftRating"
+        clearable
+        :placeholder="t('panel.filterRating')"
+        class="feedback-filter-rating"
+      >
+        <sdk-option value="like" :label="t('panel.rating.like')"></sdk-option>
+        <sdk-option value="dislike" :label="t('panel.rating.dislike')"></sdk-option>
+      </sdk-select>
+      <sdk-input
+        v-model="draftSearch"
+        clearable
+        :placeholder="t('panel.searchPlaceholder')"
+        class="feedback-filter-keyword"
+        @keyup.enter="applyFilters"
+      ></sdk-input>
+      <sdk-button type="primary" icon="search" @click="applyFilters">
+        {{ t("panel.query") }}
+      </sdk-button>
+      <div class="feedback-toolbar-actions">
+        <sdk-button icon="refresh-cw" :loading="listLoading" :disabled="listLoading" @click="refresh">
+          {{ t("panel.refresh") }}
+        </sdk-button>
+        <sdk-button icon="download" :loading="exporting" :disabled="exporting" @click="runExport">
           {{ exporting ? t("panel.exporting") : t("panel.export") }}
         </sdk-button>
       </div>
     </div>
+
     <p v-if="exportError" class="feedback-error" role="alert">
       {{ t("panel.exportFailed") }}: {{ exportError }}
     </p>
-    <div class="feedback-body">
-      <div class="feedback-list">
-        <projection slot="list"></projection>
-      </div>
-      <div class="feedback-detail">
-        <projection v-if="selected" slot="detail"></projection>
-        <p v-else class="feedback-hint">{{ t("panel.selectHint") }}</p>
-      </div>
+
+    <div class="feedback-table-wrap">
+      <projection slot="list" @row-action="onRowAction"></projection>
     </div>
   </section>
+
+  <sdk-dialog
+    :model-value="detailVisible"
+    :title="t('panel.detailTitle')"
+    width="min(760px, calc(100vw - 32px))"
+    append-to-body
+    destroy-on-close
+    @update:model-value="onDetailToggle"
+  >
+    <div v-if="selected" class="feedback-dialog-detail">
+      <projection slot="detail"></projection>
+    </div>
+  </sdk-dialog>
 </div>

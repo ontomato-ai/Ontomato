@@ -8,6 +8,8 @@ the forms and list interaction. Keep a named `#actions` slot declared and put co
 Measure a container with `const root = ref(null); const narrow = usePanelNarrow(root)` and put `ref="root"`
 on the layout element. The hook reads `--pane-narrow-breakpoint` by default, or an explicit `{ token }`.
 Use the result to open the selected detail directly beside a conversation, and CSS `@container` for layout.
+For `ObjectList` tables in narrow containers, declare `minContainerWidth` (pixels) on secondary columns so the list
+automatically hides them below that width while keeping at least one column visible.
 Route local Back or dialog close through `usePanelBack`. Leave `<sdk-dialog>` Escape handling enabled and
 call the guarded `back()` from the dialog model's close setter.
 

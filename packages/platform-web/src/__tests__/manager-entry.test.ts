@@ -13,7 +13,7 @@ async function open(path: string) {
     routes: [
       { path: "/chat", component: { render: () => null } },
       // The settings' screens, so a redirect to one lands on it rather than falling through to the catch-all.
-      ...["/agents/settings", "/agents/settings/skills", "/agents/settings/mcp", "/agents/settings/:agentId"].map((path) => ({
+      ...["/agents/settings", "/agents/settings/skills", "/agents/settings/mcp", "/agents/settings/:agentId", "/ops/feedback"].map((path) => ({
         path, component: { render: () => null },
       })),
       ...Object.values(legacyAdminRoutes),
@@ -103,5 +103,12 @@ describe("old admin addresses in the workbench", () => {
     }
     await router.push("/admin/analysis");
     expect(router.currentRoute.value.path).toBe("/ontology/agents");
+  });
+
+  it("redirects legacy /governance/feedback to /ops/feedback while preserving query parameters", async () => {
+    expect((await open("/governance/feedback")).fullPath).toBe("/ops/feedback");
+    expect((await open("/governance/feedback?sourceType=qa&rating=dislike")).fullPath).toBe(
+      "/ops/feedback?sourceType=qa&rating=dislike",
+    );
   });
 });

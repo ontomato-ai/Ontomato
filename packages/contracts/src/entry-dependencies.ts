@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const id = z.string().min(1);
+const eventSequence = z.string().regex(/^(0|[1-9][0-9]*)$/);
 
 const dependencyScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("all"), className: z.null().optional(), field: z.null().optional() }).strict(),
@@ -28,15 +29,20 @@ export interface ReadAffectedEntryRootsRequest {
 }
 export const affectedEntryRootsSchema = z.array(z.object({ entryId: id, roots: entryRootsSchema }));
 
-export interface EntryDependencyChangeRequest {
-  domainId: string;
-  source: { kind: "panel" | "application" | "object-detail"; id: string; actorId: string };
-  entries: { entryId: string; before: EntryDependency[]; after: EntryDependency[] }[];
-}
+export const entryDependencyChangeRequestSchema = z.object({
+  domainId: id,
+  source: z.object({
+    kind: z.enum(["panel", "application", "object-detail"]),
+    sequence: eventSequence.refine(value => value !== "0"),
+    actorId: id,
+  }),
+  entries: z.array(z.object({ entryId: id, before: z.array(entryDependencySchema), after: z.array(entryDependencySchema) })),
+});
+export type EntryDependencyChangeRequest = z.infer<typeof entryDependencyChangeRequestSchema>;
 
 export const applicationEntryRootsChangedSchema = z.object({
   type: z.literal("application.entry-roots.changed"),
-  sequence: z.string().regex(/^(0|[1-9][0-9]*)$/),
+  sequence: eventSequence,
   occurredAt: z.string().datetime(),
   domainId: id,
   actorId: id,

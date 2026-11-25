@@ -79,6 +79,7 @@ class AuthorizationServiceTest {
         assertFalse(authorization.decideAction(ctx,
                 new Action(action, new WorkflowStep("review", 2, 1, "run", null, null), ExecutionTarget.LIVE, published)).decision().allowed());
     }
+
     @Test
     void scopeAlternativesKeepEachGrantPairedWithTheRootsOfItsMatchingRole() {
         var roles = Set.of("direct", "assigned", "without-root");
@@ -111,4 +112,18 @@ class AuthorizationServiceTest {
         verify(subjects, never()).organizationCodes(eq("domain"), eq(Set.of()), any());
     }
 
+    @Test
+    void agentsResolveEachVerbFromObjectGrantsAndEditionEntitlements() {
+        var ctx = authorization.resolveSubject(new VerifiedIdentity("domain", "user", CredentialLimit.UNRESTRICTED));
+        var agent = new ObjectTarget("domain", Kind.AGENT, "agent");
+        var access = new ObjectAccess(agent, Verb.USE, published);
+        assertFalse(authorization.decide(ctx, access).allowed());
+        when(store.objectGrants(agent, Verb.USE, Set.of("policy")))
+                .thenReturn(List.of(new ObjectGrant("policy", agent, Verb.USE, null)));
+        assertTrue(authorization.decide(ctx, access).allowed());
+        var view = new ObjectAccess(agent, Verb.VIEW, published);
+        assertFalse(authorization.decide(ctx, view).allowed());
+        when(subjects.objectEntitlement("user", agent, Verb.VIEW)).thenReturn(true);
+        assertTrue(authorization.decide(ctx, view).allowed());
+    }
 }

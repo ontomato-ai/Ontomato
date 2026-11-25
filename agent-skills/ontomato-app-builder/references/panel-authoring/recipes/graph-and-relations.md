@@ -22,3 +22,7 @@ This fragment shows the state ports. Bind the graph's data for your mode and use
 and writes those ports and `start`. Its read-only outputs include `status`, `edgeCount` and `label`.
 Clearing `ObjectList` checks writes `[]`. If those checks filter the graph, map `[]` to `null` when clearing the filter
 should show all nodes. An explicit empty array makes the graph show an empty set.
+
+For custom `nodes` + `edges` graphs (`ObjectGraph`), double-clicking a node or edge selects it and emits `choose` with
+its `{ className, primaryKey }` reference — matching `ObjectList`'s `@choose` activation event. See
+`sdk read docs/components/ObjectGraph.md`.

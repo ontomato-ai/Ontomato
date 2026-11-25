@@ -21,13 +21,6 @@
           "objectType": "platform:ExternalMcpService"
         },
         "deepLink": false
-      },
-      "inspectedService": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:ExternalMcpService"
-        },
-        "deepLink": false
       }
     },
     "members": {
@@ -41,6 +34,10 @@
           "search": "search"
         },
         "operations": {
+          "check": {
+            "operation": "externalMcp.check",
+            "target": "row"
+          },
           "delete": {
             "operation": "externalMcp.delete",
             "target": "row"
@@ -48,6 +45,8 @@
         },
         "config": {
           "layout": "table",
+          "rowExpandMode": "multiple",
+          "rowResultDisplay": "expand",
           "searchable": true,
           "searchFields": ["label", "url"],
           "searchPlaceholder": "services.searchPlaceholder",
@@ -66,6 +65,18 @@
               "key": "usedBy",
               "labelKey": "table.usedBy",
               "minWidth": 180
+            },
+            {
+              "key": "status",
+              "labelKey": "table.status",
+              "kind": "tag",
+              "tagEffect": "plain",
+              "width": 140,
+              "emptyKey": "table.statusUnchecked",
+              "resultFrom": {
+                "operation": "check",
+                "field": "status"
+              }
             }
           ],
           "rowActions": {
@@ -73,19 +84,25 @@
             "maxVisible": 3,
             "items": [
               {
-                "kind": "local",
-                "id": "check",
-                "labelKey": "action.check"
+                "kind": "operation",
+                "operation": "check",
+                "labelKey": "action.check",
+                "icon": "plug",
+                "tone": "default"
               },
               {
                 "kind": "local",
                 "id": "edit",
-                "labelKey": "action.edit"
+                "labelKey": "action.edit",
+                "icon": "pencil",
+                "tone": "default"
               },
               {
                 "kind": "operation",
                 "operation": "delete",
                 "labelKey": "action.delete",
+                "icon": "trash",
+                "iconOnly": true,
                 "tone": "danger"
               }
             ]
@@ -127,14 +144,16 @@
       "inspectedSummary": {
         "component": "ObjectSummary",
         "type": "platform:ExternalMcpService",
-        "target": "inspectedService",
+        "target": {
+          "fromSlot": true
+        },
         "data": {
           "record": "record"
         },
         "config": {
           "showTitle": true,
-          "fields": ["url", "usedBy", "headerNames"],
-          "copyableFields": ["url"]
+          "fields": [],
+          "density": "compact"
         },
         "name": "Checked service details",
         "description": "Sanitized details of the external MCP service currently being checked",
@@ -143,34 +162,28 @@
       "inspectedTools": {
         "component": "ObjectList",
         "type": "platform:ExternalMcpService",
-        "target": "inspectedService",
+        "target": {
+          "fromSlot": true
+        },
         "data": {
           "rows": "tools"
         },
         "config": {
-          "layout": "table",
+          "layout": "accordion",
+          "subtitleField": "name",
+          "rowExpandMode": "multiple",
           "searchable": false,
           "fallbackToFirst": false,
+          "showHeader": false,
           "showFooter": false,
           "emptyText": "tools.empty",
           "columns": [
             {
-              "key": "label",
-              "labelKey": "tools.colTool",
-              "subtitleKey": "name",
-              "minWidth": 160
-            },
-            {
-              "key": "description",
-              "labelKey": "tools.colDescription",
-              "wrap": true,
-              "minWidth": 200
+              "key": "description"
             },
             {
               "key": "inputSchema",
-              "labelKey": "tools.colInputSchema",
-              "wrap": true,
-              "minWidth": 220
+              "labelKey": "tools.colInputSchema"
             }
           ]
         },
@@ -200,6 +213,8 @@
         "services.deleted": "External MCP service deleted.",
         "table.service": "Service",
         "table.usedBy": "Used by",
+        "table.status": "Status",
+        "table.statusUnchecked": "Unchecked",
         "table.actions": "Actions",
         "dialog.addTitle": "Add external MCP service",
         "dialog.editTitle": "Edit external MCP service",
@@ -229,6 +244,8 @@
         "services.deleted": "外部 MCP 服务已删除。",
         "table.service": "服务",
         "table.usedBy": "引用智能体",
+        "table.status": "状态",
+        "table.statusUnchecked": "未检查",
         "table.actions": "操作",
         "dialog.addTitle": "添加外部 MCP 服务",
         "dialog.editTitle": "编辑外部 MCP 服务",
@@ -258,6 +275,8 @@
         "services.deleted": "外部 MCP 服務已刪除。",
         "table.service": "服務",
         "table.usedBy": "引用智慧體",
+        "table.status": "狀態",
+        "table.statusUnchecked": "未檢查",
         "table.actions": "操作",
         "dialog.addTitle": "新增外部 MCP 服務",
         "dialog.editTitle": "編輯外部 MCP 服務",
@@ -287,6 +306,8 @@
         "services.deleted": "外部 MCP サービスを削除しました。",
         "table.service": "サービス",
         "table.usedBy": "利用エージェント",
+        "table.status": "ステータス",
+        "table.statusUnchecked": "未確認",
         "table.actions": "操作",
         "dialog.addTitle": "外部 MCP サービスを追加",
         "dialog.editTitle": "外部 MCP サービスを編集",
@@ -316,6 +337,8 @@
         "services.deleted": "Externer MCP-Dienst gelöscht.",
         "table.service": "Dienst",
         "table.usedBy": "Verwendet von",
+        "table.status": "Status",
+        "table.statusUnchecked": "Nicht geprüft",
         "table.actions": "Aktionen",
         "dialog.addTitle": "Externen MCP-Dienst hinzufügen",
         "dialog.editTitle": "Externen MCP-Dienst bearbeiten",
@@ -345,6 +368,8 @@
         "services.deleted": "Service MCP externe supprimé.",
         "table.service": "Service",
         "table.usedBy": "Utilisé par",
+        "table.status": "Statut",
+        "table.statusUnchecked": "Non vérifié",
         "table.actions": "Actions",
         "dialog.addTitle": "Ajouter un service MCP externe",
         "dialog.editTitle": "Modifier le service MCP externe",
@@ -374,6 +399,8 @@
         "services.deleted": "Servizio MCP esterno eliminato.",
         "table.service": "Servizio",
         "table.usedBy": "Utilizzato da",
+        "table.status": "Stato",
+        "table.statusUnchecked": "Non verificato",
         "table.actions": "Azioni",
         "dialog.addTitle": "Aggiungi servizio MCP esterno",
         "dialog.editTitle": "Modifica servizio MCP esterno",
@@ -403,6 +430,8 @@
         "services.deleted": "تم حذف خدمة MCP الخارجية.",
         "table.service": "الخدمة",
         "table.usedBy": "مستخدم بواسطة",
+        "table.status": "الحالة",
+        "table.statusUnchecked": "غير مفحوص",
         "table.actions": "الإجراءات",
         "dialog.addTitle": "إضافة خدمة MCP خارجية",
         "dialog.editTitle": "تعديل خدمة MCP الخارجية",

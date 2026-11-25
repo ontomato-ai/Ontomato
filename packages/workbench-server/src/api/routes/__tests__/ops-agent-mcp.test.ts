@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ create: vi.fn(), start: vi.fn(), snapshot: vi.fn() }));
 vi.mock("../../../services/ops-diagnosis/service", () => ({
   createDiagnosis: mocks.create,
+  requireDiagnosisAgent: async () => {},
   diagnosisService: { send: mocks.start, snapshot: mocks.snapshot },
 }));
 import { HttpError } from "../../../utils/errors";

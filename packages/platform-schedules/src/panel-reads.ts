@@ -21,9 +21,14 @@ import { scheduledTaskRunNowOperation } from "./panel-server-operations";
 import { scheduledTaskFieldLabels, scheduledTaskFrequencyText } from "./panel-text";
 import { parseScheduledTaskPanelDraft, scheduledTaskPanelSettings, type ScheduledTaskPanelSettings } from "./panel-task-values";
 
-type NamedApplication = PlatformScheduleApplication & { name: string };
+type NamedApplication = PlatformScheduleApplication & { name: string; icon?: string };
+export interface ScheduledApplicationsStatus {
+  applications: NamedApplication[];
+  missingIds: string[];
+}
 type TaskReadApi = Pick<SchedulesApi, "list" | "task" | "form" | "runs" | "run"> & {
   applications(): Promise<NamedApplication[]>;
+  applicationsStatus?(): Promise<ScheduledApplicationsStatus>;
 };
 type Translate = (key: string, values?: Record<string, string | number>) => string;
 const taskFieldPath = (key: string) => formFieldPointer("/", key);
@@ -44,12 +49,16 @@ function runStatusTone(status: PlatformTaskRun["status"]): PanelFieldTone {
   return "info";
 }
 
-function formatDuration(ms: number): string {
+function formatDuration(ms: number, translate: Translate): string {
   const seconds = ms / 1000;
-  if (seconds < 60) return `${Math.round(seconds * 10) / 10} s`;
+  if (seconds < 60) {
+    return translate("platformSchedules.duration.seconds", { n: Math.round(seconds * 10) / 10 });
+  }
   const whole = Math.round(seconds);
-  if (whole < 3600) return `${Math.floor(whole / 60)} min ${whole % 60} s`;
-  return `${Math.floor(whole / 3600)} h ${Math.floor((whole % 3600) / 60)} min`;
+  if (whole < 3600) {
+    return translate("platformSchedules.duration.minutes", { m: Math.floor(whole / 60), s: whole % 60 });
+  }
+  return translate("platformSchedules.duration.hours", { h: Math.floor(whole / 3600), m: Math.floor((whole % 3600) / 60) });
 }
 
 function formatRunError(error: NonNullable<PlatformTaskRun["error"]>, translate: Translate): string {
@@ -76,7 +85,30 @@ function taskRecord(
     ? (task.pause === null ? translate("platformSchedules.panelFields.stateOn") : translate("platformSchedules.panelFields.statePaused"))
     : translate("platformSchedules.panelFields.stateOff");
   const stateTone: PanelFieldTone = task.enabled ? (task.pause === null ? "success" : "warning") : "info";
-  const lastRunSummaryRaw = task.lastRun?.error?.message ?? task.lastRun?.resultSummary ?? "";
+  const scheduled = task.enabled && task.pause === null;
+  const hasLatestResult = task.latestResult !== null;
+  const hasEarlierResult = task.latestResult !== null && task.latestResult.runId !== task.lastRun?.id;
+  const resultActionState = !hasLatestResult ? "none" : hasEarlierResult ? "earlier" : "latest";
+  const resultStateLabel = translate(
+    !hasLatestResult
+      ? "platformSchedules.card.noResult"
+      : hasEarlierResult
+        ? "platformSchedules.card.viewEarlierResult"
+        : "platformSchedules.card.viewResult",
+  );
+  const lastRunSummary = (() => {
+    const run = task.lastRun;
+    if (!run) return "";
+    if (run.status === "failed" || run.status === "skipped") {
+      return run.error ? formatRunError(run.error, translate) : "";
+    }
+    const preview = run.resultSummary ? previewMarkdownText(run.resultSummary) : "";
+    if (preview) return preview;
+    if (run.status === "completed" && run.spendTime !== null) {
+      return translate("platformSchedules.duration.took", { time: formatDuration(run.spendTime, translate) });
+    }
+    return "";
+  })();
   const isRunning = task.activeRunId !== null || task.lastRun?.status === "running";
   const needsIntervention = task.pause !== null || (!isRunning && task.lastRun?.status === "failed");
   const attentionGroup = needsIntervention
@@ -104,6 +136,7 @@ function taskRecord(
       lastRunAt: translate("platformSchedules.panelFields.lastRunAt"),
       lastRunSummary: translate("platformSchedules.panelFields.lastRunSummary"),
       latestResultPath: translate("platformSchedules.panelFields.latestResultPath"),
+      resultStateLabel: translate("platformSchedules.panelFields.resultStateLabel"),
     },
     fields: {
       application: task.appId,
@@ -112,6 +145,7 @@ function taskRecord(
       state: task.enabled ? (task.pause === null ? "on" : `paused: ${task.pause.message}`) : "off",
       stateLabel,
       enabled: task.enabled,
+      scheduled,
       revision: task.revision,
       ...(task.activeRunId ? { activeRunId: task.activeRunId } : {}),
       pauseCode: task.pause?.code ?? "",
@@ -128,8 +162,12 @@ function taskRecord(
       lastRunAt: task.lastRun?.startedAt ?? "",
       ...(task.lastRun?.startedAt ? { lastRunStartedAt: task.lastRun.startedAt } : {}),
       ...(task.lastRun?.error?.message ? { lastRunError: task.lastRun.error.message } : {}),
-      lastRunSummary: lastRunSummaryRaw ? previewMarkdownText(lastRunSummaryRaw) : "",
+      lastRunSummary,
       latestResultPath: task.latestResult?.link.path ?? "",
+      hasLatestResult,
+      hasEarlierResult,
+      resultActionState,
+      resultStateLabel,
       latestRunId,
       attentionGroup,
       needsIntervention,
@@ -145,6 +183,8 @@ function taskRecord(
       paused: task.pause !== null,
       pauseCode: task.pause?.code ?? "",
       latestResultPath: task.latestResult?.link.path ?? "",
+      hasEarlierResult,
+      lastRunStatus: task.lastRun?.status ?? "",
       isRunning,
       needsIntervention,
       attentionGroup,
@@ -177,18 +217,21 @@ function runRecord(run: PlatformTaskRun, translate: Translate): PanelRecord {
       snapshotSummary: translate("platformSchedules.runFields.snapshotSummary"),
       result: translate("platformSchedules.runFields.result"),
       executionDetails: translate("platformSchedules.runFields.executionDetails"),
+      resultPath: translate("platformSchedules.runFields.resultPath"),
     },
     fields: {
       status: statusLabel,
       trigger: triggerLabel,
       startedAt: run.startedAt,
       ...(run.scheduledAt && run.trigger === "schedule" ? { scheduledAt: run.scheduledAt } : {}),
-      ...(run.spendTime !== null ? { duration: formatDuration(run.spendTime) } : {}),
+      ...(run.spendTime !== null ? { duration: formatDuration(run.spendTime, translate) } : {}),
       ...(errorText ? { error: errorText } : {}),
       ...(run.resultSummary ? { resultSummary: run.resultSummary } : {}),
       ...(snapshotSummary ? { snapshotSummary } : {}),
       ...(run.result !== null ? { result: run.result } : {}),
       ...(run.executionDetails !== null ? { executionDetails: { kind: "json" as const, value: run.executionDetails } } : {}),
+      ...(run.resultLink?.path ? { resultPath: run.resultLink.path } : {}),
+      hasResultLink: run.resultLink !== null,
     },
     tones: {
       status: runStatusTone(run.status),
@@ -271,11 +314,12 @@ function settingsFields(
         options: applications.map(app => ({
           value: app.id, label: app.name, description: app.description, disabled: !app.available,
           disabledReason: app.unavailableReason,
+          ...(app.icon ? { icon: app.icon } : {}),
         })),
       },
     },
     { ...field("frequency"), control: { kind: "frequency" }, valueSchema: taskFrequencyValueSchema, help: frequencyHelp },
-    { ...field("timeZone"), control: { kind: "text" } },
+    { ...field("timeZone", false), readOnly: true, control: { kind: "text" }, help: frequencyHelp },
     { ...field("notifyEmail", false), section: "notifications", control: { kind: "text", maxLength: 320 },
       help: translate("platformSchedules.form.notifyPlaceholder") },
   ];
@@ -351,10 +395,15 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     };
   }
 
+  async function readApplicationsStatus(): Promise<ScheduledApplicationsStatus> {
+    if (api.applicationsStatus) return api.applicationsStatus();
+    return { applications: await api.applications(), missingIds: [] };
+  }
+
   async function resolveAppNames(): Promise<ReadonlyMap<string, string>> {
     try {
-      const apps = await api.applications();
-      return new Map(apps.map(app => [app.id, app.name]));
+      const { applications } = await readApplicationsStatus();
+      return new Map(applications.map(app => [app.id, app.name]));
     } catch {
       return new Map();
     }
@@ -364,6 +413,38 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     async list() {
       const [{ tasks }, appNames] = await Promise.all([api.list(), resolveAppNames()]);
       return tasks.map(task => taskRecord(task, locale, translate, appNames));
+    },
+    async status(): Promise<PanelRecord> {
+      const [listResult, appsResult] = await Promise.allSettled([api.list(), readApplicationsStatus()]);
+      const applicationsFailed = appsResult.status === "rejected";
+      const missingIds = appsResult.status === "fulfilled" ? appsResult.value.missingIds : [];
+      const applications = appsResult.status === "fulfilled" ? appsResult.value.applications : [];
+      const applicationsProblem = applicationsFailed
+        ? translate("platformSchedules.notice.applicationsFailed")
+        : missingIds.length > 0
+          ? translate("platformSchedules.notice.applicationsMissing", { ids: missingIds.join(", ") })
+          : !applications.some(app => app.available)
+            ? translate("platformSchedules.notice.noApplication")
+            : "";
+      const hasCredentialPaused = listResult.status === "fulfilled"
+        && listResult.value.tasks.some(task => task.pause?.code === "credential_invalid");
+      const createBlockedReason = applicationsProblem
+        || (listResult.status === "rejected" ? translate("platformSchedules.loadFailed") : "");
+      return {
+        primaryKey: "schedules-status",
+        label: translate("platformSchedules.title"),
+        fields: {
+          ...(applicationsProblem ? { applicationsProblem } : {}),
+          ...(createBlockedReason ? { createBlockedReason } : {}),
+        },
+        outputs: {
+          canCreate: createBlockedReason === "",
+          createBlockedReason,
+          applicationsProblem,
+          applicationsFailed,
+          hasCredentialPaused,
+        },
+      };
     },
     async counts(by?: string): Promise<PanelGroupCounts> {
       const [{ tasks }, appNames] = await Promise.all([api.list(), resolveAppNames()]);

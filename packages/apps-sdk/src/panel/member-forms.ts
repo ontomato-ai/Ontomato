@@ -414,12 +414,15 @@ function structuredRefusalProblems(details: RuntimeJsonObject | undefined): Plat
   return problems;
 }
 
+export class FormSaveCancelled extends Error {}
+
 export function resolveFormSaveAnswer(
   answer: { readonly decision: "confirm" | "cancel"; readonly response?: import("@ontomato/contracts/panel-agent").PanelHumanOperationDispatchResponse },
   target: PanelFormTarget,
   objectType: string | null,
 ): FormSaveResult {
-  if (answer.decision === "cancel" || !answer.response) throw new Error("The save was cancelled");
+  if (answer.decision === "cancel") throw new FormSaveCancelled("The save was cancelled");
+  if (!answer.response) throw new Error("Whether the owner saved is not known");
   const { response } = answer;
   if (response.kind === "not-dispatched") throw new Error(response.message);
   const outcome = response.outcome;

@@ -6,7 +6,7 @@ import {
 
 await mountPanel({
   setup() {
-    const { instance, t } = usePanelContext();
+    const { refreshing, refreshObjects, t } = usePanelContext();
     const expandedCards = ref({});
 
     function onToolsToggle(key, event) {
@@ -18,11 +18,12 @@ await mountPanel({
     }
 
     function refresh() {
-      instance.refreshObjects();
+      void refreshObjects();
     }
 
     return {
       t,
+      refreshing,
       expandedCards,
       onToolsToggle,
       refresh,

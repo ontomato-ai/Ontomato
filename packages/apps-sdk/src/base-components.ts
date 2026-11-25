@@ -29,6 +29,9 @@ export const baseComponents = {
   SectionGroup: () => import("./base/SectionGroup.vue").then(module => module.default),
   ReferencePicker: () => import("./base/ReferencePicker.vue").then(module => module.default),
   ObjectGraph: () => import("./base/ObjectGraph.vue").then(module => module.default),
+  ProductAssetGraph: () => import("./base/ProductAssetGraph.vue").then(module => module.default),
+  OntologyModelGraph: () => import("./base/OntologyModelGraph.vue").then(module => module.default),
+  VisualModelingGraph: () => import("./base/VisualModelingGraph.vue").then(module => module.default),
   PathTree: () => import("@ontomato/foundation-ui/tree").then(module => module.PathTree),
   // The platform's interface components a panel draws its own parts with, as template tags (never imported by a panel).
   MarkdownView: () => import("@ontomato/foundation-ui/markdown").then(module => module.MarkdownView),
@@ -47,6 +50,7 @@ export const baseComponents = {
   CurrentEntry: () => import("./base/CurrentEntry.vue").then(module => module.default),
   MetricChart: () => import("./base/MetricChart.vue").then(module => module.default),
   DashboardMetricPreview: () => import("./base/DashboardMetricPreview.vue").then(module => module.default),
+  ScheduledTaskAppFilterBar: () => import("./base/ScheduledTaskAppFilterBar.vue").then(module => module.default),
   ScheduledTaskSummaryList: () => import("./base/ScheduledTaskSummaryList.vue").then(module => module.default),
   ScheduledTaskRunDetail: () => import("./base/ScheduledTaskRunDetail.vue").then(module => module.default),
   EffectivePermissionsView: () => import("./base/EffectivePermissionsView.vue").then(module => module.default),

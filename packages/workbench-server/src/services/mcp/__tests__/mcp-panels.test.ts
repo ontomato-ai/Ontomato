@@ -6,6 +6,7 @@ import { z } from "zod";
 import { MCP_HEADER_MASK, type McpServiceView } from "@ontomato/contracts/agent-runtime-mcp";
 import * as panelCheck from "@ontomato/contracts/panel-check";
 import {
+  CHECK_EXTERNAL_MCP_SERVICE,
   CREATE_EXTERNAL_MCP_SERVICE,
   DELETE_EXTERNAL_MCP_SERVICE,
   EXTERNAL_MCP_SERVICE,
@@ -78,10 +79,15 @@ vi.mock("../../../infrastructure/agent-runtime/client", () => ({
   RuntimeClient: vi.fn(() => mockRuntime),
 }));
 vi.mock("../../product-governance/grants", () => ({
-  grantedProductIds: (...args: unknown[]) => mockGrantedProductIds(...args),
   productGrantAllowed: vi.fn(async () => false),
   readProductGrantRecords: vi.fn(async () => ({ grants: [] })),
   requireProductGrant: vi.fn(async () => undefined),
+}));
+vi.mock("../../assistant/authorization", () => ({
+  allowedAgents: async (agents: { id: string }[], verb: string, credentials: unknown) => {
+    const ids = await mockGrantedProductIds(verb, credentials);
+    return agents.filter(agent => ids.includes(agent.id));
+  },
 }));
 vi.mock("../../assistant/store", () => ({
   assistantStore: {
@@ -459,6 +465,59 @@ describe("ExternalMcpService server operations", () => {
     });
     expect(mockRuntime.deleteMcpService).toHaveBeenCalledWith(SERVICE_ID_1);
   });
+
+  it("configures inline non-reorderable headers editor (EM-06) and checks service reachability (EM-04)", async () => {
+    const reads = createExternalMcpReads(owner, viewer);
+    const createForm = await reads.createForm({ changedField: null });
+    const headersField = createForm.fields.find((field) => field.path === "/headers");
+    expect(headersField?.control).toMatchObject({
+      kind: "object-array",
+      presentation: "inline",
+      reorderable: false,
+      addLabel: "Add header",
+    });
+
+    const checkOp = externalMcpServerOperations.find((op) => op.handlerRef === CHECK_EXTERNAL_MCP_SERVICE);
+    expect(checkOp).toBeDefined();
+    expect(checkOp?.effect).toBe("read");
+    if (!checkOp || checkOp.effect !== "read") throw new Error("Expected read operation");
+
+    mockRuntime.mcpTools.mockResolvedValueOnce({
+      tools: [
+        { name: "create_order", title: "Create Order", description: "Creates an order" },
+        { name: "list_orders", title: "List Orders" },
+      ],
+    });
+    const okResult = await checkOp.execute(makeHost(), {
+      target: { kind: "object", objectType: EXTERNAL_MCP_SERVICE, primaryKey: SERVICE_ID_1 },
+      input: {},
+    });
+    expect(okResult).toEqual({
+      kind: "json",
+      value: {
+        reachable: true,
+        toolCount: 2,
+        status: { label: "Available", tone: "success" },
+      },
+      message: "Service available (2 tools)",
+    });
+
+    mockRuntime.mcpTools.mockRejectedValueOnce(new Error("Connection refused"));
+    const failedResult = await checkOp.execute(makeHost(), {
+      target: { kind: "object", objectType: EXTERNAL_MCP_SERVICE, primaryKey: SERVICE_ID_1 },
+      input: {},
+    });
+    expect(failedResult).toEqual({
+      kind: "json",
+      value: {
+        reachable: false,
+        toolCount: 0,
+        error: "Connection refused",
+        status: { label: "Unreachable", tone: "danger" },
+      },
+      message: "Service unreachable: Connection refused",
+    });
+  });
 });
 
 describe("built-in MCP panels validation", () => {
@@ -499,6 +558,48 @@ describe("built-in MCP panels validation", () => {
       const reg = JSON.parse(readFileSync(resolve(dir, "registration.json"), "utf8"));
       const desc = JSON.parse(readFileSync(resolve(dir, "panel.json"), "utf8"));
       const html = readFileSync(resolve(dir, "panel.html"), "utf8");
+
+      if (dirName === "published-mcp") {
+        expect(desc.manifest.members.serviceTools.config).toMatchObject({
+          layout: "accordion",
+          rowExpandMode: "multiple",
+          showHeader: false,
+          showFooter: false,
+        });
+      }
+      if (dirName === "external-mcp") {
+        expect(desc.manifest.members.services.operations.check).toMatchObject({
+          operation: CHECK_EXTERNAL_MCP_SERVICE,
+          target: "row",
+        });
+        expect(desc.manifest.members.services.config.columns).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              key: "status",
+              kind: "tag",
+              resultFrom: { operation: "check", field: "status" },
+            }),
+          ]),
+        );
+        const rowItems = desc.manifest.members.services.config.rowActions.items as Array<Record<string, unknown>>;
+        for (const item of rowItems) {
+          expect(item).not.toHaveProperty("danger");
+          expect(item).not.toHaveProperty("primary");
+        }
+        expect(rowItems.at(-1)).toMatchObject({
+          kind: "operation",
+          operation: "delete",
+          icon: "trash",
+          iconOnly: true,
+          tone: "danger",
+        });
+        expect(desc.manifest.members.inspectedTools.config).toMatchObject({
+          layout: "accordion",
+          rowExpandMode: "multiple",
+          showHeader: false,
+          showFooter: false,
+        });
+      }
 
       // Verify 8-language message key parity.
       const messages = desc.content.messages as Record<string, Record<string, string>>;

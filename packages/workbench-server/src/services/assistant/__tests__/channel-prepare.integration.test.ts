@@ -15,7 +15,7 @@ vi.mock("../../../infrastructure/agent-runtime/client",()=>({RuntimeClient:class
 }}));
 vi.mock("../../../config/application",()=>({config:{dataQuery:{baseUrl:"http://ontology"}}}));
 vi.mock("../../../core/skills/registry/manager",()=>({skillRegistryManager:{}}));
-vi.mock("../../product-governance/grants", () => ({ requireProductGrant: vi.fn() }));
+vi.mock("../authorization", () => ({ requireAgent: vi.fn() }));
 vi.mock("../../skills/skill-manager",()=>({skillManager:{},skillReference:vi.fn()}));
 vi.mock("../../skills/operations",()=>({withDomainSkills:async(_domain:string,work:()=>Promise<unknown>)=>work()}));
 // Admission is exercised through the real store and claim helper, without model preparation.
@@ -28,17 +28,18 @@ import { ensureWorkspacesSchema } from "../../../infrastructure/postgres-migrati
 import { ensureOpsDiagnosisSchema } from "../../../infrastructure/postgres-migrations/20261029-ops-diagnosis/schema";
 import { assistantStore } from "../store";
 import { assistantService } from "../service";
+import { requireAgent } from "../authorization";
 import { createDiagnosis } from "../../ops-diagnosis/service";
 
 const database=process.env.RUNTIME_TEST_DATABASE_URL;
 if(!database)throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
-const owner={domainId:"domain",userId:"owner"},agentId=randomUUID();
+const owner={domainId:"domain",userId:"owner"},agentId=randomUUID(),diagnosisId=randomUUID();
 beforeAll(async()=>{
   state.schema="channel_prepare_"+randomUUID().replaceAll("-","");
   state.pool=new pg.Pool({connectionString:database});
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureAssistantSchema(state.pool);await ensureAgentExecutionSchema(state.pool);await ensureOpsDiagnosisSchema(state.pool);await ensureWorkspacesSchema(state.pool);
-  await state.pool.query(`INSERT INTO "${state.schema}".assistant_agents(id,domain_id,kind,name,system_prompt) VALUES($1,$2,'custom','Agent','')`,[agentId,owner.domainId]);
+  await state.pool.query(`INSERT INTO "${state.schema}".assistant_agents(id,domain_id,kind,name,system_prompt) VALUES($1,$2,'custom','Agent',''),($3,$2,'ops-diagnosis','Diagnosis','')`,[agentId,owner.domainId,diagnosisId]);
 });
 beforeEach(async()=>{vi.spyOn(assistantService,"admitAgent").mockResolvedValue({agent:await assistantStore.agent(agentId,owner)});});
 afterEach(()=>{vi.restoreAllMocks();});
@@ -71,6 +72,10 @@ it("client and scheduler creation remain strict for an existing runtime session"
 });
 it("diagnosis uses the same trusted-claim rule while client creation stays strict",async()=>{
   const accepted=randomUUID(),client=randomUUID();state.runtimeSessions.add(accepted);state.runtimeSessions.add(client);
-  expect((await createDiagnosis(accepted,owner,{},null,true)).session.id).toBe(accepted);
+  const credentials = { token: "initiator" };
+  expect((await createDiagnosis(accepted,owner,credentials,null,true)).session.id).toBe(accepted);
+  expect(requireAgent).toHaveBeenCalledWith(
+    expect.objectContaining({ id: diagnosisId, domain_id: owner.domainId, owner_id: null }), "USE", credentials,
+  );
   await expect(createDiagnosis(client,owner,{})).rejects.toMatchObject({status:409,code:"IDEMPOTENCY_CONFLICT"});
 });
