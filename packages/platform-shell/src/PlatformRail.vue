@@ -576,12 +576,12 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   color: var(--brand-link);
 }
 /* Collapsed: the expand control is the top row, at the size of the icon rows below it. */
-.collapsed .rail-brand {
+.platform-rail.collapsed .rail-brand {
   justify-content: center;
   height: auto;
   padding: 0;
 }
-.collapsed .rail-toggle {
+.platform-rail.collapsed .rail-toggle {
   width: var(--shell-rail-button);
   height: var(--shell-rail-button);
   margin-left: 0;
@@ -620,7 +620,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   margin: 8px 10px;
   background: var(--el-border-color);
 }
-.collapsed .rail-divider {
+.platform-rail.collapsed .rail-divider {
   width: 24px;
   margin: 8px auto;
 }
@@ -679,7 +679,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
-.collapsed .rail-item {
+.platform-rail.collapsed .rail-item {
   justify-content: center;
 }
 .rail-row {
@@ -764,17 +764,17 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   font-variant-numeric: tabular-nums;
   color: var(--el-text-color-tertiary);
 }
-.collapsed .rail-row {
+.platform-rail.collapsed .rail-row {
   justify-content: center;
   width: var(--shell-rail-button);
   height: var(--shell-rail-button);
   padding: 0;
 }
-.collapsed .rail-section,
-.collapsed .rail-foot {
+.platform-rail.collapsed .rail-section,
+.platform-rail.collapsed .rail-foot {
   align-items: center;
 }
-.collapsed .rail-foot {
+.platform-rail.collapsed .rail-foot {
   width: 100%;
 }
 .rail-account {
@@ -825,7 +825,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.collapsed .account-trigger {
+.platform-rail.collapsed .account-trigger {
   justify-content: center;
   width: var(--shell-rail-button);
   height: var(--shell-rail-button);
@@ -839,7 +839,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   bottom: calc(100% + 4px);
   left: 0;
 }
-.collapsed .account-menu-anchor {
+.platform-rail.collapsed .account-menu-anchor {
   left: calc(100% + 4px);
   bottom: 0;
 }

@@ -647,13 +647,13 @@ describe("platform shell", () => {
     const fresh = await mount(PlatformShell, { apps, activeAppId: "agents", account, preferences: preferences(), labels }, { default: () => h("div") });
     // The rail is collapsed on a fresh load, whatever the screen width: the applications open full page.
     expect(fresh.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(true);
-    expect(fresh.querySelector(".platform-rail-slot")?.classList.contains("collapsed")).toBe(true);
+    expect(fresh.querySelector(".platform-rail-slot")?.classList.contains("slot-collapsed")).toBe(true);
     app?.unmount();
 
     localStorage.setItem("ontomato.platform.railCollapsed:Ada", "false");
     const remembered = await mount(PlatformShell, { apps, activeAppId: "agents", account, preferences: preferences(), labels }, { default: () => h("div") });
     expect(remembered.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(false);
-    expect(remembered.querySelector(".platform-rail-slot")?.classList.contains("collapsed")).toBe(false);
+    expect(remembered.querySelector(".platform-rail-slot")?.classList.contains("slot-collapsed")).toBe(false);
     app?.unmount();
 
     // Another user does not inherit Ada's pinned state.
@@ -679,19 +679,21 @@ describe("platform shell", () => {
     const root = await mount(PlatformShell, { apps, activeAppId: "agents", account, preferences: preferences(), labels }, { default: () => h("div") });
     const slot = root.querySelector(".platform-rail-slot")!;
     const nav = root.querySelector<HTMLElement>(".platform-rail")!;
-    expect(slot.classList.contains("collapsed")).toBe(true);
+    expect(slot.classList.contains("slot-collapsed")).toBe(true);
+    expect(slot.classList.contains("collapsed")).toBe(false);
     expect(nav.classList.contains("floating")).toBe(false);
 
     nav.dispatchEvent(new MouseEvent("mouseenter"));
     await nextTick();
-    expect(slot.classList.contains("collapsed")).toBe(true);
+    expect(slot.classList.contains("slot-collapsed")).toBe(true);
+    expect(slot.classList.contains("collapsed")).toBe(false);
     expect(nav.classList.contains("floating")).toBe(true);
     expect(nav.classList.contains("collapsed")).toBe(false);
 
     // Pinning from the floating state expands the layout slot and keeps the rail open after mouseleave.
     root.querySelector<HTMLButtonElement>(".rail-toggle")?.click();
     await nextTick();
-    expect(slot.classList.contains("collapsed")).toBe(false);
+    expect(slot.classList.contains("slot-collapsed")).toBe(false);
     expect(nav.classList.contains("floating")).toBe(false);
     nav.dispatchEvent(new MouseEvent("mouseleave"));
     await nextTick();
