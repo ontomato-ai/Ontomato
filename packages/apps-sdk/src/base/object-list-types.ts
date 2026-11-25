@@ -1,9 +1,12 @@
+import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
+import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type {
   PanelObjectListColumn,
   PanelObjectListRowActionCondition,
   PanelObjectListRowActionItem,
   PanelObjectListRowActions,
 } from "@ontomato/contracts/panel-projection";
+import type { PanelWriteResult } from "../panel/instance";
 
 /** Visual variant for `ObjectList` when `layout` is `"tabs"`. */
 export type ObjectListTabsVariant = "underline" | "pill";
@@ -101,3 +104,21 @@ export interface ObjectListRenameCancelPayload {
   readonly ref: ObjectListRef;
   readonly index: number;
 }
+
+/** Per-row, per-operation execution state and retained result inside `ObjectList`. */
+export interface ObjectListRowOperationState {
+  readonly running: boolean;
+  readonly result?: PanelReadOperationResult;
+  readonly receipt?: PanelHumanOperationDispatchResponse;
+  readonly named?: PanelWriteResult["named"];
+  readonly error?: string;
+}
+
+/** Configuration for submitting the `ObjectList` top search box on Enter. */
+export interface ObjectListSearchSubmit {
+  readonly operation: string;
+  readonly inputField: string;
+}
+
+/** Supported semantic tones for whole-row table highlighting (`rowToneField` / `rowToneMap`). */
+export type ObjectListRowTone = "success" | "danger" | "warning" | "info";

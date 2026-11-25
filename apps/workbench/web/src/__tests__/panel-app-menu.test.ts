@@ -46,6 +46,7 @@ describe("official SDK AppMenu component", () => {
         path: "/applications/app-demo/overview",
       },
       entryMenu: {
+        singleEntry: false,
         groups: [
           { key: "second", names: { en: "Second group", "zh-CN": "第二组" }, sort: 2 },
           { key: "first", names: { en: "First group", "zh-CN": "第一组" }, sort: 1 },
@@ -133,7 +134,7 @@ describe("official SDK AppMenu component", () => {
         panelId: "builtin-product-ontology-graph",
         path: "/ontology/playground",
       },
-      entryMenu: { groups: [], panelUses: [] },
+      entryMenu: { singleEntry: false, groups: [], panelUses: [] },
       hostMenu: [
         {
           key: "ontology:facts",
@@ -202,7 +203,7 @@ describe("official SDK AppMenu component", () => {
         panelId: "panel-objects",
         path: "/ontology/objects",
       },
-      entryMenu: { groups: [], panelUses: [] },
+      entryMenu: { singleEntry: false, groups: [], panelUses: [] },
       hostMenu: [
         {
           key: "facts",

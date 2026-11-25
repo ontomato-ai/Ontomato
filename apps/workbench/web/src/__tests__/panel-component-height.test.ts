@@ -178,7 +178,7 @@ function mountDirect(
                 panelId: "panel-1",
                 path: "/applications/app-1/entry-1",
               }),
-              menu: ref({ groups: [], panelUses: [] }),
+              menu: ref({ singleEntry: true, groups: [], panelUses: [] }),
               place: extra.currentEntry.place,
             },
           }

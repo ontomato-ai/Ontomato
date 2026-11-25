@@ -24,6 +24,7 @@ export interface ResolvedRowActionItem {
   readonly danger: boolean;
   readonly primary: boolean;
   readonly disabled: boolean;
+  readonly running?: boolean;
   readonly reason?: string;
 }
 
@@ -89,9 +90,9 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
         'is-busy': item.busy,
         'is-locked': locked,
       }"
-      :disabled="item.disabled || item.busy || locked || busy"
-      :aria-busy="item.busy ? 'true' : undefined"
-      :aria-disabled="(locked || busy || item.disabled || item.busy) ? 'true' : undefined"
+      :disabled="item.disabled || item.busy || item.running || locked || busy"
+      :aria-busy="(item.busy || item.running) ? 'true' : undefined"
+      :aria-disabled="(locked || busy || item.disabled || item.busy || item.running) ? 'true' : undefined"
       :aria-label="item.iconOnly ? item.label : undefined"
       :aria-pressed="item.active !== undefined ? item.active : undefined"
       :title="item.reason ?? (item.iconOnly ? item.label : undefined)"

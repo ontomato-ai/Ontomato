@@ -37,7 +37,7 @@ vi.mock("../panel-host", () => ({
   resolveApplicationEntry: async ({ path }: { path: string }) => {
     const use = uses.find((candidate) => candidate.path.replace(/^#/, "") === path || candidate.path === path);
     if (!use) throw new Error(`No entry at ${path}`);
-    return { applicationId: path.split("/")[2], use, framePanelId, menu: { groups: [], panelUses: uses } };
+    return { applicationId: path.split("/")[2], use, framePanelId, menu: { singleEntry: uses.length <= 1, groups: [], panelUses: uses } };
   },
   readApplicationFrameManifest: readFrameManifest,
   // The host the route builds is the one for the use relation its address names.

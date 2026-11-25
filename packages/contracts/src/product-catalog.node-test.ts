@@ -318,7 +318,7 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
     framePanelId: "review-frame", theme: { light: { "--brand-primary": "#336699" } },
   };
   assert.deepEqual(applicationCatalogueEntriesSchema.parse(entries), entries);
-  const resolution = { applicationId, use, menu: { groups: [], panelUses: [] } };
+  const resolution = { applicationId, use, menu: { singleEntry: true, groups: [], panelUses: [] } };
   assert.deepEqual(applicationEntryResolutionSchema.parse(resolution), resolution);
 });
 
@@ -609,6 +609,7 @@ test("built-in native entries validate in catalog and menu schemas while domain 
   assert.equal(isNativeApplicationEntry(panelEntry), false);
 
   const menu = applicationEntryMenuSchema.parse({
+    singleEntry: false,
     names: { en: "System settings" },
     groups: [{ key: "records", names: { en: "Logs and monitoring" }, sort: 3 }],
     panelUses: [panelEntry, nativeEntry],

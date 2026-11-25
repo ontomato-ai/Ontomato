@@ -6,6 +6,7 @@ import { baseComponents } from "../base-components";
 import { preloadCatalogueComponents } from "../catalogue-components";
 import { panelContextKey } from "./context";
 import { directPanelContext } from "./direct";
+import { localDraftStoreKey } from "./local-drafts";
 import { mountDirectPanel, type DirectPanelMount, type DirectPanelMountOptions } from "./direct-mount";
 import DirectProjection, { directMountKey } from "./direct-projection";
 import type { PanelComponent, PanelMount } from "./mount";
@@ -83,6 +84,7 @@ async function mountDirectPanelComponent(component: PanelComponent, port: Direct
     setup: () => {
       provide(panelContextKey, context);
       provide(directMountKey, mount);
+      if (mount.instance.localDrafts) provide(localDraftStoreKey, mount.instance.localDrafts);
       return () => [
         h(root),
         mount.instance.secretDeliveries.value.length ? h(SecretDeliveryDialog, {

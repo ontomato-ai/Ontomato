@@ -44,6 +44,7 @@ import { getCollectingTurnWorkspace, listCollectingTurnWorkspaces } from "../../
 import { listWorkspaces, loadManifest } from "../../platform/diagnosis/observe/workspaces/store";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
+import { withReadDirective } from "../product-panels/read-directive";
 
 const CASE_ARTIFACT_KEY_SEPARATOR = "::";
 
@@ -493,6 +494,8 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
   };
 }
 
+const autotestRunReadDirective = { rereadAfterMs: 5000 };
+
 export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
   const locale = viewer.locale;
 
@@ -517,7 +520,7 @@ export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: Assist
   }
 
   return {
-    async list(): Promise<PanelRecord[]> {
+    async list() {
       const domainId = await requireObserveAccessDomain(owner, viewer);
       const activeRun = getActiveRun();
       const keptKeys = await getArtifactRetentionSnapshot();
@@ -532,7 +535,7 @@ export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: Assist
           return (b.run.createdAt || "").localeCompare(a.run.createdAt || "");
         });
 
-      return runs.map(({ run, kept }) => {
+      const records = runs.map<PanelRecord>(({ run, kept }) => {
         const active = run.status === "running" || run.status === "stopping";
         const stats = summarizeRun(run, [], locale);
         return {
@@ -566,15 +569,16 @@ export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: Assist
           },
         };
       });
+      return records.some(record => record.fields.active) ? withReadDirective(records, autotestRunReadDirective) : records;
     },
 
-    async record(runId: string): Promise<PanelRecord> {
+    async record(runId: string) {
       const { meta, active } = await requireRun(runId);
       const keptKeys = await getArtifactRetentionSnapshot();
       const kept = hasArtifactRetention(keptKeys, "autotest-run", runId);
       const results = loadCaseResults(runId);
       const stats = summarizeRun(meta, results, locale);
-      return {
+      const record: PanelRecord = {
         className: AUTOTEST_RUN,
         primaryKey: meta.runId,
         label: meta.caseSetName || meta.runId,
@@ -610,17 +614,18 @@ export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: Assist
         },
         outputs: { status: meta.status, active, kept },
       };
+      return active ? withReadDirective(record, autotestRunReadDirective) : record;
     },
 
-    async results(runId: string, params: { verdict?: "all" | "correct" | "wrong" | "abnormal" } = {}): Promise<PanelRecord[]> {
-      await requireRun(runId);
+    async results(runId: string, params: { verdict?: "all" | "correct" | "wrong" | "abnormal" } = {}) {
+      const { active } = await requireRun(runId);
       const results = loadCaseResults(runId);
       const filter = params.verdict ?? "all";
       const rows = results
         .map((row) => ({ row, verdict: getCaseVerdict(row) }))
         .filter(({ verdict }) => filter === "all" || verdict === filter);
 
-      return rows.map(({ row, verdict }) => ({
+      const records = rows.map<PanelRecord>(({ row, verdict }) => ({
         className: AUTOTEST_CASE_ARTIFACT,
         primaryKey: encodeAutotestCaseArtifactKey(runId, row.caseId),
         label: row.caseId,
@@ -649,6 +654,7 @@ export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: Assist
           verdictLabel: verdictTone(verdict),
         },
       }));
+      return active ? withReadDirective(records, autotestRunReadDirective) : records;
     },
   };
 }

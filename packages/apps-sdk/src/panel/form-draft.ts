@@ -1,6 +1,10 @@
 import { computed, toValue, type ComputedRef, type MaybeRefOrGetter } from "vue";
+import { useI18n } from "vue-i18n";
+import { confirmDanger, confirmUnsavedSwitch } from "@ontomato/platform-shell";
 import type { PageHeaderDraft } from "../base/page-header-types";
 import { usePanelContext } from "./context";
+
+export type UnsavedSwitchMode = "discard-or-cancel" | "save-discard-cancel";
 
 export interface UsePanelFormDraftOptions {
   /**
@@ -18,6 +22,12 @@ export interface UsePanelFormDraftOptions {
 export interface PanelFormDraftControls extends PageHeaderDraft {
   /** Refreshes the owner's fields and validation for the current values, preserving unsaved edits. */
   refreshDraft(): Promise<void>;
+  /**
+   * Guards switching away from this form while it has unsaved edits.
+   * In `"save-discard-cancel"` mode, presents Save and switch / Discard changes / Cancel: Save submits and proceeds
+   * only if submission succeeds, Discard resets without re-confirming, and Cancel aborts.
+   */
+  confirmSwitch?: (mode?: UnsavedSwitchMode) => Promise<boolean>;
 }
 
 /**
@@ -31,6 +41,14 @@ export function usePanelFormDraft(
 ): ComputedRef<PanelFormDraftControls | null> {
   const { instance } = usePanelContext();
   const confirmDiscard = options?.confirmDiscard ?? true;
+  const i18n = (() => {
+    try {
+      return useI18n();
+    } catch {
+      return null;
+    }
+  })();
+  const tr = (key: string, fallback: string) => (i18n && i18n.te(key) ? i18n.t(key) : fallback);
 
   return computed<PanelFormDraftControls | null>(() => {
     if (options?.when !== undefined && !toValue(options.when)) return null;
@@ -49,6 +67,41 @@ export function usePanelFormDraft(
       },
       discard: () => {
         void handle.reset({ confirm: confirmDiscard });
+      },
+      confirmSwitch: async (mode: UnsavedSwitchMode = "discard-or-cancel") => {
+        if (!handle.dirty.value) return true;
+        if (mode === "save-discard-cancel") {
+          const decision = await confirmUnsavedSwitch(
+            tr("platform.formLeaveUnsavedSwitch", "This form has unsaved changes. Save before switching, or discard them?"),
+            tr("platform.unsavedChanges", "Unsaved changes"),
+            {
+              saveButtonText: tr("platform.formSaveAndSwitch", "Save and switch"),
+              discardButtonText: tr("platform.formDiscardChanges", "Discard changes"),
+            },
+          );
+          if (decision === "cancel") return false;
+          if (decision === "discard") {
+            await handle.reset({ confirm: false });
+            return true;
+          }
+          try {
+            const outcome = await handle.submit();
+            return outcome !== null && outcome !== false;
+          } catch {
+            return false;
+          }
+        }
+        const confirmed = await confirmDanger(
+          tr("platform.formLeaveUnsaved", "This form has changes you have not saved. Discard them and open the other item?"),
+          tr("platform.unsavedChanges", "Unsaved changes"),
+          {
+            confirmButtonText: tr("platform.discard", "Discard"),
+            cancelButtonText: tr("common.cancel", "Cancel"),
+          },
+        );
+        if (!confirmed) return false;
+        await handle.reset({ confirm: false });
+        return true;
       },
     };
   });

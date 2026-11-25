@@ -27,7 +27,7 @@ public class ApplicationCatalog {
     private static final org.slf4j.Logger log = LoggerFactory.getLogger(ApplicationCatalog.class);
     public static final String DEFAULT_FRAME_PANEL_ID = "builtin-product-platform-frame";
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
-    public record EntryMenu(Map<String, String> names, List<Group> groups, List<ApplicationPanelUse> panelUses) {}
+    public record EntryMenu(Map<String, String> names, List<Group> groups, List<ApplicationPanelUse> panelUses, boolean singleEntry) {}
     public record Delivery(List<String> panels, List<String> projections, List<String> packages, List<String> agents,
                            List<PageSkills.Skill> skills) {}
     private record PanelSettings(String framePanelId, JsonNode theme, Delivery delivery) {
@@ -236,8 +236,9 @@ public class ApplicationCatalog {
         return access.withPageSkillAuthorization(user, () -> {
             var apps = applicationsInDomain(user.getDomainId());
             var enterable = access.enterableApplicationIds(apps, user);
+            var pageKeys = new BuiltinPageKeys(apps);
             return apps.stream().filter(app -> enterable.contains(app.getString("id")) && hasAssignedPanelPaths(app))
-                .map(ApplicationCatalog::summaryView).toList();
+                .map(app -> summaryView(app, pageKeys)).toList();
         });
     }
     private record CatalogueKey(String id, String name, Instant updatedAt) {}
@@ -563,9 +564,10 @@ public class ApplicationCatalog {
         });
     }
 
-    private static JSONObject summaryView(JSONObject app) {
+    private static JSONObject summaryView(JSONObject app, BuiltinPageKeys pageKeys) {
         var result = new JSONObject(app);
         result.put("entry", publicEntry(app));
+        result.put("singleEntry", singleEntry(app, pageKeys));
         result.put("allowStandalone", allowsStandalone(app));
         result.remove("permissions");
         var settings = app.getJSONObject("panelSettings");
@@ -583,7 +585,7 @@ public class ApplicationCatalog {
     }
 
     private JSONObject view(JSONObject app, User user, BuiltinPageKeys pageKeys, boolean enterable) {
-        var result = summaryView(app);
+        var result = summaryView(app, pageKeys);
         if (hasPanelUseRegistration(app))
             result.put("panelUses", enterable ? visiblePanelUses(app, user, pageKeys) : List.of());
         return result;
@@ -912,10 +914,15 @@ public class ApplicationCatalog {
         var allowed = visiblePanelUses(app, user, pageKeys);
         var use = allowed.stream().filter(entry -> !entry.nativeEntry() && useId.equals(entry.id())).findFirst()
             .orElseThrow(ApplicationCatalog::denied);
-        return entryResolution(app, use, allowed);
+        return entryResolution(app, use, allowed, pageKeys);
     }
 
-    private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed) {
+    private static boolean singleEntry(JSONObject app, BuiltinPageKeys pageKeys) {
+        return pageKeys.activeUses(app).stream().filter(entry -> entry.names() != null).count() <= 1;
+    }
+
+    private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed,
+                                             BuiltinPageKeys pageKeys) {
         boolean panels = panelManaged(app);
         var named = allowed.stream().filter(entry -> entry.names() != null).toList();
         var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
@@ -923,7 +930,7 @@ public class ApplicationCatalog {
             .sorted(Comparator.comparingInt(Group::sort)).toList();
         var appNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
         var result = JSONObject.of("applicationId", app.getString("id"), "use", use,
-            "menu", new EntryMenu(appNames, groups, named));
+            "menu", new EntryMenu(appNames, groups, named, singleEntry(app, pageKeys)));
         var settings = app.getJSONObject("panelSettings");
         String resolvedFrame = null;
         if (settings != null && settings.containsKey("framePanelId")) {

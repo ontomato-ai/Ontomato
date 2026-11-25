@@ -78,6 +78,8 @@ import { PanelReadBatchCache, registeredPanelRootId, requireRegisteredPanelRoot,
 
 const logger = createLogger("panel-data-reads");
 
+import { unwrapReadDirective } from "./read-directive";
+
 type ReadInputs = ProductPanelReadRequest["inputs"];
 type ReadMember = ProductPanel["manifest"]["members"][string];
 type ReadSelection = { kind: "platform" | "customer"; typeId: string; method: string; primaryKey?: string };
@@ -767,7 +769,7 @@ function readSelection({ source, read }: DirectProjectionData, inputs: ReadInput
 }
 
 export type ProjectionDataReadOutcome =
-  | { status: "ready"; value: Extract<ProductPanelReadResponse, { status: "ready" }>["value"]; declaration: PlatformReadDeclaration }
+  | (Extract<ProductPanelReadResponse, { status: "ready" }> & { declaration: PlatformReadDeclaration })
   | { status: "empty"; declaration: PlatformReadDeclaration };
 
 function stableJson(value: unknown): string {
@@ -827,18 +829,24 @@ export async function executeProjectionDataRead(
         invoke,
       )
     : invoke());
+  const { value: payload, directive } = unwrapReadDirective(result);
+  const rereadAfterMs = directive?.rereadAfterMs;
   if (declaration.result === "panelRecordList") {
-    const value = panelReadResultSchemas.panelRecordList.parse(result);
-    return value.length ? { status: "ready", value, declaration } : { status: "empty", declaration };
+    const value = panelReadResultSchemas.panelRecordList.parse(payload);
+    return value.length || rereadAfterMs !== undefined
+      ? { status: "ready", value, declaration, ...directive }
+      : { status: "empty", declaration };
   }
   if (declaration.result === "metricOutput") {
-    const value = panelReadResultSchemas.metricOutput.parse(result);
-    return value.rows.length || value.truncation ? { status: "ready", value, declaration } : { status: "empty", declaration };
+    const value = panelReadResultSchemas.metricOutput.parse(payload);
+    if (!value.rows.length && !value.truncation && rereadAfterMs === undefined) return { status: "empty", declaration };
+    return { status: "ready", value, declaration, ...directive };
   }
   return {
     status: "ready",
-    value: panelReadResultSchemas[declaration.result].parse(result) as Extract<ProductPanelReadResponse, { status: "ready" }>["value"],
+    value: panelReadResultSchemas[declaration.result].parse(payload) as Extract<ProductPanelReadResponse, { status: "ready" }>["value"],
     declaration,
+    ...directive,
   };
 }
 
@@ -906,7 +914,13 @@ export async function readProductPanelData(
         fallbackClassName,
       );
     }
-    return { status: "ready", value: outcome.value, ...(rowOperations && { rowOperations }) };
+    const { rereadAfterMs } = outcome;
+    return {
+      status: "ready",
+      value: outcome.value,
+      ...(rereadAfterMs !== undefined && { rereadAfterMs }),
+      ...(rowOperations && { rowOperations }),
+    };
   } catch (error) {
     if (error instanceof HttpError && (error.status === 401 || error.status === 403)) return { status: "forbidden" };
     if (error instanceof HttpError && error.code === "GRAPH_VERSION_CHANGED")

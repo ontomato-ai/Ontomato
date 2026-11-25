@@ -1,6 +1,7 @@
 import type { PageComposerRequest } from "@ontomato/agent-shell-ui";
-import { computed, effectScope, onScopeDispose, shallowReactive, shallowRef, watch, type Component, type ComputedRef, type EffectScope, type Ref } from "vue";
+import { computed, effectScope, onScopeDispose, ref, shallowReactive, shallowRef, watch, type Component, type ComputedRef, type EffectScope, type Ref } from "vue";
 import { ElMessage } from "element-plus/es/components/message/index";
+import { documentVisible, onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import { OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
@@ -8,13 +9,14 @@ import type { AppMenuGroup, DirectPanelRun } from "@ontomato/platform-shell";
 import { panelOperationAffectedSchema, panelReadResultSchemas, type PanelCompletedOperation } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { ApplicationEntryMenu, CurrentApplicationEntry, DirectProjection } from "@ontomato/contracts/product-panels";
-import type { PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import type { PanelCurrentUser, PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { createPanelInstance, type PanelInstance, type PanelInstanceOptions, type PanelOperationCompletion, type PublisherPath } from "./instance";
 import type { ComponentPackageReader } from "./component-packages";
-import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "./state";
+import { stateChildObject, stateObject, stateObjects, type PanelFieldValue, type PanelObjectRef } from "./state";
 import type { PanelText } from "./text";
 import type { PanelContext } from "./context";
+import type { PanelLocalDraftStore } from "./local-drafts";
 import { admittedOperations, watchMemberOperations, type MemberOperationsState } from "./member-operations";
 import type { PanelMemberContext } from "./member";
 import { portsOf } from "./ports-of";
@@ -80,6 +82,10 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
   registerBackHandler?: DirectPanelRun["registerBackHandler"];
   /** Unified host confirmation for leaving unsaved edits. */
   confirmLeaveUnsaved?: DirectPanelRun["confirmLeaveUnsaved"];
+  /** Current signed-in user's public display info. */
+  currentUser?: DirectPanelRun["currentUser"];
+  /** Platform-owned local draft persistence store for `persistDraft` forms and list/picker draft indicators. */
+  localDrafts?: PanelLocalDraftStore;
   /** Reads an installed component package's current release, for a member whose component is the package's. */
   readComponentPackage: ComponentPackageReader;
   loadDomainComponent?(projection: DirectProjection): Promise<Component>;
@@ -178,6 +184,12 @@ export interface DirectPanelInstance extends PanelInstance {
   readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
   /** Optional host-supplied menu groups for hybrid built-in applications mixing panel entries and native pages. */
   readonly hostMenu: ComputedRef<readonly AppMenuGroup[] | null>;
+  /** Current signed-in user's public display info; null in editions without sign-in. */
+  readonly currentUser: ComputedRef<PanelCurrentUser | null>;
+  /** Platform-owned local draft persistence store (internal to SDK components; not exposed on `PanelContext`). */
+  readonly localDrafts?: PanelLocalDraftStore;
+  /** Reactive read-only check for whether the given object has any unsaved local draft in this browser. */
+  hasLocalDraft(ref: PanelObjectRef): boolean;
   /** Reads an installed component package's current release (see the options). */
   readonly readComponentPackage: ComponentPackageReader;
   readonly loadDomainComponent?: DirectPanelInstanceOptions["loadDomainComponent"];
@@ -358,6 +370,7 @@ export async function readMemberDatum(read: PanelReadPort, projection: DirectPro
   return {
     status: "ready",
     value: panelReadResultSchemas[declaration.result].parse(result.value) as RuntimeJsonValue,
+    ...(result.rereadAfterMs !== undefined ? { rereadAfterMs: result.rereadAfterMs } : {}),
     ...(result.rowOperations ? { rowOperations: result.rowOperations } : {}),
   };
 }
@@ -449,6 +462,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     isMetricOutput: boolean;
     sourceObjectTypes: () => readonly string[] | undefined;
     reread(): Promise<void>;
+    pauseReread(): void;
+    resumeReread(): void;
   }>();
   /** Every member's operations read now, read again when refreshed or when an affected type matches. */
   const operationReads = new Set<{
@@ -549,6 +564,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       ...(options.frameState ? { frameState: options.frameState } : {}),
       ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
       ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
+      ...(options.currentUser ? { currentUser: options.currentUser } : {}),
     };
     const { element, mount } = await options.nested([nestedSegment(member)], run);
     scope.run(() => {
@@ -583,6 +599,14 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   }
 
   const addressPending = shallowRef(false);
+  const localDraftVersion = ref(0);
+  if (options.localDrafts) {
+    membersScope.run(() => {
+      onScopeDispose(options.localDrafts!.subscribe(() => {
+        localDraftVersion.value++;
+      }));
+    });
+  }
 
   const notifyOperationCompleted = instance.operationCompleted;
   const directInstance: DirectPanelInstance = Object.assign(instance, {
@@ -591,6 +615,16 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     currentEntry: computed(() => options.currentEntry?.entry.value ?? null),
     entryMenu: computed(() => options.currentEntry?.menu.value ?? null),
     hostMenu: computed(() => options.currentEntry?.hostMenu?.value ?? null),
+    currentUser: computed<PanelCurrentUser | null>(() => {
+      const raw = options.currentUser?.() ?? null;
+      const name = raw?.displayName?.trim();
+      return name ? { displayName: name } : null;
+    }),
+    ...(options.localDrafts ? { localDrafts: options.localDrafts } : {}),
+    hasLocalDraft(target: PanelObjectRef) {
+      void localDraftVersion.value;
+      return Boolean(options.localDrafts?.hasObject(target.className, target.primaryKey));
+    },
     direct,
     readComponentPackage: options.readComponentPackage,
     loadDomainComponent: options.loadDomainComponent,
@@ -760,10 +794,30 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             ready.rowOperations !== undefined
               ? { status: "ready", value: ready.value, rowOperations: ready.rowOperations }
               : { status: "ready", value: ready.value };
+          let rereadTimer: ReturnType<typeof setTimeout> | null = null;
+          let pendingRereadAfterMs: number | undefined;
+          let datumDisposed = false;
+          const isDocumentVisible = () => (typeof document === "undefined" ? true : documentVisible());
+          const clearRereadTimer = () => {
+            if (rereadTimer !== null) {
+              clearTimeout(rereadTimer);
+              rereadTimer = null;
+            }
+          };
+          const scheduleReread = (delayMs: number) => {
+            clearRereadTimer();
+            if (datumDisposed || !active || !isDocumentVisible()) return;
+            rereadTimer = setTimeout(() => {
+              rereadTimer = null;
+              if (datumDisposed || !active || !isDocumentVisible()) return;
+              void reread();
+            }, delayMs);
+          };
           const reread = (): Promise<void> => {
+            clearRereadTimer();
             // Unseen, the instance reads nothing; `lastTargetKey` stays on the last target read while active so
             // returning to a different target clears the stale record immediately.
-            if (!active) return Promise.resolve();
+            if (!active || datumDisposed) return Promise.resolve();
             const reading = ++sequence;
             const nextTargetKey = datumTargetKeyOf();
             const targetChanged = hasTarget && nextTargetKey !== lastTargetKey;
@@ -785,7 +839,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             }
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
             return answer(name, inputs()).then((result) => {
-              if (reading !== sequence) return;
+              if (datumDisposed || reading !== sequence) return;
               if (isMetricOutput && result.status === "ready" && result.value && typeof result.value === "object" && !Array.isArray(result.value)) {
                 const rawTypes = (result.value as { sourceObjectTypes?: unknown }).sourceObjectTypes;
                 if (Array.isArray(rawTypes) && rawTypes.every((item): item is string => typeof item === "string")) {
@@ -796,7 +850,16 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
               if (result.status === "ready") {
                 lastReady = snapshotReady(result);
                 state.value = result;
+                if (result.rereadAfterMs !== undefined) {
+                  pendingRereadAfterMs = result.rereadAfterMs;
+                  scheduleReread(result.rereadAfterMs);
+                } else {
+                  pendingRereadAfterMs = undefined;
+                  clearRereadTimer();
+                }
               } else if (result.status === "error") {
+                pendingRereadAfterMs = undefined;
+                clearRereadTimer();
                 // A failure is read again on request, and keeps the same target's last ready answer beside the reason.
                 state.value = {
                   ...result,
@@ -804,18 +867,35 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
                   retry: () => { void reread(); },
                 };
               } else {
+                pendingRereadAfterMs = undefined;
+                clearRereadTimer();
                 // Losing permission (`forbidden`), `empty`, or `awaiting` clears any previous answer immediately.
                 lastReady = undefined;
                 state.value = result;
               }
             });
           };
+          const pauseReread = () => {
+            clearRereadTimer();
+          };
+          const resumeReread = () => {
+            if (datumDisposed || !active || pendingRereadAfterMs === undefined || !isDocumentVisible()) return;
+            reread();
+          };
+          const stopVisibility = typeof document !== "undefined"
+            ? onDocumentVisibility((visible) => {
+                if (!visible) clearRereadTimer();
+                else if (active && pendingRereadAfterMs !== undefined && !datumDisposed) reread();
+              })
+            : undefined;
           const entry = {
             data: entryData,
             inputs,
             isMetricOutput,
             sourceObjectTypes: () => metricSourceObjectTypes,
             reread,
+            pauseReread,
+            resumeReread,
           };
           shown.add(entry);
           let namedReaders = readers.get(name);
@@ -824,7 +904,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             readers.set(name, namedReaders);
           }
           namedReaders.add(reread);
-          watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), reread, { immediate: true });
+          watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), () => {
+            clearRereadTimer();
+            if (!active) pendingRereadAfterMs = undefined;
+            reread();
+          }, { immediate: true });
           const effectiveState = computed<MemberDataState>(() => {
             if (addressPending.value && hasTarget) return { status: "loading" };
             const hasTargetData = state.value.status === "ready"
@@ -860,6 +944,10 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             );
           }
           onScopeDispose(() => {
+            datumDisposed = true;
+            pendingRereadAfterMs = undefined;
+            clearRereadTimer();
+            stopVisibility?.();
             shown.delete(entry);
             const set = readers.get(name);
             if (set) {
@@ -947,7 +1035,13 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       addressPending.value = pending;
     },
     setActive(next: boolean) {
+      const wasActive = active;
       active = next;
+      if (!next) {
+        for (const entry of shown) entry.pauseReread();
+      } else if (!wasActive) {
+        for (const entry of shown) entry.resumeReread();
+      }
       for (const mount of nestedMounts) mount.activate(next);
     },
     projectionChanged(id: string, revision?: number) {
@@ -1009,6 +1103,8 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     currentEntry: instance.currentEntry,
     entryMenu: instance.entryMenu,
     hostMenu: instance.hostMenu,
+    currentUser: instance.currentUser,
+    hasLocalDraft: (ref) => instance.hasLocalDraft(ref),
     projection: frameOnly("Reading a projection record"),
     invoke: frameOnly("Running a frame operation"),
     projectionsChanged: () => () => {},

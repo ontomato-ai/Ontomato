@@ -26,7 +26,7 @@ import PanelMember from "./PanelMember.vue";
  * member's data through the host's one read port.
  */
 
-export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "expandPageComposer" | "navigate"> {
+export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions, "read" | "confirmOperation" | "translate" | "expandPageComposer" | "navigate" | "currentUser" | "localDrafts"> {
   manifest: PanelManifest;
   run: DirectPanelRun;
   /** The platform's request path, as the reader: projection records and the coordinator's operations. */
@@ -94,6 +94,8 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       ...(run.frameState ? { frameState: run.frameState } : {}),
       ...(run.registerBackHandler ? { registerBackHandler: run.registerBackHandler } : {}),
       ...(run.confirmLeaveUnsaved ? { confirmLeaveUnsaved: () => (instance.dirty() ? run.confirmLeaveUnsaved!() : Promise.resolve(true)) } : {}),
+      ...(run.currentUser ?? options.currentUser ? { currentUser: run.currentUser ?? options.currentUser } : {}),
+      ...(options.localDrafts ? { localDrafts: options.localDrafts } : {}),
       ...(options.memberPath ? { memberPath: options.memberPath } : {}),
       translate: options.translate,
       text: createPanelText(options.messages, options.locale, options.defaultLocale),

@@ -16,7 +16,7 @@ import {
   appCandidatePanelSourceSchema, candidatePanelSourceSchema, PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH,
   PANEL_READ_BATCH_MAX, PANEL_READ_BATCH_PATH,
   panelPersonalStateResponseSchema, productPanelNestedReadResponseSchema, productPanelReadBatchResponseSchema, productPanelReadResponseSchema,
-  type AppCandidatePanelSource, type ProductPanelNestedReadRequest,
+  type AppCandidatePanelSource, type PanelCurrentUser, type ProductPanelNestedReadRequest,
   type CandidatePanelSource, type DirectPanelHostSource, type PanelHostSource, type PanelAuthorDefinitions, type PanelDefinitionMode,
   type ProductPanelReadRequest, type ProductPanelReadResponse,
 } from "@ontomato/contracts/panel-host";
@@ -43,6 +43,8 @@ import {
   reconcileDefinitionCacheWithSnapshot, setCachedPanel,
 } from "./panel-definition-cache";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
+import { authHost } from "@ontomato/workbench-ui/utils/auth";
+import { platformLocalDraftStore } from "./local-draft-store";
 import type { Router } from "vue-router";
 import * as Vue from "vue";
 import { provideGlobalConfig } from "element-plus";
@@ -675,6 +677,8 @@ export function builtinFramePanelHost(
         locale: global.locale,
         defaultLocale: String(global.fallbackLocale.value),
         translate: (key, params) => global.t(key, params ?? {}),
+        currentUser: readPlatformCurrentUser,
+        localDrafts: platformLocalDraftStore(),
         nested: () => { throw new Error("A native frame does not mount nested panels"); },
       }, target, source.panel.content.module, undefined, panelChatHost, chat?.feed);
     },
@@ -873,7 +877,18 @@ function directOptions(
     locale: global.locale,
     defaultLocale: String(global.fallbackLocale.value),
     translate: (key, params) => global.t(key, params ?? {}),
+    currentUser: readPlatformCurrentUser,
+    localDrafts: platformLocalDraftStore(),
   };
+}
+
+function readPlatformCurrentUser(): PanelCurrentUser | null {
+  try {
+    const name = authHost().getUserInfo()?.userName?.trim();
+    return name ? { displayName: name } : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Where a panel's reads come from: its application use, or an author's candidate. */

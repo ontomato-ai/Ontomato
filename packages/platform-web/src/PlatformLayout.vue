@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, provide, ref, watch } from "vue";
 import { clearExternalLinkTab, copyExternalLink, externalLinkTab, rememberExternalLinkTab } from "./external-link";
 import { allowsStandalone } from "@ontomato/contracts/platform-identity";
+import type { PanelCurrentUser } from "@ontomato/contracts/panel-host";
 import { useRoute, useRouter, RouterView, RouterLink } from "vue-router";
 import { Link } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
+import { authHost } from "@ontomato/workbench-ui/utils/auth";
 import {
   PlatformPageHeader,
   PlatformShell,
+  platformCurrentUserKey,
   useAppTheme,
   type AppMenuGroup,
   type PlatformAccount,
@@ -67,6 +70,18 @@ const props = defineProps<{
   /** The host shows no application at all (its licence is not in force, or the account holds no page). */
   blocked?: { reason: "licence" | "no-pages"; message: string } | null;
 }>();
+
+const currentUser = computed<PanelCurrentUser | null>(() => {
+  const fromAccount = props.account?.userName?.trim();
+  if (fromAccount) return { displayName: fromAccount };
+  try {
+    const fromAuth = authHost().getUserInfo()?.userName?.trim();
+    return fromAuth ? { displayName: fromAuth } : null;
+  } catch {
+    return null;
+  }
+});
+provide(platformCurrentUserKey, currentUser);
 
 /** The application's area: its menu column and its page, beside the platform's rail and account area. */
 const appBody = ref<HTMLElement | null>(null);
@@ -169,6 +184,7 @@ const applicationFrame = computed<ApplicationFrameSpec | null>(() => {
     title: app.label,
     groups: groups.length > 0 ? groups : null,
     activePageId: activePageId.value,
+    ...(app.singleEntry !== undefined ? { singleEntry: app.singleEntry } : {}),
   };
 });
 
@@ -177,11 +193,12 @@ const applicationFrame = computed<ApplicationFrameSpec | null>(() => {
  * column); an application of one page is named by its own header (the object browser). A page that draws its own header
  * (the ontology manager's, the external MCP services) is left to draw it, so no page has two.
  */
+const hasFrameMenu = computed(() => Boolean(applicationFrame.value && !applicationFrame.value.singleEntry));
 const headerTitle = computed(() =>
-  (props.shownPage?.named || applicationFrame.value ? props.shownPage?.title : activeApp.value?.label) ?? props.shownPage?.title ?? "");
+  (props.shownPage?.named || hasFrameMenu.value ? props.shownPage?.title : activeApp.value?.label) ?? props.shownPage?.title ?? "");
 // A page that names itself with a description of its own (a panel entry's) says it, as the page it names.
 const headerDescription = computed(() =>
-  (applicationFrame.value || (props.shownPage?.named && props.shownPage.description) ? props.shownPage?.description : activeApp.value?.description)
+  (hasFrameMenu.value || (props.shownPage?.named && props.shownPage.description) ? props.shownPage?.description : activeApp.value?.description)
     ?? props.shownPage?.description ?? null,
 );
 const headerShown = computed(() => !props.blocked && props.shownPage !== null && !props.shownPage.ownHeader && !props.appFramed);

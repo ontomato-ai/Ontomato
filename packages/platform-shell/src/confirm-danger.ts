@@ -47,3 +47,26 @@ export function confirmDanger(
     });
   return result;
 }
+
+export type UnsavedSwitchDecision = "save" | "discard" | "cancel";
+
+/**
+ * Prompts the reader before switching away from a form with unsaved edits, offering three distinct outcomes:
+ * Save and switch (`"save"`), Discard changes (`"discard"`), or Cancel (`"cancel"`, via close button, Esc, or backdrop).
+ */
+export function confirmUnsavedSwitch(
+  message: string | VNode,
+  title: string,
+  options: { saveButtonText: string; discardButtonText: string },
+): Promise<UnsavedSwitchDecision> {
+  return ElMessageBox.confirm(message, title, {
+    type: "warning",
+    distinguishCancelAndClose: true,
+    closeOnHashChange: false,
+    confirmButtonText: options.saveButtonText,
+    cancelButtonText: options.discardButtonText,
+  }).then(
+    () => "save" as const,
+    (action: unknown) => (action === "cancel" ? "discard" as const : "cancel" as const),
+  );
+}

@@ -25,6 +25,12 @@ export interface PlatformAppDeclaration {
   prefix: string;
   /** Platform or domain frame panel ID wrapping this application's entries when it draws a navigation frame. */
   framePanelId?: string;
+  /**
+   * Whether this application is inherently single-entry (total declared entries <= 1, independent of the current
+   * reader's permissions). Multi-entry applications (`false`) keep their left navigation menu even when a restricted
+   * account can see only one entry.
+   */
+  singleEntry?: boolean;
   /** The address its rail row opens: the first page the account may open, or the entry the declaration names. */
   home?: string;
   /** An external application: its fixed address, or the host's resolver for a signed jump; the rail opens it. */

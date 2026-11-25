@@ -134,7 +134,7 @@ beforeAll(async () => {
     if (req.query.applicationId !== "chart-pilot") { next(); return; }
     expect(req.header("tk")).toBe("bob");
     res.json({ success: true, data: {
-      applicationId: "chart-pilot", menu: { groups: [], panelUses: [] },
+      applicationId: "chart-pilot", menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: "chart", pageKey: "chart", path: "/applications/chart-pilot/chart", panelId: "chart-pilot",
         access: { kind: "domain-member" } },
     } });

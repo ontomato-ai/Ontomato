@@ -1,8 +1,10 @@
 import { computed, inject, onBeforeUnmount, type ComputedRef, type InjectionKey, type Ref } from "vue";
 import type { AppBridgeExpandPageComposer } from "@ontomato/contracts/app-bridge";
+import type { PanelCurrentUser } from "@ontomato/contracts/panel-host";
 import { panelChildCollectionQuerySchema, type PanelManifest, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { ApplicationEntryMenu, CurrentApplicationEntry, PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelInstance } from "./instance";
+import type { PanelObjectRef } from "./state";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
 import type { PanelFormAdapter, PanelFormAdapters, PanelFormHandle } from "./forms";
@@ -23,7 +25,7 @@ import type { PanelReadPort } from "./direct";
 import type { PanelText } from "./text";
 import type { AppMenuGroup, PanelBackHandlerRegistration } from "@ontomato/platform-shell";
 
-export type { PanelBackHandlerRegistration };
+export type { PanelBackHandlerRegistration, PanelCurrentUser };
 
 /*
  * The panel context the SDK provides to a panel's own module (overall design 3.3, 3.4): the panel's declaration, the
@@ -84,6 +86,13 @@ export interface PanelContext {
   readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
   /** Optional host-supplied menu groups for hybrid built-in applications mixing panel entries and native pages. */
   readonly hostMenu?: ComputedRef<readonly AppMenuGroup[] | null>;
+  /** Current signed-in user's public display info; null in editions without sign-in. Platform-owned, read-only. */
+  readonly currentUser: ComputedRef<PanelCurrentUser | null>;
+  /**
+   * Reactive read-only check for whether the given object currently has any unsaved local draft in this browser.
+   * Exposes only the boolean indicator; draft values and storage keys remain platform-internal.
+   */
+  hasLocalDraft(ref: PanelObjectRef): boolean;
   /** The projection record a slot's declaration names, read now from its owner. */
   projection(id: string): Promise<ProductProjection>;
   /** Runs one operation of this instance here, with the reader's own credential and the call it is given. */

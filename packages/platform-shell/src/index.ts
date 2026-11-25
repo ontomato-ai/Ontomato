@@ -46,6 +46,7 @@ export {
   panelHostKey,
   panelFrameDocument,
   panelUnavailable,
+  platformCurrentUserKey,
   usePanelHostPort,
   usePanelInstance,
   type DefinitionChanged,
@@ -62,7 +63,7 @@ export {
   type PanelInstanceView,
 } from "./panel-host";
 export { adoptPanelStyle, scopedPanelStyle } from "./panel-content";
-export { confirmDanger } from "./confirm-danger";
+export { confirmDanger, confirmUnsavedSwitch, type UnsavedSwitchDecision } from "./confirm-danger";
 export {
   createPanelBackController,
   hasOpenOverlay,

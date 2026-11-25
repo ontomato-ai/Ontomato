@@ -286,7 +286,7 @@ beforeEach(() => {
             applicationId: "A",
             use: currentUse,
             ...(currentFramePanelId && { framePanelId: currentFramePanelId }),
-            menu: { groups: [], panelUses: [] },
+            menu: { singleEntry: true, groups: [], panelUses: [] },
           },
         }),
       };

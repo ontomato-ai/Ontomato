@@ -20,6 +20,18 @@ export { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemb
 export { usePanelOutput, usePanelOutputs } from "./panel/panel-output";
 export { useFormFieldSlot, useListRowSlot, type FormFieldSlotContext, type ListRowSlotContext, type ListRowSlotOperation } from "./panel/slot-context";
 export {
+  computeDraftBaselineHash,
+  createMemoryLocalDraftStore,
+  localDraftStoreKey,
+  objectDraftKey,
+  objectDraftPrefix,
+  stripSecretDraftValues,
+  typeDraftKey,
+  useLocalDraftStore,
+  type PanelLocalDraftRecord,
+  type PanelLocalDraftStore,
+} from "./panel/local-drafts";
+export {
   usePanelOperation,
   type PanelOperationAvailability,
   type PanelOperationContext,

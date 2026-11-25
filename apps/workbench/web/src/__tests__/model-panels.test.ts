@@ -205,7 +205,7 @@ async function openBuiltPanel(
     }
     if (path === "/api/data-query/platform/applications/resolve-entry") {
       return Response.json({
-        data: { applicationId: appId, entry: { path: "/settings", renderer: "settings" }, use, menu: { groups: [], panelUses: [connectionsUse, usageUse] } },
+        data: { applicationId: appId, entry: { path: "/settings", renderer: "settings" }, use, menu: { singleEntry: false, groups: [], panelUses: [connectionsUse, usageUse] } },
       });
     }
     if (path === `/api/data-query/platform/applications/${appId}/panel-uses`) {

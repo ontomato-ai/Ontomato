@@ -200,7 +200,7 @@ beforeAll(async () => {
       if (req.header("tk") === "host-no-entry") { res.sendStatus(403); return; }
       expect(req.header("tk")).toBe("host-reader");
       res.json({ success: true, data: {
-        applicationId: "app-builtin-fixture", menu: { groups: [], panelUses: [] },
+        applicationId: "app-builtin-fixture", menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: "catalogue", pageKey: "catalogue", path: "/applications/app-builtin-fixture/catalogue",
           panelId: builtinPanelId, access: { kind: "domain-member" } },
       } });
@@ -211,7 +211,7 @@ beforeAll(async () => {
       const useId = String(req.query.useId);
       if (useId === "hidden") { res.sendStatus(403); return; }
       res.json({ success: true, data: {
-        applicationId: "app-frame-host", menu: { groups: [], panelUses: [] },
+        applicationId: "app-frame-host", menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: useId, pageKey: useId, path: `/applications/app-frame-host/${useId}`,
           panelId: useId === "operable" ? frameOperationContentId : frameHostContentId, access: { kind: "domain-member" } },
         ...(useId === "framed" && { framePanelId: frameHostPanelId }),
@@ -222,7 +222,7 @@ beforeAll(async () => {
     if (req.query.applicationId !== "app-mixed") { next(); return; }
     expect(req.header("tk")).toBe("host-reader");
     res.json({ success: true, data: {
-      applicationId: "app-mixed", menu: { groups: [], panelUses: [] },
+      applicationId: "app-mixed", menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: "mixed", pageKey: "mixed", path: "/applications/app-mixed/mixed",
         panelId: codePanelId, access: { kind: "domain-member" } },
     } });

@@ -1104,6 +1104,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var user = new QueryAccessService.GrantUser("admin", "domain-a");
         // Visible catalog includes admitted panel + both native entries (system-monitor & edition-merged authorization).
         var view = catalog.view(catalog.require("settings"), user);
+        assertFalse(view.getBooleanValue("singleEntry"));
         var visibleUses = view.getList("panelUses", ApplicationPanelUse.class);
         assertEquals(List.of("audit-log", "system-monitor", "authorization"),
             visibleUses.stream().map(ApplicationPanelUse::id).toList());
@@ -1111,6 +1112,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         // Resolving a panel entry returns the full menu including admitted native entries.
         var resolved = catalog.resolveEntry("/settings/records/audit-log", user);
         var menu = (ApplicationCatalog.EntryMenu) resolved.get("menu");
+        assertFalse(menu.singleEntry());
         assertEquals(List.of("audit-log", "system-monitor", "authorization"),
             menu.panelUses().stream().map(ApplicationPanelUse::id).toList());
 

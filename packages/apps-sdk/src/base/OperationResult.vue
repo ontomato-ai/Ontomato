@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from "vue";
+import { computed, defineAsyncComponent, inject, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElAlert } from "element-plus/es/components/alert/index";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElRadio, ElRadioGroup } from "element-plus/es/components/radio/index";
 import { ElTable, ElTableColumn } from "element-plus/es/components/table/index";
 import { ElTabPane, ElTabs } from "element-plus/es/components/tabs/index";
-import type { PanelReadOperationRecordCell, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
+import type {
+  PanelReadOperationRecordCell,
+  PanelReadOperationResult,
+  PanelReadOperationSectionDeclaration,
+} from "@ontomato/contracts/panel-operations";
+import { panelContextKey } from "../panel/context";
+import { panelMemberKey } from "../panel/member";
+import { admittedOperations } from "../panel/member-operations";
+import type { PanelProjectionRegistration } from "../panel/ports";
 import {
   defaultOperationSectionId,
   formatOperationJson,
@@ -19,30 +27,90 @@ import {
  * Displays what a read-only operation returned, as its owner described it: Markdown with a preview/source toggle, a
  * JSON value with optional truncation warning shown as formatted read-only JSON, a multi-section tabbed result
  * (tabular records, language-tagged code/text, or JSON per section), or the name of the file the reader saved (an
- * export). Nothing is written and nothing is reported as changed. Heavy renderers are fetched the first time a result
- * of their kind is shown, never with the panel.
+ * export). When `operationSlot` is provided and `result` is absent, pre-declared `resultSections` from the owner's
+ * operation descriptor render the section tabs with their empty-state prompts ahead of execution. Nothing is written
+ * and nothing is reported as changed. Heavy renderers are fetched the first time a result of their kind is shown, never
+ * with the panel.
  */
-const props = defineProps<{
-  /** The read-only operation result returned by the platform coordinator. */
-  result: PanelReadOperationResult;
-}>();
-const { t } = useI18n();
+const props = withDefaults(
+  defineProps<{
+    /** The read-only operation result returned by the platform coordinator, or null/undefined before execution. */
+    result?: PanelReadOperationResult | null;
+    /** Optional panel member slot declaring the read operation whose pre-declared `resultSections` should be displayed before execution. */
+    operationSlot?: string;
+    /** Optional operation local name within `operationSlot` (defaults to the slot's sole operation when omitted). */
+    operationName?: string;
+    /** Optional empty-state text or message key shown when neither a result nor section-specific empty text is present. */
+    emptyText?: string;
+  }>(),
+  {
+    result: null,
+    operationSlot: undefined,
+    operationName: undefined,
+    emptyText: undefined,
+  },
+);
+
+const { t, te } = useI18n();
+const panel = inject(panelContextKey, null);
+const memberGetter = inject(panelMemberKey, null);
 const MarkdownView = defineAsyncComponent(() => import("@ontomato/foundation-ui/markdown").then((module) => module.MarkdownView));
 const CodeEditor = defineAsyncComponent(() => import("@ontomato/foundation-ui/code").then((module) => module.CodeEditor));
 const markdownMode = ref<"preview" | "source">("preview");
-const activeSectionId = ref<string>(defaultOperationSectionId(props.result));
+
+const declaredSections = computed<readonly PanelReadOperationSectionDeclaration[]>(() => {
+  const slotName = props.operationSlot?.trim();
+  const opName = props.operationName?.trim();
+  let ops: PanelProjectionRegistration["operations"] | null = null;
+  if (slotName && panel) {
+    const registrations = (panel.instance.projections as unknown as { readonly value?: readonly PanelProjectionRegistration[] } | undefined)?.value;
+    const registration = registrations?.find((item) => item.slot === slotName);
+    if (registration) ops = registration.operations;
+    else if (memberGetter && memberGetter().key === slotName) ops = admittedOperations(memberGetter().operations.value);
+  } else if (!slotName && opName && memberGetter) {
+    ops = admittedOperations(memberGetter().operations.value);
+  }
+  if (!ops) return [];
+  if (opName) {
+    return ops[opName]?.resultSections ?? [];
+  }
+  const entries = Object.values(ops);
+  if (entries.length === 1) return entries[0]?.resultSections ?? [];
+  const readOpsWithSections = entries.filter((op) => op.effect === "read" && Boolean(op.resultSections?.length));
+  return readOpsWithSections.length === 1 ? (readOpsWithSections[0]?.resultSections ?? []) : [];
+});
+
+const activeSectionId = ref<string>(
+  props.result ? defaultOperationSectionId(props.result) : (declaredSections.value[0]?.id ?? ""),
+);
 
 watch(
   () => props.result,
   (next) => {
     markdownMode.value = "preview";
-    activeSectionId.value = defaultOperationSectionId(next);
+    activeSectionId.value = next
+      ? defaultOperationSectionId(next)
+      : (declaredSections.value[0]?.id ?? "");
   },
 );
 
-const hasMarkdown = computed(() => props.result.kind === "markdown" && props.result.markdown.trim().length > 0);
-const json = computed(() => (props.result.kind === "json" ? formatOperationJson(props.result.value) : ""));
-const truncation = computed(() => (props.result.kind === "json" ? props.result.truncation ?? null : null));
+watch(declaredSections, (next) => {
+  if (props.result) return;
+  if (!activeSectionId.value || !next.some((section) => section.id === activeSectionId.value)) {
+    activeSectionId.value = next[0]?.id ?? "";
+  }
+});
+
+const resolvedEmptyText = computed(() => {
+  const custom = props.emptyText?.trim();
+  if (!custom) return t("platform.operationNoResult");
+  if (te(custom)) return t(custom);
+  return panel ? panel.t(custom) : custom;
+});
+
+const hasMarkdown = computed(() => props.result?.kind === "markdown" && props.result.markdown.trim().length > 0);
+const json = computed(() => (props.result?.kind === "json" ? formatOperationJson(props.result.value) : ""));
+const truncation = computed(() => (props.result?.kind === "json" ? props.result.truncation ?? null : null));
 const sections = computed(() => operationResultSections(props.result));
 
 function cellText(row: Record<string, PanelReadOperationRecordCell>, key: string): string {
@@ -52,7 +120,24 @@ function cellText(row: Record<string, PanelReadOperationRecordCell>, key: string
 
 <template>
   <div class="sdk-operation-result" role="status">
-    <p v-if="result.kind === 'file'" class="sdk-operation-file">{{ t("platform.operationDownloaded", { name: result.name }) }}</p>
+    <div v-if="!result && declaredSections.length > 0" class="sdk-operation-sections-wrap sdk-operation-sections-placeholder">
+      <el-tabs v-model="activeSectionId" class="sdk-operation-sections">
+        <el-tab-pane
+          v-for="section in declaredSections"
+          :key="section.id"
+          :label="section.label"
+          :name="section.id"
+        >
+          <div class="sdk-operation-section-body">
+            <el-empty :description="section.emptyText || resolvedEmptyText"></el-empty>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </div>
+    <div v-else-if="!result" class="sdk-operation-empty-wrap">
+      <el-empty :description="resolvedEmptyText"></el-empty>
+    </div>
+    <p v-else-if="result.kind === 'file'" class="sdk-operation-file">{{ t("platform.operationDownloaded", { name: result.name }) }}</p>
     <div v-else-if="result.kind === 'markdown'" class="sdk-operation-markdown">
       <template v-if="hasMarkdown">
         <el-radio-group v-model="markdownMode" size="small" class="sdk-operation-markdown-toggle">

@@ -6,7 +6,7 @@ import { useI18n } from "vue-i18n";
 import { ElAlert } from "element-plus/es/components/alert/index";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElForm } from "element-plus/es/components/form/index";
-import { confirmDanger } from "@ontomato/platform-shell";
+import { confirmDanger, confirmUnsavedSwitch } from "@ontomato/platform-shell";
 import type { FormFieldRejection, PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -20,6 +20,13 @@ import {
   type PanelFormValues,
 } from "@ontomato/contracts/panel-projection";
 import { slotInputState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
+import {
+  computeDraftBaselineHash,
+  objectDraftKey,
+  stripSecretDraftValues,
+  typeDraftKey,
+  useLocalDraftStore,
+} from "../panel/local-drafts";
 import type { FormSubmitOverride, InvalidFormText, PanelFormDraft } from "../panel/forms";
 import type { PanelFieldValue } from "../panel/state";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
@@ -76,6 +83,7 @@ import {
   type ObjectFormPresentation,
   type ObjectFormResolvedGroup,
   type ObjectFormSlotScope,
+  type ObjectFormUnsavedSwitchMode,
 } from "./object-form-types";
 import { useDataStateLabels } from "./data-state-labels";
 
@@ -164,6 +172,17 @@ const props = withDefaults(defineProps<{
   showChangeSummary?: boolean;
   /** Optional heading (panel message key or plain text) shown above the change comparison table when `showChangeSummary` is enabled. */
   changeSummaryTitle?: string;
+  /**
+   * Persist unsaved non-secret edits in the platform local draft store across reloads, keyed by
+   * `(objectType, primaryKey, formId)` (or `(objectType, formId)` for create/singleton forms). Defaults to `false`.
+   */
+  persistDraft?: boolean;
+  /**
+   * Prompt mode when switching away from an edited form with unsaved changes:
+   * `"discard-or-cancel"` (default) shows Discard / Keep editing;
+   * `"save-discard-cancel"` shows Save and switch / Discard changes / Cancel.
+   */
+  unsavedSwitchMode?: ObjectFormUnsavedSwitchMode;
 }>(), {
   fixedFields: () => ({}),
   layout: "stacked",
@@ -180,6 +199,8 @@ const props = withDefaults(defineProps<{
   refusalPresentation: "summary",
   showChangeSummary: false,
   changeSummaryTitle: undefined,
+  persistDraft: undefined,
+  unsavedSwitchMode: undefined,
 });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created (primaryKey is null when not reported). */
@@ -249,11 +270,43 @@ defineSlots<{
   }): unknown;
 }>();
 const { t, te, locale } = useI18n();
+const tr = (key: string, fallback: string) => (te(key) ? t(key) : fallback);
 const slots = useSlots();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
+const localDraftStore = useLocalDraftStore();
 const objectType = projectionElement(slot.projection).id;
 const member = useMember();
+
+const effectivePersistDraft = computed<boolean>(() => {
+  if (props.persistDraft !== undefined) return props.persistDraft;
+  const projectionConfig = slot.projection.config as Record<string, unknown> | undefined;
+  return projectionConfig?.persistDraft === true;
+});
+
+const effectiveUnsavedSwitchMode = computed<ObjectFormUnsavedSwitchMode>(() => {
+  if (props.unsavedSwitchMode !== undefined) return props.unsavedSwitchMode;
+  const projectionConfig = slot.projection.config as Record<string, unknown> | undefined;
+  return projectionConfig?.unsavedSwitchMode === "save-discard-cancel"
+    ? "save-discard-cancel"
+    : "discard-or-cancel";
+});
+
+/** Stable per-form dimension identifier so two distinct forms on the same object never overwrite each other's drafts. */
+const draftFormId = computed(() => slot.projection.id || slot.slot);
+
+function localDraftKeyFor(forTarget: PanelFormTarget | null): string | null {
+  if (!forTarget) return null;
+  const formId = draftFormId.value;
+  return forTarget.kind === "object"
+    ? objectDraftKey(forTarget.objectType, forTarget.primaryKey, formId)
+    : typeDraftKey(objectType, formId);
+}
+
+/** Visible state for a draft restored from browser storage so drafts are never applied silently. */
+const restoredDraftState = shallowRef<{ readonly stale: boolean; readonly updatedAt: number } | null>(null);
+/** Baseline hash of the owner record from which the current local draft was derived. */
+let draftBaselineHash: string | null = null;
 // The member's form is read by the instance (through this release's resource module in a frame) and saved through its
 // owner's operation, received by the platform's coordinator.
 const forms: FormSource = memberFormSource(member, panel.instance);
@@ -530,6 +583,103 @@ function adopt(
   invalid.value = {};
   failure.value = null;
   loading.value = false;
+  restoredDraftState.value = null;
+  draftBaselineHash = computeDraftBaselineHash(baseline.values);
+}
+
+function collectSecretDraftPaths(currentValues: PanelFormValues): string[] {
+  const paths = new Set<string>(formSecretPaths(fields.value, currentValues));
+  if (ownerOpened.value) {
+    for (const path of formSecretPaths(ownerOpened.value.fields, currentValues)) {
+      paths.add(path);
+    }
+  }
+  return [...paths];
+}
+
+function clearLocalDraft(forTarget: PanelFormTarget | null = target.value) {
+  if (!localDraftStore) return;
+  const draftKey = localDraftKeyFor(forTarget);
+  if (draftKey) localDraftStore.remove(draftKey);
+}
+
+function syncLocalDraft() {
+  if (!effectivePersistDraft.value || !localDraftStore || loading.value || !target.value || !ownerOpened.value || !prunedOpenedValues.value) {
+    return;
+  }
+  const draftKey = localDraftKeyFor(target.value);
+  if (!draftKey) return;
+  if (!dirty.value) {
+    localDraftStore.remove(draftKey);
+    restoredDraftState.value = null;
+    draftBaselineHash = computeDraftBaselineHash(ownerOpened.value.values);
+    return;
+  }
+  const secretPaths = collectSecretDraftPaths(prunedValues.value);
+  const sanitizedDraft = stripSecretDraftValues(prunedValues.value, secretPaths);
+  const sanitizedBaseline = stripSecretDraftValues(prunedOpenedValues.value, secretPaths);
+  if (jsonValuesEqual(sanitizedDraft, sanitizedBaseline)) {
+    // Only secret fields were touched; never persist secret values or write a vacuous draft.
+    localDraftStore.remove(draftKey);
+    return;
+  }
+  localDraftStore.write(draftKey, {
+    values: sanitizedDraft,
+    baselineHash: draftBaselineHash ?? computeDraftBaselineHash(ownerOpened.value.values),
+    updatedAt: Date.now(),
+  });
+}
+
+function mergeRestoredDraftValues(
+  baseline: PanelFormValues,
+  draftValues: PanelFormValues,
+  currentFields: readonly PanelFormField[],
+): PanelFormValues {
+  const secretPaths = [...new Set([
+    ...formSecretPaths(currentFields, baseline),
+    ...formSecretPaths(currentFields, draftValues),
+  ])];
+  const sanitizedDraft = stripSecretDraftValues(draftValues, secretPaths);
+  let restored: PanelFormValues = { ...baseline, ...sanitizedDraft };
+  for (const secretPath of secretPaths) {
+    const baselineSecret = valueAt(baseline, secretPath);
+    restored = baselineSecret === undefined
+      ? withoutValueAt(restored, secretPath)
+      : withValueAt(restored, secretPath, baselineSecret);
+  }
+  return fixValues(restored);
+}
+
+function tryRestoreLocalDraft(forTarget: PanelFormTarget, baseline: PanelFormDescription) {
+  if (!effectivePersistDraft.value || !localDraftStore || !opened.value || !prunedOpenedValues.value) return;
+  const draftKey = localDraftKeyFor(forTarget);
+  if (!draftKey) return;
+  const stored = localDraftStore.read(draftKey);
+  if (!stored) return;
+  const currentBaselineHash = computeDraftBaselineHash(baseline.values);
+  const stale = stored.baselineHash !== currentBaselineHash;
+  const restored = mergeRestoredDraftValues(opened.value.values, stored.values, fields.value);
+  const restoredPruned = pruneInactivePanelFormVariants(fields.value, restored);
+  const restoredChanged = changedFieldPaths(fields.value, prunedOpenedValues.value, restoredPruned);
+  if (restoredChanged.size === 0 && !stale) {
+    localDraftStore.remove(draftKey);
+    return;
+  }
+  values.value = restored;
+  submitted.value = restoredChanged;
+  editedPaths.value = new Set(restoredChanged);
+  userEditedPaths.value = new Set(restoredChanged);
+  draftBaselineHash = stored.baselineHash;
+  restoredDraftState.value = {
+    stale,
+    updatedAt: stored.updatedAt,
+  };
+}
+
+function discardRestoredDraft() {
+  clearLocalDraft(target.value);
+  restoredDraftState.value = null;
+  discard(false);
 }
 
 /**
@@ -587,7 +737,11 @@ function load(next: PanelFormTarget | null) {
   values.value = {};
   loading.value = true;
   void describeBaseline(next, reading).then(
-    (answer) => { if (reading === latestRead) adopt(answer); },
+    (answer) => {
+      if (reading !== latestRead) return;
+      adopt(answer);
+      tryRestoreLocalDraft(next, answer);
+    },
     (reason: unknown) => { if (reading === latestRead) fail(reason, () => load(next)); },
   );
 }
@@ -850,16 +1004,45 @@ watch([requestedTarget, requestedFixedValues, memberInputKey], async () => {
   const probing = panel.instance.forms.probing;
   if (probing && dirty.value) return;
   const shouldDiscard = !probing && canSettle.value && !saving.value;
+  let savedBeforeSwitch = false;
   if (shouldDiscard) {
     confirmingSwitch = true;
     let leave: boolean;
     try {
-      leave = panel.confirmLeaveUnsaved
-        ? await panel.confirmLeaveUnsaved()
-        : await confirmDanger(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
-            confirmButtonText: t("platform.discard"),
-            cancelButtonText: t("platform.keepEditing"),
-          });
+      if (effectiveUnsavedSwitchMode.value === "save-discard-cancel") {
+        const decision = await confirmUnsavedSwitch(
+          tr("platform.formLeaveUnsavedSwitch", "This form has unsaved changes. Save before switching, or discard them?"),
+          tr("platform.unsavedChanges", "Unsaved changes"),
+          {
+            saveButtonText: tr("platform.formSaveAndSwitch", "Save and switch"),
+            discardButtonText: tr("platform.formDiscardChanges", "Discard changes"),
+          },
+        );
+        if (unmounted || !formContextChanged()) return;
+        if (decision === "discard") {
+          leave = true;
+        } else if (decision === "save") {
+          try {
+            await write(undefined, undefined, { allowPendingSwitch: true });
+            leave = true;
+            savedBeforeSwitch = true;
+          } catch (reason) {
+            if (!(reason instanceof PanelConfirmationDeferred)) {
+              showRefusal(reason);
+            }
+            leave = false;
+          }
+        } else {
+          leave = false;
+        }
+      } else {
+        leave = panel.confirmLeaveUnsaved
+          ? await panel.confirmLeaveUnsaved()
+          : await confirmDanger(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
+              confirmButtonText: t("platform.discard"),
+              cancelButtonText: t("platform.keepEditing"),
+            });
+      }
     } finally {
       confirmingSwitch = false;
     }
@@ -873,7 +1056,7 @@ watch([requestedTarget, requestedFixedValues, memberInputKey], async () => {
     }
   }
   pendingRefresh = false;
-  if (shouldDiscard) discard(false);
+  if (shouldDiscard && !savedBeforeSwitch) discard(false);
   acceptedState = panel.instance.state.values.value;
   acceptedMemberInputKey = memberInputKey.value;
   target.value = requestedTarget.value;
@@ -956,6 +1139,10 @@ useProjectionObjectRefresh((id) => id === key.value, () => {
   refreshWhenClean();
 });
 watch([canSettle, saving], refreshWhenClean);
+
+watch(effectivePersistDraft, (enabled) => {
+  if (enabled) syncLocalDraft();
+});
 
 watch(actionSaveReadOnlyOverlay, () => {
   if (!ownerOpened.value || !ownerShown.value) return;
@@ -1048,6 +1235,7 @@ function edit(path: string, next: PanelFormValues, source: "user" | "agent" = "u
   editGeneration += 1;
   values.value = next;
   editedAt.set(path, ++edits);
+  syncLocalDraft();
   if (field?.refreshOnChange) askOwner(path);
 }
 
@@ -1118,6 +1306,7 @@ function askOwner(changedField: string) {
     }, baseValues);
     values.value = preserveInactiveVariantValues(description.value.fields, localDraft, replayed);
     errors.value = fieldMessages(answer.errors);
+    syncLocalDraft();
   }, (reason) => {
     if (reading === latestRead) fail(reason, () => askOwner(changedField));
   }).finally(() => {
@@ -1736,6 +1925,8 @@ function resetDraft(reopenWhenUnfieldedRefusal: boolean) {
   const refused = refusal.value;
   const reopen = reopenWhenUnfieldedRefusal && refused instanceof PlatformObjectRefusal &&
     Object.keys(refused.fields).length === 0 && Object.keys(refused.savedFields).length === 0;
+  clearLocalDraft(target.value);
+  restoredDraftState.value = null;
   if (ownerOpened.value) adopt(ownerOpened.value);
   if (reopen) load(target.value);
 }
@@ -1914,17 +2105,21 @@ function saveContext(agentContext?: PanelAgentActionContext, evaluateSubmission?
 }
 
 /** Finish the save for the target it started with, whether the page button or the agent requested it. */
-function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
+function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues, options?: { allowPendingSwitch?: boolean }) {
   const fixed = fixedValues.value;
   return async (saved: FormSaveResult) => {
+    clearLocalDraft(into);
     const createdWithoutKey = into.kind === "draft" && saved.primaryKey === null;
     const stillShowingTarget = !unmounted && target.value === into && fixedValues.value === fixed;
     if (stillShowingTarget) {
+      restoredDraftState.value = null;
       if (createdWithoutKey) {
         adopt(ownerOpened.value!);
       } else {
         adopt({ ...ownerShown.value!, values: splitPanelSecrets(payloadValues, formSecretPaths(fields.value, payloadValues)).redacted, errors: [] });
-        if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey! });
+        if (into.kind === "draft" && !options?.allowPendingSwitch) {
+          moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey! });
+        }
       }
     }
     if (!stillShowingTarget || createdWithoutKey) {
@@ -1940,7 +2135,11 @@ function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
  * fields it named; nothing is retried, and the reader's form stays as they left it. A create selects the object the
  * owner created; every projection showing the saved object reads it again, this form included, at its new revision.
  */
-async function write(override?: FormSubmitOverride, agentContext?: PanelAgentActionContext): Promise<unknown> {
+async function write(
+  override?: FormSubmitOverride,
+  agentContext?: PanelAgentActionContext,
+  options?: { allowPendingSwitch?: boolean },
+): Promise<unknown> {
   const into = target.value;
   if (!into) throw new Error("This form edits one object, and none is selected");
   if (failure.value) throw failure.value.reason;
@@ -1966,8 +2165,11 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
     if (unmounted || !mounted || panel.instance.isDisposed()) {
       return { ok: false, message: "The form was closed or unmounted." };
     }
-    if (formContextChanged()) {
+    if (!options?.allowPendingSwitch && formContextChanged()) {
       return { ok: false, message: "The form target or fixed values changed." };
+    }
+    if (options?.allowPendingSwitch && targetKey(target.value) !== capturedTargetKey) {
+      return { ok: false, message: "The form target changed." };
     }
     if (!target.value || !opened.value) {
       return { ok: false, message: "The form no longer has an active target." };
@@ -2023,7 +2225,7 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
   refusal.value = null;
   errors.value = {};
   const payloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
-  const finishSave = settleSave(into, payloadValues);
+  const finishSave = settleSave(into, payloadValues, options);
   try {
     const saved = await forms.save(
       into,
@@ -2189,6 +2391,30 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
          submit handler runs: the reader's save is the button's own click. -->
     <el-form label-position="top" :hide-required-asterisk="!showRequiredMark" class="sdk-owner-form-inner">
       <div class="sdk-owner-form-body">
+        <div
+          v-if="restoredDraftState"
+          class="sdk-owner-form-draft-banner"
+          :class="{ 'is-stale': restoredDraftState.stale }"
+          :data-draft-banner="restoredDraftState.stale ? 'stale' : 'restored'"
+          role="status"
+        >
+          <span class="sdk-owner-form-draft-banner-text">
+            {{
+              restoredDraftState.stale
+                ? tr("platform.formDraftRestoredStale", "Restored your unsaved draft, but this item has been updated since then. Review carefully before saving.")
+                : tr("platform.formDraftRestored", "Restored your unsaved draft from this browser.")
+            }}
+          </span>
+          <el-button
+            size="small"
+            text
+            :type="restoredDraftState.stale ? 'warning' : 'primary'"
+            data-draft-discard
+            @click="discardRestoredDraft"
+          >
+            {{ tr("platform.formDraftDiscard", "Discard draft") }}
+          </el-button>
+        </div>
         <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
 
         <template v-if="hasCustomLayout">
@@ -2625,6 +2851,28 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
   .sdk-owner-form-contents {
     display: none;
   }
+}
+.sdk-owner-form-draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin: 0 0 var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--el-color-primary-light-7);
+  border-radius: var(--radius-md);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+}
+.sdk-owner-form-draft-banner.is-stale {
+  border-color: var(--el-color-warning-light-5);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2, var(--el-text-color-primary));
+}
+.sdk-owner-form-draft-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .sdk-owner-form-readonly {
   margin: 0 0 var(--spacing-md);

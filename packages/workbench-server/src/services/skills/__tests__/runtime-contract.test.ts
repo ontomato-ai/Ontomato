@@ -191,7 +191,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
       if (new URL(url, "http://owner.test").searchParams.get("useId") !== source.useId)
         return Response.json({ error: { code: "NOT_FOUND", message: "Unknown use" } }, { status: 404 });
       return Response.json({ success: true, data: {
-        applicationId: source.applicationId, menu: { groups: [], panelUses: [] },
+        applicationId: source.applicationId, menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: source.useId, pageKey: entrance.pageKey, panelId: "panel-a",
           path: "/applications/app-test/panel", access: { permissionCode: entrance.permissionCode } },
       } });
@@ -290,7 +290,7 @@ it("publishes one member across admitted entrances alongside the native permissi
     if (!entrance) return Response.json({ error: { code: "NOT_FOUND", message: "Unknown use" } }, { status: 404 });
     const { permissionCode, pageKey } = entrance;
     return Response.json({ success: true, data: {
-      applicationId: "ontology", menu: { groups: [], panelUses: [] },
+      applicationId: "ontology", menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: pageKey, pageKey, path: `/ontology/${pageKey}`, access: { permissionCode }, panelId: "knowledge-panel" },
     } });
   });

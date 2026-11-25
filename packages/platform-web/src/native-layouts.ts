@@ -140,6 +140,7 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
     return { ...layout, entryHome, entries, id: app.id, label: localizedApplicationText(app.names, locale) ?? app.id, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : localizedApplicationText(app.descriptions, locale) ?? null), icon: app.icon, rail: app.rail, category: app.category,
       allowStandalone: app.allowStandalone,
       framePanelId: app.framePanelId,
+      ...(app.singleEntry !== undefined ? { singleEntry: app.singleEntry } : {}),
       built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
       prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
       home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home ?? (firstPanelPath ?? undefined) };

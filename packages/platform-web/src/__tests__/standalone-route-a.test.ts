@@ -320,7 +320,7 @@ describe("Route A standalone opening and rail-driven fetching", () => {
             applicationId: "ontology",
             use: objectsUse,
             framePanelId: ontology.framePanelId,
-            menu: { names: ontology.names, groups: ontology.groups, panelUses: ontology.panelUses },
+            menu: { singleEntry: false, names: ontology.names, groups: ontology.groups, panelUses: ontology.panelUses },
           },
         });
       }

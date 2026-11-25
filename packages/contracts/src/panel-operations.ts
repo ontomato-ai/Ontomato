@@ -60,6 +60,19 @@ export const panelOperationDeclarationSchema = z.object({
 }).strict();
 export type PanelOperationDeclaration = z.infer<typeof panelOperationDeclarationSchema>;
 
+const panelReadOperationSectionBaseShape = {
+  id: z.string().min(1).max(120),
+  label: z.string().min(1).max(200),
+  emptyText: z.string().min(1).max(300).optional(),
+};
+
+export const panelReadOperationSectionDeclarationSchema = z.object({
+  ...panelReadOperationSectionBaseShape,
+  kind: z.enum(["records", "code", "json"]),
+  language: z.string().min(1).max(60).optional(),
+}).strict();
+export type PanelReadOperationSectionDeclaration = z.infer<typeof panelReadOperationSectionDeclarationSchema>;
+
 /** The trusted owner supplies the effect and schemas. Requests carry only the operation identity and input. */
 export const panelOwnerOperationDescriptorSchema = panelOperationDeclarationSchema.omit({ id: true }).extend({
   handlerRef: panelOperationDeclarationSchema.shape.id,
@@ -68,6 +81,7 @@ export const panelOwnerOperationDescriptorSchema = panelOperationDeclarationSche
   target: panelOwnerOperationTargetSchema,
   unavailable: panelOperationUnavailableSchema.optional(),
   resultSchema: runtimeJsonObjectSchema,
+  resultSections: z.array(panelReadOperationSectionDeclarationSchema).nonempty().optional(),
   /** The owner handler shared by human and agent confirmation. */
   inspectImpact: z.object({ handlerRef: z.string().min(1).max(300) }).strict().optional(),
 });
@@ -77,6 +91,7 @@ export type PanelOwnerOperationDescriptor = z.infer<typeof panelOwnerOperationDe
 export function describePanelOperationFromDeclaration(
   { id, target, inputSchema: declaredInputSchema, ...staticFields }: PanelOperationDeclaration,
   { handlerRef = id, slot, target: placedTarget, inputSchema = declaredInputSchema, ...runtime }: Pick<PanelOwnerOperationDescriptor, "label" | "resultSchema" | "inspectImpact" | "unavailable"> & {
+    resultSections?: readonly PanelReadOperationSectionDeclaration[];
     handlerRef?: string;
     slot?: string;
     target?: PanelOwnerOperationDescriptor["target"];
@@ -158,12 +173,6 @@ const panelReadOperationTruncationSchema = z.object({
   hint: z.string().nullable(),
 }).strict();
 
-const panelReadOperationSectionBaseShape = {
-  id: z.string().min(1).max(120),
-  label: z.string().min(1).max(200),
-  emptyText: z.string().min(1).max(300).optional(),
-};
-
 export const panelReadOperationRecordCellSchema = z.union([
   z.string(),
   z.number(),
@@ -204,11 +213,20 @@ export type PanelReadOperationSection = z.infer<typeof panelReadOperationSection
 export const panelReadOperationSectionsResultSchema = z.object({
   kind: z.literal("sections"),
   sections: z.array(panelReadOperationSectionSchema).nonempty(),
-}).strict();
+  defaultSectionId: z.string().min(1).max(120).optional(),
+}).strict().superRefine(({ defaultSectionId, sections }, ctx) => {
+  if (defaultSectionId !== undefined && !sections.some(section => section.id === defaultSectionId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["defaultSectionId"],
+      message: "Default section must match a section id",
+    });
+  }
+});
 export type PanelReadOperationSectionsResult = z.infer<typeof panelReadOperationSectionsResultSchema>;
 
 /** The JSON success body of a read. File-producing reads send bytes with attachment headers. */
-export const panelReadOperationJsonResultSchema = z.discriminatedUnion("kind", [
+export const panelReadOperationJsonResultSchema = z.union([
   z.object({ kind: z.literal("markdown"), markdown: z.string() }).strict(),
   z.object({
     kind: z.literal("json"),

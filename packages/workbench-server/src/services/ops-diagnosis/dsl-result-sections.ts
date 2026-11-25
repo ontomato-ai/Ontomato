@@ -1,6 +1,6 @@
-import {
-  panelReadOperationSectionSchema,
-  type PanelReadOperationSection,
+import type {
+  PanelReadOperationSection,
+  PanelReadOperationSectionDeclaration,
 } from "@ontomato/contracts/panel-operations";
 
 export interface DslResultSectionContext {
@@ -10,9 +10,10 @@ export interface DslResultSectionContext {
   readonly locale?: string;
 }
 
-export type DslResultSectionProvider = (
-  context: DslResultSectionContext,
-) => PanelReadOperationSection | readonly PanelReadOperationSection[] | null | undefined;
+export interface DslResultSectionProvider {
+  describe(locale?: string): PanelReadOperationSectionDeclaration;
+  build(context: DslResultSectionContext): PanelReadOperationSection;
+}
 
 const providers = new Set<DslResultSectionProvider>();
 
@@ -27,17 +28,10 @@ export function registerDslResultSectionProvider(provider: DslResultSectionProvi
   };
 }
 
-/** Evaluates all registered DSL result section providers in registration order. */
+export function describeDslResultSections(locale?: string): PanelReadOperationSectionDeclaration[] {
+  return [...providers].map(provider => provider.describe(locale));
+}
+
 export function collectDslResultSections(context: DslResultSectionContext): PanelReadOperationSection[] {
-  const extra: PanelReadOperationSection[] = [];
-  for (const provider of providers) {
-    const produced = provider(context);
-    if (!produced) continue;
-    const list = Array.isArray(produced) ? produced : [produced];
-    for (const section of list) {
-      if (!section) continue;
-      extra.push(panelReadOperationSectionSchema.parse(section));
-    }
-  }
-  return extra;
+  return [...providers].map(provider => provider.build(context));
 }

@@ -89,7 +89,7 @@ it("draws a declared projection in a frame from this version's task module, and 
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
         projectionsChanged: () => () => {}, holdUnsaved: () => () => {},
-        t: (key: string) => key, resources: async () => {}, expandPageComposer: async () => {}, readPanelData, navigate: async () => {}, notify: () => {}, currentEntry: computed(() => null), entryMenu: computed(() => null),
+        t: (key: string) => key, resources: async () => {}, expandPageComposer: async () => {}, readPanelData, navigate: async () => {}, notify: () => {}, currentEntry: computed(() => null), entryMenu: computed(() => null), currentUser: computed(() => null), hasLocalDraft: () => false,
       });
       return () => h("div", [h(Projection, { slot: "form" }), h(Projection, { slot: "run" })]);
     },

@@ -5,8 +5,9 @@ import { buildPathTree, filterPathTree, type PathTreeFile, type PathTreeItem, ty
 
 /**
  * Folder/file tree built from a flat list of slash-separated paths: folders appear before files, siblings sort by name,
- * and folders are expanded by default. Clicking a folder only collapses or expands it; clicking a file emits its key
- * and path without storing business selection internally.
+ * and folders are expanded by default. Clicking a folder collapses or expands it; when `directoryIndexFile` is set,
+ * clicking a folder with a matching direct child file selects that index file and keeps the folder expanded, whereas
+ * clicking a folder without one toggles it and clears the selection.
  */
 const props = withDefaults(
   defineProps<{
@@ -28,6 +29,8 @@ const props = withDefaults(
     searchPlaceholder?: string;
     /** Optional empty-state text when search matches no items. */
     noMatchText?: string;
+    /** Optional direct child filename (e.g. `"index.md"`) opened automatically when clicking a folder node. */
+    directoryIndexFile?: string;
   }>(),
   {
     selectedKey: null,
@@ -38,14 +41,15 @@ const props = withDefaults(
     search: "",
     searchPlaceholder: undefined,
     noMatchText: undefined,
+    directoryIndexFile: undefined,
   },
 );
 
 const emit = defineEmits<{
-  /** Emitted when a reader clicks a file node. */
+  /** Emitted when a reader clicks a file node or opens a folder's directory index file. */
   select: [file: PathTreeFile];
-  /** Emitted with the clicked file's key for `v-model:selectedKey`. */
-  "update:selectedKey": [key: string];
+  /** Emitted with the selected file's key (or `null` when cleared by clicking a folder without an index file). */
+  "update:selectedKey": [key: string | null];
   /** Emitted when the reader updates the search keyword. */
   "update:search": [value: string];
 }>();
@@ -80,7 +84,49 @@ watch(
 
 const effectiveCollapsed = computed<ReadonlySet<string>>(() => (activeSearch.value ? new Set() : collapsed.value));
 
+function findFolderNode(nodes: readonly PathTreeNode[], path: string): PathTreeNode | null {
+  for (const node of nodes) {
+    if (node.kind === "folder") {
+      if (node.path === path) return node;
+      if (node.children) {
+        const found = findFolderNode(node.children, path);
+        if (found) return found;
+      }
+    }
+  }
+  return null;
+}
+
+function findDirectoryIndexFile(folderPath: string): PathTreeFile | null {
+  const indexFile = props.directoryIndexFile?.trim().replace(/^\/+/, "");
+  if (!indexFile) return null;
+  const folder = findFolderNode(tree.value, folderPath);
+  if (!folder?.children?.length) return null;
+  const expectedPath = `${folder.path}/${indexFile}`;
+  const match = folder.children.find((child) => child.kind === "file" && child.path === expectedPath);
+  return match ? { key: match.key, path: match.path, label: match.label } : null;
+}
+
 function toggleFolder(path: string) {
+  const indexFileName = props.directoryIndexFile?.trim();
+  if (indexFileName) {
+    const indexFile = findDirectoryIndexFile(path);
+    if (indexFile) {
+      if (collapsed.value.has(path)) {
+        const next = new Set(collapsed.value);
+        next.delete(path);
+        collapsed.value = next;
+      }
+      pickFile(indexFile);
+      return;
+    }
+    const next = new Set(collapsed.value);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    collapsed.value = next;
+    emit("update:selectedKey", null);
+    return;
+  }
   const next = new Set(collapsed.value);
   if (next.has(path)) next.delete(path);
   else next.add(path);

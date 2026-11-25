@@ -276,6 +276,8 @@ it("contains a projection component error inside Projection without bubbling to 
     instance,
     currentEntry: computed(() => null),
     entryMenu: computed(() => null),
+    currentUser: computed(() => null),
+    hasLocalDraft: () => false,
     projection: async () => brokenForm,
     invoke: async () => null,
     projectionsChanged: () => () => {},

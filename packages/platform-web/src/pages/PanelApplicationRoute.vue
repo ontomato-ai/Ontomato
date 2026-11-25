@@ -601,7 +601,12 @@ const frameContext = computed(() => {
   const app = catalogApp.value;
   return applicationFrameContextOf({
     applicationId: props.applicationId,
-    menu: answer?.menu ?? { names: app?.names, groups: app?.groups ?? [], panelUses: app?.panelUses ?? [] },
+    menu: answer?.menu ?? {
+      singleEntry: app?.singleEntry ?? ((app?.panelUses ?? []).filter((entry) => Boolean(entry.names)).length <= 1),
+      names: app?.names,
+      groups: app?.groups ?? [],
+      panelUses: app?.panelUses ?? [],
+    },
     use: activeUse,
   });
 });

@@ -148,7 +148,7 @@ beforeAll(async () => {
   app.get("/java/platform/applications/resolve-entry", (req, res) => {
     expect([viewer.token, "executor"]).toContain(req.header("tk"));
     expect(req.query).toMatchObject({ applicationId, useId: publicUse.id });
-    res.json({ success: true, data: { applicationId, use: publicUse, menu: { groups: [], panelUses: [] } } });
+    res.json({ success: true, data: { applicationId, use: publicUse, menu: { singleEntry: true, groups: [], panelUses: [] } } });
   });
   const summary = { id: applicationId, names: declaration.names, descriptions: {}, icon: "pages",
     source: "domain", canMaintain: false, canGrant: false, canEditEntries: false, entryCount: 1 };

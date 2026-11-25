@@ -23,6 +23,7 @@ export {
   usePanelContext,
   type PanelBackHandlerRegistration,
   type PanelContext,
+  type PanelCurrentUser,
   type ProjectionSlot,
 } from "../panel/context";
 export {
@@ -33,6 +34,7 @@ export {
 export {
   usePanelFormDraft,
   type PanelFormDraftControls,
+  type UnsavedSwitchMode,
   type UsePanelFormDraftOptions,
 } from "../panel/form-draft";
 export type { PageHeaderDraft, PageHeaderLabels } from "../base/page-header-types";

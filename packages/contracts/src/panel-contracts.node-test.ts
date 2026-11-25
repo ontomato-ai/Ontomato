@@ -1201,7 +1201,7 @@ test("current entry is supplied from the resolved use and its slot cannot overri
     id: useId, pageKey: "school.orders", panelId: "orders-panel", path,
     access: { kind: "domain-member" as const }, inputs: { term: { literal: "A" } },
   };
-  const menu = { groups: [], panelUses: [use] };
+  const menu = { singleEntry: true, groups: [], panelUses: [use] };
   const frameContext = applicationFrameContextOf({ applicationId, use, menu });
   assert.deepEqual(frameContext, { currentEntry: { applicationId, useId, pageKey: use.pageKey, panelId: use.panelId, path, kind: "panel" }, menu });
   assert.equal(Object.isFrozen(frameContext.currentEntry), true);
@@ -1225,7 +1225,7 @@ test("entry resolution and personal-state scope use the actual use and nested pa
   };
   const response = {
     applicationId: "app-tasks", use, framePanelId: "site-frame", theme: { dark: { "--radius-md": "10px" } },
-    menu: { groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
+    menu: { singleEntry: true, groups: [{ key: "plan", names: { en: "Plan" }, sort: 0 }], panelUses: [use] },
   };
   assert.deepEqual(applicationEntryResolutionSchema.parse(response), response);
   const references = {
@@ -2259,6 +2259,7 @@ test("a read-only trial carries the current draft and parameters without a write
     { kind: "json", value: null, truncation: { rowLimit: null, hint: null } },
     {
       kind: "sections",
+      defaultSectionId: "raw",
       sections: [
         {
           id: "table",
@@ -2291,6 +2292,7 @@ test("a read-only trial carries the current draft and parameters without a write
   }
   for (const invalidSectionResult of [
     { kind: "sections", sections: [] },
+    { kind: "sections", defaultSectionId: "missing", sections: [{ id: "raw", label: "Raw", kind: "json", value: {} }] },
     { kind: "sections", sections: [{ id: "s1", label: "Table", kind: "records", columns: [], rows: [{ a: { nested: true } }] }] },
     { kind: "sections", sections: [{ id: "s1", label: "Code", kind: "code", language: "", content: "x" }] },
     { kind: "sections", sections: [{ id: "s1", label: "Unknown", kind: "html", content: "<div/>" }] },

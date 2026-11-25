@@ -363,6 +363,8 @@ describe("<Projection :disabled> passthrough and OperationButton draft read beha
           expandPageComposer: async () => {},
           currentEntry: computed(() => null),
           entryMenu: computed(() => null),
+          currentUser: computed(() => null),
+          hasLocalDraft: () => false,
         });
         return () => h(FrameProjection, {
           slot: "trial",

@@ -101,7 +101,7 @@ const contents = [
   "",
   sdkSection("usePanelContext"),
   "",
-  sdkFields("PanelContext", ["instance", "refreshing", "refreshObjects", "t", "navigate", "notify", "confirmLeaveUnsaved", "currentEntry", "entryMenu"]),
+  sdkFields("PanelContext", ["instance", "refreshing", "refreshObjects", "t", "navigate", "notify", "confirmLeaveUnsaved", "currentEntry", "entryMenu", "currentUser", "hasLocalDraft"]),
   "",
   sdkFields("PanelInstance", ["state", "outputs", "pageContext", "forms", "refreshing", "onObjectChanged", "refreshObjects"]),
   "",

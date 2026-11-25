@@ -140,7 +140,7 @@ beforeAll(async () => {
       res.sendStatus(403);
       return;
     }
-    res.json({ success: true, data: { applicationId: entry.applicationId, menu: { groups: [], panelUses: [] },
+    res.json({ success: true, data: { applicationId: entry.applicationId, menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: entry.useId, panelId: entry.panelId, path: entry.path, pageKey: entry.entrance.pageKey,
         access: { permissionCode: entry.entrance.permissionCode } } } });
   });

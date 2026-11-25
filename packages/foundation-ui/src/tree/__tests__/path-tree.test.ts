@@ -100,4 +100,39 @@ describe("PathTree", () => {
     expect(wrapper.find('[role="tree"]').exists()).toBe(false);
     expect(wrapper.text()).toContain("No matching files");
   });
+
+  it("opens a folder's direct index file or toggles and clears selection when directoryIndexFile is set", async () => {
+    const wrapper = mount(PathTree, {
+      props: {
+        items: [
+          { key: "k-guide-index", path: "guide/index.md" },
+          { key: "k-guide-intro", path: "guide/intro.md" },
+          { key: "k-notes-sub-index", path: "notes/sub/index.md" },
+          { key: "k-notes-readme", path: "notes/readme.md" },
+        ],
+        defaultExpandAll: false,
+        selectedKey: "k-guide-intro",
+        directoryIndexFile: "index.md",
+      },
+    });
+
+    // Clicking a collapsed folder with a direct index.md expands it and selects that index file.
+    expect(wrapper.find('[data-path="guide"]').attributes("aria-expanded")).toBe("false");
+    await wrapper.find('[data-path="guide"] > button').trigger("click");
+    expect(wrapper.find('[data-path="guide"]').attributes("aria-expanded")).toBe("true");
+    expect(wrapper.emitted("update:selectedKey")).toEqual([["k-guide-index"]]);
+    expect(wrapper.emitted("select")).toEqual([[{ key: "k-guide-index", path: "guide/index.md", label: "index.md" }]]);
+
+    // Clicking an already-expanded folder with an index file keeps it expanded and selects the index file again.
+    await wrapper.find('[data-path="guide"] > button').trigger("click");
+    expect(wrapper.find('[data-path="guide"]').attributes("aria-expanded")).toBe("true");
+    expect(wrapper.emitted("update:selectedKey")).toEqual([["k-guide-index"], ["k-guide-index"]]);
+
+    // Clicking a folder without a direct index file (nested notes/sub/index.md does not count) toggles it and clears selection.
+    expect(wrapper.find('[data-path="notes"]').attributes("aria-expanded")).toBe("false");
+    await wrapper.find('[data-path="notes"] > button').trigger("click");
+    expect(wrapper.find('[data-path="notes"]').attributes("aria-expanded")).toBe("true");
+    expect(wrapper.emitted("update:selectedKey")).toEqual([["k-guide-index"], ["k-guide-index"], [null]]);
+    expect(wrapper.emitted("select")).toHaveLength(2);
+  });
 });

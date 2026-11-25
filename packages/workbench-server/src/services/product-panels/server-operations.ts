@@ -4,7 +4,7 @@ import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import type { PanelFormTarget, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import {
   describePanelOperationFromDeclaration, panelOperationDeclarationSchema, type PanelOperationDeclaration,
-  type PanelOperationTargetTypes, type PanelOwnerOperationDescriptor, type PanelReadOperationResult,
+  type PanelOperationTargetTypes, type PanelOwnerOperationDescriptor, type PanelReadOperationResult, type PanelReadOperationSectionDeclaration,
   type panelBatchInvocationSchema, type panelOperationImpactSchema, type panelReadOperationCallSchema,
   type panelReadOperationJsonResultSchema, type panelSingleInvocationSchema,
 } from "@ontomato/contracts/panel-operations";
@@ -157,6 +157,8 @@ export interface PanelReadServerOperation extends OperationInputDescription {
   targetSchema: z.ZodType<ReadCall["target"]>;
   inputSchema: z.ZodType<ReadCall["input"]>;
   resultSchema: z.ZodType<PanelReadOperationResult>;
+  describeResultSections?: (host: PanelOperationHost, locale?: string) =>
+    Promise<readonly PanelReadOperationSectionDeclaration[] | undefined> | readonly PanelReadOperationSectionDeclaration[] | undefined;
   unavailable?(host: PanelOperationHost, target: PanelRecordTarget | null): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
   execute(host: PanelOperationHost, call: ReadCall): Promise<ReadResult>;
 }
@@ -264,6 +266,9 @@ export async function describeServerOperation(handler: PanelServerOperation, hos
     label: panelServerOperationLabel(handler, host.locale), slot, target,
     inputSchema: await handler.describeInputSchema?.(host, host.locale),
     resultSchema: runtimeJsonSchema(handler.resultSchema),
+    ...(handler.effect === "read" && handler.describeResultSections && {
+      resultSections: await handler.describeResultSections(host, host.locale),
+    }),
     ...(handler.effect === "write" && handler.inspectImpact && { inspectImpact: { handlerRef: handler.inspectImpact.handlerRef } }),
   });
 }

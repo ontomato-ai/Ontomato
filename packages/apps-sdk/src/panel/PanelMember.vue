@@ -7,6 +7,7 @@ import { projectionSlotInputsGuidance } from "@ontomato/contracts/panel-module";
 import { componentFor } from "../catalogue-components";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance, type MemberInputs } from "./direct";
+import { localDraftStoreKey } from "./local-drafts";
 import { memberComponentId } from "./projection-element";
 import { declaredComponentProps, pickProjectionPlacementAttrs } from "./projection-attrs";
 import { panelMemberKey, type PanelMemberContext } from "./member";
@@ -122,6 +123,7 @@ const refused = computed(() => {
 });
 
 provide(panelContextKey, directPanelContext(props.instance));
+if (props.instance.localDrafts) provide(localDraftStoreKey, props.instance.localDrafts);
 provide(projectionKey, { slot: props.member, get projection() { return loaded.value!.slot.projection; }, get inputs() { return loaded.value!.member.inputs.value; } });
 provide(panelMemberKey, () => loaded.value!.member);
 /**

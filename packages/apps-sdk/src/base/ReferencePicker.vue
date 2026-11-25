@@ -32,6 +32,10 @@ const props = withDefaults(
     groupBy?: string;
     /** Optional record field key in `row.fields` displayed as right-aligned secondary metadata (e.g. counts) in standalone inline mode (`data.rows`). */
     metaField?: string;
+    /** Show a 6px warning dot beside options and the selected value that have an unsaved local draft in this browser. */
+    showDraftIndicator?: boolean;
+    /** Auto-select the first available option once loaded when the current selection is empty or no longer present. */
+    fallbackToFirst?: boolean;
   }>(),
   {
     placeholder: undefined,
@@ -42,6 +46,8 @@ const props = withDefaults(
     size: "small",
     groupBy: undefined,
     metaField: undefined,
+    showDraftIndicator: undefined,
+    fallbackToFirst: undefined,
   },
 );
 
@@ -64,6 +70,8 @@ defineSlots<{
     v-if="choosesField && fieldSlot"
     :form-slot="fieldSlot.formSlot"
     :path="fieldSlot.path.value"
+    :show-draft-indicator="props.showDraftIndicator"
+    :fallback-to-first="props.fallbackToFirst"
   >
     <template v-if="$slots.option" #option="scope">
       <slot name="option" v-bind="scope"></slot>
@@ -79,6 +87,8 @@ defineSlots<{
     :size="props.size"
     :group-by="props.groupBy"
     :meta-field="props.metaField"
+    :show-draft-indicator="props.showDraftIndicator"
+    :fallback-to-first="props.fallbackToFirst"
     @update:selected="emit('update:selected', $event)"
   >
     <template v-if="$slots.option" #option="scope">
