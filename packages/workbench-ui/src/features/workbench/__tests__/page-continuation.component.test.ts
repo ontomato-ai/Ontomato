@@ -21,14 +21,22 @@ const i18n = workbenchI18n();
 const agents = vi.hoisted(() => [
   { id: "11111111-1111-4111-8111-111111111111", name: "Assistant", description: "", icon: null, enabled: true },
   { id: "22222222-2222-4222-8222-222222222222", name: "Analyst", description: "", icon: null, enabled: true },
+  { id: "44444444-4444-4444-8444-444444444444", name: "App builder", description: "", icon: null, enabled: true, workspaceBound: true },
 ]);
-const [assistant, analyst] = agents;
+const [assistant, analyst, builder] = agents;
+const workspace = "55555555-5555-4555-8555-555555555555";
+const otherWorkspace = "66666666-6666-4666-8666-666666666666";
+const workspacePage = `/app-builder/workspace?workspace=${workspace}`;
+const commit = "a".repeat(40);
 const held = vi.hoisted(() => "33333333-3333-4333-8333-333333333333");
 const sent = vi.hoisted(() => [] as string[]);
 const started = vi.hoisted(() => [] as string[]);
 const opened = vi.hoisted(() => [] as string[]);
 /** The conversations the host lists, whether the column had read them before the page's message arrived, and how slow. */
-const hosted = vi.hoisted(() => ({ sessions: [] as string[], loads: 0, slowLoads: false }));
+const hosted = vi.hoisted(() => ({
+  sessions: [] as string[], loads: 0, slowLoads: false, sessionWorkspace: undefined as string | undefined,
+  createdIn: [] as (string | undefined)[], workspaceIdForAgent: undefined as ((id: string) => string | undefined) | undefined,
+}));
 /** What choosing a conversation did: the real navigation closes the page beside the conversation it leaves. */
 const left = vi.hoisted(() => [] as string[]);
 /** What the composer was handed to hold for the reader. */
@@ -43,17 +51,27 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
     AgentShell: defineComponent({
       name: "AgentShell",
       props: ["agentId", "sessionId"],
-      setup(_props, { expose }) {
-        expose({ reloadAgents: async () => {}, send: async (text: string) => { sent.push(text); }, fill: (text: string) => { filled.push(text); } });
-        return () => h("div");
+      setup(props, { expose, slots }) {
+        expose({
+          reloadAgents: async () => {},
+          send: async (text: string) => {
+            sent.push(text);
+            if (!props.sessionId && props.agentId) hosted.createdIn.push(hosted.workspaceIdForAgent?.(props.agentId));
+          },
+          fill: (text: string) => { filled.push(text); },
+        });
+        return () => h("div", props.agentId === builder?.id && props.sessionId
+          ? slots["message-actions"]?.({ sessionId: props.sessionId, workspaceId: hosted.sessionWorkspace, workspaceCommit: commit })
+          : undefined);
       },
     }),
     ShellNavBody: { name: "ShellNavBody", template: "<div />" },
     ShellColumn: { name: "ShellColumn", template: "<div><slot /></div>" },
-    useAgentNav: (options: { setSessionId(id: string | null): void; onLeaveConversation(): void }) => {
+    useAgentNav: (options: { agentId(): string | null; setSessionId(id: string | null): void; onLeaveConversation(): void }) => {
       const sessions = ref<{ id: string }[]>([]);
       return {
         agents: { value: agents },
+        currentAgent: { get value() { return agents.find(agent => agent.id === options.agentId()); } },
         agentsState: agentsRead,
         // The pages here report no skill of their own.
         pageAgents: { value: null },
@@ -64,7 +82,7 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
           hosted.loads += 1;
           // A page message can arrive while the column is still reading: the read settles whenever it settles.
           if (hosted.slowLoads) for (let wait = 0; wait < 3; wait += 1) await new Promise((resolve) => setTimeout(resolve, 0));
-          sessions.value = hosted.sessions.map((id) => ({ id }));
+          sessions.value = hosted.sessions.map((id) => ({ id, workspaceId: hosted.sessionWorkspace }));
         },
         startNew: () => {
           started.push("new");
@@ -85,7 +103,10 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
 });
 vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
 vi.mock("../assistant-host", () => ({
-  createAssistantClient: () => ({}),
+  createAssistantClient: (_: unknown, options: { workspaceIdForAgent(id: string): string | undefined }) => {
+    hosted.workspaceIdForAgent = options.workspaceIdForAgent;
+    return {};
+  },
   createAssistantFeedback: () => ({}),
   createPanelOperationSettings: () => ({ read: async () => null }),
 }));
@@ -106,6 +127,8 @@ afterEach(() => {
   hosted.sessions = [];
   hosted.loads = 0;
   hosted.slowLoads = false;
+  hosted.sessionWorkspace = undefined;
+  hosted.createdIn.length = 0;
   agentsRead.value = "ready";
   vi.restoreAllMocks();
 });
@@ -114,12 +137,13 @@ afterEach(() => {
  * A message written at a page's foot: the counter's address, with the page it was written on. The reader is on another
  * page, the counter pushes this address, and the application mounts on it — the arrival the platform really makes.
  */
-async function fromPage(agentId: string, watchChat?: (to: RouteLocationNormalized) => void) {
+async function fromPage(agentId: string, watchChat?: (to: RouteLocationNormalized) => void, page = "/dashboards?dashboardId=board-a") {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { ...platformRoutes.chat, component: { render: () => null } },
       { ...platformRoutes.dashboards, component: { render: () => null } },
+      { path: "/app-builder/workspace", component: { render: () => null } },
     ],
   });
   await router.push({ path: platformRoutes.dashboards.path, query: { dashboardId: "board-a" } });
@@ -127,7 +151,7 @@ async function fromPage(agentId: string, watchChat?: (to: RouteLocationNormalize
   if (watchChat) router.afterEach((to) => { if (to.path === platformRoutes.chat.path) watchChat(to); });
   const arrival = router.push({
     path: platformRoutes.chat.path,
-    query: { agentId, prompt: "e2e: only say received", page: "/dashboards?dashboardId=board-a" },
+    query: { agentId, prompt: "e2e: only say received", page },
   });
   const wrapper = mount(BusinessWorkbench, {
     props: { defaultLogo: "", defaultBrandName: "Ontomato" },
@@ -136,7 +160,8 @@ async function fromPage(agentId: string, watchChat?: (to: RouteLocationNormalize
       [platformPageAccessKey as symbol]: () => true,
       // The assembly's own page beside the conversation: this board, which is what the address carries.
       [pilotPageKey as symbol]: () => (address: string) =>
-        address.startsWith("/dashboards") ? { id: "dashboards", component: { render: () => null }, props: { paired: true } } : null,
+        address.startsWith("/dashboards") || address.startsWith("/app-builder/workspace")
+          ? { id: "dashboards", component: { render: () => null }, props: { paired: true } } : null,
     } },
   });
   wrappers.push(wrapper);
@@ -296,5 +321,30 @@ describe("a message from a page, into the conversation this tab holds", () => {
     expect(opened).toEqual([]);
     expect(started).toEqual(["new"]);
     expect(shell.props("sessionId") ?? null).toBeNull();
+  });
+});
+
+it("starts in the page's workspace when the builder's remembered conversation belongs to another workspace", async () => {
+  sessionStorage.setItem("ontomato.workbench.conversation", JSON.stringify({ agentId: builder!.id, sessionId: held }));
+  hosted.sessions = [held];
+  hosted.sessionWorkspace = otherWorkspace;
+
+  const { shell } = await fromPage(builder!.id, undefined, workspacePage);
+  expect(shell.props("sessionId")).toBeNull();
+  expect(hosted.createdIn).toEqual([workspace]);
+});
+
+it("continues the builder's remembered conversation in the same workspace and opens its commit beside chat", async () => {
+  sessionStorage.setItem("ontomato.workbench.conversation", JSON.stringify({ agentId: builder!.id, sessionId: held }));
+  hosted.sessions = [held];
+  hosted.sessionWorkspace = workspace;
+
+  const { router, shell } = await fromPage(builder!.id, undefined, workspacePage);
+  expect(shell.props("sessionId")).toBe(held);
+  expect(hosted.createdIn).toEqual([]);
+  await shell.get("button.workspace-commit").trigger("click");
+  await vi.waitFor(() => {
+    expect(router.currentRoute.value.path).toBe(platformRoutes.chat.path);
+    expect(router.currentRoute.value.query.page).toBe(`${workspacePage}&tab=changes&diffTarget=${commit}`);
   });
 });

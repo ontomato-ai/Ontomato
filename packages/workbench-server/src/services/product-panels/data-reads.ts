@@ -10,7 +10,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AGENT_SESSION, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, DSL_QUERY, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
+  AGENT_SESSION, APP_WORKSPACE, AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_CASE_SET, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, DSL_QUERY, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
   MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, OPS_KNOWLEDGE, PUBLISHED_MCP_SERVICE, RECENT_VISIT, TURN_EVIDENCE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD, DASHBOARD_CARD, FUNCTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
@@ -35,6 +35,7 @@ import {
 import { createExternalMcpReads } from "../mcp/external-mcp-panel";
 import { readPublishedMcpService, readPublishedMcpServices, readPublishedMcpServiceTools } from "../mcp/panel-reads";
 import type { McpRequestLocation } from "../mcp/catalog";
+import { AppWorkspaceOwner } from "../app-builder/panel-reads";
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
 import { createDashboardCardOwnerReadAdapter, createDashboardReadAdapter } from "../dashboard/panel-reads";
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
@@ -146,6 +147,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
   const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
   const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
+  const workspaces = new AppWorkspaceOwner(owner, viewer);
   const dashboards = createDashboardReadAdapter(owner, viewer);
   const cards = createDashboardCardReadAdapter(owner, viewer);
   const cardOwnerReads = createDashboardCardOwnerReadAdapter(owner, viewer);
@@ -341,6 +343,19 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       record: selection => functions.record(selection.primaryKey!),
       form: (selection, params) => functions.form(selection.primaryKey!, formParams(params)),
       createForm: (_selection, params) => functions.createForm(formParams(params)),
+    },
+    [APP_WORKSPACE]: {
+      list: (_selection, params) => workspaces.list(params),
+      record: ({ primaryKey }) => workspaces.record(primaryKey!),
+      createForm: (_selection, params) => workspaces.createForm(formParams(params).values),
+      form: ({ primaryKey }, params) => workspaces.form(primaryKey!, formParams(params).values),
+      files: ({ primaryKey }, params) => workspaces.files(primaryKey!, params),
+      file: ({ primaryKey }, params) => workspaces.file(primaryKey!, params),
+      commits: ({ primaryKey }, params) => workspaces.commits(primaryKey!, params),
+      diff: ({ primaryKey }, params) => workspaces.diff(primaryKey!, params),
+      sessions: ({ primaryKey }) => workspaces.sessions(primaryKey!),
+      releases: ({ primaryKey }) => workspaces.releases(primaryKey!),
+      publishForm: ({ primaryKey }, params) => workspaces.publishForm(primaryKey!, formParams(params).values),
     },
     [DASHBOARD]: {
       list: () => dashboards.list(),

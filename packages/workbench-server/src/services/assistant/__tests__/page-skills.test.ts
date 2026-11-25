@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import type { PageSkillsProjection } from "@ontomato/contracts/page-skills";
+import type { PageSkillEntrance, PageSkillsProjection } from "@ontomato/contracts/page-skills";
 import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
 import type { DomainSkillRegistryManager, SkillRegistryManager } from "../../../core/skills/registry/manager";
 import type { AgentRow } from "../store";
@@ -8,7 +8,7 @@ import type { AgentRow } from "../store";
 type PageSkillRegistry = Pick<SkillRegistryManager, "getSkillByRef" | "failedManifests">;
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(), post: vi.fn(), agents: vi.fn(), native: vi.fn(), profile: vi.fn(),
+  get: vi.fn(), post: vi.fn(), agents: vi.fn(), appBuilder: vi.fn(), builderAccess: vi.fn(), native: vi.fn(), profile: vi.fn(),
   publishGovernance: vi.fn(), managed: [] as { skill: RuntimeSkillRef; title: string; description: string }[],
   grants: new Set<string>(), usableIds: [] as string[],
   allowed: true,
@@ -35,7 +35,8 @@ vi.mock("../../agent-runtime/skills", () => ({
 }));
 vi.mock("../../../i18n", () => ({ tForLocale: (_locale: string, key: string) => key }));
 vi.mock("../governance", () => ({ publishGovernanceSkill: mocks.publishGovernance }));
-vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents } }));
+vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents, appBuilder: mocks.appBuilder } }));
+vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: mocks.builderAccess }));
 vi.mock("../labels", () => ({ assistantName: (a: AgentRow) => a.name, assistantDescription: (a: AgentRow) => a.description }));
 vi.mock("../../product-assets/platform-assets", () => ({ nativeProfileId: mocks.native }));
 vi.mock("../../product-assets/agent-profile", () => ({ profileIdForAgent: mocks.profile }));
@@ -44,6 +45,7 @@ vi.mock("../../product-assets/grants", () => ({
 }));
 import { assistantSkillCatalog, effectiveAssistantSkills, prepareAssistantSkills, readAssistantSkillView, validateAssistantSkills } from "../skills";
 import { listAssistantAgents } from "../agents";
+import { HttpError } from "../../../utils/errors";
 
 const page: RuntimeSkillRef = { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" };
 const report: RuntimeSkillRef = { namespace: { kind: "provider", provider: "workbench" }, name: "assistant-report" };
@@ -65,6 +67,8 @@ beforeEach(() => {
   mocks.managed.length = 0;
   mocks.usableIds = ids.slice();
   mocks.allowed = true;
+  mocks.appBuilder.mockResolvedValue(undefined);
+  mocks.builderAccess.mockResolvedValue([]);
   mocks.publishGovernance.mockResolvedValue({ skill: page, digest: "b".repeat(64) });
   mocks.get.mockImplementation(async () => ({ text: JSON.stringify({ success: true, data: current }) }));
   mocks.post.mockImplementation(async (operation: string) => ({
@@ -122,6 +126,8 @@ it("keeps ordinary native skills and excludes true product Profile skills from p
   mocks.allowed = false;
   expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
   mocks.allowed = true;
+  mocks.appBuilder.mockResolvedValue(undefined);
+  mocks.builderAccess.mockResolvedValue([]);
   mocks.grants.delete(native.id);
   expect((await listAssistantAgents(owner, credentials)).agents.some(a => a.id === native.id)).toBe(true);
 });
@@ -169,4 +175,41 @@ it("exposes projection failures instead of continuing with stale authorization",
   mocks.get.mockRejectedValue(new Error("Java unavailable"));
   await expect(listAssistantAgents(owner, credentials)).rejects.toThrow("Java unavailable");
   await expect(prepareAssistantSkills(owner.domainId, definition(0, "regular"), credentials)).rejects.toThrow("Java unavailable");
+});
+
+it("offers the builder only after its application and use gates both pass", async () => {
+  const builder = definition(3, "app-builder", []);
+  mocks.appBuilder.mockResolvedValue(builder);
+  mocks.usableIds = ids.slice(0, 2);
+  expect((await listAssistantAgents(owner, credentials)).agents.some(agent => agent.id === builder.id)).toBe(false);
+  expect(mocks.builderAccess).not.toHaveBeenCalled();
+
+  mocks.usableIds.push(builder.id);
+  mocks.builderAccess.mockRejectedValueOnce(new HttpError(403, "App entry denied", "FORBIDDEN"));
+  expect((await listAssistantAgents(owner, credentials)).agents.some(agent => agent.id === builder.id)).toBe(false);
+
+  const directory = await listAssistantAgents(owner, credentials);
+  expect(directory.agents).toContainEqual(expect.objectContaining({ id: builder.id, workspaceBound: true }));
+  expect(directory.presetAgentIds?.["app-builder"]).toBe(builder.id);
+});
+
+it.each<PageSkillEntrance>([
+  { permissionCode: "app-builder", pageKey: "app-builder-workspaces" },
+  { access: "domain-member" as const, pageKey: "app-builder-workspace" },
+])("resolves the builder as the App Builder page default for $pageKey", async entrance => {
+  const builder = definition(3, "app-builder", []);
+  mocks.appBuilder.mockResolvedValue(builder);
+  const ref: RuntimeSkillRef = { namespace: { kind: "provider", provider: "workbench" }, name: "builder-pages" };
+  const defaultAgent = { kind: "preset", agentKind: "app-builder" } as const;
+  current = {
+    registeredSkills: [ref, page],
+    pageSkills: [
+      { ...("permissionCode" in entrance ? { permissionCode: entrance.permissionCode } : entrance), skill: ref, defaults: [{ pageKey: entrance.pageKey, defaultAgent }] },
+      { permissionCode: "business-knowledge", skill: page },
+    ],
+  };
+  const result = await listAssistantAgents(owner, credentials, assistantAgentsQuerySchema.parse(entrance));
+  expect(result.defaultAgentId).toBe(builder.id);
+  expect(result.presetAgentIds?.["app-builder"]).toBe(builder.id);
+  expect(result.agents.find(agent => agent.id === builder.id)?.effectiveSkills).toEqual([ref]);
 });

@@ -2,6 +2,7 @@ import {
   applicationCatalogueScopeSchema, applicationCatalogueSortSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
 } from "./product-catalog-query";
 import { z } from "zod";
+import { workspaceCommitSchema, workspacePathSchema } from "./workspaces";
 import { componentIdSchema } from "./product-record-id";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { findPanelFormOption, formFieldErrorSchema, formValuesSchema, panelFormOptionSchema, panelFormOptionValueSchema } from "./form-fields";
@@ -259,6 +260,11 @@ export const panelReadParameterSchemas = {
   panelFormValues: panelFormValuesSchema,
   changedField: fieldPath.nullable(),
   keyword: z.string(),
+  offset: z.number().int().nonnegative(),
+  limit: positiveInteger.max(100),
+  workspaceCommit: workspaceCommitSchema,
+  workspacePath: workspacePathSchema,
+  workspaceDiffTarget: z.union([z.enum(["latest", "working"]), workspaceCommitSchema]),
   page: z.object({ number: positiveInteger, size: positiveInteger }).strict(),
   optionValues: z.array(runtimeJsonValueSchema),
   graphNode: platformOntologyNeighborsRequestSchema.shape.node,
@@ -302,6 +308,9 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
   switch (parameter) {
     case "changedField":
     case "keyword":
+    case "workspaceCommit":
+    case "workspacePath":
+    case "workspaceDiffTarget":
     case "ontologyType":
     case "className":
     case "neighborDirection":
@@ -334,6 +343,8 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "favoritesOnly":
       return input?.kind === "scalar" && input.type === "boolean";
     case "size":
+    case "offset":
+    case "limit":
     case "neighborsLimit":
     case "nonNegativeInt":
       return input?.kind === "scalar" && input.type === "number";

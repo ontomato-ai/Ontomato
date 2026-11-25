@@ -221,6 +221,7 @@ const unstarted = computed(() => !conversation.sending.value && conversation.sta
 
 provide(shellContextKey, {
   labels: toRef(props, "labels"),
+  get workspaceId() { return conversation.state.workspaceId; },
   artifactRenderers: toRef(props, "artifactRenderers"),
   toolRenderers: toRef(props, "toolRenderers"),
   slots: {

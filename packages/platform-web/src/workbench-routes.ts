@@ -70,6 +70,13 @@ export const schedulePages = (): RouteRecordRaw[] => [
 export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
   { ...routes.appBuilder, component: () => import("./pages/AppBuilderRoute.vue"), meta: { workbench: true, ...meta } },
   {
+    name: "AppBuilderHostedPreview",
+    path: "/app-builder/:workspaceId/hosted-preview",
+    component: () => import("./pages/HostedPreviewRoute.vue"),
+    props: true,
+    meta: { workbench: true, ...meta },
+  },
+  {
     name: "PanelCandidatePreview",
     path: "/app-builder/:workspaceId/panel-preview/:ref/:pageKey",
     component: () => import("./pages/PanelCandidateRoute.vue"),

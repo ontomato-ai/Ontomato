@@ -14,7 +14,7 @@ import { defaultAgentSchema } from "./default-agent";
 import { AGENT_DEFINITION } from "./platform-object-types";
 import { skillCatalogDiagnosticsSchema } from "./skills";
 export const assistantEngineSchema = z.enum(["pi", "codex"]);
-export const assistantAgentDefinitionSchema = agentHostAgentSchema.extend({
+export const assistantAgentDefinitionSchema = agentHostAgentSchema.omit({ workspaceBound: true }).extend({
   executionUserId: z.string().trim().min(1).nullable(),
   engine: assistantEngineSchema.default("pi"),
   modelSelection: modelSelectionSchema,

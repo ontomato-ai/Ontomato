@@ -33,6 +33,7 @@ import { ontologyModelServerOperations } from "../ontology-model/model-operation
 import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
 import { governanceServerOperations } from "../governance/panel-operations";
 import { opsDiagnosisServerOperations } from "../ops-diagnosis/panel-operations";
+import { appWorkspaceServerOperations } from "../app-builder/panel-operations";
 import { dashboardServerOperations } from "../dashboard/panel-operations";
 import { skillExportOperation, skillServerOperations } from "../skills/panel-operations";
 import { productCatalogServerOperations } from "./catalog-operations";
@@ -79,6 +80,10 @@ interface ServerOperation extends OperationInputDescription {
   inspectImpact?: PanelImpactInspector;
   /** The current reader's display reason for the bound target, or null for a targetless operation. */
   unavailable?(host: PanelOperationHost, target: PanelRecordTarget | null): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
+  /** Include known operation parameters when the selection alone cannot determine availability. */
+  unavailableForInput?(
+    host: PanelOperationHost, target: PanelRecordTarget | null, input: Readonly<Record<string, unknown>>,
+  ): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
   /** Optional batch availability lookup across a page of list rows to avoid per-row backend requests. */
   unavailableBatch?(
     host: PanelOperationHost,
@@ -182,6 +187,7 @@ const registrations: readonly PanelServerOperation[] = [
   ...governanceServerOperations,
   ...opsDiagnosisServerOperations,
   ...dashboardServerOperations,
+  ...appWorkspaceServerOperations,
 ];
 const jsonSchema = (schema: z.ZodTypeAny) => cachedZodToJsonSchema(schema, { effectStrategy: "input" });
 const runtimeJsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(schema, { effectStrategy: "input" });

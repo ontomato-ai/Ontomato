@@ -300,7 +300,10 @@ export function useAgentConversation(
     try {
       createdSession = state.sessionId ? null : await client.createSession(agentId);
       if (current !== token) return null;
-      if (createdSession) state.sessionId = createdSession.id;
+      if (createdSession) {
+        state.sessionId = createdSession.id;
+        state.workspaceId = createdSession.workspaceId ?? null;
+      }
       const view = presentation();
       const binding = view && { viewId: view.viewId, ...(initialPage === undefined ? {} : { initialPage }) };
       const page = pageSkill();
