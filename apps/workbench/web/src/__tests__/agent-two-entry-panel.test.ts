@@ -186,9 +186,8 @@ interface MockAgent {
 }
 
 interface MockGrantRow {
-  principalKind: "principal" | "role" | "domain";
-  principalId: string;
-  principalName: string;
+  policyId: string;
+  name: string;
   level: "use" | "view" | "edit";
 }
 
@@ -231,30 +230,21 @@ const grantLevelLabel: Record<MockGrantRow["level"], string> = {
 };
 
 function toGrantPanelRecord(grant: MockGrantRow) {
-  const isDomain = grant.principalKind === "domain";
-  const principalKindLabel = isDomain ? "Domain" : grant.principalKind === "role" ? "Role" : "Member";
   const levelLabel = grantLevelLabel[grant.level];
   const tone = grant.level === "edit" ? "warning" : grant.level === "view" ? "info" : "default";
   return {
-    primaryKey: `${grant.principalKind}:${grant.principalId}`,
+    primaryKey: grant.policyId,
     className: AGENT_DEFINITION,
-    label: isDomain ? principalKindLabel : grant.principalName,
-    ...(!isDomain && grant.principalName !== grant.principalId && { subtitle: grant.principalId }),
+    label: grant.name,
     fields: {
-      principalKind: grant.principalKind,
-      principalKindLabel,
-      principalId: grant.principalId,
+      policyId: grant.policyId,
       level: grant.level,
       levelLabel,
       verb: grant.level,
       verbLabel: levelLabel,
-      revocable: !isDomain,
+      revocable: true,
     },
-    tones: {
-      principalKindLabel: isDomain ? "success" : "info",
-      levelLabel: tone,
-      verbLabel: tone,
-    },
+    tones: { levelLabel: tone, verbLabel: tone },
   };
 }
 
@@ -382,6 +372,7 @@ function mountTwoEntryApp(options: {
   agents?: MockAgent[];
   grantsByAgent?: Record<string, MockGrantRow[]>;
   listForbidden?: boolean;
+  createForbidden?: boolean;
   askUnsaved?: () => Promise<boolean>;
   recordResponse?: (primaryKey: string) => Response | null;
   onCreated?: (values: Record<string, unknown>) => void;
@@ -395,22 +386,15 @@ function mountTwoEntryApp(options: {
   const uses = [catalogUse, detailUse, ...extraUses];
   const agentList = (options.agents ?? DEFAULT_AGENTS).map((item) => ({ ...item }));
   const initialGrants: Record<string, MockGrantRow[]> = options.grantsByAgent ?? {
-    [CUSTOM_ID]: [{ principalKind: "principal", principalId: "user-owner", principalName: "Alice", level: "edit" }],
-    [SYSTEM_ID]: [
-      { principalKind: "domain", principalId: "*", principalName: "Domain", level: "use" },
-      { principalKind: "role", principalId: "role-admin", principalName: "Domain Admin", level: "edit" },
-    ],
+    [CUSTOM_ID]: [{ policyId: "owner-policy", name: "Sales Owners", level: "edit" }],
+    [SYSTEM_ID]: [{ policyId: "admin-policy", name: "Domain Admin", level: "edit" }],
   };
   const grantsByAgent = new Map<string, MockGrantRow[]>(
     Object.entries(initialGrants).map(([id, rows]) => [id, rows.map((row) => ({ ...row }))]),
   );
-  const userOptions = [
-    { primaryKey: "user-alice", value: "user-alice", label: "Alice" },
-    { primaryKey: "user-bob", value: "user-bob", label: "Bob" },
-  ];
-  const roleOptions = [
-    { primaryKey: "role-admin", value: "role-admin", label: "Domain Admin" },
-    { primaryKey: "role-analyst", value: "role-analyst", label: "Analyst" },
+  const policyOptions = [
+    { primaryKey: "admin-policy", value: "admin-policy", label: "Domain Admin" },
+    { primaryKey: "analyst-policy", value: "analyst-policy", label: "Analyst" },
   ];
 
   const router = createRouter({
@@ -586,25 +570,24 @@ function mountTwoEntryApp(options: {
         const id = target?.primaryKey ?? "";
         const found = agentList.find((item) => item.id === id);
         if (found?.canEdit === false) return Response.json({ status: "forbidden" });
-        return Response.json({ status: "ready", value: (grantsByAgent.get(id) ?? []).map(toGrantPanelRecord) });
+        const rows = (grantsByAgent.get(id) ?? []).map(toGrantPanelRecord);
+        return Response.json({ status: "ready", value: [
+          ...rows,
+          ...(found?.domainShared ? [{ primaryKey: "domain", className: AGENT_DEFINITION, label: "Domain", fields: {
+            level: "use", levelLabel: "Use", revocable: false,
+          } }] : []),
+        ] });
       }
-      if (member === "userPicker") {
+      if (member === "policyPicker") {
         if (body.dataName === "selected") {
           const id = (body.inputs.selected as { primaryKey?: string } | undefined)?.primaryKey;
-          const match = userOptions.find((entry) => entry.primaryKey === id) ?? null;
+          const match = policyOptions.find((entry) => entry.primaryKey === id) ?? null;
           return Response.json({ status: "ready", value: match });
         }
-        return Response.json({ status: "ready", value: { options: userOptions } });
-      }
-      if (member === "rolePicker") {
-        if (body.dataName === "selected") {
-          const id = (body.inputs.selected as { primaryKey?: string } | undefined)?.primaryKey;
-          const match = roleOptions.find((entry) => entry.primaryKey === id) ?? null;
-          return Response.json({ status: "ready", value: match });
-        }
-        return Response.json({ status: "ready", value: { options: roleOptions } });
+        return Response.json({ status: "ready", value: { options: policyOptions } });
       }
       if (member === "createForm") {
+        if (options.createForbidden) return Response.json({ status: "forbidden" });
         return Response.json({ status: "ready", value: formDescriptionFor(null) });
       }
       if (member === "form") {
@@ -710,11 +693,6 @@ function mountTwoEntryApp(options: {
         const shared = meta.input?.shared === true;
         const targetAgent = agentList.find((item) => item.id === targetId);
         if (targetAgent) targetAgent.domainShared = shared;
-        const current = (grantsByAgent.get(targetId) ?? []).filter((row) => row.principalKind !== "domain");
-        if (shared) {
-          current.unshift({ principalKind: "domain", principalId: "*", principalName: "Domain", level: "use" });
-        }
-        grantsByAgent.set(targetId, current);
         options.onShare?.(targetId, shared);
         return Response.json({
           kind: "dispatched",
@@ -732,15 +710,11 @@ function mountTwoEntryApp(options: {
       if (meta?.operationId === "grantSubmit.grant") {
         const targetId = meta.targetId ?? CUSTOM_ID;
         const input = meta.input ?? {};
-        const principalKind = input.principalKind === "role" ? "role" : "principal";
-        const principalId = String(input.principalId ?? "");
-        const level = (input.verb === "edit" || input.verb === "view" ? input.verb : "use") as MockGrantRow["level"];
-        const namePool = principalKind === "role" ? roleOptions : userOptions;
-        const principalName = namePool.find((item) => item.primaryKey === principalId)?.label ?? principalId;
-        const current = (grantsByAgent.get(targetId) ?? []).filter(
-          (row) => !(row.principalKind === principalKind && row.principalId === principalId),
-        );
-        current.push({ principalKind, principalId, principalName, level });
+        const policyId = String(input.policyId);
+        const level = input.verb as MockGrantRow["level"];
+        const policy = policyOptions.find((item) => item.primaryKey === policyId)!;
+        const current = (grantsByAgent.get(targetId) ?? []).filter(row => row.policyId !== policyId);
+        current.push({ policyId, name: policy.label, level });
         grantsByAgent.set(targetId, current);
         options.onGrant?.(targetId, input);
         return Response.json({
@@ -759,11 +733,7 @@ function mountTwoEntryApp(options: {
       if (meta?.operationId === "grantsList.revoke") {
         const targetId = meta.targetId ?? CUSTOM_ID;
         const input = meta.input ?? {};
-        const principalKind = String(input.principalKind ?? "");
-        const principalId = String(input.principalId ?? "");
-        const current = (grantsByAgent.get(targetId) ?? []).filter(
-          (row) => !(row.principalKind === principalKind && row.principalId === principalId),
-        );
+        const current = (grantsByAgent.get(targetId) ?? []).filter(row => row.policyId !== input.policyId);
         grantsByAgent.set(targetId, current);
         options.onRevoke?.(targetId, input);
         return Response.json({
@@ -882,10 +852,8 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
     expect(Object.keys(detailSource.manifest.state).sort()).toEqual([
       "catalogPath",
       "grantDialog",
-      "grantPrincipalId",
-      "grantPrincipalKind",
-      "grantRole",
-      "grantUser",
+      "grantPolicy",
+      "grantPolicyId",
       "grantVerb",
       "selected",
       "tab",
@@ -893,9 +861,10 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
     expect(detailSource.manifest.state.selected.deepLink).toBe(true);
     expect(detailSource.manifest.state.tab.deepLink).toBe(true);
     expect(detailSource.manifest.state.catalogPath.external).toBe(true);
-    for (const key of ["grantDialog", "grantPrincipalId", "grantPrincipalKind", "grantRole", "grantUser", "grantVerb"] as const) {
+    for (const key of ["grantDialog", "grantPolicy", "grantPolicyId", "grantVerb"] as const) {
       expect(detailSource.manifest.state[key].deepLink).toBe(false);
     }
+    expect(detailSource.manifest.members.policyPicker.type).toBe("platform:PermissionPolicy");
     expect(detailSource.manifest.members.remove.config.hideWhenUnavailable).toBe(true);
     // All 8 locales in agent-detail panel messages maintain exact key parity.
     const messageLocales = Object.keys(detailSource.content.messages).sort();
@@ -1015,9 +984,25 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
     const page = await app.open();
     try {
       await vi.waitFor(() => {
-        expect(page.element.querySelector('[role="alert"]')?.textContent).toContain("analysis-agent");
+        expect(page.element.querySelector('[role="alert"]')?.textContent).toMatch(/permission/i);
       }, { timeout: 5000 });
       expect(page.element.textContent).not.toContain("New agent");
+    } finally {
+      page.app.unmount();
+    }
+  });
+
+  it("keeps the catalog readable when the owner denies agent creation", async () => {
+    const app = mountTwoEntryApp({ createForbidden: true });
+    const page = await app.open();
+    try {
+      await vi.waitFor(() => {
+        expect(page.element.querySelectorAll(".sdk-object-list-table tbody tr")).toHaveLength(3);
+        const create = [...page.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
+          .find(button => button.textContent?.includes("New agent"));
+        expect(create?.disabled).toBe(true);
+        expect(create?.closest(".agents-new-wrap")?.getAttribute("title")).toBe("You need permission to create agents.");
+      });
     } finally {
       page.app.unmount();
     }
@@ -1200,7 +1185,7 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
       await vi.waitFor(() => {
         expect(page.element.querySelector('[data-tab="grants"]')).toBeTruthy();
         expect(page.element.textContent).toContain("Only the members and roles explicitly granted below");
-        expect(page.element.textContent).toContain("Alice");
+        expect(page.element.textContent).toContain("Sales Owners");
       }, { timeout: 5000 });
 
       // Enable domain-wide sharing -> invokes agents.share({ shared: true }) and updates description + button.
@@ -1215,7 +1200,7 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         expect(page.element.textContent).toContain("Disable domain-wide use");
       }, { timeout: 5000 });
 
-      // Open Add grant dialog, switch to Role, pick Analyst, choose View level, and submit.
+      // Open Add grant dialog, pick the Analyst policy, choose View level, and submit.
       const addGrantBtn = [...page.element.querySelectorAll<HTMLButtonElement>('[data-tab="grants"] button')]
         .find((btn) => btn.textContent?.includes("Add grant"))!;
       expect(addGrantBtn).toBeTruthy();
@@ -1225,14 +1210,8 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         expect(document.querySelector(".el-dialog")).toBeTruthy();
       }, { timeout: 5000 });
 
-      const roleOptionBtn = [...document.querySelectorAll<HTMLButtonElement>(".el-dialog .el-segmented__item, .el-dialog .sdk-segmented-option, .el-dialog button, .el-dialog label")]
-        .find((el) => el.textContent?.trim() === "Role")!;
-      expect(roleOptionBtn).toBeTruthy();
-      roleOptionBtn.click();
-
-      // Open role picker and pick "Analyst".
       await vi.waitFor(() => {
-        expect(app.reads.some((r) => r.memberPath[0]?.member === "rolePicker")).toBe(true);
+        expect(app.reads.some((r) => r.memberPath[0]?.member === "policyPicker")).toBe(true);
       }, { timeout: 5000 });
       const pickerTrigger = document.querySelector<HTMLElement>(".el-dialog .sdk-inline-reference-picker-select .el-select__wrapper, .el-dialog .sdk-inline-reference-picker-select input, .el-dialog .sdk-inline-reference-picker-select");
       expect(pickerTrigger).toBeTruthy();
@@ -1240,7 +1219,7 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
       await vi.waitFor(() => {
         const analystOption = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item, [role='option']")]
           .find((el) => el.textContent?.includes("Analyst"));
-        if (!analystOption) throw new Error("Expected Analyst option in rolePicker dropdown");
+        if (!analystOption) throw new Error("Expected Analyst option in policyPicker dropdown");
         analystOption.click();
       }, { timeout: 5000 });
 
@@ -1253,7 +1232,7 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         expect(document.querySelector(".el-dialog")?.textContent).toContain("read-only mode");
       }, { timeout: 5000 });
 
-      // Submit Grant -> dispatches agents.grant with { principalKind: "role", principalId: "role-analyst", verb: "view" }.
+      // Submit Grant -> dispatches agents.grant with { policyId: "analyst-policy", verb: "view" }.
       const submitBtn = [...document.querySelectorAll<HTMLButtonElement>(".el-dialog__footer button")]
         .find((btn) => btn.textContent?.trim() === "Grant")!;
       expect(submitBtn).toBeTruthy();
@@ -1265,12 +1244,12 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
       await vi.waitFor(() => {
         expect(grantCalls).toEqual([{
           targetId: CUSTOM_ID,
-          input: { principalKind: "role", principalId: "role-analyst", verb: "view" },
+          input: { policyId: "analyst-policy", verb: "view" },
         }]);
         expect(page.element.querySelector('[data-tab="grants"]')?.textContent).toContain("Analyst");
       }, { timeout: 5000 });
 
-      // Revoke the newly granted Analyst role row -> dispatches agents.revoke with { principalKind: "role", principalId: "role-analyst" }.
+      // Revoke the newly granted Analyst policy row -> dispatches agents.revoke with { policyId: "analyst-policy" }.
       const analystRow = [...page.element.querySelectorAll<HTMLElement>('[data-tab="grants"] .sdk-object-list-table tbody tr')]
         .find((row) => row.textContent?.includes("Analyst"))!;
       expect(analystRow).toBeTruthy();
@@ -1282,7 +1261,7 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
       await vi.waitFor(() => {
         expect(revokeCalls).toEqual([{
           targetId: CUSTOM_ID,
-          input: { principalKind: "role", principalId: "role-analyst" },
+          input: { policyId: "analyst-policy" },
         }]);
         expect(page.element.querySelector('[data-tab="grants"]')?.textContent).not.toContain("Analyst");
       }, { timeout: 5000 });

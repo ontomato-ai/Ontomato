@@ -14,6 +14,7 @@ import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
  */
 @Component
 public class AnonymousIdentityService implements IdentityService {
+    @Override public String workbenchSubjectId(User user) { return "system"; }
     @Override public Long getCurrentCredentialExpiresAt() { return null; }
     @Override public void requireQueryAccess() {}
     @Override public void requireActionExecutionAccess(String userId, String domainId) { requireQueryAccess(); }

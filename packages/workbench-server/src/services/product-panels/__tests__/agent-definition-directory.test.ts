@@ -7,24 +7,14 @@ import { AGENT_DEFINITION, platformObjectTypes } from "@ontomato/contracts/platf
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { HttpError } from "../../../utils/errors";
+import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 import { operationHost } from "../operation-host";
 
 const mocks = vi.hoisted(() => ({
-  ids: vi.fn(), allowed: vi.fn(), records: vi.fn(), set: vi.fn(), share: vi.fn(), agents: vi.fn(), findAgent: vi.fn(),
+  agents: vi.fn(), findAgent: vi.fn(),
   appBuilder: vi.fn(), opsDiagnosis: vi.fn(), saveDiagnosis: vi.fn(), saveBuilder: vi.fn(),
 }));
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
-vi.mock("../../product-governance/grants", () => ({
-  grantedProductIds: mocks.ids,
-  productGrantAllowed: mocks.allowed,
-  readProductGrantRecords: mocks.records,
-  setProductGrants: mocks.set,
-  shareProductResource: mocks.share,
-  requireProductGrant: async (...args: unknown[]) => {
-    if (!await mocks.allowed(...args)) throw new HttpError(403, "Product Grant required", "PRODUCT_FORBIDDEN");
-  },
-}));
 vi.mock("../../app-builder/agents", () => ({ saveBuilderModel: mocks.saveBuilder }));
 vi.mock("../../ops-diagnosis/model-settings", () => ({
   saveOpsDiagnosisModel: mocks.saveDiagnosis,
@@ -50,15 +40,33 @@ const retrievalId = RETRIEVAL_AGENT_ID;
 const systemIds = [builderId, DIAGNOSIS_AGENT_ID, retrievalId];
 const modelSelection = { modelId: "chat-model" };
 const retrieval = { id: retrievalId, kind: "retrieval", name: "Data retrieval", modelSelection };
-const builder = { id: builderId, kind: "app-builder", model_selection: modelSelection };
-const diagnosis = { id: DIAGNOSIS_AGENT_ID, kind: "ops-diagnosis", model_selection: modelSelection };
-const preset = { id: presetId, name: "Preset", description: "", enabled: true, kind: "regular", icon: '{"key":"Sparkles","color":"#EEF7FF"}' };
-const custom = { id: customId, name: "Custom", description: "", enabled: false, kind: customId, icon: null };
+const builder = { id: builderId, domain_id: owner.domainId, owner_id: null, kind: "app-builder", model_selection: modelSelection };
+const diagnosis = { id: DIAGNOSIS_AGENT_ID, domain_id: owner.domainId, owner_id: null, kind: "ops-diagnosis", model_selection: modelSelection };
+const preset = { id: presetId, domain_id: owner.domainId, owner_id: null, name: "Preset", description: "", enabled: true, kind: "regular", icon: '{"key":"Sparkles","color":"#EEF7FF"}' };
+const custom = { id: customId, domain_id: owner.domainId, owner_id: "original-author", name: "Custom", description: "", enabled: false, kind: customId, icon: null };
 const fetchOwner = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>();
 const target = (primaryKey: string) => ({ kind: "object" as const, objectType: AGENT_DEFINITION, primaryKey });
 const [save, remove, grant, revoke, share] = agentDefinitionOperations;
-const role = { principalKind: "role", principalId: "analyst" } as const;
-const storedGrants = [{ ...role, verb: "use" }, { ...role, verb: "edit" }, { principalKind: "domain", principalId: "*", verb: "use" }];
+const policy = { policyId: "analyst-policy" };
+const storedGrants = [{ ...policy, name: "Analysts", level: "EDIT" }];
+const cannotDeleteSystemAgent = "Built-in system agents cannot be deleted.";
+const local = [preset, custom, builder, diagnosis];
+const definition = (id: string, ownerId: string | null = null) => ({
+  target: { domainId: owner.domainId, kind: "AGENT", id },
+  ownerFacts: { ownerId, state: "PUBLISHED" },
+});
+const retrievalPath = `/ontology/ai/agent-models/${retrievalId}`;
+const decision = vi.fn<[ObjectDecisionRequest], boolean>();
+const retrievalRead = vi.fn<[], Response>();
+const retrievalWrite = vi.fn<[], Response>();
+let canManage: boolean;
+
+function rpcCalls(path: string) {
+  return fetchOwner.mock.calls.filter(([url]) => new URL(String(url)).pathname === `/authorization/objects/${path}`);
+}
+function rpcBodies(path: string): unknown[] {
+  return rpcCalls(path).map(([, init]) => JSON.parse(String(init?.body)));
+}
 
 configureI18n({
   defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
@@ -67,20 +75,42 @@ configureI18n({
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.ids.mockResolvedValue([presetId, customId, ...systemIds]);
-  mocks.allowed.mockResolvedValue(true);
-  mocks.records.mockResolvedValue({ grants: storedGrants });
-  mocks.agents.mockResolvedValue([preset, custom, builder, diagnosis]);
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "workbench-test-token");
+  canManage = true;
+  decision.mockReturnValue(true);
+  mocks.agents.mockResolvedValue(local);
   mocks.appBuilder.mockResolvedValue(builder);
   mocks.opsDiagnosis.mockResolvedValue(diagnosis);
-  mocks.findAgent.mockImplementation(async (id: string) => [builder, diagnosis, preset, custom].find(agent => agent.id === id));
+  mocks.findAgent.mockImplementation(async (id: string) => local.find(agent => agent.id === id));
   mocks.saveBuilder.mockResolvedValue({ modelSelection });
   mocks.saveDiagnosis.mockResolvedValue({ modelSelection });
-  fetchOwner.mockImplementation(async () => Response.json({ success: true, data: retrieval }));
+  retrievalRead.mockImplementation(() => Response.json({ success: true, data: { ...retrieval, editable: true } }));
+  retrievalWrite.mockImplementation(() => Response.json({ success: true, data: retrieval }));
+  fetchOwner.mockImplementation(async (url, init) => {
+    const path = new URL(String(url)).pathname;
+    if (path === retrievalPath && init?.method === "GET") return retrievalRead();
+    if (path === retrievalPath && init?.method === "PUT") return retrievalWrite();
+    if (path === "/authorization/objects/decide-batch") {
+      const { requests } = JSON.parse(String(init?.body)) as { requests: ObjectDecisionRequest[] };
+      return Response.json({ decisions: requests.map(request => decision(request)
+        ? { allowed: true, code: null, reason: null }
+        : { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Object permission required" }) });
+    }
+    if (["agent-access", "agent-level", "domain-use"].some(name => path === `/authorization/objects/${name}`)) {
+      if (!canManage) return Response.json({ success: false, code: 403, message: "Policy permission required" }, { status: 403 });
+      return path.endsWith("/agent-access")
+        ? Response.json({ grants: storedGrants, shared: true })
+        : new Response(null, { status: 204 });
+    }
+    throw new Error(`Unexpected owner request: ${init?.method} ${path}`);
+  });
   vi.stubGlobal("fetch", fetchOwner);
 });
 
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 it("combines four sources with localized category fields and stable outputs", async () => {
   const directory = createAgentDefinitionDirectory(owner, credentials);
@@ -89,6 +119,12 @@ it("combines four sources with localized category fields and stable outputs", as
     [presetId, "preset", "Preset"], [customId, "custom", "Custom"],
     [builderId, "system", "System"], [DIAGNOSIS_AGENT_ID, "system", "System"], [retrievalId, "system", "System"],
   ]);
+  expect(rpcBodies("decide-batch")).toEqual([
+    { requests: local.map(agent => ({ ...definition(agent.id, agent.owner_id), verb: "VIEW" })) },
+    { requests: local.map(agent => ({ ...definition(agent.id, agent.owner_id), verb: "EDIT" })) },
+  ]);
+  expect(new Headers(rpcCalls("decide-batch")[0][1]?.headers).get("tk")).toBe(credentials.token);
+  expect(new Headers(rpcCalls("decide-batch")[0][1]?.headers).get("X-Ontomato-Query-Service-Token")).toBe("workbench-test-token");
   expect(rows.slice(2).every(row => row.tones?.enabled === "success")).toBe(true);
   expect(rows.map(row => [row.primaryKey, row.fields?.icon, row.fields?.agentTitle])).toEqual([
     [presetId, '{"key":"Sparkles","color":"#EEF7FF"}', ["Preset", '{"key":"Sparkles","color":"#EEF7FF"}']],
@@ -105,43 +141,59 @@ it("combines four sources with localized category fields and stable outputs", as
   await expect(directory.count()).resolves.toEqual({ rows: [], total: 5 });
 });
 
-it("omits hidden system agents without reading their model settings", async () => {
+it("omits hidden local system agents without loading their model settings and keeps the other sources", async () => {
   const directory = createAgentDefinitionDirectory(owner, credentials);
-  mocks.ids.mockImplementation(async (verb: string) => verb === "view" ? [builderId, customId] : [customId]);
+  decision.mockImplementation(request => "target" in request &&
+    (request.target.id === customId || (request.target.id === builderId && request.verb === "VIEW")));
+  retrievalRead.mockImplementation(() => Response.json({ success: false, code: 403 }, { status: 403 }));
   const rows = await directory.list();
   expect(rows.map(row => row.primaryKey)).toEqual([customId, builderId]);
   expect(rows.find(row => row.primaryKey === builderId)?.outputs).toMatchObject({ category: "system", canEdit: false, canGrant: false });
   await expect(directory.count()).resolves.toMatchObject({ total: 2 });
   expect(mocks.opsDiagnosis).not.toHaveBeenCalled();
-  expect(fetchOwner).not.toHaveBeenCalled();
-  mocks.ids.mockResolvedValue([]);
+  await expect(directory.record(retrievalId)).rejects.toMatchObject({ status: 403 });
+  decision.mockReturnValue(false);
   await expect(directory.list()).resolves.toEqual([]);
   await expect(directory.count()).resolves.toMatchObject({ total: 0 });
+  retrievalRead.mockImplementation(() => Response.json({ success: true, data: { ...retrieval, editable: false } }));
+  await expect(directory.list()).resolves.toMatchObject([{ primaryKey: retrievalId, outputs: { canEdit: false, canGrant: false } }]);
+  await expect(directory.count()).resolves.toMatchObject({ total: 1 });
 });
 
 it.each(systemIds)("checks view and edit separately for system agent %s", async id => {
   const directory = createAgentDefinitionDirectory(owner, credentials);
-  mocks.allowed.mockImplementation(async (_id: string, verb: string) => verb === "view");
+  decision.mockImplementation(request => "verb" in request && request.verb === "VIEW");
+  canManage = false;
+  retrievalRead.mockImplementation(() => Response.json({ success: true, data: { ...retrieval, editable: false } }));
+  retrievalWrite.mockImplementation(() => Response.json({ success: false, code: 403 }, { status: 403 }));
   const record = await directory.record(id);
   expect(record.outputs).toEqual({ category: "system", canEdit: false, canGrant: false });
   expect(record.fields?.domainShared).toBeUndefined();
+  expect(rpcBodies("agent-access")).toEqual([]);
   const form = await directory.form(id, { changedField: null });
   expect(form.fields.find(field => field.path === "/modelSelection/modelId")).toMatchObject({
     readOnly: true, readOnlyReason: expect.any(String),
   });
   const host = operationHost(requester);
   const input = { values: { modelSelection }, submittedFields: ["/modelSelection/modelId"] };
-  await expect(save.execute(host, target(id), input, "intent")).resolves.toMatchObject({ kind: "refusal", code: "PRODUCT_FORBIDDEN" });
-  await expect(grant.execute(host, target(id), { ...role, verb: "edit" })).resolves.toMatchObject({ kind: "refusal", code: "PRODUCT_FORBIDDEN" });
+  const saveCode = id === retrievalId ? "FORBIDDEN" : "OBJECT_FORBIDDEN";
+  await expect(save.execute(host, target(id), input, "intent")).resolves.toMatchObject({ kind: "refusal", code: saveCode });
+  await expect(grant.execute(host, target(id), { ...policy, verb: "edit" })).resolves.toMatchObject({ kind: "refusal", code: "FORBIDDEN" });
   await expect(directory.grants(id)).rejects.toMatchObject({ status: 403 });
-  await expect(remove.unavailable(host, target(id))).resolves.toMatchObject({ reason: form.fields[2].readOnlyReason });
-  expect(mocks.records).not.toHaveBeenCalled();
+  await expect(remove.unavailable(host, target(id))).resolves.toEqual({ reason: cannotDeleteSystemAgent });
   expect(mocks.saveBuilder).not.toHaveBeenCalled();
   expect(mocks.saveDiagnosis).not.toHaveBeenCalled();
-  expect(fetchOwner.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
-  mocks.allowed.mockResolvedValue(false);
-  await expect(directory.record(id)).rejects.toMatchObject({ status: 403, code: "PRODUCT_FORBIDDEN" });
-  await expect(directory.form(id, { changedField: null })).rejects.toMatchObject({ status: 403, code: "PRODUCT_FORBIDDEN" });
+  if (id === retrievalId) {
+    expect(rpcBodies("decide-batch")).toEqual([]);
+    expect(retrievalWrite).toHaveBeenCalledTimes(1);
+  } else {
+    expect(retrievalWrite).not.toHaveBeenCalled();
+  }
+  decision.mockReturnValue(false);
+  retrievalRead.mockImplementation(() => Response.json({ success: false, code: 403 }, { status: 403 }));
+  const viewCode = id === retrievalId ? "FORBIDDEN" : "OBJECT_FORBIDDEN";
+  await expect(directory.record(id)).rejects.toMatchObject({ status: 403, code: viewCode });
+  await expect(directory.form(id, { changedField: null })).rejects.toMatchObject({ status: 403, code: viewCode });
 });
 
 it.each(systemIds)("allows editors to read and change grants for system agent %s", async id => {
@@ -149,14 +201,17 @@ it.each(systemIds)("allows editors to read and change grants for system agent %s
   const host = operationHost(requester);
   await expect(directory.grants(id)).resolves.toEqual({ grants: storedGrants, shared: true });
   const rows = await directory.grantRows(id);
-  expect(rows.find(row => row.primaryKey === "role:analyst")?.fields).toMatchObject({ level: "edit" });
-  expect(rows.filter(row => row.primaryKey === "role:analyst")).toHaveLength(1);
-  await expect(grant.execute(host, target(id), { ...role, verb: "view" })).resolves.toMatchObject({ kind: "success" });
-  await expect(revoke.execute(host, target(id), role)).resolves.toMatchObject({ kind: "success" });
+  expect(rows.find(row => row.primaryKey === policy.policyId)?.fields).toMatchObject({ level: "edit" });
+  expect(rows.filter(row => row.primaryKey === policy.policyId)).toHaveLength(1);
+  await expect(grant.execute(host, target(id), { ...policy, verb: "view" })).resolves.toMatchObject({ kind: "success" });
+  await expect(revoke.execute(host, target(id), policy)).resolves.toMatchObject({ kind: "success" });
   await expect(share.execute(host, target(id), { shared: false })).resolves.toMatchObject({ kind: "success" });
-  expect(mocks.set).toHaveBeenCalledWith(credentials, { id, ...role, verbs: ["use", "view"] });
-  expect(mocks.set).toHaveBeenCalledWith(credentials, { id, ...role, verbs: [] });
-  expect(mocks.share).toHaveBeenCalledWith(id, false, credentials);
+  expect(rpcBodies("agent-access")).toEqual([definition(id), definition(id)]);
+  expect(rpcBodies("agent-level")).toEqual([
+    { ...definition(id), ...policy, level: "VIEW" },
+    { ...definition(id), ...policy, level: null },
+  ]);
+  expect(rpcBodies("domain-use")).toEqual([{ ...definition(id), shared: false }]);
 });
 
 it.each(systemIds)("exposes only the model as an editable field for %s", async id => {
@@ -167,9 +222,9 @@ it.each(systemIds)("exposes only the model as an editable field for %s", async i
   ]);
   expect(form.fields[2].control).toMatchObject({ kind: "reference", objectType: "platform:ModelOption" });
   const host = operationHost(requester);
-  await expect(remove.unavailable(host, target(id))).resolves.toEqual({ reason: "Built-in system agents cannot be deleted." });
+  await expect(remove.unavailable(host, target(id))).resolves.toEqual({ reason: cannotDeleteSystemAgent });
   await expect(remove.execute(host, target(id))).resolves.toEqual({
-    kind: "refusal", code: "SYSTEM_AGENT_READ_ONLY", message: "Built-in system agents cannot be deleted.",
+    kind: "refusal", code: "SYSTEM_AGENT_READ_ONLY", message: cannotDeleteSystemAgent,
   });
 });
 
@@ -181,17 +236,23 @@ it("routes model saves to the three owners with the initiator's credentials", as
     await expect(save.execute(host, target(id), input, "intent")).resolves.toMatchObject({
       kind: "success", data: { modelSelection }, affected: { objects: [{ objectType: AGENT_DEFINITION, primaryKey: id }] },
     });
-    expect(mocks.allowed).toHaveBeenCalledWith(id, "edit", credentials);
+  }
+  expect(rpcBodies("decide-batch")).toEqual([builderId, DIAGNOSIS_AGENT_ID].map(id => ({
+    requests: [{ ...definition(id), verb: "EDIT" }],
+  })));
+  for (const [, init] of rpcCalls("decide-batch")) {
+    expect(new Headers(init?.headers).get("tk")).toBe("reader-token");
   }
   expect(mocks.saveBuilder).toHaveBeenCalledWith(owner, builderId, modelSelection);
   expect(mocks.saveDiagnosis).toHaveBeenCalledWith(owner, DIAGNOSIS_AGENT_ID, modelSelection);
   expect(fetchOwner).toHaveBeenCalledWith(`http://owner.test/ontology/ai/agent-models/${retrievalId}`, expect.objectContaining({
     method: "PUT", body: JSON.stringify({ modelSelection }), headers: expect.any(Headers),
   }));
-  expect((fetchOwner.mock.calls[0][1]?.headers as Headers).get("tk")).toBe("reader-token");
+  const retrievalPut = fetchOwner.mock.calls.find(([, init]) => init?.method === "PUT");
+  expect(new Headers(retrievalPut?.[1]?.headers).get("tk")).toBe("reader-token");
   expect(save.projectResult({ modelSelection }, {} as never)).toEqual({ modelSelection });
 
-  fetchOwner.mockResolvedValueOnce(Response.json({ success: false, code: 403, message: "Grant denied by owner" }, { status: 403 }));
+  retrievalWrite.mockReturnValueOnce(Response.json({ success: false, code: 403, message: "Grant denied by owner" }, { status: 403 }));
   await expect(save.execute(host, target(retrievalId), input, "intent")).resolves.toEqual({
     kind: "refusal", code: "FORBIDDEN", message: "Grant denied by owner",
   });

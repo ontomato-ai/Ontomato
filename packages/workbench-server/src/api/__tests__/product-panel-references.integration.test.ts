@@ -1,3 +1,4 @@
+import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
@@ -116,6 +117,11 @@ beforeAll(async () => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     grants.set(req.body.id, req.body.ownerId);
     res.json({ success: true });
+  });
+  app.post("/authorization/objects/decide-batch", (req, res) => {
+    res.json(agentObjectDecisions(req.body, request => "target" in request &&
+      request.target.domainId === "test-domain" && request.target.id === nestedAgentId &&
+      request.ownerFacts.ownerId === req.header("tk")));
   });
   app.post("/product-governance/check", (req, res) => {
     const token = req.header("tk");
@@ -344,7 +350,10 @@ it("reads a selected nested panel or projection and freezes its actual publisher
   }], dataName: "rows", inputs: {} });
   expect(await outside.json()).toMatchObject({ status: "error", message: expect.stringContaining("outside this member's candidates") });
 
-  grants.set(nestedAgentId, "author");
+  await state.pool!.query(
+    `INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind, name, owner_id)
+     VALUES ($1, 'test-domain', 'custom', 'Nested analyst', 'author')`, [nestedAgentId],
+  );
   const memberPath = [detail, { member: "approve" }];
   const query = new URLSearchParams({ ...use, operationId: "detail.approve.remove", memberPath: JSON.stringify(memberPath) });
   const descriptor = await request("GET", `panel-operations/descriptor?${query}`, "author");

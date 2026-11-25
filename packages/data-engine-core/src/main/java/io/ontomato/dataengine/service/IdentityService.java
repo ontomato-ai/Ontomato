@@ -44,6 +44,9 @@ public interface IdentityService {
      */
     User getCurrentUser();
 
+    /** The workbench's stable identity for an authenticated ontology caller. */
+    default String workbenchSubjectId(User user) { return user.getId(); }
+
     /**
      * Get the current user ID, returns null when not logged in.
      */

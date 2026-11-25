@@ -1,3 +1,5 @@
+import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
+import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
@@ -36,7 +38,7 @@ import { HttpError } from "../../utils/errors";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 import { ensureAssistantPresetUpgradesSchema } from "../../infrastructure/postgres-migrations/20261121-assistant-preset-upgrades/schema";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", allowAgentReads: true }));
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", base: "", allowAgentReads: true, allowAgentCreation: true }));
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
@@ -197,6 +199,12 @@ beforeAll(async () => {
     resourceIds.add(req.body.id);
     res.json({ success: true });
   });
+  app.post("/authorization/objects/decide-batch", (req, res) => {
+    expect(req.header("tk")).toBe("pilot-reader");
+    res.json(agentObjectDecisions(req.body, request =>
+      "create" in request ? state.allowAgentCreation : request.target.domainId === "pilot" && request.target.id === agentId));
+  });
+  app.post("/authorization/objects/agent-access", (_req, res) => res.json({ shared: false, grants: [] }));
   app.post("/product-governance/grants", (_req, res) => res.json({ grants: [] }));
   const allowed = (id: string, verb: string, token?: string) => {
     expect(token).toBe("pilot-reader");
@@ -487,9 +495,9 @@ beforeAll(async () => {
       })),
     });
   });
-  app.get("/ontology/ai/agent-models", (req, res) => {
+  app.get(`/ontology/ai/agent-models/${RETRIEVAL_AGENT_ID}`, (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
-    res.status(403).json({ success: false, message: "System config denied" });
+    res.json({ success: true, data: { id: RETRIEVAL_AGENT_ID, modelSelection: { modelId: null }, editable: false } });
   });
   app.post("/platform/scheduled-tasks/credential/renew", (req, res) => {
     expect(req.header("tk")).toBe("pilot-reader");
@@ -1078,7 +1086,10 @@ it("reads agent settings and reference options with the panel viewer", async () 
   });
   const disabled = { primaryKey: agentId, label: "Inventory analyst",
     fields: { name: "Inventory analyst", description: "Inventory summary", icon: "", agentTitle: ["Inventory analyst", ""], enabled: "Disabled", category: "Custom" }, tones: { enabled: "default" } };
-  expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining(disabled));
+  expect(await ready("agents", "rows")).toEqual(expect.arrayContaining([
+    expect.objectContaining(disabled),
+    expect.objectContaining({ primaryKey: RETRIEVAL_AGENT_ID, outputs: expect.objectContaining({ canEdit: false }) }),
+  ]));
   expect(await ready("summary", "record", { agent })).toMatchObject({
     ...disabled, fieldLabels: { description: "Description", enabled: "Enabled", category: "Category" },
   });
@@ -1103,7 +1114,7 @@ it("reads agent settings and reference options with the panel viewer", async () 
   expect(form.values).toMatchObject({ name: "Inventory analyst", enabled: false, skills: [] });
   expect(form.fields.find(field => field.path === "/executionUserId")?.readOnly).toBe(true);
   expect(panelFormDescriptionSchema.parse(await ready("definition", "createForm")).values).toMatchObject({
-    name: "", enabled: true, modelSelection: { modelId: null }, skills: [],
+    name: "", enabled: true, modelSelection: { modelId: null }, skills: [], publicationAccess: { kind: "private" },
   });
   // The empty choice, following the domain's default model, comes first (原页面对照《智能体设置》, f3468a825).
   expect(panelOptionListSchema.parse(await ready("models", "options")).options.map(option => option.value)).toEqual([null, "demo-chat"]);
@@ -1154,8 +1165,10 @@ it("reads agent settings and reference options with the panel viewer", async () 
     name: "Renamed analyst", description: "Inventory summary", enabled: false, system_prompt: "Read inventory", skills: [],
   }]);
 
-  state.allowAgentReads = false;
+  state.allowAgentCreation = false;
   expect(await read("definition", "createForm")).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
+  expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining({ primaryKey: agentId }));
+  state.allowAgentReads = false;
   expect(await read("skills", "selected", { values: [missing] })).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
 });
 

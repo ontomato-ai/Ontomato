@@ -70,34 +70,18 @@ public class OntologyAgentHost {
     store.update("UPDATE ontology_agent_sessions SET title=? WHERE id=?", title.strip(), uuid(session));
   }
 
-  public JSONObject agents(boolean governanceAllowed) {
-    return agents(governanceAllowed,null,"en");
-  }
-  public JSONObject agents(boolean governanceAllowed,String domain,String language) {
-    var response = JSONObject.of(
-        "agents",
-        List.of(
-            JSONObject.of(
-                "id",
-                RETRIEVER,
-                "name",
-                "Data retrieval",
-                "description",
-                "Answer a data question using the ontology",
-                "icon",
-                null,
-                "enabled",
-                true)));
-    if (governanceAllowed) {
-      var agents = new JSONArray(response.getJSONArray("agents"));
-      agents.add(JSONObject.of("id",ActionCreationService.AGENT,"name","Action creation",
-        "description","Describe a write action in conversation; the agent drafts and tests it","icon",null,"enabled",true));
-      response.put("agents",agents);
+  public JSONObject agents(boolean governanceAllowed, Owner caller, String language) {
+    var agents = new JSONArray();
+    if (retrieval.canUse(caller)) {
+      agents.add(labels.localize(RETRIEVER, JSONObject.of("id", RETRIEVER, "name", "Data retrieval",
+          "description", "Answer a data question using the ontology", "icon", null, "enabled", true), language));
     }
-    var localized=new JSONArray();
-    for(Object agent:response.getJSONArray("agents")) localized.add(labels.localize(JSONObject.from(agent).getString("id"),JSONObject.from(agent),language));
-    response.put("agents",localized);
-    return response;
+    if (governanceAllowed) {
+      agents.add(labels.localize(ActionCreationService.AGENT, JSONObject.of("id", ActionCreationService.AGENT,
+          "name", "Action creation", "description", "Describe a write action in conversation; the agent drafts and tests it",
+          "icon", null, "enabled", true), language));
+    }
+    return JSONObject.of("agents", agents);
   }
 
   public static JSONObject publicRun(JSONObject run) {

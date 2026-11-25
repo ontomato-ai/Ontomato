@@ -50,9 +50,10 @@ public class OntologyAgentModelSettings {
         "modelSelection", JSONObject.of("modelId", modelId(domain, agent.id())));
   }
 
-  public JSONObject list(String domain) {
-    var agents=new ArrayList<Agent>(catalog());
-    return JSONObject.of("agents", agents.stream().map(agent -> view(domain, agent)).toList());
+  public JSONObject list(String domain, boolean retrieverVisible) {
+    return JSONObject.of("agents", catalog().stream()
+        .filter(agent -> retrieverVisible || !OntologyAgentStore.RETRIEVER.equals(agent.id()))
+        .map(agent -> view(domain, agent)).toList());
   }
 
   public JSONObject read(String domain, String id) {

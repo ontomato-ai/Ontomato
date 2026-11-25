@@ -13,9 +13,8 @@ import {
 } from "../../infrastructure/postgres";
 import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 import { HttpError } from "../../utils/errors";
-import { assertPermission } from "../../identity/installed";
-import { grantedProductIds, registerProductResource, requireProductGrant, unregisterProductResource } from "../product-governance/grants";
-import { agentDefinitionPermissions } from "./definition-permissions";
+import { agentObject, allowedAgents, requireAgent, requireAgentCreation } from "./authorization";
+import { retireObject, writeFirstPublication } from "../product-governance/authorization";
 import { resolveAssistantSkillReferences } from "./skill-references";
 import { AgentDefinitionFieldError, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
 import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
@@ -56,18 +55,17 @@ const view = (a: AgentRow, locale?: string) =>
     sortOrder: a.sort_order,
     systemPrompt: effectiveSystemPrompt(a, locale),
   });
-export { agentDefinitionPermissions } from "./definition-permissions";
 const isReadableDefinition = (kind: string) => !isAppBuilderKind(kind) && !isOpsDiagnosisKind(kind);
 
 export async function filterReadableAgentDefinitions(
   owner: AssistantOwner, credentials: AssistantCredentials, ids: readonly string[],
 ): Promise<ReadonlySet<string>> {
-  const visible = new Set(await grantedProductIds("view", credentials));
-  const { rows } = await getPostgresPool().query<Pick<AgentRow, "id" | "kind">>(
-    `SELECT id,kind FROM ${t("assistant_agents")} WHERE domain_id=$1 AND id=ANY($2::uuid[])`,
-    [owner.domainId, ids.filter(id => visible.has(id))],
+  const { rows } = await getPostgresPool().query<AgentRow>(
+    `SELECT * FROM ${t("assistant_agents")} WHERE domain_id=$1 AND id=ANY($2::uuid[])`,
+    [owner.domainId, ids],
   );
-  return new Set(rows.filter(({ kind }) => isReadableDefinition(kind)).map(({ id }) => id));
+  const visible = await allowedAgents(rows.filter(agent => isReadableDefinition(agent.kind)), "VIEW", credentials);
+  return new Set(visible.map(agent => agent.id));
 }
 
 export async function readAgentDefinitionRow(id: string, owner: AssistantOwner, client?: Parameters<typeof assistantStore.agent>[2]) {
@@ -87,7 +85,7 @@ export function projectAgentDefinitionSkills(
 }
 
 export async function readAgentDefinition(id: string, owner: AssistantOwner, credentials: AssistantCredentials) {
-  await requireProductGrant(id, "view", credentials);
+  await requireAgent(await readAgentDefinitionRow(id, owner), "VIEW", credentials);
   const definition = await readStoredAgentDefinition(id, owner, credentials.locale);
   return projectAgentDefinitionSkills(definition, await readAssistantSkillView(owner.domainId, credentials));
 }
@@ -143,9 +141,9 @@ export async function validateAgentDefinition(
   owner: AssistantOwner,
   credentials: AssistantCredentials,
 ) {
-  if ("id" in draft.target) await requireProductGrant(draft.target.id, "edit", credentials);
-  else await assertPermission(credentials, agentDefinitionPermissions);
   const old = "id" in draft.target ? await readAgentDefinitionRow(draft.target.id, owner) : null;
+  if (old) await requireAgent(old, "EDIT", credentials);
+  else await requireAgentCreation(credentials);
   await checkedDefinition(draft.form, owner, credentials, old?.execution_user_id ?? null, old?.skills ?? []);
 }
 export async function saveAgentDefinition(
@@ -164,13 +162,13 @@ export async function saveAgentDefinitionSnapshot(
   credentials: AssistantCredentials,
   selection?: AgentDefinitionSkillSelection,
 ) {
-  await requireProductGrant(id, "edit", credentials);
   const locale = credentials.locale;
   return withDomainSkills(owner.domainId, async () => {
     const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
     const result = await transaction(async client => {
       await lockProducts(client, owner);
       const agent = await readAgentDefinitionRow(id, owner, client);
+      await requireAgent(agent, "EDIT", credentials);
       const current = view(agent, locale);
       const partial = "submittedFields" in update ? update : undefined;
       if (partial?.submittedFields.length === 0) return { definition: current, ontologyChanged: false };
@@ -239,13 +237,13 @@ export async function createAgentDefinitionSnapshot(
   credentials: AssistantCredentials,
   selection?: AgentDefinitionSkillSelection,
 ) {
-  await assertPermission(credentials, agentDefinitionPermissions);
+  await requireAgentCreation(credentials);
   return withDomainSkills(owner.domainId, async () => {
     const access = selection ?? { credentials, view: await readAssistantSkillView(owner.domainId, credentials) };
     const { skills, executionUserId } = await checkedDefinition(input, owner, credentials, null, [], access);
     const definition = await transaction(async client => {
       await lockProducts(client, owner);
-      const { rows: [existing] } = await client.query<AgentRow & { owner_id: string | null }>(
+      const { rows: [existing] } = await client.query<AgentRow>(
         `SELECT * FROM ${t("assistant_agents")} WHERE id=$1`, [id],
       );
       if (existing) {
@@ -278,7 +276,13 @@ export async function createAgentDefinitionSnapshot(
         ],
       );
       if (!inserted) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
-      await registerProductResource(owner, id, false, { createOnly: true, verbs: ["use", "view", "edit"], grantAdmin: true });
+      if (input.publicationAccess && input.publicationAccess.kind !== "private") {
+        const object = agentObject(inserted);
+        await writeFirstPublication({
+          ...object,
+          ownerFacts: { ...object.ownerFacts, state: "DRAFT" },
+        }, input.publicationAccess, credentials);
+      }
       return view(inserted);
     });
     return { definition, skillView: access.view };
@@ -291,8 +295,7 @@ export async function listAgentDefinitions(owner: AssistantOwner, credentials: A
   return { agents: agents.map(agent => projectAgentDefinitionSkills(view(agent, credentials.locale), skillView)) };
 }
 export async function visibleAgentDefinitions(owner: AssistantOwner, credentials: AssistantCredentials) {
-  const visible = new Set(await grantedProductIds("view", credentials));
-  return (await assistantStore.agents(owner.domainId)).filter(agent => visible.has(agent.id));
+  return allowedAgents(await assistantStore.agents(owner.domainId), "VIEW", credentials);
 }
 
 function presetDeletionRestriction(kind: string, locale?: string) {
@@ -305,13 +308,15 @@ export async function agentDefinitionDeletionRestriction(id: string, owner: Assi
 }
 
 export async function deleteAgentDefinition(id: string, owner: AssistantOwner, credentials: AssistantCredentials) {
-  await requireProductGrant(id, "edit", credentials);
-  const agent = await readAgentDefinitionRow(id, owner);
-  const restriction = presetDeletionRestriction(agent.kind, credentials.locale);
-  if (restriction) throw new HttpError(403, restriction.reason, "PRESET_AGENT_READ_ONLY");
-  await getPostgresPool().query(
-    `DELETE FROM ${t("assistant_agents")} WHERE id=$1 AND domain_id=$2`,
-    [id, owner.domainId],
-  );
-  await unregisterProductResource(owner.domainId, id);
+  await transaction(async client => {
+    await lockProducts(client, owner);
+    const agent = await readAgentDefinitionRow(id, owner, client);
+    const restriction = presetDeletionRestriction(agent.kind, credentials.locale);
+    if (restriction) throw new HttpError(403, restriction.reason, "PRESET_AGENT_READ_ONLY");
+    await retireObject(agentObject(agent), credentials);
+    await client.query(
+      `DELETE FROM ${t("assistant_agents")} WHERE id=$1 AND domain_id=$2`,
+      [id, owner.domainId],
+    );
+  });
 }

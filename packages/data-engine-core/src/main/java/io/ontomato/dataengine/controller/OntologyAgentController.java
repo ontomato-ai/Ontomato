@@ -35,7 +35,7 @@ public class OntologyAgentController {
   @GetMapping("/agents")
   public Object agents(HttpServletRequest req) {
     var context=access.authenticated(req);
-    return host.agents(access.governanceAllowed(),context.owner().domainId(),context.language());
+    return host.agents(access.governanceAllowed(),context.owner(),context.language());
   }
 
   @PostMapping("/sessions")
@@ -47,7 +47,7 @@ public class OntologyAgentController {
       throws Exception {
     AgentJson.fields(body, "agentId");
     return host.create(
-        AgentJson.id(key), AgentJson.id(body.getString("agentId")), access.forAgent(req,body.getString("agentId")).owner());
+        AgentJson.id(key), AgentJson.id(body.getString("agentId")), access.forAgentUse(req,body.getString("agentId")).owner());
   }
 
   @GetMapping("/sessions")
@@ -150,7 +150,7 @@ public class OntologyAgentController {
     if(body.containsKey("selectedOption") && (!(body.get("selectedOption") instanceof Integer) || body.getIntValue("selectedOption")<0 || !body.containsKey("replyTo"))) throw AgentHttpException.invalid("selectedOption requires a question and a nonnegative integer");
     if(body.containsKey("replyTo")) AgentJson.id(body.getString("replyTo"));
     return host.send(
-        AgentJson.id(id), AgentJson.id(key), AgentJson.text(body, "message"), body.getString("replyTo"), body.getInteger("selectedOption"), access.forSession(req,id));
+        AgentJson.id(id), AgentJson.id(key), AgentJson.text(body, "message"), body.getString("replyTo"), body.getInteger("selectedOption"), access.forSessionUse(req,id));
   }
 
   @GetMapping("/sessions/{id}/runs/{run}")

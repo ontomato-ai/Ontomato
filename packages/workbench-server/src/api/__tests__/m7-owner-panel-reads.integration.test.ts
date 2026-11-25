@@ -1,3 +1,4 @@
+import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
@@ -343,6 +344,10 @@ beforeAll(async () => {
   app.post("/product-governance/register", (req, res) => {
     resourceIds.add(req.body.id);
     res.json({ success: true });
+  });
+  app.post("/authorization/objects/decide-batch", (req, res) => {
+    res.json(agentObjectDecisions(req.body, request => "target" in request &&
+      request.target.domainId === domainId && request.target.id === agentIds.readable));
   });
   app.post("/product-governance/check", (req, res) => {
     res.json({ allowed: req.header("tk") === "m7-reader" && resourceIds.has(req.body.id) });

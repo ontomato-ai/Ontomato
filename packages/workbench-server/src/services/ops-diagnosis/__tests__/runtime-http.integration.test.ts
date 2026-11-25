@@ -1,3 +1,4 @@
+import { agentObjectDecisions } from "../../../__tests__/fixtures/agent-object-decisions";
 import { openBrowserEventConnection } from "../../../__tests__/fixtures/browser-events";
 import { removeWorkerFiles } from "../../../../../agent-runtime/src/worker";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
@@ -98,7 +99,7 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
   }
   beforeAll(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "ops-diagnosis-test-"));
-    const assistantResources = new Map<string, Set<string>>();
+    const publishedAgents = new Map<string, string[]>();
     model = createServer(async (req, res) => {
       let raw = ""; for await (const c of req) raw += c;
       const json = (status: number, body: object) => {
@@ -136,28 +137,29 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
       if (req.method === "POST" && req.url === "/product-governance/register") {
         if (req.headers["x-ontomato-query-service-token"] !== queryServiceToken)
           return json(403, { error: { code: "FORBIDDEN", message: "Platform service authorization required" } });
-        const { id, domainId } = JSON.parse(raw);
-        const ids = assistantResources.get(domainId) ?? new Set<string>();
-        assistantResources.set(domainId, ids.add(id));
         return json(200, { success: true });
       }
-      if (req.method === "POST" && req.url === "/product-governance/resources") {
-        const domainId = String(req.headers.tk).split(":")[1];
-        return json(200, { ids: [...(assistantResources.get(domainId) ?? [])] });
+      if (req.method === "POST" && req.url === "/authorization/objects/published-agent-presets") {
+        if (req.headers["x-ontomato-query-service-token"] !== queryServiceToken)
+          return json(403, { error: { code: "FORBIDDEN", message: "Platform service authorization required" } });
+        const { domainId, ids } = JSON.parse(raw);
+        publishedAgents.set(domainId, ids);
+        res.writeHead(204);
+        return res.end();
       }
-      if (req.method === "POST" && req.url === "/product-governance/check") {
-        const domainId = String(req.headers.tk).split(":")[1];
-        const { id, verb } = JSON.parse(raw);
-        if (revokeDiagnosisUse && verb === "use") {
-          const { rows } = await pool.query<{ id: string }>(
-            `SELECT id FROM "${schema}".assistant_agents WHERE domain_id=$1 AND kind='ops-diagnosis'`,
-            [domainId],
-          );
-          if (id === DIAGNOSIS_AGENT_ID || rows.some((row) => row.id === id)) {
-            return json(200, { allowed: false });
-          }
-        }
-        return json(200, { allowed: assistantResources.get(domainId)?.has(id) ?? false });
+      if (req.method === "POST" && req.url === "/authorization/objects/decide-batch") {
+        if (req.headers["x-ontomato-query-service-token"] !== queryServiceToken)
+          return json(403, { error: { code: "FORBIDDEN", message: "Platform service authorization required" } });
+        const [userId, domainId] = String(req.headers.tk).split(":");
+        const { rows: [diagnosis] } = await pool.query<{ id: string }>(
+          `SELECT id FROM "${schema}".assistant_agents WHERE domain_id=$1 AND kind='ops-diagnosis'`, [domainId],
+        );
+        return json(200, agentObjectDecisions(JSON.parse(raw), request =>
+          "target" in request && ["alice", "bob", "denied"].includes(userId) &&
+          request.target.domainId === domainId && request.target.kind === "AGENT" &&
+          request.ownerFacts.ownerId === null && request.ownerFacts.state === "PUBLISHED" &&
+          (publishedAgents.get(domainId)?.includes(request.target.id) ?? false) &&
+          !(revokeDiagnosisUse && request.verb === "USE" && request.target.id === diagnosis?.id)));
       }
       if (req.method === "POST" && req.url === "/product-governance/service-resources") {
         if (req.headers["x-ontomato-query-service-token"] !== queryServiceToken)
@@ -195,7 +197,9 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     expect((await api("/api/observe/agent/sessions", { agentId: DIAGNOSIS_AGENT_ID }, "alice:a", session)).status).toBe(201);
     expect((await api(`/api/observe/agent/sessions/${session}`, undefined, "bob:a")).status).toBe(404);
     expect((await api(`/api/observe/agent/sessions/${session}`, undefined, "alice:b")).status).toBe(404);
-    expect((await api("/api/observe/agent/agents", undefined, "denied:a")).status).toBe(403);
+    expect(await api("/api/observe/agent/agents", undefined, "denied:a")).toMatchObject({
+      status: 200, body: { agents: [expect.objectContaining({ id: DIAGNOSIS_AGENT_ID })] },
+    });
     // Block the first read-only caller restore, inside the host's settle callback.
     const settling = new Promise<void>((resolve) => { blockNextReadOnlyRestore = resolve; });
     const started = await api(`/api/observe/agent/sessions/${session}/runs`, { message: "inspect logs" }, "alice:a", run); expect(started.status, JSON.stringify(started.body) + logs.split("\n").filter((line) => line.includes("ERROR")).join("\n").slice(-6000)).toBe(202);
@@ -237,11 +241,12 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
     expect((await api(`/api/observe/agent/sessions/${session}`, undefined, "alice:a", undefined, "DELETE")).status).toBe(409);
     const cancelled = await api(`/api/observe/agent/sessions/${session}/runs/${active}/cancel`, {}); expect(cancelled.body.run.status).toBe("stopped"); expect(cancelled.body.run.stopReason).toBe("aborted");
   }, 30000);
-  it("requires observe access and a diagnosis grant to write, while revoked users can read history", async () => {
+  it("requires diagnosis USE to write and preserves history after revocation", async () => {
     const sessions = "/api/observe/agent/sessions";
     const session = randomUUID(), run = randomUUID();
     const input = { agentId: DIAGNOSIS_AGENT_ID };
-    expect((await api(sessions, input, "denied:a", session)).status).toBe(403);
+    // This caller has no Observe access and can still use the published diagnosis agent.
+    expect((await api(sessions, input, "denied:a", randomUUID())).status).toBe(201);
     expect((await api(sessions, input, "alice:a", session)).status).toBe(201);
     expect((await api(`${sessions}/${session}/runs`, { message: "inspect logs" }, "alice:a", run)).status).toBe(202);
     await stopped(session, run);

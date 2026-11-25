@@ -190,9 +190,7 @@ class OntologyRetrievalContractTest {
     results = new RetrievalResults(store,mock(AgentChannelChanges.class));
     outputs = mock(QueryOutputService.class);
     tasks = new RetrievalTasks(store, jobs, results);
-    var productGrants = mock(ProductGrantService.class);
-    when(productGrants.allowedFor(owner.domainId(), owner.userId(), OntologyAgentStore.RETRIEVER, "use")).thenReturn(true);
-    when(productGrants.allowedFor(owner.domainId(), executor.getId(), OntologyAgentStore.RETRIEVER, "use")).thenReturn(true);
+    var retrieverAccess = mock(RetrieverAccess.class);
     retrieval =
         new OntologyRetrievalService(
             store,
@@ -203,7 +201,7 @@ class OntologyRetrievalContractTest {
             outputs,
             jobs,
             quality,
-            authorization, results, mock(AgentChannelRuns.class), changes, productGrants);
+            authorization, results, mock(AgentChannelRuns.class), changes, retrieverAccess);
     var host =
         new OntologyAgentHost(
             store,
@@ -216,7 +214,7 @@ class OntologyRetrievalContractTest {
     when(scheduleIdentity.dataPermission(owner.domainId(), executor.getId())).thenAnswer(call -> executorPermission);
     var executions = mock(AgentExecutionAccess.class);
     when(executions.require(owner.domainId(), executor.getId())).thenReturn(executor);
-    var callers = new AgentCaller(jdbc, scheduleIdentity, identity, productGrants);
+    var callers = new AgentCaller(jdbc, scheduleIdentity, identity, retrieverAccess);
     ReflectionTestUtils.setField(callers, "executions", executions);
     var grantFilter = new QueryGrantFilter(grants);
     ReflectionTestUtils.setField(grantFilter, "executions", executions);
