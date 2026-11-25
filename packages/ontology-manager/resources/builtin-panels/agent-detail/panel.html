@@ -161,7 +161,7 @@
         <sdk-tab-pane name="grants" :label="t('tab.grants')"></sdk-tab-pane>
       </sdk-tabs>
 
-      <div v-show="tabModel === 'config' || !canGrant" class="agent-detail-tab-panel" data-tab="config">
+      <div v-if="configTabMounted" v-show="tabModel === 'config' || !canGrant" class="agent-detail-tab-panel" data-tab="config">
         <info-banner
           v-if="!canEdit"
           tone="info"

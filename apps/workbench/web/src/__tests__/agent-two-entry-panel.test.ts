@@ -1325,6 +1325,9 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
         expect(page.element.textContent).toContain("feature access gate");
         expect(page.element.textContent).toContain("Domain Admin");
       }, { timeout: 5000 });
+      // Deep-linking directly to the grants tab does not eagerly mount or read the heavy config form tab.
+      expect(page.element.querySelector('[data-tab="config"]')).toBeNull();
+      expect(app.reads.some((r) => "dataName" in r && r.memberPath[0]?.member === "form")).toBe(false);
     } finally {
       page.app.unmount();
     }

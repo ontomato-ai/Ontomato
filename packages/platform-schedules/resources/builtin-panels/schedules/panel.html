@@ -175,7 +175,7 @@
 
         <template v-else-if="selected">
           <div
-            v-show="mode === 'edit'"
+            v-if="mode === 'edit'"
             ref="editPane"
             class="schedules-edit-pane"
             data-form="edit"

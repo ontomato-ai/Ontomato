@@ -148,7 +148,7 @@
       </div>
 
       <!-- Derived definition tab: summary, grouped effects, selectable parameters, and submission conditions. -->
-      <section v-if="detailReady" class="ac-section" v-show="activeTab === 'derived'">
+      <section v-if="detailReady && activeTab === 'derived'" class="ac-section">
         <p class="ac-hint">{{ t("derivedHint") }}</p>
         <projection slot="derivedSummary"></projection>
 
@@ -163,7 +163,7 @@
       </section>
 
       <!-- Code explanation tab: generic AnnotatedCode bound to owner-projected annotatedExplanation. -->
-      <section v-if="detailReady" class="ac-section" v-show="activeTab === 'code'">
+      <section v-if="detailReady && activeTab === 'code'" class="ac-section">
         <projection slot="explanation" @select-ref="onSelectRef"></projection>
       </section>
     </section>

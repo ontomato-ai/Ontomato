@@ -1063,19 +1063,30 @@ describe("projections two-entry catalog & detail panels", () => {
     try {
       await waitFor(() => Boolean(findButton(mounted.element, "More")), "More menu button ready");
 
-      // Overview & definition tabs render summary, preview, and binding tables.
+      // Only the active Overview tab mounts initially; inactive tabs stay unmounted until selected.
+      await waitFor(() => mounted.element.querySelectorAll(".proj-tab-panel").length === 1, "only active overview tab mounted");
       expect(mounted.element.querySelector('[data-tab="overview"]')?.textContent).toContain("Inline preview");
-      expect(mounted.element.querySelector('[data-tab="definition"]')?.textContent).toContain("Data sources & reads");
-      expect(mounted.element.querySelector('[data-tab="definition"]')?.textContent).toContain("Registered operations");
+      expect(mounted.element.querySelector('[data-tab="definition"]')).toBeNull();
+      expect(mounted.element.querySelector('[data-tab="usage"]')).toBeNull();
+      expect(mounted.element.querySelector('[data-tab="grants"]')).toBeNull();
 
-      // 1. Keep same-object tabs mounted via v-show while unmounting grants tab when unauthorized.
+      // Definition tab mounts on demand and renders binding tables.
+      await present({ tab: "definition" });
+      await waitFor(
+        () =>
+          mounted.element.querySelector('[data-tab="definition"]')?.textContent?.includes("Data sources & reads") === true
+          && mounted.element.querySelector('[data-tab="definition"]')?.textContent?.includes("Registered operations") === true,
+        "definition tab mounted on demand",
+      );
+
+      // 1. Grants tab mounts on demand when authorized and unmounts when switched away or unauthorized.
       await present({ tab: "grants" });
-      await waitFor(() => mounted.element.querySelectorAll(".proj-tab-panel").length === 4, "4 tab panels mounted for authorized projection");
-      const tabPanels = Array.from(mounted.element.querySelectorAll<HTMLElement>(".proj-tab-panel"));
-      const grantsPanel = tabPanels[3]!;
+      await waitFor(() => mounted.element.querySelector('[data-tab="grants"]') !== null, "grants tab mounted for authorized projection");
+      const grantsPanel = mounted.element.querySelector<HTMLElement>('[data-tab="grants"]')!;
       expect(grantsPanel.style.display).not.toBe("none");
 
       // Domain share toggle & Add grant dialog work inside grants tab.
+      await waitFor(() => Boolean(findButton(grantsPanel, "Enable domain sharing")), "shareEnable button ready");
       const shareBtn = findButton(grantsPanel, "Enable domain sharing");
       expect(shareBtn).toBeTruthy();
       shareBtn!.click();
@@ -1093,7 +1104,7 @@ describe("projections two-entry catalog & detail panels", () => {
           && mounted.element.textContent?.includes("1 additional panel") === true,
         "usage tab shows panels and hidden count",
       );
-      const usagePanel = tabPanels[2]!;
+      const usagePanel = mounted.element.querySelector<HTMLElement>('[data-tab="usage"]')!;
       const panelRow = Array.from(usagePanel.querySelectorAll("tr")).find((tr) => tr.textContent?.includes("Sales Dashboard"));
       expect(panelRow).toBeTruthy();
       panelRow!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1170,7 +1181,13 @@ describe("projections two-entry catalog & detail panels", () => {
     const harness = await mountProjectionsApp({ initialAddress: `${DETAIL_PATH}?selected=proj-readonly` });
     const { mounted, observed, present } = harness;
     try {
-      await waitFor(() => mounted.element.querySelectorAll(".proj-tab-panel").length === 3, "readonly projection unmounts grants tab");
+      await waitFor(
+        () =>
+          mounted.element.querySelectorAll('.proj-tablist button[role="tab"]').length === 3
+          && mounted.element.querySelectorAll(".proj-tab-panel").length === 1
+          && mounted.element.querySelector('[data-tab="grants"]') === null,
+        "readonly projection omits grants tab and mounts only active overview tab",
+      );
       expect(observed.context?.state?.detailMode).toBe("view");
       expect(findButton(mounted.element, "Edit")).toBeUndefined();
 

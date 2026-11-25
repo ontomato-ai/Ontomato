@@ -37,9 +37,10 @@ import { confirmDiscard, directRun, noOperations } from "./panel-frame";
  *   batch status updates shown only when rows are checked.
  * - Detail (`builtin-panels/action-detail`): single `<page-header>` (back to `/ontology/assets/actions`, ObjectHeader
  *   title, danger delete OperationButton, and Save/Discard draft controls via `usePanelFormDraft`), in-place
- *   missing/loading/forbidden/error handling without mounting `form`, three `v-show` tabs preserving edits and live
- *   `form.draft -> AnnotatedCode.currentCode` sync, create->edit transition, delete clearing dirty form before
- *   navigating back, and bidirectional child-object `selectedParameter` <-> `activeSegmentId` linkage.
+ *   missing/loading/forbidden/error handling without mounting `form`, `definition` tab kept mounted via `v-show` to
+ *   preserve edits and live `form.draft -> AnnotatedCode.currentCode` sync while read-only `derived` and `code` tabs
+ *   mount lazily via `v-if`, create->edit transition, delete clearing dirty form before navigating back, and
+ *   bidirectional child-object `selectedParameter` <-> `activeSegmentId` linkage.
  */
 
 const actionTypeEntry = platformTypeTableEntrySchema.parse({
@@ -608,7 +609,7 @@ describe("builtin actions catalog panel (actions)", () => {
 describe("builtin action-detail panel (action-detail)", () => {
   it("renders a single page-header with Back to actions, wires header Save/Discard draft controls across all three tabs, and guards unsaved edits on back", async () => {
     let allowLeave = false;
-    const { mount, element, navigated, confirmLeaveUnsaved } = await mountDetailPanel({
+    const { mount, element, reads, navigated, confirmLeaveUnsaved } = await mountDetailPanel({
       initial: {
         selected: { className: ACTION, primaryKey: "approve-order" },
       },
@@ -624,6 +625,14 @@ describe("builtin action-detail panel (action-detail)", () => {
       expect(form).toBeDefined();
       expect(form!.values.value.name).toBe("Approve order");
     });
+
+    // Read-only derived & code tabs stay unmounted on initial definition tab load (zero eager reads).
+    const initialMembers = new Set(reads.map((r) => r.memberPath[0]?.member));
+    expect(initialMembers.has("derivedSummary")).toBe(false);
+    expect(initialMembers.has("derivedEffects")).toBe(false);
+    expect(initialMembers.has("derivedParameters")).toBe(false);
+    expect(initialMembers.has("derivedConditions")).toBe(false);
+    expect(initialMembers.has("explanation")).toBe(false);
 
     // Single page-header carries Back to actions, Save (disabled when clean), and no duplicate ObjectForm footer bar.
     const backButton = element.querySelector<HTMLButtonElement>("button.sdk-page-header-back");
@@ -1011,7 +1020,11 @@ describe("builtin action-detail panel (action-detail)", () => {
     // 5. Expanding seg-1 details and clicking its parameter reference jumps back to `derived` tab with child-object selectedParameter.
     instance.state.set("selectedParameter", null);
     await nextTick();
-    const segCard = element.querySelector<HTMLElement>('[data-member="explanation"] [data-segment-id="seg-1"]')!;
+    const segCard = await vi.waitFor(() => {
+      const found = element.querySelector<HTMLElement>('[data-member="explanation"] [data-segment-id="seg-1"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
     segCard.querySelector<HTMLButtonElement>(".sdk-annotated-code-seg-toggle")!.click();
     await vi.waitFor(() => {
       expect(segCard.querySelector<HTMLButtonElement>(".sdk-annotated-code-ref")).not.toBeNull();

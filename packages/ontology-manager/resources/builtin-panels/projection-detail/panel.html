@@ -303,7 +303,7 @@
       </div>
 
       <!-- Tab 1: Overview & inline preview -->
-      <div v-show="tabModel === 'overview'" class="proj-tab-panel" data-tab="overview">
+      <div v-if="tabModel === 'overview'" class="proj-tab-panel" data-tab="overview">
         <section class="proj-card">
           <h3 class="proj-card-title">{{ t('section.summary') }}</h3>
           <projection slot="summary" @navigate="onNavigateReference"></projection>
@@ -316,7 +316,7 @@
       </div>
 
       <!-- Tab 2: Definition & bindings -->
-      <div v-show="tabModel === 'definition'" class="proj-tab-panel" data-tab="definition">
+      <div v-else-if="tabModel === 'definition'" class="proj-tab-panel" data-tab="definition">
         <section class="proj-card">
           <h3 class="proj-card-title">{{ t('section.data') }}</h3>
           <projection slot="dataList" @navigate="onNavigateReference"></projection>
@@ -352,7 +352,7 @@
       </div>
 
       <!-- Tab 3: Used by panels -->
-      <div v-show="tabModel === 'usage'" class="proj-tab-panel" data-tab="usage">
+      <div v-else-if="tabModel === 'usage'" class="proj-tab-panel" data-tab="usage">
         <section class="proj-card">
           <div class="proj-card-head">
             <h3 class="proj-card-title">{{ t('section.usedBy') }}</h3>
@@ -366,7 +366,7 @@
       </div>
 
       <!-- Tab 4: Permissions & sharing -->
-      <div v-if="canOpenGrant" v-show="tabModel === 'grants'" class="proj-tab-panel" data-tab="grants">
+      <div v-else-if="canOpenGrant && tabModel === 'grants'" class="proj-tab-panel" data-tab="grants">
         <div class="proj-share-bar">
           <div class="proj-share-left">
             <strong class="proj-card-title">{{ t('grants.shareTitle') }}</strong>

@@ -445,7 +445,7 @@ afterEach(() => {
 });
 
 describe("application-detail tab mount retention and dialog/permission unmounting", () => {
-  it("keeps entriesList mounted across entries -> identity -> entries switches via v-show and preserves pending delete confirmation", async () => {
+  it("mounts tabs lazily on first visit, then keeps entriesList mounted across entries -> identity -> entries switches via v-show and preserves pending delete confirmation", async () => {
     const harness = mountApplicationDetail({
       initialState: { selected: appRef("app-1"), tab: "entries" },
       canMaintain: true,
@@ -462,19 +462,16 @@ describe("application-detail tab mount retention and dialog/permission unmountin
         "entries tab ready",
       );
 
-      const identityPanel = mounted.element.querySelector('[data-tab="identity"]') as HTMLElement | null;
+      // Initially only the active entries tab is mounted; unvisited tabs do not mount or fire reads eagerly.
       const entriesPanel = mounted.element.querySelector('[data-tab="entries"]') as HTMLElement | null;
-      const assetsPanel = mounted.element.querySelector('[data-tab="assets"]') as HTMLElement | null;
-      const grantsPanel = mounted.element.querySelector('[data-tab="grants"]') as HTMLElement | null;
-      expect(identityPanel).not.toBeNull();
       expect(entriesPanel).not.toBeNull();
-      expect(assetsPanel).not.toBeNull();
-      expect(grantsPanel).not.toBeNull();
-
       expect(entriesPanel!.style.display).not.toBe("none");
-      expect(identityPanel!.style.display).toBe("none");
-      expect(assetsPanel!.style.display).toBe("none");
-      expect(grantsPanel!.style.display).toBe("none");
+      expect(mounted.element.querySelector('[data-tab="identity"]')).toBeNull();
+      expect(mounted.element.querySelector('[data-tab="assets"]')).toBeNull();
+      expect(mounted.element.querySelector('[data-tab="grants"]')).toBeNull();
+      expect(harness.reads.some((r) => r.memberPath[0]?.member === "save")).toBe(false);
+      expect(harness.reads.some((r) => r.memberPath[0]?.member === "usedPanelsList")).toBe(false);
+      expect(harness.reads.some((r) => r.memberPath[0]?.member === "grantsList")).toBe(false);
 
       const entriesListEl = entriesPanel!.querySelector(".sdk-object-list") as HTMLElement | null;
       expect(entriesListEl).not.toBeNull();
@@ -489,19 +486,23 @@ describe("application-detail tab mount retention and dialog/permission unmountin
         throw new Error(`Expected entriesList.deleteEntry to await confirmation, got: ${JSON.stringify(pendingDelete)}`);
       }
 
-      // Switch tab: entries -> identity. entriesList must remain mounted as the exact same DOM node with display: none.
+      // Switch tab: entries -> identity. identity mounts on demand while entriesList remains mounted as the exact same DOM node with display: none.
       harness.controller()!.applyState({ tab: "identity" });
       await waitFor(
-        () => identityPanel!.style.display !== "none" && entriesPanel!.style.display === "none",
+        () => {
+          const idPanel = mounted.element.querySelector('[data-tab="identity"]') as HTMLElement | null;
+          return idPanel !== null && idPanel.style.display !== "none" && entriesPanel!.style.display === "none";
+        },
         "switched to identity tab",
       );
+      const identityPanel = mounted.element.querySelector('[data-tab="identity"]') as HTMLElement;
       expect(mounted.element.contains(entriesListEl!)).toBe(true);
       expect(entriesPanel!.querySelector(".sdk-object-list")).toBe(entriesListEl);
 
       // Switch tab back: identity -> entries. Same DOM node becomes visible again and pending confirmation dispatches cleanly.
       harness.controller()!.applyState({ tab: "entries" });
       await waitFor(
-        () => entriesPanel!.style.display !== "none" && identityPanel!.style.display === "none",
+        () => entriesPanel!.style.display !== "none" && identityPanel.style.display === "none",
         "switched back to entries tab",
       );
       expect(entriesPanel!.querySelector(".sdk-object-list")).toBe(entriesListEl);

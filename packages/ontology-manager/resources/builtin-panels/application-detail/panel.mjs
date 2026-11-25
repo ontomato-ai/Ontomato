@@ -1,4 +1,4 @@
-import { computed, nextTick, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import {
   mountPanel,
   panelAddress,
@@ -156,6 +156,33 @@ const ApplicationDetailPanel = {
       { immediate: true },
     );
 
+    // Mount each tab lazily on first visit for the current application, then keep visited tabs mounted
+    // via v-show so unsaved edits and pending list confirmations survive tab switches.
+    const mountedTabs = ref(new Set());
+    watch(
+      selectedKey,
+      (next, prev) => {
+        if (next !== prev) mountedTabs.value = new Set();
+      },
+      { flush: "sync" },
+    );
+    watch(
+      [recordReady, tabModel, canGrant],
+      ([ready, tab, allowed]) => {
+        if (!ready) return;
+        const effectiveTab = tab === "grants" && !allowed ? "identity" : tab;
+        if (!mountedTabs.value.has(effectiveTab)) {
+          const next = new Set(mountedTabs.value);
+          next.add(effectiveTab);
+          mountedTabs.value = next;
+        }
+      },
+      { immediate: true, flush: "sync" },
+    );
+    function isTabMounted(name) {
+      return mountedTabs.value.has(name);
+    }
+
     // Route back to the catalog entry so the platform's unified unsaved-changes guard intercepts dirty edits.
     function goBack() {
       void navigate(CATALOG_PATH).catch(() => undefined);
@@ -274,6 +301,7 @@ const ApplicationDetailPanel = {
       t,
       selectedKey,
       tabModel,
+      isTabMounted,
       entriesBulkMode,
       editingEntryId,
       entryDialogOpen,
