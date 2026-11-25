@@ -18,7 +18,7 @@ import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-op
 import { FEEDBACK_RECORD, SCHEDULED_TASK, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
-import type { DirectProjection, ProductProjection } from "@ontomato/contracts/product-panels";
+import { applicationPanelUseSchema, type DirectProjection, type ProductProjection } from "@ontomato/contracts/product-panels";
 import type { DisplayPageController } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
@@ -89,14 +89,16 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
 
   it("mounts builtin feedback panel and executes exportCsv.export via unified usePanelOperation", async () => {
     const application = catalogFixture().find((app) => app.id === "settings")!;
-    const use = application.panelUses?.find((entry) => entry.path === "/settings/feedback")
+    const use = applicationPanelUseSchema.parse(
+      application.panelUses?.find((entry) => entry.path === "/settings/feedback")
       ?? {
         id: "feedback-main",
         path: "/settings/feedback",
         pageKey: "feedback",
         panelId: "builtin-product-feedback-d2",
         access: { kind: "domain-member" as const },
-      };
+      },
+    );
     const feedbackApp = {
       ...application,
       panelUses: application.panelUses?.some((entry) => entry.path === "/settings/feedback")

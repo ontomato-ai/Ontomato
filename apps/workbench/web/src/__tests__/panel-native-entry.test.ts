@@ -6,7 +6,7 @@ import settingsHtml from "../../../../../packages/ontology-manager/resources/bui
 import settingsModule from "../../../../../packages/ontology-manager/resources/builtin-panels/agent-settings/panel.mjs?raw";
 import settingsSource from "../../../../../packages/ontology-manager/resources/builtin-panels/agent-settings/panel.json";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
-import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { applicationPanelUseSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { addressLandingGuard, panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
@@ -227,10 +227,10 @@ it.each([
 ])("mounts the shared settings panel at the original %s address", async (applicationId, path, permissionCode) => {
   const catalog = catalogFixture();
   const application = catalog.find(app => app.id === applicationId)!;
-  const use = application.panelUses?.find(entry => entry.path === path);
+  const use = applicationPanelUseSchema.parse(application.panelUses?.find(entry => entry.path === path));
   expect(use).toMatchObject({ panelId: "builtin-product-agent-settings", access: { permissionCode } });
   const panel = {
-    ...panelRecord(use!.panelId, "Agent settings", definePanel({
+    ...panelRecord(use.panelId, "Agent settings", definePanel({
       state: {
         selected: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true },
         mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
@@ -263,7 +263,7 @@ it.each([
 it("explains the missing owner permission to a reader admitted to the ontology settings entry", async () => {
   const catalog = catalogFixture();
   const application = catalog.find(app => app.id === "ontology")!;
-  const use = application.panelUses!.find(entry => entry.path === "/ontology/agents")!;
+  const use = applicationPanelUseSchema.parse(application.panelUses!.find(entry => entry.path === "/ontology/agents")!);
   const { members, ...manifest } = settingsSource.manifest;
   const panel = {
     ...panelRecord(use.panelId, "Agent settings", panelManifestSchema.parse({
@@ -310,8 +310,8 @@ it("opens another built-in application's entry from an entry, and back, without 
   const catalog = catalogFixture();
   const ontology = catalog.find(app => app.id === "ontology")!;
   const agents = catalog.find(app => app.id === "agents")!;
-  const ontologyUse = ontology.panelUses!.find(entry => entry.path === "/ontology/agents")!;
-  const agentsUse = agents.panelUses!.find(entry => entry.path === "/agents/settings")!;
+  const ontologyUse = applicationPanelUseSchema.parse(ontology.panelUses!.find(entry => entry.path === "/ontology/agents")!);
+  const agentsUse = applicationPanelUseSchema.parse(agents.panelUses!.find(entry => entry.path === "/agents/settings")!);
   const panel = {
     ...panelRecord(ontologyUse.panelId, "Agent settings", definePanel({ state: {}, members: {} })),
     visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,

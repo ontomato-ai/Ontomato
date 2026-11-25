@@ -1,5 +1,6 @@
 import type { Component } from "vue";
 import {
+  Activity,
   AlarmClock,
   AlertCircle,
   AlertTriangle,
@@ -21,6 +22,7 @@ import {
   ClipboardList,
   Clock,
   Component as ComponentIcon,
+  Cpu,
   Database,
   ExternalLink,
   Eye,
@@ -34,6 +36,7 @@ import {
   HeartPulse,
   House,
   Info,
+  KeyRound,
   Layers,
   LayoutDashboard,
   Link2,
@@ -49,6 +52,7 @@ import {
   Presentation,
   Puzzle,
   ScanEye,
+  Server,
   Settings,
   Shapes,
   Share2,
@@ -116,6 +120,10 @@ const appIcons: Record<string, Component> = {
   "panels-top-left": PanelsTopLeft,
   shapes: Shapes,
   table: Table2,
+  cpu: Cpu,
+  server: Server,
+  "key-round": KeyRound,
+  activity: Activity,
   /** 个人工作台 */
   home: House,
   /** 智能体平台 */

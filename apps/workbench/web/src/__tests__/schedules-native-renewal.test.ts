@@ -6,7 +6,7 @@ import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
-import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import { applicationPanelUseSchema, type ProductProjection } from "@ontomato/contracts/product-panels";
 import { platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -22,7 +22,7 @@ import module from "../../../../../packages/platform-schedules/resources/builtin
 import { sentPanelReadItems, humanIntents, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot } from "./panel-frame";
 
 const application = catalogFixture().find(app => app.id === "schedules")!;
-const use = application.panelUses![0]!;
+const use = applicationPanelUseSchema.parse(application.panelUses![0]!);
 const id = "00000000-0000-4000-8000-000000000001";
 const operationId = "renew.renewCredential";
 const deleteOperation = "opDelete.delete";

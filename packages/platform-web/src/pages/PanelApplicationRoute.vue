@@ -15,7 +15,7 @@ import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelDeepLinkStateValue, PanelManifest } from "@ontomato/contracts/panel-manifest";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { applicationFrameContextOf, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { applicationFrameContextOf, isNativeApplicationEntry, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { PageComposer, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
@@ -262,9 +262,11 @@ const catalogApp = computed(() => catalog.applications.value.find((app) => app.i
 const currentResolution = computed(() =>
   resolution.value?.applicationId === props.applicationId ? resolution.value : null,
 );
-/** Known entry table for this application: authoritative resolution menu once received, else navigation catalog. */
+/** Known panel entry table for this application: authoritative resolution menu once received, else navigation catalog. */
 const entryTable = computed<readonly ApplicationPanelUse[]>(() =>
-  currentResolution.value?.menu.panelUses ?? catalogApp.value?.panelUses ?? [],
+  (currentResolution.value?.menu.panelUses ?? catalogApp.value?.panelUses ?? []).filter(
+    (entry): entry is ApplicationPanelUse => !isNativeApplicationEntry(entry),
+  ),
 );
 /** The entry an address opens: its own path, or the application's first listed entry at the application's own address. */
 const entryPath = computed(() => {

@@ -16,7 +16,7 @@ import { nodeApiRequest } from "@ontomato/workbench-ui";
 import { defaultPersonalWorkspace, personalWorkspaceSchema, recentWorkListSchema, type RecentWork, type WorkspaceSection } from "@ontomato/contracts/personal-workspace";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { panelObjectRefSchema } from "@ontomato/contracts/panel-manifest";
-import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { isNativeApplicationEntry, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { ManagerFrame, ProductAssetRuntime, useProductText } from "@ontomato/ontology-manager";
 import { PanelHost, type PanelHostLabels, type PanelHostPort, type PanelHostState, type PanelInstanceView } from "@ontomato/platform-shell";
 import { DashboardCardPicker, DashboardMetricPreview } from "@ontomato/workbench-ui/features/dashboard";
@@ -194,7 +194,7 @@ const objectDetailHost = ref<PanelInstanceView | null>(null);
 const objectDetailUse = computed<ApplicationPanelUse>(() =>
   catalog.applications.value
     .find((app) => app.id === "home")
-    ?.panelUses?.find((use) => use.id === HOME_OBJECT_DETAIL_USE.id)
+    ?.panelUses?.find((use): use is ApplicationPanelUse => !isNativeApplicationEntry(use) && use.id === HOME_OBJECT_DETAIL_USE.id)
   ?? HOME_OBJECT_DETAIL_USE,
 );
 let cachedObjectDetailPort: { key: string; port: PanelHostPort } | null = null;

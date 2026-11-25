@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
-import { createMemoryHistory, createRouter } from "vue-router";
+import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { ApplicationEntryResolution, ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { PanelManifest } from "@ontomato/contracts/panel-manifest";
 import { provideApplicationFrame, providePageHeading, type DirectPanelRun } from "@ontomato/platform-shell";
@@ -552,5 +552,72 @@ describe("ApplicationFrameHost single persistent outer frame", () => {
     expect(framePanelHostCalls).toHaveLength(0);
     expect(overrideWrapper.get('[data-content-use="use-app-b-home"]').attributes("data-frame-state")).toBe(JSON.stringify({ term: "B" }));
     overrideWrapper.unmount();
+  });
+
+  it("mounts builtinFramePanelHost for a built-in framed app whose admitted entries are native-only without hostGroups", async () => {
+    const { default: ApplicationFrameHost } = await import("../ApplicationFrameHost.vue");
+    const nativeMonitor = {
+      id: "system-monitor",
+      pageKey: "system-monitor",
+      kind: "native" as const,
+      path: "/settings/records/system-monitor",
+      icon: "activity",
+      groupKey: "records",
+      access: { permissionCode: "system-monitoring" },
+      names: { en: "System monitoring" },
+    };
+    catalogApplications.value = [
+      {
+        id: "settings",
+        framePanelId: "builtin-product-platform-frame",
+        names: { en: "System settings" },
+        groups: [{ key: "records", names: { en: "Logs and monitoring" }, sort: 3 }],
+        panelUses: [nativeMonitor],
+      },
+    ];
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: "/settings/records/system-monitor",
+          component: defineComponent({
+            name: "NativeMonitorStub",
+            render: () => h("div", { "data-native-monitor": "true" }, "monitor"),
+          }),
+        },
+      ],
+    });
+    await router.push("/settings/records/system-monitor");
+    await router.isReady();
+
+    const HostHarness = defineComponent({
+      render() {
+        return h(
+          ApplicationFrameHost,
+          {
+            frame: {
+              applicationId: "settings",
+              framePanelId: "builtin-product-platform-frame",
+              title: "System settings",
+              groups: null,
+              activePageId: "/settings/records/system-monitor",
+            },
+          },
+          { default: () => h(RouterView) },
+        );
+      },
+    });
+
+    const wrapper = mount(HostHarness, { global: { plugins: [router, workbenchI18n()] } });
+    await flushPromises();
+
+    expect(framePanelHostCalls).toHaveLength(0);
+    expect(builtinFramePanelHostCalls).toEqual([
+      { applicationId: "settings", framePanelId: "builtin-product-platform-frame" },
+    ]);
+    expect(wrapper.find('[data-frame-panel="builtin-product-platform-frame"]').exists()).toBe(true);
+    expect(wrapper.find('[data-native-monitor="true"]').exists()).toBe(true);
+    wrapper.unmount();
   });
 });

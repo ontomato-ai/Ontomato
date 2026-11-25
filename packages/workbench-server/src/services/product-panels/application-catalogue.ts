@@ -9,7 +9,7 @@ import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescrip
 import { APPLICATION, APPLICATION_PANEL_USE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { allowsStandalone, applicationCatalogSchema, applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { applicationPanelUseSchema } from "@ontomato/contracts/product-panels";
+import { applicationPanelUseSchema, isNativeApplicationEntry, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { applicationCatalogueScopeSchema, applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
 import { readFavorites } from "../platform-home/service";
 import { config } from "../../config/application";
@@ -432,7 +432,7 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
         if ("kind" in access && access.kind === "domain-member") return word("accessDomainMember");
         return "permissionCode" in access ? access.permissionCode || "—" : "—";
       };
-      const agentLabel = (agent: ApplicationCatalogueDetail["panelUses"][number]["defaultAgent"]) => {
+      const agentLabel = (agent: ApplicationPanelUse["defaultAgent"]) => {
         if (!agent) return word("defaultAgentFallback");
         if (agent.kind === "id") return agents.get(`id:${agent.id}`) ?? agent.id;
         if (agent.kind === "preset") return agents.get(`preset:${agent.agentKind}`) ?? agent.agentKind;
@@ -442,18 +442,21 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
         const displayName = use.names
           ? panelRecordFieldText({ kind: "localized", values: use.names }, language, "en") || use.id
           : use.id;
-        const panelLabel = panels.get(use.panelId) ?? use.panelId;
+        const nativeEntry = isNativeApplicationEntry(use);
+        const panelLabel = nativeEntry ? "—" : (panels.get(use.panelId) ?? use.panelId);
         return {
           primaryKey: use.id,
           className: APPLICATION_PANEL_USE,
           label: displayName,
           fields: {
             path: use.path,
-            panelId: use.panelId,
-            panel: { kind: "reference", className: PRODUCT_PANEL, primaryKey: use.panelId, label: panelLabel },
+            panelId: nativeEntry ? "" : use.panelId,
+            panel: nativeEntry
+              ? "—"
+              : { kind: "reference", className: PRODUCT_PANEL, primaryKey: use.panelId, label: panelLabel },
             group: groupName(use.groupKey),
             access: accessLabel(use.access),
-            defaultAgent: agentLabel(use.defaultAgent),
+            defaultAgent: nativeEntry ? "—" : agentLabel(use.defaultAgent),
             canEdit: detail.canEditEntries,
           },
           fieldLabels: {
@@ -469,7 +472,7 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
     async usedPanels(primaryKey: string): Promise<PanelRecord[]> {
       const detail = await record(primaryKey);
       const panels = await panelNameMap();
-      const ids = [...new Set(detail.panelUses.map(use => use.panelId).filter(Boolean))];
+      const ids = [...new Set(detail.panelUses.filter((use): use is ApplicationPanelUse => !isNativeApplicationEntry(use)).map(use => use.panelId).filter(Boolean))];
       return ids.map((panelId): PanelRecord => {
         const label = panels.get(panelId) ?? panelId;
         return {
