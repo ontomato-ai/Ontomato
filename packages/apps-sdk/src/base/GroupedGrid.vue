@@ -17,6 +17,7 @@ import { admittedOperations } from "../panel/member-operations";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
 import { stateObject, type PanelFieldValue } from "../panel/state";
+import { useCollectionData } from "./collection-data";
 import { useDataStateLabels } from "./data-state-labels";
 import {
   buildGroupedGridGroups,
@@ -237,7 +238,8 @@ const objectType = isRecordMode ? projectionElement(slot.projection).id : "grid:
 const rowsDatum = isRecordMode ? member.projection.data.rows : undefined;
 const rowObjectType = isRecordMode && rowsDatum ? (directReadRowType(member.projection, rowsDatum) ?? objectType) : "grid:item";
 
-const rowsState = isRecordMode ? useMemberData("rows") : null;
+const rowsCollection = isRecordMode ? useCollectionData("rows") : null;
+const rowsState = rowsCollection ? rowsCollection.state : null;
 const hasRecordDatum = isRecordMode && "record" in member.projection.data;
 const recordState = hasRecordDatum ? useMemberData("record") : null;
 const operationsState = useMemberOperations();
@@ -294,17 +296,26 @@ const containerRecord = computed<PlatformObjectRecord | null>(() => {
 });
 
 const rawRows = computed<readonly PlatformObjectRecord[]>(() => {
-  if (!rowsState) return [];
-  const current = rowsState.value;
-  if (current.status !== "ready") return [];
-  return Array.isArray(current.value) ? (current.value as unknown as readonly PlatformObjectRecord[]) : [];
+  if (!rowsCollection) return [];
+  return rowsCollection.state.value.status === "ready" ? rowsCollection.rows.value : [];
 });
 
 const rowOperationsMap = computed<PanelRowOperationsMap | undefined>(() => {
-  if (!rowsState) return undefined;
-  const current = rowsState.value;
-  if (current.status !== "ready") return undefined;
-  return current.rowOperations;
+  if (!rowsCollection) return undefined;
+  return rowsCollection.state.value.status === "ready" ? rowsCollection.rowOperations.value : undefined;
+});
+
+const isRowsTruncated = computed(() => rowsCollection?.coverage.value.truncated === true);
+const coverageNotice = computed<string | null>(() => {
+  const coverage = rowsCollection?.coverage.value;
+  if (!coverage || !coverage.truncated) return null;
+  const base = coverage.total !== null
+    ? t("platform.collectionGridTruncatedWithTotal", { loaded: coverage.loaded, total: coverage.total })
+    : t("platform.collectionGridTruncated", { loaded: coverage.loaded });
+  const parts = [base];
+  if (props.editable) parts.push(t("platform.collectionGridTruncatedLockHint"));
+  if (coverage.diagnostics.length > 0) parts.push(coverage.diagnostics.join("; "));
+  return parts.join(" · ");
 });
 
 function resolveStaticTitle(entry: { readonly id: string; readonly title?: string; readonly titleKey?: string }): string {
@@ -373,9 +384,12 @@ const internalDraftSaving = ref(false);
 const lastOpNotice = shallowRef<{ tone: "info" | "success" | "danger"; message: string } | null>(null);
 
 const hasInternalDraft = computed(() => internalDraftValues.value !== null && Object.keys(internalDraftValues.value).length > 0);
-const isLocked = computed(() => props.locked || hasInternalDraft.value);
+const isLocked = computed(() => props.locked || hasInternalDraft.value || isRowsTruncated.value);
 const effectiveLockReason = computed(() => {
   if (props.lockReason) return props.lockReason;
+  if (isRowsTruncated.value) {
+    return t("platform.collectionGridTruncatedLockHint");
+  }
   if (hasInternalDraft.value) {
     const key = "dashboard.previewLockedHint";
     const translated = t(key);
@@ -1477,6 +1491,15 @@ const gridCssVars = computed(() => ({
       <button type="button" class="sdk-grouped-grid-op-dismiss" aria-label="Dismiss" @click="lastOpNotice = null">×</button>
     </p>
 
+    <p
+      v-if="coverageNotice"
+      class="sdk-grouped-grid-coverage"
+      role="status"
+      data-grid-coverage="partial"
+    >
+      {{ coverageNotice }}
+    </p>
+
     <div v-if="gridDataResult.status === 'empty' && $slots.empty" class="sdk-grouped-grid-custom-empty">
       <slot name="empty"></slot>
     </div>
@@ -1741,6 +1764,17 @@ const gridCssVars = computed(() => ({
   background: var(--el-color-primary-light-9);
   color: var(--el-text-color-primary);
   font-size: var(--text-sm, 13px);
+}
+
+.sdk-grouped-grid-coverage {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--el-color-warning-light-7, #f3d19e);
+  border-radius: var(--radius-md, 8px);
+  background: var(--el-color-warning-light-9, #fdf6ec);
+  color: var(--el-color-warning-dark-2, #b88230);
+  font-size: var(--text-xs, 12px);
+  line-height: 1.4;
 }
 
 .sdk-grouped-grid-draft-text {

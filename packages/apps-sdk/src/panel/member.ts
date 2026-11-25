@@ -4,7 +4,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelStateChangeSource, PanelStateWriteResult } from "./state";
-import type { MemberData, MemberInputs } from "./direct";
+import type { MemberData, MemberDataUseOptions, MemberInputs } from "./direct";
 import { withMemberReadRetry, type MemberDataState, type MemberReadyData } from "./member-data-state";
 import { panelContextKey, usePanelContext } from "./context";
 import type { MemberOperationsState } from "./member-operations";
@@ -55,8 +55,8 @@ export function readerDataState(state: Readonly<ComputedRef<MemberDataState>>): 
 }
 
 /** A named datum of this member, read and kept current while the component is mounted. */
-export function useMemberData(name: string): ComputedRef<MemberDataState> {
-  return readerDataState(member().data.use(name));
+export function useMemberData(name: string, options?: MemberDataUseOptions): ComputedRef<MemberDataState> {
+  return readerDataState(member().data.use(name, options));
 }
 
 /** This member's operations, as their owners admit them now, by the projection's local name. */

@@ -137,12 +137,20 @@ function chosenTarget(direct: PanelManifest, member: string, value: unknown): { 
 }
 
 /** One member's data: the shown data by name, and a read the component asks for with run inputs of its own. */
+/** Optional per-datum defaults passed to `MemberData.use`, isolated to that datum read. */
+export interface MemberDataUseOptions {
+  /** Fixed runtime defaults for this datum (e.g. a collection component's single-shot page size). */
+  readonly fixedParams?: MemberInputs;
+  /** Read parameter names not implicitly inherited from member outputs/inputs unless explicitly bound in `data.params`. */
+  readonly ignoreImplicitParams?: readonly string[];
+}
+
 export interface MemberData {
   /**
    * The datum a component shows, kept current while the component is mounted: called in its setup, it is what makes
    * the instance read the datum at all.
    */
-  use(name: string): ComputedRef<MemberDataState>;
+  use(name: string, options?: MemberDataUseOptions): ComputedRef<MemberDataState>;
   /**
    * One more read of a datum with values of the component's own, by the read's parameter names (a form's values and
    * changed field, a picker's keyword), and inputs it overrides (the object a form is read for). A value goes to the
@@ -238,7 +246,14 @@ export interface DirectPanelInstance extends PanelInstance {
  * output bound to it), which is the author's binding though the projection writes no mapping; and the member's own value
  * the component set (`params`), which the platform checks against the component's catalogue as a run-time parameter.
  */
-export function readParams(projection: DirectProjection, data: DirectProjectionData, member: MemberPlacement, inputs: MemberInputs, own: MemberInputs) {
+export function readParams(
+  projection: DirectProjection,
+  data: DirectProjectionData,
+  member: MemberPlacement,
+  inputs: MemberInputs,
+  own: MemberInputs,
+  ignoreImplicitParams?: readonly string[],
+) {
   const values: Record<string, RuntimeJsonValue | null> = {};
   const runtime: Record<string, RuntimeJsonValue> = {};
   // What goes to the owner as the author's: the projection's own inputs, and the member's state bound to a parameter.
@@ -247,6 +262,10 @@ export function readParams(projection: DirectProjection, data: DirectProjectionD
   const declaration = directReadDeclaration(projection, data);
   const signature = declaration?.parameterMode === "fixed" ? Object.keys(declaration.params) : [];
   for (const param of new Set([...Object.keys(data.params), ...signature])) {
+    if (ignoreImplicitParams?.includes(param) && !Object.hasOwn(data.params, param)) {
+      values[param] = null;
+      continue;
+    }
     // The contract's one rule for where an authored value comes from: the mapping, else the member's state of the name.
     const source = authoredReadParameterSource(data.params, param, member);
     if (source && "literal" in source) values[param] = source.literal;
@@ -262,12 +281,26 @@ export function readParams(projection: DirectProjection, data: DirectProjectionD
 }
 
 /** What a datum reads now, as one comparable text: it is read again only when this changes. */
-export const memberReadKey = (projection: DirectProjection, data: DirectProjectionData, member: MemberPlacement, inputs: MemberInputs, own: MemberInputs) =>
-  JSON.stringify([sourceObject(data, inputs) ?? null, readParams(projection, data, member, inputs, own).values]);
+export const memberReadKey = (
+  projection: DirectProjection,
+  data: DirectProjectionData,
+  member: MemberPlacement,
+  inputs: MemberInputs,
+  own: MemberInputs,
+  ignoreImplicitParams?: readonly string[],
+) =>
+  JSON.stringify([sourceObject(data, inputs) ?? null, readParams(projection, data, member, inputs, own, ignoreImplicitParams).values]);
 
 /** The value each of a datum's read parameters takes now (see `readParams`). */
-export function paramValues(projection: DirectProjection, data: DirectProjectionData, member: MemberPlacement, inputs: MemberInputs, own: MemberInputs) {
-  return readParams(projection, data, member, inputs, own).values;
+export function paramValues(
+  projection: DirectProjection,
+  data: DirectProjectionData,
+  member: MemberPlacement,
+  inputs: MemberInputs,
+  own: MemberInputs,
+  ignoreImplicitParams?: readonly string[],
+) {
+  return readParams(projection, data, member, inputs, own, ignoreImplicitParams).values;
 }
 
 /**
@@ -291,14 +324,23 @@ export function runValues(projection: DirectProjection, name: string, params: Me
  * Whether a datum waits for what its read cannot go without: the object it is read from, or a parameter its owner
  * requires (a type to list objects of, a node to expand). A waiting datum is read nowhere; a literal is always there.
  */
-export function awaitsInputs(projection: DirectProjection, data: DirectProjectionData, member: MemberPlacement, inputs: MemberInputs, own: MemberInputs): boolean {
+export function awaitsInputs(
+  projection: DirectProjection,
+  data: DirectProjectionData,
+  member: MemberPlacement,
+  inputs: MemberInputs,
+  own: MemberInputs,
+  ignoreImplicitParams?: readonly string[],
+): boolean {
   if ("object" in data.source && stateObject(sourceObject(data, inputs)) === null) return true;
-  const values = paramValues(projection, data, member, inputs, own);
+  const values = paramValues(projection, data, member, inputs, own, ignoreImplicitParams);
   const declaration = directReadDeclaration(projection, data);
   const required = declaration?.parameterMode === "fixed" ? declaration.requiredParams ?? [] : [];
   // An empty state, an unmapped parameter and a literal null all leave a required parameter without a value.
   return required.some(param => values[param] == null) || Object.entries(values).some(([param, value]) =>
-    value == null && readParameterUsesStateField(authoredReadParameterSource(data.params, param, member), member));
+    value == null
+    && !(ignoreImplicitParams?.includes(param) && !Object.hasOwn(data.params, param))
+    && readParameterUsesStateField(authoredReadParameterSource(data.params, param, member), member));
 }
 
 /** One read of a member's — a named datum, or the operations it can do — without the panel, which the host fills in. */
@@ -315,15 +357,23 @@ export type PanelReadPort = (request: PanelMemberReadRequest) => Promise<Product
  * checked against the result its registered read declares. A directly rendered panel and a panel's frame read the same
  * way and differ only in the port: the host's own, or the frame's request path through its bridge.
  */
-export async function readMemberDatum(read: PanelReadPort, projection: DirectProjection, memberPath: PublisherPath,
-  placement: MemberPlacement, name: string, values: MemberInputs, own: MemberInputs): Promise<MemberDataState> {
+export async function readMemberDatum(
+  read: PanelReadPort,
+  projection: DirectProjection,
+  memberPath: PublisherPath,
+  placement: MemberPlacement,
+  name: string,
+  values: MemberInputs,
+  own: MemberInputs,
+  ignoreImplicitParams?: readonly string[],
+): Promise<MemberDataState> {
   const member = memberPath.at(-1)!.member;
   const data = projection.data[name];
   if (!data) throw new Error(`Member '${member}' declares no datum '${name}'`);
   // A datum waits for its object or a required parameter; no read is made for nothing.
-  if (awaitsInputs(projection, data, placement, values, own)) return { status: "awaiting" };
+  if (awaitsInputs(projection, data, placement, values, own, ignoreImplicitParams)) return { status: "awaiting" };
   // What the member's component set itself goes apart from the author's inputs, and is checked as such.
-  const { runtime, authored } = readParams(projection, data, placement, values, own);
+  const { runtime, authored } = readParams(projection, data, placement, values, own, ignoreImplicitParams);
   // A read the platform answered with a failure (unavailable, refused before the owner) is this datum's failure, with the
   // platform's reason; one it never answered (the request reached nothing) is unreachable. The member shows either where
   // its data would be.
@@ -769,12 +819,15 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs, ownParams?: () => MemberInputs, scoped = false): MemberData {
       const own = ownParams ?? (() => instance.ownParams(member));
       const placement = direct.members[member]!;
-      const answer = (name: string, values: MemberInputs, ownRun: MemberInputs = own()) =>
-        readMemberDatum(options.read, projection, instance.memberPathOf(member), placement, name, values, ownRun);
+      const answer = (name: string, values: MemberInputs, ownRun: MemberInputs = own(), ignoreImplicitParams?: readonly string[]) =>
+        readMemberDatum(options.read, projection, instance.memberPathOf(member), placement, name, values, ownRun, ignoreImplicitParams);
       const readers = new Map<string, Set<() => void>>();
 
       return {
-        use(name) {
+        use(name, useOptions) {
+          const fixedParams = useOptions?.fixedParams;
+          const ignoreImplicitParams = useOptions?.ignoreImplicitParams;
+          const ownForDatum = (): MemberInputs => (fixedParams ? { ...fixedParams, ...own() } : own());
           const state = shallowRef<MemberDataState>({ status: "loading" });
           const loadedTargetKey = shallowRef<string | null>(null);
           let sequence = 0;
@@ -789,7 +842,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             if (!hasTarget) return null;
             const object = isObjectDatum ? (sourceObject(entryData, inputs()) ?? null) : null;
             if (requiredParams.length === 0) return JSON.stringify(object);
-            const values = paramValues(projection, entryData, placement, inputs(), own());
+            const values = paramValues(projection, entryData, placement, inputs(), ownForDatum(), ignoreImplicitParams);
             return JSON.stringify([object, requiredParams.map((param) => values[param] ?? null)]);
           };
           let lastTargetKey: string | null = null;
@@ -832,7 +885,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             // view nor derived outputs treat the earlier target's data as ready for the new target.
             if (targetChanged) {
               lastReady = undefined;
-              state.value = awaitsInputs(projection, entryData, placement, inputs(), own())
+              state.value = awaitsInputs(projection, entryData, placement, inputs(), ownForDatum(), ignoreImplicitParams)
                 ? { status: "awaiting" }
                 : { status: "loading" };
             } else if (state.value.status === "ready") {
@@ -843,7 +896,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
               state.value = lastReady ? { status: "loading", previous: lastReady } : { status: "loading" };
             }
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
-            return answer(name, inputs()).then((result) => {
+            return answer(name, inputs(), ownForDatum(), ignoreImplicitParams).then((result) => {
               if (datumDisposed || reading !== sequence) return;
               if (isMetricOutput && result.status === "ready" && result.value && typeof result.value === "object" && !Array.isArray(result.value)) {
                 const rawTypes = (result.value as { sourceObjectTypes?: unknown }).sourceObjectTypes;
@@ -905,7 +958,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             readers.set(name, namedReaders);
           }
           namedReaders.add(reread);
-          watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), () => {
+          watch(() => memberReadKey(projection, entry.data, placement, inputs(), ownForDatum(), ignoreImplicitParams), () => {
             clearRereadTimer();
             if (!active) pendingRereadAfterMs = undefined;
             reread();
@@ -915,7 +968,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             const hasTargetData = state.value.status === "ready"
               || ((state.value.status === "error" || state.value.status === "loading") && state.value.previous !== undefined);
             if (hasTarget && hasTargetData && datumTargetKeyOf() !== loadedTargetKey.value) {
-              return awaitsInputs(projection, entryData, placement, inputs(), own())
+              return awaitsInputs(projection, entryData, placement, inputs(), ownForDatum(), ignoreImplicitParams)
                 ? { status: "awaiting" }
                 : { status: "loading" };
             }

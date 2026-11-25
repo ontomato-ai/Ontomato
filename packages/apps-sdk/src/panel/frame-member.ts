@@ -158,7 +158,9 @@ export function frameMemberData(
   }
 
   return {
-    use(name) {
+    use(name, useOptions) {
+      const fixedParams = useOptions?.fixedParams;
+      const ownForDatum = (): MemberInputs => (fixedParams ? { ...fixedParams, ...own() } : own());
       const state = shallowRef<MemberDataState>({ status: "loading" });
       const loadedTargetKey = shallowRef<string | null>(null);
       let sequence = 0;
@@ -171,7 +173,7 @@ export function frameMemberData(
         if (!hasTarget) return null;
         const object = isObjectDatum ? (objectOf(data, inputs()) ?? null) : null;
         if (requiredParams.length === 0) return JSON.stringify(object);
-        const values = paramValues(projection, data, placement, inputs(), own());
+        const values = paramValues(projection, data, placement, inputs(), ownForDatum());
         return JSON.stringify([object, requiredParams.map((param) => values[param] ?? null)]);
       };
       let lastTargetKey: string | null = null;
@@ -210,7 +212,7 @@ export function frameMemberData(
         // clears the previous target's ready state immediately.
         if (targetChanged) {
           lastReady = undefined;
-          state.value = awaitsInputs(projection, data, placement, inputs(), own())
+          state.value = awaitsInputs(projection, data, placement, inputs(), ownForDatum())
             ? { status: "awaiting" }
             : { status: "loading" };
         } else if (state.value.status === "ready") {
@@ -220,7 +222,7 @@ export function frameMemberData(
         } else {
           state.value = lastReady ? { status: "loading", previous: lastReady } : { status: "loading" };
         }
-        return answer(name, inputs()).then(
+        return answer(name, inputs(), ownForDatum()).then(
           (result) => {
             if (datumDisposed || reading !== sequence) return;
             loadedTargetKey.value = nextTargetKey;
@@ -274,7 +276,7 @@ export function frameMemberData(
           })
         : undefined;
       // An object an operation changed is read again where it is shown: its own datum, or a list of its type.
-      watch(() => memberReadKey(projection, data, placement, inputs(), own()), reread, { immediate: true });
+      watch(() => memberReadKey(projection, data, placement, inputs(), ownForDatum()), reread, { immediate: true });
       const stopObjectChanged = instance.onObjectChanged((changed) => {
         const object = objectOf(data, inputs());
         if (!changed || (object && object.className === changed.objectType && object.primaryKey === changed.primaryKey)
@@ -291,7 +293,7 @@ export function frameMemberData(
         const hasTargetData = state.value.status === "ready"
           || ((state.value.status === "error" || state.value.status === "loading") && state.value.previous !== undefined);
         if (hasTarget && hasTargetData && datumTargetKeyOf() !== loadedTargetKey.value) {
-          return awaitsInputs(projection, data, placement, inputs(), own())
+          return awaitsInputs(projection, data, placement, inputs(), ownForDatum())
             ? { status: "awaiting" }
             : { status: "loading" };
         }

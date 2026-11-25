@@ -27,6 +27,7 @@ const links = computed(() => resolved.value.links);
 const loading = computed(() => resolved.value.loading);
 const readError = computed(() => resolved.value.error);
 const edgesNotice = computed(() => resolved.value.edgesNotice);
+const coverageNotice = computed(() => resolved.value.coverageNotice);
 
 const selected = computed(() => {
   const value = field.value.value;
@@ -78,6 +79,7 @@ function includeAdjacent() {
         {{ selected.length ? t("platform.graphChosenCount", { count: selected.length }) : t("platform.graphChosenNone") }}
       </p>
       <p v-if="edgesNotice" class="sdk-object-graph-notice" role="status" data-graph-edges-notice>{{ edgesNotice }}</p>
+      <p v-if="coverageNotice" class="sdk-object-graph-notice" role="status" data-graph-coverage="partial">{{ coverageNotice }}</p>
       <GraphCanvas
         :label="field.field.value.label"
         :nodes="drawnNodes"

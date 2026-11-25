@@ -68,6 +68,7 @@ const pageSearchHighlightSchema = z
     summary: z.string().min(1).max(500),
     items: z.array(pageHighlightedObjectSchema).max(200).readonly(),
     partialEdges: z.boolean().optional(),
+    partialNotice: z.string().min(1).max(500).optional(),
     memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
   })
   .strict();
@@ -275,7 +276,7 @@ function highlightParts(item: PageHighlight, format: PageLinePrompts["highlight"
   const wrap = (text: string) => (format ? format(text) : text);
   const summary = item.memberPath ? `${item.summary} memberPath=${JSON.stringify(item.memberPath)}` : item.summary;
   const parts = [wrap(summary)];
-  if (item.kind === "path" && item.partialNotice) parts.push(item.partialNotice);
+  if (item.partialNotice) parts.push(item.partialNotice);
   return parts;
 }
 

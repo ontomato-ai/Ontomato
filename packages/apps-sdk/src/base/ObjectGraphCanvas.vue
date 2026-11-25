@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { PageHighlight } from "@ontomato/contracts/page-context";
+import { directReadRowType } from "@ontomato/contracts/panel-projection";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
   G6GraphCanvas,
@@ -131,9 +132,10 @@ const exportFilename = computed(() => {
 
 /** The type each datum reads: a chosen node or edge is an object of that type. */
 const typeOf = (datum: "nodes" | "edges") => {
-  const source = member.projection.data[datum]?.source;
-  if (!source || !("type" in source)) throw new Error(`The projection in member '${member.key}' reads no type for '${datum}'`);
-  return source.type.id;
+  const entry = member.projection.data[datum];
+  const resolvedType = entry ? directReadRowType(member.projection, entry) : undefined;
+  if (!resolvedType) throw new Error(`The projection in member '${member.key}' reads no type for '${datum}'`);
+  return resolvedType;
 };
 const nodeType = typeOf("nodes");
 const edgeType = typeOf("edges");
@@ -357,9 +359,12 @@ const showGraph = computed(() => !resolved.value.loading && !resolved.value.erro
 
 const reportedHighlight = computed<PageHighlight | null>(() => {
   if (resolved.value.loading || resolved.value.error) return null;
+  const partialNotices = [resolved.value.edgesNotice, resolved.value.coverageNotice].filter(
+    (item): item is string => Boolean(item),
+  );
+  const partialNotice = partialNotices.length > 0 ? partialNotices.join("; ") : null;
   if (highlightKind.value === "path" && pathResult.value.status !== "idle") {
     const result = pathResult.value;
-    const partialNotice = resolved.value.edgesNotice;
     return {
       kind: "path",
       summary: pathBannerText.value,
@@ -377,7 +382,7 @@ const reportedHighlight = computed<PageHighlight | null>(() => {
       kind: "search",
       summary: searchBannerSummary.value,
       items: searchHighlightItems.value,
-      ...(resolved.value.edgesNotice ? { partialEdges: true } : {}),
+      ...(partialNotice ? { partialEdges: true, ...(resolved.value.coverageNotice ? { partialNotice } : {}) } : {}),
     };
   }
   return null;
@@ -956,9 +961,12 @@ async function download() {
             :marker-end="`url(#${previewMarkerId})`"
           />
         </svg>
-        <div v-if="partial || resolved.edgesNotice" class="sdk-object-graph-canvas-notices">
+        <div v-if="partial || resolved.edgesNotice || resolved.coverageNotice" class="sdk-object-graph-canvas-notices">
           <p v-if="resolved.edgesNotice" class="sdk-object-graph-canvas-edge-notice" role="status" data-graph-edges-notice>
             {{ resolved.edgesNotice }}
+          </p>
+          <p v-if="resolved.coverageNotice" class="sdk-object-graph-canvas-edge-notice" role="status" data-graph-coverage="partial">
+            {{ resolved.coverageNotice }}
           </p>
           <p v-if="partial" class="sdk-object-graph-canvas-hint" :class="{ quiet: moved }" role="status" data-graph-hint>
             {{ t("platform.graphLargerThanCanvas") }}
