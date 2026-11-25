@@ -24,11 +24,7 @@ export async function writeBundledAppSdkFixture(runtimeRoot: string): Promise<st
   });
   const catalogue = appsSdkComponentCatalogSchema.parse({
     version,
-    components: components.map((component) => {
-      const rest = { ...component };
-      delete rest.configProps;
-      return { ...rest, ports: { props: [], events: [], slots: [] } };
-    }),
+    components: components.map(component => ({ ...component, ports: { props: [], events: [], slots: [] } })),
   });
   const cataloguePath = path.join(directory, manifest.components);
   await mkdir(directory, { recursive: true });

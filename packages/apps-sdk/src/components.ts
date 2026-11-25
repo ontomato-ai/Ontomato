@@ -80,12 +80,15 @@ export interface ComponentMetadata {
 }
 
 /**
- * Declares one component's metadata. The value is returned unchanged and read by the SDK's build, which generates the
- * catalogue and its document from every component this SDK version exports; a component without a declaration fails the
- * build rather than shipping undescribed.
+ * Declares one component's metadata. The SDK build reads the full declaration (including the build-time `configProps`
+ * allowlist) statically from source to generate `components.json` and component docs; at runtime `configProps` is
+ * omitted so catalogue entries match the strict runtime schema directly.
  */
-export function defineComponentMeta<const Meta extends ComponentMetadata>(meta: Meta): Meta {
-  return meta;
+export function defineComponentMeta<const Meta extends ComponentMetadata>(meta: Meta): Omit<Meta, "configProps"> {
+  if (!("configProps" in meta)) return meta;
+  return Object.fromEntries(
+    Object.entries(meta).filter(([key]) => key !== "configProps"),
+  ) as Omit<Meta, "configProps">;
 }
 
 /** One port of a component as its source declares it: a prop, an event or a slot, with its type and its comment. */
