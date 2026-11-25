@@ -37,7 +37,7 @@ const every = [
 ];
 const board: ShellFeatureDeclaration = {
   id: "dashboards", label: "Dashboards", icon: "dashboard", availability: "page", listed: false, withConversation: true,
-  pageSkill: { mode: "public", locator: { pageKey: "dashboard", access: "domain-member" } },
+  pageSkill: { mode: "public", locator: { pageKey: "dashboard", applicationId: "dashboards", entryKey: "dashboards-main" } },
 };
 const panel: ShellFeatureDeclaration = {
   id: "panel-application", label: "Panel", icon: "dashboard", availability: "page", listed: false, withConversation: true,
@@ -196,17 +196,17 @@ it("narrows candidates from display-skill, re-queries on member switch, skips re
   const requests: string[] = [];
   const homeSkill: PageSkillContext = {
     mode: "member",
-    locator: { pageKey: "home", access: "domain-member" },
+    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
     member: { source: { kind: "home" }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-home-panel" } },
   };
   const drawerSkill: PageSkillContext = {
     mode: "member",
-    locator: { pageKey: "home", access: "domain-member" },
+    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
     member: { source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-drawer-panel" } },
   };
   const nullSkill: PageSkillContext = {
     mode: "member",
-    locator: { pageKey: "home", access: "domain-member" },
+    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
     member: null,
   };
   const request = vi.fn(async (path: string) => {
@@ -310,12 +310,12 @@ it("keeps an active conversation on its own agent when new page candidates exclu
   const sentBodies: { path: string; message: string; pageSkillContext?: PageSkillContext }[] = [];
   const homeSkill: PageSkillContext = {
     mode: "member",
-    locator: { pageKey: "home", access: "domain-member" },
+    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
     member: { source: { kind: "home" }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-home-panel" } },
   };
   const drawerSkill: PageSkillContext = {
     mode: "member",
-    locator: { pageKey: "home", access: "domain-member" },
+    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
     member: { source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-drawer-panel" } },
   };
   const session = {
@@ -529,7 +529,7 @@ it("fills a panel's entry into this conversation, or starts one with the agent i
   const existingSessionId = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
   const drawerSkill: PageSkillContext = {
     mode: "member",
-    locator: { pageKey: "home", access: "domain-member" },
+    locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
     member: {
       source: { kind: "object-detail", useId: "use-1", object: { className: "Order", primaryKey: "1" } },
       memberPath: [],

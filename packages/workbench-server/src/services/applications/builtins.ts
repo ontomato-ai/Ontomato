@@ -242,7 +242,8 @@ export const workbenchApplications: BuiltinApplication[] = [
     "entry": {
       "entryKey": "operations",
       "path": "/ops",
-      "renderer": "operations"
+      "renderer": "operations",
+      "home": "/ops/turn"
     },
     "scheduleAdapter": "workbench:operations",
     "allowStandalone": false,

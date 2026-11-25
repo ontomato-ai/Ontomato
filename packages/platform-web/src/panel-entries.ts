@@ -155,7 +155,7 @@ export function addressLandingGuard(router: Router): NavigationGuard {
       // then another native application (for example settings' audit log or operations' user feedback).
       await catalog.ensureCatalog();
       const nativeApps = catalog.mergedApplications.value.filter(
-        (app) => !isPanelApplication(app) && app.id !== platformRoutes.home.path.slice(1) && app.id !== "application-gallery",
+        app => !isPanelApplication(app) && app.rail !== "top",
       );
       const ordered = [
         ...nativeApps.filter((app) => app.id === "ontology"),
