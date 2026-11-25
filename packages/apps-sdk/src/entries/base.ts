@@ -6,11 +6,18 @@ export { default as ObjectList } from "../base/ObjectList.vue";
 export type {
   ObjectListColumn,
   ObjectListRef,
+  ObjectListRenameCancelPayload,
+  ObjectListRenameCommitPayload,
+  ObjectListRowActionCondition,
   ObjectListRowActionErrorEvent,
+  ObjectListRowActionItem,
+  ObjectListRowActionPrefill,
   ObjectListRowActionResultEvent,
   ObjectListRowActionRowSummary,
+  ObjectListRowActions,
   ObjectListSelectionRecord,
   ObjectListStateSnapshot,
+  ObjectListTabsVariant,
 } from "../base/object-list-types";
 export { default as GroupedGrid } from "../base/GroupedGrid.vue";
 export type {
@@ -40,6 +47,7 @@ export { default as ObjectRelations } from "../base/ObjectRelations.vue";
 export { default as ObjectSummary } from "../base/ObjectSummary.vue";
 export { default as ObjectTitle } from "../base/ObjectTitle.vue";
 export type { ObjectTitleTarget } from "../base/object-title-types";
+export type { SummaryKeyValueEntry } from "../base/summary-key-value";
 export { default as ObjectHeader } from "../base/ObjectHeader.vue";
 export { default as PageHeader } from "../base/PageHeader.vue";
 export type { PageHeaderDraft, PageHeaderLabels } from "../base/page-header-types";
@@ -66,6 +74,7 @@ export type {
   ObjectFormResolvedGroup,
   ObjectFormSlotScope,
 } from "../base/object-form-types";
+export type { FormChangeSummaryEntry } from "../base/form-change-summary";
 export { default as OperationButton } from "../base/OperationButton.vue";
 export { default as OperationResult } from "../base/OperationResult.vue";
 export { default as FileUploadControl } from "../base/FileUploadControl.vue";

@@ -8,7 +8,6 @@ import {
   productProjectionObjectTypeFilterSchema,
 } from "./product-catalog-query";
 import { z } from "zod";
-import { appsSdkComponentGroupSchema } from "./component-declaration";
 import { workspaceCommitSchema, workspacePathSchema } from "./workspaces";
 import { componentIdSchema } from "./product-record-id";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
@@ -267,7 +266,6 @@ export const panelReadParameterSchemas = {
   productTemplate: productPanelCatalogQuerySchema.shape.template.unwrap(),
   productProjectionComponent: productProjectionComponentFilterSchema,
   productProjectionObjectType: productProjectionObjectTypeFilterSchema,
-  sdkComponentGroup: appsSdkComponentGroupSchema,
   applicationScope: applicationCatalogueScopeSchema,
   applicationSort: applicationCatalogueSortSchema,
   applicationGalleryCategory: z.enum(["all", "business", "agents", "build", "admin"]),
@@ -357,7 +355,6 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "productSort":
     case "productProjectionComponent":
     case "productProjectionObjectType":
-    case "sdkComponentGroup":
     case "applicationScope":
     case "applicationSort":
     case "applicationGalleryCategory":

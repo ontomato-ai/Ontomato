@@ -375,7 +375,7 @@ class PanelApplicationsTest {
         verify(db, never()).update(anyString(), any(Object[].class));
     }
 
-    @Test void navigationCatalogReusesPanelUseAccessAndKeepsItsNamesAndOrder() throws Exception {
+    @Test void navigationCatalogReturnsSummaryWithoutPanelUsesWhileSingleApplicationViewKeepsFilteredPanelUses() throws Exception {
         var named = new ApplicationPanelUse("use-named", "named", "panel-p", "/applications/app-panel-a/named",
             new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("en", "Tasks", "zh-CN", "任务"));
         var denied = new ApplicationPanelUse("use-denied", "denied", "panel-q", "/applications/app-panel-a/denied",
@@ -383,6 +383,8 @@ class PanelApplicationsTest {
         var detail = use("detail", null);
         var declared = List.of(named, denied, detail);
         var application = app("app-panel-a", "panels", declared);
+        application.put("permissions", List.of(new ApplicationCatalog.Permission("app:app-panel-a:menu", Map.of("en", "Menu"), null, 0)));
+        application.put("panelSettings", JSONObject.of("framePanelId", "panel-frame"));
         doReturn(List.of(application)).when(catalog).all();
         when(access.canEnter(application, user)).thenReturn(true);
         when(access.panelUses(declared, user)).thenReturn(List.of(named, detail));
@@ -391,10 +393,22 @@ class PanelApplicationsTest {
 
         mvc.perform(get("/platform/applications").param("purpose", "navigation"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data[0].panelUses.length()").value(2))
-            .andExpect(jsonPath("$.data[0].panelUses[0].names['zh-CN']").value("任务"))
-            .andExpect(jsonPath("$.data[0].panelUses[1].path").value("/applications/app-panel-a/detail"))
-            .andExpect(jsonPath("$.data[0].panelUses[1].names").doesNotExist());
+            .andExpect(jsonPath("$.data[0].id").value("app-panel-a"))
+            .andExpect(jsonPath("$.data[0].framePanelId").value("panel-frame"))
+            .andExpect(jsonPath("$.data[0].allowStandalone").value(true))
+            .andExpect(jsonPath("$.data[0].panelUses").doesNotExist())
+            .andExpect(jsonPath("$.data[0].permissions").doesNotExist())
+            .andExpect(jsonPath("$.data[0].panelSettings").doesNotExist())
+            .andExpect(jsonPath("$.data[0].pageSkills").doesNotExist());
+        verify(access, never()).panelUses(anyList(), any());
+
+        mvc.perform(get("/platform/applications/app-panel-a"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
+            .andExpect(jsonPath("$.data.panelUses.length()").value(2))
+            .andExpect(jsonPath("$.data.panelUses[0].names['zh-CN']").value("任务"))
+            .andExpect(jsonPath("$.data.panelUses[1].path").value("/applications/app-panel-a/detail"))
+            .andExpect(jsonPath("$.data.panelUses[1].names").doesNotExist());
         mvc.perform(get("/platform/applications/app-panel-a/panel-uses"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.panelUses.length()").value(2))

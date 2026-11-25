@@ -2,6 +2,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { hasPanelSecretInput, normalizePanelSecretPointer, panelInputPointer, panelSchemaSecretPaths, panelSecretPathsOverlap } from "@ontomato/contracts/panel-secrets";
 import { cloneJsonValue, jsonValuesEqual } from "../panel/form-values";
+import { applyOperationInputInitialValues } from "./operation-prefill";
 
 export type OperationInputFieldKind = "text" | "password" | "textarea" | "select" | "number" | "integer" | "boolean";
 
@@ -226,8 +227,11 @@ export function operationInputFields(
 
 export type OperationInputDraft = Record<string, unknown>;
 
-/** Builds initial dialog form values from the schema's defaults and field kinds. */
-export function initialOperationInputDraft(fields: readonly OperationInputField[]): OperationInputDraft {
+/** Builds initial dialog form values from the schema's defaults, field kinds, and optional prefill values. */
+export function initialOperationInputDraft(
+  fields: readonly OperationInputField[],
+  initialValues?: Readonly<Record<string, unknown>>,
+): OperationInputDraft {
   const draft: OperationInputDraft = {};
   for (const field of fields) {
     if (field.kind === "boolean") {
@@ -240,7 +244,7 @@ export function initialOperationInputDraft(fields: readonly OperationInputField[
       draft[field.name] = typeof field.defaultValue === "string" ? field.defaultValue : "";
     }
   }
-  return draft;
+  return applyOperationInputInitialValues(fields, draft, initialValues);
 }
 
 export type OperationInputValidationIssue =

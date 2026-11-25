@@ -10,13 +10,17 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { HOME_PREFERENCES_CHANGED } from "../features/home/api";
 
+const mockRailVisible = ref(true);
+
 vi.mock("../PlatformLayout.vue", () => ({
   default: defineComponent({
     name: "PlatformLayoutDouble",
     props: {
       pinnedAppIds: { type: Array as () => string[], default: () => [] },
     },
-    setup(props) {
+    emits: ["railVisible"],
+    setup(props, { emit }) {
+      emit("railVisible", mockRailVisible.value);
       return () => h("div", { class: "platform-layout-double", "data-pinned": props.pinnedAppIds.join(",") });
     },
   }),

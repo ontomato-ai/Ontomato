@@ -145,7 +145,7 @@ const effectiveFrame = computed<EffectiveFrame | null>(() => {
   }
 
   if (panel?.framePanelId) {
-    const app = catalog.applications.value.find((item) => item.id === panel.applicationId) ?? null;
+    const app = catalog.applicationById(panel.applicationId);
     const title = app
       ? (localizedApplicationText(app.names, language.value.locale) ?? app.id)
       : panel.applicationId;
@@ -167,8 +167,20 @@ const frameKey = computed(() =>
 
 const catalogApp = computed(() =>
   effectiveFrame.value
-    ? catalog.applications.value.find((app) => app.id === effectiveFrame.value!.applicationId) ?? null
+    ? catalog.applicationById(effectiveFrame.value.applicationId)
     : null,
+);
+
+watch(
+  () => effectiveFrame.value?.applicationId ?? null,
+  (applicationId) => {
+    if (!applicationId) return;
+    const app = catalog.applicationById(applicationId);
+    if (app && app.panelUses === undefined) {
+      void catalog.ensureApplication(applicationId).catch(() => undefined);
+    }
+  },
+  { immediate: true },
 );
 
 type EntryUse = ApplicationEntryResolution["use"];

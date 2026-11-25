@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { dashboardCardPrimaryKey, parseDashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
+import { chartValueText } from "@ontomato/contracts/chart-presentation";
+import {
+  dashboardCardPrimaryKey,
+  parseDashboardCardPrimaryKey,
+  type DashboardMetricOutput,
+  type MetricReferenceEntry,
+} from "@ontomato/contracts/dashboard";
 import type { PanelOperationTargetTypes } from "@ontomato/contracts/panel-operations";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import {
@@ -25,6 +31,8 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { assistantStore } from "../assistant/store";
 import { getOwnedDashboard } from "../dashboard/access";
+import { DashboardMetricClient } from "../dashboard/metric-client";
+import { requireMatchingOutput } from "../dashboard/metric-data";
 import { listDashboards } from "../dashboard/store";
 import {
   addFavoriteTarget,
@@ -263,6 +271,8 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
       }
 
       if (needDashboardCards) {
+        const DEFAULT_PREVIEW_METRICS_PER_BOARD = 3;
+        const DEFAULT_PREVIEW_CHARTS_PER_BOARD = 2;
         const boardDetails = new Map<string, Awaited<ReturnType<typeof getOwnedDashboard>> | null>();
         await Promise.all(state.dashboardIds.map(async dashboardId => {
           try {
@@ -271,67 +281,124 @@ export function createFavoriteReadAdapter(owner: ProductOwner, viewer: Assistant
             boardDetails.set(dashboardId, null);
           }
         }));
+
+        const metricClient = new DashboardMetricClient(owner.domainId, viewer);
+        const metricSpecs = new Map<string, Promise<Awaited<ReturnType<DashboardMetricClient["describe"]>>>>();
+        const describeMetric = (metricId: string) => {
+          let pending = metricSpecs.get(metricId);
+          if (!pending) {
+            pending = metricClient.describe(metricId);
+            metricSpecs.set(metricId, pending);
+          }
+          return pending;
+        };
+
+        type SelectedPreviewEntry = {
+          dashboardId: string;
+          dashboardName: string;
+          cardId: string;
+          index: number;
+          total: number;
+          entry: MetricReferenceEntry | undefined;
+        };
+
+        const selectedEntries: SelectedPreviewEntry[] = [];
         for (const dashboardId of state.dashboardIds) {
           const detail = boardDetails.get(dashboardId);
           if (!detail) continue;
-          const allCards = detail.groups.flatMap(g => [
-            ...g.metrics.map(card => ({
-              id: card.id,
-              name: card.name,
-              kind: "metric" as const,
-              valueField: card.valueField,
-              unit: card.unit,
-              formats: card.formats,
-            })),
-            ...g.charts.map(card => ({
-              id: card.id,
-              name: card.name,
-              kind: "chart" as const,
-              valueField: undefined,
-              unit: undefined,
-              formats: undefined,
-            })),
+          const allMetrics = detail.groups.flatMap(g => g.metrics);
+          const allCharts = detail.groups.flatMap(g => g.charts);
+          const cardsById = new Map<string, MetricReferenceEntry>([
+            ...allMetrics.map(card => [card.id, card] as const),
+            ...allCharts.map(card => [card.id, card] as const),
           ]);
-          const cardsById = new Map(allCards.map(c => [c.id, c]));
           const chosenIds = state.dashboardCards[dashboardId]?.length
             ? state.dashboardCards[dashboardId]!
-            : allCards.map(c => c.id);
+            : [
+                ...allMetrics.slice(0, DEFAULT_PREVIEW_METRICS_PER_BOARD).map(c => c.id),
+                ...allCharts.slice(0, DEFAULT_PREVIEW_CHARTS_PER_BOARD).map(c => c.id),
+              ];
           chosenIds.forEach((cardId, index) => {
-            const card = cardsById.get(cardId);
-            const available = Boolean(card);
-            const pk = dashboardCardPrimaryKey({ dashboardId, cardId });
-            rows.push({
-              className: DASHBOARD_CARD,
-              primaryKey: pk,
-              label: available ? card!.name : unavailableLabel,
-              subtitle: detail.name,
-              fields: {
-                className: DASHBOARD_CARD,
-                primaryKey: pk,
-                dashboardId,
-                dashboardName: detail.name,
-                cardId,
-                kind: card?.kind ?? "metric",
-                title: available ? card!.name : unavailableLabel,
-                ...(card?.valueField ? { valueField: card.valueField } : {}),
-                ...(card?.unit ? { unit: card.unit } : {}),
-                ...(card?.formats ? { formats: { kind: "json", value: card.formats } } : {}),
-                favorite: true,
-                canMoveUp: index > 0,
-                canMoveDown: index < chosenIds.length - 1,
-                unavailable: !available,
-              },
-              fieldLabels,
-              outputs: {
-                openPath: available ? dashboardOpenPath(dashboardId, cardId) : "",
-                favorited: true,
-                canMoveUp: index > 0,
-                canMoveDown: index < chosenIds.length - 1,
-                unavailable: !available,
-              },
+            selectedEntries.push({
+              dashboardId,
+              dashboardName: detail.name,
+              cardId,
+              index,
+              total: chosenIds.length,
+              entry: cardsById.get(cardId),
             });
           });
         }
+
+        const previewRows = await Promise.all(selectedEntries.map(async item => {
+          const { dashboardId, dashboardName, cardId, index, total, entry } = item;
+          const available = Boolean(entry);
+          const pk = dashboardCardPrimaryKey({ dashboardId, cardId });
+          const isChart = Boolean(entry && "chartFile" in entry);
+          const kind = isChart ? "chart" : "metric";
+
+          let output: DashboardMetricOutput | null = null;
+          let valueText: string | undefined;
+          let errorText: string | undefined;
+          if (entry) {
+            try {
+              const spec = await describeMetric(entry.query.metricId);
+              const executed = await metricClient.execute(entry.query, spec.revision);
+              requireMatchingOutput(entry, executed);
+              output = executed;
+              if (!("chartFile" in entry) && executed.rows.length > 0) {
+                valueText = chartValueText(
+                  executed.rows[0]?.[entry.valueField],
+                  entry.formats?.[entry.valueField],
+                  language,
+                );
+              }
+            } catch (failure) {
+              errorText = failure instanceof Error ? failure.message : String(failure);
+            }
+          } else {
+            errorText = unavailableLabel;
+          }
+
+          const record: PanelRecord = {
+            className: DASHBOARD_CARD,
+            primaryKey: pk,
+            label: available ? entry!.name : unavailableLabel,
+            subtitle: dashboardName,
+            fields: {
+              className: DASHBOARD_CARD,
+              primaryKey: pk,
+              dashboardId,
+              dashboardName,
+              cardId,
+              kind,
+              cardKind: kind,
+              title: available ? entry!.name : unavailableLabel,
+              ...(entry && !("chartFile" in entry) ? { valueField: entry.valueField } : {}),
+              ...(entry && !("chartFile" in entry) && entry.unit ? { unit: entry.unit } : {}),
+              ...(entry && !("chartFile" in entry) && entry.formats ? { formats: { kind: "json", value: entry.formats } } : {}),
+              ...(entry && "chartFile" in entry ? { chartFile: { kind: "json", value: entry.chartFile } } : {}),
+              ...(valueText !== undefined ? { value: valueText } : {}),
+              ...(output ? { output: { kind: "json", value: output }, partial: Boolean(output.truncation) } : {}),
+              ...(errorText ? { error: errorText } : {}),
+              favorite: true,
+              canMoveUp: index > 0,
+              canMoveDown: index < total - 1,
+              unavailable: !available,
+            },
+            fieldLabels,
+            outputs: {
+              openPath: available ? dashboardOpenPath(dashboardId, cardId) : "",
+              favorited: true,
+              canMoveUp: index > 0,
+              canMoveDown: index < total - 1,
+              unavailable: !available,
+            },
+          };
+          return record;
+        }));
+
+        rows.push(...previewRows);
       }
 
       if (needSessions) {

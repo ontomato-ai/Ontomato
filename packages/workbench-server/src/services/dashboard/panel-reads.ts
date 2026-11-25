@@ -89,8 +89,8 @@ function dashboardCardRecord(
   favorited = false,
 ): PanelRecord {
   const isChart = "chartFile" in card;
-  const colSpan = card.layout?.colSpan ?? (isChart ? 6 : 3);
-  const rowSpan = card.layout?.rowSpan ?? (isChart ? 2 : 1);
+  const colSpan = card.layout?.colSpan ?? (isChart ? 12 : 3);
+  const rowSpan = card.layout?.rowSpan ?? 1;
   const primaryKey = dashboardCardPrimaryKey({ dashboardId: detail.id, cardId: card.id });
   const openPath = `/dashboards?dashboardId=${encodeURIComponent(detail.id)}&cardId=${encodeURIComponent(card.id)}`;
   const fields: Record<string, PanelRecordFieldValue> = {

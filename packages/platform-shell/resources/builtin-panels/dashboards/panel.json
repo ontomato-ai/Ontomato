@@ -109,12 +109,25 @@
         },
         "config": {
           "columns": 12,
-          "rowHeight": 160,
-          "sectionRowHeights": {
-            "metric": 150,
-            "chart": 340
+          "sectionColumns": {
+            "metric": 12,
+            "chart": 24
           },
-          "gap": 16,
+          "rowHeight": 102,
+          "sectionRowHeights": {
+            "metric": 102,
+            "chart": 360
+          },
+          "minColSpan": 1,
+          "sectionMinColSpans": {
+            "metric": 1,
+            "chart": 4
+          },
+          "sectionResizeAxes": {
+            "metric": "horizontal",
+            "chart": "both"
+          },
+          "gap": 14,
           "groupsField": "groups",
           "groupKeyField": "groupId",
           "groupTitleField": "groupTitle",
@@ -128,6 +141,13 @@
           "orderField": "order",
           "editable": true,
           "collapsible": false,
+          "groupSurface": "card",
+          "sectionItemHeaderDivider": {
+            "metric": "none",
+            "chart": "line"
+          },
+          "controlsVisibility": "hover",
+          "allowDraftPreview": true,
           "rowActions": {
             "maxVisible": 0,
             "items": [
@@ -164,7 +184,7 @@
           }
         },
         "name": "Dashboard grid",
-        "description": "Grouped 12-column dashboard canvas with drag reordering, resizing, and group management",
+        "description": "Grouped dashboard canvas (12-column metrics and 24-column charts) with drag reordering, resizing, draft preview, and group management",
         "id": "builtin-product-db10a000-4e3b-4000-8000-000000000003"
       },
       "chartCard": {
@@ -178,7 +198,12 @@
           "result": "result"
         },
         "config": {
-          "minHeight": "100%"
+          "minHeight": "100%",
+          "allowViewToggle": false,
+          "allowZoom": false,
+          "tableMaxRows": 500,
+          "truncationDisplay": "none",
+          "keepPreviousOnRefresh": true
         },
         "name": "Chart card",
         "description": "Independent chart projection for one dashboard chart card",
@@ -194,7 +219,11 @@
           "result": "result"
         },
         "config": {
-          "variant": "compact"
+          "surface": "bare",
+          "showLabel": false,
+          "valueSize": "large",
+          "truncationDisplay": "none",
+          "keepPreviousOnRefresh": true
         },
         "name": "Metric card",
         "description": "Independent KPI metric projection for one dashboard numeric card",
@@ -230,6 +259,23 @@
         "name": "Card metric source",
         "description": "Inspect the backing MetricView, status, and saved parameters of the selected card",
         "id": "builtin-product-db10a000-4e3b-4000-8000-000000000007"
+      },
+      "cardMetricOpen": {
+        "component": "ObjectRefCard",
+        "type": "platform:DashboardCard",
+        "target": "cardId",
+        "data": {
+          "record": "metricSource"
+        },
+        "config": {
+          "field": "metric",
+          "appearance": "button",
+          "buttonType": "primary",
+          "buttonLabelKey": "dialog.openMetric"
+        },
+        "name": "Open metric",
+        "description": "Open the backing MetricView detail page for the selected card",
+        "id": "builtin-product-db10a000-4e3b-4000-8000-000000000008"
       }
     }
   },
@@ -251,6 +297,10 @@
         "group.renameTitle": "Rename group",
         "group.titleLabel": "Group title",
         "group.titlePlaceholder": "Enter group title",
+        "group.untitled": "Untitled group",
+        "card.zoom": "Expand",
+        "card.viewData": "View data",
+        "card.viewChart": "View chart",
         "card.parameters": "Edit parameters",
         "card.metricSource": "View metric",
         "card.rename": "Rename",
@@ -259,6 +309,7 @@
         "dialog.parametersTitleWithName": "{name} · Edit parameters",
         "dialog.metricSourceTitle": "Metric source",
         "dialog.metricSourceTitleWithName": "{name} · Metric source",
+        "dialog.openMetric": "Open metric",
         "dialog.cancel": "Cancel",
         "dialog.close": "Close",
         "dialog.confirm": "Save",
@@ -270,6 +321,7 @@
         "empty.groupHintHighlight": "Add to dashboard",
         "empty.groupHintSuffix": "in query results to generate charts, or drag cards here.",
         "notice.layoutSaveFailed": "Failed to save layout. Please try again.",
+        "notice.draftSaved": "Dashboard changes saved.",
         "notice.parametersSaved": "Card parameters saved.",
         "notice.groupCreated": "Group created.",
         "notice.groupRenamed": "Group renamed.",
@@ -292,6 +344,10 @@
         "group.renameTitle": "重命名分组",
         "group.titleLabel": "分组名称",
         "group.titlePlaceholder": "请输入分组名称",
+        "group.untitled": "未命名分组",
+        "card.zoom": "放大查看",
+        "card.viewData": "查看数据",
+        "card.viewChart": "查看图表",
         "card.parameters": "编辑参数",
         "card.metricSource": "查看指标",
         "card.rename": "重命名",
@@ -300,6 +356,7 @@
         "dialog.parametersTitleWithName": "{name} · 编辑参数",
         "dialog.metricSourceTitle": "指标来源",
         "dialog.metricSourceTitleWithName": "{name} · 指标来源",
+        "dialog.openMetric": "打开指标",
         "dialog.cancel": "取消",
         "dialog.close": "关闭",
         "dialog.confirm": "保存",
@@ -311,6 +368,7 @@
         "empty.groupHintHighlight": "添加到仪表盘",
         "empty.groupHintSuffix": "生成图表，或将卡片拖入此分组。",
         "notice.layoutSaveFailed": "布局保存失败，请重试。",
+        "notice.draftSaved": "仪表盘修改已保存。",
         "notice.parametersSaved": "卡片参数已保存。",
         "notice.groupCreated": "分组已创建。",
         "notice.groupRenamed": "分组已重命名。",
@@ -333,6 +391,10 @@
         "group.renameTitle": "重新命名分組",
         "group.titleLabel": "分組名稱",
         "group.titlePlaceholder": "請輸入分組名稱",
+        "group.untitled": "未命名分組",
+        "card.zoom": "放大檢視",
+        "card.viewData": "檢視資料",
+        "card.viewChart": "檢視圖表",
         "card.parameters": "編輯參數",
         "card.metricSource": "檢視指標",
         "card.rename": "重新命名",
@@ -341,6 +403,7 @@
         "dialog.parametersTitleWithName": "{name} · 編輯參數",
         "dialog.metricSourceTitle": "指標來源",
         "dialog.metricSourceTitleWithName": "{name} · 指標來源",
+        "dialog.openMetric": "開啟指標",
         "dialog.cancel": "取消",
         "dialog.close": "關閉",
         "dialog.confirm": "儲存",
@@ -352,6 +415,7 @@
         "empty.groupHintHighlight": "加入儀表板",
         "empty.groupHintSuffix": "以產生圖表，或將卡片拖曳至此分組。",
         "notice.layoutSaveFailed": "版面儲存失敗，請重試。",
+        "notice.draftSaved": "儀表板變更已儲存。",
         "notice.parametersSaved": "卡片參數已儲存。",
         "notice.groupCreated": "分組已建立。",
         "notice.groupRenamed": "分組已重新命名。",
@@ -374,6 +438,10 @@
         "group.renameTitle": "グループ名を変更",
         "group.titleLabel": "グループ名",
         "group.titlePlaceholder": "グループ名を入力",
+        "group.untitled": "無題のグループ",
+        "card.zoom": "拡大表示",
+        "card.viewData": "データを表示",
+        "card.viewChart": "チャートを表示",
         "card.parameters": "パラメータを編集",
         "card.metricSource": "指標を表示",
         "card.rename": "名前を変更",
@@ -382,6 +450,7 @@
         "dialog.parametersTitleWithName": "{name} · パラメータを編集",
         "dialog.metricSourceTitle": "指標ソース",
         "dialog.metricSourceTitleWithName": "{name} · 指標ソース",
+        "dialog.openMetric": "指標を開く",
         "dialog.cancel": "キャンセル",
         "dialog.close": "閉じる",
         "dialog.confirm": "保存",
@@ -393,6 +462,7 @@
         "empty.groupHintHighlight": "ダッシュボードに追加",
         "empty.groupHintSuffix": "をクリックしてチャートを作成するか、カードをここにドラッグします。",
         "notice.layoutSaveFailed": "レイアウトの保存に失敗しました。もう一度お試しください。",
+        "notice.draftSaved": "ダッシュボードの変更を保存しました。",
         "notice.parametersSaved": "カードパラメータを保存しました。",
         "notice.groupCreated": "グループを作成しました。",
         "notice.groupRenamed": "グループ名を変更しました。",
@@ -415,6 +485,10 @@
         "group.renameTitle": "Gruppe umbenennen",
         "group.titleLabel": "Gruppentitel",
         "group.titlePlaceholder": "Gruppentitel eingeben",
+        "group.untitled": "Unbenannte Gruppe",
+        "card.zoom": "Vergrößern",
+        "card.viewData": "Daten anzeigen",
+        "card.viewChart": "Diagramm anzeigen",
         "card.parameters": "Parameter bearbeiten",
         "card.metricSource": "Kennzahl anzeigen",
         "card.rename": "Umbenennen",
@@ -423,6 +497,7 @@
         "dialog.parametersTitleWithName": "{name} · Parameter bearbeiten",
         "dialog.metricSourceTitle": "Kennzahlquelle",
         "dialog.metricSourceTitleWithName": "{name} · Kennzahlquelle",
+        "dialog.openMetric": "Kennzahl öffnen",
         "dialog.cancel": "Abbrechen",
         "dialog.close": "Schließen",
         "dialog.confirm": "Speichern",
@@ -434,6 +509,7 @@
         "empty.groupHintHighlight": "Zum Dashboard hinzufügen",
         "empty.groupHintSuffix": "um Diagramme zu erstellen, oder ziehen Sie Karten hierher.",
         "notice.layoutSaveFailed": "Layout konnte nicht gespeichert werden. Bitte erneut versuchen.",
+        "notice.draftSaved": "Dashboard-Änderungen gespeichert.",
         "notice.parametersSaved": "Kartenparameter gespeichert.",
         "notice.groupCreated": "Gruppe erstellt.",
         "notice.groupRenamed": "Gruppe umbenannt.",
@@ -456,6 +532,10 @@
         "group.renameTitle": "Renommer le groupe",
         "group.titleLabel": "Nom du groupe",
         "group.titlePlaceholder": "Saisir le nom du groupe",
+        "group.untitled": "Groupe sans titre",
+        "card.zoom": "Agrandir",
+        "card.viewData": "Voir les données",
+        "card.viewChart": "Voir le graphique",
         "card.parameters": "Modifier les paramètres",
         "card.metricSource": "Voir l'indicateur",
         "card.rename": "Renommer",
@@ -464,6 +544,7 @@
         "dialog.parametersTitleWithName": "{name} · Modifier les paramètres",
         "dialog.metricSourceTitle": "Source de l'indicateur",
         "dialog.metricSourceTitleWithName": "{name} · Source de l'indicateur",
+        "dialog.openMetric": "Ouvrir l'indicateur",
         "dialog.cancel": "Annuler",
         "dialog.close": "Fermer",
         "dialog.confirm": "Enregistrer",
@@ -475,6 +556,7 @@
         "empty.groupHintHighlight": "Ajouter au tableau de bord",
         "empty.groupHintSuffix": "pour générer des graphiques, ou faites glisser des cartes ici.",
         "notice.layoutSaveFailed": "Échec de l'enregistrement de la disposition. Veuillez réessayer.",
+        "notice.draftSaved": "Modifications du tableau enregistrées.",
         "notice.parametersSaved": "Paramètres de la carte enregistrés.",
         "notice.groupCreated": "Groupe créé.",
         "notice.groupRenamed": "Groupe renommé.",
@@ -497,6 +579,10 @@
         "group.renameTitle": "Rinomina gruppo",
         "group.titleLabel": "Titolo del gruppo",
         "group.titlePlaceholder": "Inserisci il titolo del gruppo",
+        "group.untitled": "Gruppo senza titolo",
+        "card.zoom": "Ingrandisci",
+        "card.viewData": "Visualizza dati",
+        "card.viewChart": "Visualizza grafico",
         "card.parameters": "Modifica parametri",
         "card.metricSource": "Visualizza metrica",
         "card.rename": "Rinomina",
@@ -505,6 +591,7 @@
         "dialog.parametersTitleWithName": "{name} · Modifica parametri",
         "dialog.metricSourceTitle": "Origine metrica",
         "dialog.metricSourceTitleWithName": "{name} · Origine metrica",
+        "dialog.openMetric": "Apri metrica",
         "dialog.cancel": "Annulla",
         "dialog.close": "Chiudi",
         "dialog.confirm": "Salva",
@@ -516,6 +603,7 @@
         "empty.groupHintHighlight": "Aggiungi alla dashboard",
         "empty.groupHintSuffix": "per generare grafici, oppure trascina qui le schede.",
         "notice.layoutSaveFailed": "Impossibile salvare il layout. Riprova.",
+        "notice.draftSaved": "Modifiche alla dashboard salvate.",
         "notice.parametersSaved": "Parametri della scheda salvati.",
         "notice.groupCreated": "Gruppo creato.",
         "notice.groupRenamed": "Gruppo rinominato.",
@@ -538,6 +626,10 @@
         "group.renameTitle": "إعادة تسمية المجموعة",
         "group.titleLabel": "اسم المجموعة",
         "group.titlePlaceholder": "أدخل اسم المجموعة",
+        "group.untitled": "مجموعة بدون عنوان",
+        "card.zoom": "تكبير",
+        "card.viewData": "عرض البيانات",
+        "card.viewChart": "عرض المخطط",
         "card.parameters": "تعديل المعاملات",
         "card.metricSource": "عرض المؤشر",
         "card.rename": "إعادة تسمية",
@@ -546,6 +638,7 @@
         "dialog.parametersTitleWithName": "{name} · تعديل المعاملات",
         "dialog.metricSourceTitle": "مصدر المؤشر",
         "dialog.metricSourceTitleWithName": "{name} · مصدر المؤشر",
+        "dialog.openMetric": "فتح المؤشر",
         "dialog.cancel": "إلغاء",
         "dialog.close": "إغلاق",
         "dialog.confirm": "حفظ",
@@ -557,6 +650,7 @@
         "empty.groupHintHighlight": "إضافة إلى لوحة المعلومات",
         "empty.groupHintSuffix": "لإنشاء مخططات، أو اسحب البطاقات إلى هنا.",
         "notice.layoutSaveFailed": "تعذر حفظ التخطيط. يرجى المحاولة مرة أخرى.",
+        "notice.draftSaved": "تم حفظ تعديلات لوحة المعلومات.",
         "notice.parametersSaved": "تم حفظ معاملات البطاقة.",
         "notice.groupCreated": "تم إنشاء المجموعة.",
         "notice.groupRenamed": "تمت إعادة تسمية المجموعة.",

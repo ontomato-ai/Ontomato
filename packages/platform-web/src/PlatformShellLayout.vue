@@ -22,14 +22,15 @@ import type { PlatformShownPage } from "./PlatformLayout.vue";
 import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
 import type { PlatformBrand } from "@ontomato/platform-shell";
+import { isPanelApplication } from "@ontomato/contracts/platform-identity";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { panelEntryApplication, resetApplicationCatalog, useApplicationCatalog } from "./catalog";
+import { builtinApplicationForPath, panelEntryApplication, resetApplicationCatalog, useApplicationCatalog } from "./catalog";
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import { resolveApplicationEntry } from "./panel-host";
 import { appAt } from "./apps";
 import { pilotPageResolver as resolvePilotPages } from "./pilot-pages";
 import { providePlatformPageCounter } from "./page-counter";
-import { recentDestination } from "./recent-work";
+import { createRecentVisitReporter, recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
 import { installPanelApplicationOpener } from "./panel-navigate";
@@ -53,8 +54,6 @@ const props = defineProps<{
 }>();
 
 const host = usePlatformHost();
-// Conversation and home routes do not pass through a permission-bearing page guard.
-onMounted(() => { void host.access.load(); });
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -62,28 +61,74 @@ provide(workspaceObjectHostKey, createWorkspaceObjectHost());
 
 const catalog = useApplicationCatalog();
 const pinnedAppIds=ref<string[]>([]);
-const dynamicAppIds=computed(()=>catalog.applications.value.filter(app=>['hosted','connected','link'].includes(app.kind)).map(app=>app.id));
+const dynamicAppIds=computed(()=>catalog.mergedApplications.value.filter(app=>['hosted','connected','link'].includes(app.kind)).map(app=>app.id));
 async function readShortcuts(){try{pinnedAppIds.value=(await readHomeState()).favorites.filter(item=>item.kind==='application').map(item=>item.id);}catch{/* Shortcut discovery must not prevent opening the platform. */}}
-onMounted(()=>{void readShortcuts();window.addEventListener(HOME_PREFERENCES_CHANGED,readShortcuts);});
+const railVisible = ref(false);
+let railDataLoaded = false;
+function loadRailData() {
+  if (railDataLoaded) return;
+  railDataLoaded = true;
+  void host.access.load();
+  void readShortcuts();
+  void catalog.ensureCatalog();
+}
+watch(railVisible, (visible) => {
+  if (visible) loadRailData();
+});
+function onHomePreferencesChanged() {
+  if (railVisible.value) void readShortcuts();
+}
+onMounted(() => { window.addEventListener(HOME_PREFERENCES_CHANGED, onHomePreferencesChanged); });
 onBeforeUnmount(() => {
-  window.removeEventListener(HOME_PREFERENCES_CHANGED, readShortcuts);
+  window.removeEventListener(HOME_PREFERENCES_CHANGED, onHomePreferencesChanged);
   resetApplicationCatalog();
 });
-onMounted(() => { void catalog.refresh(); });
-watch(() => host.navigation.value, () => { void catalog.refresh(); }, { deep: true });
-// The home lists every application, so returning to it reads the catalog again; the first read above covers a shell
-// mounted on the home.
+// The home and application gallery list every application, so entering them ensures the catalog; returning to home refreshes it.
+watch(
+  () => route.path === platformRoutes.home.path || route.path === platformRoutes.applicationGallery.path,
+  (needsCatalog) => { if (needsCatalog) void catalog.ensureCatalog(); },
+  { immediate: true },
+);
 watch(() => route.path === platformRoutes.home.path, (home) => { if (home) void catalog.refresh(); });
 /** The rail's placeholders stand in for a list it does not have yet; a later read keeps the rows it shows. */
 const railLoading = computed(() => catalog.loading.value && catalog.applications.value.length === 0);
 /** Whether the shown application draws its own frame in its area (its page writes it). */
 const appFramed = provideApplicationFrame();
-const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers));
+const partition = computed(() => catalogPartition(catalog.mergedApplications.value, host.preferences.locale.value, props.renderers));
 
 const declarations = computed<PlatformAppDeclaration[]>(() =>
   appDeclarations(host.navigation.value, host.access, partition.value, (key) => t(key)),
 );
-const agentBuilder = computed(() => agentBuilderShortcut(declarations.value, panelEntryApplication(platformRoutes.agents.path) === "agents", t("platform.agentBuilder")));
+// Static native routes opened standalone without the rail still need their owning application summary to verify `allowStandalone`.
+watch(
+  [railVisible, () => route.path, () => Boolean(appAt(declarations.value, route.path))],
+  ([visible, path, hasApp]) => {
+    if (visible || hasApp || path.startsWith("/applications/") || route.meta.standaloneApplication === true) return;
+    void catalog.ensureCatalog();
+  },
+  { immediate: true, flush: "post" },
+);
+// Ensure any cross-application built-in whose panel entries appear inside the active application's menu (for example,
+// permissions entries shown under ontology governance) has its entry table loaded on demand.
+watch(
+  [() => route.path, () => partition.value],
+  ([path, parts]) => {
+    const active = appAt(declarations.value, path);
+    const activePart = active ? parts.find((part) => part.id === active.id) : null;
+    if (!activePart) return;
+    for (const section of activePart.sections) {
+      if (!("paths" in section)) continue;
+      for (const sectionPath of section.paths) {
+        const owner = builtinApplicationForPath(sectionPath);
+        if (owner && owner.panelUses === undefined) {
+          void catalog.ensureApplication(owner.id).catch(() => undefined);
+        }
+      }
+    }
+  },
+  { immediate: true },
+);
+const agentBuilder = computed(() => agentBuilderShortcut(declarations.value, host.access.can("analysis-agent"), t("platform.agentBuilder")));
 const railDeclarations = computed(() => agentBuilder.value ? [...declarations.value, agentBuilder.value] : declarations.value);
 
 /** The page the navigation names for this address; a screen of a page (a detail) names the page it belongs to. */
@@ -171,15 +216,24 @@ const shellBrand = computed<PlatformBrand>(() => ({ ...props.brand, name: props.
 provide(platformBrandKey, shellBrand);
 
 const recentVisit = computed(() => {
-  if (catalog.loading.value || catalog.error.value || host.blocked?.value) return null;
-  const destination = recentDestination(route, appAt(declarations.value, route.path) ?? undefined);
+  if (catalog.error.value || host.blocked?.value) return null;
+  const app = appAt(declarations.value, route.path);
+  if (!app) return null;
+  const catalogApp = catalog.applicationById(app.id);
+  const destination = recentDestination(route, app, {
+    panelApplication: Boolean(catalogApp && isPanelApplication(catalogApp)),
+  });
   return destination ? JSON.stringify(destination) : null;
 });
-watch(recentVisit, destination => {
-  if (destination) void nodeApiRequest("/api/personal-workspace/recent", {
+const recentVisitReporter = createRecentVisitReporter((destination) => {
+  void nodeApiRequest("/api/personal-workspace/recent", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: destination,
   }).catch(() => { /* Recording a visit must not interrupt the page being opened. */ });
+});
+watch(recentVisit, (destination) => {
+  recentVisitReporter.schedule(destination);
 }, { immediate: true });
+onBeforeUnmount(() => recentVisitReporter.cancel());
 
 /** Each language retains its own name when the UI locale changes. */
 const localeNames = computed(() =>
@@ -229,6 +283,7 @@ onBeforeUnmount(() => {
  */
 const hasPageAccess = (path: string) =>
   Boolean(panelEntryApplication(path)) ||
+  (path === platformRoutes.dashboards.path && Boolean(catalog.applicationById("dashboards"))) ||
   availablePages(host.navigation.value, host.access).some((page) => page.path === path);
 
 provide(platformPageAccessKey, hasPageAccess);
@@ -244,7 +299,8 @@ provide(pageAdmissionKey, async (address: string) => {
   }
   if (path.startsWith("/applications/") || panelEntryApplication(path) !== null || !hasPageAccess(path)) {
     try {
-      await resolveApplicationEntry({ path });
+      const resolved = await resolveApplicationEntry({ path });
+      if (!panelEntryApplication(path)) await catalog.ensureApplication(resolved.applicationId).catch(() => undefined);
       return { ok: true };
     } catch (error) {
       if (error instanceof ApiRequestError && error.status === 403) {
@@ -301,5 +357,6 @@ const blocked = computed(() => {
     :standalone-applications="standaloneApplications"
     :blocked="catalog.error.value ? { reason: 'no-pages', message: catalog.error.value } : blocked"
     @select-app="selectRailApp"
+    @rail-visible="railVisible = $event"
   />
 </template>

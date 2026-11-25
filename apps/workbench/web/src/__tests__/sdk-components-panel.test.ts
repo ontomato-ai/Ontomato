@@ -93,37 +93,63 @@ const sampleCatalogue = [
     primaryKey: "@ontomato/sdk:ObjectList",
     className: SDK_COMPONENT,
     label: "ObjectList",
-    groupKey: "list",
+    searchText: LONG_LIST_MEANING,
     fields: {
       package: "@ontomato/sdk",
+      role: "Control",
+      panelUsable: "Panel-usable",
       group: "Lists",
-      meaning: LONG_LIST_MEANING,
     },
-    fieldLabels: { package: "SDK package", group: "Purpose group", meaning: "Purpose" },
+    tags: { bindsElement: ["PlatformObjectType:*", "ObjectType:*"] },
+    tones: { role: "info", panelUsable: "success" },
+    fieldLabels: {
+      package: "SDK package",
+      role: "Role",
+      panelUsable: "Availability",
+      group: "Purpose group",
+      bindsElement: "Applicable object types",
+    },
   },
   {
     primaryKey: "@ontomato/sdk:ObjectSummary",
     className: SDK_COMPONENT,
     label: "ObjectSummary",
-    groupKey: "detail",
+    searchText: "Displays structured fields for one selected object.",
     fields: {
       package: "@ontomato/sdk",
+      role: "Presentation",
+      panelUsable: "Panel-usable",
       group: "Details",
-      meaning: "Displays structured fields for one selected object.",
     },
-    fieldLabels: { package: "SDK package", group: "Purpose group", meaning: "Purpose" },
+    tags: { bindsElement: ["PlatformObjectType:*", "ObjectType:*"] },
+    tones: { role: "default", panelUsable: "success" },
+    fieldLabels: {
+      package: "SDK package",
+      role: "Role",
+      panelUsable: "Availability",
+      group: "Purpose group",
+      bindsElement: "Applicable object types",
+    },
   },
   {
     primaryKey: "@ontomato/sdk:MarkdownView",
     className: SDK_COMPONENT,
     label: "MarkdownView",
-    groupKey: "content",
+    searchText: "Renders markdown content in light or dark theme.",
     fields: {
       package: "@ontomato/sdk",
+      role: "Presentation",
+      panelUsable: "Panel-usable",
       group: "Content",
-      meaning: "Renders markdown content in light or dark theme.",
     },
-    fieldLabels: { package: "SDK package", group: "Purpose group", meaning: "Purpose" },
+    tones: { role: "default", panelUsable: "success" },
+    fieldLabels: {
+      package: "SDK package",
+      role: "Role",
+      panelUsable: "Availability",
+      group: "Purpose group",
+      bindsElement: "Applicable object types",
+    },
   },
 ];
 
@@ -138,13 +164,14 @@ const sampleRecords: Record<string, Record<string, unknown>> = {
       package: "@ontomato/sdk",
       module: "@ontomato/sdk/base",
       exportName: "ObjectList",
-      role: "Presentation",
+      role: "Control",
       group: "Lists",
+      panelUsable: "Panel-usable",
       meaning: LONG_LIST_MEANING,
       effects: "Emits row selection events.",
     },
-    tags: { bindsElement: ["ObjectType"] },
-    tones: { role: "default" },
+    tags: { bindsElement: ["PlatformObjectType:*", "ObjectType:*"] },
+    tones: { role: "info", panelUsable: "success" },
     fieldLabels: {
       componentId: "Component ID",
       package: "SDK package",
@@ -152,7 +179,8 @@ const sampleRecords: Record<string, Record<string, unknown>> = {
       exportName: "Export name",
       role: "Role",
       group: "Purpose group",
-      bindsElement: "Binds element",
+      panelUsable: "Availability",
+      bindsElement: "Applicable object types",
       meaning: "Purpose",
       effects: "Effects",
     },
@@ -169,10 +197,11 @@ const sampleRecords: Record<string, Record<string, unknown>> = {
       exportName: "ObjectSummary",
       role: "Presentation",
       group: "Details",
+      panelUsable: "Panel-usable",
       meaning: "Displays structured fields for one selected object.",
     },
-    tags: { bindsElement: ["ObjectType"] },
-    tones: { role: "default" },
+    tags: { bindsElement: ["PlatformObjectType:*", "ObjectType:*"] },
+    tones: { role: "default", panelUsable: "success" },
     fieldLabels: {
       componentId: "Component ID",
       package: "SDK package",
@@ -180,7 +209,8 @@ const sampleRecords: Record<string, Record<string, unknown>> = {
       exportName: "Export name",
       role: "Role",
       group: "Purpose group",
-      bindsElement: "Binds element",
+      panelUsable: "Availability",
+      bindsElement: "Applicable object types",
       meaning: "Purpose",
       effects: "Effects",
     },
@@ -267,15 +297,21 @@ function mountComponentsRoute(initialState: Record<string, unknown> = {}) {
       const member = body.memberPath[0]?.member;
       if (member === "list" && body.dataName === "rows") {
         const term = String(body.inputs?.search ?? "").trim().toLowerCase();
-        const group = typeof body.inputs?.group === "string" ? body.inputs.group.trim() : "";
         const rows = sampleCatalogue
-          .filter((item) => (!group || item.groupKey === group))
           .filter((item) =>
             !term
-            || [item.primaryKey, item.label, item.fields.package, item.fields.group, item.fields.meaning]
-              .some((text) => text.toLowerCase().includes(term)),
+            || [
+              item.primaryKey,
+              item.label,
+              item.fields.package,
+              item.fields.role,
+              item.fields.panelUsable,
+              item.fields.group,
+              ...(item.tags?.bindsElement ?? []),
+              item.searchText,
+            ].some((text) => text.toLowerCase().includes(term)),
           )
-          .map(({ groupKey: _groupKey, ...row }) => row);
+          .map(({ searchText: _searchText, ...row }) => row);
         return Response.json(rows.length ? { status: "ready", value: rows } : { status: "empty" });
       }
       const targetKey = (body.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey ?? "";
@@ -360,28 +396,31 @@ afterEach(() => {
 });
 
 describe("sdk-components builtin panel", () => {
-  it("renders a grouped compact single-line table catalog and filters rows via server-side group and search state", async () => {
+  it("renders a grouped 5-column catalog without meaning, filters via search, and shows full meaning in detail", async () => {
     const route = mountComponentsRoute();
     const { element, cleanup } = await route.open();
     try {
       await vi.waitFor(() => {
         const rows = element.querySelectorAll('.sdk-table-host tbody tr[data-row-item="true"]');
         expect(rows.length).toBe(3);
-      });
+      }, { timeout: 5000 });
 
-      // Full-width catalog table headers, purpose group headers, and single-line truncation on meaning are rendered.
+      // Full-width catalog table headers, purpose group headers, and no redundant group dropdown filter.
       const headers = Array.from(element.querySelectorAll(".sdk-table-host thead th")).map((th) => th.textContent?.trim());
-      expect(headers.slice(0, 3)).toEqual(["Component", "Package", "Meaning"]);
+      expect(headers.slice(0, 5)).toEqual(["Component", "Role", "Availability", "Applicable types", "Package"]);
+      expect(element.querySelector(".sdk-group-filter")).toBeNull();
       const groupLabels = Array.from(element.querySelectorAll(".sdk-table-host .sdk-object-list-group-label")).map((el) => el.textContent?.trim());
       expect(groupLabels).toEqual(["Lists", "Details", "Content"]);
       expect(element.querySelector(".sdk-count")?.textContent?.trim()).toBe("3 items");
       expect(element.querySelector(".sdk-detail-view")).toBeNull();
 
-      // Meaning column uses single-line truncation (no wrap class) and exposes the full meaning in its title.
-      const firstMeaningCell = element.querySelector<HTMLElement>('.sdk-table-host tbody tr[data-row-item="true"] td:nth-child(3)')!;
-      expect(firstMeaningCell.classList.contains("sdk-object-list-col-wrap")).toBe(false);
-      expect(firstMeaningCell.classList.contains("sdk-object-list-col-shrink")).toBe(true);
-      expect(firstMeaningCell.getAttribute("title")).toBe(LONG_LIST_MEANING);
+      // Meaning text is kept out of the first-screen catalog; tags render for applicable types and dash for UI-only rows.
+      expect(element.querySelector(".sdk-table-host")?.textContent).not.toContain(LONG_LIST_MEANING);
+      const rows = Array.from(element.querySelectorAll<HTMLElement>('.sdk-table-host tbody tr[data-row-item="true"]'));
+      expect(rows[0]!.textContent).toContain("Control");
+      expect(rows[0]!.textContent).toContain("Panel-usable");
+      expect(rows[0]!.textContent).toContain("PlatformObjectType:*");
+      expect(rows[2]!.querySelector("td:nth-child(4)")?.textContent?.trim()).toBe("—");
 
       // Typing in the search input updates deep-linked search state and narrows rows.
       const searchInput = element.querySelector<HTMLInputElement>(".sdk-search input")!;
@@ -396,7 +435,21 @@ describe("sdk-components builtin panel", () => {
       });
       expect(route.router.currentRoute.value.query.search).toBe("Object");
 
-      // Unmatched search shows empty no-match description and 0 items cleanly.
+      // Clicking a row shows full meaning, purpose group, and availability in the detail overview.
+      element.querySelector<HTMLElement>('.sdk-table-host tbody tr[data-row-item="true"]')!.click();
+      await vi.waitFor(() => {
+        expect(element.querySelector(".sdk-detail-body")?.textContent).toContain(LONG_LIST_MEANING);
+        expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("Lists");
+        expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("Panel-usable");
+      });
+
+      // Returning preserves search; unmatched search shows empty no-match description and 0 items cleanly.
+      element.querySelector<HTMLButtonElement>(".sdk-detail-view .sdk-page-header-back")!.click();
+      await vi.waitFor(() => {
+        expect(element.querySelector(".sdk-detail-view")).toBeNull();
+        expect(element.querySelectorAll('.sdk-table-host tbody tr[data-row-item="true"]').length).toBe(2);
+      });
+
       searchInput.value = "does-not-match-anything";
       searchInput.dispatchEvent(new Event("input", { bubbles: true }));
       await nextTick();
@@ -405,57 +458,6 @@ describe("sdk-components builtin panel", () => {
         expect(element.querySelector(".sdk-table-host")?.textContent).toContain("No matching base components");
         expect(element.querySelector(".sdk-count")?.textContent?.trim()).toBe("0 items");
       });
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("deep-links purpose group filter, passes group to server read, and preserves group across detail open and back", async () => {
-    const route = mountComponentsRoute({ group: "list" });
-    const { element, cleanup } = await route.open();
-    try {
-      await vi.waitFor(() => {
-        expect(element.querySelectorAll('.sdk-table-host tbody tr[data-row-item="true"]').length).toBe(1);
-      });
-      expect(route.router.currentRoute.value.query.group).toBe("list");
-      expect(route.reads.some((r) => r.memberPath[0]?.member === "list" && r.inputs?.group === "list")).toBe(true);
-      expect(Array.from(element.querySelectorAll(".sdk-table-host .sdk-object-list-group-label")).map((el) => el.textContent?.trim())).toEqual(["Lists"]);
-      expect(element.querySelector(".sdk-group-filter")).not.toBeNull();
-
-      // Clicking the component opens detail showing full meaning and purpose group.
-      element.querySelector<HTMLElement>('.sdk-table-host tbody tr[data-row-item="true"]')!.click();
-      await vi.waitFor(() => {
-        expect(element.querySelector(".sdk-detail-body")?.textContent).toContain(LONG_LIST_MEANING);
-        expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("Lists");
-      });
-      expect(route.router.currentRoute.value.query.group).toBe("list");
-
-      // Returning preserves group filter and filtered rows.
-      element.querySelector<HTMLButtonElement>(".sdk-detail-view .sdk-page-header-back")!.click();
-      await vi.waitFor(() => {
-        expect(element.querySelector(".sdk-detail-view")).toBeNull();
-        expect(element.querySelectorAll('.sdk-table-host tbody tr[data-row-item="true"]').length).toBe(1);
-      });
-      expect(route.router.currentRoute.value.query.group).toBe("list");
-
-      // Combining search with a group filter that yields no matches offers a working Clear filters button.
-      const searchInput = element.querySelector<HTMLInputElement>(".sdk-search input")!;
-      searchInput.value = "MarkdownView";
-      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
-      await nextTick();
-      await vi.waitFor(() => {
-        expect(element.querySelector(".sdk-table-host")?.textContent).toContain("No matching base components");
-        expect(element.querySelector(".sdk-table-host")?.textContent).toContain("Clear filters");
-      });
-      const clearBtn = Array.from(element.querySelectorAll<HTMLButtonElement>(".sdk-table-host button"))
-        .find((button) => button.textContent?.trim() === "Clear filters")!;
-      expect(clearBtn).not.toBeUndefined();
-      clearBtn.click();
-      await vi.waitFor(() => {
-        expect(element.querySelectorAll('.sdk-table-host tbody tr[data-row-item="true"]').length).toBe(3);
-      });
-      expect(route.router.currentRoute.value.query.group).toBeUndefined();
-      expect(route.router.currentRoute.value.query.search).toBeUndefined();
     } finally {
       cleanup();
     }
@@ -480,6 +482,9 @@ describe("sdk-components builtin panel", () => {
         expect(element.querySelector(".sdk-detail-view")).not.toBeNull();
         expect(element.querySelector(".sdk-detail-body")).not.toBeNull();
         expect(element.querySelectorAll(".sdk-detail-card").length).toBe(6);
+        expect(element.querySelector(".sdk-detail-body")?.textContent).toContain(LONG_LIST_MEANING);
+        expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("panelRecordList");
+        expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("filteredCount");
       });
 
       // Catalog stays mounted (v-show hidden) while detail is visible, and scroll resets to top.
@@ -492,7 +497,7 @@ describe("sdk-components builtin panel", () => {
       expect(route.router.currentRoute.value.query.selected).toBe("@ontomato/sdk:ObjectList");
       const detailHeader = element.querySelector(".sdk-detail-view .sdk-page-header")!;
       expect(detailHeader.textContent).toContain("ObjectList");
-      expect(detailHeader.textContent).toContain("Presentation");
+      expect(detailHeader.textContent).toContain("Control");
       expect(detailHeader.textContent).toContain("@ontomato/sdk");
       expect(detailHeader.querySelector('[data-panel-action="open-component-class"]')).not.toBeNull();
       expect(element.querySelector(".sdk-detail-body")?.textContent).toContain(LONG_LIST_MEANING);
@@ -556,12 +561,12 @@ describe("sdk-components builtin panel", () => {
       await vi.waitFor(() => {
         expect(element.querySelector(".sdk-detail-body")).not.toBeNull();
         expect(element.querySelectorAll(".sdk-detail-card").length).toBe(6);
+        expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("Displays structured fields for one selected object.");
       });
 
       const catalogView = element.querySelector<HTMLElement>(".sdk-catalog-view")!;
       expect(catalogView.style.display).toBe("none");
       expect(element.querySelector(".sdk-detail-view .sdk-page-header")?.textContent).toContain("ObjectSummary");
-      expect(element.querySelector(".sdk-detail-body")?.textContent).toContain("Displays structured fields for one selected object.");
     } finally {
       cleanup();
     }

@@ -291,6 +291,13 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           isRunning: { kind: "scalar", type: "boolean" },
         },
       },
+      latestRunRecord: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          resultPath: { kind: "scalar", type: "string" },
+          isRunning: { kind: "scalar", type: "boolean" },
+        },
+      },
     },
     operations: [`${SCHEDULED_TASK}.save`, RUN_NOW, CREATE_SCHEDULED_TASK, SET_SCHEDULED_TASK_ENABLED, DELETE_SCHEDULED_TASK],
   },
@@ -697,12 +704,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("sdkComponent", "product"),
     reads: {
       count: countRead,
-      catalogue: {
-        source: "type",
-        parameterMode: "fixed",
-        params: { search: "keyword", group: "sdkComponentGroup" },
-        result: "panelRecordList",
-      },
+      catalogue: { source: "type", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecordList" },
       definition: { source: "object", parameterMode: "fixed", params: {}, result: "sdkComponentDefinition" },
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       dataRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },

@@ -337,36 +337,59 @@ describe("the platform layout", () => {
     localStorage.clear();
   });
 
-  it("waits for the catalog before honoring ?standalone=1 so disabled apps never flash or persist standalone mode", async () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [{ path: "/", component: { render: () => h(RouterView) }, children: [{ path: "/applications/:applicationId/:panelPath(.*)?", component: page("application") }] }],
-    });
-    await router.push("/applications/app-locked/tasks?standalone=1");
-    const wrapper = mount(PlatformLayout, {
-      props: {
-        apps: [],
-        loading: true,
-        shownPage: { title: "Tasks", named: true },
-        account: null,
-        preferences: { locales: ["en"], locale: "en", setLocale: () => {}, theme: "light", setTheme: () => {} },
-        labels,
-        pageActions: null,
-      },
-      global: { plugins: [router] },
-    });
-    mounted.push(wrapper);
-    await flushPromises();
-    expect(wrapper.find(".platform-rail").exists()).toBe(true);
-    expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBeNull();
+  it("hides the rail immediately while loading ?standalone=1, shows it once a disabled app loads, and persists only for allowed apps", async () => {
+    const mountAt = async (url: string) => {
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [{ path: "/", component: { render: () => h(RouterView) }, children: [{ path: "/applications/:applicationId/:panelPath(.*)?", component: page("application") }] }],
+      });
+      await router.push(url);
+      const wrapper = mount(PlatformLayout, {
+        props: {
+          apps: [],
+          loading: true,
+          shownPage: { title: "Tasks", named: true },
+          account: null,
+          preferences: { locales: ["en"], locale: "en", setLocale: () => {}, theme: "light", setTheme: () => {} },
+          labels,
+          pageActions: null,
+        },
+        global: { plugins: [router] },
+      });
+      mounted.push(wrapper);
+      await flushPromises();
+      return { router, wrapper };
+    };
 
-    await wrapper.setProps({
+    // 1. Disabled application: never flashes the rail skeleton while loading, never pollutes sessionStorage,
+    //    then reveals the rail and strips ?standalone=1 once allowStandalone: false is confirmed.
+    const locked = await mountAt("/applications/app-locked/tasks?standalone=1");
+    expect(locked.wrapper.find(".platform-rail").exists()).toBe(false);
+    expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBeNull();
+    expect(locked.wrapper.emitted("railVisible")?.at(-1)).toEqual([false]);
+
+    await locked.wrapper.setProps({
       loading: false,
       apps: [{ id: "app-locked", label: "Locked", icon: "pages", category: "business", prefix: "/applications/app-locked", home: "/applications/app-locked", allowStandalone: false }],
     });
     await flushPromises();
-    expect(wrapper.find(".platform-rail").exists()).toBe(true);
-    expect(router.currentRoute.value.query.standalone).toBeUndefined();
+    expect(locked.wrapper.find(".platform-rail").exists()).toBe(true);
+    expect(locked.router.currentRoute.value.query.standalone).toBeUndefined();
     expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBeNull();
+    expect(locked.wrapper.emitted("railVisible")?.at(-1)).toEqual([true]);
+
+    // 2. Allowed application: rail stays hidden throughout loading and after confirmation, and sessionStorage is written only after confirmation.
+    const open = await mountAt("/applications/app-open/tasks?standalone=1");
+    expect(open.wrapper.find(".platform-rail").exists()).toBe(false);
+    expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBeNull();
+
+    await open.wrapper.setProps({
+      loading: false,
+      apps: [{ id: "app-open", label: "Open", icon: "pages", category: "business", prefix: "/applications/app-open", home: "/applications/app-open", allowStandalone: true }],
+    });
+    await flushPromises();
+    expect(open.wrapper.find(".platform-rail").exists()).toBe(false);
+    expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBe("1");
+    expect(open.wrapper.emitted("railVisible")?.at(-1)).toEqual([false]);
   });
 });

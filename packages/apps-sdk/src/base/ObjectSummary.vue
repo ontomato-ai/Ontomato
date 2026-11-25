@@ -18,6 +18,7 @@ import {
   toChildFieldReference,
   toFieldReference,
 } from "./record-field";
+import { extractSummaryKeyValueEntries, type SummaryKeyValueEntry } from "./summary-key-value";
 import { textHighlightSegments } from "./text-highlight";
 import { useDataStateLabels } from "./data-state-labels";
 
@@ -71,6 +72,12 @@ const props = withDefaults(
      * two-column layout with `12px` row gap and `16px` column gap; `"compact"` uses tighter `auto 1fr` spacing for dense containers.
      */
     density?: "comfortable" | "compact";
+    /** Field keys whose structured map or `{ key, label?, value }` entry list renders as an aligned two-column `<dl>` grid instead of raw JSON text. */
+    keyValueFields?: readonly string[];
+    /** Renders the field list as a bordered description table with subtle cell borders and a muted label column background. Defaults to `false`. */
+    bordered?: boolean;
+    /** Number of label/value column pairs per row in `"fields"` layout. Defaults to `1`. */
+    columns?: number;
   }>(),
   {
     showTitle: true,
@@ -84,6 +91,9 @@ const props = withDefaults(
     presentation: "fields",
     textField: undefined,
     density: "comfortable",
+    keyValueFields: undefined,
+    bordered: false,
+    columns: 1,
   },
 );
 
@@ -167,8 +177,24 @@ watch(record, (found) => {
   panel.instance.nameObjects(ref.className, [found]);
 }, { immediate: true });
 
+const effectiveColumns = computed(() => Math.max(1, Math.floor(props.columns || 1)));
+const summaryListStyle = computed(() =>
+  effectiveColumns.value > 1
+    ? ({ "--sdk-summary-columns": String(effectiveColumns.value) } as Record<string, string>)
+    : undefined,
+);
+
 function fieldText(current: PlatformObjectRecord, name: string): string {
   return displayFieldText(current.fields[name], locale.value, t);
+}
+
+function isKeyValueField(name: string): boolean {
+  return Boolean(props.keyValueFields?.includes(name));
+}
+
+function keyValueEntries(current: PlatformObjectRecord, name: string): readonly SummaryKeyValueEntry[] | null {
+  if (!isKeyValueField(name)) return null;
+  return extractSummaryKeyValueEntries(current.fields[name], t);
 }
 
 const copiedField = ref<string | null>(null);
@@ -315,7 +341,12 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
               <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
             </template>
           </div>
-          <dl v-if="articleExtraFields.length" class="sdk-object-summary-article-extra">
+          <dl
+            v-if="articleExtraFields.length"
+            class="sdk-object-summary-list sdk-object-summary-article-extra"
+            :class="{ 'is-bordered': bordered, 'is-multi-col': effectiveColumns > 1 }"
+            :style="summaryListStyle"
+          >
             <template v-for="name in articleExtraFields" :key="name">
               <dt>{{ current.fieldLabels?.[name] ?? name }}</dt>
               <dd>
@@ -338,6 +369,15 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
                     </svg>
                   </button>
                 </span>
+                <template v-else-if="keyValueEntries(current, name) !== null">
+                  <dl v-if="keyValueEntries(current, name)!.length" class="sdk-object-summary-kv">
+                    <template v-for="entry in keyValueEntries(current, name)!" :key="entry.key">
+                      <dt>{{ entry.key }}</dt>
+                      <dd>{{ entry.value }}</dd>
+                    </template>
+                  </dl>
+                  <template v-else>—</template>
+                </template>
                 <template v-else>{{ fieldText(current, name) || "—" }}</template>
               </dd>
             </template>
@@ -349,7 +389,11 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
               <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
             </template>
           </h3>
-          <dl>
+          <dl
+            class="sdk-object-summary-list"
+            :class="{ 'is-bordered': bordered, 'is-multi-col': effectiveColumns > 1 }"
+            :style="summaryListStyle"
+          >
             <template v-for="name in shown" :key="name">
               <dt>{{ current.fieldLabels?.[name] ?? name }}</dt>
               <dd>
@@ -422,6 +466,15 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
                     </svg>
                   </button>
                 </span>
+                <template v-else-if="keyValueEntries(current, name) !== null">
+                  <dl v-if="keyValueEntries(current, name)!.length" class="sdk-object-summary-kv">
+                    <template v-for="entry in keyValueEntries(current, name)!" :key="entry.key">
+                      <dt>{{ entry.key }}</dt>
+                      <dd>{{ entry.value }}</dd>
+                    </template>
+                  </dl>
+                  <template v-else>—</template>
+                </template>
                 <span v-else-if="fieldText(current, name) !== ''" class="sdk-object-summary-text">
                   <template v-for="(part, index) in textHighlightSegments(fieldText(current, name), current.highlights?.[name])" :key="index">
                     <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
@@ -531,31 +584,79 @@ function navigateToChild(reference: PlatformChildFieldReference, fieldName: stri
 .sdk-object-summary-article-extra {
   margin-top: var(--spacing-md);
 }
-dl {
+.sdk-object-summary-list {
   display: grid;
   font-size: var(--text-sm);
   column-gap: var(--spacing-md, 16px);
   row-gap: 12px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  grid-template-columns: repeat(var(--sdk-summary-columns, 1), minmax(0, 1fr) minmax(0, 2fr));
   margin: 0;
 }
-.sdk-object-summary-compact dl {
+.sdk-object-summary-compact .sdk-object-summary-list {
   gap: var(--spacing-xs, 4px) var(--spacing-md, 16px);
-  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  grid-template-columns: repeat(var(--sdk-summary-columns, 1), minmax(0, max-content) minmax(0, 1fr));
 }
-dt {
+.sdk-object-summary-list > dt {
   color: var(--el-text-color-secondary);
   line-height: 1.5;
   min-width: 0;
   overflow-wrap: break-word;
   word-break: break-word;
 }
-dd {
+.sdk-object-summary-list > dd {
   color: var(--el-text-color-primary);
   line-height: 1.5;
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.sdk-object-summary-list.is-bordered,
+.sdk-object-summary-compact .sdk-object-summary-list.is-bordered {
+  gap: 0;
+  grid-template-columns: repeat(var(--sdk-summary-columns, 1), minmax(112px, max-content) minmax(0, 1fr));
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--radius-sm, 4px);
+  overflow: hidden;
+}
+.sdk-object-summary-list.is-bordered > dt {
+  padding: 10px 12px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-weight: 500;
+  border-right: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.sdk-object-summary-list.is-bordered > dd {
+  padding: 10px 12px;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  word-break: break-word;
+}
+.sdk-object-summary-list.is-bordered:not(.is-multi-col) > dt:nth-last-of-type(1),
+.sdk-object-summary-list.is-bordered:not(.is-multi-col) > dd:last-of-type {
+  border-bottom: 0;
+}
+.sdk-object-summary-list.is-bordered.is-multi-col {
+  border-right: 0;
+  border-bottom: 0;
+}
+.sdk-object-summary-list.is-bordered.is-multi-col > dd {
+  border-right: 1px solid var(--el-border-color-lighter);
+}
+.sdk-object-summary-kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.sdk-object-summary-kv > dt {
+  color: var(--el-text-color-secondary);
+}
+.sdk-object-summary-kv > dd {
+  margin: 0;
+  min-width: 0;
   word-break: break-word;
 }
 /* An owner's text keeps its own line breaks: a knowledge item's body reads as its owner wrote it. */

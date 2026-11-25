@@ -38,8 +38,8 @@ export function panelNavigator(router: Router, beside?: (address: string) => voi
     const served = () => address.startsWith("/") && !address.startsWith("//") && router.resolve(address).name !== platformRoutes.unknown.name;
     // A panel entry's route opens on the first address that asks for it, so another page's entry is opened here too.
     if (!served()) servePanelEntries(router);
-    // Asked before the shell read the catalog, nothing is listed yet: read it once, and only then call the address absent.
-    if (!served()) await readAndServePanelEntries(router);
+    // Asked before the owning application's entry table was read: load it once, and only then call the address absent.
+    if (!served()) await readAndServePanelEntries(router, address);
     if (!served()) {
       const reason = new Error(workbenchI18n().global.t("platform.panelAddressUnavailable", { address }));
       ElMessage.error(reason.message);

@@ -274,6 +274,7 @@ describe("readBuiltinProducts", () => {
       expect(dashboardsPanel!.manifest.members).toHaveProperty("metricCard");
       expect(dashboardsPanel!.manifest.members).toHaveProperty("cardParamForm");
       expect(dashboardsPanel!.manifest.members).toHaveProperty("cardMetricSource");
+      expect(dashboardsPanel!.manifest.members).toHaveProperty("cardMetricOpen");
       expect(dashboardsPanel!.content.html).not.toMatch(/<el-|--el-|:deep\(/);
       expect(dashboardsPanel!.content.module).not.toContain("usePanelData");
 
@@ -300,10 +301,28 @@ describe("readBuiltinProducts", () => {
       expect(personalWorkspace!.manifest.members).toHaveProperty("favoriteDashboards");
       expect(personalWorkspace!.manifest.members).toHaveProperty("favoriteDashboardCards");
       expect(personalWorkspace!.manifest.members).toHaveProperty("scheduledTasks");
+      expect(personalWorkspace!.manifest.members).toHaveProperty("taskSummary");
       expect(personalWorkspace!.manifest.members).toHaveProperty("recentConversations");
       expect(personalWorkspace!.manifest.members).toHaveProperty("pinnedObjects");
       expect(personalWorkspace!.manifest.members).toHaveProperty("recentVisits");
       expect(personalWorkspace!.manifest.members).toHaveProperty("objectDetail");
+      const pwMemberProjection = (slot: string) => {
+        const member = personalWorkspace!.manifest.members[slot];
+        if (!member || !("projectionId" in member.target)) return undefined;
+        return projections.get(member.target.projectionId);
+      };
+      expect(pwMemberProjection("workspaceGrid")?.config).toMatchObject({
+        itemSurface: "section",
+        rowSizing: "auto",
+        itemHeaderDivider: "none",
+        controlsVisibility: "hover",
+      });
+      expect(pwMemberProjection("favoriteDashboardCards")?.componentId).toBe("@ontomato/sdk:DashboardMetricPreview");
+      expect(pwMemberProjection("scheduledTasks")?.componentId).toBe("@ontomato/sdk:ScheduledTaskSummaryList");
+      expect(pwMemberProjection("taskSummary")?.componentId).toBe("@ontomato/sdk:ScheduledTaskRunDetail");
+      expect(pwMemberProjection("taskSummary")?.data).toEqual({
+        record: expect.objectContaining({ read: "latestRunRecord" }),
+      });
       expect(personalWorkspace!.content.html).not.toMatch(/<el-|--el-|:deep\(/);
       expect(personalWorkspace!.content.module).not.toContain("usePanelData");
 
