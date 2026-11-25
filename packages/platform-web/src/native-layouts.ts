@@ -53,18 +53,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
     ],
   },
   {
-    renderer: "browser",
-    descriptionKey: "platform.descriptions.objectBrowser",
-    sections: [
-      {
-        key: "browser:pages",
-        titleKey: "platform.objectBrowser",
-        // Instance graph and table are modes of one browser, not separate application tabs.
-        paths: [platformRoutes.data.path],
-      },
-    ],
-  },
-  {
     renderer: "agents",
     // The conversation is where the platform is entered, by every member of the domain; the agent settings and the models
     // follow it at the foot of the column.

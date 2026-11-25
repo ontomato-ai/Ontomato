@@ -19,10 +19,6 @@ import {
 // Nothing here exercises a page's own behaviour: the heavy pages are doubled and the network answers only what a page
 // needs to draw, so a failure means the shell did not mount the page or the page broke while drawing.
 vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
-vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowser.vue", () => ({
-  __esModule: true,
-  default: { name: "DataBrowserDouble", template: '<p class="page-double">data browser</p>' },
-}));
 // The governance page pulls in the graph libraries (an ES module inside a CommonJS package); it is
 // doubled so the shell is exercised without them. Its own tests cover the page.
 vi.mock("../../../../../../packages/platform-admin/src/pages/SystemMonitorPage.vue", () => ({
@@ -187,6 +183,9 @@ describe("retired object view legacy links", () => {
     await router.push("/views/Person?key=person-1&from=workspace");
     await settle();
     expect(window.location.hash.replace(/^#/, "")).toBe("/browser/views?selected=Person~person-1&returnTo=workspace");
+    await router.push("/browser/data/Order");
+    await settle();
+    expect(window.location.hash.replace(/^#/, "")).toBe("/browser/data?selectedClass=Order&viewMode=table");
     expect(drawErrors).toEqual([]);
   });
 });

@@ -1,0 +1,843 @@
+{
+  "manifest": {
+    "state": {
+      "viewMode": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "graph"
+      },
+      "selectedClass": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        },
+        "deepLink": true
+      },
+      "selectedNode": {
+        "type": {
+          "kind": "object",
+          "objectType": "@any"
+        }
+      },
+      "graphStart": {
+        "type": {
+          "kind": "object",
+          "objectType": "@any"
+        }
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": ""
+      },
+      "graphQuery": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": ""
+      },
+      "graphSearchClass": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "graphSearchClassName": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "graphVersion": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "positions": {
+        "type": {
+          "kind": "json"
+        },
+        "personal": true
+      },
+      "expandedNodes": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "@any"
+          }
+        }
+      },
+      "visibleRelationKinds": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        }
+      },
+      "filters": {
+        "type": {
+          "kind": "json"
+        }
+      },
+      "sort": {
+        "type": {
+          "kind": "json"
+        }
+      }
+    },
+    "members": {
+      "instanceGraph": {
+        "component": "OntologyGraph",
+        "name": "Instance relationship graph",
+        "description": "Sampled overview and paginated one-hop neighborhood graph of domain object instances with per-person saved node positions.",
+        "type": "platform:ObjectType",
+        "data": {
+          "overview": "instanceGraphOverview",
+          "connections": "instanceGraphConnections",
+          "counts": "instanceGraphStatistics",
+          "neighbors": "instanceNeighbors"
+        },
+        "inputs": {
+          "selected": {
+            "state": "selectedNode"
+          }
+        },
+        "state": {
+          "start": "graphStart",
+          "selectedNode": "selectedNode",
+          "query": "graphQuery",
+          "positions": "positions",
+          "expandedNodes": "expandedNodes",
+          "visibleRelationKinds": "visibleRelationKinds"
+        },
+        "config": {
+          "showLayerFilter": false,
+          "showLegend": true,
+          "showToolbar": true,
+          "aggregateEdges": true,
+          "showEdgeLabels": true,
+          "showAggregateToggle": true,
+          "showEdgeLabelToggle": true,
+          "showZoomControls": true,
+          "showRefreshControl": true,
+          "showNeighborControls": true,
+          "neighborPageSize": 50
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000001"
+      },
+      "graphSearchClassPicker": {
+        "component": "ReferencePicker",
+        "name": "Graph search class filter",
+        "description": "Optional object type filter narrowing instance graph search results.",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "graphSearchClass"
+        },
+        "config": {
+          "placeholderKey": "db.allClasses",
+          "clearable": true,
+          "size": "small"
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000002"
+      },
+      "graphSearchResults": {
+        "component": "ObjectList",
+        "name": "Instance graph search results",
+        "description": "Matches instances in the current graph snapshot by keyword and optional object type.",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": {
+            "read": "instanceGraphSearch",
+            "params": {
+              "search": {
+                "state": "graphQuery"
+              },
+              "className": {
+                "state": "graphSearchClassName"
+              },
+              "version": {
+                "state": "graphVersion"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "list",
+          "subtitleField": "classLabel",
+          "searchable": false,
+          "showFooter": false,
+          "showChevron": true,
+          "emptyText": "db.graphSearchEmpty"
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000003"
+      },
+      "nodeHeader": {
+        "component": "ObjectHeader",
+        "name": "Selected instance title",
+        "description": "Displays the selected graph instance's name in the inspector drawer.",
+        "type": "platform:ObjectType",
+        "data": {
+          "record": {
+            "read": "instanceRecord",
+            "params": {
+              "object": {
+                "state": "selectedNode"
+              }
+            }
+          }
+        },
+        "config": {
+          "subtitle": "",
+          "fallbackTitle": ""
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000004"
+      },
+      "nodeSummary": {
+        "component": "ObjectSummary",
+        "name": "Selected instance attributes",
+        "description": "Quick read-only attribute overview of the selected graph instance.",
+        "type": "platform:ObjectType",
+        "data": {
+          "record": {
+            "read": "instanceRecord",
+            "params": {
+              "object": {
+                "state": "selectedNode"
+              }
+            }
+          }
+        },
+        "config": {
+          "showTitle": false,
+          "emptyText": "db.nodeSummaryEmpty",
+          "missingText": "db.nodeSummaryMissing"
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000005"
+      },
+      "classPicker": {
+        "component": "ReferencePicker",
+        "name": "Object type selector",
+        "description": "Searchable dropdown to switch the active object type in table mode.",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "selectedClass"
+        },
+        "config": {
+          "placeholderKey": "db.selectClass",
+          "clearable": false,
+          "size": "default"
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000006"
+      },
+      "classCatalogProbe": {
+        "component": "ObjectList",
+        "name": "Default object type selector probe",
+        "description": "Selects the first available object type automatically when entering table mode without a selected class.",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "selectedClass"
+        },
+        "config": {
+          "layout": "list",
+          "fallbackToFirst": true,
+          "searchable": false,
+          "showFooter": false
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000007"
+      },
+      "classAttributesProbe": {
+        "component": "ObjectList",
+        "name": "Selected class attributes probe",
+        "description": "Loads the selected object type's attributes for filter and sort field selectors.",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "state": "selectedClass",
+                "field": "primaryKey"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "showFooter": false
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000008"
+      },
+      "instanceTable": {
+        "component": "ObjectList",
+        "name": "Object instance records table",
+        "description": "Server-filtered, server-sorted, paginated multi-column table of object instances with dynamic columns, column visibility toggle, and current-page CSV export.",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": {
+            "read": "instances",
+            "params": {
+              "className": {
+                "state": "selectedClass",
+                "field": "primaryKey"
+              },
+              "filters": {
+                "state": "filters"
+              },
+              "sort": {
+                "state": "sort"
+              }
+            }
+          }
+        },
+        "state": {
+          "search": "search"
+        },
+        "config": {
+          "layout": "table",
+          "dynamicColumns": true,
+          "showColumnToggle": true,
+          "exportable": true,
+          "searchable": false,
+          "showChevron": true,
+          "emptyText": "db.tableEmpty",
+          "noMatchText": "db.tableNoMatch"
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000009"
+      },
+      "detailBinding": {
+        "component": "InfoBanner",
+        "name": "Detail panel permission probe",
+        "description": "Reads whether the current user can configure this object type's detail presentation.",
+        "target": "selectedClass",
+        "data": {
+          "record": "detailPanel"
+        },
+        "config": {
+          "field": "unavailableReason",
+          "hideWhenEmpty": true
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000010"
+      },
+      "detailBindingSummary": {
+        "component": "ObjectSummary",
+        "name": "Current detail panel binding",
+        "description": "Displays the currently configured detail panel status and name inside the presentation dialog.",
+        "target": "selectedClass",
+        "data": {
+          "record": "detailPanel"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "status",
+            "panelName",
+            "unavailableReason"
+          ]
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000011"
+      },
+      "detailPanelForm": {
+        "component": "ObjectForm",
+        "name": "Configure detail panel form",
+        "description": "Selects or clears the custom detail panel bound to this object type.",
+        "type": "platform:ObjectType",
+        "target": "selectedClass",
+        "data": {
+          "form": "detailPanelForm"
+        },
+        "operation": "platform:ObjectType.saveDetailPanel",
+        "config": {
+          "actions": "footer"
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000012"
+      },
+      "detailPanelPicker": {
+        "component": "ReferencePicker",
+        "name": "Detail panel picker",
+        "description": "Searches and picks a usable panel to bind as this object type's detail panel.",
+        "type": "platform:ProductPanel",
+        "data": {
+          "options": "options"
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000013"
+      },
+      "clearDetailPanel": {
+        "component": "OperationButton",
+        "name": "Restore default detail",
+        "description": "Clears the custom detail panel binding so the object type falls back to the built-in read-only detail.",
+        "operation": "objectTypes.clearDetailPanel",
+        "target": "selectedClass",
+        "config": {
+          "plain": true,
+          "labelKey": "db.restoreDefault"
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000014"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Object browser",
+        "panel.description": "Browse object records and explore relationships between instances",
+        "db.title": "Object browser",
+        "db.description": "Browse object records and explore relationships between instances",
+        "db.modeSwitchLabel": "Browse mode",
+        "db.modeGraph": "Instance graph",
+        "db.modeTable": "Table",
+        "db.refresh": "Refresh",
+        "db.configurePresentation": "Configure presentation",
+        "db.configureTitle": "Configure object presentation",
+        "db.currentBinding": "Current presentation",
+        "db.restoreDefault": "Restore default detail",
+        "db.managePanels": "Manage detail panels",
+        "db.savedNotice": "Object presentation saved.",
+        "db.clearedNotice": "Restored default read-only detail.",
+        "db.graphSearchPlaceholder": "Search instances by name or key…",
+        "db.allClasses": "All object types",
+        "db.graphSearchResults": "Matching instances",
+        "db.graphSearchEmpty": "No matching instances found.",
+        "db.graphStatsSummary": "{nodes} instances · {edges} relations",
+        "db.closeInspector": "Close inspector",
+        "db.viewFullDetail": "View full details",
+        "db.exploreNeighborhood": "Explore neighborhood",
+        "db.nodeAttributes": "Attributes",
+        "db.nodeSummaryEmpty": "Select an instance node to inspect its attributes.",
+        "db.nodeSummaryMissing": "The instance no longer exists or is not readable.",
+        "db.selectClass": "Select object type",
+        "db.tableSearchPlaceholder": "Search records…",
+        "db.filterAndSort": "Filter & sort",
+        "db.filterConditions": "Filter conditions",
+        "db.addCondition": "Add condition",
+        "db.removeCondition": "Remove condition",
+        "db.selectField": "Field",
+        "db.selectOperator": "Operator",
+        "db.filterValuePlaceholder": "Value",
+        "db.opEq": "Equals",
+        "db.opNe": "Not equals",
+        "db.opContains": "Contains",
+        "db.opGt": "Greater than",
+        "db.opLt": "Less than",
+        "db.opGte": "Greater than or equal",
+        "db.opLte": "Less than or equal",
+        "db.opNull": "Is empty",
+        "db.opNotNull": "Is not empty",
+        "db.sortSection": "Sort",
+        "db.selectSortField": "Sort by field",
+        "db.sortAsc": "Ascending",
+        "db.sortDesc": "Descending",
+        "db.resetFilters": "Reset",
+        "db.applyFilters": "Apply",
+        "db.tableEmpty": "No records for this object type.",
+        "db.tableNoMatch": "No records match the current search or filters.",
+        "db.noClassSelected": "Select an object type to browse its records."
+      },
+      "zh-CN": {
+        "panel.name": "对象浏览器",
+        "panel.description": "浏览对象记录，查看实例之间的关系",
+        "db.title": "对象浏览器",
+        "db.description": "浏览对象记录，查看实例之间的关系",
+        "db.modeSwitchLabel": "浏览模式",
+        "db.modeGraph": "实例图谱",
+        "db.modeTable": "表格",
+        "db.refresh": "刷新",
+        "db.configurePresentation": "配置呈现",
+        "db.configureTitle": "配置对象呈现",
+        "db.currentBinding": "当前呈现配置",
+        "db.restoreDefault": "恢复默认详情",
+        "db.managePanels": "创建 / 管理详情面板",
+        "db.savedNotice": "对象呈现配置已保存。",
+        "db.clearedNotice": "已恢复默认只读详情。",
+        "db.graphSearchPlaceholder": "按名称或主键搜索实例…",
+        "db.allClasses": "全部对象类型",
+        "db.graphSearchResults": "匹配实例",
+        "db.graphSearchEmpty": "未找到匹配的实例。",
+        "db.graphStatsSummary": "{nodes} 个实例 · {edges} 条关系",
+        "db.closeInspector": "关闭速览",
+        "db.viewFullDetail": "查看完整详情",
+        "db.exploreNeighborhood": "展开邻域",
+        "db.nodeAttributes": "属性速览",
+        "db.nodeSummaryEmpty": "点击图谱节点查看实例属性。",
+        "db.nodeSummaryMissing": "该实例不存在或无权读取。",
+        "db.selectClass": "选择对象类型",
+        "db.tableSearchPlaceholder": "搜索当前类型记录…",
+        "db.filterAndSort": "筛选与排序",
+        "db.filterConditions": "筛选条件",
+        "db.addCondition": "添加条件",
+        "db.removeCondition": "删除条件",
+        "db.selectField": "属性字段",
+        "db.selectOperator": "操作符",
+        "db.filterValuePlaceholder": "输入值",
+        "db.opEq": "等于",
+        "db.opNe": "不等于",
+        "db.opContains": "包含",
+        "db.opGt": "大于",
+        "db.opLt": "小于",
+        "db.opGte": "大于等于",
+        "db.opLte": "小于等于",
+        "db.opNull": "为空",
+        "db.opNotNull": "非空",
+        "db.sortSection": "排序",
+        "db.selectSortField": "排序字段",
+        "db.sortAsc": "升序",
+        "db.sortDesc": "降序",
+        "db.resetFilters": "重置",
+        "db.applyFilters": "应用",
+        "db.tableEmpty": "当前对象类型暂无记录。",
+        "db.tableNoMatch": "没有符合当前搜索或筛选条件的记录。",
+        "db.noClassSelected": "请选择一个对象类型以浏览记录。"
+      },
+      "zh-TW": {
+        "panel.name": "物件瀏覽器",
+        "panel.description": "瀏覽物件記錄，檢視實例之間的關係",
+        "db.title": "物件瀏覽器",
+        "db.description": "瀏覽物件記錄，檢視實例之間的關係",
+        "db.modeSwitchLabel": "瀏覽模式",
+        "db.modeGraph": "實例圖譜",
+        "db.modeTable": "表格",
+        "db.refresh": "重新整理",
+        "db.configurePresentation": "設定呈現",
+        "db.configureTitle": "設定物件呈現",
+        "db.currentBinding": "目前呈現設定",
+        "db.restoreDefault": "恢復預設詳情",
+        "db.managePanels": "建立 / 管理詳情面板",
+        "db.savedNotice": "物件呈現設定已儲存。",
+        "db.clearedNotice": "已恢復預設唯讀詳情。",
+        "db.graphSearchPlaceholder": "依名稱或主鍵搜尋實例…",
+        "db.allClasses": "全部物件類型",
+        "db.graphSearchResults": "符合實例",
+        "db.graphSearchEmpty": "找不到符合的實例。",
+        "db.graphStatsSummary": "{nodes} 個實例 · {edges} 條關係",
+        "db.closeInspector": "關閉速覽",
+        "db.viewFullDetail": "檢視完整詳情",
+        "db.exploreNeighborhood": "展開鄰域",
+        "db.nodeAttributes": "屬性速覽",
+        "db.nodeSummaryEmpty": "點擊圖譜節點檢視實例屬性。",
+        "db.nodeSummaryMissing": "該實例不存在或無權讀取。",
+        "db.selectClass": "選擇物件類型",
+        "db.tableSearchPlaceholder": "搜尋目前類型記錄…",
+        "db.filterAndSort": "篩選與排序",
+        "db.filterConditions": "篩選條件",
+        "db.addCondition": "新增條件",
+        "db.removeCondition": "移除條件",
+        "db.selectField": "屬性欄位",
+        "db.selectOperator": "運算子",
+        "db.filterValuePlaceholder": "輸入值",
+        "db.opEq": "等於",
+        "db.opNe": "不等於",
+        "db.opContains": "包含",
+        "db.opGt": "大於",
+        "db.opLt": "小於",
+        "db.opGte": "大於等於",
+        "db.opLte": "小於等於",
+        "db.opNull": "為空",
+        "db.opNotNull": "非空",
+        "db.sortSection": "排序",
+        "db.selectSortField": "排序欄位",
+        "db.sortAsc": "升冪",
+        "db.sortDesc": "降冪",
+        "db.resetFilters": "重設",
+        "db.applyFilters": "套用",
+        "db.tableEmpty": "目前物件類型暫無記錄。",
+        "db.tableNoMatch": "沒有符合目前搜尋或篩選條件的記錄。",
+        "db.noClassSelected": "請選擇一個物件類型以瀏覽記錄。"
+      },
+      "ja": {
+        "panel.name": "オブジェクトブラウザー",
+        "panel.description": "オブジェクトレコードを閲覧し、インスタンス間の関係性を探索します",
+        "db.title": "オブジェクトブラウザー",
+        "db.description": "オブジェクトレコードを閲覧し、インスタンス間の関係性を探索します",
+        "db.modeSwitchLabel": "表示モード",
+        "db.modeGraph": "インスタンスグラフ",
+        "db.modeTable": "テーブル",
+        "db.refresh": "更新",
+        "db.configurePresentation": "表示を設定",
+        "db.configureTitle": "オブジェクト表示の設定",
+        "db.currentBinding": "現在の表示設定",
+        "db.restoreDefault": "デフォルト表示に戻す",
+        "db.managePanels": "詳細パネルを作成・管理",
+        "db.savedNotice": "オブジェクトの表示設定を保存しました。",
+        "db.clearedNotice": "デフォルトの読み取り専用表示に戻しました。",
+        "db.graphSearchPlaceholder": "名前または主キーでインスタンスを検索…",
+        "db.allClasses": "すべてのオブジェクトタイプ",
+        "db.graphSearchResults": "一致するインスタンス",
+        "db.graphSearchEmpty": "一致するインスタンスが見つかりません。",
+        "db.graphStatsSummary": "{nodes} 件のインスタンス · {edges} 件の関係",
+        "db.closeInspector": "インスペクターを閉じる",
+        "db.viewFullDetail": "詳細を表示",
+        "db.exploreNeighborhood": "近傍を展開",
+        "db.nodeAttributes": "属性概要",
+        "db.nodeSummaryEmpty": "グラフのノードを選択すると属性が表示されます。",
+        "db.nodeSummaryMissing": "インスタンスが存在しないか、読み取り権限がありません。",
+        "db.selectClass": "オブジェクトタイプを選択",
+        "db.tableSearchPlaceholder": "レコードを検索…",
+        "db.filterAndSort": "フィルターと並べ替え",
+        "db.filterConditions": "フィルター条件",
+        "db.addCondition": "条件を追加",
+        "db.removeCondition": "条件を削除",
+        "db.selectField": "フィールド",
+        "db.selectOperator": "演算子",
+        "db.filterValuePlaceholder": "値を入力",
+        "db.opEq": "等しい",
+        "db.opNe": "等しくない",
+        "db.opContains": "含む",
+        "db.opGt": "より大きい",
+        "db.opLt": "より小さい",
+        "db.opGte": "以上",
+        "db.opLte": "以下",
+        "db.opNull": "空である",
+        "db.opNotNull": "空でない",
+        "db.sortSection": "並べ替え",
+        "db.selectSortField": "並べ替えフィールド",
+        "db.sortAsc": "昇順",
+        "db.sortDesc": "降順",
+        "db.resetFilters": "リセット",
+        "db.applyFilters": "適用",
+        "db.tableEmpty": "このオブジェクトタイプにはレコードがありません。",
+        "db.tableNoMatch": "現在の検索またはフィルターに一致するレコードがありません。",
+        "db.noClassSelected": "レコードを閲覧するオブジェクトタイプを選択してください。"
+      },
+      "de": {
+        "panel.name": "Objektbrowser",
+        "panel.description": "Objektdatensätze durchsuchen und Beziehungen zwischen Instanzen erkunden",
+        "db.title": "Objektbrowser",
+        "db.description": "Objektdatensätze durchsuchen und Beziehungen zwischen Instanzen erkunden",
+        "db.modeSwitchLabel": "Ansichtsmodus",
+        "db.modeGraph": "Instanzgraph",
+        "db.modeTable": "Tabelle",
+        "db.refresh": "Aktualisieren",
+        "db.configurePresentation": "Darstellung konfigurieren",
+        "db.configureTitle": "Objektdarstellung konfigurieren",
+        "db.currentBinding": "Aktuelle Darstellung",
+        "db.restoreDefault": "Standardansicht wiederherstellen",
+        "db.managePanels": "Detailpanels verwalten",
+        "db.savedNotice": "Objektdarstellung gespeichert.",
+        "db.clearedNotice": "Schreibgeschützte Standardansicht wiederhergestellt.",
+        "db.graphSearchPlaceholder": "Instanzen nach Name oder Schlüssel suchen…",
+        "db.allClasses": "Alle Objekttypen",
+        "db.graphSearchResults": "Passende Instanzen",
+        "db.graphSearchEmpty": "Keine passenden Instanzen gefunden.",
+        "db.graphStatsSummary": "{nodes} Instanzen · {edges} Beziehungen",
+        "db.closeInspector": "Inspektor schließen",
+        "db.viewFullDetail": "Vollständige Details",
+        "db.exploreNeighborhood": "Nachbarschaft erkunden",
+        "db.nodeAttributes": "Attribute",
+        "db.nodeSummaryEmpty": "Wählen Sie einen Knoten aus, um Attribute zu prüfen.",
+        "db.nodeSummaryMissing": "Die Instanz existiert nicht mehr oder ist nicht lesbar.",
+        "db.selectClass": "Objekttyp auswählen",
+        "db.tableSearchPlaceholder": "Datensätze suchen…",
+        "db.filterAndSort": "Filtern & Sortieren",
+        "db.filterConditions": "Filterbedingungen",
+        "db.addCondition": "Bedingung hinzufügen",
+        "db.removeCondition": "Bedingung entfernen",
+        "db.selectField": "Feld",
+        "db.selectOperator": "Operator",
+        "db.filterValuePlaceholder": "Wert",
+        "db.opEq": "Gleich",
+        "db.opNe": "Ungleich",
+        "db.opContains": "Enthält",
+        "db.opGt": "Größer als",
+        "db.opLt": "Kleiner als",
+        "db.opGte": "Größer oder gleich",
+        "db.opLte": "Kleiner oder gleich",
+        "db.opNull": "Ist leer",
+        "db.opNotNull": "Ist nicht leer",
+        "db.sortSection": "Sortierung",
+        "db.selectSortField": "Sortieren nach",
+        "db.sortAsc": "Aufsteigend",
+        "db.sortDesc": "Absteigend",
+        "db.resetFilters": "Zurücksetzen",
+        "db.applyFilters": "Anwenden",
+        "db.tableEmpty": "Keine Datensätze für diesen Objekttyp.",
+        "db.tableNoMatch": "Keine Datensätze entsprechen der Suche oder den Filtern.",
+        "db.noClassSelected": "Wählen Sie einen Objekttyp aus, um Datensätze anzuzeigen."
+      },
+      "fr": {
+        "panel.name": "Explorateur d'objets",
+        "panel.description": "Parcourir les enregistrements d'objets et explorer les relations entre instances",
+        "db.title": "Explorateur d'objets",
+        "db.description": "Parcourir les enregistrements d'objets et explorer les relations entre instances",
+        "db.modeSwitchLabel": "Mode d'affichage",
+        "db.modeGraph": "Graphe d'instances",
+        "db.modeTable": "Tableau",
+        "db.refresh": "Actualiser",
+        "db.configurePresentation": "Configurer la présentation",
+        "db.configureTitle": "Configurer la présentation de l'objet",
+        "db.currentBinding": "Présentation actuelle",
+        "db.restoreDefault": "Rétablir la vue par défaut",
+        "db.managePanels": "Gérer les panneaux de détail",
+        "db.savedNotice": "Présentation de l'objet enregistrée.",
+        "db.clearedNotice": "Vue détaillée en lecture seule rétablie.",
+        "db.graphSearchPlaceholder": "Rechercher des instances par nom ou clé…",
+        "db.allClasses": "Tous les types d'objets",
+        "db.graphSearchResults": "Instances correspondantes",
+        "db.graphSearchEmpty": "Aucune instance correspondante.",
+        "db.graphStatsSummary": "{nodes} instances · {edges} relations",
+        "db.closeInspector": "Fermer l'inspecteur",
+        "db.viewFullDetail": "Voir tous les détails",
+        "db.exploreNeighborhood": "Explorer le voisinage",
+        "db.nodeAttributes": "Attributs",
+        "db.nodeSummaryEmpty": "Sélectionnez un nœud pour consulter ses attributs.",
+        "db.nodeSummaryMissing": "L'instance n'existe plus ou n'est pas lisible.",
+        "db.selectClass": "Sélectionner un type d'objet",
+        "db.tableSearchPlaceholder": "Rechercher des enregistrements…",
+        "db.filterAndSort": "Filtrer et trier",
+        "db.filterConditions": "Conditions de filtre",
+        "db.addCondition": "Ajouter une condition",
+        "db.removeCondition": "Supprimer la condition",
+        "db.selectField": "Champ",
+        "db.selectOperator": "Opérateur",
+        "db.filterValuePlaceholder": "Valeur",
+        "db.opEq": "Égal à",
+        "db.opNe": "Différent de",
+        "db.opContains": "Contient",
+        "db.opGt": "Supérieur à",
+        "db.opLt": "Inférieur à",
+        "db.opGte": "Supérieur ou égal à",
+        "db.opLte": "Inférieur ou égal à",
+        "db.opNull": "Est vide",
+        "db.opNotNull": "N'est pas vide",
+        "db.sortSection": "Tri",
+        "db.selectSortField": "Trier par champ",
+        "db.sortAsc": "Croissant",
+        "db.sortDesc": "Décroissant",
+        "db.resetFilters": "Réinitialiser",
+        "db.applyFilters": "Appliquer",
+        "db.tableEmpty": "Aucun enregistrement pour ce type d'objet.",
+        "db.tableNoMatch": "Aucun enregistrement ne correspond à la recherche ou aux filtres.",
+        "db.noClassSelected": "Sélectionnez un type d'objet pour parcourir ses enregistrements."
+      },
+      "it": {
+        "panel.name": "Browser oggetti",
+        "panel.description": "Sfoglia i record degli oggetti ed esplora le relazioni tra istanze",
+        "db.title": "Browser oggetti",
+        "db.description": "Sfoglia i record degli oggetti ed esplora le relazioni tra istanze",
+        "db.modeSwitchLabel": "Modalità di visualizzazione",
+        "db.modeGraph": "Grafo istanze",
+        "db.modeTable": "Tabella",
+        "db.refresh": "Aggiorna",
+        "db.configurePresentation": "Configura presentazione",
+        "db.configureTitle": "Configura presentazione oggetto",
+        "db.currentBinding": "Presentazione corrente",
+        "db.restoreDefault": "Ripristina dettaglio predefinito",
+        "db.managePanels": "Gestisci pannelli di dettaglio",
+        "db.savedNotice": "Presentazione oggetto salvata.",
+        "db.clearedNotice": "Ripristinato il dettaglio predefinito in sola lettura.",
+        "db.graphSearchPlaceholder": "Cerca istanze per nome o chiave…",
+        "db.allClasses": "Tutti i tipi di oggetto",
+        "db.graphSearchResults": "Istanze corrispondenti",
+        "db.graphSearchEmpty": "Nessuna istanza corrispondente.",
+        "db.graphStatsSummary": "{nodes} istanze · {edges} relazioni",
+        "db.closeInspector": "Chiudi pannello",
+        "db.viewFullDetail": "Visualizza dettagli completi",
+        "db.exploreNeighborhood": "Esplora adiacenze",
+        "db.nodeAttributes": "Attributi",
+        "db.nodeSummaryEmpty": "Seleziona un nodo per visualizzarne gli attributi.",
+        "db.nodeSummaryMissing": "L'istanza non esiste più o non è leggibile.",
+        "db.selectClass": "Seleziona tipo di oggetto",
+        "db.tableSearchPlaceholder": "Cerca record…",
+        "db.filterAndSort": "Filtra e ordina",
+        "db.filterConditions": "Condizioni di filtro",
+        "db.addCondition": "Aggiungi condizione",
+        "db.removeCondition": "Rimuovi condizione",
+        "db.selectField": "Campo",
+        "db.selectOperator": "Operatore",
+        "db.filterValuePlaceholder": "Valore",
+        "db.opEq": "Uguale a",
+        "db.opNe": "Diverso da",
+        "db.opContains": "Contiene",
+        "db.opGt": "Maggiore di",
+        "db.opLt": "Minore di",
+        "db.opGte": "Maggiore o uguale a",
+        "db.opLte": "Minore o uguale a",
+        "db.opNull": "È vuoto",
+        "db.opNotNull": "Non è vuoto",
+        "db.sortSection": "Ordinamento",
+        "db.selectSortField": "Ordina per campo",
+        "db.sortAsc": "Crescente",
+        "db.sortDesc": "Decrescente",
+        "db.resetFilters": "Ripristina",
+        "db.applyFilters": "Applica",
+        "db.tableEmpty": "Nessun record per questo tipo di oggetto.",
+        "db.tableNoMatch": "Nessun record corrisponde alla ricerca o ai filtri correnti.",
+        "db.noClassSelected": "Seleziona un tipo di oggetto per sfogliarne i record."
+      },
+      "ar": {
+        "panel.name": "متصفح الكائنات",
+        "panel.description": "استعراض سجلات الكائنات واستكشاف العلاقات بين المثيلات",
+        "db.title": "متصفح الكائنات",
+        "db.description": "استعراض سجلات الكائنات واستكشاف العلاقات بين المثيلات",
+        "db.modeSwitchLabel": "وضع العرض",
+        "db.modeGraph": "مخطط المثيلات",
+        "db.modeTable": "جدول",
+        "db.refresh": "تحديث",
+        "db.configurePresentation": "تكوين العرض",
+        "db.configureTitle": "تكوين عرض الكائن",
+        "db.currentBinding": "العرض الحالي",
+        "db.restoreDefault": "استعادة التفاصيل الافتراضية",
+        "db.managePanels": "إنشاء / إدارة لوحات التفاصيل",
+        "db.savedNotice": "تم حفظ تكوين عرض الكائن.",
+        "db.clearedNotice": "تمت استعادة التفاصيل الافتراضية للقراءة فقط.",
+        "db.graphSearchPlaceholder": "البحث عن المثيلات بالاسم أو المفتاح…",
+        "db.allClasses": "جميع أنواع الكائنات",
+        "db.graphSearchResults": "المثيلات المطابقة",
+        "db.graphSearchEmpty": "لم يتم العثور على مثيلات مطابقة.",
+        "db.graphStatsSummary": "{nodes} مثيل · {edges} علاقة",
+        "db.closeInspector": "إغلاق المعاينة",
+        "db.viewFullDetail": "عرض التفاصيل الكاملة",
+        "db.exploreNeighborhood": "استكشاف الجوار",
+        "db.nodeAttributes": "السمات",
+        "db.nodeSummaryEmpty": "اختر عقدة من المخطط لمعاينة سماتها.",
+        "db.nodeSummaryMissing": "المثيل غير موجود أو لا يمكن قراءته.",
+        "db.selectClass": "اختر نوع الكائن",
+        "db.tableSearchPlaceholder": "البحث في السجلات…",
+        "db.filterAndSort": "التصفية والفرز",
+        "db.filterConditions": "شروط التصفية",
+        "db.addCondition": "إضافة شرط",
+        "db.removeCondition": "حذف الشرط",
+        "db.selectField": "الحقل",
+        "db.selectOperator": "المعامل",
+        "db.filterValuePlaceholder": "القيمة",
+        "db.opEq": "يساوي",
+        "db.opNe": "لا يساوي",
+        "db.opContains": "يحتوي على",
+        "db.opGt": "أكبر من",
+        "db.opLt": "أصغر من",
+        "db.opGte": "أكبر من أو يساوي",
+        "db.opLte": "أصغر من أو يساوي",
+        "db.opNull": "فارغ",
+        "db.opNotNull": "غير فارغ",
+        "db.sortSection": "الفرز",
+        "db.selectSortField": "الفرز حسب الحقل",
+        "db.sortAsc": "تصاعدي",
+        "db.sortDesc": "تنازلي",
+        "db.resetFilters": "إعادة تعيين",
+        "db.applyFilters": "تطبيق",
+        "db.tableEmpty": "لا توجد سجلات لنوع الكائن هذا.",
+        "db.tableNoMatch": "لا توجد سجلات تطابق البحث أو التصفية الحالية.",
+        "db.noClassSelected": "اختر نوع كائن لاستعراض سجلاته."
+      }
+    }
+  }
+}

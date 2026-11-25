@@ -458,21 +458,21 @@ export const components: readonly ComponentMetadata[] = [
     // which layers are visible, which nodes are expanded, and saved per-person node coordinates.
     inputs: {
       mode: { kind: "scalar", type: "string" },
-      start: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
-      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      start: { kind: "object", objectType: "@any" },
+      selected: { kind: "object", objectType: "@any" },
       selectedType: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
       visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
-      expandedNodes: { kind: "list", items: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
+      expandedNodes: { kind: "list", items: { kind: "object", objectType: "@any" } },
     },
     outputs: {
-      selectedNode: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
-      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      selectedNode: { kind: "object", objectType: "@any" },
+      selected: { kind: "object", objectType: "@any" },
       selectedType: { kind: "scalar", type: "string" },
       // The relation kinds drawn, read as well as written: a page's own kind filter and the graph follow one choice.
       visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
       visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
-      expandedNodes: { kind: "list", items: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
+      expandedNodes: { kind: "list", items: { kind: "object", objectType: "@any" } },
       positions: { kind: "json" },
     },
     readOnlyOutputs: {

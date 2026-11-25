@@ -29,11 +29,11 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-/** Four pages each inject the client, standing for the ontology, asset, data browsing and modeling request entry points. */
+/** Four pages each inject the client, standing for the ontology, asset, workflow and modeling request entry points. */
 const pages = {
   ontology: (client: ManagerClient) => client.loadOntology(),
   assets: (client: ManagerClient) => client.loadSmartAssets("actions"),
-  dataBrowser: (client: ManagerClient) => client.loadObjectData("Order", 1, 25),
+  workflows: (client: ManagerClient) => client.loadWorkflows(),
   visualModeling: (client: ManagerClient) => client.listDataAdapters(),
 };
 type Page = keyof typeof pages;
@@ -83,8 +83,8 @@ function mountPage(credential: ManagerCredential = { type: "token", token: "t-1"
 describe("the Manager installed in the page", () => {
   it("every page shares the page's one client, and the client sends the page credential", async () => {
     const page = mountPage();
-    const { ontology, assets, dataBrowser, visualModeling } = page.clients;
-    expect(new Set([ontology, assets, dataBrowser, visualModeling, page.manager.client]).size).toBe(1);
+    const { ontology, assets, workflows, visualModeling } = page.clients;
+    expect(new Set([ontology, assets, workflows, visualModeling, page.manager.client]).size).toBe(1);
 
     await Promise.all((Object.keys(pages) as Page[]).map((name) => page.run(name)));
     expect(requests).toHaveLength(4);

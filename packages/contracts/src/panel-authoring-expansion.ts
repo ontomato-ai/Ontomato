@@ -60,6 +60,7 @@ export function expandPanelAuthoringMember(
   const componentData = component.data ?? {};
   const componentId = qualifiedId(component);
   const isObjectRelations = componentId === "@ontomato/sdk:ObjectRelations";
+  const isOntologyGraph = componentId === "@ontomato/sdk:OntologyGraph";
   if (member.agent !== undefined && componentId !== "@ontomato/sdk:ConversationEntry")
     return fail("agent", "The agent target belongs to the official ConversationEntry component");
   const conversationEntry = member.agent === undefined ? undefined : panelConversationEntrySchema.parse({
@@ -296,7 +297,12 @@ export function expandPanelAuthoringMember(
         return fail(path, `Port '${name}' requires object or object-union state`);
       return actual;
     }
-    if (isObjectRelations && name === "visibleRelationKinds" && actual !== undefined) {
+    if (declared.kind === "list" && declared.items.kind === "object" && declared.items.objectType === "@any") {
+      if (actual?.kind !== "list" || (actual.items.kind !== "object" && actual.items.kind !== "object-union"))
+        return fail(path, `Port '${name}' requires a list of object or object-union state`);
+      return actual;
+    }
+    if ((isObjectRelations || isOntologyGraph) && name === "visibleRelationKinds" && actual !== undefined) {
       if (actual.kind !== "list" || (actual.items.kind !== "object"
         && !(actual.items.kind === "scalar" && actual.items.type === "string")))
         return fail(path, `Port '${name}' requires a list of strings or object references`);
