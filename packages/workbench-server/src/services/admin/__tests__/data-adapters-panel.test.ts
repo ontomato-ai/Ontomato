@@ -374,12 +374,25 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
 
     const modeField = form.fields.find((f) => f.path === "/adapterMode")!;
     expect(modeField.refreshOnChange).toBe(true);
+    expect(modeField.fullWidth).toBe(true);
     expect(modeField.control).toMatchObject({ kind: "select", presentation: "radio" });
+
+    const urlField = form.fields.find((f) => f.path === "/connection/url")!;
+    expect(urlField.fullWidth).toBe(true);
+    expect(urlField.control).toEqual({
+      kind: "text",
+      clearable: true,
+      placeholder: "jdbc:postgresql://host:5432/db",
+    });
+
+    const userField = form.fields.find((f) => f.path === "/connection/user")!;
+    expect(userField.fullWidth).toBeUndefined();
+    expect(userField.control).toMatchObject({ kind: "text", clearable: true });
 
     const passwordField = form.fields.find((f) => f.path === "/connection/password")!;
     expect(passwordField.required).toBe(false);
     expect(passwordField.help).toContain("Leave blank");
-    expect(passwordField.control).toEqual({ kind: "text", secret: true, placeholder: "******" });
+    expect(passwordField.control).toEqual({ kind: "text", secret: true, clearable: true, placeholder: "******" });
   });
 
   it("loads the newly chosen adapter's fields and keeps required=true for unsaved required secrets on refreshOnChange", async () => {
@@ -416,13 +429,21 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
     // DA-11: form read never fetches `/admin/getSchema`, even in multi-source mode.
     expect(schemaReadCount).toBe(0);
     const dsField = multiForm.fields.find((f) => f.path === "/dataSources")!;
+    expect(dsField.fullWidth).toBe(true);
     expect(dsField.control.kind).toBe("object-array");
     if (dsField.control.kind !== "object-array") throw new Error("expected object-array");
+    expect(dsField.control.columns).toBe(2);
+    expect(dsField.control.reorderable).toBe(false);
+    const idItem = dsField.control.itemFields.find((f) => f.path === "/id")!;
+    expect(idItem.control).toMatchObject({ kind: "text", clearable: true });
     const adapterItem = dsField.control.itemFields.find((f) => f.path === "/adapter")!;
+    expect(adapterItem.fullWidth).toBe(true);
     expect(adapterItem.control.kind).toBe("object");
     if (adapterItem.control.kind !== "object") throw new Error("expected object");
+    expect(adapterItem.control.columns).toBe(2);
     expect(adapterItem.control.variantBy).toBe("/adapterType");
     expect(Object.keys(adapterItem.control.variants ?? {})).toEqual(["postgresql", "m3", "opensearch"]);
+    expect(adapterItem.control.variants?.postgresql?.find((f) => f.path === "/connection/url")?.fullWidth).toBe(true);
 
     // Saved multi-source secrets must stay empty in form values.
     expect(JSON.stringify(multiForm.values)).not.toContain("******");
@@ -437,55 +458,105 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
     expect(schemaReadCount).toBe(1);
     expect(routingForm.sections?.map((s) => s.key)).toEqual(["classRoutes", "relationshipRoutes"]);
 
+    // DA-07: compact fixed-row tables for class routing (2 cols) and relationship routing (4 cols).
+    const classRoutesField = routingForm.fields.find((f) => f.path === "/classRoutes")!;
+    expect(classRoutesField.control).toMatchObject({
+      kind: "object-array",
+      presentation: "table",
+      fixedRows: true,
+      reorderable: false,
+    });
+    if (classRoutesField.control.kind !== "object-array") throw new Error("expected object-array");
+    expect(classRoutesField.control.itemFields.map((f) => f.path)).toEqual(["/className", "/sourceId"]);
+    expect(routingForm.values.classRoutes).toEqual([
+      { className: "Order", sourceId: "crm" },
+      { className: "Device", sourceId: "graph" },
+      { className: "Rack", sourceId: "graph" },
+    ]);
+
+    const relRoutesField = routingForm.fields.find((f) => f.path === "/relationshipRoutes")!;
+    expect(relRoutesField.control).toMatchObject({
+      kind: "object-array",
+      presentation: "table",
+      fixedRows: true,
+      reorderable: false,
+    });
+    if (relRoutesField.control.kind !== "object-array") throw new Error("expected object-array");
+    expect(relRoutesField.control.itemFields.map((f) => f.path)).toEqual(["/relationship", "/ends", "/source", "/realEdge"]);
+
     // Relationship derivations:
     // - MOUNTED_ON: Device(graph) -> Rack(graph) => graph, editable realEdge
-    // - ORDER_DEVICE: Order(crm) -> Device(graph) => cross-source, readonly realEdge
-    // - SELF_ORDER: Order(crm) -> Order(crm) => crm (SQL), readonly realEdge
+    // - ORDER_DEVICE: Order(crm) -> Device(graph) => cross-source, non-editable realEdge
+    // - SELF_ORDER: Order(crm) -> Order(crm) => crm (SQL), non-editable realEdge
     const rels = routingForm.values.relationshipRoutes as Array<{
       relationship: string;
       ends: string;
-      sourceSummary: string;
-      edge: { mode: string; realEdge: string };
+      source: string;
+      fromSource: string;
+      toSource: string;
+      crossSource: boolean;
+      edgeEditable: boolean;
+      realEdge: string;
     }>;
     expect(rels).toEqual([
       {
         relationship: "MOUNTED_ON",
         ends: "Device → Rack",
-        sourceSummary: "graph",
-        edge: { mode: "editable", realEdge: "mounted_in_rack" },
+        source: "graph",
+        fromSource: "graph",
+        toSource: "graph",
+        crossSource: false,
+        edgeEditable: true,
+        realEdge: "mounted_in_rack",
       },
       {
         relationship: "ORDER_DEVICE",
         ends: "Order → Device",
-        sourceSummary: "Cross-source (crm → graph)",
-        edge: { mode: "readonly", realEdge: "" },
+        source: "",
+        fromSource: "crm",
+        toSource: "graph",
+        crossSource: true,
+        edgeEditable: false,
+        realEdge: "",
       },
       {
         relationship: "SELF_ORDER",
         ends: "Order → Order",
-        sourceSummary: "crm",
-        edge: { mode: "readonly", realEdge: "" },
+        source: "crm",
+        fromSource: "crm",
+        toSource: "crm",
+        crossSource: false,
+        edgeEditable: false,
+        realEdge: "",
       },
     ]);
 
     // Re-route Order from crm to graph via refreshOnChange => ORDER_DEVICE & SELF_ORDER become graph + editable!
     const refreshed = panelFormDescriptionSchema.parse(
       await reads.routingForm("domain", {
-        changedField: "/classRoutes/Order",
+        changedField: "/classRoutes/0/sourceId",
         values: {
           ...routingForm.values,
-          classRoutes: { Order: "graph", Device: "graph", Rack: "graph" },
+          classRoutes: [
+            { className: "Order", sourceId: "graph" },
+            { className: "Device", sourceId: "graph" },
+            { className: "Rack", sourceId: "graph" },
+          ],
         } as PanelFormValues,
       }),
     );
     const updatedRels = refreshed.values.relationshipRoutes as typeof rels;
     expect(updatedRels.find((r) => r.relationship === "ORDER_DEVICE")).toMatchObject({
-      sourceSummary: "graph",
-      edge: { mode: "editable", realEdge: "" },
+      source: "graph",
+      crossSource: false,
+      edgeEditable: true,
+      realEdge: "",
     });
     expect(updatedRels.find((r) => r.relationship === "SELF_ORDER")).toMatchObject({
-      sourceSummary: "graph",
-      edge: { mode: "editable", realEdge: "" },
+      source: "graph",
+      crossSource: false,
+      edgeEditable: true,
+      realEdge: "",
     });
   });
 
@@ -520,7 +591,11 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
         changedField: "/sourceCatalog",
         values: {
           sourceCatalog: [{ id: "sole-graph", adapterType: "m3" }],
-          classRoutes: { Order: "", Device: "", Rack: "" },
+          classRoutes: [
+            { className: "Order", sourceId: "" },
+            { className: "Device", sourceId: "" },
+            { className: "Rack", sourceId: "" },
+          ],
           relationshipRoutes: [],
         },
       }),
@@ -528,8 +603,8 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
 
     const classSection = refreshed.sections?.find((s) => s.key === "classRoutes");
     expect(classSection?.hint).toContain("sole-graph");
-    const rels = refreshed.values.relationshipRoutes as Array<{ relationship: string; sourceSummary: string; edge: { mode: string } }>;
-    expect(rels.every((r) => r.sourceSummary === "sole-graph" && r.edge.mode === "editable")).toBe(true);
+    const rels = refreshed.values.relationshipRoutes as Array<{ relationship: string; source: string; edgeEditable: boolean }>;
+    expect(rels.every((r) => r.source === "sole-graph" && r.edgeEditable === true)).toBe(true);
   });
 });
 
@@ -603,10 +678,14 @@ describe("platform:DataAdapterConfig.save operation", () => {
             adapter: { adapterType: "m3", connection: { url: "graph:8080", company: "acme", user: "root", password: "" } },
           },
         ],
-        classRoutes: { Order: "crm", Device: "graph", Rack: "graph" },
+        classRoutes: [
+          { className: "Order", sourceId: "crm" },
+          { className: "Device", sourceId: "graph" },
+          { className: "Rack", sourceId: "graph" },
+        ],
         relationshipRoutes: [
-          { relationship: "MOUNTED_ON", edge: { mode: "editable", realEdge: "mounted_on_rack" } },
-          { relationship: "ORDER_DEVICE", edge: { mode: "readonly", realEdge: "" } },
+          { relationship: "MOUNTED_ON", realEdge: "mounted_on_rack" },
+          { relationship: "ORDER_DEVICE", realEdge: "" },
         ],
       },
       submittedFields: ["/adapterMode", "/dataSources", "/classRoutes", "/relationshipRoutes"],
@@ -666,7 +745,7 @@ describe("platform:DataAdapterConfig.save operation", () => {
             adapter: { adapterType: "postgresql", connection: { url: "jdbc:postgresql://crm:5432/crm", user: "crm", password: "" } },
           },
         ],
-        classRoutes: { Order: "crm" },
+        classRoutes: [{ className: "Order", sourceId: "crm" }],
         relationshipRoutes: [],
       },
     }, "intent-m2");
@@ -693,10 +772,14 @@ describe("platform:DataAdapterConfig.save operation", () => {
 
     const ok = await op.execute(makeHost(), domainTarget, {
       values: {
-        classRoutes: { Order: "graph", Device: "graph", Rack: "graph" },
+        classRoutes: [
+          { className: "Order", sourceId: "graph" },
+          { className: "Device", sourceId: "graph" },
+          { className: "Rack", sourceId: "graph" },
+        ],
         relationshipRoutes: [
-          { relationship: "MOUNTED_ON", edge: { mode: "editable", realEdge: "mounted_on_rack" } },
-          { relationship: "ORDER_DEVICE", edge: { mode: "editable", realEdge: "order_uses_device" } },
+          { relationship: "MOUNTED_ON", realEdge: "mounted_on_rack" },
+          { relationship: "ORDER_DEVICE", realEdge: "order_uses_device" },
         ],
       },
     }, "intent-r1");
@@ -729,7 +812,7 @@ describe("platform:DataAdapterConfig.save operation", () => {
     };
     const rejected = await op.execute(makeHost(), domainTarget, {
       values: {
-        classRoutes: { Order: "crm" },
+        classRoutes: [{ className: "Order", sourceId: "crm" }],
         relationshipRoutes: [],
       },
     }, "intent-r2");
@@ -739,9 +822,9 @@ describe("platform:DataAdapterConfig.save operation", () => {
     });
     if (rejected.kind !== "refusal") throw new Error("expected refusal");
     expect(rejected.errors?.map((e) => e.field)).toEqual([
-      "/classRoutes/Order",
+      "/classRoutes/0/sourceId",
       "/relationshipRoutes/1",
-      "/relationshipRoutes/0/edge/realEdge",
+      "/relationshipRoutes/0/realEdge",
     ]);
     expect(rejected.details).toEqual({
       problems: [
@@ -778,7 +861,7 @@ describe("sandbox permission writes", () => {
 });
 
 describe("dataAdapters.testConnection read operation", () => {
-  it("tests single-source draft with restored secret and formats catalog Markdown report", async () => {
+  it("tests single-source draft with restored secret and returns structured JSON catalog report", async () => {
     const op = testOp();
     const res = await op.execute(makeHost(), {
       target: domainTarget,
@@ -797,21 +880,27 @@ describe("dataAdapters.testConnection read operation", () => {
       user: "appuser",
       password: "******",
     });
-    expect(res.kind).toBe("markdown");
-    if (res.kind !== "markdown") throw new Error("expected markdown");
-    expect(res.markdown).toContain("Connection test succeeded");
-    expect(res.markdown).toContain("14 ms");
-    expect(res.markdown).toContain("PostgreSQL 16.2");
-    expect(res.markdown).toContain("PostgreSQL JDBC Driver 42.7.3");
-    expect(res.markdown).toContain("`orders`");
-    expect(res.markdown).toContain("`active_orders`");
-    expect(res.markdown).toContain("Action trial & sandbox permission");
-    expect(res.markdown).toContain("actions cannot be published");
-    expect(res.markdown).toContain("CREATE denied");
-    expect(res.markdown).toContain("immediately deletes one empty probe table");
+    expect(res).toEqual({
+      kind: "json",
+      value: {
+        kind: "catalog",
+        sandboxCapability: failedCapability,
+        elapsedMs: 14,
+        databaseProduct: "PostgreSQL",
+        databaseVersion: "16.2",
+        driverName: "PostgreSQL JDBC Driver",
+        driverVersion: "42.7.3",
+        catalog: "app",
+        schema: "public",
+        tables: [
+          { name: "orders", type: "TABLE" },
+          { name: "active_orders", type: "VIEW" },
+        ],
+      },
+    });
   });
 
-  it("tests a specific multi-source data source by sourceId and formats search Markdown report", async () => {
+  it("tests a specific multi-source data source by sourceId and returns structured JSON search report", async () => {
     nextTestResponse = {
       success: true,
       data: {
@@ -857,16 +946,31 @@ describe("dataAdapters.testConnection read operation", () => {
       user: "admin",
       password: "pw",
     });
-    expect(res.kind).toBe("markdown");
-    if (res.kind !== "markdown") throw new Error("expected markdown");
-    expect(res.markdown).toContain("`search-idx`");
-    expect(res.markdown).toContain("OpenSearch 2.13.0");
-    expect(res.markdown).toContain("`prod-es`");
-    expect(res.markdown).toContain("`orders-2026`");
-    expect(res.markdown).toContain("`customers`");
-    expect(res.markdown).toContain("does not support write actions");
-    expect(res.markdown).toContain("No probe object is created");
-    expect(res.markdown).not.toContain("immediately deletes");
+    expect(res).toEqual({
+      kind: "json",
+      value: {
+        kind: "search",
+        sandboxCapability: { ...failedCapability, status: "unsupported", supported: false, details: {} },
+        elapsedMs: 7,
+        databaseProduct: "OpenSearch",
+        databaseVersion: "2.13.0",
+        clusterName: "prod-es",
+        indices: ["orders-2026", "customers"],
+      },
+    });
+
+    // Failure response keeps raising DATA_ADAPTER_TEST_FAILED so the inline report displays the error alert.
+    nextTestResponse = { success: false, message: "Connection refused" };
+    await expect(op.execute(makeHost(), {
+      target: domainTarget,
+      input: {
+        draft: {
+          adapterMode: "postgresql",
+          connection: { url: "jdbc:postgresql://db:5432/app", user: "appuser", password: "" },
+        },
+        parameters: { sourceId: "" },
+      },
+    })).rejects.toMatchObject({ status: 422, code: "DATA_ADAPTER_TEST_FAILED", message: "Connection refused" });
 
     // Multi-source with multiple sources and missing sourceId fails cleanly
     await expect(op.execute(makeHost(), {

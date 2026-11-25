@@ -32,6 +32,17 @@ await mountPanel({
     const routingDraft = usePanelFormDraft("routingForm", { when: () => isMultiMode.value });
     const routingFormDraft = usePanelOutput("routingForm", "draft");
 
+    const routingValues = computed(() => (
+      routingFormDraft.value && typeof routingFormDraft.value === "object" && !Array.isArray(routingFormDraft.value)
+        ? routingFormDraft.value
+        : {}
+    ));
+
+    function relationshipRow(index) {
+      const rows = routingValues.value.relationshipRoutes;
+      return Array.isArray(rows) && typeof index === "number" ? rows[index] ?? null : null;
+    }
+
     const sourceCatalog = computed(() => {
       if (!isMultiMode.value || !Array.isArray(formValues.value.dataSources)) return [];
       return formValues.value.dataSources
@@ -76,22 +87,147 @@ await mountPanel({
         const adapterHandle = instance.forms.handle("adapterForm");
         const routingHandle = instance.forms.handle("routingForm");
         if (!adapterHandle || !routingHandle || routingHandle.fields.value.length === 0) return;
-        const routingValues = routingHandle.values.value;
-        if (!routingValues || typeof routingValues !== "object") return;
+        const routing = routingHandle.values.value;
+        if (!routing || typeof routing !== "object") return;
         if (
-          routingValues.classRoutes !== undefined
-          && JSON.stringify(routingValues.classRoutes) !== JSON.stringify(adapterHandle.values.value?.classRoutes)
+          routing.classRoutes !== undefined
+          && JSON.stringify(routing.classRoutes) !== JSON.stringify(adapterHandle.values.value?.classRoutes)
         ) {
-          adapterHandle.set("/classRoutes", routingValues.classRoutes);
+          adapterHandle.set("/classRoutes", routing.classRoutes);
         }
         if (
-          routingValues.relationshipRoutes !== undefined
-          && JSON.stringify(routingValues.relationshipRoutes) !== JSON.stringify(adapterHandle.values.value?.relationshipRoutes)
+          routing.relationshipRoutes !== undefined
+          && JSON.stringify(routing.relationshipRoutes) !== JSON.stringify(adapterHandle.values.value?.relationshipRoutes)
         ) {
-          adapterHandle.set("/relationshipRoutes", routingValues.relationshipRoutes);
+          adapterHandle.set("/relationshipRoutes", routing.relationshipRoutes);
         }
       },
       { flush: "post" },
+    );
+
+    // Single-source inline connection test report; cleared whenever mode or connection fields change.
+    const singleTestOutcome = ref(null);
+    let singleTestRevision = 0;
+    let singleTestTriggerRevision = 0;
+
+    const singleTestDisabled = computed(() => !formValues.value.adapterMode || isMultiMode.value);
+    const singleTestSignature = computed(() => JSON.stringify({
+      adapterMode: formValues.value.adapterMode ?? "",
+      connection: formValues.value.connection ?? null,
+    }));
+
+    watch(singleTestSignature, (next, prev) => {
+      if (next !== prev) {
+        singleTestRevision += 1;
+        singleTestOutcome.value = null;
+      }
+    });
+
+    function onSingleTestTrigger() {
+      if (singleTestDisabled.value) return;
+      singleTestTriggerRevision = singleTestRevision;
+      instance.state.set("testSourceId", "");
+    }
+
+    function onSingleTestRead(result) {
+      if (singleTestTriggerRevision !== singleTestRevision) return;
+      singleTestOutcome.value = { result, error: null };
+    }
+
+    function onSingleTestError(error) {
+      if (singleTestTriggerRevision !== singleTestRevision) return;
+      singleTestOutcome.value = { result: null, error };
+    }
+
+    // Multi-source per-card test reports keyed by row key so cards never overwrite each other.
+    const cardTestOutcomes = ref({});
+    const pendingCardSignatures = new Map();
+
+    function sourceIdOf(item) {
+      return item && typeof item === "object" && typeof item.id === "string"
+        ? item.id.trim()
+        : "";
+    }
+
+    function cardSignature(item) {
+      if (!item || typeof item !== "object") return "";
+      return JSON.stringify({
+        id: sourceIdOf(item),
+        adapter: item.adapter ?? null,
+      });
+    }
+
+    function cardTestOutcome(key) {
+      return cardTestOutcomes.value[key] ?? null;
+    }
+
+    function onCardTestTrigger(item, key) {
+      const id = sourceIdOf(item);
+      if (!id) return;
+      pendingCardSignatures.set(key, cardSignature(item));
+      instance.state.set("testSourceId", id);
+    }
+
+    function onCardTestRead(item, key, result) {
+      const signature = cardSignature(item);
+      const expected = pendingCardSignatures.get(key);
+      if (expected !== undefined && expected !== signature) return;
+      cardTestOutcomes.value = {
+        ...cardTestOutcomes.value,
+        [key]: { result, error: null, signature },
+      };
+    }
+
+    function onCardTestError(item, key, error) {
+      const signature = cardSignature(item);
+      const expected = pendingCardSignatures.get(key);
+      if (expected !== undefined && expected !== signature) return;
+      cardTestOutcomes.value = {
+        ...cardTestOutcomes.value,
+        [key]: { result: null, error, signature },
+      };
+    }
+
+    function clearAllTestOutcomes() {
+      singleTestRevision += 1;
+      singleTestOutcome.value = null;
+      cardTestOutcomes.value = {};
+      pendingCardSignatures.clear();
+    }
+
+    // Prune removed cards and clear stale outcomes only for cards whose id/adapter changed.
+    watch(
+      [isMultiMode, () => formValues.value.dataSources],
+      ([multi, rows]) => {
+        if (!multi || !Array.isArray(rows)) {
+          if (Object.keys(cardTestOutcomes.value).length > 0) {
+            cardTestOutcomes.value = {};
+            pendingCardSignatures.clear();
+          }
+          return;
+        }
+        const currentByKey = new Map();
+        rows.forEach((row, index) => {
+          const sig = cardSignature(row);
+          const rawId = row && typeof row === "object" ? row.id : undefined;
+          if (typeof rawId === "string" || typeof rawId === "number") {
+            currentByKey.set(`key:${rawId}`, sig);
+          }
+          currentByKey.set(`new:${index}`, sig);
+        });
+        const existing = cardTestOutcomes.value;
+        let changed = false;
+        const next = {};
+        for (const [key, entry] of Object.entries(existing)) {
+          if (currentByKey.has(key) && currentByKey.get(key) === entry.signature) {
+            next[key] = entry;
+          } else {
+            changed = true;
+          }
+        }
+        if (changed) cardTestOutcomes.value = next;
+      },
+      { deep: true },
     );
 
     const pageDraft = computed(() => {
@@ -114,13 +250,13 @@ await mountPanel({
           const routingHandle = isMultiMode.value ? instance.forms.handle("routingForm") : undefined;
           if (adapterDirty) {
             if (isMultiMode.value && adapterHandle && routingHandle && routingHandle.fields.value.length > 0) {
-              const routingValues = routingHandle.values.value;
-              if (routingValues && typeof routingValues === "object") {
-                if (routingValues.classRoutes !== undefined) {
-                  adapterHandle.set("/classRoutes", routingValues.classRoutes);
+              const routing = routingHandle.values.value;
+              if (routing && typeof routing === "object") {
+                if (routing.classRoutes !== undefined) {
+                  adapterHandle.set("/classRoutes", routing.classRoutes);
                 }
-                if (routingValues.relationshipRoutes !== undefined) {
-                  adapterHandle.set("/relationshipRoutes", routingValues.relationshipRoutes);
+                if (routing.relationshipRoutes !== undefined) {
+                  adapterHandle.set("/relationshipRoutes", routing.relationshipRoutes);
                 }
               }
             }
@@ -137,91 +273,20 @@ await mountPanel({
             const routingHandle = isMultiMode.value ? instance.forms.handle("routingForm") : undefined;
             if (adapterDirty && adapterHandle) {
               const confirmed = await adapterHandle.reset({ confirm: true });
-              if (confirmed && routingHandle) {
-                await routingHandle.reset({ confirm: false });
+              if (confirmed) {
+                if (routingHandle) await routingHandle.reset({ confirm: false });
+                clearAllTestOutcomes();
               }
               return;
             }
             if (routingDirty && routingHandle) {
-              await routingHandle.reset({ confirm: true });
+              const confirmed = await routingHandle.reset({ confirm: true });
+              if (confirmed) clearAllTestOutcomes();
             }
           })();
         },
       };
     });
-
-    const multiSources = computed(() => {
-      if (!isMultiMode.value || !Array.isArray(formValues.value.dataSources)) return [];
-      const seen = new Set();
-      const options = [];
-      for (const row of formValues.value.dataSources) {
-        if (!row || typeof row !== "object") continue;
-        const id = typeof row.id === "string" ? row.id.trim() : "";
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        const label = typeof row.label === "string" ? row.label.trim() : "";
-        options.push({
-          id,
-          optionLabel: label && label !== id ? `${label} (${id})` : id,
-        });
-      }
-      return options;
-    });
-
-    const selectedTestSource = computed({
-      get: () => (typeof instance.state.values.value.testSourceId === "string"
-        ? instance.state.values.value.testSourceId
-        : ""),
-      set: (value) => {
-        instance.state.set("testSourceId", typeof value === "string" ? value : "");
-      },
-    });
-
-    watch(
-      [isMultiMode, multiSources],
-      ([multi, sources]) => {
-        if (!multi) {
-          if (selectedTestSource.value) instance.state.set("testSourceId", "");
-          return;
-        }
-        const ids = new Set(sources.map((item) => item.id));
-        if (!selectedTestSource.value || !ids.has(selectedTestSource.value)) {
-          instance.state.set("testSourceId", sources[0]?.id ?? "");
-        }
-      },
-      { immediate: true },
-    );
-
-    const testDisabled = computed(() => {
-      if (!formValues.value.adapterMode) return true;
-      if (isMultiMode.value) return !selectedTestSource.value;
-      return false;
-    });
-
-    // Clear any stale connection test result as soon as the tested draft values or selected source change.
-    const testResetKey = ref(0);
-    const testActivated = ref(false);
-    const testedSignature = computed(() => JSON.stringify({
-      adapterMode: formValues.value.adapterMode ?? "",
-      connection: formValues.value.connection ?? null,
-      dataSources: formValues.value.dataSources ?? null,
-      testSourceId: selectedTestSource.value,
-    }));
-
-    watch(testedSignature, (next, prev) => {
-      if (next !== prev && testActivated.value) {
-        testActivated.value = false;
-        testResetKey.value += 1;
-      }
-    });
-
-    function onTestTrigger() {
-      if (!testDisabled.value) testActivated.value = true;
-    }
-
-    function onTestRead() {
-      testActivated.value = true;
-    }
 
     function notifySaved(outcome) {
       const capability = outcome?.data?.sandboxCapability;
@@ -272,12 +337,17 @@ await mountPanel({
       sandboxSupported,
       onSandboxChecked,
       isMultiMode,
-      multiSources,
-      selectedTestSource,
-      testDisabled,
-      testResetKey,
-      onTestTrigger,
-      onTestRead,
+      relationshipRow,
+      singleTestOutcome,
+      singleTestDisabled,
+      onSingleTestTrigger,
+      onSingleTestRead,
+      onSingleTestError,
+      sourceIdOf,
+      cardTestOutcome,
+      onCardTestTrigger,
+      onCardTestRead,
+      onCardTestError,
       onAdapterSaved,
       onRoutingSaved,
     };
