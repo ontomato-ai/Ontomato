@@ -9,6 +9,8 @@ export async function ensurePlatformHomeSchema(c: QueryableClient) {
     PRIMARY KEY (domain_id, user_id));
     ALTER TABLE ${t("platform_home_preferences")} ADD COLUMN IF NOT EXISTS home_panel_id text;
     ALTER TABLE ${t("platform_home_preferences")} ADD COLUMN IF NOT EXISTS pinned_objects jsonb NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE ${t("platform_home_preferences")} ADD COLUMN IF NOT EXISTS dashboard_cards jsonb NOT NULL DEFAULT '{}'::jsonb;
+    ALTER TABLE ${t("platform_home_preferences")} ADD COLUMN IF NOT EXISTS pinned_sessions jsonb NOT NULL DEFAULT '[]'::jsonb;
     CREATE TABLE IF NOT EXISTS ${t("platform_application_usage")} (
     domain_id text NOT NULL, user_id text NOT NULL, application_id text NOT NULL,
     last_opened_at timestamptz NOT NULL,

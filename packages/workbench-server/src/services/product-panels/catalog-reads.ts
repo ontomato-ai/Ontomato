@@ -37,6 +37,8 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
+import { readHomePanel } from "../platform-home/service";
+import { platformHomeStore } from "../platform-home/store";
 import { currentProductGrants, currentProductUsedBy, listCurrentProducts, listUnavailablePanels, readCataloguePanel } from "./catalog";
 import { readAuthorComponentCatalogue } from "./component-catalogue";
 import { readCurrentPanel, readCurrentProjection } from "./current";
@@ -670,6 +672,90 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
           content: panelWord("sourceContent"),
         },
       };
+    },
+    async homePanel(): Promise<PanelRecord> {
+      const homePanelId = await platformHomeStore.homePanelId(owner);
+      if (!homePanelId) {
+        return {
+          primaryKey: "default",
+          className: PRODUCT_PANEL,
+          label: panelWord("defaultHome"),
+          fields: {
+            panelId: "",
+            panelName: panelWord("defaultHome"),
+            isCustomHome: false,
+            unavailable: false,
+            unavailableReason: "",
+          },
+          outputs: {
+            isCustomHome: false,
+            panelId: "",
+            unavailable: false,
+          },
+        };
+      }
+      try {
+        const panel = await readHomePanel(owner, viewer);
+        if (!panel) {
+          return {
+            primaryKey: "default",
+            className: PRODUCT_PANEL,
+            label: panelWord("defaultHome"),
+            fields: {
+              panelId: "",
+              panelName: panelWord("defaultHome"),
+              isCustomHome: false,
+              unavailable: false,
+              unavailableReason: "",
+            },
+            outputs: {
+              isCustomHome: false,
+              panelId: "",
+              unavailable: false,
+            },
+          };
+        }
+        const label = panel.name || panel.id;
+        return {
+          primaryKey: panel.id,
+          className: PRODUCT_PANEL,
+          label,
+          ...(panel.description ? { subtitle: panel.description } : {}),
+          fields: {
+            panelId: panel.id,
+            panelName: label,
+            isCustomHome: true,
+            unavailable: false,
+            unavailableReason: "",
+          },
+          outputs: {
+            isCustomHome: true,
+            panelId: panel.id,
+            unavailable: false,
+          },
+        };
+      } catch (error) {
+        const reason = error instanceof Error && error.message
+          ? error.message
+          : panelWord("homeUnavailable");
+        return {
+          primaryKey: homePanelId,
+          className: PRODUCT_PANEL,
+          label: homePanelId,
+          fields: {
+            panelId: homePanelId,
+            panelName: homePanelId,
+            isCustomHome: true,
+            unavailable: true,
+            unavailableReason: reason,
+          },
+          outputs: {
+            isCustomHome: true,
+            panelId: homePanelId,
+            unavailable: true,
+          },
+        };
+      }
     },
     async form(primaryKey: string, params: FormParams) {
       const panel = await rawRecord(primaryKey);

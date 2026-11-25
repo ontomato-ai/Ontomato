@@ -6,6 +6,8 @@ import {
   homePanelPreferenceSchema,
   homePanelResponseSchema,
 } from "@ontomato/contracts/platform-home";
+import { recentWorkInputSchema } from "@ontomato/contracts/personal-workspace";
+import { personalWorkspaceStore } from "../../services/personal-workspace/store";
 import {
   readHome,
   readHomePanel,
@@ -64,6 +66,27 @@ router.post(
         applicationId.parse(req.params.applicationId),
       ),
     );
+  }),
+);
+
+router.get(
+  "/recent",
+  wrap(async (req, res) => {
+    res.json({ data: await personalWorkspaceStore.recent(context(req).owner) });
+  }),
+);
+
+router.post(
+  "/recent",
+  wrap(async (req, res) => {
+    const parsed = recentWorkInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "INVALID_RECENT_WORK" });
+      return;
+    }
+    const item = { ...parsed.data, visitedAt: new Date().toISOString() };
+    await personalWorkspaceStore.recordVisit(context(req).owner, item);
+    res.json({ data: item });
   }),
 );
 

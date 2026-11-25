@@ -37,8 +37,12 @@ await mountPanel({
     const showApplications = computed(() => category.value !== "agents");
     const showAgents = computed(() => category.value === "all" || category.value === "agents");
 
-    const appsReadyEmpty = computed(() => appsStatus.value === "ready" && (appsCount.value ?? 0) === 0);
-    const agentsReadyEmpty = computed(() => agentsStatus.value === "ready" && (agentsCount.value ?? 0) === 0);
+    const appsReadyEmpty = computed(() =>
+      (appsStatus.value === "ready" || appsStatus.value === "empty") && (appsCount.value ?? 0) === 0,
+    );
+    const agentsReadyEmpty = computed(() =>
+      (agentsStatus.value === "ready" || agentsStatus.value === "empty") && (agentsCount.value ?? 0) === 0,
+    );
 
     const showCombinedEmpty = computed(() =>
       category.value === "all" && appsReadyEmpty.value && agentsReadyEmpty.value,

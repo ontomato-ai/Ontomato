@@ -121,7 +121,7 @@
         "type": "platform:Favorite",
         "data": {
           "record": {
-            "read": "record",
+            "read": "status",
             "params": {
               "object": {
                 "state": "selected"
@@ -140,6 +140,7 @@
         "name": "Add object to favorites",
         "description": "Pins the selected object to the reader's personal favorites.",
         "type": "platform:Favorite",
+        "target": "selected",
         "operation": "favorites.add",
         "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000008"
       },
@@ -148,6 +149,7 @@
         "name": "Remove object from favorites",
         "description": "Removes the selected object from the reader's personal favorites.",
         "type": "platform:Favorite",
+        "target": "selected",
         "operation": "favorites.remove",
         "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a02-000000000009"
       },

@@ -4,9 +4,11 @@ import { panelDownloadReceiptSchema } from "./panel-download";
 import { panelUploadDeclarationSchema } from "./panel-upload";
 import { panelFormTargetSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema, panelOperationIdSchema, panelOperationUnavailableSchema } from "./panel-manifest";
 import {
-  panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
-  panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
+  panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOperationTargetTypesSchema,
+  panelOptionListSchema, panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
+  type PanelOperationTargetTypes,
 } from "./panel-projection";
+export { panelOperationTargetTypesSchema, type PanelOperationTargetTypes };
 import { actionDefinitionSchema, actionExplanationSchema } from "./action-panel";
 import { annotatedCodeSchema } from "./annotated-code";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
@@ -47,6 +49,8 @@ export const panelOperationDeclarationSchema = z.object({
   kind: z.enum(["form.save", "action"]),
   effect: z.enum(["read", "write"]),
   target: panelOperationDeclarationTargetSchema,
+  /** Explicit allowed target object types when the operation acts across multiple real ontology types. */
+  targetTypes: panelOperationTargetTypesSchema.optional(),
   inputSchema: runtimeJsonObjectSchema,
   batch: z.boolean(),
   /** Secret paths are relative to form values for a save, or to the operation input for an action. */

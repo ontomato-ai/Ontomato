@@ -24,6 +24,18 @@ vi.mock("../../platform-home/service", () => ({
     state.favorites = state.favorites.filter(existing => `${existing.kind}:${existing.id}` !== key);
     return { items: [...state.favorites] };
   }),
+  addFavoriteTarget: vi.fn(async (_owner, target: { objectType: string; primaryKey: string }) => {
+    const kind = target.objectType === APPLICATION ? "application" : "agent";
+    const key = `${kind}:${target.primaryKey}`;
+    if (!state.favorites.some(existing => `${existing.kind}:${existing.id}` === key)) {
+      state.favorites = [...state.favorites, { kind, id: target.primaryKey }];
+    }
+  }),
+  removeFavoriteTarget: vi.fn(async (_owner, target: { objectType: string; primaryKey: string }) => {
+    const kind = target.objectType === APPLICATION ? "application" : "agent";
+    const key = `${kind}:${target.primaryKey}`;
+    state.favorites = state.favorites.filter(existing => `${existing.kind}:${existing.id}` !== key);
+  }),
 }));
 
 vi.mock("../../../utils/backend-client", async (actual) => ({
@@ -49,10 +61,9 @@ import { appTextEn } from "../../../i18n/app-text-en";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import type { PanelOperationHost, PanelRecordTarget, SinglePanelOperationOutcome } from "../server-operations";
 import { createApplicationReadAdapter } from "../application-catalogue";
-import { productCatalogServerOperations } from "../catalog-operations";
+import { favoriteServerOperations } from "../favorite-panel";
 
 let createAgentDefinitionDirectory: typeof import("../agent-definition-directory").createAgentDefinitionDirectory;
-let agentDefinitionOperations: typeof import("../agent-definition-operations").agentDefinitionOperations;
 
 const owner = { domainId: "domain-a", userId: "reader-1" };
 const viewer = { token: "tok", locale: "en" };
@@ -65,7 +76,6 @@ beforeAll(async () => {
     runtimeResources: [],
   });
   ({ createAgentDefinitionDirectory } = await import("../agent-definition-directory"));
-  ({ agentDefinitionOperations } = await import("../agent-definition-operations"));
 });
 
 beforeEach(() => {
@@ -211,10 +221,8 @@ describe("application gallery real-object reads and favorite operations", () => 
     type TargetedAction = {
       execute(host: PanelOperationHost, target: PanelRecordTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome>;
     };
-    const favApp = productCatalogServerOperations.find(op => op.handlerRef === "applications.favorite") as unknown as TargetedAction;
-    const unfavApp = productCatalogServerOperations.find(op => op.handlerRef === "applications.unfavorite") as unknown as TargetedAction;
-    const favAgent = agentDefinitionOperations.find(op => op.handlerRef === "agents.favorite") as unknown as TargetedAction;
-    const unfavAgent = agentDefinitionOperations.find(op => op.handlerRef === "agents.unfavorite") as unknown as TargetedAction;
+    const favOp = favoriteServerOperations.find(op => op.handlerRef === "favorites.add") as unknown as TargetedAction;
+    const unfavOp = favoriteServerOperations.find(op => op.handlerRef === "favorites.remove") as unknown as TargetedAction;
     const host = {
       initiator: { owner, credentials: viewer },
       executor: { owner, credentials: viewer },
@@ -225,21 +233,21 @@ describe("application gallery real-object reads and favorite operations", () => 
     const appTarget = (primaryKey: string): PanelRecordTarget => ({ kind: "object", objectType: APPLICATION, primaryKey });
     const agentTarget = (primaryKey: string): PanelRecordTarget => ({ kind: "object", objectType: AGENT_DEFINITION, primaryKey });
 
-    const pinned = await favApp.execute(host, appTarget("settings"), {}, "i-1");
+    const pinned = await favOp.execute(host, appTarget("settings"), {}, "i-1");
     expect(pinned.kind).toBe("success");
     expect(state.favorites.some(item => item.kind === "application" && item.id === "settings")).toBe(true);
 
-    const refusedHidden = await favApp.execute(host, appTarget("secret-app"), {}, "i-2");
+    const refusedHidden = await favOp.execute(host, appTarget("secret-app"), {}, "i-2");
     expect(refusedHidden.kind).toBe("refusal");
 
-    const unpinned = await unfavApp.execute(host, appTarget("settings"), {}, "i-3");
+    const unpinned = await unfavOp.execute(host, appTarget("settings"), {}, "i-3");
     expect(unpinned.kind).toBe("success");
     expect(state.favorites.some(item => item.kind === "application" && item.id === "settings")).toBe(false);
 
-    const refusedDisabled = await favAgent.execute(host, agentTarget("22222222-2222-4222-8222-222222222222"), {}, "i-4");
+    const refusedDisabled = await favOp.execute(host, agentTarget("22222222-2222-4222-8222-222222222222"), {}, "i-4");
     expect(refusedDisabled.kind).toBe("refusal");
 
-    const unpinnedAgent = await unfavAgent.execute(host, agentTarget("11111111-1111-4111-8111-111111111111"), {}, "i-5");
+    const unpinnedAgent = await unfavOp.execute(host, agentTarget("11111111-1111-4111-8111-111111111111"), {}, "i-5");
     expect(unpinnedAgent.kind).toBe("success");
     expect(state.favorites.some(item => item.kind === "agent")).toBe(false);
   });

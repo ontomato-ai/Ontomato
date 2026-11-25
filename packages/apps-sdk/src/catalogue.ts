@@ -777,10 +777,10 @@ export const components: readonly ComponentMetadata[] = [
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
           "business", "by", "category", "changedField", "className", "cursor", "defaultAppId", "direction", "entryId",
-          "favoritesOnly", "filters", "keyword", "layers", "limit", "node", "object", "offset",
-          "operation", "orgId", "origin", "page", "parentId", "path", "rating", "relationKinds",
+          "favoritesOnly", "filters", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
+          "operation", "orgId", "origin", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
           "runId", "sampleToken", "scope", "search", "section", "size", "sort", "source", "sourceType", "status",
-          "targetClass", "template", "type", "values", "verdict", "version",
+          "targetClass", "targetGroup", "template", "type", "values", "verdict", "version",
         ],
       },
     },
