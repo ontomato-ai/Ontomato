@@ -187,7 +187,7 @@ describe("governance panel read adapter", () => {
           success: true,
           data: {
             fields: [],
-            values: { postName: "Draft", menuIds: ["m1"], apiIds: ["a1"] },
+            values: { postName: "Draft", managementOperationIds: ["governance.users.read"] },
             errors: [],
             save: { method: "POST", path: "/panel/governance/policies/save", bodySchema: { type: "object" } },
           },
@@ -203,7 +203,16 @@ describe("governance panel read adapter", () => {
       return { success: true, data: [] };
     });
 
-    const adapter = createGovernanceReadAdapters({ token: "tok", locale: "en" });
+    const workbenchCatalog = {
+      panels: [{ id: "panel-1", label: "Orders Panel" }],
+      projections: [{ id: "proj-1", label: "Orders Projection" }],
+      components: [{ id: "comp-1", label: "Status Badge" }],
+      agents: [{ id: "agent-1", label: "Analysis Agent" }],
+    };
+    const adapter = createGovernanceReadAdapters(
+      { token: "tok", locale: "en" },
+      { loadPolicyCatalog: async () => workbenchCatalog },
+    );
 
     const page = await adapter.users.query({ search: "ali", page: { number: 2, size: 15 } });
     expect(page.total).toBe(1);
@@ -220,12 +229,18 @@ describe("governance panel read adapter", () => {
       body: { parentId: "org-root", changedField: null },
     });
 
-    const values = { postName: "Draft", menuIds: ["m1"], apiIds: ["a1"] };
+    const values = { postName: "Draft", managementOperationIds: ["governance.users.read"] };
     const policyForm = await adapter.policies.form("p-1", { values });
     expect(policyForm.values).toEqual(values);
     expect(requests[2]).toEqual({
       path: "/panel/governance/policies/form",
-      body: { id: "p-1", values, changedField: null },
+      body: { id: "p-1", workbenchCatalog, values, changedField: null },
+    });
+
+    await adapter.policies.createForm({});
+    expect(requests[3]).toEqual({
+      path: "/panel/governance/policies/form",
+      body: { changedField: null },
     });
 
     await expect(adapter.users.record("missing")).rejects.toMatchObject({
@@ -440,8 +455,24 @@ describe("governance panel server operations", () => {
     });
 
     const policyTarget = { kind: "object" as const, objectType: PERMISSION_POLICY, primaryKey: "p-1" };
-    const values = { postName: "New name", dataPermissions: { Order: { fieldPermissions: { amount: 1 } } } };
-    const submittedFields = ["/postName", "/dataPermissions/Order/fieldPermissions"];
+    const values = {
+      postName: "New name",
+      entryIds: ["app-1/entry-1"],
+      panelGrants: { "panel-1": "use_edit" },
+      agentGrants: { "agent-1": "use_view" },
+      createKinds: ["PANEL"],
+      actionGrants: [{ actionId: "act-1", scopeKind: "all", className: "", field: "" }],
+      dataPermissions: { Order: { fieldPermissions: { amount: 1 } } },
+    };
+    const submittedFields = [
+      "/postName",
+      "/entryIds",
+      "/panelGrants",
+      "/agentGrants",
+      "/createKinds",
+      "/actionGrants",
+      "/dataPermissions/Order/fieldPermissions",
+    ];
     const savePolicy = anyWriteOp(`${PERMISSION_POLICY}.save`);
     if (savePolicy.kind !== "form.save") throw new Error("Permission policy must use its owner form");
     expect(await savePolicy.execute(host, policyTarget, {
