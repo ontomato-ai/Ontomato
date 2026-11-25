@@ -1003,6 +1003,8 @@ const objectControl = z.object({
   presentation: z.enum(["plain", "panel"]).optional(),
 }).strict();
 
+const formSubmitOn = z.enum(["manual", "blur", "change"]).optional();
+
 const fieldShape = z.object({
   path: fieldPath,
   label: z.string().min(1),
@@ -1016,6 +1018,7 @@ const fieldShape = z.object({
   readOnly: z.boolean(),
   readOnlyReason: z.string().min(1).optional(),
   refreshOnChange: z.boolean().optional(),
+  submitOn: formSubmitOn,
   /** In a multi-column grid, span across all columns instead of occupying a single column cell. */
   fullWidth: z.boolean().optional(),
   advanced: z.literal(true).optional().describe(
@@ -1389,6 +1392,7 @@ export const panelFormRevisionSchema = z.union([z.number().int().positive().safe
 export type PanelFormRevision = z.infer<typeof panelFormRevisionSchema>;
 
 export const panelFormDescriptionSchema = z.object({
+  submitOn: formSubmitOn,
   fields: z.array(panelFormFieldSchema),
   /** The form's sections in order; a form without them is one list of fields. */
   sections: z.array(panelFormSectionSchema).optional(),

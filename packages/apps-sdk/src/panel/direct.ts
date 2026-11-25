@@ -60,6 +60,11 @@ export type MemberDataState =
     }
   | { status: "awaiting" };
 
+/** Shows a failed datum beside its last answer and the read that can retry it. */
+export function withMemberReadRetry(result: MemberDataState, previous: MemberReadyData | undefined, retry: () => void): MemberDataState {
+  return result.status === "error" ? { ...result, ...(previous && { previous }), retry } : result;
+}
+
 /** A projection input's value: a JSON value as the member and the run supply it; absent while nothing is supplied. */
 export type MemberInputs = Readonly<Record<string, RuntimeJsonValue>>;
 
@@ -360,8 +365,7 @@ export async function readMemberDatum(read: PanelReadPort, projection: DirectPro
       status: "error" as const,
       message: reason instanceof Error ? reason.message : String(reason),
       ...(code ? { code } : {}),
-      // No answer at all: the request reached nothing (the browser's network failure) or what came back was no answer of
-      // the platform's (a gateway's page while a service is replaced). A failure the platform states keeps its words.
+      // A browser or gateway failure has no reader-facing explanation.
       ...(reason instanceof TypeError || reason instanceof SyntaxError ? { unreachable: true as const } : {}),
     };
   });
@@ -884,11 +888,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
                 pendingRereadAfterMs = undefined;
                 clearRereadTimer();
                 // A failure is read again on request, and keeps the same target's last ready answer beside the reason.
-                state.value = {
-                  ...result,
-                  ...(lastReady ? { previous: lastReady } : {}),
-                  retry: () => { void reread(); },
-                };
+                state.value = withMemberReadRetry(result, lastReady, () => { void reread(); });
               } else {
                 pendingRereadAfterMs = undefined;
                 clearRereadTimer();

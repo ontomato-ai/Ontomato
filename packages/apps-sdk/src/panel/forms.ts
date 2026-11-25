@@ -1,5 +1,5 @@
 import { shallowReactive, shallowRef, type Ref } from "vue";
-import type { ExpectedPageTarget, FormFieldRejection, FormFillOutcome } from "@ontomato/contracts/agent-presentation";
+import type { ExpectedPageTarget, FormFieldRejection, FormFillOutcome, PageActionOutcome } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
 import type { PanelFormTarget, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
@@ -34,6 +34,8 @@ export interface PanelFormHandle {
   readonly canSubmit: Readonly<Ref<boolean>>;
   /** Sets one field's value; a field the owner marks `refreshOnChange` has the owner asked again. */
   set(path: string, value: RuntimeJsonValue): void;
+  setFromControl?(path: string, value: RuntimeJsonValue): void;
+  blurFromControl?(path: string): void;
   /** Refreshes the owner's fields and validation for the current values, preserving unsaved edits. */
   refreshDraft(): Promise<void>;
   /** Submits the form through its owner. */
@@ -63,6 +65,7 @@ export type PanelFormAdapterFillResult =
   | {
       readonly ok: true;
       readonly filledFields: readonly string[];
+      readonly write?: PageActionOutcome;
       readonly rejectedFields?: readonly FormFieldRejection[];
     }
   | {
@@ -71,6 +74,13 @@ export type PanelFormAdapterFillResult =
       readonly rejectedFields?: readonly FormFieldRejection[];
       readonly message?: string;
     };
+
+export interface FormFillOptions {
+  readonly overwriteUnsaved?: boolean;
+  readonly expectedFormInstanceId?: string;
+  readonly expectedTarget?: ExpectedPageTarget;
+  readonly executeWrite?: (operation: string, submit: (context: PanelAgentActionContext) => Promise<unknown>) => Promise<PageActionOutcome>;
+}
 
 export interface InvalidFormText {
   readonly message: string;
@@ -101,7 +111,7 @@ export interface PanelFormAdapter {
    */
   fill?(
     values: Readonly<Record<string, RuntimeJsonValue>>,
-    options?: { overwriteUnsaved?: boolean; expectedFormInstanceId?: string; expectedTarget?: ExpectedPageTarget },
+    options?: FormFillOptions,
   ): Promise<PanelFormAdapterFillResult>;
   /** Saves what the form holds now, through the owner, at the revision it was read at where the owner has one. */
   submit(override?: FormSubmitOverride): Promise<unknown>;
@@ -212,7 +222,7 @@ export class PanelFormAdapters {
   async fill(
     slot: string,
     values: Readonly<Record<string, RuntimeJsonValue>>,
-    options?: { overwriteUnsaved?: boolean; expectedFormInstanceId?: string; expectedTarget?: ExpectedPageTarget },
+    options?: FormFillOptions,
   ): Promise<FormFillOutcome> {
     const adapter = this.#bySlot.get(slot);
     if (!adapter) {
@@ -226,7 +236,7 @@ export class PanelFormAdapters {
     if (!adapter.fill) return { ok: false, reason: "form_not_ready", member: slot, message: `Form '${slot}' does not support live filling` };
     const result = await adapter.fill(values, options);
     return result.ok
-      ? { ok: true, member: slot, filledFields: result.filledFields, ...(result.rejectedFields?.length ? { rejectedFields: result.rejectedFields } : {}) }
+      ? { ok: true, member: slot, filledFields: result.filledFields, ...(result.write ? { write: result.write } : {}), ...(result.rejectedFields?.length ? { rejectedFields: result.rejectedFields } : {}) }
       : { ok: false, reason: result.reason, member: slot, ...(result.rejectedFields?.length ? { rejectedFields: result.rejectedFields } : {}), ...(result.message ? { message: result.message } : {}) };
   }
 

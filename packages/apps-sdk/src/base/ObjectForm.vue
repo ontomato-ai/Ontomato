@@ -60,6 +60,7 @@ import {
   MemberDataUnavailable,
   resolveActionSaveWiring,
   resolveFormSaveAnswer,
+  FormSaveCancelled,
   type FormSource,
   type FormSaveResult,
 } from "../panel/member-forms";
@@ -400,6 +401,8 @@ const errors = shallowRef<Readonly<Record<string, string>>>({});
 const invalid = shallowRef<Readonly<Record<string, InvalidFormText>>>({});
 const loading = ref(true);
 const saving = ref(false);
+const autoPending = ref(false);
+const submitting = computed(() => saving.value || autoPending.value);
 const failure = shallowRef<{ reason: Error; retry: () => void } | null>(null);
 /** The owner's refusal of the last save, shown with the form the reader still holds; its fields' messages on the fields. */
 const refusal = shallowRef<Error | null>(null);
@@ -580,7 +583,7 @@ const dirtyFields = computed<ReadonlySet<string>>(() => {
 const changedCount = computed(() => (dirtyFields.value.size > 0 ? dirtyFields.value.size : (canSettle.value ? 1 : 0)));
 /** Whether the form is ready and currently able to submit unsaved edits. */
 const canSubmit = computed(() =>
-  !failure.value && !loading.value && description.value !== null && canSettle.value && !saving.value && !asking.value && !saveUnavailable.value,
+  !failure.value && !loading.value && description.value !== null && canSettle.value && !submitting.value && !asking.value && !saveUnavailable.value,
 );
 
 /** Whether this form component has mounted and performed its initial load. */
@@ -597,6 +600,7 @@ function adopt(
   written: ReadonlySet<string> = new Set(),
 ) {
   branchDrafts.clear();
+  humanBlurEdits.clear();
   submitted.value = written;
   editedPaths.value = new Set();
   userEditedPaths.value = new Set();
@@ -815,7 +819,7 @@ async function handleDiscardAction(
   if (request.expectedTarget !== undefined && !matchesExpectedTarget(effectiveTarget.value, request.expectedTarget)) {
     return { ok: false as const, reason: "stale" as const, message: "The form switched to a different target object or draft." };
   }
-  if (!mounted || unmounted || panel.instance.isDisposed() || !opened.value || loading.value || saving.value || asking.value) {
+  if (!mounted || unmounted || panel.instance.isDisposed() || !opened.value || loading.value || submitting.value || asking.value) {
     return { ok: false as const, reason: "action_not_ready" as const, message: `The form is not ready to ${operationName}.` };
   }
   if (!canSettle.value) {
@@ -842,7 +846,7 @@ async function handleDiscardAction(
     if (!target.value || !opened.value || loading.value || asking.value || failure.value) {
       return { ok: false, message: "The form is no longer ready." };
     }
-    if (phase === "confirm" && saving.value) {
+    if (phase === "confirm" && submitting.value) {
       return { ok: false, message: "The form is currently saving." };
     }
     if (!canSettle.value) {
@@ -1021,8 +1025,8 @@ function formContextChanged() {
  * The target and the fixed values together identify what the reader is editing. Keep the accepted inputs until any
  * pending confirmation settles, including when one panel state change derives another.
  */
-watch([requestedTarget, requestedFixedValues, memberInputKey], async () => {
-  if (confirmingSwitch) return;
+watch([requestedTarget, requestedFixedValues, memberInputKey, autoPending], async () => {
+  if (confirmingSwitch || autoPending.value) return;
   if (!formContextChanged()) {
     acceptedState = panel.instance.state.values.value;
     if (memberInputKey.value !== acceptedMemberInputKey) {
@@ -1097,7 +1101,7 @@ watch([requestedTarget, requestedFixedValues, memberInputKey], async () => {
   load(target.value);
 });
 function refreshWhenClean() {
-  if (!pendingRefresh || canSettle.value || saving.value) return;
+  if (!pendingRefresh || canSettle.value || submitting.value) return;
   pendingRefresh = false;
   reread();
 }
@@ -1169,7 +1173,7 @@ useProjectionObjectRefresh((id) => id === key.value, () => {
   pendingRefresh = true;
   refreshWhenClean();
 });
-watch([canSettle, saving], refreshWhenClean);
+watch([canSettle, submitting], refreshWhenClean);
 
 watch(effectivePersistDraft, (enabled) => {
   if (enabled) syncLocalDraft();
@@ -1182,11 +1186,80 @@ watch(actionSaveReadOnlyOverlay, () => {
 });
 
 /** One field changed: the form holds the value; a field the owner's form depends on has the owner asked again. */
+function submitMode(field: PanelFormField) {
+  return field.submitOn ?? description.value?.submitOn ?? "manual";
+}
+
+function setFromControl(path: string, value: RuntimeJsonValue) {
+  editFromControl(path, withValueAt(values.value, path, value));
+}
+
+function editFromControl(path: string, next: PanelFormValues) {
+  const field = activeFieldAt(fields.value, values.value, path);
+  edit(path, next);
+  if (!field) return;
+  if (submitMode(field) === "change") queueFieldSave(path);
+  if (submitMode(field) === "blur") humanBlurEdits.add(path);
+}
+
+const humanBlurEdits = new Set<string>();
+const queuedFields = new Set<string>();
+
+function blurFromControl(path: string) {
+  if (humanBlurEdits.has(path)) queueFieldSave(path);
+}
+
+function queueFieldSave(path: string) {
+  const resolved = resolveActiveField(fields.value, values.value, path);
+  if (!resolved || resolved.readOnly || submitMode(resolved.field) === "manual") return;
+  queuedFields.add(path);
+  if (!autoPending.value) void drainFieldSaves();
+}
+
+async function drainFieldSaves() {
+  autoPending.value = true;
+  const into = target.value;
+  try {
+    for (const path of queuedFields) {
+      queuedFields.delete(path);
+      await waitForOwnerAsk();
+      if (unmounted || target.value !== into || !opened.value) break;
+      const baseline = valueAt(opened.value.values, path);
+      const current = valueAt(values.value, path);
+      const resolved = resolveActiveField(fields.value, values.value, path);
+      if (!resolved || resolved.readOnly) continue;
+      if (jsonValuesEqual(current, baseline) && !Object.keys(activeInvalid.value).some((at) => pathsOverlap(at, path))) {
+        clearCommittedFieldMarks([path]);
+        continue;
+      }
+      try {
+        await write(undefined, undefined, { allowPendingSwitch: true, fieldValues: new Map([[path, current]]) });
+      } catch (reason) {
+        if (reason instanceof FormSaveCancelled) {
+          values.value = assignFormValue(values.value, path, baseline);
+          clearCommittedFieldMarks([path]);
+          syncLocalDraft();
+          if (resolved.field.refreshOnChange) askOwner(path);
+        } else if (!refusal.value) {
+          showRefusal(reason);
+        }
+      }
+    }
+  } finally {
+    queuedFields.clear();
+    autoPending.value = false;
+  }
+}
+
+function assignFormValue(next: PanelFormValues, path: string, value: RuntimeJsonValue | undefined): PanelFormValues {
+  return value === undefined ? withoutValueAt(next, path) : withValueAt(next, path, value);
+}
+
 function set(path: string, value: RuntimeJsonValue) {
   edit(path, withValueAt(values.value, path, value), "user");
 }
 function remove(path: string) {
-  edit(path, withoutValueAt(values.value, path), "user");
+  editFromControl(path, withoutValueAt(values.value, path));
 }
 
 /**
@@ -1363,7 +1436,7 @@ function reorder(path: string, order: readonly number[]) {
   errors.value = moved(errors.value);
   invalid.value = moved(invalid.value);
   changed.value = new Set([...changed.value].flatMap((at) => movedPath(at, path, order) ?? []));
-  set(path, order.map((index) => rows[index]!));
+  setFromControl(path, order.map((index) => rows[index]!));
 }
 
 function markInvalid(path: string, text: InvalidFormText | null) {
@@ -1375,6 +1448,8 @@ function markInvalid(path: string, text: InvalidFormText | null) {
     return;
   }
   userEditedPaths.value = new Set([...userEditedPaths.value, path]);
+  const field = activeFieldAt(fields.value, values.value, path);
+  if (field && submitMode(field) === "blur") humanBlurEdits.add(path);
   invalid.value = { ...invalid.value, [path]: text };
 }
 
@@ -1638,7 +1713,7 @@ function buildFieldSlotProps(
     error: allErrors.value[absolutePath],
     changed: changed.value.has(absolutePath),
     disabled: Boolean(disabled) || field.readOnly || saving.value,
-    set: (value: RuntimeJsonValue) => set(absolutePath, value),
+    set: (value: RuntimeJsonValue) => setFromControl(absolutePath, value),
     remove: () => remove(absolutePath),
   };
 }
@@ -1658,7 +1733,8 @@ provide(formControlsKey, {
   isTopLevel: (path) => topLevelPaths.value.has(path),
   hasInvalid: (path) => Object.keys(activeInvalid.value).some((at) => at === path || at.startsWith(`${path}/`)),
   invalidText: (path) => invalid.value[path]?.source,
-  set,
+  set: setFromControl,
+  blur: blurFromControl,
   remove,
   reorder,
   invalid: markInvalid,
@@ -1711,7 +1787,7 @@ const formObjectLabel = computed<string | null>(() => {
 });
 
 useMemberOutput("label", () => (description.value ? formObjectLabel.value : null));
-useMemberOutput("dirty", () => dirty.value);
+useMemberOutput("dirty", () => dirty.value || autoPending.value);
 useMemberOutput("draft", () => (description.value ? prunedValues.value : null));
 
 useProjectionForm({
@@ -1721,11 +1797,13 @@ useProjectionForm({
     errors,
     changed,
     busy: saving,
-    dirty: canSettle,
+    dirty: computed(() => canSettle.value || autoPending.value),
     dirtyFields,
-    submitting: saving,
+    submitting,
     canSubmit,
     set,
+    setFromControl,
+    blurFromControl,
     refreshDraft,
     submit: () => panel.instance.forms.submit(slot.slot),
     reset: async (options) => {
@@ -1749,7 +1827,7 @@ useProjectionForm({
         message: "The form switched to a different target object or draft.",
       };
     }
-    if (!mounted || unmounted || !target.value || !opened.value || loading.value || saving.value || failure.value) {
+    if (!mounted || unmounted || !target.value || !opened.value || loading.value || submitting.value || failure.value) {
       return {
         ok: false,
         reason: "form_not_ready",
@@ -1773,7 +1851,7 @@ useProjectionForm({
         };
       }
       const postFailure = failure.value as { reason: Error; retry: () => void } | null;
-      if (!mounted || unmounted || !target.value || !opened.value || loading.value || saving.value || postFailure) {
+      if (!mounted || unmounted || !target.value || !opened.value || loading.value || submitting.value || postFailure) {
         return {
           ok: false,
           reason: "form_not_ready",
@@ -1809,9 +1887,11 @@ useProjectionForm({
     const startTargetKey = targetKey(target.value);
     const startReading = latestRead;
     const filledFields: string[] = [];
+    const automatic = new Map<string, RuntimeJsonValue>();
     const rejectedFields: FormFieldRejection[] = [];
 
     const applyField = (pointer: string, value: RuntimeJsonValue) => {
+      for (const at of humanBlurEdits) if (pathsOverlap(pointer, at)) humanBlurEdits.delete(at);
       edit(pointer, withValueAt(values.value, pointer, value), "agent");
       const described = fields.value.find((item) => pointer === item.path || pointer.startsWith(`${item.path}/`));
       const nextChanged = new Set(changed.value);
@@ -1890,7 +1970,7 @@ useProjectionForm({
       for (const entry of pending) {
         const [pointer, value] = entry;
         const checked = validateEntry(pointer, value);
-        if (checked.ok && checked.field.refreshOnChange) {
+        if (checked.ok && checked.field.refreshOnChange && submitMode(checked.field) === "manual") {
           refreshEntry = entry;
           break;
         }
@@ -1918,11 +1998,33 @@ useProjectionForm({
           rejectedFields.push(checked.rejection);
           continue;
         }
-        applyField(pointer, value);
+        if (submitMode(checked.field) === "manual") {
+          applyField(pointer, value);
+        } else if (!jsonValuesEqual(value, valueAt(opened.value.values, pointer))) {
+          automatic.set(pointer, value);
+        } else if (!jsonValuesEqual(value, valueAt(values.value, pointer))) {
+          applyField(pointer, value);
+          clearCommittedFieldMarks([pointer]);
+        } else {
+          filledFields.push(pointer);
+        }
       }
       pending.clear();
     }
 
+    if (automatic.size > 0) {
+      const operation = saveOperationName.value ?? "save";
+      const action = panel.instance.operationIdOf(slot.slot, operation);
+      const writeOutcome = options?.executeWrite && admittedSave.value
+        ? await options.executeWrite(action, (context) => write(undefined, context, { fieldValues: automatic }))
+        : { ok: false as const, reason: "action_unavailable" as const, operation: action };
+      return {
+        ok: true,
+        filledFields,
+        ...(rejectedFields.length ? { rejectedFields } : {}),
+        write: writeOutcome,
+      };
+    }
     if (filledFields.length === 0) {
       return {
         ok: false,
@@ -1938,7 +2040,7 @@ useProjectionForm({
     };
   },
   submit: (override) => write(override),
-  dirty: () => dirty.value,
+  dirty: () => dirty.value || autoPending.value,
   editingTarget: () => target.value,
   discard,
   draft: {
@@ -2143,20 +2245,20 @@ function takeSavedFields(receipt: PlatformObjectRefusal) {
   editGeneration += 1;
 }
 
-function saveInput(payloadValues: PanelFormValues) {
+function saveInput(payloadValues: PanelFormValues, paths = [...submitted.value]) {
   const { revision } = opened.value!;
   return {
     values: payloadValues,
-    submittedFields: [...submitted.value],
+    submittedFields: paths,
     ...(revision === undefined ? {} : { revision }),
   };
 }
 
-function saveContext(agentContext?: PanelAgentActionContext, evaluateSubmission?: SubmissionEvaluator) {
+function saveContext(agentContext?: PanelAgentActionContext, evaluateSubmission?: SubmissionEvaluator, paths?: readonly string[], payload = values.value) {
   return {
-    secretFields: formSecretPaths(fields.value, values.value),
+    secretFields: formSecretPaths(fields.value, payload),
     fixedFieldPaths: Object.keys(fixedValues.value),
-    changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
+    changedFields: paths ?? [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
     baselineValues: opened.value!.values,
     ...(agentContext ? { agentContext } : {}),
     ...(evaluateSubmission ? { evaluateSubmission } : {}),
@@ -2167,6 +2269,67 @@ function saveContext(agentContext?: PanelAgentActionContext, evaluateSubmission?
       fieldMessage: () => actionFieldReadOnlyReason.value,
     }),
   };
+}
+
+function clearCommittedFieldMarks(paths: readonly string[]) {
+  const keep = (path: string) => !paths.some((saved) => pathsOverlap(path, saved))
+    || !jsonValuesEqual(valueAt(values.value, path), valueAt(opened.value!.values, path));
+  submitted.value = new Set([...submitted.value].filter(keep));
+  changed.value = new Set([...changed.value].filter(keep));
+  editedPaths.value = new Set([...editedPaths.value].filter(keep));
+  userEditedPaths.value = new Set([...userEditedPaths.value].filter(keep));
+  agentFilledPaths.value = new Set([...agentFilledPaths.value].filter(keep));
+  for (const path of paths) humanBlurEdits.delete(path);
+}
+
+async function settleFieldSave(into: PanelFormTarget, payload: PanelFormValues, paths: readonly string[], saved: FormSaveResult) {
+  if (into.kind === "draft" || unmounted || target.value !== into) {
+    await settleSave(into, payload)(saved);
+    return;
+  }
+  function accept(answer: PanelFormDescription) {
+    const draft = values.value;
+    const dirtyPaths = [...effectiveChangedPaths.value];
+    ownerOpened.value = answer;
+    opened.value = fixDescription(answer);
+    const keep = new Set([...dirtyPaths, ...editedPaths.value, ...submitted.value]);
+    let next = opened.value.values;
+    for (const path of keep) {
+      if (!paths.some((savedPath) => path === savedPath || path.startsWith(`${savedPath}/`))) {
+        next = assignFormValue(next, path, valueAt(draft, path));
+      }
+    }
+    for (const path of paths) next = assignFormValue(next, path, valueAt(opened.value.values, path));
+    values.value = next;
+    editGeneration += 1;
+    draftBaselineHash = computeDraftBaselineHash(answer.values);
+    clearCommittedFieldMarks(paths);
+    syncLocalDraft();
+  }
+
+  // A subsequent partial save must read the owner's new revision even when other draft fields are still dirty.
+  const rereadSavedForm = async () => {
+    const reading = ++latestRead;
+    try {
+      const answer = await describeBaseline(into, reading);
+      if (reading !== latestRead || unmounted || target.value !== into) return;
+      accept(answer);
+      ownerShown.value = answer;
+      description.value = fixDescription(answer);
+      pendingRefresh = false;
+      failure.value = null;
+    } catch (reason) {
+      if (reading === latestRead && !unmounted) fail(reason, () => void rereadSavedForm());
+    }
+  };
+  const baseline = ownerOpened.value!;
+  const redacted = splitPanelSecrets(payload, formSecretPaths(fields.value, payload)).redacted;
+  accept({
+    ...baseline,
+    values: paths.reduce((next, path) => assignFormValue(next, path, valueAt(redacted, path)), baseline.values),
+  });
+  await rereadSavedForm();
+  emit("saved", { className: objectType, primaryKey: saved.primaryKey }, saved);
 }
 
 /** Finish the save for the target it started with, whether the page button or the agent requested it. */
@@ -2203,14 +2366,23 @@ function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues, optio
 async function write(
   override?: FormSubmitOverride,
   agentContext?: PanelAgentActionContext,
-  options?: { allowPendingSwitch?: boolean },
+  options?: { allowPendingSwitch?: boolean; fieldValues?: ReadonlyMap<string, RuntimeJsonValue | undefined> },
 ): Promise<unknown> {
   const into = target.value;
   if (!into) throw new Error("This form edits one object, and none is selected");
   if (failure.value) throw failure.value.reason;
-  if (saving.value) throw new Error("The form is currently saving.");
+  if (saving.value || (autoPending.value && !options?.fieldValues)) throw new Error("The form is currently saving.");
   if (loading.value || asking.value) throw new Error(t("common.loading"));
-  if (Object.keys(activeInvalid.value).length) throw new Error(t("platform.formFixInvalid"));
+  const paths = options?.fieldValues ? [...options.fieldValues.keys()] : undefined;
+  const submissionInvalid = () => paths
+    ? Object.fromEntries(Object.entries(activeInvalid.value).filter(([at]) => paths.some((path) => pathsOverlap(path, at))))
+    : activeInvalid.value;
+  const submissionValues = () => options?.fieldValues
+    ? pruneInactivePanelFormVariants(fields.value, [...options.fieldValues].reduce(
+        (next, [path, value]) => assignFormValue(next, path, value), opened.value!.values,
+      ))
+    : prunedValues.value;
+  if (Object.keys(submissionInvalid()).length) throw new Error(t("platform.formFixInvalid"));
   const capturedTargetKey = targetKey(into);
   const capturedOpened = ownerOpened.value;
   const capturedLabel = formObjectLabel.value;
@@ -2220,12 +2392,18 @@ async function write(
     !unmounted && targetKey(target.value) === capturedTargetKey && ownerOpened.value === capturedOpened;
   const handleSaveRefusal = (refusalReason: unknown) => {
     if (isStillSameForm()) {
-      if (refusalReason instanceof PlatformObjectRefusal) takeSavedFields(refusalReason);
+      if (refusalReason instanceof PlatformObjectRefusal) {
+        if (paths && agentContext) {
+          for (const [path, value] of Object.entries(refusalReason.savedFields)) values.value = assignFormValue(values.value, path, value);
+        }
+        takeSavedFields(refusalReason);
+      }
       showRefusal(refusalReason);
       return;
     }
     notifyStaleSaveRefusal(saveActionLabel, capturedLabel, refusalReason);
   };
+  let dispatchingConfirmation = false;
   const evaluateSaveSubmission: SubmissionEvaluator = (phase: SubmissionCheckPhase) => {
     if (unmounted || !mounted || panel.instance.isDisposed()) {
       return { ok: false, message: "The form was closed or unmounted." };
@@ -2245,10 +2423,10 @@ async function write(
     if (loading.value || asking.value) {
       return { ok: false, message: "The form is currently busy loading." };
     }
-    if (phase === "confirm" && saving.value) {
+    if (phase === "confirm" && ((saving.value && !dispatchingConfirmation) || autoPending.value)) {
       return { ok: false, message: "The form is currently saving." };
     }
-    if (Object.keys(activeInvalid.value).length > 0) {
+    if (Object.keys(submissionInvalid()).length > 0) {
       return { ok: false, message: t("platform.formFixInvalid") };
     }
     if (override) {
@@ -2257,13 +2435,13 @@ async function write(
     } else if (!admittedSave.value) {
       return { ok: false, message: "The form save operation is no longer available." };
     }
-    if (!isCreate.value && !canSettle.value) {
+    if (!paths && !isCreate.value && !canSettle.value) {
       return { ok: false, message: "The form no longer has unsaved changes to save." };
     }
     const liveOperationId = override?.operationId ?? panel.instance.operationIdOf(slot.slot, admittedSave.value!.name);
     const liveDescriptor = override?.descriptor ?? admittedSave.value!.descriptor;
     const liveCallTarget = liveDescriptor.target.source === "none" ? null : target.value;
-    const livePayloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
+    const livePayloadValues = submissionValues();
     const liveMemberInputs = override
       ? (override.readMemberInputs ? override.readMemberInputs() : override.memberInputs)
       : member.inputs.value;
@@ -2276,8 +2454,8 @@ async function write(
         formInstanceId: formInstanceId.value,
         values: livePayloadValues,
         fixedValues: fixedValues.value,
-        submittedFields: [...submitted.value].sort(),
-        activeInvalid: activeInvalid.value,
+        submittedFields: (paths ?? [...submitted.value]).sort(),
+        activeInvalid: submissionInvalid(),
         editGeneration,
         revision: opened.value.revision ?? null,
         dirty: dirty.value,
@@ -2288,15 +2466,22 @@ async function write(
   };
   saving.value = true;
   refusal.value = null;
-  errors.value = {};
-  const payloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
-  const finishSave = settleSave(into, payloadValues, options);
+  const clearSaveErrors = () => {
+    errors.value = paths
+      ? Object.fromEntries(Object.entries(errors.value).filter(([at]) => !paths.some((path) => pathsOverlap(path, at))))
+      : {};
+  };
+  clearSaveErrors();
+  const payloadValues = submissionValues();
+  const finishSave = paths
+    ? (saved: FormSaveResult) => settleFieldSave(into, payloadValues, paths, saved)
+    : settleSave(into, payloadValues, options);
   try {
     const saved = await forms.save(
       into,
-      saveInput(payloadValues),
+      saveInput(payloadValues, paths),
       override,
-      saveContext(agentContext ?? override?.agentContext, evaluateSaveSubmission),
+      saveContext(agentContext ?? override?.agentContext, evaluateSaveSubmission, paths, payloadValues),
     );
     await finishSave(saved);
     return saved;
@@ -2313,9 +2498,10 @@ async function write(
         isStillValid: deferred.isStillValid,
         cancel: deferred.cancelNow,
         async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
+          dispatchingConfirmation = true;
           saving.value = true;
           refusal.value = null;
-          errors.value = {};
+          clearSaveErrors();
           try {
             const confirmed = await deferred.dispatchNow();
             if (confirmed.decision !== "confirm") {
@@ -2350,6 +2536,7 @@ async function write(
               message: dispatchReason instanceof Error ? dispatchReason.message : String(dispatchReason),
             };
           } finally {
+            dispatchingConfirmation = false;
             saving.value = false;
           }
         },
@@ -2357,7 +2544,7 @@ async function write(
       throw new PanelConfirmationDeferred(confirmation);
     }
     if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) throw reason;
-    handleSaveRefusal(reason);
+    if (!(paths && reason instanceof FormSaveCancelled)) handleSaveRefusal(reason);
     throw reason;
   } finally {
     saving.value = false;
