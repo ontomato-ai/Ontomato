@@ -417,8 +417,11 @@ public class MetricViewServiceImpl implements MetricViewService {
   }
 
   private MetricView hydrate(Object[] tuple, String domainId) {
+    return hydrate(tuple, domainId, functionDao.queryById((String) tuple[1]));
+  }
+
+  private MetricView hydrate(Object[] tuple, String domainId, Function function) {
     MetricView metric = (MetricView) tuple[0];
-    Function function = functionDao.queryById((String) tuple[1]);
     if (!domainId.equals(metric.getDomainId()) || function == null || !domainId.equals(function.getDomainId())
         || !Function.OPERATION_READ.equals(function.getOperation()))
       throw new IllegalStateException("MetricView read Function is missing or belongs to another domain");
@@ -474,7 +477,14 @@ public class MetricViewServiceImpl implements MetricViewService {
   @Override
   public List<MetricView> queryList(String status, String functionId, String className, String domainId) {
     Objects.requireNonNull(domainId, "Current domain is required");
-    return metricViewDao.queryList(status, functionId, className, domainId).stream().map(row -> hydrate(row, domainId)).toList();
+    var rows = metricViewDao.queryList(status, functionId, className, domainId);
+    Set<String> functionIds = new HashSet<>();
+    for (Object[] row : rows) {
+      String id = (String) row[1];
+      if (id != null) functionIds.add(id);
+    }
+    var functions = functionDao.queryByIds(functionIds);
+    return rows.stream().map(row -> hydrate(row, domainId, functions.get((String) row[1]))).toList();
   }
 
   @Override

@@ -64,6 +64,14 @@ class MetricViewBindingContractTest {
     when(functionDao.queryById(anyString())).thenAnswer(call -> {
       Function f = functions.get(call.getArgument(0)); return f == null ? null : copy(f, Function.class);
     });
+    when(functionDao.queryByIds(anySet())).thenAnswer(call -> {
+      Map<String, Function> requested = new HashMap<>();
+      for (String id : call.<Set<String>>getArgument(0)) {
+        Function function = functions.get(id);
+        if (function != null) requested.put(id, copy(function, Function.class));
+      }
+      return requested;
+    });
     when(functionDao.save(any(), anyString())).thenAnswer(call -> {
       Function f = call.getArgument(0);
       if (f.getId() == null) f.setId(UUID.randomUUID().toString());

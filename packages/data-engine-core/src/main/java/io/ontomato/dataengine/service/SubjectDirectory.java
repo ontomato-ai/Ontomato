@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -22,4 +23,7 @@ public interface SubjectDirectory {
     record Subject(String id, String loginCode, String displayName, Set<String> roleIds) {}
 
     List<Subject> subjectsInDomain(String domainId);
+
+    /** Current display names for the requested members of this domain, with login code as the name of an unnamed account. */
+    Map<String, String> displayNamesInDomain(String domainId, Set<String> subjectIds);
 }

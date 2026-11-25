@@ -6,8 +6,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -151,6 +153,16 @@ public class FunctionDao {
 			log.error(e.getMessage(), e);
 		}
 		return function;
+	}
+
+	public Map<String, Function> queryByIds(Set<String> ids) {
+		Map<String, Function> functions = new HashMap<>();
+		if (ids.isEmpty()) return functions;
+		var rows = jdbcTemplate.query("SELECT " + COLUMNS + " FROM " + TABLE_NAME + " WHERE id = ANY (?)",
+				statement -> statement.setArray(1, statement.getConnection().createArrayOf("varchar", ids.toArray())),
+				(rs, rowNum) -> mapRow(rs));
+		for (Function function : rows) functions.put(function.getId(), function);
+		return functions;
 	}
 
 	public List<Function> queryList(String operation, String className, String domainId) {

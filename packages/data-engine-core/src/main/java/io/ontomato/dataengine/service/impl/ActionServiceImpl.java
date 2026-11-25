@@ -478,11 +478,12 @@ public class ActionServiceImpl implements ActionService {
   @Override
 	public List<Action> queryList(String status, String functionId, String className, String domainId) {
 		List<Object[]> oList = actionDao.queryList(status, functionId, className, domainId);
-		List<Function> functions = functionDao.queryList(null, null, null);
-		Map<String, Function> functionMap = new HashMap<String, Function>();
-		for (Function function : functions) {
-			functionMap.put(function.getId(), function);
+		Set<String> functionIds = new HashSet<>();
+		for (Object[] row : oList) {
+			String id = (String) row[1];
+			if (id != null) functionIds.add(id);
 		}
+		Map<String, Function> functionMap = functionDao.queryByIds(functionIds);
 		List<Action> actions = new ArrayList<Action>();
 		for (Object[] o : oList) {
 			Action action = (Action)o[0];

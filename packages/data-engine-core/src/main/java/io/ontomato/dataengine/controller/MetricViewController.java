@@ -17,9 +17,11 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -148,7 +150,7 @@ public class MetricViewController {
 				metricView.getFunction().setDomainId(user.getDomainId());
 			}
 			MetricView saved = metricViewService.save(metricView, lang);
-            ret.put("data", withDisplay(saved, subjectNames(user.getDomainId()), lang));
+            ret.put("data", withDisplay(saved, subjectNames(user.getDomainId(), List.of(saved)), lang));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
@@ -194,7 +196,7 @@ public class MetricViewController {
 			MetricView metricView = metricViewService.queryById(id, user.getDomainId());
             if (metricView == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
 			ret.put("success", true);
-			ret.put("data", withDisplay(metricView, subjectNames(user.getDomainId()), lang));
+			ret.put("data", withDisplay(metricView, subjectNames(user.getDomainId(), List.of(metricView)), lang));
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
 		} catch (Exception e) {
@@ -342,18 +344,16 @@ public class MetricViewController {
 	}
 
 	private ArrayNode withDisplay(List<MetricView> metricViews, String domainId, String lang) {
-		Map<String, String> names = subjectNames(domainId);
+		Map<String, String> names = subjectNames(domainId, metricViews);
 		ArrayNode items = objectMapper.createArrayNode();
 		for (MetricView metricView : metricViews) items.add(withDisplay(metricView, names, lang));
 		return items;
 	}
 
-	private Map<String, String> subjectNames(String domainId) {
-		Map<String, String> names = new HashMap<>();
-		for (SubjectDirectory.Subject subject : subjectDirectory.subjectsInDomain(domainId))
-			names.put(subject.id(), subject.displayName() == null || subject.displayName().isBlank()
-					? subject.loginCode() : subject.displayName());
-		return names;
+	private Map<String, String> subjectNames(String domainId, List<MetricView> metricViews) {
+		var ids = metricViews.stream().flatMap(row -> Stream.of(row.getCreatedBy(), row.getReviewedBy()))
+				.filter(Objects::nonNull).collect(Collectors.toSet());
+		return subjectDirectory.displayNamesInDomain(domainId, ids);
 	}
 
 	private String statusLabel(String status, String lang) {

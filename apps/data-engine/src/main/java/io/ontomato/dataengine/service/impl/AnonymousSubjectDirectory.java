@@ -1,6 +1,9 @@
 package io.ontomato.dataengine.service.impl;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
@@ -18,5 +21,10 @@ public class AnonymousSubjectDirectory implements SubjectDirectory {
     @Override
     public List<Subject> subjectsInDomain(String domainId) {
         return List.of();
+    }
+
+    @Override
+    public Map<String, String> displayNamesInDomain(String domainId, Set<String> subjectIds) {
+        return Collections.emptyMap();
     }
 }

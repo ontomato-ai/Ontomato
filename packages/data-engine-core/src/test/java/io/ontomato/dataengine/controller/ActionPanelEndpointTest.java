@@ -79,7 +79,6 @@ class ActionPanelEndpointTest {
     ReflectionTestUtils.setField(controller, "sandboxPermissions", sandboxPermissions);
     when(sandboxPermissions.read("domain")).thenReturn(JSONObject.of("status", "unchecked"));
     SubjectDirectory subjects = mock(SubjectDirectory.class);
-    when(subjects.subjectsInDomain("domain")).thenReturn(List.of());
     ReflectionTestUtils.setField(controller, "subjectDirectory", subjects);
     ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());
     ReflectionTestUtils.setField(controller, "generationOperations", mock(GenerationOperations.class));
