@@ -108,7 +108,7 @@ beforeEach(() => {
   mocks.listAnalysisAgentSkillReferences.mockReset().mockResolvedValue([]);
   mocks.removeAnalysisAgentSkillReferences.mockReset().mockResolvedValue(0);
   mocks.restoreAnalysisAgentSkillReferences.mockReset().mockResolvedValue(undefined);
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init: Parameters<typeof fetch>[1]) => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     if (url.endsWith("/authorization/objects/retire")) {
       retired.push(JSON.parse(String(init.body)));
       return new Response(null, { status: 204 });

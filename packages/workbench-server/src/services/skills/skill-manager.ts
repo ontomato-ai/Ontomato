@@ -112,7 +112,10 @@ class SkillManager {
     return { skill, source };
   }
   async getDeleteSkillReferences(domainId: string, id: string, access: ReferenceAccess) {
-    const { skill } = await this.requireEditableSkill(domainId, id, access.credentials);
+    const view = await readSkillView(domainId, access.credentials);
+    const skill = view.requireSkillById(id);
+    if (skillWriteRestriction(skill)) return null;
+    await requireSkillAccess(domainId, skill, "EDIT", access.credentials);
     const references = await listAnalysisAgentSkillReferences(domainId, skill.skill);
     return readableReferences(references, access);
   }

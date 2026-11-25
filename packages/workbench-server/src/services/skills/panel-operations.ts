@@ -55,6 +55,7 @@ const deleteSkillImpact: PanelImpactInspector = {
       target.primaryKey,
       await referenceAccess(host.initiator),
     );
+    if (agents === null) return null;
     return {
       summary: tForLocale(host.locale, "panels.confirmation.deleteSkillImpact", { count: agents.length }),
       objects: agents.map(agent => ({
