@@ -25,10 +25,13 @@ const props = withDefaults(
     modelValue: boolean;
     title?: string;
     fields: readonly OperationInputField[];
+    /** Optional initial field values keyed by parameter name, overriding schema defaults when opened. */
+    initialValues?: Readonly<Record<string, unknown>>;
     busy?: boolean;
   }>(),
   {
     title: "",
+    initialValues: undefined,
     busy: false,
   },
 );
@@ -48,7 +51,7 @@ const dialogTitle = computed(() => props.title.trim() || t("platform.operationIn
 function resetForm() {
   for (const key of Object.keys(draft)) delete draft[key];
   for (const key of Object.keys(fieldErrors)) delete fieldErrors[key];
-  Object.assign(draft, initialOperationInputDraft(props.fields));
+  Object.assign(draft, initialOperationInputDraft(props.fields, props.initialValues));
 }
 
 watch(

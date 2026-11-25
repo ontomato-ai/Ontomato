@@ -85,8 +85,15 @@ import {
   matchesRowActionWhen,
   resolveRowActionAddress,
   resolveRowOperationParams,
+  resolveRowOperationPrefill,
   resolveRowOperationTarget,
 } from "./object-list-actions";
+import {
+  computeRevealTabScrollLeft,
+  computeTabScrollStep,
+  resolveInlineRenameCommit,
+  resolveInlineRenameFieldKey,
+} from "./object-list-tabs";
 import {
   buildCsvContent,
   collectDynamicFieldLabels,
@@ -107,7 +114,11 @@ import {
 import type {
   ObjectListColumn,
   ObjectListRef,
+  ObjectListRenameCancelPayload,
+  ObjectListRenameCommitPayload,
+  ObjectListRowActionPrefill,
   ObjectListRowActions as ObjectListRowActionsConfig,
+  ObjectListTabsVariant,
 } from "./object-list-types";
 import {
   buildVirtualGridBands,
@@ -196,6 +207,11 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "rowActivation",
   "showPageJumper",
   "showRangeBar",
+  "tabsVariant",
+  "inlineRename",
+  "inlineRenameOperation",
+  "inlineRenameField",
+  "renamingKey",
 ]);
 
 interface ParsedListData {
@@ -347,6 +363,32 @@ const props = withDefaults(
     showPageJumper?: boolean;
     /** Show a compact range summary bar (`Showing X–Y of Z`) above the list or table when rows are loaded; defaults to `false`. */
     showRangeBar?: boolean;
+    /**
+     * Visual presentation of the horizontal tab strip when `layout` is `"tabs"`: `"underline"` (default) shows bottom
+     * indicator tabs; `"pill"` draws compact rounded pill tabs with neutral dark active fill and hover-revealed actions.
+     */
+    tabsVariant?: ObjectListTabsVariant;
+    /**
+     * Enables in-place tab label editing when `layout` is `"tabs"`. Pair with `inlineRenameOperation` to automatically
+     * intercept that row action and dispatch the renamed label, or control active editing with `renamingKey` and listen
+     * to `rename-commit` / `rename-cancel`.
+     */
+    inlineRename?: boolean;
+    /**
+     * Declared row operation name (for example `"rename"`) handled via in-place tab editing instead of opening the
+     * operation input dialog when `layout` is `"tabs"` and `inlineRename` is enabled.
+     */
+    inlineRenameOperation?: string;
+    /**
+     * Input parameter key passed to `inlineRenameOperation` on commit (for example `"name"`). When omitted, the sole
+     * unbound editable text field from the operation schema is inferred automatically.
+     */
+    inlineRenameField?: string;
+    /**
+     * Optional controlled row key (`primaryKey` or composite `<className>:<primaryKey>`) currently showing an inline
+     * rename input in `"tabs"` layout. Supports `v-model:renamingKey`.
+     */
+    renamingKey?: string | null;
   }>(),
   {
     layout: "auto",
@@ -385,6 +427,11 @@ const props = withDefaults(
     rowActivation: "click",
     showPageJumper: true,
     showRangeBar: false,
+    tabsVariant: "underline",
+    inlineRename: false,
+    inlineRenameOperation: undefined,
+    inlineRenameField: undefined,
+    renamingKey: undefined,
   },
 );
 
@@ -410,6 +457,12 @@ const emit = defineEmits<{
   "row-action": [payload: { id: string; ref: ObjectListRef; index: number }];
   /** Emitted after a declared row operation dispatches and the owner answers. */
   "operation-done": [operation: string, outcome: OperationOutcome, ref: ObjectListRef];
+  /** Emitted when an inline tab rename commits a changed non-empty label. */
+  "rename-commit": [payload: ObjectListRenameCommitPayload];
+  /** Emitted when an inline tab rename is cancelled via Escape or closed unchanged. */
+  "rename-cancel": [payload: ObjectListRenameCancelPayload];
+  /** Emitted when the active inline-renaming tab key changes. */
+  "update:renamingKey": [key: string | null];
 }>();
 
 type RowRefSlotScope = {
@@ -1327,7 +1380,137 @@ const isTabs = computed(() => effectiveLayout.value === "tabs");
 const tabsScrollerRef = ref<HTMLElement | null>(null);
 const tabsCanScrollLeft = ref(false);
 const tabsCanScrollRight = ref(false);
+const openTabMenuKey = ref<string | null>(null);
+const internalRenamingKey = ref<string | null>(null);
+const inlineRenameDraft = ref("");
+const inlineRenameOriginal = ref("");
+const inlineRenameInputRef = ref<HTMLInputElement | null>(null);
+let inlineRenameHandled = false;
+let inlineRenameFocusTimer: ReturnType<typeof setTimeout> | null = null;
 let tabsResizeObserver: ResizeObserver | null = null;
+
+function onTabMenuOpenChange(rowKey: string, open: boolean) {
+  if (open) {
+    openTabMenuKey.value = rowKey;
+  } else if (openTabMenuKey.value === rowKey) {
+    openTabMenuKey.value = null;
+  }
+}
+
+function setInlineRenameInput(el: unknown) {
+  inlineRenameInputRef.value = el instanceof HTMLInputElement ? el : null;
+}
+
+function matchesTabRenamingKey(row: PlatformObjectRecord, targetKey: string | null | undefined): boolean {
+  if (!targetKey) return false;
+  return rowIdentityKey(row) === targetKey || row.primaryKey === targetKey;
+}
+
+const activeRenamingKey = computed<string | null>(() =>
+  props.renamingKey !== undefined ? (props.renamingKey || null) : internalRenamingKey.value,
+);
+
+function isTabRenaming(row: PlatformObjectRecord): boolean {
+  return isTabs.value && matchesTabRenamingKey(row, activeRenamingKey.value);
+}
+
+function focusInlineRenameInput() {
+  void nextTick(() => {
+    const input = inlineRenameInputRef.value;
+    if (!input) return;
+    input.focus();
+    input.select();
+    if (inlineRenameFocusTimer !== null) clearTimeout(inlineRenameFocusTimer);
+    inlineRenameFocusTimer = setTimeout(() => {
+      inlineRenameFocusTimer = null;
+      const current = inlineRenameInputRef.value;
+      if (current && document.activeElement !== current) {
+        current.focus();
+        current.select();
+      }
+    }, 0);
+  });
+}
+
+function startTabInlineRename(row: PlatformObjectRecord) {
+  const key = rowIdentityKey(row);
+  inlineRenameHandled = false;
+  inlineRenameDraft.value = row.label;
+  inlineRenameOriginal.value = row.label;
+  openTabMenuKey.value = null;
+  internalRenamingKey.value = key;
+  emit("update:renamingKey", row.primaryKey);
+  focusInlineRenameInput();
+}
+
+function finishTabInlineRename() {
+  internalRenamingKey.value = null;
+  emit("update:renamingKey", null);
+}
+
+function commitTabInlineRename(row: PlatformObjectRecord, index: number) {
+  if (inlineRenameHandled) return;
+  inlineRenameHandled = true;
+  const resolution = resolveInlineRenameCommit(inlineRenameDraft.value, inlineRenameOriginal.value);
+  const previousValue = inlineRenameOriginal.value;
+  finishTabInlineRename();
+  if (resolution.kind === "cancel") {
+    emit("rename-cancel", { ref: rowObjectRef(row), index });
+    return;
+  }
+  emit("rename-commit", {
+    ref: rowObjectRef(row),
+    value: resolution.value,
+    previousValue,
+    index,
+  });
+  const opName = props.inlineRenameOperation;
+  if (!opName) return;
+  const descriptor = admittedOpMap.value[opName];
+  const binding = member.projection.operations?.[opName];
+  if (!descriptor || !binding) return;
+  const allFields = resolveOperationInputFields(panel, slot, opName, descriptor);
+  const allowedKeys = allowedRowOperationInputKeys(binding, allFields);
+  const allowedFields = allFields.filter((field) => allowedKeys.has(field.name));
+  const fieldKey = resolveInlineRenameFieldKey(props.inlineRenameField, allowedFields);
+  if (!fieldKey) return;
+  void runRowOperation(row, opName, { [fieldKey]: resolution.value });
+}
+
+function cancelTabInlineRename(row: PlatformObjectRecord, index: number) {
+  if (inlineRenameHandled) return;
+  inlineRenameHandled = true;
+  finishTabInlineRename();
+  emit("rename-cancel", { ref: rowObjectRef(row), index });
+}
+
+function onInlineRenameKeydown(row: PlatformObjectRecord, index: number, event: KeyboardEvent) {
+  event.stopPropagation();
+  if (event.key === "Enter") {
+    if (event.isComposing) return;
+    event.preventDefault();
+    commitTabInlineRename(row, index);
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    cancelTabInlineRename(row, index);
+  }
+}
+
+watch(
+  () => props.renamingKey,
+  (next) => {
+    if (!next || !isTabs.value) return;
+    const match = rows.value.find((row) => matchesTabRenamingKey(row, next));
+    if (!match) return;
+    inlineRenameHandled = false;
+    inlineRenameDraft.value = match.label;
+    inlineRenameOriginal.value = match.label;
+    openTabMenuKey.value = null;
+    focusInlineRenameInput();
+  },
+);
 
 function updateTabsOverflow() {
   const el = tabsScrollerRef.value;
@@ -1340,10 +1523,41 @@ function updateTabsOverflow() {
   tabsCanScrollRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
 }
 
+function tabLeftRelativeToScroller(strip: HTMLElement, tab: HTMLElement): number {
+  if (tab.offsetParent === strip) return tab.offsetLeft;
+  const stripRect = strip.getBoundingClientRect();
+  const tabRect = tab.getBoundingClientRect();
+  return tabRect.left - stripRect.left + strip.scrollLeft;
+}
+
+function revealActiveTab() {
+  const el = tabsScrollerRef.value;
+  if (!el || !isTabs.value) {
+    updateTabsOverflow();
+    return;
+  }
+  const active = el.querySelector<HTMLElement>(".sdk-object-list-tab.chosen");
+  if (!active) {
+    updateTabsOverflow();
+    return;
+  }
+  const tabLeft = tabLeftRelativeToScroller(el, active);
+  const nextScrollLeft = computeRevealTabScrollLeft(el.scrollLeft, el.clientWidth, tabLeft, active.offsetWidth);
+  if (nextScrollLeft !== el.scrollLeft) {
+    el.scrollLeft = nextScrollLeft;
+  }
+  updateTabsOverflow();
+}
+
 function scrollTabsBy(direction: -1 | 1) {
   const el = tabsScrollerRef.value;
   if (!el) return;
-  const step = Math.max(160, Math.floor(el.clientWidth * 0.6));
+  const tabEls = Array.from(el.querySelectorAll<HTMLElement>(".sdk-object-list-tab"));
+  const bounds = tabEls.map((tab) => ({
+    left: tabLeftRelativeToScroller(el, tab),
+    width: tab.offsetWidth,
+  }));
+  const step = computeTabScrollStep(bounds, el.scrollLeft, el.clientWidth, direction, 4);
   if (typeof el.scrollBy === "function") {
     el.scrollBy({ left: direction * step, behavior: "smooth" });
   } else {
@@ -1353,6 +1567,7 @@ function scrollTabsBy(direction: -1 | 1) {
 }
 
 function onTabKeydown(row: PlatformObjectRecord, index: number, event: KeyboardEvent) {
+  if (isTabRenaming(row)) return;
   if (event.key === "Enter" || event.key === " ") {
     if (rowActivatable.value) {
       event.preventDefault();
@@ -1382,22 +1597,27 @@ watch(tabsScrollerRef, (el) => {
     return;
   }
   if (typeof ResizeObserver !== "undefined") {
-    tabsResizeObserver = new ResizeObserver(() => updateTabsOverflow());
+    tabsResizeObserver = new ResizeObserver(() => revealActiveTab());
     tabsResizeObserver.observe(el);
   }
-  void nextTick(updateTabsOverflow);
+  void nextTick(revealActiveTab);
 });
 
 watch(
-  [isTabs, () => rows.value.length],
+  [isTabs, chosenIdentity, () => rows.value.length],
   () => {
-    if (isTabs.value) void nextTick(updateTabsOverflow);
+    if (isTabs.value) void nextTick(revealActiveTab);
   },
+  { immediate: true },
 );
 
 onBeforeUnmount(() => {
   tabsResizeObserver?.disconnect();
   tabsResizeObserver = null;
+  if (inlineRenameFocusTimer !== null) {
+    clearTimeout(inlineRenameFocusTimer);
+    inlineRenameFocusTimer = null;
+  }
 });
 
 /** From this many characters a text column shrinks to the table's room and ends in an ellipsis rather than set its width. */
@@ -2561,6 +2781,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         key: `op:${opName}:${index}`,
         kind: "operation",
         operation: opName,
+        prefill: "prefill" in item ? item.prefill : undefined,
         label,
         icon: item.icon,
         iconOnly: item.iconOnly,
@@ -2601,6 +2822,7 @@ const rowOpPendingName = ref<string | null>(null);
 const rowOpPendingDescriptor = shallowRef<PanelOwnerOperationDescriptor | null>(null);
 const rowOpPendingBaseInput = shallowRef<Record<string, RuntimeJsonValue>>({});
 const rowOpPendingExtraInput = shallowRef<Record<string, RuntimeJsonValue>>({});
+const rowOpPendingInitialValues = shallowRef<Record<string, unknown>>({});
 
 const rowOpPendingInputFields = computed<readonly OperationInputField[]>(() => {
   if (!rowOpPendingName.value || !rowOpPendingDescriptor.value) return [];
@@ -2922,10 +3144,18 @@ async function executeRowOperation(
   }
 }
 
+function configuredRowActionPrefill(operationName: string): ObjectListRowActionPrefill | undefined {
+  const match = (props.rowActions?.items ?? []).find(
+    (item) => item.kind === "operation" && item.operation === operationName,
+  );
+  return match && match.kind === "operation" ? match.prefill : undefined;
+}
+
 async function runRowOperation(
   row: PlatformObjectRecord,
   operationName: string,
   extraInput?: Readonly<Record<string, RuntimeJsonValue>>,
+  prefillOverride?: ObjectListRowActionPrefill,
 ): Promise<void> {
   if (rowOpRunning.value) return;
   const descriptor = admittedOpMap.value[operationName];
@@ -2946,12 +3176,14 @@ async function runRowOperation(
   const suppliedKeys = new Set(Object.keys(baseInput));
   const missingFields = allFields.filter((field) => allowedKeys.has(field.name) && !suppliedKeys.has(field.name));
   if (missingFields.length > 0) {
+    const effectivePrefill = prefillOverride !== undefined ? prefillOverride : configuredRowActionPrefill(operationName);
     rowOpFailure.value = null;
     rowOpPendingRow.value = row;
     rowOpPendingName.value = operationName;
     rowOpPendingDescriptor.value = descriptor;
     rowOpPendingBaseInput.value = baseInput;
     rowOpPendingExtraInput.value = filteredExtra;
+    rowOpPendingInitialValues.value = resolveRowOperationPrefill(row, missingFields, effectivePrefill);
     rowOpInputDialogOpen.value = true;
     return;
   }
@@ -3114,7 +3346,11 @@ onBeforeUnmount(clearRowActionHandlers);
 function triggerRowAction(row: PlatformObjectRecord, index: number, item: ResolvedRowActionItem) {
   activeRowLabel.value = row.label || row.primaryKey;
   if (item.kind === "operation" && item.operation) {
-    void runRowOperation(row, item.operation);
+    if (isTabs.value && props.inlineRename && props.inlineRenameOperation === item.operation) {
+      startTabInlineRename(row);
+      return;
+    }
+    void runRowOperation(row, item.operation, undefined, item.prefill);
     return;
   }
   if (item.kind === "local" && item.id) {
@@ -3339,6 +3575,7 @@ defineExpose({
     <div
       v-else-if="isTabs && listResult.status === 'empty' && $slots['tabs-extra']"
       class="sdk-object-list-tabs-bar is-empty"
+      :class="{ 'is-pill': tabsVariant === 'pill' }"
     >
       <span class="sdk-object-list-tabs-empty-text">{{ emptyText ? panel.t(emptyText) : t("platform.dataEmpty") }}</span>
       <div class="sdk-object-list-tabs-extra">
@@ -3728,7 +3965,7 @@ defineExpose({
         </table>
       </div>
 
-      <div v-else-if="isTabs" class="sdk-object-list-tabs-bar">
+      <div v-else-if="isTabs" class="sdk-object-list-tabs-bar" :class="{ 'is-pill': tabsVariant === 'pill' }">
         <button
           v-if="tabsCanScrollLeft"
           type="button"
@@ -3737,7 +3974,7 @@ defineExpose({
           aria-label="Scroll tabs left"
           @click="scrollTabsBy(-1)"
         >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
@@ -3745,7 +3982,7 @@ defineExpose({
           ref="tabsScrollerRef"
           class="sdk-object-list-tabs-scroller"
           role="tablist"
-          @scroll="updateTabsOverflow"
+          @scroll.passive="updateTabsOverflow"
         >
           <div
             v-for="(row, rowIndex) in rows"
@@ -3758,51 +3995,68 @@ defineExpose({
             :class="{
               chosen: rowIdentityKey(row) === chosenIdentity,
               'is-non-selectable': !rowActivatable,
-              'has-actions': hasActionColumn && (Boolean(slots.actions) || resolvedRowActionsFor(row).length > 0),
+              'has-actions': !isTabRenaming(row) && hasActionColumn && (Boolean(slots.actions) || resolvedRowActionsFor(row).length > 0),
+              'is-menu-open': openTabMenuKey === rowIdentityKey(row),
+              'is-renaming': isTabRenaming(row),
             }"
-            @click="rowActivatable ? choose(row) : undefined"
+            @click="!isTabRenaming(row) && rowActivatable ? choose(row) : undefined"
             @keydown="onTabKeydown(row, rowIndex, $event)"
           >
-            <span
-              v-if="statusField && statusStyle === 'dot' && fieldValue(row, statusField) !== ''"
-              class="sdk-object-list-status-dot"
-              :data-tone="row.tones?.[statusField] ?? 'default'"
-              :title="fieldValue(row, statusField)"
-            ></span>
-            <span class="sdk-object-list-tab-label" :title="row.label">
-              <template v-for="(part, index) in textSegmentsFor(row, 'label', row.label)" :key="index">
-                <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-              </template>
-            </span>
-            <span
-              v-if="statusField && statusStyle !== 'dot' && fieldValue(row, statusField) !== ''"
-              class="sdk-object-list-tag"
-              :data-tone="row.tones?.[statusField] ?? 'default'"
-            >{{ fieldValue(row, statusField) }}</span>
-            <div
-              v-if="hasActionColumn && (slots.actions || resolvedRowActionsFor(row).length > 0)"
-              class="sdk-object-list-tab-actions"
+            <input
+              v-if="isTabRenaming(row)"
+              :ref="setInlineRenameInput"
+              v-model="inlineRenameDraft"
+              type="text"
+              class="sdk-object-list-tab-rename-input"
+              data-testid="object-list-tab-rename-input"
+              :aria-label="row.label"
               @click.stop
-            >
-              <list-row-slot-host
-                v-if="slots.actions"
-                :list-slot="member.key"
-                :row-ref="rowObjectRef(row)"
-                :index="rowIndex"
-                :operations="rowOperationsFor(row)"
-                :run-operation="(opName, extra) => runRowOperation(row, opName, extra)"
-                :render-slot="slots.actions!"
-                :slot-props="rowActionsSlotProps(row, rowIndex)"
-              />
-              <ObjectListRowActions
-                v-else
-                :items="resolvedRowActionsFor(row)"
-                :max-visible="0"
-                :busy="rowOpRunning"
-                :row-label="row.label || row.primaryKey"
-                @trigger="(item) => triggerRowAction(row, rowIndex, item)"
-              />
-            </div>
+              @keydown="onInlineRenameKeydown(row, rowIndex, $event)"
+              @blur="commitTabInlineRename(row, rowIndex)"
+            />
+            <template v-else>
+              <span
+                v-if="statusField && statusStyle === 'dot' && fieldValue(row, statusField) !== ''"
+                class="sdk-object-list-status-dot"
+                :data-tone="row.tones?.[statusField] ?? 'default'"
+                :title="fieldValue(row, statusField)"
+              ></span>
+              <span class="sdk-object-list-tab-label" :title="row.label">
+                <template v-for="(part, index) in textSegmentsFor(row, 'label', row.label)" :key="index">
+                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                </template>
+              </span>
+              <span
+                v-if="statusField && statusStyle !== 'dot' && fieldValue(row, statusField) !== ''"
+                class="sdk-object-list-tag"
+                :data-tone="row.tones?.[statusField] ?? 'default'"
+              >{{ fieldValue(row, statusField) }}</span>
+              <div
+                v-if="hasActionColumn && (slots.actions || resolvedRowActionsFor(row).length > 0)"
+                class="sdk-object-list-tab-actions"
+                @click.stop
+              >
+                <list-row-slot-host
+                  v-if="slots.actions"
+                  :list-slot="member.key"
+                  :row-ref="rowObjectRef(row)"
+                  :index="rowIndex"
+                  :operations="rowOperationsFor(row)"
+                  :run-operation="(opName, extra) => runRowOperation(row, opName, extra)"
+                  :render-slot="slots.actions!"
+                  :slot-props="rowActionsSlotProps(row, rowIndex)"
+                />
+                <ObjectListRowActions
+                  v-else
+                  :items="resolvedRowActionsFor(row)"
+                  :max-visible="0"
+                  :busy="rowOpRunning"
+                  :row-label="row.label || row.primaryKey"
+                  @menu-open-change="(open) => onTabMenuOpenChange(rowIdentityKey(row), open)"
+                  @trigger="(item) => triggerRowAction(row, rowIndex, item)"
+                />
+              </div>
+            </template>
           </div>
         </div>
         <button
@@ -3813,7 +4067,7 @@ defineExpose({
           aria-label="Scroll tabs right"
           @click="scrollTabsBy(1)"
         >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </button>
@@ -4474,6 +4728,7 @@ defineExpose({
       v-model="rowOpInputDialogOpen"
       :title="rowOpPendingDescriptor?.label"
       :fields="rowOpPendingInputFields"
+      :initial-values="rowOpPendingInitialValues"
       :busy="rowOpRunning"
       @confirm="confirmRowOpInput"
     ></operation-input-dialog>
@@ -5512,6 +5767,10 @@ mark {
   border-bottom: 1px solid var(--ui-divider, var(--el-border-color-lighter));
   box-sizing: border-box;
 }
+.sdk-object-list-tabs-bar.is-pill {
+  min-height: 32px;
+  border-bottom: 0;
+}
 .sdk-object-list-tabs-bar.is-empty {
   justify-content: space-between;
   padding: var(--spacing-xs, 4px) 0;
@@ -5589,30 +5848,127 @@ mark {
   align-items: center;
   flex: none;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  pointer-events: none;
+  transition: opacity var(--transition-fast, 0.15s ease);
 }
 .sdk-object-list-tab:hover .sdk-object-list-tab-actions,
 .sdk-object-list-tab:focus-within .sdk-object-list-tab-actions,
+.sdk-object-list-tab.is-menu-open .sdk-object-list-tab-actions,
 .sdk-object-list-tab.chosen .sdk-object-list-tab-actions {
   opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .sdk-object-list-tab-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.sdk-object-list-tab.is-renaming {
+  padding: 0 2px;
+  background: transparent;
+}
+.sdk-object-list-tab.is-renaming:hover:not(.is-non-selectable) {
+  background: transparent;
+}
+.sdk-object-list-tab-rename-input {
+  width: 160px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--el-color-primary);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  font: inherit;
+  font-size: var(--text-sm, 13px);
+  font-weight: 400;
+  line-height: 1;
+  box-sizing: border-box;
+  outline: none;
+  box-shadow: var(--focus-ring, 0 0 0 2px var(--el-color-primary-light-8));
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tabs-scroller {
+  align-items: center;
+  gap: 4px;
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab {
+  max-width: none;
+  height: 32px;
+  gap: 4px;
+  padding: 0 12px;
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--text-sm, 13px);
+  font-weight: 400;
+  color: var(--el-text-color-regular);
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab.has-actions {
+  padding-inline-end: 0;
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab.is-renaming {
+  padding: 0;
+  background: transparent;
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab:hover:not(.is-non-selectable):not(.is-renaming):not(.chosen) {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-regular);
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab.chosen:not(.is-renaming) {
+  background: var(--el-fill-color-dark);
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab.chosen::after {
+  display: none;
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab-label {
+  overflow: visible;
+  text-overflow: clip;
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab.chosen:not(:hover):not(:focus-within):not(.is-menu-open) .sdk-object-list-tab-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (hover: none) {
+  .sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab.chosen .sdk-object-list-tab-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab-actions :deep(.sdk-object-list-action-more-btn) {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  margin-right: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--el-text-color-tertiary, var(--el-text-color-placeholder));
+}
+.sdk-object-list-tabs-bar.is-pill .sdk-object-list-tab-actions :deep(.sdk-object-list-action-more-btn:hover:not(:disabled)) {
+  background: transparent;
+  color: var(--el-text-color-primary);
 }
 .sdk-object-list-tabs-scroll-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 32px;
   padding: 0;
-  border: 1px solid var(--ui-divider, var(--el-border-color-lighter));
-  border-radius: var(--border-radius-sm, 6px);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--el-text-color-secondary);
   cursor: pointer;
 }
 .sdk-object-list-tabs-scroll-btn:hover {
-  background: var(--el-fill-color-light);
+  background: var(--el-fill-color);
   color: var(--el-text-color-primary);
+}
+.sdk-object-list-tabs-scroll-btn:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 .sdk-object-list-tabs-extra {
   display: inline-flex;
