@@ -803,12 +803,12 @@ describe("panels two-entry architecture (catalog + detail)", () => {
     expect(catalogSource.manifest.members.catalogue.config.fallbackToFirst).toBe(false);
     expect(catalogSource.manifest.members.catalogue.config.pageSizes).toContain(100);
     expect(catalogSource.manifest.state.creating).not.toHaveProperty("deepLink", true);
-    expect(detailSource.manifest.state.detailMode.deepLink).toBe(false);
+    expect(detailSource.manifest.state.detailMode).not.toHaveProperty("deepLink", true);
     expect(detailSource.manifest.members.policyPicker).toMatchObject({
       component: "ReferencePicker", type: "platform:PermissionPolicy", state: { selected: "grantPolicy" },
     });
     expect(detailSource.manifest.members.grantSubmit).toMatchObject({
-      type: PRODUCT_PANEL, target: "selected", operation: "productPanels.grant",
+      target: "selected", operation: "productPanels.grant",
       operationParams: { policyId: { state: "grantPolicyId" }, verb: { state: "grantVerb" } },
     });
     expect(detailSource.manifest.members.grantsList.operations.revoke).toEqual({

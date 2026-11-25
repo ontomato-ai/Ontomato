@@ -80,14 +80,12 @@
           "kind": "scalar",
           "type": "boolean"
         },
-        "default": false,
-        "deepLink": false
+        "default": false
       }
     },
     "members": {
       "headerTitle": {
         "component": "ObjectHeader",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "record": "record"
@@ -99,7 +97,6 @@
       },
       "runtimeSummary": {
         "component": "ObjectSummary",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "record": "record"
@@ -128,7 +125,6 @@
       },
       "summary": {
         "component": "ObjectSummary",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "record": "record"
@@ -159,7 +155,6 @@
       },
       "declarationSummary": {
         "component": "ObjectSummary",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "record": "record"
@@ -179,7 +174,6 @@
       },
       "copyForm": {
         "component": "ObjectForm",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "form": {
@@ -204,7 +198,6 @@
       },
       "save": {
         "component": "ObjectForm",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "form": {
@@ -224,7 +217,6 @@
       },
       "entriesList": {
         "component": "ObjectList",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "rows": "entryRows"
@@ -313,7 +305,6 @@
       },
       "entryForm": {
         "component": "ObjectForm",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "form": {
@@ -336,7 +327,6 @@
       },
       "entriesForm": {
         "component": "ObjectForm",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "form": {
@@ -356,7 +346,6 @@
       },
       "referenceGraph": {
         "component": "ProductAssetGraph",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "graph": "referenceGraph"
@@ -365,7 +354,6 @@
       },
       "usedPanelsList": {
         "component": "ObjectList",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "rows": "usedPanels"
@@ -399,7 +387,6 @@
       },
       "panelMembersList": {
         "component": "ObjectList",
-        "type": "platform:ProductPanel",
         "target": "inspectedPanel",
         "data": {
           "rows": "memberRows"
@@ -433,7 +420,6 @@
       },
       "grantsList": {
         "component": "ObjectList",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "rows": "grantRows"
@@ -540,7 +526,6 @@
       },
       "grantSubmit": {
         "component": "OperationButton",
-        "type": "platform:Application",
         "target": "selected",
         "operation": "applications.grant",
         "operationParams": {
@@ -565,7 +550,6 @@
       },
       "shareEnable": {
         "component": "OperationButton",
-        "type": "platform:Application",
         "target": "selected",
         "operation": "applications.share",
         "operationParams": {
@@ -581,7 +565,6 @@
       },
       "shareDisable": {
         "component": "OperationButton",
-        "type": "platform:Application",
         "target": "selected",
         "operation": "applications.share",
         "operationParams": {
@@ -597,7 +580,6 @@
       },
       "shareStatusDesc": {
         "component": "TypedValue",
-        "type": "platform:Application",
         "target": "selected",
         "data": {
           "record": "record"
@@ -618,7 +600,6 @@
       },
       "deleteApp": {
         "component": "OperationButton",
-        "type": "platform:Application",
         "target": "selected",
         "operation": "applications.delete",
         "config": {

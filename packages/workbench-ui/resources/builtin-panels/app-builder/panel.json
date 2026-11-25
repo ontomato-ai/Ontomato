@@ -145,7 +145,6 @@
       "project": {
         "id": "builtin-product-app-builder-project",
         "component": "ObjectSummary",
-        "type": "platform:Application",
         "target": "app",
         "data": { "record": "builderProject" },
         "operations": {
@@ -169,12 +168,10 @@
       "sourceFiles": {
         "id": "builtin-product-app-builder-source-files",
         "component": "ObjectTree",
-        "type": "platform:Application",
         "target": "app",
         "data": { "files": "sourceFiles" },
         "state": { "selected": "file" },
         "config": {
-          "pathField": "path",
           "fallbackToFirst": true,
           "emptyText": "empty.noFiles",
           "label": "tab.files"
@@ -183,7 +180,6 @@
       "sourceFile": {
         "id": "builtin-product-app-builder-source-file",
         "component": "ObjectTextReader",
-        "type": "platform:Application",
         "target": "app",
         "data": {
           "record": {
@@ -201,7 +197,6 @@
       "sourceDiff": {
         "id": "builtin-product-app-builder-source-diff",
         "component": "ObjectTextReader",
-        "type": "platform:Application",
         "target": "app",
         "data": {
           "record": {
@@ -218,7 +213,6 @@
       "sourceCommits": {
         "id": "builtin-product-app-builder-source-commits",
         "component": "ObjectList",
-        "type": "platform:Application",
         "target": "app",
         "data": { "rows": "sourceCommits" },
         "operations": {
@@ -270,7 +264,6 @@
       "metaForm": {
         "id": "builtin-product-app-builder-meta-form",
         "component": "ObjectForm",
-        "type": "platform:Application",
         "target": "editTarget",
         "data": { "form": "builderMetaForm" },
         "operation": "applications.updateBuilderMeta",
@@ -279,7 +272,6 @@
       "publishForm": {
         "id": "builtin-product-app-builder-publish-form",
         "component": "ObjectForm",
-        "type": "platform:Application",
         "target": "app",
         "data": {
           "form": {
@@ -293,7 +285,6 @@
       "releases": {
         "id": "builtin-product-app-builder-releases",
         "component": "ObjectList",
-        "type": "platform:Application",
         "target": "app",
         "data": { "rows": "sourceReleases" },
         "operations": {

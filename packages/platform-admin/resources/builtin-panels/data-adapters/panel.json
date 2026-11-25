@@ -13,14 +13,12 @@
           "kind": "scalar",
           "type": "string"
         },
-        "default": "",
-        "deepLink": false
+        "default": ""
       }
     },
     "members": {
       "sandboxCapability": {
         "component": "ObjectSummary",
-        "type": "platform:DataAdapterConfig",
         "target": "domain",
         "data": {
           "record": "record"
@@ -36,7 +34,6 @@
       },
       "checkSandboxPermission": {
         "component": "OperationButton",
-        "type": "platform:DataAdapterConfig",
         "target": "domain",
         "operation": "dataAdapters.checkSandboxPermission",
         "config": {
@@ -47,7 +44,6 @@
       },
       "adapterForm": {
         "component": "ObjectForm",
-        "type": "platform:DataAdapterConfig",
         "target": "domain",
         "data": {
           "form": "form"
@@ -64,7 +60,6 @@
       },
       "routingForm": {
         "component": "ObjectForm",
-        "type": "platform:DataAdapterConfig",
         "target": "domain",
         "data": {
           "form": "routingForm"

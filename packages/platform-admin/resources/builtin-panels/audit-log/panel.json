@@ -81,7 +81,6 @@
       },
       "logDetail": {
         "component": "ObjectSummary",
-        "type": "platform:AuditLog",
         "target": "selectedLog",
         "data": {
           "record": "record"

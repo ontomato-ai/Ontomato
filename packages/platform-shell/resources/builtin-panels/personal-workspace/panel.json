@@ -87,22 +87,19 @@
         "type": {
           "kind": "object",
           "objectType": "@any"
-        },
-        "deepLink": false
+        }
       },
       "selectedCard": {
         "type": {
           "kind": "object",
           "objectType": "platform:DashboardCard"
-        },
-        "deepLink": false
+        }
       },
       "selectedTask": {
         "type": {
           "kind": "object",
           "objectType": "platform:ScheduledTask"
-        },
-        "deepLink": false
+        }
       }
     },
     "members": {
@@ -452,8 +449,7 @@
         },
         "config": {
           "maxMetrics": 6,
-          "maxCharts": 4,
-          "chartHeight": "220px"
+          "maxCharts": 4
         },
         "name": "Pinned dashboard cards",
         "description": "Live KPI numerals and thumbnail charts for followed dashboards.",
@@ -464,10 +460,6 @@
         "type": "platform:ScheduledTask",
         "data": {
           "rows": "list"
-        },
-        "config": {
-          "maxPerGroup": 6,
-          "showResolveAction": true
         },
         "name": "My scheduled tasks",
         "description": "Scheduled task attention summary, priority sections, and inline resolve actions.",
@@ -780,7 +772,6 @@
       },
       "cardMetricPreview": {
         "component": "MetricCard",
-        "type": "platform:DashboardCard",
         "target": "selectedCard",
         "data": {
           "result": "result"
@@ -794,7 +785,6 @@
       },
       "cardChartPreview": {
         "component": "MetricChart",
-        "type": "platform:DashboardCard",
         "target": "selectedCard",
         "data": {
           "template": "chartTemplate",
@@ -811,7 +801,6 @@
       },
       "cardMetricSource": {
         "component": "ObjectSummary",
-        "type": "platform:DashboardCard",
         "target": "selectedCard",
         "data": {
           "record": "metricSource"
@@ -834,13 +823,9 @@
       },
       "taskSummary": {
         "component": "ScheduledTaskRunDetail",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "data": {
           "record": "latestRunRecord"
-        },
-        "config": {
-          "showRefresh": true
         },
         "name": "Selected task recent run",
         "description": "Pause/failure callouts, status strip, timestamps, and cleaned output for the task's latest run.",

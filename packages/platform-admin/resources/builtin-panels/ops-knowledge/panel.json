@@ -73,7 +73,6 @@
         "config": {
           "field": "updatedAt",
           "kind": "time",
-          "timeFormat": "relative",
           "emptyText": ""
         },
         "id": "builtin-product-7e2c4a19-5b81-4f3d-9a0c-1d8e6b4a2f03"

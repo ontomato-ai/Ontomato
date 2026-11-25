@@ -73,7 +73,6 @@
       },
       "header": {
         "component": "ObjectHeader",
-        "type": "platform:SDKComponent",
         "target": "selected",
         "data": {
           "record": "record"
@@ -88,7 +87,6 @@
       },
       "summary": {
         "component": "ObjectSummary",
-        "type": "platform:SDKComponent",
         "target": "selected",
         "data": {
           "record": "record"
@@ -117,7 +115,6 @@
       },
       "dataTable": {
         "component": "ObjectList",
-        "type": "platform:SDKComponent",
         "target": "selected",
         "data": {
           "rows": "dataRows"
@@ -160,7 +157,6 @@
       },
       "configTable": {
         "component": "ObjectList",
-        "type": "platform:SDKComponent",
         "target": "selected",
         "data": {
           "rows": "configRows"
@@ -208,7 +204,6 @@
       },
       "inputTable": {
         "component": "ObjectList",
-        "type": "platform:SDKComponent",
         "target": "selected",
         "data": {
           "rows": "inputRows"
@@ -251,7 +246,6 @@
       },
       "outputTable": {
         "component": "ObjectList",
-        "type": "platform:SDKComponent",
         "target": "selected",
         "data": {
           "rows": "outputRows"
@@ -294,7 +288,6 @@
       },
       "operationTable": {
         "component": "ObjectList",
-        "type": "platform:SDKComponent",
         "target": "selected",
         "data": {
           "rows": "operationRows"

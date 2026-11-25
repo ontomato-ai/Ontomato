@@ -47,7 +47,6 @@
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
         "default": ""
       }
     },
@@ -208,7 +207,6 @@
       },
       "detailHeader": {
         "component": "ObjectHeader",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "data": {
           "record": "record"
@@ -221,7 +219,6 @@
       },
       "detailPause": {
         "component": "InfoBanner",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "data": {
           "record": "record"
@@ -237,7 +234,6 @@
       },
       "detailSummary": {
         "component": "ObjectSummary",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "data": {
           "record": "record"
@@ -260,7 +256,6 @@
       },
       "history": {
         "component": "ObjectList",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "data": {
           "rows": "runRecords"
@@ -310,7 +305,6 @@
       },
       "runDetail": {
         "component": "ObjectSummary",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "data": {
           "record": {
@@ -334,7 +328,6 @@
       },
       "focus": {
         "component": "ObjectSummary",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "data": {
           "record": {
@@ -365,7 +358,6 @@
       },
       "editForm": {
         "component": "ObjectForm",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "data": {
           "form": "form",
@@ -379,7 +371,6 @@
       },
       "newForm": {
         "component": "ObjectForm",
-        "type": "platform:ScheduledTask",
         "target": "newTask",
         "data": {
           "form": "form",
@@ -400,21 +391,18 @@
       },
       "opEnable": {
         "component": "OperationButton",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "operation": "platform:ScheduledTask.setEnabled",
         "id": "builtin-product-cc431561-faab-4244-ab89-d4e1465ce208"
       },
       "opRunNow": {
         "component": "OperationButton",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "operation": "schedules.runNow",
         "id": "builtin-product-8e1a6e5f-988e-42ac-8acb-aacefceea339"
       },
       "opDelete": {
         "component": "OperationButton",
-        "type": "platform:ScheduledTask",
         "target": "selectedTask",
         "operation": "platform:ScheduledTask.delete",
         "config": {
@@ -424,7 +412,6 @@
       },
       "renew": {
         "component": "PanelData",
-        "type": "platform:Application",
         "target": "schedulesApplication",
         "operation": "schedules.renewCredential",
         "id": "builtin-product-c533fb06-5286-495f-95f1-304b5752a802"

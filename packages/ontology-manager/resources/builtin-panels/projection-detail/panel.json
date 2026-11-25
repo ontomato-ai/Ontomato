@@ -21,94 +21,81 @@
           "kind": "scalar",
           "type": "string"
         },
-        "default": "view",
-        "deepLink": false
+        "default": "view"
       },
       "copyDialog": {
         "type": {
           "kind": "scalar",
           "type": "boolean"
         },
-        "default": false,
-        "deepLink": false
+        "default": false
       },
       "copyId": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": false
+        }
       },
       "copyName": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": false
+        }
       },
       "deleteRevision": {
         "type": {
           "kind": "scalar",
           "type": "number"
-        },
-        "deepLink": false
+        }
       },
       "grantDialog": {
         "type": {
           "kind": "scalar",
           "type": "boolean"
         },
-        "default": false,
-        "deepLink": false
+        "default": false
       },
       "grantPolicy": {
         "type": {
           "kind": "object",
           "objectType": "platform:PermissionPolicy"
-        },
-        "deepLink": false
+        }
       },
       "grantPolicyId": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": false
+        }
       },
       "grantVerb": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
-        "default": "USE",
-        "deepLink": false
+        "default": "USE"
       },
       "bindingObjectType": {
         "type": {
           "kind": "object",
           "objectType": "platform:ObjectType"
-        },
-        "deepLink": false
+        }
       },
       "bindingMetric": {
         "type": {
           "kind": "object",
           "objectType": "platform:MetricView"
-        },
-        "deepLink": false
+        }
       },
       "bindingAction": {
         "type": {
           "kind": "object",
           "objectType": "platform:Action"
-        },
-        "deepLink": false
+        }
       }
     },
     "members": {
       "headerTitle": {
         "component": "ObjectHeader",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "record": "record"
@@ -122,7 +109,6 @@
       },
       "summary": {
         "component": "ObjectSummary",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "record": "record"
@@ -149,7 +135,6 @@
       },
       "definitionSummary": {
         "component": "ObjectSummary",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "record": "record"
@@ -209,7 +194,6 @@
       },
       "dataList": {
         "component": "ObjectList",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "rows": "dataRows"
@@ -251,7 +235,6 @@
       },
       "configList": {
         "component": "ObjectList",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "rows": "configRows"
@@ -282,7 +265,6 @@
       },
       "inputsList": {
         "component": "ObjectList",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "rows": "inputRows"
@@ -313,7 +295,6 @@
       },
       "outputsList": {
         "component": "ObjectList",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "rows": "outputRows"
@@ -344,7 +325,6 @@
       },
       "operationsList": {
         "component": "ObjectList",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "rows": "operationRows"
@@ -381,7 +361,6 @@
       },
       "usedByList": {
         "component": "ObjectList",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "rows": "usedByRows"
@@ -412,7 +391,6 @@
       },
       "referenceGraph": {
         "component": "ProductAssetGraph",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "graph": "referenceGraph"
@@ -423,7 +401,6 @@
       },
       "grantsList": {
         "component": "ObjectList",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "rows": "grantRows"
@@ -505,7 +482,6 @@
       },
       "grantSubmit": {
         "component": "OperationButton",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "operation": "productProjections.grant",
         "operationParams": {
@@ -524,7 +500,6 @@
       },
       "shareEnable": {
         "component": "OperationButton",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "operation": "productProjections.share",
         "operationParams": {
@@ -540,7 +515,6 @@
       },
       "shareDisable": {
         "component": "OperationButton",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "operation": "productProjections.share",
         "operationParams": {
@@ -556,7 +530,6 @@
       },
       "shareStatusDesc": {
         "component": "TypedValue",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "record": "record"
@@ -577,7 +550,6 @@
       },
       "copySubmit": {
         "component": "OperationButton",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "operation": "productProjections.copy",
         "operationParams": {
@@ -596,7 +568,6 @@
       },
       "deleteProjection": {
         "component": "PanelData",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "operation": "productProjections.delete",
         "operationParams": {
@@ -610,7 +581,6 @@
       },
       "form": {
         "component": "ObjectForm",
-        "type": "platform:ProductProjection",
         "target": "selected",
         "data": {
           "form": "form"

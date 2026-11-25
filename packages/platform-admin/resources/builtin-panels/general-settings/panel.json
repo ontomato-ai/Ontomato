@@ -12,7 +12,6 @@
     "members": {
       "generalForm": {
         "component": "ObjectForm",
-        "type": "platform:GeneralSettings",
         "target": "settings",
         "data": {
           "form": "form"

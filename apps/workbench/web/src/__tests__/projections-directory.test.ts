@@ -1005,10 +1005,10 @@ describe("projections two-entry catalog & detail panels", () => {
     expect(catalogHtml).not.toContain("<sdk-dialog");
     expect(catalogHtml).not.toContain("<object-form-fields");
     expect(catalogSource.manifest.members.createForm.config.actions).toBe("none");
-    expect(catalogSource.manifest.state.creating.deepLink).toBe(false);
+    expect(catalogSource.manifest.state.creating).not.toHaveProperty("deepLink", true);
     expect(catalogSource.manifest.state.componentId.deepLink).toBe(true);
     expect(catalogSource.manifest.state.objectType.deepLink).toBe(true);
-    expect(detailSource.manifest.state.detailMode.deepLink).toBe(false);
+    expect(detailSource.manifest.state.detailMode).not.toHaveProperty("deepLink", true);
     expect(catalogSource.manifest.members.catalogue.config.showChevron).toBe(true);
     expect(catalogSource.manifest.members.catalogue.config.fallbackToFirst).toBe(false);
   });

@@ -134,15 +134,7 @@
           "showLayerFilter": false,
           "showLegend": false,
           "showToolbar": true,
-          "showHint": true,
-          "aggregateEdges": true,
-          "showEdgeLabels": true,
-          "showAggregateToggle": true,
-          "showEdgeLabelToggle": true,
-          "showZoomControls": true,
-          "showRefreshControl": true,
-          "showNeighborControls": false,
-          "neighborPageSize": 50
+          "showNeighborControls": false
         },
         "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000001"
       },
@@ -335,7 +327,6 @@
           "showRowIndex": true,
           "pinPrimaryColumn": true,
           "rowActivation": "dblclick",
-          "showPageJumper": true,
           "showRangeBar": true,
           "emptyText": "db.tableEmpty",
           "noMatchText": "db.tableNoMatch",
@@ -384,7 +375,6 @@
         "component": "ObjectForm",
         "name": "Configure detail panel form",
         "description": "Selects or clears the custom detail panel bound to this object type.",
-        "type": "platform:ObjectType",
         "target": "selectedClass",
         "data": {
           "form": "detailPanelForm"
@@ -427,7 +417,6 @@
         },
         "config": {
           "layout": "list",
-          "selectable": false,
           "searchable": false,
           "showFooter": false
         },

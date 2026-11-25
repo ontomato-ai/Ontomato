@@ -11,8 +11,7 @@
         "type": {
           "kind": "object",
           "objectType": "platform:Application"
-        },
-        "deepLink": false
+        }
       },
       "search": {
         "type": {
@@ -140,7 +139,6 @@
       },
       "copyForm": {
         "component": "ObjectForm",
-        "type": "platform:Application",
         "target": "copySource",
         "data": {
           "form": {

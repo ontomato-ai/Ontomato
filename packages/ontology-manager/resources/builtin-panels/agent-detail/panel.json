@@ -13,7 +13,6 @@
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
         "external": true,
         "default": "/ontology/agents"
       },
@@ -29,36 +28,31 @@
         "type": {
           "kind": "scalar",
           "type": "boolean"
-        },
-        "deepLink": false
+        }
       },
       "grantVerb": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
         "default": "use"
       },
       "grantPolicy": {
         "type": {
           "kind": "object",
           "objectType": "platform:PermissionPolicy"
-        },
-        "deepLink": false
+        }
       },
       "grantPolicyId": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": false
+        }
       }
     },
     "members": {
       "header": {
         "component": "ObjectHeader",
-        "type": "platform:AgentDefinition",
         "target": "selected",
         "data": {
           "record": "record"
@@ -73,7 +67,6 @@
       },
       "form": {
         "component": "ObjectForm",
-        "type": "platform:AgentDefinition",
         "target": "selected",
         "data": {
           "form": "form"
@@ -90,7 +83,6 @@
       },
       "remove": {
         "component": "OperationButton",
-        "type": "platform:AgentDefinition",
         "target": "selected",
         "operation": "agents.delete",
         "config": {
@@ -180,7 +172,6 @@
       },
       "grantsList": {
         "component": "ObjectList",
-        "type": "platform:AgentDefinition",
         "target": "selected",
         "data": {
           "rows": "grantRows"
@@ -242,7 +233,6 @@
       },
       "shareStatusDesc": {
         "component": "TypedValue",
-        "type": "platform:AgentDefinition",
         "target": "selected",
         "data": {
           "record": "record"
@@ -265,7 +255,6 @@
       },
       "shareEnable": {
         "component": "OperationButton",
-        "type": "platform:AgentDefinition",
         "target": "selected",
         "operation": "agents.share",
         "operationParams": {
@@ -283,7 +272,6 @@
       },
       "shareDisable": {
         "component": "OperationButton",
-        "type": "platform:AgentDefinition",
         "target": "selected",
         "operation": "agents.share",
         "operationParams": {
@@ -301,7 +289,6 @@
       },
       "grantSubmit": {
         "component": "OperationButton",
-        "type": "platform:AgentDefinition",
         "target": "selected",
         "operation": "agents.grant",
         "operationParams": {

@@ -120,7 +120,6 @@
       },
       "setStatus": {
         "component": "OperationButton",
-        "type": "platform:Action",
         "target": "checked",
         "operation": "actions.setStatus",
         "operationParams": {

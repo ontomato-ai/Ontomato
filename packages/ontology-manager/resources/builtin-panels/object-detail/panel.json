@@ -81,7 +81,6 @@
         "component": "ObjectForm",
         "name": "Configure detail panel form",
         "description": "Selects or clears the custom detail panel bound to this object type.",
-        "type": "platform:ObjectType",
         "target": "selectedClass",
         "data": {
           "form": "detailPanelForm"

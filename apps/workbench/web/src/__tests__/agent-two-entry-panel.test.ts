@@ -861,7 +861,7 @@ describe("agent-settings & agent-detail two-entry builtin panels", () => {
     expect(detailSource.manifest.state.tab.deepLink).toBe(true);
     expect(detailSource.manifest.state.catalogPath.external).toBe(true);
     for (const key of ["grantDialog", "grantPolicy", "grantPolicyId", "grantVerb"] as const) {
-      expect(detailSource.manifest.state[key].deepLink).toBe(false);
+      expect(detailSource.manifest.state[key]).not.toHaveProperty("deepLink", true);
     }
     expect(detailSource.manifest.members.policyPicker.type).toBe("platform:PermissionPolicy");
     expect(detailSource.manifest.members.remove.config.hideWhenUnavailable).toBe(true);

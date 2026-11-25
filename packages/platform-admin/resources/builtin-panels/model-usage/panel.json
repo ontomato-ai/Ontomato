@@ -12,7 +12,6 @@
     "members": {
       "usageForm": {
         "component": "ObjectForm",
-        "type": "platform:ModelUsage",
         "target": "domain",
         "data": {
           "form": "form"
@@ -29,7 +28,6 @@
       },
       "vectorStatus": {
         "component": "InfoBanner",
-        "type": "platform:ModelUsage",
         "target": "domain",
         "data": {
           "record": "vectorRebuild"
@@ -44,7 +42,6 @@
       },
       "rebuildVectors": {
         "component": "OperationButton",
-        "type": "platform:ModelUsage",
         "target": "domain",
         "operation": "modelUsage.rebuildVectors",
         "name": "Rebuild vectors",
@@ -53,7 +50,6 @@
       },
       "pauseVectorRebuild": {
         "component": "OperationButton",
-        "type": "platform:ModelUsage",
         "target": "domain",
         "operation": "modelUsage.pauseVectorRebuild",
         "name": "Pause vector rebuild",

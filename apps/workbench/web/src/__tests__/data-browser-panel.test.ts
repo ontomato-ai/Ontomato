@@ -711,7 +711,7 @@ describe("builtin-product-data-browser panel", () => {
       expect(instanceTableProjection?.config?.showRowIndex).toBe(true);
       expect(instanceTableProjection?.config?.pinPrimaryColumn).toBe(true);
       expect(instanceTableProjection?.config?.rowActivation).toBe("dblclick");
-      expect(instanceTableProjection?.config?.showPageJumper).toBe(true);
+      expect(instanceTableProjection?.config?.showPageJumper).not.toBe(false);
       expect(instanceTableProjection?.config?.showRangeBar).toBe(true);
       expect(element.querySelector('[data-testid="object-list-range-bar"]')).not.toBeNull();
       expect(route.router.currentRoute.value.fullPath).toContain("viewMode=table");
@@ -1010,7 +1010,7 @@ describe("builtin-product-data-browser panel", () => {
     const instanceGraphProjection = projections.get("builtin-product-9f3c1e20-4b7d-4e92-a814-000000000001");
     expect(instanceGraphProjection?.config?.fitMode).toBe("fit");
     expect(instanceGraphProjection?.config?.expandOn).toBe("activate");
-    expect(instanceGraphProjection?.config?.showHint).toBe(true);
+    expect(instanceGraphProjection?.config?.showHint).not.toBe(false);
     expect(instanceGraphProjection?.config?.showNeighborControls).toBe(false);
     const classPickerProjection = projections.get("builtin-product-9f3c1e20-4b7d-4e92-a814-000000000002");
     expect(classPickerProjection?.config?.metaField).toBe("instanceCount");

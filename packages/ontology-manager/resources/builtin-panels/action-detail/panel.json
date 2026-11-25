@@ -21,29 +21,25 @@
           "kind": "scalar",
           "type": "boolean"
         },
-        "deepLink": false,
         "default": false
       },
       "activeSegmentId": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": false
+        }
       },
       "selectedParameter": {
         "type": {
           "kind": "child-object",
           "parentType": "platform:Action",
           "collection": "parameters"
-        },
-        "deepLink": false
+        }
       }
     },
     "members": {
       "header": {
         "component": "ObjectHeader",
-        "type": "platform:Action",
         "target": "selected",
         "data": {
           "record": "record"
@@ -56,7 +52,6 @@
       },
       "trial": {
         "component": "OperationButton",
-        "type": "platform:Action",
         "target": "selected",
         "operation": "actions.trial",
         "config": {
@@ -66,7 +61,6 @@
       },
       "publish": {
         "component": "OperationButton",
-        "type": "platform:Action",
         "target": "selected",
         "operation": "actions.setStatus",
         "config": {
@@ -77,7 +71,6 @@
       },
       "trialSummary": {
         "component": "ObjectSummary",
-        "type": "platform:Action",
         "target": "selected",
         "data": {
           "record": "trialSummary"
@@ -94,7 +87,6 @@
       },
       "remove": {
         "component": "OperationButton",
-        "type": "platform:Action",
         "target": "selected",
         "operation": "actions.delete",
         "config": {
@@ -107,7 +99,6 @@
       },
       "form": {
         "component": "ObjectForm",
-        "type": "platform:Action",
         "target": "selected",
         "data": {
           "form": "form",
@@ -155,7 +146,6 @@
       },
       "derivedSummary": {
         "component": "ObjectSummary",
-        "type": "platform:Action",
         "target": "selected",
         "data": {
           "record": "derivedSummary"
@@ -174,7 +164,6 @@
       },
       "derivedEffects": {
         "component": "ObjectList",
-        "type": "platform:Action",
         "target": "selected",
         "data": {
           "rows": "derivedEffects"
@@ -229,7 +218,6 @@
       },
       "derivedParameters": {
         "component": "ObjectList",
-        "type": "platform:Action",
         "target": "selected",
         "data": {
           "rows": "derivedParameters"
@@ -286,7 +274,6 @@
       },
       "derivedConditions": {
         "component": "ObjectList",
-        "type": "platform:Action",
         "target": "selected",
         "data": {
           "rows": "derivedConditions"
@@ -326,7 +313,6 @@
       },
       "explanation": {
         "component": "AnnotatedCode",
-        "type": "platform:Action",
         "target": "selected",
         "data": {
           "content": "annotatedExplanation"

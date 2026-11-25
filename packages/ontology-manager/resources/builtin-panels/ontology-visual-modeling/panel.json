@@ -94,7 +94,6 @@
         },
         "config": {
           "layout": "list",
-          "selectable": false,
           "searchable": false,
           "showFooter": false
         },
@@ -110,7 +109,6 @@
         },
         "config": {
           "layout": "list",
-          "selectable": false,
           "searchable": false,
           "showFooter": false
         },
@@ -118,7 +116,6 @@
       },
       "nodeHeader": {
         "component": "ObjectHeader",
-        "type": "platform:ObjectType",
         "target": "selectedNode",
         "data": {
           "record": "record"
@@ -130,7 +127,6 @@
       },
       "edgeHeader": {
         "component": "ObjectHeader",
-        "type": "platform:Relationship",
         "target": "selectedEdge",
         "data": {
           "record": "record"
@@ -140,7 +136,6 @@
       },
       "classForm": {
         "component": "ObjectForm",
-        "type": "platform:ObjectType",
         "target": "selectedNode",
         "data": {
           "form": "form"
@@ -150,7 +145,6 @@
       },
       "classInlineForm": {
         "component": "ObjectForm",
-        "type": "platform:ObjectType",
         "target": "selectedNode",
         "data": {
           "form": "inlineForm"
@@ -172,7 +166,6 @@
       },
       "classDelete": {
         "component": "OperationButton",
-        "type": "platform:ObjectType",
         "target": "selectedNode",
         "operation": "objectTypes.delete",
         "config": {
@@ -186,7 +179,6 @@
       },
       "relationForm": {
         "component": "ObjectForm",
-        "type": "platform:Relationship",
         "target": "selectedEdge",
         "data": {
           "form": "form"
@@ -196,7 +188,6 @@
       },
       "relationEditFrom": {
         "component": "ObjectRefCard",
-        "type": "platform:Relationship",
         "target": "selectedEdge",
         "data": {
           "record": "record"
@@ -211,7 +202,6 @@
       },
       "relationEditTo": {
         "component": "ObjectRefCard",
-        "type": "platform:Relationship",
         "target": "selectedEdge",
         "data": {
           "record": "record"
@@ -245,7 +235,6 @@
       },
       "relationDelete": {
         "component": "OperationButton",
-        "type": "platform:Relationship",
         "target": "selectedEdge",
         "operation": "relationships.delete",
         "config": {
@@ -276,7 +265,6 @@
         },
         "config": {
           "layout": "cards",
-          "selectable": false,
           "subtitleField": "name",
           "showFooter": false,
           "searchable": false,
@@ -286,7 +274,6 @@
       },
       "attributeInlineForm": {
         "component": "ObjectForm",
-        "type": "platform:Attribute",
         "target": "selectedAttribute",
         "data": {
           "form": "inlineForm"

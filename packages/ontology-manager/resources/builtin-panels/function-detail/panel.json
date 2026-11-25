@@ -33,7 +33,6 @@
       },
       "definition": {
         "component": "ObjectForm",
-        "type": "platform:Function",
         "target": "selected",
         "data": {
           "form": "form",

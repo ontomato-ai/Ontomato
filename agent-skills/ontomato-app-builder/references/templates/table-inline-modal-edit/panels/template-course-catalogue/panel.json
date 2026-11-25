@@ -9,28 +9,20 @@
           "kind": "scalar",
           "type": "string"
         },
-        "personal": false,
         "deepLink": true,
-        "external": false,
         "default": ""
       },
       "editing": {
         "type": {
           "kind": "object",
           "objectType": "Course"
-        },
-        "personal": false,
-        "deepLink": false,
-        "external": false
+        }
       },
       "tab": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
-        "personal": false,
-        "deepLink": false,
-        "external": false,
         "default": "details"
       }
     },
