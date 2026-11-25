@@ -32,6 +32,15 @@
           "kind": "object",
           "objectType": "platform:Attribute"
         }
+      },
+      "expandedAttributes": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        }
       }
     },
     "members": {
@@ -66,13 +75,16 @@
           }
         },
         "state": {
-          "search": "search"
+          "search": "search",
+          "expandedKeys": "expandedAttributes"
         },
         "operations": {
           "delete": "attributes.delete"
         },
         "config": {
           "layout": "table",
+          "rowActivation": "expand",
+          "rowExpandMode": "single",
           "showChevron": false,
           "showFooter": false,
           "searchable": false,

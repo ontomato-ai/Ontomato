@@ -5860,6 +5860,7 @@ defineExpose({
               v-if="slots.card"
               :list-slot="member.key"
               :row-ref="rowObjectRef(entry.row)"
+              :item-key="rowItemKey(entry.row)"
               :index="entry.rowIndex"
               :operations="rowOperationsFor(entry.row)"
               :operation-results="rowResultsFor(entry.row)"

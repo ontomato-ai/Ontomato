@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { h, nextTick } from "vue";
+import { defineComponent, h, nextTick } from "vue";
+import { provideUnsavedChanges } from "@ontomato/platform-shell";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
@@ -480,6 +481,7 @@ function mountObjectsRoute(
     onDeleteAttribute?: (target: unknown) => unknown;
     onRead?: (body: ProductPanelReadRequest) => Response | undefined;
     attributeDeleteUnavailable?: (attribute: SampleAttribute) => { reason: string } | undefined;
+    confirmLeave?: () => boolean | Promise<boolean>;
   } = {},
 ) {
   const objectTypesList = options.objectTypes ? [...options.objectTypes] : [...sampleObjectTypes];
@@ -736,6 +738,16 @@ function mountObjectsRoute(
         },
       ];
       await router.push(panelAddress(use.path, initialState, objectsPanel.manifest));
+      if (options.confirmLeave) {
+        const confirmLeaveUnsaved = async () => Boolean(await options.confirmLeave!());
+        const Shell = defineComponent({
+          setup() {
+            provideUnsavedChanges(confirmLeaveUnsaved);
+            return () => h(RouterView);
+          },
+        });
+        return mountPlatformPage(() => h(Shell), router);
+      }
       return mountPlatformPage(() => h(RouterView), router);
     },
   };
@@ -1219,10 +1231,10 @@ describe("ontology-objects cleaned builtin panel", () => {
             outputs: { isPrimaryKey: false, className: "warehouse" },
           });
           // First create refreshes only ATTRIBUTE; second create refreshes OBJECT_TYPE to exercise detail re-read failure.
+          // Omit `created` here so OO-06 auto-expand does not switch the open inline row away from "code" mid-draft.
           return {
             kind: "success",
             data: { primaryKey: createdKey },
-            created: { objectType: ATTRIBUTE, primaryKey: createdKey },
             affected: failDetailReread
               ? {
                 objects: [{ objectType: OBJECT_TYPE, primaryKey: "warehouse" }],
@@ -1469,20 +1481,15 @@ describe("ontology-objects cleaned builtin panel", () => {
       expect(saveBtn).toBeTruthy();
       saveBtn!.click();
 
-      // After save: create dialog closes, no drawer opens, and the new attribute appears in the list via affected refresh.
+      // After save: create dialog closes, no drawer opens, and OO-06 auto-expands the newly created attribute row.
       await vi.waitFor(() => {
         expect(submittedCreates).toEqual([{ className: "warehouse", name: "region" }]);
         expect(document.querySelector('.el-dialog [data-field="/className"]')).toBeNull();
         expect(document.querySelector(".el-drawer")).toBeNull();
         expect(element.textContent).toContain("Region");
-      });
-      expect(route.router.currentRoute.value.fullPath).not.toContain("creatingAttribute");
-
-      // Expand the newly created attribute row to edit inline via attributeRowForm.
-      await expandAttributeRow(element, "Region");
-      await vi.waitFor(() => {
         expect(element.querySelector<HTMLInputElement>('.ot-attr-editor [data-field="/showName"] input')?.value).toBe("Region");
       });
+      expect(route.router.currentRoute.value.fullPath).not.toContain("creatingAttribute");
       expect(route.router.currentRoute.value.fullPath).not.toContain("editingAttribute");
 
       // Toggle /primaryKey switch and save through attributeRowForm.save.
@@ -1732,6 +1739,78 @@ describe("ontology-objects cleaned builtin panel", () => {
       manageBtn.click();
       await vi.waitFor(() => {
         expect(route.router.currentRoute.value.fullPath).toBe("/ontology/panels");
+      });
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("OO-06: toggles attribute inline detail via whole-row click, Enter/Space, trailing chevron indicator, and dirty-form leave guard", async () => {
+    let allowLeave = false;
+    const confirmLeave = vi.fn(async () => allowLeave);
+    const route = mountObjectsRoute(
+      { selected: { className: OBJECT_TYPE, primaryKey: "warehouse" } },
+      { confirmLeave },
+    );
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        const rows = element.querySelectorAll<HTMLTableRowElement>(".ot-detail-list-host tr[data-row-item='true']");
+        expect(rows.length).toBeGreaterThanOrEqual(2);
+      });
+
+      // No leading expand column; trailing chevron indicator has aria-expanded="false".
+      expect(element.querySelector(".ot-detail-list-host .sdk-object-list-expand-col")).toBeNull();
+      const indicators = element.querySelectorAll<HTMLButtonElement>(".ot-detail-list-host [data-row-expand-indicator='true']");
+      expect(indicators.length).toBeGreaterThanOrEqual(2);
+      expect(indicators[0]!.getAttribute("aria-expanded")).toBe("false");
+
+      const rows = element.querySelectorAll<HTMLTableRowElement>(".ot-detail-list-host tr[data-row-item='true']");
+      const row0 = rows[0]!;
+      const row1 = rows[1]!;
+
+      // Whole-row click expands row 0.
+      row0.click();
+      await vi.waitFor(() => {
+        expect(row0.getAttribute("aria-expanded")).toBe("true");
+        expect(element.querySelector<HTMLInputElement>('.ot-attr-editor [data-field="/showName"] input')).not.toBeNull();
+      });
+
+      // Enter key collapses row 0.
+      row0.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      await vi.waitFor(() => {
+        expect(row0.getAttribute("aria-expanded")).toBe("false");
+        expect(element.querySelector(".ot-attr-editor")).toBeNull();
+      });
+
+      // Space key expands row 1.
+      row1.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      await vi.waitFor(() => {
+        expect(row1.getAttribute("aria-expanded")).toBe("true");
+        expect(element.querySelector<HTMLInputElement>('.ot-attr-editor [data-field="/showName"] input')).not.toBeNull();
+      });
+
+      // Dirty-form leave guard blocks switching rows when cancelled and proceeds when confirmed.
+      const input = element.querySelector<HTMLInputElement>('.ot-attr-editor [data-field="/showName"] input')!;
+      input.value = "Unsaved edit";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await nextTick();
+
+      row0.click();
+      await vi.waitFor(() => {
+        expect(confirmLeave).toHaveBeenCalledTimes(1);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await nextTick();
+      expect(row1.getAttribute("aria-expanded")).toBe("true");
+      expect(row0.getAttribute("aria-expanded")).toBe("false");
+
+      allowLeave = true;
+      row0.click();
+      await vi.waitFor(() => {
+        expect(confirmLeave).toHaveBeenCalledTimes(2);
+        expect(row0.getAttribute("aria-expanded")).toBe("true");
+        expect(row1.getAttribute("aria-expanded")).toBe("false");
       });
     } finally {
       app.unmount();

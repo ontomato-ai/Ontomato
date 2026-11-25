@@ -131,6 +131,19 @@ export interface PanelFormAdapter {
   };
 }
 
+const SCOPED_FORM_SEPARATOR = "\u0000";
+
+/** Base manifest member slot name for a form registration key (strips any per-row/card scope suffix). */
+export function baseFormSlot(key: string): string {
+  const sep = key.indexOf(SCOPED_FORM_SEPARATOR);
+  return sep === -1 ? key : key.slice(0, sep);
+}
+
+/** Builds a collision-free form registration key for a row/card-scoped form instance. */
+export function scopedFormSlot(slot: string, scopeKey: string): string {
+  return `${slot}${SCOPED_FORM_SEPARATOR}${scopeKey}`;
+}
+
 /** The form adapters one panel instance's projections registered, by slot. */
 export class PanelFormAdapters {
   readonly #bySlot = shallowReactive(new Map<string, PanelFormAdapter>());
@@ -156,9 +169,16 @@ export class PanelFormAdapters {
   }
 
   dirtyInputs(): { member: string; fields: string[] }[] {
-    return [...this.#bySlot].flatMap(([member, adapter]) => adapter.dirty()
-      ? [{ member, fields: [...(this.#boundState.get(member) ?? []), ...(adapter.draft?.inputStateKeys() ?? [])] }]
-      : []);
+    return [...this.#bySlot].flatMap(([key, adapter]) => {
+      if (!adapter.dirty()) return [];
+      const member = baseFormSlot(key);
+      const bound = new Set<string>([
+        ...(this.#boundState.get(key) ?? []),
+        ...(this.#boundState.get(member) ?? []),
+        ...(adapter.draft?.inputStateKeys() ?? []),
+      ]);
+      return [{ member, fields: [...bound] }];
+    });
   }
 
   captureDirtyDrafts() {
@@ -202,20 +222,36 @@ export class PanelFormAdapters {
     const list = [...slots];
     if (!this.memberOrder.length) return list;
     const rank = (slot: string) => {
-      const index = this.memberOrder.indexOf(slot);
+      const index = this.memberOrder.indexOf(baseFormSlot(slot));
       return index === -1 ? this.memberOrder.length : index;
     };
     return list.sort((a, b) => rank(a) - rank(b));
   }
 
+  #matchingEntries(slot: string): [string, PanelFormAdapter][] {
+    const direct = this.#bySlot.get(slot);
+    if (direct) return [[slot, direct]];
+    if (slot.includes(SCOPED_FORM_SEPARATOR)) return [];
+    const matches: [string, PanelFormAdapter][] = [];
+    for (const [key, adapter] of this.#bySlot.entries()) {
+      if (baseFormSlot(key) === slot) matches.push([key, adapter]);
+    }
+    return matches;
+  }
+
+  #resolveSingle(slot: string): PanelFormAdapter | undefined {
+    const matches = this.#matchingEntries(slot);
+    return matches.length === 1 ? matches[0]![1] : undefined;
+  }
+
   /** The form a slot holds, for the projections that edit one of its fields; undefined until it registers. */
   handle(slot: string): PanelFormHandle | undefined {
-    return this.#bySlot.get(slot)?.handle;
+    return this.#resolveSingle(slot)?.handle;
   }
 
   /** Mounted form slot keys in manifest declaration order. */
   mountedSlots(): string[] {
-    return this.#orderedSlots(this.#bySlot.keys());
+    return this.#orderedSlots(this.#bySlot.keys()).map((key) => baseFormSlot(key));
   }
 
   /** Fills explicit fields on the mounted form in `slot` through its live editing entry. */
@@ -224,20 +260,59 @@ export class PanelFormAdapters {
     values: Readonly<Record<string, RuntimeJsonValue>>,
     options?: FormFillOptions,
   ): Promise<FormFillOutcome> {
-    const adapter = this.#bySlot.get(slot);
+    const matches = this.#matchingEntries(slot);
+    let adapter: PanelFormAdapter | undefined;
+    if (matches.length === 1) {
+      adapter = matches[0]![1];
+    } else if (matches.length > 1) {
+      const filtered = matches.filter(([, candidate]) => {
+        const snap = candidate.snapshot?.();
+        if (options?.expectedFormInstanceId !== undefined && snap?.formInstanceId !== options.expectedFormInstanceId) {
+          return false;
+        }
+        if (options?.expectedTarget !== undefined) {
+          const target = snap?.target;
+          if (!target || target.kind !== options.expectedTarget.kind || target.objectType !== options.expectedTarget.objectType) {
+            return false;
+          }
+          if (target.kind === "object" && options.expectedTarget.kind === "object" && target.primaryKey !== options.expectedTarget.primaryKey) {
+            return false;
+          }
+        }
+        return true;
+      });
+      if (filtered.length === 1) {
+        adapter = filtered[0]![1];
+      } else if (filtered.length === 0) {
+        return {
+          ok: false,
+          reason: "stale",
+          member: baseFormSlot(slot),
+          message: `Form '${baseFormSlot(slot)}' no longer matches the expected instance or target`,
+        };
+      } else {
+        return {
+          ok: false,
+          reason: "form_ambiguous",
+          member: baseFormSlot(slot),
+          message: `Multiple '${baseFormSlot(slot)}' forms are open; specify expectedFormInstanceId or expectedTarget.`,
+        };
+      }
+    }
     if (!adapter) {
       return {
         ok: false,
         reason: options?.expectedFormInstanceId !== undefined ? "stale" : "form_not_found",
-        member: slot,
-        message: `Form '${slot}' is not mounted`,
+        member: baseFormSlot(slot),
+        message: `Form '${baseFormSlot(slot)}' is not mounted`,
       };
     }
-    if (!adapter.fill) return { ok: false, reason: "form_not_ready", member: slot, message: `Form '${slot}' does not support live filling` };
+    if (!adapter.fill) return { ok: false, reason: "form_not_ready", member: baseFormSlot(slot), message: `Form '${baseFormSlot(slot)}' does not support live filling` };
     const result = await adapter.fill(values, options);
+    const member = baseFormSlot(slot);
     return result.ok
-      ? { ok: true, member: slot, filledFields: result.filledFields, ...(result.write ? { write: result.write } : {}), ...(result.rejectedFields?.length ? { rejectedFields: result.rejectedFields } : {}) }
-      : { ok: false, reason: result.reason, member: slot, ...(result.rejectedFields?.length ? { rejectedFields: result.rejectedFields } : {}), ...(result.message ? { message: result.message } : {}) };
+      ? { ok: true, member, filledFields: result.filledFields, ...(result.write ? { write: result.write } : {}), ...(result.rejectedFields?.length ? { rejectedFields: result.rejectedFields } : {}) }
+      : { ok: false, reason: result.reason, member, ...(result.rejectedFields?.length ? { rejectedFields: result.rejectedFields } : {}), ...(result.message ? { message: result.message } : {}) };
   }
 
   /**
@@ -247,7 +322,7 @@ export class PanelFormAdapters {
   dirty(slots?: string | readonly string[]): boolean {
     if (slots === undefined) return [...this.#bySlot.values()].some((adapter) => adapter.dirty());
     const list = typeof slots === "string" ? [slots] : slots;
-    return list.some((slot) => Boolean(this.#bySlot.get(slot)?.dirty()));
+    return list.some((slot) => this.#matchingEntries(slot).some(([, adapter]) => adapter.dirty()));
   }
 
   /**
@@ -263,23 +338,24 @@ export class PanelFormAdapters {
     }
     const seen = new Set<string>();
     for (const slot of slots) {
-      if (seen.has(slot)) continue;
-      seen.add(slot);
-      const adapter = this.#bySlot.get(slot);
-      if (adapter?.dirty()) adapter.discard();
+      for (const [key, adapter] of this.#matchingEntries(slot)) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (adapter.dirty()) adapter.discard();
+      }
     }
   }
 
   /** Saves what the form in a slot holds now, optionally dispatching through another member's bound write operation. */
   submit(slot: string, override?: FormSubmitOverride): Promise<unknown> {
-    const adapter = this.#bySlot.get(slot);
+    const adapter = this.#resolveSingle(slot);
     if (!adapter) throw new Error(`Slot '${slot}' holds no form`);
     return override === undefined ? adapter.submit() : adapter.submit(override);
   }
 
   /** Drops unsaved edits in a slot's form, restoring its owner baseline. */
   discard(slot: string): void {
-    this.#bySlot.get(slot)?.discard();
+    this.#resolveSingle(slot)?.discard();
   }
 
   /**
@@ -305,11 +381,12 @@ export class PanelFormAdapters {
           ({ objectType, primaryKey }) =>
             objectType === target.objectType && primaryKey === target.primaryKey,
         );
+      const base = baseFormSlot(slot);
       const stateCleared =
         !targetRemoved
         && hasClearedStates
         && (
-          [...(this.#boundState.get(slot) ?? [])].some((key) => clearedStateKeys!.has(key))
+          [...(this.#boundState.get(slot) ?? []), ...(this.#boundState.get(base) ?? [])].some((key) => clearedStateKeys!.has(key))
           || [...(adapter.draft?.inputStateKeys() ?? [])].some((key) => clearedStateKeys!.has(key))
         );
       if (targetRemoved || stateCleared) adapter.discard();
@@ -321,14 +398,14 @@ export class PanelFormAdapters {
    * `options.confirm` is `true`. Resolves `false` when the slot has no mounted form or the reader cancels.
    */
   reset(slot: string, options?: { confirm?: boolean }): Promise<boolean> {
-    const adapter = this.#bySlot.get(slot);
+    const adapter = this.#resolveSingle(slot);
     if (!adapter) return Promise.resolve(false);
     return adapter.handle.reset(options);
   }
 
   /** Returns the current snapshot for a single mounted form slot, or null if not mounted or still loading. */
   snapshot(slot: string): Omit<PageFormSnapshot, "member" | "memberPath"> | null {
-    const adapter = this.#bySlot.get(slot);
+    const adapter = this.#resolveSingle(slot);
     if (!adapter) return null;
     if (adapter.snapshot) return adapter.snapshot();
     if (!adapter.handle?.values) return null;
@@ -362,7 +439,7 @@ export class PanelFormAdapters {
       for (const [k, v] of Object.entries(snap.values)) {
         if (v !== undefined) cleanValues[k] = v;
       }
-      result.push({ member: slot, ...snap, values: cleanValues });
+      result.push({ member: baseFormSlot(slot), ...snap, values: cleanValues });
     }
     return result;
   }

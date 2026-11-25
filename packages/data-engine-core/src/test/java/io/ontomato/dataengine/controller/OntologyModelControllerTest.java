@@ -268,6 +268,48 @@ class OntologyModelControllerTest {
 				.andExpect(status().isBadRequest());
 	}
 
+	@Test
+	void inlineFormModeRoutesToInlineOwnerMethods() throws Exception {
+		when(service.objectTypeInlineForm(any(), eq(user), eq("en"))).thenReturn(new FormDescription(
+				List.of(object("path", "/showName", "label", "Display name", "control", object("kind", "text"),
+						"valueSchema", object("type", "string"), "required", false, "readOnly", false,
+						"submitOn", "blur")),
+				Map.of("className", "Device", "showName", "Device"),
+				new FormSave("POST", "/ontology/model/object-type/update", object("type", "object"))));
+		when(service.attributeInlineForm(any(), eq(user), eq("en"))).thenReturn(new FormDescription(
+				List.of(object("path", "/enable", "label", "Enabled", "control", object("kind", "switch"),
+						"valueSchema", object("type", "boolean"), "required", false, "readOnly", false,
+						"submitOn", "change")),
+				Map.of("className", "Device", "name", "site_id", "enable", true),
+				new FormSave("POST", "/ontology/model/attribute/update", object("type", "object"))));
+
+		var objectResponse = mvc().perform(post("/ontology/model/object-type/form")
+				.param("mode", "inline")
+				.header("Accept-Language", "en")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"target":{"kind":"object","objectType":"platform:ObjectType","primaryKey":"Device"},
+						"values":null,"changedField":null}
+						"""))
+				.andExpect(status().isOk()).andReturn().getResponse();
+		assertEquals("blur", JSON.parseObject(objectResponse.getContentAsString())
+				.getJSONArray("fields").getJSONObject(0).getString("submitOn"));
+		verify(service).objectTypeInlineForm(any(), eq(user), eq("en"));
+
+		var attrResponse = mvc().perform(post("/ontology/model/attribute/form")
+				.param("mode", "inline")
+				.header("Accept-Language", "en")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"target":{"kind":"object","objectType":"platform:Attribute","primaryKey":"[\\"Device\\",\\"site_id\\"]"},
+						"values":null,"changedField":null}
+						"""))
+				.andExpect(status().isOk()).andReturn().getResponse();
+		assertEquals("change", JSON.parseObject(attrResponse.getContentAsString())
+				.getJSONArray("fields").getJSONObject(0).getString("submitOn"));
+		verify(service).attributeInlineForm(any(), eq(user), eq("en"));
+	}
+
 	private MockMvc mvc() {
 		return MockMvcBuilders.standaloneSetup(controller)
 				.setMessageConverters(new MappingJackson2HttpMessageConverter()).build();

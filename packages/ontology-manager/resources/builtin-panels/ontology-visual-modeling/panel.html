@@ -17,23 +17,7 @@
     overflow: hidden;
     pointer-events: none;
   }
-  .vm-toolbar {
-    display: flex;
-    min-height: 48px;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-xs) var(--page-gutter);
-    font-size: var(--text-sm);
-    color: var(--sdk-text-color-secondary);
-    flex: 0 0 auto;
-  }
-  .vm-toolbar .vm-hint {
-    flex: 1 1 16rem;
-    min-width: 0;
-  }
   .vm-selection {
-    margin-left: auto;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -186,8 +170,57 @@
     gap: var(--spacing-xs);
     padding: var(--spacing-sm) var(--spacing-md);
   }
-  .vm-attributes .sdk-object-list-card-fields {
-    gap: 2px var(--spacing-sm);
+  .vm-attr-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .vm-attr-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-xs);
+    min-width: 0;
+  }
+  .vm-attr-card-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs);
+    min-width: 0;
+    font-size: var(--text-sm);
+    color: var(--sdk-text-color-primary);
+  }
+  .vm-attr-card-title code {
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .vm-attr-type-row .sdk-object-form-fields {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+  .vm-attr-switches .sdk-object-form-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs) var(--spacing-md);
+    align-items: center;
+  }
+  .vm-attr-switches .sdk-object-form-fields > * {
+    flex: 0 1 auto;
+    min-width: 84px;
+  }
+  .vm-attr-fields .sdk-object-form-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+  .vm-attr-row-delete {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    flex-shrink: 0;
   }
   .vm-dialog-body {
     display: flex;
@@ -262,34 +295,6 @@
     </template>
   </page-header>
 
-  <div class="vm-toolbar">
-    <span class="vm-hint">{{ t("visualModeling.hint") }}</span>
-    <div class="vm-selection">
-      <sdk-tag v-if="selectedNode" type="primary" size="small" disable-transitions>
-        {{ t("visualModeling.selectedType", { name: selectedNodeLabel }) }}
-      </sdk-tag>
-      <sdk-tag v-else-if="selectedEdge" type="success" size="small" disable-transitions>
-        {{ t("visualModeling.selectedRelation", { name: selectedEdgeLabel }) }}
-      </sdk-tag>
-      <span v-else class="vm-state">{{ t("visualModeling.noSelection") }}</span>
-      <div class="vm-selection-actions">
-        <sdk-button
-          size="small"
-          icon="pencil"
-          :disabled="!canEditSelected"
-          @click="openEditSelectedDialog"
-        >
-          {{ t("visualModeling.edit") }}
-        </sdk-button>
-        <projection v-if="selectedNode" slot="classDelete" @done="onClassDeleted"></projection>
-        <projection v-else-if="selectedEdge" slot="relationDelete" @done="onRelationDeleted"></projection>
-        <sdk-button v-else type="danger" text size="small" icon="trash-2" disabled>
-          {{ t("visualModeling.delete") }}
-        </sdk-button>
-      </div>
-    </div>
-  </div>
-
   <div v-if="showEdgeBanner" class="vm-notice" data-vm-edge-status>
     <info-banner
       v-if="edgeForbidden"
@@ -331,7 +336,34 @@
 
   <div class="vm-body">
     <div class="vm-canvas">
-      <projection slot="graph"></projection>
+      <projection slot="graph" :hint="t('visualModeling.hint')" @choose="onGraphChoose">
+        <template #toolbar-actions>
+          <div class="vm-selection">
+            <sdk-tag v-if="selectedNode" type="primary" size="small" disable-transitions>
+              {{ t("visualModeling.selectedType", { name: selectedNodeLabel }) }}
+            </sdk-tag>
+            <sdk-tag v-else-if="selectedEdge" type="success" size="small" disable-transitions>
+              {{ t("visualModeling.selectedRelation", { name: selectedEdgeLabel }) }}
+            </sdk-tag>
+            <span v-else class="vm-state">{{ t("visualModeling.noSelection") }}</span>
+            <div class="vm-selection-actions">
+              <sdk-button
+                size="small"
+                icon="pencil"
+                :disabled="!canEditSelected"
+                @click="openEditSelectedDialog"
+              >
+                {{ t("visualModeling.edit") }}
+              </sdk-button>
+              <projection v-if="selectedNode" slot="classDelete" @done="onClassDeleted"></projection>
+              <projection v-else-if="selectedEdge" slot="relationDelete" @done="onRelationDeleted"></projection>
+              <sdk-button v-else type="danger" text size="small" icon="trash-2" disabled>
+                {{ t("visualModeling.delete") }}
+              </sdk-button>
+            </div>
+          </div>
+        </template>
+      </projection>
     </div>
 
     <aside v-if="selectedNode" class="vm-side">
@@ -387,7 +419,7 @@
         </info-banner>
 
         <template v-if="showNodeContent">
-          <projection v-if="!editClassDialog" slot="classForm"></projection>
+          <projection slot="classInlineForm"></projection>
 
           <div class="vm-side-section">
             <div class="vm-section-head">
@@ -402,18 +434,35 @@
               </sdk-button>
             </div>
             <div class="vm-attributes">
-              <projection slot="attributes"></projection>
-            </div>
-          </div>
-
-          <div v-if="selectedAttribute" class="vm-side-section">
-            <div class="vm-section-head">
-              <span>{{ t("visualModeling.editAttribute") }}</span>
-            </div>
-            <projection slot="attributeForm"></projection>
-            <div class="vm-attr-actions">
-              <projection slot="attributePrimaryKey"></projection>
-              <projection slot="attributeDelete" @done="onAttributeDeleted"></projection>
+              <projection slot="attributes">
+                <template #card="{ ref: attrRef, title, subtitle }">
+                  <div class="vm-attr-card" :data-attr-card="attrRef.primaryKey">
+                    <div class="vm-attr-card-head">
+                      <div class="vm-attr-card-title">
+                        <strong>{{ title }}</strong>
+                        <code v-if="subtitle">{{ subtitle }}</code>
+                      </div>
+                      <row-delete-button :label="t('visualModeling.delete')"></row-delete-button>
+                    </div>
+                    <projection :key="attrRef.primaryKey" slot="attributeInlineForm" :inputs="{ target: attrRef }">
+                      <template #default>
+                        <div class="vm-attr-type-row">
+                          <object-form-fields :fields="['/type']"></object-form-fields>
+                        </div>
+                        <div class="vm-attr-switches">
+                          <object-form-fields :fields="['/enable', '/businessKey', '/primaryKey']"></object-form-fields>
+                        </div>
+                        <div class="vm-attr-fields">
+                          <object-form-fields :fields="['/showName', '/attrDesc']"></object-form-fields>
+                        </div>
+                      </template>
+                      <template #field-type="{ value }">
+                        <sdk-tag v-if="value" size="small" effect="plain">{{ value }}</sdk-tag>
+                      </template>
+                    </projection>
+                  </div>
+                </template>
+              </projection>
             </div>
           </div>
         </template>

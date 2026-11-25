@@ -27,6 +27,8 @@ import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
 import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
+import { registeredProductGraph } from "../product-assets/ontology";
+import { listProducts } from "../product-assets/store";
 
 import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
 import { createDataAdapterConfigReads } from "../admin/data-adapters-panel";
@@ -530,6 +532,18 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       ),
       detailPanel: selection => objectDetail.record(selection.primaryKey!),
       detailPanelForm: (selection, params) => objectDetail.form(selection.primaryKey!, formParams(params).values),
+      inlineForm: (selection, params) => model.inlineForm(selection.typeId, selection.primaryKey!, formParams(params)),
+      productGraph: async () => {
+        const graph = await registeredProductGraph(owner, await listProducts(owner), viewer);
+        return {
+          className: OBJECT_TYPE,
+          primaryKey: "product-graph",
+          label: "Product graph",
+          fields: {
+            graph: { kind: "json" as const, value: graph },
+          },
+        };
+      },
       options: () => model.objectTypeOptions(),
       resolve: (_selection, params) => model.resolveObjectTypes(panelReadParameterSchemas.optionValues.parse(params.values)),
     },
@@ -557,7 +571,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       }),
       record: selection => agentSessions.record(selection.primaryKey!),
     },
-    [ATTRIBUTE]: modelReads,
+    [ATTRIBUTE]: {
+      ...modelReads,
+      inlineForm: (selection, params) => model.inlineForm(selection.typeId, selection.primaryKey!, formParams(params)),
+    },
     [RELATIONSHIP]: modelReads,
     [PRODUCT_PROJECTION]: {
       ...catalogueReads(projectionCatalogue),

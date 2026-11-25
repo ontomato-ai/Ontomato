@@ -229,8 +229,12 @@ await mountPanel({
       },
     });
 
-    function onSaved() {
-      instance.state.set("creating", false);
+    function onSaved(saved, outcome) {
+      const key = saved?.primaryKey || outcome?.primaryKey;
+      instance.state.setState({
+        creating: false,
+        ...(key ? { expandedAttributes: [key] } : {}),
+      });
     }
 
     function onDiscarded() {

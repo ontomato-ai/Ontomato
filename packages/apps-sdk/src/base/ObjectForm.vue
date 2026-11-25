@@ -19,7 +19,7 @@ import {
   type PanelFormField,
   type PanelFormValues,
 } from "@ontomato/contracts/panel-projection";
-import { slotInputState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
+import { projectionFormSlotKey, slotInputState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import {
   computeDraftBaselineHash,
   objectDraftKey,
@@ -286,6 +286,7 @@ const { t, te, locale } = useI18n();
 const tr = (key: string, fallback: string) => (te(key) ? t(key) : fallback);
 const slots = useSlots();
 const slot = useProjectionSlot();
+const formSlotKey = projectionFormSlotKey();
 const panel = usePanelContext();
 const localDraftStore = useLocalDraftStore();
 const objectType = projectionElement(slot.projection).id;
@@ -348,14 +349,24 @@ const editInput = editedInput(member.projection);
 const creates = member.projection.data.createForm !== undefined
   || Object.values(member.projection.data).some((data) => data.read === "createForm")
   || (member.projection.data.form !== undefined && "type" in member.projection.data.form.source);
+const explicitScopedInputKey = computed(() => (
+  member.scoped && editInput !== undefined
+    ? selectedKey(slot.inputs[editInput] as PanelFieldValue | undefined)
+    : null
+));
 /** The panel state the edited object is held in; a form that only creates or binds no state holds none. */
-const state = computed(() => (editInput === undefined ? null : slotInputState(panel.manifest, slot.slot, editInput)));
+const state = computed(() => (
+  editInput === undefined || explicitScopedInputKey.value !== null
+    ? null
+    : slotInputState(panel.manifest, slot.slot, editInput)
+));
 const requestedKey = computed(() => (
-  state.value !== null
+  explicitScopedInputKey.value
+  ?? (state.value !== null
     ? selectedKey(panel.instance.state.values.value[state.value])
     : editInput === undefined
       ? null
-      : selectedKey(slot.inputs[editInput] as PanelFieldValue | undefined)
+      : selectedKey(slot.inputs[editInput] as PanelFieldValue | undefined))
 ));
 /**
  * What the form shows: the chosen object, or, with nothing chosen, a new one when the projection reads its owner's create
@@ -1719,7 +1730,7 @@ function buildFieldSlotProps(
 }
 
 provide(formControlsKey, {
-  formSlot: slot.slot,
+  formSlot: formSlotKey,
   values,
   prunedValues,
   errors: allErrors,
@@ -1805,7 +1816,7 @@ useProjectionForm({
     setFromControl,
     blurFromControl,
     refreshDraft,
-    submit: () => panel.instance.forms.submit(slot.slot),
+    submit: () => panel.instance.forms.submit(formSlotKey),
     reset: async (options) => {
       if (options?.confirm) return await confirmDiscard();
       discard();
@@ -2133,7 +2144,7 @@ async function saveFromForm() {
   const startTargetKey = targetKey(target.value);
   const startOpened = ownerOpened.value;
   try {
-    await panel.instance.forms.submit(slot.slot);
+    await panel.instance.forms.submit(formSlotKey);
   } catch (reason) {
     if (reason instanceof PanelConfirmationDeferred) return;
     // The operation also rejects for programmatic callers. Only show the refusal in the form if it is still on the originating target.

@@ -156,7 +156,11 @@ public interface OntologyModelService {
 
 	FormDescription objectTypeForm(FormRequest body, User user, String lang);
 
+	FormDescription objectTypeInlineForm(FormRequest body, User user, String lang);
+
 	FormDescription attributeForm(FormRequest body, User user, String lang);
+
+	FormDescription attributeInlineForm(FormRequest body, User user, String lang);
 
 	FormDescription relationshipForm(FormRequest body, User user, String lang);
 }

@@ -113,6 +113,8 @@ function mountPanel(
     initial?: Record<string, unknown>;
     messages?: Record<string, Record<string, string>>;
     render?: (instance: ReturnType<typeof createDirectPanelInstance>) => ReturnType<typeof h>;
+    operations?: typeof noOperations.operations;
+    confirmOperation?: typeof noOperations.confirmOperation;
   } = {},
 ) {
   const instance = createDirectPanelInstance(manifest, {
@@ -122,6 +124,8 @@ function mountPanel(
     initial: options.initial as never,
     text: createPanelText(options.messages ?? {}, ref("en"), "en"),
     ...noOperations,
+    ...(options.operations ? { operations: options.operations } : {}),
+    ...(options.confirmOperation ? { confirmOperation: options.confirmOperation } : {}),
     readProjection: async (id) => projections[id]!,
     read: async (request) => answer(request),
   });
@@ -806,5 +810,174 @@ describe("Task 3 (G5): AnnotatedCode automatic token-based syntax highlighting",
     instance.state.set("lang", "");
     await nextTick();
     expect(element.querySelectorAll(".sdk-code-tok").length).toBe(0);
+  });
+});
+
+describe("ObjectList #card concurrent scoped ObjectForm instances", () => {
+  it("mounts multiple scoped ObjectForm cards concurrently without slot collision and prefers explicit scoped target inputs", async () => {
+    const savedCalls: Array<{ target: unknown; values: Record<string, unknown> }> = [];
+    const cardRows = [
+      { className: FUNCTION, primaryKey: "fn-1", label: "Alpha", fields: { name: "Alpha" } },
+      { className: FUNCTION, primaryKey: "fn-2", label: "Beta", fields: { name: "Beta" } },
+    ];
+    const cardListProjection: DirectProjection = {
+      id: "card-list",
+      ...meta,
+      name: "Card list",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: { layout: "cards", selectable: false, searchable: false, showFooter: false },
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: FUNCTION } },
+          read: "query",
+          params: {},
+        },
+      },
+    };
+    const cardFormProjection: DirectProjection = {
+      id: "card-inline-form",
+      ...meta,
+      name: "Card inline form",
+      componentId: "@ontomato/sdk:ObjectForm",
+      inputs: {
+        prop: { kind: "object", objectType: FUNCTION },
+        values: { kind: "json" },
+        changedField: { kind: "scalar", type: "string" },
+      },
+      outputs: {},
+      config: { actions: "none" },
+      data: {
+        form: {
+          source: { object: { input: "prop" } },
+          read: "form",
+          params: { values: { input: "values" }, changedField: { input: "changedField" } },
+        },
+      },
+      operations: {
+        save: { operation: { kind: "PlatformOperation", id: `${FUNCTION}.save` }, target: { input: "prop" } },
+      },
+    };
+
+    const manifest = definePanel({
+      state: {
+        // Bound to cardForm in manifest, intentionally left null to prove scoped `:inputs` wins over global state.
+        selectedProp: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: false, external: false },
+      },
+      members: {
+        list: { target: { projectionId: "card-list" }, inputs: {} },
+        cardForm: {
+          target: { projectionId: "card-inline-form" },
+          inputs: { prop: { state: "selectedProp" } },
+        },
+      },
+    });
+
+    const saveOp = {
+      kind: "form.save" as const,
+      handlerRef: `${FUNCTION}.save`,
+      label: "Save",
+      effect: "write" as const,
+      target: { source: "input" as const, input: "prop" },
+      inputSchema: {},
+      resultSchema: {},
+      batch: false,
+    };
+
+    const { instance, element } = mountPanel(
+      manifest,
+      { "card-list": cardListProjection, "card-inline-form": cardFormProjection },
+      (request) => {
+        if (request.operations) return ready({ save: saveOp });
+        if (request.dataName === "rows") return ready({ rows: cardRows, total: cardRows.length });
+        const propInput = (request.inputs as { prop?: { primaryKey?: string } } | undefined)?.prop;
+        const pk = propInput?.primaryKey ?? "";
+        return ready({
+          fields: [
+            {
+              path: "/title",
+              label: "Title",
+              required: false,
+              readOnly: false,
+              submitOn: "blur",
+              valueSchema: { type: "string" },
+              control: { kind: "text" },
+            },
+          ],
+          values: { title: pk === "fn-1" ? "Alpha card" : pk === "fn-2" ? "Beta card" : "Missing" },
+          errors: [],
+          revision: 1,
+          save: { method: "PUT", path: `/fn/${pk}`, bodySchema: {} },
+        });
+      },
+      {
+        operations: {
+          ...noOperations.operations,
+          prepare: async (operationId, invocation) => {
+            const single = "call" in invocation ? invocation.call : invocation;
+            savedCalls.push({
+              target: (single as { target?: unknown }).target,
+              values: ((single as { input?: { values?: Record<string, unknown> } }).input?.values) ?? {},
+            });
+            return {
+              intentId: `intent-${savedCalls.length}`,
+              operationId,
+              label: "Save",
+              confirmation: { kind: "none" },
+            };
+          },
+        },
+        confirmOperation: async (preparation) => ({
+          decision: "confirm",
+          response: {
+            kind: "dispatched",
+            intentId: preparation.intentId,
+            outcome: { kind: "success", data: {}, affected: { objects: [], objectTypes: [] } },
+          },
+        }),
+        render: (inst) =>
+          h(
+            PanelMember,
+            { instance: inst, member: "list" },
+            {
+              card: (slotProps: { ref: { className: string; primaryKey: string } }) =>
+                h("div", { "data-card-pk": slotProps.ref.primaryKey }, [
+                  h(PanelMember, {
+                    instance: inst,
+                    member: "cardForm",
+                    inputs: { prop: slotProps.ref },
+                  }),
+                ]),
+            },
+          ),
+      },
+    );
+
+    await vi.waitFor(() => {
+      expect(element.querySelector<HTMLInputElement>('[data-card-pk="fn-1"] [data-field="/title"] input')?.value).toBe("Alpha card");
+      expect(element.querySelector<HTMLInputElement>('[data-card-pk="fn-2"] [data-field="/title"] input')?.value).toBe("Beta card");
+    });
+
+    // Both scoped forms register cleanly without collision and report clean manifest member names in snapshots.
+    expect(element.textContent).not.toContain("already holds a form");
+    const snapshots = instance.forms.snapshots();
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots.map((snap) => snap.member)).toEqual(["cardForm", "cardForm"]);
+    expect(snapshots.map((snap) => (snap.target?.kind === "object" ? snap.target.primaryKey : null)).sort()).toEqual([
+      "fn-1",
+      "fn-2",
+    ]);
+
+    // Editing card 2 and blurring submits only card 2's target while keeping card 1 intact.
+    const secondInput = element.querySelector<HTMLInputElement>('[data-card-pk="fn-2"] [data-field="/title"] input')!;
+    secondInput.value = "Beta card updated";
+    secondInput.dispatchEvent(new Event("input", { bubbles: true }));
+    secondInput.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+
+    await vi.waitFor(() => expect(savedCalls).toHaveLength(1));
+    expect(savedCalls[0]!.target).toEqual({ kind: "object", objectType: FUNCTION, primaryKey: "fn-2" });
+    expect(savedCalls[0]!.values.title).toBe("Beta card updated");
+    expect(element.querySelector<HTMLInputElement>('[data-card-pk="fn-1"] [data-field="/title"] input')?.value).toBe("Alpha card");
   });
 });
