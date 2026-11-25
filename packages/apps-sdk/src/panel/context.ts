@@ -72,9 +72,9 @@ export interface PanelContext {
   /** This instance: its state, page context, projections and operations. */
   readonly instance: PanelInstance;
   /** True while one or more refreshes triggered by `refreshObjects()` are in flight. */
-  readonly refreshing: ComputedRef<boolean>;
+  readonly refreshing?: ComputedRef<boolean>;
   /** Re-reads all mounted projections and data in this panel instance; resolves once they settle. */
-  refreshObjects(): Promise<void>;
+  refreshObjects?: () => Promise<void>;
   /**
    * In an application's frame: the entry the reader opened (it follows the reader to another entry of the application),
    * and the menu the same resolution gave, to draw the frame's menu with and mark the entry. Null in any other panel.
@@ -169,11 +169,24 @@ export function slotOutputState(manifest: PanelManifest, slot: string, output: s
   return declaration.outputs?.[output]?.state ?? null;
 }
 
+/** Resolved panel context returned by `usePanelContext()`, guaranteeing `refreshing` and `refreshObjects`. */
+export type ResolvedPanelContext = PanelContext & {
+  readonly refreshing: ComputedRef<boolean>;
+  refreshObjects(): Promise<void>;
+};
+
 /** The panel context a panel module runs under. */
-export function usePanelContext(): PanelContext {
+export function usePanelContext(): ResolvedPanelContext {
   const context = inject(panelContextKey, null);
   if (!context) throw new Error("A panel's module runs under the SDK's panel host, which provides its context");
-  return context;
+  if (context.refreshing && context.refreshObjects) {
+    return context as ResolvedPanelContext;
+  }
+  return {
+    ...context,
+    refreshing: context.refreshing ?? context.instance.refreshing,
+    refreshObjects: context.refreshObjects ?? (() => context.instance.refreshObjects()),
+  };
 }
 
 /**
@@ -260,7 +273,7 @@ export function formFieldAt(instance: PanelInstance, formSlot: string, path: () 
 }
 
 /** Refresh this projection when a local or server operation changed an object it shows. */
-export function useProjectionObjectRefresh(shows: (id: string) => boolean, refresh: () => void | Promise<unknown>): void {
+export function useProjectionObjectRefresh(shows: (id: string) => boolean, refresh: () => unknown): void {
   const { instance } = usePanelContext();
   const slot = useProjectionSlot();
   onBeforeUnmount(instance.onObjectChanged(object => {

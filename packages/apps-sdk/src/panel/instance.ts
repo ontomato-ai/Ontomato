@@ -370,7 +370,7 @@ export interface PanelInstance {
   readonly refreshing: ComputedRef<boolean>;
   /** Tracks an asynchronous refresh promise in `refreshing` until it settles. */
   trackRefresh<T>(task: Promise<T>): Promise<T>;
-  onObjectChanged(listener: (object: PanelObjectIdentity | null) => void | Promise<unknown>): () => void;
+  onObjectChanged(listener: (object: PanelObjectIdentity | null) => unknown): () => void;
   /** Reads a projection record by ID, as the reader. */
   projection(id: string): Promise<ProductProjection>;
   /**
@@ -451,7 +451,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   let disposed = false;
   const secretDeliveries = shallowRef<readonly PanelSecretDelivery[]>([]);
   const state = createPanelState(manifest, options.initial);
-  const objectListeners = new Set<(object: PanelObjectIdentity | null) => void | Promise<unknown>>();
+  const objectListeners = new Set<(object: PanelObjectIdentity | null) => unknown>();
   const operationCompletedListeners = new Set<(event: PanelOperationCompletion) => void>();
   const activeRefreshes = ref(0);
   const refreshing = computed(() => activeRefreshes.value > 0);

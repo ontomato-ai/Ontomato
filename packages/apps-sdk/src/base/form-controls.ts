@@ -21,7 +21,7 @@ export interface FormControls {
   /** How top-level fields of the form are arranged (`stacked` or `rows`). */
   readonly layout: Readonly<Ref<"stacked" | "rows">>;
   /** Whether required fields render the red required asterisk marker. */
-  readonly showRequiredMark: Readonly<Ref<boolean>>;
+  readonly showRequiredMark?: Readonly<Ref<boolean>>;
   /** Whether any visible top-level field declares `defaultValue`, reserving the reset column in `rows` layout. */
   readonly hasDefaults: Readonly<Ref<boolean>>;
   /** Read-only reasons the form says once for itself, because its owner gives them to several fields; a field skips them. */

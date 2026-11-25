@@ -31,7 +31,7 @@ const controls = inject(formControlsKey, null);
 const { t } = useI18n();
 
 const isRow = computed(() => controls !== null && controls.layout.value === "rows" && controls.isTopLevel(props.path));
-const showRequiredMark = computed(() => controls?.showRequiredMark.value ?? true);
+const showRequiredMark = computed(() => controls?.showRequiredMark?.value ?? true);
 const hasDefaultsColumn = computed(() => controls?.hasDefaults.value ?? false);
 const helpText = computed(() => {
   if (props.field.readOnly && props.field.readOnlyReason) {
