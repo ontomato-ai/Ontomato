@@ -36,7 +36,17 @@ import type { PlatformTaskFrequency } from "@ontomato/contracts/platform-schedul
  * The owner's value shapes are kept as they are: a cleared number is null, never 0; an untouched, omitted object stays
  * absent and a removed one is null; a select keeps a numeric choice a number.
  */
-const props = withDefaults(defineProps<{ field: PanelFormField; path: string; disabled?: boolean }>(), { disabled: false });
+const props = withDefaults(defineProps<{
+  field: PanelFormField;
+  path: string;
+  disabled?: boolean;
+  arrayPath?: string;
+  rowIndex?: number;
+}>(), {
+  disabled: false,
+  arrayPath: undefined,
+  rowIndex: undefined,
+});
 const controls = useFormControls();
 const { t, locale } = useI18n();
 
@@ -86,8 +96,11 @@ function addRow() {
 const setNumber = (typed: string) => set(typed === "" ? null : Number(typed));
 const setStepperNumber = (next: number | null | undefined) => set(typeof next === "number" && Number.isFinite(next) ? next : null);
 const trashIcon = appIcon("trash-2");
-const RenderArrayItemFooter = (footerProps: { render: Slot; scope: Record<string, unknown> }) =>
-  footerProps.render(footerProps.scope);
+const RenderSlotContent = (slotProps: { render: Slot; scope: Record<string, unknown> }) =>
+  slotProps.render(slotProps.scope);
+const afterSlot = computed(() =>
+  controls.resolveFieldAfterSlot?.(props.field, props.path, props.arrayPath, props.rowIndex, props.disabled),
+);
 function arrayItemFooter(row: RuntimeJsonValue, index: number) {
   return controls.resolveArrayItemFooterSlot?.(
     props.path,
@@ -459,7 +472,7 @@ function setFrequency(next: FrequencyDraft) {
         </div>
         <div v-if="arrayItemFooter(row, index)" class="sdk-form-row-footer">
           <component
-            :is="RenderArrayItemFooter"
+            :is="RenderSlotContent"
             :render="arrayItemFooter(row, index)!.slot"
             :scope="arrayItemFooter(row, index)!.props"
           />
@@ -500,6 +513,11 @@ function setFrequency(next: FrequencyDraft) {
       </div>
     </div>
     <p v-else role="alert" class="sdk-form-field-unavailable">{{ t("platform.formControlUnavailable") }}</p>
+    <template v-if="afterSlot" #after>
+      <div class="sdk-owner-form-field-after" :data-field-after="path">
+        <component :is="RenderSlotContent" :render="afterSlot.slot" :scope="afterSlot.props" />
+      </div>
+    </template>
   </form-field-frame>
 </template>
 
@@ -538,6 +556,10 @@ function setFrequency(next: FrequencyDraft) {
 .sdk-form-avatar-color:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+.sdk-owner-form-field-after {
+  margin-top: 8px;
+  width: 100%;
 }
 .sdk-form-field-wide {
   width: 100%;
