@@ -334,6 +334,10 @@ describe("dashboard panel owner reads", () => {
       primaryKey: "mv-orders",
       label: "Order Count",
     });
+    expect(source.fields.parameters).toEqual({
+      kind: "json",
+      value: { region: "APAC" },
+    });
     expect(source.tones).toEqual({ status: "success" });
 
     const tpl = await cardData.ownedChartTemplate(chartKey);

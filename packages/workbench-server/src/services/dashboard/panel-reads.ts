@@ -44,13 +44,6 @@ function findCardWithGroup(
   return null;
 }
 
-function formatParameterValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return JSON.stringify(value);
-}
-
 function metricStatusTone(status: string | undefined): "success" | "warning" | "danger" | "default" {
   switch (status) {
     case "PUBLISHED":
@@ -373,8 +366,13 @@ export function createDashboardCardOwnerReadAdapter(owner: ProductOwner, viewer:
         }
       }
       const parameterEntries = Object.entries(card.query.parameters);
-      const parametersDisplay = parameterEntries.length > 0
-        ? parameterEntries.map(([key, value]) => `${key}: ${formatParameterValue(value)}`).join("\n")
+      const parametersValue: PanelRecordFieldValue = parameterEntries.length > 0
+        ? {
+            kind: "json",
+            value: Object.fromEntries(
+              parameterEntries.map(([key, value]) => [key, value === undefined ? null : (value as RuntimeJsonValue)]),
+            ),
+          }
         : tForLocale(locale, "panels.dashboard.metricSource.noParameters");
       return {
         primaryKey,
@@ -388,7 +386,7 @@ export function createDashboardCardOwnerReadAdapter(owner: ProductOwner, viewer:
             label: metricName,
           },
           status: metricStatusLabel(metricStatus, locale),
-          parameters: parametersDisplay,
+          parameters: parametersValue,
         },
         tones: {
           status: metricStatusTone(metricStatus),
