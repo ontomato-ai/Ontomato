@@ -219,7 +219,8 @@ describe("the open-source platform's conversations", () => {
   it("/ops/diagnosis is declared as a frame-conversation entry on builtin-product-ops-frame", () => {
     const operations = catalogFixture().find((app) => app.id === "operations");
     expect(operations?.framePanelId).toBe("builtin-product-ops-frame");
-    expect(operations?.panelUses?.find((use) => use.path === "/ops/diagnosis")?.kind).toBe("frame-conversation");
+    const diagnosisUse = operations?.panelUses?.find((use) => use.path === "/ops/diagnosis");
+    expect(diagnosisUse && "kind" in diagnosisUse ? diagnosisUse.kind : undefined).toBe("frame-conversation");
     expect(operations?.groups?.map((group) => group.key)).toContain("autotest");
   });
 });
