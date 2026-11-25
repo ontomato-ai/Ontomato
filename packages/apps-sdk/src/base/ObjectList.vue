@@ -31,6 +31,7 @@ import AgentAvatar from "@ontomato/agent-shell-ui/agent-avatar";
 import { appIcon, curatedIcon } from "@ontomato/platform-shell/icons";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
+import { useLocalDraftStore } from "../panel/local-drafts";
 import { paramValues } from "../panel/direct";
 import {
   classifyDispatchResponseForAction,
@@ -130,6 +131,9 @@ import type {
   ObjectListRowActionPrefill,
   ObjectListRowActionResultEvent,
   ObjectListRowActions as ObjectListRowActionsConfig,
+  ObjectListRowOperationState,
+  ObjectListRowTone,
+  ObjectListSearchSubmit,
   ObjectListSelectionRecord,
   ObjectListStateSnapshot,
   ObjectListTabsVariant,
@@ -238,6 +242,12 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "inlineRenameOperation",
   "inlineRenameField",
   "renamingKey",
+  "rowExpandMode",
+  "rowResultDisplay",
+  "showDraftIndicator",
+  "searchSubmit",
+  "rowToneField",
+  "rowToneMap",
 ]);
 
 interface ParsedListData {
@@ -441,6 +451,18 @@ const props = withDefaults(
      * rename input in `"tabs"` layout. Supports `v-model:renamingKey`.
      */
     renamingKey?: string | null;
+    /** Row expansion mode: `"single"` (default) keeps at most one expanded row; `"multiple"` allows concurrent expanded rows. */
+    rowExpandMode?: "single" | "multiple";
+    /** How per-row operation results are displayed: `"none"` (default), `"inline"` (exposed to slots without auto-expand), or `"expand"` (auto-expand row and render result). */
+    rowResultDisplay?: "none" | "inline" | "expand";
+    /** Show a 6px warning dot beside rows whose object has an unsaved local draft in this browser. */
+    showDraftIndicator?: boolean;
+    /** Submit handler for pressing Enter in the top search box: selects an existing loaded row by `primaryKey`, or invokes the declared operation with `{ [inputField]: trimmed }`. */
+    searchSubmit?: ObjectListSearchSubmit;
+    /** Optional field key in `row.fields` used to apply semantic whole-row background tinting in table mode. */
+    rowToneField?: string;
+    /** Optional mapping from `row.fields[rowToneField]` values to semantic tones (`"success" | "danger" | "warning" | "info"`). */
+    rowToneMap?: Readonly<Record<string, ObjectListRowTone>>;
   }>(),
   {
     layout: "auto",
@@ -496,6 +518,12 @@ const props = withDefaults(
     inlineRenameOperation: undefined,
     inlineRenameField: undefined,
     renamingKey: undefined,
+    rowExpandMode: undefined,
+    rowResultDisplay: undefined,
+    showDraftIndicator: undefined,
+    searchSubmit: undefined,
+    rowToneField: undefined,
+    rowToneMap: undefined,
   },
 );
 
@@ -544,7 +572,9 @@ type RowRefSlotScope = {
 
 type RowActionsSlotScope = RowRefSlotScope & {
   readonly operations: Readonly<Record<string, ListRowSlotOperation>>;
+  readonly operationResults: Readonly<Record<string, ObjectListRowOperationState>>;
   readonly runOperation: (operationName: string, extraInput?: Readonly<Record<string, RuntimeJsonValue>>) => Promise<void>;
+  readonly clearOperationResult: (operationName?: string) => void;
 };
 
 type CellSlotScope = RowActionsSlotScope & {
@@ -572,7 +602,13 @@ defineSlots<{
   /** Custom row actions content; receives row reference and declared row operations. */
   actions?(props: RowActionsSlotScope): unknown;
   /** Expanded detail region rendered inline below a row; receives typed row reference to drive child projections. */
-  "row-detail"?(props: RowRefSlotScope & { collapse: () => void }): unknown;
+  "row-detail"?(
+    props: RowRefSlotScope & {
+      collapse: () => void;
+      operationResults: Readonly<Record<string, ObjectListRowOperationState>>;
+      clearOperationResult: (operationName?: string) => void;
+    },
+  ): unknown;
   /** Decorative leading badge or icon rendered before each compact list item's title and subtitle. */
   "item-leading"?(): unknown;
   /** Trailing inline controls placed at the end of the horizontal tab bar in `"tabs"` layout (for example a create button). */
@@ -649,6 +685,78 @@ function paramNameOf(name: string): string {
   return mapped && "input" in mapped ? mapped.input : name;
 }
 
+const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => {
+  const cfg = member.projection.config;
+  return cfg && typeof cfg === "object" && !Array.isArray(cfg) ? (cfg as Record<string, unknown>) : undefined;
+});
+const effectiveRowExpandMode = computed<"single" | "multiple">(() => {
+  const raw = props.rowExpandMode ?? rawConfig.value?.rowExpandMode;
+  return raw === "multiple" ? "multiple" : "single";
+});
+const effectiveRowResultDisplay = computed<"none" | "inline" | "expand">(() => {
+  const raw = props.rowResultDisplay ?? rawConfig.value?.rowResultDisplay;
+  return raw === "expand" || raw === "inline" ? raw : "none";
+});
+const effectiveShowDraftIndicator = computed<boolean>(() =>
+  props.showDraftIndicator ?? Boolean(rawConfig.value?.showDraftIndicator),
+);
+const effectiveSearchSubmit = computed<ObjectListSearchSubmit | undefined>(() => {
+  const candidate = props.searchSubmit ?? rawConfig.value?.searchSubmit;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return undefined;
+  const record = candidate as Record<string, unknown>;
+  const operation = typeof record.operation === "string" ? record.operation.trim() : "";
+  const inputField = typeof record.inputField === "string" ? record.inputField.trim() : "";
+  return operation && inputField ? { operation, inputField } : undefined;
+});
+const effectiveRowToneField = computed<string | undefined>(() => {
+  const raw = props.rowToneField ?? rawConfig.value?.rowToneField;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : undefined;
+});
+const effectiveRowToneMap = computed<Readonly<Record<string, ObjectListRowTone>> | undefined>(() => {
+  const raw = props.rowToneMap ?? rawConfig.value?.rowToneMap;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  return raw as Readonly<Record<string, ObjectListRowTone>>;
+});
+
+const VALID_ROW_TONES = new Set<ObjectListRowTone>(["success", "danger", "warning", "info"]);
+function resolveRowTone(row: PlatformObjectRecord): ObjectListRowTone | null {
+  const field = effectiveRowToneField.value;
+  if (!field) return null;
+  const raw = rawRecordField(row, field);
+  if (raw !== undefined && raw !== null) {
+    const key = String(raw);
+    const mapped = effectiveRowToneMap.value?.[key];
+    if (mapped && VALID_ROW_TONES.has(mapped)) return mapped;
+    if (VALID_ROW_TONES.has(key as ObjectListRowTone)) return key as ObjectListRowTone;
+  }
+  const ownerTone = row.tones?.[field];
+  if (ownerTone && VALID_ROW_TONES.has(ownerTone as ObjectListRowTone)) {
+    return ownerTone as ObjectListRowTone;
+  }
+  return null;
+}
+function rowToneClass(row: PlatformObjectRecord): string | undefined {
+  const tone = resolveRowTone(row);
+  return tone ? `is-tone-${tone}` : undefined;
+}
+
+const localDraftStore = useLocalDraftStore();
+const localDraftTick = ref(0);
+if (localDraftStore) {
+  onBeforeUnmount(localDraftStore.subscribe(() => {
+    localDraftTick.value += 1;
+  }));
+}
+function hasRowDraft(row: PlatformObjectRecord): boolean {
+  if (!effectiveShowDraftIndicator.value) return false;
+  void localDraftTick.value;
+  const refObj = rowObjectRef(row);
+  if (localDraftStore?.hasObject(refObj.className, refObj.primaryKey)) return true;
+  return panel.hasLocalDraft(refObj);
+}
+
 const hasServerSearch = "search" in signatureParams && isWritableParam("search");
 const pageMode: "cursor" | "page" | "none" = "cursor" in signatureParams
   ? "cursor"
@@ -663,7 +771,9 @@ const isLocalSearchActive = computed(
   () => !hasServerSearch && pageMode === "none" && (props.searchable === true || searchStateBound),
 );
 const canSearch = computed(
-  () => props.searchable !== false && (hasServerSearch || (isLocalSearchActive.value && isWritableParam("search"))),
+  () =>
+    props.searchable !== false
+    && (hasServerSearch || ((isLocalSearchActive.value || Boolean(effectiveSearchSubmit.value)) && isWritableParam("search"))),
 );
 const canCheck = Boolean(slotOutputState(panel.manifest, member.key, "checked"));
 const selectedStateName = slotOutputState(panel.manifest, member.key, "selected")
@@ -891,7 +1001,7 @@ onBeforeUnmount(() => {
   containerResizeObserver = null;
 });
 
-const expandedKey = ref<string | null>(null);
+const expandedKeys = ref<ReadonlySet<string>>(new Set());
 const detailElements = new Map<string, HTMLElement>();
 function setDetailElement(key: string, element: unknown) {
   if (element instanceof HTMLElement) {
@@ -902,12 +1012,39 @@ function setDetailElement(key: string, element: unknown) {
   }
 }
 function isRowExpanded(row: PlatformObjectRecord): boolean {
-  return expandedKey.value === rowIdentityKey(row);
+  return expandedKeys.value.has(rowIdentityKey(row));
+}
+function expandRowKey(key: string) {
+  if (effectiveRowExpandMode.value === "multiple") {
+    if (expandedKeys.value.has(key)) return;
+    const next = new Set(expandedKeys.value);
+    next.add(key);
+    expandedKeys.value = next;
+  } else {
+    if (expandedKeys.value.size === 1 && expandedKeys.value.has(key)) return;
+    expandedKeys.value = new Set([key]);
+  }
+}
+function collapseRowKey(key: string) {
+  if (!expandedKeys.value.has(key)) return;
+  const next = new Set(expandedKeys.value);
+  next.delete(key);
+  expandedKeys.value = next;
 }
 function toggleRowExpanded(row: PlatformObjectRecord) {
   const key = rowIdentityKey(row);
-  expandedKey.value = expandedKey.value === key ? null : key;
+  if (expandedKeys.value.has(key)) {
+    collapseRowKey(key);
+  } else {
+    expandRowKey(key);
+  }
 }
+watch(effectiveRowExpandMode, (mode) => {
+  if (mode === "single" && expandedKeys.value.size > 1) {
+    const [first] = expandedKeys.value;
+    expandedKeys.value = first ? new Set([first]) : new Set();
+  }
+});
 function rowExpandAriaLabel(row: PlatformObjectRecord): string {
   const label = row.label || row.primaryKey;
   return isRowExpanded(row)
@@ -954,7 +1091,9 @@ if ("object" in datum.source) {
       if (next === prev) return;
       initialLoadDone = false;
       activeRowLabel.value = null;
-      expandedKey.value = null;
+      expandedKeys.value = new Set();
+      rowOperationResults.value = {};
+      lastNoneModeFeedback.value = null;
       resetPaging();
     },
     { flush: "sync" },
@@ -2317,10 +2456,146 @@ if (pageMode === "none") {
   );
 }
 
+const searchSubmitRunning = ref(false);
+const searchSubmitError = ref<string | null>(null);
+const pendingSearchSelectPrimaryKey = ref<string | null>(null);
+
+function selectRowDirectly(row: PlatformObjectRecord) {
+  const next = rowSelectionValue(row);
+  if (hasSelectedBinding || hasUpdateSelectedListener) {
+    setSelected(next);
+  }
+  if (hasChooseListener) {
+    activeRowLabel.value = row.label || row.primaryKey;
+    emit("choose", next);
+  }
+}
+
+watch(
+  mergedRows,
+  (listed) => {
+    const targetKey = pendingSearchSelectPrimaryKey.value;
+    if (!targetKey) return;
+    const found = listed.find((row) => row.primaryKey === targetKey);
+    if (!found) return;
+    pendingSearchSelectPrimaryKey.value = null;
+    selectRowDirectly(found);
+  },
+);
+
 function onSearchInput(event: Event) {
   if (!searchParam || !isWritableParam("search")) return;
+  searchSubmitError.value = null;
   const next = (event.target as HTMLInputElement).value;
   searchParam.set(next === "" ? null : next);
+}
+
+async function submitSearch() {
+  const cfg = effectiveSearchSubmit.value;
+  if (!cfg || searchSubmitRunning.value) return;
+  const trimmed = searchText.value.trim();
+  if (!trimmed) return;
+  searchSubmitError.value = null;
+
+  const loadedMatch = mergedRows.value.find((row) => row.primaryKey === trimmed);
+  if (loadedMatch) {
+    selectRowDirectly(loadedMatch);
+    searchParam?.set(null);
+    return;
+  }
+
+  const descriptor = admittedOpMap.value[cfg.operation];
+  const binding = member.projection.operations?.[cfg.operation];
+  if (!descriptor || !binding) return;
+
+  const operationId = panel.instance.operationIdOf(slot.slot, cfg.operation);
+  const boundParams: Record<string, RuntimeJsonValue> = {};
+  for (const [paramKey, source] of Object.entries(binding.params ?? {})) {
+    if ("literal" in source) {
+      boundParams[paramKey] = source.literal as RuntimeJsonValue;
+    } else if ("input" in source) {
+      const value = member.inputs.value[source.input];
+      if (value !== undefined) boundParams[paramKey] = value as RuntimeJsonValue;
+    }
+  }
+  const providedInput: Record<string, RuntimeJsonValue> = { [cfg.inputField]: trimmed };
+  const input: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
+    ? wrapActionOperationInput(descriptor.inputSchema, boundParams, providedInput)
+    : { ...providedInput, ...boundParams };
+
+  let target: { kind: "object"; objectType: string; primaryKey: string } | null = null;
+  if (binding.target) {
+    if ("literal" in binding.target) {
+      target = {
+        kind: "object",
+        objectType: binding.target.literal.className,
+        primaryKey: binding.target.literal.primaryKey,
+      };
+    } else if ("input" in binding.target) {
+      const refObj = stateObject(member.inputs.value[binding.target.input] as PanelFieldValue);
+      if (!refObj) return;
+      target = { kind: "object", objectType: refObj.className, primaryKey: refObj.primaryKey };
+    }
+  }
+
+  searchSubmitRunning.value = true;
+  try {
+    if (descriptor.effect === "read") {
+      await panel.instance.readOperation(operationId, { target, input });
+      searchParam?.set(null);
+      const afterMatch = mergedRows.value.find((row) => row.primaryKey === trimmed);
+      if (afterMatch) selectRowDirectly(afterMatch);
+      else pendingSearchSelectPrimaryKey.value = trimmed;
+      return;
+    }
+    const answer = await panel.instance.writeOperation(operationId, { call: { target, input } });
+    if (answer.decision === "cancel" || !answer.response) return;
+    if (answer.response.kind !== "dispatched") {
+      searchSubmitError.value = answer.response.message;
+      return;
+    }
+    const outcome = answer.response.outcome;
+    if (outcome?.kind === "success") {
+      panel.notify({ kind: "success", text: saidRowOp(outcome) });
+      searchParam?.set(null);
+      if (outcome.created) {
+        const createdRef: ObjectListRef = {
+          className: outcome.created.objectType,
+          primaryKey: outcome.created.primaryKey,
+        };
+        const createdRow = mergedRows.value.find((row) => row.primaryKey === createdRef.primaryKey);
+        if (createdRow) {
+          selectRowDirectly(createdRow);
+        } else {
+          if (hasSelectedBinding || hasUpdateSelectedListener) {
+            setSelected(createdRef);
+          }
+          if (hasChooseListener) {
+            emit("choose", createdRef);
+          }
+          pendingSearchSelectPrimaryKey.value = createdRef.primaryKey;
+        }
+      } else {
+        const afterMatch = mergedRows.value.find((row) => row.primaryKey === trimmed);
+        if (afterMatch) selectRowDirectly(afterMatch);
+        else pendingSearchSelectPrimaryKey.value = trimmed;
+      }
+      return;
+    }
+    if (outcome && outcome.kind !== "batch") {
+      searchSubmitError.value = saidRowOp(outcome);
+    }
+  } catch (reason) {
+    searchSubmitError.value = reason instanceof Error ? reason.message : String(reason);
+  } finally {
+    searchSubmitRunning.value = false;
+  }
+}
+
+function onSearchKeydown(event: KeyboardEvent) {
+  if (event.key !== "Enter" || !effectiveSearchSubmit.value) return;
+  event.preventDefault();
+  void submitSearch();
 }
 
 function goPage(nextPage: number) {
@@ -2497,7 +2772,7 @@ function estimatedItemHeight(item: FlatListItem): number {
   }
   const baseDefault = isCards.value ? 160 : isTable.value ? 40 : (listHasTwoLines.value ? 64 : 48);
   const measured = measuredHeights.get(item.key);
-  const expanded = expandedKey.value === item.key;
+  const expanded = expandedKeys.value.has(item.key);
   if (isTable.value) {
     const rowHeight = measured ?? baseDefault;
     return expanded ? rowHeight + (measuredDetailHeights.get(item.key) ?? 200) : rowHeight;
@@ -2632,11 +2907,17 @@ watch(
   { immediate: true },
 );
 
-watch(expandedKey, (key) => {
-  if (!key) return;
-  ensureRowInVirtualWindow(key);
+watch(expandedKeys, (next, prev) => {
+  const prevSet = prev ?? new Set<string>();
+  const added: string[] = [];
+  for (const key of next) {
+    if (!prevSet.has(key)) added.push(key);
+  }
+  const latestAdded = added[added.length - 1];
+  if (!latestAdded) return;
+  ensureRowInVirtualWindow(latestAdded);
   void nextTick(() => {
-    const target = detailElements.get(key) ?? rowElements.get(key);
+    const target = detailElements.get(latestAdded) ?? rowElements.get(latestAdded);
     if (target && typeof target.scrollIntoView === "function") {
       target.scrollIntoView({ block: "nearest" });
     }
@@ -2644,10 +2925,15 @@ watch(expandedKey, (key) => {
 });
 
 watch(rows, (listed) => {
-  if (expandedKey.value === null) return;
-  if (!listed.some((row) => rowIdentityKey(row) === expandedKey.value)) {
-    expandedKey.value = null;
+  if (datumState.value.status === "loading" || expandedKeys.value.size === 0) return;
+  const present = new Set(listed.map((row) => rowIdentityKey(row)));
+  let changed = false;
+  const next = new Set<string>();
+  for (const key of expandedKeys.value) {
+    if (present.has(key)) next.add(key);
+    else changed = true;
   }
+  if (changed) expandedKeys.value = next;
 });
 
 const activeRowLabel = ref<string | null>(null);
@@ -3077,10 +3363,100 @@ const mergedRowOperations = computed<PanelRowOperationsMap>(() => {
   return isShowingStaleData.value ? lastValidRowOperations.value : liveRowOperations.value;
 });
 
+const rowOperationResults = ref<Readonly<Record<string, Readonly<Record<string, ObjectListRowOperationState>>>>>({});
+const lastNoneModeFeedback = ref<{ readonly rowKey: string; readonly operationName: string } | null>(null);
+
+function rowResultsForKey(rowKey: string): Readonly<Record<string, ObjectListRowOperationState>> {
+  return rowOperationResults.value[rowKey] ?? {};
+}
+function rowResultsFor(row: PlatformObjectRecord): Readonly<Record<string, ObjectListRowOperationState>> {
+  return rowResultsForKey(rowIdentityKey(row));
+}
+function isRowBusyKey(rowKey: string): boolean {
+  const ops = rowOperationResults.value[rowKey];
+  if (!ops) return false;
+  return Object.values(ops).some((state) => state.running);
+}
+function isRowBusy(row: PlatformObjectRecord): boolean {
+  return isRowBusyKey(rowIdentityKey(row));
+}
+function setRowOpState(rowKey: string, opName: string, state: ObjectListRowOperationState) {
+  const prevRow = rowOperationResults.value[rowKey] ?? {};
+  rowOperationResults.value = {
+    ...rowOperationResults.value,
+    [rowKey]: {
+      ...prevRow,
+      [opName]: state,
+    },
+  };
+}
+function clearRowOperationResult(rowKey: string, operationName?: string) {
+  const prevRow = rowOperationResults.value[rowKey];
+  if (!prevRow) {
+    if (!hasRowDetailSlot.value) collapseRowKey(rowKey);
+    return;
+  }
+  if (!operationName) {
+    const next = { ...rowOperationResults.value };
+    delete next[rowKey];
+    rowOperationResults.value = next;
+    if (lastNoneModeFeedback.value?.rowKey === rowKey) lastNoneModeFeedback.value = null;
+    if (!hasRowDetailSlot.value) collapseRowKey(rowKey);
+    return;
+  }
+  if (!(operationName in prevRow)) return;
+  const nextRow = { ...prevRow };
+  delete nextRow[operationName];
+  const next = { ...rowOperationResults.value };
+  if (Object.keys(nextRow).length === 0) {
+    delete next[rowKey];
+    if (!hasRowDetailSlot.value) collapseRowKey(rowKey);
+  } else {
+    next[rowKey] = nextRow;
+  }
+  rowOperationResults.value = next;
+  if (lastNoneModeFeedback.value?.rowKey === rowKey && lastNoneModeFeedback.value.operationName === operationName) {
+    lastNoneModeFeedback.value = null;
+  }
+}
+
+function hasVisibleRowOpState(state: ObjectListRowOperationState): boolean {
+  return Boolean(
+    state.error
+    || state.result
+    || (state.receipt && !(state.receipt.kind === "dispatched" && state.receipt.outcome?.kind === "success")),
+  );
+}
+
+function rowOperationFeedbackEntries(row: PlatformObjectRecord): readonly {
+  readonly operationName: string;
+  readonly state: ObjectListRowOperationState;
+}[] {
+  const map = rowResultsFor(row);
+  return Object.entries(map)
+    .filter(([, state]) => hasVisibleRowOpState(state))
+    .map(([operationName, state]) => ({ operationName, state }));
+}
+
+function shouldShowRowDetail(row: PlatformObjectRecord): boolean {
+  if (!isRowExpanded(row)) return false;
+  if (hasRowDetailSlot.value) return true;
+  return effectiveRowResultDisplay.value === "expand" && rowOperationFeedbackEntries(row).length > 0;
+}
+
+const noneModeFeedbackState = computed<ObjectListRowOperationState | null>(() => {
+  if (effectiveRowResultDisplay.value !== "none") return null;
+  const refKeyInfo = lastNoneModeFeedback.value;
+  if (!refKeyInfo) return null;
+  const state = rowOperationResults.value[refKeyInfo.rowKey]?.[refKeyInfo.operationName];
+  return state && hasVisibleRowOpState(state) ? state : null;
+});
+
 function rowOperationsFor(row: PlatformObjectRecord): Readonly<Record<string, ListRowSlotOperation>> {
   const fallbackClassName = activeType.value ?? rowObjectType;
   const rowKey = panelRowOperationKey(row, fallbackClassName);
   const batchForRow = mergedRowOperations.value[rowKey];
+  const rowResults = rowResultsFor(row);
   const admitted = admittedOpMap.value;
   const bindings = member.projection.operations ?? {};
   const result: Record<string, ListRowSlotOperation> = {};
@@ -3100,6 +3476,7 @@ function rowOperationsFor(row: PlatformObjectRecord): Readonly<Record<string, Li
       unavailable,
       danger: Boolean(descriptor.inspectImpact),
       effect: descriptor.effect,
+      running: Boolean(rowResults[opName]?.running),
     };
   }
   return result;
@@ -3159,6 +3536,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         danger: item.danger ?? (item.tone === "danger" ? true : op.danger),
         primary: Boolean(item.primary || item.tone === "primary"),
         disabled: disabledByCondition || !op.available,
+        running: Boolean(op.running),
         reason: op.unavailable?.reason,
       });
       return;
@@ -3202,10 +3580,6 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
   return resolved;
 }
 
-const rowOpFailure = shallowRef<Error | null>(null);
-const rowOpRead = shallowRef<PanelReadOperationResult | null>(null);
-const rowOpReceipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
-const rowOpNamed = shallowRef<PanelWriteResult["named"]>([]);
 const rowOpInputDialogOpen = ref(false);
 const rowOpPendingRow = shallowRef<PlatformObjectRecord | null>(null);
 const rowOpPendingName = ref<string | null>(null);
@@ -3224,9 +3598,6 @@ const rowOpPendingInputFields = computed<readonly OperationInputField[]>(() => {
   return fields.filter((field) => allowedKeys.has(field.name) && !suppliedKeys.has(field.name));
 });
 
-const rowOpOutcome = computed<OperationOutcome | null>(() =>
-  rowOpReceipt.value?.kind === "dispatched" ? rowOpReceipt.value.outcome ?? null : null,
-);
 const saidRowOp = (single: SingleOperationOutcome) => formatOperationOutcome(single, t);
 
 const hasCustomRowActionSlot = computed(() =>
@@ -3381,6 +3752,14 @@ function findLoadedRowByKey(
   return { ok: true, row: plainMatches[0]! };
 }
 
+interface RowOperationExecutionOutcome {
+  readonly status: "executed" | "cancelled" | "skipped";
+  readonly result?: PanelReadOperationResult;
+  readonly receipt?: PanelHumanOperationDispatchResponse;
+  readonly outcome?: OperationOutcome;
+  readonly error?: string;
+}
+
 async function executeRowOperation(
   row: PlatformObjectRecord,
   operationName: string,
@@ -3388,20 +3767,22 @@ async function executeRowOperation(
   boundInput: Record<string, RuntimeJsonValue>,
   providedInput: Record<string, RuntimeJsonValue>,
   agentContext?: PanelAgentActionContext,
-): Promise<"executed" | "cancelled" | "skipped"> {
+): Promise<RowOperationExecutionOutcome> {
+  const rowIdKey = rowIdentityKey(row);
+  if (isRowBusyKey(rowIdKey)) return { status: "skipped" };
   const binding = member.projection.operations?.[operationName];
-  if (!binding) return "skipped";
+  if (!binding) return { status: "skipped" };
   const fallbackClassName = activeType.value ?? rowObjectType;
   const target = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
-  if (target === undefined) return "skipped";
+  if (target === undefined) return { status: "skipped" };
   const operationId = panel.instance.operationIdOf(slot.slot, operationName);
   const capturedCompositeKey = panelRowOperationKey(row, fallbackClassName);
   const busyKey = `${capturedCompositeKey}\0${operationName}`;
   const isWriteOp = descriptor.effect !== "read";
   const lockGroup = props.actionLockGroup;
   const lock = { instanceId: listInstanceId.value, rowKey: capturedCompositeKey, actionId: operationName };
-  if (busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value)) return "skipped";
-  if (lockGroup && !acquireActionLock(lockGroup, lock)) return "skipped";
+  if (busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value)) return { status: "skipped" };
+  if (lockGroup && !acquireActionLock(lockGroup, lock)) return { status: "skipped" };
   const ref = rowObjectRef(row);
   const rowSummary = { className: ref.className, primaryKey: ref.primaryKey, label: row.label || ref.primaryKey };
   const input: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
@@ -3412,8 +3793,8 @@ async function executeRowOperation(
     if (listUnmounted || panel.instance.isDisposed()) {
       return { ok: false, message: "The list was closed or unmounted." };
     }
-    if (phase === "confirm" && (busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value) || (lockGroup && isActionLockGroupBusy(lockGroup)))) {
-      return { ok: false, message: "Another row operation is currently running." };
+    if (phase === "confirm" && (isRowBusyKey(rowIdKey) || busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value) || (lockGroup && isActionLockGroupBusy(lockGroup)))) {
+      return { ok: false, message: "Another operation is currently running on this row." };
     }
     const liveFallback = activeType.value ?? rowObjectType;
     const liveRow = rows.value.find((item) => panelRowOperationKey(item, liveFallback) === capturedCompositeKey);
@@ -3454,13 +3835,16 @@ async function executeRowOperation(
   };
 
   markRowActionBusy(busyKey, true, isWriteOp);
-  rowOpFailure.value = null;
-  rowOpRead.value = null;
-  rowOpReceipt.value = null;
+  setRowOpState(rowIdKey, operationName, { running: true });
   try {
     if (descriptor.effect === "read") {
       const readResult = await panel.instance.readOperation(operationId, { target, input }, agentContext?.agentRun);
-      rowOpRead.value = readResult;
+      setRowOpState(rowIdKey, operationName, { running: false, result: readResult });
+      if (effectiveRowResultDisplay.value === "expand") {
+        expandRowKey(rowIdKey);
+      } else if (effectiveRowResultDisplay.value === "none") {
+        lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName };
+      }
       const data = readResult.kind === "json"
         ? readResult.value
         : readResult.kind === "markdown"
@@ -3474,14 +3858,18 @@ async function executeRowOperation(
         outcome: readResult,
         data,
       });
-      return "executed";
+      return { status: "executed", result: readResult };
     }
     const applyRowAnswer = (
       answer: { decision: "confirm" | "cancel"; response?: PanelHumanOperationDispatchResponse; named: PanelWriteResult["named"] },
     ) => {
       if (answer.decision === "cancel" || !answer.response) return undefined;
-      rowOpNamed.value = answer.named;
       const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
+      setRowOpState(rowIdKey, operationName, {
+        running: false,
+        receipt: answer.response,
+        named: answer.named,
+      });
       if (answered?.kind === "success") {
         const message = saidRowOp(answered);
         panel.notify({ kind: "success", text: message });
@@ -3495,7 +3883,11 @@ async function executeRowOperation(
           message,
         });
       } else {
-        rowOpReceipt.value = answer.response;
+        if (effectiveRowResultDisplay.value === "expand") {
+          expandRowKey(rowIdKey);
+        } else if (effectiveRowResultDisplay.value === "none") {
+          lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName };
+        }
         const message = answer.response.kind === "not-dispatched"
           ? answer.response.message
           : answered && answered.kind !== "batch"
@@ -3533,6 +3925,7 @@ async function executeRowOperation(
       if (reason instanceof PanelOperationDeferred) {
         const deferred = reason;
         const { preparation } = deferred;
+        setRowOpState(rowIdKey, operationName, { running: false });
         const confirmation = createDeferredConfirmation({
           intentId: preparation.intentId,
           questionId: preparation.questionId!,
@@ -3546,17 +3939,18 @@ async function executeRowOperation(
               return { ok: false, intentId: preparation.intentId, reason: "failed", message: "Another row action is currently running." };
             }
             markRowActionBusy(busyKey, true, true);
-            rowOpFailure.value = null;
-            rowOpReceipt.value = null;
+            setRowOpState(rowIdKey, operationName, { running: true });
             try {
               const confirmed = await deferred.dispatchNow();
               if (confirmed.decision !== "confirm") {
+                setRowOpState(rowIdKey, operationName, { running: false });
                 return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "Operation was cancelled." };
               }
               applyRowAnswer({ ...confirmed, named: deferred.named });
               return classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
             } catch (dispatchReason) {
               if (dispatchReason instanceof PanelSubmissionStaleError) {
+                setRowOpState(rowIdKey, operationName, { running: false });
                 return {
                   ok: false,
                   intentId: preparation.intentId,
@@ -3564,12 +3958,18 @@ async function executeRowOperation(
                   message: dispatchReason.message,
                 };
               }
-              rowOpFailure.value = dispatchReason instanceof Error ? dispatchReason : new Error(String(dispatchReason));
+              const message = dispatchReason instanceof Error ? dispatchReason.message : String(dispatchReason);
+              setRowOpState(rowIdKey, operationName, { running: false, error: message });
+              if (effectiveRowResultDisplay.value === "expand") {
+                expandRowKey(rowIdKey);
+              } else if (effectiveRowResultDisplay.value === "none") {
+                lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName };
+              }
               emit("row-action-error", {
                 actionId: operationName,
                 row: rowSummary,
                 ref,
-                message: rowOpFailure.value.message,
+                message,
               });
               emit("row-action-result", {
                 actionId: operationName,
@@ -3577,18 +3977,22 @@ async function executeRowOperation(
                 ref,
                 ok: false,
                 outcome: null,
-                message: rowOpFailure.value.message,
-                error: rowOpFailure.value.message,
+                message,
+                error: message,
               });
               return {
                 ok: false,
                 intentId: preparation.intentId,
                 reason: "failed",
-                message: rowOpFailure.value.message,
+                message,
               };
             } finally {
               markRowActionBusy(busyKey, false, true);
               if (lockGroup) releaseActionLock(lockGroup, lock);
+              const current = rowOperationResults.value[rowIdKey]?.[operationName];
+              if (current?.running) {
+                setRowOpState(rowIdKey, operationName, { ...current, running: false });
+              }
             }
           },
         });
@@ -3596,18 +4000,32 @@ async function executeRowOperation(
       }
       throw reason;
     }
-    if (answer.decision === "cancel") return "cancelled";
-    applyRowAnswer(answer);
-    return "executed";
+    if (answer.decision === "cancel") {
+      setRowOpState(rowIdKey, operationName, { running: false });
+      return { status: "cancelled" };
+    }
+    const outcome = applyRowAnswer(answer);
+    return { status: "executed", receipt: answer.response, outcome: outcome ?? undefined };
   } catch (reason) {
-    if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) throw reason;
-    const error = reason instanceof Error ? reason : new Error(String(reason));
-    rowOpFailure.value = error;
+    if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) {
+      const current = rowOperationResults.value[rowIdKey]?.[operationName];
+      if (current?.running) {
+        setRowOpState(rowIdKey, operationName, { ...current, running: false });
+      }
+      throw reason;
+    }
+    const message = reason instanceof Error ? reason.message : String(reason);
+    setRowOpState(rowIdKey, operationName, { running: false, error: message });
+    if (effectiveRowResultDisplay.value === "expand") {
+      expandRowKey(rowIdKey);
+    } else if (effectiveRowResultDisplay.value === "none") {
+      lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName };
+    }
     emit("row-action-error", {
       actionId: operationName,
       row: rowSummary,
       ref,
-      message: error.message,
+      message,
     });
     emit("row-action-result", {
       actionId: operationName,
@@ -3615,13 +4033,17 @@ async function executeRowOperation(
       ref,
       ok: false,
       outcome: null,
-      message: error.message,
-      error: error.message,
+      message,
+      error: message,
     });
-    return "executed";
+    return { status: "executed", error: message };
   } finally {
     markRowActionBusy(busyKey, false, isWriteOp);
     if (lockGroup) releaseActionLock(lockGroup, lock);
+    const current = rowOperationResults.value[rowIdKey]?.[operationName];
+    if (current?.running) {
+      setRowOpState(rowIdKey, operationName, { ...current, running: false });
+    }
   }
 }
 
@@ -3638,7 +4060,7 @@ async function runRowOperation(
   extraInput?: Readonly<Record<string, RuntimeJsonValue>>,
   prefillOverride?: ObjectListRowActionPrefill,
 ): Promise<void> {
-  if (isGroupLocked.value || isRowActionBusy(row, operationName)) return;
+  if (isGroupLocked.value || isRowActionBusy(row, operationName) || isRowBusy(row)) return;
   const descriptor = admittedOpMap.value[operationName];
   const binding = member.projection.operations?.[operationName];
   if (!descriptor || !binding) return;
@@ -3659,7 +4081,6 @@ async function runRowOperation(
   const missingFields = allFields.filter((field) => allowedKeys.has(field.name) && !suppliedKeys.has(field.name));
   if (missingFields.length > 0) {
     const effectivePrefill = prefillOverride !== undefined ? prefillOverride : configuredRowActionPrefill(operationName);
-    rowOpFailure.value = null;
     rowOpPendingRow.value = row;
     rowOpPendingName.value = operationName;
     rowOpPendingDescriptor.value = descriptor;
@@ -3758,11 +4179,11 @@ watch(
           if (!descriptor) {
             return missingOperationDescriptorResult(memberOperationsState.value, operationName);
           }
-          if (isGroupLocked.value || isRowActionBusy(row, operationName) || (descriptor.effect !== "read" && writeRowOpRunning.value)) {
+          if (isGroupLocked.value || isRowActionBusy(row, operationName) || isRowBusy(row) || (descriptor.effect !== "read" && writeRowOpRunning.value)) {
             return {
               ok: false,
               reason: "action_unavailable",
-              message: `List is busy executing another row operation; cannot run '${operationName}' on row '${rowKey}'.`,
+              message: `Row '${rowKey}' is busy executing another operation; cannot run '${operationName}'.`,
             };
           }
           const buttonState = rowActionButtonState(row, operationName);
@@ -3794,28 +4215,28 @@ watch(
               message: `Row operation '${operationName}' requires input fields: ${missing.join(", ")}.`,
             };
           }
-          const status = await executeRowOperation(row, operationName, descriptor, boundInput, filteredExtra, agentContext);
-          const dispatchedResponse = rowOpReceipt.value ?? agentContext?.completed?.response;
+          const exec = await executeRowOperation(row, operationName, descriptor, boundInput, filteredExtra, agentContext);
+          const dispatchedResponse = exec.receipt ?? agentContext?.completed?.response;
           if (dispatchedResponse) {
             return classifyDispatchResponseForAction(dispatchedResponse);
           }
-          if (rowOpFailure.value) {
-            return { ok: false, reason: "failed", message: rowOpFailure.value.message };
+          if (exec.error) {
+            return { ok: false, reason: "failed", message: exec.error };
           }
-          if (status === "cancelled") {
+          if (exec.status === "cancelled") {
             return { ok: false, reason: "cancelled", message: `Row operation '${operationName}' was cancelled.` };
           }
-          if (status === "skipped") {
+          if (exec.status === "skipped") {
             return {
               ok: false,
               reason: "action_unavailable",
-              message: `Row operation '${operationName}' could not be executed because the list is busy.`,
+              message: `Row operation '${operationName}' could not be executed because the row is busy.`,
             };
           }
-          if (rowOpRead.value) {
-            return { ok: true, outcome: rowOpRead.value };
+          if (exec.result) {
+            return { ok: true, outcome: exec.result };
           }
-          return { ok: true, outcome: rowOpOutcome.value ?? undefined };
+          return { ok: true, outcome: exec.outcome ?? undefined };
         },
         { scope: "row", entryInstanceId: () => listInstanceId.value },
       ),
@@ -3895,8 +4316,8 @@ async function runConversationRowAction(row: PlatformObjectRecord, item: Resolve
   const target = resolveConversationTarget(item);
   const prefill = resolveConversationPrompt(row, item);
 
+  const rowIdKey = rowIdentityKey(row);
   markRowActionBusy(busyKey, true);
-  rowOpFailure.value = null;
   try {
     await panel.expandPageComposer({
       slot: slot.slot,
@@ -3912,7 +4333,10 @@ async function runConversationRowAction(row: PlatformObjectRecord, item: Resolve
     });
   } catch (reason) {
     const error = reason instanceof Error ? reason : new Error(String(reason));
-    rowOpFailure.value = error;
+    setRowOpState(rowIdKey, actionId, { running: false, error: error.message });
+    if (effectiveRowResultDisplay.value === "none") {
+      lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName: actionId };
+    }
     emit("row-action-error", {
       actionId,
       row: rowSummary,
@@ -3985,12 +4409,15 @@ function rowRefSlotProps(row: PlatformObjectRecord, index: number): RowRefSlotSc
 }
 
 function rowActionsSlotProps(row: PlatformObjectRecord, index: number): RowActionsSlotScope {
+  const rowIdKey = rowIdentityKey(row);
   return {
     ref: rowSelectionValue(row),
     index,
     operations: rowOperationsFor(row),
+    operationResults: rowResultsForKey(rowIdKey),
     runOperation: (operationName: string, extraInput?: Readonly<Record<string, RuntimeJsonValue>>) =>
       runRowOperation(row, operationName, extraInput),
+    clearOperationResult: (operationName?: string) => clearRowOperationResult(rowIdKey, operationName),
   };
 }
 
@@ -4064,8 +4491,10 @@ defineExpose({
           :placeholder="searchPlaceholderText"
           :aria-label="searchPlaceholderText"
           @input="onSearchInput"
+          @keydown="onSearchKeydown"
         />
       </div>
+      <p v-if="searchSubmitError" class="sdk-object-list-op-alert" role="alert">{{ searchSubmitError }}</p>
       <div v-if="$slots.filters" class="sdk-object-list-filters">
         <slot name="filters"></slot>
       </div>
@@ -4314,11 +4743,14 @@ defineExpose({
                   data-row-item="true"
                   :data-highlighted="rowActivation === 'dblclick' && entry.key === highlightedIdentity ? 'true' : undefined"
                   :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
-                  :class="{
-                    chosen: entry.key === chosenIdentity,
-                    highlighted: rowActivation === 'dblclick' && entry.key === highlightedIdentity,
-                    'is-non-selectable': !rowActivatable || rowActivation === 'dblclick',
-                  }"
+                  :class="[
+                    {
+                      chosen: entry.key === chosenIdentity,
+                      highlighted: rowActivation === 'dblclick' && entry.key === highlightedIdentity,
+                      'is-non-selectable': !rowActivatable || rowActivation === 'dblclick',
+                    },
+                    rowToneClass(entry.row),
+                  ]"
                   @click="onTableRowClick(entry.row)"
                   @dblclick="onTableRowDblclick(entry.row)"
                   @keydown="rowSelectable ? onRowKeydown(entry.row, $event) : undefined"
@@ -4350,17 +4782,26 @@ defineExpose({
                     :style="columnStyle(column)"
                     :title="columnCellSlot(column.key) ? undefined : cellTitle(entry.row, column)"
                   >
-                    <list-row-slot-host
-                      v-if="columnCellSlot(column.key)"
-                      :list-slot="member.key"
-                      :row-ref="rowObjectRef(entry.row)"
-                      :index="entry.rowIndex"
-                      :operations="rowOperationsFor(entry.row)"
-                      :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
-                      :render-slot="columnCellSlot(column.key)!"
-                      :slot-props="cellSlotProps(entry.row, entry.rowIndex, column)"
-                      :fallback-to-default="true"
-                    >
+                    <div class="sdk-object-list-td-body" :class="{ 'has-draft-dot': colIndex === 0 && hasRowDraft(entry.row) }">
+                      <span
+                        v-if="colIndex === 0 && hasRowDraft(entry.row)"
+                        class="sdk-object-list-draft-dot"
+                        :title="t('platform.formDraftIndicator')"
+                        :aria-label="t('platform.formDraftIndicator')"
+                      ></span>
+                      <list-row-slot-host
+                        v-if="columnCellSlot(column.key)"
+                        :list-slot="member.key"
+                        :row-ref="rowObjectRef(entry.row)"
+                        :index="entry.rowIndex"
+                        :operations="rowOperationsFor(entry.row)"
+                        :operation-results="rowResultsFor(entry.row)"
+                        :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                        :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
+                        :render-slot="columnCellSlot(column.key)!"
+                        :slot-props="cellSlotProps(entry.row, entry.rowIndex, column)"
+                        :fallback-to-default="true"
+                      >
                       <span
                         v-if="isCellAwaitingSupplement(entry.row, column.key)"
                         class="sdk-object-list-cell-pending"
@@ -4550,6 +4991,7 @@ defineExpose({
                         </span>
                       </div>
                     </div>
+                    </div>
                   </td>
                   <td
                     v-if="hasActionColumn"
@@ -4564,7 +5006,9 @@ defineExpose({
                       :row-ref="rowObjectRef(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
+                      :operation-results="rowResultsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                      :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
                       :render-slot="slots.actions!"
                       :slot-props="rowActionsSlotProps(entry.row, entry.rowIndex)"
                       :fallback-to-default="Boolean(rowActions && rowActions.items.length > 0)"
@@ -4573,6 +5017,7 @@ defineExpose({
                         :items="resolvedRowActionsFor(entry.row)"
                         :max-visible="rowActions?.maxVisible ?? 2"
                         :locked="isGroupLocked"
+                        :busy="isRowBusy(entry.row)"
                         :row-label="entry.row.label || entry.row.primaryKey"
                         @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                       />
@@ -4582,6 +5027,7 @@ defineExpose({
                       :items="resolvedRowActionsFor(entry.row)"
                       :max-visible="rowActions?.maxVisible ?? 2"
                       :locked="isGroupLocked"
+                      :busy="isRowBusy(entry.row)"
                       :row-label="entry.row.label || entry.row.primaryKey"
                       @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                     />
@@ -4593,21 +5039,62 @@ defineExpose({
                   </td>
                 </tr>
                 <tr
-                  v-if="hasRowDetailSlot && isRowExpanded(entry.row)"
+                  v-if="shouldShowRowDetail(entry.row)"
                   :ref="(el) => setDetailElement(entry.key, el)"
                   class="sdk-object-list-detail-row"
                 >
                   <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell sdk-object-list-detail-host">
                     <list-row-slot-host
+                      v-if="hasRowDetailSlot"
                       :list-slot="member.key"
                       :row-ref="rowObjectRef(entry.row)"
                       :item-key="rowItemKey(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
+                      :operation-results="rowResultsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                      :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
                       :render-slot="slots['row-detail']!"
-                      :slot-props="{ ...rowRefSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
+                      :slot-props="{
+                        ...rowRefSlotProps(entry.row, entry.rowIndex),
+                        collapse: () => collapseRowKey(entry.key),
+                        operationResults: rowResultsFor(entry.row),
+                        clearOperationResult: (opName?: string) => clearRowOperationResult(entry.key, opName),
+                      }"
                     />
+                    <div v-else class="sdk-object-list-row-result-panel">
+                      <div class="sdk-object-list-row-result-header">
+                        <button
+                          type="button"
+                          class="sdk-object-list-row-result-close"
+                          :aria-label="t('platform.listRowResultClose')"
+                          :title="t('platform.listRowResultClose')"
+                          @click.stop="clearRowOperationResult(entry.key)"
+                        >
+                          {{ t("platform.listRowResultClose") }}
+                        </button>
+                      </div>
+                      <div
+                        v-for="item in rowOperationFeedbackEntries(entry.row)"
+                        :key="item.operationName"
+                        class="sdk-object-list-row-result-entry"
+                        :data-operation="item.operationName"
+                      >
+                        <p v-if="item.state.error" class="sdk-object-list-op-alert" role="alert">{{ item.state.error }}</p>
+                        <OperationResult
+                          v-if="item.state.result"
+                          :result="item.state.result"
+                          :operation-slot="member.key"
+                          :operation-name="item.operationName"
+                        />
+                        <template v-if="item.state.receipt && !(item.state.receipt.kind === 'dispatched' && item.state.receipt.outcome?.kind === 'success')">
+                          <p v-if="item.state.receipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ item.state.receipt.message }}</p>
+                          <p v-else-if="!item.state.receipt.outcome" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
+                          <OperationBatchReceipt v-else-if="item.state.receipt.outcome.kind === 'batch'" :items="item.state.receipt.outcome.items" :named="item.state.named ?? []" />
+                          <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="item.state.receipt.outcome.kind">{{ saidRowOp(item.state.receipt.outcome) }}</p>
+                        </template>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               </template>
@@ -4675,6 +5162,12 @@ defineExpose({
                 :data-tone="row.tones?.[statusField] ?? 'default'"
                 :title="fieldValue(row, statusField)"
               ></span>
+              <span
+                v-if="hasRowDraft(row)"
+                class="sdk-object-list-draft-dot"
+                :title="t('platform.formDraftIndicator')"
+                :aria-label="t('platform.formDraftIndicator')"
+              ></span>
               <span class="sdk-object-list-tab-label" :title="row.label">
                 <template v-for="(part, index) in textSegmentsFor(row, 'label', row.label)" :key="index">
                   <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
@@ -4696,7 +5189,9 @@ defineExpose({
                   :row-ref="rowObjectRef(row)"
                   :index="rowIndex"
                   :operations="rowOperationsFor(row)"
+                  :operation-results="rowResultsFor(row)"
                   :run-operation="(opName, extra) => runRowOperation(row, opName, extra)"
+                  :clear-operation-result="(opName) => clearRowOperationResult(rowIdentityKey(row), opName)"
                   :render-slot="slots.actions!"
                   :slot-props="rowActionsSlotProps(row, rowIndex)"
                 />
@@ -4705,6 +5200,7 @@ defineExpose({
                   :items="resolvedRowActionsFor(row)"
                   :max-visible="0"
                   :locked="isGroupLocked"
+                  :busy="isRowBusy(row)"
                   :row-label="row.label || row.primaryKey"
                   @menu-open-change="(open) => onTabMenuOpenChange(rowIdentityKey(row), open)"
                   @trigger="(item) => triggerRowAction(row, rowIndex, item)"
@@ -4840,7 +5336,9 @@ defineExpose({
               :row-ref="rowObjectRef(entry.row)"
               :index="entry.rowIndex"
               :operations="rowOperationsFor(entry.row)"
+              :operation-results="rowResultsFor(entry.row)"
               :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+              :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
               :render-slot="slots.card!"
               :slot-props="cardSlotProps(entry.row, entry.rowIndex, entry.key)"
               :fallback-to-default="true"
@@ -4865,6 +5363,12 @@ defineExpose({
                   @click.stop
                   @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                 />
+                <span
+                  v-if="hasRowDraft(entry.row)"
+                  class="sdk-object-list-draft-dot"
+                  :title="t('platform.formDraftIndicator')"
+                  :aria-label="t('platform.formDraftIndicator')"
+                ></span>
                 <span class="sdk-object-list-card-title">
                   <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
                     <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
@@ -4937,6 +5441,12 @@ defineExpose({
                   </span>
                   <span class="sdk-object-list-card-content">
                     <span class="sdk-object-list-card-title-row">
+                      <span
+                        v-if="hasRowDraft(entry.row)"
+                        class="sdk-object-list-draft-dot"
+                        :title="t('platform.formDraftIndicator')"
+                        :aria-label="t('platform.formDraftIndicator')"
+                      ></span>
                       <span class="sdk-object-list-card-title">
                         <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
                           <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
@@ -4964,6 +5474,7 @@ defineExpose({
                     :items="resolvedRowActionsFor(entry.row)"
                     :max-visible="rowActions?.maxVisible ?? 2"
                     :locked="isGroupLocked"
+                    :busy="isRowBusy(entry.row)"
                     :row-label="entry.row.label || entry.row.primaryKey"
                     @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                   />
@@ -4979,7 +5490,9 @@ defineExpose({
                       :row-ref="rowObjectRef(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
+                      :operation-results="rowResultsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                      :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
                       :render-slot="columnCellSlot(column.key)!"
                       :slot-props="cellSlotProps(entry.row, entry.rowIndex, column)"
                       :fallback-to-default="true"
@@ -5107,7 +5620,9 @@ defineExpose({
                   :row-ref="rowObjectRef(entry.row)"
                   :index="entry.rowIndex"
                   :operations="rowOperationsFor(entry.row)"
+                  :operation-results="rowResultsFor(entry.row)"
                   :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                  :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
                   :render-slot="slots.actions!"
                   :slot-props="rowActionsSlotProps(entry.row, entry.rowIndex)"
                   :fallback-to-default="Boolean(rowActions && rowActions.items.length > 0)"
@@ -5116,6 +5631,7 @@ defineExpose({
                     :items="resolvedRowActionsFor(entry.row)"
                     :max-visible="rowActions?.maxVisible ?? 2"
                     :locked="isGroupLocked"
+                    :busy="isRowBusy(entry.row)"
                     :row-label="entry.row.label || entry.row.primaryKey"
                     @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                   />
@@ -5125,27 +5641,69 @@ defineExpose({
                   :items="resolvedRowActionsFor(entry.row)"
                   :max-visible="rowActions?.maxVisible ?? 2"
                   :locked="isGroupLocked"
+                  :busy="isRowBusy(entry.row)"
                   :row-label="entry.row.label || entry.row.primaryKey"
                   @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                 />
               </div>
             </template>
             <div
-              v-if="hasRowDetailSlot && isRowExpanded(entry.row)"
+              v-if="shouldShowRowDetail(entry.row)"
               :ref="(el) => setDetailElement(entry.key, el)"
               class="sdk-object-list-card-detail sdk-object-list-detail-host"
               @click.stop
             >
               <list-row-slot-host
+                v-if="hasRowDetailSlot"
                 :list-slot="member.key"
                 :row-ref="rowObjectRef(entry.row)"
                 :item-key="rowItemKey(entry.row)"
                 :index="entry.rowIndex"
                 :operations="rowOperationsFor(entry.row)"
+                :operation-results="rowResultsFor(entry.row)"
                 :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
                 :render-slot="slots['row-detail']!"
-                :slot-props="{ ...rowRefSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
+                :slot-props="{
+                  ...rowRefSlotProps(entry.row, entry.rowIndex),
+                  collapse: () => collapseRowKey(entry.key),
+                  operationResults: rowResultsFor(entry.row),
+                  clearOperationResult: (opName?: string) => clearRowOperationResult(entry.key, opName),
+                }"
               />
+              <div v-else class="sdk-object-list-row-result-panel">
+                <div class="sdk-object-list-row-result-header">
+                  <button
+                    type="button"
+                    class="sdk-object-list-row-result-close"
+                    :aria-label="t('platform.listRowResultClose')"
+                    :title="t('platform.listRowResultClose')"
+                    @click.stop="clearRowOperationResult(entry.key)"
+                  >
+                    {{ t("platform.listRowResultClose") }}
+                  </button>
+                </div>
+                <div
+                  v-for="item in rowOperationFeedbackEntries(entry.row)"
+                  :key="item.operationName"
+                  class="sdk-object-list-row-result-entry"
+                  :data-operation="item.operationName"
+                >
+                  <p v-if="item.state.error" class="sdk-object-list-op-alert" role="alert">{{ item.state.error }}</p>
+                  <OperationResult
+                    v-if="item.state.result"
+                    :result="item.state.result"
+                    :operation-slot="member.key"
+                    :operation-name="item.operationName"
+                  />
+                  <template v-if="item.state.receipt && !(item.state.receipt.kind === 'dispatched' && item.state.receipt.outcome?.kind === 'success')">
+                    <p v-if="item.state.receipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ item.state.receipt.message }}</p>
+                    <p v-else-if="!item.state.receipt.outcome" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
+                    <OperationBatchReceipt v-else-if="item.state.receipt.outcome.kind === 'batch'" :items="item.state.receipt.outcome.items" :named="item.state.named ?? []" />
+                    <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="item.state.receipt.outcome.kind">{{ saidRowOp(item.state.receipt.outcome) }}</p>
+                  </template>
+                </div>
+              </div>
             </div>
           </article>
         </template>
@@ -5265,6 +5823,12 @@ defineExpose({
                       :title="fieldValue(entry.row, statusField)"
                       aria-hidden="true"
                     ></span>
+                    <span
+                      v-if="hasRowDraft(entry.row)"
+                      class="sdk-object-list-draft-dot"
+                      :title="t('platform.formDraftIndicator')"
+                      :aria-label="t('platform.formDraftIndicator')"
+                    ></span>
                     <span class="sdk-object-list-item-label">
                       <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
                         <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
@@ -5321,7 +5885,9 @@ defineExpose({
                   :row-ref="rowObjectRef(entry.row)"
                   :index="entry.rowIndex"
                   :operations="rowOperationsFor(entry.row)"
+                  :operation-results="rowResultsFor(entry.row)"
                   :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                  :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
                   :render-slot="slots.actions!"
                   :slot-props="rowActionsSlotProps(entry.row, entry.rowIndex)"
                   :fallback-to-default="Boolean(rowActions && rowActions.items.length > 0)"
@@ -5330,6 +5896,7 @@ defineExpose({
                     :items="resolvedRowActionsFor(entry.row)"
                     :max-visible="rowActions?.maxVisible ?? 2"
                     :locked="isGroupLocked"
+                    :busy="isRowBusy(entry.row)"
                     :row-label="entry.row.label || entry.row.primaryKey"
                     @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                   />
@@ -5339,27 +5906,69 @@ defineExpose({
                   :items="resolvedRowActionsFor(entry.row)"
                   :max-visible="rowActions?.maxVisible ?? 2"
                   :locked="isGroupLocked"
+                  :busy="isRowBusy(entry.row)"
                   :row-label="entry.row.label || entry.row.primaryKey"
                   @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
                 />
               </div>
             </div>
             <div
-              v-if="hasRowDetailSlot && isRowExpanded(entry.row)"
+              v-if="shouldShowRowDetail(entry.row)"
               :ref="(el) => setDetailElement(entry.key, el)"
               class="sdk-object-list-row-detail sdk-object-list-detail-host"
               @click.stop
             >
               <list-row-slot-host
+                v-if="hasRowDetailSlot"
                 :list-slot="member.key"
                 :row-ref="rowObjectRef(entry.row)"
                 :item-key="rowItemKey(entry.row)"
                 :index="entry.rowIndex"
                 :operations="rowOperationsFor(entry.row)"
+                :operation-results="rowResultsFor(entry.row)"
                 :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                :clear-operation-result="(opName) => clearRowOperationResult(entry.key, opName)"
                 :render-slot="slots['row-detail']!"
-                :slot-props="{ ...rowRefSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
+                :slot-props="{
+                  ...rowRefSlotProps(entry.row, entry.rowIndex),
+                  collapse: () => collapseRowKey(entry.key),
+                  operationResults: rowResultsFor(entry.row),
+                  clearOperationResult: (opName?: string) => clearRowOperationResult(entry.key, opName),
+                }"
               />
+              <div v-else class="sdk-object-list-row-result-panel">
+                <div class="sdk-object-list-row-result-header">
+                  <button
+                    type="button"
+                    class="sdk-object-list-row-result-close"
+                    :aria-label="t('platform.listRowResultClose')"
+                    :title="t('platform.listRowResultClose')"
+                    @click.stop="clearRowOperationResult(entry.key)"
+                  >
+                    {{ t("platform.listRowResultClose") }}
+                  </button>
+                </div>
+                <div
+                  v-for="item in rowOperationFeedbackEntries(entry.row)"
+                  :key="item.operationName"
+                  class="sdk-object-list-row-result-entry"
+                  :data-operation="item.operationName"
+                >
+                  <p v-if="item.state.error" class="sdk-object-list-op-alert" role="alert">{{ item.state.error }}</p>
+                  <OperationResult
+                    v-if="item.state.result"
+                    :result="item.state.result"
+                    :operation-slot="member.key"
+                    :operation-name="item.operationName"
+                  />
+                  <template v-if="item.state.receipt && !(item.state.receipt.kind === 'dispatched' && item.state.receipt.outcome?.kind === 'success')">
+                    <p v-if="item.state.receipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ item.state.receipt.message }}</p>
+                    <p v-else-if="!item.state.receipt.outcome" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
+                    <OperationBatchReceipt v-else-if="item.state.receipt.outcome.kind === 'batch'" :items="item.state.receipt.outcome.items" :named="item.state.named ?? []" />
+                    <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="item.state.receipt.outcome.kind">{{ saidRowOp(item.state.receipt.outcome) }}</p>
+                  </template>
+                </div>
+              </div>
             </div>
           </li>
         </template>
@@ -5483,21 +6092,26 @@ defineExpose({
       :title="rowOpPendingDescriptor?.label"
       :fields="rowOpPendingInputFields"
       :initial-values="rowOpPendingInitialValues"
-      :busy="rowOpRunning"
+      :busy="rowOpPendingRow ? isRowBusy(rowOpPendingRow) : false"
       @confirm="confirmRowOpInput"
     ></operation-input-dialog>
 
     <div
-      v-if="(inlineActionError !== false && (rowOpFailure || rowOpReceipt)) || (rowOpRead && !hasRowActionResultListener)"
+      v-if="noneModeFeedbackState && ((inlineActionError !== false && (noneModeFeedbackState.error || (noneModeFeedbackState.receipt && !(noneModeFeedbackState.receipt.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'success')))) || (noneModeFeedbackState.result && !hasRowActionResultListener))"
       class="sdk-object-list-op-feedback"
     >
-      <p v-if="inlineActionError !== false && rowOpFailure" class="sdk-object-list-op-alert" role="alert">{{ rowOpFailure.message }}</p>
-      <OperationResult v-if="rowOpRead && !hasRowActionResultListener" :result="rowOpRead" />
-      <template v-if="inlineActionError !== false && rowOpReceipt">
-        <p v-if="rowOpReceipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ rowOpReceipt.message }}</p>
-        <p v-else-if="rowOpOutcome === null" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
-        <OperationBatchReceipt v-else-if="rowOpOutcome.kind === 'batch'" :items="rowOpOutcome.items" :named="rowOpNamed" />
-        <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="rowOpOutcome.kind">{{ saidRowOp(rowOpOutcome) }}</p>
+      <p v-if="inlineActionError !== false && noneModeFeedbackState.error" class="sdk-object-list-op-alert" role="alert">{{ noneModeFeedbackState.error }}</p>
+      <OperationResult
+        v-if="noneModeFeedbackState.result && !hasRowActionResultListener"
+        :result="noneModeFeedbackState.result"
+        :operation-slot="member.key"
+        :operation-name="lastNoneModeFeedback?.operationName"
+      />
+      <template v-if="inlineActionError !== false && noneModeFeedbackState.receipt && !(noneModeFeedbackState.receipt.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'success')">
+        <p v-if="noneModeFeedbackState.receipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ noneModeFeedbackState.receipt.message }}</p>
+        <p v-else-if="!noneModeFeedbackState.receipt.outcome" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
+        <OperationBatchReceipt v-else-if="noneModeFeedbackState.receipt.outcome.kind === 'batch'" :items="noneModeFeedbackState.receipt.outcome.items" :named="noneModeFeedbackState.named ?? []" />
+        <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="noneModeFeedbackState.receipt.outcome.kind">{{ saidRowOp(noneModeFeedbackState.receipt.outcome) }}</p>
       </template>
     </div>
   </div>
@@ -5841,6 +6455,75 @@ defineExpose({
 }
 .sdk-object-list-table tbody tr.highlighted:hover {
   background: var(--brand-primary-tint, var(--ui-fill-secondary));
+}
+.sdk-object-list-table tbody tr.is-tone-success {
+  background: color-mix(in srgb, var(--el-color-success) 8%, transparent);
+}
+.sdk-object-list-table tbody tr.is-tone-success:hover {
+  background: color-mix(in srgb, var(--el-color-success) 14%, transparent);
+}
+.sdk-object-list-table tbody tr.is-tone-danger {
+  background: color-mix(in srgb, var(--el-color-danger) 8%, transparent);
+}
+.sdk-object-list-table tbody tr.is-tone-danger:hover {
+  background: color-mix(in srgb, var(--el-color-danger) 14%, transparent);
+}
+.sdk-object-list-table tbody tr.is-tone-warning {
+  background: color-mix(in srgb, var(--el-color-warning) 8%, transparent);
+}
+.sdk-object-list-table tbody tr.is-tone-warning:hover {
+  background: color-mix(in srgb, var(--el-color-warning) 14%, transparent);
+}
+.sdk-object-list-table tbody tr.is-tone-info {
+  background: color-mix(in srgb, var(--el-color-info) 8%, transparent);
+}
+.sdk-object-list-table tbody tr.is-tone-info:hover {
+  background: color-mix(in srgb, var(--el-color-info) 14%, transparent);
+}
+.sdk-object-list-td-body {
+  display: contents;
+}
+.sdk-object-list-td-body.has-draft-dot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sdk-object-list-draft-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-warning);
+  flex: 0 0 auto;
+}
+.sdk-object-list-row-result-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.sdk-object-list-row-result-header {
+  display: flex;
+  justify-content: flex-end;
+}
+.sdk-object-list-row-result-close {
+  background: transparent;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--border-radius-sm, 4px);
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  padding: 2px var(--spacing-xs);
+}
+.sdk-object-list-row-result-close:hover {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+}
+.sdk-object-list-row-result-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
 }
 .sdk-object-list-table tbody tr:focus-visible {
   outline: 2px solid var(--brand-link);

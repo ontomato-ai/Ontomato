@@ -4,6 +4,9 @@ import type { PanelFormField } from "@ontomato/contracts/panel-projection";
 /** How `ObjectForm` arranges its field groups while keeping one shared form state and draft. */
 export type ObjectFormPresentation = "default" | "cards" | "tabs" | "steps";
 
+/** How `ObjectForm` guards switching away from an edited form with unsaved changes. */
+export type ObjectFormUnsavedSwitchMode = "discard-or-cancel" | "save-discard-cancel";
+
 /** Declarative group assigning top-level owner fields (or owner sections) to one card, tab, or wizard step. */
 export interface ObjectFormGroup {
   /** Stable identifier for this card, tab, or step (used for `activeGroup`, slots, and `data-form-group`). */

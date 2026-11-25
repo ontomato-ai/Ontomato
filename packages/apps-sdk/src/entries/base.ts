@@ -15,6 +15,9 @@ export type {
   ObjectListRowActionResultEvent,
   ObjectListRowActionRowSummary,
   ObjectListRowActions,
+  ObjectListRowOperationState,
+  ObjectListRowTone,
+  ObjectListSearchSubmit,
   ObjectListSelectionRecord,
   ObjectListStateSnapshot,
   ObjectListTabsVariant,
@@ -68,13 +71,19 @@ export type {
 export type { MetricCardItem } from "../base/metric-card-types";
 export { default as ObjectForm } from "../base/ObjectForm.vue";
 export { default as ObjectFormFields } from "../base/ObjectFormFields.vue";
+export { default as TestcaseWorkbench } from "../base/TestcaseWorkbench.vue";
 export type {
   ObjectFormGroup,
   ObjectFormPresentation,
   ObjectFormResolvedGroup,
   ObjectFormSlotScope,
+  ObjectFormUnsavedSwitchMode,
 } from "../base/object-form-types";
 export type { FormChangeSummaryEntry } from "../base/form-change-summary";
+export type {
+  TestcaseEntry,
+  TestcaseFieldKey,
+} from "../base/testcase-workbench-model";
 export { default as OperationButton } from "../base/OperationButton.vue";
 export { default as OperationResult } from "../base/OperationResult.vue";
 export { default as DataAdapterTestReport } from "../base/DataAdapterTestReport.vue";

@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { formFieldAt, usePanelContext } from "../panel/context";
+import { formFieldAt, usePanelContext, useProjectionSlot } from "../panel/context";
+import { useLocalDraftStore } from "../panel/local-drafts";
 import type { PlatformObjectOption, PlatformObjectOptions } from "../panel/platform-objects";
 import type { PanelOptionList } from "@ontomato/contracts/panel-projection";
 import { MemberDataUnavailable } from "../panel/member-forms";
-import { useMemberRead } from "../panel/member";
+import { useMember, useMemberRead } from "../panel/member";
+import { projectionElement } from "../panel/projection-element";
 import FormFieldFrame from "./FormFieldFrame.vue";
 
 /**
@@ -23,8 +25,43 @@ import FormFieldFrame from "./FormFieldFrame.vue";
  * under the field as the owner wrote it, beside the choices that did come back; a held value the owner no longer offers
  * says so by its own unavailable reason.
  */
-const props = defineProps<{ formSlot: string; path: string }>();
-const field = formFieldAt(usePanelContext().instance, props.formSlot, () => props.path);
+const props = defineProps<{
+  formSlot: string;
+  path: string;
+  showDraftIndicator?: boolean;
+  fallbackToFirst?: boolean;
+}>();
+const panel = usePanelContext();
+const slot = useProjectionSlot();
+const member = useMember();
+const defaultClassName = projectionElement(slot.projection).id;
+const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => {
+  const cfg = member.projection.config;
+  return cfg && typeof cfg === "object" && !Array.isArray(cfg) ? (cfg as Record<string, unknown>) : undefined;
+});
+const effectiveShowDraftIndicator = computed(() =>
+  props.showDraftIndicator ?? Boolean(rawConfig.value?.showDraftIndicator),
+);
+const effectiveFallbackToFirst = computed(() =>
+  props.fallbackToFirst ?? Boolean(rawConfig.value?.fallbackToFirst),
+);
+
+const localDraftStore = useLocalDraftStore();
+const localDraftTick = ref(0);
+if (localDraftStore) {
+  onBeforeUnmount(localDraftStore.subscribe(() => {
+    localDraftTick.value += 1;
+  }));
+}
+
+function hasChoiceDraft(primaryKey: string): boolean {
+  if (!effectiveShowDraftIndicator.value || !primaryKey) return false;
+  void localDraftTick.value;
+  if (localDraftStore?.hasObject(defaultClassName, primaryKey)) return true;
+  return panel.hasLocalDraft({ className: defaultClassName, primaryKey });
+}
+
+const field = formFieldAt(panel.instance, props.formSlot, () => props.path);
 const options: PlatformObjectOptions = memberOptions();
 
 function memberOptions(): PlatformObjectOptions {
@@ -48,6 +85,8 @@ const known = shallowRef(new Map<string, PlatformObjectOption>());
 const offered = shallowRef<readonly PlatformObjectOption[]>([]);
 const held = shallowRef<readonly PlatformObjectOption[]>([]);
 const searching = ref(false);
+const optionsLoadedOnce = ref(false);
+const lastKeyword = ref("");
 const failure = shallowRef<Error | null>(null);
 /** The owner's notes on the catalogue's latest answer. */
 const notes = shallowRef<readonly string[]>([]);
@@ -58,12 +97,15 @@ function remember(list: readonly PlatformObjectOption[]) {
 }
 
 function search(keyword = "") {
+  const trimmed = keyword.trim();
+  lastKeyword.value = trimmed;
   searching.value = true;
   void options.list({ keyword, page: { number: 1, size: 50 } }).then(({ options: listed, diagnostics }) => {
     remember(listed);
     offered.value = listed;
     notes.value = diagnostics ?? [];
     searching.value = false;
+    if (!trimmed) optionsLoadedOnce.value = true;
   }, (reason: unknown) => {
     failure.value = reason instanceof Error ? reason : new Error(String(reason));
     searching.value = false;
@@ -104,6 +146,29 @@ const chosen = computed(() => {
   return held.value[0]?.primaryKey ?? "";
 });
 
+const selectedHasDraft = computed(() => {
+  if (multiple.value || typeof chosen.value !== "string" || !chosen.value) return false;
+  const opt = known.value.get(chosen.value);
+  if (opt?.value === null) return false;
+  return hasChoiceDraft(chosen.value);
+});
+
+watch(
+  [effectiveFallbackToFirst, optionsLoadedOnce, searching, failure, offered, chosen, multiple] as const,
+  ([enabled, loaded, isSearching, err, list, currentChosen, isMultiple]) => {
+    if (!enabled || !loaded || isSearching || err || isMultiple || lastKeyword.value || list.length === 0) return;
+    const currentKey = typeof currentChosen === "string" ? currentChosen : "";
+    const isCurrentValid = Boolean(
+      currentKey && list.some((option) => option.primaryKey === currentKey && option.value !== null && option.unavailable === undefined),
+    );
+    if (isCurrentValid) return;
+    const first = list.find((option) => option.value !== null && option.unavailable === undefined);
+    if (!first) return;
+    field.set(first.value);
+  },
+  { immediate: true },
+);
+
 /**
  * Writes the reader's choice in the owner's shape: the chosen values of a multiple reference (an empty list once it is
  * cleared), the chosen value of a single one, or null once it is cleared — Element Plus clears a single select to
@@ -141,6 +206,13 @@ function choose(keys: string | string[] | undefined) {
       class="sdk-reference-picker-select"
       @update:model-value="choose"
     >
+      <template v-if="selectedHasDraft" #prefix>
+        <span
+          class="sdk-reference-draft-dot sdk-reference-selected-draft-dot"
+          :title="t('platform.formDraftIndicator')"
+          :aria-label="t('platform.formDraftIndicator')"
+        ></span>
+      </template>
       <el-option
         v-for="option in shown"
         :key="option.primaryKey"
@@ -157,7 +229,15 @@ function choose(keys: string | string[] | undefined) {
           :selected="Array.isArray(chosen) ? chosen.includes(option.primaryKey) : chosen === option.primaryKey"
           :disabled="option.unavailable !== undefined"
         >
-          <span class="sdk-reference-option-label">{{ option.value === null ? localized(option.label) : option.label }}</span>
+          <span class="sdk-reference-option-label">
+            <span
+              v-if="option.value !== null && hasChoiceDraft(option.primaryKey)"
+              class="sdk-reference-draft-dot"
+              :title="t('platform.formDraftIndicator')"
+              :aria-label="t('platform.formDraftIndicator')"
+            ></span>
+            <span>{{ option.value === null ? localized(option.label) : option.label }}</span>
+          </span>
           <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
         </slot>
       </el-option>
@@ -181,6 +261,19 @@ function choose(keys: string | string[] | undefined) {
   list-style: none;
   margin: var(--spacing-xs) 0 0;
   padding: 0;
+}
+.sdk-reference-draft-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-warning);
+  flex: 0 0 auto;
+}
+.sdk-reference-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 </style>
 

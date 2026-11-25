@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElOption, ElOptionGroup, ElSelect } from "element-plus/es/components/select/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
@@ -12,6 +12,7 @@ import {
   type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
+import { useLocalDraftStore } from "../panel/local-drafts";
 import { useMember, useMemberData, useMemberParam, useMemberRead } from "../panel/member";
 import type { PlatformObjectOption, PlatformObjectRecord } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
@@ -42,6 +43,8 @@ const props = withDefaults(
     size?: "small" | "default" | "large";
     groupBy?: string;
     metaField?: string;
+    showDraftIndicator?: boolean;
+    fallbackToFirst?: boolean;
   }>(),
   {
     placeholder: undefined,
@@ -52,6 +55,8 @@ const props = withDefaults(
     size: "small",
     groupBy: undefined,
     metaField: undefined,
+    showDraftIndicator: undefined,
+    fallbackToFirst: undefined,
   },
 );
 
@@ -115,6 +120,34 @@ function formatOptionMeta(value: unknown): string | undefined {
     return trimmed ? trimmed : undefined;
   }
   return undefined;
+}
+
+const effectiveShowDraftIndicator = computed<boolean>(() =>
+  props.showDraftIndicator ?? Boolean(rawConfig.value?.showDraftIndicator),
+);
+
+const effectiveFallbackToFirst = computed<boolean>(() =>
+  props.fallbackToFirst ?? Boolean(rawConfig.value?.fallbackToFirst),
+);
+
+const localDraftStore = useLocalDraftStore();
+const localDraftTick = ref(0);
+if (localDraftStore) {
+  onBeforeUnmount(localDraftStore.subscribe(() => {
+    localDraftTick.value += 1;
+  }));
+}
+
+function hasObjectDraft(className: string, primaryKey: string): boolean {
+  if (!effectiveShowDraftIndicator.value || !primaryKey) return false;
+  void localDraftTick.value;
+  if (localDraftStore?.hasObject(className, primaryKey)) return true;
+  return panel.hasLocalDraft({ className, primaryKey });
+}
+
+function hasOptionDraft(option: Pick<InlineOption, "className" | "primaryKey" | "isNullChoice">): boolean {
+  if (option.isNullChoice) return false;
+  return hasObjectDraft(option.className || defaultClassName, option.primaryKey);
 }
 
 const knownOptions = shallowRef(new Map<string, InlineOption>());
@@ -209,6 +242,8 @@ const readOptions = dataMode === "options" ? useMemberRead("options") : null;
 
 const offeredOptions = shallowRef<readonly InlineOption[]>([]);
 const searchingOptions = ref(dataMode === "options" && !requiresOptionsKeyword);
+const optionsLoadedOnce = ref(false);
+const lastOptionsQuery = ref("");
 const optionsUnavailable = shallowRef<{ status: "forbidden" | "error" | "awaiting"; message: string } | null>(null);
 const optionDiagnostics = shallowRef<readonly string[]>([]);
 
@@ -229,6 +264,7 @@ function searchOptions(keyword = "") {
   if (!readOptions) return;
   const generation = ++searchGeneration;
   const trimmed = keyword.trim();
+  lastOptionsQuery.value = trimmed;
   if (requiresOptionsKeyword && !trimmed) {
     searchingOptions.value = false;
     offeredOptions.value = [];
@@ -250,12 +286,14 @@ function searchOptions(keyword = "") {
       rememberOptions(mapped);
       offeredOptions.value = mapped;
       optionDiagnostics.value = list.diagnostics ?? [];
+      if (!trimmed) optionsLoadedOnce.value = true;
       return;
     }
     if (result.status === "empty") {
       optionsUnavailable.value = null;
       offeredOptions.value = [];
       optionDiagnostics.value = [];
+      if (!trimmed) optionsLoadedOnce.value = true;
       return;
     }
     if (result.status === "forbidden") {
@@ -282,6 +320,11 @@ const selectedRef = computed<PanelObjectRef | null>(() =>
   stateObject(selectedParam.value.value as PanelFieldValue),
 );
 const currentKey = computed<string>(() => selectedRef.value?.primaryKey ?? "");
+const selectedHasDraft = computed<boolean>(() => {
+  const refObj = selectedRef.value;
+  if (!refObj) return false;
+  return hasObjectDraft(refObj.className || defaultClassName, refObj.primaryKey);
+});
 
 if (readOptions && !requiresOptionsKeyword) onMounted(() => searchOptions());
 
@@ -419,6 +462,35 @@ function writeSelected(next: PanelObjectRef | null) {
   emit("update:selected", next);
 }
 
+const sourceOptionsForFallback = computed<readonly InlineOption[]>(() =>
+  dataMode === "rows" ? allRowOptions.value : offeredOptions.value,
+);
+
+const optionsReadyForFallback = computed<boolean>(() => {
+  if (dataMode === "rows") {
+    return rowsData!.value.status === "ready" && !lastRemoteRowsQuery.value;
+  }
+  return optionsLoadedOnce.value && !searchingOptions.value && !optionsUnavailable.value && !lastOptionsQuery.value;
+});
+
+watch(
+  [effectiveFallbackToFirst, optionsReadyForFallback, sourceOptionsForFallback, currentKey] as const,
+  ([enabled, ready, list, key]) => {
+    if (!enabled || !ready || list.length === 0) return;
+    const isCurrentValid = Boolean(
+      key && list.some((option) => option.primaryKey === key && !option.isNullChoice && option.unavailableReason === undefined),
+    );
+    if (isCurrentValid) return;
+    const first = list.find((option) => !option.isNullChoice && option.unavailableReason === undefined);
+    if (!first) return;
+    writeSelected({
+      className: first.className || defaultClassName,
+      primaryKey: first.primaryKey,
+    });
+  },
+  { immediate: true },
+);
+
 function onSelect(value: string | undefined) {
   localQuery.value = "";
   if (value === undefined || value === "") {
@@ -462,6 +534,13 @@ function onSelect(value: string | undefined) {
       @visible-change="onVisibleChange"
       @update:model-value="onSelect"
     >
+      <template v-if="selectedHasDraft" #prefix>
+        <span
+          class="sdk-reference-draft-dot sdk-reference-selected-draft-dot"
+          :title="t('platform.formDraftIndicator')"
+          :aria-label="t('platform.formDraftIndicator')"
+        ></span>
+      </template>
       <template v-if="optionGroups">
         <template v-for="group in optionGroups" :key="group.key || '__ungrouped'">
           <el-option-group v-if="group.label" :label="group.label">
@@ -481,7 +560,15 @@ function onSelect(value: string | undefined) {
                 :disabled="option.unavailableReason !== undefined"
               >
                 <span class="sdk-reference-option-main">
-                  <span class="sdk-reference-option-label">{{ option.label }}</span>
+                  <span class="sdk-reference-option-label">
+                    <span
+                      v-if="hasOptionDraft(option)"
+                      class="sdk-reference-draft-dot"
+                      :title="t('platform.formDraftIndicator')"
+                      :aria-label="t('platform.formDraftIndicator')"
+                    ></span>
+                    <span>{{ option.label }}</span>
+                  </span>
                   <span v-if="option.meta" class="sdk-reference-option-meta" data-picker-option-meta>{{ option.meta }}</span>
                 </span>
                 <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
@@ -505,7 +592,15 @@ function onSelect(value: string | undefined) {
                 :disabled="option.unavailableReason !== undefined"
               >
                 <span class="sdk-reference-option-main">
-                  <span class="sdk-reference-option-label">{{ option.label }}</span>
+                  <span class="sdk-reference-option-label">
+                    <span
+                      v-if="hasOptionDraft(option)"
+                      class="sdk-reference-draft-dot"
+                      :title="t('platform.formDraftIndicator')"
+                      :aria-label="t('platform.formDraftIndicator')"
+                    ></span>
+                    <span>{{ option.label }}</span>
+                  </span>
                   <span v-if="option.meta" class="sdk-reference-option-meta" data-picker-option-meta>{{ option.meta }}</span>
                 </span>
                 <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
@@ -531,7 +626,15 @@ function onSelect(value: string | undefined) {
             :disabled="option.unavailableReason !== undefined"
           >
             <span class="sdk-reference-option-main">
-              <span class="sdk-reference-option-label">{{ option.label }}</span>
+              <span class="sdk-reference-option-label">
+                <span
+                  v-if="hasOptionDraft(option)"
+                  class="sdk-reference-draft-dot"
+                  :title="t('platform.formDraftIndicator')"
+                  :aria-label="t('platform.formDraftIndicator')"
+                ></span>
+                <span>{{ option.label }}</span>
+              </span>
               <span v-if="option.meta" class="sdk-reference-option-meta" data-picker-option-meta>{{ option.meta }}</span>
             </span>
             <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
@@ -561,6 +664,19 @@ function onSelect(value: string | undefined) {
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   margin-top: var(--spacing-xs);
+}
+.sdk-reference-draft-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-warning);
+  flex: 0 0 auto;
+}
+.sdk-reference-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 </style>
 

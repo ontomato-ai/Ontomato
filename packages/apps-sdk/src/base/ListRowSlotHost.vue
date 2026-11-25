@@ -4,6 +4,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import { listRowSlotKey, type ListRowSlotOperation } from "../panel/slot-context";
 import type { PanelObjectRef } from "../panel/state";
+import type { ObjectListRowOperationState } from "./object-list-types";
 
 function hasRenderableVNodes(vnodes: readonly VNode[]): boolean {
   return vnodes.some((node) => {
@@ -33,11 +34,19 @@ export default defineComponent({
       type: Object as PropType<Readonly<Record<string, ListRowSlotOperation>>>,
       required: true,
     },
+    operationResults: {
+      type: Object as PropType<Readonly<Record<string, ObjectListRowOperationState>>>,
+      default: () => ({}),
+    },
     runOperation: {
       type: Function as PropType<
         (operationName: string, extraInput?: Readonly<Record<string, RuntimeJsonValue>>) => Promise<void>
       >,
       required: true,
+    },
+    clearOperationResult: {
+      type: Function as PropType<(operationName?: string) => void>,
+      default: () => {},
     },
     renderSlot: { type: Function as PropType<Slot>, required: true },
     slotProps: { type: Object as PropType<Record<string, unknown>>, required: true },
@@ -50,7 +59,9 @@ export default defineComponent({
       itemKey: computed(() => props.itemKey ?? props.rowRef),
       index: computed(() => props.index),
       operations: computed(() => props.operations),
+      operationResults: computed(() => props.operationResults),
       runOperation: (operationName, extraInput) => props.runOperation(operationName, extraInput),
+      clearOperationResult: (operationName) => props.clearOperationResult(operationName),
     });
     return () => {
       const rendered = props.renderSlot(props.slotProps);

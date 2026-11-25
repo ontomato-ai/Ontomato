@@ -38,12 +38,19 @@ export function formatOperationJson(value: RuntimeJsonValue): string {
 
 /** Returns the sections list when a read operation result carries multi-section output. */
 export function operationResultSections(
-  result: PanelReadOperationResult,
+  result: PanelReadOperationResult | null | undefined,
 ): readonly PanelReadOperationSection[] {
-  return result.kind === "sections" ? result.sections : [];
+  return result?.kind === "sections" ? result.sections : [];
 }
 
-/** Picks the first section ID for a multi-section result, or an empty string for other kinds. */
-export function defaultOperationSectionId(result: PanelReadOperationResult): string {
-  return result.kind === "sections" ? result.sections[0]?.id ?? "" : "";
+/**
+ * Picks the default active section ID for a multi-section result: uses `result.defaultSectionId` when it matches one
+ * of `result.sections`, otherwise falls back to the first section's ID, or `""` for non-section or empty results.
+ */
+export function defaultOperationSectionId(result: PanelReadOperationResult | null | undefined): string {
+  if (result?.kind !== "sections" || result.sections.length === 0) return "";
+  if (result.defaultSectionId && result.sections.some((section) => section.id === result.defaultSectionId)) {
+    return result.defaultSectionId;
+  }
+  return result.sections[0]?.id ?? "";
 }

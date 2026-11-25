@@ -5,9 +5,10 @@ import { firstTreeFile, buildPathTree, PathTree, type PathTreeItem } from "@onto
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { panelRecordFieldText } from "@ontomato/contracts/panel-projection";
 import { usePanelContext } from "../panel/context";
-import { useMemberData, useMemberParam } from "../panel/member";
+import { useMember, useMemberData, useMemberParam } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { useDataStateLabels } from "./data-state-labels";
+import { readConfigString } from "./localized-text";
 
 /**
  * The files of one object — a skill package's, say — as a folder/file tree, read through its owner's `files` read (the
@@ -33,6 +34,8 @@ const props = withDefaults(
     searchPlaceholder?: string;
     /** Optional panel message key shown when the search matches no files. */
     noMatchText?: string;
+    /** Optional direct child filename (e.g. `"index.md"`) selected when clicking a directory node. */
+    directoryIndexFile?: string;
   }>(),
   {
     pathField: "path",
@@ -43,16 +46,28 @@ const props = withDefaults(
     searchable: false,
     searchPlaceholder: undefined,
     noMatchText: undefined,
+    directoryIndexFile: undefined,
   },
 );
 
 const { locale, t } = useI18n();
 const panel = usePanelContext();
+const member = useMember();
 const files = useMemberData("files");
 /** The selected file's key: the panel state the placement binds, else the tree's own. */
 const selected = useMemberParam("selected");
 /** The search keyword: bound to panel public state when wired so readers and agents share it. */
 const search = useMemberParam("search");
+
+const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => {
+  const cfg = member.projection.config;
+  return cfg && typeof cfg === "object" && !Array.isArray(cfg) ? (cfg as Record<string, unknown>) : undefined;
+});
+const effectiveDirectoryIndexFile = computed<string | undefined>(() => {
+  const value = props.directoryIndexFile ?? readConfigString(rawConfig.value, "directoryIndexFile", "directory-index-file");
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+});
 
 const records = computed(() => (files.value.status === "ready" ? (files.value.value as unknown as PlatformObjectRecord[]) : []));
 const items = computed<readonly PathTreeItem[]>(() =>
@@ -80,7 +95,7 @@ watch([items, answered], ([next, isAnswered]) => {
   if (fallback !== null) selected.set(fallback);
 }, { immediate: true });
 
-function onSelect(key: string) {
+function onSelect(key: string | null) {
   selected.set(key);
 }
 
@@ -102,6 +117,7 @@ const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyTex
         :search="searchText"
         :search-placeholder="searchPlaceholder ? panel.t(searchPlaceholder) : t('common.search')"
         :no-match-text="noMatchText ? panel.t(noMatchText) : undefined"
+        :directory-index-file="effectiveDirectoryIndexFile"
         @update:selected-key="onSelect"
         @update:search="onSearch"
       />

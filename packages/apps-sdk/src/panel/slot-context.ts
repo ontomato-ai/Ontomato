@@ -3,6 +3,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { PanelDeclaredComponents, PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
+import type { ObjectListRowOperationState } from "../base/object-list-types";
 import type { PanelObjectRef } from "./state";
 
 /** Direct panels register manifest components under their local names in the panel app. */
@@ -55,7 +56,9 @@ export interface ListRowSlotContext {
   readonly itemKey: ComputedRef<PanelMemberItemKey>;
   readonly index: ComputedRef<number>;
   readonly operations: ComputedRef<Readonly<Record<string, ListRowSlotOperation>>>;
+  readonly operationResults?: ComputedRef<Readonly<Record<string, ObjectListRowOperationState>>>;
   runOperation(operationName: string, extraInput?: Readonly<Record<string, RuntimeJsonValue>>): Promise<void>;
+  clearOperationResult?(operationName?: string): void;
 }
 
 export const listRowSlotKey: InjectionKey<ListRowSlotContext> = Symbol("ontomato.listRowSlot");

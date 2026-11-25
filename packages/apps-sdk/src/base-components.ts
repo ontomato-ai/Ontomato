@@ -15,6 +15,7 @@ export const baseComponents = {
   MetricCard: () => import("./base/MetricCard.vue").then(module => module.default),
   ObjectForm: () => import("./base/ObjectForm.vue").then(module => module.default),
   ObjectFormFields: () => import("./base/ObjectFormFields.vue").then(module => module.default),
+  TestcaseWorkbench: () => import("./base/TestcaseWorkbench.vue").then(module => module.default),
   OperationButton: () => import("./base/OperationButton.vue").then(module => module.default),
   OperationResult: () => import("./base/OperationResult.vue").then(module => module.default),
   DataAdapterTestReport: () => import("./base/DataAdapterTestReport.vue").then(module => module.default),
