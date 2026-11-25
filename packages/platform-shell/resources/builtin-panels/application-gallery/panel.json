@@ -49,9 +49,11 @@
           "searchable": false,
           "showFooter": false,
           "leadingIconField": "icon",
-          "leadingIconKind": "application",
+          "leadingIconKind": "auto",
           "openOutput": "openPath",
           "subtitleLines": 2,
+          "skeletonCount": 6,
+          "actionErrorPlacement": "top",
           "emptyText": "panel.empty",
           "noMatchText": "panel.empty",
           "rowActions": {

@@ -125,10 +125,22 @@ function layoutSignature(layout) {
     .join("|");
 }
 
-function greetingKeyForHour(hour) {
-  if (hour >= 5 && hour < 12) return "hero.greeting.morning";
-  if (hour >= 12 && hour < 18) return "hero.greeting.afternoon";
-  return "hero.greeting.evening";
+function greetingPeriodForHour(hour) {
+  if (hour >= 5 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 18) return "afternoon";
+  return "evening";
+}
+
+function inferCardKind(card) {
+  const fields = card?.row?.fields;
+  const rawKind = typeof card?.kind === "string"
+    ? card.kind
+    : (typeof fields?.cardKind === "string"
+        ? fields.cardKind
+        : (typeof fields?.kind === "string" ? fields.kind : ""));
+  if (rawKind.toLowerCase() === "chart") return "chart";
+  if (rawKind.toLowerCase() === "metric") return "metric";
+  return fields?.chartFile !== undefined ? "chart" : "metric";
 }
 
 function cardPathFromPrimaryKey(primaryKey) {
@@ -164,10 +176,17 @@ function outcomeOf(receipt) {
 
 await mountPanel({
   setup() {
-    const { instance, navigate, notify, t } = usePanelContext();
+    const { instance, navigate, notify, t, currentUser } = usePanelContext();
     const values = instance.state.values;
 
-    const greetingText = computed(() => t(greetingKeyForHour(new Date().getHours())));
+    const greetingText = computed(() => {
+      const period = greetingPeriodForHour(new Date().getHours());
+      const displayName = currentUser?.value?.displayName?.trim();
+      if (displayName) {
+        return t(`hero.greetingNamed.${period}`, { name: displayName });
+      }
+      return t(`hero.greeting.${period}`);
+    });
     const preferencesOpen = ref(false);
     const resettingHome = ref(false);
     const refreshingAll = ref(false);
@@ -226,7 +245,6 @@ await mountPanel({
     const hasSelectedObject = computed(() =>
       Boolean(selectedObject.value?.className && selectedObject.value?.primaryKey),
     );
-    const selectedObjectTitle = computed(() => selectedObject.value?.primaryKey ?? "");
     const selectedObjectPath = computed(() => objectPathFromRef(selectedObject.value));
     const objectDrawerOpen = computed({
       get: () => hasSelectedObject.value,
@@ -236,9 +254,16 @@ await mountPanel({
     });
 
     const selectedCardLabel = ref("");
+    const selectedCardKind = ref("metric");
     const selectedCard = computed(() => values.value.selectedCard ?? null);
     const hasSelectedCard = computed(() => Boolean(selectedCard.value?.primaryKey));
-    const selectedCardTitle = computed(() => selectedCardLabel.value);
+    const selectedCardTarget = computed(() => {
+      const current = selectedCard.value;
+      if (!current?.className || !current?.primaryKey) return null;
+      return selectedCardLabel.value
+        ? { className: current.className, primaryKey: current.primaryKey, label: selectedCardLabel.value }
+        : { className: current.className, primaryKey: current.primaryKey };
+    });
     const selectedCardPath = computed(() =>
       selectedCard.value?.primaryKey ? cardPathFromPrimaryKey(selectedCard.value.primaryKey) : "",
     );
@@ -247,6 +272,7 @@ await mountPanel({
       set: (open) => {
         if (!open && hasSelectedCard.value) {
           selectedCardLabel.value = "";
+          selectedCardKind.value = "metric";
           instance.state.set("selectedCard", null);
         }
       },
@@ -256,7 +282,13 @@ await mountPanel({
     const selectedTaskOpenPath = ref("");
     const selectedTask = computed(() => values.value.selectedTask ?? null);
     const hasSelectedTask = computed(() => Boolean(selectedTask.value?.primaryKey));
-    const selectedTaskTitle = computed(() => selectedTaskLabel.value);
+    const selectedTaskTarget = computed(() => {
+      const current = selectedTask.value;
+      if (!current?.className || !current?.primaryKey) return null;
+      return selectedTaskLabel.value
+        ? { className: current.className, primaryKey: current.primaryKey, label: selectedTaskLabel.value }
+        : { className: current.className, primaryKey: current.primaryKey };
+    });
     const selectedTaskPath = computed(() => {
       if (selectedTaskOpenPath.value) return selectedTaskOpenPath.value;
       return selectedTask.value?.primaryKey ? taskPathFromPrimaryKey(selectedTask.value.primaryKey) : "";
@@ -380,6 +412,7 @@ await mountPanel({
         return;
       }
       selectedCardLabel.value = typeof card?.name === "string" ? card.name : "";
+      selectedCardKind.value = inferCardKind(card);
       instance.state.set("selectedCard", { className: ref.className, primaryKey: ref.primaryKey });
     }
 
@@ -419,15 +452,16 @@ await mountPanel({
       openModeMetrics,
       openModeTasks,
       hasSelectedObject,
-      selectedObjectTitle,
+      selectedObject,
       selectedObjectPath,
       objectDrawerOpen,
       hasSelectedCard,
-      selectedCardTitle,
+      selectedCardKind,
+      selectedCardTarget,
       selectedCardPath,
       cardDrawerOpen,
       hasSelectedTask,
-      selectedTaskTitle,
+      selectedTaskTarget,
       selectedTaskPath,
       taskDrawerOpen,
       bindProjection,
