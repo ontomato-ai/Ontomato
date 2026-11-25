@@ -58,7 +58,12 @@ vi.mock("../application-catalogue", () => ({
   }),
 }));
 
-import { agentSessionServerOperations, cleanSessionDisplayTitle, createAgentSessionReadAdapter } from "../agent-session-panel";
+import {
+  agentSessionServerOperations,
+  cleanSessionDisplayTitle,
+  createAgentSessionReadAdapter,
+  formatShortDateTime,
+} from "../agent-session-panel";
 import { createRecentVisitReadAdapter } from "../recent-visit-panel";
 
 configureI18n({
@@ -92,24 +97,27 @@ beforeEach(() => {
   state.favoriteKeys = new Set([JSON.stringify([AGENT_SESSION, "11111111-1111-4111-8111-111111111111"])]);
   state.visits = [
     { appId: "dashboards", title: "Sales Board", path: "/dashboards?dashboardId=b1", visitedAt: "2026-11-25T01:00:00.000Z" },
+    { appId: "browser", title: "Order Detail", path: "/browser/views/Order?key=ORD-42", visitedAt: "2026-11-25T02:30:00.000Z" },
     { appId: "hidden-app", title: "Hidden", path: "/hidden", visitedAt: "2026-11-25T00:00:00.000Z" },
   ];
   state.catalog = [
     { id: "dashboards", names: { en: "Dashboards" }, icon: "layout-dashboard" },
+    { id: "browser", names: { en: "Object Browser" }, icon: "objects" },
   ];
 });
 
 describe("platform:AgentSession and platform:RecentVisit panel reads and rename", () => {
-  it("cleans legacy session titles, derives favorited from platform-home, and renames sessions", async () => {
+  it("cleans legacy session titles, derives favorited from platform-home, formats subtitle time, and renames sessions", async () => {
     expect(cleanSessionDisplayTitle('{"resource":{"title":"Faculty Scale"}}', "Untitled")).toBe("Faculty Scale");
     const adapter = createAgentSessionReadAdapter(owner, viewer);
     const rows = await adapter.list({});
+    const expectedSessionTime = formatShortDateTime("2026-11-25T01:00:00.000Z", "en");
     expect(rows).toMatchObject([
       {
         className: AGENT_SESSION,
         primaryKey: "11111111-1111-4111-8111-111111111111",
         label: "Quarterly Revenue",
-        subtitle: "Analyst",
+        subtitle: `Analyst · ${expectedSessionTime}`,
         outputs: {
           openPath: "/agents/chat?agentId=22222222-2222-4222-8222-222222222222&sessionId=11111111-1111-4111-8111-111111111111",
           favorited: true,
@@ -128,16 +136,27 @@ describe("platform:AgentSession and platform:RecentVisit panel reads and rename"
     expect(state.sessions[0]?.title).toBe("Q4 Board Review");
   });
 
-  it("filters recent visits to currently visible applications and exposes openPath", async () => {
+  it("filters recent visits to currently visible applications and exposes context, formatted time, and openPath", async () => {
     const adapter = createRecentVisitReadAdapter(owner, viewer);
     const rows = await adapter.list({ limit: 8 });
-    expect(rows).toHaveLength(1);
+    const expectedBoardTime = formatShortDateTime("2026-11-25T01:00:00.000Z", "en");
+    const expectedObjectTime = formatShortDateTime("2026-11-25T02:30:00.000Z", "en");
+    expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       className: RECENT_VISIT,
       primaryKey: "/dashboards?dashboardId=b1",
       label: "Sales Board",
-      subtitle: "Dashboards",
+      subtitle: `Dashboards · ${expectedBoardTime}`,
+      fields: { context: "" },
       outputs: { openPath: "/dashboards?dashboardId=b1" },
+    });
+    expect(rows[1]).toMatchObject({
+      className: RECENT_VISIT,
+      primaryKey: "/browser/views/Order?key=ORD-42",
+      label: "Order Detail",
+      subtitle: `Object Browser · ORD-42 · ${expectedObjectTime}`,
+      fields: { context: "ORD-42" },
+      outputs: { openPath: "/browser/views/Order?key=ORD-42" },
     });
   });
 });

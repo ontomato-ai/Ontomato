@@ -23,10 +23,13 @@ const BLOCK_ITEMS = [
 ];
 
 const BLOCK_HEADER_LINKS = {
-  apps: { path: "/applications", labelKey: "link.allApps" },
-  dashboards: { path: "/dashboards", labelKey: "link.allDashboards" },
-  tasks: { path: "/schedules", labelKey: "link.allTasks" },
-  conversations: { path: "/agents/chat", labelKey: "link.allConversations" },
+  apps: [
+    { path: "/app-builder", labelKey: "link.appBuilder" },
+    { path: "/applications", labelKey: "link.allApps" },
+  ],
+  dashboards: [{ path: "/dashboards", labelKey: "link.allDashboards" }],
+  tasks: [{ path: "/schedules", labelKey: "link.allTasks" }],
+  conversations: [{ path: "/agents/chat", labelKey: "link.allConversations" }],
 };
 
 const LAYOUT_PRESETS = {
@@ -114,6 +117,14 @@ function cloneLayout(source) {
   };
 }
 
+function layoutSignature(layout) {
+  const groups = Array.isArray(layout?.groups) ? layout.groups : [];
+  return groups
+    .flatMap((group) => (Array.isArray(group?.items) ? group.items : []))
+    .map((item) => `${item?.id ?? ""}:${item?.colSpan ?? ""}:${item?.rowSpan ?? ""}:${item?.hidden ? "1" : "0"}`)
+    .join("|");
+}
+
 function greetingKeyForHour(hour) {
   if (hour >= 5 && hour < 12) return "hero.greeting.morning";
   if (hour >= 12 && hour < 18) return "hero.greeting.afternoon";
@@ -159,16 +170,29 @@ await mountPanel({
     const greetingText = computed(() => t(greetingKeyForHour(new Date().getHours())));
     const preferencesOpen = ref(false);
     const resettingHome = ref(false);
+    const refreshingAll = ref(false);
+    const projectionRefs = new Map();
 
     const isCustomHomeOutput = usePanelOutput("homeStatus", "isCustomHome");
     const isCustomHome = computed(() => isCustomHomeOutput.value === true);
 
     const gridHiddenCount = usePanelOutput("workspaceGrid", "hiddenCount");
+    const pinnedSessionsLoaded = usePanelOutput("pinnedSessions", "loadedCount");
+    const hasPinnedSessions = computed(() => (pinnedSessionsLoaded.value ?? 0) > 0);
+
     const currentLayout = computed(() => {
       const value = values.value.layout;
       return value && typeof value === "object" && Array.isArray(value.groups)
         ? value
         : LAYOUT_PRESETS.balanced;
+    });
+
+    const activePresetId = computed(() => {
+      const current = layoutSignature(currentLayout.value);
+      for (const preset of PRESET_LIST) {
+        if (layoutSignature(LAYOUT_PRESETS[preset.id]) === current) return preset.id;
+      }
+      return null;
     });
 
     const hiddenItems = computed(() => {
@@ -256,13 +280,37 @@ await mountPanel({
       await opResetHome.run({ target: null, input: {} });
     }
 
+    function bindProjection(slotName) {
+      return (el) => {
+        if (el && typeof el.refresh === "function") {
+          projectionRefs.set(slotName, el);
+        } else {
+          projectionRefs.delete(slotName);
+        }
+      };
+    }
+
+    function refreshAll() {
+      if (refreshingAll.value) return;
+      refreshingAll.value = true;
+      try {
+        for (const projection of projectionRefs.values()) {
+          projection.refresh?.();
+        }
+      } finally {
+        setTimeout(() => {
+          refreshingAll.value = false;
+        }, 350);
+      }
+    }
+
     function openPath(path) {
       if (!path) return;
       void navigate(path);
     }
 
-    function blockHeaderLink(itemId) {
-      return BLOCK_HEADER_LINKS[itemId] ?? null;
+    function blockHeaderLinks(itemId) {
+      return BLOCK_HEADER_LINKS[itemId] ?? [];
     }
 
     function setOpenMode(field, mode) {
@@ -332,9 +380,12 @@ await mountPanel({
       greetingText,
       preferencesOpen,
       resettingHome,
+      refreshingAll,
       isCustomHome,
       hiddenCount,
       hiddenItems,
+      hasPinnedSessions,
+      activePresetId,
       presets: PRESET_LIST,
       openModeObjects,
       openModeMetrics,
@@ -349,9 +400,11 @@ await mountPanel({
       hasSelectedTask,
       selectedTaskPath,
       taskDrawerOpen,
+      bindProjection,
+      refreshAll,
       runResetHome,
       openPath,
-      blockHeaderLink,
+      blockHeaderLinks,
       setOpenMode,
       applyPreset,
       resetDefaultLayout,

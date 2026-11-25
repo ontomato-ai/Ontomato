@@ -25,58 +25,84 @@
     min-width: 0;
   }
   .pw-status-host {
-    min-width: 0;
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    pointer-events: none;
   }
   .pw-hero {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md, 16px);
-    padding: var(--spacing-lg, 22px) var(--spacing-xl, 24px);
-    border: 1px solid var(--sdk-border-color-lighter, var(--sdk-border-color));
-    border-radius: var(--radius-lg, 14px);
-    background: var(--sdk-bg-color);
+    padding: var(--spacing-xs, 4px) 0 0;
+    min-width: 0;
   }
   .pw-hero-top {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: var(--spacing-md, 16px);
     flex-wrap: wrap;
   }
-  .pw-hero-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-  }
   .pw-greeting {
     margin: 0;
-    font-size: var(--text-xl, 22px);
+    font-size: var(--text-2xl, 24px);
     font-weight: var(--font-semibold, 600);
-    line-height: 1.3;
+    line-height: var(--spacing-2xl, 32px);
     color: var(--sdk-text-color-primary);
-  }
-  .pw-subtitle {
-    margin: 0;
-    font-size: var(--text-sm, 13px);
-    line-height: 1.5;
-    color: var(--sdk-text-color-secondary);
+    min-width: 0;
   }
   .pw-hero-actions {
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--spacing-xs, 8px);
+    gap: var(--spacing-xs, 6px);
     flex: none;
+  }
+  .pw-icon-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: var(--control-height, 32px);
+    height: var(--control-height, 32px);
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-md, 8px);
+    background: transparent;
+    color: var(--sdk-text-color-secondary);
+    font: inherit;
+    cursor: pointer;
+    transition: background-color var(--transition-fast, 0.15s ease), color var(--transition-fast, 0.15s ease);
+  }
+  .pw-icon-btn:hover {
+    background: var(--sdk-fill-color-light);
+    color: var(--sdk-text-color-primary);
+  }
+  .pw-icon-btn:focus-visible {
+    outline: 2px solid var(--sdk-color-primary);
+    outline-offset: -2px;
+  }
+  .pw-icon-btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .pw-icon-btn.is-spinning svg {
+    animation: pw-spin 0.6s linear infinite;
+  }
+  @keyframes pw-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
   .pw-prefs-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    margin-left: 6px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
     border-radius: 999px;
     background: var(--sdk-color-primary-light-9, var(--sdk-fill-color-light));
     color: var(--sdk-color-primary);
@@ -87,6 +113,39 @@
   .pw-composer-wrap {
     width: 100%;
     min-width: 0;
+    --shell-composer-shadow: var(--elevation-composer, 0 6px 20px rgba(0, 0, 0, 0.08));
+  }
+  .pw-quick-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs, 8px);
+  }
+  .pw-quick-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+    min-height: var(--control-height-sm, 28px);
+    padding: var(--spacing-xs, 4px) var(--spacing-sm, 10px);
+    border: 0;
+    border-radius: var(--radius-md, 8px);
+    background: transparent;
+    color: var(--sdk-text-color-secondary);
+    font: inherit;
+    font-size: var(--text-sm, 13px);
+    cursor: pointer;
+    transition: background-color var(--transition-fast, 0.15s ease), color var(--transition-fast, 0.15s ease);
+  }
+  .pw-quick-link:hover {
+    background: var(--sdk-fill-color, var(--sdk-fill-color-light));
+    color: var(--sdk-text-color-primary);
+  }
+  .pw-quick-link:focus-visible {
+    outline: 2px solid var(--sdk-color-primary);
+    outline-offset: -2px;
+  }
+  .pw-quick-link svg {
+    flex: none;
   }
   .pw-grid-wrap {
     width: 100%;
@@ -107,6 +166,9 @@
     gap: 6px;
     min-width: 0;
   }
+  .pw-block-subsection.is-hidden {
+    display: none;
+  }
   .pw-block-subsection-title {
     margin: 0;
     font-size: var(--text-xs, 12px);
@@ -117,10 +179,41 @@
     height: auto;
     min-width: 0;
   }
+  .pw-apps-list .sdk-object-list-cards {
+    grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
+    gap: var(--spacing-sm, 12px);
+  }
+  .pw-item-icon {
+    color: var(--sdk-text-color-secondary);
+    flex-shrink: 0;
+  }
+  .pw-item-icon-accent {
+    color: var(--sdk-color-primary);
+  }
+  .pw-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-xs, 6px);
+    padding: var(--spacing-md, 16px) var(--spacing-sm, 12px);
+    text-align: center;
+    color: var(--sdk-text-color-secondary);
+  }
+  .pw-empty p {
+    margin: 0;
+    font-size: var(--text-sm, 13px);
+    line-height: 1.5;
+  }
+  .pw-header-links {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
   .pw-header-link {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     padding: 2px 8px;
     border: 0;
     border-radius: var(--radius-sm, 6px);
@@ -177,6 +270,12 @@
   .pw-preset-btn:hover {
     border-color: var(--sdk-color-primary);
     background: var(--sdk-fill-color-light);
+  }
+  .pw-preset-btn.is-active {
+    border-color: var(--sdk-color-primary);
+    background: var(--sdk-color-primary-light-9, var(--sdk-fill-color-light));
+    color: var(--sdk-color-primary);
+    font-weight: var(--font-semibold, 600);
   }
   .pw-hidden-list {
     display: flex;
@@ -276,37 +375,54 @@
     .pw-scroll {
       padding: var(--spacing-md, 16px) var(--spacing-md, 16px) var(--spacing-xl, 28px);
     }
-    .pw-hero {
-      padding: var(--spacing-md, 16px);
-    }
   }
 </style>
 
 <div id="app" v-cloak class="pw-page">
+  <div class="pw-status-host" aria-hidden="true">
+    <projection slot="homeStatus" :ref="bindProjection('homeStatus')"></projection>
+    <projection slot="homeActions"></projection>
+  </div>
+
   <div class="pw-scroll">
     <div class="pw-shell">
-      <div class="pw-status-host">
-        <projection slot="homeStatus"></projection>
-        <projection slot="homeActions"></projection>
-      </div>
-
       <section class="pw-hero">
         <div class="pw-hero-top">
-          <div class="pw-hero-copy">
-            <h1 class="pw-greeting">{{ greetingText }}</h1>
-            <p class="pw-subtitle">{{ t("hero.subtitle") }}</p>
-          </div>
+          <h1 class="pw-greeting">{{ greetingText }}</h1>
           <div class="pw-hero-actions">
-            <projection slot="customizeWorkspace"></projection>
-            <sdk-button
-              size="small"
-              plain
+            <button
+              type="button"
+              class="pw-icon-btn"
+              :class="{ 'is-spinning': refreshingAll }"
+              :disabled="refreshingAll"
+              :title="t('hero.refresh')"
+              :aria-label="t('hero.refresh')"
+              data-testid="workspace-refresh-btn"
+              @click="refreshAll"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                <path d="M21 3v5h-5"></path>
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                <path d="M8 16H3v5"></path>
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="pw-icon-btn"
+              :title="t('hero.preferences')"
+              :aria-label="t('hero.preferences')"
               data-testid="workspace-preferences-btn"
               @click="preferencesOpen = true"
             >
-              <span>{{ t("hero.preferences") }}</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 7h-9"></path>
+                <path d="M14 17H5"></path>
+                <circle cx="17" cy="17" r="3"></circle>
+                <circle cx="7" cy="7" r="3"></circle>
+              </svg>
               <span v-if="hiddenCount > 0" class="pw-prefs-badge" data-testid="hidden-blocks-badge">{{ hiddenCount }}</span>
-            </sdk-button>
+            </button>
             <sdk-button
               v-if="isCustomHome"
               size="small"
@@ -324,6 +440,36 @@
         <div class="pw-composer-wrap">
           <projection slot="askInline"></projection>
         </div>
+
+        <nav class="pw-quick-links" :aria-label="t('hero.quickLinksLabel')">
+          <button
+            type="button"
+            class="pw-quick-link"
+            @click="openPath('/agents/chat')"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path>
+              <path d="M20 3v4"></path>
+              <path d="M22 5h-4"></path>
+              <path d="M4 17v2"></path>
+              <path d="M5 18H3"></path>
+            </svg>
+            <span>{{ t("hero.startAnalysis") }}</span>
+          </button>
+          <button
+            type="button"
+            class="pw-quick-link"
+            @click="openPath('/applications')"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+              <path d="M10 4v4"></path>
+              <path d="M2 8h20"></path>
+              <path d="M6 4v4"></path>
+            </svg>
+            <span>{{ t("hero.exploreApps") }}</span>
+          </button>
+        </nav>
       </section>
 
       <section class="pw-grid-wrap">
@@ -335,58 +481,175 @@
           :editable="true"
         >
           <template #item-header-actions="{ itemId }">
-            <button
-              v-if="blockHeaderLink(itemId)"
-              type="button"
-              class="pw-header-link"
-              @click.stop="openPath(blockHeaderLink(itemId).path)"
-            >
-              {{ t(blockHeaderLink(itemId).labelKey) }}
-            </button>
+            <div v-if="blockHeaderLinks(itemId).length > 0" class="pw-header-links">
+              <button
+                v-for="link in blockHeaderLinks(itemId)"
+                :key="link.path"
+                type="button"
+                class="pw-header-link"
+                @click.stop="openPath(link.path)"
+              >
+                <span>{{ t(link.labelKey) }}</span>
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M7 7h10v10"></path>
+                  <path d="M7 17 17 7"></path>
+                </svg>
+              </button>
+            </div>
           </template>
 
           <template #item="{ itemId }">
             <div v-if="itemId === 'apps'" class="pw-block-body">
-              <projection slot="favoriteApps" class="pw-block-list"></projection>
+              <projection
+                slot="favoriteApps"
+                :ref="bindProjection('favoriteApps')"
+                class="pw-block-list pw-apps-list"
+              >
+                <template #empty>
+                  <div class="pw-empty">
+                    <p>{{ t("empty.apps") }}</p>
+                    <sdk-button size="small" text type="primary" @click="openPath('/applications')">
+                      {{ t("empty.action.apps") }}
+                    </sdk-button>
+                  </div>
+                </template>
+              </projection>
             </div>
 
             <div v-else-if="itemId === 'dashboards'" class="pw-block-body">
               <div class="pw-block-subsection">
                 <h3 class="pw-block-subsection-title">{{ t("block.dashboardsList") }}</h3>
-                <projection slot="favoriteDashboards" class="pw-block-list"></projection>
+                <projection
+                  slot="favoriteDashboards"
+                  :ref="bindProjection('favoriteDashboards')"
+                  class="pw-block-list"
+                >
+                  <template #empty>
+                    <div class="pw-empty">
+                      <p>{{ t("empty.dashboards") }}</p>
+                      <sdk-button size="small" text type="primary" @click="openPath('/dashboards')">
+                        {{ t("empty.action.dashboards") }}
+                      </sdk-button>
+                    </div>
+                  </template>
+                </projection>
               </div>
               <div class="pw-block-subsection">
                 <h3 class="pw-block-subsection-title">{{ t("block.dashboardCardsList") }}</h3>
                 <projection
                   slot="favoriteDashboardCards"
+                  :ref="bindProjection('favoriteDashboardCards')"
                   class="pw-block-list"
                   @choose="onChooseCard"
-                ></projection>
+                >
+                  <template #empty>
+                    <div class="pw-empty">
+                      <p>{{ t("empty.dashboardCards") }}</p>
+                      <sdk-button size="small" text type="primary" @click="openPath('/dashboards')">
+                        {{ t("empty.action.dashboards") }}
+                      </sdk-button>
+                    </div>
+                  </template>
+                </projection>
               </div>
             </div>
 
             <div v-else-if="itemId === 'tasks'" class="pw-block-body">
               <projection
                 slot="scheduledTasks"
+                :ref="bindProjection('scheduledTasks')"
                 class="pw-block-list"
                 @choose="onChooseTask"
-              ></projection>
+              >
+                <template #empty>
+                  <div class="pw-empty">
+                    <p>{{ t("empty.tasks") }}</p>
+                    <sdk-button size="small" text type="primary" @click="openPath('/schedules')">
+                      {{ t("empty.action.tasks") }}
+                    </sdk-button>
+                  </div>
+                </template>
+              </projection>
             </div>
 
             <div v-else-if="itemId === 'conversations'" class="pw-block-body">
-              <projection slot="recentConversations" class="pw-block-list"></projection>
+              <div class="pw-block-subsection" :class="{ 'is-hidden': !hasPinnedSessions }">
+                <h3 class="pw-block-subsection-title">{{ t("block.pinnedConversations") }}</h3>
+                <projection
+                  slot="pinnedSessions"
+                  :ref="bindProjection('pinnedSessions')"
+                  class="pw-block-list"
+                >
+                  <template #item-leading>
+                    <svg class="pw-item-icon pw-item-icon-accent" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path>
+                      <path d="M20 3v4"></path>
+                      <path d="M22 5h-4"></path>
+                      <path d="M4 17v2"></path>
+                      <path d="M5 18H3"></path>
+                    </svg>
+                  </template>
+                </projection>
+              </div>
+              <div class="pw-block-subsection">
+                <h3 v-if="hasPinnedSessions" class="pw-block-subsection-title">{{ t("block.recentConversations") }}</h3>
+                <projection
+                  slot="recentConversations"
+                  :ref="bindProjection('recentConversations')"
+                  class="pw-block-list"
+                >
+                  <template #item-leading>
+                    <svg class="pw-item-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"></path>
+                      <path d="M20 3v4"></path>
+                      <path d="M22 5h-4"></path>
+                      <path d="M4 17v2"></path>
+                      <path d="M5 18H3"></path>
+                    </svg>
+                  </template>
+                  <template #empty>
+                    <div class="pw-empty">
+                      <p>{{ t("empty.conversations") }}</p>
+                      <sdk-button size="small" text type="primary" @click="openPath('/agents/chat')">
+                        {{ t("empty.action.conversations") }}
+                      </sdk-button>
+                    </div>
+                  </template>
+                </projection>
+              </div>
             </div>
 
             <div v-else-if="itemId === 'objects'" class="pw-block-body">
               <projection
                 slot="pinnedObjects"
+                :ref="bindProjection('pinnedObjects')"
                 class="pw-block-list"
                 @choose="onChooseObject"
-              ></projection>
+              >
+                <template #empty>
+                  <div class="pw-empty">
+                    <p>{{ t("empty.objects") }}</p>
+                    <sdk-button size="small" text type="primary" @click="openPath('/browser')">
+                      {{ t("empty.action.objects") }}
+                    </sdk-button>
+                  </div>
+                </template>
+              </projection>
             </div>
 
             <div v-else-if="itemId === 'recent'" class="pw-block-body">
-              <projection slot="recentVisits" class="pw-block-list"></projection>
+              <projection
+                slot="recentVisits"
+                :ref="bindProjection('recentVisits')"
+                class="pw-block-list"
+              >
+                <template #item-leading>
+                  <svg class="pw-item-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                </template>
+              </projection>
             </div>
           </template>
         </projection>
@@ -410,6 +673,8 @@
             :key="preset.id"
             type="button"
             class="pw-preset-btn"
+            :class="{ 'is-active': activePresetId === preset.id }"
+            :aria-pressed="activePresetId === preset.id ? 'true' : 'false'"
             @click="applyPreset(preset.id)"
           >
             {{ t(preset.labelKey) }}
@@ -492,6 +757,7 @@
       </section>
 
       <div class="pw-prefs-footer">
+        <projection slot="customizeWorkspace"></projection>
         <sdk-button size="small" plain @click="resetDefaultLayout">
           {{ t("prefs.resetLayout") }}
         </sdk-button>
@@ -502,7 +768,7 @@
   <!-- Object Detail Drawer -->
   <sdk-drawer
     v-model="objectDrawerOpen"
-    size="56%"
+    size="min(920px, 100vw)"
     destroy-on-close
   >
     <template #header>
@@ -529,7 +795,7 @@
   <!-- Metric / Dashboard Card Detail Drawer -->
   <sdk-drawer
     v-model="cardDrawerOpen"
-    size="480px"
+    size="min(680px, 100vw)"
     destroy-on-close
   >
     <template #header>
@@ -537,6 +803,7 @@
         <h2 class="pw-drawer-title">{{ t("drawer.cardTitle") }}</h2>
         <div class="pw-drawer-actions">
           <projection slot="askCard"></projection>
+          <projection slot="explainCard"></projection>
           <sdk-button
             v-if="selectedCardPath"
             size="small"
@@ -557,7 +824,7 @@
   <!-- Scheduled Task Detail Drawer -->
   <sdk-drawer
     v-model="taskDrawerOpen"
-    size="480px"
+    size="min(680px, 100vw)"
     destroy-on-close
   >
     <template #header>

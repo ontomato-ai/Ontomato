@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { AGENT_SESSION, FAVORITE, RENAME_AGENT_SESSION } from "@ontomato/contracts/platform-object-types";
-import { tForLocale } from "../../i18n";
+import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { assistantStore } from "../assistant/store";
@@ -53,7 +53,21 @@ export function sessionOpenPath(agentId: string, sessionId: string): string {
   return `/agents/chat?agentId=${encodeURIComponent(agentId)}&sessionId=${encodeURIComponent(sessionId)}`;
 }
 
+/** Format an ISO timestamp into a compact locale-aware date/time label for workspace list subtitles. */
+export function formatShortDateTime(iso: string | undefined, locale: string): string {
+  if (!iso) return "";
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return "";
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(ms));
+}
+
 export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
+  const language = resolveLocale(viewer.locale);
   const untitled = sessionText(viewer.locale, "untitled");
   const fieldLabels = {
     title: sessionText(viewer.locale, "title"),
@@ -71,11 +85,13 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
         const displayTitle = cleanSessionDisplayTitle(item.title, untitled);
         const favorited = favoriteKeys.has(favoriteTargetKey(AGENT_SESSION, item.sessionId));
         const openPath = sessionOpenPath(item.agentId, item.sessionId);
+        const formattedUpdatedAt = formatShortDateTime(item.updatedAt, language);
+        const subtitle = [item.agentName, formattedUpdatedAt].filter(Boolean).join(" · ");
         return {
           className: AGENT_SESSION,
           primaryKey: item.sessionId,
           label: displayTitle,
-          ...(item.agentName ? { subtitle: item.agentName } : {}),
+          ...(subtitle ? { subtitle } : {}),
           fields: {
             title: displayTitle,
             agentId: item.agentId,
