@@ -123,7 +123,7 @@
         },
         "config": {
           "showLayerFilter": false,
-          "showLegend": true,
+          "showLegend": false,
           "showToolbar": true,
           "aggregateEdges": true,
           "showEdgeLabels": true,
@@ -151,7 +151,7 @@
         "config": {
           "placeholderKey": "db.allClasses",
           "clearable": true,
-          "size": "small"
+          "size": "default"
         },
         "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000002"
       },
@@ -181,7 +181,7 @@
           "subtitleField": "classLabel",
           "searchable": false,
           "showFooter": false,
-          "showChevron": true,
+          "showChevron": false,
           "emptyText": "db.graphSearchEmpty"
         },
         "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000003"
@@ -320,9 +320,15 @@
           "showColumnToggle": true,
           "exportable": true,
           "searchable": false,
-          "showChevron": true,
+          "showChevron": false,
           "emptyText": "db.tableEmpty",
-          "noMatchText": "db.tableNoMatch"
+          "noMatchText": "db.tableNoMatch",
+          "pagination": "pages",
+          "pageSizes": [
+            20,
+            50,
+            100
+          ]
         },
         "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000009"
       },
@@ -394,6 +400,22 @@
           "labelKey": "db.restoreDefault"
         },
         "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000014"
+      },
+      "classNamesProbe": {
+        "component": "ObjectList",
+        "name": "Object type display labels probe",
+        "description": "Populates object type display names for graph inspector and class scope labels.",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "config": {
+          "layout": "list",
+          "selectable": false,
+          "searchable": false,
+          "showFooter": false
+        },
+        "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000015"
       }
     }
   },
@@ -452,7 +474,13 @@
         "db.applyFilters": "Apply",
         "db.tableEmpty": "No records for this object type.",
         "db.tableNoMatch": "No records match the current search or filters.",
-        "db.noClassSelected": "Select an object type to browse its records."
+        "db.noClassSelected": "Select an object type to browse its records.",
+        "db.nodeType": "Type",
+        "db.clearScope": "Clear type filter",
+        "db.inspectorEmptyTitle": "Select a graph element",
+        "db.inspectorEmptyDesc": "Click a node on the canvas or search above to inspect its attributes and relationships.",
+        "db.filterCount": "{n} filters",
+        "db.filtersApplied": "Filters and sort applied."
       },
       "zh-CN": {
         "panel.name": "对象浏览器",
@@ -507,7 +535,13 @@
         "db.applyFilters": "应用",
         "db.tableEmpty": "当前对象类型暂无记录。",
         "db.tableNoMatch": "没有符合当前搜索或筛选条件的记录。",
-        "db.noClassSelected": "请选择一个对象类型以浏览记录。"
+        "db.noClassSelected": "请选择一个对象类型以浏览记录。",
+        "db.nodeType": "类型",
+        "db.clearScope": "清除类型筛选",
+        "db.inspectorEmptyTitle": "选择一个图谱元素",
+        "db.inspectorEmptyDesc": "点击画布上的节点或在上方搜索实例，以查看其属性与关联关系。",
+        "db.filterCount": "{n} 项筛选",
+        "db.filtersApplied": "筛选与排序已应用。"
       },
       "zh-TW": {
         "panel.name": "物件瀏覽器",
@@ -562,7 +596,13 @@
         "db.applyFilters": "套用",
         "db.tableEmpty": "目前物件類型暫無記錄。",
         "db.tableNoMatch": "沒有符合目前搜尋或篩選條件的記錄。",
-        "db.noClassSelected": "請選擇一個物件類型以瀏覽記錄。"
+        "db.noClassSelected": "請選擇一個物件類型以瀏覽記錄。",
+        "db.nodeType": "類型",
+        "db.clearScope": "清除類型篩選",
+        "db.inspectorEmptyTitle": "選擇一個圖譜元素",
+        "db.inspectorEmptyDesc": "點擊畫布上的節點或在上方搜尋實例，以檢視其屬性與關聯關係。",
+        "db.filterCount": "{n} 項篩選",
+        "db.filtersApplied": "已套用篩選與排序。"
       },
       "ja": {
         "panel.name": "オブジェクトブラウザー",
@@ -617,7 +657,13 @@
         "db.applyFilters": "適用",
         "db.tableEmpty": "このオブジェクトタイプにはレコードがありません。",
         "db.tableNoMatch": "現在の検索またはフィルターに一致するレコードがありません。",
-        "db.noClassSelected": "レコードを閲覧するオブジェクトタイプを選択してください。"
+        "db.noClassSelected": "レコードを閲覧するオブジェクトタイプを選択してください。",
+        "db.nodeType": "タイプ",
+        "db.clearScope": "タイプ絞り込みを解除",
+        "db.inspectorEmptyTitle": "グラフ要素を選択",
+        "db.inspectorEmptyDesc": "キャンバス上のノードをクリックするか上部から検索して属性と関係を確認します。",
+        "db.filterCount": "{n} 件のフィルター",
+        "db.filtersApplied": "フィルターと並び替えを適用しました。"
       },
       "de": {
         "panel.name": "Objektbrowser",
@@ -672,7 +718,13 @@
         "db.applyFilters": "Anwenden",
         "db.tableEmpty": "Keine Datensätze für diesen Objekttyp.",
         "db.tableNoMatch": "Keine Datensätze entsprechen der Suche oder den Filtern.",
-        "db.noClassSelected": "Wählen Sie einen Objekttyp aus, um Datensätze anzuzeigen."
+        "db.noClassSelected": "Wählen Sie einen Objekttyp aus, um Datensätze anzuzeigen.",
+        "db.nodeType": "Typ",
+        "db.clearScope": "Typfilter löschen",
+        "db.inspectorEmptyTitle": "Ein Graphelement auswählen",
+        "db.inspectorEmptyDesc": "Klicken Sie auf einen Knoten oder suchen Sie oben, um Attribute und Beziehungen zu prüfen.",
+        "db.filterCount": "{n} Filter",
+        "db.filtersApplied": "Filter und Sortierung angewendet."
       },
       "fr": {
         "panel.name": "Explorateur d'objets",
@@ -727,7 +779,13 @@
         "db.applyFilters": "Appliquer",
         "db.tableEmpty": "Aucun enregistrement pour ce type d'objet.",
         "db.tableNoMatch": "Aucun enregistrement ne correspond à la recherche ou aux filtres.",
-        "db.noClassSelected": "Sélectionnez un type d'objet pour parcourir ses enregistrements."
+        "db.noClassSelected": "Sélectionnez un type d'objet pour parcourir ses enregistrements.",
+        "db.nodeType": "Type",
+        "db.clearScope": "Effacer le filtre de type",
+        "db.inspectorEmptyTitle": "Sélectionnez un élément du graphe",
+        "db.inspectorEmptyDesc": "Cliquez sur un nœud ou effectuez une recherche ci-dessus pour inspecter ses attributs et relations.",
+        "db.filterCount": "{n} filtres",
+        "db.filtersApplied": "Filtres et tri appliqués."
       },
       "it": {
         "panel.name": "Browser oggetti",
@@ -782,7 +840,13 @@
         "db.applyFilters": "Applica",
         "db.tableEmpty": "Nessun record per questo tipo di oggetto.",
         "db.tableNoMatch": "Nessun record corrisponde alla ricerca o ai filtri correnti.",
-        "db.noClassSelected": "Seleziona un tipo di oggetto per sfogliarne i record."
+        "db.noClassSelected": "Seleziona un tipo di oggetto per sfogliarne i record.",
+        "db.nodeType": "Tipo",
+        "db.clearScope": "Cancella filtro tipo",
+        "db.inspectorEmptyTitle": "Seleziona un elemento del grafo",
+        "db.inspectorEmptyDesc": "Fai clic su un nodo o cerca sopra per visualizzarne attributi e relazioni.",
+        "db.filterCount": "{n} filtri",
+        "db.filtersApplied": "Filtri e ordinamento applicati."
       },
       "ar": {
         "panel.name": "متصفح الكائنات",
@@ -837,7 +901,13 @@
         "db.applyFilters": "تطبيق",
         "db.tableEmpty": "لا توجد سجلات لنوع الكائن هذا.",
         "db.tableNoMatch": "لا توجد سجلات تطابق البحث أو التصفية الحالية.",
-        "db.noClassSelected": "اختر نوع كائن لاستعراض سجلاته."
+        "db.noClassSelected": "اختر نوع كائن لاستعراض سجلاته.",
+        "db.nodeType": "النوع",
+        "db.clearScope": "مسح تصفية النوع",
+        "db.inspectorEmptyTitle": "اختر عنصرًا من المخطط",
+        "db.inspectorEmptyDesc": "انقر على عقدة في اللوحة أو ابحث أعلاه لمعاينة سماتها وعلاقاتها.",
+        "db.filterCount": "{n} مرشحات",
+        "db.filtersApplied": "تم تطبيق التصفية والفرز."
       }
     }
   }

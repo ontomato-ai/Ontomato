@@ -15,12 +15,9 @@
     padding: var(--spacing-2xl) var(--page-gutter);
   }
 
-  .odb-status {
-    margin: 0;
-    padding: var(--spacing-xl) var(--page-gutter);
-    color: var(--sdk-text-color-secondary);
-    font-size: var(--text-sm);
-    text-align: center;
+  .odb-skeleton {
+    min-height: 240px;
+    padding: var(--page-content-gap) var(--page-gutter);
   }
 
   .odb-binding-host {
@@ -61,7 +58,7 @@
   .odb-card-title {
     margin: 0;
     color: var(--sdk-text-color-primary);
-    font-size: var(--text-lg);
+    font-size: var(--text-sm);
     font-weight: var(--font-semibold);
   }
 
@@ -86,7 +83,9 @@
         <projection slot="detailBinding"></projection>
       </div>
 
-      <p v-if="!panelStatus" class="odb-status" role="status">{{ t("odb.loading") }}</p>
+      <div v-if="!panelStatus" class="odb-skeleton" role="status" :aria-label="t('odb.loading')">
+        <sdk-skeleton :rows="10" animated></sdk-skeleton>
+      </div>
 
       <div v-else-if="panelStatus === 'configured'" class="odb-custom-host">
         <projection :key="customDetailKey" slot="customDetail"></projection>

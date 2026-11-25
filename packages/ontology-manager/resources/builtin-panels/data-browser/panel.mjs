@@ -8,6 +8,7 @@ import {
   usePanelOutput,
 } from "@ontomato/sdk/panel";
 
+const OBJECT_TYPE = "platform:ObjectType";
 const ATTRIBUTE = "platform:Attribute";
 
 function parseAttributeName(primaryKey) {
@@ -38,7 +39,7 @@ await mountPanel({
     const { instance, t, navigate, notify } = usePanelContext();
     const rootRef = ref(null);
     const narrow = usePanelNarrow(rootRef);
-    const drawerSize = computed(() => (narrow.value ? "100%" : "420px"));
+    const drawerSize = computed(() => (narrow.value ? "100%" : "400px"));
     const dialogWidth = computed(() => (narrow.value ? "94%" : "560px"));
 
     const state = computed(() => instance.state.values.value);
@@ -54,6 +55,17 @@ await mountPanel({
     const selectedClass = computed(() => state.value.selectedClass ?? null);
     const selectedClassKey = computed(() => selectedClass.value?.primaryKey ?? "");
 
+    // Reactive bump whenever platform:ObjectType display names finish loading in graph mode.
+    const classNamesVersion = ref(0);
+    function onClassNamesListed() {
+      classNamesVersion.value += 1;
+    }
+    function resolveClassDisplayName(className) {
+      void classNamesVersion.value;
+      if (!className) return "";
+      return instance.objectName(OBJECT_TYPE, className) || className;
+    }
+
     const selectedNode = computed(() => state.value.selectedNode ?? null);
     const hasSelectedNode = computed(() => Boolean(selectedNode.value?.className && selectedNode.value?.primaryKey));
     const nodeHeaderStatus = usePanelOutput("nodeHeader", "status");
@@ -64,6 +76,7 @@ await mountPanel({
       if (!node) return "";
       return instance.objectName(node.className, node.primaryKey) || node.primaryKey;
     });
+    const selectedNodeClassLabel = computed(() => resolveClassDisplayName(selectedNode.value?.className ?? ""));
 
     // Graph stats & version sync for graph search.
     const graphNodeCount = usePanelOutput("instanceGraph", "nodeCount");
@@ -88,6 +101,7 @@ await mountPanel({
 
     // Sync optional graph search class filter ref -> string parameter state so null omits className cleanly.
     const graphSearchClassKey = computed(() => state.value.graphSearchClass?.primaryKey ?? null);
+    const graphSearchClassLabel = computed(() => resolveClassDisplayName(graphSearchClassKey.value ?? ""));
     watch(
       graphSearchClassKey,
       (next) => {
@@ -98,31 +112,34 @@ await mountPanel({
       { immediate: true },
     );
 
-    const graphSearchOpen = ref(false);
     const graphQueryInput = computed({
       get: () => (typeof state.value.graphQuery === "string" ? state.value.graphQuery : ""),
       set: (value) => instance.state.set("graphQuery", value || ""),
     });
-    const showGraphSearchPopover = computed(
-      () => graphSearchOpen.value && Boolean(graphQueryInput.value.trim()),
+    const showGraphCandidates = computed(
+      () => Boolean(graphQueryInput.value.trim() || graphSearchClassKey.value),
     );
 
-    function onGraphQueryInput(value) {
-      graphSearchOpen.value = Boolean(typeof value === "string" && value.trim());
+    function onGraphQueryClear() {
+      instance.state.set("graphQuery", "");
     }
 
-    function onGraphQueryClear() {
-      graphSearchOpen.value = false;
-      instance.state.set("graphQuery", "");
+    function clearGraphSearchClass() {
+      instance.state.setState({
+        graphSearchClass: null,
+        graphSearchClassName: null,
+      });
     }
 
     function focusSearchedInstance(reference) {
       if (!reference?.className || !reference?.primaryKey) return;
       const target = { className: reference.className, primaryKey: reference.primaryKey };
-      graphSearchOpen.value = false;
       instance.state.setState({
         selectedNode: target,
         graphStart: target,
+        graphQuery: "",
+        graphSearchClass: null,
+        graphSearchClassName: null,
       });
     }
 
@@ -153,11 +170,28 @@ await mountPanel({
       }
     }
 
-    // Table mode: search, attributes, multi-condition filters & server sort.
-    const tableSearchInput = computed({
-      get: () => (typeof state.value.search === "string" ? state.value.search : ""),
-      set: (value) => instance.state.set("search", value || ""),
-    });
+    // Table mode: local search draft committed on Enter or Clear (matches legacy DataBrowser).
+    const tableSearchInput = ref(typeof state.value.search === "string" ? state.value.search : "");
+    watch(
+      () => (typeof state.value.search === "string" ? state.value.search : ""),
+      (next) => {
+        if (tableSearchInput.value !== next) tableSearchInput.value = next;
+      },
+    );
+
+    function submitTableSearch() {
+      const normalized = tableSearchInput.value.trim();
+      if ((state.value.search ?? "") !== normalized) {
+        instance.state.set("search", normalized);
+      }
+    }
+
+    function clearTableSearch() {
+      tableSearchInput.value = "";
+      if ((state.value.search ?? "") !== "") {
+        instance.state.set("search", "");
+      }
+    }
 
     const exportFileName = computed(() =>
       selectedClassKey.value ? `${selectedClassKey.value}-${todayStamp()}` : undefined,
@@ -219,9 +253,6 @@ await mountPanel({
 
     function openFilterDrawer() {
       syncDraftFromState();
-      if (draftFilters.value.length === 0) {
-        draftFilters.value.push({ field: "", operator: "eq", value: "" });
-      }
       filterDrawerOpen.value = true;
     }
 
@@ -256,6 +287,7 @@ await mountPanel({
         sort: nextSort,
       });
       filterDrawerOpen.value = false;
+      notify({ kind: "success", text: t("db.filtersApplied") });
     }
 
     function resetAppliedFilters() {
@@ -270,6 +302,8 @@ await mountPanel({
       draftFilters.value = [];
       draftSortField.value = "";
       draftSortOrder.value = "asc";
+      tableSearchInput.value = "";
+      instance.state.setState({ filters: null, sort: null, search: "" });
     }
 
     function openInstanceDetail(reference) {
@@ -319,7 +353,7 @@ await mountPanel({
       void navigate("/ontology/panels").catch(() => undefined);
     }
 
-    // Switching object type clears class-specific filters/sort and closes class dialogs/drawers.
+    // Switching object type clears class-specific search, filters/sort, and closes class dialogs/drawers.
     watch(selectedClassKey, (next, prev) => {
       if (prev === undefined || next === prev) return;
       attributeOptions.value = [];
@@ -328,8 +362,13 @@ await mountPanel({
       draftFilters.value = [];
       draftSortField.value = "";
       draftSortOrder.value = "asc";
-      if (instance.state.values.value.filters != null || instance.state.values.value.sort != null) {
-        instance.state.setState({ filters: null, sort: null });
+      tableSearchInput.value = "";
+      if (
+        instance.state.values.value.filters != null
+        || instance.state.values.value.sort != null
+        || (instance.state.values.value.search ?? "") !== ""
+      ) {
+        instance.state.setState({ filters: null, sort: null, search: "" });
       }
     });
 
@@ -346,17 +385,22 @@ await mountPanel({
       hasSelectedNode,
       nodeHeaderStatus,
       selectedNodeFallbackTitle,
+      selectedNodeClassLabel,
+      onClassNamesListed,
       graphStatsLabel,
-      graphSearchOpen,
+      graphSearchClassKey,
+      graphSearchClassLabel,
       graphQueryInput,
-      showGraphSearchPopover,
-      onGraphQueryInput,
+      showGraphCandidates,
       onGraphQueryClear,
+      clearGraphSearchClass,
       focusSearchedInstance,
       clearSelectedNode,
       openSelectedNodeDetail,
       exploreSelectedNode,
       tableSearchInput,
+      submitTableSearch,
+      clearTableSearch,
       exportFileName,
       attributeOptions,
       onAttributesListed,
@@ -380,7 +424,6 @@ await mountPanel({
       onDetailPanelSaved,
       onDetailPanelCleared,
       openPanelsDirectory,
-      refresh: () => instance.refreshObjects(),
     };
   },
 });

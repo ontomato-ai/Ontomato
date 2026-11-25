@@ -541,20 +541,21 @@ describe("builtin object-detail and object-detail-body panels", () => {
         expect(element.querySelector("header")?.textContent).toContain("Order #1");
         expect(element.textContent).toContain("ORD-1");
         expect(element.textContent).toContain("Acme Corp");
-        const star = element.querySelector<HTMLButtonElement>('button[aria-label="Add to favorites"]');
+        const star = element.querySelector<HTMLButtonElement>('.sdk-page-header-title-slot button[aria-label="Add to favorites"]');
         expect(star).toBeTruthy();
         expect(star?.disabled).toBe(false);
       });
 
-      const starAdd = element.querySelector<HTMLButtonElement>('button[aria-label="Add to favorites"]');
+      const starAdd = element.querySelector<HTMLButtonElement>('.sdk-page-header-title-slot button[aria-label="Add to favorites"]');
       expect(starAdd).toBeTruthy();
       expect(starAdd?.getAttribute("aria-pressed")).toBe("false");
       starAdd!.click();
 
       await vi.waitFor(() => {
-        const starRemove = element.querySelector<HTMLButtonElement>('button[aria-label="Remove from favorites"]');
+        const starRemove = element.querySelector<HTMLButtonElement>('.sdk-page-header-title-slot button[aria-label="Remove from favorites"]');
         expect(starRemove).toBeTruthy();
         expect(starRemove?.getAttribute("aria-pressed")).toBe("true");
+        expect(starRemove?.classList.contains("od-star-active")).toBe(true);
       });
       expect(route.intentCalls.at(-1)).toMatchObject({
         operationId: "addFavorite.add",
