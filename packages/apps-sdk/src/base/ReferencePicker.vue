@@ -30,6 +30,10 @@ const props = withDefaults(
     size?: "small" | "default" | "large";
     /** Optional record field key in `row.fields` used to group options in standalone inline mode (`data.rows`). */
     groupBy?: string;
+    /** Optional record field key in `row.fields` displayed as right-aligned secondary metadata (e.g. counts) in standalone inline mode (`data.rows`). */
+    metaField?: string;
+    /** Optional lookup map keyed by option `primaryKey` supplying right-aligned secondary metadata (e.g. counts) on each option in standalone inline mode. */
+    optionMeta?: Readonly<Record<string, string | number>>;
   }>(),
   {
     placeholder: undefined,
@@ -39,6 +43,8 @@ const props = withDefaults(
     disabled: false,
     size: "small",
     groupBy: undefined,
+    metaField: undefined,
+    optionMeta: undefined,
   },
 );
 
@@ -75,6 +81,8 @@ defineSlots<{
     :disabled="props.disabled"
     :size="props.size"
     :group-by="props.groupBy"
+    :meta-field="props.metaField"
+    :option-meta="props.optionMeta"
     @update:selected="emit('update:selected', $event)"
   >
     <template v-if="$slots.option" #option="scope">
