@@ -234,17 +234,28 @@ describe("builtin-product-app-builder three-column panel", () => {
         if (member === "sourceFiles") {
           return Response.json({
             status: "ready",
-            value: [{ path: "application.json", size: 120 }],
+            value: [
+              {
+                primaryKey: "application.json",
+                label: "application.json",
+                fields: { path: "application.json", size: 120, isText: true, language: "json" },
+              },
+            ],
           });
         }
         if (member === "sourceFile") {
           return Response.json({
             status: "ready",
             value: {
-              className: APPLICATION,
-              primaryKey: "app-orders",
+              primaryKey: "application.json",
               label: "application.json",
-              fields: { path: "application.json", content: '{"id":"app-orders"}' },
+              fields: {
+                path: "application.json",
+                content: '{"id":"app-orders"}',
+                language: "json",
+                isText: true,
+                nonTextNotice: "",
+              },
             },
           });
         }
@@ -255,7 +266,9 @@ describe("builtin-product-app-builder three-column panel", () => {
               className: APPLICATION,
               primaryKey: "app-orders",
               label: "Diff",
-              fields: { content: "@@ -1 +1 @@\n-old\n+new" },
+              fields: {
+                content: "diff --git a/application.json b/application.json\n--- a/application.json\n+++ b/application.json\n@@ -1 +1 @@\n-old\n+new",
+              },
             },
           });
         }
@@ -268,9 +281,17 @@ describe("builtin-product-app-builder three-column panel", () => {
                   className: APPLICATION,
                   primaryKey: "abc1234567890",
                   label: "Initial scaffold",
-                  fields: { shortId: "abc1234", message: "Initial scaffold", createdAt: "2026-11-25T10:00:00Z", isPublishable: true, isHead: true },
+                  fields: {
+                    id: "abc1234567890",
+                    shortId: "abc1234",
+                    message: "Initial scaffold",
+                    createdAt: "2026-11-25T10:00:00Z",
+                    isPublishable: true,
+                    isHead: true,
+                  },
                 },
               ],
+              hasMore: false,
               total: 1,
             },
           });
@@ -323,15 +344,33 @@ describe("builtin-product-app-builder three-column panel", () => {
       "carried page chip shows Orders Portal",
     );
 
-    // Switch right pane tabs to Files, Changes, and History.
+    // Switch right pane tabs to Files, Changes, and History, waiting for each tab's data read to settle.
     const tabs = Array.from(mounted.element.querySelectorAll<HTMLButtonElement>(".ab-tab"));
     expect(tabs.length).toBe(4);
     tabs[1]!.click();
-    await waitFor(() => mounted.element.querySelector(".ab-files-tab") !== null, "Files tab rendered");
+    await waitFor(
+      () => {
+        const filesTab = mounted.element.querySelector(".ab-files-tab");
+        return filesTab !== null && (filesTab.textContent ?? "").includes("application.json");
+      },
+      "Files tab rendered sourceFiles tree",
+    );
     tabs[2]!.click();
-    await waitFor(() => mounted.element.querySelector(".ab-changes-tab") !== null, "Changes tab rendered");
+    await waitFor(
+      () => {
+        const changesTab = mounted.element.querySelector(".ab-changes-tab");
+        return changesTab !== null && (changesTab.textContent ?? "").includes("application.json");
+      },
+      "Changes tab rendered sourceDiff content",
+    );
     tabs[3]!.click();
-    await waitFor(() => mounted.element.querySelector(".ab-history-tab") !== null, "History tab rendered");
+    await waitFor(
+      () => {
+        const historyTab = mounted.element.querySelector(".ab-history-tab");
+        return historyTab !== null && (historyTab.textContent ?? "").includes("Initial scaffold");
+      },
+      "History tab rendered sourceCommits row",
+    );
 
     // Toggle full pane and closed pane, then restore via composer context chip.
     const fullBtn = mounted.element.querySelector<HTMLButtonElement>(".ab-tool-btn[aria-label]");
