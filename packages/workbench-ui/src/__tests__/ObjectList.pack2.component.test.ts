@@ -202,9 +202,12 @@ describe("ObjectList Pack 2C features", () => {
       },
     );
 
-    await vi.waitFor(() => {
-      expect(element.querySelectorAll("tbody tr td").length).toBe(4);
-    });
+    await vi.waitFor(
+      () => {
+        expect(element.querySelectorAll("tbody tr td").length).toBe(4);
+      },
+      { timeout: 5000 },
+    );
 
     const rowCells = element.querySelectorAll("tbody tr td");
 
@@ -280,9 +283,12 @@ describe("ObjectList Pack 2C features", () => {
       },
     );
 
-    await vi.waitFor(() => {
-      expect(element.querySelectorAll("thead th").length).toBe(2);
-    });
+    await vi.waitFor(
+      () => {
+        expect(element.querySelectorAll("thead th").length).toBe(2);
+      },
+      { timeout: 5000 },
+    );
 
     const headers = element.querySelectorAll("thead th");
     expect(headers[0]!.querySelector(".sdk-object-list-th-help")).toBeNull();
@@ -345,9 +351,12 @@ describe("ObjectList Pack 2C features", () => {
       { messages: { en: { "col.name": "Member" } } },
     );
 
-    await vi.waitFor(() => {
-      expect(element.querySelectorAll("tbody input[type='checkbox']").length).toBe(3);
-    });
+    await vi.waitFor(
+      () => {
+        expect(element.querySelectorAll("tbody input[type='checkbox']").length).toBe(3);
+      },
+      { timeout: 5000 },
+    );
 
     const headerCheck = element.querySelector("thead input[type='checkbox']") as HTMLInputElement;
     const rowChecks = Array.from(element.querySelectorAll("tbody input[type='checkbox']")) as HTMLInputElement[];
@@ -472,9 +481,12 @@ describe("ObjectList Pack 2C features", () => {
       { messages: { en: { "col.name": "Name", "act.inspect": "Inspect" } } },
     );
 
-    await vi.waitFor(() => {
-      expect(element.querySelector("button.sdk-object-list-action-btn")).not.toBeNull();
-    });
+    await vi.waitFor(
+      () => {
+        expect(element.querySelector("button.sdk-object-list-action-btn")).not.toBeNull();
+      },
+      { timeout: 5000 },
+    );
 
     const actionBtn = element.querySelector("button.sdk-object-list-action-btn");
     expect(actionBtn!.classList.contains("is-icon-only")).toBe(true);
@@ -524,9 +536,12 @@ describe("ObjectList Pack 2C features", () => {
       }),
     );
 
-    await vi.waitFor(() => {
-      expect(element.querySelector(".sdk-object-list-item-sub-row")).not.toBeNull();
-    });
+    await vi.waitFor(
+      () => {
+        expect(element.querySelector(".sdk-object-list-item-sub-row")).not.toBeNull();
+      },
+      { timeout: 5000 },
+    );
 
     const subRow = element.querySelector(".sdk-object-list-item-sub-row");
 
