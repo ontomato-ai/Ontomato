@@ -21,11 +21,13 @@ const props = withDefaults(defineProps<{
   presentation?: "inline" | "panel";
   /** Height of the chart, in pixels or as a CSS length. */
   height?: number | string;
+  /** Suppress the inline truncation notice bar above the canvas (when a parent renders its own compact indicator). */
+  hideTruncationNotice?: boolean;
   /** A timeline event's date the metric does not give, in the reader's language. */
   undated?: string;
   /** What a result with no rows says, in the reader's language. */
   empty?: string;
-}>(), { presentation: "panel", undated: "Undated", empty: "No data" });
+}>(), { presentation: "panel", hideTruncationNotice: false, undated: "Undated", empty: "No data" });
 
 const theme = useChartTheme();
 const drawn = ref<{ width: number; height: number }>({ width: 0, height: 0 });
@@ -68,7 +70,7 @@ const failure = computed(() => filled.value.ok ? null : filled.value as ChartFai
       </ul>
     </div>
     <template v-else-if="filled.ok">
-      <p v-if="filled.truncation" class="state truncation" role="note">{{ filled.truncation.truncationHint }}</p>
+      <p v-if="filled.truncation && !hideTruncationNotice" class="state truncation" role="note">{{ filled.truncation.truncationHint }}</p>
       <p v-if="!filled.rowCount" class="state">{{ empty }}</p>
       <EChart v-else-if="mapsReady" class="metric-chart-canvas" :option="option!" :theme="theme" :height="chartHeight" role="img" @resize="drawn = $event" />
     </template>

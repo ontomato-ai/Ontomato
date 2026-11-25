@@ -257,7 +257,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "list",
     meaning:
-      "Arranges records or items into collapsible grid groups with drag-and-drop reordering, resizing, and row actions; use for dashboards or card boards. Arranges either records from its `rows` (`panelRecordList`) datum (optionally preserving empty groups and group order from a parent container `record` datum's `groupsField`) or fixed static items from `items` (with optional `groups` and typed `layout` state) into collapsible groups on a responsive CSS grid (`columns`, `rowHeight`, `gap`) with optional stacked section tracks (`sectionField`, `sectionOrder`), drag-and-drop group and item reordering (within or across groups), pointer-driven cell resizing (`colSpanField`, `rowSpanField`, or per-item span bounds), optional item hiding (`allowHide`) and header toggles (`showGroupHeaders`, `showItemHeaders`), selection highlight and scroll-into-view (`selected`), and built-in per-item `rowActions`. Renders each cell body via the scoped `#item` slot (alongside `#item-header-actions`, `#group-header-actions`, `#group-empty`, and `#empty`) and never fetches cell body content itself. Writes `layout` state and emits `layout-change` only when the reader finishes a drag, resize, or hide interaction, never on initial load or restore.",
+      "Collapsible grid groups with drag, resize, and row actions. Arranges either records from its `rows` (`panelRecordList`) datum (optionally preserving empty groups and group order from a parent container `record` datum's `groupsField`) or fixed static items from `items` (with optional `groups` and typed `layout` state) into collapsible groups on a responsive CSS grid (`columns`, `sectionColumns`, `rowHeight`, `sectionRowHeights`, `rowSizing`, `gap`) with optional stacked section tracks (`sectionField`, `sectionOrder`, `sectionResizeAxes`), configurable outer group and item surfaces (`groupSurface`, `itemSurface`, `itemHeaderDivider`), hover-revealed or always-visible controls (`controlsVisibility`), whole-grid draft preview (`draftMode`, `draftNotice`, `draftOverrides`), drag-and-drop group and item reordering (within or across groups), pointer-driven cell resizing (`colSpanField`, `rowSpanField`, or per-item span bounds), optional item hiding (`allowHide`) and header toggles (`showGroupHeaders`, `showItemHeaders`), selection highlight and scroll-into-view (`selected`), and built-in per-item `rowActions`. Renders each cell body via the scoped `#item` slot (alongside `#item-header-actions`, `#item-header-extra`, `#group-header-actions`, `#group-empty`, and `#empty`) and never fetches cell body content itself. Writes `layout` state and emits `layout-change` only when the reader finishes a drag, resize, or hide interaction, never on initial load or restore.",
     effects:
       "In record mode, reads its `rows` list and optional container `record` datum as the reader, writes the panel's `selected` state, and runs declared per-item operations through the platform coordinator. In fixed-member mode, reads and writes the panel's typed `layout` state without querying any datum.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
@@ -461,7 +461,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "chart",
     meaning:
-      "Draws a dashboard chart (`template` + MetricView `result`) that updates with panel parameters; use to embed published charts. Draws one chart as its source card draws it: the card's chart file (`template`) filled with a MetricView's output (`result`) for the card's saved parameters and the values the panel binds over them. The platform supplies both, and an output with no rows is the owner's empty answer. It fills the height of the box its member is placed in and falls back to a 320px default height when that box has no definite height. The projection keeps no drawing, query or data of its own.",
+      "Draws a dashboard chart (`template` + MetricView `result`). Draws one chart as its source card draws it: the card's chart file (`template`) filled with a MetricView's output (`result`) for the card's saved parameters and the values the panel binds over them. Supports optional fullscreen zoom (`zoomable` / `v-model:zoomed`), formatted data-table overlay switching (`viewMode` / `allowDataView`), hover-revealed or slot-integrated truncation indicator (`truncationDisplay` + `truncation-change`), and flicker-free refresh (`keepPreviousOnRefresh`). It fills the height of the box its member is placed in and falls back to a 320px default height when that box has no definite height. The projection keeps no drawing, query or data of its own.",
     effects: "Sends no request of its own: the platform reads the source card's template and the MetricView's output, both as the reader.",
     bindsElement: ["MetricView:*"],
     // The chart file and the output it is filled with: drawn once both are read.
@@ -619,7 +619,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "layout",
     meaning:
-      "Presentational page header with title, back link, `#actions`, and Save/Discard draft controls (`:draft`); place at the top of a panel. Pure presentational page header rendered by a panel at the top of its content: optional leading visual, explicit back link, single-line title (plain text or a projection-bound component in `#title`), optional description, flexible right-side actions/controls (`#actions` or default slot), and optional Save/Discard draft controls (`draft`). It asks nothing from the platform host and adapts to its own container width.",
+      "Page header with title, back link, `#actions`, and draft controls. Pure presentational page header rendered by a panel at the top of its content: optional leading visual, explicit back link, single-line title (plain text, locale map `names`, or a projection-bound component in `#title`), configurable `density` (`bar` / `compact` / `expanded`), optional description, flexible right-side actions/controls (`#actions` or default slot), and optional Save/Discard draft controls (`draft`). It asks nothing from the platform host and adapts to its own container width.",
   }),
   defineComponentMeta({
     componentId: "AppMenu",
@@ -683,7 +683,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Displays a clickable object reference card with icon, title, key, and status badge; use for related-object navigation links. Displays one clickable object reference card — leading icon or monogram, optional role caption (such as Source or Target), primary localized display name, secondary monospace API name / primary key, and optional status badge — emitting `navigate` (and writing declared navigation output) on click. Reads a reference field (`field`) or the object itself from `record` (`panelRecord`) or metric `result` (`metricOutput`), or renders a direct `reference` / `record` prop standalone.",
+      "Clickable object reference card or button (`appearance`). Displays one clickable object reference — either as a bordered reference card (leading icon or monogram, optional role caption, primary localized display name, secondary monospace API name / primary key, and optional status badge) or as a compact action button (`appearance=\"button\"`, `buttonType`, `buttonSize`, `buttonLabel`) — emitting `navigate` (and writing declared navigation output) on click. Reads a reference field (`field`) or the object itself from `record` (`panelRecord`) or metric `result` (`metricOutput`), or renders a direct `reference` / `record` prop standalone.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -705,7 +705,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "chart",
     meaning:
-      "Displays statistical KPI metric cards from a MetricView, record, list, or query `total`; use for headers, dashboards, and summaries. Displays one or more statistical metric cards (label + tabular numeral + optional unit, description, and semantic tone) in `card`, `compact`, or `inline` variants for ontology headers, dashboards, and catalog summaries. Directly consumes a MetricView's `result` (`metricOutput`, extracting a scalar or named column from the first or `rowIndex` row, and surfacing truncation hints), a single `record` (`panelRecord`), `rows` (`panelRecordList` uses list length; `panelRecordQuery` uses strictly the owner-returned `total`, never loaded row counts), or `objects` (`panelOntologyObjects` owner `total`), or standalone `value`/`items` props. Pure presentation: never computes aggregations on the client.",
+      "KPI metric cards from a MetricView, record, list, or query `total`. Displays one or more statistical metric cards (label + tabular numeral + optional unit, description, and semantic tone) in `card`, `compact`, or `inline` variants with configurable `surface` (`card` or `bare` for embedding inside outer dashboard cards), `showLabel`, `valueSize` (`default` or `large` 32px KPI numeral), `truncationDisplay`, and flicker-free `keepPreviousOnRefresh`. Directly consumes a MetricView's `result` (`metricOutput`), a single `record` (`panelRecord`), `rows` (`panelRecordList` uses list length; `panelRecordQuery` uses strictly the owner-returned `total`), or `objects` (`panelOntologyObjects` owner `total`), or standalone `value`/`items` props. Pure presentation: never computes aggregations on the client.",
     effects: "Reads the bound MetricView `result`, `record`, `rows`, or `objects` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -818,6 +818,66 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     // A button the host acts on: it reads nothing from the platform, and says so, so a placement may carry it as a member.
     data: {},
+  }),
+  defineComponentMeta({
+    componentId: "DashboardMetricPreview",
+    module: "@ontomato/sdk/base",
+    exportName: "DashboardMetricPreview",
+    role: "control",
+    group: "chart",
+    meaning:
+      "Workspace dashboard KPI and chart preview. Renders scalar KPI tiles (3-column grid) above thumbnail charts (2-column grid, 220px height) from `rows` (`platform:DashboardCard`) or direct `cards`, selecting clicked items into `selected` state.",
+    effects: "Reads its bound `rows` datum as the reader and writes the panel's `selected` state on click.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+    },
+    inputs: {
+      selected: { kind: "object", objectType: "@data:rows" },
+    },
+    outputs: {
+      selected: { kind: "object", objectType: "@data:rows" },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "ScheduledTaskSummaryList",
+    module: "@ontomato/sdk/base",
+    exportName: "ScheduledTaskSummaryList",
+    role: "control",
+    group: "list",
+    meaning:
+      "Workspace scheduled task attention summary and grouped list. Renders a three-counter top strip (Needs intervention, Recent results, Running), three priority-ordered task sections with status dots and multi-line excerpts, and an inline Resolve action for paused or failed tasks.",
+    effects: "Reads its bound `rows` datum as the reader and writes `selected` / `resolveTarget` panel state when the reader opens or resolves a task.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+    },
+    inputs: {
+      selected: { kind: "object", objectType: "@data:rows" },
+    },
+    outputs: {
+      selected: { kind: "object", objectType: "@data:rows" },
+      resolveTarget: { kind: "object", objectType: "@data:rows" },
+    },
+    readOnlyOutputs: {
+      issueCount: { kind: "scalar", type: "number" },
+      resultCount: { kind: "scalar", type: "number" },
+      runningCount: { kind: "scalar", type: "number" },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "ScheduledTaskRunDetail",
+    module: "@ontomato/sdk/base",
+    exportName: "ScheduledTaskRunDetail",
+    role: "presentation",
+    group: "detail",
+    meaning:
+      "Scheduled task recent-run detail view. Renders pause/failure callout banners, status dot and trigger strip, two-column Started/Finished timestamp `<dl>`, cleaned multi-paragraph execution output, and a Refresh button.",
+    effects: "Reads its bound `record` datum as the reader and refreshes it when the reader clicks Refresh.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      record: { results: ["panelRecord", "scheduledTaskRun"], required: false },
+    },
   }),
   defineComponentMeta({
     componentId: "CurrentEntry",
