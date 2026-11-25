@@ -33,6 +33,7 @@ const grantSchema = z.object({
   stepNo: z.number().nullish(),
   scope: z.object({ kind: z.enum(scopeKinds), field: z.string().nullish() }),
   inForce: z.boolean(),
+  activatedByWorkflowVersion: z.number().nullish(),
 });
 const querySchema = z.object({
   search: panelReadParameterSchemas.keyword.optional(),
@@ -102,8 +103,13 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
     const active = canDeactivateWorkflow(row);
     const inactive = row.status === "INACTIVE";
     const statusCode = active ? "ACTIVE" : inactive ? "INACTIVE" : "DRAFT";
+    const statusLabel = t(`status.${statusCode}`);
+    const statusTone = active ? "success" : inactive ? "info" : "warning";
     const hasDraft = Boolean(row.hasDraft);
+    const draftLabel = hasDraft && statusCode !== "DRAFT" ? t("status.DRAFT") : undefined;
+    const statusBadges = draftLabel ? [statusLabel, draftLabel] : [statusLabel];
     const inForce = context.grants?.filter(grant => grant.workflowId === row.id && grant.inForce) ?? [];
+    const activeGrantRev = inForce[0]?.activatedByWorkflowVersion ?? (inForce.length > 0 ? row.version : null);
     const steps = caseScopedSteps(row).length;
     const noGrants = context.grants !== null && inForce.length === 0 && steps === 0;
     const grantSummary = [
@@ -111,11 +117,13 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
       steps > 0 && t("caseScopedSummary", { steps }),
     ].filter(Boolean).join(" · ");
     const fields = {
-      status: t(`status.${statusCode}`),
+      status: statusLabel,
+      statusBadges,
       statusCode,
       hasDraft,
-      ...(hasDraft && statusCode !== "DRAFT" && { hasDraftLabel: t("status.DRAFT") }),
+      ...(draftLabel && { hasDraftLabel: draftLabel }),
       version: `v${row.version ?? 0}`,
+      ...(activeGrantRev != null && { activeGrantVersion: `v${activeGrantRev}` }),
       stepsSummary: stepSummary(row.steps ?? [], context.directory, context.catalogue),
       grantsSummary: context.grants === null ? t("grantsUnavailable") : noGrants ? t("noGrants") : grantSummary,
       createdBy: context.subjectNames.get(row.createdBy ?? "") ?? t("unspecified"),
@@ -129,7 +137,7 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
       ...(row.description && { subtitle: row.description }),
       fields,
       fieldLabels: labels(Object.keys(fields)),
-      tones: { status: active ? "success" : inactive ? "info" : "warning", ...(noGrants && { grantsSummary: "warning" }) },
+      tones: { status: statusTone, statusBadges: statusTone, ...(noGrants && { grantsSummary: "warning" }) },
     };
   }
 
@@ -141,7 +149,10 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
   async function formOptions() {
     const [directory, catalogue] = await Promise.all([subjects(), actions()]);
     return {
-      subjects: directory.map(subject => ({ value: subject.id, label: subjectLabel(subject) })),
+      subjects: directory.map(subject => ({
+        value: subject.id,
+        label: `${subjectLabel(subject)} (${subject.loginCode || subject.id})`,
+      })),
       actions: catalogue.flatMap(action => action.id && (!action.status || action.status === "PUBLISHED")
         ? [{ value: action.id, label: action.name }] : []),
     };

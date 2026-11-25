@@ -1,9 +1,11 @@
 import { computed, ref, shallowRef, watch } from "vue";
 import {
+  appIcon,
   mountPanel,
   usePanelContext,
   usePanelFormDraft,
   usePanelOperation,
+  usePanelOutput,
 } from "@ontomato/sdk/panel";
 
 const CONNECTION_TYPE = "platform:ModelConnection";
@@ -42,14 +44,45 @@ await mountPanel({
       when: () => Boolean(selectedKey.value),
     });
 
-    const discoverOp = usePanelOperation("discoverModels", "discover");
-    const testOp = usePanelOperation("testModel", "test");
+    const headerModelCountOutput = usePanelOutput("connectionHeader", "modelCount");
+    const existingModelIdsOutput = usePanelOutput("connectionHeader", "existingModelIds");
+    const listTotalOutput = usePanelOutput("modelsList", "total");
+    const listedModelsOutput = usePanelOutput("modelsList", "listed");
 
-    // ---- Test one model row against the live unsaved connection form ----
-    const testingModel = ref("");
+    const modelCount = computed(() => {
+      if (typeof listTotalOutput.value === "number") return listTotalOutput.value;
+      if (typeof headerModelCountOutput.value === "number") return headerModelCountOutput.value;
+      return null;
+    });
+
+    const existingModelSet = computed(() => {
+      const ids = new Set();
+      const raw = existingModelIdsOutput.value;
+      if (typeof raw === "string" && raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              if (typeof item === "string" && item) ids.add(item);
+            }
+          }
+        } catch {
+          // Ignore malformed output and fall back to listed row keys below.
+        }
+      }
+      if (Array.isArray(listedModelsOutput.value)) {
+        for (const item of listedModelsOutput.value) {
+          if (item?.primaryKey) ids.add(item.primaryKey);
+        }
+      }
+      return ids;
+    });
+
+    const discoverOp = usePanelOperation("discoverModels", "discover");
+
+    // ---- Row-action test result banner ----
     const testStatus = shallowRef(null);
     watch(selectedKey, () => {
-      testingModel.value = "";
       testStatus.value = null;
     });
 
@@ -57,26 +90,19 @@ await mountPanel({
       return instance.forms.handle("connectionForm")?.values.value ?? {};
     }
 
-    async function runTestModel(modelName) {
-      if (!modelName || testingModel.value) return;
-      testingModel.value = modelName;
-      testStatus.value = null;
-      try {
-        const result = await testOp.run({
-          draft: connectionDraftValues(),
-          parameters: { modelName },
-        });
-        const value = result?.kind === "json" ? result.value : result;
-        const text = value?.type === "embedding"
-          ? t("models.testEmbeddingOk", { name: modelName, dimensions: value.dimensions })
-          : t("models.testChatOk", { name: modelName, reply: String(value?.content ?? "").slice(0, 80) || "OK" });
-        testStatus.value = { ok: true, text };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        testStatus.value = { ok: false, text: t("models.testFailed", { name: modelName, message }) };
-      } finally {
-        testingModel.value = "";
+    function discoverPrecheckError() {
+      const handle = instance.forms.handle("connectionForm");
+      const draft = handle?.values.value ?? {};
+      const fields = handle?.fields.value ?? [];
+      const apiBaseField = fields.find((field) => field.path === "/apiBase");
+      const apiBase = typeof draft.apiBase === "string" ? draft.apiBase.trim() : "";
+      if (apiBaseField?.required && !apiBase) {
+        return t("discover.apiBaseRequired");
       }
+      const errors = handle?.errors.value ?? {};
+      const firstError = Object.values(errors).find((msg) => typeof msg === "string" && msg.trim() !== "");
+      if (firstError) return firstError;
+      return "";
     }
 
     // ---- Discover models using the live unsaved connection form ----
@@ -87,6 +113,13 @@ await mountPanel({
     let discoverSeq = 0;
 
     async function runDiscover() {
+      const precheck = discoverPrecheckError();
+      if (precheck) {
+        discoverLoading.value = false;
+        discoverError.value = precheck;
+        discoverCandidates.value = [];
+        return;
+      }
       const seq = ++discoverSeq;
       discoverLoading.value = true;
       discoverError.value = "";
@@ -117,7 +150,9 @@ await mountPanel({
     const filteredCandidates = computed(() => {
       const q = discoverQuery.value.trim().toLowerCase();
       if (!q) return discoverCandidates.value;
-      return discoverCandidates.value.filter((item) => item.id.toLowerCase().includes(q));
+      return discoverCandidates.value.filter(
+        (item) => item.id.toLowerCase().includes(q) || (typeof item.name === "string" && item.name.toLowerCase().includes(q)),
+      );
     });
 
     // ---- Prefill discovered candidate into the createModelForm once mounted ----
@@ -152,11 +187,16 @@ await mountPanel({
     }
 
     function openDiscover() {
+      const problem = discoverPrecheckError();
+      if (problem) {
+        notify({ kind: "warning", text: problem });
+        return;
+      }
       discoverOpen.value = true;
     }
 
     function pickDiscoveredModel(id) {
-      discoverOpen.value = false;
+      // Keep the discovery dialog open so multiple discovered models can be added in sequence.
       openAddModel(id);
     }
 
@@ -202,9 +242,7 @@ await mountPanel({
     function onModelRowAction({ id, ref: rowRef }) {
       const modelName = rowRef?.primaryKey;
       if (!modelName) return;
-      if (id === "test") {
-        void runTestModel(modelName);
-      } else if (id === "edit") {
+      if (id === "edit") {
         instance.state.setState({
           editingModel: { className: MODEL_TYPE, primaryKey: modelName },
           modelDialog: "edit",
@@ -212,9 +250,27 @@ await mountPanel({
       }
     }
 
+    function onModelRowActionResult(event) {
+      if (event?.actionId !== "testModel") return;
+      const modelName = event.row?.label || event.ref?.primaryKey || "";
+      if (event.ok) {
+        const value = event.data;
+        const text = value?.type === "embedding"
+          ? t("models.testEmbeddingOk", { name: modelName, dimensions: value.dimensions })
+          : t("models.testChatOk", { name: modelName, reply: String(value?.content ?? "").slice(0, 80) || "OK" });
+        testStatus.value = { ok: true, text };
+      } else {
+        const message = event.error || event.message || "Unknown error";
+        testStatus.value = { ok: false, text: t("models.testFailed", { name: modelName, message }) };
+      }
+    }
+
     return {
       t,
+      searchIcon: appIcon("search"),
       selectedKey,
+      modelCount,
+      existingModelSet,
       connectionDraft,
       createConnectionOpen,
       modelDialogOpen,
@@ -226,7 +282,6 @@ await mountPanel({
       discoverCandidates,
       discoverQuery,
       filteredCandidates,
-      testingModel,
       testStatus,
       openCreateConnection,
       openAddModel,
@@ -240,6 +295,7 @@ await mountPanel({
       onConnectionDeleted,
       onModelSaved,
       onModelRowAction,
+      onModelRowActionResult,
     };
   },
 });

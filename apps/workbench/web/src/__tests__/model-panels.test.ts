@@ -319,27 +319,20 @@ describe("built-in model panels", () => {
               },
             });
           }
-          if (slot === "testModel") {
+          if (slot === "modelsList") {
             return Response.json({
               status: "ready",
               value: {
-                test: {
+                testModel: {
                   kind: "action",
                   handlerRef: TEST_MODEL_CONNECTION,
-                  label: "Test connection",
+                  label: "Test",
                   effect: "read",
                   target: { source: "none" },
                   inputSchema: {},
                   resultSchema: {},
                   batch: false,
                 },
-              },
-            });
-          }
-          if (slot === "modelsList") {
-            return Response.json({
-              status: "ready",
-              value: {
                 deleteModel: {
                   kind: "action",
                   handlerRef: DELETE_MODEL_ENTRY,
@@ -399,10 +392,18 @@ describe("built-in model panels", () => {
               primaryKey: "gpt-4o",
               className: MODEL_ENTRY,
               label: "gpt-4o",
-              fields: { upstreamModel: "gpt-4o", type: "chat", typeLabel: "Chat", specs: "262,144 ctx", defaultTag: "Default chat" },
+              fields: {
+                nameParts: ["gpt-4o", "Default chat"],
+                upstreamModel: "gpt-4o",
+                type: "chat",
+                typeLabel: "Chat",
+                specs: "262,144 ctx",
+                defaultTag: "Default chat",
+              },
             }],
             rowOperations: {
               [`${MODEL_ENTRY}:gpt-4o`]: {
+                testModel: { available: true },
                 deleteModel: { available: true },
               },
             },
@@ -415,7 +416,7 @@ describe("built-in model panels", () => {
       },
       readOperation(body) {
         readOps.push(body);
-        if (String(body.operationId).endsWith(".test")) {
+        if (String(body.operationId).endsWith(".testModel")) {
           return Response.json({ kind: "json", value: { type: "chat", content: "pong" } });
         }
         return Response.json({ kind: "json", value: { models: [{ id: "gpt-4o" }, { id: "gpt-4.1" }] } });
@@ -429,7 +430,7 @@ describe("built-in model panels", () => {
     }, { timeout: 3000 });
 
     const testBtn = await vi.waitFor(() => {
-      const btn = document.querySelector<HTMLButtonElement>('[data-local-action="test"]');
+      const btn = document.querySelector<HTMLButtonElement>('[data-operation="testModel"]');
       expect(btn).not.toBeNull();
       return btn!;
     });
@@ -438,7 +439,7 @@ describe("built-in model panels", () => {
     await vi.waitFor(() => {
       expect(document.querySelector(".mc-test-status")?.textContent).toContain("pong");
     });
-    expect(readOps.some((entry) => String(entry.operationId).endsWith(".test"))).toBe(true);
+    expect(readOps.some((entry) => String(entry.operationId).endsWith(".testModel"))).toBe(true);
 
     const discoverBtn = [...document.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent?.trim() === "Fetch model list")!;

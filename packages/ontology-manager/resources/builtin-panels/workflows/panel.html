@@ -22,45 +22,16 @@
   .wf-catalog {
     min-width: 0;
   }
-  .wf-catalog .sdk-object-list-search-wrap {
-    flex: 0 1 22rem;
-  }
-  .wf-catalog .sdk-object-list-table {
-    table-layout: fixed;
-  }
-  .wf-catalog .sdk-object-list-table th,
-  .wf-catalog .sdk-object-list-table td {
-    padding-inline: var(--spacing-sm);
-  }
-  .wf-catalog .sdk-object-list-table .sdk-object-list-col-shrink {
-    min-width: 0;
-    max-width: none;
-  }
-  .wf-catalog .sdk-object-list-cell {
-    max-width: 100%;
-    min-width: 0;
-  }
-  .wf-catalog .sdk-object-list-cell-text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    max-width: 100%;
-    min-width: 0;
-  }
-  .wf-catalog .sdk-object-list-cell-main,
-  .wf-catalog .sdk-object-list-cell-sub {
-    display: block;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .wf-status-badges {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
   }
   .wf-grant-link {
     display: inline-block;
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
     padding: 0;
     border: 0;
     background: none;
@@ -126,21 +97,43 @@
     font-size: var(--text-xs);
     line-height: 1.5;
   }
+  .wf-grant-role {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: var(--text-xs);
+  }
 </style>
 <div id="app" v-cloak>
   <div class="wf-page">
     <page-header :title="t('pageTitle')" :description="t('pageDescription')">
       <template #actions>
-        <sdk-button text :aria-label="t('action.refresh')" :title="t('action.refresh')" @click="refresh">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-        </sdk-button>
-        <sdk-button type="primary" @click="startCreate">{{ t('action.newWorkflow') }}</sdk-button>
+        <sdk-button
+          text
+          icon="refresh-cw"
+          :loading="refreshing"
+          :aria-label="t('action.refresh')"
+          :title="t('action.refresh')"
+          @click="refresh"
+        ></sdk-button>
+        <sdk-button type="primary" icon="plus" @click="startCreate">{{ t('action.newWorkflow') }}</sdk-button>
       </template>
     </page-header>
 
     <section class="wf-body">
       <div class="wf-catalog">
         <projection slot="catalog" @row-action="onRowAction">
+          <template #cell-statusBadges="{ value, tone }">
+            <span class="wf-status-badges">
+              <sdk-tag
+                v-for="(badge, idx) in (Array.isArray(value) ? value : [value])"
+                :key="idx"
+                size="small"
+                effect="light"
+                :type="idx === 0 ? (tone === 'success' || tone === 'warning' || tone === 'danger' ? tone : 'info') : 'warning'"
+              >
+                {{ badge }}
+              </sdk-tag>
+            </span>
+          </template>
           <template #cell-grantsSummary="{ ref, displayText, tone }">
             <button
               type="button"
@@ -214,37 +207,59 @@
       append-to-body
       destroy-on-close
     >
-      <div v-if="grantsDialogOpen" :key="inspectingGrantsKey" class="wf-grants-body">
-        <projection slot="grantsHeader"></projection>
+      <div
+        v-if="grantsDialogOpen"
+        :key="inspectingGrantsKey"
+        v-sdk-loading="grantsLoading && !grantsHasWorkflowAuthority && !grantsError"
+        class="wf-grants-body"
+      >
         <p class="wf-grants-desc">{{ t('grants.desc') }}</p>
 
-        <section class="wf-grants-group">
+        <sdk-empty v-if="grantsError" :description="t('grants.unavailable')" :image-size="60"></sdk-empty>
+        <sdk-empty v-else-if="grantsEmpty" :description="t('grants.empty')" :image-size="60"></sdk-empty>
+
+        <section v-show="!grantsError && grantStates.caseScoped.count > 0" class="wf-grants-group">
           <h4>{{ t('grants.caseScopedTitle') }}</h4>
           <p class="wf-grants-hint">{{ t('grants.caseScopedHint') }}</p>
-          <projection slot="grantCaseScopedSteps"></projection>
+          <projection slot="grantCaseScopedSteps" @state-change="onGrantState('caseScoped', $event)">
+            <template #cell-roleCode="{ displayText }">
+              <span class="wf-grant-role">{{ displayText }}</span>
+            </template>
+          </projection>
         </section>
 
-        <section class="wf-grants-group">
-          <h4>{{ t('grants.inForceTitle') }}</h4>
-          <p class="wf-grants-hint">{{ t('grants.inForceHint') }}</p>
-          <projection slot="grantInForce"></projection>
+        <section v-show="!grantsError && grantStates.inForce.count > 0" class="wf-grants-group">
+          <h4><projection slot="grantsInForceTitle"></projection></h4>
+          <projection slot="grantInForce" @state-change="onGrantState('inForce', $event)">
+            <template #cell-roleCode="{ displayText }">
+              <span class="wf-grant-role">{{ displayText }}</span>
+            </template>
+          </projection>
         </section>
 
-        <section class="wf-grants-group">
+        <section v-show="!grantsError && grantStates.superseded.count > 0" class="wf-grants-group">
           <h4>{{ t('grants.supersededTitle') }}</h4>
           <p class="wf-grants-hint">{{ t('grants.supersededHint') }}</p>
-          <projection slot="grantSuperseded"></projection>
+          <projection slot="grantSuperseded" @state-change="onGrantState('superseded', $event)">
+            <template #cell-roleCode="{ displayText }">
+              <span class="wf-grant-role">{{ displayText }}</span>
+            </template>
+          </projection>
         </section>
 
-        <section class="wf-grants-group">
+        <section v-show="!grantsError && grantsHasWorkflowAuthority && grantStates.direct.count > 0" class="wf-grants-group">
           <h4>{{ t('grants.directTitle') }}</h4>
           <p class="wf-grants-hint">{{ t('grants.directHint') }}</p>
-          <projection slot="grantDirect"></projection>
+          <projection slot="grantDirect" @state-change="onGrantState('direct', $event)">
+            <template #cell-roleCode="{ displayText }">
+              <span class="wf-grant-role">{{ displayText }}</span>
+            </template>
+          </projection>
         </section>
       </div>
       <template #footer>
         <div class="wf-dialog-footer">
-          <sdk-button @click="refresh">{{ t('grants.refresh') }}</sdk-button>
+          <sdk-button :loading="refreshing" @click="refresh">{{ t('grants.refresh') }}</sdk-button>
           <sdk-button type="primary" @click="closeGrants">{{ t('action.close') }}</sdk-button>
         </div>
       </template>

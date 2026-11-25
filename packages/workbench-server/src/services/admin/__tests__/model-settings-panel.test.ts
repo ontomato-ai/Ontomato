@@ -252,11 +252,85 @@ describe("model settings owner reads & forms", () => {
     expect(editForm.fields.find((f) => f.path === "/name")!.readOnly).toBe(true);
     const refreshed = await reads.form("openai-main", { values: { provider: "deepseek" } });
     expect(refreshed.values.apiKey).toBe("");
+    expect(refreshed.fields.find((f) => f.path === "/provider")?.warning).toBe(
+      "This provider type does not support embedding models.",
+    );
     expect(refreshed.errors).toEqual([{
       field: "/provider", code: "invalid_option", message: "This provider type does not support embedding models.",
     }]);
     expect(JSON.stringify([await reads.list(), await reads.record("openai-main"), editForm, refreshed]))
       .not.toContain(storedSettings.connections["openai-main"]!.apiKey);
+  });
+
+  it("exposes connection status/subtitle/existingModelIds, inline extraHeaders, stepper model inputs, and usages", async () => {
+    const reads = createModelConnectionReads(actor);
+
+    const list = await reads.list();
+    const openai = list.find((row) => row.primaryKey === "openai-main")!;
+    expect(openai.fields).toMatchObject({
+      status: "ready",
+      statusLabel: "Ready",
+      summary: "OpenAI / OpenAI Compatible (Responses) · 2 models",
+    });
+    expect(openai.tones).toEqual({ statusLabel: "success" });
+    expect(JSON.parse(String(openai.outputs?.existingModelIds))).toEqual(
+      expect.arrayContaining(["gpt-4o", "embed-3", "text-embedding-3-small"]),
+    );
+
+    storedSettings.connections["empty-azure"] = { provider: "azure", apiKey: "******0000" };
+    const incomplete = (await reads.list()).find((row) => row.primaryKey === "empty-azure")!;
+    expect(incomplete.fields.status).toBe("incomplete");
+    expect(incomplete.tones).toEqual({ statusLabel: "warning" });
+
+    const editOpenAi = await reads.form("openai-main", {});
+    const openAiHeaders = editOpenAi.fields.find((f) => f.path === "/extraHeaders")!;
+    expect(openAiHeaders.control).toMatchObject({ kind: "object-array", presentation: "inline" });
+    expect(openAiHeaders.advanced).toBeUndefined();
+
+    const editClaude = await reads.form("claude-main", {});
+    const claudeHeaders = editClaude.fields.find((f) => f.path === "/extraHeaders")!;
+    expect(claudeHeaders.control).toMatchObject({ kind: "object-array", presentation: "inline" });
+    expect(claudeHeaders.advanced).toBe(true);
+
+    const chatForm = await reads.createModelForm("openai-main", {});
+    expect(chatForm.fields.find((f) => f.path === "/contextWindow")?.control).toMatchObject({
+      kind: "number",
+      presentation: "stepper",
+      min: 1,
+    });
+    expect(chatForm.fields.find((f) => f.path === "/timeoutSeconds")?.control).toMatchObject({
+      kind: "number",
+      presentation: "stepper",
+      min: 1,
+    });
+    expect(chatForm.fields.find((f) => f.path === "/maxRetries")?.control).toMatchObject({
+      kind: "number",
+      presentation: "stepper",
+      min: 0,
+    });
+
+    const embedForm = await reads.createModelForm("openai-main", { values: { type: "embedding" } });
+    expect(embedForm.fields.find((f) => f.path === "/dimensions")?.control).toMatchObject({
+      kind: "number",
+      presentation: "stepper",
+      min: 1,
+    });
+
+    const models = await reads.models("openai-main");
+    expect(models.find((m) => m.primaryKey === "gpt-4o")?.fields.nameParts).toEqual([
+      "gpt-4o",
+      "gpt-4o",
+      "Default chat",
+    ]);
+
+    const usages = await reads.usages("openai-main");
+    expect(usages.map((row) => ({ where: row.fields.where, model: row.fields.model }))).toEqual([
+      { where: "Domain default chat model", model: "gpt-4o" },
+      { where: "Domain embedding model", model: "embed-3" },
+      { where: "Question quality check", model: "gpt-4o" },
+      { where: "Data retrieval", model: "gpt-4o" },
+    ]);
+    expect(await reads.usages("claude-main")).toEqual([]);
   });
 
   it("shows chat fields vs embedding dimensions by model type and disables embedding for anthropic", async () => {
@@ -295,6 +369,8 @@ describe("model settings owner reads & forms", () => {
     storedSettings.embeddingModel = null;
     const opened = panelFormDescriptionSchema.parse(await usage.form("domain", {}));
     expect(opened.values).toEqual({
+      defaultModel: "@none",
+      embeddingModel: "@none",
       taskModels: {
         quality: "gpt-4o",
         describe: "@default",
@@ -302,6 +378,24 @@ describe("model settings owner reads & forms", () => {
         metric: "@default",
       },
     });
+    const defaultField = opened.fields.find((f) => f.path === "/defaultModel")!;
+    const embeddingField = opened.fields.find((f) => f.path === "/embeddingModel")!;
+    expect(defaultField.control).toMatchObject({
+      kind: "select",
+      options: expect.arrayContaining([expect.objectContaining({ value: "@none", label: "No default chat model" })]),
+    });
+    expect(embeddingField.control).toMatchObject({
+      kind: "select",
+      options: expect.arrayContaining([expect.objectContaining({ value: "@none", label: "No embedding model" })]),
+    });
+    expect(embeddingField.help).toBe("Used for semantic search and vector indexing.");
+  });
+
+  it("includes embeddingRebuildHint when an embedding model is selected", async () => {
+    const usage = createModelUsageReads(actor);
+    const form = panelFormDescriptionSchema.parse(await usage.form("domain", {}));
+    const embeddingField = form.fields.find((f) => f.path === "/embeddingModel")!;
+    expect(embeddingField.help).toContain("Changing the embedding model or its dimensions requires rebuilding domain vectors.");
   });
 
   it("exposes vector rebuild outputs and the four background task models with domain default labels", async () => {
@@ -466,6 +560,7 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
   it.each<{ description: string; values: PanelFormValues }>([
     { description: "omitted defaults", values: {} },
     { description: "null defaults", values: { defaultModel: null, embeddingModel: null } },
+    { description: "explicit @none defaults", values: { defaultModel: "@none", embeddingModel: "@none" } },
   ])("clears stored model selections when saving $description", async ({ values }) => {
     const saveUsage = writeOp(`${MODEL_USAGE}.save`);
     const result = await saveUsage.execute(
@@ -476,6 +571,8 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
     );
     expect(result).toMatchObject({ kind: "success" });
     expect(result.kind === "success" && result.data).toEqual({
+      defaultModel: "@none",
+      embeddingModel: "@none",
       taskModels: {
         quality: "gpt-4o",
         describe: "@default",
@@ -567,6 +664,22 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
       connection: { apiKey, apiBase: draft.apiBase },
     });
   });
+
+  it("tests a model directly from a declarative ObjectList row action without a form draft", async () => {
+    const test = readOp(TEST_MODEL_CONNECTION);
+    const tested = await test.execute(makeHost(), {
+      target: undefined,
+      input: { modelName: "embed-3" },
+    });
+    expect(tested).toEqual({ kind: "json", value: { type: "embedding", dimensions: 1536 } });
+    const lastCall = mockFetch.mock.calls.at(-1)!;
+    expect(lastCall[0]).toBe("/api/data-query/model-settings/test");
+    expect(JSON.parse(String((lastCall[1] as FetchInit).body))).toMatchObject({
+      connectionName: "openai-main",
+      connection: { provider: "openai", apiKey: "******1234" },
+      model: { connection: "openai-main", model: "text-embedding-3-small", type: "embedding", dimensions: 1536 },
+    });
+  });
 });
 
 describe("built-in model panels validation", () => {
@@ -582,7 +695,7 @@ describe("built-in model panels validation", () => {
     const connOps = typeMap.get(MODEL_CONNECTION)?.operations?.map((operation) => operation.id) ?? [];
     expect(connOps).toContain(DISCOVER_MODEL_CONNECTION);
     expect(connOps).toContain(TEST_MODEL_CONNECTION);
-    expect(typeMap.get(MODEL_CONNECTION)?.reads).not.toHaveProperty("usages");
+    expect(typeMap.get(MODEL_CONNECTION)?.reads).toHaveProperty("usages");
 
     const typeTable = {
       objectTypes: z.record(platformTypeTableEntrySchema).parse(Object.fromEntries(typeMap)),
@@ -605,9 +718,30 @@ describe("built-in model panels validation", () => {
       const desc = JSON.parse(readFileSync(resolve(dir, "panel.json"), "utf8"));
       const html = readFileSync(resolve(dir, "panel.html"), "utf8");
       if (dirName === "model-connections") {
-        expect(desc.manifest.members).not.toHaveProperty("usagesList");
-        expect(html).not.toContain("usagesList");
+        expect(desc.manifest.members).toHaveProperty("usagesList");
+        expect(desc.manifest.members.connections.config).toMatchObject({
+          searchable: true,
+          statusStyle: "dot",
+          statusField: "statusLabel",
+          subtitleField: "summary",
+        });
+        expect(desc.manifest.members.connectionForm.config).toMatchObject({ columns: 2 });
+        expect(desc.manifest.members.deleteConnection.config).toMatchObject({ type: "danger", icon: "trash-2" });
+        expect(desc.manifest.members.deleteConnection.config.plain).toBeUndefined();
+        expect(desc.manifest.members.modelsList.config).toMatchObject({ groupBy: "typeLabel" });
+        expect(desc.manifest.members.modelsList.config.rowActions.items[0]).toMatchObject({
+          kind: "operation",
+          operation: "testModel",
+        });
+        expect(desc.manifest.members.createModelForm.config).toMatchObject({ columns: 2 });
+        expect(desc.manifest.members.editModelForm.config).toMatchObject({ columns: 2 });
+        expect(html).toContain("usagesList");
         expect(html).not.toContain("openUsage");
+      }
+      if (dirName === "model-usage") {
+        expect(desc.manifest.members.usageForm.config).toMatchObject({ showToc: false });
+        expect(html).not.toContain("openConnections");
+        expect(mod).toContain("setInterval");
       }
       const { state, members, ...decl } = desc.manifest;
       const placements = Object.fromEntries(Object.entries(members).map(([member, def]) => {

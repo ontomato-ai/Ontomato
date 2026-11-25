@@ -84,7 +84,7 @@ type Option = { value: string; label: string };
 
 const blankStep = {
   name: "", roleCode: "", actionId: "", scope: "all", invocationChoice: "manual",
-  caseScoped: false, actorPolicy: { mode: "none" },
+  actorPolicy: { mode: "none" },
 } satisfies PanelFormValues;
 
 export function workflowText(locale?: string): Translate {
@@ -177,7 +177,7 @@ export function workflowForm(
 ): PanelFormDescription {
   const field = (
     name: string, schema: z.ZodTypeAny, control: PanelFormField["control"],
-    options: Partial<Pick<PanelFormField, "required" | "help" | "warning">> = {}, label = name,
+    options: Partial<Pick<PanelFormField, "required" | "help" | "warning" | "refreshOnChange">> = {}, label = name,
   ): PanelFormField => ({
     path: `/${name}`, label: t(`fields.${label}`), valueSchema: jsonSchema(schema),
     required: false, help: null, readOnly, control, ...options,
@@ -188,6 +188,9 @@ export function workflowForm(
   }));
   const choices = (group: string, names: readonly string[]) =>
     selectOptions(names.map(value => ({ value, label: t(`${group}.${value}`) })));
+  const hasAutomaticStep = Array.isArray(values?.steps) && values.steps.some(
+    step => typeof step === "object" && step !== null && (step as Record<string, unknown>).invocationChoice === "automatic",
+  );
   const principal = field("executionPrincipalId", optionalText, {
     kind: "select", allowCreate: true, options: selectOptions(subjects), placeholder: t("systemPrincipal"),
   }, { help: t("executionPrincipalHelp") });
@@ -213,8 +216,10 @@ export function workflowForm(
         field("scope", scope, { kind: "select", options: choices("scope", scopeKinds) }),
         field("invocationChoice", invocationChoice, {
           kind: "select", options: choices("invocation", invocationChoices),
-        }, { help: t("automaticReserved") }),
-        field("caseScoped", z.boolean(), { kind: "switch" }),
+        }, {
+          refreshOnChange: true,
+          ...(hasAutomaticStep ? { warning: t("automaticReserved") } : {}),
+        }),
         field("actorPolicy", actorPolicySchema, {
           kind: "object",
           defaultObject: { mode: "none" },
@@ -241,7 +246,7 @@ export function workflowForm(
   ];
   return {
     fields,
-    values: values ?? { name: "", description: "", runClassName: null, runContract: null, steps: [blankStep] },
+    values: values ?? { name: "", description: "", runClassName: null, runContract: null, steps: [] },
     errors: [],
     save: { method: "POST", path: "/workflow/save", bodySchema: jsonSchema(workflowValuesSchema) },
   };

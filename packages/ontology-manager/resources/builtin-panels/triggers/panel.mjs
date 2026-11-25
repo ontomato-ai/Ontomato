@@ -1,5 +1,6 @@
 import { computed, watch } from "vue";
 import {
+  appIcon,
   mountPanel,
   usePanelBack,
   usePanelContext,
@@ -55,7 +56,7 @@ await mountPanel({
     const dialog = computed({
       get: () => dialogOpen.value,
       set: (open) => {
-        if (!open && dialogOpen.value) closeDialog();
+        if (!open && dialogOpen.value) cancelDialog();
       },
     });
 
@@ -73,12 +74,20 @@ await mountPanel({
       void dialogBack.back();
     }
 
+    function beforeCloseDialog() {
+      cancelDialog();
+    }
+
     function onFormSaved() {
       closeDialog();
     }
 
     return {
+      t,
       search,
+      searchIcon: appIcon("search"),
+      scheduleIcon: appIcon("schedule"),
+      refreshing: instance.refreshing,
       creating,
       editing,
       dialogOpen,
@@ -88,6 +97,7 @@ await mountPanel({
       startCreate,
       onRowAction,
       cancelDialog,
+      beforeCloseDialog,
       closeDialog,
       onFormSaved,
       refresh: () => instance.refreshObjects(),

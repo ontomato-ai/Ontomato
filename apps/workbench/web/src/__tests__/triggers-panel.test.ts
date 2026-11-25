@@ -123,10 +123,17 @@ type DataReadRequest = Extract<ProductPanelReadRequest, { dataName: string }>;
 type OpsReadRequest = Extract<ProductPanelReadRequest, { operations: true }>;
 
 const triggerFieldLabels = {
+  triggerTitle: "Trigger",
+  version: "Version",
   status: "State",
+  statusCode: "Status code",
   enabled: "Enabled",
+  conditionKind: "Condition",
+  cadence: "Cadence",
   condition: "Schedule",
+  timeZone: "Time zone",
   effect: "Effect",
+  executor: "Executor",
   nextRunAt: "Next run",
 };
 
@@ -137,14 +144,21 @@ function triggerRow(id: string, name: string, enabled: boolean, statusLabel: str
     subtitle: `${name} description`,
     fieldLabels: triggerFieldLabels,
     fields: {
+      triggerTitle: [name, "v1"],
+      version: "v1",
       status: statusLabel,
+      statusCode: enabled ? "PUBLISHED" : "PENDING_REVIEW",
       enabled,
+      conditionKind: "Schedule",
+      cadence: "Daily at 09:00",
       condition: "Daily at 09:00",
+      timeZone: "UTC",
       effect: "Action · Approve expense",
+      executor: "Default agent",
       nextRunAt: enabled ? "2026-11-25T01:00:00Z" : "",
     },
     tones: {
-      status: enabled ? "success" : "info",
+      status: enabled ? "success" : "default",
       enabled: enabled ? "success" : "info",
     },
   };
@@ -321,15 +335,16 @@ describe("triggers builtin panel", () => {
       expect(host.textContent).toContain("Armed");
       expect(host.textContent).toContain("Nightly sync");
     });
-    expect(host.textContent).toContain("Total");
-    const countValues = [...host.querySelectorAll(".sdk-object-count-badge")].map((el) => el.textContent?.trim());
+    expect(host.textContent).toContain("Triggers");
+    const countValues = [...host.querySelectorAll(".sdk-object-count-value")].map((el) => el.textContent?.trim());
     expect(countValues).toEqual(["1", "2"]);
 
     const bodyRows = [...host.querySelectorAll(".sdk-object-list-table tbody tr")];
     expect(bodyRows).toHaveLength(2);
 
-    const row1Actions = [...bodyRows[0]!.querySelectorAll(".sdk-object-list-action-btn")].map((btn) => btn.textContent?.trim());
-    const row2Actions = [...bodyRows[1]!.querySelectorAll(".sdk-object-list-action-btn")].map((btn) => btn.textContent?.trim());
+    const labelOf = (btn: Element) => btn.textContent?.trim() || btn.getAttribute("aria-label") || btn.getAttribute("title") || "";
+    const row1Actions = [...bodyRows[0]!.querySelectorAll(".sdk-object-list-action-btn")].map(labelOf);
+    const row2Actions = [...bodyRows[1]!.querySelectorAll(".sdk-object-list-action-btn")].map(labelOf);
     expect(row1Actions).toEqual(["Edit", "Disable", "Delete"]);
     expect(row2Actions).toEqual(["Edit", "Publish", "Delete"]);
   });
@@ -389,7 +404,7 @@ describe("triggers builtin panel", () => {
 
     expect(route.router.currentRoute.value.fullPath).toBe("/ontology/assets/triggers");
     const saveBtn = [...document.body.querySelectorAll("button")].find((btn) => btn.textContent?.trim() === "Save") as HTMLButtonElement | undefined;
-    expect(saveBtn?.disabled).toBe(true);
+    expect(saveBtn?.disabled).toBe(false);
 
     // Close create modal via Cancel button.
     const cancelBtn = [...document.body.querySelectorAll("button")].find((btn) => btn.textContent?.trim() === "Cancel") as HTMLButtonElement | undefined;
