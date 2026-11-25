@@ -27,6 +27,7 @@ import detailSource from "../../../../../packages/ontology-manager/resources/bui
 import detailHtml from "../../../../../packages/ontology-manager/resources/builtin-panels/panel-detail/panel.html?raw";
 import detailModule from "../../../../../packages/ontology-manager/resources/builtin-panels/panel-detail/panel.mjs?raw";
 import {
+  APPLICATION_ENTRY_PATH,
   installPlatform,
   leaveFrame,
   mountPlatformPage,
@@ -380,6 +381,7 @@ async function mountPanelsApp(options: HarnessOptions = {}) {
     const nestedMatch = /^\/api\/product-panels\/([^/]+)(\/snapshot)?$/.exec(path);
     if (
       request.method === "GET"
+      && path !== APPLICATION_ENTRY_PATH
       && nestedMatch
       && nestedMatch[1] !== catalogFixture.panel.id
       && nestedMatch[1] !== detailFixture.panel.id
