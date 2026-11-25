@@ -67,6 +67,28 @@ function ownerAnswering(answers: Record<string, (body: Record<string, unknown>) 
 const ok = (data: unknown) => () => Response.json({ success: true, data });
 
 describe("action catalog reads", () => {
+  it("reads persisted sandbox capability as the viewer without probing", async () => {
+    const capability = {
+      status: "unchecked", supported: true, canCreateAndDrop: false,
+      reason: "Unprobed connection", probeNote: "Creates and drops a probe table",
+    };
+    const fetch = vi.fn(async () => Response.json({ success: true, data: { ...capability, details: {} } }));
+    vi.stubGlobal("fetch", fetch);
+    const record = panelRecordSchema.parse(await createActionReadAdapter(owner, viewer).sandboxCapability());
+    expect(record.outputs).toEqual({
+      sandboxStatus: capability.status,
+      sandboxSupported: capability.supported,
+      sandboxCanCreateAndDrop: capability.canCreateAndDrop,
+      sandboxReason: capability.reason,
+      sandboxProbeNote: capability.probeNote,
+    });
+    expect(record.fields.sandboxStatus).toBe("Not checked yet");
+    expect(record.tones?.sandboxStatus).toBe("warning");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith("http://owner.test/action/sandboxCapability",
+      expect.objectContaining({ method: "GET" }));
+  });
+
   it("lists the actions with the owner's display names, status tones, and this owner's column names", async () => {
     const pending = { ...approve, id: "review-order", name: "Review order", status: "PENDING_REVIEW", statusLabel: "Pending review" };
     const unused = { ...approve, id: "legacy-order", name: "Legacy order", status: "UNUSED", statusLabel: "Unused" };

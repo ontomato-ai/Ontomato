@@ -85,8 +85,10 @@ const props = withDefaults(
     hideWhenUnavailable?: boolean;
     /** Whether to render read-only operation results and read failures inline beneath the button (default `true`). Set `false` when the panel renders `<operation-result>` in a dedicated region via `@read` and `@error`. */
     showResult?: boolean;
+    /** Let the panel describe a successful receipt with its own notification. */
+    notifySuccess?: boolean;
   }>(),
-  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, parameters: undefined, label: undefined, labelKey: undefined, size: "default", disabled: false, hideWhenUnavailable: false, showResult: true },
+  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, parameters: undefined, label: undefined, labelKey: undefined, size: "default", disabled: false, hideWhenUnavailable: false, showResult: true, notifySuccess: true },
 );
 
 const emit = defineEmits<{
@@ -152,6 +154,7 @@ const {
     }
     return { ok: true };
   },
+  notifySuccess: () => props.notifySuccess,
   onDone: (_name, answered) => {
     if (answered.kind === "batch") publishBatchReceipt?.({ items: answered.items, named: named.value });
     emit("done", answered);

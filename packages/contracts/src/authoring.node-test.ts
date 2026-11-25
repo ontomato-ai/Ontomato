@@ -37,6 +37,18 @@ test("authoring operation input cannot carry Workbench authority", () => {
   assert.equal(authoringKindSchema.safeParse("function").success, false);
 });
 
+test("Action authoring context preserves the saved sandbox capability with a strict shape", () => {
+  const sandboxCapability = {
+    status: "unchecked", supported: true, canCreateAndDrop: false,
+    reason: "Not checked", probeNote: "Creates and removes one empty probe table", details: {},
+  };
+  const context = { ontology: {}, knowledge: {}, helpers: { markdown: "" }, sandboxCapability };
+  assert.deepEqual(authoringOperations.action.context.response.parse(context), context);
+  assert.equal(authoringOperations.action.context.response.safeParse({
+    ...context, sandboxCapability: { ...sandboxCapability, extra: "unexpected" },
+  }).success, false);
+});
+
 test("Action sandbox input uses inline samples and one structured DSL object", () => {
   const vector = { className: "/Employee", objectId: "one", attrName: "notes", text: "A sample" };
   const sample = { objDatas: [{ className: "/Employee", rows: [{ id: "one" }] }], relDatas: [], vectorDatas: [vector] };

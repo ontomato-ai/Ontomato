@@ -3,6 +3,7 @@ import {
   dataAdapterTestResultSchema,
   multiDataSourceRejectionSchema,
   multiDataSourceType,
+  sandboxCapabilitySchema,
   type ConfigurationProblem,
   type DataAdapterConnection,
   type DataAdapterInfo,
@@ -27,6 +28,8 @@ import {
   type PanelRecord,
 } from "@ontomato/contracts/panel-projection";
 import {
+  ACTION,
+  CHECK_DATA_ADAPTER_SANDBOX_PERMISSION,
   DATA_ADAPTER_CONFIG,
   SAVE_DATA_ADAPTER_ROUTING,
   TEST_DATA_ADAPTER_CONNECTION,
@@ -43,6 +46,9 @@ import {
   ownerWriteFailure,
   type DataQueryOperationHost,
 } from "../product-panels/data-query-operations";
+import {
+  checkSandboxPermission, sandboxPermissionPresentation, sandboxPermissionResultSchema,
+} from "../product-panels/sandbox-permission";
 import { operationHost } from "../product-panels/operation-host";
 import type {
   PanelOperationActor,
@@ -63,6 +69,7 @@ import type {
 
 const DOMAIN_KEY = "domain";
 const SECRET_MASK = "******";
+const SANDBOX_AFFECTED_TYPES = [DATA_ADAPTER_CONFIG, ACTION];
 const SAVE_OP = `${DATA_ADAPTER_CONFIG}.save`;
 const SECRET_NAME_RE = /(password|secret|token|private.?key|access.?key|api.?key)/i;
 
@@ -141,6 +148,7 @@ const multiDataSourceSchema = z.object({
 }).passthrough();
 
 const businessConfigPayloadSchema = z.object({
+  sandboxCapability: sandboxCapabilitySchema.optional(),
   dataAdapter: z.string().nullish().transform((v) => v ?? ""),
   dataAdapterConnections: z.record(z.string(), connectionMapSchema.nullish()).nullish().transform((map) => {
     const out: Record<string, DataAdapterConnection> = {};
@@ -193,7 +201,16 @@ const dataAdapterTargetSchema = z.object({
 }).strict();
 
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
-const saveResultSchema = z.object({ adapterMode: z.string() }).strict();
+const saveCapabilitySchema = z.object({ sandboxCapability: sandboxCapabilitySchema.optional() });
+const saveResultSchema = saveCapabilitySchema.extend({ adapterMode: z.string() }).strict();
+
+function savedConfig(adapterMode: string, data: unknown): SinglePanelOperationOutcome {
+  return {
+    kind: "success",
+    data: { adapterMode, ...saveCapabilitySchema.optional().parse(data) },
+    affected: affected(DATA_ADAPTER_CONFIG, DOMAIN_KEY, SANDBOX_AFFECTED_TYPES),
+  };
+}
 const markdownResultSchema = panelReadOperationJsonResultSchema.options[0];
 const testParamsSchema = z.object({
   sourceId: z.string().nullish(),
@@ -647,6 +664,17 @@ function formatTestReportMarkdown(
     }
   }
 
+  if (report.sandboxCapability) {
+    const { status, detail } = sandboxPermissionPresentation(report.sandboxCapability, locale);
+    lines.push(
+      "", `#### ${t("panels.dataAdapters.sandbox.title")}`, "",
+      `| ${t("panels.dataAdapters.sandbox.status")} | ${t("panels.dataAdapters.sandbox.detail")} |`,
+      "| --- | --- |",
+      `| ${status} | ${escapeMarkdownCell(detail)} |`,
+    );
+    if (report.sandboxCapability.supported) lines.push("", t("panels.dataAdapters.sandbox.probeNote"));
+  }
+
   return lines.join("\n");
 }
 
@@ -723,6 +751,23 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
         adaptersData.adapters,
         locale,
       );
+      const configured = summary.mode !== "unconfigured";
+      const capability = configured
+        ? config.sandboxCapability ?? {
+          status: "unchecked" as const,
+          supported: true,
+          canCreateAndDrop: false,
+          reason: t("panels.dataAdapters.sandbox.uncheckedDetail"),
+          probeNote: t("panels.dataAdapters.sandbox.probeNote"),
+        }
+        : {
+          status: "unsupported" as const,
+          supported: false,
+          canCreateAndDrop: false,
+          reason: t("panels.dataAdapters.sandbox.unconfiguredDetail"),
+          probeNote: "",
+        };
+      const sandbox = sandboxPermissionPresentation(capability, locale);
       return {
         primaryKey: DOMAIN_KEY,
         label: summary.displayName,
@@ -731,17 +776,27 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
           displayName: summary.displayName,
           mode: summary.modeLabel,
           summary: summary.summary,
+          sandboxStatus: configured ? sandbox.status : t("panels.dataAdapters.record.unconfigured"),
+          sandboxDetail: configured ? sandbox.detail : capability.reason,
         },
         fieldLabels: {
           adapterType: t("panels.dataAdapters.record.adapterType"),
           displayName: t("panels.dataAdapters.record.displayName"),
           mode: t("panels.dataAdapters.record.mode"),
           summary: t("panels.dataAdapters.record.summary"),
+          sandboxStatus: t("panels.dataAdapters.sandbox.status"),
+          sandboxDetail: t("panels.dataAdapters.sandbox.detail"),
         },
+        tones: { sandboxStatus: sandbox.tone },
         outputs: {
           currentType: summary.currentType,
           mode: summary.mode,
-          configured: summary.mode !== "unconfigured",
+          configured,
+          sandboxStatus: capability.status,
+          sandboxSupported: capability.supported,
+          sandboxCanCreateAndDrop: capability.canCreateAndDrop,
+          sandboxReason: capability.reason,
+          sandboxProbeNote: capability.probeNote,
         },
       };
     },
@@ -1429,11 +1484,7 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
           return ownerWriteFailure(envelope, "MULTI_DATA_SOURCE_SAVE_FAILED", t("panels.dataAdapters.errors.saveFailed"));
         }
 
-        return {
-          kind: "success",
-          data: { adapterMode: multiDataSourceType },
-          affected: affected(DATA_ADAPTER_CONFIG, DOMAIN_KEY, [DATA_ADAPTER_CONFIG]),
-        };
+        return savedConfig(multiDataSourceType, envelope.data);
       }
 
       // Single-source save
@@ -1454,11 +1505,7 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
       if (!envelope.success) {
         return ownerWriteFailure(envelope, "DATA_ADAPTER_SAVE_FAILED", t("panels.dataAdapters.errors.saveFailed"));
       }
-      return {
-        kind: "success",
-        data: { adapterMode: selected.type },
-        affected: affected(DATA_ADAPTER_CONFIG, DOMAIN_KEY, [DATA_ADAPTER_CONFIG]),
-      };
+      return savedConfig(selected.type, envelope.data);
     },
   },
   {
@@ -1538,12 +1585,23 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
         return ownerWriteFailure(envelope, "MULTI_DATA_SOURCE_SAVE_FAILED", t("panels.dataAdapters.errors.saveFailed"));
       }
 
-      return {
-        kind: "success",
-        data: { adapterMode: multiDataSourceType },
-        affected: affected(DATA_ADAPTER_CONFIG, DOMAIN_KEY, [DATA_ADAPTER_CONFIG]),
-      };
+      return savedConfig(multiDataSourceType, envelope.data);
     },
+  },
+  {
+    handlerRef: CHECK_DATA_ADAPTER_SANDBOX_PERMISSION,
+    labelKey: "panels.dataAdapters.operations.checkSandboxPermission",
+    kind: "action",
+    effect: "write",
+    batch: false,
+    binding: { kind: "PlatformOperation", id: CHECK_DATA_ADAPTER_SANDBOX_PERMISSION },
+    targetType: DATA_ADAPTER_CONFIG,
+    targetSchema: dataAdapterTargetSchema,
+    targetInput: "config",
+    targetLabel: async (host) => tForLocale(host.locale, "panels.dataAdapters.sandbox.title"),
+    inputSchema: z.object({}).strict(),
+    resultSchema: sandboxPermissionResultSchema,
+    execute: (host) => checkSandboxPermission(host, SANDBOX_AFFECTED_TYPES),
   },
   {
     handlerRef: TEST_DATA_ADAPTER_CONNECTION,

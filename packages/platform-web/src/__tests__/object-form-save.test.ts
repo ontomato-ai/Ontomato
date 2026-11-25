@@ -37,7 +37,7 @@ function receipt(primaryKey: string | null = null, affectedKeys = primaryKey ===
     response: {
       kind: "dispatched", intentId: "save-intent",
       outcome: {
-        kind: "success", data: {}, message: "Customer created",
+        kind: "success", data: { savedName: "Customer" }, message: "Customer created",
         ...(primaryKey === null ? {} : { created: { objectType: customerType, primaryKey } }),
         affected: {
           objects: affectedKeys.map(primaryKey => ({ objectType: customerType, primaryKey })),
@@ -169,23 +169,23 @@ describe("resolveFormSaveAnswer", () => {
 
   it.each([customerType, null])("returns the declared key for form type %s even with two affected objects", type => {
     expect(resolveFormSaveAnswer(receipt("new-customer"), draft, type))
-      .toEqual({ primaryKey: "new-customer", message: "Customer created" });
+      .toEqual({ primaryKey: "new-customer", message: "Customer created", data: { savedName: "Customer" } });
   });
 
   it.each(affectedKeys.map(keys => [keys.length, keys] as const))("returns no key with %i affected objects and no created identity", (_, keys) => {
     expect(resolveFormSaveAnswer(receipt(null, keys), draft, customerType))
-      .toEqual({ primaryKey: null, message: "Customer created" });
+      .toEqual({ primaryKey: null, message: "Customer created", data: { savedName: "Customer" } });
   });
 
   it("ignores a created identity for a different form type", () => {
     expect(resolveFormSaveAnswer(receipt("new-customer"), draft, platformType))
-      .toEqual({ primaryKey: null, message: "Customer created" });
+      .toEqual({ primaryKey: null, message: "Customer created", data: { savedName: "Customer" } });
   });
 
   it("keeps the selected object's key on edit", () => {
     const target = { kind: "object", objectType: customerType, primaryKey: "selected-customer" } as const;
     expect(resolveFormSaveAnswer(receipt("new-customer"), target, customerType))
-      .toEqual({ primaryKey: "selected-customer", message: "Customer created" });
+      .toEqual({ primaryKey: "selected-customer", message: "Customer created", data: { savedName: "Customer" } });
   });
 });
 
@@ -204,7 +204,7 @@ describe("ObjectForm save", () => {
     pending.resolve(receipt(primaryKey));
     await expect(saving).resolves.toMatchObject({ primaryKey });
     expect(state.values.value.selected).toEqual(selected);
-    expect(wrapper.emitted("saved")).toEqual([[{ className: customerType, primaryKey }]]);
+    expect(wrapper.emitted("saved")).toEqual([[{ className: customerType, primaryKey }, expect.objectContaining({ data: { savedName: "Customer" } })]]);
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "success" }));
 
     selectedRead.resolve(description("Existing customer"));
@@ -393,11 +393,11 @@ describe("ObjectForm save", () => {
     form.set("/name", "Ada");
     expect(form.dirty.value).toBe(true);
 
-    await expect(form.submit()).resolves.toEqual({ primaryKey: null, message: "Customer created" });
+    await expect(form.submit()).resolves.toEqual({ primaryKey: null, message: "Customer created", data: { savedName: "Customer" } });
     expect(state.values.value.selected).toBeNull();
     expect(form.values.value).toEqual(baseline.values);
     expect(form.dirty.value).toBe(false);
-    expect(wrapper.emitted("saved")).toEqual([[{ className: customerType, primaryKey: null }]]);
+    expect(wrapper.emitted("saved")).toEqual([[{ className: customerType, primaryKey: null }, expect.objectContaining({ data: { savedName: "Customer" } })]]);
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "success" }));
     wrapper.unmount();
   });
@@ -415,7 +415,7 @@ describe("ObjectForm save", () => {
     expect(state.values.value.selected).toEqual(objectRef(customerType, "new-customer"));
     expect(form.values.value.name).toBe("Ada");
     expect(form.dirty.value).toBe(false);
-    expect(wrapper.emitted("saved")).toEqual([[{ className: customerType, primaryKey: "new-customer" }]]);
+    expect(wrapper.emitted("saved")).toEqual([[{ className: customerType, primaryKey: "new-customer" }, expect.objectContaining({ data: { savedName: "Customer" } })]]);
     wrapper.unmount();
   });
 
@@ -437,7 +437,7 @@ describe("ObjectForm save", () => {
     expect(state.values.value.selected).toEqual(selected);
     expect(form.values.value.name).toBe("Ada");
     expect(form.dirty.value).toBe(false);
-    expect(wrapper.emitted("saved")).toEqual([[selected]]);
+    expect(wrapper.emitted("saved")).toEqual([[selected, expect.objectContaining({ data: { savedName: "Customer" } })]]);
     wrapper.unmount();
   });
 

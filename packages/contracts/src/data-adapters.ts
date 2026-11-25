@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { runtimeJsonObjectSchema } from "./agent-runtime-values";
 
 /**
  * A connection field name. The vocabulary belongs to each adapter provider:
@@ -87,6 +88,19 @@ export interface DataAdaptersData {
   adapters: DataAdapterInfo[];
 }
 
+export const sandboxCapabilityStatusSchema = z.enum(["passed", "failed", "unsupported", "unchecked"]);
+export const sandboxCapabilitySchema = z.object({
+  status: sandboxCapabilityStatusSchema,
+  supported: z.boolean(),
+  canCreateAndDrop: z.boolean(),
+  reason: z.string(),
+  probeNote: z.string(),
+  details: runtimeJsonObjectSchema,
+}).strict();
+
+export type SandboxCapabilityStatus = z.infer<typeof sandboxCapabilityStatusSchema>;
+export type SandboxCapability = z.infer<typeof sandboxCapabilitySchema>;
+
 const tableSchema = z.object({ name: z.string(), type: z.enum(["TABLE", "VIEW"]) });
 
 /**
@@ -97,6 +111,7 @@ const tableSchema = z.object({ name: z.string(), type: z.enum(["TABLE", "VIEW"])
 export const dataAdapterTestResultSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("catalog"),
+    sandboxCapability: sandboxCapabilitySchema.optional(),
     elapsedMs: z.number(),
     databaseProduct: z.string(),
     databaseVersion: z.string(),
@@ -108,6 +123,7 @@ export const dataAdapterTestResultSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("search"),
+    sandboxCapability: sandboxCapabilitySchema.optional(),
     elapsedMs: z.number(),
     databaseProduct: z.string(),
     databaseVersion: z.string().nullable(),

@@ -4,6 +4,7 @@ import { nextTick, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
+import type { SandboxCapabilityStatus } from "@ontomato/contracts/data-adapters";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
@@ -12,7 +13,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
 import type { PanelFormDescription } from "@ontomato/contracts/panel-projection";
-import { ACTION, DELETE_ACTION, SET_ACTION_STATUS, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
+import { ACTION, CHECK_ACTION_SANDBOX_PERMISSION, DELETE_ACTION, SET_ACTION_STATUS, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -46,6 +47,14 @@ import { confirmDiscard, directRun, noOperations } from "./panel-frame";
 const actionTypeEntry = platformTypeTableEntrySchema.parse({
   ...platformObjectTypes[ACTION],
   operations: [
+    {
+      id: CHECK_ACTION_SANDBOX_PERMISSION,
+      kind: "action",
+      effect: "write",
+      batch: false,
+      inputSchema: { type: "object" },
+      target: { source: "none" },
+    },
     {
       id: `${ACTION}.save`,
       kind: "form.save",
@@ -228,6 +237,7 @@ afterEach(() => {
 });
 
 interface MountCatalogOptions {
+  sandboxStatus?: SandboxCapabilityStatus;
   initial?: Record<string, RuntimeJsonValue>;
   locale?: "en" | "zh-CN";
 }
@@ -242,6 +252,8 @@ async function mountCatalogPanel(options: MountCatalogOptions = {}) {
     navigated.push(address);
   });
   const expandPageComposer = vi.fn(async () => ({ expanded: true }));
+  const confirmOperation = vi.fn(noOperations.confirmOperation);
+  const status = options.sandboxStatus ?? "passed";
 
   let resolveMount!: (mount: DirectPanelMount) => void;
   const mountedPromise = new Promise<DirectPanelMount>((resolve) => {
@@ -283,10 +295,18 @@ async function mountCatalogPanel(options: MountCatalogOptions = {}) {
     expandPageComposer,
     navigate,
     nested: noOperations.nested,
-    confirmOperation: noOperations.confirmOperation,
+    confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       const member = request.memberPath[0]?.member;
       if (request.operations) {
+        if (member === "checkSandboxPermission") {
+          return { status: "ready", value: {
+            checkSandboxPermission: {
+              kind: "action", handlerRef: CHECK_ACTION_SANDBOX_PERMISSION, label: "Check permission",
+              effect: "write", batch: false, target: { source: "none" }, inputSchema: {}, resultSchema: {},
+            },
+          } };
+        }
         if (member === "setStatus") {
           return {
             status: "ready",
@@ -306,6 +326,19 @@ async function mountCatalogPanel(options: MountCatalogOptions = {}) {
         }
         return { status: "ready", value: {} as never };
       }
+      if (member === "sandboxCapability") {
+        return { status: "ready", value: {
+          primaryKey: "domain", label: "Action trial & sandbox permission",
+          fields: { sandboxStatus: status, sandboxDetail: status === "failed" ? "CREATE denied" : status },
+          outputs: {
+            sandboxStatus: status,
+            sandboxSupported: status !== "unsupported",
+            sandboxCanCreateAndDrop: status === "passed",
+            sandboxReason: "",
+            sandboxProbeNote: "",
+          },
+        } };
+      }
       if (member === "catalog") {
         return { status: "ready", value: catalogRows as never };
       }
@@ -319,7 +352,7 @@ async function mountCatalogPanel(options: MountCatalogOptions = {}) {
   });
 
   const mount = await mountedPromise;
-  return { mount, element, navigate, navigated, expandPageComposer };
+  return { mount, element, navigate, navigated, expandPageComposer, confirmOperation };
 }
 
 interface MountDetailOptions {
@@ -554,6 +587,25 @@ async function mountDetailPanel(options: MountDetailOptions = {}) {
 }
 
 describe("builtin actions catalog panel (actions)", () => {
+  it.each([
+    ["passed", null],
+    ["unsupported", null],
+    ["unchecked", "Check permission"],
+    ["failed", "Re-check permission"],
+  ] as const)("renders the persisted %s status without starting the check", async (sandboxStatus, buttonLabel) => {
+    const { mount, element, confirmOperation } = await mountCatalogPanel({ sandboxStatus });
+    await vi.waitFor(() => {
+      expect(mount.instance.outputs.sandboxCapability?.sandboxStatus).toBe(sandboxStatus);
+      expect(element.querySelector<HTMLButtonElement>('[data-member="checkSandboxPermission"] button')?.textContent?.trim() ?? null)
+        .toBe(buttonLabel);
+    }, { timeout: 3000 });
+    const notice = element.querySelector<HTMLElement>(".ac-capability")!;
+    expect(notice.style.display === "none").toBe(sandboxStatus === "passed");
+    if (buttonLabel) expect(notice.textContent).toContain("immediately deletes one empty probe table");
+    if (sandboxStatus === "failed") expect(notice.textContent).toContain("CREATE denied");
+    expect(confirmOperation).not.toHaveBeenCalled();
+  });
+
   it("renders a single page-header with New action button, navigates to action-detail on row click, and scopes batch status to checked rows", async () => {
     const { mount, element, navigated, expandPageComposer } = await mountCatalogPanel();
     const { instance } = mount;

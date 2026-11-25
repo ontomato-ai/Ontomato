@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { ACTION, DELETE_ACTION, FUNCTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
+import type { ZodNull } from "zod";
+import { ACTION, CHECK_ACTION_SANDBOX_PERMISSION, DELETE_ACTION, FUNCTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
+import { DATA_ADAPTER_CONFIG } from "@ontomato/contracts/platform-object-types";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { describeServerOperation, operationDeclaration, type PanelOperationHost } from "../../product-panels/server-operations";
@@ -20,6 +22,8 @@ configureI18n({
 });
 
 type M6Operation = (typeof m6ServerOperations)[number];
+const checkPermission = m6ServerOperations.find((item): item is Extract<M6Operation, { targetSchema: ZodNull }> =>
+  item.handlerRef === CHECK_ACTION_SANDBOX_PERMISSION)!;
 const write = (handlerRef: string) =>
   m6ServerOperations.find((item): item is Extract<M6Operation, { effect: "write" }> =>
     item.effect === "write" && item.handlerRef === handlerRef)!;
@@ -51,6 +55,29 @@ const actionTarget = { kind: "object" as const, objectType: ACTION, primaryKey: 
 const secondAction = { kind: "object" as const, objectType: ACTION, primaryKey: "a2" };
 
 describe("action panel server operations", () => {
+  it("checks sandbox permission with an empty POST and invalidates both panels", async () => {
+    const sandboxCapability = {
+      status: "passed", supported: true, canCreateAndDrop: true, reason: "Allowed", probeNote: "Probe removed", details: {},
+    };
+    const { host, sent } = hostWith(() => Response.json({ success: true, data: { sandboxCapability } }));
+    expect(checkPermission.targetSchema.parse(null)).toBeNull();
+    await expect(checkPermission.execute(host)).resolves.toMatchObject({
+      kind: "success", data: { sandboxCapability },
+      affected: { objects: [], objectTypes: [ACTION, DATA_ADAPTER_CONFIG] },
+    });
+    expect(sent).toMatchObject([{
+      path: "/api/data-query/businessConfig/checkSandboxPermission", init: { method: "POST", body: "{}" },
+    }]);
+  });
+
+  it("asks non-admins to contact a domain administrator when Java denies the check", async () => {
+    const { host } = hostWith(() => new Response(null, { status: 403 }));
+    await expect(checkPermission.execute({ ...host, locale: "en" })).resolves.toEqual({
+      kind: "refusal", code: "SANDBOX_CHECK_FORBIDDEN",
+      message: "Ask a domain administrator to check permissions in Data Adapters settings.",
+    });
+  });
+
   it.each([
     { locale: "en", title: "Status", labels: ["Pending review", "Published", "Disabled"] },
     { locale: "zh-CN", title: "状态", labels: ["待审核", "已发布", "已停用"] },

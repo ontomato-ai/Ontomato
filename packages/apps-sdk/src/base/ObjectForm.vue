@@ -183,7 +183,7 @@ const props = withDefaults(defineProps<{
 });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created (primaryKey is null when not reported). */
-  saved: [object: { className: string; primaryKey: string | null }];
+  saved: [object: { className: string; primaryKey: string | null }, outcome: FormSaveResult];
   /** The reader discarded the changes the form held. */
   discarded: [];
   /** The reader cancelled creating a new object. */
@@ -1929,7 +1929,7 @@ function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
     if (!stillShowingTarget || createdWithoutKey) {
       panel.notify({ kind: "success", text: saved.message ?? t("platform.operationDone") });
     }
-    emit("saved", { className: objectType, primaryKey: saved.primaryKey });
+    emit("saved", { className: objectType, primaryKey: saved.primaryKey }, saved);
   };
 }
 

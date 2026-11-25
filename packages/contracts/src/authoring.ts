@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sandboxCapabilitySchema } from "./data-adapters";
 import { runtimeArtifactSchema, runtimeFileMetadataSchema } from "./agent-runtime-artifacts";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema, runtimeSequenceSchema } from "./agent-runtime-values";
 import { packageRecipeSchema, queryPackageSchema, queryParameterSchema } from "./query-package";
@@ -36,6 +37,7 @@ export const authoringContextSchema = z.object({
   ontology: runtimeJsonValueSchema,
   knowledge: runtimeJsonValueSchema,
   helpers: z.object({ markdown: z.string() }).strict(),
+  sandboxCapability: sandboxCapabilitySchema.optional(),
 }).strict();
 
 /** The Action author prepares inline sandbox samples; the sandbox owner validates classes and row values. */

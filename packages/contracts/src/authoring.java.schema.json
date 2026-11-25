@@ -251,6 +251,68 @@
             "markdown"
           ],
           "additionalProperties": false
+        },
+        "sandboxCapability": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "passed",
+                "failed",
+                "unsupported",
+                "unchecked"
+              ]
+            },
+            "supported": {
+              "type": "boolean"
+            },
+            "canCreateAndDrop": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "probeNote": {
+              "type": "string"
+            },
+            "details": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {}
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "status",
+            "supported",
+            "canCreateAndDrop",
+            "reason",
+            "probeNote",
+            "details"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

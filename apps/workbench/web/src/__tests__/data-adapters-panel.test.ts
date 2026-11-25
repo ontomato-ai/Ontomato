@@ -8,7 +8,9 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { currentPanelRecordSchema, type ProductProjection } from "@ontomato/contracts/product-panels";
 import {
+  CHECK_DATA_ADAPTER_SANDBOX_PERMISSION,
   DATA_ADAPTER_CONFIG,
+  SAVE_DATA_ADAPTER_ROUTING,
   TEST_DATA_ADAPTER_CONNECTION,
   platformObjectTypes,
 } from "@ontomato/contracts/platform-object-types";
@@ -45,7 +47,7 @@ const adaptersUse = {
 };
 
 const READ_OPS = new Set([TEST_DATA_ADAPTER_CONNECTION]);
-const FORM_SAVE_OPS = new Set([`${DATA_ADAPTER_CONFIG}.save`]);
+const FORM_SAVE_OPS = new Set([`${DATA_ADAPTER_CONFIG}.save`, SAVE_DATA_ADAPTER_ROUTING]);
 
 const objectTypes = Object.fromEntries(
   Object.entries(platformObjectTypes).map(([type, entry]) => [
@@ -269,7 +271,22 @@ describe("builtin-product-data-adapters panel", () => {
         if ("operations" in request && request.operations) {
           if (slot === "adapterForm") return adapterFormOperationsResponse();
           if (slot === "testConnection") return testButtonOperationsResponse();
+          if (slot === "checkSandboxPermission") {
+            return Response.json({ status: "ready", value: {
+              checkSandboxPermission: {
+                kind: "action", handlerRef: CHECK_DATA_ADAPTER_SANDBOX_PERMISSION, label: "Check permission",
+                effect: "write", batch: false, target: { source: "input", input: "target" }, inputSchema: {}, resultSchema: {},
+              },
+            } });
+          }
           return Response.json({ status: "ready", value: {} });
+        }
+        if (slot === "sandboxCapability") {
+          return Response.json({ status: "ready", value: {
+            primaryKey: "domain", label: "PostgreSQL",
+            fields: { sandboxStatus: "Not checked yet", sandboxDetail: "Sandbox permissions have not been checked." },
+            outputs: { configured: true, sandboxStatus: "unchecked", sandboxSupported: true },
+          } });
         }
         if (slot === "adapterForm") {
           return Response.json({
@@ -340,9 +357,13 @@ describe("builtin-product-data-adapters panel", () => {
     await vi.waitFor(() => {
       expect(document.body.textContent).toContain("Data adapters");
       expect(document.body.textContent).toContain("Connection URL");
+      expect(document.body.textContent).toContain("Not checked yet");
+      expect(document.body.textContent).toContain("immediately deletes one empty probe table");
+      expect(document.querySelector('[data-member="checkSandboxPermission"] button')?.textContent).toContain("Check permission");
       expect(document.body.textContent).toContain("Already saved. Leave blank to keep the existing value.");
     }, { timeout: 3000 });
 
+    expect(readOpCalls).toHaveLength(0);
     let testBtn: HTMLButtonElement | undefined;
     await vi.waitFor(() => {
       testBtn = [...document.querySelectorAll<HTMLButtonElement>("button")]
@@ -391,7 +412,22 @@ describe("builtin-product-data-adapters panel", () => {
         if ("operations" in request && request.operations) {
           if (slot === "adapterForm") return adapterFormOperationsResponse();
           if (slot === "testConnection") return testButtonOperationsResponse();
+          if (slot === "checkSandboxPermission") {
+            return Response.json({ status: "ready", value: {
+              checkSandboxPermission: {
+                kind: "action", handlerRef: CHECK_DATA_ADAPTER_SANDBOX_PERMISSION, label: "Check permission",
+                effect: "write", batch: false, target: { source: "input", input: "target" }, inputSchema: {}, resultSchema: {},
+              },
+            } });
+          }
           return Response.json({ status: "ready", value: {} });
+        }
+        if (slot === "sandboxCapability") {
+          return Response.json({ status: "ready", value: {
+            primaryKey: "domain", label: "PostgreSQL",
+            fields: { sandboxStatus: "Not checked yet", sandboxDetail: "Sandbox permissions have not been checked." },
+            outputs: { configured: true, sandboxStatus: "unchecked", sandboxSupported: true },
+          } });
         }
         if (slot === "adapterForm") {
           return Response.json({
@@ -482,6 +518,7 @@ describe("builtin-product-data-adapters panel", () => {
       expect(document.body.textContent).toContain("Select one configured data source from the draft");
     }, { timeout: 3000 });
 
+    expect(readOpCalls).toHaveLength(0);
     let testBtn: HTMLButtonElement | undefined;
     await vi.waitFor(() => {
       testBtn = [...document.querySelectorAll<HTMLButtonElement>("button")]

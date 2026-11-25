@@ -16,6 +16,9 @@ await mountPanel({
       instance.state.set("domain", { className: DATA_ADAPTER_TYPE, primaryKey: "domain" });
     }
 
+    const configured = usePanelOutput("sandboxCapability", "configured");
+    const sandboxSupported = usePanelOutput("sandboxCapability", "sandboxSupported");
+
     const adapterDraft = usePanelFormDraft("adapterForm");
     const formDraft = usePanelOutput("adapterForm", "draft");
 
@@ -220,23 +223,54 @@ await mountPanel({
       testActivated.value = true;
     }
 
-    function onAdapterSaved() {
+    function notifySaved(outcome) {
+      const capability = outcome?.data?.sandboxCapability;
+      if (capability?.status === "failed") {
+        notify({ kind: "warning", text: t("sandbox.savedFailed", { reason: capability.reason }) });
+      } else if (capability?.status === "unsupported") {
+        notify({ kind: "info", text: t("sandbox.savedUnsupported") });
+      } else {
+        notify({ kind: "success", text: t("saved") });
+      }
+    }
+
+    function onSandboxChecked(outcome) {
+      if (outcome.kind !== "success") return;
+      instance.refreshObjects();
+      const capability = outcome.data.sandboxCapability;
+      switch (capability.status) {
+        case "passed":
+          notify({ kind: "success", text: t("sandbox.passed") });
+          break;
+        case "failed":
+          notify({ kind: "warning", text: t("sandbox.failed", { reason: capability.reason }) });
+          break;
+        case "unsupported":
+          notify({ kind: "info", text: t("sandbox.unsupported") });
+          break;
+      }
+    }
+
+    function onAdapterSaved(outcome) {
       const routingHandle = instance.forms.handle("routingForm");
       if (routingHandle?.dirty.value) {
         void routingHandle.reset({ confirm: false });
       }
       instance.refreshObjects();
-      notify({ kind: "success", text: t("saved") });
+      notifySaved(outcome);
     }
 
-    function onRoutingSaved() {
+    function onRoutingSaved(outcome) {
       instance.refreshObjects();
-      notify({ kind: "success", text: t("saved") });
+      notifySaved(outcome);
     }
 
     return {
       t,
       pageDraft,
+      configured,
+      sandboxSupported,
+      onSandboxChecked,
       isMultiMode,
       multiSources,
       selectedTestSource,
