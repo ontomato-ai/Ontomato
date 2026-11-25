@@ -57,7 +57,11 @@ export function requireOrdinaryProjection(input: Pick<ProductProjectionInput, "c
 async function readCurrentRecord(
   owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, management: boolean,
 ) {
-  const row = await loadCurrentProduct(owner.domainId, kind, id);
+  const row = await findCurrentProduct(owner.domainId, kind, id);
+  if (!row) {
+    const label = kind === "panel" ? "Panel" : "Projection";
+    throw new HttpError(404, management ? `${label} '${id}' does not exist` : "Current product definition not found", "PRODUCT_UNAVAILABLE");
+  }
   const { decisions, editable } = await currentDefinitionAccess(kind, [row], owner.domainId, credentials);
   const canEdit = editable.has(id);
   if (!management || !canEdit) requireAllowed(decisions[0]);

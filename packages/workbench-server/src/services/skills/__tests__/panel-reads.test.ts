@@ -45,7 +45,7 @@ afterAll(async () => {
 });
 beforeEach(() => {
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "test-service-token");
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: Parameters<typeof fetch>[1]) => {
     if (url.endsWith("/authorization/objects/decide-batch")) {
       const { requests } = JSON.parse(String(init.body));
       return Response.json({ decisions: requests.map(() => ({ allowed: true })) });
