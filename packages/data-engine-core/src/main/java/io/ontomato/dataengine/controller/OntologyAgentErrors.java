@@ -4,11 +4,13 @@ import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
+import io.ontomato.dataengine.service.vector.VectorNotReadyException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -31,6 +33,12 @@ public class OntologyAgentErrors {
 
   public OntologyAgentErrors(LangService messages) {
     this.messages = messages;
+  }
+
+  @ExceptionHandler(VectorNotReadyException.class)
+  public ResponseEntity<?> vectorNotReady(VectorNotReadyException error, HttpServletRequest request) {
+    return failure(new AgentHttpException(HttpStatus.CONFLICT.value(), "VECTOR_NOT_READY", error.getMessage())
+        .localized(VectorNotReadyException.MESSAGE_KEY, Map.of()), request);
   }
 
   /**

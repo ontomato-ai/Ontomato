@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.alibaba.fastjson2.JSON;
@@ -13,8 +14,11 @@ import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
+import io.ontomato.dataengine.config.BaseControllerAdvice;
+import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.JSONRuleDao;
+import io.ontomato.dataengine.dao.VectorRebuildState;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.agent.AgentCaller;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
@@ -24,6 +28,8 @@ import io.ontomato.dataengine.service.agent.OntologyAgentHost;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.service.agent.OntologyRetrievalService;
+import io.ontomato.dataengine.service.agent.PlatformAuthoringService;
+import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
 import java.util.List;
 import java.util.Map;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +42,44 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class JacksonAgentBoundaryTest {
+  @Test
+  void authoringContextExplainsWhyVectorSearchIsUnavailable() throws Exception {
+    var config = mock(BusinessConfig.class);
+    when(config.getLang()).thenReturn("en");
+    var configs = mock(BusinessConfigService.class);
+    when(configs.get("domain-a")).thenReturn(config);
+    var state = mock(VectorRebuildState.class);
+    when(state.getStatus()).thenReturn(VectorRebuildState.Status.PENDING);
+    var gate = spy(new VectorRetrievalGate());
+    doReturn(state).when(gate).stateOf("domain-a", config);
+    var message = "向量尚未就绪，请在模型配置中开始或继续重建。";
+    var messages = mock(LangService.class);
+    when(messages.get("en", "Vector.rebuildRequired")).thenReturn("Vector search is paused.");
+    when(messages.get("zh-CN", "Vector.rebuildRequired")).thenReturn(message);
+    ReflectionTestUtils.setField(gate, "businessConfigService", configs);
+    ReflectionTestUtils.setField(gate, "langService", messages);
+
+    var access = mock(OntologyAgentAccess.class);
+    var platform = mock(PlatformAuthoringService.class);
+    when(platform.operateExternal(anyString(), eq("metric-view"), eq("context"), any(), any()))
+        .thenAnswer(call -> {
+          gate.requireRetrievable("domain-a");
+          return null;
+        });
+    var controller = new OntologyGenerationController(null, null, access, null, null, null);
+    ReflectionTestUtils.setField(controller, "platform", platform);
+    var mvc = MockMvcBuilders.standaloneSetup(controller)
+        .setControllerAdvice(new OntologyAgentErrors(messages), new BaseControllerAdvice())
+        .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+
+    mvc.perform(post("/ontology/ai/generation/{run}/authoring/metric-view/context",
+            "11111111-1111-4111-8111-111111111111")
+        .header("Accept-Language", "zh-CN").contentType(MediaType.APPLICATION_JSON).content("{}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error.code").value("VECTOR_NOT_READY"))
+        .andExpect(jsonPath("$.error.message").value(message));
+  }
+
   @Test
   void actionGatePassesDeclaredClassesSeparatelyFromTheCallerAuthority() throws Exception {
     var generation = mock(OntologyGenerationService.class);

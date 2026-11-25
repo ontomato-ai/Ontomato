@@ -70,7 +70,7 @@ public class VectorRetrievalGate {
     public void requireRetrievable(String domainId) {
         BusinessConfig businessConfig = businessConfigService.get(domainId);
         if (stateOf(domainId, businessConfig).getStatus() != VectorRebuildState.Status.READY) {
-            throw new IllegalStateException(langService.get(businessConfig.getLang(), "Vector.rebuildRequired"));
+            throw new VectorNotReadyException(langService.get(businessConfig.getLang(), VectorNotReadyException.MESSAGE_KEY));
         }
     }
 
