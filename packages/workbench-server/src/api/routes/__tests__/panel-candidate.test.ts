@@ -93,8 +93,8 @@ beforeAll(async () => {
   app.use(`/v1/workspaces/${workspaceId}`, runtime);
   app.get("/java/platform/applications", (_req, res) => res.json({ success: true, data: [{
     id: "app-builder", kind: "native", names: { en: "App Builder" }, descriptions: {},
-    icon: "Hammer", rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder" },
-    entryAccess: ["app-builder"], scheduleAdapter: null, releaseId: null,
+    icon: "Hammer", rail: "apps", category: "build", sort: 1, entry: { path: "/app-builder", renderer: "app-builder", entryKey: "app-builder" },
+    scheduleAdapter: null, releaseId: null,
   }] }));
   app.get("/java/ontology/build-tests/current", (req, res) => {
     calls.push(`test:${req.header("tk")}:${req.query.workspaceId}`);

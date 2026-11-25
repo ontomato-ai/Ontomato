@@ -22,7 +22,6 @@ const liveLogsPage: PageComponent = () =>
 export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecordRaw[] {
   const baseMeta: RouteMeta = { ...options.meta, ownHeader: true };
   return [
-    { ...routes.ops, redirect: routes.diagnosis.path },
     {
       ...routes.turnDetail,
       redirect: (to) => {
@@ -35,7 +34,7 @@ export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecor
     {
       ...routes.test,
       component: autotestPage,
-      meta: { ...baseMeta, page: routes.test.path },
+      meta: { ...baseMeta, page: routes.test.path, entryPath: routes.test.path },
     },
     {
       ...routes.caseDetail,
@@ -50,7 +49,7 @@ export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecor
     {
       ...routes.logs,
       component: liveLogsPage,
-      meta: { ...baseMeta, page: routes.logs.path },
+      meta: { ...baseMeta, page: routes.logs.path, entryPath: routes.logs.path },
     },
   ];
 }

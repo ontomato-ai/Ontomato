@@ -27,13 +27,42 @@ export const applicationSourceManifestSchema = z.object({
   declaration: applicationMetadataSchema,
   allowStandalone: z.boolean().optional(),
   entry: panelEntrySchema,
-  entryAccess: z.array(z.string().min(1)).min(1).optional(),
+  initialOpenEntryIds: z.array(applicationPanelUseSchema.shape.id).optional(),
   framePanelId: z.string().min(1).optional(),
   theme: panelThemeOverridesSchema.optional(),
   panelUses: z.array(panelApplicationEntryUseSchema),
   delivery: applicationDeliverySchema.optional(),
 }).strict();
 export type ApplicationSourceManifest = z.infer<typeof applicationSourceManifestSchema>;
+
+const legacyApplicationSourceSchema = z.object({
+  entryAccess: z.array(z.string()).optional(),
+  declaration: z.object({ permissions: z.array(z.unknown()).optional() }).passthrough(),
+  panelUses: z.array(z.object({
+    id: applicationPanelUseSchema.shape.id,
+    access: z.union([
+      z.object({ kind: z.literal("domain-member") }).strict(),
+      z.object({ permissionCode: z.string().min(1) }).strict(),
+    ]),
+  }).passthrough()),
+}).passthrough();
+
+function readStoredApplicationSource(source: unknown): ApplicationSourceManifest {
+  if (source && typeof source === "object" && ("entryAccess" in source ||
+      ("panelUses" in source && Array.isArray(source.panelUses) &&
+        source.panelUses.some(use => use && typeof use === "object" && "access" in use)))) {
+    const { entryAccess, panelUses, declaration, ...legacy } = legacyApplicationSourceSchema.parse(source);
+    const { permissions: _permissions, ...metadata } = declaration;
+    // Stored sources without an application qualifier used domain admission when first published.
+    const open = entryAccess === undefined || entryAccess.includes("domain-member");
+    const initialOpenEntryIds = panelUses.filter(use => open && "kind" in use.access).map(use => use.id);
+    return applicationSourceManifestSchema.parse({
+      ...legacy, initialOpenEntryIds, declaration: metadata,
+      panelUses: panelUses.map(({ access: _access, ...use }) => use),
+    });
+  }
+  return applicationSourceManifestSchema.parse(source);
+}
 
 const panelSourceDescriptorSchema = z.object({
   name: productPanelInputSchema.shape.name,
@@ -224,7 +253,7 @@ export function parseApplicationSource(files: readonly WorkspaceFile[]): ParsedA
 
   const appFile = byPath.get(APPLICATION_SOURCE_FILE);
   if (appFile) {
-    const application = applicationSourceManifestSchema.parse(
+    const application = readStoredApplicationSource(
       parseJsonSource(APPLICATION_SOURCE_FILE, decodeFileText(appFile)),
     );
 
@@ -367,9 +396,10 @@ export function computeLiveFingerprint(snapshot: LiveApplicationSnapshot): Appli
       hash: sha256Canonical(projection.input),
     };
   }
+  const { initialOpenEntryIds: _opening, ...definition } = snapshot.application;
   return {
     kind: "panel",
-    applicationHash: sha256Canonical(snapshot.application),
+    applicationHash: sha256Canonical(definition),
     panels,
     projections,
   };

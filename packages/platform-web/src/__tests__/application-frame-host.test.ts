@@ -22,7 +22,6 @@ const playgroundUse: ApplicationPanelUse = {
   path: "/ontology/playground",
   pageKey: "ontology-playground",
   names: { en: "Ontology graph" },
-  access: { kind: "domain-member" },
 };
 const objectsUse: ApplicationPanelUse = {
   id: "use-ontology-objects",
@@ -30,7 +29,6 @@ const objectsUse: ApplicationPanelUse = {
   path: "/ontology/objects",
   pageKey: "ontology-objects",
   names: { en: "Object types" },
-  access: { kind: "domain-member" },
 };
 const relationsUse: ApplicationPanelUse = {
   id: "use-ontology-relations",
@@ -38,7 +36,6 @@ const relationsUse: ApplicationPanelUse = {
   path: "/ontology/relations",
   pageKey: "ontology-relations",
   names: { en: "Relationships" },
-  access: { kind: "domain-member" },
 };
 const appBHomeUse: ApplicationPanelUse = {
   id: "use-app-b-home",
@@ -46,12 +43,10 @@ const appBHomeUse: ApplicationPanelUse = {
   path: "/applications/app-b/home",
   pageKey: "app-b-home",
   names: { en: "App B home" },
-  access: { kind: "domain-member" },
 };
 
 const conversationUse: ApplicationEntryResolution["use"] = {
   kind: "frame-conversation", id: "chat", pageKey: "chat", path: "/applications/app-b/chat",
-  access: { kind: "domain-member" },
 };
 const runFeed = vi.hoisted(() => ({ subscribe: vi.fn(), detach: vi.fn() }));
 vi.mock("@ontomato/workbench-ui/features/workbench/assistant-host", () => ({
@@ -647,7 +642,6 @@ describe("ApplicationFrameHost single persistent outer frame", () => {
       path: "/settings/records/system-monitor",
       icon: "activity",
       groupKey: "records",
-      access: { permissionCode: "system-monitoring" },
       names: { en: "System monitoring" },
     };
     catalogApplications.value = [

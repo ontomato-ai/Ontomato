@@ -17,7 +17,6 @@ const homeUse: ApplicationPanelUse = {
   pageKey: "home",
   panelId: "builtin-product-personal-workspace",
   path: "/home",
-  access: { kind: "domain-member" },
   pageComposer: "none",
 };
 

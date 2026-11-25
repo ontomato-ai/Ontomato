@@ -5,6 +5,9 @@ import {createI18n} from 'vue-i18n';
 import {productAssetSchema} from '@ontomato/contracts/product-assets';
 const mocks=vi.hoisted(()=>({request:vi.fn()}));
 vi.mock('@ontomato/workbench-ui',()=>({nodeApiRequest:mocks.request}));
+vi.mock('../panel-host',()=>({
+  resolveApplicationEntry: async ({ path }: { path: string }) => ({ applicationId: path.split("/").at(-1) }),
+}));
 vi.mock('@ontomato/ontology-manager',()=>({useProductText:()=>(value:string)=>value,ManagerFrame:{template:'<div><slot /></div>'},ProductAssetRuntime:{props:['asset','pageState'],template:'<div class="projection">{{JSON.stringify(pageState)}}</div>'}}));
 vi.mock('../pages/PersonalWorkspaceRoute.vue',()=>({default:{props:['productAssetId','pinnedAssets'],template:'<div><h1>{{productAssetId}}</h1><div class="page">{{productAssetId}}</div></div>'}}));
 import ProductRoute from '../pages/ProductRoute.vue';

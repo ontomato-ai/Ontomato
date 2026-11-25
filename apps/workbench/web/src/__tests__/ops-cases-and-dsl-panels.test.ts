@@ -311,7 +311,6 @@ async function openBuiltPanel(
     category: "admin",
     sort: 30,
     entry: { path: "/ops", renderer: "ops" },
-    entryAccess: ["ops-diagnosis"],
     scheduleAdapter: null,
     releaseId: null,
     names: { en: "Ops diagnosis" },

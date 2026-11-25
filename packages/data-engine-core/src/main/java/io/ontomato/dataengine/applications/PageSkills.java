@@ -1,7 +1,6 @@
 package io.ontomato.dataengine.applications;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -14,36 +13,18 @@ public final class PageSkills {
     public record Skill(Namespace namespace, String name) {}
     public record Default(String pageKey, DefaultAgentTarget defaultAgent) {}
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Mapping(String permissionCode, String access, String pageKey, Skill skill, List<Default> defaults) {
-        public String locator() { return PageSkills.locator(permissionCode, access, pageKey); }
-    }
+    public record Declaration(String entryKey, String pageKey, Skill skill, List<Default> defaults) {}
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Entrance(String permissionCode, String access, String pageKey) {}
+    public record Mapping(String applicationId, String entryKey, String pageKey, Skill skill, List<Default> defaults) {}
+    public record Entrance(String applicationId, String entryKey, String pageKey) {}
     public record Projection(List<Mapping> pageSkills, List<Skill> registeredSkills, List<Entrance> admittedEntrances) {}
 
-    static Mapping withPanelDefaults(Mapping nativeMapping, Mapping panelGroup) {
-        if (panelGroup.defaults() == null) return nativeMapping;
-        var defaults = new ArrayList<Default>();
-        if (nativeMapping.defaults() != null) defaults.addAll(nativeMapping.defaults());
-        defaults.addAll(panelGroup.defaults());
-        return new Mapping(nativeMapping.permissionCode(), nativeMapping.access(), nativeMapping.pageKey(),
-            nativeMapping.skill(), defaults);
-    }
-
-    public static String locator(String permissionCode, String access, String pageKey) {
-        return permissionCode != null ? "permission:" + permissionCode : "access:" + access + ":" + pageKey;
-    }
-
-    /** Validate declarations and persisted catalog data at their ingestion boundary. */
-    public static void validate(List<Mapping> mappings) {
-        Set<String> locators = new HashSet<>();
+    static void validate(List<Declaration> mappings) {
+        Set<String> entries = new HashSet<>();
         for (var mapping : mappings) {
-            if ((mapping.permissionCode() == null) == (mapping.access() == null)
-                || mapping.permissionCode() != null && mapping.permissionCode().isBlank()
-                || mapping.access() != null && !mapping.access().equals("domain-member")
-                || mapping.access() != null && (mapping.pageKey() == null || mapping.pageKey().isBlank())
-                || mapping.permissionCode() != null && mapping.pageKey() != null
-                || !locators.add(mapping.locator())) throw ApplicationCatalog.bad("Invalid or duplicate page skill locator");
+            if (!ApplicationCatalog.validEntryKey(mapping.entryKey())
+                    || mapping.pageKey() == null || mapping.pageKey().isBlank()
+                    || !entries.add(mapping.entryKey())) throw ApplicationCatalog.bad("Invalid or duplicate page skill entry");
             var skill = mapping.skill();
             if (skill == null || skill.namespace() == null || skill.name() == null
                 || !skill.name().matches("[a-z0-9]+(?:-[a-z0-9]+)*") || skill.name().length() > 64)
@@ -55,7 +36,7 @@ public final class PageSkills {
             if (mapping.defaults() != null) {
                 Set<String> pages = new HashSet<>();
                 for (var entry : mapping.defaults())
-                    if (entry.pageKey() == null || entry.pageKey().isBlank() || entry.defaultAgent() == null
+                    if (!mapping.pageKey().equals(entry.pageKey()) || entry.defaultAgent() == null
                         || !pages.add(entry.pageKey())) throw ApplicationCatalog.bad("Invalid page skill default");
             }
         }

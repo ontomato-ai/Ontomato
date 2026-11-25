@@ -5,16 +5,10 @@
   "category": "admin",
   "sort": 20,
   "entry": {
+    "entryKey": "settings",
     "path": "/settings",
     "renderer": "settings"
   },
-  "entryAccess": [
-    "system-config",
-    "authorization-management",
-    "audit-logs",
-    "system-monitoring",
-    "mcp-service"
-  ],
   "scheduleAdapter": null,
   "framePanelId": "builtin-product-platform-frame",
   "allowStandalone": false,
@@ -86,7 +80,6 @@
         "sort": 3
       }
     ],
-    "permissions": [],
     "panelUses": [
       {
         "id": "model-usage",
@@ -95,7 +88,6 @@
         "path": "/settings/model-config/usage",
         "icon": "cpu",
         "groupKey": "models",
-        "access": { "permissionCode": "system-config" },
         "inputs": {
           "domain": { "literal": { "className": "platform:ModelUsage", "primaryKey": "domain" } }
         },
@@ -121,7 +113,6 @@
         "path": "/settings/model-config/providers",
         "icon": "server",
         "groupKey": "models",
-        "access": { "permissionCode": "system-config" },
         "names": {
           "en": "Providers & models",
           "zh-CN": "服务商和模型",
@@ -144,7 +135,6 @@
         "path": "/settings/system-config/general",
         "icon": "sliders-horizontal",
         "groupKey": "system-settings",
-        "access": { "permissionCode": "system-config" },
         "inputs": {
           "settings": { "literal": { "className": "platform:GeneralSettings", "primaryKey": "general" } }
         },
@@ -170,7 +160,6 @@
         "path": "/settings/system-config/data-adapters",
         "icon": "database",
         "groupKey": "connections",
-        "access": { "permissionCode": "system-config" },
         "inputs": {
           "domain": { "literal": { "className": "platform:DataAdapterConfig", "primaryKey": "domain" } }
         },
@@ -196,7 +185,6 @@
         "path": "/settings/external-mcp",
         "icon": "cable",
         "groupKey": "connections",
-        "access": { "permissionCode": "mcp-service" },
         "names": {
           "en": "External MCP services",
           "zh-CN": "外部 MCP 服务",
@@ -219,7 +207,6 @@
         "path": "/settings/mcp-services",
         "icon": "plug",
         "groupKey": "connections",
-        "access": { "permissionCode": "mcp-service" },
         "names": {
           "en": "Published MCP services",
           "zh-CN": "对外 MCP 服务",
@@ -242,7 +229,6 @@
         "path": "/settings/records/audit-log",
         "icon": "scroll-text",
         "groupKey": "records",
-        "access": { "permissionCode": "audit-logs" },
         "names": {
           "en": "Audit log",
           "zh-CN": "审计日志",
@@ -265,7 +251,6 @@
         "path": "/settings/records/system-monitor",
         "icon": "activity",
         "groupKey": "records",
-        "access": { "permissionCode": "system-monitoring" },
         "names": {
           "en": "System monitoring",
           "zh-CN": "系统监控",

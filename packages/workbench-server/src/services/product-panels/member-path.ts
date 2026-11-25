@@ -5,7 +5,8 @@ import {
 import {
   productPanelSchema,
   productProjectionSchema,
-  isApplicationPanelUse, type ApplicationPanelUse, type PanelUseRef, type ProductPanel,
+  isApplicationPanelUse, isNativeApplicationEntry,
+  type ApplicationEntryResolution, type ApplicationPanelUse, type PanelUseRef, type ProductPanel,
 } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
@@ -99,8 +100,10 @@ export class PanelReadBatchCache {
   }
 }
 
-export function registeredPanelRootId(source: RegisteredSource, { use, framePanelId }: PanelEntry) {
-  // The entry owner only returns framePanelId for its panels renderer.
+export function registeredPanelRootId(source: RegisteredSource,
+  { use, framePanelId }: Pick<ApplicationEntryResolution, "use" | "framePanelId">,
+) {
+  if (isNativeApplicationEntry(use)) return undefined;
   return source.kind === "frame" ? framePanelId : isApplicationPanelUse(use) ? use.panelId : undefined;
 }
 

@@ -96,7 +96,6 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
         path: "/settings/feedback",
         pageKey: "feedback",
         panelId: "builtin-product-feedback-d2",
-        access: { kind: "domain-member" as const },
       },
     );
     const feedbackApp = {

@@ -36,15 +36,15 @@ const labels = {
 } as Pick<ShellLabels, "placeholder" | "send" | "stop" | "agent" | "pageAgentUnavailable" | "collapseComposer" | "expandComposer">;
 
 const agent = (id: string, name: string): AgentHostAgent => ({ id, name, description: "", icon: null, enabled: true });
-const dashboardSkill: PageSkillContext = { mode: "public", locator: { pageKey: "dashboard", access: "domain-member" } };
+const dashboardSkill: PageSkillContext = { mode: "public", locator: { pageKey: "dashboard", applicationId: "dashboards", entryKey: "dashboards-main" } };
 const homeMemberSkill: PageSkillContext = {
   mode: "member",
-  locator: { pageKey: "home", access: "domain-member" },
+  locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
   member: { source: { kind: "home" }, memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-home-panel" } },
 };
 const drawerMemberSkill: PageSkillContext = {
   mode: "member",
-  locator: { pageKey: "home", access: "domain-member" },
+  locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
   member: {
     source: { kind: "object-detail", useId: "use-order", object: { className: "Order", primaryKey: "ord-1" } },
     memberPath: [], ref: { namespace: { kind: "domain", domainId: "domain-1" }, name: "pvt-order-detail" },
@@ -52,7 +52,7 @@ const drawerMemberSkill: PageSkillContext = {
 };
 const unavailableMemberSkill: PageSkillContext = {
   mode: "member",
-  locator: { pageKey: "home", access: "domain-member" },
+  locator: { pageKey: "home", applicationId: "home", entryKey: "home" },
   member: null,
 };
 
@@ -231,7 +231,7 @@ it("encodes public and member queries through the real host client and skips net
   await host.listPageAgents(dashboardSkill);
   expect(requestedUrls).toHaveLength(1);
   const publicParams = Object.fromEntries(new URL(requestedUrls[0]!, "http://host.test").searchParams);
-  expect(assistantAgentsQuerySchema.parse(publicParams)).toEqual({ pageKey: "dashboard", access: "domain-member" });
+  expect(assistantAgentsQuerySchema.parse(publicParams)).toEqual({ pageKey: "dashboard", applicationId: "dashboards", entryKey: "dashboards-main" });
 
   await host.listPageAgents(drawerMemberSkill);
   expect(requestedUrls).toHaveLength(2);
@@ -239,7 +239,8 @@ it("encodes public and member queries through the real host client and skips net
   // The member goes as the snapshot gave it, in one parameter, beside the entrance.
   expect(assistantAgentsQuerySchema.parse(memberParams)).toEqual({
     pageKey: "home",
-    access: "domain-member",
+    applicationId: "home",
+    entryKey: "home",
     member: drawerMemberSkill.mode === "member" ? drawerMemberSkill.member : null,
   });
 

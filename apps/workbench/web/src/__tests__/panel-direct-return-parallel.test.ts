@@ -24,7 +24,7 @@ async function open(relations: Promise<readonly unknown[]>) {
     if (request.path === "/api/data-query/platform/applications") return Response.json({ success: true, data: [{
       id: application, kind: "product", names: { en: application }, descriptions: {}, icon: "schedules",
       rail: "apps", category: "business", sort: 0, entry: { path: "/", renderer: "panels" },
-      entryAccess: ["domain-member"], scheduleAdapter: null, releaseId: null, panelUses: [use],
+      scheduleAdapter: null, releaseId: null, panelUses: [use],
     }] });
     if (request.path === `/api/data-query/platform/applications/${application}/panel-uses`)
       return Response.json({ data: { applicationId: application, entry: { path: "/", renderer: "panels" }, panelUses: await relations } });

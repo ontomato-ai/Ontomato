@@ -187,12 +187,13 @@ watch(
   { immediate: true },
 );
 
-type EntryUse = ApplicationEntryResolution["use"];
+type EntryUse = Exclude<ApplicationEntryResolution["use"], { kind: "native" }>;
 const anchorUse = computed<EntryUse | null>(() => {
   const panelUse = catalogApp.value?.panelUses?.find(
     (entry): entry is EntryUse => !isNativeApplicationEntry(entry),
   );
-  return panelUse ?? matchingPanelEntry.value?.use ?? null;
+  const matching = matchingPanelEntry.value?.use;
+  return panelUse ?? (matching && !isNativeApplicationEntry(matching) ? matching : null);
 });
 
 function refreshFrame(change: PanelObjectChange) {

@@ -2,7 +2,6 @@ import { assistantAgentListSchema } from "@ontomato/contracts/assistant-chat";
 import type { AssistantAgentsQuery, PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { isAppBuilderEntrance } from "./skill-selection";
 import { HttpError } from "../../utils/errors";
 import { isAppBuilderKind } from "../app-builder/definition";
 import { isOpsDiagnosisKind } from "../ops-diagnosis/definition";
@@ -20,8 +19,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
   );
   const builder = definitions.find(agent => isAppBuilderKind(agent.kind));
   const entrance: PageSkillEntrance | null = "pageKey" in query
-    ? "permissionCode" in query ? { pageKey: query.pageKey, permissionCode: query.permissionCode }
-      : { pageKey: query.pageKey, access: query.access }
+    ? { applicationId: query.applicationId, entryKey: query.entryKey, pageKey: query.pageKey }
     : null;
   const page = entrance && await (await import("../skills/view")).readPageCandidateSkill(
     { ...owner, initiatorCredentials: credentials }, entrance, undefined, "member" in query ? query.member : undefined,
@@ -47,10 +45,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
   const matching = definitions.filter(agent => agent.enabled && effectiveAssistantSkills(agent, view).some(view.hasSkill));
   const profiles = await agentsWithProductProfiles(owner, matching.map(agent => agent.id));
   const candidates = matching.filter(agent => !profiles.has(agent.id));
-  const defaultAgent = page.defaultAgent ?? {
-    kind: "preset",
-    agentKind: isAppBuilderEntrance(entrance) ? "app-builder" : "regular",
-  };
+  const defaultAgent = page.defaultAgent ?? { kind: "preset", agentKind: "regular" };
   const selected = defaultAgent.kind === "id"
     ? candidates.find(agent => agent.id === defaultAgent.id)
     : candidates.find(agent => agent.kind === defaultAgent.agentKind);

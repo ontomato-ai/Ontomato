@@ -126,8 +126,8 @@ it.each([
   [PRODUCT_PANEL, { ...definition, content: { html: "<main></main>" }, manifest: { state: {}, members: {} } }],
   [PRODUCT_PROJECTION, { ...definition, componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {}, data: {} }],
   [APPLICATION, {
-    entry: { path: "/applications/app-orders", renderer: "panels" }, panelUses: [], entryAccess: ["owner"],
-    declaration: { names: { en: "Orders" }, descriptions: {}, icon: "app", groups: [], permissions: [] },
+    entry: { path: "/applications/app-orders", renderer: "panels" }, panelUses: [], initialOpenEntryIds: [],
+    declaration: { names: { en: "Orders" }, descriptions: {}, icon: "app", groups: [] },
   }],
 ] as const)("reports the created identity when saving a draft %s", async (objectType, values) => {
   const save = productCatalogServerOperations.find(op => op.handlerRef === `${objectType}.save`)!;
@@ -310,7 +310,6 @@ it("preserves existing entry icons when saving entries from a form that does not
     pageKey: "roles",
     panelId: "panel-roles",
     path: "/applications/app-1/roles",
-    access: { kind: "domain-member" as const },
     names: { en: "Roles" },
     icon: "user-cog",
   };
@@ -332,7 +331,6 @@ it("preserves existing entry icons when saving entries from a form that does not
         pageKey: "roles",
         panelId: "panel-roles",
         path: "/applications/app-1/roles",
-        access: { kind: "domain-member" },
         names: { en: "Roles updated" },
       },
     },
@@ -354,7 +352,6 @@ it("preserves existing entry icons when saving entries from a form that does not
           pageKey: "roles",
           panelId: "panel-roles",
           path: "/applications/app-1/roles",
-          access: { kind: "domain-member" },
           names: { en: "Roles bulk" },
         }],
       },
@@ -365,4 +362,20 @@ it("preserves existing entry icons when saving entries from a form that does not
   expect(applicationSaveEntries).toHaveBeenCalledWith("app-1", expect.objectContaining({
     panelUses: [expect.objectContaining({ id: "entry-roles", icon: "user-cog", names: { en: "Roles bulk" } })],
   }));
+});
+
+it("saves a new entry from submitted fields using the registration DTO", async () => {
+  const save = productCatalogServerOperations.find(op => op.handlerRef === `${APPLICATION}.save`)!;
+  if (save.kind !== "form.save") throw new Error("Expected a form save");
+  const entry = { path: "/applications/app-1", renderer: "panels" };
+  const use = { id: "roles", pageKey: "roles-view", panelId: "panel-roles", path: `${entry.path}/roles` };
+  applicationForm.mockResolvedValue({ values: { entry, panelUses: [] }, fields: [] });
+  applicationSaveEntries.mockResolvedValue(undefined);
+
+  await save.execute(impactHost, { kind: "object", objectType: APPLICATION, primaryKey: "app-1" }, {
+    values: use,
+    submittedFields: ["/id", "/pageKey", "/panelId", "/path"],
+  }, "intent-new-entry");
+
+  expect(applicationSaveEntries).toHaveBeenCalledWith("app-1", { entry, panelUses: [use] });
 });

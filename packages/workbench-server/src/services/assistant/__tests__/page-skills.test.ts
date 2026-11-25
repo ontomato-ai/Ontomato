@@ -53,14 +53,16 @@ const report: RuntimeSkillRef = { namespace: { kind: "provider", provider: "work
 const dashboard: RuntimeSkillRef = { namespace: { kind: "provider", provider: "workbench" }, name: "dashboard-pages" };
 const sameName: RuntimeSkillRef = { namespace: { kind: "provider", provider: "workbench" }, name: page.name };
 const owner = { domainId: "domain", userId: "user" }, credentials = { token: "user-token", locale: "en" };
-const query = { pageKey: "governance-report", permissionCode: "business-knowledge" } as const;
+const query = { applicationId: "ontology", entryKey: "governance", pageKey: "governance-report" } as const;
+const dashboardEntrance = { applicationId: "home", entryKey: "dashboard", pageKey: "overview" } as const;
+const schedulesEntrance = { applicationId: "home", entryKey: "schedules", pageKey: "overview" } as const;
 const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"];
 function definition(index: number, kind: string, skills: RuntimeSkillRef[] = [report, page]): AgentRow {
   return { id: ids[index], domain_id: "domain", kind, name: kind, description: "", icon: null, enabled: true,
     owner_id: null, execution_user_id: null, system_prompt: "private prompt", model_selection: { modelId: null }, skills, class_names: [], enabled_mcp_service_ids: [], sort_order: index };
 }
 function projection(allowed = true): PageSkillsProjection {
-  return { pageSkills: allowed ? [{ permissionCode: "business-knowledge", skill: page }] : [], registeredSkills: [page, dashboard] };
+  return { pageSkills: allowed ? [{ ...query, skill: page }] : [], registeredSkills: [page, dashboard] };
 }
 let current: PageSkillsProjection;
 beforeEach(() => {
@@ -157,14 +159,23 @@ it("selects a concrete ID without treating it as a preset kind", async () => {
   await expect(listAssistantAgents(owner, credentials, query)).rejects.toMatchObject({ code: "PAGE_DEFAULT_AGENT_UNAVAILABLE" });
 });
 
-it("locates each domain-member page by pageKey and keeps dashboard's own skill and default", async () => {
-  current = { pageSkills: [{ access: "domain-member", pageKey: "dashboard", skill: dashboard, defaults: [{ pageKey: "dashboard", defaultAgent: { kind: "preset", agentKind: "custom" } }] },
-    {access:"domain-member",pageKey:"schedules",skill:page,defaults:[{pageKey:"schedules",defaultAgent:{kind:"id",id:ids[0]}}]}], registeredSkills: [dashboard,page] };
+it("uses the exact entry and checks pageKey without sharing defaults across entries", async () => {
+  current = { pageSkills: [
+    { ...dashboardEntrance, skill: dashboard, defaults: [{ pageKey: dashboardEntrance.pageKey, defaultAgent: { kind: "preset", agentKind: "custom" } }] },
+    { ...schedulesEntrance, skill: page, defaults: [{ pageKey: schedulesEntrance.pageKey, defaultAgent: { kind: "id", id: ids[0] } }] },
+  ], registeredSkills: [dashboard, page] };
   mocks.agents.mockResolvedValue([definition(0, "regular", [report]), definition(1, "custom", [dashboard])]);
-  expect((await listAssistantAgents(owner, credentials, { pageKey: "dashboard", access: "domain-member" })).defaultAgentId).toBe(ids[1]);
-  expect((await listAssistantAgents(owner, credentials, { pageKey: "schedules", access: "domain-member" })).defaultAgentId).toBe(ids[0]);
-  await expect(listAssistantAgents(owner, credentials, { pageKey: "agent-settings", access: "domain-member" })).rejects.toMatchObject({code:"PAGE_SKILL_FORBIDDEN"});
-  expect(assistantAgentsQuerySchema.safeParse({ pageKey: "dashboard" }).success).toBe(false);
+  expect((await listAssistantAgents(owner, credentials, dashboardEntrance)).defaultAgentId).toBe(ids[1]);
+  expect((await listAssistantAgents(owner, credentials, schedulesEntrance)).defaultAgentId).toBe(ids[0]);
+  for (const entrance of [
+    { ...dashboardEntrance, applicationId: "other" },
+    { ...dashboardEntrance, entryKey: "unknown" },
+    { ...dashboardEntrance, pageKey: "stale" },
+  ]) {
+    await expect(listAssistantAgents(owner, credentials, entrance)).rejects.toMatchObject({ code: "PAGE_SKILL_FORBIDDEN" });
+  }
+  expect(assistantAgentsQuerySchema.safeParse({ pageKey: "overview" }).success).toBe(false);
+  expect(assistantAgentsQuerySchema.safeParse({ pageKey: "overview", permissionCode: "dashboard" }).success).toBe(false);
   expect(assistantAgentsQuerySchema.safeParse({ ...query, access: "domain-member" }).success).toBe(false);
 });
 
@@ -192,7 +203,7 @@ it("offers the builder when the agent has use permission", async () => {
 });
 
 it.each<PageSkillEntrance>([
-  { permissionCode: "app-builder", pageKey: "app-builder" },
+  { applicationId: "builder", entryKey: "landing", pageKey: "workspace" },
 ])("resolves the builder as the App Builder page default for $pageKey", async entrance => {
   const builder = definition(3, "app-builder", []);
   mocks.appBuilder.mockResolvedValue(builder);
@@ -201,8 +212,8 @@ it.each<PageSkillEntrance>([
   current = {
     registeredSkills: [ref, page],
     pageSkills: [
-      { ...("permissionCode" in entrance ? { permissionCode: entrance.permissionCode } : entrance), skill: ref, defaults: [{ pageKey: entrance.pageKey, defaultAgent }] },
-      { permissionCode: "business-knowledge", skill: page },
+      { ...entrance, skill: ref, defaults: [{ pageKey: entrance.pageKey, defaultAgent }] },
+      { ...query, skill: page },
     ],
   };
   const result = await listAssistantAgents(owner, credentials, assistantAgentsQuerySchema.parse(entrance));

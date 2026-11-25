@@ -27,6 +27,7 @@ class ApplicationCatalogParityTest {
     @Test
     void catalogueSupportsNumericPageAndMineSharedScopes() {
         var access = mock(ApplicationAccess.class);
+        var authorization = EntryAuthorizationFixture.allowEntries();
         var grants = mock(ProductGrantService.class);
         var user = new QueryAccessService.GrantUser("alice", "domain-a");
 
@@ -37,11 +38,10 @@ class ApplicationCatalogParityTest {
         when(access.canMaintain(mineApp, user)).thenReturn(true);
         when(access.canMaintain(sharedApp, user)).thenReturn(false);
         when(access.canMaintain(builtinApp, user)).thenReturn(false);
-        when(access.canEnter(any(), any())).thenReturn(true);
         when(grants.principalNames(any(), any())).thenReturn(Map.of("alice", "Alice", "bob", "Bob"));
 
         var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class), access,
-            "{}", mock(PanelResources.class), grants));
+            "{}", mock(PanelResources.class), grants, authorization));
         doReturn(List.of(mineApp, sharedApp, builtinApp)).when(catalog).loadApplications(true);
 
         var allPage1 = catalog.catalogue(user, "", "visible", null, 1, 2, "id", Locale.ENGLISH);
@@ -72,30 +72,30 @@ class ApplicationCatalogParityTest {
     @Test
     void copyFormFiltersHiddenEntriesAndExposesPublicThemeOnRecord() {
         var access = mock(ApplicationAccess.class);
+        var authorization = EntryAuthorizationFixture.entries((actor, key) -> !key.equals("app-src/secret"));
         var grants = mock(ProductGrantService.class);
         var user = new QueryAccessService.GrantUser("reader", "domain-a");
 
         var visibleUse = new ApplicationPanelUse("overview", "app-src:overview", "panel-visible",
-            "/applications/app-src/overview", new ApplicationPanelUse.Access(null, "domain-member"),
+            "/applications/app-src/overview",
             null, Map.of("en", "Overview"));
         var hiddenUse = new ApplicationPanelUse("secret", "app-src:secret", "panel-hidden",
-            "/applications/app-src/secret", new ApplicationPanelUse.Access("app-src:secret", null),
+            "/applications/app-src/secret",
             null, Map.of("en", "Secret"));
         var source = domainApp("app-src", "domain-a", "owner", "Source App");
+        source.getJSONObject("entry").put("renderer", "panels");
         source.put("panelUses", List.of(visibleUse, hiddenUse));
         source.put("panelSettings", JSONObject.of(
             "framePanelId", "builtin-product-frame",
             "theme", JSONObject.of("light", JSONObject.of("accent", "#123456"))));
 
         when(access.canMaintain(source, user)).thenReturn(false);
-        when(access.canEnter(source, user)).thenReturn(true);
-        when(access.panelUses(List.of(visibleUse, hiddenUse), user)).thenReturn(List.of(visibleUse));
         when(grants.allowedBatchFor("domain-a", "reader", List.of("panel-visible"), "use"))
             .thenReturn(Map.of("panel-visible", true));
         when(grants.principalNames(any(), any())).thenReturn(Map.of("owner", "Owner"));
 
         var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class), access,
-            "{}", mock(PanelResources.class), grants));
+            "{}", mock(PanelResources.class), grants, authorization));
         doReturn(List.of(source)).when(catalog).all();
 
         var record = catalog.catalogueRecord("app-src", user, Locale.ENGLISH);
@@ -118,7 +118,7 @@ class ApplicationCatalogParityTest {
         assertTrue(copiedUse.getString("path").startsWith("/applications/app-"));
         assertFalse(copiedUse.getString("path").contains("app-src"));
         assertTrue(copiedUse.getString("pageKey").startsWith("app-"));
-        assertEquals("domain-member", copiedUse.getJSONObject("access").getString("kind"));
+        assertFalse(copiedUse.containsKey("access"));
         assertNotNull(values.getJSONObject("theme"));
     }
 
@@ -128,13 +128,12 @@ class ApplicationCatalogParityTest {
             "domainId", domainId,
             "ownerUserId", ownerUserId,
             "kind", "native",
-            "entry", JSONObject.of("path", "/applications/" + id, "renderer", "panels"),
+            "entry", JSONObject.of("path", "/applications/" + id, "entryKey", "main"),
             "names", JSONObject.of("en", name),
             "descriptions", JSONObject.of("en", ""),
             "icon", "pages",
             "groups", List.of(),
-            "permissions", List.of(),
-            "entryAccess", List.of("domain-member"),
+            "pageSkills", List.of(),
             "panelUses", List.of(),
             "panelSettings", new JSONObject(),
             "allowStandalone", true,
@@ -145,13 +144,12 @@ class ApplicationCatalogParityTest {
         return JSONObject.of(
             "id", id,
             "kind", "native",
-            "entry", JSONObject.of("path", "/" + id, "renderer", id),
+            "entry", JSONObject.of("path", "/" + id, "renderer", id, "entryKey", "main"),
             "names", JSONObject.of("en", name),
             "descriptions", JSONObject.of("en", ""),
             "icon", "pages",
             "groups", List.of(),
-            "permissions", List.of(),
-            "entryAccess", List.of("domain-member"),
+            "pageSkills", List.of(),
             "panelUses", List.of(),
             "panelSettings", new JSONObject(),
             "allowStandalone", true,

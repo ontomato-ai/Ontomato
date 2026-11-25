@@ -249,7 +249,6 @@ async function openBuiltPanel(
     category: "admin",
     sort: 20,
     entry: { path: "/settings", renderer: "settings" },
-    entryAccess: ["mcp-service"],
     scheduleAdapter: null,
     releaseId: null,
     names: { en: "System settings" },

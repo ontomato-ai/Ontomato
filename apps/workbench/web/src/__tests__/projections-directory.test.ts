@@ -826,7 +826,6 @@ async function mountProjectionsApp(options: MountOptions = {}) {
       category: "build",
       sort: 0,
       entry: { path: "/ontology", renderer: "panels" },
-      entryAccess: ["domain-member"],
       scheduleAdapter: null,
       releaseId: null,
       panelUses: [catalogUse, detailUse],

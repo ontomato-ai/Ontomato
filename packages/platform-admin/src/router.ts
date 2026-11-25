@@ -17,7 +17,7 @@ export function installPageGuard(router: Router, navigation: PlatformNavigation,
       if (to.query.section !== "admin") {
         const homePage = pageOf(navigation, router.resolve(home));
         // The platform's home and the conversation are no navigation pages; their own routes decide who enters.
-        if (home === platformRoutes.home.path || home === platformRoutes.chat.path) return home;
+        if ((home === platformRoutes.home.path || home === platformRoutes.chat.path) && access.canEnter(home)) return home;
         if (homePage && pages.includes(homePage)) return home;
         return pages[0]?.path ?? true;
       }
@@ -28,9 +28,9 @@ export function installPageGuard(router: Router, navigation: PlatformNavigation,
     const page = pageOf(navigation, to)
       ?? (to.name === platformRoutes.unknown.name ? navigation.pages.find((listed) => listed.path === to.path) : undefined);
     if (!page) return true;
-    await access.load();
-    // A page that may be entered without its permissions (the license landing) skips the code check.
-    if (!page.enterableWithoutPermission && !availablePages(navigation, access).includes(page)) {
+    const decision = await access.verifyEntry(page.path);
+    if (decision !== "allowed" && !(decision === "license-required" && page.licenseRecovery)) {
+      await access.load();
       const fallback = fallbackPage(navigation, access, page.group);
       return fallback ? fallback.path : { name: platformRoutes.ontology.name };
     }

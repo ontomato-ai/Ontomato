@@ -41,7 +41,7 @@ async function publishApplicationIdentity(bundle:ProductAsset,ownerId:string,rel
   if(bundle.document.kind!=='application')return;
   const response=await backendPut(
     'product-application-publication', config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(bundle.id)+'/product-publication',
-    {releaseId,ownerFacts:{ownerId,state:'current'},declaration:{names:{en:bundle.name},descriptions:{en:bundle.description},icon:'pages',groups:[],permissions:[]}},
+    {releaseId,ownerFacts:{ownerId,state:'current'},declaration:{names:{en:bundle.name},descriptions:{en:bundle.description},icon:'pages',groups:[]}},
     {headers:productDefinitionOwnerHeaders(credentials),retries:1},
   );
   if(JSON.parse(response.text).success!==true)throw new HttpError(503,'Application directory publication failed','PRODUCT_UNAVAILABLE');

@@ -26,8 +26,6 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
   home?: string;
   /** The existing navigation page whose permission also governs this home route. */
   homePage?: string;
-  /** The permission code that governs this home route when the route is not in PlatformNavigation (operations' /ops/turn). */
-  homePermission?: string;
   /**
    * An entry of the application its rail row opens when the reader may open none of the pages its menu lists (the
    * operations application's user feedback, for a reader who holds only that): set only when the reader has the entry.
@@ -98,7 +96,6 @@ export function appDeclarations(
 
     const home = app.home
       && (!app.homePage || byPath.has(app.homePage))
-      && (!app.homePermission || access.can(app.homePermission))
       ? app.home
       : undefined;
     const declaredPageCount = app.sections.reduce(

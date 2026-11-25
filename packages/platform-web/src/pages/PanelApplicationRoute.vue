@@ -232,7 +232,9 @@ const catalog = useApplicationCatalog();
  * Java's answer for this application's entry (`resolve-entry`): the admitted use relation, frame panel, theme, and
  * visible entry menu. Same-application switches hitting the known entry table mount immediately without re-asking.
  */
-const resolution = shallowRef<ApplicationEntryResolution | null>(null);
+type EntryUse = Exclude<ApplicationEntryResolution["use"], { kind: "native" }>;
+type PanelEntryResolution = ApplicationEntryResolution & { use: EntryUse };
+const resolution = shallowRef<PanelEntryResolution | null>(null);
 /** True while waiting for server admission on a direct link not present in the current application's entry table. */
 const verifying = ref(false);
 /** Entry path explicitly refused by the server (403/404 or mismatched application). */
@@ -273,7 +275,6 @@ const catalogApp = computed(() => catalog.applicationById(props.applicationId));
 const currentResolution = computed(() =>
   resolution.value?.applicationId === props.applicationId ? resolution.value : null,
 );
-type EntryUse = ApplicationEntryResolution["use"];
 /** The catalogue supplies the root route's candidate; the opening result admits it even if it has no menu label. */
 const entryPath = computed(() => {
   if (openedPath.value !== applicationRootPath(props.applicationId)) return openedPath.value;
@@ -312,11 +313,11 @@ async function requestEntryResolution(
     const answer = initial?.applicationId === applicationId && panelUsePath(initial.use.path) === path
       ? initial : await resolveApplicationEntry({ path });
     if (unmounted || epoch !== resolveEpoch || props.applicationId !== applicationId || entryPath.value !== path) return;
-    if (answer.applicationId !== applicationId) {
+    if (answer.applicationId !== applicationId || isNativeApplicationEntry(answer.use)) {
       revokeEntry(path);
       return;
     }
-    resolution.value = answer;
+    resolution.value = { ...answer, use: answer.use };
     deniedPath.value = null;
     verifying.value = false;
   } catch {

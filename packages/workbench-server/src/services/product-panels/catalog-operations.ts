@@ -416,7 +416,7 @@ const applicationSave: PanelWriteServerOperation = {
       }
 
       const id = target.primaryKey;
-      if ("declaration" in values && "entry" in values && "entryAccess" in values) {
+      if ("declaration" in values && "entry" in values && "initialOpenEntryIds" in values) {
         // Copy-create submitted from section="create" against a source application target.
         const { id: formId, ...createValues } = values;
         checkDefaultAgentShapes(createValues);
@@ -428,7 +428,7 @@ const applicationSave: PanelWriteServerOperation = {
         return { primaryKey: newId, data: { id: newId }, created: true };
       }
       if (submittedFields?.length === 0) return { primaryKey: id, data: { id } };
-      const singleEntryKeys = new Set(["id", "pageKey", "panelId", "path", "access", "groupKey", "inputs", "defaultAgent"]);
+      const singleEntryKeys = new Set(["id", "pageKey", "panelId", "path", "groupKey", "inputs", "defaultAgent"]);
       const isSingleEntry = !("panelUses" in values) && (
         ("pageKey" in values && "panelId" in values)
         || (submittedFields !== undefined && submittedFields.some(pointer => singleEntryKeys.has(pointer.split("/", 2)[1] ?? "")))
@@ -440,7 +440,7 @@ const applicationSave: PanelWriteServerOperation = {
         const existingIndex = entriesValues.panelUses.findIndex(item => item.id === currentEntryId);
         const existingEntry = existingIndex >= 0 ? entriesValues.panelUses[existingIndex] : undefined;
         const baseEntry = (existingEntry
-          ?? { id: "", pageKey: "", panelId: "", path: `/applications/${id}/`, access: { kind: "domain-member" } }) as Parameters<typeof applySubmittedFields>[0];
+          ?? { id: "", pageKey: "", panelId: "", path: `/applications/${id}/` }) as Parameters<typeof applySubmittedFields>[0];
         const body = submittedFields === undefined
           ? (existingEntry?.icon !== undefined && !("icon" in values) ? { ...values, icon: existingEntry.icon } : values)
           : applySubmittedFields(baseEntry, values, submittedFields);

@@ -101,7 +101,7 @@ function exposeBusinessKnowledgeEntry(domainId: string) {
     useId: "business-knowledge",
     panelId: GOVERNANCE_PANEL_ID,
     path: "/ontology/knowledge",
-    entrance: { permissionCode: "business-knowledge", pageKey: "business-knowledge" },
+    entrance: { applicationId: "ontology", entryKey: "business-knowledge", pageKey: "business-knowledge" },
   }]);
 }
 
@@ -248,8 +248,7 @@ beforeAll(async () => {
     res.json({
       success: true,
       data: {
-        pageSkills: sources.map(({ entrance }) =>
-          "permissionCode" in entrance ? { permissionCode: entrance.permissionCode } : entrance),
+        pageSkills: sources.map(({ entrance }) => entrance),
         registeredSkills: [],
         admittedEntrances: sources.map((source) => source.entrance),
       },

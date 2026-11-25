@@ -3,13 +3,13 @@
     "path": "/applications/app-academic-planner/courses",
     "renderer": "panels"
   },
-  "entryAccess": [
-    "domain-member"
+  "initialOpenEntryIds": [
+    "app-academic-planner-courses",
+    "app-academic-planner-enrollments"
   ],
   "declaration": {
     "descriptions": {},
     "groups": [],
-    "permissions": [],
     "names": {
       "en": "Academic planner"
     },
@@ -21,9 +21,6 @@
       "pageKey": "app-academic-planner-courses",
       "panelId": "template-academic-courses",
       "path": "/applications/app-academic-planner/courses",
-      "access": {
-        "kind": "domain-member"
-      },
       "names": {
         "en": "Courses"
       },
@@ -38,9 +35,6 @@
       "pageKey": "app-academic-planner-enrollments",
       "panelId": "template-academic-enrollments",
       "path": "/applications/app-academic-planner/enrollments",
-      "access": {
-        "kind": "domain-member"
-      },
       "names": {
         "en": "Enrollments"
       },

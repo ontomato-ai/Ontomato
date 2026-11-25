@@ -117,7 +117,7 @@ test("platform products use a reserved identity and are read-only without a doma
   assert.equal(panelAuthoringMemberSchema.safeParse({
     id: projectionId, component: "ObjectList", type: "platform:ScheduledTask", data: { rows: "list" },
   }).success, true);
-  const use = { id: "sales", pageKey: "sales", path: "/sales", panelId, access: { permissionCode: "sales" } };
+  const use = { id: "sales", pageKey: "sales", path: "/sales", panelId };
   assert.deepEqual(builtinApplicationPanelUseSchema.parse(use), use);
   assert.equal(builtinApplicationPanelUseSchema.safeParse({ ...use, panelId: "sales-panel" }).success, false);
 });
@@ -280,7 +280,6 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
   const entry = { path: "/applications/app-reviews", renderer: "panels" };
   const base = {
     id: "report", pageKey: "report", panelId: "review-report", path: entry.path + "/report",
-    access: { kind: "domain-member" },
   };
   const descriptions = { en: "Review the current report", "zh-CN": "查看当前报告" };
   const use = { ...base, descriptions };
@@ -297,13 +296,12 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
     applicationMetadataSchema.safeParse({
       names: { "zh-CN": "中文应用" }, descriptions: {}, icon: "pages",
       groups: [{ key: "main", names: { "zh-CN": "主分组" }, sort: 0 }],
-      permissions: [{ code: "app:zh:read", names: { "zh-CN": "查看" }, groupKey: "main", sort: 0 }],
     }).success,
     true,
   );
   assert.equal(
     applicationMetadataSchema.safeParse({
-      names: {}, descriptions: {}, icon: "pages", groups: [], permissions: [],
+      names: {}, descriptions: {}, icon: "pages", groups: [],
     }).success,
     false,
   );
@@ -314,10 +312,11 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
   assert.deepEqual(builtinApplicationPanelUseSchema.parse(builtin), builtin);
   assert.deepEqual(registerApplicationPanelUsesRequestSchema.parse({ entry, panelUses: [use] }).panelUses, [use]);
   const entries = {
-    applicationId, entry, panelUses: [use], groups: [{ key: "reports", names: { en: "Reports" }, sort: 0 }],
+    applicationId, entry: { ...entry, home: use.path, entryKey: use.id }, panelUses: [use], groups: [{ key: "reports", names: { en: "Reports" }, sort: 0 }],
     framePanelId: "review-frame", theme: { light: { "--brand-primary": "#336699" } },
   };
   assert.deepEqual(applicationCatalogueEntriesSchema.parse(entries), entries);
+  assert.equal(applicationPanelUseSchema.safeParse({ ...use, access: { kind: "domain-member" } }).success, false);
   const resolution = { applicationId, use, menu: { singleEntry: true, groups: [], panelUses: [] } };
   assert.deepEqual(applicationEntryResolutionSchema.parse(resolution), resolution);
 });
@@ -339,7 +338,7 @@ test("all catalogue icons are available to domain applications while unknown key
   assert.equal(invalid.success, false);
   if (!invalid.success) assert.match(invalid.error.issues[0]!.message, /Choose one of app-window/);
   // Entry icons share the same unified icon list on write while keeping stored keys readable.
-  const entryUse = { id: "entry-roles", pageKey: "roles", panelId: "panel-roles", path: "/applications/app-a/roles", access: { kind: "domain-member" as const }, icon: "user-cog" };
+  const entryUse = { id: "entry-roles", pageKey: "roles", panelId: "panel-roles", path: "/applications/app-a/roles", icon: "user-cog" };
   assert.equal(applicationPanelUseSchema.parse(entryUse).icon, "user-cog");
   assert.equal(applicationPanelUseSchema.parse({ ...entryUse, icon: "legacy-stored-key" }).icon, "legacy-stored-key");
   assert.equal(applicationPanelUseSchema.safeParse({ ...entryUse, icon: "   " }).success, false);
@@ -355,7 +354,7 @@ test("all catalogue icons are available to domain applications while unknown key
   const catalogParsed = applicationCatalogSchema.parse([{
     id: "app-grouped", kind: "product", names: { en: "Grouped" }, descriptions: {}, icon: "app-window",
     rail: "apps", category: "business", sort: 10, entry: { path: "/applications/app-grouped", renderer: "panels" },
-    entryAccess: ["domain-member"], scheduleAdapter: null, releaseId: null,
+    scheduleAdapter: null, releaseId: null,
     groups: [{ key: "main", names: { en: "Main" }, sort: 0 }],
     panelUses: [{ ...entryUse, groupKey: "main" }],
     framePanelId: "builtin-product-platform-frame",
@@ -524,7 +523,7 @@ test("application contracts accept optional allowStandalone toggle and route it 
   const baseApp = {
     id: "app-one", kind: "product" as const, names: { en: "One" }, descriptions: {}, icon: "pages",
     rail: "apps" as const, category: "business" as const, sort: 1,
-    entry: { path: "/applications/app-one", renderer: "panels" }, entryAccess: ["domain-member"],
+    entry: { path: "/applications/app-one", renderer: "panels" },
     scheduleAdapter: null, releaseId: null,
   };
   assert.equal(applicationCatalogSchema.parse([baseApp])[0]?.allowStandalone, undefined);
@@ -537,8 +536,8 @@ test("application contracts accept optional allowStandalone toggle and route it 
   const createPayload = {
     entry: { path: "/applications/app-one", renderer: "panels" as const },
     panelUses: [],
-    declaration: { names: { en: "One" }, descriptions: {}, icon: "pages", groups: [], permissions: [] },
-    entryAccess: ["domain-member"],
+    declaration: { names: { en: "One" }, descriptions: {}, icon: "pages", groups: [] },
+    initialOpenEntryIds: [],
     allowStandalone: false,
   };
   assert.equal(applicationCatalogueCreateSchema.parse(createPayload).allowStandalone, false);
@@ -571,7 +570,6 @@ test("built-in native entries validate in catalog and menu schemas while domain 
     path: "/settings/records/system-monitor",
     icon: "activity",
     groupKey: "records",
-    access: { permissionCode: "system-monitoring" },
     names: { en: "System monitoring", "zh-CN": "系统监控" },
   });
   assert.equal(isNativeApplicationEntry(nativeEntry), true);
@@ -603,7 +601,6 @@ test("built-in native entries validate in catalog and menu schemas while domain 
     path: "/settings/records/audit-log",
     icon: "clipboard-list",
     groupKey: "records",
-    access: { permissionCode: "audit-logs" },
     names: { en: "Audit log", "zh-CN": "审计日志" },
   };
   assert.equal(isNativeApplicationEntry(panelEntry), false);
@@ -619,8 +616,7 @@ test("built-in native entries validate in catalog and menu schemas while domain 
   const catalog = applicationCatalogSchema.parse([{
     id: "settings", kind: "native", names: { en: "System settings" }, descriptions: {}, icon: "settings",
     rail: "bottom", category: "admin", sort: 20,
-    entry: { path: "/settings", renderer: "settings" },
-    entryAccess: ["audit-logs", "system-monitoring"],
+    entry: { path: "/settings", renderer: "settings", entryKey: nativeEntry.id, home: nativeEntry.path },
     scheduleAdapter: null, releaseId: null,
     framePanelId: "builtin-product-platform-frame",
     allowStandalone: false,
@@ -636,7 +632,6 @@ test("applicationPanelUseSchema accepts pageComposer bottom/none and rejects inv
     pageKey: "home",
     panelId: "builtin-product-personal-workspace",
     path: "/home",
-    access: { kind: "domain-member" as const },
   };
   assert.equal(applicationPanelUseSchema.parse({ ...base, pageComposer: "none" }).pageComposer, "none");
   assert.equal(applicationPanelUseSchema.parse({ ...base, pageComposer: "bottom" }).pageComposer, "bottom");
@@ -646,7 +641,6 @@ test("applicationPanelUseSchema accepts pageComposer bottom/none and rejects inv
     pageKey: "native-entry",
     kind: "native",
     path: "/settings/native",
-    access: { kind: "domain-member" },
     pageComposer: "none",
   }).success, false);
 });

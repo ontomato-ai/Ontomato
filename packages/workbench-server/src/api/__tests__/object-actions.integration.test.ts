@@ -131,7 +131,7 @@ beforeAll(async () => {
     res.json({ success: true, data: {
       applicationId: use.applicationId, menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: use.useId, pageKey: "orders", path: `/applications/${use.applicationId}/orders`,
-        panelId: "panel-orders", access: { kind: "domain-member" } },
+        panelId: "panel-orders" },
     } });
   });
   app.post("/action/queryById", (req, res) => {

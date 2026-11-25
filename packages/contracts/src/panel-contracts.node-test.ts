@@ -1200,7 +1200,7 @@ test("current entry is supplied from the resolved use and its slot cannot overri
   assert.equal(applicationEntryResolutionQuerySchema.safeParse({ path, applicationId, useId }).success, false);
   const use = {
     id: useId, pageKey: "school.orders", panelId: "orders-panel", path,
-    access: { kind: "domain-member" as const }, inputs: { term: { literal: "A" } },
+    inputs: { term: { literal: "A" } },
   };
   const menu = { singleEntry: true, groups: [], panelUses: [use] };
   const frameContext = applicationFrameContextOf({ applicationId, use, menu });
@@ -1221,7 +1221,7 @@ test("entry resolution and personal-state scope use the actual use and nested pa
   const { panelDefinitionSnapshotSchema } = await import("./product-subscriptions");
   const use = {
     id: "tasks", pageKey: "tasks", path: "/applications/app-tasks/tasks", panelId: "schedule-list",
-    access: { kind: "domain-member" }, names: { en: "Tasks" }, groupKey: "plan",
+    names: { en: "Tasks" }, groupKey: "plan",
     inputs: { term: { frameState: "term" }, role: { literal: null } },
   };
   const response = {
@@ -1825,7 +1825,7 @@ test("an opening carries the admitted entry and page skill separately from the p
   };
   const pageSkillContext = {
     mode: "member",
-    locator: { permissionCode: "analysis-agent", pageKey: "agent-settings" },
+    locator: { applicationId: "ontology", entryKey: "ontology-agent-settings", pageKey: "agent-settings" },
     member: {
       source: { kind: "application-use", applicationId: "ontology", useId: "ontology-agent-settings" },
       memberPath: [],
@@ -1847,7 +1847,7 @@ test("an opening carries the admitted entry and page skill separately from the p
   assert.equal(productPanelResponseSchema.safeParse({ panel, pageSkillContext }).success, false);
   const resolution = { applicationId: "ontology",
     use: { id: "ontology-agent-settings", panelId: panel.id, pageKey: "agent-settings",
-      path: "/ontology/agents", access: { permissionCode: "analysis-agent" } },
+      path: "/ontology/agents" },
     menu: { singleEntry: true, panelUses: [], groups: [] } };
   assert.deepEqual(applicationEntryResolutionSchema.parse({ ...resolution, pageSkillContext }).pageSkillContext, pageSkillContext);
   const unavailable = { ...pageSkillContext, entry: pageSkillContext.member.source, member: null };
@@ -1862,7 +1862,7 @@ test("panel definition snapshots do not carry entry skill context", () => {
   };
   const pageSkillContext = {
     mode: "member",
-    locator: { permissionCode: "analysis-agent", pageKey: "agents-agent-settings" },
+    locator: { applicationId: "agents", entryKey: "agents-agent-settings", pageKey: "agents-agent-settings" },
     member: null,
   };
   assert.deepEqual(panelDefinitionSnapshotSchema.parse(snapshot), snapshot);
@@ -2837,13 +2837,14 @@ test("a frame can prepare a human intent and only the host can dispatch it", () 
 });
 
 test("application uses and page-skill defaults share the explicit agent target", () => {
-  const use = { id: "governance", pageKey: "report", panelId: "reports", path: "/governance/reports", access: { kind: "domain-member" } };
+  const use = { id: "governance", pageKey: "report", panelId: "reports", path: "/governance/reports" };
   const preset = { kind: "preset", agentKind: "knowledge-governance" };
   const concrete = { kind: "id", id: "saved-agent" };
   assert.deepEqual(applicationPanelUseSchema.parse({ ...use, defaultAgent: concrete }).defaultAgent, concrete);
   assert.equal(applicationPanelUseSchema.safeParse({ ...use, defaultAgentId: "saved-agent" }).success, false);
   const mapping = {
-    permissionCode: "business-knowledge",
+    entryKey: use.id,
+    pageKey: use.pageKey,
     skill: { namespace: { kind: "provider", provider: "ontology" }, name: "knowledge-governance" },
     defaults: [{ pageKey: use.pageKey, defaultAgent: preset }],
   };

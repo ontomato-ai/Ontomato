@@ -30,6 +30,7 @@ export { appBuilderPages, dashboardPages, personalWorkspacePages, schedulePages,
 export type { NativeLayout } from "./native-layouts";
 export { useApplicationCatalog } from "./catalog";
 export { resolveApplicationEntry } from "./panel-host";
+export { catalogueEntryAccess, hasOntologyServiceEntry, installCatalogueEntryGuard } from "./entry-access";
 export {
   createBrowserLocalDraftStore,
   draftUserScope,

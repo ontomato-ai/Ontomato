@@ -63,8 +63,9 @@ function panelAppRecord(id: string, allowStandalone: boolean) {
     names: { en: id },
     descriptions: {},
     icon: "pages",
+    ownerService: "workbench",
+    entryPaths: [`/applications/${id}/main`],
     entry: { path: `/applications/${id}`, renderer: "panels" },
-    entryAccess: ["domain-member"],
     scheduleAdapter: null,
     releaseId: null,
     groups: [],
@@ -75,7 +76,6 @@ function panelAppRecord(id: string, allowStandalone: boolean) {
       pageKey: `${id}-main`,
       panelId: `panel-${id}-main`,
       path: `/applications/${id}/main`,
-      access: { kind: "domain-member" as const },
       names: { en: "Main" },
     }],
   };
@@ -130,7 +130,7 @@ describe("Route A standalone opening and rail-driven fetching", () => {
     await router.push("/applications/app-open/main?standalone=1");
 
     const host = {
-      access: { ready: true, error: null, can: () => true, load: loadAccess },
+      access: { ready: true, error: null, canEnter: () => true, verifyEntry: async () => "allowed", load: loadAccess },
       navigation: computed<PlatformNavigation>(() => ({ groups: [], pages: [] })),
       account: { userName: "Ada", signOut: () => {} },
       preferences: { locales: ["en"], locale: ref("en"), setLocale: () => {}, theme: ref<"light" | "dark">("light"), setTheme: () => {} },
@@ -206,7 +206,7 @@ describe("Route A standalone opening and rail-driven fetching", () => {
     await router.push("/applications/app-locked/main?standalone=1");
 
     const host = {
-      access: { ready: true, error: null, can: () => true, load: loadAccess },
+      access: { ready: true, error: null, canEnter: () => true, verifyEntry: async () => "allowed", load: loadAccess },
       navigation: computed<PlatformNavigation>(() => ({ groups: [], pages: [] })),
       account: { userName: "Ada", signOut: () => {} },
       preferences: { locales: ["en"], locale: ref("en"), setLocale: () => {}, theme: ref<"light" | "dark">("light"), setTheme: () => {} },
@@ -257,7 +257,7 @@ describe("Route A standalone opening and rail-driven fetching", () => {
     });
 
     const nav = ref<PlatformNavigation>({ groups: [], pages: [] });
-    const granted = ref<string[]>(["analysis-agent"]);
+    const granted = ref<string[]>(["/agents/settings"]);
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{
@@ -269,7 +269,7 @@ describe("Route A standalone opening and rail-driven fetching", () => {
     await router.push("/agents/chat");
 
     const host = {
-      access: { ready: true, error: null, can: (code: string) => granted.value.includes(code), load: async () => {} },
+      access: { ready: true, error: null, canEnter: (path: string) => granted.value.includes(path), verifyEntry: async () => "allowed", load: async () => {} },
       navigation: computed(() => nav.value),
       account: { userName: "Ada", signOut: () => {} },
       preferences: { locales: ["en"], locale: ref("en"), setLocale: () => {}, theme: ref<"light" | "dark">("light"), setTheme: () => {} },
@@ -296,7 +296,7 @@ describe("Route A standalone opening and rail-driven fetching", () => {
       await flushPromises();
       expect(requests.filter((url) => url.startsWith("/api/data-query/platform/applications"))).toHaveLength(1);
 
-      // Revoking analysis-agent hides the Agent Builder shortcut even without panelUses.
+      // Revoking the settings entry hides the Agent Builder shortcut even without panelUses.
       granted.value = [];
       await flushPromises();
       expect(hasAgentBuilderRow()).toBe(false);

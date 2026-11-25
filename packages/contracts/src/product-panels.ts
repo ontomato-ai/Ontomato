@@ -291,10 +291,6 @@ export const applicationPanelUseSchema = z.object({
   pageKey: id,
   panelId: id,
   path: applicationPanelUsePathSchema,
-  access: z.union([
-    z.object({ permissionCode: id }).strict(),
-    z.object({ kind: z.literal("domain-member") }).strict(),
-  ]),
   defaultAgent: defaultAgentSchema.optional(),
   names: applicationMetadataSchema.shape.names.optional(),
   /** Optional page heading text, independent of whether the entry is in the menu. */
@@ -322,7 +318,6 @@ export const builtinNativeEntrySchema = z.object({
   pageKey: id,
   kind: z.literal("native"),
   path: applicationPanelUsePathSchema,
-  access: applicationPanelUseSchema.shape.access,
   names: applicationPanelUseSchema.shape.names,
   descriptions: applicationPanelUseSchema.shape.descriptions,
   icon: applicationPanelUseSchema.shape.icon,
@@ -381,7 +376,7 @@ export type ApplicationEntryMenu = z.infer<typeof applicationEntryMenuSchema>;
 
 export const applicationEntryResolutionSchema = z.object({
   applicationId: id,
-  use: panelApplicationEntryUseSchema,
+  use: applicationMenuEntrySchema,
   framePanelId: id.optional(),
   theme: panelThemeOverridesSchema.optional(),
   menu: applicationEntryMenuSchema,
@@ -406,9 +401,7 @@ export type ApplicationFrameContext = z.infer<typeof applicationFrameContextSche
 
 export function applicationFrameContextOf({ applicationId, use, menu }: ApplicationEntryResolution): ApplicationFrameContext {
   const { id: useId, pageKey, path } = use;
-  const placement = isFrameConversationEntry(use)
-    ? { kind: use.kind }
-    : { kind: "panel", panelId: use.panelId };
+  const placement = isApplicationPanelUse(use) ? { kind: "panel", panelId: use.panelId } : { kind: use.kind };
   return applicationFrameContextSchema.parse({ currentEntry: { applicationId, useId, pageKey, path, ...placement }, menu });
 }
 
@@ -791,9 +784,10 @@ export const applicationPanelUsesParamsSchema = z.object({ applicationId: id }).
 export const registerApplicationPanelUsesRequestSchema = z.object({
   entry: panelApplicationEntrySchema,
   panelUses: z.array(panelApplicationEntryUseSchema),
-  /** Required when creating an application; omitted updates retain existing metadata and entry access. */
+  /** Required when creating an application; omitted updates retain existing metadata. */
   declaration: applicationMetadataSchema.optional(),
-  entryAccess: z.array(id).min(1).optional(),
+  /** Entries to grant to the domain's default policy on first registration. */
+  initialOpenEntryIds: z.array(applicationPanelUseSchema.shape.id).optional(),
   /** Optional initial domain sharing intent when creating an application. */
   shared: z.boolean().optional(),
   /** Whether the application allows standalone open (`standalone=1`) and exposes an external link; defaults to true. */
@@ -805,7 +799,7 @@ export type RegisterApplicationPanelUsesRequest = z.infer<typeof registerApplica
 /** Current Java-owned entry and use relations; Java owns their access checks. */
 export const applicationPanelUsesResponseSchema = z.object({
   applicationId: id,
-  entry: z.object({ path, renderer: id, home: path.optional() }).strict(),
+  entry: z.object({ path, renderer: id, home: path.optional(), entryKey: id.optional() }).strict(),
   panelUses: z.array(applicationMenuEntrySchema),
 }).strict();
 export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesResponseSchema>;
@@ -814,7 +808,6 @@ export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesRe
 export const applicationPanelUsesManagementSchema = applicationPanelUsesResponseSchema.extend({
   panelUses: z.array(panelApplicationEntryUseSchema),
   declaration: applicationMetadataSchema,
-  entryAccess: z.array(id).min(1),
   allowStandalone: z.boolean().optional(),
   ...applicationEntrySettings,
 });

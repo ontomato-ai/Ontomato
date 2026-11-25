@@ -3,13 +3,12 @@
     "path": "/applications/app-student-directory/students",
     "renderer": "panels"
   },
-  "entryAccess": [
-    "domain-member"
+  "initialOpenEntryIds": [
+    "app-student-directory-students"
   ],
   "declaration": {
     "descriptions": {},
     "groups": [],
-    "permissions": [],
     "names": {
       "en": "Student directory"
     },
@@ -21,9 +20,6 @@
       "pageKey": "app-student-directory-students",
       "panelId": "template-student-directory",
       "path": "/applications/app-student-directory/students",
-      "access": {
-        "kind": "domain-member"
-      },
       "names": {
         "en": "Students"
       }

@@ -51,23 +51,23 @@ public class ApplicationController {
     /** Domain applications submit their entry and uses inside their assigned application path. */
     public record PanelEntry(String path, String renderer) {}
     public record PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
-                                    ApplicationCatalog.Declaration declaration, List<String> entryAccess,
+                                    ApplicationCatalog.Declaration declaration, List<String> initialOpenEntryIds,
                                     String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery,
                                     Boolean shared, Boolean allowStandalone) {
         public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
-                                 ApplicationCatalog.Declaration declaration, List<String> entryAccess) {
-            this(entry, panelUses, declaration, entryAccess, null, null, null, null, null);
+                                 ApplicationCatalog.Declaration declaration, List<String> initialOpenEntryIds) {
+            this(entry, panelUses, declaration, initialOpenEntryIds, null, null, null, null, null);
         }
         public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
-                                 ApplicationCatalog.Declaration declaration, List<String> entryAccess,
+                                 ApplicationCatalog.Declaration declaration, List<String> initialOpenEntryIds,
                                  String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery) {
-            this(entry, panelUses, declaration, entryAccess, framePanelId, theme, delivery, null, null);
+            this(entry, panelUses, declaration, initialOpenEntryIds, framePanelId, theme, delivery, null, null);
         }
         public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
-                                 ApplicationCatalog.Declaration declaration, List<String> entryAccess,
+                                 ApplicationCatalog.Declaration declaration, List<String> initialOpenEntryIds,
                                  String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery,
                                  Boolean shared) {
-            this(entry, panelUses, declaration, entryAccess, framePanelId, theme, delivery, shared, null);
+            this(entry, panelUses, declaration, initialOpenEntryIds, framePanelId, theme, delivery, shared, null);
         }
     }
     public record CatalogueFormTarget(String kind, String id, String objectType, String primaryKey) {}
@@ -140,6 +140,15 @@ public class ApplicationController {
             @RequestParam(defaultValue = "false") boolean create, Locale locale) {
         return R.of(catalog.putPanelUses(id, body, current(), create, locale));
     }
+    public record DomainOpening(JsonNode open) {}
+
+    @PutMapping("/platform/applications/{id}/entries/{entryKey}/domain-opening")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void requestDomainEntryOpening(@PathVariable String id, @PathVariable String entryKey, @RequestBody DomainOpening body) {
+        if (body.open() == null || !body.open().isBoolean()) throw ApplicationCatalog.bad("An open boolean is required");
+        catalog.requestDomainEntryOpening(id, entryKey, body.open().booleanValue(), current());
+    }
+
     @DeleteMapping("/platform/applications/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable String id) {
@@ -156,16 +165,17 @@ public class ApplicationController {
 
     @GetMapping("/platform/page-skills")
     @io.ontomato.dataengine.controller.BuildTestAccess(io.ontomato.dataengine.controller.BuildTestAccess.Access.NO_BUSINESS_DATA)
-    public R<PageSkills.Projection> pageSkills(@RequestParam(required = false) String pageKey,
-        @RequestParam(required = false) String permissionCode, @RequestParam(required = false) String panelId) {
-        if (pageKey == null) {
-            if (permissionCode != null || panelId != null) throw ApplicationCatalog.bad("A page key is required");
+    public R<PageSkills.Projection> pageSkills(@RequestParam(required = false) String applicationId,
+            @RequestParam(required = false) String entryKey, @RequestParam(required = false) String pageKey,
+            @RequestParam(required = false) String panelId, @RequestParam Map<String, String> parameters) {
+        if (parameters.containsKey("permissionCode") || parameters.containsKey("access"))
+            throw ApplicationCatalog.bad("Use applicationId, entryKey and pageKey for page skill lookup");
+        if (applicationId == null && entryKey == null && pageKey == null && panelId == null)
             return R.of(catalog.pageSkills(current()));
-        }
-        if (pageKey.isBlank() || permissionCode != null && permissionCode.isBlank() || panelId != null && panelId.isBlank())
-            throw ApplicationCatalog.bad("Invalid page skill lookup");
-        var entrance = new PageSkills.Entrance(permissionCode, permissionCode == null ? "domain-member" : null, pageKey);
-        return R.of(catalog.pageSkills(current(), entrance, panelId));
+        if (applicationId == null || applicationId.isBlank() || !ApplicationCatalog.validEntryKey(entryKey)
+                || pageKey == null || pageKey.isBlank() || panelId != null && panelId.isBlank())
+            throw ApplicationCatalog.bad("A page skill lookup requires applicationId, entryKey and pageKey");
+        return R.of(catalog.pageSkills(current(), new PageSkills.Entrance(applicationId, entryKey, pageKey), panelId));
     }
     @PostMapping("/platform/applications/connected")
     @ManagementEndpoint(CONNECT_APPLICATION)

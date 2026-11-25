@@ -88,7 +88,7 @@ describe("PlatformShellLayout home shortcuts refresh", () => {
     await router.push("/home");
 
     const host = {
-      access: { ready: true, error: null, can: () => true, load: async () => {} },
+      access: { ready: true, error: null, canEnter: () => true, verifyEntry: async () => "allowed", load: async () => {} },
       navigation: computed(() => ({ groups: [], pages: [] })),
       account: { userName: "Ada", signOut: () => {} },
       preferences: {

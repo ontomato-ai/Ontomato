@@ -245,7 +245,6 @@ beforeEach(() => {
     pageKey: "tasks",
     path: "/applications/A/tasks",
     panelId: "P",
-    access: { kind: "domain-member" },
   };
   currentRun = {
     id: uuid(3),
@@ -618,7 +617,6 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       pageKey: "tasks",
       path: "/applications/A/tasks",
       panelId: "P",
-      access: { kind: "domain-member" },
       inputs: {
         pinnedApp: { literal: { className: APPLICATION, primaryKey: "app-pinned" } },
         pinnedScope: { literal: "tenant-prod" },

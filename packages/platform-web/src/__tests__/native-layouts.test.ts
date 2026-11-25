@@ -25,7 +25,8 @@ describe("the platform's applications", () => {
   });
   it("omits stale native entries until their renderer layout is registered", () => {
     const application = {
-      ...catalogFixture()[0]!, id: "edition-app", panelUses: [], entry: { path: "/edition-app", renderer: "later-renderer" },
+      ...catalogFixture()[0]!, id: "edition-app", panelUses: [],
+      entry: { path: "/edition-app", renderer: "later-renderer", home: "/edition-app/home" },
     };
     const pending = catalogPartition([application], "en");
     expect(pending).toEqual([]);
@@ -73,7 +74,6 @@ describe("the platform's applications", () => {
           pageKey: "permissions-member-detail",
           panelId: "builtin-product-governance-member-detail",
           path: "/permissions/members/detail",
-          access: { permissionCode: "user-management" },
         },
         {
           id: "permissions-roles",
@@ -82,7 +82,6 @@ describe("the platform's applications", () => {
           path: "/permissions/roles",
           icon: "user-cog",
           names: { en: "Roles", "zh-CN": "角色" },
-          access: { permissionCode: "role-management" },
         },
       ],
     };
@@ -139,16 +138,15 @@ it("propagates framePanelId and leaves panel application menus to their frame pa
 describe("the operations application's dedicated frame", () => {
   const catalog = catalogFixture();
   const filterPanelUses = (granted: readonly string[]) =>
-    catalog.map((app) =>
-      app.id !== "operations"
-        ? app
-        : {
-            ...app,
-            panelUses: (app.panelUses ?? []).filter(
-              (entry) => !("permissionCode" in entry.access) || granted.includes(entry.access.permissionCode),
-            ),
-          },
-    );
+    catalog.map(app => {
+      if (app.id !== "operations") return app;
+      const panelUses = (app.panelUses ?? []).filter(
+        entry => granted.includes(entry.id === "user-feedback" ? "user-feedback" : "observer"),
+      );
+      const entryPaths = panelUses.map(entry => entry.path);
+      const home = entryPaths.find(path => path === app.entry.home) ?? entryPaths[0];
+      return { ...app, panelUses, entryPaths, entry: { ...app.entry, home } };
+    });
   const withoutFeedback = catalog.map((app) => app.id !== "operations" ? app : { ...app, panelUses: [] });
   const navigation = generatedNavigation();
   const operations = (granted: string[], apps = filterPanelUses(granted)) =>
@@ -174,7 +172,7 @@ describe("the operations application's dedicated frame", () => {
     expect(operations(["user-feedback"], withoutFeedback).home).not.toBe("/ops/feedback");
   });
 
-  it("redirects /ops root to /ops/diagnosis and leaves /ops/diagnosis to the catalog frame-conversation entry", async () => {
+  it("leaves the operations root to the admitted catalogue landing and preserves the diagnosis link", async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -183,8 +181,7 @@ describe("the operations application's dedicated frame", () => {
       ],
     });
 
-    await router.push("/ops");
-    expect(router.currentRoute.value.path).toBe("/ops/diagnosis");
+    expect(observePageRoutes().some(route => route.path === "/ops")).toBe(false);
 
     await router.push("/ops/diagnosis?frame.sessionId=session-123");
     expect(router.currentRoute.value.path).toBe("/ops/diagnosis");
@@ -204,7 +201,6 @@ describe("system settings catalog-driven frame with mixed panel and native entri
       category: "admin" as const,
       sort: 20,
       entry: { path: "/settings", renderer: "settings" },
-      entryAccess: ["system-config", "authorization-management", "audit-logs", "system-monitoring", "mcp-service"],
       scheduleAdapter: null,
       releaseId: null,
       framePanelId: "builtin-product-platform-frame",
@@ -222,7 +218,6 @@ describe("system settings catalog-driven frame with mixed panel and native entri
           path: "/settings/records/audit-log",
           icon: "clipboard-list",
           groupKey: "records",
-          access: { permissionCode: "audit-logs" },
           names: { en: "Audit log" },
         },
         {
@@ -232,7 +227,6 @@ describe("system settings catalog-driven frame with mixed panel and native entri
           path: "/settings/records/system-monitor",
           icon: "activity",
           groupKey: "records",
-          access: { permissionCode: "system-monitoring" },
           names: { en: "System monitoring" },
         },
         {
@@ -242,7 +236,6 @@ describe("system settings catalog-driven frame with mixed panel and native entri
           path: "/settings/system-config/authorization",
           icon: "key-round",
           groupKey: "system-settings",
-          access: { permissionCode: "authorization-management" },
           names: { en: "License" },
         },
       ],

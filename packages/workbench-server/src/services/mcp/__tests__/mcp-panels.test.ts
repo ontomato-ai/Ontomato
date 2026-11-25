@@ -648,20 +648,18 @@ describe("built-in MCP panels validation", () => {
     const settings = JSON.parse(
       readFileSync(resolve(repoRoot, "packages/data-engine-core/src/main/resources/applications/settings.json"), "utf8"),
     );
-    const uses = settings.declaration.panelUses as Array<{ id: string; panelId: string; path: string; access: { permissionCode: string } }>;
+    const uses = settings.declaration.panelUses as Array<{ id: string; panelId: string; path: string }>;
     expect(uses).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: "external-mcp",
           panelId: "builtin-product-external-mcp",
           path: "/settings/external-mcp",
-          access: { permissionCode: "mcp-service" },
         }),
         expect.objectContaining({
           id: "published-mcp",
           panelId: "builtin-product-published-mcp",
           path: "/settings/mcp-services",
-          access: { permissionCode: "mcp-service" },
         }),
       ]),
     );

@@ -95,7 +95,6 @@ describe("panel personal state service", () => {
         pageKey: "page-1",
         panelId: panel.id,
         path: "/applications/app-1/page-1",
-        access: { kind: "domain-member" as const },
         inputs: { term: { frameState: "term" } },
       },
       framePanelId: undefined,
@@ -156,7 +155,6 @@ describe("panel personal state service", () => {
         pageKey: "page-2",
         panelId: panel.id,
         path: "/applications/app-1/page-2",
-        access: { kind: "domain-member" as const },
       },
       framePanelId: undefined,
     });

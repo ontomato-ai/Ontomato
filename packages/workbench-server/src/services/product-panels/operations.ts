@@ -21,7 +21,6 @@ import {
   AGENT_UPLOAD_UNSUPPORTED, panelFileInputSchema, panelUploadAccepted, panelUploadFileSchema, type PanelUploadFile, type PanelUploadReceipt,
 } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { HttpError } from "../../utils/errors";
 import { tForLocale } from "../../i18n";
@@ -55,13 +54,10 @@ export async function requirePanelSkillForRun(owner: AssistantOwner, credentials
   ref: PanelUseRef & Pick<PanelOperationRef, "root">) {
   if (ref.root === "frame")
     throw new HttpError(403, "This run does not have the application frame's skill", "PANEL_FRAME_SKILL_REQUIRED");
-  const { use, framePanelId } = await requirePanelUseEntry(credentials, ref, owner);
+  const { applicationId, use, framePanelId } = await requirePanelUseEntry(credentials, ref, owner);
   const view = await readAssistantSkillView(owner.domainId, credentials, owner.userId);
-  const entrance: PageSkillEntrance = "permissionCode" in use.access
-    ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }
-    : { access: "domain-member", pageKey: use.pageKey };
-  const skill = await resolvePageSkillSource(view, entrance, {
-    kind: "application-use", applicationId: ref.applicationId, useId: use.id,
+  const skill = await resolvePageSkillSource(view, { applicationId, entryKey: use.id, pageKey: use.pageKey }, {
+    kind: "application-use", applicationId, useId: use.id,
   }, [], { id: use.panelId });
   if (!skill || !loadedPageSkillVersion(skill, run.resolvedSkills))
     throw new HttpError(403,"This run does not have this panel's skill","FORBIDDEN");

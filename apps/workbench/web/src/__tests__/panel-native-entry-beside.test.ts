@@ -25,7 +25,7 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
 const panel = panelRecord("builtin-components", "Base components", definePanel({ state: {}, members: {} }));
 const components: ApplicationPanelUse = {
   id: "ontology-components", pageKey: "ontology-components", panelId: panel.id, path: "/ontology/components",
-  access: { permissionCode: "ontology-modeling" }, names: { en: "Base components" },
+  names: { en: "Base components" },
 };
 
 function answer(request: Sent) {

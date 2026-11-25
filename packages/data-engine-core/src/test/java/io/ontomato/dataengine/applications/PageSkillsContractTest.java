@@ -1,91 +1,101 @@
 package io.ontomato.dataengine.applications;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.core.bean.User;
-import java.nio.charset.StandardCharsets;
+import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.QueryAccessService;
+import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
-import org.springframework.mock.http.MockHttpInputMessage;
-import org.springframework.mock.http.MockHttpOutputMessage;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 class PageSkillsContractTest {
-    private static final PageSkills.Skill SKILL = new PageSkills.Skill(new PageSkills.Namespace("provider","ontology",null),"knowledge-governance");
-    private static PageSkills.Mapping menu(String permission) { return new PageSkills.Mapping(permission,null,null,SKILL,null); }
-    private static PageSkills.Mapping member() { return new PageSkills.Mapping(null,"domain-member","dashboard",SKILL,null); }
+    private static final PageSkills.Skill SKILL =
+        new PageSkills.Skill(new PageSkills.Namespace("provider", "ontology", null), "knowledge-governance");
 
-    @Test void jacksonBoundaryKeepsTheSharedWireShapeWithoutNullAlternativeFields() throws Exception {
-        var converter = new MappingJackson2HttpMessageConverter();
-        var input = new MockHttpInputMessage("""
-            {"applications":[{"id":"example","kind":"native","rail":"apps","category":"build","sort":1,
-            "entry":{"path":"/example","renderer":"example"},"entryAccess":["business-knowledge"],"scheduleAdapter":null,
-            "declaration":{"names":{"en":"Example"},"descriptions":{},"icon":"knowledge","groups":[],"permissions":[],
-            "pageSkills":[{"permissionCode":"business-knowledge","skill":{"namespace":{"kind":"provider","provider":"ontology"},"name":"knowledge-governance"},
-            "defaults":[{"pageKey":"governance-report","defaultAgent":{"kind":"preset","agentKind":"knowledge-governance"}}]}]}}]}
-            """.getBytes(StandardCharsets.UTF_8));
-        input.getHeaders().setContentType(MediaType.APPLICATION_JSON);
-        var batch = (ApplicationController.Batch)converter.read(ApplicationController.Batch.class,input);
-        var mappings = batch.applications().getFirst().declaration().pageSkills();
-        PageSkills.validate(mappings);
-        assertEquals(SKILL,mappings.getFirst().skill());
-        var output = new MockHttpOutputMessage();
-        var target = new DefaultAgentTarget("id", "tasks-agent", null);
-        var panelGroup = new PageSkills.Mapping("schedules", null, null, null, List.of(new PageSkills.Default("tasks", target)));
-        var entrances = List.of(new PageSkills.Entrance("schedules", null, "tasks"),
-            new PageSkills.Entrance(null, "domain-member", "dashboard"));
-        var projection = new PageSkills.Projection(List.of(mappings.getFirst(), panelGroup), List.of(SKILL), entrances);
-        converter.write(projection,MediaType.APPLICATION_JSON,output);
-        var body = JSONObject.parseObject(output.getBodyAsString());
-        var mapping = body.getJSONArray("pageSkills").getJSONObject(0);
-        assertFalse(mapping.containsKey("access"));
-        assertFalse(mapping.getJSONObject("skill").getJSONObject("namespace").containsKey("domainId"));
-        assertEquals("governance-report",mapping.getJSONArray("defaults").getJSONObject(0).getString("pageKey"));
-        assertEquals(SKILL.name(),body.getJSONArray("registeredSkills").getJSONObject(0).getString("name"));
-        var panel = body.getJSONArray("pageSkills").getJSONObject(1);
-        assertFalse(panel.containsKey("skill"));
-        assertFalse(panel.containsKey("pageKey"));
-        assertEquals("schedules", panel.getString("permissionCode"));
-        assertEquals("tasks-agent", panel.getJSONArray("defaults").getJSONObject(0).getJSONObject("defaultAgent").getString("id"));
-        assertEquals(List.of(JSONObject.of("permissionCode", "schedules", "pageKey", "tasks"),
-            JSONObject.of("access", "domain-member", "pageKey", "dashboard")),
-            body.getJSONArray("admittedEntrances"));
+    @Test void rejectsDuplicateEntryBindingsAtRegistration() {
+        var declaration = new PageSkills.Declaration("main", "knowledge", SKILL, null);
+        assertThrows(ResponseStatusException.class, () -> PageSkills.validate(List.of(declaration, declaration)));
     }
 
-    @Test void rejectsAmbiguousLocatorsAtTheDeclarationBoundary() {
-        assertThrows(ResponseStatusException.class,()->PageSkills.validate(List.of(menu("menu"),menu("menu"))));
-        assertThrows(ResponseStatusException.class,()->PageSkills.validate(List.of(member(),member())));
-        assertThrows(ResponseStatusException.class,()->PageSkills.validate(List.of(new PageSkills.Mapping("menu","domain-member","dashboard",SKILL,null))));
+    @Test void globalCatalogueKeepsTheSkillAndDefaultAtTheRegisteredEntry() throws Exception {
+        var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class),
+            mock(ApplicationAccess.class), "{}", mock(PanelResources.class), mock(ProductGrantService.class),
+            EntryAuthorizationFixture.allowEntries()));
+        var unrelated = new ApplicationPanelUse("other-use", "other", "panel-other",
+            "/ontology/other", null, null);
+        var knowledge = new ApplicationPanelUse("knowledge-use", "knowledge", "builtin-product-knowledge",
+            "/ontology/knowledge", new DefaultAgentTarget("id", "knowledge-agent", null), null);
+        doReturn(List.of(JSONObject.of("id", "ontology", "domainId", "domain",
+            "entry", JSONObject.of("path", "/ontology", "renderer", "ontology"),
+            "panelUses", List.of(unrelated, knowledge),
+            "pageSkills", List.of(new PageSkills.Declaration("knowledge-use", "knowledge", SKILL, List.of())))))
+            .when(catalog).all();
+        var identity = mock(IdentityService.class);
+        when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("reader", "domain"));
+        var http = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity,
+            mock(WorkbenchServiceAuthentication.class))).build();
+
+        var response = http.perform(get("/platform/page-skills"))
+            .andExpect(jsonPath("$.data.pageSkills").value(hasSize(2)));
+        expectKnowledgeMapping(response);
     }
 
-    @Test void projectionRetainsDeniedIdentitiesButNeverTheirMappingsOrDefaults() {
-        var access=mock(ApplicationAccess.class); var user=mock(User.class);
-        when(access.withPageSkillAuthorization(any(), any())).thenCallRealMethod();
-        when(user.getDomainId()).thenReturn("domain");
-        var catalog=spy(new ApplicationCatalog(mock(JdbcTemplate.class),mock(TransactionTemplate.class),access,"{}",mock(PanelResources.class),mock(io.ontomato.dataengine.service.ProductGrantService.class)));
-        var allowed=menu("allowed");var denied=menu("denied");
-        doReturn(List.of(JSONObject.of("id","example","entry",JSONObject.of("renderer","native"),"pageSkills",List.of(allowed,denied),"panelUses",List.of()),
-            JSONObject.of("id","other-domain","domainId","other","pageSkills",List.of(member()),"panelUses",List.of()))).when(catalog).all();
-        when(access.pageSkills(List.of(allowed,denied),user)).thenReturn(List.of(allowed));
-        var projection=catalog.pageSkills(user);
-        assertEquals(List.of(allowed),projection.pageSkills());
-        assertEquals(List.of(SKILL),projection.registeredSkills());
+    static void expectKnowledgeMapping(ResultActions response) throws Exception {
+        var entry = "[?(@.applicationId == 'ontology' && @.entryKey == 'knowledge-use')]";
+        var mapping = "$.data.pageSkills" + entry;
+        response.andExpect(status().isOk())
+            .andExpect(jsonPath(mapping).value(hasSize(1)))
+            .andExpect(jsonPath(mapping + ".skill.name").value(contains(SKILL.name())))
+            .andExpect(jsonPath(mapping + ".defaults[*].pageKey").value(contains("knowledge")))
+            .andExpect(jsonPath(mapping + ".defaults[*].defaultAgent.id").value(contains("knowledge-agent")))
+            .andExpect(jsonPath("$.data.admittedEntrances" + entry + ".pageKey").value(contains("knowledge")))
+            .andExpect(jsonPath("$.data.registeredSkills[*].name").value(hasItem(SKILL.name())));
     }
 
-    @Test void duplicateLocatorsAcrossApplicationsFailBeforeAnyWrite() {
-        var db=mock(JdbcTemplate.class);var transactions=mock(TransactionTemplate.class);
-        doAnswer(call->{ ((java.util.function.Consumer<org.springframework.transaction.TransactionStatus>)call.getArgument(0)).accept(null);return null; })
-            .when(transactions).executeWithoutResult(any());
-        var catalog=spy(new ApplicationCatalog(db,transactions,mock(ApplicationAccess.class),"{}",mock(PanelResources.class),mock(io.ontomato.dataengine.service.ProductGrantService.class)));
-        doReturn(List.of(JSONObject.of("id","existing","entry",JSONObject.of("renderer","native"),"pageSkills",List.of(member()),"panelUses",List.of()))).when(catalog).all();
-        var declaration=new ApplicationCatalog.Declaration(java.util.Map.of("en","Example"),java.util.Map.of(),"knowledge",List.of(),List.of(),List.of(member()),List.of());
-        var builtin=new ApplicationCatalog.Builtin("new-app","native","apps","build",0,JSONObject.of("path","/example"),List.of("domain-member"),null,declaration);
-        assertThrows(ResponseStatusException.class,()->catalog.builtins("workbench",List.of(builtin)));
-        verify(db,never()).update(anyString(),any(Object[].class));
+    @Test void scopedHttpLookupCannotBorrowAnotherEntrysAdmissionForTheSamePanel() throws Exception {
+        var authorization = EntryAuthorizationFixture.entries((actor, target) -> target.equals("app-example/allowed"));
+        var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class),
+            mock(ApplicationAccess.class), "{}", mock(PanelResources.class), mock(ProductGrantService.class), authorization));
+        var allowed = new ApplicationPanelUse("allowed", "page-a", "panel-shared",
+            "/applications/app-example/allowed", null, null);
+        var denied = new ApplicationPanelUse("denied", "page-b", "panel-shared",
+            "/applications/app-example/denied", null, null);
+        var app = JSONObject.of("id", "app-example", "domainId", "domain",
+            "entry", JSONObject.of("path", "/applications/app-example", "renderer", "panels"),
+            "panelUses", List.of(allowed, denied),
+            "pageSkills", List.of(new PageSkills.Declaration("denied", "page-b", SKILL, null)));
+        doReturn(List.of(app)).when(catalog).all();
+        var identity = mock(IdentityService.class);
+        when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("reader", "domain"));
+        var http = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity,
+            mock(WorkbenchServiceAuthentication.class))).build();
+
+        http.perform(get("/platform/page-skills").param("applicationId", "app-example")
+                .param("entryKey", "denied").param("pageKey", "page-b").param("panelId", "panel-shared"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.admittedEntrances").isEmpty())
+            .andExpect(jsonPath("$.data.pageSkills").isEmpty())
+            .andExpect(jsonPath("$.data.registeredSkills[0].name").value(SKILL.name()));
+
+        http.perform(get("/platform/page-skills").param("applicationId", "app-example")
+                .param("entryKey", "allowed").param("pageKey", "page-a").param("panelId", "panel-shared"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.admittedEntrances[0].applicationId").value("app-example"))
+            .andExpect(jsonPath("$.data.admittedEntrances[0].entryKey").value("allowed"))
+            .andExpect(jsonPath("$.data.admittedEntrances[0].pageKey").value("page-a"))
+            .andExpect(jsonPath("$.data.pageSkills[0].entryKey").value("allowed"));
     }
 }
