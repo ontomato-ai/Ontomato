@@ -556,6 +556,11 @@ it("retains a visible broken root on read and omitted updates and permits its ex
 
 it("rejects old uncertain roots without writes and gives old hidden roots precedence", async () => {
   const unknown = page("unknown");
+  // The root still has owner facts for USE, but its stored manifest cannot establish the dependencies.
+  await state.pool!.query(
+    `INSERT INTO "${state.schema}".product_panels (id, domain_id, owner_id, definition) VALUES ($1, $2, $3, $4)`,
+    [unknown.panelId, domainId, "source-owner", { name: unknown.panelId, manifest: { members: [] } }],
+  );
   entries = [...entries, unknown];
   registered.add(unknown.panelId);
   denied = brokenProjection;

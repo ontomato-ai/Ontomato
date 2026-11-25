@@ -498,11 +498,12 @@ it("lets the panel's registered owner clean it up after retiring a same-ID trial
   expect(retired.status).toBe(204);
   const record = await request("GET", resource, "author");
   expect(record.status).toBe(200);
-  expect(productPanelResponseSchema.parse(await record.json()).panel).toMatchObject({ id, ownerId: "author", revision: 1, editable: false });
+  expect(productPanelResponseSchema.parse(await record.json()).panel).toMatchObject({ id, ownerId: "author", revision: 1, editable: true });
   const rows = await request("GET", `product-panels?scope=mine&q=${id}`, "author");
   expect(await rows.json()).toMatchObject({ items: [{ id, revision: 1 }] });
   expect((await request("GET", resource, "unrelated-reader")).status).toBe(403);
-  expect((await request("GET", `${resource}?view=1`, "author")).status).toBe(403);
+  expect((await request("GET", `${resource}?view=1`, "author")).status).toBe(200);
+  expect((await request("GET", `${resource}?view=1`, "unrelated-reader")).status).toBe(403);
   expect((await request("DELETE", `${resource}?revision=1`, "unrelated-reader")).status).toBe(403);
 
   const deleted = await request("DELETE", `${resource}?revision=1`, "author");
