@@ -691,10 +691,14 @@
           </div>
         </section>
 
-        <!-- Tab 4: Usage -->
+        <!-- Tab 4: Usage & local asset reference graph (PN-03) -->
         <section v-else-if="tabModel === 'usage'" class="pd-section pd-tab-panel" data-tab="usage">
-          <div class="pd-section-bar">
-            <sdk-button size="small" @click="openAddress('/ontology/applications')">{{ t('action.allApplications') }}</sdk-button>
+          <div class="pd-card">
+            <div class="pd-section-bar">
+              <h2 class="pd-section-title">{{ t('usage.referenceGraph') }}</h2>
+              <sdk-button size="small" @click="openAddress('/ontology/applications')">{{ t('action.allApplications') }}</sdk-button>
+            </div>
+            <projection slot="referenceGraph" @open="onOpenAssetGraph"></projection>
           </div>
           <info-banner
             v-if="hiddenUsedByCount > 0"

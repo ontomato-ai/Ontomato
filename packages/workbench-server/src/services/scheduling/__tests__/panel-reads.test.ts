@@ -6,6 +6,7 @@ import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import examples from "../../../../../contracts/examples/platform-schedules.json";
 import { configureI18n, tForLocale } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
+import { unwrapReadDirective } from "../../product-panels/read-directive";
 import { createScheduledTaskReadAdapter } from "../panel-reads";
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://owner.test" } } }));
@@ -366,4 +367,64 @@ it("returns a field refusal when submitted task settings are invalid", async () 
     errors: [{ field: "/task/notifyEmail", message: expect.any(String) }],
   });
   expect(request).toHaveBeenCalledTimes(1);
+});
+
+it("filters scheduled task list by application and search and carries application icons (SC-04)", async () => {
+  const secondTask = {
+    ...task,
+    id: "10000000-0000-4000-8000-000000000099",
+    appId: "agents",
+    title: "Weekly digest",
+  };
+  vi.stubGlobal("fetch", async (url: string) => {
+    const path = new URL(url).pathname;
+    if (path === "/platform/applications") return Response.json(catalogue);
+    if (path === "/platform/scheduled-tasks/applications") return Response.json(examples.applicationsEnglish.response);
+    if (path === "/platform/scheduled-tasks") return Response.json({ timeZone: task.timeZone, tasks: [task, secondTask] });
+    throw new Error(`Unexpected owner request ${path}`);
+  });
+  const reads = createScheduledTaskReadAdapter(viewer);
+  const byApp = unwrapReadDirective(await reads.list({ application: "operations" })).value as Array<{ primaryKey: string; fields: Record<string, unknown> }>;
+  expect(byApp).toHaveLength(1);
+  expect(byApp[0]?.primaryKey).toBe(task.id);
+  expect(byApp[0]?.fields.applicationIcon).toBe("apps");
+  const bySearch = unwrapReadDirective(await reads.list({ search: "weekly" })).value as Array<{ primaryKey: string }>;
+  expect(bySearch).toHaveLength(1);
+  expect(bySearch[0]?.primaryKey).toBe(secondTask.id);
+});
+
+it("attaches declarative rereadAfterMs directives only while scheduled tasks or runs are active (SC-13)", async () => {
+  const runningRun = examples.runs.find(run => run.name === "agents-running")!.response;
+  const completedRun = { ...runningRun, id: "20000000-0000-4000-8000-000000000099", status: "completed" as const, finishedAt: "2026-04-01T00:05:00Z" };
+  const activeTask = { ...task, activeRunId: runningRun.id };
+  const idleTask = { ...task, activeRunId: null };
+  let active = true;
+  vi.stubGlobal("fetch", async (url: string) => {
+    const path = new URL(url).pathname;
+    if (path === "/platform/applications") return Response.json(catalogue);
+    if (path === "/platform/scheduled-tasks/applications") return Response.json(examples.applicationsEnglish.response);
+    if (path === "/platform/scheduled-tasks") return Response.json({ timeZone: task.timeZone, tasks: [active ? activeTask : idleTask] });
+    if (path === `/platform/scheduled-tasks/${task.id}`) return Response.json(active ? activeTask : idleTask);
+    if (path === `/platform/scheduled-tasks/${task.id}/runs`) {
+      return Response.json({ runs: [active ? runningRun : completedRun], nextCursor: null });
+    }
+    if (path === `/platform/scheduled-tasks/${task.id}/runs/${runningRun.id}`) {
+      return Response.json(active ? runningRun : completedRun);
+    }
+    throw new Error(`Unexpected owner request ${path}`);
+  });
+  const reads = createScheduledTaskReadAdapter(viewer);
+
+  expect(unwrapReadDirective(await reads.list()).directive).toEqual({ rereadAfterMs: 30_000 });
+  expect(unwrapReadDirective(await reads.record(task.id)).directive).toEqual({ rereadAfterMs: 5_000 });
+  expect(unwrapReadDirective(await reads.runRecords(task.id)).directive).toEqual({ rereadAfterMs: 5_000 });
+  expect(unwrapReadDirective(await reads.runRecord(task.id, runningRun.id)).directive).toEqual({ rereadAfterMs: 5_000 });
+  expect(unwrapReadDirective(await reads.latestRunRecord(task.id)).directive).toEqual({ rereadAfterMs: 5_000 });
+
+  active = false;
+  expect(unwrapReadDirective(await reads.list()).directive).toBeUndefined();
+  expect(unwrapReadDirective(await reads.record(task.id)).directive).toBeUndefined();
+  expect(unwrapReadDirective(await reads.runRecords(task.id)).directive).toBeUndefined();
+  expect(unwrapReadDirective(await reads.runRecord(task.id, runningRun.id)).directive).toBeUndefined();
+  expect(unwrapReadDirective(await reads.latestRunRecord(task.id)).directive).toBeUndefined();
 });

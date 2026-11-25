@@ -1020,6 +1020,12 @@ ${gridItems}
       }
     }
 
+    function onOpenAssetGraph(target) {
+      if (!target?.primaryKey) return;
+      if (target.className === PANEL_TYPE && target.primaryKey === selectedKey.value) return;
+      onNavigateReference(target);
+    }
+
     function onUsedByRowAction({ id, ref }) {
       if (id === "openEntry" && ref?.primaryKey) {
         void openAddress(ref.primaryKey);
@@ -1110,6 +1116,7 @@ ${gridItems}
       goBack,
       openAddress,
       onNavigateReference,
+      onOpenAssetGraph,
       onUsedByRowAction,
       refresh: () => instance.refreshObjects(),
     };

@@ -561,8 +561,13 @@
         </details>
       </div>
 
-      <!-- Tab 3: Used by panels -->
+      <!-- Tab 3: Used by panels & local asset reference graph (PJ-06) -->
       <div v-else-if="tabModel === 'usage'" class="proj-tab-panel" data-tab="usage">
+        <section class="proj-card">
+          <h3 class="proj-card-title">{{ t('section.referenceGraph') }}</h3>
+          <projection slot="referenceGraph" @open="onOpenAssetGraph"></projection>
+        </section>
+
         <section class="proj-card">
           <div class="proj-card-head">
             <h3 class="proj-card-title">{{ t('section.usedBy') }}</h3>

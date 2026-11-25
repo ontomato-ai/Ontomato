@@ -354,6 +354,15 @@
         },
         "id": "builtin-product-fe66a20c-a476-4988-ac4d-d42dfaa1908a"
       },
+      "referenceGraph": {
+        "component": "ProductAssetGraph",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": {
+          "graph": "referenceGraph"
+        },
+        "id": "builtin-product-7e2b9a43-5c18-4d6f-8a39-1f4b6c8d3093"
+      },
       "usedPanelsList": {
         "component": "ObjectList",
         "type": "platform:Application",
@@ -664,6 +673,7 @@
         "entries.saved": "入口已保存。",
         "assets.usedPanels": "用到的面板（{count}）",
         "assets.usedPanelsTitle": "用到的面板",
+        "assets.referenceGraph": "资产引用关系图",
         "assets.noPanels": "当前应用未引用任何面板。",
         "assets.panelMembers": "面板用到的投影与成员",
         "assets.selectPanel": "从左侧选择一个面板查看它用到的投影。",
@@ -737,6 +747,7 @@
         "entries.saved": "Entry saved.",
         "assets.usedPanels": "Used panels ({count})",
         "assets.usedPanelsTitle": "Used panels",
+        "assets.referenceGraph": "Asset reference graph",
         "assets.noPanels": "No panels are referenced by this application.",
         "assets.panelMembers": "Projections & nested panels",
         "assets.selectPanel": "Select a panel to view the projections it uses.",
@@ -810,6 +821,7 @@
         "entries.saved": "入口已儲存。",
         "assets.usedPanels": "用到的面板（{count}）",
         "assets.usedPanelsTitle": "用到的面板",
+        "assets.referenceGraph": "資產引用關係圖",
         "assets.noPanels": "目前應用未引用任何面板。",
         "assets.panelMembers": "面板用到的投影與成員",
         "assets.selectPanel": "從左側選擇一個面板檢視它用到的投影。",

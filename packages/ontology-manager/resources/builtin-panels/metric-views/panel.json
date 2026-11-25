@@ -49,11 +49,13 @@
             },
             {
               "key": "function",
-              "emptyKey": "metricViews.emptyValue"
+              "emptyKey": "metricViews.emptyValue",
+              "minContainerWidth": 901
             },
             {
               "key": "origin",
-              "emptyKey": "metricViews.emptyValue"
+              "emptyKey": "metricViews.emptyValue",
+              "minContainerWidth": 901
             },
             {
               "key": "status",
@@ -61,17 +63,20 @@
             },
             {
               "key": "createdBy",
-              "emptyKey": "metricViews.emptyValue"
+              "emptyKey": "metricViews.emptyValue",
+              "minContainerWidth": 901
             },
             {
               "key": "reviewedBy",
-              "emptyKey": "metricViews.emptyValue"
+              "emptyKey": "metricViews.emptyValue",
+              "minContainerWidth": 901
             },
             {
               "key": "modified",
               "kind": "time",
               "timeFormat": "datetime",
-              "emptyKey": "metricViews.emptyValue"
+              "emptyKey": "metricViews.emptyValue",
+              "minContainerWidth": 901
             }
           ],
           "emptyText": "metricViews.empty"

@@ -11,6 +11,7 @@ import {
 
 const PROJECTION_TYPE = "platform:ProductProjection";
 const PANEL_TYPE = "platform:ProductPanel";
+const APPLICATION_TYPE = "platform:Application";
 const SDK_COMPONENT_TYPE = "platform:SDKComponent";
 const ONTOLOGY_TYPE = "platform:OntologyType";
 const OBJECT_TYPE = "platform:ObjectType";
@@ -21,6 +22,8 @@ const METRIC_VIEW_TYPE = "platform:MetricView";
 const CATALOG_PATH = "/ontology/projections";
 const CAPABILITY_MAP = "/ontology/assets/capability-map";
 const PANELS_PAGE = "/ontology/panels/detail";
+const PROJECTIONS_DETAIL_PAGE = "/ontology/projections/detail";
+const APPLICATIONS_DETAIL_PAGE = "/ontology/applications/detail";
 const COMPONENTS_PAGE = "/ontology/components";
 const OBJECTS_PAGE = "/ontology/objects";
 const RELATIONS_PAGE = "/ontology/relations";
@@ -642,8 +645,14 @@ const ProjectionDetailPanel = {
     function onNavigateReference(reference) {
       if (!reference?.primaryKey) return;
       switch (reference.className) {
+        case PROJECTION_TYPE:
+          void goTo(panelAddress(PROJECTIONS_DETAIL_PAGE, { selected: reference.primaryKey }));
+          return;
         case PANEL_TYPE:
           void goTo(panelAddress(PANELS_PAGE, { selected: reference.primaryKey }));
+          return;
+        case APPLICATION_TYPE:
+          void goTo(panelAddress(APPLICATIONS_DETAIL_PAGE, { selected: reference.primaryKey }));
           return;
         case SDK_COMPONENT_TYPE:
           void goTo(panelAddress(COMPONENTS_PAGE, { selected: reference.primaryKey }));
@@ -666,6 +675,12 @@ const ProjectionDetailPanel = {
         default:
           return;
       }
+    }
+
+    function onOpenAssetGraph(target) {
+      if (!target?.primaryKey) return;
+      if (target.className === PROJECTION_TYPE && target.primaryKey === selectedKey.value) return;
+      onNavigateReference(target);
     }
 
     return {
@@ -737,6 +752,7 @@ const ProjectionDetailPanel = {
       onMoreCommand,
       onChoosePanel,
       onNavigateReference,
+      onOpenAssetGraph,
       refresh: () => instance.refreshObjects(),
     };
   },

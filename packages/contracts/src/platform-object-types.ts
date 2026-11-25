@@ -257,7 +257,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("scheduledTask", "capability"),
     reads: {
       list: {
-        source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList",
+        source: "type", parameterMode: "fixed", params: { scope: "keyword", search: "keyword" }, result: "panelRecordList",
         outputs: {
           revision: { kind: "scalar", type: "number" },
           enabled: { kind: "scalar", type: "boolean" },
@@ -753,6 +753,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       },
       usedBy: { ...catalogueRecord, result: "productProjectionUsedBy" },
       usedByRows: { ...catalogueRecord, result: "panelRecordList", rowType: PRODUCT_PANEL },
+      referenceGraph: { ...catalogueRecord, result: "panelRecord" },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       grantRows: { ...catalogueRecord, result: "panelRecordList" },
       dataRows: { ...catalogueRecord, result: "panelRecordList" },
@@ -788,6 +789,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       },
       usedBy: { ...catalogueRecord, result: "productPanelUsedBy" },
       usedByRows: { ...catalogueRecord, result: "panelRecordList" },
+      referenceGraph: { ...catalogueRecord, result: "panelRecord" },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       grantRows: { ...catalogueRecord, result: "panelRecordList" },
       members: { ...catalogueRecord, result: "productPanelMembers" },
@@ -839,6 +841,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       entries: { ...catalogueRecord, result: "applicationEntries" },
       entryRows: { ...catalogueRecord, result: "panelRecordList" },
       usedPanels: { ...catalogueRecord, result: "panelRecordList", rowType: PRODUCT_PANEL },
+      referenceGraph: { ...catalogueRecord, result: "panelRecord" },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       grantRows: { ...catalogueRecord, result: "panelRecordList" },
       form: {

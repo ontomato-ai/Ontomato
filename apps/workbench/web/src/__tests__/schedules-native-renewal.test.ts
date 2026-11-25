@@ -173,8 +173,9 @@ afterEach(() => {
   useApplicationCatalog().applications.value = [];
 });
 
-it("removes usePanelData and business-data PanelData members from the schedules builtin panel", () => {
+it("removes usePanelData, setInterval, and business-data PanelData members from the schedules builtin panel", () => {
   expect(module).not.toContain("usePanelData");
+  expect(module).not.toContain("setInterval");
   for (const [name, definition] of Object.entries(authoring)) {
     if ("component" in definition && definition.component === "PanelData") {
       expect(name).toBe("renew");
@@ -217,6 +218,14 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         return Response.json({
           status: "ready",
           value: {
+            setEnabled: {
+              kind: "action", handlerRef: "platform:ScheduledTask.setEnabled", effect: "write", label: "Toggle task", batch: false,
+              target: { source: "row" }, inputSchema: {}, resultSchema: {},
+            },
+            runNow: {
+              kind: "action", handlerRef: "schedules.runNow", effect: "write", label: "Run now", batch: false,
+              target: { source: "row" }, inputSchema: {}, resultSchema: {},
+            },
             delete: {
               kind: "action", handlerRef: "platform:ScheduledTask.delete", effect: "write", label: "Delete task", batch: false,
               target: { source: "row" }, inputSchema: {}, resultSchema: {},
@@ -251,9 +260,16 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         return Response.json({ status: "ready", value: countsFixture });
       }
       if (member === "tasks" && body.dataName === "rows") {
-        return Response.json({ status: "ready", value: allTaskRows });
+        const app = typeof body.inputs.scope === "string" ? body.inputs.scope : "";
+        const search = typeof body.inputs.search === "string" ? body.inputs.search.trim().toLowerCase() : "";
+        const filtered = allTaskRows.filter((item) => {
+          if (app && item.fields.application !== app) return false;
+          if (search && !item.label.toLowerCase().includes(search)) return false;
+          return true;
+        });
+        return Response.json({ status: "ready", value: filtered });
       }
-      if (member === "focus" && body.dataName === "record") {
+      if ((member === "focus" || member === "runDetail") && body.dataName === "record") {
         return Response.json({ status: "ready", value: toRunRecord(body.inputs.runId === olderRun.id ? olderRun : run) });
       }
       if (member === "history" && body.dataName === "rows") {
@@ -318,18 +334,22 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       });
       await vi.waitFor(() => expect(document.body.querySelector(`.schedules-focus[data-run="${runId}"]`)).not.toBeNull());
     }
-    await vi.waitFor(() => expect(element.querySelector(".schedules-list-col .sdk-object-list-card")?.textContent).toContain("Finished"));
+    await vi.waitFor(() => expect(element.querySelector(".schedules-list-col .sdk-sts-card")?.textContent).toContain("Finished"));
     if (!refused) {
       const list = element.querySelector(".schedules");
       await router.push("/schedules?app=operations");
       expect(router.currentRoute.value.query).toEqual({ app: "operations" });
       await vi.waitFor(() => expect(element.querySelector('.sdk-segmented-option[data-value="operations"]')?.getAttribute("aria-checked")).toBe("true"));
       await vi.waitFor(() => {
-        const cards = element.querySelectorAll(".schedules-list-col .sdk-object-list-card");
+        const cards = element.querySelectorAll(".schedules-list-col .sdk-sts-card");
         expect(cards).toHaveLength(1);
         expect(cards[0]?.textContent).toContain("Operations test");
-        expect(cards[0]?.textContent).toContain("The application form changed.");
       });
+      // SC-04: Pause reason is collapsible inside the card and reveals the owner's message on expand.
+      const pauseToggle = element.querySelector<HTMLButtonElement>(".schedules-list-col .sdk-sts-card-pause button");
+      expect(pauseToggle).not.toBeNull();
+      pauseToggle!.click();
+      await vi.waitFor(() => expect(element.querySelector(".schedules-list-col .sdk-sts-card-pause")?.textContent).toContain("The application form changed."));
       expect(element.querySelector(".schedules")).toBe(list);
 
       const reviewButton = await vi.waitFor(() => {
@@ -356,7 +376,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       await router.push(`/schedules?app=${other.fields.application}`);
       await vi.waitFor(() => expect(element.querySelector(`.sdk-segmented-option[data-value="${other.fields.application}"]`)?.getAttribute("aria-checked")).toBe("true"));
       await vi.waitFor(() => {
-        const cards = element.querySelectorAll(".schedules-list-col .sdk-object-list-card");
+        const cards = element.querySelectorAll(".schedules-list-col .sdk-sts-card");
         expect(cards).toHaveLength(1);
         expect(cards[0]?.textContent).toContain(other.label);
       });
@@ -388,14 +408,57 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       await vi.waitFor(() => expect(historyReads).toEqual([null, null, "older", "older"]));
       await vi.waitFor(() => expect(document.body.querySelectorAll(".schedules-runs .sdk-object-list-card")).toHaveLength(2));
 
+      // SC-12: Expanding both loaded runs keeps both independent runDetail sub-reads open concurrently.
+      const expandBtns = document.body.querySelectorAll<HTMLButtonElement>(".schedules-runs .sdk-object-list-expand-btn");
+      expect(expandBtns).toHaveLength(2);
+      if (expandBtns[0]!.getAttribute("aria-expanded") !== "true") expandBtns[0]!.click();
+      if (expandBtns[1]!.getAttribute("aria-expanded") !== "true") expandBtns[1]!.click();
+      await vi.waitFor(() => {
+        const details = document.body.querySelectorAll<HTMLElement>(".schedules-runs [data-run-detail]");
+        expect(details).toHaveLength(2);
+        expect(details[1]!.textContent).toContain("Earlier run result");
+        expect(details[1]!.textContent).toContain("owner snapshot");
+      });
+
       await router.push("/schedules");
-      const deleteBtn = await vi.waitFor(() => {
-        const btn = [...element.querySelectorAll<HTMLButtonElement>('.schedules-list-col [data-action-kind="operation"]')]
-          .find(item => item.textContent?.trim() === "Delete");
-        expect(btn).toBeDefined();
+      await vi.waitFor(() => expect(element.querySelectorAll(".schedules-list-col .sdk-sts-card")).toHaveLength(allTaskRows.length));
+      // SC-04: Card header switch dispatches setEnabled directly on the card.
+      const firstCard = element.querySelector<HTMLElement>(".schedules-list-col .sdk-sts-card")!;
+      const firstSwitch = firstCard.querySelector<HTMLElement>(".el-switch");
+      expect(firstSwitch).not.toBeNull();
+      firstSwitch!.click();
+      await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
+        path: "/api/panel-operations/intents",
+        body: {
+          applicationId: "schedules",
+          useId: use.id,
+          operationId: "tasks.setEnabled",
+          call: {
+            target: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: taskId },
+            input: { enabled: true, revision: 1 },
+          },
+        },
+      })));
+
+      // Open overflow actions on the first card to trigger Delete after setEnabled settles.
+      const overflowTrigger = await vi.waitFor(() => {
+        const btn = firstCard.querySelector<HTMLButtonElement>(".sdk-object-list-action-more-btn");
+        expect(btn).not.toBeNull();
+        expect(btn!.disabled).toBe(false);
         return btn!;
       });
-      deleteBtn.click();
+      overflowTrigger.click();
+      const deleteMenuItem = await vi.waitFor(() => {
+        const popperId = overflowTrigger.closest("[aria-controls]")?.getAttribute("aria-controls")
+          ?? overflowTrigger.getAttribute("aria-controls");
+        const scope = popperId ? document.getElementById(popperId) : document.body;
+        const item = [...(scope ?? document.body).querySelectorAll<HTMLElement>('[role="menuitem"]')]
+          .find(el => el.textContent?.trim() === "Delete");
+        expect(item).toBeDefined();
+        expect(item!.getAttribute("aria-disabled")).not.toBe("true");
+        return item!;
+      });
+      deleteMenuItem.click();
       await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
         path: "/api/panel-operations/intents",
         body: { applicationId: "schedules", useId: use.id, operationId: deleteOperation,

@@ -344,6 +344,7 @@
           "activeSegmentId": "activeSegmentId"
         },
         "config": {
+          "language": "python",
           "emptyText": "noExplanation",
           "staleLabel": "codeStale",
           "staleHint": "codeStaleHint",

@@ -84,11 +84,13 @@
             },
             {
               "key": "function",
-              "minWidth": 150
+              "minWidth": 150,
+              "minContainerWidth": 901
             },
             {
               "key": "origin",
-              "width": 100
+              "width": 100,
+              "minContainerWidth": 901
             },
             {
               "key": "status",
@@ -97,17 +99,20 @@
             },
             {
               "key": "createdBy",
-              "width": 120
+              "width": 120,
+              "minContainerWidth": 901
             },
             {
               "key": "reviewedBy",
-              "width": 120
+              "width": 120,
+              "minContainerWidth": 901
             },
             {
               "key": "updatedAt",
               "kind": "time",
               "timeFormat": "datetime",
-              "width": 160
+              "width": 160,
+              "minContainerWidth": 901
             }
           ]
         },

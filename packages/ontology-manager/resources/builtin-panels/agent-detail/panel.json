@@ -125,6 +125,9 @@
           "options": "options",
           "selected": "resolve"
         },
+        "config": {
+          "refreshable": true
+        },
         "name": "模型选择",
         "description": "选择智能体使用的对话模型。",
         "id": "builtin-product-cc37f7cd-0a61-4b15-a2a1-64b2d571dc08"
@@ -147,6 +150,9 @@
           "options": "options",
           "selected": "resolve"
         },
+        "config": {
+          "refreshable": true
+        },
         "name": "外部 MCP 工具选择",
         "description": "选择智能体启用的外部 MCP 服务。",
         "id": "builtin-product-733252d6-8534-4654-944a-a1f5f8ce0a27"
@@ -157,6 +163,9 @@
         "data": {
           "options": "options",
           "selected": "resolve"
+        },
+        "config": {
+          "refreshable": true
         },
         "name": "执行身份选择",
         "description": "选择智能体运行所依据的域成员身份。",

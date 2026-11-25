@@ -1,4 +1,4 @@
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { mountPanel, usePanelContext, usePanelOperation, usePanelOutput } from "@ontomato/sdk/panel";
 
 const TASK = "platform:ScheduledTask";
@@ -16,7 +16,7 @@ await mountPanel({
     const noticeBlockedReason = usePanelOutput("pageNotice", "createBlockedReason");
     const noticeCredentialPaused = usePanelOutput("pageNotice", "hasCredentialPaused");
 
-    const tasksListed = usePanelOutput("tasks", "listed");
+    const tasksStatus = usePanelOutput("tasks", "status");
     const detailStatus = usePanelOutput("detailHeader", "status");
     const detailLabel = usePanelOutput("detailHeader", "label");
     const detailRevision = usePanelOutput("detailHeader", "revision");
@@ -49,9 +49,19 @@ await mountPanel({
     });
     const formDialogOpen = computed(() => mode.value === "create" || mode.value === "edit");
 
-    // Independent right-side run records drawer state (SC-11).
+    // Independent right-side run records drawer state (SC-11, SC-12).
     const runsDrawerOpen = ref(Boolean(selected.value && mode.value === "view"));
+    const expandedRunIds = ref([]);
     const isRunning = computed(() => Boolean(detailRunning.value || focusRunning.value));
+
+    const searchModel = computed({
+      get: () => (typeof values.value.search === "string" ? values.value.search : ""),
+      set: (next) => instance.state.set("search", typeof next === "string" ? next : ""),
+    });
+    const hasActiveFilters = computed(() => Boolean(values.value.app || searchModel.value.trim()));
+    function clearFilters() {
+      instance.state.setState({ app: "", search: "" });
+    }
 
     const runsDrawerTitle = computed(() => {
       const label = typeof detailLabel.value === "string" && detailLabel.value.trim()
@@ -77,7 +87,7 @@ await mountPanel({
       if (target && target.isConnected) {
         target.focus();
       } else {
-        schedulePage.value?.querySelector(".sdk-object-list-card.chosen")?.focus();
+        schedulePage.value?.querySelector(".sdk-sts-card.is-selected button")?.focus();
       }
     }
 
@@ -95,9 +105,13 @@ await mountPanel({
     watch(runId, (next) => {
       if (next && selected.value && mode.value === "view") {
         runsDrawerOpen.value = true;
+        if (!expandedRunIds.value.includes(next)) {
+          expandedRunIds.value = [...expandedRunIds.value, next];
+        }
       }
-    });
-    watch(selectedId, (next) => {
+    }, { immediate: true });
+    watch(selectedId, (next, prev) => {
+      if (next !== prev) expandedRunIds.value = runId.value ? [runId.value] : [];
       if (!next) runsDrawerOpen.value = false;
     });
 
@@ -109,14 +123,12 @@ await mountPanel({
       }
     });
 
-    // ---------- polling while a task run is active ----------
-    let timer = null;
-    watch(isRunning, (active) => {
-      if (timer) clearInterval(timer);
-      timer = active ? setInterval(() => instance.refreshObjects(), 5000) : null;
-    }, { immediate: true });
-    onBeforeUnmount(() => {
-      if (timer) clearInterval(timer);
+    // Declarative auto-reread (SC-13): owners attach rereadAfterMs (30s for active catalog, 5s for active runs).
+    // When an active run in the drawer finishes, sync the task cards and counts once.
+    watch(isRunning, (active, previous) => {
+      if (previous && !active && runsDrawerOpen.value) {
+        instance.refresh({ objectTypes: [TASK], objects: [] });
+      }
     });
 
     // ---------- navigation & selection ----------
@@ -135,6 +147,7 @@ await mountPanel({
     }
     function closeRunsDrawer() {
       runsDrawerOpen.value = false;
+      expandedRunIds.value = [];
       if (mode.value === "view") {
         instance.state.setState({ selectedTask: null, runId: null });
       }
@@ -263,24 +276,25 @@ await mountPanel({
         return;
       }
       if (operation === "runNow") {
-        notifyRunNowOutcome(outcome, taskId);
+        const run = outcome.data;
+        instance.refreshObjects();
+        if (run?.id && runsDrawerOpen.value && selectedId.value === taskId) {
+          instance.state.set("runId", run.id);
+        }
         return;
       }
-      if (operation === "enable") {
+      if (operation === "setEnabled") {
         const task = outcome.data;
-        if (task?.pause) {
+        if (task?.enabled && task.pause) {
           notify({ kind: "warning", text: t("message.stillPaused", { reason: task.pause.message }) });
         }
-        instance.refreshObjects();
-        return;
-      }
-      if (operation === "disable") {
         instance.refreshObjects();
         return;
       }
       if (operation === "delete") {
         if (taskId && selectedId.value === taskId) {
           runsDrawerOpen.value = false;
+          expandedRunIds.value = [];
           setMode("view");
           instance.state.setState({ selectedTask: null, runId: null });
         }
@@ -368,12 +382,13 @@ await mountPanel({
       }
     }
 
-    function onChooseTask(chosen) {
-      if (chosen?.primaryKey) showRecords(chosen.primaryKey);
+    function onSelectTask(task) {
+      const taskId = task?.id ?? task?.ref?.primaryKey;
+      if (taskId) showRecords(taskId);
     }
 
-    function onTaskRowAction({ id, ref: rowRef }) {
-      const taskId = rowRef?.primaryKey;
+    function onTaskRowAction(id, task) {
+      const taskId = task?.id ?? task?.ref?.primaryKey;
       if (!taskId) return;
       if (id === "review" || id === "edit") {
         rememberFocus();
@@ -387,12 +402,23 @@ await mountPanel({
       }
     }
 
+    function toggleRunExpanded(id) {
+      if (!id) return;
+      if (expandedRunIds.value.includes(id)) {
+        expandedRunIds.value = expandedRunIds.value.filter((item) => item !== id);
+      } else {
+        expandedRunIds.value = [...expandedRunIds.value, id];
+      }
+    }
+    function onExpandedRunsChange(keys) {
+      expandedRunIds.value = Array.isArray(keys) ? [...keys] : [];
+    }
     function onChooseRun(chosen) {
-      if (chosen?.primaryKey) instance.state.set("runId", chosen.primaryKey);
+      if (chosen?.primaryKey) toggleRunExpanded(chosen.primaryKey);
     }
     function onRunRowAction({ id, ref: rowRef }) {
       if (id === "details" && rowRef?.primaryKey) {
-        instance.state.set("runId", rowRef.primaryKey);
+        toggleRunExpanded(rowRef.primaryKey);
       }
     }
 
@@ -460,8 +486,7 @@ await mountPanel({
       notify({ kind: "success", text: t("message.created") });
     }
 
-    // Keep listed ref referenced cleanly if inspected by tooling.
-    void tasksListed;
+    // Keep refs referenced cleanly if inspected by tooling.
     void detailRevision;
     void opEnable;
     void opRunNow;
@@ -486,6 +511,12 @@ await mountPanel({
       detailPauseCode,
       focusResultPath,
       isRunning,
+      tasksStatus,
+      searchModel,
+      hasActiveFilters,
+      clearFilters,
+      expandedRunIds,
+      onExpandedRunsChange,
       emptyStateMessage,
       fieldOptions,
       startCreate,
@@ -498,7 +529,7 @@ await mountPanel({
       loadLatestEdit,
       saved,
       created,
-      onChooseTask,
+      onSelectTask,
       onTaskRowAction,
       onTaskOperationDone,
       onRunsDrawerToggle,

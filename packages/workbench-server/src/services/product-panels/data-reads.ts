@@ -561,6 +561,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       componentOptions: () => projectionCatalogue.componentOptions(),
       objectTypeOptions: () => projectionCatalogue.objectTypeOptions(),
       usedByRows: selection => projectionCatalogue.usedByRows(selection.primaryKey!),
+      referenceGraph: selection => projectionCatalogue.referenceGraph(selection.primaryKey!),
       grantRows: selection => projectionCatalogue.grantRows(selection.primaryKey!),
       dataRows: selection => projectionCatalogue.dataRows(selection.primaryKey!),
       configRows: selection => projectionCatalogue.configRows(selection.primaryKey!),
@@ -575,6 +576,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       ),
       unavailable: () => panelCatalogue.unavailable(),
       usedByRows: selection => panelCatalogue.usedByRows(selection.primaryKey!),
+      referenceGraph: selection => panelCatalogue.referenceGraph(selection.primaryKey!),
       grantRows: selection => panelCatalogue.grantRows(selection.primaryKey!),
       members: selection => panelCatalogue.members(selection.primaryKey!),
       memberRows: selection => panelCatalogue.memberRows(selection.primaryKey!),
@@ -597,6 +599,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       entries: selection => applications.entries(selection.primaryKey!),
       entryRows: selection => applications.entryRows(selection.primaryKey!),
       usedPanels: selection => applications.usedPanels(selection.primaryKey!),
+      referenceGraph: selection => applications.referenceGraph(selection.primaryKey!),
       grants: selection => applications.grants(selection.primaryKey!),
       grantRows: selection => applications.grantRows(selection.primaryKey!),
       form: (selection, params) => applications.form(selection.primaryKey!, {
@@ -639,7 +642,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       list: async () => (await ontology()).relationKinds(),
     },
     [SCHEDULED_TASK]: {
-      list: () => schedules.list(),
+      list: (_selection, params) => schedules.list({
+        application: panelReadParameterSchemas.keyword.optional().parse(params.scope),
+        search: panelReadParameterSchemas.keyword.optional().parse(params.search),
+      }),
       counts: (_selection, params) => schedules.counts(panelReadParameterSchemas.keyword.optional().parse(params.by)),
       status: () => schedules.status(),
       record: selection => schedules.record(selection.primaryKey!),

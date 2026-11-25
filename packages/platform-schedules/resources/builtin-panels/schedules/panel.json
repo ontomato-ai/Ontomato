@@ -88,44 +88,28 @@
         "id": "builtin-product-206cd648-2af3-4d9c-a69c-153ecb4952e3"
       },
       "tasks": {
-        "component": "ObjectList",
+        "component": "ScheduledTaskSummaryList",
         "type": "platform:ScheduledTask",
         "data": {
-          "rows": "list"
-        },
-        "state": {
-          "selected": "selectedTask",
-          "search": "search"
-        },
-        "inputs": {
-          "application": {
-            "state": "app"
+          "rows": {
+            "read": "list",
+            "params": {
+              "scope": {
+                "state": "app"
+              },
+              "search": {
+                "state": "search"
+              }
+            }
           }
         },
+        "state": {
+          "selected": "selectedTask"
+        },
         "operations": {
-          "enable": {
+          "setEnabled": {
             "operation": "platform:ScheduledTask.setEnabled",
-            "target": "row",
-            "params": {
-              "enabled": {
-                "literal": true
-              },
-              "revision": {
-                "rowField": "revision"
-              }
-            }
-          },
-          "disable": {
-            "operation": "platform:ScheduledTask.setEnabled",
-            "target": "row",
-            "params": {
-              "enabled": {
-                "literal": false
-              },
-              "revision": {
-                "rowField": "revision"
-              }
-            }
+            "target": "row"
           },
           "runNow": {
             "operation": "schedules.runNow",
@@ -142,66 +126,9 @@
           }
         },
         "config": {
-          "layout": "cards",
-          "skeletonCount": 3,
-          "subtitleField": "settings",
-          "subtitleLines": 2,
-          "statusField": "stateLabel",
-          "searchPlaceholder": "filter.search",
-          "searchFields": [
-            "label"
-          ],
-          "emptyText": "empty.none",
-          "noMatchText": "empty.noMatch",
-          "columns": [
-            {
-              "key": "applicationName"
-            },
-            {
-              "key": "frequency"
-            },
-            {
-              "key": "nextRun",
-              "kind": "time"
-            },
-            {
-              "key": "lastRun",
-              "kind": "tag",
-              "valueMap": {
-                "running": {
-                  "labelKey": "runStatus.running",
-                  "tone": "info"
-                },
-                "completed": {
-                  "labelKey": "runStatus.completed",
-                  "tone": "success"
-                },
-                "failed": {
-                  "labelKey": "runStatus.failed",
-                  "tone": "danger"
-                },
-                "skipped": {
-                  "labelKey": "runStatus.skipped",
-                  "tone": "warning"
-                }
-              }
-            },
-            {
-              "key": "lastRunAt",
-              "kind": "time"
-            },
-            {
-              "key": "lastRunSummary"
-            },
-            {
-              "key": "resultStateLabel"
-            },
-            {
-              "key": "pauseReason"
-            }
-          ],
+          "presentation": "cards",
           "rowActions": {
-            "maxVisible": 3,
+            "maxVisible": 2,
             "items": [
               {
                 "kind": "local",
@@ -244,24 +171,6 @@
                     "failed",
                     "skipped"
                   ]
-                }
-              },
-              {
-                "kind": "operation",
-                "operation": "enable",
-                "labelKey": "action.enable",
-                "when": {
-                  "field": "enabled",
-                  "equals": false
-                }
-              },
-              {
-                "kind": "operation",
-                "operation": "disable",
-                "labelKey": "action.disable",
-                "when": {
-                  "field": "enabled",
-                  "equals": true
                 }
               },
               {
@@ -359,6 +268,7 @@
         "config": {
           "layout": "cards",
           "pagination": "load-more",
+          "rowExpandMode": "multiple",
           "statusField": "status",
           "subtitleField": "resultSummary",
           "subtitleLines": 2,
@@ -397,6 +307,30 @@
           }
         },
         "id": "builtin-product-514d483b-ac7e-4345-9cd5-1125425e80fb"
+      },
+      "runDetail": {
+        "component": "ObjectSummary",
+        "type": "platform:ScheduledTask",
+        "target": "selectedTask",
+        "data": {
+          "record": {
+            "read": "runRecord",
+            "params": {
+              "runId": {
+                "fromSlot": true
+              }
+            }
+          }
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "snapshotSummary",
+            "result",
+            "executionDetails"
+          ]
+        },
+        "id": "builtin-product-6c8e4b19-2d7a-4f31-9e50-8b2d6a4c1e97"
       },
       "focus": {
         "component": "ObjectSummary",
