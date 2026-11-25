@@ -186,9 +186,9 @@ public class OntologyGenerationService {
     }
     try {
       if (sandbox != null) operations.createSandbox(sandbox, owner.domainId(), classes);
-    } catch (Exception error) {
+    } catch (RuntimeException error) {
       close(session, run, owner);
-      throw new IllegalStateException(error);
+      throw error;
     }
     return JSONObject.of("sessionId", session, "runId", run);
   }

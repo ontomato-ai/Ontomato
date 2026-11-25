@@ -37,6 +37,53 @@ class AgentWritePostgresContractTest {
   private static final Path FIXTURES = Path.of("../../data-engine-core/src/test/resources/agent-contracts");
   private static String fixture(String name) throws Exception { return Files.readString(FIXTURES.resolve(name)); }
 
+  @Test void quotedNamesRoundTripAndLegacyTablesKeepTheirPhysicalNames() throws Exception {
+    String url = Objects.requireNonNull(System.getenv("ONTOMATO_TEST_POSTGRES_URL"));
+    String user = System.getenv("ONTOMATO_TEST_POSTGRES_USER");
+    String password = System.getenv("ONTOMATO_TEST_POSTGRES_PASSWORD");
+    var admin = new JdbcTemplate(new DriverManagerDataSource(url, user, password));
+    String schema = "identifiers_" + UUID.randomUUID().toString().replace("-", "");
+    admin.execute("CREATE SCHEMA " + schema);
+    try {
+      String scoped = url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema;
+      var jdbc = new JdbcTemplate(new DriverManagerDataSource(scoped, user, password));
+      jdbc.execute("CREATE TABLE LegacyExpense (ExpenseId varchar, Amount int)");
+      var id = Map.<String, Object>of("name", "ExpenseId", "type", "varchar", "primaryKey", true);
+      var amount = Map.<String, Object>of("name", "Amount", "type", "int");
+      var legacy = Map.<String, Object>of("className", "LegacyExpense", "attrs", List.of(id, amount));
+      var special = Map.<String, Object>of("className", "e2e-expense", "attrs", List.of(id,
+          Map.of("name", "Net-\"Amount", "type", "int")));
+      var connection = new DataAdapterConnection();
+      connection.put("url", scoped);
+      connection.put("user", user);
+      connection.put("password", password);
+      var adapter = new PostgreAdapter(connection, Map.of("classDef", List.of(legacy, special)));
+      adapter.insertObjects(null, legacy, JSONArray.of(JSONObject.of("ExpenseId", "legacy", "Amount", 7)));
+      assertEquals(7, jdbc.queryForObject("SELECT amount FROM legacyexpense", Integer.class));
+
+      var recorded = adapter.createRecordedClass("sample_", special);
+      String column = "Net-\"Amount";
+      adapter.insertObjects("sample_", special, JSONArray.of(JSONObject.of("ExpenseId", "sample", column, 10)));
+      var where = JSONObject.of("field", "ExpenseId", "operator", "=", "value", "sample");
+      adapter.updateObjects("sample_", special, JSONObject.of(column, 12), where);
+      assertEquals(12, JSONObject.parseObject(adapter.querySampleDataByClassName("sample_e2e-expense", List.of(column))).getIntValue(column));
+      adapter.deleteObjects("sample_", special, where);
+      assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM \"sample_e2e-expense\"", Integer.class));
+      adapter.dropRecordedResource(recorded);
+      assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?",
+          Integer.class, schema, recorded.getString("name")));
+
+      String oversized = "发票".repeat(9);
+      var invalid = Map.<String, Object>of("className", oversized, "attrs", List.of(id));
+      var failure = assertThrows(IllegalArgumentException.class,
+          () -> adapter.validateSandboxClasses("sandbox_prefix_", List.of(invalid)));
+      assertTrue(failure.getMessage().contains(oversized));
+      assertTrue(failure.getMessage().contains("maximum is 63 bytes"));
+    } finally {
+      admin.execute("DROP SCHEMA " + schema + " CASCADE");
+    }
+  }
+
   @Test void savedLegalActionExecutesThroughPythonAndMalformedInputsHaveNoEffects() throws Exception {
     String url = Objects.requireNonNull(System.getenv("ONTOMATO_TEST_POSTGRES_URL"), "ONTOMATO_TEST_POSTGRES_URL is required; database tests must not skip");
     String user = System.getenv("ONTOMATO_TEST_POSTGRES_USER"), password = System.getenv("ONTOMATO_TEST_POSTGRES_PASSWORD");

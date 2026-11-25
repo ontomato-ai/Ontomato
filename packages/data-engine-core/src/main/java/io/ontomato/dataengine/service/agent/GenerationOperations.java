@@ -127,9 +127,13 @@ public class GenerationOperations {
 
   void createSandbox(String sandbox, String domain, List<String> classes) {
     if (classes.isEmpty()) return;
+    sandboxService.createSampleStructure(sandbox, emptySample(classes), domain);
+  }
+
+  private static JSONObject emptySample(List<String> classes) {
     var objects = new JSONArray();
     for (String name : classes) objects.add(JSONObject.of("className", name, "rows", new JSONArray()));
-    sandboxService.createSampleStructure(sandbox, JSONObject.of("objDatas", objects), domain);
+    return JSONObject.of("objDatas", objects);
   }
 
   private static void requireSampleAccess(String name, List<String> allowed) {
@@ -193,8 +197,8 @@ public class GenerationOperations {
       var before = sampleClassSet(declared, previous);
       var after = sampleClassSet(declared, data);
       if (!before.equals(after)) {
-        if (!before.isEmpty()) sandboxService.dropNamespace(sandboxId, domain);
-        createSandbox(sandboxId, domain, List.copyOf(after));
+        if (before.isEmpty()) createSandbox(sandboxId, domain, List.copyOf(after));
+        else sandboxService.replaceSampleStructure(sandboxId, emptySample(List.copyOf(after)), domain);
       }
       window.samples().accept(data);
       return null;

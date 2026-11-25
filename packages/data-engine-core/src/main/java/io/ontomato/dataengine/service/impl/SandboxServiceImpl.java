@@ -115,8 +115,18 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     @Override
+    public void replaceSampleStructure(String sandbox, JSONObject sample, String domain) {
+      createSampleStructure(sandbox, sample, domain, resources -> {}, true);
+    }
+
+    @Override
+    public void createSampleStructure(String sandbox, JSONObject sample, String domain, java.util.function.Consumer<JSONArray> save) {
+      createSampleStructure(sandbox, sample, domain, save, false);
+    }
+
     @SuppressWarnings("unchecked")
-    public void createSampleStructure(String sandbox,JSONObject sample,String domain,java.util.function.Consumer<JSONArray> save) {
+    private void createSampleStructure(String sandbox, JSONObject sample, String domain,
+        java.util.function.Consumer<JSONArray> save, boolean replace) {
       var adapter=getDataAdapter(domain);
       var classes=sample.getJSONArray("objDatas").toJavaList(JSONObject.class).stream().map(row->row.getString("className")).toList();
       if(!adapter.supportsSandbox(classes)) throw new IllegalArgumentException("Source does not support sandbox");
@@ -127,6 +137,7 @@ public class SandboxServiceImpl implements SandboxService {
       for(var cls:definitions) for(String attr:getVectorAttrNames(cls))
         planned.add(vectorResourceDao.plannedSandboxVector(adapter.sandboxClassName(sandbox,(String)cls.get("className")),attr,domain));
       vectorResourceDao.validateSandboxVectorNames(planned);
+      if (replace) dropNamespace(sandbox, domain);
       var resources=new JSONArray();
       var namespace=JSONObject.of("kind","pending","logicalName",sandbox,"operation","namespace");
       resources.add(namespace);save.accept(resources);

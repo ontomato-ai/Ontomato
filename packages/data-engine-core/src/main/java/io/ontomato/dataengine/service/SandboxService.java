@@ -8,6 +8,7 @@ public interface SandboxService {
     com.alibaba.fastjson2.JSONObject bindSample(com.alibaba.fastjson2.JSONObject sample, String domain);
     void dropSampleStructure(com.alibaba.fastjson2.JSONObject binding, com.alibaba.fastjson2.JSONArray resources, String domain, java.util.function.Consumer<com.alibaba.fastjson2.JSONArray> save);
     void createSampleStructure(String sandbox, com.alibaba.fastjson2.JSONObject sample, String domain);
+    void replaceSampleStructure(String sandbox, com.alibaba.fastjson2.JSONObject sample, String domain);
     void createSampleStructure(String sandbox, com.alibaba.fastjson2.JSONObject sample, String domain, java.util.function.Consumer<com.alibaba.fastjson2.JSONArray> save);
 
     com.alibaba.fastjson2.JSONObject validateSample(com.alibaba.fastjson2.JSONObject sample, Map<String, byte[]> attachments, String domainId);
