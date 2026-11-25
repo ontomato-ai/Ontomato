@@ -40,6 +40,7 @@ export const authoringContextSchema = z.object({
 
 /** The Action author prepares inline sandbox samples; the sandbox owner validates classes and row values. */
 export const authoringPrepareRequestSchema = z.object({
+  classNames: z.array(runtimeKeySchema).optional(),
   objDatas: z.array(z.object({ className: runtimeKeySchema, rows: z.array(runtimeJsonObjectSchema) }).strict()),
   relDatas: z.array(z.object({
     relationName: runtimeKeySchema,

@@ -115,7 +115,7 @@ public class DslUtil {
     														if (classDef.get("className").equals(obj.get("class"))) {
     															List<Map<String, String>> attrs = (List<Map<String, String>>)classDef.get("attrs");
     															for (Map<String, String> attr : attrs) {
-    																if (("date".equals(attr.get("type")) || "timestamp".equals(attr.get("type")))) {
+																if ("date".equals(attr.get("type")) || "timestamp".equals(attr.get("type")) || "datetime".equals(attr.get("type"))) {
     																	formatAttrNames.add(attr.get("name"));
     																}
     															}

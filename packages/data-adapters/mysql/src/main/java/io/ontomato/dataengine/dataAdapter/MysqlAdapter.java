@@ -169,9 +169,11 @@ public class MysqlAdapter implements DataAdapter {
 								if ("=".equals(cond.getString("operator")) || "!=".equals(cond.getString("operator"))) {
 									if ("varchar".equals(type)) {
 										sqlCond = "`" + alias + "`." + attr + " " + cond.getString("operator") + " '" + cond.getString("value").replace("'", "''") + "'";
-									} else if ("int".equals(type) || "long".equals(type) || "double".equals(type)) {
+									} else if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
 										sqlCond = "`" + alias + "`." + attr + " " + cond.getString("operator") + " " + cond.get("value");
-									} else if ("date".equals(type) || "timestamp".equals(type)) {
+									} else if ("boolean".equals(type)) {
+										sqlCond = "`" + alias + "`." + attr + " " + cond.getString("operator") + " " + booleanLiteral(cond.get("value"));
+									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
 										sqlCond = "`" + alias + "`." + attr + " " + cond.getString("operator") + " " + timeLiteral(cond.get("value"));
 									}
 								} else if ("like".equals(cond.getString("operator")) && LikePattern.escaped(cond)) {
@@ -190,16 +192,16 @@ public class MysqlAdapter implements DataAdapter {
 										sqlCond = "`" + alias + "`." + attr + " " + cond.getString("operator") + " '" + value + "'";
 									}
 								} else if (">".equals(cond.getString("operator")) || ">=".equals(cond.getString("operator")) || "<=".equals(cond.getString("operator")) || "<".equals(cond.getString("operator"))) {
-									if ("int".equals(type) || "long".equals(type) || "double".equals(type)) {
+									if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
 										sqlCond = "`" + alias + "`." + attr + " " + cond.getString("operator") + " " + cond.get("value");
-									} else if ("date".equals(type) || "timestamp".equals(type)) {
+									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
 										sqlCond = "`" + alias + "`." + attr + " " + cond.getString("operator") + " " + timeLiteral(cond.get("value"));
 									}
 								} else if ("between".equals(cond.getString("operator"))) {
 									JSONArray value = cond.getJSONArray("value");
-									if ("int".equals(type) || "long".equals(type) || "double".equals(type)) {
+									if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
 										sqlCond = "(`" + alias + "`." + attr + " >= " + value.get(0) + " and `" + alias + "`." + attr + " <= " + value.get(1) + ")";
-									} else if ("date".equals(type) || "timestamp".equals(type)) {
+									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
 										sqlCond = "(`" + alias + "`." + attr + " >= " + timeLiteral(value.get(0)) + " and `" + alias + "`." + attr + " <= " + timeLiteral(value.get(1)) + ")";
 									}
 								} else if ("in".equals(cond.getString("operator"))) {
@@ -211,14 +213,21 @@ public class MysqlAdapter implements DataAdapter {
 										}
 										in = "(" + in.substring(0, in.length() - 1) + ")";
 										sqlCond = "`" + alias + "`." + attr + " " + cond.getString("operator") + " " + in;
-									} else if ("int".equals(type) || "long".equals(type) || "double".equals(type)) {
+									} else if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
 										String in = "";
 										for (int j = 0; j < value.size(); j++) {
 											in += value.get(j) + ",";
 										}
 										in = "(" + in.substring(0, in.length() - 1) + ")";
 										sqlCond = "`" + alias + "`." + attr + " " + cond.getString("operator") + " " + in;
-									} else if ("date".equals(type) || "timestamp".equals(type)) {
+									} else if ("boolean".equals(type)) {
+										String in = "";
+										for (int j = 0; j < value.size(); j++) {
+											in += booleanLiteral(value.get(j)) + ",";
+										}
+										in = "(" + in.substring(0, in.length() - 1) + ")";
+										sqlCond = "`" + alias + "`." + attr + " " + cond.getString("operator") + " " + in;
+									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
 										String in = "";
 										for (int j = 0; j < value.size(); j++) {
 											in += timeLiteral(value.get(j)) + ",";
@@ -696,6 +705,22 @@ public class MysqlAdapter implements DataAdapter {
 		}
 	}
 
+	static String columnType(String type) {
+		return switch (type) {
+			case "varchar" -> "varchar(200)";
+			case "text" -> "text";
+			case "int" -> "int";
+			case "long" -> "bigint";
+			case "float" -> "float";
+			case "double" -> "double";
+			case "boolean" -> "boolean";
+			case "date" -> "date";
+			case "timestamp", "datetime" -> "datetime";
+			case "vector" -> "text";
+			default -> throw new IllegalArgumentException("Unsupported attribute type: " + type);
+		};
+	}
+
 	@Override
 	public void createClass(String namespace, Map<String, Object> classDef) {
 		try {
@@ -706,28 +731,7 @@ public class MysqlAdapter implements DataAdapter {
 				for (Map<String, Object> attr : attrs) {
 					if (attr.get("enable") == null || (Boolean)attr.get("enable")) {
 						String name = (String) attr.get("name");
-						String type = (String) attr.get("type");
-						if (name != null && isSupportedType(type)) {
-							String ty = "";
-							if ("varchar".equals(type)) {
-								ty = "varchar(200)";
-							} else if ("text".equals(type)) {
-								ty = "text";
-							} else if ("int".equals(type)) {
-								ty = "int";
-							} else if ("long".equals(type)) {
-								ty = "bigint";
-							} else if ("double".equals(type)) {
-								ty = "double";
-							} else if ("date".equals(type)) {
-								ty = "date";
-							} else if ("timestamp".equals(type)) {
-								ty = "datetime";
-							} else if ("vector".equals(type)) {
-								ty = "text";
-							}
-							fields.add(name + " " + ty);
-						}
+						fields.add(name + " " + columnType((String) attr.get("type")));
 					}
 				}
 			}
@@ -745,11 +749,6 @@ public class MysqlAdapter implements DataAdapter {
 		}
 	}
 
-	private boolean isSupportedType(String type) {
-		return "varchar".equals(type) || "text".equals(type) || "int".equals(type) || "long".equals(type)
-				|| "double".equals(type) || "date".equals(type) || "timestamp".equals(type)
-				|| "vector".equals(type);
-	}
 
 	@Override
 	public void createEdgeType(String namespace, String edgeName) {
@@ -785,26 +784,7 @@ public class MysqlAdapter implements DataAdapter {
 				if (!fieldName.equals(attr.get("name"))) {
 					continue;
 				}
-				String type = (String) attr.get("type");
-				if ("int".equals(type)) {
-					return "int";
-				}
-				if ("long".equals(type)) {
-					return "bigint";
-				}
-				if ("double".equals(type)) {
-					return "double";
-				}
-				if ("date".equals(type)) {
-					return "date";
-				}
-				if ("timestamp".equals(type)) {
-					return "datetime";
-				}
-				if ("text".equals(type)) {
-					return "text";
-				}
-				return "varchar(200)";
+				return columnType((String) attr.get("type"));
 			}
 		}
 		return "varchar(200)";
@@ -825,14 +805,11 @@ public class MysqlAdapter implements DataAdapter {
 			List<Map<String, Object>> attrDefs = (List<Map<String, Object>>) classDef.get("attrs");
 			for (Map<String, Object> attrDef : attrDefs) {
 				if (attrDef.get("enable") == null || (Boolean)attrDef.get("enable")) {
-					String type = (String) attrDef.get("type");
-					if (isSupportedType(type)) {
-						if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
-							idIndex = fields.size();
-						}
-						fields.add((String) attrDef.get("name"));
-						attrTypeMap.put((String) attrDef.get("name"), (String) attrDef.get("type"));
+					if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
+						idIndex = fields.size();
 					}
+					fields.add((String) attrDef.get("name"));
+					attrTypeMap.put((String) attrDef.get("name"), (String) attrDef.get("type"));
 				}
 			}
 		}
@@ -889,13 +866,10 @@ public class MysqlAdapter implements DataAdapter {
 			List<Map<String, Object>> attrDefs = (List<Map<String, Object>>) classDef.get("attrs");
 			for (Map<String, Object> attrDef : attrDefs) {
 				if (attrDef.get("enable") == null || (Boolean)attrDef.get("enable")) {
-					String type = (String) attrDef.get("type");
-					if (isSupportedType(type)) {
-						if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
-							pk = (String) attrDef.get("name");
-						}
-						attrTypeMap.put((String) attrDef.get("name"), (String) attrDef.get("type"));
+					if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
+						pk = (String) attrDef.get("name");
 					}
+					attrTypeMap.put((String) attrDef.get("name"), (String) attrDef.get("type"));
 				}
 			}
 		}
@@ -1041,14 +1015,20 @@ public class MysqlAdapter implements DataAdapter {
 		}
 	}
 
+	private static String booleanLiteral(Object value) {
+		return ((Boolean) value).toString();
+	}
+
 	private String toSqlValue(String type, Object value, SimpleDateFormat ymd, SimpleDateFormat ymdhms) throws Exception {
 		String valueSql = "";
 		if ("varchar".equals(type) || "text".equals(type) || "vector".equals(type)) {
 			String strValue = "vector".equals(type) && value != null && !(value instanceof String)
 					? JSON.toJSONString(value) : (String) value;
 			valueSql = "'" + strValue.replace("'", "''") + "'";
-		} else if ("int".equals(type) || "long".equals(type) || "double".equals(type)) {
+		} else if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
 			valueSql = value + "";
+		} else if ("boolean".equals(type)) {
+			valueSql = booleanLiteral(value);
 		} else if ("date".equals(type)) {
 			try {
 				valueSql = "'" + ymd.format(ymd.parse((String) value)) + "'";
@@ -1056,7 +1036,7 @@ public class MysqlAdapter implements DataAdapter {
 				log.error(e.getMessage(), e);
 				throw new Exception("Invalid format for a date field, expected yyyy-MM-dd");
 			}
-		} else if ("timestamp".equals(type)) {
+		} else if ("timestamp".equals(type) || "datetime".equals(type)) {
 			try {
 				valueSql = "'" + ymdhms.format(ymdhms.parse((String) value)) + "'";
 			} catch (Exception e) {
@@ -1080,10 +1060,7 @@ public class MysqlAdapter implements DataAdapter {
 			List<Map<String, Object>> attrDefs = (List<Map<String, Object>>) classDef.get("attrs");
 			for (Map<String, Object> attrDef : attrDefs) {
 				if (attrDef.get("enable") == null || (Boolean)attrDef.get("enable")) {
-					String type = (String) attrDef.get("type");
-					if (isSupportedType(type)) {
-						attrTypeMap.put((String) attrDef.get("name"), (String) attrDef.get("type"));
-					}
+					attrTypeMap.put((String) attrDef.get("name"), (String) attrDef.get("type"));
 				}
 			}
 		}

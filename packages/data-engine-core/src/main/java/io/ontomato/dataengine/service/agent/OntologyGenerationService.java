@@ -134,17 +134,23 @@ public class OntologyGenerationService {
   }
 
   public JSONObject open(String kind,String businessId,String source,Owner owner,boolean external) {
-    return openAt(kind,businessId,source,owner,external,UUID.randomUUID().toString(),UUID.randomUUID().toString(),false,List.of());
+    return openAt(kind,businessId,source,owner,external,UUID.randomUUID().toString(),UUID.randomUUID().toString(),false,List.of(),List.of());
   }
 
-  public JSONObject openExternal(String kind, String businessId, String source, Owner owner, List<String> classes) {
+  public JSONObject openExternal(String kind, String businessId, String source, Owner owner, List<String> requested, QueryAccessService.Access access) {
+    List<String> allowed = kind.equals("action") && !requested.isEmpty()
+        ? QueryAccessService.classScope(access.permission(), access.classNames()) : List.of();
     return openAt(kind, businessId, source, owner, true, UUID.randomUUID().toString(),
-        UUID.randomUUID().toString(), false, classes);
+        UUID.randomUUID().toString(), false, requested, allowed);
   }
 
   private JSONObject openAt(String kind,String businessId,String source,Owner owner,boolean external,String session,String run,
-      boolean channelManaged,List<String> classes) {
+      boolean channelManaged,List<String> requested,List<String> allowed) {
     if(kind.equals("action")) operations.requireWriteAccess(owner);
+    var classes = kind.equals("action") ? operations.sandboxClasses(owner.domainId(), requested, allowed) : List.<String>of();
+    var request = new JSONObject();
+    if (channelManaged) request.put("agentChannel", true);
+    if (!classes.isEmpty()) request.put("sandboxClasses", classes);
     String sandbox = kind.equals("action") ? "a" + run.replace("-", "") : null;
     String agent = agentId(kind);
     if (!external && !channelManaged) active.add(run);
@@ -159,7 +165,7 @@ public class OntologyGenerationService {
                 uuid(run),
                 uuid(session),
                 AgentJson.hash(JSONObject.of("kind", kind, "businessId", businessId)),
-                AgentJson.json(channelManaged?JSONObject.of("agentChannel",true):new JSONObject()),
+                AgentJson.json(request),
                 Instant.now().plusSeconds(deadlineSeconds(kind)).toString(),
                 external);
             store.update(

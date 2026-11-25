@@ -41,6 +41,8 @@ test("Action sandbox input uses inline samples and one structured DSL object", (
   const vector = { className: "/Employee", objectId: "one", attrName: "notes", text: "A sample" };
   const sample = { objDatas: [{ className: "/Employee", rows: [{ id: "one" }] }], relDatas: [], vectorDatas: [vector] };
   assert.deepEqual(authoringOperations.action.prepare.body.parse(sample), sample);
+  const declaredClasses = { ...sample, classNames: ["/Department"] };
+  assert.deepEqual(authoringOperations.action.prepare.body.parse(declaredClasses), declaredClasses);
   assert.equal(authoringOperations.action.prepare.body.safeParse({
     ...sample, vectorDatas: [{ ...vector, fileId: "outside" }],
   }).success, false);

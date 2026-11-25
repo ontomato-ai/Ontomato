@@ -1,7 +1,9 @@
 package io.ontomato.dataengine.service;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -13,8 +15,40 @@ import io.ontomato.dataengine.core.bean.User;
  */
 public interface OntologyModelService {
 
-	/** The only attribute types the Manager offers; the later form description takes its options from here. */
-	List<String> ATTRIBUTE_TYPES = List.of("varchar", "int", "float", "datetime", "boolean", "text");
+	/** Attribute types shared by modeling, queries and storage adapters. */
+	List<String> ATTRIBUTE_TYPES = List.of(
+			"varchar", "int", "float", "datetime", "boolean", "text", "long", "double", "date", "timestamp", "vector");
+
+	static String normalizeAttributeType(String type) {
+		if (type == null) return null;
+		String name = type.trim().toLowerCase(Locale.ROOT);
+		return switch (name) {
+			case "bigint", "int8" -> "long";
+			case "integer", "int4", "smallint", "int2" -> "int";
+			case "real", "float4" -> "float";
+			case "double precision", "float8" -> "double";
+			case "bool", "bit" -> "boolean";
+			case "character varying", "nvarchar", "character", "char", "nchar" -> "varchar";
+			case "datetime2" -> "datetime";
+			case "timestamp without time zone", "timestamp with time zone", "timestamptz" -> "timestamp";
+			default -> name;
+		};
+	}
+
+	@SuppressWarnings("unchecked")
+	static void normalizeRuleAttributeTypes(Map<String, Object> rule, boolean validate) {
+		for (var definition : (List<Map<String, Object>>) rule.getOrDefault("classDef", List.of())) {
+			for (var attribute : (List<Map<String, Object>>) definition.getOrDefault("attrs", List.of())) {
+				String original = (String) attribute.get("type");
+				String type = normalizeAttributeType(original);
+				if (validate && (type == null || !ATTRIBUTE_TYPES.contains(type))) {
+					throw new IllegalArgumentException("Unsupported attribute type for " + definition.get("className")
+							+ "." + attribute.get("name") + ": " + original + ". Expected one of " + ATTRIBUTE_TYPES);
+				}
+				if (!Objects.equals(type, original)) attribute.put("type", type);
+			}
+		}
+	}
 
 	record ObjectTypeCreate(String className, String primaryKeyName, String showName, String classDesc) {
 	}

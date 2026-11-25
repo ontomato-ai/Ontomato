@@ -37,6 +37,31 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class JacksonAgentBoundaryTest {
   @Test
+  void actionGatePassesDeclaredClassesSeparatelyFromTheCallerAuthority() throws Exception {
+    var generation = mock(OntologyGenerationService.class);
+    var access = mock(OntologyAgentAccess.class);
+    var owner = new OntologyAgentStore.Owner("author", "domain-a");
+    var authority = new QueryAccessService.Access(new QueryAccessService.GrantUser("author", "domain-a"),
+        null, null, null, null, List.of("student", "workflow_run", "unrelated"));
+    when(access.current(any())).thenReturn(new OntologyAgentAccess.Context(owner, authority, null, null, "en", null, null));
+    var controller = new OntologyGenerationController(generation, null, access, null, null, null);
+    var mvc = MockMvcBuilders.standaloneSetup(controller)
+        .setControllerAdvice(new OntologyAgentErrors((language, key) -> key))
+        .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+
+    mvc.perform(post("/ontology/ai/generation/gates").contentType(MediaType.APPLICATION_JSON)
+        .content("""
+            {"kind":"action","classNames":["workflow_run"]}
+            """)).andExpect(status().isOk());
+    verify(generation).openExternal(eq("action"), anyString(), isNull(), eq(owner), eq(List.of("workflow_run")), eq(authority));
+
+    mvc.perform(post("/ontology/ai/generation/gates").contentType(MediaType.APPLICATION_JSON)
+        .content("""
+            {"kind":"action","classNames":[42]}
+            """)).andExpect(status().isBadRequest());
+  }
+
+  @Test
   void retrievalPreparePreservesAnExplicitlyUnknownConditionMapping() throws Exception {
     var retrieval = mock(OntologyRetrievalService.class);
     when(retrieval.prepareRun(anyString(), anyString(), any(), anyString(), any(), anyString(), any()))
