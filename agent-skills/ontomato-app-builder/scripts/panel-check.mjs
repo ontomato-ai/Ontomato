@@ -504,8 +504,14 @@ async function readApplicationWorkspace(directory, checks) {
     const file = resolve(projectionsDir, entry.name);
     const id = entry.name.slice(0, -5);
     requireDomainProductId(file, id, checks);
-    const result = checks.productProjectionInputSchema.safeParse(await readJson(file));
-    if (!result.success) throw new Error(`${file}: ${result.error.message}`);
+    const rawProjection = await readJson(file);
+    const result = checks.productProjectionInputSchema.safeParse(rawProjection);
+    if (!result.success) {
+      if (rawProjection && typeof rawProjection === "object" && !Array.isArray(rawProjection) && rawProjection.data === undefined) {
+        throw new Error(`${file}: projection is missing required "data" field (use "data": {} for components such as OperationButton that declare no data reads)`);
+      }
+      throw new Error(`${file}: ${result.error.message}`);
+    }
     projections.set(id, result.data);
   }
   return { application, workspaces, records: new Map([["panel", panels], ["projection", projections]]) };
@@ -537,7 +543,7 @@ export async function checkPanelWorkspace(directory, options) {
         if (record === undefined) unchecked.push({ kind, id });
       }
     }
-    return { status: "valid", version, ...(digest && { digest }), unchecked };
+    return { status: "valid", version, ...(digest && { digest }), typeTableChecked: Boolean(typeTable), unchecked };
   }
   const loadAuthoring = typeTable && (() => ({ catalogue, typeTable }));
   const workspace = await readPanelWorkspace(
@@ -552,7 +558,7 @@ export async function checkPanelWorkspace(directory, options) {
   const applications = material.applications ?? [];
   await checkFrameBindings(applications, records, lookup, unchecked);
   await checkWorkspacePanel(workspace, applications, records, options, unchecked);
-  return { status: "valid", version, ...(digest && { digest }), unchecked };
+  return { status: "valid", version, ...(digest && { digest }), typeTableChecked: Boolean(typeTable), unchecked };
 }
 
 async function checkFrameBindings(applications, records, lookup, unchecked) {
@@ -747,5 +753,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (unchecked.length) {
     throw new Error(`${directory}: unchecked references: ${JSON.stringify(unchecked)}`);
   }
-  console.log(`${directory}: valid (0 errors, 0 unchecked references)`);
+  console.log(`${directory}: valid (0 errors, 0 unchecked references, type table checked)`);
 }

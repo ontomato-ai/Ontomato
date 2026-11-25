@@ -56,7 +56,8 @@ full-width detail), read the [management page wiring recipes](references/managem
      `OperationButton` `hideWhenUnavailable`), (3) standard Vue slots (`#cell-<key>`, `#actions`, `#row-detail`,
      `#field-<dotPath>`) with a slot-only domain component in `manifest.components` or nested `<projection :inputs="{ target: ref }">`,
      (4) a dedicated domain component only as a last resort.
-   - **Panels lay out and wire**: write layout in normal HTML, CSS (`@container`), and Vue (no layout components). Place
+   - **Panels lay out and wire**: write layout in normal HTML, CSS (`@container`), and Vue, and reuse SDK layout tags
+     such as `<two-pane-layout>` when they match the interaction. Place
      `<page-header>` at the top of `panel.html` when needed and wire edit Save/Discard with `usePanelFormDraft("form")`.
      Use `panelAddress(path, state)` for flat named URL query parameters (never mark dialog/edit toggles with
      `deepLink: true`), `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` tokens, `usePanelOutput` / `usePanelOutputs` for

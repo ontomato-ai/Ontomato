@@ -231,7 +231,7 @@
         <section v-show="!grantsError && grantStates.caseScoped.count > 0" class="wf-grants-group">
           <h4>{{ t('grants.caseScopedTitle') }}</h4>
           <p class="wf-grants-hint">{{ t('grants.caseScopedHint') }}</p>
-          <projection slot="grantCaseScopedSteps" @state-change="onGrantState('caseScoped', $event)">
+          <projection slot="grantCaseScopedSteps">
             <template #cell-roleCode="{ displayText }">
               <span class="wf-grant-role">{{ displayText }}</span>
             </template>
@@ -240,7 +240,7 @@
 
         <section v-show="!grantsError && grantStates.inForce.count > 0" class="wf-grants-group">
           <h4><projection slot="grantsInForceTitle"></projection></h4>
-          <projection slot="grantInForce" @state-change="onGrantState('inForce', $event)">
+          <projection slot="grantInForce">
             <template #cell-roleCode="{ displayText }">
               <span class="wf-grant-role">{{ displayText }}</span>
             </template>
@@ -250,7 +250,7 @@
         <section v-show="!grantsError && grantStates.superseded.count > 0" class="wf-grants-group">
           <h4>{{ t('grants.supersededTitle') }}</h4>
           <p class="wf-grants-hint">{{ t('grants.supersededHint') }}</p>
-          <projection slot="grantSuperseded" @state-change="onGrantState('superseded', $event)">
+          <projection slot="grantSuperseded">
             <template #cell-roleCode="{ displayText }">
               <span class="wf-grant-role">{{ displayText }}</span>
             </template>
@@ -260,7 +260,7 @@
         <section v-show="!grantsError && grantsHasWorkflowAuthority && grantStates.direct.count > 0" class="wf-grants-group">
           <h4>{{ t('grants.directTitle') }}</h4>
           <p class="wf-grants-hint">{{ t('grants.directHint') }}</p>
-          <projection slot="grantDirect" @state-change="onGrantState('direct', $event)">
+          <projection slot="grantDirect">
             <template #cell-roleCode="{ displayText }">
               <span class="wf-grant-role">{{ displayText }}</span>
             </template>

@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -61,7 +62,7 @@ class ActionGrantGuardTest {
   private FunctionDao functionDao;
   private ABCProgramService programs;
   private ActionPreconditionService preconditions;
-  private CapabilityGrantLookup grants;
+  private ActionAuthorization grants;
   private IdentitySnapshotLookup identitySnapshots;
   private WorkflowRunResolver workflowRuns;
   private LangService lang;
@@ -75,7 +76,7 @@ class ActionGrantGuardTest {
     functionDao = mock(FunctionDao.class);
     programs = mock(ABCProgramService.class);
     preconditions = mock(ActionPreconditionService.class);
-    grants = mock(CapabilityGrantLookup.class);
+    grants = mock(ActionAuthorization.class);
     identitySnapshots = mock(IdentitySnapshotLookup.class);
     workflowRuns = mock(WorkflowRunResolver.class);
     lang = mock(LangService.class);
@@ -84,7 +85,7 @@ class ActionGrantGuardTest {
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "abcProgramService", programs);
     ReflectionTestUtils.setField(service, "preconditions", preconditions);
-    ReflectionTestUtils.setField(service, "capabilityGrants", grants);
+    ReflectionTestUtils.setField(service, "authorization", grants);
     ReflectionTestUtils.setField(service, "identitySnapshots", identitySnapshots);
     ReflectionTestUtils.setField(service, "workflowRuns", workflowRuns);
     ReflectionTestUtils.setField(service, "langService", lang);
@@ -129,7 +130,10 @@ class ActionGrantGuardTest {
   }
 
   private void grantAnswer(boolean allowed) {
-    when(grants.admission(USER_ID, DOMAIN, CapabilityGrantLookup.ACTION, ACTION_ID)).thenReturn(allowed ? CapabilityGrantLookup.Admission.ALL : CapabilityGrantLookup.Admission.DENIED);
+    if (allowed) org.mockito.Mockito.doReturn(CapabilityGrantLookup.Admission.ALL)
+        .when(grants).requireExecution(any(), any(), any(), any());
+    else org.mockito.Mockito.doThrow(new ActionAuthorization.Denied("ACTION_NOT_GRANTED", "No role grants this action"))
+        .when(grants).requireExecution(any(), any(), any(), any());
   }
 
   private JSONObject params() {
@@ -171,7 +175,8 @@ class ActionGrantGuardTest {
     assertThrows(IllegalArgumentException.class, () -> service.execute(ACTION_ID,
         JSONObject.of("order_id", "O-1", "user_id", "someone-else"), LANG, alice, permission, 5));
     verifyNoInteractions(preconditions, programs);
-    verify(grants).admission(USER_ID, DOMAIN, CapabilityGrantLookup.ACTION, ACTION_ID);
+    verify(grants).subject(alice);
+    verify(grants).requireExecution(any(), any(), any(), any());
   }
 
   @Test
@@ -208,7 +213,7 @@ class ActionGrantGuardTest {
     // A draft is not an authorization question; asking the grant here would report the wrong layer.
     assertEquals("ACTION_NOT_EXECUTABLE", thrown.code());
     assertEquals("Action not published", thrown.getMessage());
-    verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
+    verify(grants, never()).requireExecution(any(), any(), any(), any());
   }
 
   @Test
@@ -223,7 +228,7 @@ class ActionGrantGuardTest {
 
     assertEquals("ACTION_NOT_FOUND", thrown.code());
     assertTrue(thrown.getMessage().contains("outside the current domain"), thrown.getMessage());
-    verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
+    verify(grants, never()).requireExecution(any(), any(), any(), any());
   }
 
   @Test
@@ -237,14 +242,14 @@ class ActionGrantGuardTest {
     OwnerRefusal executed = assertThrows(OwnerRefusal.class,
         () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
     OwnerRefusal opened = assertThrows(OwnerRefusal.class,
-        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice));
+        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice, permission, io.ontomato.dataengine.service.ExecutionTarget.LIVE));
 
     // It exists in the caller's domain, so it is not reported as missing or as another domain's.
     for (OwnerRefusal refusal : List.of(executed, opened)) {
       assertEquals("ACTION_NOT_EXECUTABLE", refusal.code());
       assertEquals("This action's function no longer exists", refusal.getMessage());
     }
-    verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
+    verify(grants, never()).requireExecution(any(), any(), any(), any());
   }
 
   @Test
@@ -258,7 +263,7 @@ class ActionGrantGuardTest {
 
     assertEquals("ACTION_NOT_FOUND", thrown.code());
     assertEquals("Action not found", thrown.getMessage());
-    verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
+    verify(grants, never()).requireExecution(any(), any(), any(), any());
   }
 
   @Test
@@ -323,7 +328,7 @@ class ActionGrantGuardTest {
     when(lang.get(anyString(), eq("Action.notPublished"))).thenReturn("Action not published");
 
     OwnerRefusal error = assertThrows(OwnerRefusal.class,
-        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice));
+        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice, permission, io.ontomato.dataengine.service.ExecutionTarget.LIVE));
 
     assertEquals("ACTION_NOT_EXECUTABLE", error.code());
     assertEquals("Action not published", error.getMessage());
@@ -335,7 +340,7 @@ class ActionGrantGuardTest {
     action.setDomainId("domain-2");
 
     OwnerRefusal error = assertThrows(OwnerRefusal.class,
-        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice));
+        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice, permission, io.ontomato.dataengine.service.ExecutionTarget.LIVE));
 
     assertEquals("ACTION_NOT_FOUND", error.code());
     assertTrue(error.getMessage().contains("outside the current domain"), error.getMessage());
@@ -347,7 +352,7 @@ class ActionGrantGuardTest {
     grantAnswer(false);
 
     OwnerRefusal error = assertThrows(OwnerRefusal.class,
-        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice));
+        () -> service.form(ACTION_ID, new JSONObject(), null, List.of(), LANG, alice, permission, io.ontomato.dataengine.service.ExecutionTarget.LIVE));
 
     assertEquals("ACTION_NOT_GRANTED", error.code());
     assertEquals("No role grants this action", error.getMessage());
@@ -404,4 +409,28 @@ class ActionGrantGuardTest {
     verify(queries).actionTargetExists(eq(action.getTarget()), eq("00123"), eq(CapabilityGrantLookup.Admission.ALL), any());
     org.mockito.Mockito.verifyNoInteractions(preconditions, programs);
   }
+  @Test
+  void formAndExecutionBothRejectAnOutOfScopeTarget() throws Exception {
+    var action = publishedAction();
+    action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("Order", "order_id"));
+    grantAnswer(true);
+    var queries = mock(io.ontomato.dataengine.service.OntologyQueryService.class);
+    ReflectionTestUtils.setField(service, "queries", queries);
+    when(queries.actionTargetExists(eq(action.getTarget()), eq("O-1"), any(), any())).thenReturn(false);
+
+    var prepared = assertThrows(ActionAuthorization.Denied.class, () -> service.form(
+        ACTION_ID, params(), null, List.of("order_id"), LANG, alice, permission,
+        io.ontomato.dataengine.service.ExecutionTarget.LIVE));
+    var submitted = assertThrows(ActionAuthorization.Denied.class, () -> service.form(
+        ACTION_ID, params(), new JSONObject(), List.of("order_id"), LANG, alice, permission,
+        io.ontomato.dataengine.service.ExecutionTarget.LIVE));
+    var executed = assertThrows(ActionAuthorization.Denied.class,
+        () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
+    assertEquals("ACTION_TARGET_OUT_OF_SCOPE", prepared.code());
+    assertEquals(prepared.code(), submitted.code());
+    assertEquals(prepared.code(), executed.code());
+    verify(queries, org.mockito.Mockito.times(3)).actionTargetExists(eq(action.getTarget()), eq("O-1"), any(), any());
+    verifyNoInteractions(preconditions, programs);
+  }
+
 }
