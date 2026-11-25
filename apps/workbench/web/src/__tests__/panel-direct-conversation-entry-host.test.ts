@@ -94,3 +94,90 @@ it("expands the page's own composer with the member's declared agent and sentenc
     app.unmount();
   }
 });
+
+it("suppresses the bottom PageComposer when pageComposer is none while an inline ConversationEntry serves sibling triggers and submits prompts", async () => {
+  const inlineUse = { ...use, id: "use-inline", pageKey: "inline", path: `/applications/${application}/inline`, pageComposer: "none" as const };
+  const inlinePanel: ProductPanel = {
+    ...base,
+    id: inlineUse.panelId,
+    name: "Inline composer page",
+    content: { html: '<div id="app"></div>', module: PLACE_EVERY_MEMBER },
+    manifest: {
+      state: {},
+      members: {
+        composer: { target: { projectionId: "inline-composer" } },
+        governance: { target: { projectionId: "knowledge-governance" } },
+      },
+    },
+  };
+  const inlineProjections: Record<string, DirectProjection> = {
+    ...projections,
+    "inline-composer": {
+      ...base,
+      id: "inline-composer",
+      name: "Ask assistant",
+      componentId: "@ontomato/sdk:ConversationEntry",
+      inputs: {},
+      outputs: {},
+      config: { presentation: "inline", minLines: 3, agentPickerVariant: "home" },
+      data: {},
+    },
+  };
+  installPlatform((request: Sent) => {
+    if (request.path === `/api/data-query/platform/applications/${application}/panel-uses`)
+      return Response.json({ data: { applicationId: application, entry: { path: "/", renderer: "panels" }, panelUses: [inlineUse] } });
+    if (request.path === `/api/product-panels/${inlinePanel.id}`) return panelAnswer(inlinePanel, request);
+    if (request.path === `/api/product-panels/${inlinePanel.id}/snapshot`) return panelSnapshot(inlinePanel, inlineProjections, request);
+    const projection = /^\/api\/product-projections\/(.+)$/.exec(request.path);
+    if (projection) return Response.json({ projection: inlineProjections[decodeURIComponent(projection[1]!)] });
+    return nothingAt(request);
+  });
+
+  const ask = vi.fn();
+  const counter: PageCounter = {
+    agents: async () => [regular, governor],
+    pageAgents: async () => ({ agents: [regular, governor], defaultAgentId: regular.id }),
+    preferredAgentId: ref(regular.id),
+    ask,
+  };
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{
+      path: "/applications/:applicationId/:panelPath",
+      component: PanelApplicationRoute,
+      props: route => ({ applicationId: route.params.applicationId }),
+    }],
+  });
+  await router.push(inlineUse.path);
+  const { app, element } = mountPlatformPage(() => h(RouterView), router, counter);
+  try {
+    const input = await vi.waitFor(() => {
+      const found = element.querySelector<HTMLTextAreaElement>('[data-member="composer"] textarea');
+      if (!found) throw new Error("The inline ConversationEntry composer is not drawn yet");
+      return found;
+    });
+    // Bottom floating PageComposer is suppressed because entry declares `pageComposer: "none"`.
+    expect(element.querySelector(".page-ask")).toBeNull();
+    expect(element.querySelector('[data-member="composer"]')?.textContent).toContain(regular.name);
+
+    // Sibling ConversationEntry button routes to the inline composer through `servePageComposerKey`.
+    const trigger = await vi.waitFor(() => {
+      const found = element.querySelector<HTMLButtonElement>('[data-member="governance"] button');
+      if (!found) throw new Error("The trigger entry is not drawn yet");
+      return found;
+    });
+    trigger.click();
+    await vi.waitFor(() => expect(input.value).toBe(governance.prefill));
+    expect(element.querySelector('[data-member="composer"]')?.textContent).toContain(governor.name);
+    expect(element.querySelector('[data-member="governance"] [role=alert]')).toBeNull();
+    expect(ask).not.toHaveBeenCalled();
+
+    // Submitting from the inline composer sends to the selected agent without attaching the page by default.
+    const sendButton = element.querySelector<HTMLButtonElement>('[data-member="composer"] button[type="submit"]');
+    expect(sendButton).not.toBeNull();
+    sendButton!.click();
+    await vi.waitFor(() => expect(ask).toHaveBeenCalledWith(governor.id, governance.prefill, undefined));
+  } finally {
+    app.unmount();
+  }
+});

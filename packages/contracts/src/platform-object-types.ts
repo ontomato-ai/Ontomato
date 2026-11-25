@@ -39,6 +39,7 @@ export const TURN_EVIDENCE = "platform:TurnEvidence";
 export const AUTOTEST_CASE_SET = "platform:AutotestCaseSet";
 export const AUTOTEST_RUN = "platform:AutotestRun";
 export const AUTOTEST_CASE_ARTIFACT = "platform:AutotestCaseArtifact";
+export const DSL_QUERY = "platform:DslQuery";
 
 export const ACTION = "platform:Action";
 export const WORKFLOW = "platform:Workflow";
@@ -148,6 +149,7 @@ export const UNKEEP_AUTOTEST_RUN = "autotestRun.unkeep";
 export const DOWNLOAD_AUTOTEST_RUN = "autotestRun.download";
 export const DELETE_AUTOTEST_RUN = "autotestRun.delete";
 export const DOWNLOAD_AUTOTEST_CASE_ARTIFACT = "autotestCaseArtifact.download";
+export const EXECUTE_DSL_QUERY = "dslQuery.execute";
 export const DELETE_MODEL_CONNECTION = "modelConnections.delete";
 export const DISCOVER_MODEL_CONNECTION = "modelConnections.discover";
 export const TEST_MODEL_CONNECTION = "modelConnections.test";
@@ -1009,6 +1011,13 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       },
     },
     operations: [DOWNLOAD_AUTOTEST_CASE_ARTIFACT],
+  },
+  [DSL_QUERY]: {
+    ...describeType("dslQuery"),
+    reads: {
+      form: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+    },
+    operations: [EXECUTE_DSL_QUERY],
   },
   [DATA_ADAPTER_CONFIG]: {
     ...describeType("dataAdapterConfig"),

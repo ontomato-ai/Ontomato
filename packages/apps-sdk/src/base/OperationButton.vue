@@ -79,8 +79,10 @@ const props = withDefaults(
     disabled?: boolean;
     /** When true, hides the button unless the owner's operation read is ready and admits this operation as available (fail-closed on loading, error, forbidden, empty, unadmitted, or unavailable). */
     hideWhenUnavailable?: boolean;
+    /** Whether to render read-only operation results and read failures inline beneath the button (default `true`). Set `false` when the panel renders `<operation-result>` in a dedicated region via `@read` and `@error`. */
+    showResult?: boolean;
   }>(),
-  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, label: undefined, labelKey: undefined, size: "default", disabled: false, hideWhenUnavailable: false },
+  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, label: undefined, labelKey: undefined, size: "default", disabled: false, hideWhenUnavailable: false, showResult: true },
 );
 
 const emit = defineEmits<{
@@ -88,6 +90,8 @@ const emit = defineEmits<{
   done: [outcome: OperationOutcome];
   /** A read-only operation answered: the result, for the page to react to. */
   read: [result: PanelReadOperationResult];
+  /** An operation failed before producing an outcome or read result. */
+  error: [error: Error];
 }>();
 
 const { t } = useI18n();
@@ -202,6 +206,10 @@ const draftFormKey = computed(() => {
   if (!draftSlot.value) return null;
   const snap = panel.instance.forms.snapshot(draftSlot.value);
   return snap ? `${snap.formInstanceId ?? ""}:${JSON.stringify(snap.target ?? null)}` : null;
+});
+
+watch(failure, (next) => {
+  if (next) emit("error", next);
 });
 
 watch([targetKey, draftFormKey], () => {
@@ -377,8 +385,8 @@ onBeforeUnmount(unregisterAction);
         @confirm="confirmInput"
       ></operation-input-dialog>
       <p v-if="!pending && descriptor?.unavailable" class="sdk-operation-unavailable">{{ descriptor.unavailable.reason }}</p>
-      <p v-if="failure" role="alert">{{ failure.message }}</p>
-      <operation-result v-if="read" :result="read"></operation-result>
+      <p v-if="failure && (showResult || descriptor?.effect !== 'read')" role="alert">{{ failure.message }}</p>
+      <operation-result v-if="read && showResult" :result="read"></operation-result>
       <template v-if="receipt">
         <p v-if="receipt.kind === 'not-dispatched'" role="alert">{{ receipt.message }}</p>
         <p v-else-if="outcome === null" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>

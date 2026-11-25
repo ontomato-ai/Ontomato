@@ -2,7 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import AdmZip from "adm-zip";
 import { z } from "zod";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
+import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
+import {
+  panelReadOperationInputSchema,
+  panelReadOperationSectionsResultSchema,
+  type PanelReadOperationRecordCell,
+  type PanelReadOperationRecordColumn,
+} from "@ontomato/contracts/panel-operations";
 import {
   AUTOTEST_CASE_ARTIFACT,
   AUTOTEST_RUN,
@@ -12,6 +20,8 @@ import {
   DOWNLOAD_AUTOTEST_CASE_ARTIFACT,
   DOWNLOAD_AUTOTEST_RUN,
   DOWNLOAD_TURN_EVIDENCE,
+  DSL_QUERY,
+  EXECUTE_DSL_QUERY,
   KEEP_AUTOTEST_RUN,
   KEEP_TURN_EVIDENCE,
   REFRESH_TURN_EVIDENCE,
@@ -21,6 +31,13 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { tForLocale } from "../../i18n";
 import { parseTurnKey } from "../../logging/log-context";
+import { executeDslViaBackend } from "../data-query/dsl-executor";
+import {
+  collectDslResultSections,
+  registerDslResultSectionProvider,
+  type DslResultSectionContext,
+  type DslResultSectionProvider,
+} from "./dsl-result-sections";
 import { autotestConfig } from "../../platform/diagnosis/autotest/config";
 import {
   deleteRun,
@@ -556,6 +573,103 @@ export const opsDiagnosisWriteOperations = [
   },
 ] satisfies readonly PanelServerOperation[];
 
+function normalizeDslExecutionPayload(payload: unknown): unknown {
+  if (
+    payload
+    && typeof payload === "object"
+    && !Array.isArray(payload)
+    && (payload as Record<string, unknown>).success === true
+    && (payload as Record<string, unknown>).data !== undefined
+    && !Array.isArray((payload as Record<string, unknown>).data)
+  ) {
+    return (payload as Record<string, unknown>).data;
+  }
+  return payload;
+}
+
+function parseDslDraftObject(raw: unknown, locale?: string): Record<string, unknown> {
+  let candidate: unknown = raw;
+  if (typeof candidate === "string") {
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+      throw new HttpError(422, tForLocale(locale, "panels.ops.dsl.emptyInput"), "INVALID_DSL_QUERY");
+    }
+    try {
+      candidate = JSON.parse(trimmed);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new HttpError(
+        422,
+        tForLocale(locale, "panels.ops.dsl.invalidJson", { message: detail }),
+        "INVALID_DSL_QUERY",
+      );
+    }
+  }
+  const unwrapped = Array.isArray(candidate) ? candidate[0] : candidate;
+  if (!unwrapped || typeof unwrapped !== "object" || Array.isArray(unwrapped)) {
+    throw new HttpError(422, tForLocale(locale, "panels.ops.dsl.mustBeObject"), "INVALID_DSL_QUERY");
+  }
+  return unwrapped as Record<string, unknown>;
+}
+
+function toRecordCell(value: unknown): PanelReadOperationRecordCell {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function extractDslAnswerTable(payload: unknown): {
+  columns: PanelReadOperationRecordColumn[];
+  rows: Record<string, PanelReadOperationRecordCell>[];
+} {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { columns: [], rows: [] };
+  }
+  const data = (payload as Record<string, unknown>).data;
+  if (!Array.isArray(data) || data.length === 0) return { columns: [], rows: [] };
+  const first = data[0];
+  if (!first || typeof first !== "object" || Array.isArray(first)) return { columns: [], rows: [] };
+  const answer = (first as Record<string, unknown>).answer;
+  if (!Array.isArray(answer) || answer.length === 0) return { columns: [], rows: [] };
+
+  const columnKeys: string[] = [];
+  const seen = new Set<string>();
+  const objectRows: Record<string, unknown>[] = [];
+  for (const item of answer) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    objectRows.push(record);
+    for (const key of Object.keys(record)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      columnKeys.push(key);
+    }
+  }
+  const columns: PanelReadOperationRecordColumn[] = columnKeys.map((key) => ({ key, label: key }));
+  const rows = objectRows.map((record) => {
+    const row: Record<string, PanelReadOperationRecordCell> = {};
+    for (const key of columnKeys) {
+      row[key] = toRecordCell(record[key]);
+    }
+    return row;
+  });
+  return { columns, rows };
+}
+
+function toSafeRuntimeJsonValue(value: unknown): RuntimeJsonValue {
+  if (value === undefined) return null;
+  try {
+    return JSON.parse(JSON.stringify(value)) as RuntimeJsonValue;
+  } catch {
+    return String(value);
+  }
+}
+
 export const opsDiagnosisReadOperations = [
   {
     handlerRef: DOWNLOAD_TURN_EVIDENCE,
@@ -666,7 +780,64 @@ export const opsDiagnosisReadOperations = [
       };
     },
   },
+  {
+    handlerRef: EXECUTE_DSL_QUERY,
+    labelKey: "panels.ops.actions.executeDsl",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: EXECUTE_DSL_QUERY },
+    effect: "read",
+    batch: false,
+    targetType: DSL_QUERY,
+    target: { source: "draft" },
+    targetSchema: panelFormTargetSchema.optional(),
+    inputSchema: panelReadOperationInputSchema,
+    resultSchema: panelReadOperationSectionsResultSchema,
+    async execute(host, call) {
+      await requireObserveAccessDomain(host.executor.owner, host.executor.credentials);
+      const locale = host.locale;
+      const { draft } = panelReadOperationInputSchema.parse(call.input);
+      const dslObject = parseDslDraftObject(draft.dsl, locale);
+      const execution = await executeDslViaBackend(dslObject, host.executor.credentials.token ?? "");
+      if (!execution.ok) {
+        throw new HttpError(
+          execution.status || 502,
+          execution.detail || tForLocale(locale, "panels.ops.dsl.executeFailed"),
+          "DSL_EXECUTION_FAILED",
+        );
+      }
+      const normalized = normalizeDslExecutionPayload(execution.payload);
+      const { columns, rows } = extractDslAnswerTable(normalized);
+      const extraSections = collectDslResultSections({ payload: normalized, locale });
+      return {
+        kind: "sections",
+        sections: [
+          {
+            id: "table",
+            label: tForLocale(locale, "panels.ops.dsl.dataTable"),
+            emptyText: tForLocale(locale, "panels.ops.dsl.noData"),
+            kind: "records",
+            columns,
+            rows,
+          },
+          ...extraSections,
+          {
+            id: "raw",
+            label: tForLocale(locale, "panels.ops.dsl.rawResponse"),
+            emptyText: tForLocale(locale, "panels.ops.dsl.noResponse"),
+            kind: "json",
+            value: toSafeRuntimeJsonValue(normalized),
+          },
+        ],
+      };
+    },
+  },
 ] satisfies readonly (PanelReadServerOperation & { labelKey: string })[];
+
+export {
+  registerDslResultSectionProvider,
+  type DslResultSectionContext,
+  type DslResultSectionProvider,
+};
 
 export const opsDiagnosisServerOperations: readonly PanelServerOperation[] = [
   ...opsDiagnosisWriteOperations,

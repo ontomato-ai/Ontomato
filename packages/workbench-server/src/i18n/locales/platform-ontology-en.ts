@@ -44,6 +44,7 @@ export const platformOntologyEn = {
   "platformOntology.types.autotestCaseSet": "Test case set",
   "platformOntology.types.autotestRun": "Autotest run",
   "platformOntology.types.autotestCaseArtifact": "Test case artifact",
+  "platformOntology.types.dslQuery": "DSL query",
   "platformOntology.types.favorite": "Favorite",
   "platformOntology.types.recentVisit": "Recent visit",
   "platformOntology.types.agentSession": "Session",

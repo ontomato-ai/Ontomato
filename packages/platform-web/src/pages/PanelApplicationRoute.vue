@@ -17,7 +17,7 @@ import type { PanelDeepLinkStateValue, PanelManifest } from "@ontomato/contracts
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationFrameContextOf, isNativeApplicationEntry, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
-import { PageComposer, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
+import { PageComposer, usePageCounter, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { APPLICATION, FAVORITE } from "@ontomato/contracts/platform-object-types";
@@ -81,6 +81,7 @@ const emit = defineEmits<{
 const route = useRoute();
 const router = useRouter();
 const { t, locale, fallbackLocale } = useI18n();
+const pageCounter = usePageCounter();
 /** The language a panel's own name is given in: the reader's, else the deployment's default. */
 const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
@@ -728,6 +729,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
     props.applicationId, use, changed, undefined, (context) => reportPageSkill(page, context),
     // Beside a conversation, an address the panel opens goes to the conversation's display; at full page, the router.
     props.navigate,
+    pageCounter,
   ));
   return page;
 }
@@ -828,7 +830,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         </div>
       </div>
       <!-- Offered once the panel's read named the page's skill: the agents are the ones that skill reaches. -->
-      <template v-if="!props.navigate && ((shownPage && shownSkill) || composerProblem)" #foot>
+      <template v-if="!props.navigate && shownPage?.use.pageComposer !== 'none' && ((shownPage && shownSkill) || composerProblem)" #foot>
         <PageComposer
           v-if="shownPage && shownSkill"
           :page="shownPage.reported"

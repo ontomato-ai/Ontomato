@@ -326,6 +326,14 @@ export const components: readonly ComponentMetadata[] = [
     data: {},
   }),
   defineComponentMeta({
+    componentId: "OperationResult",
+    module: "@ontomato/sdk/base",
+    exportName: "OperationResult",
+    role: "presentation",
+    meaning:
+      "Displays the result returned by a read-only panel operation (`markdown`, `json`, `file`, or multi-section `sections` with tabbed `records` tables, language-tagged `code`, and `json` panes). Pure presentation: reads and writes nothing itself.",
+  }),
+  defineComponentMeta({
     componentId: "FileUploadControl",
     module: "@ontomato/sdk/base",
     exportName: "FileUploadControl",
@@ -736,8 +744,8 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ConversationEntry",
     role: "control",
     meaning:
-      "Renders a generic button for a projection's declared conversationEntry. Clicking it asks the platform host to expand the page's composer with the declared agent target and optional prefill text without sending a message.",
-    effects: "Requests the host to expand the page's composer with the projection's declared conversationEntry; performs no writes and never sends messages.",
+      "Renders a conversation entry for a projection: in its default button presentation, clicking asks the platform host to expand the page's composer with the projection's declared conversationEntry without sending a message; in presentation='inline', renders the platform's inline composer (agent selector and prompt input) directly inside the page and serves sibling ConversationEntry triggers while mounted (typically paired with pageComposer: 'none' on the application entry).",
+    effects: "In button mode, requests the host to expand the page's composer without sending; in inline mode, submits the reader's typed prompt to the platform agent counter.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     // A button the host acts on: it reads nothing from the platform, and says so, so a placement may carry it as a member.
     data: {},
