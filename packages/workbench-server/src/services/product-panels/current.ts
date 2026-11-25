@@ -26,7 +26,7 @@ import { panelSkillRef } from "./skill-identity";
 import { collectReferences, findPanelUsers, validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
 import { panelDefinition, projectionDefinition } from "./render-definitions";
-import { storedPanelAuthoringDefinition } from "./entry-dependency-compiler";
+import { declaredProjectionAgents, storedPanelAuthoringDefinition } from "./entry-dependency-compiler";
 import { compileRegisteredPanelRoots, updatePanelDependencies } from "./entry-dependency-store";
 import { deliverEntryDependencyPublications } from "./entry-dependency-publication";
 
@@ -159,9 +159,10 @@ async function currentForSave(owner: ProductOwner, credentials: AssistantCredent
 
 async function validateProjectionForSave(client: PoolClient, owner: ProductOwner, id: string, input: ProductProjectionInput) {
   await validateProjectionComponent(id, input, undefined, { domainId: owner.domainId, authorId: owner.userId, client });
-  const target = input.conversationEntry?.target;
-  if (target?.kind === "id" && !await assistantStore.findAgent(target.id, owner.domainId, client)) {
-    throw new HttpError(400, `Projection '${id}', conversationEntry.target.id '${target.id}' is not in this domain`, "INVALID_PANEL_REFERENCE");
+  for (const { target, field } of declaredProjectionAgents(input)) {
+    if (target.kind === "id" && !await assistantStore.findAgent(target.id, owner.domainId, client)) {
+      throw new HttpError(400, `Projection '${id}', ${field}.id '${target.id}' is not in this domain`, "INVALID_PANEL_REFERENCE");
+    }
   }
 }
 

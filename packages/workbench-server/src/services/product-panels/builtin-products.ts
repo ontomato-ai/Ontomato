@@ -19,6 +19,7 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import { readPanelComponentCatalogue, validateProjectionComponent } from "./component-catalogue";
 import { validateBuiltinProductReferences } from "./references";
 import { platformTypeEntries } from "./type-table";
+import { declaredProjectionAgents } from "./entry-dependency-compiler";
 import { compileRegisteredPanelRoots, installBuiltinPanelDependencies } from "./entry-dependency-store";
 import { readAffectedEntryRoots } from "./entry-dependency-publication";
 
@@ -92,6 +93,11 @@ export async function readBuiltinProducts(root: string) {
   }
   for (const [id, projection] of projections) {
     if (panels.has(id)) throw new Error(`Platform product ID '${id}' is declared as a panel and a projection`);
+    for (const { target, field } of declaredProjectionAgents(projection)) {
+      if (target.kind === "id") {
+        throw new Error(`Platform projection '${id}' cannot bind a domain object: ${field}.id`);
+      }
+    }
     await validateProjectionComponent(id, projection, readCatalogue);
   }
   await validateBuiltinProductReferences(panels, projections, readCatalogue);
