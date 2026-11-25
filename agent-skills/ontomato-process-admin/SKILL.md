@@ -296,7 +296,7 @@ node client.mjs grant-save '{
 
 流程有 N 步，就写 N+1 个动作：**1 个发起动作 + 每步 1 个办理动作**。
 
-动作导入格式、Python 协议头、参数规则，沿用 `ontomato-workflow-maker` 的约定。本技能只强调与固定流程相关的硬约束：
+动作定义格式、Python 协议头、参数规则，沿用 `ontomato-workflow-maker` 的约定。本技能只强调与固定流程相关的硬约束：
 
 - `code` 第一行必须是 `# ontomato-python:2`。
 - `function.operation` 只能是 `OPERATION_WRITE`。
@@ -322,16 +322,19 @@ node client.mjs grant-save '{
 - 人事聘任 Action 接收 `run_id`。通过后关闭原现任历史，按申请的目标等级新增一条真实现任历史，并把申请置为已完成；生效日期默认取聘任完成日。
 - 这样允许“六级升五级”或“八级升七级”，也允许人员从未任过五级而直接晋升五级。要求“目标等级的现任记录已经存在”在业务上是错误的。
 
-命令：
+命令与三步流：
 
 ```bash
 node client.mjs actions
+node client.mjs action-save @actions.json        # 1. 保存为 PENDING_REVIEW 草稿（新建省略 id，由服务端返回）
+node client.mjs action-reexplain '{"ids":["<actionId>"]}'  # 2. 如有需要，生成/重算解读
+node client.mjs action-publish <actionId>         # 3. 审阅确认后置为 PUBLISHED（POST /action/setStatus）
 node client.mjs action-get <actionId>
-node client.mjs action-import @actions.json
-node client.mjs action-reexplain '{"ids":["act_..."]}'
+node client.mjs action-retire <actionId>          # 退休置为 UNUSED（不删）
 ```
 
-导入是草稿/待审核；`action-reexplain` 生成解释后，再用 `action-get` 核对 `status=PUBLISHED`。
+- **新建严禁自编 `id`**（以及 `function.id`）：先通过 `action-save` 存为 `PENDING_REVIEW` 草稿，由服务端生成并返回 `id` 后再填入 `workflow.json` 的 `steps[].actionId`；修改已有草稿时才带 `id`。
+- 如有需要（例如重算或补齐解读），调用 `action-reexplain` 生成/重算解读；审阅确认后用 `action-publish <actionId>`（`POST /action/setStatus`）发布，不要通过 `/action/save` 直接改写 `status=PUBLISHED`。
 
 ---
 
@@ -592,7 +595,7 @@ node client.mjs trigger-run <triggerId>
 | `api-list / menu-list` | 权限项 |
 | `post-api / post-menu / post-data` | 岗位 API/菜单/数据权限 |
 | `data-permission-save / data-permission-delete` | 数据权限 |
-| `actions / action-get / action-import / action-reexplain` | Action |
+| `actions / action-get / action-save / action-reexplain / action-publish / action-retire` | Action |
 | `wf-save / wf-query / wf-activate / wf-deactivate / wf-delete` | Workflow |
 | `wf-grants / wf-access` | 生效授权/平台操作 |
 | `trigger-*` | 触发器 |

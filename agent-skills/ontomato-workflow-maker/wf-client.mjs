@@ -10,10 +10,7 @@
  *   WF_CODE / WF_PASS 登录名与密码（默认 test / admin）
  */
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 
 const BASE = process.env.WF_BASE || 'http://localhost:8080/api/data-query';
 const AUTH = process.env.WF_AUTH || 'http://localhost:8080/api/auth';
@@ -138,29 +135,24 @@ async function executeAction(actionId, param) {
   return { ok: true, result };
 }
 
-/** 导入要求 zip 里恰好一个 .json；用系统 zip 造包，避免自带 ZIP 实现。 */
-async function importActions(jsonFile) {
-  const list = readJsonArg(jsonFile);
-  const arr = Array.isArray(list) ? list : [list];
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-import-'));
-  const inner = path.join(dir, 'actions.json');
-  const zipPath = path.join(dir, 'actions.zip');
-  fs.writeFileSync(inner, JSON.stringify(arr));
-  execFileSync('zip', ['-j', '-q', zipPath, inner]);
-  const tk = await login();
-  const fd = new FormData();
-  fd.append('file', new Blob([fs.readFileSync(zipPath)]), 'actions.zip');
-  const r = await fetch(`${BASE}/action/import?allowMissingExplanation=true`, {
-    method: 'POST',
-    headers: { tk, 'Accept-Language': 'zh-CN' },
-    body: fd,
-  });
-  const text = await r.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    die(`/action/import 返回非 JSON（HTTP ${r.status}）`, text.slice(0, 500));
+async function saveActions(jsonArg) {
+  const input = readJsonArg(jsonArg);
+  if (!input || typeof input !== 'object' || (Array.isArray(input) && input.length === 0)) {
+    die('action-save 需要一个 Action 对象或非空数组');
   }
+  const items = Array.isArray(input) ? input : [input];
+  const results = [];
+  for (const item of items) {
+    const saved = unwrap(await post('/action/save', item), 'action/save');
+    results.push({
+      id: saved.id,
+      name: saved.name,
+      status: saved.status,
+      function: saved.function ? { id: saved.function.id } : undefined,
+      codeHash: saved.codeHash,
+    });
+  }
+  return Array.isArray(input) ? results : results[0];
 }
 
 // ---------------------------------------------------------------- 子命令
@@ -219,10 +211,25 @@ if (cmd === 'login') {
 } else if (cmd === 'action-get') {
   const j = await post('/action/queryById', { id: args[0] });
   console.log(JSON.stringify(unwrap(j, 'queryById'), null, 2));
-} else if (cmd === 'action-import') {
-  const j = await importActions(args[0]);
-  console.log(JSON.stringify(j, null, 2));
-  if (j.success === false) process.exit(1);
+} else if (cmd === 'action-save') {
+  console.log(JSON.stringify(await saveActions(args[0]), null, 2));
+} else if (cmd === 'action-reexplain') {
+  const body = readJsonArg(args[0]);
+  const j = await post('/action/re-explain', { ...body, missingOnly: body.missingOnly ?? false });
+  console.log(JSON.stringify(unwrap(j, 'action/re-explain'), null, 2));
+} else if (cmd === 'action-publish') {
+  const id = args[0];
+  if (!id) die('用法: action-publish <actionId>');
+  const data = unwrap(await post('/action/setStatus', { ids: [id], status: 'PUBLISHED' }), 'action/setStatus');
+  const item = data?.items?.[0];
+  if (!item || item.outcome !== 'success') {
+    const reason = item?.error?.message || item?.message || item?.code || '未知拒绝原因';
+    die(`action PUBLISHED 失败 (${id}): ${reason}`, item);
+  }
+  const saved = item.data || {};
+  const out = { id: saved.id || item.id || id, status: saved.status || 'PUBLISHED' };
+  if (saved.codeHash !== undefined) out.codeHash = saved.codeHash;
+  console.log(JSON.stringify(out, null, 2));
 } else if (cmd === 'wf-save') {
   const body = readJsonArg(args[0]);
   const j = await post('/workflow/save', body);
@@ -276,7 +283,9 @@ if (cmd === 'login') {
   subjects                         域内主体及其有效角色（判定"这步有没有人能做"）
   actions [status]                 列出动作
   action-get <actionId>            动作详情（含 function 与 submissionCriteria）
-  action-import <json|@json>       导入动作（zip 内部完成）
+  action-save <json|@json>         保存动作草稿（新建省略 id，由服务端返回）
+  action-reexplain <json>          刷新动作解释 {ids:[...],missingOnly?}
+  action-publish <actionId>        解释生成后把动作置为 PUBLISHED（setStatus）
   wf-save <json>                   存流程草稿，保留已激活版本
   wf-query [id] [--active]         查可编辑定义，--active 查生效快照
   wf-activate <id>                 激活：冻结版本 + 落授权

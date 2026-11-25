@@ -18,10 +18,7 @@
  * 所有写命令都支持 --dry-run：只在本地打印方法/路径/请求体，不登录、不访问服务端、不落库。
  */
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 
 const BASE = (process.env.OA_BASE || process.env.ONTOMATO_ONTOLOGY_URL || 'http://localhost:8080/api/data-query').replace(/\/+$/, '');
 const AUTH = process.env.OA_AUTH || 'http://localhost:8080/api/auth';
@@ -190,34 +187,42 @@ async function get(backendPath) {
 
 const page = { pageNum: 1, pageSize: 200, cdt: '' };
 
-async function importActions(jsonArg) {
-  const list = readJsonArg(jsonArg);
-  const arr = Array.isArray(list) ? list : [list];
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oa-import-'));
-  const inner = path.join(dir, 'actions.json');
-  const zipPath = path.join(dir, 'actions.zip');
-  fs.writeFileSync(inner, JSON.stringify(arr));
-  execFileSync('zip', ['-j', '-q', zipPath, inner]);
-  if (DRY) {
-    console.log(JSON.stringify({ dryRun: true, method: 'POST', path: '/action/import', actions: arr.map((a) => a.id || a.name) }, null, 2));
-    return { dryRun: true };
+async function saveActions(jsonArg) {
+  const input = readJsonArg(jsonArg);
+  if (!input || typeof input !== 'object' || (Array.isArray(input) && input.length === 0)) {
+    die('action-save 需要一个 Action 对象或非空数组');
   }
-  const tk = await login();
-  const fd = new FormData();
-  fd.append('file', new Blob([fs.readFileSync(zipPath)]), 'actions.zip');
-  const r = await fetch(`${BASE}/action/import?allowMissingExplanation=true`, {
-    method: 'POST',
-    headers: { tk, 'Accept-Language': 'zh-CN' },
-    body: fd,
-  });
-  const text = await r.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    die(`/action/import 返回非 JSON（HTTP ${r.status}）`, text.slice(0, 500));
+  const items = Array.isArray(input) ? input : [input];
+  const results = [];
+  for (const item of items) {
+    const saved = await post('/action/save', item);
+    if (!DRY) {
+      results.push({
+        id: saved.id,
+        name: saved.name,
+        status: saved.status,
+        function: saved.function ? { id: saved.function.id } : undefined,
+        codeHash: saved.codeHash,
+      });
+    }
   }
-  return json;
+  if (!DRY) {
+    console.log(JSON.stringify(Array.isArray(input) ? results : results[0], null, 2));
+  }
+}
+
+async function setActionStatus(id, status) {
+  const res = await post('/action/setStatus', { ids: [id], status });
+  if (DRY) return;
+  const item = res?.items?.[0];
+  if (!item || item.outcome !== 'success') {
+    const reason = item?.error?.message || item?.message || item?.code || '未知拒绝原因';
+    die(`action ${status} 失败 (${id}): ${reason}`, item);
+  }
+  const saved = item.data || {};
+  const out = { id: saved.id || item.id || id, status: saved.status || status };
+  if (saved.codeHash !== undefined) out.codeHash = saved.codeHash;
+  console.log(JSON.stringify(out, null, 2));
 }
 
 function rowsOf(data) {
@@ -419,25 +424,15 @@ if (cmd === 'login') {
   console.log(JSON.stringify(rowsOf(data).map((a) => ({ id: a.id, name: a.name, status: a.status, approvalMode: a.approvalMode, operation: a.function && a.function.operation })), null, 2));
 } else if (cmd === 'action-get') {
   console.log(JSON.stringify(await post('/action/queryById', { id: requireArg(args, 0, 'action-get <actionId>') }), null, 2));
-} else if (cmd === 'action-import') {
-  const j = await importActions(requireArg(args, 0, 'action-import <json|@json>'));
-  console.log(JSON.stringify(j, null, 2));
-  if (j.success === false) process.exit(1);
+} else if (cmd === 'action-save') {
+  await saveActions(requireArg(args, 0, 'action-save <json|@json>'));
 } else if (cmd === 'action-reexplain') {
   const body = readJsonArg(requireArg(args, 0, 'action-reexplain <json>{ids:[...]}'));
   console.log(JSON.stringify(await post('/action/re-explain', { ...body, missingOnly: body.missingOnly ?? false }), null, 2));
 } else if (cmd === 'action-publish') {
-  const id = requireArg(args, 0, 'action-publish <actionId>');
-  const action = await post('/action/queryById', { id });
-  action.status = 'PUBLISHED';
-  const saved = await post('/action/save', action);
-  console.log(JSON.stringify({ id: saved.id, status: saved.status, codeHash: saved.codeHash }, null, 2));
+  await setActionStatus(requireArg(args, 0, 'action-publish <actionId>'), 'PUBLISHED');
 } else if (cmd === 'action-retire') {
-  const id = requireArg(args, 0, 'action-retire <actionId>');
-  const action = await post('/action/queryById', { id });
-  action.status = 'UNUSED';
-  const saved = await post('/action/save', action);
-  console.log(JSON.stringify({ id: saved.id, status: saved.status }, null, 2));
+  await setActionStatus(requireArg(args, 0, 'action-retire <actionId>'), 'UNUSED');
 } else if (cmd === 'wf-save') {
   const body = readJsonArg(requireArg(args, 0, 'wf-save <json>{name,steps,runClassName,runContract,temporary,caseFormSchema}'));
   const data = await post('/workflow/save', body);
@@ -589,10 +584,10 @@ if (cmd === 'login') {
 能力与流程
   actions [status]                 动作列表
   action-get <id>                  动作详情
-  action-import <json|@json>       导入动作（zip 内部完成）
+  action-save <json|@json>         保存动作草稿（新建省略 id，由服务端返回）
   action-reexplain <json>          刷新动作解释
-  action-publish <id>              解释生成后把动作置为 PUBLISHED
-  action-retire <id>               把动作置为 UNUSED（退休，不删）
+  action-publish <id>              解释生成后把动作置为 PUBLISHED（setStatus）
+  action-retire <id>               把动作置为 UNUSED（退休，不删）（setStatus）
   wf-save <json>                   存流程草稿
   wf-query [id]                    查流程
   wf-activate <id>                 激活：冻结版本 + 落授权
