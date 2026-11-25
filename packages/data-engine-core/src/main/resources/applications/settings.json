@@ -142,7 +142,7 @@
         "pageKey": "general-settings",
         "panelId": "builtin-product-general-settings",
         "path": "/settings/system-config/general",
-        "icon": "settings",
+        "icon": "sliders-horizontal",
         "groupKey": "system-settings",
         "access": { "permissionCode": "system-config" },
         "inputs": {
@@ -194,7 +194,7 @@
         "pageKey": "external-mcp",
         "panelId": "builtin-product-external-mcp",
         "path": "/settings/external-mcp",
-        "icon": "link",
+        "icon": "cable",
         "groupKey": "connections",
         "access": { "permissionCode": "mcp-service" },
         "names": {
@@ -217,7 +217,7 @@
         "pageKey": "published-mcp",
         "panelId": "builtin-product-published-mcp",
         "path": "/settings/mcp-services",
-        "icon": "share-2",
+        "icon": "plug",
         "groupKey": "connections",
         "access": { "permissionCode": "mcp-service" },
         "names": {
@@ -240,7 +240,7 @@
         "pageKey": "audit-log",
         "panelId": "builtin-product-audit-log",
         "path": "/settings/records/audit-log",
-        "icon": "clipboard-list",
+        "icon": "scroll-text",
         "groupKey": "records",
         "access": { "permissionCode": "audit-logs" },
         "names": {

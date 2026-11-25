@@ -171,7 +171,7 @@ const matchedActiveId = computed<string | null>(() => {
 .mobile-page-select {
   display: none;
 }
-@container (max-width: 760px) {
+@container (max-width: 600px) {
   .platform-app-menu {
     flex: 0 0 auto;
     width: 100%;
@@ -206,7 +206,7 @@ const matchedActiveId = computed<string | null>(() => {
     font-size: var(--text-sm);
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 600px) {
   .platform-app-menu {
     flex: 0 0 auto;
     width: 100%;

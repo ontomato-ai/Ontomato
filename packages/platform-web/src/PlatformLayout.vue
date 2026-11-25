@@ -293,7 +293,7 @@ const headerLabels = computed(() => ({
   color: var(--el-text-color-secondary);
   font-size: var(--text-base);
 }
-@media(max-width:760px){
+@media(max-width:600px){
   .platform-app-page{flex:1;overflow:hidden}
 }
 </style>
