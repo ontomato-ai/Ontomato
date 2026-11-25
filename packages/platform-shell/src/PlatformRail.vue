@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { PanelLeftClose, PanelLeftOpen, Moon } from "lucide-vue-next";
-import type { PlatformAccount, PlatformApp, PlatformBrand, PlatformPreferences, PlatformShellLabels } from "./types";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { ChevronDown, ChevronUp, Moon, PanelLeftOpen, Pin, PinOff } from "lucide-vue-next";
+import type {
+  PlatformAccount,
+  PlatformApp,
+  PlatformBrand,
+  PlatformPreferences,
+  PlatformRailSection,
+  PlatformShellLabels,
+} from "./types";
 import { appIcon, ExternalLink } from "./icons";
 import PlatformAccountMenu from "./PlatformAccountMenu.vue";
 import PlatformBrandMark from "./PlatformBrandMark.vue";
@@ -9,13 +16,11 @@ import { ElTooltip } from "element-plus";
 import { actionTooltipProps } from "@ontomato/foundation-ui/overlay";
 
 /**
- * The platform's own rail: the ground layer of the shell, with the expand control, every application in three sections
- * and the account at the foot.
+ * The platform's own rail: the ground layer of the shell, with the pin control, every application in sections and the
+ * account at the foot.
  *
- * Collapsed — the default — it shows application icons only, each named by its tooltip and its accessible name, and the
- * control that expands it sits at the top with no brand mark. Expanded it shows the brand mark, the product name and the
- * names, and the control collapses it again. The rail carries no per-application content (DESIGN.md "Applications and
- * shells"): the application's own navigation is drawn by the application.
+ * Unpinned (collapsed) by default, it shows application icons only and expands as a floating overlay on pointer hover
+ * without narrowing the application surface. Pinning it keeps the rail expanded in layout flow across reloads per user.
  */
 const props = defineProps<{
   apps: readonly PlatformApp[];
@@ -35,18 +40,95 @@ const emit = defineEmits<{
   "update:collapsed": [value: boolean];
 }>();
 
+const BUILDERS_APP_FOLD_LIMIT = 5;
+const BUILDERS_EXPANDED_KEY = "ontomato.platform.railBuildersExpanded";
+
+function buildersStorageKey(account: PlatformAccount | null): string {
+  const user = account?.userName?.trim();
+  return user ? `${BUILDERS_EXPANDED_KEY}:${encodeURIComponent(user)}` : BUILDERS_EXPANDED_KEY;
+}
+
+function readBuildersExpanded(account: PlatformAccount | null): boolean {
+  try {
+    return localStorage.getItem(buildersStorageKey(account)) === "true";
+  } catch {
+    return false;
+  }
+}
+
+const buildersExpanded = ref(readBuildersExpanded(props.account));
+watch(
+  () => props.account?.userName,
+  () => {
+    buildersExpanded.value = readBuildersExpanded(props.account);
+  },
+);
+
+function toggleBuildersExpanded() {
+  buildersExpanded.value = !buildersExpanded.value;
+  try {
+    localStorage.setItem(buildersStorageKey(props.account), String(buildersExpanded.value));
+  } catch {
+    // Remembering the fold state is a convenience only.
+  }
+}
+
 const brandName = computed(() => props.brand?.name || props.labels.brand);
 const markBrand = computed(() => ({ ...props.brand, name: brandName.value }));
 const builtLabel = computed(() => props.labels.builtApplication || "App Builder");
+const moreLabel = computed(() => props.labels.more || "More");
+const collapseLabel = computed(() => props.labels.collapse || "Collapse");
 const appLabel = (app: PlatformApp) => app.built ? `${app.label} · ${builtLabel.value}` : app.label;
 const newTabLabel = (app: PlatformApp) => [appLabel(app), props.labels.opensInNewTab].filter(Boolean).join(" · ");
 const standaloneActionText = computed(() => props.labels.openStandalone || props.labels.opensInNewTab || "Open standalone");
 const standaloneAriaLabel = (app: PlatformApp) => `${app.label} · ${standaloneActionText.value}`;
+const moreToggleAriaLabel = (hiddenCount: number) =>
+  buildersExpanded.value ? collapseLabel.value : (hiddenCount > 0 ? `${moreLabel.value} (${hiddenCount})` : moreLabel.value);
 
-/** The rail's applications, in order: the ontology applications, then the business ones (the external one last). */
-const scrolling = computed(() => {
-  const of = (rail: PlatformApp["rail"]) => props.apps.filter((app) => (app.rail ?? "apps") === rail);
-  return [of("top"), of("builders"), of("apps")].filter((section) => section.length > 0);
+interface RailSectionView {
+  key: PlatformRailSection;
+  apps: PlatformApp[];
+  showToggle: boolean;
+  hiddenCount: number;
+}
+
+/**
+ * The rail's applications, in order: business applications, builders and their registered apps (folding registered
+ * applications beyond 5 while always surfacing the currently open one), then ontology/operations.
+ */
+const scrolling = computed<RailSectionView[]>(() => {
+  const of = (rail: PlatformRailSection) => props.apps.filter((app) => (app.rail ?? "apps") === rail);
+  const sections: RailSectionView[] = [];
+  for (const key of ["top", "builders", "apps"] as const) {
+    const sectionApps = of(key);
+    if (sectionApps.length === 0) continue;
+    if (key !== "builders") {
+      sections.push({ key, apps: sectionApps, showToggle: false, hiddenCount: 0 });
+      continue;
+    }
+    const pinnedBuilders = sectionApps.filter((app) => !app.built);
+    const registeredApps = sectionApps.filter((app) => Boolean(app.built));
+    if (registeredApps.length <= BUILDERS_APP_FOLD_LIMIT) {
+      sections.push({ key, apps: sectionApps, showToggle: false, hiddenCount: 0 });
+      continue;
+    }
+    if (buildersExpanded.value) {
+      sections.push({ key, apps: [...pinnedBuilders, ...registeredApps], showToggle: true, hiddenCount: 0 });
+      continue;
+    }
+    const head = registeredApps.slice(0, BUILDERS_APP_FOLD_LIMIT);
+    const tail = registeredApps.slice(BUILDERS_APP_FOLD_LIMIT);
+    const activeInTail = tail.find((app) => app.id === props.activeAppId);
+    const visibleRegistered = activeInTail ? [...head, activeInTail] : head;
+    const hiddenCount = tail.length - (activeInTail ? 1 : 0);
+    sections.push({
+      key,
+      apps: [...pinnedBuilders, ...visibleRegistered],
+      showToggle: hiddenCount > 0,
+      hiddenCount,
+    });
+  }
+  return sections;
 });
 
 /**
@@ -62,16 +144,37 @@ function selectApp(app: PlatformApp) {
   emit("selectApp", app.id);
 }
 
-function toggle() {
-  emit("update:collapsed", !props.collapsed);
-}
-
-/* ---- account menu ---- */
+/* ---- hover expand & account menu ---- */
+const railRoot = ref<HTMLElement | null>(null);
+const hovered = ref(false);
 const menuOpen = ref(false);
 const menuRoot = ref<HTMLElement | null>(null);
 
+const visuallyExpanded = computed(() => !props.collapsed || hovered.value || menuOpen.value);
+const floating = computed(() => props.collapsed && visuallyExpanded.value);
+
+function onRailEnter() {
+  if (props.collapsed) hovered.value = true;
+}
+
+function onRailLeave() {
+  hovered.value = false;
+}
+
+function toggle() {
+  const nextCollapsed = !props.collapsed;
+  if (nextCollapsed) hovered.value = false;
+  emit("update:collapsed", nextCollapsed);
+}
+
 function onDocumentPointer(event: PointerEvent) {
-  if (menuRoot.value && !menuRoot.value.contains(event.target as Node)) closeMenu();
+  const target = event.target as Node;
+  if (menuRoot.value && !menuRoot.value.contains(target)) {
+    closeMenu();
+    if (props.collapsed && railRoot.value && !railRoot.value.contains(target)) {
+      hovered.value = false;
+    }
+  }
 }
 function openMenu() {
   menuOpen.value = true;
@@ -81,9 +184,20 @@ function closeMenu() {
   menuOpen.value = false;
   document.removeEventListener("pointerdown", onDocumentPointer);
 }
+function onMenuClose() {
+  closeMenu();
+  if (!props.collapsed) return;
+  void nextTick(() => {
+    try {
+      if (!railRoot.value?.matches(":hover")) hovered.value = false;
+    } catch {
+      hovered.value = false;
+    }
+  });
+}
 const initial = computed(() => props.account?.userName.trim().charAt(0).toUpperCase() ?? "");
 
-// The menu is part of the rail: collapsing it while open would leave it floating beside an icon rail.
+// Unpinning while the account menu is open closes the menu together with the rail.
 watch(
   () => props.collapsed,
   (collapsed) => {
@@ -95,15 +209,23 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 </script>
 
 <template>
-  <nav class="platform-rail" :class="{ collapsed }" :aria-label="labels.applications">
-    <!-- Collapsed: the expand control alone. Expanded: the brand mark, the product name and the collapse control. -->
-    <div v-if="collapsed" class="rail-brand">
+  <nav
+    ref="railRoot"
+    class="platform-rail"
+    :class="{ collapsed: !visuallyExpanded, floating }"
+    :aria-label="labels.applications"
+    @mouseenter="onRailEnter"
+    @mouseleave="onRailLeave"
+  >
+    <!-- Visually collapsed: the pin/expand control alone. Expanded (hovered or pinned): brand mark, name, pin toggle. -->
+    <div v-if="!visuallyExpanded" class="rail-brand">
       <ElTooltip v-bind="actionTooltipProps" :content="labels.expandRail">
       <button
         type="button"
         class="rail-toggle"
         :aria-label="labels.expandRail"
         :aria-expanded="false"
+        :aria-pressed="false"
         @click="toggle"
       >
         <PanelLeftOpen :size="16" aria-hidden="true" />
@@ -113,15 +235,18 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
     <div v-else class="rail-brand">
       <PlatformBrandMark :brand="markBrand" />
       <span class="brand-name">{{ brandName }}</span>
-      <ElTooltip v-bind="actionTooltipProps" :content="labels.collapseRail">
+      <ElTooltip v-bind="actionTooltipProps" :content="collapsed ? labels.expandRail : labels.collapseRail">
       <button
         type="button"
         class="rail-toggle"
-        :aria-label="labels.collapseRail"
-        :aria-expanded="true"
+        :class="{ pinned: !collapsed }"
+        :aria-label="collapsed ? labels.expandRail : labels.collapseRail"
+        :aria-expanded="!collapsed"
+        :aria-pressed="!collapsed"
         @click="toggle"
       >
-        <PanelLeftClose :size="16" aria-hidden="true" />
+        <PinOff v-if="!collapsed" :size="15" aria-hidden="true" />
+        <Pin v-else :size="15" aria-hidden="true" />
       </button>
       </ElTooltip>
     </div>
@@ -130,10 +255,10 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
       <div v-if="loading" class="rail-skeleton" aria-busy="true" :aria-label="labels.applications">
         <span v-for="item in 6" :key="item" />
       </div>
-      <template v-for="(section, index) in scrolling" :key="index">
+      <template v-for="(section, index) in scrolling" :key="section.key">
         <div v-if="index > 0" class="rail-divider" aria-hidden="true" />
-        <ul class="rail-section">
-          <li v-for="app in section" :key="app.id">
+        <ul class="rail-section" :data-section="section.key">
+          <li v-for="app in section.apps" :key="app.id">
             <a
               v-if="app.href"
               class="rail-row external"
@@ -142,14 +267,14 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
               :href="app.href"
               target="_blank"
               rel="noopener noreferrer"
-              :title="app.built ? newTabLabel(app) : collapsed ? app.label : undefined"
-              :aria-label="app.built ? newTabLabel(app) : collapsed ? app.label : undefined"
+              :title="app.built ? newTabLabel(app) : !visuallyExpanded ? app.label : undefined"
+              :aria-label="app.built ? newTabLabel(app) : !visuallyExpanded ? app.label : undefined"
             >
               <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-              <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
-              <ExternalLink v-if="app.built && !collapsed" :size="12" class="rail-built-icon" aria-hidden="true" />
+              <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
+              <ExternalLink v-if="app.built && visuallyExpanded" :size="12" class="rail-built-icon" aria-hidden="true" />
               <ExternalLink
-                v-else-if="!collapsed"
+                v-else-if="visuallyExpanded"
                 class="rail-external"
                 :size="10"
                 :role="labels.opensInNewTab ? 'img' : undefined"
@@ -162,14 +287,14 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
               v-else-if="app.open"
               type="button"
               class="rail-row external"
-              :title="collapsed ? app.label : undefined"
-              :aria-label="collapsed ? app.label : undefined"
+              :title="!visuallyExpanded ? app.label : undefined"
+              :aria-label="!visuallyExpanded ? app.label : undefined"
               @click="app.open()"
             >
               <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-              <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+              <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
               <ExternalLink
-                v-if="!collapsed"
+                v-if="visuallyExpanded"
                 class="rail-external"
                 :size="10"
                 :role="labels.opensInNewTab ? 'img' : undefined"
@@ -182,29 +307,29 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
               class="rail-row unavailable"
               aria-disabled="true"
               :title="app.unavailableHint"
-              :aria-label="collapsed ? app.label : undefined"
+              :aria-label="!visuallyExpanded ? app.label : undefined"
             >
               <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-              <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+              <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
             </span>
             <div
               v-else
               class="rail-item"
-              :class="{ active: app.id === activeAppId, 'has-standalone': !collapsed && Boolean(app.standaloneHref) }"
+              :class="{ active: app.id === activeAppId, 'has-standalone': visuallyExpanded && Boolean(app.standaloneHref) }"
             >
               <button
                 type="button"
                 class="rail-row"
                 :class="{ active: app.id === activeAppId }"
                 :aria-current="app.id === activeAppId ? 'page' : undefined"
-                :title="collapsed || app.built ? appLabel(app) : undefined"
-                :aria-label="collapsed || app.built ? appLabel(app) : undefined"
+                :title="!visuallyExpanded || app.built ? appLabel(app) : undefined"
+                :aria-label="!visuallyExpanded || app.built ? appLabel(app) : undefined"
                 @click="selectApp(app)"
               >
                 <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-                <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+                <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
               </button>
-              <ElTooltip v-if="!collapsed && app.standaloneHref" v-bind="actionTooltipProps" :content="standaloneActionText">
+              <ElTooltip v-if="visuallyExpanded && app.standaloneHref" v-bind="actionTooltipProps" :content="standaloneActionText">
                 <a
                   class="rail-standalone"
                   :href="app.standaloneHref"
@@ -216,6 +341,23 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
                 </a>
               </ElTooltip>
             </div>
+          </li>
+          <li v-if="section.showToggle" class="rail-more-item">
+            <button
+              type="button"
+              class="rail-row rail-more-toggle"
+              :aria-expanded="buildersExpanded"
+              :title="!visuallyExpanded ? moreToggleAriaLabel(section.hiddenCount) : undefined"
+              :aria-label="!visuallyExpanded ? moreToggleAriaLabel(section.hiddenCount) : undefined"
+              @click="toggleBuildersExpanded"
+            >
+              <ChevronUp v-if="buildersExpanded" class="rail-icon" :size="16" aria-hidden="true" />
+              <ChevronDown v-else class="rail-icon" :size="16" aria-hidden="true" />
+              <span v-if="visuallyExpanded" class="rail-label">{{ buildersExpanded ? collapseLabel : moreLabel }}</span>
+              <span v-if="visuallyExpanded && !buildersExpanded && section.hiddenCount > 0" class="rail-more-count">
+                {{ section.hiddenCount }}
+              </span>
+            </button>
           </li>
         </ul>
       </template>
@@ -231,13 +373,13 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
           :href="app.href"
           target="_blank"
           rel="noopener noreferrer"
-          :title="collapsed ? app.label : undefined"
-          :aria-label="collapsed ? app.label : undefined"
+          :title="!visuallyExpanded ? app.label : undefined"
+          :aria-label="!visuallyExpanded ? app.label : undefined"
         >
           <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-          <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+          <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
           <ExternalLink
-            v-if="!collapsed"
+            v-if="visuallyExpanded"
             class="rail-external"
             :size="10"
             :role="labels.opensInNewTab ? 'img' : undefined"
@@ -249,41 +391,41 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
           v-else-if="app.open"
           type="button"
           class="rail-row external"
-          :title="collapsed ? app.label : undefined"
-          :aria-label="collapsed ? app.label : undefined"
+          :title="!visuallyExpanded ? app.label : undefined"
+          :aria-label="!visuallyExpanded ? app.label : undefined"
           @click="app.open()"
         >
           <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-          <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+          <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
         </button>
         <span
           v-else-if="app.unavailableHint"
           class="rail-row unavailable"
           aria-disabled="true"
           :title="app.unavailableHint"
-          :aria-label="collapsed ? app.label : undefined"
+          :aria-label="!visuallyExpanded ? app.label : undefined"
         >
           <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-          <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+          <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
         </span>
         <div
           v-else
           class="rail-item"
-          :class="{ active: app.id === activeAppId, 'has-standalone': !collapsed && Boolean(app.standaloneHref) }"
+          :class="{ active: app.id === activeAppId, 'has-standalone': visuallyExpanded && Boolean(app.standaloneHref) }"
         >
           <button
             type="button"
             class="rail-row"
             :class="{ active: app.id === activeAppId }"
             :aria-current="app.id === activeAppId ? 'page' : undefined"
-            :title="collapsed ? app.label : undefined"
-            :aria-label="collapsed ? app.label : undefined"
+            :title="!visuallyExpanded ? app.label : undefined"
+            :aria-label="!visuallyExpanded ? app.label : undefined"
             @click="selectApp(app)"
           >
             <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-            <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+            <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
           </button>
-          <ElTooltip v-if="!collapsed && app.standaloneHref" v-bind="actionTooltipProps" :content="standaloneActionText">
+          <ElTooltip v-if="visuallyExpanded && app.standaloneHref" v-bind="actionTooltipProps" :content="standaloneActionText">
             <a
               class="rail-standalone"
               :href="app.standaloneHref"
@@ -310,14 +452,14 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
         aria-haspopup="menu"
         :aria-expanded="menuOpen"
         :aria-label="labels.account"
-        :title="collapsed ? account?.userName : undefined"
-        @click="menuOpen ? closeMenu() : openMenu()"
-        @keydown.escape="closeMenu"
+        :title="!visuallyExpanded ? account?.userName : undefined"
+        @click="menuOpen ? onMenuClose() : openMenu()"
+        @keydown.escape="onMenuClose"
       >
         <span v-if="account" class="account-avatar" aria-hidden="true">{{ initial }}</span>
         <Moon v-else class="account-avatar-icon" :size="16" aria-hidden="true" />
-        <span v-if="!collapsed && account" class="account-name">{{ account.userName }}</span>
-        <span v-if="!collapsed && !account" class="account-name">{{ labels.account }}</span>
+        <span v-if="visuallyExpanded && account" class="account-name">{{ account.userName }}</span>
+        <span v-if="visuallyExpanded && !account" class="account-name">{{ labels.account }}</span>
       </button>
       <div v-if="menuOpen" class="account-menu-anchor">
         <PlatformAccountMenu
@@ -325,7 +467,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
           :preferences="preferences"
           :labels="labels"
           :locale-names="localeNames"
-          @close="closeMenu"
+          @close="onMenuClose"
         />
       </div>
     </div>
@@ -369,13 +511,25 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   color: var(--el-text-color-regular);
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
-  transition: width var(--transition-base);
+  transition: width var(--transition-base), box-shadow var(--transition-fast);
   overflow: visible;
 }
 .platform-rail.collapsed {
   width: var(--shell-platform-rail-collapsed);
   align-items: center;
   padding: 10px 0 12px;
+}
+/* Hover-expanded while unpinned: floats over the application surface without shifting or narrowing page content. */
+.platform-rail.floating {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 40;
+  width: var(--shell-platform-rail);
+  border-right: 1px solid var(--shell-app-edge);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  box-shadow: var(--elevation-overlay);
 }
 .rail-brand {
   display: flex;
@@ -414,6 +568,13 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   background: var(--shell-rail-hover);
   color: var(--el-text-color-primary);
 }
+.rail-toggle.pinned {
+  color: var(--brand-link);
+}
+.rail-toggle.pinned:hover {
+  background: var(--shell-rail-hover);
+  color: var(--brand-link);
+}
 /* Collapsed: the expand control is the top row, at the size of the icon rows below it. */
 .collapsed .rail-brand {
   justify-content: center;
@@ -433,6 +594,11 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.rail-scroll::-webkit-scrollbar {
+  display: none;
 }
 .rail-section,
 .rail-foot {
@@ -587,6 +753,16 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   flex: none;
   color: var(--el-text-color-secondary);
   opacity: 0.8;
+}
+.rail-more-toggle {
+  color: var(--el-text-color-secondary);
+}
+.rail-more-count {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--el-text-color-tertiary);
 }
 .collapsed .rail-row {
   justify-content: center;

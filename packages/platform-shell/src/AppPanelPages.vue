@@ -90,7 +90,21 @@ defineSlots<{
   box-sizing: border-box;
   padding: 4px 0 8px;
 }
-.page-groups { display:flex; flex:1; min-height:0; flex-direction:column; gap:12px; overflow-y:auto; overscroll-behavior:contain; }
+.page-groups {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Hide the scrollbar so it never overlaps trailing row metadata (such as item counts) while scrolling. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.page-groups::-webkit-scrollbar {
+  display: none;
+}
 /* The application's own entry stays at the foot of the column, under a hairline. */
 .page-foot {
   flex-shrink: 0;
@@ -183,4 +197,3 @@ defineSlots<{
   outline-offset: -2px;
 }
 </style>
-<style scoped>.page-groups{scrollbar-width:thin;scrollbar-gutter:stable}.page-groups::-webkit-scrollbar{width:6px}.page-groups::-webkit-scrollbar-thumb{background:var(--el-border-color-dark);border-radius:4px}</style>

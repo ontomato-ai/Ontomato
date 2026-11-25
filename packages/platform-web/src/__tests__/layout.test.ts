@@ -289,7 +289,7 @@ describe("the platform layout", () => {
   });
 
   it("shows standalone open buttons in the expanded rail only for apps that allow it, and blocks ?standalone=1 when disabled", async () => {
-    localStorage.setItem("ontomato.platform.railCollapsed", "false");
+    localStorage.setItem("ontomato.platform.railCollapsed:Ada", "false");
     const { wrapper, router } = await mountLayout("/ontology/objects", ["ontology-modeling"]);
     router.addRoute({ path: "/applications/:applicationId/:panelPath(.*)?", component: page("application") });
     const catalog = catalogFixture();

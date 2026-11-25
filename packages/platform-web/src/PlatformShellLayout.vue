@@ -129,6 +129,7 @@ const preferences = computed(() => ({
 const labels = computed(() => ({
   back: t("common.back"),
   more: t("common.more"),
+  collapse: t("common.collapse"),
   copyExternalLink: t("platform.copyExternalLink"),
   externalLinkCopied: t("platform.externalLinkCopied"),
   expandRail: t("platform.expandRail"),

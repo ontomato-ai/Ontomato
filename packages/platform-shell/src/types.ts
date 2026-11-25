@@ -111,8 +111,10 @@ export interface PlatformBrand {
 export interface PlatformShellLabels {
   /** The way back on a page the reader reached from elsewhere. */
   back: string;
-  /** The page header's "more" button. */
+  /** The page header's "more" button and rail overflow toggle. */
   more: string;
+  /** Label for collapsing an expanded list in the rail. */
+  collapse?: string;
   /** The header's item that copies the entry's external link, and what it says once copied. */
   copyExternalLink: string;
   externalLinkCopied: string;
