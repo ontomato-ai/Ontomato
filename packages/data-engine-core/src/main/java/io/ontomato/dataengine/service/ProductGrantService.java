@@ -29,7 +29,6 @@ public class ProductGrantService implements InitializingBean {
         CREATE TABLE IF NOT EXISTS product_resource(domain_id text NOT NULL,id text NOT NULL,owner_id text NOT NULL,PRIMARY KEY(domain_id,id));
         CREATE TABLE IF NOT EXISTS product_grant(domain_id text NOT NULL,resource_id text NOT NULL,principal_kind text NOT NULL,principal_id text NOT NULL,verb text NOT NULL,PRIMARY KEY(domain_id,resource_id,principal_kind,principal_id,verb));
         CREATE INDEX IF NOT EXISTS product_grant_principal ON product_grant(domain_id,principal_kind,principal_id,verb);
-        CREATE TABLE IF NOT EXISTS product_application_grant_migration(domain_id text NOT NULL,id text NOT NULL,PRIMARY KEY(domain_id,id));
         """);}
     public boolean allowed(String id,String verb){
         var user=identity.getCurrentUser();if(user==null||user.getDomainId()==null)return false;
@@ -44,10 +43,13 @@ public class ProductGrantService implements InitializingBean {
     }
     public Map<String, Boolean> allowedBatch(Collection<String> ids, String verb) {
         var user = identity.getCurrentUser();
+        return allowedBatchFor(user == null ? null : user.getDomainId(), user == null ? null : user.getId(), ids, verb);
+    }
+
+    public Map<String, Boolean> allowedBatchFor(String domainId, String userId, Collection<String> ids, String verb) {
         var allowed = new LinkedHashMap<String, Boolean>();
         for (String id : ids) allowed.put(id, false);
-        if (user == null || user.getDomainId() == null || user.getId() == null
-            || !ProductGrants.isValidVerb(verb)) return allowed;
+        if (domainId == null || userId == null || !ProductGrants.isValidVerb(verb)) return allowed;
 
         var domainIds = new ArrayList<String>();
         for (String id : allowed.keySet()) {
@@ -56,9 +58,8 @@ public class ProductGrantService implements InitializingBean {
         }
         if (domainIds.isEmpty()) return allowed;
 
-        String domainId = user.getDomainId();
-        String principalId = principals.productPrincipalId(user.getId());
-        var roles = principals.effectiveRoles(user.getId(), domainId);
+        String principalId = principals.productPrincipalId(userId);
+        var roles = principals.effectiveRoles(userId, domainId);
         var parameters = new ArrayList<String>(domainIds.size() + 1);
         parameters.add(domainId);
         parameters.addAll(domainIds);
@@ -76,16 +77,6 @@ public class ProductGrantService implements InitializingBean {
         for (String id : domainIds)
             allowed.put(id, ProductGrants.allows(grants.getOrDefault(id, List.of()), principalId, roles, verb));
         return allowed;
-    }
-    @Transactional public void migrateApplication(String domainId,String id){
-        requireDomainGrantResource(id);
-        lockResource(domainId,id);
-        if(Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM product_application_grant_migration WHERE domain_id=? AND id=?)",Boolean.class,domainId,id)))return;
-        var authors=db.queryForList("SELECT owner_user_id FROM sys_application WHERE domain_id=? AND id=? AND owner_user_id IS NOT NULL",String.class,domainId,id);
-        if(authors.isEmpty())return;
-        db.update("INSERT INTO product_resource(domain_id,id,owner_id) VALUES(?,?,?) ON CONFLICT DO NOTHING",domainId,id,authors.getFirst());
-        for(var grant:principals.legacyApplicationGrants(domainId,id))insert(domainId,id,grant);
-        db.update("INSERT INTO product_application_grant_migration(domain_id,id) VALUES(?,?)",domainId,id);
     }
     public List<String> resources(String verb){
         var user=identity.getCurrentUser();if(user==null||user.getDomainId()==null)return List.of();
@@ -148,7 +139,6 @@ public class ProductGrantService implements InitializingBean {
 
     @Transactional public void retireApplication(String domainId, String id) {
         unregister(domainId, id);
-        db.update("DELETE FROM product_application_grant_migration WHERE domain_id=? AND id=?", domainId, id);
     }
 
     private static void requireDomainGrantResource(String id) {

@@ -2,6 +2,9 @@ package io.ontomato.dataengine.applications;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.core.bean.User;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /** Edition-owned authorization and permission declarations. */
 public interface ApplicationAccess {
@@ -10,7 +13,11 @@ public interface ApplicationAccess {
     void requireConnectedRegistration(User user);
     boolean canMaintain(JSONObject application, User user);
     boolean canEnter(JSONObject application, User user);
-    /** A read-only page-skill projection may reuse one subject's authorization facts. */
+    default Set<String> enterableApplicationIds(List<JSONObject> apps, User user) {
+        return apps.stream().filter(app -> canEnter(app, user))
+            .map(app -> app.getString("id")).collect(Collectors.toSet());
+    }
+    /** Catalog reads reuse one subject's authorization facts for the duration of the projection. */
     default <T> T withPageSkillAuthorization(User user, java.util.function.Supplier<T> read) {
         return read.get();
     }

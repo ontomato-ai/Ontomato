@@ -17,10 +17,6 @@ class ProductGrantServiceTest {
         var db = mock(JdbcTemplate.class);
         var identity = mock(IdentityService.class);
         var principals = mock(ProductPrincipalLookup.class);
-        var member = mock(User.class);
-        when(member.getId()).thenReturn("member");
-        when(member.getDomainId()).thenReturn("domain-a");
-        when(identity.getCurrentUser()).thenReturn(member);
         when(principals.productPrincipalId("member")).thenReturn("mapped-member");
         when(principals.effectiveRoles("member", "domain-a")).thenReturn(Set.of("reader"));
 
@@ -38,10 +34,9 @@ class ProductGrantServiceTest {
         assertEquals(Map.of(
             "builtin-product-frame", true, "builtin-product-", false,
             "owned", true, "role-read", true, "shared", true, "edit-only", false, "missing", false
-        ), service.allowedBatch(List.of(
+        ), service.allowedBatchFor("domain-a", "member", List.of(
             "owned", "builtin-product-frame", "role-read", "shared", "edit-only", "missing", "builtin-product-", "owned"
         ), "use"));
-        verify(identity).getCurrentUser();
         verify(principals).productPrincipalId("member");
         verify(principals).effectiveRoles("member", "domain-a");
         verify(db).query(anyString(), any(ResultSetExtractor.class), eq(parameters));
@@ -99,7 +94,6 @@ class ProductGrantServiceTest {
             assertAll(
                 () -> assertThrows(ResponseStatusException.class, () -> service.register("domain", id, "owner", true)),
                 () -> assertThrows(ResponseStatusException.class, () -> service.unregister("domain", id)),
-                () -> assertThrows(ResponseStatusException.class, () -> service.migrateApplication("domain", id)),
                 () -> assertThrows(ResponseStatusException.class, () -> service.grant(id,
                     new ProductGrants.Grant("principal", "other", "use"), false)),
                 () -> assertThrows(ResponseStatusException.class, () -> service.share(id, true)));
@@ -119,14 +113,6 @@ class ProductGrantServiceTest {
         assertEquals(List.of("Builtin-product-domain"), service.resourcesFor("domain", "member", "use"));
     }
 
-    @Test void repeatedApplicationMigrationDoesNotRestoreRevokedLegacyAuthority() {
-        var db=mock(JdbcTemplate.class);var principals=mock(ProductPrincipalLookup.class);
-        when(db.queryForObject("SELECT EXISTS(SELECT 1 FROM product_application_grant_migration WHERE domain_id=? AND id=?)",Boolean.class,"domain","app-example")).thenReturn(true);
-        var service=new ProductGrantService(db,mock(IdentityService.class),principals);
-        service.migrateApplication("domain","app-example");
-        verifyNoInteractions(principals);
-        verify(db,never()).update(anyString(),org.mockito.ArgumentMatchers.<Object[]>any());
-    }
     @Test void repeatedImportsDoNotRestoreRevokedPrincipalOrDomainGrants() {
         var db=mock(JdbcTemplate.class);
         when(db.queryForList("SELECT owner_id FROM product_resource WHERE domain_id=? AND id=?",String.class,"domain","profile")).thenReturn(java.util.List.of("author"));
