@@ -294,12 +294,13 @@ export async function startWorkbench(
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
   await initializeConnection(registerProductResource);
-  const { registerBuiltinProducts } = await import("../services/product-panels/builtin-products");
+  const { registerBuiltinProducts, installRegisteredPanelDependencies } = await import("../services/product-panels/builtin-products");
   await registerBuiltinProducts();
   // Production images carry the apps SDK next to the web pages; development serves neither from a build.
   startModelMigration();
   getWorkbenchLogStore();
   const stopApplication = await initializeApplication?.();
+  await installRegisteredPanelDependencies();
   const { initializeExistingDomainPresetAgents } = await import("../services/assistant/preset-initialization");
   await initializeExistingDomainPresetAgents();
   const { startWorkbenchPlatformEvents } = await import("../services/admin/account-deletion-consumer");

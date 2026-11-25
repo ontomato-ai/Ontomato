@@ -14,7 +14,7 @@ vi.mock("../../../infrastructure/product-write-lock", () => ({ lockProducts: vi.
 vi.mock("../../product-governance/grants", () => ({ requireProductGrant: state.requireGrant }));
 vi.mock("../object-detail", () => ({ requireDetailPanel: state.requirePanel, findObjectDetailPanelId: async () => "old" }));
 vi.mock("../references", () => ({ validateObjectDetailPanelMapping: state.validate }));
-vi.mock("../entry-dependency-store", () => ({ queueDependencyPublication: vi.fn() }));
+vi.mock("../entry-dependency-store", () => ({ compileRegisteredPanelRoots: vi.fn(), queueDependencyPublication: vi.fn() }));
 vi.mock("../entry-dependency-publication", () => ({ deliverEntryDependencyPublications: vi.fn() }));
 
 const owner = { domainId: "domain", userId: "modeler" };

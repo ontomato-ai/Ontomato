@@ -12,10 +12,15 @@ import { errorHandler } from "../middleware/error-handler";
 import { objectDetailsRouter } from "../routes/object-details";
 
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
+import { config } from "../../config/application";
+import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
+import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { classesUsingDetailPanel, resolveObjectDetail } from "../../services/product-panels/object-detail";
 import { clearObjectDetail, setObjectDetail } from "../../services/product-panels/object-detail-write";
+import { compileRegisteredPanelRoots } from "../../services/product-panels/entry-dependency-store";
 
 const state = vi.hoisted(() => ({
   pool: undefined as pg.Pool | undefined,
@@ -39,6 +44,7 @@ if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable Po
 
 let server: Server;
 let base: string;
+const previousQueryUrl = config.dataQuery.baseUrl;
 const owner = { domainId: "domain", userId: "editor" };
 const credentials = { token: "caller" };
 const panel = {
@@ -55,10 +61,12 @@ beforeAll(async () => {
   state.schema = `object_detail_${randomUUID().replaceAll("-", "")}`;
   state.pool = new pg.Pool({ connectionString: database });
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
+  await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
 
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { token: "fixture-service", entries: () => [] });
   app.use("/api/object-details", (req, _res, next) => {
     Object.assign(req, owner, credentials);
     next();
@@ -67,9 +75,12 @@ beforeAll(async () => {
   server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  config.dataQuery.baseUrl = base;
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "fixture-service");
 });
 
 afterAll(async () => {
+  config.dataQuery.baseUrl = previousQueryUrl;
   vi.unstubAllEnvs();
   if (server) await new Promise<void>(resolve => server.close(() => resolve()));
   await state.pool?.query(`DROP SCHEMA "${state.schema}" CASCADE`);
@@ -80,7 +91,8 @@ beforeEach(async () => {
   state.assertPermission.mockReset();
   state.requireGrant.mockReset();
   state.requireGrant.mockResolvedValue(undefined);
-  await state.pool!.query(`TRUNCATE "${state.schema}".product_panels, "${state.schema}".product_object_details`);
+  await state.pool!.query(`TRUNCATE "${state.schema}".product_panels, "${state.schema}".product_object_details,
+    "${state.schema}".product_panel_entry_dependencies, "${state.schema}".product_publication_outbox`);
 });
 
 async function addPanel(id: string, definition: object = panel) {
@@ -91,6 +103,11 @@ async function addPanel(id: string, definition: object = panel) {
 async function mapClass(className: string, panelId: string, domainId = owner.domainId) {
   await state.pool!.query(`INSERT INTO "${state.schema}".product_object_details (domain_id,class_name,panel_id,updated_by)
     VALUES ($1,$2,$3,$4)`, [domainId, className, panelId, owner.userId]);
+}
+
+async function mapInstalledClass(className: string, panelId: string) {
+  await transaction(client => compileRegisteredPanelRoots(client, owner.domainId, [panelId]));
+  await mapClass(className, panelId);
 }
 
 it("resolves a usable current panel and distinguishes a class with no mapping", async () => {
@@ -143,7 +160,7 @@ it("requires ontology-modeling and the new panel use grant for a first mapping",
 it("replaces and clears the mapping with modeling permission and only the new panel use grant", async () => {
   await addPanel("old");
   await addPanel("new");
-  await mapClass("Customer", "old");
+  await mapInstalledClass("Customer", "old");
   state.requireGrant.mockImplementation(async (id, verb) => {
     if (id === "new" && verb === "use") throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
   });
@@ -203,7 +220,7 @@ it("rejects a remapping that closes a panel cycle without changing the old mappi
   });
   await addPanel("old");
   await addPanel("leaf");
-  await mapClass("Customer", "old");
+  await mapInstalledClass("Customer", "old");
   const url = `${base}/api/object-details/Customer`;
   const set = (panelId: string) => fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(setObjectDetailRequestSchema.parse({ panelId })) });

@@ -18,6 +18,7 @@ import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import { panelSkillRef } from "../../services/product-panels/skill-identity";
 import { installContentLayout } from "../../content/layout";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
@@ -113,6 +114,10 @@ beforeAll(async () => {
   registerPanelSkillProvider();
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === domainId
+    ? [...entries, library].map(({ applicationId, useId, panelId }) => ({
+      entryId: `${applicationId}/${useId}`, roots: { panelIds: [panelId], agentIds: [] },
+    })) : [] });
   app.use(unwrapCallbackCredential);
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");

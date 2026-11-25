@@ -33,6 +33,11 @@ async function submit(change: EntryDependencyChangeRequest) {
   publicationResponse.parse(await request("/permissions/service/entry-dependency-changes", change));
 }
 
+export async function readAffectedEntryRoots(domainId: string, panelIds: string[]) {
+  const result = affectedRootsResponse.parse(await request("/platform/applications/service/affected-entry-roots", { domainId, panelIds }));
+  return result.data.entries;
+}
+
 function grantableDependency({ objectType, objectKey }: EntryDependency) {
   if (objectType === "PANEL" || objectType === "PROJECTION") return !isBuiltinProductId(objectKey);
   if (objectType === "COMPONENT") return isDomainComponentId(objectKey);
@@ -57,8 +62,8 @@ async function publish(client: PoolClient, domainId: string, { source, panels, d
   const panelIds = panels.map(panel => panel.panelId);
   const roots = [];
   if (panelIds.length) {
-    const result = affectedRootsResponse.parse(await request("/platform/applications/service/affected-entry-roots", { domainId, panelIds }));
-    for (const { entryId, roots: entryRoots } of result.data.entries) roots.push({ entryId, before: entryRoots, after: entryRoots });
+    for (const { entryId, roots: entryRoots } of await readAffectedEntryRoots(domainId, panelIds))
+      roots.push({ entryId, before: entryRoots, after: entryRoots });
     const details = new Map((await listObjectDetailPanelMappings(domainId, client)).map(({ className, panelId }) => [className, panelId]));
     for (const queued of [...later].reverse()) {
       if (!queued.detail) continue;

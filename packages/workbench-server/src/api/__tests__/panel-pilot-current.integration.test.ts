@@ -19,6 +19,7 @@ import { platformScheduleFormSchema, platformTaskRunSchema, platformTaskSchema }
 import { scheduledTaskPanelMessages, scheduledTaskPanelTextZhCn } from "@ontomato/platform-schedules/panel-text";
 import examples from "../../../../contracts/examples/platform-schedules.json";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { installContentLayout } from "../../content/layout";
 import { workbenchApplications } from "../../services/applications/builtins";
 import { configureI18n } from "../../i18n";
@@ -183,6 +184,12 @@ beforeAll(async () => {
   await ensurePanelOperationsSchema(state.pool);
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === "pilot"
+    ? [
+      { entryId: "app-schedules/pilot", roots: { panelIds: [panelId], agentIds: [] } },
+      { entryId: "ontology-pilot/graph", roots: { panelIds: [graphPanelId], agentIds: [] } },
+      { entryId: "ontology-pilot/data", roots: { panelIds: [dataPanelId], agentIds: [] } },
+    ] : [] });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     resourceIds.add(req.body.id);

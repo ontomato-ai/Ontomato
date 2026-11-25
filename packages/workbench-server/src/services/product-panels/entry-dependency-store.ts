@@ -2,7 +2,7 @@ import type { EntryDependency, EntryDependencyChangeRequest } from "@ontomato/co
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
 import { qualifiedTable as t } from "../../infrastructure/postgres";
-import { currentProductRows, type CurrentProductKind } from "../../infrastructure/product-current";
+import type { CurrentProductKind } from "../../infrastructure/product-current";
 import { dependencyKey, entryDependencyCompiler } from "./entry-dependency-compiler";
 
 const table = () => t("product_panel_entry_dependencies");
@@ -77,17 +77,7 @@ export async function compileRegisteredPanelRoots(client: PoolClient, domainId: 
   }
 }
 
-export async function installPanelDependencies(client: PoolClient) {
-  const { rows } = await client.query<{ domain_id: string | null; id: string }>(
-    `SELECT domain_id,id FROM ${currentProductRows("panel")} AS definitions ORDER BY domain_id,id`,
-  );
-  const byDomain = new Map<string | null, string[]>();
-  for (const { domain_id, id } of rows) {
-    const ids = byDomain.get(domain_id) ?? [];
-    ids.push(id);
-    byDomain.set(domain_id, ids);
-  }
-  for (const [domain, ids] of byDomain) await compileRegisteredPanelRoots(client, domain, ids);
-  await client.query(`DELETE FROM ${table()} WHERE domain_id='' AND NOT EXISTS (
-    SELECT 1 FROM ${t("builtin_product_panels")} AS builtin WHERE builtin.id=panel_id)`);
+export async function installBuiltinPanelDependencies(client: PoolClient, panelIds: string[]) {
+  await compileRegisteredPanelRoots(client, null, panelIds);
+  await client.query(`DELETE FROM ${table()} WHERE domain_id='' AND NOT (panel_id=ANY($1::text[]))`, [panelIds]);
 }

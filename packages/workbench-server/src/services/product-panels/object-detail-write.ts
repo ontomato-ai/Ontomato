@@ -6,7 +6,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
 import { findObjectDetailPanelId, requireDetailPanel } from "./object-detail";
 import { validateObjectDetailPanelMapping } from "./references";
-import { queueDependencyPublication } from "./entry-dependency-store";
+import { compileRegisteredPanelRoots, queueDependencyPublication } from "./entry-dependency-store";
 import { deliverEntryDependencyPublications } from "./entry-dependency-publication";
 
 async function writeObjectDetail(
@@ -28,6 +28,7 @@ async function writeObjectDetail(
     await requireProductGrant(panelId, "use", credentials);
     await validateObjectDetailPanelMapping(owner.domainId, className, panelId, client);
     const before = await findObjectDetailPanelId(owner.domainId, className, client);
+    await compileRegisteredPanelRoots(client, owner.domainId, [panelId]);
     await client.query(`INSERT INTO ${t("product_object_details")} (domain_id,class_name,panel_id,updated_by)
       VALUES ($1,$2,$3,$4) ON CONFLICT (domain_id,class_name) DO UPDATE
       SET panel_id=EXCLUDED.panel_id,updated_by=EXCLUDED.updated_by,updated_at=now()`,

@@ -20,6 +20,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import { panelDefinitionSnapshotSchema } from "@ontomato/contracts/product-subscriptions";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { installContentLayout } from "../../content/layout";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
@@ -95,6 +96,12 @@ beforeAll(async () => {
   const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === "test-domain"
+    ? [
+      { entryId: "app-nested/main", roots: { panelIds: [nestedRootId], agentIds: [] } },
+      { entryId: "app-personal/main", roots: { panelIds: [personalPanelId], agentIds: [] } },
+      ...[...trialApplications].map(id => ({ entryId: `${id}/trial`, roots: { panelIds: [id], agentIds: [] } })),
+    ] : [] });
   const granted = (token: string | undefined, id: string, verb: "use" | "edit") => {
     const owner = grants.get(id);
     return owner !== undefined && ((owner === token && (verb === "edit" || !editOnlyPanels.has(id))) || (verb === "use" && (
