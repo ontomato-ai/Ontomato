@@ -37,6 +37,13 @@ it("registers historical resources in every domain before removing the migration
     { domainId: "another", ownerId: "author", id: "private", shared: false },
   ]);
   expect(mocks.query).toHaveBeenCalledTimes(3);
+
+  mocks.query.mockReset();
+  mocks.post.mockClear();
+  mocks.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [privateAsset] }).mockResolvedValue({ rows: [] });
+  await migrateProductGrants({ query: mocks.query }, registerProductResource);
+  expect(mocks.post.mock.calls[0][2]).toEqual({ domainId: "another", ownerId: "author", id: "private", shared: false });
+
   mocks.query.mockReset();
   mocks.query.mockResolvedValueOnce(column).mockResolvedValueOnce({ rows: [privateAsset] });
   mocks.post.mockRejectedValue(new Error("Unavailable"));
