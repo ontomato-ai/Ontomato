@@ -331,6 +331,11 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(summaryShowTitle?.default, "true");
     assert.match(summaryShowTitle?.description ?? "", /record\.label/);
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
+    const readerFormat = declared.get("ObjectTextReader").config.find((prop) => prop.name === "format");
+    assert.equal(readerFormat?.required, false);
+    for (const mode of ["auto", "plain", "markdown", "code", "table", "diff"]) {
+      assert.match(readerFormat?.type ?? "", new RegExp(`"${mode}"`), `ObjectTextReader.format includes "${mode}"`);
+    }
     assert.equal(declared.get("PanelData").config, undefined, "a component with no configuration declares none");
     const metricChartConfigNames = (declared.get("MetricChart").config ?? []).map((prop) => prop.name);
     assert.ok(metricChartConfigNames.includes("file-override"), "MetricChart exposes file-override for live draft preview");
