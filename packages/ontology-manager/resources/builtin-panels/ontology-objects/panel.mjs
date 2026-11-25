@@ -30,13 +30,13 @@ const ATTRIBUTE_COLUMNS_WIDE = [
     key: "businessKey",
     labelKey: "ot.colBusinessKey",
     width: 112,
-    valueMap: { true: { labelKey: "ot.yes", tone: "info" }, false: { labelKey: "ot.dash" } },
+    valueMap: { true: { labelKey: "ot.yes" }, false: { labelKey: "ot.dash" } },
   },
   {
     key: "primaryKey",
     labelKey: "ot.colPrimaryKey",
     width: 112,
-    valueMap: { true: { labelKey: "ot.yes", tone: "success" }, false: { labelKey: "ot.dash" } },
+    valueMap: { true: { labelKey: "ot.yes" }, false: { labelKey: "ot.dash" } },
   },
   { key: "attrDesc", labelKey: "ot.colAttrDescription", emptyKey: "ot.dash", minWidth: 140 },
 ];

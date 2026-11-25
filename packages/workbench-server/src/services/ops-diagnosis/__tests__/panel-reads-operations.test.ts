@@ -352,7 +352,7 @@ describe("Observe and Autotest panel owner reads and operations", () => {
       expect(rows.map((row) => row.primaryKey)).toEqual([turnKey, keptKey]);
       expect(rows[0]).toMatchObject({
         fields: { status: "collecting", statusLabel: expect.any(String), statusTone: "info", hasEvidence: false },
-        tones: { statusLabel: "info" },
+        tones: { statusLabel: "info", hasEvidence: "warning" },
       });
       expect(rows[0]!.fields.statusLabel).not.toBe("collecting");
       const detail = await adapter.record(turnKey);
@@ -364,7 +364,7 @@ describe("Observe and Autotest panel owner reads and operations", () => {
           statusTone: "info",
           createdAt: rows[0]!.fields.createdAt,
         },
-        tones: { statusLabel: "info" },
+        tones: { statusLabel: "info", hasEvidence: "warning" },
         outputs: { status: "collecting", kept: false, hasEvidence: false },
       });
       expect(await adapter.evidenceRuns(turnKey)).toEqual([]);
@@ -463,11 +463,19 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     if (!Array.isArray(wrongOnly)) throw new Error("Expected terminal run results");
     expect(wrongOnly.map((r) => r.fields.caseId)).toEqual(["c2"]);
     expect(wrongOnly[0]!.primaryKey).toBe(encodeAutotestCaseArtifactKey(runId, "c2"));
+    expect(wrongOnly[0]!.tones).toMatchObject({ verdict: "danger", verdictLabel: "danger" });
+
+    const correctOnly = await runAdapter.results(runId, { verdict: "correct" });
+    expect(Array.isArray(correctOnly)).toBe(true);
+    if (!Array.isArray(correctOnly)) throw new Error("Expected terminal run results");
+    expect(correctOnly[0]!.tones?.verdict).toBeUndefined();
+    expect(correctOnly[0]!.tones?.verdictLabel).toBe("success");
 
     const caseKey = encodeAutotestCaseArtifactKey(runId, "c1");
     const caseAdapter = createAutotestCaseArtifactReadAdapter({ domainId: "domain-a", userId: "user-1" }, { token: "tok", locale: "en" });
     const caseRecord = await caseAdapter.record(caseKey);
     expect(caseRecord.outputs).toEqual({ runId, caseId: "c1", hasEvidence: true });
+    expect(caseRecord.tones).toMatchObject({ hasEvidence: "info", verdictLabel: "success" });
     expect((await caseAdapter.file(caseKey, "trace.json")).fields.content).toBe('{\n  "ok": true\n}');
 
     const host = makeHost("domain-a");

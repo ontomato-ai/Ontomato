@@ -449,23 +449,45 @@ describe("Gap 5 + Gap 2 + D2-1 + D3-4: ObjectList", () => {
     expect(element.querySelectorAll(".sdk-object-list-draft-dot").length).toBe(1);
   });
 
-  it("applies semantic row tone classes via rowToneField and rowToneMap (D3-4)", async () => {
+  it("applies semantic row tone classes via rowToneField from value/row tones (D3-4)", async () => {
+    const tonedRows = [
+      {
+        className: BUSINESS_KNOWLEDGE,
+        primaryKey: "k-1",
+        label: "Alpha",
+        fields: { title: "Alpha", status: "passed" },
+        tones: { status: "success" as const },
+      },
+      {
+        className: BUSINESS_KNOWLEDGE,
+        primaryKey: "k-2",
+        label: "Beta",
+        fields: { title: "Beta", status: { kind: "tag" as const, label: "Failed", tone: "danger" as const } },
+      },
+      {
+        className: BUSINESS_KNOWLEDGE,
+        primaryKey: "k-3",
+        label: "Gamma",
+        fields: { title: "Gamma", status: "warning" },
+      },
+      {
+        className: BUSINESS_KNOWLEDGE,
+        primaryKey: "k-4",
+        label: "Delta",
+        fields: { title: "Delta", status: "pending" },
+        tones: { status: "info" as const },
+      },
+    ];
     const { element } = mountDirect(
       baseManifest,
       { "list.items": baseListProjection },
-      (req) => ("operations" in req && req.operations ? ready({}) : readyRows(listRows)),
+      (req) => ("operations" in req && req.operations ? ready({}) : readyRows(tonedRows as never)),
       {
         memberProps: {
           list: {
             layout: "table",
             columns: [{ key: "title" }, { key: "status" }],
             rowToneField: "status",
-            rowToneMap: {
-              passed: "success",
-              failed: "danger",
-              warning: "warning",
-              pending: "info",
-            },
           },
         },
       },

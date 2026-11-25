@@ -226,8 +226,7 @@
               "width": 112,
               "valueMap": {
                 "true": {
-                  "labelKey": "ot.yes",
-                  "tone": "info"
+                  "labelKey": "ot.yes"
                 },
                 "false": {
                   "labelKey": "ot.dash"
@@ -240,8 +239,7 @@
               "width": 112,
               "valueMap": {
                 "true": {
-                  "labelKey": "ot.yes",
-                  "tone": "success"
+                  "labelKey": "ot.yes"
                 },
                 "false": {
                   "labelKey": "ot.dash"

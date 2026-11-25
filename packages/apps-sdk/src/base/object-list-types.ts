@@ -85,5 +85,5 @@ export interface ObjectListSearchSubmit {
   readonly inputField: string;
 }
 
-/** Supported semantic tones for whole-row table highlighting (`rowToneField` / `rowToneMap`). */
+/** Supported semantic tones for whole-row table highlighting (`rowToneField`). */
 export type ObjectListRowTone = "success" | "danger" | "warning" | "info";

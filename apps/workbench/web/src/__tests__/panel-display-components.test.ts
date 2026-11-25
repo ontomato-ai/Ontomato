@@ -708,35 +708,33 @@ describe("TypedValue emptyText", () => {
 });
 
 describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
-  it("maps exact scalar values in TypedValue to localized labels, tones, and platform icons, with exact fallback", async () => {
+  it("maps exact scalar values in TypedValue to localized labels and platform icons while reading tone from values/record.tones", async () => {
     const valueMap = {
       APPROVED: {
         labels: { en: "Approved", "zh-CN": "已通过" },
-        tone: "success" as const,
         icon: "check-circle",
       },
       REJECTED: {
         labelKey: "status.rejected",
-        tone: "danger" as const,
         icon: "x-circle",
       },
       true: {
         label: "Enabled",
         icon: "eye",
       },
-      ONLY_TONE: {
-        tone: "warning" as const,
+      UNKNOWN_ICON: {
+        label: "Fallback label",
         icon: "unknown-nonexistent-icon",
       },
     };
 
+    // Standalone valueMap maps localized label + icon without forcing a tag; tone comes from the value or explicit prop.
     const approved = mountStandalone(TypedValue, { value: "APPROVED", valueMap }, { locale: "zh-CN" });
-    const tag = approved.container.querySelector(".sdk-typed-value-tag")!;
-    expect(tag).not.toBeNull();
-    expect(tag.getAttribute("data-tone")).toBe("success");
-    expect(tag.textContent?.trim()).toBe("已通过");
-    expect(tag.querySelector("svg.sdk-typed-value-icon")?.getAttribute("data-icon")).toBe("check-circle");
+    expect(approved.container.querySelector(".sdk-typed-value-tag")).toBeNull();
+    expect(approved.container.querySelector(".sdk-typed-value-text")?.textContent?.trim()).toBe("已通过");
+    expect(approved.container.querySelector("svg.sdk-typed-value-icon")?.getAttribute("data-icon")).toBe("check-circle");
 
+    // Bound record supplies semantic tone via record.tones while valueMap supplies localized label and icon.
     const rejectedProj: DirectProjection = {
       ...meta,
       id: "status-rejected",
@@ -755,7 +753,7 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
     };
     const rejected = mountProjection(
       rejectedProj,
-      () => ready({ primaryKey: "rev-1", label: "Review 1", fields: { decision: "REJECTED" } }),
+      () => ready({ primaryKey: "rev-1", label: "Review 1", fields: { decision: "REJECTED" }, tones: { decision: "danger" } }),
       { locale: "zh-CN", messages: { "zh-CN": { "status.rejected": "已驳回" } } },
     );
     await vi.waitFor(() => {
@@ -766,18 +764,16 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
     expect(rejTag.textContent?.trim()).toBe("已驳回");
     expect(rejTag.querySelector("svg.sdk-typed-value-icon")?.getAttribute("data-icon")).toBe("x-circle");
 
-    // Boolean key without tone renders inline text + icon (not forced into a tag)
+    // Boolean key renders inline text + icon (not forced into a tag)
     const enabled = mountStandalone(TypedValue, { value: true, valueMap });
     expect(enabled.container.querySelector(".sdk-typed-value-tag")).toBeNull();
     expect(enabled.container.querySelector(".sdk-typed-value-text")?.textContent?.trim()).toBe("Enabled");
     expect(enabled.container.querySelector("svg.sdk-typed-value-icon")?.getAttribute("data-icon")).toBe("eye");
 
-    // Entry with tone only keeps original text and ignores unknown icon names
-    const toneOnly = mountStandalone(TypedValue, { value: "ONLY_TONE", valueMap });
-    const toneTag = toneOnly.container.querySelector(".sdk-typed-value-tag")!;
-    expect(toneTag.getAttribute("data-tone")).toBe("warning");
-    expect(toneTag.textContent?.trim()).toBe("ONLY_TONE");
-    expect(toneTag.querySelector(".sdk-typed-value-icon")).toBeNull();
+    // Unknown icon names are ignored cleanly
+    const unknownIcon = mountStandalone(TypedValue, { value: "UNKNOWN_ICON", valueMap });
+    expect(unknownIcon.container.querySelector(".sdk-typed-value-text")?.textContent?.trim()).toBe("Fallback label");
+    expect(unknownIcon.container.querySelector(".sdk-typed-value-icon")).toBeNull();
 
     // Unmatched value falls back as-is
     const unmatched = mountStandalone(TypedValue, { value: "PENDING", valueMap });
@@ -787,10 +783,10 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
 
   it("never evaluates numeric ranges, thresholds, or expressions in valueMap keys", () => {
     const thresholdMap = {
-      "> 3": { label: "Abnormal", tone: "danger" as const, icon: "alert-triangle" },
-      ">= 10": { label: "Critical", tone: "danger" as const },
-      "count > 0": { label: "Positive", tone: "warning" as const },
-      "5": { label: "Exactly five", tone: "info" as const },
+      "> 3": { label: "Abnormal", icon: "alert-triangle" },
+      ">= 10": { label: "Critical" },
+      "count > 0": { label: "Positive" },
+      "5": { label: "Exactly five" },
     };
 
     const twelve = mountStandalone(TypedValue, { value: 12, valueMap: thresholdMap });
@@ -798,11 +794,10 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
     expect(twelve.container.textContent?.trim()).toBe("12");
 
     const five = mountStandalone(TypedValue, { value: 5, valueMap: thresholdMap });
-    expect(five.container.querySelector(".sdk-typed-value-tag")?.getAttribute("data-tone")).toBe("info");
     expect(five.container.textContent?.trim()).toBe("Exactly five");
   });
 
-  it("propagates fieldFormats.valueMap inside RecordTemplate and maps InfoBanner tone/icon/label from metric or record", async () => {
+  it("propagates fieldFormats.valueMap inside RecordTemplate and reads InfoBanner tone from value/record.tones while mapping label/icon via valueMap", async () => {
     const templateRes = mountStandalone(
       RecordTemplate,
       {
@@ -810,8 +805,9 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
         values: { decision: "APPROVED" },
         fieldFormats: {
           decision: {
+            tone: "success",
             valueMap: {
-              APPROVED: { label: "已通过", tone: "success", icon: "check-circle" },
+              APPROVED: { label: "已通过", icon: "check-circle" },
             },
           },
         },
@@ -831,18 +827,18 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
       outputs: {},
       config: {
         field: "decision",
+        toneField: "decision",
         valueMap: {
           REJECTED: {
             labels: { en: "Rejected by reviewer", "zh-CN": "审核已驳回" },
-            tone: "danger",
             icon: "x-circle",
           },
         },
       },
       data: {
-        result: {
-          source: { object: { literal: { className: METRIC_VIEW, primaryKey: "mv-decision" } } },
-          read: "result",
+        record: {
+          source: { object: { literal: { className: OBJECT_TYPE, primaryKey: "rev-1" } } },
+          read: "record",
           params: {},
         },
       },
@@ -851,9 +847,10 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
       bannerProj,
       () =>
         ready({
-          columns: [{ key: "decision", label: "Decision", type: "string" }],
-          rows: [{ decision: "REJECTED" }],
-          truncation: null,
+          primaryKey: "rev-1",
+          label: "Review 1",
+          fields: { decision: "REJECTED" },
+          tones: { decision: "danger" },
         }),
       { locale: "zh-CN" },
     );
@@ -866,7 +863,7 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
     expect(aside.querySelector(".sdk-info-banner-icon")?.getAttribute("data-icon")).toBe("x-circle");
     expect(aside.textContent).toContain("审核已驳回");
 
-    const toneMapBannerProj: DirectProjection = {
+    const toneFieldBannerProj: DirectProjection = {
       ...meta,
       id: "severity-banner",
       name: "Severity banner",
@@ -875,7 +872,6 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
       outputs: {},
       config: {
         toneField: "level",
-        toneMap: { WARN: "warning", OK: "success" },
         template: "{count} items flagged",
       },
       data: {
@@ -886,13 +882,13 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
         },
       },
     };
-    const sevBanner = mountProjection(toneMapBannerProj, () =>
+    const sevBanner = mountProjection(toneFieldBannerProj, () =>
       ready({
         columns: [
           { key: "level", label: "Level", type: "string" },
           { key: "count", label: "Count", type: "integer" },
         ],
-        rows: [{ level: "WARN", count: 4 }],
+        rows: [{ level: "warning", count: 4 }],
         truncation: null,
       }),
     );
@@ -903,7 +899,7 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
     expect(sevBanner.container.textContent?.replace(/\s+/g, " ")).toContain("4 items flagged");
   });
 
-  it("applies column.valueMap in ObjectList table cells with tone, platform icon, localized label, and raw fallback", async () => {
+  it("applies column.valueMap in ObjectList table cells for localized label and icon while reading tone from row.tones", async () => {
     const listProjection: DirectProjection = {
       ...meta,
       id: "review-table",
@@ -919,8 +915,8 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
             key: "reviewResult",
             labelKey: "col.result",
             valueMap: {
-              APPROVED: { labels: { en: "Approved", "zh-CN": "已通过" }, tone: "success", icon: "check-circle" },
-              REJECTED: { labels: { en: "Rejected", "zh-CN": "已驳回" }, tone: "danger", icon: "x-circle" },
+              APPROVED: { labels: { en: "Approved", "zh-CN": "已通过" }, icon: "check-circle" },
+              REJECTED: { labels: { en: "Rejected", "zh-CN": "已驳回" }, icon: "x-circle" },
             },
           },
         ],
@@ -931,8 +927,8 @@ describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
       listProjection,
       () =>
         ready([
-          { primaryKey: "r1", label: "Case A", fields: { reviewResult: "APPROVED" } },
-          { primaryKey: "r2", label: "Case B", fields: { reviewResult: "REJECTED" } },
+          { primaryKey: "r1", label: "Case A", fields: { reviewResult: "APPROVED" }, tones: { reviewResult: "success" } },
+          { primaryKey: "r2", label: "Case B", fields: { reviewResult: "REJECTED" }, tones: { reviewResult: "danger" } },
           { primaryKey: "r3", label: "Case C", fields: { reviewResult: "PENDING" } },
         ]),
       { locale: "zh-CN", messages: { "zh-CN": { "col.name": "名称", "col.result": "审核结果" } } },

@@ -2,9 +2,11 @@ import { z } from "zod";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { FormFieldError } from "@ontomato/contracts/form-fields";
 import {
+  panelFieldToneSchema,
   panelFormDescriptionSchema,
   type recordFiltersSchema,
   type recordSortSchema,
+  type PanelFieldTone,
   type PanelFormDescription,
   type PanelFormField,
   type PanelFormValues,
@@ -28,6 +30,7 @@ const attributeOptionSchema = z.object({
   value: z.union([z.string(), z.number()]),
   label: z.string().min(1),
   description: z.string().nullish(),
+  tone: panelFieldToneSchema.optional(),
 });
 const classAttributesSchema = z.array(z.object({
   className: z.string(),
@@ -138,16 +141,35 @@ function recordLabel(attributes: readonly ClassAttribute[], primaryKey: string, 
   return values.some(value => value !== "") ? values.join(" / ") : primaryKey;
 }
 
+/** Resolve the declared semantic tone for an attribute's option value, if any. */
+function attributeOptionTone(attribute: ClassAttribute | undefined, raw: unknown): PanelFieldTone | undefined {
+  if (!attribute?.options || attribute.options.length === 0 || raw == null) return undefined;
+  const text = displayText(raw);
+  const matched = attribute.options.find(option => option.value === raw || String(option.value) === text);
+  return matched?.tone;
+}
+
 /** Map one owner row to the panel record shape; only the columns the row carries become fields. */
 function panelRecord(className: string, attributes: readonly ClassAttribute[], row: Record<string, unknown>): PanelRecord {
   const primaryKey = displayText(row[primaryKeyName(attributes)]);
   const fields: Record<string, string> = {};
   const fieldLabels: Record<string, string> = {};
+  const tones: Record<string, PanelFieldTone> = {};
   for (const [name, value] of Object.entries(row)) {
+    const attribute = attributes.find(item => item.name === name);
     fields[name] = displayText(value);
-    fieldLabels[name] = attributes.find(attribute => attribute.name === name)?.showName ?? name;
+    fieldLabels[name] = attribute?.showName ?? name;
+    const tone = attributeOptionTone(attribute, value);
+    if (tone) tones[name] = tone;
   }
-  return { className, primaryKey, label: recordLabel(attributes, primaryKey, row), fields, fieldLabels };
+  return {
+    className,
+    primaryKey,
+    label: recordLabel(attributes, primaryKey, row),
+    fields,
+    fieldLabels,
+    ...(Object.keys(tones).length > 0 ? { tones } : {}),
+  };
 }
 
 /** The owner's reason for an unreadable object, by its code: a permission refusal answers forbidden, a missing object keeps its reason. */
@@ -171,7 +193,14 @@ function normalizedAttributeType(type: string): string {
   return type.trim().toLowerCase();
 }
 
-function attributeSelectOptions(attribute: ClassAttribute): { value: string | number; label: string; description: string | null; disabled: boolean; disabledReason: string | null }[] | null {
+function attributeSelectOptions(attribute: ClassAttribute): {
+  value: string | number;
+  label: string;
+  description: string | null;
+  disabled: boolean;
+  disabledReason: string | null;
+  tone?: PanelFieldTone;
+}[] | null {
   if (attribute.options && attribute.options.length > 0) {
     return attribute.options.map(option => ({
       value: option.value,
@@ -179,6 +208,7 @@ function attributeSelectOptions(attribute: ClassAttribute): { value: string | nu
       description: option.description ?? null,
       disabled: false,
       disabledReason: null,
+      ...(option.tone ? { tone: option.tone } : {}),
     }));
   }
   if (attribute.enum && attribute.enum.length > 0) {
