@@ -424,9 +424,10 @@ test("declares grant reads for both resource classes and a panel-only template f
 
   for (const type of [PRODUCT_PANEL, PRODUCT_PROJECTION]) {
     assert.deepEqual(platformObjectTypes[type].reads?.grants,
-      { source: "object", parameterMode: "fixed", params: {}, result: "productCatalogueGrants" });
+      { source: "object", parameterMode: "fixed", params: {}, result: "productObjectAccess" });
   }
-  assert.deepEqual(panelReadResultSchemas.productCatalogueGrants.parse({ grants: [], shared: false }), { grants: [], shared: false });
+  const access = { grants: [{ policyId: "edit-policy", name: "Editors", verb: "EDIT" }], shared: false };
+  assert.deepEqual(panelReadResultSchemas.productObjectAccess.parse(access), access);
   const panelQuery = platformObjectTypes[PRODUCT_PANEL].reads?.query;
   assert.equal(panelQuery?.parameterMode === "fixed" && panelQuery.params.template, "productTemplate");
   assert.equal(panelReadParameterSchemas.productTemplate.safeParse(true).success, true);

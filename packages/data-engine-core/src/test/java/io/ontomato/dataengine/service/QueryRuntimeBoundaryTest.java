@@ -35,6 +35,7 @@ class QueryRuntimeBoundaryTest {
   OntologyQueryService ontology;
   MockMvc http;
   QueryGrantFilter grantFilter;
+  io.ontomato.dataengine.service.agent.AgentExecutionAccess executions;
   final User user = new QueryAccessService.GrantUser("user-a", "domain-a");
   final UserDataPermission permission = new UserDataPermission();
 
@@ -102,7 +103,8 @@ class QueryRuntimeBoundaryTest {
     var controller =
         new OntologyQueryController(
             authorization, ontology, mock(QueryOutputService.class), mock(QueryJobService.class));
-    grantFilter=new QueryGrantFilter(grants);
+    executions = mock(io.ontomato.dataengine.service.agent.AgentExecutionAccess.class);
+    grantFilter = new QueryGrantFilter(grants, executions, identity);
     http =
         MockMvcBuilders.standaloneSetup(controller, new DslController())
             .setControllerAdvice(new OntologyQueryErrors())
@@ -130,7 +132,7 @@ class QueryRuntimeBoundaryTest {
   @Test
   void grantCannotChangeRunDomainPurposeOrScopeAndRevocationIsImmediate() throws Exception {
     String run = UUID.randomUUID().toString(), token = grant(run, "retrieval-exploration");
-    var claims = grants.verify(token, run, "/ontology/query/execute-dsl");
+    var claims = grants.verifyRequest(token, run, "POST", "/ontology/query/execute-dsl");
     assertEquals("domain-a", claims.getString("domainId"));
     http.perform(
             post("/ontology/query/execute-dsl")
@@ -150,16 +152,16 @@ class QueryRuntimeBoundaryTest {
         .andExpect(status().isForbidden());
     assertThrows(
         ResponseStatusException.class,
-        () -> grants.verify(token, UUID.randomUUID().toString(), "/ontology/query/execute-dsl"));
+        () -> grants.verifyRequest(token, UUID.randomUUID().toString(), "POST", "/ontology/query/execute-dsl"));
     assertThrows(
         ResponseStatusException.class,
-        () -> grants.verify(token, run, "/writeFunctionOperation/insert"));
+        () -> grants.verifyRequest(token, run, "POST", "/writeFunctionOperation/insert"));
     assertThrows(
-        ResponseStatusException.class, () -> grants.verify(token, run, "/ontology/query/outputs"));
+        ResponseStatusException.class, () -> grants.verifyRequest(token, run, "POST", "/ontology/query/outputs"));
     grants.revoke("domain-a", run);
     assertThrows(
         ResponseStatusException.class,
-        () -> grants.verify(token, run, "/ontology/query/execute-dsl"));
+        () -> grants.verifyRequest(token, run, "POST", "/ontology/query/execute-dsl"));
   }
 
   @Test
@@ -192,14 +194,14 @@ class QueryRuntimeBoundaryTest {
     var request = new MockHttpServletRequest();
     request.addHeader("tk", token);
     request.setAttribute(
-        QueryGrantService.ATTRIBUTE, grants.verify(token, run, "/ontology/query/execute-dsl"));
+        QueryGrantService.ATTRIBUTE, grants.verifyRequest(token, run, "POST", "/ontology/query/execute-dsl"));
     var captured = authorization.access(request);
     assertNotSame(permission, captured.permission());
     assertTrue(captured.permission().isFullData());
     verify(lookup).getDataPermission("user-a", "domain-a");
     assertThrows(
         ResponseStatusException.class,
-        () -> grants.verify(token, run, "/writeFunctionOperation/query"));
+        () -> grants.verifyRequest(token, run, "POST", "/writeFunctionOperation/query"));
   }
 
   @Test
@@ -239,11 +241,11 @@ class QueryRuntimeBoundaryTest {
         .getJSONArray("data").getJSONObject(0).getJSONArray("answer").getJSONObject(0).getString("count"));
     verify(lookup).getDataPermission("user-a", "domain-a");
     var request = new MockHttpServletRequest();
-    request.setAttribute(QueryGrantService.ATTRIBUTE, grants.verify(token, run, "/ontology/query/overview"));
+    request.setAttribute(QueryGrantService.ATTRIBUTE, grants.verifyRequest(token, run, "GET", "/ontology/query/overview"));
     var agentAccess = new io.ontomato.dataengine.service.agent.OntologyAgentAccess(authorization, identity, grants, null);
     assertThrows(io.ontomato.dataengine.service.agent.AgentHttpException.class, () -> agentAccess.current(request));
     for (String path : List.of("/writeFunctionOperation/insert", "/action/save", "/businessConfig/saveModelSettings"))
-      assertThrows(ResponseStatusException.class, () -> grants.verify(token, run, path));
+      assertThrows(ResponseStatusException.class, () -> grants.verifyRequest(token, run, "POST", path));
   }
 
   @Test
@@ -251,7 +253,7 @@ class QueryRuntimeBoundaryTest {
     String run = UUID.randomUUID().toString(), token = grant(run, "retrieval-exploration");
     assertThrows(
         ResponseStatusException.class,
-        () -> grants.verify(token + "changed", run, "/ontology/query/execute-dsl"));
+        () -> grants.verifyRequest(token + "changed", run, "POST", "/ontology/query/execute-dsl"));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -289,7 +291,7 @@ class QueryRuntimeBoundaryTest {
     String token =
         authorization.issueExploration(
             authorization.access(new MockHttpServletRequest()), body);
-    var claims = grants.verify(token, body.getString("runtimeRunId"), "/ontology/query/overview");
+    var claims = grants.verifyRequest(token, body.getString("runtimeRunId"), "GET", "/ontology/query/overview");
     assertEquals(expiry, claims.getLongValue("expiresAt"));
     assertEquals(body.getString("retrievalId"), claims.getString("retrievalId"));
     assertEquals(body.getString("runtimeSessionId"), claims.getString("sessionId"));
@@ -370,7 +372,7 @@ class QueryRuntimeBoundaryTest {
             + " text,description text,status text,match_questions text,class_names text,domain_id"
             + " text,create_timestamp bigint,modify_timestamp bigint,origin_check_result"
             + " text,origin_question text,created_by varchar(64),reviewed_by varchar(64),"
-            + "adopted boolean NOT NULL DEFAULT false)");
+            + "adopted boolean NOT NULL DEFAULT false,previously_published boolean NOT NULL DEFAULT false)");
     var dao = new io.ontomato.dataengine.dao.MetricViewDao();
     org.springframework.test.util.ReflectionTestUtils.setField(dao, "jdbcTemplate", jdbc);
     org.springframework.test.util.ReflectionTestUtils.setField(
@@ -384,8 +386,8 @@ class QueryRuntimeBoundaryTest {
           i == 3 ? "domain-b" : "domain-a",
           i == 2 ? "OPERATION_WRITE" : "OPERATION_READ");
       jdbc.update(
-          "INSERT INTO metric_view(id,name,type,function_id,status,class_names,domain_id)"
-              + " VALUES(?,?,?,?,?,?,?)",
+          "INSERT INTO metric_view(id,name,type,function_id,status,class_names,domain_id,previously_published)"
+              + " VALUES(?,?,?,?,?,?,?,TRUE)",
           "m" + i,
           "Sales_" + i,
           "GENERAL",
@@ -460,12 +462,11 @@ class QueryRuntimeBoundaryTest {
   }
 
   @Test void selectedExecutorGrantRestoresItsCurrentSharedKeyAndNeverFallsBack() throws Exception {
-    var execution=mock(io.ontomato.dataengine.service.agent.AgentExecutionAccess.class);
-    org.springframework.test.util.ReflectionTestUtils.setField(grantFilter,"executions",execution);
+    var execution = executions;
     when(lookup.getDataPermission("V","domain-a")).thenReturn(permission);
     var token=grants.issue("V","domain-a","user-read","selected-run",System.currentTimeMillis()+60000,java.util.List.of("/sales"),null,
       JSONObject.of("executionUserId","V","initiatorUserId","U"));
-    var claims=grants.verify(token,"selected-run","/ontology/query/overview");
+    var claims=grants.verifyRequest(token, "selected-run", "GET", "/ontology/query/overview");
     assertEquals("V",claims.getString("userId"));assertEquals("U",claims.getString("initiatorUserId"));
     http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ontology/query/overview").header("tk",token).header("X-Ontomato-Run-Id","selected-run")).andExpect(status().isOk());
     verify(execution).require("domain-a","V");

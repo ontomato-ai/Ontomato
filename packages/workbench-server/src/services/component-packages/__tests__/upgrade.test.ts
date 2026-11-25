@@ -4,7 +4,7 @@ import { productReferenceKey } from "../../product-panels/references";
 import { checkComponentPackageUpgrade } from "../upgrade";
 
 const mocks = vi.hoisted(() => ({
-  query: vi.fn(), findProjectionPanelUsers: vi.fn(), grantedProductIds: vi.fn(),
+  query: vi.fn(), findProjectionPanelUsers: vi.fn(), usableCurrentIds: vi.fn(),
 }));
 vi.mock("../../../infrastructure/postgres-transaction", () => ({
   transaction: (read: (client: { query: typeof mocks.query }) => unknown) => read({ query: mocks.query }),
@@ -13,7 +13,7 @@ vi.mock("../../product-panels/references", async (original) => ({
   ...await original<typeof import("../../product-panels/references")>(),
   findProjectionPanelUsers: mocks.findProjectionPanelUsers,
 }));
-vi.mock("../../product-governance/grants", () => ({ grantedProductIds: mocks.grantedProductIds }));
+vi.mock("../../product-panels/access", () => ({ usableCurrentIds: mocks.usableCurrentIds }));
 
 const name = "@example/upgrade";
 const value = { kind: "scalar", type: "string" } as const;
@@ -46,7 +46,7 @@ beforeEach(() => {
     [productReferenceKey(alpha), new Map([panelUse(alphaPanel), panelUse(hiddenPanel)])],
     [productReferenceKey(beta), new Map([panelUse(betaPanel)])],
   ]));
-  mocks.grantedProductIds.mockResolvedValue([alpha.id, alphaPanel.id, betaPanel.id]);
+  mocks.usableCurrentIds.mockImplementation(async kind => new Set(kind === "panel" ? [alphaPanel.id] : [alpha.id]));
 });
 
 it("shows a deployment maintainer every affected projection and panel with its domain", async () => {
@@ -58,7 +58,7 @@ it("shows a deployment maintainer every affected projection and panel with its d
     projectionIds: [alpha.id], panelIds: [alphaPanel.id, betaPanel.id, hiddenPanel.id],
     projections: [alpha, beta], panels: [alphaPanel, hiddenPanel, betaPanel],
   }]);
-  expect(mocks.grantedProductIds).not.toHaveBeenCalled();
+  expect(mocks.usableCurrentIds).not.toHaveBeenCalled();
 });
 
 it("limits an author's diagnostics to granted records in that domain", async () => {
@@ -67,5 +67,6 @@ it("limits an author's diagnostics to granted records in that domain", async () 
     component: component.componentId, field: "inputs.value", before: value, after: undefined,
     projectionIds: [alpha.id], panelIds: [alphaPanel.id], projections: [alpha], panels: [alphaPanel],
   }]);
-  expect(mocks.grantedProductIds).toHaveBeenCalledWith("use", caller.credentials);
+  expect(mocks.usableCurrentIds).toHaveBeenCalledWith("panel", "alpha", [alphaPanel.id, hiddenPanel.id], caller.credentials);
+  expect(mocks.usableCurrentIds).toHaveBeenCalledWith("projection", "alpha", [alpha.id], caller.credentials);
 });

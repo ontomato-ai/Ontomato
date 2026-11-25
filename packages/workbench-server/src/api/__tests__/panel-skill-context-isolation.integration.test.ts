@@ -24,7 +24,7 @@ import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
-import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
+import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
 import { installWorkbenchIdentity } from "../../identity/installed";
@@ -121,6 +121,12 @@ beforeAll(async () => {
       entryId: `${applicationId}/${useId}`, roots: { panelIds: [panelId], agentIds: [] },
     })) : [] });
   app.use(unwrapCallbackCredential);
+  mountCurrentProductDecisions(app, {
+    token: "fixture-service", domain: domainId, kinds: ["PANEL", "PROJECTION", "SKILL"],
+    allow: ({ target, verb }, caller) => (caller === "reader" && target.id !== denied ||
+      caller === "executor" && target.id !== executorDenied) &&
+      (verb === "USE" || target.kind === "SKILL" && verb === "VIEW" || caller === "reader"),
+  });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     registered.add(req.body.id);
@@ -355,7 +361,7 @@ it("derives SDK catalogue reads from the page and serves them through the run's 
   state.credentialsForRun.mockResolvedValue({ executionUserId: "second-user", credentials: { token: "executor", locale: "en" } });
   const { callbackCredential } = await import("../../services/agent-runtime/callback-credential");
   const pathPrefix = `/api/assistant/executions/${runId}/`;
-  const credential = callbackCredential({ pathPrefix, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
+  const credential = callbackCredential({ scope: { purpose: "execution", capability: "panels" }, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
   const readFromRun = (dataName: string) => fetch(state.base + pathPrefix + "panels/read", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential.value,
       "X-Ontomato-Run-Id": runId },
@@ -419,7 +425,7 @@ it("reads header.record and detail table rows on the real builtin component entr
   state.credentialsForRun.mockResolvedValue({ executionUserId: "second-user", credentials: { token: "executor", locale: "en" } });
   const { callbackCredential } = await import("../../services/agent-runtime/callback-credential");
   const pathPrefix = `/api/assistant/executions/${runId}/`;
-  const credential = callbackCredential({ pathPrefix, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
+  const credential = callbackCredential({ scope: { purpose: "execution", capability: "panels" }, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
   const readMember = (member: string, dataName: string) => fetch(state.base + pathPrefix + "panels/read", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential.value,
       "X-Ontomato-Run-Id": runId },
@@ -549,6 +555,11 @@ it("retains a visible broken root on read and omitted updates and permits its ex
 
 it("rejects old uncertain roots without writes and gives old hidden roots precedence", async () => {
   const unknown = page("unknown");
+  // The root still has owner facts for USE, but its stored manifest cannot establish the dependencies.
+  await state.pool!.query(
+    `INSERT INTO "${state.schema}".product_panels (id, domain_id, owner_id, definition) VALUES ($1, $2, $3, $4)`,
+    [unknown.panelId, domainId, "source-owner", { name: unknown.panelId, manifest: { members: [] } }],
+  );
   entries = [...entries, unknown];
   registered.add(unknown.panelId);
   denied = brokenProjection;
@@ -623,7 +634,7 @@ it("denies opening and runtime definition reads of an inaccessible panel", async
     const response = await read(broken, route);
     const body = await response.json();
     expect(response.status, JSON.stringify(body)).toBe(403);
-    expect(body.error.code).toBe("PRODUCT_FORBIDDEN");
+    expect(body.error.code).toBe("OBJECT_FORBIDDEN");
     expect(JSON.stringify(body)).not.toContain(privateOperation);
   }
 });

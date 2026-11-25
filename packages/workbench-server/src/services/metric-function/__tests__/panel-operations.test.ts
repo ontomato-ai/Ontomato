@@ -238,6 +238,28 @@ describe("metric and function panel server operations", () => {
     expect(JSON.parse(String(changed.sent[0]?.init.body))).toEqual({ ids: ["m1"], status: "PUBLISHED" });
   });
 
+  it("keeps different publication audiences separate in a status batch", async () => {
+    const operation = batchAction(SET_METRIC_VIEW_STATUS);
+    const secondMetric = { ...metricTarget, primaryKey: "m2" };
+    const answer = hostWith((_path, init) => {
+      const body = JSON.parse(String(init.body));
+      return Response.json({ success: true, data: { items: body.ids.map((id: string) => ({
+        id, outcome: "success", data: { id, status: "PUBLISHED" },
+      })) } });
+    });
+    const domain = { kind: "domain" };
+    const policy = { kind: "policy", policyId: "reviewers" };
+    const result = await operation.executeBatch(answer.host, [
+      { target: metricTarget, input: { status: "PUBLISHED", publicationAccess: domain } },
+      { target: secondMetric, input: { status: "PUBLISHED", publicationAccess: policy } },
+    ]);
+    expect(result.kind).toBe("batch");
+    expect(answer.sent.map(({ init }) => JSON.parse(String(init.body)))).toEqual([
+      { ids: ["m1"], status: "PUBLISHED", publicationAccess: domain },
+      { ids: ["m2"], status: "PUBLISHED", publicationAccess: policy },
+    ]);
+  });
+
   it("tells one metric's coded refusal from its uncoded failure", async () => {
     const operation = batchAction(SET_METRIC_VIEW_STATUS);
     const refused = hostWith(() => Response.json({ success: true, data: { items: [

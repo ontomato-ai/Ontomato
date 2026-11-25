@@ -1,5 +1,11 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Create;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Kind;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -61,6 +67,8 @@ public class TriggerService {
 	@Autowired
 	private UserCredentials credentials;
 
+    @Autowired private CapabilityDefinitions definitions;
+
 	private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
 	/**
@@ -88,8 +96,10 @@ public class TriggerService {
 			if (trigger == null || !domainId.equals(trigger.getDomainId())) {
 				throw new OwnerRefusal("TRIGGER_NOT_FOUND", text(lang, "Trigger.notFound"));
 			}
+			definitions.requireRead(definitions.current(), access(trigger, Verb.USE));
 			existing = true;
 		} else if ("draft".equals(kind)) {
+            definitions.require(definitions.current(), new Create(Kind.TRIGGER));
 			existing = false;
 		} else {
 			throw new IllegalArgumentException("target.kind: expected object or draft");
@@ -122,12 +132,16 @@ public class TriggerService {
 		Trigger existing = null;
 		if (id != null && !id.isBlank()) {
 			existing = triggers.queryById(id);
-			if (existing != null && !user.getDomainId().equals(existing.getDomainId())) {
+			if (existing == null || !user.getDomainId().equals(existing.getDomainId())) {
 				throw new OwnerRefusal("TRIGGER_NOT_FOUND", text(lang, "Trigger.notFound"));
 			}
 		}
 
-		if (param.get("conditionKind") == null) param.put("conditionKind", Trigger.CONDITION_TIME);
+        var actor = definitions.subject(user);
+        if (existing == null) definitions.require(actor, new Create(Kind.TRIGGER));
+        else definitions.require(actor, access(existing, Verb.EDIT));
+
+        if (param.get("conditionKind") == null) param.put("conditionKind", Trigger.CONDITION_TIME);
 		List<Action> domainActions = actions.queryList(Action.STATUS_PUBLISHED, null, null, user.getDomainId());
 		List<Workflow> domainWorkflows = workflows.queryList(null, user.getDomainId());
 		List<ObjectNode> errors = TriggerForm.fieldErrors(
@@ -143,9 +157,8 @@ public class TriggerService {
 
 		Trigger trigger = param.to(Trigger.class);
 		trigger.setDomainId(user.getDomainId());
-		if (trigger.getCreatedBy() == null || trigger.getCreatedBy().isBlank()) {
-			trigger.setCreatedBy(existing != null && existing.getCreatedBy() != null ? existing.getCreatedBy() : user.getId());
-		}
+        trigger.setCreatedBy(existing == null ? user.getId() : existing.getCreatedBy());
+        trigger.setReviewedBy(existing == null ? null : existing.getReviewedBy());
 		if (trigger.getStatus() == null || trigger.getStatus().isBlank()) {
 			trigger.setStatus(Trigger.STATUS_PENDING_REVIEW);
 		}
@@ -165,6 +178,7 @@ public class TriggerService {
 		if (trigger == null || !user.getDomainId().equals(trigger.getDomainId())) {
 			throw new OwnerRefusal("TRIGGER_NOT_FOUND", text(lang, "Trigger.notFound"));
 		}
+		definitions.require(definitions.subject(user), access(trigger, Verb.EDIT));
 		if (!Trigger.STATUS_PUBLISHED.equals(status)
 				&& !Trigger.STATUS_UNUSED.equals(status)
 				&& !Trigger.STATUS_PENDING_REVIEW.equals(status)) {
@@ -192,6 +206,7 @@ public class TriggerService {
 		if (trigger == null || !domainId.equals(trigger.getDomainId())) {
 			throw new OwnerRefusal("TRIGGER_NOT_FOUND", text(lang, "Trigger.notFound"));
 		}
+		definitions.require(definitions.current(), access(trigger, Verb.EDIT));
 		triggers.delete(id, domainId);
 	}
 
@@ -209,6 +224,7 @@ public class TriggerService {
 			if (stored == null || !domainId.equals(stored.getDomainId())) {
 				throw new OwnerRefusal("TRIGGER_NOT_FOUND", text(lang, "Trigger.notFound"));
 			}
+			definitions.require(definitions.current(), access(stored, Verb.EDIT));
 			saved = TriggerForm.fromTrigger(stored);
 		}
 		JSONObject values = PanelFormFields.withSubmitted(saved, param, submitted);
@@ -317,7 +333,15 @@ public class TriggerService {
 	 * ledger has a unique partial index on `trigger_key`.</p>
 	 */
 	public JSONObject fire(Trigger trigger, Instant slot, String lang) {
-		String executor = executorOf(trigger);
+        return fire(trigger, slot, lang, executorOf(trigger), null);
+    }
+
+    public JSONObject run(Trigger trigger, String lang, User caller) {
+        definitions.require(definitions.subject(caller), access(trigger, Verb.USE));
+        return fire(trigger, Instant.now(), lang, caller.getId(), caller);
+    }
+
+    private JSONObject fire(Trigger trigger, Instant slot, String lang, String executor, User caller) {
 		if (executor == null || executor.isBlank())
 			throw new IllegalArgumentException("Trigger " + trigger.getId() + " has no executor");
 		String key = TriggerDao.fireKey(trigger, slot);
@@ -328,8 +352,10 @@ public class TriggerService {
 		result.put("executor", executor);
 
 		if (Trigger.EFFECT_ACTION.equals(trigger.getEffectKind())) return fireAction(trigger, slot, key, executor, lang, result);
-		if (Trigger.EFFECT_WORKFLOW.equals(trigger.getEffectKind()))
-			return fireWorkflow(trigger, slot, key, executor, result);
+        if (Trigger.EFFECT_WORKFLOW.equals(trigger.getEffectKind())) {
+            String requester = caller == null ? trigger.getEffect().getString("requester") : caller.getLoginCode();
+            return fireWorkflow(trigger, slot, key, executor, requester, result);
+        }
 		throw new IllegalArgumentException("Trigger.effectKind " + trigger.getEffectKind() + " has no executor");
 	}
 
@@ -380,7 +406,7 @@ public class TriggerService {
 	 * <p>The trigger does not advance the run: it asks the execution plane to create one, with the trigger's key, and
 	 * stops there. Anything else would make the scheduler a second workflow engine.</p>
 	 */
-	private JSONObject fireWorkflow(Trigger trigger, Instant slot, String key, String executor, JSONObject result) {
+	private JSONObject fireWorkflow(Trigger trigger, Instant slot, String key, String executor, String requester, JSONObject result) {
 		String workflowId = trigger.getEffect().getString("workflowId");
 		String base = System.getenv().getOrDefault("ONTOPRAXIS_BASE_URL", "http://127.0.0.1:18600");
 		var body = new JSONObject();
@@ -388,7 +414,6 @@ public class TriggerService {
 		// The execution plane addresses subjects by login code, not by the platform's internal id. Resolving here keeps
 		// that vocabulary out of Ontopraxis, and keeps one id space from leaking into another: the ledger stores what
 		// the platform calls the person, not a row key that means nothing outside this database.
-		var requester = trigger.getEffect().getString("requester");
 		if (requester == null || requester.isBlank()) requester = loginCodeOf(trigger.getDomainId(), executor);
 		body.put("requester", requester);
 		body.put("triggerRef", "trigger:" + trigger.getId());

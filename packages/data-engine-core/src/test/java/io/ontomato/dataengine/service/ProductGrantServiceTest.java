@@ -121,19 +121,17 @@ class ProductGrantServiceTest {
         verify(db,never()).update(eq("DELETE FROM product_grant WHERE domain_id=? AND resource_id=? AND principal_kind='domain'"),any(),any());
     }
 
-    @Test void panelOwnershipDoesNotRestoreARevokedEditGrantOrCrossDomains() {
+    @Test void legacyChecksRequireAnExplicitGrantInTheCurrentDomain() {
         var db = mock(JdbcTemplate.class);
         var identity = mock(IdentityService.class);
         when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser("author", "domain"));
         var principals = mock(ProductPrincipalLookup.class);
         when(principals.productPrincipalId("author")).thenReturn("author");
         var service = new ProductGrantService(db, identity, principals);
-        var facts = new ProductGrantService.OwnerFacts("author", "current");
 
-        assertEquals(new ProductGrantService.ManagementAccess(true, true, false), service.managementAccess(
-            new ProductGrantService.ObjectTarget("domain", "panel", "profile"), facts));
-        assertEquals(403, assertThrows(ResponseStatusException.class, () -> service.managementAccess(
-            new ProductGrantService.ObjectTarget("other", "panel", "profile"), facts)).getStatusCode().value());
+        assertFalse(service.allowed("profile", "edit"));
+        verify(db).query(eq("SELECT principal_kind,principal_id,verb FROM product_grant WHERE domain_id=? AND resource_id=?"),
+            any(org.springframework.jdbc.core.RowMapper.class), eq("domain"), eq("profile"));
     }
 
     @Test void anUnauthenticatedSubjectCannotUseOrDelegateAProduct() {

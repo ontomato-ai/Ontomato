@@ -12,6 +12,8 @@ import { SkillSourceRecordError, type SkillPackageContext } from "../../core/ski
 import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { HttpError } from "../../utils/errors";
 import { skillManager } from "../skills/skill-manager";
+import { decideDomainSkills } from "../skills/authorization";
+import { requireAllowed } from "../product-governance/authorization";
 import { isStoredProtectedSkillRef, pageSkillDefaultAgent, readSkillView, resolveCurrentPageSkillMember, validateApplicationPageSkillEntry, type AuthorizedPageSkillMember } from "../skills/view";
 import {
   publishOntologyAssistantSkill, publishSkill, publishSkillPackage, workbenchBuiltinSkillRoot,
@@ -73,12 +75,15 @@ export async function registerAssistantSkills() {
 
 export async function readAssistantSkillView(domainId: string, initiatorCredentials: AssistantCredentials, userId?: string) {
   const view = await readSkillView(domainId, initiatorCredentials, userId);
+  const entries = view.registry.getSkills();
+  const decisions = await decideDomainSkills(domainId, entries, "USE", initiatorCredentials);
   const builtins = builtinSkillOptions(initiatorCredentials.locale);
   const builtinKeys = new Set(builtins.map(option => runtimeSkillKey(option.skill)));
   const options = new Map(builtins
     .filter(option => !view.unavailableStoredPageSkill(option.skill))
     .map(option => [runtimeSkillKey(option.skill), option]));
-  for (const info of skillManager.skillsInRegistry(view.registry, initiatorCredentials.locale)) {
+  const usable = entries.filter(entry => entry.source.kind !== "domain" || decisions.get(runtimeSkillKey(entry.skill))!.allowed);
+  for (const info of skillManager.describeSkills(usable, initiatorCredentials.locale)) {
     const key = runtimeSkillKey(info.skill);
     if (builtinKeys.has(key))
       throw new InvalidSkillPackageError(`Skill ${info.id} from ${sourceLabel(info)} conflicts with a built-in skill of the same identity`);
@@ -94,6 +99,12 @@ export async function readAssistantSkillView(domainId: string, initiatorCredenti
     ...view,
     options: [...options.values()],
     hasSkill: (ref: RuntimeSkillRef) => options.has(runtimeSkillKey(ref)),
+    hiddenStoredSkill: (ref: RuntimeSkillRef) =>
+      decisions.get(runtimeSkillKey(ref))?.allowed === false || view.hiddenStoredSkill(ref),
+    requireSkillUse(ref: RuntimeSkillRef) {
+      const decision = decisions.get(runtimeSkillKey(ref));
+      if (decision) requireAllowed(decision);
+    },
   };
 }
 
@@ -138,6 +149,7 @@ function skillNotFound() {
 function checkSkillSelection(refs: readonly RuntimeSkillRef[], view: AssistantSkillView) {
   const names = new Set<string>();
   for (const ref of refs) {
+    view.requireSkillUse(ref);
     if (!view.hasSkill(ref)) {
       view.checkUnresolvedInput(ref);
       throw skillNotFound();
@@ -213,6 +225,7 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
   await validateApplicationPageSkillEntry({ domainId, initiatorCredentials, userId }, pageSkillContext);
   const view = await readAssistantSkillView(domainId, initiatorCredentials, userId);
   for (const ref of agent.skills) {
+    view.requireSkillUse(ref);
     view.requireCertainStoredSkill(ref);
     view.requireReadableManifest(ref);
     if (!view.hasSkill(ref) && !view.unavailableStoredPageSkill(ref)) throw unavailableRunSkill();
@@ -285,6 +298,7 @@ export async function prepareCurrentPageSkill(
   const ref = currentPage?.member.ref ??
     (pageSkillContext.mode === "public" ? view.publicPageSkill(pageSkillContext.locator) : null);
   if (!ref) return null;
+  view.requireSkillUse(ref);
   if (!view.hasSkill(ref)) throw unavailableRunSkill();
   const skill = await publishSelectedSkill(domainId, ref, view, packageContext);
   return { skill, currentPage };

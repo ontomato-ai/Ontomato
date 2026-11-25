@@ -148,7 +148,7 @@ export async function panelSkillSources(
         : undefined;
       const installedIds = [...new Set(entries.map(([, projection]) => projection.componentId))]
         .filter(componentId => !sdk.components.has(componentId));
-      const installed = await Promise.all(installedIds.map(async id => [id, await readProjectionComponent(id, () => Promise.resolve(sdk), scope === "platform" ? null : domainId)] as const));
+      const installed = await Promise.all(installedIds.map(async id => [id, await readProjectionComponent(id, () => Promise.resolve(sdk), { domainId: scope === "platform" ? null : domainId, credentials: reader })] as const));
       const components = new Map<string, ComponentDeclaration>(sdk.components);
       for (const [id, component] of installed) if (component) components.set(id, component);
       const description = describePanel(panel, new Map(entries), components, locale, actions);

@@ -23,6 +23,8 @@ public record ExecutionTarget(String contextId, String sandboxId, List<String> c
     if(error instanceof ResponseStatusException failure && failure.getReason()!=null && failure.getReason().startsWith("BUILD_TEST_"))
       response.put("code",failure.getReason().split(":",2)[0]);
   }
+  public enum Mode { LIVE, SANDBOX }
+  public Mode mode() { return sandboxId == null ? Mode.LIVE : Mode.SANDBOX; }
   public boolean testing() { return contextId != null; }
   public void requireClasses(List<String> names) {
     if ((testing() || !classNames.isEmpty()) && (names == null || names.isEmpty() || !classNames.containsAll(names))) {

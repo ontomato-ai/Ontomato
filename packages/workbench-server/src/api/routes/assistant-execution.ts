@@ -159,7 +159,8 @@ assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) =
   const businessGrant = target === "ontology" && governanceAction.test(path) ? callback.businessGrant : undefined;
   let credentials: AssistantCredentials = initiatorCredentials;
   let retrievalScopeId: string | null = null;
-  let executionContext = req.header(BUILD_TEST_HEADER);
+  const requestedContext = req.header(BUILD_TEST_HEADER);
+  let executionContext: string | undefined;
   if (initiatorResourceRead || ownership || businessGrant) {
     if (target === "ontology") {
       const { turn, run } = await ownedRun(owner, runId);
@@ -177,13 +178,19 @@ assistantExecutionRouter.all(assistantOwnerCallbackPath, wrap(async (req, res) =
     const resolved = await credentialsForRun(owner, runId, initiatorCredentials);
     credentials = resolved.credentials;
     retrievalScopeId = resolved.retrievalScopeId ?? resolved.credentials.headers?.["X-Ontomato-Retrieval-Caller-Id"] ?? null;
-    if (target === "ontology" && isAssistantBuildTestOperation(req.method, path) &&
-        resolved.run.channel?.authority.executionKind === "build-test" && executionContext === undefined) {
-      const workspaceId = await sessionBuildTestWorkspace(owner, resolved.run.sessionId);
-      const current = await new WorkspaceBuildTests(owner, initiatorCredentials, workspaceId).current();
-      executionContext = JSON.stringify({ kind: "build-test", contextId: current?.contextId ?? null });
+    const authority = resolved.run.channel?.authority;
+    if (authority?.executionKind === "build-test") {
+      let contextId = authority.executionContextId ?? null;
+      if (contextId === null && target === "ontology" && isAssistantBuildTestOperation(req.method, path)) {
+        const workspaceId = await sessionBuildTestWorkspace(owner, resolved.run.sessionId);
+        const current = await new WorkspaceBuildTests(owner, initiatorCredentials, workspaceId).current();
+        contextId = current?.contextId ?? null;
+      }
+      executionContext = JSON.stringify({ kind: "build-test", contextId });
     }
   }
+  if (requestedContext !== undefined && requestedContext !== executionContext)
+    throw new HttpError(403, "Execution context differs from the run's bound target", "BUILD_TEST_FORBIDDEN");
   const headers = buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers);
   if (businessGrant) {
     headers.tk = businessGrant;

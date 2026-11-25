@@ -1,3 +1,4 @@
+import { mountCurrentProductDecisions } from "./product-grant-check";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
@@ -193,6 +194,11 @@ export async function startPanelSkillEntryServer(options: {
   app.get("/api/data-query/platform/applications/:id/panel-uses", (req, res) => {
     res.json({ success: true, data: { applicationId: req.params.id, entry: { path: `/applications/${req.params.id}`, renderer: "panels" },
       panelUses: entries.filter(use => use.applicationId === req.params.id).map(javaUse) } });
+  });
+  mountCurrentProductDecisions(app, {
+    token: "fixture-platform", domain: domainId, kinds: ["PANEL", "PROJECTION", "SKILL"],
+    allow: ({ target, verb, ownerFacts }, caller) => caller === "editor" &&
+      (verb === "EDIT" ? ownerFacts.ownerId === "editor" : grants.has(target.id) || target.kind === "SKILL"),
   });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-platform");

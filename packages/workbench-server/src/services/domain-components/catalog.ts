@@ -8,15 +8,14 @@ import { DOMAIN_COMPONENT_PREFIX } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
 import type { z } from "zod";
 import { qualifiedTable as t } from "../../infrastructure/postgres";
-import { currentProductColumns, type CurrentProductRow } from "../../infrastructure/product-current";
+import { currentProductColumns, findCurrentProducts, type CurrentProductRow } from "../../infrastructure/product-current";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { assertAppBuilderAccess } from "../app-builder/access";
-import {
-  grantedProductIds, productManagementAccess, registerProductResource, requireProductGrant, unregisterProductResource, type ProductOwner,
-} from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/grants";
+import { requireAllowed, requireObject, retireObject, writeFirstPublication } from "../product-governance/authorization";
+import { currentDefinition, currentDefinitionAccess } from "../product-panels/access";
 import { declarationChanges, findComponentUsers } from "../product-panels/component-users";
 import { productReferenceKey } from "../product-panels/references";
 import { domainComponentRecord, findDomainComponent, listVisibleDomainComponents } from "./store";
@@ -24,23 +23,15 @@ import { domainComponentRecord, findDomainComponent, listVisibleDomainComponents
 const unavailable = () => new HttpError(404, "Component is unavailable in this domain", "COMPONENT_UNAVAILABLE");
 
 export async function listDomainComponents(owner: ProductOwner, credentials: AssistantCredentials) {
-  await assertAppBuilderAccess(credentials);
-  const editable = new Set(await grantedProductIds("edit", credentials));
-  return listVisibleDomainComponents(owner.domainId, owner.userId, editable);
+  return listVisibleDomainComponents(owner.domainId, credentials);
 }
 
 export async function readDomainComponent(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
-  await assertAppBuilderAccess(credentials);
   const row = await findDomainComponent(owner.domainId, id);
   if (!row) throw unavailable();
-  const access = await productManagementAccess(
-    { domainId: owner.domainId, kind: "component", id },
-    { ownerId: row.ownerId, state: "current" },
-    credentials,
-  );
-  const record = domainComponentRecord(row, access.editable);
-  if (!access.allowed && record.visibility !== "domain") throw unavailable();
-  return record;
+  const { decisions, editable } = await currentDefinitionAccess("component", [row], owner.domainId, credentials);
+  requireAllowed(decisions[0]);
+  return domainComponentRecord(row, editable.has(id));
 }
 
 export async function checkDomainComponentSource({ source }: DomainComponentInput) {
@@ -59,9 +50,10 @@ export async function checkDomainComponentSource({ source }: DomainComponentInpu
 export async function registerDomainComponent(
   owner: ProductOwner, credentials: AssistantCredentials, request: z.infer<typeof registerDomainComponentRequestSchema>,
 ) {
-  await assertAppBuilderAccess(credentials);
-  const id = request.declaration.componentId ?? DOMAIN_COMPONENT_PREFIX + randomUUID();
-  const input = { ...request, declaration: { ...request.declaration, componentId: id } };
+  await requireObject({ create: "COMPONENT" }, credentials);
+  const { publicationAccess, ...definition } = request;
+  const id = definition.declaration.componentId ?? DOMAIN_COMPONENT_PREFIX + randomUUID();
+  const input = { ...definition, declaration: { ...definition.declaration, componentId: id } };
   await checkDomainComponentSource(input);
   return transaction(async client => {
     await lockProducts(client, owner);
@@ -78,8 +70,10 @@ export async function registerDomainComponent(
       `INSERT INTO ${t("domain_components")} (domain_id,id,owner_id,definition)
        VALUES ($1,$2,$3,$4::jsonb) RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)],
     );
-    await registerProductResource(owner, id, false, { createOnly: true });
-    return domainComponentRecord(rows[0]!, true);
+    const row = rows[0]!;
+    const object = currentDefinition("component", row, owner.domainId);
+    await writeFirstPublication({ ...object, ownerFacts: { ...object.ownerFacts, state: "DRAFT" } }, publicationAccess, credentials);
+    return domainComponentRecord(row, true);
   });
 }
 
@@ -87,13 +81,14 @@ async function currentForChange(client: PoolClient, owner: ProductOwner, credent
   await lockProducts(client, owner);
   const row = await findDomainComponent(owner.domainId, id, client);
   if (!row) throw unavailable();
-  await requireProductGrant(id, "edit", credentials);
+  await requireObject({ ...currentDefinition("component", row, owner.domainId), verb: "EDIT" }, credentials);
   if (row.revision !== revision) throw new HttpError(409, "Definition changed; reload before editing", "PRODUCT_CONFLICT");
-  return domainComponentRecord(row, true);
+  return row;
 }
 
 async function visibleUsage(
-  { rows, users, directPanels }: Awaited<ReturnType<typeof findComponentUsers>>, credentials: AssistantCredentials,
+  { rows, users, directPanels }: Awaited<ReturnType<typeof findComponentUsers>>,
+  domainId: string, credentials: AssistantCredentials, client: PoolClient,
 ) {
   const panels = new Map<string, { domainId: string | null; id: string }>(
     rows.flatMap(row => [...users.get(productReferenceKey(row))?.entries() ?? []]),
@@ -101,9 +96,18 @@ async function visibleUsage(
   for (const panel of directPanels) {
     panels.set(productReferenceKey(panel), panel);
   }
-  const visible = new Set(await grantedProductIds("use", credentials));
-  const visibleProjections = rows.filter(row => visible.has(row.id)).map(({ id }) => ({ id }));
-  const visiblePanels = [...panels.values()].filter(panel => panel.domainId === null || visible.has(panel.id)).map(({ id }) => ({ id }));
+  const [projections, panelRows] = await Promise.all([
+    findCurrentProducts(domainId, "projection", rows.map(({ id }) => id), client),
+    findCurrentProducts(domainId, "panel", [...panels.values()].filter(panel => panel.domainId === null || panel.domainId === domainId).map(({ id }) => id), client),
+  ]);
+  const projectionFacts = [...projections.values()];
+  const panelFacts = [...panelRows.values()];
+  const [projectionAccess, panelAccess] = await Promise.all([
+    currentDefinitionAccess("projection", projectionFacts, domainId, credentials, false),
+    currentDefinitionAccess("panel", panelFacts, domainId, credentials, false),
+  ]);
+  const visibleProjections = projectionFacts.filter((_, index) => projectionAccess.decisions[index].allowed).map(({ id }) => ({ id }));
+  const visiblePanels = panelFacts.filter((_, index) => panelAccess.decisions[index].allowed).map(({ id }) => ({ id }));
   return {
     projections: visibleProjections,
     panels: visiblePanels,
@@ -116,7 +120,7 @@ export async function domainComponentUsedBy(owner: ProductOwner, credentials: As
   await readDomainComponent(owner, credentials, id);
   return transaction(async client => {
     await client.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    return visibleUsage(await findComponentUsers([id], client, owner.domainId), credentials);
+    return visibleUsage(await findComponentUsers([id], client, owner.domainId), owner.domainId, credentials, client);
   });
 }
 
@@ -127,7 +131,7 @@ export async function updateDomainComponent(
     throw new HttpError(400, "field 'declaration.componentId' must match the component being updated", "INVALID_REQUEST");
   await checkDomainComponentSource(input);
   return transaction(async client => {
-    const current = await currentForChange(client, owner, credentials, id, revision);
+    const current = domainComponentRecord(await currentForChange(client, owner, credentials, id, revision), true);
     if (!isDeepStrictEqual(current.declaration, input.declaration)) {
       const usage = await findComponentUsers([id], client, owner.domainId);
       const changes = usage.rows.flatMap(row => {
@@ -135,7 +139,7 @@ export async function updateDomainComponent(
         return declarationChanges(row.definition, current.declaration, input.declaration, panels);
       });
       if (changes.length) throw new HttpError(409, "Component declaration changes fields that are in use", "COMPONENT_INCOMPATIBLE", {
-        ...await visibleUsage(usage, credentials), fields: [...new Set(changes.map(change => change.field))],
+        ...await visibleUsage(usage, owner.domainId, credentials, client), fields: [...new Set(changes.map(change => change.field))],
       });
     }
     const { rows } = await client.query<CurrentProductRow>(
@@ -149,11 +153,11 @@ export async function updateDomainComponent(
 
 export async function deleteDomainComponent(owner: ProductOwner, credentials: AssistantCredentials, id: string, revision: number) {
   return transaction(async client => {
-    await currentForChange(client, owner, credentials, id, revision);
+    const row = await currentForChange(client, owner, credentials, id, revision);
     const usage = await findComponentUsers([id], client, owner.domainId);
     if (usage.rows.length || usage.directPanels.length)
-      throw new HttpError(409, "Component is in use", "COMPONENT_IN_USE", await visibleUsage(usage, credentials));
-    await unregisterProductResource(owner.domainId, id);
+      throw new HttpError(409, "Component is in use", "COMPONENT_IN_USE", await visibleUsage(usage, owner.domainId, credentials, client));
+    await retireObject(currentDefinition("component", row, owner.domainId), credentials);
     await client.query(`DELETE FROM ${t("domain_components")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);
   });
 }

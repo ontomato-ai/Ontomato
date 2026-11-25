@@ -151,8 +151,10 @@ public class ActionTrialService {
       if (!verdict.satisfied())
         return failed(messages.get(lang, "Action.preconditionFailed") + ": " + String.join("; ", verdict.violations()), started);
       var snapshot = identitySnapshots.snapshot(user, user.getDomainId());
+      var grant = ActionRuntimeGrant.capture(action, user, params,
+          new io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone());
       Object[] execution = programs.execute(trialId, function, user.getId(), permission, target.sandboxId(),
-          lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, snapshot, target));
+          lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, snapshot, target, grant));
       PythonExecuteResult result = (PythonExecuteResult) execution[1];
       if (ActionTrialStore.passed(result)) {
         if (execution[0] != null)

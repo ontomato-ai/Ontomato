@@ -12,7 +12,6 @@ import {
   APPLICATION,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
-  USER,
   platformObjectTypes,
 } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
@@ -509,14 +508,6 @@ async function mountPanelsApp(options: HarnessOptions = {}) {
           },
         });
       }
-      if (member === "userPicker") {
-        return Response.json({
-          status: "ready",
-          value: [
-            { value: "user-bob", label: "Bob", object: { className: USER, primaryKey: "user-bob" } },
-          ],
-        });
-      }
       if (member === "headerTitle" || member === "overviewSummary" || member === "unavailableSummary" || member === "shareStatusDesc") {
         const key = readTargetKey(body);
         if (!key) return Response.json({ status: "empty" });
@@ -768,6 +759,17 @@ describe("panels two-entry architecture (catalog + detail)", () => {
     expect(catalogSource.manifest.members.catalogue.config.pageSizes).toContain(100);
     expect(catalogSource.manifest.state.creating).not.toHaveProperty("deepLink", true);
     expect(detailSource.manifest.state.detailMode.deepLink).toBe(false);
+    expect(detailSource.manifest.members.policyPicker).toMatchObject({
+      component: "ReferencePicker", type: "platform:PermissionPolicy", state: { selected: "grantPolicy" },
+    });
+    expect(detailSource.manifest.members.grantSubmit).toMatchObject({
+      type: PRODUCT_PANEL, target: "selected", operation: "productPanels.grant",
+      operationParams: { policyId: { state: "grantPolicyId" }, verb: { state: "grantVerb" } },
+    });
+    expect(detailSource.manifest.members.grantsList.operations.revoke).toEqual({
+      operation: "productPanels.revoke", target: { state: "selected" },
+      params: { policyId: { rowField: "policyId" }, verb: { rowField: "verb" } },
+    });
     expect(Object.keys(catalogSource.content.messages).sort()).toEqual(["ar", "de", "en", "fr", "it", "ja", "zh-CN", "zh-TW"]);
     expect(Object.keys(detailSource.content.messages).sort()).toEqual(["ar", "de", "en", "fr", "it", "ja", "zh-CN", "zh-TW"]);
   });
@@ -1230,6 +1232,7 @@ describe("panels two-entry architecture (catalog + detail)", () => {
           },
         },
       ],
+      dispatchIntent: () => ({ kind: "success", data: { success: true } }),
       operationsFor: (member) => {
         if (member === "shareEnable") {
           return {
@@ -1318,6 +1321,13 @@ describe("panels two-entry architecture (catalog + detail)", () => {
       );
       mounted.element.querySelector<HTMLButtonElement>('[data-tab="grants"] .pd-share-actions .sdk-operation-button button')!.click();
       await waitFor(() => dispatched.some((d) => d.operationId === "shareEnable.share"), "share dispatched");
+      expect(dispatched).toContainEqual({
+        operationId: "shareEnable.share",
+        call: {
+          target: { kind: "object", objectType: PRODUCT_PANEL, primaryKey: "panel-b" },
+          input: { shared: true },
+        },
+      });
 
       // Preview tab: mounts live preview on demand, and unmounts when switching away.
       await display.present(presentFrame({ tab: "preview" }, display.page.value!.address));

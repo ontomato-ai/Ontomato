@@ -46,6 +46,7 @@ class TriggerFormTest {
 
   @BeforeEach
   void setUp() {
+    ReflectionTestUtils.setField(service, "definitions", io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain-a", "user-1"));
     ReflectionTestUtils.setField(service, "triggers", triggers);
     ReflectionTestUtils.setField(service, "actions", actions);
     ReflectionTestUtils.setField(service, "workflows", workflows);

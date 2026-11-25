@@ -12,7 +12,7 @@
   - `overview`（概览与预览）：基础属性摘要（`summary`，组件引用可跳转）与原位预览（`preview` 槽位挂载当前选中投影；当投影声明了对象主键或输入端口时，可在预览区输入并按 Enter／点击查看传入临时预览输入）。
   - `definition`（定义与绑定）：数据来处/读法/参数表（`dataList`，来处引用可跳转至能力图谱、对象类、关系类、行动或指标视图）、组件配置表（`configList`）、输入/输出端口表（`inputsList` / `outputsList`）、属主登记的操作表（`operationsList`），以及可展开的完整 JSON 定义（`definitionSummary`）。
   - `usage`（使用方）：列出当前读者可见的使用面板（`usedByList`，点击跳转到面板页），并在存在无权查看的使用面板时提示隐藏数量。
-  - `grants`（权限与共享，仅可编辑时显示）：域内共享开关（`shareEnable` / `shareDisable`）、授权列表与行级撤销（`grantsList.revoke`），以及通过成员/角色选择器添加授权的弹窗（`grantSubmit`）。
+  - `grants`（权限与共享，仅可编辑时显示）：域内共享开关（`shareEnable` / `shareDisable`）、授权列表与行级撤销（`grantsList.revoke`），以及通过`platform:PermissionPolicy` 选择器添加授权的弹窗（`grantSubmit`）。
 
 ## 读写都按读者的真实身份
 
@@ -33,9 +33,9 @@
 | --- | --- | --- | --- |
 | `copySubmit.copy` | `productProjections.copy` | `{ id, name }` | 复制为一条新的**私有**投影（需具备编辑权且非图投影）；复制成功后仅按属主回执的 `data.id` 切换选中。 |
 | `deleteProjection.delete` | `productProjections.delete` | `{ revision }` | 删除选中投影（入口在页头「更多」菜单与 `page_action` 共用）；由宿主经属主 `inspectImpact` 弹出确认框，列出可见使用面板名称与隐藏引用提示，被任何面板使用时属主拒绝（`PRODUCT_IN_USE`）；删除成功后返回 `/ontology/projections`。 |
-| `grantSubmit.grant` | `productProjections.grant` | `{ principalKind: "principal" \| "role", principalId, verb: "use" \| "edit" }` | 给成员或角色授予使用或编辑权。 |
-| `grantsList.revoke` | `productProjections.revoke` | `{ principalKind, principalId, verb }` | 撤销授权列表中的单条成员/角色授权（域内共享行不可在行内撤销，请使用域内共享开关）。 |
-| `shareEnable.share` / `shareDisable.share` | `productProjections.share` | `{ shared: boolean }` | 开启或关闭域内所有成员的使用授权。 |
+| `grantSubmit.grant` | `productProjections.grant` | `{ policyId, verb: "USE" \| "EDIT" }` | 给所选对象策略授予此投影的使用权或编辑权，两项独立授予。 |
+| `grantsList.revoke` | `productProjections.revoke` | `{ policyId, verb: "USE" \| "EDIT" }` | 撤销授权列表中的所选对象策略的指定权限（域内共享行不可在行内撤销，请使用域内共享开关）。 |
+| `shareEnable.share` / `shareDisable.share` | `productProjections.share` | `{ shared: boolean }` | 开启或关闭此投影的域内使用授权，返回 `{ success: true }`。 |
 
 ## 图投影
 

@@ -1,3 +1,4 @@
+import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
@@ -108,6 +109,11 @@ beforeAll(async () => {
   mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === "domain"
     ? [{ entryId: `${use.applicationId}/${use.useId}`, roots: { panelIds: ["panel-orders"], agentIds: [] } }] : [] });
   const grants = new Set<string>();
+  mountCurrentProductDecisions(app, {
+    token: "fixture-service", domain: "domain",
+    allow: (request, caller) => caller === "alice" &&
+      (request.ownerFacts.ownerId === "alice" || (request.verb === "USE" && request.ownerFacts.ownerId === null)),
+  });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     grants.add(req.body.id);

@@ -1,3 +1,4 @@
+import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
@@ -31,8 +32,6 @@ const mocks = vi.hoisted(() => ({
   restore: vi.fn(),
   sessionActor: vi.fn(),
   notify: vi.fn(),
-  requireGrant: vi.fn(),
-  grantedIds: vi.fn(),
   findProduct: vi.fn(),
   listScheduledTasks: vi.fn(),
   queryKnowledge: vi.fn(),
@@ -58,9 +57,19 @@ vi.mock("../../../infrastructure/product-current", () => ({
     updatedAt: row.updatedAt.toISOString(),
   }),
 }));
-vi.mock("../../product-governance/grants", () => ({
-  requireProductGrant: mocks.requireGrant,
-  grantedProductIds: mocks.grantedIds,
+vi.mock("../../product-governance/authorization", async original => ({
+  ...await original<typeof import("../../product-governance/authorization")>(),
+  requireObject: async (request: ObjectDecisionRequest) => {
+    if (!("target" in request) || request.verb !== "USE" ||
+      !products.has(`${request.target.kind.toLowerCase()}:${request.target.id}`))
+      throw new HttpError(403, "Product access denied", "OBJECT_FORBIDDEN");
+  },
+  decideObjects: async (requests: ObjectDecisionRequest[]) => requests.map((request) => {
+    if (!("target" in request)) throw new Error("Unexpected create decision");
+    const row = products.get(`${request.target.kind.toLowerCase()}:${request.target.id}`);
+    expect(request).toMatchObject({ ownerFacts: { ownerId: row?.ownerId, state: "PUBLISHED" } });
+    return request.verb === "USE" ? { allowed: true } : { allowed: false, code: "FORBIDDEN", reason: "Read only" };
+  }),
 }));
 vi.mock("../../../config/environment", () => ({
   environment: { agentRuntime: () => ({ callbackUrl: "http://workbench.test" }) },
@@ -264,8 +273,6 @@ beforeEach(() => {
 
   mocks.run.mockImplementation(async () => ({ run: currentRun }));
   mocks.resolve.mockImplementation(async () => ({ credentials }));
-  mocks.requireGrant.mockResolvedValue(undefined);
-  mocks.grantedIds.mockResolvedValue([]);
   mocks.findProduct.mockImplementation(async (_domainId: string, kind: CurrentProductKind, id: string) =>
     products.get(`${kind}:${id}`) ?? null);
   mocks.readCatalogue.mockResolvedValue({

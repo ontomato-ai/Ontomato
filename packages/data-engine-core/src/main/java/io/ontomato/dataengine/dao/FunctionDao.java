@@ -38,7 +38,7 @@ public class FunctionDao {
 
 	private static final String TABLE_NAME = "function";
 
-	private static final String COLUMNS = "id, name, origin, description, operation, parameters, return_def, code, logic, class_names, create_timestamp, modify_timestamp, domain_id, query_package, source_artifact";
+	private static final String COLUMNS = "id, name, origin, description, operation, parameters, return_def, code, logic, class_names, create_timestamp, modify_timestamp, domain_id, query_package, source_artifact, created_by, published";
 
 	@PostConstruct
 	public void initIndex() {
@@ -59,6 +59,8 @@ public class FunctionDao {
 				+ ")");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS query_package TEXT");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS source_artifact JSONB");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS created_by VARCHAR(64)");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS published BOOLEAN NOT NULL DEFAULT TRUE");
 		jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + TABLE_NAME + "_domain_id ON " + TABLE_NAME + "(domain_id)");
 		log.info(">>>function table initialization complete");
 	}
@@ -94,20 +96,20 @@ public class FunctionDao {
 		String classNamesStr = buildClassNamesStr(function);
 
 		jdbcTemplate.update(
-				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb) "
+				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, origin = EXCLUDED.origin, "
 						+ "description = EXCLUDED.description, operation = EXCLUDED.operation, "
 						+ "parameters = EXCLUDED.parameters, return_def = EXCLUDED.return_def, "
 						+ "code = EXCLUDED.code, logic = EXCLUDED.logic, class_names = EXCLUDED.class_names, "
 						+ "create_timestamp = EXCLUDED.create_timestamp, modify_timestamp = EXCLUDED.modify_timestamp, "
-				+ "domain_id = EXCLUDED.domain_id, query_package = EXCLUDED.query_package, source_artifact = EXCLUDED.source_artifact",
+				+ "domain_id = EXCLUDED.domain_id, query_package = EXCLUDED.query_package, source_artifact = EXCLUDED.source_artifact, published = EXCLUDED.published",
 				function.getId(), function.getName(), function.getOrigin(), function.getDescription(),
 				function.getOperation(),
 				function.getQueryPackage() == null ? JSON.toJSONString(function.getParameters(), Feature.WriteMapNullValue) : null,
 				JSON.toJSONString(function.getReturnDef(), Feature.WriteMapNullValue),
 				function.getCode(), function.getLogic(), classNamesStr,
 				function.getCreateTimestamp(), function.getModifyTimestamp(), function.getDomainId(),
-                JSON.toJSONString(function.getQueryPackage(), Feature.WriteMapNullValue),JSON.toJSONString(function.getSourceArtifact()));
+                JSON.toJSONString(function.getQueryPackage(), Feature.WriteMapNullValue),JSON.toJSONString(function.getSourceArtifact()), function.getCreatedBy(), function.isPublished());
 		return function;
 	}
 
@@ -210,6 +212,8 @@ public class FunctionDao {
 		function.setCreateTimestamp(rs.getObject("create_timestamp") == null ? null : rs.getLong("create_timestamp"));
 		function.setModifyTimestamp(rs.getObject("modify_timestamp") == null ? null : rs.getLong("modify_timestamp"));
 		function.setDomainId(rs.getString("domain_id"));
+		function.setCreatedBy(rs.getString("created_by"));
+		function.setPublished(rs.getBoolean("published"));
 		return function;
 	}
 

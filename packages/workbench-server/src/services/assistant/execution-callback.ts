@@ -5,12 +5,12 @@ import type {
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { environment } from "../../config/environment";
 import { getQueryTimeoutMs } from "../../config/query-settings";
-import { callbackCredential } from "../agent-runtime/callback-credential";
+import { callbackCredential, type CallbackScope } from "../agent-runtime/callback-credential";
 import type { AssistantOwner } from "./store";
 
 function sealedCallback(
   basePath: string,
-  pathPrefix: string,
+  scope: CallbackScope,
   runId: string,
   expiresAt: number,
   initiatorCredentials: AssistantCredentials,
@@ -21,7 +21,7 @@ function sealedCallback(
     owner: "workbench", baseUrl, pathPrefix: new URL(baseUrl).pathname,
     credentialHeader: "X-Ontomato-Callback-Credential",
     credential: callbackCredential({
-      pathPrefix,
+      scope,
       runId,
       expiresAt,
       token: initiatorCredentials.token ?? "",
@@ -43,12 +43,12 @@ export function executionBusinessCallbacks(
   const scope = options.scope ?? "full";
   const expiresAt = options.expiresAt ?? Date.now() + getQueryTimeoutMs();
   const base = `/api/assistant/executions/${runId}`;
-  const authoring = sealedCallback(`${base}/authoring`, `${base}/authoring/`, runId, expiresAt, initiatorCredentials);
+  const authoring = sealedCallback(`${base}/authoring`, { purpose: "execution", capability: "authoring" }, runId, expiresAt, initiatorCredentials);
   if (scope === "authoring-only") return { authoring };
-  const workbench = sealedCallback(`${base}/workbench`, `${base}/workbench/`, runId, expiresAt, initiatorCredentials);
-  const ontology = sealedCallback(`${base}/ontology`, `${base}/ontology/`, runId, expiresAt, initiatorCredentials);
+  const workbench = sealedCallback(`${base}/workbench`, { purpose: "execution", capability: "workbench" }, runId, expiresAt, initiatorCredentials);
+  const ontology = sealedCallback(`${base}/ontology`, { purpose: "execution", capability: "ontology" }, runId, expiresAt, initiatorCredentials);
   const panelCallbacks = scope === "full" || options.pageControl ? {
-    panelOperations: sealedCallback(`${base}/panels`, `${base}/panels/`, runId, expiresAt, initiatorCredentials),
+    panelOperations: sealedCallback(`${base}/panels`, { purpose: "execution", capability: "panels" }, runId, expiresAt, initiatorCredentials),
   } : {};
   if (scope === "app-builder") return { workbench, ontology, authoring, ...panelCallbacks };
   return {
@@ -56,7 +56,7 @@ export function executionBusinessCallbacks(
     ontology,
     ...panelCallbacks,
     authoring,
-    retrieval: sealedCallback(`${base}/retrieval`, `${base}/retrieval`, runId, expiresAt, initiatorCredentials),
+    retrieval: sealedCallback(`${base}/retrieval`, { purpose: "execution", capability: "retrieval" }, runId, expiresAt, initiatorCredentials),
   };
 }
 
@@ -68,7 +68,7 @@ export function governanceBusinessCallback(
   initiatorCredentials: AssistantCredentials,
 ): RuntimeBusinessCallback {
   const callbackPath = `/api/assistant/sessions/${sessionId}/governance-window`;
-  return sealedCallback(callbackPath, callbackPath, runId, expiresAt, initiatorCredentials);
+  return sealedCallback(callbackPath, { purpose: "governance", sessionId }, runId, expiresAt, initiatorCredentials);
 }
 
 /** Declares the pinned product-profile tool callback under the tools prefix. */
@@ -80,5 +80,5 @@ export function productBusinessCallback(
   initiatorCredentials: AssistantCredentials,
 ): RuntimeBusinessCallback {
   const basePath = `/api/product-assets/${encodeURIComponent(profileId)}/releases/${encodeURIComponent(releaseId)}/tools`;
-  return sealedCallback(basePath, `${basePath}/`, runId, expiresAt, initiatorCredentials);
+  return sealedCallback(basePath, { purpose: "product-tool", profileId, releaseId }, runId, expiresAt, initiatorCredentials);
 }

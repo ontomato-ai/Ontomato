@@ -1,3 +1,4 @@
+import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -314,6 +315,11 @@ beforeAll(async () => {
   app.use(express.json());
   mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === "knowledge-domain"
     ? [{ entryId: "app-knowledge/knowledge", roots: { panelIds: [panelId], agentIds: [] } }] : [] });
+  mountCurrentProductDecisions(app, {
+    token: "fixture-service", domain: "knowledge-domain",
+    allow: (request, caller) => caller === "knowledge-reader" &&
+      (request.ownerFacts.ownerId === "knowledge-reader" || (request.verb === "USE" && request.ownerFacts.ownerId === null)),
+  });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     resourceIds.add(req.body.id);
@@ -689,7 +695,7 @@ it("rejects a forged member path, an undeclared operation and an unauthorized ta
   const refusedReader = await intent("approve.approve", k2Target, { tk: "outsider" });
   expect(refusedReader.status).toBe(403);
   expect(await refusedReader.json()).toMatchObject({
-    error: { code: "PRODUCT_FORBIDDEN", message: "Product use Grant required" },
+    error: { code: "OBJECT_FORBIDDEN", message: "Object access denied" },
   });
   const preparedForbiddenApprove = await intent("approve.approve", forbiddenTarget);
   expect(preparedForbiddenApprove.status).toBe(200);

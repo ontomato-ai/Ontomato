@@ -1,4 +1,5 @@
-import { beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { objectDecisions } from "../../../__tests__/fixtures/agent-object-decisions";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { Request, Response } from "express";
 import { tmpdir } from "node:os";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
@@ -77,10 +78,10 @@ beforeEach(() => {
       use: { id: useId, pageKey: "list", panelId: "panel-content", path: "/ontology/list" },
     } }) };
   });
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "fixture");
   mocks.post.mockImplementation(async (_endpoint, url: string, body) => {
-    if (url.endsWith("/check")) return { text: JSON.stringify({ allowed: body.id !== projectionIds[2] }) };
-    if (url.endsWith("/check-batch"))
-      return { text: JSON.stringify({ allowed: Object.fromEntries(body.ids.map((id: string) => [id, id !== projectionIds[2]])) }) };
+    if (url.endsWith("/authorization/objects/decide-batch"))
+      return { text: JSON.stringify(objectDecisions(body, request => "target" in request && request.target.id !== projectionIds[2])) };
     throw new Error(`Unexpected backend POST: ${url}`);
   });
   const time = new Date("2026-11-24T00:00:00Z");
@@ -112,6 +113,12 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => { vi.unstubAllEnvs(); });
+
+const useRequest = (kind: string, id: string) => ({
+  target: { kind, id, domainId: "domain-a" }, ownerFacts: { ownerId: "author", state: "PUBLISHED" }, verb: "USE",
+});
+
 it("reads a 19-member frame with one entry lookup, two grant calls and isolated results", async () => {
   const response = await postBatch({ reads }, JSON.stringify({ kind: "build-test", contextId: null }));
   expect(response).toEqual({ status: 200, body: { results: [
@@ -127,12 +134,12 @@ it("reads a 19-member frame with one entry lookup, two grant calls and isolated 
     expect.objectContaining({ headers: expect.objectContaining({ tk: "reader-token", [BUILD_TEST_HEADER]: expect.any(String) }) }),
   );
   expect(mocks.post.mock.calls.map(([, url, body]) => [new URL(url, "http://data-engine.test").pathname, body])).toEqual([
-    ["/product-governance/check", { id: root, verb: "use" }],
-    ["/product-governance/check-batch", { ids: projectionIds, verb: "use" }],
+    ["/authorization/objects/decide-batch", { requests: [useRequest("PANEL", root)] }],
+    ["/authorization/objects/decide-batch", { requests: projectionIds.map(id => useRequest("PROJECTION", id)) }],
   ]);
   expect(mocks.query.mock.calls.map(([, ids]) => ids)).toEqual([
     ["domain-a", [root]],
-    ["domain-a", projectionIds.filter(id => id !== projectionIds[2])],
+    ["domain-a", projectionIds],
   ]);
   // Identical authorized reads within one batch (16x OBJECT_TYPE + 1x ATTRIBUTE + 1x RELATIONSHIP) deduplicate to 3 calls.
   expect(mocks.list).toHaveBeenCalledTimes(3);
@@ -143,16 +150,17 @@ it("does not carry cached entries or grants across batches or inspect a denied r
   expect((await postBatch({ reads: sample })).body).toEqual({
     results: [{ status: "ready", value: [record] }, { status: "forbidden", reason: expect.stringMatching(/\S/u) }],
   });
-  const loaded = mocks.query.mock.calls.length;
-  mocks.post.mockResolvedValue({ text: JSON.stringify({ allowed: false }) });
+  mocks.query.mockClear();
+  mocks.post.mockImplementation(async (_endpoint, _url, body) => ({ text: JSON.stringify(objectDecisions(body, () => false)) }));
   expect((await postBatch({ reads: sample })).body).toEqual({
     results: [{ status: "forbidden", reason: expect.stringMatching(/\S/u) }, { status: "forbidden", reason: expect.stringMatching(/\S/u) }],
   });
   expect(mocks.get).toHaveBeenCalledTimes(4);
   expect(mocks.post).toHaveBeenLastCalledWith(
-    "product-grant-check", expect.stringContaining("/product-governance/check"), { id: root, verb: "use" }, expect.anything(),
+    "object-authorization-decide-batch", expect.stringContaining("/authorization/objects/decide-batch"),
+    { requests: [useRequest("PANEL", root)] }, expect.anything(),
   );
-  expect(mocks.query).toHaveBeenCalledTimes(loaded);
+  expect(mocks.query.mock.calls.map(([, args]) => args)).toEqual([["domain-a", [root]]]);
 });
 
 it("rejects invalid envelopes before entry or grant lookup", async () => {
@@ -163,13 +171,14 @@ it("rejects invalid envelopes before entry or grant lookup", async () => {
   expect(mocks.post).not.toHaveBeenCalled();
 });
 
-it("rejects an incomplete grant response before loading definitions", async () => {
-  mocks.post.mockResolvedValueOnce({ text: JSON.stringify({ allowed: true }) })
-    .mockResolvedValueOnce({ text: JSON.stringify({ allowed: { [projectionIds[0]]: true } }) });
+it("rejects an incomplete grant response before reading member data", async () => {
+  mocks.post.mockResolvedValueOnce({ text: JSON.stringify({ decisions: [{ allowed: true }] }) })
+    .mockResolvedValueOnce({ text: JSON.stringify({ decisions: [{ allowed: true }] }) });
   const result = await postBatch({ reads: reads.slice(0, 2) });
   expect(result).toEqual({ status: 200, body: { results: [
-    { status: "error", message: "Invalid product Grant response" },
-    { status: "error", message: "Invalid product Grant response" },
+    { status: "error", message: expect.stringMatching(/decisions|grant/i) },
+    { status: "error", message: expect.stringMatching(/decisions|grant/i) },
   ] } });
-  expect(mocks.query).toHaveBeenCalledTimes(1);
+  expect(mocks.query).toHaveBeenCalledTimes(2);
+  expect(mocks.list).not.toHaveBeenCalled();
 });

@@ -53,6 +53,7 @@ class MetricViewPanelEndpointTest {
     context.registerBean(IdentityService.class, () -> identityService);
     context.refresh();
     new SpringBeanUtil().setApplicationContext(context);
+    ReflectionTestUtils.setField(controller, "definitions", io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain", "user-1"));
     ReflectionTestUtils.setField(controller, "identityService", identityService);
     ReflectionTestUtils.setField(controller, "metricViewService", metricViewService);
     ReflectionTestUtils.setField(controller, "subjectDirectory", subjectDirectory);

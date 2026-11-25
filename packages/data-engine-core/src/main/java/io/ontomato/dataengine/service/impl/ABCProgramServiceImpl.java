@@ -44,6 +44,8 @@ public class ABCProgramServiceImpl implements ABCProgramService {
       String sandbox, String lang, int timeout, String domain, ExecutionContext context) throws Exception {
     ExecutionTarget target = context.target();
     boolean read = Function.OPERATION_READ.equals(function.getOperation());
+    if (read && context.action() != null)
+      throw new IllegalArgumentException("An action requires a write program");
     // The write scope is the same union stored on the function/action rows: the object types bound
     // to parameters plus the declared write targets. Using only returnDef here made a program fail
     // with 403 once it wrote to a class that its parameters already declared.
@@ -64,6 +66,7 @@ public class ABCProgramServiceImpl implements ABCProgramService {
     var authority = read ? PythonAuthority.read(user, domain) : PythonAuthority.write(user, domain, sandbox)
         .withClasses(grantClasses);
     authority = authority.withTarget(target);
+    if (context.action() != null) authority = authority.withAction(context.action());
     if (context.executionId() != null) authority = authority.forExecution(context.executionId().toString());
     if (context.identity() != null) authority = authority.withIdentity(context.identity());
     PythonExecuteResult result;

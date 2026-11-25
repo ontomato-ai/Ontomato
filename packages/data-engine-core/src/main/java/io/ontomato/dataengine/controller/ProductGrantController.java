@@ -20,16 +20,9 @@ public class ProductGrantController {
     private final WorkbenchServiceAuthentication authentication;
     public ProductGrantController(ProductGrantService grants,WorkbenchServiceAuthentication authentication){this.grants=grants;this.authentication=authentication;}
     @PostMapping("/product-governance/check")
-    public Object check(HttpServletRequest request, @RequestBody Map<String, Object> body) {
-        if (body.containsKey("target") || body.containsKey("ownerFacts")) {
-            authentication.authenticate(request);
-            if (!(body.get("target") instanceof Map<?, ?> target)
-                    || !(body.get("ownerFacts") instanceof Map<?, ?> facts) || !facts.containsKey("ownerId"))
-                throw new IllegalArgumentException("Expected product target and owner facts");
-            return grants.managementAccess(
-                new ProductGrantService.ObjectTarget(text(target, "domainId"), text(target, "kind"), text(target, "id")),
-                new ProductGrantService.OwnerFacts(optionalText(facts, "ownerId"), text(facts, "state")));
-        }
+    public Object check(@RequestBody Map<String, Object> body) {
+        if (body.containsKey("target") || body.containsKey("ownerFacts"))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Object definitions use the authorization decision endpoint.");
         return Map.of("allowed", grants.allowed(text(body, "id"), text(body, "verb")));
     }
     @PostMapping("/product-governance/check-batch")

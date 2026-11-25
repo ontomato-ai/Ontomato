@@ -2,7 +2,7 @@ import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations
 import { PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { productGrantCheck } from "../../../__tests__/fixtures/product-grant-check";
+import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
@@ -12,9 +12,8 @@ import type { PanelOperationHost } from "../server-operations";
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
-  grant: vi.fn(),
-  managementAccess: vi.fn(),
-  unregister: vi.fn(),
+  decide: vi.fn(),
+  retire: vi.fn(),
   panelUsers: vi.fn(),
   homePanelId: vi.fn(),
   readHomePanel: vi.fn(),
@@ -27,13 +26,14 @@ vi.mock("../../../infrastructure/postgres", () => ({
 vi.mock("../../../infrastructure/postgres-transaction", () => ({
   transaction: (run: (client: { query: typeof mocks.query }) => unknown) => run({ query: mocks.query }),
 }));
-vi.mock("../../product-governance/grants", async importOriginal => ({
-  ...await importOriginal<typeof import("../../product-governance/grants")>(),
-  grantedProductIds: async (verb: "use" | "edit") => grantedIds[verb],
-  requireProductGrant: mocks.grant,
-  productGrantAllowed: async () => false,
-  productManagementAccess: mocks.managementAccess,
-  unregisterProductResource: mocks.unregister,
+vi.mock("../../product-governance/authorization", async original => ({
+  ...await original<typeof import("../../product-governance/authorization")>(),
+  decideObjects: mocks.decide,
+  requireObject: async (request: ObjectDecisionRequest, caller: unknown) => {
+    const [decision] = await mocks.decide([request], caller);
+    if (!decision.allowed) throw new HttpError(403, decision.reason, decision.code);
+  },
+  retireObject: mocks.retire,
 }));
 vi.mock("../used-by", () => ({ panelUsers: mocks.panelUsers, panelsUsingProjection: vi.fn() }));
 vi.mock("../../platform-home/store", () => ({
@@ -85,9 +85,8 @@ beforeEach(() => {
   const rows = new Map(stored.map(panel => [panel.id, panel]));
   mocks.query.mockReset().mockImplementation(async (sql: string, args: unknown[]) => {
     if (sql.includes("UNION ALL")) {
-      const [domainId, visible, ownerId] = args as [string, string[], string];
-      return { rows: [...rows.values()].filter(row =>
-        row.domainId === domainId && (row.ownerId === ownerId || visible.includes(row.id))) };
+      const [domainId, visible] = args as [string, string[] | undefined];
+      return { rows: [...rows.values()].filter(row => row.domainId === domainId && (!visible || visible.includes(row.id))) };
     }
     if (sql.startsWith("SELECT id,domain_id")) {
       const row = rows.get(args[1] as string);
@@ -96,16 +95,19 @@ beforeEach(() => {
     if (sql.startsWith("DELETE FROM product_panels")) rows.delete(args[1] as string);
     return { rows: [] };
   });
-  mocks.grant.mockReset().mockImplementation(async (id: string) => {
-    if (id !== "reader-panel") throw new HttpError(403, "Use Grant required", "PRODUCT_FORBIDDEN");
-  });
-  mocks.managementAccess.mockReset().mockImplementation(async (target, ownerFacts, caller) => {
+  mocks.decide.mockReset().mockImplementation(async (requests: ObjectDecisionRequest[], caller) => {
     expect(caller).toEqual(credentials);
-    expect(target).toMatchObject({ domainId: owner.domainId, kind: "panel" });
-    expect(ownerFacts).toEqual({ ownerId: rows.get(target.id)?.ownerId, state: "current" });
-    return productGrantCheck({ target, ownerFacts }, owner.userId, (id, verb) => grantedIds[verb].includes(id));
+    return requests.map(request => {
+      if (!("target" in request) || request.verb === "VIEW") throw new Error("Unexpected panel decision");
+      const { target, ownerFacts, verb } = request;
+      expect(target).toMatchObject({ domainId: owner.domainId, kind: "PANEL" });
+      expect(ownerFacts).toEqual({ ownerId: rows.get(target.id)?.ownerId, state: "PUBLISHED" });
+      const allowed = (verb === "EDIT" && ownerFacts.ownerId === owner.userId) ||
+        grantedIds[verb === "USE" ? "use" : "edit"].includes(target.id);
+      return allowed ? { allowed: true } : { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Denied" };
+    });
   });
-  mocks.unregister.mockReset();
+  mocks.retire.mockReset();
   mocks.panelUsers.mockReset().mockResolvedValue({ panels: [], applicationEntries: [], classNames: [], hiddenCount: 0 });
   mocks.homePanelId.mockReset().mockResolvedValue(null);
   mocks.readHomePanel.mockReset().mockResolvedValue(null);
@@ -168,7 +170,10 @@ it("allows the author to confirm and delete a broken panel after its Grants are 
     kind: "success", data: { success: true },
     affected: { objects: [{ objectType: PRODUCT_PANEL, primaryKey: "author-panel" }] },
   });
-  expect(mocks.unregister).not.toHaveBeenCalled();
+  expect(mocks.retire).toHaveBeenCalledWith({
+    target: { domainId: owner.domainId, kind: "PANEL", id: "author-panel" },
+    ownerFacts: { ownerId: owner.userId, state: "PUBLISHED" },
+  }, credentials);
   await expect(adapter.record("author-panel")).rejects.toMatchObject({ status: 404 });
 });
 

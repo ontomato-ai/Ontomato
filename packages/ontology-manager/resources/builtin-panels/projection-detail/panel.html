@@ -628,24 +628,20 @@
       destroy-on-close
     >
       <sdk-form label-position="top">
-        <sdk-form-item :label="t('grants.kind')">
-          <sdk-segmented v-model="grantPrincipalKindModel" :options="grantKindOptions" size="default"></sdk-segmented>
-        </sdk-form-item>
-        <sdk-form-item :label="grantPrincipalKindModel === 'role' ? t('grants.role') : t('grants.principal')">
-          <projection v-if="canOpenGrant && grantDialogOpen && grantPrincipalKindModel === 'role'" slot="rolePicker"></projection>
-          <projection v-else-if="canOpenGrant && grantDialogOpen" slot="userPicker"></projection>
+        <sdk-form-item :label="t('grants.policy')">
+          <projection slot="policyPicker"></projection>
         </sdk-form-item>
         <sdk-form-item :label="t('grants.verb')">
           <sdk-select v-model="grantVerbModel" style="width: 100%">
-            <sdk-option value="use" :label="t('grants.use')"></sdk-option>
-            <sdk-option value="edit" :label="t('grants.edit')"></sdk-option>
+            <sdk-option value="USE" :label="t('grants.use')"></sdk-option>
+            <sdk-option value="EDIT" :label="t('grants.edit')"></sdk-option>
           </sdk-select>
         </sdk-form-item>
       </sdk-form>
       <template #footer>
         <div class="proj-dialog-footer">
           <sdk-button @click="grantDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection v-if="canOpenGrant && grantDialogOpen" slot="grantSubmit" :disabled="!grantPrincipalId" @done="onGrantAdded"></projection>
+          <projection v-if="canOpenGrant && grantDialogOpen" slot="grantSubmit" :disabled="!grantPolicyId" @done="onGrantAdded"></projection>
         </div>
       </template>
     </sdk-dialog>

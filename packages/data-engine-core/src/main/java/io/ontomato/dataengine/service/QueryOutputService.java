@@ -90,7 +90,7 @@ public class QueryOutputService {
         }
       }
       var scope = QueryAccessService.classScope(access.permission(), requested);
-      var authority = PythonAuthority.read(access.user().getId(), access.user().getDomainId()).withExecution(access.executionUserId(),access.initiatorUserId()).withClasses(scope).forExecution(id);
+      var authority = PythonAuthority.read(access.user().getId(), access.user().getDomainId()).withExecution(access.executionUserId(),access.initiatorUserId()).withClasses(scope).withTarget(access.target()).forExecution(id);
       if (access.grant() != null) authority = authority.withParent(new PythonAuthority.ParentGrant(
           access.credential(), access.grant().getString("runId"), access.grant().getLongValue("expiresAt")));
       int minutes = Math.max(1, (int) (config.get(access.user().getDomainId()).getDslCookerTimeout() / 60000));

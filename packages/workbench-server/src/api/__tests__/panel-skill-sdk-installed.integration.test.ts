@@ -346,7 +346,11 @@ it("catalogue diagnostics distinguish hidden and uncertain through an owned entr
     listAssociations: async () => [{ entrance: dynamic, identity }],
     resolve: async () => identity,
   });
-  // Both registered panels lack their rows. Only the dynamic association and the required root grant remain.
+  // The hidden root has no row. The other root can be authorized, but its stored dependencies are unreadable.
+  await getPostgresPool().query(
+    `INSERT INTO ${table("product_panels")} (id, domain_id, owner_id, definition) VALUES ($1, $2, $3, $4)`,
+    [uncertain.panelId, server.domainId, "source-owner", { name: uncertain.panelId, manifest: { members: [] } }],
+  );
   fixture.uses.splice(0, fixture.uses.length, hidden, uncertain);
   staticEntrances = [hidden.entrance];
   fixture.grants.add(uncertain.panelId);

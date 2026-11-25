@@ -384,7 +384,8 @@ public class OntologyGenerationService {
     long deadline=Instant.parse(row.getString("deadline")).toEpochMilli();
     if(context.expiresAt()!=null) deadline=Math.min(deadline,context.expiresAt());
     var definition=kind.equals("metric")?definitions.metricView(context.owner().domainId(),prompt,context.language(),deadline-System.currentTimeMillis(),skills):definitions.generation(context.owner().domainId(),kind,prompt,context.language(),deadline-System.currentTimeMillis(),skills);
-    String token=grants.issue(context.access().user().getId(),context.owner().domainId(),"ontology-generation",run,deadline,context.access().classNames(),null,JSONObject.of("executionUserId",context.executionUserId(),"initiatorUserId",context.owner().userId()));
+    String token=grants.issueForTarget("ontology-generation", run, deadline, context.access(),
+        JSONObject.of("executionUserId", context.executionUserId(), "initiatorUserId", context.owner().userId()));
     store.transaction(() -> store.gate(session,run,context.owner()));
     return JSONObject.of("language",context.language(),"input",input,"definition",definition,
       "businessCallbacks", callbacks(runtime.ontologyUrl(), token, token));

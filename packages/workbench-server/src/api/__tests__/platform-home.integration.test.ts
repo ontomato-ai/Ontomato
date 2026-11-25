@@ -1,3 +1,4 @@
+import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { Server } from "node:http";
@@ -50,6 +51,10 @@ beforeAll(async () => {
 
   const app = express();
   app.use(express.json());
+  mountCurrentProductDecisions(app, {
+    prefix: "/java", token: "fixture-service", domain: "domain-a",
+    allow: ({ target, verb }, caller) => canUsePanel && caller === "home-reader" && target.id === "shared-home" && verb === "USE",
+  });
   app.post("/java/product-governance/check", (req, res) => {
     res.json({ allowed: canUsePanel && req.get("tk") === "home-reader" && req.body.id === "shared-home" && req.body.verb === "use" });
   });
@@ -63,10 +68,12 @@ beforeAll(async () => {
   await once(server, "listening");
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   config.dataQuery.baseUrl = base + "/java";
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "fixture-service");
 });
 
 afterAll(async () => {
   config.dataQuery.baseUrl = oldQueryUrl;
+  vi.unstubAllEnvs();
   if (server) {
     server.close();
     await once(server, "close");
@@ -123,7 +130,7 @@ it("stores only the caller's home panel choice and checks current use when savin
   canUsePanel = false;
   const revoked = await read();
   expect(revoked.status).toBe(403);
-  expect(await revoked.json()).toMatchObject({ error: { code: "PRODUCT_FORBIDDEN" } });
+  expect(await revoked.json()).toMatchObject({ error: { code: "OBJECT_FORBIDDEN" } });
 
   const cleared = await request(userId, "domain-a", { homePanelId: null });
   expect(cleared.status).toBe(200);

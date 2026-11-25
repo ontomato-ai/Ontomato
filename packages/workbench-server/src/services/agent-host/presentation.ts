@@ -11,7 +11,7 @@ import { classifyPanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { environment } from "../../config/environment";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { callbackCredential } from "../agent-runtime/callback-credential";
+import { callbackCredential, presentationHostPaths } from "../agent-runtime/callback-credential";
 import { panelOperationStore } from "../product-panels/operation-store";
 import type { AgentHostOwner, AgentHostService, AgentPresentationHost } from "./types";
 import type { AgentVisibilityReader } from "./visibility";
@@ -46,11 +46,6 @@ const viewKey = (host: AgentPresentationHost, owner: AgentHostOwner, viewId: str
 const runViewKey = (host: AgentPresentationHost, owner: AgentHostOwner, runId: string) =>
   JSON.stringify([host, owner.domainId, owner.userId, runId]);
 const runSnapshotKey = runViewKey;
-const hostPaths: Record<AgentPresentationHost, string> = {
-  workbench: "/api/assistant",
-  observe: "/api/observe/agent",
-};
-
 export interface LivePresentationRunEligibility {
   readonly host: AgentPresentationHost;
   readonly owner: AgentHostOwner;
@@ -310,11 +305,11 @@ export function presentationCallback(
   const snapshotKey = runSnapshotKey(host, owner, body.runId);
   if (initialPage) storePageSnapshot(snapshotKey, initialPage);
   else lastPageSnapshots.delete(snapshotKey);
-  const path = `${hostPaths[host]}/sessions/${body.sessionId}/runs/${body.runId}/presentation-call/${viewId}`;
+  const path = `${presentationHostPaths[host]}/sessions/${body.sessionId}/runs/${body.runId}/presentation-call/${viewId}`;
   return {
     url: environment.agentRuntime().callbackUrl.replace(/\/$/, "") + path,
     credential: callbackCredential({
-      pathPrefix: path, runId: body.runId, expiresAt, token: credentials.token ?? "", apiKey: credentials.apiKey ?? "",
+      scope: { purpose: "presentation", host, sessionId: body.sessionId, viewId }, runId: body.runId, expiresAt, token: credentials.token ?? "", apiKey: credentials.apiKey ?? "",
     }).value,
   };
 }

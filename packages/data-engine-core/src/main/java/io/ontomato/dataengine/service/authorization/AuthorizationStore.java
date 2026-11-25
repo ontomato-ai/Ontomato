@@ -23,6 +23,9 @@ public interface AuthorizationStore {
     Map<String, Long> countManagementOperationsByPolicy(String domainId, Set<String> policyIds);
     Map<String, Long> countPendingGrantsByPolicy(String domainId, Set<String> policyIds);
 
+    default boolean requiresFirstPublicationAudience() { return true; }
+    default List<ObjectGrantView> objectGrantViews(ObjectTarget target) { throw unsupportedObjectPolicies(); }
+
     default PolicyRef domainPolicy(String domainId) { throw unsupportedObjectPolicies(); }
     default List<AgentPolicyGrant> agentPolicyGrants(ObjectTarget target) { throw unsupportedObjectPolicies(); }
     default void replaceAgentLevel(String policyId, ObjectTarget target, Verb level) { throw unsupportedObjectPolicies(); }

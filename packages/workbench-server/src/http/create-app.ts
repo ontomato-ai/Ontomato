@@ -23,7 +23,7 @@ import {
 import { installAssistantEvidenceReader } from "../platform/diagnosis/observe/workspaces/assistant-source";
 import { installDiagnosisEvidenceReader } from "../platform/diagnosis/observe/workspaces/diagnosis-source";
 import { resolveDiagnosisEvidence } from "../services/ops-diagnosis/evidence";
-import type { AuthenticatedRequest } from "../utils/request-identity";
+import { credentialsFromRequest, type AuthenticatedRequest } from "../utils/request-identity";
 import { assistantExecutionMountPath, assistantExecutionRouter, assistantOwnerCallbackPath } from "../api/routes/assistant-execution";
 import { unwrapCallbackCredential } from "../services/agent-runtime/callback-credential";
 import express, {
@@ -35,7 +35,7 @@ import express, {
 import cors from "cors";
 import path from "path";
 import { normalizeSkillPackagePath } from "../core/skills/manifest";
-import { readSkillView } from "../services/skills/view";
+import { skillManager } from "../services/skills/skill-manager";
 import { asyncHandler } from "../api/utils/http";
 import { config } from "../config/application";
 import analysisTasksRouter from "../api/routes/analysis-tasks";
@@ -162,10 +162,10 @@ export function createWorkbenchApp(): Express {
       res.setHeader("Referrer-Policy", "no-referrer");
       const { token, apiKey } = verification;
       await runWithLogContext({ domainId, token, apiKey }, async () => {
-        const view = await readSkillView(domainId, { token, apiKey });
         // Saved HTML still has two historical path segments before the skill name.
         const [, , , id, ...segments] = decodeURIComponent(req.path).split("/");
-        const skill = view.requireSkillById(id);
+        const caller = Object.assign(req, { token, apiKey }) as AuthenticatedRequest;
+        const skill = await skillManager.requireReadableSkill(domainId, id, credentialsFromRequest(caller));
         const relative = normalizeSkillPackagePath(segments.join("/"));
         if (!relative) {
           res.sendStatus(404);
