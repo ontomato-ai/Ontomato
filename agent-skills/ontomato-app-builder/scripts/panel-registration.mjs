@@ -66,8 +66,8 @@ export function panelRegistrationRecords({ projections = [], panels = [], applic
       requireMode(mode);
       if (mode === "create") {
         requireApplicationId(id);
-        if (input.declaration == null || input.entryAccess == null) {
-          throw new Error("Application creation requires declaration and entryAccess");
+        if (input.declaration == null || input.initialOpenEntryIds == null) {
+          throw new Error("Application creation requires declaration and initialOpenEntryIds");
         }
       } else {
         const allowed = ["entry", "panelUses", "framePanelId", "declaration"];

@@ -31,10 +31,9 @@ class ApplicationStandaloneToggleTest {
               "rail": "top",
               "category": "business",
               "sort": 1,
-              "entry": {"path": "/demo", "renderer": "demo"},
-              "entryAccess": ["domain-member"],
+              "entry": {"path": "/demo", "renderer": "demo", "entryKey": "main"},
               "scheduleAdapter": null,
-              "declaration": {"names": {"en": "Demo"}, "descriptions": {}, "icon": "pages", "groups": [], "permissions": []}
+              "declaration": {"names": {"en": "Demo"}, "descriptions": {}, "icon": "pages", "groups": []}
             }
             """, ApplicationCatalog.Builtin.class);
         assertTrue(defaulted.allowsStandalone());
@@ -46,11 +45,10 @@ class ApplicationStandaloneToggleTest {
               "rail": "bottom",
               "category": "admin",
               "sort": 2,
-              "entry": {"path": "/sys-demo", "renderer": "sys-demo"},
-              "entryAccess": ["domain-member"],
+              "entry": {"path": "/sys-demo", "renderer": "sys-demo", "entryKey": "main"},
               "scheduleAdapter": null,
               "allowStandalone": false,
-              "declaration": {"names": {"en": "Sys Demo"}, "descriptions": {}, "icon": "settings", "groups": [], "permissions": []}
+              "declaration": {"names": {"en": "Sys Demo"}, "descriptions": {}, "icon": "settings", "groups": []}
             }
             """, ApplicationCatalog.Builtin.class);
         assertFalse(disabled.allowsStandalone());
@@ -106,9 +104,10 @@ class ApplicationStandaloneToggleTest {
             return callback.doInTransaction(mock(TransactionStatus.class));
         });
         var access = mock(ApplicationAccess.class);
+        var authorization = EntryAuthorizationFixture.allowEntries();
         var panels = mock(PanelResources.class);
         var grants = mock(ProductGrantService.class);
-        var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", panels, grants));
+        var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", panels, grants, authorization));
 
         var user = mock(User.class);
         when(user.getId()).thenReturn("u-1");
@@ -122,7 +121,6 @@ class ApplicationStandaloneToggleTest {
             "entry", JSONObject.of("path", "/applications/app-one", "renderer", "panels"),
             "panelUses", List.of(),
             "groups", List.of(),
-            "permissions", List.of(),
             "panelSettings", new JSONObject(),
             "allowStandalone", true);
         doReturn(List.of(app)).when(catalog).all();
@@ -156,8 +154,8 @@ class ApplicationStandaloneToggleTest {
             return null;
         }).when(transactions).executeWithoutResult(any());
         var access = mock(ApplicationAccess.class);
-        when(access.builtinPermissions(anyString())).thenReturn(List.of());
-        var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", mock(PanelResources.class), mock(ProductGrantService.class)));
+        var authorization = EntryAuthorizationFixture.allowEntries();
+        var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", mock(PanelResources.class), mock(ProductGrantService.class), authorization));
 
         var existingSettings = JSONObject.of(
             "id", "settings",
@@ -168,7 +166,6 @@ class ApplicationStandaloneToggleTest {
             "pageSkills", List.of(),
             "panelUses", List.of(),
             "groups", List.of(),
-            "permissions", List.of(),
             "panelSettings", new JSONObject(),
             "allowStandalone", true);
         doReturn(List.of(existingSettings)).when(catalog).all();
@@ -180,7 +177,7 @@ class ApplicationStandaloneToggleTest {
             argThat((String sql) -> sql.contains("ON CONFLICT(id) DO UPDATE SET") && sql.contains("allow_standalone=excluded.allow_standalone")),
             eq("settings"), isNull(), eq("data-engine"), isNull(), eq("native"),
             any(), any(), eq("settings"), eq("bottom"), eq("admin"), eq(20),
-            any(), any(), isNull(), isNull(), any(), eq("/settings"), any(), any(), any(), any(), eq(false));
+            any(), isNull(), isNull(), any(), eq("/settings"), any(), any(), any(), eq(false));
     }
 
     @Test

@@ -66,6 +66,47 @@ public class ApplicationCatalogUpgrade implements InitializingBean {
                 FROM jsonb_array_elements(app.page_skills) WITH ORDINALITY AS mappings(mapping, mapping_position)
             ) WHERE app.page_skills @? '$[*].defaults[*].agentKey';
             """);
+        // Bind legacy skill declarations to persisted entries. Historical panel access remains for the edition migration.
+        db.update("""
+            UPDATE sys_application
+            SET entry = entry || jsonb_build_object('entryKey', ?::text)
+            WHERE kind IS NOT NULL AND entry IS NOT NULL
+              AND entry->>'entryKey' IS NULL AND entry->>'renderer' IS DISTINCT FROM 'panels'
+              AND panel_uses = '[]'::jsonb
+            """, ApplicationCatalog.LEGACY_ENTRY_KEY);
+        db.execute("""
+            UPDATE sys_application AS app
+            SET page_skills = (
+                SELECT COALESCE(jsonb_agg(
+                    (mapping - 'permissionCode' - 'access' - 'defaults')
+                    || jsonb_build_object('entryKey', matched.entry_key, 'pageKey', matched.page_key)
+                    || CASE WHEN matching_defaults.items IS NULL THEN '{}'::jsonb
+                            ELSE jsonb_build_object('defaults', matching_defaults.items) END
+                    ORDER BY position, matched.entry_key), '[]'::jsonb)
+                FROM jsonb_array_elements(app.page_skills) WITH ORDINALITY AS mappings(mapping, position)
+                CROSS JOIN LATERAL (
+                    SELECT use_item->>'id' AS entry_key, use_item->>'pageKey' AS page_key
+                    FROM jsonb_array_elements(app.panel_uses) AS uses(use_item)
+                    WHERE CASE WHEN mapping ? 'entryKey' THEN use_item->>'id' = mapping->>'entryKey'
+                          WHEN mapping->>'permissionCode' IS NOT NULL
+                            THEN use_item->'access'->>'permissionCode' = mapping->>'permissionCode'
+                          ELSE use_item->>'pageKey' = mapping->>'pageKey'
+                            AND use_item->'access'->>'kind' = mapping->>'access' END
+                    UNION ALL
+                    SELECT app.entry->>'entryKey',
+                        COALESCE(app.entry->>'pageKey', mapping->>'pageKey', app.entry->>'entryKey')
+                    WHERE app.panel_uses = '[]'::jsonb AND app.entry->>'entryKey' IS NOT NULL
+                      AND (mapping->>'entryKey' = app.entry->>'entryKey'
+                          OR NOT (mapping ? 'entryKey') AND jsonb_array_length(app.page_skills) = 1)
+                ) AS matched
+                CROSS JOIN LATERAL (
+                    SELECT jsonb_agg(item) AS items
+                    FROM jsonb_array_elements(COALESCE(NULLIF(mapping->'defaults', 'null'::jsonb), '[]'::jsonb)) AS defaults(item)
+                    WHERE item->>'pageKey' = matched.page_key
+                ) AS matching_defaults
+            )
+            WHERE app.page_skills @? '$[*] ? (!exists(@.entryKey))';
+            """);
     }
     @Component("applicationBuiltins")
     @DependsOn("applicationCatalogUpgrade")

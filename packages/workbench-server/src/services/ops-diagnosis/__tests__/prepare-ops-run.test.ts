@@ -138,7 +138,7 @@ it("attaches page skill, pageControl and panelOperations callback when invoked f
     executionCredentials: { token: "secret-token", locale: "en" },
     pageSkillContext: {
       mode: "public",
-      locator: { permissionCode: "observer", pageKey: "ops-turn-evidence" },
+      locator: { applicationId: "operations", entryKey: "ops-turn-evidence", pageKey: "ops-turn-evidence" },
     },
   }));
 

@@ -179,7 +179,6 @@ const HOME_OBJECT_DETAIL_USE: ApplicationPanelUse = {
   pageKey: "home-object-detail-body",
   panelId: "builtin-product-object-detail-body",
   path: "/home/object-detail",
-  access: { kind: "domain-member" },
 };
 const objectDetailHost = ref<PanelInstanceView | null>(null);
 const objectDetailUse = computed<ApplicationPanelUse>(() =>

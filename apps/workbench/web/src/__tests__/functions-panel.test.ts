@@ -401,7 +401,6 @@ async function mountFunctionsApp(options: HarnessOptions = {}) {
       category: "build",
       sort: 10,
       entry: { path: "/ontology", renderer: "ontology" },
-      entryAccess: ["ontology-modeling"],
       scheduleAdapter: null,
       releaseId: null,
       panelUses: [catalogUse, detailUse],

@@ -245,7 +245,6 @@ async function openBuiltPanel(
     category: "admin",
     sort: 20,
     entry: { path: "/settings", renderer: "settings" },
-    entryAccess: ["system-config"],
     scheduleAdapter: null,
     releaseId: null,
     names: { en: "System settings" },

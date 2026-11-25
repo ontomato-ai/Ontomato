@@ -82,7 +82,7 @@ beforeAll(async () => {
     res.json({ success: true, data: {
       applicationId: use.applicationId, menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: use.useId, pageKey: "tasks", path: "/applications/app-tasks/tasks",
-        panelId: "panel-tasks", access: { kind: "domain-member" } },
+        panelId: "panel-tasks" },
     } });
   });
   app.get("/platform/scheduled-tasks/:taskId", (req, res) => {

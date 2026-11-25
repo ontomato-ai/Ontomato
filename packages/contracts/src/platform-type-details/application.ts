@@ -48,18 +48,12 @@ export const applicationTypeDetail = {
     {
       name: "panelUses",
       type: "ApplicationPanelUse[]",
-      description: "Entries in their declared order, including paths, panel references, inputs, menu metadata, admission rules, and default agents.",
+      description: "Entries in their declared order, including paths, panel references, inputs, menu metadata, and default agents.",
     },
     {
       name: "groups",
       type: "{ key: string, names: Record<string, string>, sort: number }[]",
       description: "Menu group keys, translated names, and sort order.",
-    },
-    {
-      name: "entryAccess",
-      type: "string[]",
-      optional: true,
-      description: "Application-level admission rules visible to the application's maintainers.",
     },
     {
       name: "framePanelId",

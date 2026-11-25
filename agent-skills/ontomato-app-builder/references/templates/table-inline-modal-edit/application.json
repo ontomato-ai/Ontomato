@@ -3,13 +3,12 @@
     "path": "/applications/app-course-catalogue/courses",
     "renderer": "panels"
   },
-  "entryAccess": [
-    "domain-member"
+  "initialOpenEntryIds": [
+    "app-course-catalogue-courses"
   ],
   "declaration": {
     "descriptions": {},
     "groups": [],
-    "permissions": [],
     "names": {
       "en": "Course catalogue"
     },
@@ -21,9 +20,6 @@
       "pageKey": "app-course-catalogue-courses",
       "panelId": "template-course-catalogue",
       "path": "/applications/app-course-catalogue/courses",
-      "access": {
-        "kind": "domain-member"
-      },
       "names": {
         "en": "Courses"
       }

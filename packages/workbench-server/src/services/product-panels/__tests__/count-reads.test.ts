@@ -210,7 +210,7 @@ describe("platform count reads", () => {
       data: { rows: { source: { type: { kind: "PlatformObjectType", id: ATTRIBUTE } }, read: "list", params: { className: { input: "className" } } } },
     });
     mocks.resolveRoot.mockResolvedValue({ entry: applicationPanelUseSchema.parse({
-      id: "attributes", pageKey: "attributes", panelId: "model", path: "/attributes", access: { kind: "domain-member" },
+      id: "attributes", pageKey: "attributes", panelId: "model", path: "/attributes",
       inputs: { selectedNode: { literal: { className: OBJECT_TYPE, primaryKey: "Device" } } },
     }) });
     mocks.resolveMember.mockResolvedValue({

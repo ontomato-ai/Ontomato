@@ -270,12 +270,11 @@ export function managementPanel(type, checks, typeTable, {
   });
   const use = (entry, path) => ({
     id: `${id}-${entry}-use`, pageKey: `${id}-${entry}`, panelId: `${id}-${entry}`, path,
-    access: { kind: "domain-member" },
   });
   const application = {
     entry: { path: catalogPath, renderer: "panels" },
-    entryAccess: ["domain-member"],
-    declaration: { names: { en: title }, descriptions: { en: `Manage ${title}` }, icon: "app-window", groups: [], permissions: [] },
+    initialOpenEntryIds: [`${id}-catalog-use`, `${id}-detail-use`],
+    declaration: { names: { en: title }, descriptions: { en: `Manage ${title}` }, icon: "app-window", groups: [] },
     panelUses: [{ ...use("catalog", catalogPath), names: { en: title } }, use("detail", detailPath)],
   };
   return { application, panels: [catalog, detail], entry: catalogPath };

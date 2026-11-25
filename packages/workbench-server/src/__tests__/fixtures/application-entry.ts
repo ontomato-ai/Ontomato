@@ -9,6 +9,10 @@ export function mockApplicationEntry(
     res.json = (body) => {
       if (body?.success !== true) return send(body);
       const { applicationId, use, framePanelId } = body.data;
+      if (!use || use.kind === "native") {
+        res.status(404);
+        return send({ success: false, message: "Panel entry not found" });
+      }
       return send({ success: true, data: { applicationId, use, framePanelId } });
     };
     return answer(req, res, next);

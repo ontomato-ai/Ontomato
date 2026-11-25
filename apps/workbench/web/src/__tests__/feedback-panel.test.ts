@@ -217,7 +217,6 @@ describe("feedback builtin panel export operation", () => {
         category: "admin",
         sort: 0,
         entry: { path: "/admin", renderer: "panels" },
-        entryAccess: ["domain-member"],
         scheduleAdapter: null,
         releaseId: null,
         panelUses: [use],

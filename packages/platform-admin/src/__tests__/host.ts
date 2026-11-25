@@ -12,7 +12,6 @@ import {
 } from "@ontomato/platform-shell";
 import { createPlatformI18n } from "../i18n";
 import { providePlatformHost, type PlatformPageHost } from "../context";
-import { openAccess } from "../navigation";
 import { ossPlatformPages, platformGroups } from "../pages";
 import type { PlatformApi } from "../api";
 import platformEn from "../locales/en";
@@ -25,7 +24,7 @@ export function testI18n() {
 /** A platform host for mounting one page in a component test; `api` holds the endpoints the page under test calls. */
 export function testHost(api: Partial<PlatformApi>, overrides: Partial<PlatformPageHost> = {}): PlatformPageHost {
   return {
-    access: openAccess,
+    access: { ready: true, error: null, canEnter: () => true, verifyEntry: async () => "allowed", load: async () => {} },
     api: api as PlatformApi,
     preferences: {
       locales: ["en"],

@@ -19,17 +19,19 @@ export const builtinApplicationDeclarationSchema = applicationMetadataSchema.ext
 export const builtinApplicationSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/), kind: z.enum(["native", "link"]),
   rail: z.enum(["top", "apps", "bottom"]), category: categories, sort: z.number().int(),
-  entry: z.object({ path: z.string(), renderer: z.string(), home: z.string().optional() }),
-  entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), declaration: builtinApplicationDeclarationSchema,
+  entry: z.object({ path: z.string(), renderer: z.string(), entryKey: z.string().min(1).optional(), home: z.string().optional() }),
+  scheduleAdapter: z.string().nullable(), declaration: builtinApplicationDeclarationSchema,
   framePanelId: z.string().min(1).optional(),
   allowStandalone: z.boolean().optional(),
 });
 export type BuiltinApplication = z.infer<typeof builtinApplicationSchema>;
 export const applicationCatalogSchema = z.array(z.object({
   id: z.string(), kind: z.enum(["native", "hosted", "connected", "link",'product']), names,
+  ownerService: z.string().min(1).optional(),
   descriptions: z.record(z.string()), icon: z.string(), rail: z.enum(["top", "apps", "bottom"]), category: categories, sort: z.number(),
-  entry: z.object({ path: z.string(), renderer: z.string().optional(), home: z.string().optional() }),
-  entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), releaseId: z.string().nullable(),
+  entry: z.object({ path: z.string(), renderer: z.string().optional(), entryKey: z.string().min(1).optional(), home: z.string().optional() }),
+  scheduleAdapter: z.string().nullable(), releaseId: z.string().nullable(),
+  entryPaths: z.array(z.string().min(1)).optional(),
   singleEntry: z.boolean().optional(),
   groups: applicationMetadataSchema.shape.groups.optional(),
   panelUses: z.array(applicationMenuEntrySchema).optional(),
@@ -37,6 +39,7 @@ export const applicationCatalogSchema = z.array(z.object({
   allowStandalone: z.boolean().optional(),
 }));
 export type CatalogApplication = z.infer<typeof applicationCatalogSchema>[number];
+export const navigationApplicationCatalogSchema = z.array(applicationCatalogSchema.element.required({ entryPaths: true, ownerService: true }));
 
 /** Whether an application permits opening in standalone mode (`standalone=1`); defaults to enabled when omitted. */
 export function allowsStandalone(app: { allowStandalone?: boolean } | null | undefined): boolean {

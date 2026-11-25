@@ -569,7 +569,6 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
       category: "business",
       sort: 40,
       entry: { path: "/browser", renderer: "browser", home: "/browser/data" },
-      entryAccess: ["data-browser"],
       scheduleAdapter: null,
       releaseId: null,
       names: { en: "Object browser" },

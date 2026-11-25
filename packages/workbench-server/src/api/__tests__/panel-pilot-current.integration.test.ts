@@ -228,8 +228,7 @@ beforeAll(async () => {
     res.json({ success: true, data: {
       applicationId: "app-schedules",
       menu: { singleEntry: true, groups: [], panelUses: [] },
-      use: { id: "pilot", pageKey: "pilot", path: "/applications/app-schedules/pilot", panelId,
-        access: { kind: "domain-member" } },
+      use: { id: "pilot", pageKey: "pilot", path: "/applications/app-schedules/pilot", panelId },
     } });
   });
   mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
@@ -237,8 +236,8 @@ beforeAll(async () => {
     expect(req.header("tk")).toBe("pilot-reader");
     // Java answers the one admitted entry the request names.
     const uses = [
-      { id: "graph", pageKey: "graph", path: "/applications/ontology-pilot/graph", panelId: graphPanelId, access: { kind: "domain-member" } },
-      { id: "data", pageKey: "data", path: "/applications/ontology-pilot/data", panelId: dataPanelId, access: { kind: "domain-member" } },
+      { id: "graph", pageKey: "graph", path: "/applications/ontology-pilot/graph", panelId: graphPanelId },
+      { id: "data", pageKey: "data", path: "/applications/ontology-pilot/data", panelId: dataPanelId },
     ];
     res.json({ success: true, data: {
       applicationId: "ontology-pilot", menu: { singleEntry: true, groups: [], panelUses: [] }, use: uses.find(use => use.id === req.query.useId),
@@ -288,7 +287,6 @@ beforeAll(async () => {
       applicationId: "agent-settings", menu: { singleEntry: true, groups: [], panelUses: [] },
       use: {
         id: "settings", pageKey: "settings", path: "/applications/agent-settings/settings", panelId: agentPanelId,
-        access: { kind: "domain-member" },
       },
     } });
   });
@@ -339,7 +337,7 @@ beforeAll(async () => {
     res.json({ success: true, data: {
       applicationId: family, menu: { singleEntry: true, groups: [], panelUses: [] },
       use: { id: "data", pageKey: "data", path: `/applications/${family}/data`,
-        panelId: `panel-${family}`, access: { kind: "domain-member" } },
+        panelId: `panel-${family}` },
     } });
   });
   for (const endpoint of ["queryList", "queryById", "definitionForm"]) {

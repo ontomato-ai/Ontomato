@@ -19,10 +19,10 @@ export function generatedNavigation(): PlatformNavigation {
       { key: "knowledge", titleKey: "nav.groupKnowledge" },
     ],
     pages: [
-      { path: "/ontology/playground", titleKey: "nav.ontologyGraph", icon: Network, permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
-      { path: "/ontology/objects", titleKey: "nav.objectTypes", icon: Network, permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
-      { path: "/browser/data", titleKey: "nav.dataBrowser", icon: Table2, permissions: ["data-browser"], group: "ontology", ownHeader: true },
-      { path: "/ontology/knowledge", titleKey: "nav.businessKnowledge", icon: BookOpen, permissions: ["business-knowledge"], group: "knowledge", ownHeader: true },
+      { path: "/ontology/playground", titleKey: "nav.ontologyGraph", icon: Network, group: "ontology", ownHeader: true },
+      { path: "/ontology/objects", titleKey: "nav.objectTypes", icon: Network, group: "ontology", ownHeader: true },
+      { path: "/browser/data", titleKey: "nav.dataBrowser", icon: Table2, group: "ontology", ownHeader: true },
+      { path: "/ontology/knowledge", titleKey: "nav.businessKnowledge", icon: BookOpen, group: "knowledge", ownHeader: true },
     ],
   };
 }
@@ -54,9 +54,17 @@ export function partitionOf(): readonly AppPartition[] {
   ];
 }
 
-/** An access check that grants exactly the codes it is given. */
+/** A fake catalogue response for the audience in each fixture. */
 export function closedAccess(granted: readonly string[]): PlatformAccess {
-  return { ready: true, error: null, can: (code) => granted.includes(code), load: () => Promise.resolve() };
+  const entries = {
+    "ontology-modeling": ["/ontology/playground", "/ontology/objects"],
+    "data-browser": ["/browser/data"],
+    "business-knowledge": ["/ontology/knowledge"],
+    "feedback": ["/ops/feedback"],
+  };
+  const paths = granted.flatMap(value => entries[value as keyof typeof entries] ?? []);
+  const canEnter = (path: string) => paths.includes(path);
+  return { ready: true, error: null, canEnter, verifyEntry: async path => canEnter(path) ? "allowed" : "denied", load: async () => {} };
 }
 
 /** A navigation as the host computes it, so a factory argument matches the production shape. */
@@ -72,7 +80,11 @@ export function readApplicationDeclarations(directory: string): BuiltinApplicati
 export function catalogFixture(additional: BuiltinApplication[] = []) {
   const java = readApplicationDeclarations(join(__dirname, "../../../data-engine-core/src/main/resources/applications"));
   return applicationCatalogSchema.parse([...workbenchApplications, ...java, ...additional]
-    .map(({ declaration, ...app }) => ({ ...app, ...declaration, releaseId: null }))
+    .map(({ declaration, ...app }) => ({
+      ...app, ...declaration, releaseId: null,
+      ownerService: workbenchApplications.some(registered => registered.id === app.id) ? "workbench" : "data-engine",
+      entryPaths: declaration.panelUses?.map(use => use.path) ?? [app.entry.path],
+    }))
     .sort((a,b) => ["top","apps","bottom"].indexOf(a.rail) - ["top","apps","bottom"].indexOf(b.rail) || a.sort-b.sort || a.id.localeCompare(b.id)));
 }
 export function catalogPartitionFixture() { return catalogPartition(catalogFixture(), "en"); }

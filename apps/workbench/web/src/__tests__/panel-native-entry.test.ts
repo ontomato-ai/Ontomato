@@ -32,7 +32,7 @@ const panel = panelRecord("builtin-components", "Base components", definePanel({
 const catalogPath = "/api/data-query/platform/applications";
 const components: ApplicationPanelUse = {
   id: "use-components", pageKey: "ontology-components", panelId: panel.id, path: "/ontology/components",
-  access: { permissionCode: "ontology-modeling" }, names: { en: "Base components" },
+  names: { en: "Base components" },
 };
 
 /** The ontology manager in the catalog, with the entries this reader may open. */

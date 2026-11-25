@@ -32,7 +32,13 @@ const member: RuntimeSkillRef = { namespace: { kind: "domain", domainId: owner.d
 const detailMember: RuntimeSkillRef = { ...member, name: "author-detail-member" };
 const sibling: RuntimeSkillRef = { ...member, name: "sibling-member" };
 const entry = (skill: RuntimeSkillRef) => ({ skill, digest: "a".repeat(64), description: skill.name });
-const skillView = { pageSkills: [{ skills: [member, detailMember, sibling] }] };
+const locators = [
+  { applicationId: "ontology", entryKey: "ontology-actions", pageKey: "actions" },
+  { applicationId: "ontology", entryKey: "ontology-action-detail", pageKey: "action-detail" },
+  { applicationId: "ontology", entryKey: "ontology-metric-views", pageKey: "metric-views" },
+  { applicationId: "ontology", entryKey: "ontology-metric-view-detail", pageKey: "metric-view-detail" },
+];
+const skillView = { pageSkills: locators.map(locator => ({ locator })) };
 
 function loaded(ref: RuntimeSkillRef) {
   mocks.ownedRun.mockResolvedValue({
@@ -54,21 +60,11 @@ beforeEach(() => {
 });
 
 it.each([
-  [
-    "action",
-    { permissionCode: "action-management", pageKey: "actions" },
-    "ontology-actions",
-    { permissionCode: "action-management", pageKey: "action-detail" },
-    "ontology-action-detail",
-  ],
-  [
-    "metric-view",
-    { permissionCode: "ontology-modeling", pageKey: "metric-views" },
-    "ontology-metric-views",
-    { permissionCode: "ontology-modeling", pageKey: "metric-view-detail" },
-    "ontology-metric-view-detail",
-  ],
-] as const)("requires a registered root author member (catalog or detail) for %s even when its sibling is loaded", async (kind, catalogEntrance, catalogUseId, detailEntrance, detailUseId) => {
+  ["action", locators[0]!, locators[1]!],
+  ["metric-view", locators[2]!, locators[3]!],
+] as const)("requires a registered root author member (catalog or detail) for %s even when its sibling is loaded", async (kind, catalogEntrance, detailEntrance) => {
+  const catalogUseId = catalogEntrance.entryKey;
+  const detailUseId = detailEntrance.entryKey;
   mocks.resolveSource.mockImplementation(async (_view, _entrance, source) => {
     if (source.useId === catalogUseId) return member;
     if (source.useId === detailUseId) return detailMember;

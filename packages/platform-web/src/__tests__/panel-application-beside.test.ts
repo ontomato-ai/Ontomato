@@ -33,7 +33,6 @@ const uses: ApplicationPanelUse[] = [
     panelId: "panel-tasks",
     path: "/applications/app-a/tasks",
     pageKey: "panels-trial-a-tasks",
-    access: { kind: "domain-member" },
   },
 ];
 vi.mock("../panel-host", () => ({

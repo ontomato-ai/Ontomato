@@ -11,7 +11,6 @@ it("wires the dashboards application to its builtin panel and keeps the headless
     pageKey:"dashboards",
     panelId:"builtin-product-dashboards",
     path:"/dashboards",
-    access:{kind:"domain-member"},
   })]);
   const skills=await new SkillScanner(fileURLToPath(new URL("../../../../skills",import.meta.url)),true).scan();
   expect(skills.find(skill=>skill.id==="dashboard-pages")).toMatchObject({id:"dashboard-pages",isPublic:true});

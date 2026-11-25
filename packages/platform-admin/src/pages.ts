@@ -19,7 +19,6 @@ export const platformPages = {
     titleKey: "nav.systemMonitor",
     descriptionKey: "platform.descriptions.systemMonitor",
     icon: Activity,
-    permissions: ["system-monitoring"],
     group: "platform",
   },
 } satisfies Record<string, PlatformPage>;

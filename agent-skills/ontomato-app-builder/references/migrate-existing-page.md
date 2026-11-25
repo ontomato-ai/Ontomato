@@ -95,7 +95,7 @@
   - 应用 ID 必须以 `app-` 开头，入口路径以 `/applications/<app-id>/` 开头。
   - 每个入口在 `panelUses` 中分配域内唯一的 `pageKey`；出现在应用菜单里的入口填写 `names`，详情页这类靠跳转或深链打开的入口**省略 `names`**。
   - 入口之间跳转统一用 `@ontomato/sdk/panel` 的 `panelAddress(DETAIL_PATH, { selected: ref.primaryKey })` 生成扁平具名参数链接。
-- **准入规则**：`entryAccess` 和每条 `panelUses[].access` 只写两种——本域成员都能进（`{ "kind": "domain-member" }`），或使用**本应用自己声明**的权限码（`{ "permissionCode": "app:<app-id>:..." }`），不要借用别的应用的权限码。
+- **入口准入**：应用内用 `panelUses[].id` 稳定标识入口。首次登记时用 `initialOpenEntryIds` 选择允许本域成员进入的入口，空数组表示全部受限。后续开放由对象策略管理。
 - **外框面板**：不自写外框时，平台自动套用通用外框面板渲染应用菜单；只有多个入口需要共享外框级上下文（如全局“当前学期”切换）时，才自写应用外框面板，外框里标 `deepLink: true` 的状态会自动以 `frame.<name>` 形式出现在 URL 中。对话旁打开时不画外框，直接显示入口面板。
 
 ---

@@ -31,5 +31,4 @@ export const applicationMetadataSchema = z.object({
   descriptions: z.record(z.string()),
   icon: z.string().min(1),
   groups: z.array(z.object({ key, names, sort: z.number().int() }).strict()),
-  permissions: z.array(z.object({ code: key, names, groupKey: key, sort: z.number().int() }).strict()),
 }).strict();

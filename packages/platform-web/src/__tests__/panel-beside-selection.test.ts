@@ -52,7 +52,6 @@ const use: ApplicationPanelUse = {
   panelId: panelRecord.id,
   path: "/applications/app-a/objects",
   pageKey: "objects",
-  access: { kind: "domain-member" },
 };
 
 const pushedAddresses: string[] = [];

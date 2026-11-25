@@ -735,6 +735,11 @@ async function applyPanelSourceToPlatform(
   projections: Array<{ id: string; input: ProductProjectionInput }>,
   overrides?: { name?: string; icon?: string },
 ): Promise<void> {
+  const { initialOpenEntryIds: requestedOpenEntries, ...definition } = manifest;
+  const initialOpenEntryIds = isPublished ? null : requestedOpenEntries;
+  if (initialOpenEntryIds === undefined) {
+    throw new HttpError(400, "Choose the entries to open to the domain in initialOpenEntryIds", "APPLICATION_ENTRY_OPENING_REQUIRED");
+  }
   // Claim the source resources before publishing any current definitions.
   const claimed: OwnedResourceRef[] = [
     ...panels.filter(p => !isBuiltinProductId(p.id)).map((p): OwnedResourceRef => ({ kind: "panel", resourceId: p.id })),
@@ -795,12 +800,9 @@ async function applyPanelSourceToPlatform(
     ...(overrides?.icon ? { icon: overrides.icon } : {}),
   };
 
-  const registration = { ...manifest, declaration: effectiveDeclaration };
-  if (isPublished) {
-    await java.publishSource(appId, registration);
-  } else {
-    await java.create(appId, { ...registration, entryAccess: manifest.entryAccess ?? ["domain-member"] });
-  }
+  const registration = { ...definition, declaration: effectiveDeclaration };
+  if (initialOpenEntryIds === null) await java.publishSource(appId, registration);
+  else await java.create(appId, { ...registration, initialOpenEntryIds });
 
 
 }
@@ -894,17 +896,15 @@ export async function publishApplicationBuilderSource(
         descriptions: ctx.project.draftMeta?.descriptions ?? {},
         icon,
         groups: [],
-        permissions: [],
       },
       entry: { path: `/applications/${appId}`, renderer: "panels", home: `/applications/${appId}/main` },
-      entryAccess: ["domain-member"],
+      initialOpenEntryIds: ["main"],
       framePanelId: "builtin-product-platform-frame",
       panelUses: [{
         id: "main",
         pageKey: "main",
         panelId,
         path: `/applications/${appId}/main`,
-        access: { kind: "domain-member" },
       }],
       delivery: { panels: [panelId], projections: [], packages: [], agents: [], skills: [] },
     };
@@ -927,7 +927,7 @@ export async function publishApplicationBuilderSource(
       ?? recommendApplicationIcon(displayName);
     const declaration = ctx.live?.snapshot.kind === "hosted"
       ? { ...ctx.live.snapshot.declaration, icon }
-      : { names: defaultLocalizedMap(displayName), descriptions: ctx.project.draftMeta?.descriptions ?? {}, icon, groups: [], permissions: [] };
+      : { names: defaultLocalizedMap(displayName), descriptions: ctx.project.draftMeta?.descriptions ?? {}, icon, groups: [] };
     const { publishWorkspace } = await import("../workspaces/hosted-apps");
     const hosted = await publishWorkspace(
       owner,

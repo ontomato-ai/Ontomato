@@ -14,9 +14,9 @@ const fixture = {
   domainId: "panel-entry-domain", panelId: "settings", grants: new Set(["settings", "records"]), native: false,
   uses: [
     { applicationId: "settings", useId: "settings-panel", panelId: "settings", path: "/applications/settings/settings",
-      entrance: { permissionCode: "analysis-agent", pageKey: "settings" } },
+      entrance: { applicationId: "settings", entryKey: "settings-panel", pageKey: "settings" } },
     { applicationId: "other-settings", useId: "other-panel", panelId: "settings", path: "/applications/other-settings/other",
-      entrance: { permissionCode: "business-knowledge", pageKey: "other-settings" } },
+      entrance: { applicationId: "other-settings", entryKey: "other-panel", pageKey: "other-settings" } },
   ] as PanelSkillSource[],
 };
 const agentId = randomUUID();
@@ -32,7 +32,7 @@ beforeAll(async () => {
     entries: fixture.uses, grants: fixture.grants, onPublish: published,
     entryInputs: entry => entryInputs.get(entry.useId),
     admittedEntrances: () => staticEntrances,
-    nativeMapping: () => fixture.native ? { permissionCode: "business-knowledge", skill: governance,
+    nativeMapping: () => fixture.native ? { ...fixture.uses[1]!.entrance, skill: governance,
       defaults: [{ pageKey: "other-settings", defaultAgent: governanceDefault }] } : undefined,
   });
   base = server.origin + "/api/assistant";
@@ -128,17 +128,17 @@ it("publishes the panel skill for the authorized entry's wired state fields", as
   expect(published).not.toHaveBeenCalled();
 });
 
-it("keeps the native governance skill and preset alongside the protected panel in the same group", async () => {
+it("keeps the native governance skill and preset alongside the protected panel at the same entry", async () => {
   const { effectiveAssistantSkills, readAssistantSkillView } = await import("../../services/assistant/skills");
   fixture.grants.add("records");
   fixture.native = true;
   const view = await readAssistantSkillView(fixture.domainId, { token: "editor", locale: "en" });
-  const groups = view.pageSkills.filter(group =>
-    "permissionCode" in group.locator && group.locator.permissionCode === "business-knowledge");
-  expect(groups).toEqual([{
-    locator: { permissionCode: "business-knowledge" }, skills: [governance, skill],
-    defaults: [{ pageKey: "other-settings", defaultAgent: governanceDefault }],
-  }]);
+  const entrance = fixture.uses[1]!.entrance;
+  const group = view.pageSkills.find(({ locator }) =>
+    locator.applicationId === entrance.applicationId && locator.entryKey === entrance.entryKey);
+  expect(group).toMatchObject({ locator: entrance, skills: [governance, skill],
+    defaults: [{ pageKey: entrance.pageKey, defaultAgent: governanceDefault }],
+  });
   expect(effectiveAssistantSkills({ kind: "regular", skills: [] }, view)).toHaveLength(2);
 });
 
@@ -201,7 +201,7 @@ it("opens registered panel entries, selects the regular assistant and installs t
 
 function sourceFor(panelId: string): PanelSkillSource {
   return { applicationId: "catalogue", useId: panelId, panelId, path: "/catalogue/" + panelId,
-    entrance: { access: "domain-member", pageKey: panelId } };
+    entrance: { applicationId: "catalogue", entryKey: panelId, pageKey: panelId } };
 }
 function currentMember(use: PanelSkillSource) {
   return { source: { kind: "application-use" as const, applicationId: use.applicationId, useId: use.useId },

@@ -78,7 +78,7 @@ const uuid=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
 const owner={domainId:"d",userId:"U"},credentials={token:"U-token",locale:"en"};
 const session={providerId:"workbench",sessionId:uuid(1)},root={providerId:"ontology",sessionId:uuid(2)};
 const skill={namespace:{kind:"domain" as const,domainId:"d"},name:"derived-panel"};
-const use={id:"tasks",pageKey:"tasks",path:"/applications/A/tasks",panelId:"P",access:{kind:"domain-member"}};
+const use={id:"tasks",pageKey:"tasks",path:"/applications/A/tasks",panelId:"P"};
 let intents:Map<string,PanelOperationIntent>, automatic:boolean, current:RuntimeRun;
 const action=()=>({intentId:uuid(5),applicationId:"A",useId:"tasks",operationId:"run.runNow",call:{target:{kind:"object" as const,objectType:"platform:ScheduledTask",primaryKey:uuid(9)},input:{}}});
 function prepareLiveAction({ intentId, ...request }: CreatePanelHumanOperationIntentRequest & { intentId: string }) {
@@ -854,16 +854,16 @@ it("runs a registered read using the reader and preview context without creating
 });
 
 it("resolves the actual panel-use member and refuses a run that only loaded a sibling", async () => {
-  mocks.resolveMember.mockResolvedValue({ ...skill, name: "other-panel-in-the-same-group" });
+  mocks.resolveMember.mockResolvedValue({ ...skill, name: "other-panel-skill" });
   await expect(prepareLiveAction(action())).rejects.toMatchObject({ code: "FORBIDDEN" });
   expect(mocks.pages).toHaveBeenCalledWith(owner.domainId, credentials, owner.userId);
   expect(mocks.resolveMember).toHaveBeenCalledWith(
     expect.objectContaining({ resolveSource: mocks.resolveMember }),
-    { access: "domain-member", pageKey: "tasks" },
+    { applicationId: "A", entryKey: use.id, pageKey: use.pageKey },
     { kind: "application-use", applicationId: "A", useId: "tasks" }, [], { id: use.panelId },
   );
   expect(mocks.loadedMember).toHaveBeenCalledWith(
-    { ...skill, name: "other-panel-in-the-same-group" }, current.resolvedSkills,
+    { ...skill, name: "other-panel-skill" }, current.resolvedSkills,
   );
   expect(ownerWrites()).toHaveLength(0);
 });
@@ -1312,8 +1312,8 @@ it("names the specific application entry in deleteEntry confirmation prompts", a
             entry: { path: "/orders", home: "/orders/list" },
             groups: [],
             panelUses: [
-              { id: "entry-a", pageKey: "orders", panelId: "p1", path: "/orders/list", access: { kind: "domain-member" }, names: { en: "Order List" } },
-              { id: "entry-b", pageKey: "settings", panelId: "p2", path: "/orders/settings", access: { kind: "domain-member" }, names: { en: "Order Settings" } },
+              { id: "entry-a", pageKey: "orders", panelId: "p1", path: "/orders/list", names: { en: "Order List" } },
+              { id: "entry-b", pageKey: "settings", panelId: "p2", path: "/orders/settings", names: { en: "Order Settings" } },
             ],
           },
         }),

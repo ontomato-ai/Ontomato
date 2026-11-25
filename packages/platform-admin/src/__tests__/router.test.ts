@@ -5,16 +5,16 @@ import { installPageGuard } from "../router";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { managerDestination } from "../legacy-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { availableGroups, availablePages, openAccess, type PlatformAccess, type PlatformNavigation } from "../navigation";
+import { availableGroups, availablePages, type PlatformAccess, type PlatformNavigation } from "../navigation";
 import { formerParentRoutes, ossPlatformPages, pageRoutes, sharedPageRoutes } from "../pages";
 
 /** The enterprise edition's licence page, as it declares it: the landing of a failed licence check. */
 const licence = {
   path: platformRoutes.license.path,
   titleKey: "l",
-  permissions: ["authorization-management"],
+
   group: "platform",
-  enterableWithoutPermission: true,
+  licenseRecovery: true,
 };
 
 const navigation: PlatformNavigation = {
@@ -23,10 +23,10 @@ const navigation: PlatformNavigation = {
     { key: "platform", titleKey: "nav.platform" },
   ],
   pages: [
-    { path: "/playground", titleKey: "g", permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
-    { path: "/objects", titleKey: "o", permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
-    { path: "/data", titleKey: "d", permissions: ["data-browser"], group: "ontology", ownHeader: true },
-    { path: "/permissions", titleKey: "p", permissions: ["user-management", "role-management"], group: "platform" },
+    { path: "/playground", titleKey: "g", group: "ontology", ownHeader: true },
+    { path: "/objects", titleKey: "o", group: "ontology", ownHeader: true },
+    { path: "/data", titleKey: "d", group: "ontology", ownHeader: true },
+    { path: "/permissions", titleKey: "p", group: "platform" },
     ...ossPlatformPages,
     licence,
   ],
@@ -60,11 +60,22 @@ const routes: RouteRecordRaw[] = [
 const layout = defineComponent({ render: () => h(RouterView) });
 
 function access(granted: string[], error: string | null = null): PlatformAccess & { loads: number } {
+  const entries = {
+    "ontology-modeling": ["/playground", "/objects"],
+    "data-browser": ["/data"],
+    "role-management": ["/permissions"],
+    "system-monitoring": [ossPlatformPages[0]!.path],
+    "authorization-management": [licence.path],
+  };
+  const paths = granted.flatMap(value => entries[value as keyof typeof entries] ?? []);
   const state = {
     ready: false,
     error,
     loads: 0,
-    can: (permission: string) => granted.includes(permission),
+    canEnter: (path: string) => paths.includes(path),
+    async verifyEntry(path: string) {
+      return error === "HTTP 402" ? "license-required" as const : paths.includes(path) ? "allowed" as const : "denied" as const;
+    },
     async load() {
       state.loads += 1;
       state.ready = true;
@@ -82,8 +93,8 @@ async function land(path: string, account: PlatformAccess, home = "/playground")
   return router.currentRoute.value.fullPath;
 }
 
-describe("one navigation filtered by permission codes", () => {
-  it("lists a page when the account holds any one of its codes, and a group only with a listed page", () => {
+describe("one navigation filtered by admitted entries", () => {
+  it("lists admitted pages and groups containing a listed page", () => {
     const account = access(["role-management", "system-monitoring"]);
     expect(availablePages(navigation, account).map(({ path }) => path)).toEqual([
       "/permissions",
@@ -96,18 +107,18 @@ describe("one navigation filtered by permission codes", () => {
     ]);
   });
 
-  it("lists a page only when the account holds one of its codes", () => {
+  it("omits pages without admission", () => {
     expect(availablePages(navigation, access([])).map(({ path }) => path)).toEqual([]);
     // The license landing still opens with no permission at all: it is entered before the codes are read.
-    expect(navigation.pages.find(({ path }) => path === licence.path)?.enterableWithoutPermission).toBe(true);
+    expect(navigation.pages.find(({ path }) => path === licence.path)?.licenseRecovery).toBe(true);
   });
 });
 
 describe("the service router", () => {
-  it("waits for the permissions before deciding and enters a granted page, its detail pages included", async () => {
+  it("checks admission on opening a page and its detail", async () => {
     const account = access(["system-monitoring", "ontology-modeling"]);
     expect(await land("/settings/records/system-monitor", account)).toBe("/settings/records/system-monitor");
-    expect(account.loads).toBe(1);
+    expect(account.loads).toBe(0);
     expect(await land("/objects/Order%20A", account)).toBe("/objects/Order%20A");
   });
 
@@ -155,7 +166,7 @@ describe("the service router", () => {
   it("enters the license page even when the permissions cannot be read (they fail while the license is invalid)", async () => {
     // The page is named, so it opens although the account holds no code at all.
     expect(await land("/admin/license", access([], "HTTP 402"))).toBe("/settings/system-config/authorization");
-    expect(await land("/admin/license", access(["system-config"]))).toBe("/settings/system-config/authorization");
+    expect(await land("/admin/license", access(["system-config"]))).toBe("/ontology");
   });
 });
 

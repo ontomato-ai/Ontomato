@@ -813,7 +813,6 @@ function mountTwoEntryApp(options: {
           category: appId === "agents" ? "business" : "build",
           sort: 0,
           entry: { path: appId === "agents" ? "/agents" : "/ontology", renderer: "panels" },
-          entryAccess: ["domain-member"],
           scheduleAdapter: null,
           releaseId: null,
           panelUses: uses,

@@ -26,11 +26,10 @@ const owner = { domainId: "domain", userId: "caller" };
 const panel = { id: "P1", name: "Definition from owner", revision: 7 };
 const snapshot = { panel: { id: panel.id, revision: panel.revision }, projections: [] };
 const source = { kind: "application-use", applicationId: "app", useId: "use-1" };
-const locator = { pageKey: "ontology-agents", permissionCode: "analysis-agent" };
+const locator = { applicationId: "app", entryKey: "use-1", pageKey: "ontology-agents" };
 const entry = {
   applicationId: source.applicationId,
-  use: { id: source.useId, pageKey: locator.pageKey, path: "/ontology/agents", panelId: panel.id,
-    access: { permissionCode: locator.permissionCode } },
+  use: { id: source.useId, pageKey: locator.pageKey, path: "/ontology/agents", panelId: panel.id },
   menu: { singleEntry: true, groups: [], panelUses: [] },
 };
 let base: string;

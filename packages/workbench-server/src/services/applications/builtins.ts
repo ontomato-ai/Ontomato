@@ -3,19 +3,18 @@ import type { BuiltinApplication } from "@ontomato/contracts/platform-identity";
 export const workbenchApplications: BuiltinApplication[] = [
   {
     id: "application-gallery", kind: "native", rail: "top", category: "business", sort: 2,
-    entry: { path: "/applications", renderer: "application-gallery", home: "/applications" },
-    entryAccess: ["domain-member"], scheduleAdapter: null, allowStandalone: false,
+    entry: { entryKey: "application-gallery", path: "/applications", renderer: "application-gallery", home: "/applications" },
+    scheduleAdapter: null, allowStandalone: false,
     framePanelId: "builtin-product-platform-frame",
     declaration: {
       names: { en: "Application gallery", "zh-CN": "应用广场" },
       descriptions: { en: "Discover applications and pin shortcuts to your personal workspace", "zh-CN": "发现应用，并将常用入口固定到个人工作台" },
-      icon: "gallery", groups: [], permissions: [],
+      icon: "gallery", groups: [],
       panelUses: [{
         id: "application-gallery",
         pageKey: "application-gallery",
         panelId: "builtin-product-application-gallery",
         path: "/applications",
-        access: { kind: "domain-member" },
         icon: "gallery",
         names: {
           en: "Application gallery",
@@ -41,13 +40,11 @@ export const workbenchApplications: BuiltinApplication[] = [
     "category": "business",
     "sort": 0,
     "entry": {
+      "entryKey": "home",
       "path": "/home",
       "renderer": "home",
       "home": "/home"
     },
-    "entryAccess": [
-      "domain-member"
-    ],
     "scheduleAdapter": null,
     "allowStandalone": false,
     "framePanelId": "builtin-product-platform-frame",
@@ -62,13 +59,11 @@ export const workbenchApplications: BuiltinApplication[] = [
       },
       "icon": "home",
       "groups": [],
-      "permissions": [],
       "panelUses": [{
         "id": "home",
         "pageKey": "home",
         "panelId": "builtin-product-personal-workspace",
         "path": "/home",
-        "access": { "kind": "domain-member" },
         "pageComposer": "none",
         "icon": "home",
         "names": {
@@ -90,7 +85,6 @@ export const workbenchApplications: BuiltinApplication[] = [
         "pageKey": "home-object-detail-body",
         "panelId": "builtin-product-object-detail-body",
         "path": "/home/object-detail",
-        "access": { "kind": "domain-member" }
       }]
     }
   },
@@ -101,14 +95,11 @@ export const workbenchApplications: BuiltinApplication[] = [
     "category": "business",
     "sort": 10,
     "entry": {
+      "entryKey": "agents",
       "path": "/agents",
       "renderer": "agents",
       "home": "/agents/chat"
     },
-    "entryAccess": [
-      "domain-member",
-      "analysis-agent"
-    ],
     "scheduleAdapter": "java:agents",
     "allowStandalone": false,
     "declaration": {
@@ -122,20 +113,17 @@ export const workbenchApplications: BuiltinApplication[] = [
       },
       "icon": "agents",
       "groups": [],
-      "permissions": [],
       "panelUses": [{
         "id": "agents-agent-settings",
         "pageKey": "agents-agent-settings",
         "panelId": "builtin-product-agent-settings",
         "path": "/agents/settings",
-        "access": { "permissionCode": "analysis-agent" },
         "inputs": { "detailPath": { "literal": "/agents/settings/detail" } },
       }, {
         "id": "agents-agent-detail",
         "pageKey": "agents-agent-detail",
         "panelId": "builtin-product-agent-detail",
         "path": "/agents/settings/detail",
-        "access": { "permissionCode": "analysis-agent" },
         "inputs": { "catalogPath": { "literal": "/agents/settings" } },
       }],
     }
@@ -147,13 +135,11 @@ export const workbenchApplications: BuiltinApplication[] = [
     "category": "business",
     "sort": 20,
     "entry": {
+      "entryKey": "dashboards",
       "path": "/dashboards",
       "renderer": "dashboards",
       "home": "/dashboards"
     },
-    "entryAccess": [
-      "domain-member"
-    ],
     "scheduleAdapter": null,
     "allowStandalone": false,
     "framePanelId": "builtin-product-platform-frame",
@@ -168,13 +154,11 @@ export const workbenchApplications: BuiltinApplication[] = [
       },
       "icon": "dashboards",
       "groups": [],
-      "permissions": [],
       "panelUses": [{
         "id": "dashboards-main",
         "pageKey": "dashboards",
         "panelId": "builtin-product-dashboards",
         "path": "/dashboards",
-        "access": { "kind": "domain-member" },
         "icon": "dashboards",
         "names": {
           "en": "Dashboards",
@@ -206,13 +190,11 @@ export const workbenchApplications: BuiltinApplication[] = [
     "category": "business",
     "sort": 30,
     "entry": {
+      "entryKey": "schedules",
       "path": "/schedules",
       "renderer": "schedules",
       "home": "/schedules"
     },
-    "entryAccess": [
-      "domain-member"
-    ],
     "scheduleAdapter": null,
     "allowStandalone": false,
     "framePanelId": "builtin-product-platform-frame",
@@ -227,13 +209,11 @@ export const workbenchApplications: BuiltinApplication[] = [
       },
       "icon": "schedule",
       "groups": [],
-      "permissions": [],
       "panelUses": [{
         "id": "schedules-tasks",
         "pageKey": "schedules",
         "panelId": "builtin-product-scheduled-tasks",
         "path": "/schedules",
-        "access": { "kind": "domain-member" },
         "icon": "schedule",
         "inputs": { "schedulesApplication": { "literal": { "className": "platform:Application", "primaryKey": "schedules" } } },
         "names": {
@@ -260,13 +240,10 @@ export const workbenchApplications: BuiltinApplication[] = [
     "category": "admin",
     "sort": 30,
     "entry": {
+      "entryKey": "operations",
       "path": "/ops",
       "renderer": "operations"
     },
-    "entryAccess": [
-      "observer",
-      "user-feedback"
-    ],
     "scheduleAdapter": "workbench:operations",
     "allowStandalone": false,
     "framePanelId": "builtin-product-ops-frame",
@@ -302,19 +279,16 @@ export const workbenchApplications: BuiltinApplication[] = [
           }
         }
       ],
-      "permissions": [],
       "panelUses": [{
         "id": "ops-diagnosis",
         "pageKey": "ops-diagnosis",
         "kind": "frame-conversation",
         "path": "/ops/diagnosis",
-        "access": { "permissionCode": "observer" }
       }, {
         "id": "ops-turn-evidence",
         "pageKey": "ops-turn-evidence",
         "panelId": "builtin-product-ops-turn-evidence",
         "path": "/ops/turn",
-        "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
         "icon": "file-search",
         "names": {
@@ -337,7 +311,6 @@ export const workbenchApplications: BuiltinApplication[] = [
         "kind": "native",
         "path": "/ops/test",
         "groupKey": "autotest",
-        "access": { "permissionCode": "observer" },
         "icon": "flask-conical",
         "names": {
           "en": "Test Execution",
@@ -359,7 +332,6 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-ops-autotest-results",
         "path": "/ops/results",
         "groupKey": "autotest",
-        "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
         "icon": "flask-conical",
         "inputs": { "caseDetailPath": { "literal": "/ops/autotest/case" } },
@@ -383,7 +355,6 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-ops-autotest-case-artifact",
         "path": "/ops/autotest/case",
         "groupKey": "autotest",
-        "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" }
       }, {
         "id": "ops-autotest-cases",
@@ -391,7 +362,6 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-ops-autotest-cases",
         "path": "/ops/cases",
         "groupKey": "autotest",
-        "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
         "icon": "flask-conical",
         "names": {
@@ -413,7 +383,6 @@ export const workbenchApplications: BuiltinApplication[] = [
         "pageKey": "ops-live-logs",
         "kind": "native",
         "path": "/ops/live-logs",
-        "access": { "permissionCode": "observer" },
         "icon": "activity",
         "names": {
           "en": "Live logs",
@@ -434,7 +403,6 @@ export const workbenchApplications: BuiltinApplication[] = [
         "pageKey": "ops-dsl-console",
         "panelId": "builtin-product-ops-dsl-console",
         "path": "/ops/dsl",
-        "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
         "icon": "square-terminal",
         "names": {
@@ -456,7 +424,6 @@ export const workbenchApplications: BuiltinApplication[] = [
         "pageKey": "ops-knowledge",
         "panelId": "builtin-product-ops-knowledge",
         "path": "/ops/knowledge",
-        "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
         "icon": "book-open",
         "names": {
@@ -478,7 +445,6 @@ export const workbenchApplications: BuiltinApplication[] = [
         "pageKey": "user-feedback",
         "panelId": "builtin-product-feedback",
         "path": "/ops/feedback",
-        "access": { "permissionCode": "user-feedback" },
         "icon": "thumbs-up",
         "names": {
           "en": "User feedback",
@@ -504,13 +470,11 @@ export const workbenchApplications: BuiltinApplication[] = [
     "category": "build",
     "sort": 1,
     "entry": {
+      "entryKey": "app-builder",
       "path": "/app-builder",
       "renderer": "app-builder",
       "home": "/app-builder"
     },
-    "entryAccess": [
-      "app-builder"
-    ],
     "scheduleAdapter": null,
     "allowStandalone": false,
     "framePanelId": "builtin-product-platform-frame",
@@ -534,26 +498,13 @@ export const workbenchApplications: BuiltinApplication[] = [
           "sort": 0
         }
       ],
-      "permissions": [
-        {
-          "code": "app-builder",
-          "names": {
-            "en": "Open application",
-            "zh-CN": "打开应用"
-          },
-          "groupKey": "entry",
-          "sort": 0
-        }
-      ],
       "panelUses": [
         {
           "id": "app-builder",
           "pageKey": "app-builder",
           "panelId": "builtin-product-app-builder",
           "path": "/app-builder",
-          "access": {
-            "permissionCode": "app-builder"
-          },
+          "defaultAgent": { "kind": "preset", "agentKind": "app-builder" },
           "icon": "builder",
           "pageComposer": "none",
           "names": {

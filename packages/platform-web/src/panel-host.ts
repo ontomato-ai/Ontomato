@@ -519,7 +519,6 @@ export function builtinFramePanelHost(
     pageKey: applicationId,
     panelId: framePanelId,
     path: `/${applicationId}`,
-    access: { kind: "domain-member" },
   };
   const panelChatHost = createPanelChatHost(undefined, chat);
   const shown: PanelUseRef = { applicationId, useId: placeholderUse.id };

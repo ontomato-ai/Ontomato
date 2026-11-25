@@ -43,7 +43,7 @@ function answer(request: Sent) {
   if (request.path === "/api/data-query/platform/applications") return Response.json({ success: true, data: [appA, appB].map(id => ({
     id, kind: "product", names: { en: id }, descriptions: {}, icon: "schedules",
     rail: "apps", category: "business", sort: 0, entry: { path: `/${id.slice(4)}`, renderer: "panels" },
-    entryAccess: ["domain-member"], scheduleAdapter: null, releaseId: null,
+    scheduleAdapter: null, releaseId: null,
     // The navigation catalogue lists the reader's entries, as Java answers it: where the application's own address starts.
     panelUses: [id === appA ? useP : useQ],
   })) });

@@ -485,7 +485,7 @@ async function readApplicationWorkspace(directory, checks) {
   }
   const { shape } = checks.applicationCatalogueRecordSchema;
   const result = checks.applicationCatalogueRecordSchema.pick({
-    entry: true, panelUses: true, entryAccess: true, allowStandalone: true, framePanelId: true, theme: true, delivery: true,
+    entry: true, panelUses: true, initialOpenEntryIds: true, allowStandalone: true, framePanelId: true, theme: true, delivery: true,
   }).extend({
     declaration: checks.applicationIdentityUpdateSchema.omit({ allowStandalone: true }).extend({ groups: shape.groups }).passthrough(),
   }).safeParse(application);

@@ -26,6 +26,7 @@ import { installPanelBackPopStateListener } from "@ontomato/platform-shell";
 import { resetApplicationCatalog } from "./catalog";
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "./detail-selection";
 import { addressLandingGuard, panelEntryGuard } from "./panel-entries";
+import { installCatalogueEntryGuard } from "./entry-access";
 import { legacyAgentSettingsTab } from "./workbench-routes";
 
 export interface WorkbenchWebOptions {
@@ -71,6 +72,7 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   // A built-in application's panel entry opens at its own address, through the panel route.
   router.beforeEach(panelEntryGuard(router));
   options.installGuards?.(router, pinia);
+  installCatalogueEntryGuard(router);
   // An address nothing serves for this reader, after every guard above and the edition's: the landing.
   router.beforeResolve(addressLandingGuard(router));
 

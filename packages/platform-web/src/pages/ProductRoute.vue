@@ -6,6 +6,7 @@ import {productAssetSchema,type ProductAsset} from "@ontomato/contracts/product-
 import {nodeApiRequest} from "@ontomato/workbench-ui";
 import {ManagerFrame,ProductAssetRuntime,useProductText} from "@ontomato/ontology-manager";
 import PersonalWorkspace from "./PersonalWorkspaceRoute.vue";
+import { resolveApplicationEntry } from "../panel-host";
 import {ElAlert,ElButton} from 'element-plus';
 import {useI18n} from 'vue-i18n';
 const props=defineProps<{productAssetId:string;embedded?:boolean;applicationId?:string}>();
@@ -36,6 +37,8 @@ const visibleDirectChildren=computed(()=>directChildren.value.filter(child=>!una
 watch(()=>[props.productAssetId,props.applicationId,route.query.navigationPath],async()=>{const current=++generation;asset.value=null;children.value=[];unavailableAssets.value=[];navigationPage.value='';error.value='';try{
   const request=async(id:string)=>{const response=await nodeApiRequest(`/api/product-assets/${encodeURIComponent(id)}`);const body=await response.json();if(!response.ok)throw new Error(body.error?.message??'Asset unavailable');return productAssetSchema.parse(body.asset);};
    if(props.applicationId){
+     const entry = await resolveApplicationEntry({ path: `/products/${encodeURIComponent(props.applicationId)}` });
+     if (entry.applicationId !== props.applicationId) throw new Error("The requested application does not own this entry");
      const response=await nodeApiRequest(`/api/product-assets/published/${encodeURIComponent(props.applicationId)}/${encodeURIComponent(props.productAssetId)}`);const body=await response.json();if(!response.ok)throw new Error(body.error?.message??'Product contract unavailable');
        if(current!==generation)return;asset.value=productAssetSchema.parse(body.asset);children.value=body.assets.map((item:unknown)=>productAssetSchema.parse(item));unavailableAssets.value=(body.issues??[]).map((issue:{assetId:string})=>issue.assetId);
     }else{const loaded=await request(props.productAssetId);const loadedChildren='children' in loaded.document?await Promise.all(loaded.document.children.map(child=>request(child.assetId))):[];if(current!==generation)return;asset.value=loaded;children.value=loadedChildren;}

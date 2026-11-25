@@ -41,7 +41,6 @@ describe("application gallery panel entry and host application opener", () => {
       category: "business",
       sort: 2,
       entry: { path: "/applications", renderer: "application-gallery", home: "/applications" },
-      entryAccess: ["domain-member"],
       scheduleAdapter: null,
       releaseId: null,
       names: { en: "Application gallery", "zh-CN": "应用广场" },
@@ -53,7 +52,6 @@ describe("application gallery panel entry and host application opener", () => {
         pageKey: "application-gallery",
         panelId: "builtin-product-application-gallery",
         path: "/applications",
-        access: { kind: "domain-member" },
         names: { en: "Application gallery", "zh-CN": "应用广场" },
       }],
     }], "en");

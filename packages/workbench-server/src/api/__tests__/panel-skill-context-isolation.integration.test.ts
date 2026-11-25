@@ -62,12 +62,12 @@ const domainId = "isolation-domain";
 const applicationId = "app-panel-isolation";
 function page(name: string) {
   return { applicationId, useId: `use-${name}`, panelId: `panel-${name}`, path: `/panels/${name}`,
-    entrance: { permissionCode: "panel-menu", pageKey: name } };
+    entrance: { applicationId, entryKey: `use-${name}`, pageKey: name } };
 }
 const good = page("good"), broken = page("broken"), library = page("library"), changing = page("changing");
 const componentsPage = {
   applicationId: "ontology", useId: "ontology-components", panelId: "builtin-product-sdk-components", path: "/ontology/components",
-  entrance: { permissionCode: "ontology-modeling", pageKey: "ontology-components" },
+  entrance: { applicationId: "ontology", entryKey: "ontology-components", pageKey: "ontology-components" },
 };
 const brokenProjection = "projection-broken";
 const privateOperation = "private-stored-operation-body";
@@ -152,8 +152,7 @@ beforeAll(async () => {
     }
     res.json({ success: true, data: { applicationId: entry.applicationId,
       ...(!registered && { menu: { singleEntry: true, groups: [], panelUses: [] } }),
-      use: { id: entry.useId, panelId: entry.panelId, path: entry.path, pageKey: entry.entrance.pageKey,
-        access: { permissionCode: entry.entrance.permissionCode } } } });
+      use: { id: entry.useId, panelId: entry.panelId, path: entry.path, pageKey: entry.entrance.pageKey } } });
   });
   app.get("/platform/applications/panel-skill-sources", async (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
@@ -163,7 +162,7 @@ beforeAll(async () => {
   app.get("/platform/page-skills", (req, res) => {
     expect(req.header("tk")).toBe("reader");
     const admitted = entries.filter(entry => entry.useId !== deniedEntrance);
-    const pageSkills = [...new Set(admitted.map(entry => entry.entrance.permissionCode))].map(permissionCode => ({ permissionCode }));
+    const pageSkills = admitted.map(entry => entry.entrance);
     res.json({ success: true, data: { pageSkills, registeredSkills: [], admittedEntrances: admitted.map(entry => entry.entrance) } });
   });
   app.post("/internal/agent-execution/validate-setting", (_req, res) => res.sendStatus(204));

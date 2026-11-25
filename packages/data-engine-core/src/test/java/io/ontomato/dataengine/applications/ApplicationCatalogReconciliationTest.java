@@ -39,6 +39,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private ApplicationCatalog catalog;
+    private final java.util.Set<String> deniedEntries = new java.util.HashSet<>();
+    private final io.ontomato.dataengine.service.authorization.AuthorizationService authorization =
+        EntryAuthorizationFixture.entries((actor, key) -> !deniedEntries.contains(actor.userId() + ":" + key));
     private MockMvc http;
     private ApplicationAccess access;
     private IdentityService identity;
@@ -51,8 +54,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
         new ApplicationEntryEvents(jdbc).run();
         access = mock(ApplicationAccess.class);
-        when(access.withPageSkillAuthorization(any(), any())).thenCallRealMethod();
-        when(access.enterableApplicationIds(anyList(), any())).thenCallRealMethod();
         identity = mock(IdentityService.class);
         grants = mock(ProductGrantService.class);
         when(grants.allowed(anyString(), eq("use"))).thenAnswer(call ->
@@ -62,7 +63,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 .collect(java.util.stream.Collectors.toMap(id -> id, id -> panelGrants.getOrDefault(id, allowOtherPanels))));
         panels = mock(PanelResources.class);
         catalog = new ApplicationCatalog(jdbc,
-            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, grants);
+            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, grants, authorization);
         http = MockMvcBuilders.standaloneSetup(new ApplicationController(catalog, identity,
             new WorkbenchServiceAuthentication("test-service")))
             .setControllerAdvice(new ApplicationErrors())
@@ -70,8 +71,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     }
     private ApplicationCatalog.Builtin builtin(String id, String kind) {
         return new ApplicationCatalog.Builtin(id, kind, "apps", "build", 1,
-            JSONObject.of("path", "/"+id, "renderer", id), List.of("domain-member"), null,
-            new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "pages", List.of(), List.of(), List.of(), List.of()));
+            JSONObject.of("path", "/"+id, "renderer", id, "entryKey", "main"), null,
+            new ApplicationCatalog.Declaration(Map.of("en", id), Map.of(), "pages", List.of(), List.of(), List.of()));
     }
     private List<Map<String,Object>> records() {
         return jdbc.queryForList("SELECT * FROM sys_application ORDER BY id");
@@ -125,28 +126,24 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var ontology = JSON.parseObject(new ClassPathResource("applications/ontology.json").getContentAsString(StandardCharsets.UTF_8),
             ApplicationCatalog.Builtin.class);
         var metadata = ontology.declaration();
-        var mapping = new PageSkills.Mapping("business-knowledge", null, null,
+        var mapping = new PageSkills.Declaration("knowledge-use", "knowledge",
             new PageSkills.Skill(new PageSkills.Namespace("provider", "ontology", null), "knowledge-governance"), List.of());
         var use = new ApplicationPanelUse("knowledge-use", "knowledge", "builtin-product-knowledge", "/ontology/knowledge",
-            new ApplicationPanelUse.Access("business-knowledge", null),
             new DefaultAgentTarget("id", "knowledge-agent", null), null);
         var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
-            metadata.groups(), metadata.permissions(), List.of(mapping), List.of(use));
+            metadata.groups(), List.of(mapping), List.of(use));
         catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(ontology.id(), ontology.kind(), ontology.rail(),
-            ontology.category(), ontology.sort(), ontology.entry(), ontology.entryAccess(), ontology.scheduleAdapter(), declaration)));
+            ontology.category(), ontology.sort(), ontology.entry(), ontology.scheduleAdapter(), declaration)));
 
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
-        when(access.pageSkills(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
-        when(access.panelUses(List.of(use), viewer)).thenReturn(List.of(use));
         panelGrants.put("builtin-product-knowledge", true);
 
         http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "domain")
                 .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data[?(@.path == '/ontology/knowledge')].entrance.permissionCode")
-                .value(org.hamcrest.Matchers.contains("business-knowledge")));
+            .andExpect(jsonPath("$.data[?(@.path == '/ontology/knowledge')].entrance.entryKey")
+                .value(org.hamcrest.Matchers.contains("knowledge-use")));
         http.perform(get("/platform/applications/ontology/panel-uses"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.entry.renderer").value("ontology"))
@@ -185,25 +182,22 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .filter(use -> use.path().equals("/ontology/components"))
             .findFirst().orElseThrow();
         assertEquals("builtin-product-sdk-components", components.panelId());
-        assertEquals("ontology-modeling", components.access().permissionCode());
         assertEquals("products", components.groupKey());
     }
 
     @Test void builtinNativeApplicationResolvesItsDeclaredBuiltinFramePanelId() throws Exception {
         var declared = builtin("native-framed-demo", "native");
         var use = new ApplicationPanelUse("overview", "native-framed-demo-overview", "builtin-product-overview",
-            "/native-framed-demo/overview", new ApplicationPanelUse.Access(null, "domain-member"), null,
+            "/native-framed-demo/overview", null,
             Map.of("en", "Overview"), null, null, null);
         var metadata = new ApplicationCatalog.Declaration(Map.of("en", "Native framed"), Map.of(), "pages",
-            List.of(), List.of(), List.of(), List.of(use));
+            List.of(), List.of(), List.of(use));
         catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(declared.id(), declared.kind(),
-            declared.rail(), declared.category(), declared.sort(), declared.entry(), declared.entryAccess(),
+            declared.rail(), declared.category(), declared.sort(), declared.entry(),
             declared.scheduleAdapter(), metadata, null, "builtin-product-native-frame")));
 
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
-        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
         panelGrants.put(use.panelId(), true);
 
         http.perform(get("/platform/applications/resolve-entry").param("path", use.path()))
@@ -217,18 +211,14 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void builtinDescriptionsRoundTripWithoutAddingANamelessEntryToTheMenu() throws Exception {
         var source = new ByteArrayResource("""
             {"id":"descriptions-test","kind":"native","rail":"apps","category":"build","sort":100,
-             "entry":{"path":"/descriptions-test","renderer":"descriptions"},"entryAccess":["domain-member"],
-             "declaration":{"names":{"en":"Descriptions"},"descriptions":{},"icon":"pages","groups":[],"permissions":[],
+             "entry":{"path":"/descriptions-test","renderer":"descriptions"},"initialOpenEntryIds":[],
+             "declaration":{"names":{"en":"Descriptions"},"descriptions":{},"icon":"pages","groups":[],
                "panelUses":[
-                 {"id":"info","pageKey":"descriptions-info","path":"/descriptions-test/info","panelId":"builtin-product-info",
-                  "access":{"kind":"domain-member"},"descriptions":{"en":"  Keep the original text.  ","zh-CN":"入口说明"}},
-                 {"id":"plain","pageKey":"descriptions-plain","path":"/descriptions-test/plain","panelId":"builtin-product-info",
-                  "access":{"kind":"domain-member"}}]}}
+                 {"id":"info","pageKey":"descriptions-info","path":"/descriptions-test/info","panelId":"builtin-product-info","descriptions":{"en":"  Keep the original text.  ","zh-CN":"入口说明"}},
+                 {"id":"plain","pageKey":"descriptions-plain","path":"/descriptions-test/plain","panelId":"builtin-product-info"}]}}
             """.getBytes(StandardCharsets.UTF_8), "applications/descriptions-test.json");
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
-        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
         panelGrants.put("builtin-product-info", true);
 
         catalog.builtins("data-engine", List.of(ApplicationCatalogUpgrade.Builtins.readDeclaration(source)));
@@ -248,19 +238,17 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private static String registrationWithEntryDescriptions(String descriptions) {
         return """
             {"entry":{"path":"/applications/app-descriptions","renderer":"panels"},
-             "declaration":{"names":{"en":"Descriptions"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
-             "entryAccess":["domain-member"],
+             "declaration":{"names":{"en":"Descriptions"},"descriptions":{},"icon":"pages","groups":[]},
+             "initialOpenEntryIds":[],
              "panelUses":[{"id":"info","pageKey":"app-descriptions-info","path":"/applications/app-descriptions/info",
-               "panelId":"info-panel","access":{"kind":"domain-member"},"descriptions":%s}]}
+               "panelId":"info-panel","descriptions":%s}]}
             """.formatted(descriptions);
     }
 
     @Test void domainEntryDescriptionsRoundTripAndRejectInvalidValues() throws Exception {
         var viewer = new QueryAccessService.GrantUser("owner", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
         when(access.canMaintain(any(), eq(viewer))).thenReturn(true);
-        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
         panelGrants.put("info-panel", true);
 
         var writer = "/platform/applications/app-descriptions/panel-uses";
@@ -307,12 +295,10 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         verifyNoInteractions(panels);
     }
 
-    @Test void theShippedOntologyCatalogueEntriesKeepTheirModelingPermission() throws Exception {
+    @Test void theShippedOntologyCatalogueEntriesUseTheirStableKeys() throws Exception {
         new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
         var viewer = new QueryAccessService.GrantUser("modeler", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
-        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
 
         for (var name : List.of("projections", "panels", "applications")) {
             panelGrants.put("builtin-product-ontology-" + name, true);
@@ -322,9 +308,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.applicationId").value("ontology"))
                 .andExpect(jsonPath("$.data.use.panelId").value("builtin-product-ontology-" + name))
-                .andExpect(jsonPath("$.data.use.access.permissionCode").value("ontology-modeling"));
+                .andExpect(jsonPath("$.data.use.id").value("use-ontology-" + name));
         }
-        when(access.panelUses(anyList(), eq(viewer))).thenReturn(List.of());
+        deniedEntries.add("modeler:ontology/use-ontology-projections");
         http.perform(get("/platform/applications/resolve-entry").param("path", "/ontology/projections"))
             .andExpect(status().isForbidden());
     }
@@ -332,22 +318,17 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     private static String panelsTrialRegistration(String id) {
         return """
             {"entry":{"path":"/applications/%1$s","renderer":"panels"},
-             "declaration":{"names":{"en":"Panel trial"},"descriptions":{},"icon":"pages","permissions":[],"groups":[]},
-             "entryAccess":["domain-member"],"panelUses":[
-               {"id":"trial","pageKey":"ontology-panels","panelId":"trial-panel","path":"/applications/%1$s/trial",
-                "access":{"kind":"domain-member"},"names":{"en":"Trial"}},
-               {"id":"other","pageKey":"other-page","panelId":"trial-panel","path":"/applications/%1$s/other",
-                "access":{"kind":"domain-member"},"names":{"en":"Other"}}]}
+             "declaration":{"names":{"en":"Panel trial"},"descriptions":{},"icon":"pages","groups":[]},
+             "initialOpenEntryIds":[],"panelUses":[
+               {"id":"trial","pageKey":"ontology-panels","panelId":"trial-panel","path":"/applications/%1$s/trial","names":{"en":"Trial"}},
+               {"id":"other","pageKey":"other-page","panelId":"trial-panel","path":"/applications/%1$s/other","names":{"en":"Other"}}]}
             """.formatted(id);
     }
 
     @Test void startupKeepsTheBuiltinAndQuarantinesOnlyTheConflictingDomainUse() throws Exception {
         var operator = new QueryAccessService.GrantUser("operator", "trial-domain");
         when(identity.getCurrentUser()).thenReturn(operator);
-        when(access.canEnter(any(), eq(operator))).thenReturn(true);
         when(access.canMaintain(any(), eq(operator))).thenReturn(true);
-        when(access.pageSkills(anyList(), eq(operator))).thenAnswer(call -> call.getArgument(0));
-        when(access.panelUses(anyList(), eq(operator))).thenAnswer(call -> call.getArgument(0));
         allowOtherPanels = true;
 
         var id = "app-ontology-panels";
@@ -368,9 +349,13 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.use.id").value("other"));
         http.perform(get("/platform/applications/" + id + "/panel-uses"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses[*].id").value(org.hamcrest.Matchers.contains("other")));
+        var roots = catalog.affectedEntryRoots("trial-domain", java.util.Set.of("trial-panel"));
+        assertTrue(roots.stream().anyMatch(entry -> entry.entryId().equals(id + "/other")));
+        assertFalse(catalog.ownsEntry("trial-domain", id + "/trial"));
+        assertFalse(roots.stream().anyMatch(entry -> entry.entryId().equals(id + "/trial")));
         http.perform(get("/platform/page-skills")).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.admittedEntrances[?(@.pageKey == 'ontology-panels')].permissionCode")
-                .value(org.hamcrest.Matchers.contains("ontology-modeling")));
+            .andExpect(jsonPath("$.data.admittedEntrances[?(@.pageKey == 'ontology-panels')].entryKey")
+                .value(org.hamcrest.Matchers.contains("use-ontology-panels")));
         http.perform(get(ApplicationController.PANEL_SKILL_SOURCES).param("domainId", "trial-domain")
                 .header(WorkbenchServiceAuthentication.HEADER, "test-service"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data[?(@.applicationId == 'app-ontology-panels')].useId")
@@ -404,12 +389,10 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var resourceGrants = new ProductGrantService(jdbc, identity, (userId, domainId) -> java.util.Set.of());
         resourceGrants.afterPropertiesSet();
         var actualCatalog = new ApplicationCatalog(jdbc,
-            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, resourceGrants);
+            new TransactionTemplate(new DataSourceTransactionManager(dataSource)), access, "{}", panels, resourceGrants, authorization);
         actualCatalog.builtins("data-engine", List.of(builtInBrowser("builtin-product-browser")));
         var first = new QueryAccessService.GrantUser("one", "domain-one");
         var second = new QueryAccessService.GrantUser("two", "domain-two");
-        when(access.canEnter(any(), any())).thenReturn(true);
-        when(access.panelUses(anyList(), any())).thenAnswer(call -> call.getArgument(0));
         var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(actualCatalog, identity,
             new WorkbenchServiceAuthentication("test-service"))).setControllerAdvice(new ApplicationErrors()).build();
         var request = get("/platform/applications/resolve-entry").param("path", "/browser/data");
@@ -418,18 +401,17 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             mvc.perform(request).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.applicationId").value("browser"))
                 .andExpect(jsonPath("$.data.use.panelId").value("builtin-product-browser"))
-                .andExpect(jsonPath("$.data.use.access.permissionCode").value("data-browser"));
+                .andExpect(jsonPath("$.data.use.id").value("browse"));
         }
-        when(access.panelUses(anyList(), eq(second))).thenReturn(List.of());
+        deniedEntries.add("two:browser/browse");
         mvc.perform(request).andExpect(status().isForbidden());
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM product_grant", Integer.class));
         verifyNoInteractions(panels);
 
-        var localUse = new ApplicationPanelUse("local", "local", "builtin-product-browser", "/applications/app-local/home",
-            new ApplicationPanelUse.Access(null, "domain-member"), null, null);
+        var localUse = new ApplicationPanelUse("local", "local", "builtin-product-browser", "/applications/app-local/home", null, null);
         var registration = new ApplicationController.PanelRegistration(
             new ApplicationController.PanelEntry("/applications/app-local", "panels"), List.of(localUse),
-            builtin("local", "native").declaration(), List.of("domain-member"));
+            builtin("local", "native").declaration(), List.of());
         actualCatalog.putPanelUses("app-local", registration, second);
         assertEquals("builtin-product-browser",
             actualCatalog.require("app-local").getList("panelUses", ApplicationPanelUse.class).getFirst().panelId());
@@ -437,32 +419,27 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     }
 
     private ApplicationCatalog.Builtin builtInBrowser(String panelId) {
-        var use = new ApplicationPanelUse("browse", "browse", panelId, "/browser/data",
-            new ApplicationPanelUse.Access("data-browser", null), null, null);
+        var use = new ApplicationPanelUse("browse", "browse", panelId, "/browser/data", null, null);
         var metadata = builtin("browser", "native").declaration();
         var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
-            metadata.groups(), metadata.permissions(), List.of(), List.of(use));
+            metadata.groups(), List.of(), List.of(use));
         return new ApplicationCatalog.Builtin("browser", "native", "apps", "build", 1,
-            JSONObject.of("path", "/browser", "renderer", "panels"), List.of("data-browser"), null, declaration);
+            JSONObject.of("path", "/browser", "renderer", "panels"), null, declaration);
     }
 
-    @Test void aBuiltinCannotBorrowAnotherBuiltinsEntryCode() throws Exception {
-        new ApplicationCatalogUpgrade.Builtins(catalog).afterPropertiesSet();
-        var before = records();
-        var original = builtin("other", "native");
-        var use = new ApplicationPanelUse("detail", "detail", "builtin-product-detail", "/other/detail",
-            new ApplicationPanelUse.Access("data-browser", null), null, null);
-        var metadata = original.declaration();
-        var declaration = new ApplicationCatalog.Declaration(metadata.names(), metadata.descriptions(), metadata.icon(),
-            metadata.groups(), metadata.permissions(), List.of(), List.of(use));
-        var other = new ApplicationCatalog.Builtin(original.id(), original.kind(), original.rail(), original.category(), original.sort(),
-            JSONObject.of("renderer", "panels", "path", "/other"), List.of("data-browser"), null, declaration);
+    @Test void aBuiltinCannotBorrowAnotherBuiltinsEntryAdmission() throws Exception {
+        catalog.builtins("data-engine", List.of(builtin("first", "native"), builtin("other", "native")));
+        var viewer = new QueryAccessService.GrantUser("viewer", "domain");
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        deniedEntries.add("viewer:other/main");
 
-        var refusal = assertThrows(org.springframework.web.server.ResponseStatusException.class,
-            () -> catalog.builtins("workbench", List.of(other)));
-        assertEquals(400, refusal.getStatusCode().value());
-        assertTrue(refusal.getReason().contains("data-browser"));
-        assertEquals(before, records());
+        var route = "/platform/applications/resolve-entry";
+        http.perform(get(route).param("applicationId", "first").param("useId", "main"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.applicationId").value("first"));
+        http.perform(get(route).param("applicationId", "other").param("useId", "main"))
+            .andExpect(status().isForbidden());
+        http.perform(get(route).param("applicationId", "other").param("useId", "missing"))
+            .andExpect(status().isNotFound());
     }
 
     @Test void managementRetainsFullUsesAndResolveReturnsTheSavedEntrySettings() throws Exception {
@@ -470,27 +447,22 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(owner);
         allowOtherPanels = true;
-        when(access.canEnter(any(), any())).thenReturn(true);
         when(access.canMaintain(any(), eq(owner))).thenReturn(true);
-        when(access.panelUses(anyList(), any())).thenAnswer(call -> List.of(call.<List<ApplicationPanelUse>>getArgument(0).getFirst()));
         var path = "/platform/applications/app-school/panel-uses";
         http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content("""
-            {"entry":{"path":"/applications/app-school","renderer":"panels"},"entryAccess":["domain-member"],
+            {"entry":{"path":"/applications/app-school","renderer":"panels"},"initialOpenEntryIds":[],
              "declaration":{"names":{"en":"School"},"descriptions":{},"icon":"school",
-               "groups":[{"key":"school","names":{"en":"School"},"sort":1}],
-               "permissions":[{"code":"app:app-school:private","names":{"en":"Private","zh-CN":"仅限内部"},"groupKey":"school","sort":1}]},
+               "groups":[{"key":"school","names":{"en":"School"},"sort":1}]},
              "framePanelId":"panel-frame","theme":{"light":{"--el-color-primary":"#123456"}},
              "delivery":{"panels":["panel-frame","panel-school"],"projections":["projection-school"],"packages":[],"agents":[],"skills":[]},
              "panelUses":[
-               {"id":"school","pageKey":"school","panelId":"panel-school","path":"/applications/app-school/main","access":{"kind":"domain-member"},
+               {"id":"school","pageKey":"school","panelId":"panel-school","path":"/applications/app-school/main",
                 "names":{"en":"School"},"groupKey":"school","inputs":{"term":{"literal":null}}},
-               {"id":"private","pageKey":"private","panelId":"panel-school","path":"/applications/app-school/private",
-                "access":{"permissionCode":"app:app-school:private"}}]}
+               {"id":"private","pageKey":"private","panelId":"panel-school","path":"/applications/app-school/private"}]}
             """)).andExpect(status().isOk());
 
         http.perform(get(path).param("purpose", "management")).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.panelUses.length()").value(2))
-            .andExpect(jsonPath("$.data.declaration.permissions[0].code").value("app:app-school:private"))
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
             .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"));
         http.perform(get(CATALOGUE + "/app-school")).andExpect(status().isOk())
@@ -519,18 +491,11 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var inputsField = rowFields.stream().filter(item -> "/inputs".equals(item.getString("path"))).findFirst().orElseThrow();
         assertTrue(inputsField.getBooleanValue("advanced"));
         assertEquals("code", inputsField.getJSONObject("control").getString("kind"));
-        var accessField = rowFields.stream().filter(item -> "/access".equals(item.getString("path"))).findFirst().orElseThrow();
-        var accessControl = accessField.getJSONObject("control");
-        assertTrue(accessField.getBooleanValue("required"));
-        assertEquals("select", accessControl.getString("kind"));
-        var options = accessControl.getJSONArray("options");
-        assertEquals(JSONObject.of("kind", "domain-member"), options.getJSONObject(0).getJSONObject("value"));
-        assertEquals("本域成员", options.getJSONObject(0).getString("label"));
-        assertEquals(JSONObject.of("permissionCode", "app:app-school:private"), options.getJSONObject(1).getJSONObject("value"));
-        assertEquals("仅限内部", options.getJSONObject(1).getString("label"));
+        assertTrue(rowFields.stream().noneMatch(item -> "/access".equals(item.getString("path"))));
         var defaultAgent = rowFields.stream().filter(item -> "/defaultAgent".equals(item.getString("path"))).findFirst().orElseThrow();
         assertFalse(defaultAgent.getBooleanValue("required"));
         assertEquals(JSONObject.of("kind", "select", "options", List.of()), defaultAgent.getJSONObject("control"));
+        deniedEntries.add("viewer:app-school/private");
         when(identity.getCurrentUser()).thenReturn(viewer);
         http.perform(get(path).param("purpose", "management")).andExpect(status().isForbidden());
         http.perform(get(path)).andExpect(status().isOk()).andExpect(jsonPath("$.data.panelUses.length()").value(1));
@@ -563,19 +528,19 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.theme").doesNotHaveJsonPath())
             .andExpect(jsonPath("$.data.delivery").doesNotHaveJsonPath())
             .andExpect(jsonPath("$.data.declaration.names.en").value("School"))
-            .andExpect(jsonPath("$.data.entryAccess[0]").value("domain-member"));
+            .andExpect(jsonPath("$.data.entryAccess").doesNotHaveJsonPath());
 
     }
 
     private static final String CATALOGUE = "/platform/applications/catalogue";
     private static final String CATALOGUE_APP = "/platform/applications/app-catalogue/panel-uses";
     private static final String CATALOGUE_REGISTRATION = """
-        {"entry":{"path":"/applications/app-catalogue","renderer":"panels"},"entryAccess":["domain-member"],
+        {"entry":{"path":"/applications/app-catalogue","renderer":"panels"},"initialOpenEntryIds":[],
          "declaration":{"names":{"en":"Catalogue demo","zh-CN":"目录示例"},"descriptions":{"en":"Find me"},"icon":"pages",
-          "groups":[],"permissions":[]},
+          "groups":[]},
          "panelUses":[
-          {"id":"public","pageKey":"public","panelId":"panel-public","path":"/applications/app-catalogue/public","access":{"kind":"domain-member"}},
-          {"id":"hidden","pageKey":"hidden","panelId":"panel-hidden","path":"/applications/app-catalogue/hidden","access":{"kind":"domain-member"}}]}
+          {"id":"public","pageKey":"public","panelId":"panel-public","path":"/applications/app-catalogue/public"},
+          {"id":"hidden","pageKey":"hidden","panelId":"panel-hidden","path":"/applications/app-catalogue/hidden"}]}
         """;
 
     @Test void catalogueNameOrderUsesReaderLanguageAndPagesAcrossEqualNames() throws Exception {
@@ -636,8 +601,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         when(identity.getCurrentUser()).thenReturn(owner);
         allowOtherPanels = true;
         when(access.canMaintain(any(), eq(owner))).thenReturn(true);
-        when(access.canEnter(any(), eq(reader))).thenReturn(true);
-        when(access.panelUses(anyList(), eq(reader))).thenAnswer(call -> call.getArgument(0));
         when(grants.allowedFor("domain", "owner", "app-catalogue", "edit")).thenReturn(true);
         catalog.builtins("data-engine", List.of(builtin("browser", "native")));
         catalog.publish("app-hosted", builtin("hosted", "native").declaration(), "release", owner);
@@ -646,6 +609,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(status().isOk());
 
         panelGrants.put("panel-hidden", false);
+        deniedEntries.add("owner:browser/main");
         http.perform(get(CATALOGUE).param("countOnly", "true"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(2))
             .andExpect(jsonPath("$.data.rows").doesNotHaveJsonPath());
@@ -667,7 +631,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.entry.renderer").doesNotHaveJsonPath());
         http.perform(get(CATALOGUE + "/app-catalogue")).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.panelUses.length()").value(2))
-            .andExpect(jsonPath("$.data.entryAccess[0]").value("domain-member"));
+            .andExpect(jsonPath("$.data.entryAccess").doesNotHaveJsonPath());
         http.perform(post(CATALOGUE + "/form").contentType(MediaType.APPLICATION_JSON).content("""
             {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-catalogue"},"changedField":null}
             """)).andExpect(status().isOk())
@@ -705,11 +669,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                     {"section":"create","target":{"kind":"draft","id":"app-translated"},
                      "values":{"declaration":{"names":{"en":"App","zh-CN":"应用","ko-KR":"앱"},
                                               "descriptions":{"zh-CN":"应用说明"},"icon":"pages",
-                                              "groups":[{"key":"tools","names":{"en":"Tools","zh-CN":"工具"},"sort":7}],
-                                              "permissions":[{"code":"app:app-translated:read","names":{"en":"Read","zh-CN":"查看"},
-                                                              "groupKey":"tools","sort":3}]},
+                                              "groups":[{"key":"tools","names":{"en":"Tools","zh-CN":"工具"},"sort":7}]},
                                "entry":{"path":"/applications/app-translated","renderer":"panels"},
-                               "entryAccess":["domain-member"],"panelUses":[]}}
+                               "initialOpenEntryIds":[],"panelUses":[]}}
                     """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.fields[0].label").value("应用身份"))
@@ -730,21 +692,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.fields[0].control.fields[3].control.itemFields[2].control.kind").value("number"))
             .andExpect(jsonPath("$.data.values.declaration.groups[0].names['zh-CN']").value("工具"))
             .andExpect(jsonPath("$.data.values.declaration.groups[0].sort").value(7))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].label").value("菜单权限"))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].refreshOnChange").value(true))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[0].refreshOnChange").value(true))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].refreshOnChange").value(true))
-            .andExpect(jsonPath("$.data.fields[2].control.itemFields[8].control.options[1].value.permissionCode").value("app:app-translated:read"))
-            .andExpect(jsonPath("$.data.fields[2].control.itemFields[8].control.options[1].label").value("查看"))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.kind").value("object-array"))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemKeyPath").doesNotHaveJsonPath())
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.defaultItem.code").value("app:app-translated:"))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[0].label").value("权限码"))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].control.kind").value("localized-text"))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].control.requiredLocales").isEmpty())
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[2].path").value("/groupKey"))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[3].control.kind").value("number"))
-            .andExpect(jsonPath("$.data.values.declaration.permissions[0].names['zh-CN']").value("查看"))
             .andExpect(jsonPath("$.data.fields[1].path").value("/entry/path"))
             .andExpect(jsonPath("$.data.fields[1].label").value("应用地址"))
             .andExpect(jsonPath("$.data.fields[1].control.kind").value("text"))
@@ -777,17 +724,14 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.errors[0].field").value("/declaration/groups"))
             .andExpect(jsonPath("$.data.save.path").value(saved));
         declaration.put("groups", List.of(JSONObject.of("key", "tools", "names", JSONObject.of("en", "Tools"), "sort", 0)));
-        var permission = JSONObject.of("code", ApplicationCatalog.permissionPrefix(id) + "read",
-            "names", JSONObject.of("en", ""), "groupKey", "tools", "sort", 3);
-        declaration.put("permissions", List.of(permission));
+        values.put("initialOpenEntryIds", List.of("unknown"));
         http.perform(post(CATALOGUE + "/form").contentType(MediaType.APPLICATION_JSON)
                 .content(JSONObject.of("section", "create", "target", JSONObject.of("kind", "draft", "id", id), "values", values).toJSONString()))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.errors[0].field").value("/declaration/permissions/0/names/en"));
-        permission.getJSONObject("names").put("en", "Read");
+            .andExpect(jsonPath("$.data.errors[0].field").value("/initialOpenEntryIds"));
+        values.put("initialOpenEntryIds", List.of());
         http.perform(put(saved).contentType(MediaType.APPLICATION_JSON).content(values.toJSONString()))
             .andExpect(status().isOk());
-        assertEquals(permission, catalog.require(id).getJSONArray("permissions").getJSONObject(0));
         var before = records();
         http.perform(put(saved).contentType(MediaType.APPLICATION_JSON).content(values.toJSONString()))
             .andExpect(status().isConflict());
@@ -819,8 +763,6 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.errors[0].field").value("/declaration/names"));
         zhDecl.getJSONObject("names").put("zh-CN", "中文应用");
         zhDecl.put("groups", List.of(JSONObject.of("key", "main", "names", JSONObject.of("zh-CN", "主菜单"), "sort", 0)));
-        zhDecl.put("permissions", List.of(JSONObject.of("code", ApplicationCatalog.permissionPrefix(zhId) + "view",
-            "names", JSONObject.of("zh-CN", "查看"), "groupKey", "main", "sort", 0)));
         http.perform(post(CATALOGUE + "/form").locale(Locale.SIMPLIFIED_CHINESE)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(JSONObject.of("section", "create", "target", JSONObject.of("kind", "draft", "id", zhId), "values", zhValues).toJSONString()))
@@ -836,21 +778,19 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void resolvesNativePanelEntriesAndTheirMenusWithDefaultPlatformFrameAndInputsWithoutTheme() throws Exception {
         var declared = builtin("native-frame-demo", "native");
         var use = new ApplicationPanelUse("overview", "native-frame-demo-overview", "builtin-product-overview",
-            "/native-frame-demo/overview", new ApplicationPanelUse.Access(null, "domain-member"), null,
+            "/native-frame-demo/overview", null,
             Map.of("en", "Overview"), Map.of("en", "Explain the overview"),
             Map.of("term", Map.of("literal", "autumn")), "main");
         var metadata = new ApplicationCatalog.Declaration(Map.of("en", "Native example"), Map.of(), "pages",
-            List.of(new ApplicationCatalog.Group("main", Map.of("en", "Main"), 1)), List.of(), List.of(), List.of(use));
+            List.of(new ApplicationCatalog.Group("main", Map.of("en", "Main"), 1)), List.of(), List.of(use));
         catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(declared.id(), declared.kind(),
-            declared.rail(), declared.category(), declared.sort(), declared.entry(), declared.entryAccess(),
+            declared.rail(), declared.category(), declared.sort(), declared.entry(),
             declared.scheduleAdapter(), metadata)));
         jdbc.update("UPDATE sys_application SET panel_settings=?::jsonb WHERE id=?", """
             {"framePanelId":"stale-frame","theme":{"light":{"--el-color-primary":"#123456"}}}
             """, declared.id());
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);
-        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
-        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
         panelGrants.put(use.panelId(), true);
 
         var route = "/platform/applications/resolve-entry";
@@ -877,8 +817,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         when(access.canMaintain(any(), eq(owner))).thenReturn(true);
         var path = "/platform/applications/app-icon-proof/panel-uses";
         var registration = JSON.parseObject("""
-            {"entry":{"path":"/applications/app-icon-proof","renderer":"panels"},"entryAccess":["domain-member"],
-             "declaration":{"names":{"en":"Original"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
+            {"entry":{"path":"/applications/app-icon-proof","renderer":"panels"},"initialOpenEntryIds":[],
+             "declaration":{"names":{"en":"Original"},"descriptions":{},"icon":"pages","groups":[]},
              "panelUses":[]}
             """);
         http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration.toJSONString()))
@@ -930,7 +870,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         try {
             var panelClient = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
             var remoteCatalog = new ApplicationCatalog(jdbc, new TransactionTemplate(new DataSourceTransactionManager(dataSource)),
-                access, "{}", panelClient, grants);
+                access, "{}", panelClient, grants, authorization);
             var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(remoteCatalog, identity,
                     new WorkbenchServiceAuthentication("test-service")))
                 .setControllerAdvice(new ApplicationErrors())
@@ -941,13 +881,13 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             mvc.perform(put("/platform/applications/app-default-agent-proof/panel-uses")
                     .param("create", "true").locale(Locale.SIMPLIFIED_CHINESE)
                     .contentType(MediaType.APPLICATION_JSON).content("""
-                    {"entry":{"path":"/applications/app-default-agent-proof","renderer":"panels"},"entryAccess":["domain-member"],
-                     "declaration":{"names":{"en":"Default agent proof"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
+                    {"entry":{"path":"/applications/app-default-agent-proof","renderer":"panels"},"initialOpenEntryIds":[],
+                     "declaration":{"names":{"en":"Default agent proof"},"descriptions":{},"icon":"pages","groups":[]},
                      "panelUses":[
                        {"id":"overview","pageKey":"overview-proof","panelId":"panel-overview",
-                        "path":"/applications/app-default-agent-proof/overview","access":{"kind":"domain-member"}},
+                        "path":"/applications/app-default-agent-proof/overview"},
                        {"id":"history","pageKey":"history-proof","panelId":"panel-overview",
-                        "path":"/applications/app-default-agent-proof/history","access":{"kind":"domain-member"},
+                        "path":"/applications/app-default-agent-proof/history",
                         "defaultAgent":{"kind":"preset","agentKind":"knowledge-governance"}}]}
                     """)).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
@@ -984,7 +924,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         try {
             var panelClient = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
             var remoteCatalog = new ApplicationCatalog(jdbc, new TransactionTemplate(new DataSourceTransactionManager(dataSource)),
-                access, "{}", panelClient, grants);
+                access, "{}", panelClient, grants, authorization);
             var mvc = MockMvcBuilders.standaloneSetup(new ApplicationController(remoteCatalog, identity,
                     new WorkbenchServiceAuthentication("test-service")))
                 .setControllerAdvice(new ApplicationErrors())
@@ -993,10 +933,10 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             panelGrants.put("panel-overview", true);
 
             var body = """
-                {"entry":{"path":"/applications/app-native-settings","renderer":"panels"},"entryAccess":["domain-member"],
-                 "declaration":{"names":{"en":"Settings"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
+                {"entry":{"path":"/applications/app-native-settings","renderer":"panels"},"initialOpenEntryIds":[],
+                 "declaration":{"names":{"en":"Settings"},"descriptions":{},"icon":"pages","groups":[]},
                  "panelUses":[{"id":"overview","pageKey":"frame-demo-overview","panelId":"panel-overview",
-                   "path":"/applications/app-native-settings/overview","access":{"kind":"domain-member"},
+                   "path":"/applications/app-native-settings/overview",
                    "inputs":{"term":{"frameState":"term"}}}]}
                 """;
             var raw = JSON.parseObject(body);
@@ -1043,13 +983,13 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         server.start();
         try {
             var remote = new PanelResources("http://127.0.0.1:" + server.getAddress().getPort(), "test-service");
-            var member = new ApplicationPanelUse.Access(null, "domain-member");
+
             remote.requireCurrent("domain", null, List.of(
-                new ApplicationPanelUse("report", "report", "panel-report", "/example/report", member,
+                new ApplicationPanelUse("report", "report", "panel-report", "/example/report",
                     new DefaultAgentTarget("preset", null, "knowledge-governance"), null),
-                new ApplicationPanelUse("plan", "plan", "panel-plan", "/example/plan", member,
+                new ApplicationPanelUse("plan", "plan", "panel-plan", "/example/plan",
                     new DefaultAgentTarget("id", "planner", null), null),
-                new ApplicationPanelUse("ordinary", "ordinary", "panel-ordinary", "/example/ordinary", member, null, null)
+                new ApplicationPanelUse("ordinary", "ordinary", "panel-ordinary", "/example/ordinary", null, null)
             ), null, null, null, null);
 
             assertEquals("test-service", serviceHeader.get());
@@ -1067,20 +1007,21 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         catalog.builtins("data-engine", List.of(builtin("ontology", "native")));
         jdbc.update("UPDATE sys_application SET panel_uses=?::jsonb, page_skills=?::jsonb WHERE id='ontology'", """
             [{"id":"use","pageKey":"page","panelId":"panel","path":"/ontology/page",
-              "access":{"kind":"domain-member"},"defaultAgentId":"saved-agent"},
-             {"id":"other","pageKey":"other","panelId":"panel","path":"/ontology/other",
-              "access":{"kind":"domain-member"}}]
+              "access":{"permissionCode":"business-knowledge"},"defaultAgentId":"saved-agent"},
+             {"id":"other","pageKey":"other","panelId":"panel","path":"/ontology/other"}]
             """, """
             [{"permissionCode":"business-knowledge","skill":{"namespace":{"kind":"provider","provider":"ontology"},
-              "name":"knowledge-governance"},"defaults":[{"pageKey":"governance-report","agentKey":"knowledge-governance"}]}]
+              "name":"knowledge-governance"},"defaults":[{"pageKey":"page","agentKey":"knowledge-governance"}]}]
             """);
 
         new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
         var app = catalog.require("ontology");
         var uses = app.getList("panelUses", ApplicationPanelUse.class);
         assertEquals(new DefaultAgentTarget("id", "saved-agent", null), uses.getFirst().defaultAgent());
+        assertEquals("business-knowledge", jdbc.queryForObject(
+            "SELECT panel_uses->0->'access'->>'permissionCode' FROM sys_application WHERE id='ontology'", String.class));
         assertNull(uses.get(1).defaultAgent());
-        var mapping = app.getList("pageSkills", PageSkills.Mapping.class).getFirst();
+        var mapping = app.getList("pageSkills", PageSkills.Declaration.class).getFirst();
         assertEquals(new DefaultAgentTarget("preset", null, "knowledge-governance"), mapping.defaults().getFirst().defaultAgent());
         var upgraded = records();
 
@@ -1090,12 +1031,9 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
 
     @Test void mergesEditionBuiltinEntriesAndAdmitsNativeEntriesWithoutPanelGrantsOrSkills() throws Exception {
         var editionAuth = new ApplicationPanelUse("authorization", "authorization", null,
-            "/settings/system-config/authorization", new ApplicationPanelUse.Access("authorization-management", null),
+            "/settings/system-config/authorization",
             null, Map.of("en", "License"), null, null, "system-settings", "key-round", ApplicationPanelUse.NATIVE_KIND);
         when(access.builtinEntries("settings")).thenReturn(List.of(editionAuth));
-        when(access.canEnter(any(), any())).thenReturn(true);
-        when(access.panelUses(any(), any())).thenAnswer(call -> call.getArgument(0));
-        when(access.pageSkills(any(), any())).thenReturn(List.of());
         // Panel grant returns true ONLY for builtin-product-audit-log, false for everything else (including null).
         panelGrants.put("builtin-product-audit-log", true);
 
@@ -1117,11 +1055,11 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         assertEquals(List.of("audit-log", "system-monitor", "authorization"),
             menu.panelUses().stream().map(ApplicationPanelUse::id).toList());
 
-        // Native entries are never resolved as product panels or exported as panel page skills.
-        assertThrows(org.springframework.web.server.ResponseStatusException.class,
-            () -> catalog.resolveEntry("/settings/records/system-monitor", user));
-        assertThrows(org.springframework.web.server.ResponseStatusException.class,
-            () -> catalog.resolveEntry("/settings/system-config/authorization", user));
+        // Native entries have their own admission and never export a panel page skill.
+        assertTrue(catalog.resolveEntry("/settings/records/system-monitor", user)
+            .getObject("use", ApplicationPanelUse.class).nativeEntry());
+        assertTrue(catalog.resolveEntry("/settings/system-config/authorization", user)
+            .getObject("use", ApplicationPanelUse.class).nativeEntry());
         assertTrue(catalog.panelSkillSources("domain-a").stream().noneMatch(src ->
             "system-monitor".equals(src.useId()) || "authorization".equals(src.useId())));
         assertTrue(catalog.pageSkills(user).admittedEntrances().stream().noneMatch(entrance ->

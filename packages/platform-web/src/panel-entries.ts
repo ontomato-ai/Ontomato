@@ -128,7 +128,7 @@ export function panelEntryGuard(router: Router): NavigationGuard {
     if (!unknown(to.fullPath)) return to.fullPath;
     // Entering a built-in application's root prefix (e.g. `/settings`, `/permissions`, `/ops`) lands on its first visible entry.
     if (owner && to.path === owner.entry.path) {
-      const landing = firstVisiblePanelPath(owner);
+      const landing = owner.entry.home ?? firstVisiblePanelPath(owner);
       if (landing && !unknown(landing)) {
         return { path: landing, query: to.query, hash: to.hash };
       }
@@ -151,7 +151,7 @@ export function addressLandingGuard(router: Router): NavigationGuard {
   return async (to) => {
     if (to.name === platformRoutes.ontology.name) {
       // Every page guard left this reader at `/ontology` because they have no native page in the navigation:
-      // land on the first permission-gated panel entry they hold — ontology first (for example business knowledge),
+      // land on the first available panel entry — ontology first (for example business knowledge),
       // then another native application (for example settings' audit log or operations' user feedback).
       await catalog.ensureCatalog();
       const nativeApps = catalog.mergedApplications.value.filter(
@@ -165,9 +165,7 @@ export function addressLandingGuard(router: Router): NavigationGuard {
         const app = candidate.panelUses !== undefined
           ? candidate
           : await catalog.ensureApplication(candidate.id).catch(() => candidate);
-        const first = (app.panelUses ?? []).find(
-          (use) => !isNativeApplicationEntry(use) && "permissionCode" in use.access,
-        );
+        const first = app.panelUses?.find(use => !isNativeApplicationEntry(use));
         if (first) {
           servePanelEntries(router);
           return panelUsePath(first.path);

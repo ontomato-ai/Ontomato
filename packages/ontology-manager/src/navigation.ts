@@ -32,8 +32,6 @@ export interface ManagerNavigationPage {
   path: string;
   titleKey: string;
   icon: Component;
-  /** Permission codes that grant the page (any one of them); editions without permissions ignore them. */
-  permissions: readonly string[];
   group: string;
   /**
    * The page draws the platform's page header itself, inside the Manager's frame, and carries that header's gutter. The
@@ -74,30 +72,21 @@ export const managerGroups = {
   knowledge: { key: "knowledge", titleKey: "nav.groupKnowledge" },
 } satisfies Record<string, ManagerNavigationGroup>;
 
-/*
- * Permission codes: the menu permissions the platform registers for its ontology group. The graph, the model pages,
- * visual modeling and the smart assets follow `ontology-modeling` (the code the workbench used for the Manager and its
- * asset pages); workflows and triggers (`action-management`), the data browser and business knowledge have codes of
- * their own.
- */
-const MODELING = ["ontology-modeling"];
-
 function page(
   path: string,
   titleKey: string,
   icon: Component,
   group: string,
-  permissions: readonly string[],
 ): ManagerNavigationPage {
-  return { path, titleKey, icon, group, permissions, ownHeader: true };
+  return { path, titleKey, icon, group, ownHeader: true };
 }
 
 const pages: readonly ManagerNavigationPage[] = [
-  page(managerPaths.graph, "nav.ontologyGraph", Network, "ontology", MODELING),
-  page(managerPaths.objects, "nav.objectTypes", Boxes, "ontology", MODELING),
-  page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING),
-  page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING),
-  page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
+  page(managerPaths.graph, "nav.ontologyGraph", Network, "ontology"),
+  page(managerPaths.objects, "nav.objectTypes", Boxes, "ontology"),
+  page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology"),
+  page(managerPaths.relations, "nav.relationTypes", Link2, "ontology"),
+  page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology"),
 ];
 
 /**

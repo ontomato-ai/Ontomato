@@ -8,7 +8,7 @@ import type pg from "pg";
 import { expect, vi } from "vitest";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
-import type { PageSkill } from "@ontomato/contracts/page-skills";
+import { pageSkillPlacementKey, type PageSkill } from "@ontomato/contracts/page-skills";
 import type { ApplicationPanelInputs, PanelSkillSource } from "@ontomato/contracts/product-panels";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { SkillRegistry, type InstalledSkill } from "../../../../agent-runtime/src/skills";
@@ -52,9 +52,9 @@ const host = { id: "workbench", providers: ["workbench"], domainSkills: true, to
 const scope = { domainId, hostId: host.id };
 const panelEntries: PanelSkillSource[] = [
   { applicationId: "app-business-knowledge-panel", useId: "business-knowledge-panel-use", panelId: "panel-business-knowledge",
-    path: "/applications/app-business-knowledge-panel/manage", entrance: { access: "domain-member", pageKey: "business-knowledge-panel" } },
+    path: "/applications/app-business-knowledge-panel/manage", entrance: { applicationId: "app-business-knowledge-panel", entryKey: "business-knowledge-panel-use", pageKey: "business-knowledge-panel" } },
   { applicationId: "app-panels-trial-a", useId: "use-trial-a-tasks", panelId: "panel-schedules-trial",
-    path: "/applications/app-panels-trial-a/tasks", entrance: { access: "domain-member", pageKey: "panels-trial-a-tasks" } },
+    path: "/applications/app-panels-trial-a/tasks", entrance: { applicationId: "app-panels-trial-a", entryKey: "use-trial-a-tasks", pageKey: "panels-trial-a-tasks" } },
 ];
 
 /** One origin for the panel, assistant, runtime and the external Java/Grant HTTP fixtures. */
@@ -62,7 +62,7 @@ export async function startPanelSkillEntryServer(options: {
   entries?: PanelSkillSource[];
   entryInputs?: (entry: PanelSkillSource) => ApplicationPanelInputs | undefined;
   grants?: Set<string>;
-  nativeMapping?: () => PageSkill | undefined;
+  nativeMapping?: () => (PageSkill & { applicationId: string }) | undefined;
   admittedEntrances?: () => PanelSkillSource["entrance"][] | undefined;
   onPublish?: (pkg: unknown) => string | void;
 } = {}) {
@@ -72,7 +72,6 @@ export async function startPanelSkillEntryServer(options: {
   function javaUse(entry: PanelSkillSource) {
     const { useId, panelId, path, entrance } = entry;
     return { id: useId, panelId, path, pageKey: entrance.pageKey, names: { en: entrance.pageKey },
-      access: "permissionCode" in entrance ? { permissionCode: entrance.permissionCode } : { kind: entrance.access },
       inputs: options.entryInputs?.(entry) };
   }
   const grants = options.grants ?? new Set(["records", ...entries.map(page => page.panelId)]);
@@ -150,16 +149,17 @@ export async function startPanelSkillEntryServer(options: {
   app.get("/platform/page-skills", (req, res) => {
     expect(req.header("tk")).toBe("editor");
     const native = options.nativeMapping?.();
-    const { pageKey, permissionCode, panelId } = req.query;
-    const current = entries.filter(use => pageKey === undefined || panelId === use.panelId
-      || (use.entrance.pageKey === pageKey && ("permissionCode" in use.entrance ? use.entrance.permissionCode : undefined) === permissionCode));
+    const { applicationId, entryKey, pageKey, panelId } = req.query;
+    const current = entries.filter(use => applicationId === undefined
+      || (use.applicationId === applicationId && use.useId === entryKey && use.entrance.pageKey === pageKey
+        && (panelId === undefined || use.panelId === panelId)));
     const useEntrances = current.map(use => use.entrance);
-    const admitted = options.admittedEntrances?.() ?? useEntrances;
+    const admitted = new Set((options.admittedEntrances?.() ?? useEntrances).map(pageSkillPlacementKey));
+    const admittedEntrances = useEntrances.filter(entrance => admitted.has(pageSkillPlacementKey(entrance)));
     res.json({ success: true, data: {
-      pageSkills: current.map(({ entrance }) => "permissionCode" in entrance
-        ? (native && "permissionCode" in native && native.permissionCode === entrance.permissionCode ? native : { permissionCode: entrance.permissionCode })
-        : { ...entrance, defaults: [{ pageKey: entrance.pageKey, defaultAgent: { kind: "preset", agentKind: "regular" } }] }),
-      registeredSkills: native ? [native.skill] : [], admittedEntrances: admitted.filter(entrance => useEntrances.some(use => JSON.stringify(use) === JSON.stringify(entrance))),
+      pageSkills: admittedEntrances.map(entrance => native && pageSkillPlacementKey(native) === pageSkillPlacementKey(entrance)
+        ? native : entrance),
+      registeredSkills: native ? [native.skill] : [], admittedEntrances,
     } });
   });
   app.get("/platform/applications", (req, res, next) => {

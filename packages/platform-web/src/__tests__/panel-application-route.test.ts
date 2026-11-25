@@ -19,8 +19,8 @@ import elementEn from "element-plus/es/locale/lang/en";
  */
 
 const uses: ApplicationPanelUse[] = [
-  { id: "use-tasks", panelId: "panel-tasks", path: "/applications/app-a/tasks", pageKey: "panels-trial-a-tasks", access: { kind: "domain-member" } },
-  { id: "use-summary", panelId: "panel-summary", path: "/applications/app-a/summary", pageKey: "panels-trial-a-summary", access: { kind: "domain-member" } },
+  { id: "use-tasks", panelId: "panel-tasks", path: "/applications/app-a/tasks", pageKey: "panels-trial-a-tasks", },
+  { id: "use-summary", panelId: "panel-summary", path: "/applications/app-a/summary", pageKey: "panels-trial-a-summary", },
 ];
 
 /** Every panel instance the route mounted, and the address each last reported. */

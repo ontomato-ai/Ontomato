@@ -416,7 +416,7 @@ const applicationSave: PanelWriteServerOperation = {
       }
 
       const id = target.primaryKey;
-      if ("declaration" in values && "entry" in values && "entryAccess" in values) {
+      if ("declaration" in values && "entry" in values && "initialOpenEntryIds" in values) {
         // Copy-create submitted from section="create" against a source application target.
         const { id: formId, ...createValues } = values;
         checkDefaultAgentShapes(createValues);
@@ -428,7 +428,7 @@ const applicationSave: PanelWriteServerOperation = {
         return { primaryKey: newId, data: { id: newId }, created: true };
       }
       if (submittedFields?.length === 0) return { primaryKey: id, data: { id } };
-      const singleEntryKeys = new Set(["id", "pageKey", "panelId", "path", "access", "groupKey", "inputs", "defaultAgent"]);
+      const singleEntryKeys = new Set(["id", "pageKey", "panelId", "path", "groupKey", "inputs", "defaultAgent"]);
       const isSingleEntry = !("panelUses" in values) && (
         ("pageKey" in values && "panelId" in values)
         || (submittedFields !== undefined && submittedFields.some(pointer => singleEntryKeys.has(pointer.split("/", 2)[1] ?? "")))

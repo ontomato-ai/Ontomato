@@ -17,7 +17,6 @@ const tasksUse: ApplicationPanelUse = {
   path: "/applications/app-a/tasks",
   pageKey: "app-a-tasks",
   names: { en: "Tasks" },
-  access: { kind: "domain-member" },
 };
 const summaryUse: ApplicationPanelUse = {
   id: "use-summary",
@@ -25,7 +24,6 @@ const summaryUse: ApplicationPanelUse = {
   path: "/applications/app-a/summary",
   pageKey: "app-a-summary",
   names: { en: "Summary" },
-  access: { kind: "domain-member" },
 };
 const reportsUse: ApplicationPanelUse = {
   id: "use-reports",
@@ -33,14 +31,12 @@ const reportsUse: ApplicationPanelUse = {
   path: "/applications/app-a/reports",
   pageKey: "app-a-reports",
   names: { en: "Reports" },
-  access: { kind: "domain-member" },
 };
 const hiddenUse: ApplicationPanelUse = {
   id: "use-hidden",
   panelId: "panel-hidden",
   path: "/applications/app-a/hidden",
   pageKey: "app-a-hidden",
-  access: { kind: "domain-member" },
 };
 const appBUse: ApplicationPanelUse = {
   id: "use-b-home",
@@ -48,7 +44,6 @@ const appBUse: ApplicationPanelUse = {
   path: "/applications/app-b/home",
   pageKey: "app-b-home",
   names: { en: "App B Home" },
-  access: { kind: "domain-member" },
 };
 
 const resolveApplicationEntryMock = vi.fn<[{ path?: string; useId?: string }], Promise<ApplicationEntryResolution>>();

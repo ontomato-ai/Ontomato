@@ -260,7 +260,6 @@ async function openBuiltPanel(
     category: "admin",
     sort: 20,
     entry: { path: "/settings", renderer: "settings" },
-    entryAccess: ["system-config", "audit-logs"],
     scheduleAdapter: null,
     releaseId: null,
     names: { en: "System settings" },
