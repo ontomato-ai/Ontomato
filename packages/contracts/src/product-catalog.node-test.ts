@@ -480,3 +480,75 @@ test("application contracts accept optional allowStandalone toggle and route it 
   });
   assert.equal(record.allowStandalone, false);
 });
+
+test("built-in native entries validate in catalog and menu schemas while domain write contracts reject them", async () => {
+  const { applicationCatalogSchema } = await import("./platform-identity");
+  const {
+    applicationEntryMenuSchema, builtinNativeEntrySchema, isNativeApplicationEntry,
+    registerApplicationPanelUsesRequestSchema,
+  } = await import("./product-panels");
+
+  const nativeEntry = builtinNativeEntrySchema.parse({
+    id: "system-monitor",
+    pageKey: "system-monitor",
+    kind: "native",
+    path: "/settings/records/system-monitor",
+    icon: "activity",
+    groupKey: "records",
+    access: { permissionCode: "system-monitoring" },
+    names: { en: "System monitoring", "zh-CN": "系统监控" },
+  });
+  assert.equal(isNativeApplicationEntry(nativeEntry), true);
+
+  assert.equal(
+    builtinNativeEntrySchema.safeParse({ ...nativeEntry, panelId: "builtin-product-audit-log" }).success,
+    false,
+  );
+  assert.equal(
+    builtinNativeEntrySchema.safeParse({ ...nativeEntry, inputs: { a: { literal: "x" } } }).success,
+    false,
+  );
+  assert.equal(
+    builtinNativeEntrySchema.safeParse({ ...nativeEntry, defaultAgent: { kind: "id", id: "agent-1" } }).success,
+    false,
+  );
+  assert.equal(
+    registerApplicationPanelUsesRequestSchema.safeParse({
+      entry: { path: "/applications/app-one", renderer: "panels" },
+      panelUses: [nativeEntry],
+    }).success,
+    false,
+  );
+
+  const panelEntry = {
+    id: "audit-log",
+    pageKey: "audit-log",
+    panelId: "builtin-product-audit-log",
+    path: "/settings/records/audit-log",
+    icon: "clipboard-list",
+    groupKey: "records",
+    access: { permissionCode: "audit-logs" },
+    names: { en: "Audit log", "zh-CN": "审计日志" },
+  };
+  assert.equal(isNativeApplicationEntry(panelEntry), false);
+
+  const menu = applicationEntryMenuSchema.parse({
+    names: { en: "System settings" },
+    groups: [{ key: "records", names: { en: "Logs and monitoring" }, sort: 3 }],
+    panelUses: [panelEntry, nativeEntry],
+  });
+  assert.equal(menu.panelUses.length, 2);
+
+  const catalog = applicationCatalogSchema.parse([{
+    id: "settings", kind: "native", names: { en: "System settings" }, descriptions: {}, icon: "settings",
+    rail: "bottom", category: "admin", sort: 20,
+    entry: { path: "/settings", renderer: "settings" },
+    entryAccess: ["audit-logs", "system-monitoring"],
+    scheduleAdapter: null, releaseId: null,
+    framePanelId: "builtin-product-platform-frame",
+    allowStandalone: false,
+    groups: [{ key: "records", names: { en: "Logs and monitoring" }, sort: 3 }],
+    panelUses: [panelEntry, nativeEntry],
+  }]);
+  assert.equal(catalog[0]?.panelUses?.filter(isNativeApplicationEntry).length, 1);
+});

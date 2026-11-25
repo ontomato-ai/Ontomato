@@ -35,7 +35,6 @@ export {
   formerParentRoutes,
   ossPlatformPages,
   pageRoutes,
-  platformEntryRows,
   platformGroups,
   platformPageComponents,
   platformPages,

@@ -28,7 +28,64 @@
       "zh-CN": "模型、通用设置、连接、日志与监控"
     },
     "icon": "settings",
-    "groups": [],
+    "groups": [
+      {
+        "key": "models",
+        "names": {
+          "en": "Models",
+          "zh-CN": "模型",
+          "zh-TW": "模型",
+          "ja": "モデル",
+          "ar": "النماذج",
+          "fr": "Modèles",
+          "de": "Modelle",
+          "it": "Modelli"
+        },
+        "sort": 0
+      },
+      {
+        "key": "system-settings",
+        "names": {
+          "en": "System",
+          "zh-CN": "系统",
+          "zh-TW": "系統",
+          "ja": "システム",
+          "ar": "النظام",
+          "fr": "Système",
+          "de": "System",
+          "it": "Sistema"
+        },
+        "sort": 1
+      },
+      {
+        "key": "connections",
+        "names": {
+          "en": "Connections",
+          "zh-CN": "连接",
+          "zh-TW": "連線",
+          "ja": "接続",
+          "ar": "الاتصالات",
+          "fr": "Connexions",
+          "de": "Verbindungen",
+          "it": "Connessioni"
+        },
+        "sort": 2
+      },
+      {
+        "key": "records",
+        "names": {
+          "en": "Logs and monitoring",
+          "zh-CN": "日志与监控",
+          "zh-TW": "日誌與監控",
+          "ja": "ログと監視",
+          "ar": "السجلات والمراقبة",
+          "fr": "Journaux et surveillance",
+          "de": "Protokolle und Überwachung",
+          "it": "Log e monitoraggio"
+        },
+        "sort": 3
+      }
+    ],
     "permissions": [],
     "panelUses": [
       {
@@ -36,6 +93,8 @@
         "pageKey": "model-usage",
         "panelId": "builtin-product-model-usage",
         "path": "/settings/model-config/usage",
+        "icon": "cpu",
+        "groupKey": "models",
         "access": { "permissionCode": "system-config" },
         "inputs": {
           "domain": { "literal": { "className": "platform:ModelUsage", "primaryKey": "domain" } }
@@ -60,6 +119,8 @@
         "pageKey": "model-connections",
         "panelId": "builtin-product-model-connections",
         "path": "/settings/model-config/providers",
+        "icon": "server",
+        "groupKey": "models",
         "access": { "permissionCode": "system-config" },
         "names": {
           "en": "Providers & models",
@@ -82,6 +143,7 @@
         "panelId": "builtin-product-general-settings",
         "path": "/settings/system-config/general",
         "icon": "settings",
+        "groupKey": "system-settings",
         "access": { "permissionCode": "system-config" },
         "inputs": {
           "settings": { "literal": { "className": "platform:GeneralSettings", "primaryKey": "general" } }
@@ -107,6 +169,7 @@
         "panelId": "builtin-product-data-adapters",
         "path": "/settings/system-config/data-adapters",
         "icon": "database",
+        "groupKey": "connections",
         "access": { "permissionCode": "system-config" },
         "inputs": {
           "domain": { "literal": { "className": "platform:DataAdapterConfig", "primaryKey": "domain" } }
@@ -132,6 +195,7 @@
         "panelId": "builtin-product-external-mcp",
         "path": "/settings/external-mcp",
         "icon": "link",
+        "groupKey": "connections",
         "access": { "permissionCode": "mcp-service" },
         "names": {
           "en": "External MCP services",
@@ -154,6 +218,7 @@
         "panelId": "builtin-product-published-mcp",
         "path": "/settings/mcp-services",
         "icon": "share-2",
+        "groupKey": "connections",
         "access": { "permissionCode": "mcp-service" },
         "names": {
           "en": "Published MCP services",
@@ -176,6 +241,7 @@
         "panelId": "builtin-product-audit-log",
         "path": "/settings/records/audit-log",
         "icon": "clipboard-list",
+        "groupKey": "records",
         "access": { "permissionCode": "audit-logs" },
         "names": {
           "en": "Audit log",
@@ -190,6 +256,35 @@
         "descriptions": {
           "en": "Sign-ins and changes recorded across the platform",
           "zh-CN": "平台内的登录与变更记录"
+        }
+      },
+      {
+        "id": "system-monitor",
+        "pageKey": "system-monitor",
+        "kind": "native",
+        "path": "/settings/records/system-monitor",
+        "icon": "activity",
+        "groupKey": "records",
+        "access": { "permissionCode": "system-monitoring" },
+        "names": {
+          "en": "System monitoring",
+          "zh-CN": "系统监控",
+          "zh-TW": "系統監控",
+          "ja": "システム監視",
+          "ar": "مراقبة النظام",
+          "fr": "Surveillance système",
+          "de": "Systemüberwachung",
+          "it": "Monitoraggio sistema"
+        },
+        "descriptions": {
+          "en": "Service status and resource usage of the data engine",
+          "zh-CN": "数据引擎的服务状态与资源用量",
+          "zh-TW": "資料引擎的服務狀態與資源用量",
+          "ja": "データエンジンのサービス状態とリソース使用量",
+          "ar": "حالة خدمة محرك البيانات واستخدام الموارد",
+          "fr": "État du service et ressources du moteur de données",
+          "de": "Dienststatus und Ressourcennutzung der Datenengine",
+          "it": "Stato del servizio e uso delle risorse del motore dati"
         }
       }
     ]

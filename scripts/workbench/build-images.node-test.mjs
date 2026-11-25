@@ -540,6 +540,7 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
     applications,
     checks: {
       builtinApplicationPanelUseSchema: { safeParse: () => ({ success: true }) },
+      builtinNativeEntrySchema: { safeParse: () => ({ success: true }) },
       builtinProductIdSchema: { safeParse: data => ({ success: true, data }) },
       panelAuthoringManifestSchema: { safeParse: data => ({ success: true, data }) },
     },

@@ -20,6 +20,10 @@ public interface ApplicationAccess {
     default java.util.List<ApplicationCatalog.Permission> builtinPermissions(String applicationId) {
         return java.util.List.of();
     }
+    /** Edition-owned entries appended to a built-in application (panel or native entries). */
+    default java.util.List<ApplicationPanelUse> builtinEntries(String applicationId) {
+        return java.util.List.of();
+    }
     void declare(JSONObject application, ApplicationCatalog.Declaration declaration, boolean created);
     /** Remove edition-owned facts for a domain application within its catalog transaction. */
     void retire(JSONObject application);
