@@ -13,7 +13,7 @@ import { workspaceCommitSchema, workspaceExportSchema, type WorkspaceFile } from
 import { resolveLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { issueHostedPreviewToken } from "../../api/routes/workspaces";
+import { issueHostedPreviewToken } from "../workspaces/preview-tokens";
 import type { AssistantOwner } from "../assistant/store";
 import { readPanelDomainComponents } from "../product-panels/component-catalogue";
 import { readCurrentPanelRecord, readCurrentProjectionRecord } from "../product-panels/current";

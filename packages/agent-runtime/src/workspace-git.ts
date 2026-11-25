@@ -15,7 +15,7 @@ export class WorkspaceGit {
     this.repository = path.join(directory, "repository.git");
   }
   git(...args: string[]) { return this.runGit(this.tree, {}, args); }
-  private async runGit(tree: string, env: NodeJS.ProcessEnv, args: string[]) {
+  private async runGit(tree: string, env: Record<string, string | undefined>, args: string[]) {
     return (await execute("git", ["--git-dir", this.repository, "--work-tree", tree,
       "-c", "safe.directory=*", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
       "-c", "user.name=Ontomato", "-c", "user.email=workspace@ontomato.local", ...args], {

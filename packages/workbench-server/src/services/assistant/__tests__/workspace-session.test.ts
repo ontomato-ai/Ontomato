@@ -50,8 +50,9 @@ beforeEach(() => {
     id: workspaceId, name: "App workspace", activeRunId: null, headCommit: "a".repeat(40),
     createdAt: now.toISOString(), updatedAt: now.toISOString(),
   });
+  const recordRuntime = (client: RuntimeClient) => { sessionRuntime = client; };
   vi.spyOn(RuntimeClient.prototype, "createSession").mockImplementation(async function (this: RuntimeClient) {
-    sessionRuntime = this;
+    recordRuntime(this);
     return { session: { id: sessionId, domainId: owner.domainId, workspaceId, activeRunId: null,
       latestRunId: null, createdAt: now.toISOString(), updatedAt: now.toISOString() }, replayed: false };
   });

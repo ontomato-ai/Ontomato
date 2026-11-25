@@ -2,7 +2,6 @@ import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-busine
 import { WorkspaceBuildTests } from "../../services/app-builder/build-tests";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
-import { randomBytes } from "node:crypto";
 import path from "node:path";
 import {readFile} from 'node:fs/promises';
 import express, { Router, type Request, type Response, type NextFunction } from "express";
@@ -21,6 +20,7 @@ import {backendGet,buildBackendHeaders} from '../../utils/backend-client';
 import {config} from '../../config/application';
 import {SOURCE_APPLICATION_CSP} from '../../services/workspaces/product-admission';
 import { HOSTED_SDK_MARKER, injectHostedSdkHtml } from "../../services/workspaces/hosted-sdk";
+import { issueHostedPreviewToken, lookupHostedPreviewToken } from "../../services/workspaces/preview-tokens";
 import { mountAppsSdkStatic } from "./apps-sdk";
 import type { AssistantOwner } from "../../services/assistant/store";
 
@@ -28,28 +28,12 @@ const wrap = (fn: (req: Request, res: Response) => Promise<void>) =>
   (req: Request, res: Response, next: NextFunction) => {
     void fn(req, res).catch(error => next(error instanceof z.ZodError ? new HttpError(400, error.message, "INVALID_REQUEST") : error));
   };
-const previews = new Map<string, { workspaceId: string; owner: AssistantOwner; workspaceOwnerId?: string; expiresAt: number }>();
 const runtime = (owner: AssistantOwner, workspaceOwnerId?: string) =>
   new RuntimeClient(owner.domainId, undefined, owner.userId, workspaceOwnerId ?? owner.userId);
 
-export async function issueHostedPreviewToken(
-  owner: AssistantOwner,
-  credentials: { token?: string; apiKey?: string; locale?: string; headers?: Record<string, string> },
-  workspaceId: string,
-  workspaceOwnerId = owner.userId,
-) {
-  const tests = new WorkspaceBuildTests(owner, credentials, workspaceId, workspaceOwnerId);
-  await tests.requirePreviewSdk();
-  const token = randomBytes(32).toString("base64url");
-  const expiresAt = Date.now() + 10 * 60_000;
-  previews.set(token, { workspaceId, owner, workspaceOwnerId, expiresAt });
-  setTimeout(() => previews.delete(token), 10 * 60_000).unref();
-  return { token, expiresAt: new Date(expiresAt).toISOString() };
-}
-
 export const workspacePreviewRouter = Router();
 workspacePreviewRouter.get("/:id/preview/:token/*", wrap(async (req, res) => {
-  const preview = previews.get(req.params.token);
+  const preview = lookupHostedPreviewToken(req.params.token);
   if (!preview || preview.workspaceId !== workspaceIdSchema.parse(req.params.id) || preview.expiresAt <= Date.now())
     throw new HttpError(404, "Preview expired", "NOT_FOUND");
   const file = workspacePathSchema.parse(req.params[0] || "index.html");

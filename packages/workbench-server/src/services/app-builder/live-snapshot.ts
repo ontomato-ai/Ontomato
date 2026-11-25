@@ -174,7 +174,6 @@ export async function readLiveApplicationSnapshot(
 
   while (frontier.length > 0) {
     const batch = frontier.filter(id => !visitedPanels.has(id));
-    frontier = [];
     if (!batch.length) break;
     for (const id of batch) visitedPanels.add(id);
 
