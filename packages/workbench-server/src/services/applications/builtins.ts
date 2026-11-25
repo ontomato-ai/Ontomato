@@ -279,6 +279,27 @@ export const workbenchApplications: BuiltinApplication[] = [
           "zh-CN": "查看已采集的 Turn 取证工作区、产物文件、保留状态与导出下载"
         }
       }, {
+        "id": "ops-test-run",
+        "pageKey": "ops-test-run",
+        "kind": "native",
+        "path": "/ops/test",
+        "access": { "permissionCode": "observer" },
+        "icon": "microscope",
+        "names": {
+          "en": "Automatic tests",
+          "zh-CN": "自动测试",
+          "zh-TW": "自動測試",
+          "ja": "自動テスト",
+          "de": "Automatische Tests",
+          "fr": "Tests automatiques",
+          "it": "Test automatici",
+          "ar": "الاختبارات التلقائية"
+        },
+        "descriptions": {
+          "en": "Run automated test suites and follow live execution progress",
+          "zh-CN": "执行自动测试批次并实时观察测试进度与日志"
+        }
+      }, {
         "id": "ops-autotest-results",
         "pageKey": "ops-autotest-results",
         "panelId": "builtin-product-ops-autotest-results",
@@ -308,6 +329,27 @@ export const workbenchApplications: BuiltinApplication[] = [
         "path": "/ops/autotest/case",
         "access": { "permissionCode": "observer" },
         "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" }
+      }, {
+        "id": "ops-live-logs",
+        "pageKey": "ops-live-logs",
+        "kind": "native",
+        "path": "/ops/live-logs",
+        "access": { "permissionCode": "observer" },
+        "icon": "activity",
+        "names": {
+          "en": "Live logs",
+          "zh-CN": "实时日志",
+          "zh-TW": "即時日誌",
+          "ja": "リアルタイムログ",
+          "de": "Live-Protokolle",
+          "fr": "Journaux en direct",
+          "it": "Log in tempo reale",
+          "ar": "السجلات الحية"
+        },
+        "descriptions": {
+          "en": "Stream and inspect live service logs for operations troubleshooting",
+          "zh-CN": "实时查看与筛选服务运行日志，辅助排障定位"
+        }
       }, {
         "id": "ops-knowledge",
         "pageKey": "ops-knowledge",

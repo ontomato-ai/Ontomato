@@ -241,7 +241,7 @@ beforeEach(() => {
 
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: string | URL, init?: RequestInit) => {
+    vi.fn(async (input: string | URL, init?: Parameters<typeof fetch>[1]) => {
       const url = String(input);
       if (url.endsWith("/platform/page-skills")) {
         pageSkillsFetches += 1;
