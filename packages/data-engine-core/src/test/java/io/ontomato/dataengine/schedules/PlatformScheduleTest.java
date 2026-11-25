@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.schedules;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import io.ontomato.dataengine.service.identity.UserCredentials;
 import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 import static org.awaitility.Awaitility.await;
@@ -55,7 +56,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   private PlatformTasks tasks;
   private UserDetail user;
   private ActionServiceImpl actions;
-  private CapabilityGrantLookup grantsForActions;
+  private ActionAuthorization grantsForActions;
   private OntologyQueryService targetQueries;
   private ABCProgramServiceImpl programs;
   private OntologyScheduleReferences references;
@@ -89,8 +90,9 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     credentials = new UserCredentials(store.jdbc(), identity, "test-seal");
     actions = spy(new ActionServiceImpl());
     doReturn(List.of()).when(actions).queryList(anyString(), isNull(), isNull(), anyString());
-    grantsForActions = mock(CapabilityGrantLookup.class);
-    when(grantsForActions.admission(anyString(), anyString(), anyString(), anyString())).thenReturn(CapabilityGrantLookup.Admission.ALL);
+    grantsForActions = mock(ActionAuthorization.class);
+    when(grantsForActions.standalone(any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.ALL);
+    when(grantsForActions.requireExecution(any(), any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.ALL);
     targetQueries = mock(OntologyQueryService.class);
     programs = new ABCProgramServiceImpl();
     // Ontology tasks created before Triggers took over keep running on this scheduler until they are migrated. The
@@ -122,7 +124,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
 
   private void wireActionExecutor() {
     ReflectionTestUtils.setField(actions, "abcProgramService", programs);
-    ReflectionTestUtils.setField(actions, "capabilityGrants", grantsForActions);
+    ReflectionTestUtils.setField(actions, "authorization", grantsForActions);
     ReflectionTestUtils.setField(actions, "queries", targetQueries);
     ReflectionTestUtils.setField(actions, "preconditions", new ActionPreconditionService(
         mock(DslService.class), mock(AdminService.class), targetQueries));

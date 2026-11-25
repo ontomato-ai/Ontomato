@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -49,9 +50,9 @@ class ActionParameterDefaultsTest {
     doReturn(action).when(service).queryById("action-a");
     var programs = mock(ABCProgramService.class);
     ReflectionTestUtils.setField(service, "abcProgramService", programs);
-    var grants = mock(CapabilityGrantLookup.class);
-    when(grants.admission("user-a", "domain-a", CapabilityGrantLookup.ACTION, "action-a")).thenReturn(CapabilityGrantLookup.Admission.ALL);
-    ReflectionTestUtils.setField(service, "capabilityGrants", grants);
+    var grants = mock(ActionAuthorization.class);
+    when(grants.requireExecution(any(), any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.ALL);
+    ReflectionTestUtils.setField(service, "authorization", grants);
     var preconditions = mock(ActionPreconditionService.class);
     when(preconditions.evaluate(any(), any(), any(), any(), any())).thenReturn(new ActionPreconditionService.Verdict(true, List.of()));
     ReflectionTestUtils.setField(service, "preconditions", preconditions);

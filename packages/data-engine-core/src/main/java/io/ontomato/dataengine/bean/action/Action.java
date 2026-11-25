@@ -57,6 +57,8 @@ public class Action {
 	 */
 	private String createdBy;
 
+	private java.util.List<String> coauthorIds;
+
 	/**
 	 * The subject who last published this action. Publication is the review moment, so this is the
 	 * reviewer. Only the latest one is kept; a publish that carries no subject preserves the stored

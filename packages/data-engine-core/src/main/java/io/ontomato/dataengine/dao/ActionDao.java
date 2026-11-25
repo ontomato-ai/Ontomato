@@ -51,7 +51,7 @@ public class ActionDao extends BaseDao {
 
 	private static final String TABLE_NAME = "action";
 
-	private static final String COLUMNS = "id, name, description, origin, function_id, code_segments, business_meaning, code_hash, explanation_version, status, class_names, domain_id, submission_criteria, target, create_timestamp, modify_timestamp, created_by, reviewed_by, approval_mode, adopted";
+	private static final String COLUMNS = "id, name, description, origin, function_id, code_segments, business_meaning, code_hash, explanation_version, status, class_names, domain_id, submission_criteria, target, create_timestamp, modify_timestamp, created_by, reviewed_by, approval_mode, adopted, coauthor_ids";
 
 	@PostConstruct
 	public void initIndex() {
@@ -90,6 +90,7 @@ public class ActionDao extends BaseDao {
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS submission_criteria TEXT");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS created_by VARCHAR(64)");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(64)");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS coauthor_ids TEXT");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS approval_mode VARCHAR(16)");
 		// Existing rows predate claim tracking. Preserve them on upgrade.
 		jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS adopted BOOLEAN NOT NULL DEFAULT TRUE");
@@ -149,7 +150,7 @@ public class ActionDao extends BaseDao {
 		String classNamesStr = buildClassNamesStr(function);
 
 		jdbcTemplate.update(
-				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
+				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, "
 						+ "origin = EXCLUDED.origin, function_id = EXCLUDED.function_id, code_segments = EXCLUDED.code_segments, business_meaning = EXCLUDED.business_meaning, code_hash = EXCLUDED.code_hash, explanation_version = EXCLUDED.explanation_version, "
 						+ "status = EXCLUDED.status, class_names = EXCLUDED.class_names, domain_id = EXCLUDED.domain_id, submission_criteria = EXCLUDED.submission_criteria, target = EXCLUDED.target, "
@@ -159,7 +160,7 @@ public class ActionDao extends BaseDao {
 						+ "reviewed_by = COALESCE(EXCLUDED.reviewed_by, action.reviewed_by), "
 						// An update that omits approvalMode must not silently open the gate.
 						+ "approval_mode = COALESCE(EXCLUDED.approval_mode, action.approval_mode), "
-						+ "adopted = action.adopted OR EXCLUDED.adopted, "
+						+ "adopted = action.adopted OR EXCLUDED.adopted, coauthor_ids = COALESCE(EXCLUDED.coauthor_ids, action.coauthor_ids), "
 						+ "brief = EXCLUDED.brief, brief_vector = CASE WHEN ? AND action.brief = EXCLUDED.brief "
 						+ "THEN action.brief_vector ELSE EXCLUDED.brief_vector END",
 				action.getId(), action.getName(), action.getDescription(), action.getOrigin(),
@@ -167,7 +168,7 @@ public class ActionDao extends BaseDao {
 				action.getCodeHash(), action.getExplanationVersion(),
 				action.getStatus(), classNamesStr, action.getDomainId(), JSON.toJSONString(action.getSubmissionCriteria(), Feature.WriteMapNullValue),
 				action.getTarget() == null ? null : JSON.toJSONString(action.getTarget()), action.getCreateTimestamp(), action.getModifyTimestamp(),
-				action.getCreatedBy(), action.getReviewedBy(), action.getApprovalMode(), action.isAdopted(), brief, vector, preserveVector);
+				action.getCreatedBy(), action.getReviewedBy(), action.getApprovalMode(), action.isAdopted(), action.getCoauthorIds() == null ? null : JSON.toJSONString(action.getCoauthorIds()), brief, vector, preserveVector);
 		return action;
 	}
 
@@ -438,6 +439,7 @@ public class ActionDao extends BaseDao {
 		action.setModifyTimestamp(rs.getObject("modify_timestamp") == null ? null : rs.getLong("modify_timestamp"));
 		action.setDomainId(rs.getString("domain_id"));
 		action.setCreatedBy(rs.getString("created_by"));
+		action.setCoauthorIds(JSON.parseArray(rs.getString("coauthor_ids"), String.class));
 		action.setReviewedBy(rs.getString("reviewed_by"));
 		action.setApprovalMode(rs.getString("approval_mode"));
 		action.setAdopted(rs.getBoolean("adopted"));

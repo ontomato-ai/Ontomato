@@ -266,33 +266,13 @@ function requireArg(args, index, usage) {
 
 async function myActions() {
   const user = await me();
-  const [subjects, grants, actions] = await Promise.all([
-    post('/workflow/subjects', {}),
-    post('/workflow/grants', {}),
-    post('/action/queryList', {}),
-  ]);
-  const mine = (subjects || []).find((s) => s.id === user.id || s.loginCode === user.loginCode);
-  const roleIds = new Set(mine?.roleIds || []);
-  const brief = { id: user.id, loginCode: user.loginCode, userName: user.userName };
-  if (!roleIds.size) return { user: brief, roleIds: [], actions: [], reason: 'This subject holds no role in this domain.' };
-  const inForce = (grants || []).filter((grant) => grant.inForce && roleIds.has(grant.roleId));
-  const known = new Map((actions || []).map((a) => [a.id, a]));
-  const rows = inForce
-    .map((g) => {
-      const a = known.get(g.capabilityId);
-      return {
-        actionId: g.capabilityId,
-        name: a?.name ?? g.capabilityId,
-        status: a?.status ?? null,
-        approvalMode: a?.approvalMode ?? null,
-        role: g.roleCode ?? g.roleId,
-        source: g.workflowId ? 'process' : 'direct',
-        workflowId: g.workflowId ?? null,
-        workflowVersion: g.activatedByWorkflowVersion ?? null,
-      };
-    })
-    .filter((r) => r.status === null || r.status === 'PUBLISHED');
-  return { user: brief, roleIds: [...roleIds], actions: rows };
+  const actions = await post('/action/queryList', { purpose: 'execute' });
+  return {
+    user: { id: user.id, loginCode: user.loginCode, userName: user.userName },
+    actions: actions.map(({ id, name, status, approvalMode, target }) => ({
+      actionId: id, name, status, approvalMode, target,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------- dispatch
@@ -331,21 +311,12 @@ if (cmd === 'login') {
   console.log(JSON.stringify(result, null, 2));
 } else if (cmd === 'action') {
   const actionId = requireArg(args, 0, 'action <actionId>');
-  console.log(JSON.stringify(await post('/action/queryById', { id: actionId }), null, 2));
+  console.log(JSON.stringify(await post('/action/queryById', { id: actionId, purpose: 'execute' }), null, 2));
 } else if (cmd === 'find') {
   const question = requireArg(args, 0, 'find <需求描述> [className]');
   const className = args[1] || undefined;
   const found = rowsOf(await post('/action/find', { question, className }));
-  const mine = await myActions();
-  const allowedIds = new Set(mine.actions.map((a) => a.actionId));
-  const rows = found.map((a) => ({
-    actionId: a.id,
-    name: a.name,
-    description: a.description,
-    status: a.status,
-    allowed: allowedIds.has(a.id),
-  }));
-  console.log(JSON.stringify({ question, className: className ?? null, allowed: rows.filter((r) => r.allowed), denied: rows.filter((r) => !r.allowed) }, null, 2));
+  console.log(JSON.stringify({ question, className: className ?? null, allowed: found }, null, 2));
 } else if (cmd === 'pending') {
   const flow = args.includes('--flow') ? args[args.indexOf('--flow') + 1] : undefined;
   const metrics = [];
