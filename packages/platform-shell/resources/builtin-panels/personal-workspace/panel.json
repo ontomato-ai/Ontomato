@@ -791,6 +791,9 @@
         },
         "config": {
           "showTitle": false,
+          "keyValueFields": [
+            "parameters"
+          ],
           "fields": [
             "metric",
             "status",
