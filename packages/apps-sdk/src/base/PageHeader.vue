@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { confirmDanger } from "@ontomato/platform-shell";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { PageHeaderDraft, PageHeaderLabels } from "./page-header-types";
 
@@ -81,6 +82,11 @@ const resolvedLabels = computed<PageHeaderLabels>(() => ({
   save: props.labels?.save ?? translate("platform.save", "Save"),
   discard: props.labels?.discard ?? translate("platform.discard", "Discard"),
   unsavedChanges: props.labels?.unsavedChanges ?? translate("platform.unsavedChanges", "Unsaved changes"),
+  discardConfirmTitle: props.labels?.discardConfirmTitle ?? props.labels?.discard ?? translate("platform.discard", "Discard"),
+  discardConfirmMessage:
+    props.labels?.discardConfirmMessage
+    ?? translate("platform.formDiscardConfirm", "Discard the changes you have not saved?"),
+  keepEditing: props.labels?.keepEditing ?? translate("platform.keepEditing", "Keep editing"),
 }));
 
 const currentLocale = computed(() => i18n?.locale.value ?? "en");
@@ -101,10 +107,28 @@ const draftCanSave = computed(() => {
   if (!props.draft || draftSaving.value) return false;
   return props.draft.canSave !== undefined ? props.draft.canSave : draftDirty.value;
 });
+const confirmingDiscard = ref(false);
 
-function handleDiscard() {
-  if (!draftDirty.value || draftSaving.value) return;
-  props.draft?.discard?.();
+async function handleDiscard() {
+  if (!draftDirty.value || draftSaving.value || confirmingDiscard.value) return;
+  if (props.draft?.confirmDiscard) {
+    confirmingDiscard.value = true;
+    try {
+      const confirmed = await confirmDanger(
+        resolvedLabels.value.discardConfirmMessage!,
+        resolvedLabels.value.discardConfirmTitle!,
+        {
+          confirmButtonText: resolvedLabels.value.discard,
+          cancelButtonText: resolvedLabels.value.keepEditing,
+        },
+      );
+      if (!confirmed) return;
+    } finally {
+      confirmingDiscard.value = false;
+    }
+  }
+  const outcome = await props.draft?.discard?.();
+  if (outcome === false) return;
   emit("discard");
 }
 

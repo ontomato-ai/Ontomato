@@ -604,7 +604,13 @@ async function openDashboardsPanel(options: {
             fields: {
               metric: { kind: "reference", className: METRIC_VIEW, primaryKey: "mv-rev", label: "Revenue Metric" },
               status: "Published",
-              parameters: "year: 2026",
+              parameters: {
+                kind: "json",
+                value: {
+                  year: "2026",
+                  region: "East",
+                },
+              },
             },
             fieldLabels: {
               metric: "Metric view",
@@ -1008,6 +1014,111 @@ describe("builtin-product-dashboards panel", () => {
           charts: [],
         },
       ],
+    });
+  });
+
+  it("wires pack-2 pill tabs with inline rename, parameter change summary, card rename prefill, and bordered key-value metric source (D-03/04/06/22/23/24)", async () => {
+    const { element, dispatched } = await openDashboardsPanel();
+
+    await vi.waitFor(() => {
+      expect(element.querySelector(".sdk-object-list-tabs-bar.is-pill")).not.toBeNull();
+      expect(element.querySelector('[data-primary-key="d1/c1"]')).not.toBeNull();
+    });
+
+    // D-03 / D-06: pill tab strip + in-place inline rename via row action without opening OperationInputDialog
+    const firstTab = element.querySelectorAll<HTMLElement>('[role="tab"]')[0]!;
+    firstTab.querySelector<HTMLButtonElement>(".sdk-object-list-action-more-btn")!.click();
+    await vi.waitFor(() => {
+      const renameItem = [...document.querySelectorAll<HTMLElement>(".el-dropdown-menu__item")].find(
+        (item) => item.textContent?.trim() === "Rename",
+      );
+      expect(renameItem).toBeDefined();
+      renameItem!.click();
+    });
+
+    await vi.waitFor(() => {
+      const renameInput = element.querySelector<HTMLInputElement>('[data-testid="object-list-tab-rename-input"]');
+      expect(renameInput).not.toBeNull();
+      expect(renameInput!.value).toBe("Executive Overview");
+    });
+
+    const renameInput = element.querySelector<HTMLInputElement>('[data-testid="object-list-tab-rename-input"]')!;
+    renameInput.value = "Q4 Executive Overview";
+    renameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    renameInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    await vi.waitFor(() => {
+      const renameCall = dispatched.find((item) => item.operationId.endsWith("boardTabs.rename"));
+      expect(renameCall).toBeDefined();
+      expect(renameCall!.call.input).toEqual({ name: "Q4 Executive Overview" });
+      expect(element.querySelector('[data-testid="object-list-tab-rename-input"]')).toBeNull();
+    });
+
+    // D-23: card rename row action opens OperationInputDialog prefilled with the current card's name
+    const chartCardEl = element.querySelector<HTMLElement>('[data-primary-key="d1/c1"]')!;
+    const beforeDropdownCount = document.querySelectorAll(".el-dropdown-menu__item").length;
+    chartCardEl.querySelector<HTMLButtonElement>(".sdk-object-list-action-more-btn")!.click();
+    await vi.waitFor(() => {
+      const visibleMenus = [...document.querySelectorAll<HTMLElement>(".el-dropdown__popper")].filter(
+        (popper) => popper.getAttribute("aria-hidden") !== "true" && popper.style.display !== "none",
+      );
+      const visibleRename = visibleMenus
+        .flatMap((popper) => [...popper.querySelectorAll<HTMLElement>(".el-dropdown-menu__item")])
+        .find((item) => item.textContent?.trim() === "Rename");
+      expect(visibleRename ?? (document.querySelectorAll(".el-dropdown-menu__item").length > beforeDropdownCount ? "mounted" : null)).toBeTruthy();
+      expect(visibleRename).toBeDefined();
+      visibleRename!.click();
+    });
+
+    await vi.waitFor(() => {
+      const nameInput = document.querySelector<HTMLInputElement>('[data-input-field="name"] input');
+      expect(nameInput).not.toBeNull();
+      expect(nameInput!.value).toBe("Revenue by Region");
+    });
+    const cancelBtn = [...document.querySelectorAll<HTMLButtonElement>(".sdk-operation-input-dialog .el-button")].find(
+      (btn) => btn.textContent?.trim() === "Cancel",
+    );
+    cancelBtn?.click();
+
+    // D-22: card parameter form shows before/after change summary when edited
+    chartCardEl.querySelector<HTMLButtonElement>('[data-action="card-parameters"]')!.click();
+    await vi.waitFor(() => {
+      const input = document.querySelector<HTMLInputElement>(".db-form-wrap input");
+      expect(input).not.toBeNull();
+      expect(input!.value).toBe("2026");
+    });
+    const yearInput = document.querySelector<HTMLInputElement>(".db-form-wrap input")!;
+    yearInput.value = "2027";
+    yearInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await vi.waitFor(() => {
+      const summary = document.querySelector<HTMLElement>('[data-testid="object-form-change-summary"]');
+      expect(summary).not.toBeNull();
+      expect(summary!.textContent).toContain("Fiscal year");
+      expect(summary!.textContent).toContain("2026");
+      expect(summary!.textContent).toContain("2027");
+    });
+
+    // Close parameter dialog
+    document.querySelector<HTMLButtonElement>(".el-dialog__headerbtn")?.click();
+
+    // D-24: metric source dialog renders 1-column bordered summary with aligned 2-column key-value parameters <dl>
+    chartCardEl.querySelector<HTMLButtonElement>('[data-action="card-toggle-view"]')!.click();
+    await vi.waitFor(() => {
+      expect(chartCardEl.querySelector('[data-action="table-metric-source"]')).not.toBeNull();
+    });
+    chartCardEl.querySelector<HTMLButtonElement>('[data-action="table-metric-source"]')!.click();
+
+    await vi.waitFor(() => {
+      const list = document.querySelector<HTMLElement>(".sdk-object-summary-list.is-bordered");
+      expect(list).not.toBeNull();
+      expect(list!.classList.contains("is-multi-col")).toBe(false);
+      const kv = list!.querySelector<HTMLElement>(".sdk-object-summary-kv");
+      expect(kv).not.toBeNull();
+      const dts = [...kv!.querySelectorAll("dt")].map((el) => el.textContent?.trim());
+      const dds = [...kv!.querySelectorAll("dd")].map((el) => el.textContent?.trim());
+      expect(dts).toEqual(["year", "region"]);
+      expect(dds).toEqual(["2026", "East"]);
     });
   });
 });

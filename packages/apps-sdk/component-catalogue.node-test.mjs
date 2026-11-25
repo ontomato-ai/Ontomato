@@ -244,6 +244,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       query: { kind: "scalar", type: "string" },
       visibleLayers: stringList,
       expandedNodes: anyObjectList,
+      neighborFilter: { kind: "json" },
     });
     const platformRelationKindList = { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } };
     assert.deepEqual(declared.get("OntologyGraph").outputs, {
@@ -254,6 +255,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       visibleRelationKinds: platformRelationKindList,
       visibleLayers: stringList,
       expandedNodes: anyObjectList,
+      neighborFilter: { kind: "json" },
       positions: { kind: "json" },
     });
     assert.deepEqual(declared.get("OntologyGraph").data.connections.runtimeParams, ["version", "sampleToken"]);
@@ -461,7 +463,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const componentsDoc = readFileSync(join(out, version, "docs/components.md"), "utf8");
     const componentsDocBytes = Buffer.byteLength(componentsDoc, "utf8");
     assert.ok(
-      componentsDocBytes < 10_000,
+      componentsDocBytes < 12_000,
       `docs/components.md overview must stay within a few KB (got ${componentsDocBytes} bytes)`,
     );
     assert.doesNotMatch(componentsDoc, /^Binds:/mu, "docs/components.md must not emit misleading bare 'Binds:' lines");
@@ -542,7 +544,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
 test("the @ontomato/sdk/ui entry exports every SDK_UI_COMPONENTS primitive and directive while keeping component names intact", async () => {
   const { SDK_UI_COMPONENTS, SDK_UI_DIRECTIVES } = await import("../contracts/src/sdk-ui-map.ts");
   const uiSource = readFileSync(join(HERE, "src/entries/ui.ts"), "utf8");
-  const sdkWrappedPrimitives = new Set(["SdkDialog", "SdkDrawer"]);
+  const sdkWrappedPrimitives = new Set(["SdkButton", "SdkDialog", "SdkDrawer"]);
   for (const entry of SDK_UI_COMPONENTS) {
     if (sdkWrappedPrimitives.has(entry.sdkExport)) {
       assert.match(

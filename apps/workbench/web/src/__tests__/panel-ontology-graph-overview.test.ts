@@ -1016,3 +1016,125 @@ it("displays an overview notice listing omitted relationships and their reasons 
     expect(notice?.textContent).toContain("This relationship does not declare join fields; add them to read it.");
   });
 });
+
+it("syncs applied neighborFilter bidirectionally without revision and keeps unapplied popover drafts internal", async () => {
+  const baseProjection = overviewProjection();
+  const projection: ProductProjection = {
+    ...baseProjection,
+    inputs: {
+      ...baseProjection.inputs,
+      neighborFilter: { kind: "json" },
+    },
+    outputs: {
+      ...baseProjection.outputs,
+      neighborFilter: { kind: "json" },
+    },
+  };
+  const baseManifest = overviewManifest();
+  const manifest: PanelManifest = {
+    state: {
+      ...baseManifest.state,
+      neighborFilter: { type: { kind: "json" }, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      graph: {
+        ...baseManifest.members.graph!,
+        inputs: {
+          ...baseManifest.members.graph!.inputs,
+          neighborFilter: { state: "neighborFilter" },
+        },
+        outputs: {
+          ...baseManifest.members.graph!.outputs,
+          neighborFilter: { state: "neighborFilter" },
+        },
+      },
+    },
+  };
+
+  const { instance, element, reads } = mountDirect(
+    manifest,
+    { "sampled-graph": projection },
+    (request) => {
+      if (request.dataName === "overview") return ready(readyOverviewPayload(false));
+      if (request.dataName === "connections") return ready({ version: "v-1", truncated: false, edges: [] });
+      if (request.dataName === "neighbors") {
+        return ready({
+          version: "v-1",
+          node: factory1,
+          neighbors: [order1],
+          edges: [
+            {
+              id: "e-1",
+              relationKind: "produces",
+              label: "Produces",
+              from: { className: "Factory", primaryKey: "f-1" },
+              to: { className: "Order", primaryKey: "o-1" },
+              direction: "outgoing" as const,
+              derived: false,
+            },
+          ],
+          relations: [{ relationKind: "produces", status: "ok", edgeCount: 1 }],
+          total: 1,
+          nextOffset: null,
+        });
+      }
+      return { status: "empty" };
+    },
+    { initial: { start: { className: factory1.className, primaryKey: factory1.primaryKey } } },
+  );
+
+  await vi.waitFor(() => expect(instance.outputs.graph?.activeMode).toBe("instance"));
+  await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(2));
+  expect(reads.filter((r) => r.dataName === "neighbors")).toHaveLength(1);
+  expect(instance.state.values.value.neighborFilter).toBeNull();
+
+  // 1. Open popover, edit draft direction without clicking Apply -> public state stays null and no read fires
+  element.querySelector<HTMLButtonElement>('[data-graph-action="neighbor-filters"]')!.click();
+  const applyBtn = await vi.waitFor(() => {
+    const btn = document.querySelector<HTMLButtonElement>('[data-graph-action="apply-filters"]');
+    expect(btn).not.toBeNull();
+    return btn!;
+  });
+  document.querySelector<HTMLElement>('[data-graph-filter="direction"] .el-select__wrapper')!
+    .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await nextTick();
+  [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+    .find((el) => el.textContent?.includes("Incoming"))!
+    .click();
+  await nextTick();
+  expect(instance.state.values.value.neighborFilter).toBeNull();
+  expect(reads.filter((r) => r.dataName === "neighbors")).toHaveLength(1);
+
+  // 2. Click Apply -> updates public neighborFilter state (no revision field) and reloads once
+  applyBtn.click();
+  await vi.waitFor(() => expect(reads.filter((r) => r.dataName === "neighbors")).toHaveLength(2));
+  expect(instance.state.values.value.neighborFilter).toEqual({
+    direction: "incoming",
+    targetClass: null,
+    relationKind: null,
+    fitAfterExpand: false,
+  });
+
+  // 3. Updating neighborFilter state externally applies immediately without any revision token
+  instance.state.set("neighborFilter", {
+    direction: "outgoing",
+    targetClass: "Order",
+    relationKind: "produces",
+    fitAfterExpand: true,
+  });
+  await vi.waitFor(() => expect(reads.filter((r) => r.dataName === "neighbors")).toHaveLength(3));
+  expect(reads.filter((r) => r.dataName === "neighbors").at(-1)?.runtimeParams).toMatchObject({
+    direction: "outgoing",
+    targetClass: "Order",
+    relationKinds: ["produces"],
+    offset: 0,
+  });
+
+  // 4. Resetting neighborFilter state to null restores defaults and reloads
+  instance.state.set("neighborFilter", null);
+  await vi.waitFor(() => expect(reads.filter((r) => r.dataName === "neighbors")).toHaveLength(4));
+  expect(reads.filter((r) => r.dataName === "neighbors").at(-1)?.runtimeParams).toMatchObject({
+    direction: "both",
+    offset: 0,
+  });
+});

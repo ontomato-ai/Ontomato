@@ -434,13 +434,13 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     inputs: () => MemberInputs;
     isMetricOutput: boolean;
     sourceObjectTypes: () => readonly string[] | undefined;
-    reread(): void;
+    reread(): Promise<void>;
   }>();
   /** Every member's operations read now, read again when refreshed or when an affected type matches. */
   const operationReads = new Set<{
     projection: DirectProjection;
     inputs: () => MemberInputs;
-    reread(): void;
+    reread(): Promise<void>;
   }>();
   /** Where the members the instance holds live, each in its own scope, so a member held anew ends the old one. */
   const membersScope = effectScope();
@@ -453,9 +453,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   // here; the components that read their own data hear it as well.
   instance.onObjectChanged((object) => {
     if (object !== null) return;
-    for (const { reread } of shown) reread();
-    for (const { reread } of operationReads) reread();
+    const tasks: Promise<unknown>[] = [];
+    for (const { reread } of shown) tasks.push(reread());
+    for (const { reread } of operationReads) tasks.push(reread());
     for (const mount of nestedMounts) mount.refresh(null);
+    if (tasks.length) return Promise.allSettled(tasks);
   });
   /** The projection a member places now: its fixed one, or the one the panel's state chose; none for a panel. */
   const placedProjectionId = (member: string): string | null => {
@@ -739,10 +741,10 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           };
           let lastTargetKey: string | null = null;
           let metricSourceObjectTypes: readonly string[] | undefined;
-          const reread = () => {
+          const reread = (): Promise<void> => {
             // Unseen, the instance reads nothing; `lastTargetKey` stays on the last target read while active so
             // returning to a different target clears the stale record immediately.
-            if (!active) return;
+            if (!active) return Promise.resolve();
             const reading = ++sequence;
             const nextTargetKey = datumTargetKeyOf();
             const targetChanged = hasTarget && nextTargetKey !== lastTargetKey;
@@ -758,7 +760,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
               state.value = { status: "loading" };
             }
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
-            void answer(name, inputs()).then((result) => {
+            return answer(name, inputs()).then((result) => {
               if (reading !== sequence) return;
               if (isMetricOutput && result.status === "ready" && result.value && typeof result.value === "object" && !Array.isArray(result.value)) {
                 const rawTypes = (result.value as { sourceObjectTypes?: unknown }).sourceObjectTypes;
@@ -768,7 +770,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
               }
               loadedTargetKey.value = nextTargetKey;
               // A failure is read again on request, as a refresh reads it.
-              state.value = result.status === "error" ? { ...result, retry: () => { state.value = { status: "loading" }; reread(); } } : result;
+              state.value = result.status === "error" ? { ...result, retry: () => { state.value = { status: "loading" }; void reread(); } } : result;
             });
           };
           const entry = {
@@ -963,6 +965,8 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     get panel(): never { return frameOnly("The handed-over definition")(); },
     manifest: instance.manifest,
     instance,
+    refreshing: instance.refreshing,
+    refreshObjects: () => instance.refreshObjects(),
     currentEntry: instance.currentEntry,
     entryMenu: instance.entryMenu,
     hostMenu: instance.hostMenu,

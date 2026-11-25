@@ -418,7 +418,8 @@ export function resolveFormSaveAnswer(
   }
   if (outcome.kind === "refusal" || outcome.kind === "failure") {
     // The owner names each refused field by its JSON Pointer.
-    throw new PlatformObjectRefusal(outcome.message, fieldMessages(outcome.errors), undefined, outcome.savedFields);
+    const details = (outcome.errors ?? []).map((item) => ({ path: item.field, message: item.message }));
+    throw new PlatformObjectRefusal(outcome.message, fieldMessages(outcome.errors), undefined, outcome.savedFields, details);
   }
   if (outcome.kind === "batch") throw new Error("A form's save is one call, not a batch");
   throw new Error(outcome.message);

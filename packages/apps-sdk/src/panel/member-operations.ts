@@ -94,17 +94,17 @@ export async function readMemberOperations(read: PanelReadPort, projection: Dire
  */
 export function watchMemberOperations(
   read: PanelReadPort, projection: DirectProjection, memberPath: () => PublisherPath, inputs: () => MemberInputs, active: () => boolean = () => true,
-): { state: ComputedRef<MemberOperationsState>; reread(): void } {
+): { state: ComputedRef<MemberOperationsState>; reread(): Promise<void> } {
   const state = shallowRef<MemberOperationsState>({ status: "loading" });
   let sequence = 0;
   let lastInputsKey: string | undefined;
   const keyOf = () => JSON.stringify(operationInputs(projection, inputs()));
-  const reread = () => {
-    if (!active()) return;
+  const reread = (): Promise<void> => {
+    if (!active()) return Promise.resolve();
     lastInputsKey = keyOf();
     const reading = ++sequence;
     // A read that fails is the member's to show, as a datum's is: its buttons say why there is nothing to press.
-    void readMemberOperations(read, projection, memberPath(), inputs()).then(
+    return readMemberOperations(read, projection, memberPath(), inputs()).then(
       (result) => { if (reading === sequence) state.value = result; },
       (reason: unknown) => { if (reading === sequence) state.value = { status: "error", message: reason instanceof Error ? reason.message : String(reason) }; },
     );
