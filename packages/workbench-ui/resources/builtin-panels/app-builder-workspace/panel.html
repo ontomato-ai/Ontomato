@@ -47,6 +47,7 @@
   }
   .ab-ws-summary-card {
     display: flex;
+    flex: 0 0 auto;
     flex-direction: column;
     gap: var(--spacing-sm);
     padding: var(--spacing-md);
@@ -76,12 +77,14 @@
   }
   .ab-ws-tabs-bar {
     display: flex;
+    flex: 0 0 auto;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--spacing-sm);
     min-width: 0;
     overflow-x: auto;
+    overflow-y: visible;
   }
   .ab-ws-view {
     display: flex;
@@ -137,6 +140,7 @@
   }
   .ab-ws-diff-toolbar {
     display: flex;
+    flex: 0 0 auto;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--spacing-xs);
@@ -151,6 +155,7 @@
     background: var(--sdk-fill-color-light);
   }
   .ab-ws-diff-summary {
+    flex: 0 0 auto;
     padding: var(--spacing-sm) var(--spacing-md);
     border: 1px solid var(--sdk-border-color-light, var(--ui-divider));
     border-radius: var(--radius-md);
@@ -158,6 +163,7 @@
   }
   .ab-ws-releases-bar {
     display: flex;
+    flex: 0 0 auto;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;

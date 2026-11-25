@@ -137,15 +137,20 @@ export class AppWorkspaceOwner {
     return null;
   }
 
+  private fieldLabels(keys: readonly string[]) {
+    return Object.fromEntries(keys.map(key => [key, this.text(`field.${key}`)]));
+  }
+
   private summary(workspace: Workspace, application?: CatalogApplication): PanelRecord {
     const { id, name, headCommit, activeRunId, createdAt, updatedAt } = workspace;
     const busy = activeRunId !== null;
     const busyStatus = busy ? "BUSY" : "IDLE";
     return {
       className: APP_WORKSPACE, primaryKey: id, label: name,
+      fieldLabels: this.fieldLabels(["shortHeadCommit", "busyLabel", "publishedAppName", "updatedAt"]),
       fields: {
         id, name, headCommit, shortHeadCommit: shortCommit(headCommit), activeRunId: activeRunId ?? "", busy, busyStatus,
-        busyLabel: this.text(busy ? "busy" : "idle"), createdAt, updatedAt,
+        busyLabel: this.text(busy ? "statusBusy" : "idle"), createdAt, updatedAt,
         publishedAppId: application?.id ?? "",
         publishedAppName: application ? localizedApplicationText(application.names, this.credentials.locale) ?? application.id : "",
       },
@@ -221,6 +226,10 @@ export class AppWorkspaceOwner {
     };
     return {
       ...row, outputs,
+      fieldLabels: {
+        ...row.fieldLabels,
+        ...this.fieldLabels(["buildTestStatusLabel", "buildTestSampleName"]),
+      },
       fields: {
         ...row.fields, ...outputs, buildTestStatusLabel: this.text(`test.${buildTestStatus}`),
         buildTestSampleName: test === "UNAVAILABLE" ? "" : test?.sampleSummary.name ?? "",
@@ -307,7 +316,11 @@ export class AppWorkspaceOwner {
     const comparisonLabel = from
       ? this.text(commit ? "comparedWith" : "workingComparedWith", { commit: shortCommit(from) })
       : this.text("initialCommit");
-    return { primaryKey: id, label: targetLabel, fields: { content, comparisonLabel, targetLabel, isEmpty: !content } };
+    return {
+      primaryKey: id, label: targetLabel,
+      fieldLabels: this.fieldLabels(["targetLabel", "comparisonLabel"]),
+      fields: { content, comparisonLabel, targetLabel, isEmpty: !content },
+    };
   }
 
   async sessions(id: string): Promise<PanelRecord[]> {
@@ -323,7 +336,7 @@ export class AppWorkspaceOwner {
       });
       return {
         className: AGENT_SESSION, primaryKey: session.id, label: title,
-        fields: { title, status, statusLabel: this.text(isOccupying ? "busy" : `session.${status}`), isOccupying, updatedAt: session.updatedAt },
+        fields: { title, status, statusLabel: this.text(isOccupying ? "statusBusy" : `session.${status}`), isOccupying, updatedAt: session.updatedAt },
         tones: { statusLabel: isOccupying ? "warning" : "default" },
         outputs: { openPath: `/agents/chat?${query}` },
       };

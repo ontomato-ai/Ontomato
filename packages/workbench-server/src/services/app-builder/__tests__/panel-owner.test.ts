@@ -128,6 +128,14 @@ it("projects the previews and publication even when build-test status is down", 
     canManagePermissions: true, buildTestStatus: "UNAVAILABLE", buildTestCanRestart: false,
   });
   expect(row.fields.currentReleaseId).toBe(releaseId);
+  expect(row.fieldLabels).toEqual({
+    shortHeadCommit: "Current commit",
+    busyLabel: "Status",
+    buildTestStatusLabel: "Business test",
+    buildTestSampleName: "Test sample",
+    publishedAppName: "Published app",
+    updatedAt: "Updated",
+  });
 });
 
 it("filters owned workspaces and paginates commits without losing the next page", async () => {
@@ -144,7 +152,9 @@ it("keeps preview files first, exposes file content, and passes through unified 
     .toEqual(["panel.json", "panel.html", "index.html", "data.bin", "src/main.js"]);
   expect(panelRecordSchema.parse(await read.file(id, { path: "index.html" })).fields).toMatchObject({ isText: true, language: "html", content: "<main>App</main>" });
   expect(panelRecordSchema.parse(await read.file(id, { path: "data.bin" })).fields).toMatchObject({ isText: false, content: "" });
-  expect(panelRecordSchema.parse(await read.diff(id, {})).fields).toMatchObject({ content: patch, isEmpty: false });
+  const latestDiff = panelRecordSchema.parse(await read.diff(id, {}));
+  expect(latestDiff.fields).toMatchObject({ content: patch, isEmpty: false });
+  expect(latestDiff.fieldLabels).toEqual({ targetLabel: "Target", comparisonLabel: "Baseline" });
   expect(mocks.request).toHaveBeenCalledWith(`${path}/diff?from=${previous}&to=${head}`);
   await read.diff(id, { target: "working" });
   expect(mocks.request).toHaveBeenCalledWith(`${path}/diff?from=${head}&to=working`);
