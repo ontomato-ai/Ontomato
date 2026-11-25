@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, ref } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { installWorkbenchI18n, workbenchI18n } from "@ontomato/workbench-ui/i18n";
@@ -27,6 +28,7 @@ const uses: ApplicationPanelUse[] = [
 const mountedInstances: { useId: string; address: ReturnType<typeof ref<string>>; initial: Record<string, unknown> }[] = [];
 let framePanelId: string | undefined;
 const readFrameManifest = vi.fn();
+let publishPageSkill: (context: PageSkillContext | null) => void;
 
 import { useApplicationCatalog } from "../catalog";
 
@@ -39,7 +41,11 @@ vi.mock("../panel-host", () => ({
   },
   readApplicationFrameManifest: readFrameManifest,
   // The host the route builds is the one for the use relation its address names.
-  platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
+  platformPanelHost: (_applicationId: string, use: ApplicationPanelUse, _changed: unknown, _mode: unknown,
+    onPageSkill: typeof publishPageSkill) => {
+    publishPageSkill = onPageSkill;
+    return { use };
+  },
   onPanelReadDenied: () => () => {},
 }));
 
@@ -173,6 +179,8 @@ describe("a panel application's page", () => {
     expect(panelAddressState(onDisplayAddress.mock.calls[0]![0].address)).toEqual({
       selectedTask: "task-2",
     });
+    expect(onDisplayLoaded).toHaveBeenLastCalledWith({ status: "loading" });
+    publishPageSkill({ mode: "member", locator: { access: "domain-member", pageKey: uses[0]!.pageKey }, member: null });
     expect(onDisplayLoaded).toHaveBeenLastCalledWith({ status: "ready" });
     expect(onDisplayDirty.mock.calls).toEqual([[true]]);
     expect(route.emitted("display-address")).toEqual(onDisplayAddress.mock.calls);
