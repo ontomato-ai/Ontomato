@@ -31,7 +31,7 @@ const state = vi.hoisted(() => ({
   pool: undefined as pg.Pool | undefined,
   schema: "",
   base: "",
-  permissions: new Set<string>(["user-feedback", "skill-management", "analysis-agent"]),
+  permissions: new Set<string>(["user-feedback", "analysis-agent"]),
 }));
 
 vi.mock("../../infrastructure/postgres", () => ({
@@ -67,6 +67,8 @@ let server: Server | undefined;
 let contentRoot: string;
 let publicSkillsRoot: string;
 const resourceIds = new Set<string>();
+let canEditDomainSkill = true;
+const retiredSkills: string[] = [];
 const domainId = "m7-owner-domain";
 const panelId = "panel-m7-owners";
 const feedbackIds = {
@@ -344,7 +346,23 @@ beforeAll(async () => {
     ? [{ entryId: "app-m7/owners", roots: { panelIds: [panelId], agentIds: [] } }] : [] });
   mountCurrentProductDecisions(app, {
     token: "fixture-service", domain: domainId, kinds: ["PANEL", "PROJECTION", "SKILL"],
-    allow: ({ ownerFacts }, caller) => Boolean(caller && (ownerFacts.ownerId === "owner-1" || ownerFacts.ownerId === null)),
+    allow: ({ target, ownerFacts, verb }, caller) => {
+      if (target.kind === "SKILL") {
+        expect(ownerFacts).toEqual({ ownerId: null, state: "PUBLISHED" });
+        return caller === "m7-reader" && (verb !== "EDIT" || canEditDomainSkill);
+      }
+      return Boolean(caller && (ownerFacts.ownerId === "owner-1" || ownerFacts.ownerId === null));
+    },
+  });
+  app.post("/authorization/objects/retire", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    expect(req.header("tk")).toBe("m7-reader");
+    expect(req.body).toEqual({
+      target: { domainId, id: "custom-domain-skill", kind: "SKILL" },
+      ownerFacts: { ownerId: null, state: "PUBLISHED" },
+    });
+    retiredSkills.push(req.body.target.id);
+    res.sendStatus(204);
   });
   app.post("/product-governance/register", (req, res) => {
     resourceIds.add(req.body.id);
@@ -672,15 +690,14 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
   const intents = await state.pool!.query(`SELECT id FROM "${state.schema}".panel_operation_intents`);
   expect(intents.rows).toEqual([]);
 
-  // Refusals: missing permission, public package, provider package.
-  state.permissions.delete("skill-management");
-  const noPermIntent = await (await request("POST", "panel-operations/intents", {
+  // Revoking EDIT after inspection must prevent deletion at dispatch.
+  const revokedIntent = await (await request("POST", "panel-operations/intents", {
     applicationId: "app-m7",
     useId: "owners",
     operationId: "skillDetail.delete",
     call: { target: { kind: "object", objectType: SKILL, primaryKey: "custom-domain-skill" }, input: {} },
   })).json();
-  expect(noPermIntent.confirmation).toEqual({
+  expect(revokedIntent.confirmation).toEqual({
     kind: "impact",
     impact: {
       summary: "This deletes the selected skill and removes its references from 1 agent(s).",
@@ -688,11 +705,14 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
       total: 1,
     },
   });
-  expect(await (await request("POST", `panel-operations/intents/${noPermIntent.intentId}/dispatch`, {})).json()).toMatchObject({
+  canEditDomainSkill = false;
+  expect(await (await request("POST", `panel-operations/intents/${revokedIntent.intentId}/dispatch`, {})).json()).toMatchObject({
     kind: "dispatched",
-    outcome: { kind: "refusal", code: "PERMISSION_DENIED" },
+    outcome: { kind: "refusal", code: "OBJECT_FORBIDDEN" },
   });
-  state.permissions.add("skill-management");
+  expect(retiredSkills).toEqual([]);
+  expect((await stat(path.join(contentRoot, "data", "domain-skills", domainId, "custom-domain-skill"))).isDirectory()).toBe(true);
+  canEditDomainSkill = true;
 
   const publicIntent = await (await request("POST", "panel-operations/intents", {
     applicationId: "app-m7",
@@ -750,6 +770,7 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
       },
     },
   });
+  expect(retiredSkills).toEqual(["custom-domain-skill"]);
   await expect(stat(path.join(contentRoot, "data", "domain-skills", domainId, "custom-domain-skill"))).rejects.toThrow();
   const agentRows = await state.pool!.query<{ id: string; skills: unknown[] }>(
     `SELECT id, skills FROM "${state.schema}".assistant_agents WHERE id=$1`,

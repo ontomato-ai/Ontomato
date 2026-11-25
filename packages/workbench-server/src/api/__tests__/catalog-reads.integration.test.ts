@@ -398,10 +398,11 @@ it("updates only the submitted projection configuration field in PostgreSQL", as
   if (save.effect !== "write" || save.kind !== "form.save") throw new Error("Expected a form save");
   const target = { kind: "object" as const, objectType: PRODUCT_PROJECTION, primaryKey: before.id };
 
-  await expect(save.execute(host, target, {
+  const saved = await save.execute(host, target, {
     values: { config: { drawing: { color: "orange", width: 1 } } },
     submittedFields: ["/config/drawing/color"], revision: before.revision,
-  }, "projection-save")).resolves.toMatchObject({ kind: "success" });
+  }, "projection-save");
+  expect(saved.kind, JSON.stringify(saved)).toBe("success");
   expect(await readCurrentProjection(owner, viewer, before.id)).toMatchObject({
     name: before.name, data: before.data, componentId: before.componentId,
     config: { drawing: { color: "orange", width: 400 } },
