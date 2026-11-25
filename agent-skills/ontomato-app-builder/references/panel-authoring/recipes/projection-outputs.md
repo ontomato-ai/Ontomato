@@ -12,10 +12,14 @@ Wire one member's read-only output directly to another member's inputs. For exam
 ```json
 {
   "inputs": {
-    "currentCode": { "output": { "member": "form", "name": "draft", "path": "/function/code" } }
+    "currentCode": { "output": { "member": "form", "name": "draft", "path": "/function/code" } },
+    "language": { "literal": "python" }
   }
 }
 ```
+
+(`AnnotatedCode` applies zero-dependency syntax highlighting automatically whenever a supported `language` is supplied
+via `config.language`, `inputs.language`, or the `content` datum.)
 
 Use a JSON Pointer for nested values and omit `path` for the whole output. Keep outputs such as
 `usePanelOutput("list", "listed")` and `usePanelOutput("form", "draft")` outside writable `manifest.state`.
