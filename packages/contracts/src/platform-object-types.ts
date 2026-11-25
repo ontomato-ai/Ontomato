@@ -19,6 +19,7 @@ export const MODEL_OPTION = "platform:ModelOption";
 export const PUBLISHED_MCP_SERVICE = "platform:PublishedMcpService";
 export const EXTERNAL_MCP_SERVICE = "platform:ExternalMcpService";
 export const CREATE_EXTERNAL_MCP_SERVICE = `${EXTERNAL_MCP_SERVICE}.create`;
+export const CHECK_EXTERNAL_MCP_SERVICE = "externalMcp.check";
 export const DELETE_EXTERNAL_MCP_SERVICE = "externalMcp.delete";
 export const AUDIT_LOG = "platform:AuditLog";
 export const GENERAL_SETTINGS = "platform:GeneralSettings";
@@ -324,7 +325,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       ...modelReads,
       tools: objectListRead,
     },
-    operations: [CREATE_EXTERNAL_MCP_SERVICE, `${EXTERNAL_MCP_SERVICE}.save`, DELETE_EXTERNAL_MCP_SERVICE],
+    operations: [CREATE_EXTERNAL_MCP_SERVICE, `${EXTERNAL_MCP_SERVICE}.save`, CHECK_EXTERNAL_MCP_SERVICE, DELETE_EXTERNAL_MCP_SERVICE],
   },
   [AUDIT_LOG]: {
     ...describeType("auditLog"),

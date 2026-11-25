@@ -8,6 +8,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import { currentPanelRecordSchema, type ProductProjection } from "@ontomato/contracts/product-panels";
 import {
+  CHECK_EXTERNAL_MCP_SERVICE,
   CREATE_EXTERNAL_MCP_SERVICE,
   DELETE_EXTERNAL_MCP_SERVICE,
   EXTERNAL_MCP_SERVICE,
@@ -50,6 +51,7 @@ const externalUse = panelUse(
 );
 
 const FORM_SAVE_OPS = new Set([CREATE_EXTERNAL_MCP_SERVICE, `${EXTERNAL_MCP_SERVICE}.save`]);
+const READ_OPS = new Set([CHECK_EXTERNAL_MCP_SERVICE]);
 
 const objectTypes = Object.fromEntries(
   Object.entries(platformObjectTypes).map(([type, entry]) => [
@@ -61,7 +63,7 @@ const objectTypes = Object.fromEntries(
         return {
           id,
           kind: form ? "form.save" : "action",
-          effect: "write",
+          effect: READ_OPS.has(id) ? "read" : "write",
           batch: false,
           inputSchema: {},
           target: form ? { source: "draft" } : { source: "input", input: "service" },
@@ -156,6 +158,7 @@ async function openBuiltPanel(
   built: ReturnType<typeof buildPanel>,
   handlers: {
     read: (request: ProductPanelReadRequest) => Response;
+    readOperation?: (body: Record<string, unknown>) => Response | Promise<Response>;
   },
 ) {
   const router = createRouter({
@@ -233,6 +236,9 @@ async function openBuiltPanel(
       );
       return Response.json({ results });
     }
+    if (path === "/api/panel-operations/read" && handlers.readOperation) {
+      return handlers.readOperation(sent.body as Record<string, unknown>);
+    }
     if (path === "/api/product-panels/page-skill") {
       return Response.json({ pageKey: use.pageKey, applicationId: appId, useId: use.id, panelId: use.panelId, skills: [] });
     }
@@ -265,7 +271,7 @@ async function openBuiltPanel(
 }
 
 describe("built-in MCP settings panels", () => {
-  it("published-mcp renders published services, copyable endpoint summary, and collapsible tool schema", async () => {
+  it("published-mcp renders multiple cards with concurrent accordion serviceTools (PM-03, PM-04, PM-05)", async () => {
     const reads: string[] = [];
     const { root } = await openBuiltPanel(publishedUse, builtPublished, {
       read(request) {
@@ -281,7 +287,14 @@ describe("built-in MCP settings panels", () => {
               {
                 primaryKey: "analysis-agents",
                 label: "Agent service",
-                fields: { mcpUrl: "http://example/mcp/analysis-agents", status: "Published", toolCount: "1" },
+                fields: { mcpUrl: "http://example/mcp/analysis-agents", status: "Published", toolCount: "2" },
+                fieldLabels: { mcpUrl: "Service address", status: "Status", toolCount: "Available tools" },
+                tones: { status: "success" },
+              },
+              {
+                primaryKey: "ops-agents",
+                label: "Ops agent service",
+                fields: { mcpUrl: "http://example/mcp/ops-agents", status: "Published", toolCount: "1" },
                 fieldLabels: { mcpUrl: "Service address", status: "Status", toolCount: "Available tools" },
                 tones: { status: "success" },
               },
@@ -289,6 +302,24 @@ describe("built-in MCP settings panels", () => {
           });
         }
         if (member === "serviceSummary") {
+          const targetKey = (request.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
+          if (targetKey === "ops-agents") {
+            return Response.json({
+              status: "ready",
+              value: {
+                primaryKey: "ops-agents",
+                label: "Ops agent service",
+                fields: {
+                  mcpUrl: "http://example/mcp/ops-agents",
+                  authHint: "Use an ops API key",
+                },
+                fieldLabels: {
+                  mcpUrl: "Service address",
+                  authHint: "Authentication",
+                },
+              },
+            });
+          }
           return Response.json({
             status: "ready",
             value: {
@@ -296,21 +327,39 @@ describe("built-in MCP settings panels", () => {
               label: "Agent service",
               fields: {
                 mcpUrl: "http://example/mcp/analysis-agents",
-                status: "Published",
-                toolCount: "1",
                 authHint: "Use an API key",
               },
               fieldLabels: {
                 mcpUrl: "Service address",
-                status: "Status",
-                toolCount: "Available tools",
                 authHint: "Authentication",
               },
-              tones: { status: "success" },
             },
           });
         }
         if (member === "serviceTools") {
+          const targetKey = (request.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
+          if (targetKey === "ops-agents") {
+            return Response.json({
+              status: "ready",
+              value: [
+                {
+                  primaryKey: "inspect_alert",
+                  label: "Inspect Alert",
+                  subtitle: "inspect_alert",
+                  fields: {
+                    name: "inspect_alert",
+                    description: "Inspects an active alert",
+                    inputSchema: "{\n  \"type\": \"object\",\n  \"required\": [\"alertId\"]\n}",
+                  },
+                  fieldLabels: {
+                    name: "Tool name",
+                    description: "Description",
+                    inputSchema: "Input schema",
+                  },
+                },
+              ],
+            });
+          }
           return Response.json({
             status: "ready",
             value: [
@@ -329,6 +378,21 @@ describe("built-in MCP settings panels", () => {
                   inputSchema: "Input schema",
                 },
               },
+              {
+                primaryKey: "ask_agent",
+                label: "Ask Agent",
+                subtitle: "ask_agent",
+                fields: {
+                  name: "ask_agent",
+                  description: "Asks one enabled agent",
+                  inputSchema: "{\n  \"type\": \"object\",\n  \"required\": [\"prompt\"]\n}",
+                },
+                fieldLabels: {
+                  name: "Tool name",
+                  description: "Description",
+                  inputSchema: "Input schema",
+                },
+              },
             ],
           });
         }
@@ -338,35 +402,83 @@ describe("built-in MCP settings panels", () => {
 
     await vi.waitFor(() => {
       expect(root.textContent).toContain("Agent service");
+      expect(root.textContent).toContain("Ops agent service");
       expect(root.textContent).toContain("http://example/mcp/analysis-agents");
       expect(root.querySelector(".sdk-object-summary-copy-btn")).not.toBeNull();
     });
 
-    // Tools stay collapsed by default until the service card's tools disclosure is opened.
+    // Tools stay collapsed by default until each service card's tools disclosure is opened.
     expect(reads).toContain("services");
     expect(reads).toContain("serviceSummary");
     expect(reads).not.toContain("serviceTools");
 
-    const toolsDetails = root.querySelector("details.pm-tools-details") as HTMLDetailsElement | null;
-    expect(toolsDetails).not.toBeNull();
-    toolsDetails!.open = true;
-    toolsDetails!.dispatchEvent(new Event("toggle"));
+    // PM-05: expand BOTH cards simultaneously; each mounts its own scoped serviceTools projection.
+    const toolsDetails = [...root.querySelectorAll("details.pm-tools-details")] as HTMLDetailsElement[];
+    expect(toolsDetails).toHaveLength(2);
+    for (const detail of toolsDetails) {
+      detail.open = true;
+      detail.dispatchEvent(new Event("toggle"));
+    }
 
     await vi.waitFor(() => {
       expect(root.textContent).toContain("List Agents");
+      expect(root.textContent).toContain("list_agents");
+      expect(root.textContent).toContain("Inspect Alert");
+      expect(root.textContent).toContain("inspect_alert");
+    });
+
+    // PM-03: accordion tools start collapsed; clicking expands description and JSON schema <pre>.
+    expect(root.textContent).not.toContain("Lists enabled agents");
+    const accordionSummaries = [...root.querySelectorAll("button.sdk-object-list-accordion-summary")] as HTMLButtonElement[];
+    expect(accordionSummaries.length).toBe(3);
+    accordionSummaries[0]!.click();
+    accordionSummaries[2]!.click();
+
+    await vi.waitFor(() => {
       expect(root.textContent).toContain("Lists enabled agents");
-      expect(root.querySelector("details.pm-schema-details pre")?.textContent).toContain('"type": "object"');
+      expect(root.textContent).toContain("Inspects an active alert");
+      const preBlocks = [...root.querySelectorAll("pre.sdk-object-list-accordion-pre")].map((el) => el.textContent);
+      expect(preBlocks.some((text) => text?.includes('"type": "object"'))).toBe(true);
+      expect(preBlocks.some((text) => text?.includes('"alertId"'))).toBe(true);
     });
 
     expect(reads).toContain("serviceTools");
   });
 
-  it("external-mcp never probes tools on initial load and checks tools only on demand", async () => {
-    const SERVICE_ID = "11111111-1111-4111-8111-111111111111";
+  it("external-mcp probes on demand with status resultFrom, accordion tools, and multi-card stacking (EM-04, EM-05, EM-07, EM-08)", async () => {
+    const SERVICE_ID_1 = "11111111-1111-4111-8111-111111111111";
+    const SERVICE_ID_2 = "22222222-2222-4222-8222-222222222222";
     const reads: string[] = [];
-    let failTools = false;
+    const checkCalls: string[] = [];
+    let failService1 = false;
 
     const { root } = await openBuiltPanel(externalUse, builtExternal, {
+      readOperation(body) {
+        const call = body.call as { target?: { primaryKey?: string } } | undefined;
+        const primaryKey = call?.target?.primaryKey ?? "";
+        checkCalls.push(primaryKey);
+        if (primaryKey === SERVICE_ID_1 && failService1) {
+          return Response.json({
+            kind: "json",
+            value: {
+              reachable: false,
+              toolCount: 0,
+              error: "Unable to connect to MCP service",
+              status: { label: "Unreachable", tone: "danger" },
+            },
+            message: "Service unreachable: Unable to connect to MCP service",
+          });
+        }
+        return Response.json({
+          kind: "json",
+          value: {
+            reachable: true,
+            toolCount: 1,
+            status: { label: "Available", tone: "success" },
+          },
+          message: "Service available (1 tools)",
+        });
+      },
       read(request) {
         const member = request.memberPath.at(-1)?.member ?? "";
         if ("operations" in request && request.operations) {
@@ -374,6 +486,16 @@ describe("built-in MCP settings panels", () => {
             return Response.json({
               status: "ready",
               value: {
+                check: {
+                  kind: "action",
+                  handlerRef: CHECK_EXTERNAL_MCP_SERVICE,
+                  label: "Check",
+                  effect: "read",
+                  target: { source: "row" },
+                  inputSchema: {},
+                  resultSchema: {},
+                  batch: false,
+                },
                 delete: {
                   kind: "action",
                   handlerRef: DELETE_EXTERNAL_MCP_SERVICE,
@@ -395,7 +517,7 @@ describe("built-in MCP settings panels", () => {
             status: "ready",
             value: [
               {
-                primaryKey: SERVICE_ID,
+                primaryKey: SERVICE_ID_1,
                 className: EXTERNAL_MCP_SERVICE,
                 label: "Orders MCP",
                 subtitle: "https://orders.example/mcp",
@@ -412,33 +534,67 @@ describe("built-in MCP settings panels", () => {
                   headerNames: "Request headers",
                 },
               },
+              {
+                primaryKey: SERVICE_ID_2,
+                className: EXTERNAL_MCP_SERVICE,
+                label: "Inventory MCP",
+                subtitle: "https://inventory.example/mcp",
+                fields: {
+                  name: "Inventory MCP",
+                  url: "https://inventory.example/mcp",
+                  usedBy: "Not used",
+                  headerNames: "",
+                },
+                fieldLabels: {
+                  name: "Service name",
+                  url: "Service address",
+                  usedBy: "Used by",
+                  headerNames: "Request headers",
+                },
+              },
             ],
           });
         }
         if (member === "inspectedSummary") {
+          const targetKey = (request.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
           return Response.json({
             status: "ready",
             value: {
-              primaryKey: SERVICE_ID,
-              label: "Orders MCP",
+              primaryKey: targetKey ?? SERVICE_ID_1,
+              label: targetKey === SERVICE_ID_2 ? "Inventory MCP" : "Orders MCP",
               fields: {
-                url: "https://orders.example/mcp",
-                usedBy: "Sales Agent",
-                headerNames: "authorization",
+                url: targetKey === SERVICE_ID_2 ? "https://inventory.example/mcp" : "https://orders.example/mcp",
+                usedBy: targetKey === SERVICE_ID_2 ? "Not used" : "Sales Agent",
               },
               fieldLabels: {
                 url: "Service address",
                 usedBy: "Used by",
-                headerNames: "Request headers",
               },
             },
           });
         }
         if (member === "inspectedTools") {
-          if (failTools) {
+          const targetKey = (request.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
+          if (targetKey === SERVICE_ID_2) {
             return Response.json({
-              status: "error",
-              message: "Unable to connect to MCP service",
+              status: "ready",
+              value: [
+                {
+                  primaryKey: "check_stock",
+                  label: "Check Stock",
+                  subtitle: "check_stock",
+                  fields: {
+                    name: "check_stock",
+                    description: "Checks warehouse inventory",
+                    inputSchema: "{\n  \"type\": \"object\",\n  \"required\": [\"sku\"]\n}",
+                  },
+                  fieldLabels: {
+                    name: "Tool name",
+                    description: "Description",
+                    inputSchema: "Input schema",
+                  },
+                },
+              ],
             });
           }
           return Response.json({
@@ -468,33 +624,83 @@ describe("built-in MCP settings panels", () => {
 
     await vi.waitFor(() => {
       expect(root.textContent).toContain("Orders MCP");
-      expect(root.textContent).toContain("https://orders.example/mcp");
-      expect(root.textContent).toContain("Sales Agent");
+      expect(root.textContent).toContain("Inventory MCP");
+      expect(root.textContent).toContain("Unchecked");
     });
 
-    // Plan A: tools must NOT be probed automatically on page load.
+    // Tools must NOT be probed automatically on initial load.
     expect(reads).not.toContain("inspectedTools");
     expect(reads).not.toContain("inspectedSummary");
 
-    // Click the row's "Check" action to mount inspectedTools on demand.
-    const checkBtn = [...root.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Check");
-    expect(checkBtn).toBeDefined();
-    checkBtn!.click();
+    // EM-05: row tail delete action is icon-only with danger tone.
+    const deleteButtons = [...root.querySelectorAll("button[aria-label='Delete']")];
+    expect(deleteButtons).toHaveLength(2);
+    expect(deleteButtons[0]!.textContent?.trim()).toBe("");
+
+    // EM-04 & EM-08: click Check on Service 1, then on Service 2 — both cards stack below the table.
+    const checkButtons = [...root.querySelectorAll("button")].filter((button) => button.textContent?.trim() === "Check");
+    expect(checkButtons).toHaveLength(2);
+    checkButtons[0]!.click();
 
     await vi.waitFor(() => {
-      expect(reads).toContain("inspectedTools");
-      expect(document.body.textContent).toContain("Create Order");
-      expect(document.body.textContent).toContain("Creates an order");
+      expect(checkCalls).toContain(SERVICE_ID_1);
+      expect(root.querySelector(".sdk-object-list-tag[data-tone='success']")?.textContent?.trim()).toBe("Available");
+      expect(root.querySelectorAll(".em-discovered-card")).toHaveLength(1);
+      expect(root.textContent).toContain("Create Order");
+      expect(root.textContent).toContain("create_order");
     });
 
-    // Simulate upstream failure on recheck: error renders in drawer without breaking main list.
-    failTools = true;
-    const recheckBtn = [...document.body.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Check again");
-    expect(recheckBtn).toBeDefined();
-    recheckBtn!.click();
+    // EM-07: accordion expands tool description and JSON schema <pre>.
+    expect(root.textContent).not.toContain("Creates an order");
+    (root.querySelector(".em-discovered-card button.sdk-object-list-accordion-summary") as HTMLButtonElement).click();
+    await vi.waitFor(() => {
+      expect(root.textContent).toContain("Creates an order");
+      expect(root.querySelector(".em-discovered-card pre.sdk-object-list-accordion-pre")?.textContent).toContain('"type": "object"');
+    });
+
+    // Check Service 2: both Service 1 and Service 2 cards stay visible simultaneously.
+    checkButtons[1]!.click();
+    await vi.waitFor(() => {
+      expect(checkCalls).toContain(SERVICE_ID_2);
+      expect(root.querySelectorAll(".em-discovered-card")).toHaveLength(2);
+      expect(root.textContent).toContain("Create Order");
+      expect(root.textContent).toContain("Check Stock");
+    });
+
+    // Recheck Service 1 when unreachable: status updates to Unreachable, Service 1 card displays the error, Service 2 card remains.
+    failService1 = true;
+    const recheckBtns = [...root.querySelectorAll(".em-discovered-card button")].filter(
+      (button) => button.textContent?.trim() === "Check again",
+    ) as HTMLButtonElement[];
+    expect(recheckBtns).toHaveLength(2);
+    recheckBtns[0]!.click();
 
     await vi.waitFor(() => {
-      expect(document.body.textContent).toContain("Unable to connect to MCP service");
+      expect(root.querySelector(".sdk-object-list-tag[data-tone='danger']")?.textContent?.trim()).toBe("Unreachable");
+      expect(root.querySelector(".em-discovered-card-error")?.textContent?.trim()).toBe("Unable to connect to MCP service");
+      expect(root.textContent).toContain("Check Stock");
+      expect(root.textContent).not.toContain("Create Order");
+    });
+
+    // Close both cards independently via their Close buttons.
+    const closeBtns = [...root.querySelectorAll(".em-discovered-card button")].filter(
+      (button) => button.textContent?.trim() === "Close",
+    ) as HTMLButtonElement[];
+    expect(closeBtns).toHaveLength(2);
+    closeBtns[0]!.click();
+
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".em-discovered-card")).toHaveLength(1);
+      expect(root.textContent).toContain("Check Stock");
+    });
+
+    const remainingCloseBtn = [...root.querySelectorAll(".em-discovered-card button")].find(
+      (button) => button.textContent?.trim() === "Close",
+    ) as HTMLButtonElement;
+    remainingCloseBtn.click();
+
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".em-discovered-card")).toHaveLength(0);
     });
     expect(root.textContent).toContain("Orders MCP");
     expect(DELETE_EXTERNAL_MCP_SERVICE).toBe("externalMcp.delete");

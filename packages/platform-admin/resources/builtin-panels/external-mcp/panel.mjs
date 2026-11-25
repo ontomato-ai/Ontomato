@@ -1,16 +1,32 @@
-import { computed } from "vue";
+import { computed, defineComponent } from "vue";
 import {
   mountPanel,
+  useListRowSlot,
   usePanelContext,
-  usePanelOutput,
 } from "@ontomato/sdk/panel";
 
 const SERVICE_TYPE = "platform:ExternalMcpService";
 
+const RowSlotRunner = defineComponent({
+  name: "RowSlotRunner",
+  setup(_props, { slots }) {
+    const rowSlot = useListRowSlot();
+    return () => slots.default?.({
+      runOperation: (operationName, extraInput) => rowSlot?.runOperation(operationName, extraInput),
+    });
+  },
+});
+
 await mountPanel({
+  components: {
+    RowSlotRunner,
+  },
   setup() {
-    const { instance, notify, t } = usePanelContext();
+    const { instance, notify, refreshing, refreshObjects, t } = usePanelContext();
     const values = instance.state.values;
+
+    const resultVersions = new WeakMap();
+    let nextResultVersion = 0;
 
     const createOpen = computed({
       get: () => values.value.creating === true,
@@ -25,18 +41,31 @@ await mountPanel({
       },
     });
 
-    const inspectedKey = computed(() => values.value.inspectedService?.primaryKey ?? "");
-    const inspectOpen = computed({
-      get: () => Boolean(inspectedKey.value),
-      set: (open) => {
-        if (!open) closeInspect();
-      },
-    });
+    function checkErrorText(checkState) {
+      if (!checkState || checkState.running) return "";
+      if (checkState.error) return checkState.error;
+      const value = checkState.result?.kind === "json" ? checkState.result.value : null;
+      if (value && typeof value === "object" && value.reachable === false) {
+        return typeof value.error === "string" && value.error
+          ? value.error
+          : (checkState.result?.message || "");
+      }
+      return "";
+    }
 
-    const inspectedToolTotal = usePanelOutput("inspectedTools", "total");
+    function toolsRenderKey(rowRef, checkState) {
+      const result = checkState?.result;
+      if (!result || typeof result !== "object") return `${rowRef.primaryKey}:0`;
+      let version = resultVersions.get(result);
+      if (version === undefined) {
+        version = ++nextResultVersion;
+        resultVersions.set(result, version);
+      }
+      return `${rowRef.primaryKey}:${version}`;
+    }
 
     function refresh() {
-      instance.refreshObjects();
+      void refreshObjects();
     }
 
     function openCreate() {
@@ -50,23 +79,15 @@ await mountPanel({
       instance.state.set("editingService", null);
     }
 
-    function closeInspect() {
-      instance.state.set("inspectedService", null);
-    }
-
-    function recheck() {
-      instance.refreshObjects();
-    }
-
     function onCreated() {
       createOpen.value = false;
-      instance.refreshObjects();
+      void refreshObjects();
       notify({ kind: "success", text: t("services.created") });
     }
 
     function onEdited() {
       closeEdit();
-      instance.refreshObjects();
+      void refreshObjects();
       notify({ kind: "success", text: t("services.saved") });
     }
 
@@ -74,9 +95,7 @@ await mountPanel({
       const primaryKey = rowRef?.primaryKey;
       if (!primaryKey) return;
       const target = { className: SERVICE_TYPE, primaryKey };
-      if (id === "check") {
-        instance.state.set("inspectedService", target);
-      } else if (id === "edit") {
+      if (id === "edit") {
         instance.state.setState({
           creating: null,
           editingService: target,
@@ -87,29 +106,24 @@ await mountPanel({
     function onServiceOperationDone(operation, outcome, rowRef) {
       if (operation !== "delete" || outcome?.kind !== "success") return;
       const deletedId = rowRef?.primaryKey;
-      if (deletedId && inspectedKey.value === deletedId) {
-        instance.state.set("inspectedService", null);
-      }
       if (deletedId && editingKey.value === deletedId) {
         instance.state.set("editingService", null);
       }
-      instance.refreshObjects();
+      void refreshObjects();
       notify({ kind: "success", text: t("services.deleted") });
     }
 
     return {
       t,
+      refreshing,
       createOpen,
       editOpen,
       editingKey,
-      inspectOpen,
-      inspectedKey,
-      inspectedToolTotal,
+      checkErrorText,
+      toolsRenderKey,
       refresh,
       openCreate,
       closeEdit,
-      closeInspect,
-      recheck,
       onCreated,
       onEdited,
       onRowAction,
