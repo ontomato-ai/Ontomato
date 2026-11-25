@@ -80,14 +80,33 @@ export function readApplicationDeclarations(directory: string): BuiltinApplicati
 export function catalogFixture(additional: BuiltinApplication[] = []) {
   const java = readApplicationDeclarations(join(__dirname, "../../../data-engine-core/src/main/resources/applications"));
   return applicationCatalogSchema.parse([...workbenchApplications, ...java, ...additional]
-    .map(({ declaration, ...app }) => ({
-      ...app, ...declaration, releaseId: null,
-      ownerService: workbenchApplications.some(registered => registered.id === app.id) ? "workbench" : "data-engine",
-      entryPaths: declaration.panelUses?.map(use => use.path) ?? [app.entry.path],
-    }))
+    .map(({ declaration, ...app }) => {
+      const panelUses = [...(declaration.panelUses ?? [])];
+      const { entryKey, home, path } = app.entry;
+      if (entryKey && (!panelUses.length || home && !panelUses.some(use => use.id === entryKey || use.path === home))) {
+        panelUses.push({ id: entryKey, pageKey: entryKey, path: home ?? path, kind: "native" });
+      }
+      return { ...app, ...declaration, releaseId: null, panelUses,
+        ownerService: workbenchApplications.some(registered => registered.id === app.id) ? "workbench" : "data-engine",
+        entryPaths: panelUses.map(use => use.path) };
+    })
     .sort((a,b) => ["top","apps","bottom"].indexOf(a.rail) - ["top","apps","bottom"].indexOf(b.rail) || a.sort-b.sort || a.id.localeCompare(b.id)));
 }
 export function catalogPartitionFixture() { return catalogPartition(catalogFixture(), "en"); }
+
+export function catalogEntryFixture(url: URL): Response {
+  const path = url.searchParams.get("path");
+  for (const app of catalogFixture()) {
+    const uses = app.panelUses ?? [];
+    const use = uses.find(entry => entry.path === path);
+    if (use) return Response.json({
+      applicationId: app.id, use, framePanelId: app.framePanelId,
+      menu: { singleEntry: uses.length <= 1, names: app.names, groups: app.groups ?? [], panelUses: uses },
+    });
+  }
+  return Response.json({ error: { message: "Entry not found" } }, { status: 404 });
+}
+
 
 /** The built-in applications this repository ships, as Java declares them. */
 export function builtinApplications(): BuiltinApplication[] {

@@ -234,13 +234,13 @@ it("lets a page open another page's entry before either has been visited", async
 });
 
 it.each([
-  ["ontology", "/ontology/agents", "ontology-modeling"],
-  ["agents", "/agents/settings", "analysis-agent"],
-])("mounts the shared settings panel at the original %s address", async (applicationId, path, permissionCode) => {
+  ["ontology", "/ontology/agents", "ontology-agent-settings"],
+  ["agents", "/agents/settings", "agents-agent-settings"],
+])("mounts the shared settings panel at the original %s address", async (applicationId, path, entryKey) => {
   const catalog = catalogFixture();
   const application = catalog.find(app => app.id === applicationId)!;
   const use = applicationPanelUseSchema.parse(application.panelUses?.find(entry => entry.path === path));
-  expect(use).toMatchObject({ panelId: "builtin-product-agent-settings", access: { permissionCode } });
+  expect(use).toMatchObject({ id: entryKey, panelId: "builtin-product-agent-settings" });
   const panel = {
     ...panelRecord(use.panelId, "Agent settings", definePanel({
       state: {
