@@ -238,7 +238,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "list",
     meaning:
-      "Displays ontology records as a list, table, card grid, tab strip, or collapsible accordion with search, filtering, sorting, paging, selection, and row actions; use for catalog views. Lists the owner's records of the projection's type (or the read's declared `rowType` when listing child objects of a different ontology type) in a compact list (single-line or two-line row height), multi-column table (`columns`, with optional `width`/`minWidth`, `border`, `stripe`, fixed head and row heights, single-line ellipsis unless `wrap: true`, horizontal scroll inside the table; or `dynamicColumns: true` when no static `columns` are given, deriving table columns from owner `fieldLabels` and record `fields` while excluding array-valued fields and preserving the last derived headers in an empty state within the same scope), responsive card grid (`layout: 'cards'`, with 256px minmax columns, skeleton loading via `skeletonCount` / `#loading`, native combined `title` tooltip, and parameterized leading icons supporting `leadingIconKind: 'application' | 'agent' | 'auto'` and `leadingIconSize`), single-row horizontal tab strip (`layout: 'tabs'`, with `tabsVariant: 'underline' | 'pill'`, automatic left/right overflow scroll buttons that reveal the active tab, compact per-tab row action menu, optional in-place tab renaming via `inlineRename` / `inlineRenameOperation` / `inlineRenameField` / `renamingKey`, and trailing `#tabs-extra` slot), or collapsible disclosure list (`layout: 'accordion'`, driven by `expandedKeys` / `rowExpandMode` and rendering `#row-detail` or configured `columns` / record fields; default `'auto'` draws a table when `columns` or `dynamicColumns` is given and a compact list otherwise), from its `rows` datum (an owner's list or query read; customer `ObjectType` `query` reads accept server-side `filters` and `sort` via `data.rows.params`) or `objects` (ontology objects of a chosen type). Built-in row action column (`rowActions`) renders declared projection row operations (using per-row availability returned with the list read to avoid N+1 requests, with per-`(rowKey, actionId)` busy tracking, automatic same-object same-write-operation in-flight mutex across sibling lists on the same panel, `actionErrorPlacement` (`'inline'` or `'top'`), declarative per-column operation result display via `column.resultFrom` (`{ operation, field? }`, deriving value and value-carried tone or `danger` on error while suppressing duplicate bottom `OperationResult` dumps, with read-operation `message` toasts handled by the platform operation layer), and optional row-prefilled operation input dialogs via `prefill`), local buttons (`kind: 'local'`, emitting `row-action` with `{ id, ref, index }`), and row-level conversation entries (`kind: 'conversation'`, expanding the page composer with the row's object reference context using `PanelConversationEntry` fields), alongside five-level `tone` (`'default' | 'primary' | 'success' | 'warning' | 'danger'`), `icon`, `iconOnly`, per-row visibility conditions (`when`), `hideWhenUnavailable` for operations unavailable on that row, and overflow into a 'More' dropdown menu beyond `maxVisible`. Exposes top-bar pagination/loading/error status through `#status`, and automatically keeps previous rows visible from `MemberDataState.previous` under an inline retry alert whenever a same-target reread fails or retries. Customize cells, row actions, expanded row details, decorative leading marks, cards, toolbars, loading, status, or empty states with standard Vue slots (`#cell-<columnKey>` and `#cell` receiving `{ ref, index, column, value, displayText, tone, operations, runOperation }`, `#actions` receiving `{ ref, index, operations, runOperation }`, `#row-detail` receiving `{ ref, index, collapse, operationResults, clearOperationResult }` to drive child projections, `#item-leading` receiving no row data, `#card`, `#status`, `#loading`, `#filters`, `#batch-actions`, `#toolbar-actions`, `#tabs-extra`, `#create-row`, `#empty`); raw row records are never handed to panel slots or events. The top toolbar stays fixed with search on the left (server search when the owner's read declares `search`; zero-request local search across `label`, `primaryKey`, `subtitle`, tags, and all typed/nested field values when the read is unpaged without server `search` and either `searchable: true` or `search` state is bound), optional `#filters`, batch actions (`#batch-actions`) when rows are checked, and `#toolbar-actions` on the right alongside optional built-in table controls: `showColumnToggle` (a local column-visibility popover with Select all and Reset that keeps at least one column visible and resets automatically when the column set changes) and `exportable` (an `Export current page (CSV)` button that downloads only the currently loaded rows in visible-column order with display headers as UTF-8 BOM RFC 4180 CSV using `exportFileName`, defaulting to `records-YYYY-MM-DD.csv`, disabled when empty); `#create-row` expands an inline create block at the top of the list. Unpaged reads also support zero-request local field-equality filtering via `localFilters` or non-read panel inputs, optional collapsible grouping (`groupBy` and `groupEmptyLabel`) with live filtered counts per group (omitting empty groups) across list, table, and card layouts, and automatic windowed rendering when more than 60 items are visible. The bottom footer stays fixed with the total count on the left whenever the owner returns `total` or local filtering is enabled on a complete list, numeric page buttons on the right in `page` mode (scrolling the list back to top on page change), and a Load more button that appends the next batch in `cursor` mode. In table mode, optional `showRowIndex` adds a 50px 1-based page-aware row index column, `pinPrimaryColumn` pins the first visible column to the left and styles its cell as a primary clickable link, `rowActivation: 'dblclick'` highlights rows on single click (preserving text selection) while activating on double-click or primary link click (default `'click'` activates on single click), and `showRangeBar` shows a compact range summary above the table. When a subsequent same-target reload or page change fails after rows have already been loaded, `MemberDataState.previous` keeps the last valid rows visible with an inline retry notice bar (and stays visible while retrying) instead of wiping the table. Changing search or any filter resets paging to page 1; when the selected object reference changes and is present in the current list it expands its group if collapsed and scrolls into view (including jumping the virtual window). With `fallbackToFirst`, the first row is selected only on first showing (or after switching parent target) when nothing is selected, or after server or local search/filters change and the previously selected item is no longer listed (clearing to null when empty); selection cleared elsewhere is never re-selected automatically. Clicking an item or pressing Enter/Space on a focused table row or card selects its full typed object reference (`selected`), and arrow keys move focus between rows or cards without interfering with interactive controls inside; search matches are highlighted, typed record fields render natively, time columns support `timeFormat` (`relative`, `datetime`, `date`), and a reference field is a link the page hears as `navigate`. `listed` outputs the object references of the currently matching batch, both as a bindable output and as a read-only output. Other read-only outputs (`status`, `total` — complete-list length, owner-reported total for a query, or `null` when unknown, `loadedCount` — rows currently loaded in this batch/page, `filteredCount` — local text-match count only for complete unpaged lists else `null`, `checkedCount`, `selectedLabel`, `activeLabel`) are available to the panel without polluting writable public state. Three empty states distinguish no data (`emptyText` and optional `emptyHint`), narrowed no-match (with a Clear filters action that resets search, server/local filters and paging), and forbidden (showing the owner's reason when supplied). Missing required inputs show the waiting state. An optional `supplement` (`panelRecordList`) datum may be declared alongside `rows` or `objects` to merge supplementary per-row fields, labels, and tones in parallel without blocking primary rows; missing cells show `…` while loading, and a failed or forbidden supplement leaves primary rows usable with the failure reason available on hover. Set `rowExpandMode: 'multiple'` (default `'single'`) to expand multiple rows simultaneously with per-row independent child projections in `#row-detail` and per-row retained operation results (`rowResultDisplay: 'none' | 'inline' | 'expand'`, exposing `operationResults` and `clearOperationResult` to row slots without blocking other rows). Set `showDraftIndicator: true` to mark rows with unsaved local browser drafts, `searchSubmit: { operation, inputField }` to select an exact match or invoke a declared operation when the reader explicitly presses Enter in the search box, and `rowToneField`/`rowToneMap` for whole-row semantic table highlighting.",
+      "Displays ontology records as a list, table, card grid, tab strip, or collapsible accordion with search, filtering, sorting, paging, selection, and row actions; use for catalog views. Lists the owner's records of the projection's type (or the read's declared `rowType` when listing child objects of a different ontology type) in a compact list (single-line or two-line row height), multi-column table (`columns`, with optional `width`/`minWidth`, `border`, `stripe`, fixed head and row heights, single-line ellipsis unless `wrap: true`, horizontal scroll inside the table; or `dynamicColumns: true` when no static `columns` are given, deriving table columns from owner `fieldLabels` and record `fields` while excluding array-valued fields and preserving the last derived headers in an empty state within the same scope), responsive card grid (`layout: 'cards'`, with 256px minmax columns, skeleton loading via `skeletonCount` / `#loading`, native combined `title` tooltip, and parameterized leading icons supporting `leadingIconKind: 'application' | 'agent' | 'auto'` and `leadingIconSize`), single-row horizontal tab strip (`layout: 'tabs'`, with `tabsVariant: 'underline' | 'pill'`, automatic left/right overflow scroll buttons that reveal the active tab, compact per-tab row action menu, optional in-place tab renaming via `inlineRename` / `inlineRenameOperation` / `inlineRenameField` / `renamingKey`, and trailing `#tabs-extra` slot), or collapsible disclosure list (`layout: 'accordion'`, driven by `expandedKeys` / `rowExpandMode` and rendering `#row-detail` or configured `columns` / record fields; default `'auto'` draws a table when `columns` or `dynamicColumns` is given and a compact list otherwise), from its `rows` datum (an owner's list or query read; customer `ObjectType` `query` reads accept server-side `filters` and `sort` via `data.rows.params`) or `objects` (ontology objects of a chosen type). Built-in row action column (`rowActions`) renders declared projection row operations (using per-row availability returned with the list read to avoid N+1 requests, with per-`(rowKey, actionId)` busy tracking, automatic same-object same-write-operation in-flight mutex across sibling lists on the same panel, `actionErrorPlacement` (`'inline'` or `'top'`), declarative per-column operation result display via `column.resultFrom` (`{ operation, field? }`, deriving value and value-carried tone or `danger` on error while suppressing duplicate bottom `OperationResult` dumps, with read-operation `message` toasts handled by the platform operation layer), and optional row-prefilled operation input dialogs via `prefill`), local buttons (`kind: 'local'`, emitting `row-action` with `{ id, ref, index }`), and row-level conversation entries (`kind: 'conversation'`, expanding the page composer with the row's object reference context using `PanelConversationEntry` fields), alongside five-level `tone` (`'default' | 'primary' | 'success' | 'warning' | 'danger'`), `icon`, `iconOnly`, per-row visibility conditions (`when`), `hideWhenUnavailable` for operations unavailable on that row, and overflow into a 'More' dropdown menu beyond `maxVisible`. Exposes top-bar pagination/loading/error status through `#status`, and automatically keeps previous rows visible from `MemberDataState.previous` under an inline retry alert whenever a same-target reread fails or retries. Customize cells, row actions, expanded row details, decorative leading marks, cards, toolbars, loading, status, or empty states with standard Vue slots (`#cell-<columnKey>` and `#cell` receiving `{ ref, index, column, value, displayText, tone, operations, runOperation }`, `#actions` receiving `{ ref, index, operations, runOperation }`, `#row-detail` receiving `{ ref, index, collapse, operationResults, clearOperationResult }` to drive child projections, `#item-leading` receiving no row data, `#card`, `#status`, `#loading`, `#filters`, `#batch-actions`, `#toolbar-actions`, `#tabs-extra`, `#create-row`, `#empty`); raw row records are never handed to panel slots or events. The top toolbar stays fixed with search on the left (server search when the owner's read declares `search`; zero-request local search across `label`, `primaryKey`, `subtitle`, tags, and all typed/nested field values when the read is unpaged without server `search` and either `searchable: true` or `search` state is bound), optional `#filters`, batch actions (`#batch-actions`) when rows are checked, and `#toolbar-actions` on the right alongside optional built-in table controls: `showColumnToggle` (a local column-visibility popover with Select all and Reset that keeps at least one column visible and resets automatically when the column set changes) and `exportable` (an `Export current page (CSV)` button that downloads only the currently loaded rows in visible-column order with display headers as UTF-8 BOM RFC 4180 CSV using `exportFileName`, defaulting to `records-YYYY-MM-DD.csv`, disabled when empty); `#create-row` expands an inline create block at the top of the list. Unpaged reads also support zero-request local field-equality filtering via `localFilters` or non-read panel inputs, optional collapsible grouping (`groupBy` and `groupEmptyLabel`) with live filtered counts per group (omitting empty groups) across list, table, and card layouts, and automatic windowed rendering when more than 60 items are visible. The bottom footer stays fixed with the total count on the left whenever the owner returns `total` or local filtering is enabled on a complete list, numeric page buttons on the right in `page` mode (scrolling the list back to top on page change), and a Load more button that appends the next batch in `cursor` mode. In table mode, optional `showRowIndex` adds a 50px 1-based page-aware row index column, `pinPrimaryColumn` pins the first visible column to the left and styles its cell as a primary clickable link, `rowActivation: 'dblclick'` highlights rows on single click (preserving text selection) while activating on double-click or primary link click (default `'click'` activates on single click), and `showRangeBar` shows a compact range summary above the table. When a subsequent same-target reload or page change fails after rows have already been loaded, `MemberDataState.previous` keeps the last valid rows visible with an inline retry notice bar (and stays visible while retrying) instead of wiping the table. Changing search or any filter resets paging to page 1; when the selected object reference changes and is present in the current list it expands its group if collapsed and scrolls into view (including jumping the virtual window). With `fallbackToFirst`, the first row is selected only on first showing (or after switching parent target) when nothing is selected, or after server or local search/filters change and the previously selected item is no longer listed (clearing to null when empty); selection cleared elsewhere is never re-selected automatically. Clicking an item or pressing Enter/Space on a focused table row or card selects its full typed object reference (`selected`), and arrow keys move focus between rows or cards without interfering with interactive controls inside; search matches are highlighted, typed record fields render natively, time columns support `timeFormat` (`relative`, `datetime`, `date`), and a reference field is a link the page hears as `navigate`. `listed` outputs the object references of the currently matching batch, both as a bindable output and as a read-only output. Other read-only outputs (`status`, `total` — complete-list length, owner-reported total for a query, or `null` when unknown, `loadedCount` — rows currently loaded in this batch/page, `filteredCount` — local text-match count only for complete unpaged lists else `null`, `checkedCount`, `selectedLabel`, `activeLabel`) are available to the panel without polluting writable public state. Three empty states distinguish no data (`emptyText` and optional `emptyHint`), narrowed no-match (with a Clear filters action that resets search, server/local filters and paging), and forbidden (showing the owner's reason when supplied). Missing required inputs show the waiting state. An optional `supplement` (`panelRecordList`) datum may be declared alongside `rows` or `objects` to merge supplementary per-row fields, labels, and tones in parallel without blocking primary rows; missing cells show `…` while loading, and a failed or forbidden supplement leaves primary rows usable with the failure reason available on hover. Set `rowExpandMode: 'multiple'` (default `'single'`) to expand multiple rows simultaneously with per-row independent child projections in `#row-detail` and per-row retained operation results (`rowResultDisplay: 'none' | 'inline' | 'expand'`, exposing `operationResults` and `clearOperationResult` to row slots without blocking other rows). Set `rowActivation: 'expand'` (paired with `#row-detail` or `layout: 'accordion'`) for whole-row click and `Enter`/`Space` expansion with a trailing chevron indicator, controlled `expandedKeys` (prop or `inputs`/`outputs.expandedKeys` state port, auto-scrolling newly expanded rows into view), and automatic unsaved-form leave confirmation before collapsing or switching away from dirty nested forms. Declare `minContainerWidth` on table columns to automatically hide lower-priority columns when the list container narrows below their pixel threshold while always keeping at least one column visible. Set `showDraftIndicator: true` to mark rows with unsaved local browser drafts, `searchSubmit: { operation, inputField }` to select an exact match or invoke a declared operation when the reader explicitly presses Enter in the search box, and `rowToneField`/`rowToneMap` for whole-row semantic table highlighting.",
     effects: "Reads the bound type's list, query or ontology objects datum as the reader; runs declared row operations through the platform coordinator and writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
@@ -249,12 +249,16 @@ export const components: readonly ComponentMetadata[] = [
       objects: { results: ["panelOntologyObjects"], required: false, runtimeParams: ["search", "page"] },
       supplement: { results: ["panelRecordList"], required: false },
     },
+    inputs: {
+      expandedKeys: { kind: "list", items: { kind: "scalar", type: "string" } },
+    },
     outputs: {
       selected: { kind: "object", objectType: "@binding" },
       checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       // References of the current batch: current page when paged, or all matching rows when unpaged.
       listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
+      expandedKeys: { kind: "list", items: { kind: "scalar", type: "string" } },
     },
     readOnlyOutputs: {
       status: { kind: "scalar", type: "string" },
@@ -480,7 +484,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "graph",
     meaning:
-      "Draws `nodes` and `edges` reads as an interactive graph with zoom, search, and shortest-path; use for custom graphs (`OntologyGraph` for ontology schema/neighbors). Draws the records its `nodes` datum reads as a graph joined by the records its `edges` datum reads, each edge between the node keys its fields name at `edgeEnds`. Placed inside an `ObjectForm` field Vue slot (`#field-<path>` or `#field`), it chooses that field's list of node keys in the field's place: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all; a line sums the choice up, a legend names the three looks, and a list offers the same choice by name. Otherwise it is the page's graph canvas on the platform's G6 canvas, shared by the ontology graph and visual modeling (with `#toolbar` and `#overlay` Vue slots): a chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`), a click on empty canvas lets both go, where the reader puts the nodes is kept per person (`positions`, a personal `json` state) and drawn again from there, a node never placed is placed by its relations (the most connected first, each node one relation on in the next column) and nothing is written for it, and with `editable` a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new-edge form. When `nodes` are readable and `edges` are forbidden, all readable nodes are still drawn with a non-blocking notice explaining that relations cannot be viewed; when `nodes` are forbidden the graph shows the access refusal. Each edge is drawn with its record's label; edges between the same two nodes fan out. Given `pathFrom` and `pathTo` bound to panel state, the canvas finds the shortest directed path along visible edges, highlights it distinctly from search matches (`highlightedNodes`, `highlightedEdges`), displays the path trail and hop count on the canvas, and reports what is highlighted — search matches vs a directed path with start, target, outcome and hops — into `pageContext.highlights`; when edges are partially or fully forbidden, 'no path found in the visible graph' and the hidden-relations permission notice are reported separately. What the panel highlights stands out and the rest fades, without being chosen. The view opens on the chosen node, else the most connected, never smaller than names can be read at; a larger graph is panned. The canvas carries zoom in and out, fit, centring the chosen node, relayout (which lets the reader's places go) and a PNG of the view; names keep their size however far the reader zooms out, a name with no room being hidden until there is; the graph is fitted again once its container settles at a new size; and its zoom is a port (`zoom`), read and set by the page. The canvas fills the height of the box its member is placed in and falls back to its own default minimum height (420px) when that box has no definite height. Each node takes its category's colour of the platform palette when `nodeCategory` (a JSON Pointer into each node record's fields) and `categories` (the order of the colours) are configured; `nodeSize` and `labelSize` (screen pixels) draw the nodes and their names larger or smaller than the platform's own, and the placement leaves rows to fit them. It decides nothing about what the nodes stand for or who may read them.",
+      "Draws `nodes` and `edges` reads as an interactive graph with zoom, search, and shortest-path; use for custom graphs (`OntologyGraph` for ontology schema/neighbors). Draws the records its `nodes` datum reads as a graph joined by the records its `edges` datum reads, each edge between the node keys its fields name at `edgeEnds`. Placed inside an `ObjectForm` field Vue slot (`#field-<path>` or `#field`), it chooses that field's list of node keys in the field's place: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all; a line sums the choice up, a legend names the three looks, and a list offers the same choice by name. Otherwise it is the page's graph canvas on the platform's G6 canvas, shared by the ontology graph and visual modeling (with `#toolbar` and `#overlay` Vue slots): a chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`), double-clicking a node or edge selects it and emits `choose` with its object reference (`{ className, primaryKey }`), a click on empty canvas lets both go, where the reader puts the nodes is kept per person (`positions`, a personal `json` state) and drawn again from there, a node never placed is placed by its relations (the most connected first, each node one relation on in the next column) and nothing is written for it, and with `editable` a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new-edge form. When `nodes` are readable and `edges` are forbidden, all readable nodes are still drawn with a non-blocking notice explaining that relations cannot be viewed; when `nodes` are forbidden the graph shows the access refusal. Each edge is drawn with its record's label; edges between the same two nodes fan out. Given `pathFrom` and `pathTo` bound to panel state, the canvas finds the shortest directed path along visible edges, highlights it distinctly from search matches (`highlightedNodes`, `highlightedEdges`), displays the path trail and hop count on the canvas, and reports what is highlighted — search matches vs a directed path with start, target, outcome and hops — into `pageContext.highlights`; when edges are partially or fully forbidden, 'no path found in the visible graph' and the hidden-relations permission notice are reported separately. What the panel highlights stands out and the rest fades, without being chosen. The view opens on the chosen node, else the most connected, never smaller than names can be read at; a larger graph is panned. The canvas carries zoom in and out, fit, centring the chosen node, relayout (which lets the reader's places go) and a PNG of the view; names keep their size however far the reader zooms out, a name with no room being hidden until there is; the graph is fitted again once its container settles at a new size; and its zoom is a port (`zoom`), read and set by the page. The canvas fills the height of the box its member is placed in and falls back to its own default minimum height (420px) when that box has no definite height. Each node takes its category's colour of the platform palette when `nodeCategory` (a JSON Pointer into each node record's fields) and `categories` (the order of the colours) are configured; `nodeSize` and `labelSize` (screen pixels) draw the nodes and their names larger or smaller than the platform's own, and the placement leaves rows to fit them. It decides nothing about what the nodes stand for or who may read them.",
     effects: "Reads the node and edge types' lists as the reader; it writes the enclosing form field when placed inside an `ObjectForm` field slot, or the panel state its outputs bind, never the owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -865,7 +869,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "content",
     meaning:
-      "Displays line-numbered code with synchronized annotations and clickable references; use for Action or query code explanations. Displays line-numbered source code alongside hierarchical line-range annotation segments from its `content` (`annotatedCode`) datum, with bidirectional line/segment highlighting and scrolling (including automatically scrolling both panes when `activeSegmentId` changes externally and clearing highlights when it is cleared to `null`), a deduplicated kind legend, expandable structured detail rows with clickable reference buttons (`refKey`), an optional outdated-code notice when the `currentCode` input differs from `content.code`, and optional summary blocks. Emits `select-ref` and `select-segment`, accepts optional `currentCode` and `activeSegmentId` inputs (with `activeSegmentId` also writable to bound panel state), and exposes `status`, `activeSegmentId`, and `selectedRef` as read-only outputs.",
+      "Displays line-numbered code with synchronized annotations and clickable references; use for Action or query code explanations. Displays line-numbered source code alongside hierarchical line-range annotation segments from its `content` (`annotatedCode`) datum, automatically applying safe token-based syntax highlighting whenever a supported `language` (such as `python`, `javascript`, `typescript`, `json`, `sql`, `yaml`, `bash`, `html`, or `css`) is supplied via prop, input, or datum and falling back to plain text when omitted or `plain`/`text`, with bidirectional line/segment highlighting and scrolling (including automatically scrolling both panes when `activeSegmentId` changes externally and clearing highlights when it is cleared to `null`), a deduplicated kind legend, expandable structured detail rows with clickable reference buttons (`refKey`), an optional outdated-code notice when the `currentCode` input differs from `content.code`, and optional summary blocks. Emits `select-ref` and `select-segment`, accepts optional `currentCode`, `activeSegmentId`, and `language` inputs (with `activeSegmentId` also writable to bound panel state), and exposes `status`, `activeSegmentId`, and `selectedRef` as read-only outputs.",
     effects: "Reads the bound object's annotatedCode datum as the reader; writes only the panel's own segment selection state and read-only outputs.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -874,6 +878,7 @@ export const components: readonly ComponentMetadata[] = [
     inputs: {
       currentCode: { kind: "scalar", type: "string" },
       activeSegmentId: { kind: "scalar", type: "string" },
+      language: { kind: "scalar", type: "string" },
     },
     outputs: {
       activeSegmentId: { kind: "scalar", type: "string" },
@@ -919,6 +924,21 @@ export const components: readonly ComponentMetadata[] = [
     },
   }),
   defineComponentMeta({
+    componentId: "ScheduledTaskAppFilterBar",
+    module: "@ontomato/sdk/base",
+    exportName: "ScheduledTaskAppFilterBar",
+    role: "control",
+    group: "form",
+    panelUsable: false,
+    meaning:
+      "Filters scheduled tasks by application. Shows the owner's total and counts from the counts datum or standalone items, displays up to maxVisible applications (five by default), and shows the selected overflow application's name and count on the More trigger.",
+    effects: "Writes the selected application key to selected, using an empty string for all applications.",
+    bindsElement: ["PlatformObjectType:platform:ScheduledTask"],
+    data: { counts: { results: ["panelGroupCounts"], required: false } },
+    inputs: { selected: { kind: "scalar", type: "string" } },
+    outputs: { selected: { kind: "scalar", type: "string" } },
+  }),
+  defineComponentMeta({
     componentId: "ScheduledTaskSummaryList",
     module: "@ontomato/sdk/base",
     exportName: "ScheduledTaskSummaryList",
@@ -926,8 +946,8 @@ export const components: readonly ComponentMetadata[] = [
     group: "list",
     panelUsable: false,
     meaning:
-      "Workspace scheduled task attention summary and grouped list. Renders a three-counter top strip (Needs intervention, Recent results, Running), three priority-ordered task sections with status dots and multi-line excerpts, and an inline Resolve action for paused or failed tasks.",
-    effects: "Reads its bound `rows` datum as the reader and writes `selected` / `resolveTarget` panel state when the reader opens or resolves a task.",
+      "Scheduled task list with presentation 'summary' (default workspace attention counters, groups, and Resolve action) or 'cards' (full task cards with application identity, schedule, enabled switch, pause details, and recent run). The card footer supports rowActions for declared operations and local events, and card-actions or row-actions slots.",
+    effects: "Reads its bound `rows` datum as the reader and writes `selected` / `resolveTarget` when the reader opens or resolves a task. Cards dispatch the declared row operation `setEnabled` with enabled and the observed revision, and dispatch other named row operations through the panel instance.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
       rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
@@ -978,6 +998,111 @@ export const components: readonly ComponentMetadata[] = [
       subjectData: { results: ["panelRecordList"], required: false },
       managedData: { results: ["panelRecordList"], required: false },
       effectiveData: { results: ["panelRecordList"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "ProductAssetGraph",
+    module: "@ontomato/sdk/base",
+    exportName: "ProductAssetGraph",
+    role: "control",
+    group: "graph",
+    panelUsable: false,
+    meaning:
+      "Platform-dedicated layered SVG product asset reference graph shared by Product Overview, Projection Detail, Panel Detail, and Application Detail. Renders category columns of rectangular asset cards connected by cubic Bezier arrows, highlights incident edges and relation labels on hover or keyboard focus while dimming unrelated edges, emits `open` and `navigate` with real asset identity on click or Enter, and provides zoom, fit, 100% actual-size, and fullscreen dialog preview controls.",
+    effects: "Reads its bound `graph` datum as the reader when declared and writes the optional `navigate` output state on asset activation; writes nothing to any owner.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      graph: { results: ["panelRecord"], required: false },
+    },
+    outputs: {
+      navigate: {
+        kind: "object-union",
+        layers: ["product"],
+        objectTypes: ["platform:AgentDefinition"],
+      },
+    },
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      nodeCount: { kind: "scalar", type: "number" },
+      edgeCount: { kind: "scalar", type: "number" },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "OntologyModelGraph",
+    module: "@ontomato/sdk/base",
+    exportName: "OntologyModelGraph",
+    role: "control",
+    group: "graph",
+    panelUsable: false,
+    meaning:
+      "Platform-dedicated ontology model graph canvas built on the shared `ObjectGraphCanvas` / G6 engine with the ontology graph's fixed visual language (5px node strokes, stronger selection and path strokes, 0.16 node / 0.12 edge non-match dimming, radial force layout, and solid-background dated PNG export).",
+    effects: "Reads its bound `nodes` and `edges` lists as the reader and writes the panel state its outputs bind; never writes to any owner.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      nodes: { results: ["panelRecordList"], required: true },
+      edges: { results: ["panelRecordList"], required: true },
+    },
+    inputs: {
+      highlightedNodes: { kind: "list", items: { kind: "object", objectType: "@data:nodes" } },
+      highlightedEdges: { kind: "list", items: { kind: "object", objectType: "@data:edges" } },
+      pathFrom: { kind: "object", objectType: "@data:nodes" },
+      pathTo: { kind: "object", objectType: "@data:nodes" },
+      zoom: { kind: "scalar", type: "number" },
+    },
+    outputs: {
+      selectedNode: { kind: "object", objectType: "@data:nodes" },
+      selectedEdge: { kind: "object", objectType: "@data:edges" },
+      positions: { kind: "json" },
+      zoom: { kind: "scalar", type: "number" },
+    },
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      error: { kind: "scalar", type: "string" },
+      pathStatus: { kind: "scalar", type: "string" },
+      pathMessage: { kind: "scalar", type: "string" },
+      pathHops: { kind: "scalar", type: "number" },
+      nodeCount: { kind: "scalar", type: "number" },
+      edgeCount: { kind: "scalar", type: "number" },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "VisualModelingGraph",
+    module: "@ontomato/sdk/base",
+    exportName: "VisualModelingGraph",
+    role: "control",
+    group: "graph",
+    panelUsable: false,
+    meaning:
+      "Platform-dedicated visual modeling graph canvas built on the shared `ObjectGraphCanvas` / G6 engine with fixed modeling layout and gestures: top-left four-action view toolbar (zoom in, zoom out, fit, relayout) with `#toolbar-actions` / `#toolbar-right` slots, independent node selection halo, capsule-shaped edge labels, four-direction hover connection ports with live drag preview and visual-only pending connection edge, and double-click `choose` activation.",
+    effects: "Reads its bound `nodes` and `edges` lists as the reader and writes selection, position, and pending connection endpoint state (`connectFrom`, `connectTo`); temporary visual edges are never written to any owner.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      nodes: { results: ["panelRecordList"], required: true },
+      edges: { results: ["panelRecordList"], required: true },
+    },
+    inputs: {
+      highlightedNodes: { kind: "list", items: { kind: "object", objectType: "@data:nodes" } },
+      highlightedEdges: { kind: "list", items: { kind: "object", objectType: "@data:edges" } },
+      pathFrom: { kind: "object", objectType: "@data:nodes" },
+      pathTo: { kind: "object", objectType: "@data:nodes" },
+      zoom: { kind: "scalar", type: "number" },
+    },
+    outputs: {
+      selectedNode: { kind: "object", objectType: "@data:nodes" },
+      selectedEdge: { kind: "object", objectType: "@data:edges" },
+      connectFrom: { kind: "scalar", type: "string" },
+      connectTo: { kind: "scalar", type: "string" },
+      positions: { kind: "json" },
+      zoom: { kind: "scalar", type: "number" },
+    },
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      error: { kind: "scalar", type: "string" },
+      pathStatus: { kind: "scalar", type: "string" },
+      pathMessage: { kind: "scalar", type: "string" },
+      pathHops: { kind: "scalar", type: "number" },
+      nodeCount: { kind: "scalar", type: "number" },
+      edgeCount: { kind: "scalar", type: "number" },
     },
   }),
   defineComponentMeta({

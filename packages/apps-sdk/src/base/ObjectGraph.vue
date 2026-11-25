@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { useFormFieldSlot } from "../panel/slot-context";
 import type { EdgeEndsConfig } from "./object-graph-data";
+import type { ObjectListRef } from "./object-list-types";
 import ObjectGraphCanvas from "./ObjectGraphCanvas.vue";
 import ObjectGraphField from "./ObjectGraphField.vue";
 
@@ -33,7 +34,16 @@ withDefaults(defineProps<{
   showFocusButton?: boolean;
   /** Optional subtle operation hint shown at the bottom-right corner of the canvas. */
   hint?: string;
-}>(), { editable: undefined, highlightBanner: undefined, showFocusButton: undefined });
+  /** Single-page presentation option: background CSS colour composited behind exported PNG layers. */
+  exportBackground?: string;
+  /** Single-page presentation option: exported PNG filename template (`{date}` expands to local `YYYY-MM-DD`). */
+  exportFilename?: string;
+}>(), { editable: undefined, highlightBanner: undefined, showFocusButton: undefined, exportBackground: undefined, exportFilename: undefined });
+
+const emit = defineEmits<{
+  /** Emitted when the reader explicitly activates a node or edge by double-clicking it. */
+  choose: [value: ObjectListRef];
+}>();
 
 const fieldSlot = useFormFieldSlot();
 const choosesField = computed(() => fieldSlot !== null);
@@ -77,6 +87,9 @@ defineSlots<{
     :highlight-banner="highlightBanner"
     :show-focus-button="showFocusButton"
     :hint="hint"
+    :export-background="exportBackground"
+    :export-filename="exportFilename"
+    @choose="emit('choose', $event)"
   >
     <template v-if="$slots.toolbar" #toolbar="scope">
       <slot name="toolbar" v-bind="scope"></slot>

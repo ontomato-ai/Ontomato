@@ -36,29 +36,9 @@ import { memberComponentId } from "./projection-element";
 /** The objects and types an operation reports it changed. */
 export type PanelOperationAffected = ReturnType<typeof panelOperationAffectedSchema.parse>;
 
-/** The last successful datum answer for the same target, kept beside a failed or retrying read. */
-export type MemberReadyData = Extract<PanelDataState, { status: "ready" }>;
+import { withMemberReadRetry, type MemberDataState, type MemberReadyData } from "./member-data-state";
 
-/**
- * One named datum of a member as a component shows it: the host's answer, still loading, or awaiting a selection. A
- * failure carries `retry`, which reads it again; one the platform never answered (the page reached nothing) is
- * `unreachable`, and is worded in the reader's language where it is shown, not with the browser's own words. When
- * re-reading the same target fails (or retries from a failure), `previous` carries the last successful answer for that
- * target; switching targets, losing access (`forbidden`), or receiving `empty` clears `previous`.
- */
-export type MemberDataState =
-  | (MemberReadyData & { readonly refreshing?: true })
-  | Exclude<PanelDataState, { status: "error" | "ready" | "loading" }>
-  | { status: "loading"; readonly previous?: MemberReadyData }
-  | {
-      status: "error";
-      message: string;
-      code?: string;
-      unreachable?: true;
-      retry?: () => void;
-      readonly previous?: MemberReadyData;
-    }
-  | { status: "awaiting" };
+export { withMemberReadRetry, type MemberDataState, type MemberReadyData };
 
 /** A projection input's value: a JSON value as the member and the run supply it; absent while nothing is supplied. */
 export type MemberInputs = Readonly<Record<string, RuntimeJsonValue>>;
@@ -360,8 +340,7 @@ export async function readMemberDatum(read: PanelReadPort, projection: DirectPro
       status: "error" as const,
       message: reason instanceof Error ? reason.message : String(reason),
       ...(code ? { code } : {}),
-      // No answer at all: the request reached nothing (the browser's network failure) or what came back was no answer of
-      // the platform's (a gateway's page while a service is replaced). A failure the platform states keeps its words.
+      // A browser or gateway failure has no reader-facing explanation.
       ...(reason instanceof TypeError || reason instanceof SyntaxError ? { unreachable: true as const } : {}),
     };
   });
@@ -884,11 +863,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
                 pendingRereadAfterMs = undefined;
                 clearRereadTimer();
                 // A failure is read again on request, and keeps the same target's last ready answer beside the reason.
-                state.value = {
-                  ...result,
-                  ...(lastReady ? { previous: lastReady } : {}),
-                  retry: () => { void reread(); },
-                };
+                state.value = withMemberReadRetry(result, lastReady, () => { void reread(); });
               } else {
                 pendingRereadAfterMs = undefined;
                 clearRereadTimer();

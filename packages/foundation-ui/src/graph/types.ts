@@ -95,3 +95,54 @@ export interface GraphCanvasPoint {
   x: number;
   y: number;
 }
+
+/** A node's current center and screen radius in canvas viewport pixels. */
+export interface GraphCanvasNodeViewportBox {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+}
+
+/** Options for exporting the interactive graph canvas as a PNG image. */
+export interface GraphCanvasExportOptions {
+  /**
+   * Optional CSS colour (or CSS custom property such as `var(--el-bg-color-page)`) filled behind the exported canvas
+   * layers before compositing. Defaults to the canvas's surface colour when omitted.
+   */
+  background?: string;
+}
+
+/** Optional visual styling overrides used by specialized platform graph canvases. */
+export interface GraphCanvasStyleOverrides {
+  /** Default node border width in graph pixels (default `4`). */
+  nodeLineWidth?: number;
+  /** Border width for `path` and `neighbor` highlighted nodes (default `5`). */
+  highlightedNodeLineWidth?: number;
+  /** Border width for selected nodes (default `6`). */
+  selectedNodeLineWidth?: number;
+  /** Optional node drop-shadow blur radius in graph pixels. */
+  nodeShadowBlur?: number;
+  /** Vertical gap below a node circle to its label (default `6`). */
+  nodeLabelOffsetY?: number;
+  /** Whether selected nodes render an independent outer halo ring. */
+  selectedNodeHalo?: boolean;
+  /** Outer halo width when `selectedNodeHalo` is enabled (default `12`). */
+  selectedNodeHaloWidth?: number;
+  /** Opacity applied to `muted` nodes (default `0.18`). */
+  mutedNodeOpacity?: number;
+  /** Default edge stroke width (default `1.5`). */
+  edgeLineWidth?: number;
+  /** Stroke width for `path` and `neighbor` highlighted edges (default `3`). */
+  highlightedEdgeLineWidth?: number;
+  /** Stroke width for selected edges (default `3.5`). */
+  selectedEdgeLineWidth?: number;
+  /** Opacity applied to `muted` edges (default `0.15`). */
+  mutedEdgeOpacity?: number;
+  /** Edge label backing shape: `"plain"` (default) or `"pill"` (bordered capsule). */
+  edgeLabelShape?: "plain" | "pill";
+  /** Edge label font size in graph pixels (default `11`). */
+  edgeLabelFontSize?: number;
+  /** Optional corner radius for edge label backings. */
+  edgeLabelRadius?: number;
+}

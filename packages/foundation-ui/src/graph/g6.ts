@@ -9,10 +9,13 @@ export { graphCategorySlot, readGraphPalette } from "./palette";
 export type {
   GraphCanvasEdge,
   GraphCanvasElement,
+  GraphCanvasExportOptions,
   GraphCanvasLayout,
   GraphCanvasNode,
+  GraphCanvasNodeViewportBox,
   GraphCanvasPoint,
   GraphCanvasSelection,
+  GraphCanvasStyleOverrides,
   GraphCanvasTone,
   GraphCanvasViewport,
 } from "./types";

@@ -214,11 +214,15 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     for (const param of declaredReadParameters()) assert.ok(panelData.data["*"].runtimeParams.includes(param), `PanelData takes ${param}`);
     // A placement binds a component's outputs to the panel's state by type; an object of the projection's own type is
     // `@binding`, which registration resolves, and a signal with no state stays an event.
+    assert.deepEqual(declared.get("ObjectList").inputs, {
+      expandedKeys: { kind: "list", items: { kind: "scalar", type: "string" } },
+    });
     assert.deepEqual(declared.get("ObjectList").outputs, {
       selected: { kind: "object", objectType: "@binding" },
       checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
+      expandedKeys: { kind: "list", items: { kind: "scalar", type: "string" } },
     });
     assert.equal(declared.get("ObjectCount").outputs, undefined, "ObjectCount is presentation-only");
     assert.deepEqual(declared.get("ReferencePicker").outputs, {
@@ -483,10 +487,30 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         assert.ok(!componentsDoc.includes(overviewLink), `non-panel ${component.componentId} must be excluded from docs/components.md`);
       }
     }
-    for (const excluded of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "DashboardMetricPreview", "ScheduledTaskSummaryList", "ScheduledTaskRunDetail", "EffectivePermissionsView", "TestcaseWorkbench", "DataAdapterTestReport"]) {
+    for (const excluded of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "DashboardMetricPreview", "ScheduledTaskAppFilterBar", "ScheduledTaskSummaryList", "ScheduledTaskRunDetail", "EffectivePermissionsView", "TestcaseWorkbench", "DataAdapterTestReport", "ProductAssetGraph", "OntologyModelGraph", "VisualModelingGraph"]) {
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
     }
+    const objectGraph = declared.get("ObjectGraph");
+    const objectGraphConfigNames = (objectGraph.config ?? []).map((prop) => prop.name);
+    assert.ok(objectGraphConfigNames.includes("export-background"), "ObjectGraph exposes single-page export-background prop");
+    assert.ok(objectGraphConfigNames.includes("export-filename"), "ObjectGraph exposes single-page export-filename prop");
+    assert.doesNotMatch(
+      objectGraph.meaning,
+      /exportBackground|exportFilename|export-background|export-filename/u,
+      "ObjectGraph meaning must not list single-page PNG export presentation attributes",
+    );
+    for (const forbidden of ["style-overrides", "toolbar-placement", "connect-ports", "show-pending-edge", "pending-edge"]) {
+      assert.equal(
+        objectGraphConfigNames.includes(forbidden),
+        false,
+        `ObjectGraph must not expose dedicated platform prop '${forbidden}'`,
+      );
+    }
+    assert.ok(
+      (objectGraph.ports?.events ?? []).some((event) => event.name === "choose"),
+      "ObjectGraph declares the choose activation event matching ObjectList",
+    );
     assert.deepEqual(
       declared.get("TestcaseWorkbench").bindsElement,
       ["PlatformObjectType:platform:AutotestCaseSet"],

@@ -142,6 +142,7 @@ function stepFailureSummary(toolName: string, result: PresentationResult): strin
     return `${result.status}/${result.reason}`;
   }
   if (toolName === "fill_form") {
+    if (result.status === "executed") return null;
     if (result.status === "filled") {
       return result.rejectedFields?.length
         ? `filled/partial_rejected:${result.rejectedFields.map((item) => item.path).join(",")}`
@@ -233,7 +234,7 @@ const PRESENTATION_TOOL_SPECS: ReadonlyArray<{
     declaration: {
       name: "fill_form",
       description:
-        "Fill explicit fields into a live form currently displayed on the page beside the conversation, using the form's own editing entry so changed fields are highlighted, owner-driven dynamic updates run, and the form remains unsaved until saved. Does not navigate or save. The platform binds this call to the latest page snapshot in this round, starting with the page context attached to the user message. If no page context was attached, use `observe_display` or `present` first. It rejects as `stale` if the page, panel, form, target, or dashboard board/card changed. Keys in `values` are JSON Pointer field paths (e.g. \"/name\") or top-level field names (e.g. \"name\"). When the form has unsaved edits made by the user on any target field, refuses without overwriting (not_filled / blocked_unsaved) — ask the user first and pass overwriteUnsaved: true only after explicit user confirmation.",
+        "Fill explicit fields into a live form currently displayed on the page beside the conversation, using the form's own editing entry so changed fields are highlighted, owner-driven dynamic updates run, and manual fields remain unsaved. Changing a field configured to save on blur or change requests the registered save operation for those fields: default mode returns awaiting_confirmation, and full-auto executes after checking the live form. The platform binds this call to the latest page snapshot in this round, starting with the page context attached to the user message. If no page context was attached, use `observe_display` or `present` first. It rejects as `stale` if the page, panel, form, target, or dashboard board/card changed. Keys in `values` are JSON Pointer field paths (e.g. \"/name\") or top-level field names (e.g. \"name\"). When the form has unsaved edits made by the user on any target field, refuses without overwriting (not_filled / blocked_unsaved) — ask the user first and pass overwriteUnsaved: true only after explicit user confirmation.",
       parameters: {
         type: "object",
         required: ["values"],

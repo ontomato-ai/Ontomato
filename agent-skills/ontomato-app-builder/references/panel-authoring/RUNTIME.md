@@ -241,6 +241,8 @@ interface PanelFormHandle {
   readonly canSubmit: Readonly<Ref<boolean>>;
   /** Sets one field's value; a field the owner marks `refreshOnChange` has the owner asked again. */
   set(path: string, value: RuntimeJsonValue): void;
+  setFromControl?(path: string, value: RuntimeJsonValue): void;
+  blurFromControl?(path: string): void;
   /** Refreshes the owner's fields and validation for the current values, preserving unsaved edits. */
   refreshDraft(): Promise<void>;
   /** Submits the form through its owner. */

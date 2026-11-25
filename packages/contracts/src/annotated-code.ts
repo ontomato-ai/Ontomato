@@ -85,6 +85,8 @@ export type AnnotatedCodeSummarySection = z.infer<typeof annotatedCodeSummarySec
 /** Complete annotated-code payload returned by an owner read for the `AnnotatedCode` component. */
 export const annotatedCodeSchema = z.object({
   code: z.string().optional(),
+  /** Optional language identifier declared by the owner (for example `python`, `sql`, `json`, `typescript`). */
+  language: z.string().min(1).optional(),
   segments: z.array(annotatedCodeSegmentSchema),
   summary: z.array(annotatedCodeSummarySectionSchema).optional(),
 }).strict();
