@@ -8,6 +8,7 @@ import { readProductPanelData } from "../../services/product-panels/data-reads";
 import { readNestedPanel, resolvePanelMemberPath } from "../../services/product-panels/member-path";
 import { readCurrentPanelRecord } from "../../services/product-panels/current";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
+import { isAssistantBuildTestOperation } from "../build-test-access";
 import { PROJECTION_REUSE_PANEL_HEADER } from "@ontomato/contracts/product-panels";
 import { Router, type Request } from "express";
 import { AGENT_DEFINITION, SKILL, MODEL_OPTION, EXTERNAL_MCP_SERVICE, USER, OBJECT_TYPE, ONTOLOGY_TYPE, bindingKey, chartProjectionLookupRead, chartProjectionSourceRead, panelClientReads, scheduledTaskReads } from "@ontomato/contracts/panel-client-requests";
@@ -87,10 +88,6 @@ const ontologyPosts = [
   "/admin/getSchemaByClassName",
   "/admin/getRelationshipByClassNames",
 ];
-const buildTestOperations = new Set([
-  "/action/execute", "/metricView/execute", "/metricView/test", "/metricView/testExecute",
-  "/vectorResource/upload", "/vectorResource/delete", "/ontology/query/distinct-values", "/ontology/query/execute-dsl",
-]);
 const assetReadPaths = [
   "/metricView/queryById",
   "/metricView/queryList",
@@ -298,7 +295,7 @@ assistantExecutionRouter.all("/:runId/:target/*", wrap(async (req, res) => {
     const resolved = await credentialsForRun(owner, runId, initiatorCredentials);
     credentials = resolved.credentials;
     retrievalScopeId = resolved.retrievalScopeId ?? resolved.credentials.headers?.["X-Ontomato-Retrieval-Caller-Id"] ?? null;
-    if (target === "ontology" && req.method === "POST" && buildTestOperations.has(path) &&
+    if (target === "ontology" && isAssistantBuildTestOperation(req.method, path) &&
         resolved.run.channel?.authority.executionKind === "build-test" && executionContext === undefined) {
       const workspaceId = await sessionBuildTestWorkspace(owner, resolved.run.sessionId);
       const current = await new WorkspaceBuildTests(owner, initiatorCredentials, workspaceId).current();

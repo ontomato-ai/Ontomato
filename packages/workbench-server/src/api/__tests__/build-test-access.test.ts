@@ -10,12 +10,17 @@ import { errorHandler } from "../middleware";
 let server: ReturnType<typeof createServer>;
 let base: string;
 let executed: string[];
+const callback = "/api/assistant/executions/11111111-1111-4111-8111-111111111111/ontology";
 
 beforeEach(async () => {
   executed = [];
   const app = express();
   app.use("/api", buildTestAccess);
   app.use("/internal/agent-channel",agentChannelRouter);
+  app.post(`${callback}/*`, (req, res) => {
+    executed.push(req.path);
+    res.sendStatus(204);
+  });
   app.post("/api/dashboards/query-card", (_req, res) => {
     executed.push("query-card");
     res.json({ success: true, data: [] });
@@ -49,6 +54,18 @@ afterEach(async () => {
 function testHeader() {
   return { [BUILD_TEST_HEADER]: JSON.stringify({ kind: "build-test", contextId: "context-a" }) };
 }
+
+it("lets declared assistant callback executions reach their Java owner with the test header", async () => {
+  const response = await fetch(`${base}${callback}/metricView/execute`, { method: "POST", headers: testHeader() });
+  expect(response.status).toBe(204);
+  expect(executed).toEqual([`${callback}/metricView/execute`]);
+});
+
+it("still refuses a headed assistant callback outside the declared test operations", async () => {
+  const response = await fetch(`${base}${callback}/action/save`, { method: "POST", headers: testHeader() });
+  expect(response.status).toBe(422);
+  expect(executed).toEqual([]);
+});
 
 it("refuses a build-test request to a business route before it executes", async () => {
   const response = await fetch(`${base}/api/dashboards/query-card`, { method: "POST", headers: testHeader() });
