@@ -192,8 +192,7 @@ const HOME_OBJECT_DETAIL_USE: ApplicationPanelUse = {
 };
 const objectDetailHost = ref<PanelInstanceView | null>(null);
 const objectDetailUse = computed<ApplicationPanelUse>(() =>
-  catalog.applications.value
-    .find((app) => app.id === "home")
+  catalog.applicationById("home")
     ?.panelUses?.find((use): use is ApplicationPanelUse => isApplicationPanelUse(use) && use.id === HOME_OBJECT_DETAIL_USE.id)
   ?? HOME_OBJECT_DETAIL_USE,
 );

@@ -8,7 +8,7 @@ import settingsSource from "../../../../../packages/ontology-manager/resources/b
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import { applicationPanelUseSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
+import { resetApplicationCatalog, useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { addressLandingGuard, panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
 import { panelNavigator } from "../../../../../packages/platform-web/src/panel-navigate";
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "../../../../../packages/platform-web/src/detail-selection";
@@ -49,9 +49,21 @@ function answer(request: Sent) {
 }
 
 function answerWithCatalog(panelUses: ApplicationPanelUse[]) {
-  return (request: Sent) => request.path === catalogPath
-    ? Response.json({ success: true, data: catalogWith(panelUses) })
-    : answer(request);
+  const apps = catalogWith(panelUses);
+  return (request: Sent) => {
+    if (request.path === catalogPath) {
+      return Response.json({
+        success: true,
+        data: apps.map(({ panelUses: _omitted, ...summary }) => summary),
+      });
+    }
+    const single = request.path.match(/^\/api\/data-query\/platform\/applications\/([^/]+)$/);
+    if (single) {
+      const app = apps.find((entry) => entry.id === decodeURIComponent(single[1]!));
+      if (app) return Response.json({ success: true, data: app });
+    }
+    return answer(request);
+  };
 }
 
 /** The platform's router as far as entries go: its layout, a page of its own, and the catch-all. */
@@ -76,9 +88,7 @@ async function open(address: string, landing: string | null = "/home") {
 
 afterEach(() => {
   leaveFrame();
-  const catalog = useApplicationCatalog();
-  catalog.applications.value = [];
-  catalog.loading.value = true;
+  resetApplicationCatalog();
   window.__APP_CONFIG__ = {};
 });
 
@@ -96,15 +106,16 @@ it("opens a built-in application's entry at its original address, through the pa
 });
 
 it.each([
-  ["a cold link", []],
-  ["a newly granted entry", catalogWith([])],
-] as const)("reads the catalog once to open %s", async (_scenario, initialCatalog) => {
+  ["a cold link", [], 1, 1],
+  ["a newly granted entry", catalogWith([]), 0, 1],
+] as const)("reads the owning application on demand to open %s", async (_scenario, initialCatalog, expectedCatalogReads, expectedSingleReads) => {
   const sent = installPlatform(answerWithCatalog([components]));
   useApplicationCatalog().applications.value = [...initialCatalog];
   const { router, app } = await open(components.path);
   try {
     expect(router.currentRoute.value.path).toBe(components.path);
-    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(1);
+    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(expectedCatalogReads);
+    expect(sent.filter(request => request.path === `${catalogPath}/ontology`)).toHaveLength(expectedSingleReads);
   } finally {
     app.unmount();
   }
@@ -118,7 +129,8 @@ it("goes where an address no page serves goes for a reader the entry does not ad
   try {
     expect(router.currentRoute.value.path).toBe("/home");
     expect(element.querySelector(".home")).not.toBeNull();
-    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(1);
+    expect(sent.filter(request => request.path === catalogPath)).toHaveLength(0);
+    expect(sent.filter(request => request.path === `${catalogPath}/ontology`)).toHaveLength(1);
   } finally {
     app.unmount();
   }
