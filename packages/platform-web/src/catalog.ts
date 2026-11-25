@@ -1,5 +1,6 @@
 import { shallowRef } from "vue";
 import { applicationCatalogSchema, isPanelApplication, type CatalogApplication } from "@ontomato/contracts/platform-identity";
+import { isNativeApplicationEntry } from "@ontomato/contracts/product-panels";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 const applications = shallowRef<CatalogApplication[]>([]);
@@ -45,5 +46,5 @@ export function useApplicationCatalog() {
  */
 export function panelEntryApplication(path: string): string | null {
   return applications.value.find((app) => !isPanelApplication(app)
-    && (app.panelUses ?? []).some((use) => panelUsePath(use.path) === path))?.id ?? null;
+    && (app.panelUses ?? []).some((use) => !isNativeApplicationEntry(use) && panelUsePath(use.path) === path))?.id ?? null;
 }

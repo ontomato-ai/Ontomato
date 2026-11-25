@@ -20,21 +20,34 @@ import org.springframework.web.util.UriUtils;
 public record ApplicationPanelUse(String id, String pageKey, String panelId, String path,
                                   Access access, DefaultAgentTarget defaultAgent, Map<String, String> names,
                                   @JsonDeserialize(using = DescriptionsDeserializer.class) Map<String, String> descriptions,
-                                  Map<String, Map<String, Object>> inputs, String groupKey, String icon) {
+                                  Map<String, Map<String, Object>> inputs, String groupKey, String icon, String kind) {
+    public static final String NATIVE_KIND = "native";
+
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
                                DefaultAgentTarget defaultAgent, Map<String, String> names) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, null, null, null, null);
+        this(id, pageKey, panelId, path, access, defaultAgent, names, null, null, null, null, null);
     }
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
                                DefaultAgentTarget defaultAgent, Map<String, String> names,
                                Map<String, Map<String, Object>> inputs, String groupKey) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, null, inputs, groupKey, null);
+        this(id, pageKey, panelId, path, access, defaultAgent, names, null, inputs, groupKey, null, null);
     }
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
                                DefaultAgentTarget defaultAgent, Map<String, String> names,
                                Map<String, String> descriptions,
                                Map<String, Map<String, Object>> inputs, String groupKey) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, inputs, groupKey, null);
+        this(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, inputs, groupKey, null, null);
+    }
+    public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
+                               DefaultAgentTarget defaultAgent, Map<String, String> names,
+                               Map<String, String> descriptions,
+                               Map<String, Map<String, Object>> inputs, String groupKey, String icon) {
+        this(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, inputs, groupKey, icon, null);
+    }
+
+    /** True when this entry points to a built-in native page rather than a product panel. */
+    public boolean nativeEntry() {
+        return NATIVE_KIND.equals(kind);
     }
 
     private static final class DescriptionsDeserializer extends JsonDeserializer<Map<String, String>> {
@@ -69,9 +82,13 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
     public String locator() { return PageSkills.locator(access.permissionCode(), access.kind(), pageKey); }
 
     static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses) {
+        return canonical(uses, false);
+    }
+
+    static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses, boolean allowNative) {
         var normalized = uses.stream().map(use -> new ApplicationPanelUse(use.id, use.pageKey, use.panelId,
-            canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.descriptions, use.inputs, use.groupKey, use.icon)).toList();
-        validate(normalized);
+            canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.descriptions, use.inputs, use.groupKey, use.icon, use.kind)).toList();
+        validate(normalized, allowNative);
         return normalized;
     }
 
@@ -104,18 +121,29 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
     }
 
     public static void validate(List<ApplicationPanelUse> uses) {
+        validate(uses, false);
+    }
+
+    public static void validate(List<ApplicationPanelUse> uses, boolean allowNative) {
         var ids = new HashSet<String>();
         var pages = new HashSet<String>();
         var paths = new HashSet<String>();
         for (var use : uses) {
             if (use.id() == null || use.id().isBlank() || !ids.add(use.id())
                 || use.pageKey() == null || use.pageKey().isBlank() || !pages.add(use.pageKey())
-                || use.panelId() == null || use.panelId().isBlank()
                 || !paths.add(use.path())
                 || use.access() == null || (use.access().permissionCode() == null) == (use.access().kind() == null)
                 || use.access().permissionCode() != null && use.access().permissionCode().isBlank()
                 || use.access().kind() != null && !use.access().kind().equals("domain-member"))
                 throw ApplicationCatalog.bad("Invalid or duplicate panel use");
+            if (use.kind() != null) {
+                if (!allowNative || !NATIVE_KIND.equals(use.kind()))
+                    throw ApplicationCatalog.bad("Native entries are allowed only on built-in applications: " + use.pageKey());
+                if (use.panelId() != null || use.inputs() != null || use.defaultAgent() != null)
+                    throw ApplicationCatalog.bad("Native entry " + use.pageKey() + " cannot declare panelId, inputs, or defaultAgent");
+            } else if (use.panelId() == null || use.panelId().isBlank()) {
+                throw ApplicationCatalog.bad("Invalid or duplicate panel use");
+            }
             if (use.names() != null && (use.names().isEmpty()
                 || use.names().values().stream().anyMatch(name -> name == null || name.isBlank())))
                 throw ApplicationCatalog.bad("A panel use's names require at least one nonblank localized name");

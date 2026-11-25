@@ -1,7 +1,7 @@
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { Activity, Cable, Cpu, Database, Plug, ScrollText, Server, SlidersHorizontal } from "lucide-vue-next";
+import { Activity } from "lucide-vue-next";
 import type { RouteRecordRaw } from "vue-router";
-import type { PlatformEntryRow, PlatformGroup, PlatformPage } from "./navigation";
+import type { PlatformGroup, PlatformPage } from "./navigation";
 
 /**
  * Platform administration pages this package ships: the system settings' pages beside the permissions. Each page is one
@@ -12,17 +12,6 @@ import type { PlatformEntryRow, PlatformGroup, PlatformPage } from "./navigation
 export const platformGroups = {
   platform: { key: "platform", titleKey: "platform.title" },
 } satisfies Record<string, PlatformGroup>;
-
-/** Menu row icons for built-in settings panel entries whose native Vue routes have been replaced. */
-export const platformEntryRows: readonly PlatformEntryRow[] = [
-  { path: platformRoutes.usage.path, icon: Cpu },
-  { path: platformRoutes.providers.path, icon: Server },
-  { path: platformRoutes.general.path, icon: SlidersHorizontal },
-  { path: platformRoutes.adapters.path, icon: Database },
-  { path: platformRoutes.externalMcp.path, icon: Cable },
-  { path: platformRoutes.publishedMcp.path, icon: Plug },
-  { path: platformRoutes.audit.path, icon: ScrollText },
-];
 
 export const platformPages = {
   systemMonitor: {

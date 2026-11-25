@@ -21,7 +21,6 @@ import { managerMessageTree, type ManagerMessages } from "@ontomato/ontology-man
 import {
   type PlatformPreferences,
   mergeMessages,
-  platformEntryRows,
   type PlatformGroup,
   type PlatformLocale,
   type PlatformNavigation,
@@ -175,7 +174,7 @@ export function serviceNavigation(
   return {
     groups: [...ontology.groups, platformGroup],
     pages: [...ontology.pages, ...platformPages, ...applicationPages],
-    entries: [...ontology.entries, ...platformEntryRows],
+    entries: [...ontology.entries],
   };
 }
 

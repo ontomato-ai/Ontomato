@@ -494,4 +494,43 @@ class PanelApplicationsTest {
             null, null, null, "   ");
         assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(blankIcon)));
     }
+
+    @Test void validatesBuiltinNativeEntriesAndRejectsThemOnDomainWrites() throws Exception {
+        var nativeEntry = new ApplicationPanelUse("system-monitor", "system-monitor", null, "/settings/records/system-monitor",
+            new ApplicationPanelUse.Access("system-monitoring", null), null, Map.of("en", "System monitoring"),
+            null, null, "records", "activity", ApplicationPanelUse.NATIVE_KIND);
+        assertTrue(nativeEntry.nativeEntry());
+        // Domain write validation rejects kind="native".
+        assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(nativeEntry)));
+        // Built-in validation accepts explicit kind="native" without panel-only fields.
+        assertEquals(ApplicationPanelUse.NATIVE_KIND,
+            ApplicationPanelUse.canonical(List.of(nativeEntry), true).getFirst().kind());
+        // Native entries cannot declare panelId, inputs, or defaultAgent.
+        var withPanelId = new ApplicationPanelUse("bad-native-panel", "bad-native-panel", "builtin-product-audit-log",
+            "/settings/records/bad-1", new ApplicationPanelUse.Access("system-monitoring", null), null,
+            Map.of("en", "Bad"), null, null, "records", "activity", ApplicationPanelUse.NATIVE_KIND);
+        assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(withPanelId), true));
+        var withInputs = new ApplicationPanelUse("bad-native-inputs", "bad-native-inputs", null,
+            "/settings/records/bad-2", new ApplicationPanelUse.Access("system-monitoring", null), null,
+            Map.of("en", "Bad"), null, Map.of("x", Map.of("literal", "y")), "records", "activity", ApplicationPanelUse.NATIVE_KIND);
+        assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(withInputs), true));
+        // Omitting panelId without explicit kind="native" is still rejected even for built-ins.
+        var missingPanelId = new ApplicationPanelUse("missing-panel", "missing-panel", null,
+            "/settings/records/missing", new ApplicationPanelUse.Access("system-monitoring", null), null,
+            Map.of("en", "Missing"), null, null, "records", "activity", null);
+        assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(missingPanelId), true));
+
+        // Shipped settings.json parses cleanly with its 4 groups, 7 panel entries, and shared system-monitor native entry.
+        var settings = ApplicationCatalogUpgrade.Builtins.readDeclaration(
+            new org.springframework.core.io.ClassPathResource("applications/settings.json"));
+        assertEquals("settings", settings.id());
+        assertEquals(4, settings.declaration().groups().size());
+        var uses = ApplicationPanelUse.canonical(settings.declaration().panelUses(), true);
+        assertEquals(8, uses.size());
+        var monitor = uses.stream().filter(use -> "system-monitor".equals(use.id())).findFirst().orElseThrow();
+        assertTrue(monitor.nativeEntry());
+        assertEquals("/settings/records/system-monitor", monitor.path());
+        assertEquals("records", monitor.groupKey());
+        assertEquals("activity", monitor.icon());
+    }
 }
