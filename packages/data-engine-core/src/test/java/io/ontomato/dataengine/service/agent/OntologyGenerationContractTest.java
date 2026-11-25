@@ -37,6 +37,8 @@ class OntologyGenerationContractTest {
   OntologyAgentStore store;
   QueryGrantService grants;
   GenerationOperations operations;
+  private final io.ontomato.dataengine.service.authorization.ActionAuthorization actionAuthorization =
+      mock(io.ontomato.dataengine.service.authorization.ActionAuthorization.class);
   OntologyGenerationService generation;
   AgentRuntimeClient runtime;
   RuntimeCodeClient code;
@@ -108,6 +110,7 @@ class OntologyGenerationContractTest {
     var ontology = mock(OntologyQueryService.class);
     when(ontology.rule(any())).thenReturn(Map.of("classDef", List.of()));
     org.springframework.test.util.ReflectionTestUtils.setField(operations, "ontology", ontology);
+    org.springframework.test.util.ReflectionTestUtils.setField(operations, "actionAuthorization", actionAuthorization);
     runtime = mock(AgentRuntimeClient.class);
     when(runtime.ontologyUrl()).thenReturn("http://ontology.invalid");
     code = mock(RuntimeCodeClient.class);
@@ -345,17 +348,17 @@ class OntologyGenerationContractTest {
 
   @Test
   void readAccessCannotAllocateOrContinueAWriteSandbox() throws Exception {
-    doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,
-        "Action execution permission is required")).when(identity).requireActionExecutionAccess(owner.userId(), owner.domainId());
-    assertThrows(org.springframework.web.server.ResponseStatusException.class,
+    var denied = new io.ontomato.dataengine.service.authorization.ActionAuthorization.Denied(
+        "CREATE_FORBIDDEN", "Action create permission is required");
+    doThrow(denied).when(actionAuthorization).requireCreate(any());
+    assertThrows(AgentHttpException.class,
         () -> generation.open("action", UUID.randomUUID().toString(), null, owner, true));
     verifyNoInteractions(sandboxService, python);
-    reset(identity);
+    doNothing().when(actionAuthorization).requireCreate(any());
     var opened = generation.open("action", UUID.randomUUID().toString(), null, owner, true);
     verifyNoInteractions(sandboxService);
-    doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN))
-        .when(identity).requireActionExecutionAccess(owner.userId(), owner.domainId());
-    assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> operations.test(opened.getString("runId"), owner,
+    doThrow(denied).when(actionAuthorization).requireCreate(any());
+    assertThrows(AgentHttpException.class, () -> operations.test(opened.getString("runId"), owner,
         JSONObject.of("code", source, "parameterDefs", new JSONArray())));
     verifyNoInteractions(python);
     generation.close(opened.getString("sessionId"), opened.getString("runId"), owner);

@@ -28,6 +28,7 @@ public final class AuthorizationTypes {
     public record PolicyRef(String roleId, String policyId, PolicyKind kind) {}
 
     public record ObjectGrant(String policyId, ObjectTarget target, Verb verb, GrantScope scope) {}
+    public record AgentPolicyGrant(String policyId, String name, Verb level) {}
 
     public record PendingGrant(long id, String source, String changeKey, String actorId,
                                ObjectTarget entry, ObjectGrant grant) {}
@@ -42,7 +43,9 @@ public final class AuthorizationTypes {
             Map<String, Set<String>> grantRootsByRole,
             boolean administrator) {
         public Set<String> rootsForRole(String roleId) {
-            return directRoleIds.contains(roleId) ? membershipRoots : grantRootsByRole.getOrDefault(roleId, Set.of());
+            var roots = new java.util.LinkedHashSet<>(grantRootsByRole.getOrDefault(roleId, Set.of()));
+            if (directRoleIds.contains(roleId)) roots.addAll(membershipRoots);
+            return roots;
         }
     }
 }

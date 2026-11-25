@@ -53,7 +53,7 @@
           "kind": "operation",
           "operation": "archive",
           "labelKey": "action.archive",
-          "danger": true
+          "tone": "danger"
         }
       ]
     }

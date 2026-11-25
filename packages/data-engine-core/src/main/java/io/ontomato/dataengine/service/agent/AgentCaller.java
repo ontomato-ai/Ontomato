@@ -3,7 +3,7 @@ package io.ontomato.dataengine.service.agent;
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.schedules.ScheduleIdentity;
 import io.ontomato.dataengine.service.IdentityService;
-import io.ontomato.dataengine.service.ProductGrantService;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import java.time.Instant;
 import java.util.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -15,15 +15,15 @@ public class AgentCaller {
   private final JdbcTemplate jdbc;
   private final ScheduleIdentity identities;
   private final IdentityService identity;
-  private final ProductGrantService productGrants;
+  private final RetrieverAccess retrieverAccess;
   @org.springframework.beans.factory.annotation.Autowired
   private io.ontomato.dataengine.service.DataSandboxService contexts;
 
   @org.springframework.beans.factory.annotation.Autowired
   private AgentExecutionAccess executions;
 
-  public AgentCaller(JdbcTemplate jdbc, ScheduleIdentity identities, IdentityService identity, ProductGrantService productGrants) {
-    this.jdbc=jdbc; this.identities=identities; this.identity=identity; this.productGrants=productGrants;
+  public AgentCaller(JdbcTemplate jdbc, ScheduleIdentity identities, IdentityService identity, RetrieverAccess retrieverAccess) {
+    this.jdbc=jdbc; this.identities=identities; this.identity=identity; this.retrieverAccess=retrieverAccess;
   }
   public record Actor(String id, io.ontomato.dataengine.core.bean.User user, long expiresAt) {
     public OntologyAgentStore.Owner owner() { return new OntologyAgentStore.Owner(user.getId(),user.getDomainId()); }
@@ -88,9 +88,9 @@ public class AgentCaller {
     var actor=restore(ref,domain);
     var executor=executionUser(actor,executionActor);
     boolean query = purpose != Purpose.GENERATION;
-    if(query) requireQueryUser(executor);
-    if (purpose == Purpose.RETRIEVAL && !productGrants.allowedFor(domain, executor.getId(), OntologyAgentStore.RETRIEVER, "use"))
-      throw new AgentHttpException(403, "FORBIDDEN", "Retriever use Grant required");
+    if (purpose == Purpose.QUERY) requireQueryUser(executor);
+    if (purpose == Purpose.RETRIEVAL)
+      retrieverAccess.require(retrieverAccess.subject(new OntologyAgentStore.Owner(executor.getId(), domain)), Verb.USE);
     var permission=identities.dataPermission(domain,executor.getId());
     var classes=authority.getList("classNames",String.class);
     if(purpose == Purpose.QUERY) classes=io.ontomato.dataengine.service.QueryAccessService.classScope(permission,classes);

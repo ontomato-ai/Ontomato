@@ -17,6 +17,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { ownerEnvelopeSchema, ownerWriteFailure } from "../product-panels/data-query-operations";
+import type { PolicyWorkbenchCatalog } from "./policy-catalog";
 
 /*
  * Direct-panel read adapters for enterprise governance owners: users, roles, permission policies, and organization
@@ -77,7 +78,11 @@ function formBody(id: string | undefined, { values, changedField }: GovernanceFo
   };
 }
 
-export function createGovernanceReadAdapters(viewer: AssistantCredentials) {
+export interface GovernanceReadOptions {
+  loadPolicyCatalog?: () => Promise<PolicyWorkbenchCatalog>;
+}
+
+export function createGovernanceReadAdapters(viewer: AssistantCredentials, options: GovernanceReadOptions = {}) {
   const owner = governanceOwner(viewer);
 
   return {
@@ -143,8 +148,14 @@ export function createGovernanceReadAdapters(viewer: AssistantCredentials) {
       record(id: string): Promise<PanelRecord> {
         return owner("governance-policy-record", "/panel/governance/policies/record", { id }, panelRecordSchema);
       },
-      form(id: string, params: GovernanceFormParams): Promise<PanelFormDescription> {
-        return owner("governance-policy-form", "/panel/governance/policies/form", formBody(id, params), panelFormDescriptionSchema);
+      async form(id: string, params: GovernanceFormParams): Promise<PanelFormDescription> {
+        const workbenchCatalog = options.loadPolicyCatalog ? await options.loadPolicyCatalog() : undefined;
+        return owner(
+          "governance-policy-form",
+          "/panel/governance/policies/form",
+          formBody(id, params, workbenchCatalog ? { workbenchCatalog } : undefined),
+          panelFormDescriptionSchema,
+        );
       },
       createForm(params: GovernanceFormParams): Promise<PanelFormDescription> {
         return owner("governance-policy-create-form", "/panel/governance/policies/form", formBody(undefined, params), panelFormDescriptionSchema);

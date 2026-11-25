@@ -729,13 +729,9 @@
       destroy-on-close
     >
       <sdk-form v-if="grantDialogOpen && grantEntryAllowed" label-position="top">
-        <sdk-form-item :label="t('grants.kind')">
-          <sdk-segmented v-model="grantPrincipalKindModel" :options="grantKindOptions" size="default"></sdk-segmented>
-        </sdk-form-item>
-        <sdk-form-item :label="grantPrincipalKindModel === 'role' ? t('grants.role') : t('grants.principal')">
+        <sdk-form-item :label="t('grants.policy')">
           <div class="agent-detail-picker-field">
-            <projection v-if="grantPrincipalKindModel === 'role'" slot="rolePicker"></projection>
-            <projection v-else slot="userPicker"></projection>
+            <projection slot="policyPicker"></projection>
           </div>
         </sdk-form-item>
         <sdk-form-item :label="t('grants.level')">

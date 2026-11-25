@@ -207,7 +207,7 @@ function candidatePageSkill(entrance: PageSkillEntrance, skill: RuntimeSkillRef,
 
 /** Read one page's skill and the admitted placements of that same skill. */
 export async function readPageCandidateSkill(caller: PageSkillViewCaller, entrance: PageSkillEntrance,
-  usableIds: ReadonlySet<string>, member?: PageSkillMember,
+  usableIds?: ReadonlySet<string>, member?: PageSkillMember,
 ) {
   const { domainId, initiatorCredentials, userId } = caller;
   if (!member) {

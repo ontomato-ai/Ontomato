@@ -1,9 +1,8 @@
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 import { HttpError } from "../../../utils/errors";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import { panelRecordListSchema } from "@ontomato/contracts/panel-projection";
-import type { ProductGrantRecord } from "@ontomato/contracts/product-governance";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { tmpdir } from "node:os";
@@ -35,113 +34,121 @@ const host: PanelOperationHost = {
   request: vi.fn(), requestWorkbench: vi.fn(),
 };
 const [, , grant, revoke, share] = agentDefinitionOperations;
-const role = { principalKind: "role", principalId: "analyst" } as const;
+const policy = { policyId: "analyst-policy" };
+const definition = {
+  target: { domainId: owner.domainId, kind: "AGENT", id },
+  ownerFacts: { ownerId: "author", state: "PUBLISHED" },
+};
+const decideBatch = "object-authorization-decide-batch";
+const agentLevel = "object-authorization-agent-level";
+const agentAccess = "object-authorization-agent-access";
+const domainUse = "object-authorization-domain-use";
+const forbidden = { status: 403, code: "OBJECT_FORBIDDEN" };
 const reply = (data: unknown) => ({ text: JSON.stringify(data) });
 
 configureI18n({ defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { messages: en, ...enLocaleMeta } } });
 beforeEach(() => {
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "workbench-test-token");
   mocks.builderAccess.mockReset().mockResolvedValue(undefined);
   mocks.observeAccess.mockReset().mockResolvedValue(undefined);
   mocks.session.mockReset().mockResolvedValue({ agent_id: id });
   mocks.agent.mockReset().mockResolvedValue({
-    id, kind: id, name: "Agent", description: "", icon: null, enabled: true,
+    id, domain_id: owner.domainId, owner_id: "author", kind: id, name: "Agent", description: "", icon: null, enabled: true,
     engine: "pi", class_names: [], enabled_mcp_service_ids: [], sort_order: 0,
     system_prompt: "Prompt", skills: [], model_selection: { modelId: null }, execution_user_id: null,
   });
-  mocks.post.mockReset().mockImplementation(async (operation: string) =>
-    reply(operation === "product-grant-check" ? { allowed: true } : { success: true }));
+  mocks.post.mockReset().mockImplementation(async (operation: string) => {
+    if (operation === decideBatch) return reply({ decisions: [{ allowed: true, code: null, reason: null }] });
+    if (operation === agentLevel || operation === domainUse) return { text: "" };
+    throw new Error(`Unexpected authorization operation: ${operation}`);
+  });
 });
+
+afterEach(() => { vi.unstubAllEnvs(); });
 
 it.each([
-  ["edit", ["use", "view", "edit"]],
-  ["view", ["use", "view"]],
-  ["use", ["use"]],
-])("sets the complete %s grant with one owner mutation", async (verb, verbs) => {
-  await expect(grant.execute(host, target, { ...role, verb })).resolves.toMatchObject({
+  ["edit", "EDIT"],
+  ["view", "VIEW"],
+  ["use", "USE"],
+])("sends the %s level as one policy replacement", async (verb, level) => {
+  await expect(grant.execute(host, target, { ...policy, verb })).resolves.toMatchObject({
     kind: "success", affected: { objects: [{ objectType: AGENT_DEFINITION, primaryKey: id }] },
   });
-  const writes = mocks.post.mock.calls.filter(([operation]) => operation === "product-grant-set");
-  expect(writes.map(call => call[2])).toEqual([{ id, ...role, verbs }]);
-});
-
-it("revokes the entire subject grant and writes domain sharing separately", async () => {
-  await expect(revoke.execute(host, target, role)).resolves.toMatchObject({ kind: "success" });
-  await expect(share.execute(host, target, { shared: false })).resolves.toMatchObject({ kind: "success" });
-  expect(mocks.post.mock.calls.map(([operation, , body]) => [operation, body])).toEqual([
-    ["product-grant-check", { id, verb: "edit" }],
-    ["product-grant-set", { id, ...role, verbs: [] }],
-    ["product-grant-check", { id, verb: "edit" }],
-    ["product-grant-sharing", { id, shared: false }],
+  expect(mocks.post.mock.calls).toEqual([
+    [agentLevel, "http://query/authorization/objects/agent-level", { ...definition, ...policy, level }, expect.anything()],
   ]);
 });
 
-it("refuses grant reads and mutations without edit authorization", async () => {
-  mocks.post.mockResolvedValue(reply({ allowed: false }));
-  const reads = createAgentDefinitionDirectory(owner, credentials);
-  await expect(reads.grantRows(id)).rejects.toMatchObject({ status: 403, code: "PRODUCT_FORBIDDEN" });
-  await expect(grant.execute(host, target, { ...role, verb: "use" })).resolves.toMatchObject({ kind: "refusal", code: "PRODUCT_FORBIDDEN" });
-  expect(mocks.post.mock.calls.every(([operation]) => operation === "product-grant-check")).toBe(true);
-  expect(mocks.agent).not.toHaveBeenCalled();
+it("revokes the complete policy level and writes domain sharing separately", async () => {
+  await expect(revoke.execute(host, target, policy)).resolves.toMatchObject({ kind: "success" });
+  await expect(share.execute(host, target, { shared: false })).resolves.toMatchObject({ kind: "success" });
+  expect(mocks.post.mock.calls.map(([operation, , body]) => [operation, body])).toEqual([
+    [agentLevel, { ...definition, ...policy, level: null }],
+    [domainUse, { ...definition, shared: false }],
+  ]);
 });
 
-it("projects each subject at its highest tier while keeping principal kinds distinct", async () => {
-  const grants: ProductGrantRecord[] = [
-    { ...role, verb: "view" }, { ...role, verb: "use" }, { ...role, verb: "edit", principalName: "Analysts" },
-    { principalKind: "principal", principalId: role.principalId, verb: "view" },
-    { principalKind: "domain", principalId: "*", verb: "use" },
+it("propagates the policy owner's edit refusal on reads and mutations", async () => {
+  mocks.post.mockRejectedValue(new HttpError(403, "Edit permission required", "FORBIDDEN"));
+  const reads = createAgentDefinitionDirectory(owner, credentials);
+  await expect(reads.grantRows(id)).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+  await expect(grant.execute(host, target, { ...policy, verb: "use" })).resolves.toMatchObject({ kind: "refusal", code: "FORBIDDEN" });
+  await expect(revoke.execute(host, target, policy)).resolves.toMatchObject({ kind: "refusal", code: "FORBIDDEN" });
+  await expect(share.execute(host, target, { shared: true })).resolves.toMatchObject({ kind: "refusal", code: "FORBIDDEN" });
+  expect(mocks.post.mock.calls.map(([operation, , body]) => [operation, body])).toEqual([
+    [agentAccess, definition],
+    [agentLevel, { ...definition, ...policy, level: "USE" }],
+    [agentLevel, { ...definition, ...policy, level: null }],
+    [domainUse, { ...definition, shared: true }],
+  ]);
+});
+
+it("projects the three policy levels and a separate non-revocable domain row", async () => {
+  const grants = [
+    { ...policy, name: "Analysts", level: "EDIT" },
+    { policyId: "viewer-policy", name: "Analysts", level: "VIEW" },
+    { policyId: "operator-policy", name: "Operators", level: "USE" },
   ];
-  mocks.post.mockImplementation(async (operation: string) =>
-    reply(operation === "product-grant-records" ? { grants } : { allowed: true }));
+  mocks.post.mockResolvedValue(reply({ grants, shared: true }));
   const reads = createAgentDefinitionDirectory(owner, credentials);
   await expect(reads.grants(id)).resolves.toEqual({ grants, shared: true });
   const rows = panelRecordListSchema.parse(await reads.grantRows(id));
-  expect(rows).toHaveLength(3);
+  expect(rows).toHaveLength(4);
+  for (const { policyId, name, level } of grants) {
+    expect(rows).toContainEqual(expect.objectContaining({
+      primaryKey: policyId, className: AGENT_DEFINITION, label: name,
+      fields: expect.objectContaining({ policyId, level: level.toLowerCase(), verb: level.toLowerCase(), revocable: true }),
+    }));
+  }
   expect(rows).toContainEqual(expect.objectContaining({
-    primaryKey: "role:analyst", className: AGENT_DEFINITION, label: "Analysts", subtitle: "analyst",
-    fields: expect.objectContaining({ level: "edit", verb: "edit", revocable: true }),
-  }));
-  expect(rows).toContainEqual(expect.objectContaining({
-    primaryKey: "principal:analyst", fields: expect.objectContaining({ level: "view", revocable: true }),
-  }));
-  expect(rows).toContainEqual(expect.objectContaining({
-    primaryKey: "domain:*", fields: expect.objectContaining({ level: "use", revocable: false }),
+    primaryKey: "domain", fields: expect.objectContaining({ level: "use", revocable: false }),
   }));
 });
 
-it("requires both application access and use to admit the app builder", async () => {
-  mocks.agent.mockResolvedValue({ id, kind: "app-builder", enabled: true });
+it.each(["app-builder", "ops-diagnosis"])("admits %s with object use even when its former gate would deny", async kind => {
+  mocks.agent.mockResolvedValue({ id, domain_id: owner.domainId, owner_id: null, kind, enabled: true });
+  const gateRefusal = new HttpError(403, "Former gate denied", "FORBIDDEN");
+  mocks.builderAccess.mockRejectedValue(gateRefusal);
+  mocks.observeAccess.mockRejectedValue(gateRefusal);
   await expect(assistantService.admitAgent(id, owner, credentials)).resolves.toMatchObject({ agent: { id } });
-
-  mocks.builderAccess.mockRejectedValue(new HttpError(403, "Application access denied", "FORBIDDEN"));
-  await expect(assistantService.admitAgent(id, owner, credentials)).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+  expect(mocks.post).toHaveBeenCalledWith(decideBatch, "http://query/authorization/objects/decide-batch", {
+    requests: [{ ...definition, ownerFacts: { ownerId: null, state: "PUBLISHED" }, verb: "USE" }],
+  }, expect.anything());
+  expect(mocks.builderAccess).not.toHaveBeenCalled();
+  expect(mocks.observeAccess).not.toHaveBeenCalled();
 });
 
-it("refuses app builder admission, creation, continuation and preparation after use is revoked", async () => {
-  mocks.agent.mockResolvedValue({ id, kind: "app-builder", enabled: true });
-  mocks.post.mockResolvedValue(reply({ allowed: false }));
+it.each(["app-builder", "ops-diagnosis"])("refuses %s admission, creation, continuation and preparation after use is revoked", async kind => {
+  mocks.agent.mockResolvedValue({ id, domain_id: owner.domainId, owner_id: null, kind, enabled: true });
+  mocks.post.mockResolvedValue(reply({ decisions: [{ allowed: false, code: forbidden.code, reason: "Use permission required" }] }));
   const run = { agent: { agentId: id } } as AgentPrepareRequest;
-  const forbidden = { status: 403, code: "PRODUCT_FORBIDDEN" };
   await expect(assistantService.admitAgent(id, owner, credentials)).rejects.toMatchObject(forbidden);
   await expect(assistantService.create(id, owner, { agentId: id }, credentials)).rejects.toMatchObject(forbidden);
   await expect(assistantService.send(id, id, { message: "Continue" }, owner, credentials, "human")).rejects.toMatchObject(forbidden);
   await expect(assistantService.prepare(run, owner, credentials)).rejects.toMatchObject(forbidden);
-  expect(mocks.post).toHaveBeenCalledWith("product-grant-check", expect.any(String), { id, verb: "use" }, expect.anything());
-});
-
-it("requires both observe access and use grant to admit ops-diagnosis", async () => {
-  mocks.agent.mockResolvedValue({ id, kind: "ops-diagnosis", enabled: true });
-  await expect(assistantService.admitAgent(id, owner, credentials)).resolves.toMatchObject({ agent: { id } });
-  expect(mocks.observeAccess).toHaveBeenCalledWith({ domainId: owner.domainId, token: credentials.token, apiKey: undefined });
-
-  mocks.observeAccess.mockRejectedValue(new HttpError(403, "Observe permission required", "FORBIDDEN"));
-  await expect(assistantService.admitAgent(id, owner, credentials)).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
-
-  mocks.observeAccess.mockResolvedValue(undefined);
-  mocks.post.mockResolvedValue(reply({ allowed: false }));
-  const run = { agent: { agentId: id } } as AgentPrepareRequest;
-  const forbidden = { status: 403, code: "PRODUCT_FORBIDDEN" };
-  await expect(assistantService.admitAgent(id, owner, credentials)).rejects.toMatchObject(forbidden);
-  await expect(assistantService.create(id, owner, { agentId: id }, credentials)).rejects.toMatchObject(forbidden);
-  await expect(assistantService.send(id, id, { message: "Diagnose" }, owner, credentials, "human")).rejects.toMatchObject(forbidden);
-  await expect(assistantService.prepare(run, owner, credentials)).rejects.toMatchObject(forbidden);
+  expect(mocks.post).toHaveBeenCalledWith(decideBatch, "http://query/authorization/objects/decide-batch", {
+    requests: [{ ...definition, ownerFacts: { ownerId: null, state: "PUBLISHED" }, verb: "USE" }],
+  }, expect.anything());
+  expect(mocks.builderAccess).not.toHaveBeenCalled();
+  expect(mocks.observeAccess).not.toHaveBeenCalled();
 });

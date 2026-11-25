@@ -156,7 +156,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       }, resultSchemas: { panelRecordList: { type: "array" } } });
       const cli = join(HERE, "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
       const checked = exec([cli, "panel", "check", "panel", "--sdk-dir", sdk, "--component-package", author, "--type-table", "types.json"]);
-      assert.deepEqual(JSON.parse(checked), { status: "valid", version, unchecked: [] });
+      assert.deepEqual(JSON.parse(checked), { status: "valid", version, typeTableChecked: true, unchecked: [] });
     });
 
     await t.test("the offline checker requires an explicit form for a draft read before writing any IDs", () => {
@@ -318,6 +318,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(rowActivation?.required, false);
     assert.match(rowActivation?.type ?? "", /"click"/);
     assert.match(rowActivation?.type ?? "", /"dblclick"/);
+    assert.match(rowActivation?.type ?? "", /"expand"/);
     assert.equal(rowActivation?.default, '"click"');
     const showPageJumper = declared.get("ObjectList").config.find(prop => prop.name === "show-page-jumper");
     assert.equal(showPageJumper?.required, false);
@@ -500,6 +501,53 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       /exportBackground|exportFilename|export-background|export-filename/u,
       "ObjectGraph meaning must not list single-page PNG export presentation attributes",
     );
+    // Guard against single-page exclusive presentation attributes (Groups A–F) leaking into public component meanings.
+    const singlePageExclusions = [
+      ["ObjectList", /rowToneMap|row-tone-map|rowToneField|row-tone-field|searchSubmit|search-submit|skeletonCount|skeleton-count|leadingIconSize|leading-icon-size|tagEffect|tag-effect|rowActionIconVariant|row-action-icon-variant|iconVariant|icon-variant|\bmetaField\b|meta-field/u],
+      ["ObjectTree", /directoryIndexFile|directory-index-file/u],
+      ["ObjectForm", /showRequiredMark|show-required-mark|showToc|show-toc|array-item-footer|fixedRows|fixed-rows|labelPosition|label-position|labelWidth|label-width|field-after-|variablesCollapsible|variables-collapsible|variablesPresentation|variables-presentation/u],
+      ["ObjectSummary", /\btextField\b|text-field/u],
+    ];
+    for (const [name, pattern] of singlePageExclusions) {
+      assert.doesNotMatch(
+        declared.get(name).meaning,
+        pattern,
+        `${name} meaning must not list single-page exclusive presentation attributes`,
+      );
+    }
+    // Status semantic tones travel on values or record.tones — never via ObjectList.rowToneMap or InfoBanner.toneMap.
+    const objectListConfigNames = (declared.get("ObjectList").config ?? []).map((prop) => prop.name);
+    assert.equal(objectListConfigNames.includes("row-tone-map"), false, "ObjectList must not expose row-tone-map");
+    assert.equal(objectListConfigNames.includes("row-tone-field"), true, "ObjectList retains row-tone-field");
+    const infoBannerConfigNames = (declared.get("InfoBanner").config ?? []).map((prop) => prop.name);
+    assert.equal(infoBannerConfigNames.includes("tone-map"), false, "InfoBanner must not expose tone-map");
+    assert.equal(infoBannerConfigNames.includes("tone-field"), true, "InfoBanner retains tone-field");
+    // Verify Group F public general capabilities are reflected in catalogue metadata and config.
+    assert.match(declared.get("ObjectForm").meaning, /\bsubmitOn\b/u, "ObjectForm meaning documents submitOn");
+    assert.doesNotMatch(
+      declared.get("ObjectForm").meaning,
+      /config\.actions` to `header`/u,
+      "ObjectForm meaning must not document removed actions: 'header'",
+    );
+    assert.ok(
+      declared.get("OperationButton").bindsElement.includes("Action:*"),
+      "OperationButton bindsElement must include customer Action:*",
+    );
+    assert.equal(
+      declared.get("AnnotatedCode").inputs?.language?.kind,
+      "scalar",
+      "AnnotatedCode declares inputs.language port",
+    );
+    assert.ok(
+      (declared.get("AnnotatedCode").config ?? []).some((prop) => prop.name === "language"),
+      "AnnotatedCode exposes language config prop",
+    );
+    assert.ok(
+      (declared.get("ReferencePicker").config ?? []).some((prop) => prop.name === "refreshable"),
+      "ReferencePicker exposes refreshable config prop",
+    );
+    assert.match(declared.get("ReferencePicker").meaning, /\brefreshable\b/u, "ReferencePicker meaning documents refreshable");
+    assert.match(declared.get("ReferencePicker").meaning, /\bMemberDataState\b/u, "ReferencePicker meaning documents MemberDataState retry");
     for (const forbidden of ["style-overrides", "toolbar-placement", "connect-ports", "show-pending-edge", "pending-edge"]) {
       assert.equal(
         objectGraphConfigNames.includes(forbidden),
@@ -555,6 +603,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       "docs/components/ObjectList.md must expand ObjectListColumn fields beside ObjectList config",
     );
     const columnTypeLine = objectListDoc.match(/type ObjectListColumn = [^\n]+/u)?.[0] ?? "";
+    assert.ok(columnTypeLine.includes("minContainerWidth"), `ObjectListColumn in docs/components/ObjectList.md must include minContainerWidth: ${columnTypeLine}`);
     for (const kind of ['"text"', '"tag"', '"tags"', '"reference"', '"time"']) {
       assert.ok(columnTypeLine.includes(kind), `ObjectListColumn in docs/components/ObjectList.md must include kind ${kind}: ${columnTypeLine}`);
     }

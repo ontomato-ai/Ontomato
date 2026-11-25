@@ -223,10 +223,6 @@
         "config": {
           "field": "evidenceHint",
           "toneField": "hasEvidence",
-          "toneMap": {
-            "true": "info",
-            "false": "warning"
-          },
           "compact": true,
           "hideWhenEmpty": true
         },

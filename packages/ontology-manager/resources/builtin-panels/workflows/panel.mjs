@@ -1,4 +1,4 @@
-import { computed, reactive, watch } from "vue";
+import { computed } from "vue";
 import {
   mountPanel,
   usePanelBack,
@@ -37,37 +37,51 @@ await mountPanel({
       return name ? t("grants.titleNamed", { name }) : t("grants.title");
     });
 
-    const initialGrantState = () => ({ count: 0, loading: true, error: null });
-    const grantStates = reactive({
-      caseScoped: initialGrantState(),
-      inForce: initialGrantState(),
-      superseded: initialGrantState(),
-      direct: initialGrantState(),
-    });
-
-    watch(inspectingGrantsKey, () => {
-      grantStates.caseScoped = initialGrantState();
-      grantStates.inForce = initialGrantState();
-      grantStates.superseded = initialGrantState();
-      grantStates.direct = initialGrantState();
-    });
-
-    function onGrantState(group, snapshot) {
-      grantStates[group] = {
-        count: Number(snapshot?.count ?? 0),
-        loading: Boolean(snapshot?.loading),
-        error: snapshot?.error ?? null,
-      };
+    function readGrantGroup(member) {
+      const status = usePanelOutput(member, "status");
+      const loadedCount = usePanelOutput(member, "loadedCount");
+      return computed(() => {
+        const currentStatus = status.value;
+        const count = typeof loadedCount.value === "number" ? loadedCount.value : 0;
+        const loading = currentStatus === null || currentStatus === "awaiting" || currentStatus === "loading";
+        const error = currentStatus === "error" || currentStatus === "forbidden";
+        return { count, loading, error };
+      });
     }
 
+    const grantGroups = {
+      caseScoped: readGrantGroup("grantCaseScopedSteps"),
+      inForce: readGrantGroup("grantInForce"),
+      superseded: readGrantGroup("grantSuperseded"),
+      direct: readGrantGroup("grantDirect"),
+    };
+
+    const grantStates = computed(() => ({
+      caseScoped: grantGroups.caseScoped.value,
+      inForce: grantGroups.inForce.value,
+      superseded: grantGroups.superseded.value,
+      direct: grantGroups.direct.value,
+    }));
+
     const grantsLoading = computed(
-      () => grantStates.caseScoped.loading || grantStates.inForce.loading || grantStates.superseded.loading || grantStates.direct.loading,
+      () =>
+        grantStates.value.caseScoped.loading ||
+        grantStates.value.inForce.loading ||
+        grantStates.value.superseded.loading ||
+        grantStates.value.direct.loading,
     );
     const grantsError = computed(
-      () => grantStates.caseScoped.error || grantStates.inForce.error || grantStates.superseded.error || grantStates.direct.error,
+      () =>
+        grantStates.value.caseScoped.error ||
+        grantStates.value.inForce.error ||
+        grantStates.value.superseded.error ||
+        grantStates.value.direct.error,
     );
     const grantsHasWorkflowAuthority = computed(
-      () => grantStates.caseScoped.count > 0 || grantStates.inForce.count > 0 || grantStates.superseded.count > 0,
+      () =>
+        grantStates.value.caseScoped.count > 0 ||
+        grantStates.value.inForce.count > 0 ||
+        grantStates.value.superseded.count > 0,
     );
     const grantsEmpty = computed(
       () => !grantsLoading.value && !grantsError.value && !grantsHasWorkflowAuthority.value,
@@ -165,7 +179,6 @@ await mountPanel({
       grantsError,
       grantsHasWorkflowAuthority,
       grantsEmpty,
-      onGrantState,
       startCreate,
       closeView,
       requestCloseCreate,

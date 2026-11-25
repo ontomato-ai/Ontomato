@@ -10,7 +10,7 @@ import { listCaseSets } from "../../platform/diagnosis/autotest/cases/repository
 import { getActiveRun, isRunActive, startRun } from "../../platform/diagnosis/autotest/runner/run-controller";
 import { loadRunMeta, scheduledRunSource } from "../../platform/diagnosis/autotest/results/store";
 import { workbenchIdentity } from "../../identity/installed";
-import { productGrantAllowed } from "../product-governance/grants";
+import { agentAllowed } from "../assistant/authorization";
 import { HttpError } from "../../utils/errors";
 
 function fingerprint(input: PlatformScheduleExecutionRequest): string {
@@ -74,7 +74,7 @@ export const operationsScheduleApplication: ScheduleApplication = {
     const zh = credentials.locale?.startsWith("zh");
     const operation = input.values.operation || "autotest";
     const diagnosis = await assistantStore.opsDiagnosis(owner.domainId);
-    const canInspect = Boolean(diagnosis?.enabled && await productGrantAllowed(diagnosis.id, "use", credentials));
+    const canInspect = Boolean(diagnosis?.enabled && await agentAllowed(diagnosis, "USE", credentials));
     const fields = [select("operation", zh ? "做什么" : "Operation", [
       option("autotest", zh ? "跑自动测试" : "Run automated tests"),
       option("inspection", zh ? "巡检" : "Inspection", canInspect ? null : zh ? "无权使用运维诊断智能体" : "Operations diagnosis use permission required"),
