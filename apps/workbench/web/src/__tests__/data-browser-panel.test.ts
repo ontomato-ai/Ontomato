@@ -399,12 +399,12 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
         },
       };
     }
-    if (member === "classPicker" || member === "classCatalogProbe") {
+    if (member === "classPicker" || member === "classCatalogProbe" || member === "classNamesProbe") {
       return {
         status: "ready",
         value: [
-          { className: OBJECT_TYPE, primaryKey: "Order", label: "Order", fields: { className: "Order", showName: "Order" } },
-          { className: OBJECT_TYPE, primaryKey: "Customer", label: "Customer", fields: { className: "Customer", showName: "Customer" } },
+          { className: OBJECT_TYPE, primaryKey: "Order", label: "Order Display", fields: { className: "Order", showName: "Order Display" } },
+          { className: OBJECT_TYPE, primaryKey: "Customer", label: "Customer Display", fields: { className: "Customer", showName: "Customer Display" } },
         ],
       };
     }
@@ -605,11 +605,14 @@ describe("builtin-product-data-browser panel", () => {
         expect(route.readLog.some((r) => r.member === "instanceGraph" && r.dataName === "connections")).toBe(true);
       });
 
-      // Overlay stats chips show per-class totals from overview.
+      // Permanent right inspector renders empty guidance before selection, without duplicate overlay chips, top legend, or header refresh.
       await vi.waitFor(() => {
-        const stats = element.querySelector("[data-graph-class-stats]");
-        expect(stats?.textContent).toContain("Order");
-        expect(stats?.textContent).toContain("12");
+        expect(element.querySelector("[data-graph-inspector]")).not.toBeNull();
+        expect(element.querySelector("[data-inspector-empty]")).not.toBeNull();
+        expect(element.querySelector("[data-graph-class-stats]")).toBeNull();
+        expect(element.querySelector(".sdk-ontology-graph-legend")).toBeNull();
+        expect(element.querySelector('.sdk-page-header button[aria-label="Refresh"]')).toBeNull();
+        expect(element.querySelector("[data-graph-stats-summary]")?.textContent).toContain("2");
       });
 
       // Dragging a node persists per-person positions through panel personal state, never localStorage.
@@ -622,11 +625,14 @@ describe("builtin-product-data-browser panel", () => {
       expect(saved?.[orderNodeId]).toEqual({ x: 240, y: 180 });
       expect(localStorage.length).toBe(0);
 
-      // Selecting a node opens the right-hand attribute inspector powered by ObjectSummary.
+      // Selecting a node switches the permanent inspector to node details with Box icon, key, display class label, and ObjectSummary.
       canvasRecorder.emitSelect?.([orderNodeId]);
       await vi.waitFor(() => {
         const inspector = element.querySelector("[data-node-inspector]");
         expect(inspector).not.toBeNull();
+        expect(inspector?.querySelector(".db-resource-icon")).not.toBeNull();
+        expect(inspector?.querySelector(".db-detail-key")?.textContent?.trim()).toBe("ord-1");
+        expect(inspector?.querySelector("[data-node-class-label]")?.textContent?.trim()).toBe("Order Display");
         expect(inspector?.textContent).toContain("ORD-001");
         expect(inspector?.textContent).toContain("4200");
         expect(inspector?.textContent).toContain("Paid");
@@ -681,15 +687,37 @@ describe("builtin-product-data-browser panel", () => {
       expect(tableTab).toBeTruthy();
       tableTab.click();
 
-      // Auto-selects first object type ("Order") and renders dynamic table columns & rows.
+      // Auto-selects first object type ("Order") and renders dynamic table columns & rows in a single unified toolbar without row chevrons.
       await vi.waitFor(() => {
         expect(element.textContent).toContain("Order No");
         expect(element.textContent).toContain("ORD-001");
         expect(element.textContent).toContain("ORD-002");
       });
+      expect(element.querySelector(".db-table-toolbar")).toBeNull();
+      expect(element.querySelector(".sdk-object-list-row-chevron")).toBeNull();
+      const instanceTableProjection = projections.get("builtin-product-9f3c1e20-4b7d-4e92-a814-000000000009");
+      expect(instanceTableProjection?.config?.pagination).toBe("pages");
+      expect(instanceTableProjection?.config?.pageSizes).toEqual([20, 50, 100]);
       expect(route.router.currentRoute.value.fullPath).toContain("viewMode=table");
       expect(route.router.currentRoute.value.fullPath).not.toContain("page=");
       expect(route.router.currentRoute.value.fullPath).not.toContain("size=");
+
+      // Table search commits only on Enter (not on intermediate keystrokes).
+      const tableSearchEl = element.querySelector<HTMLInputElement>(".db-table-search input")!;
+      expect(tableSearchEl).toBeTruthy();
+      tableSearchEl.value = "ORD-001";
+      tableSearchEl.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(route.router.currentRoute.value.fullPath).not.toContain("search=ORD-001");
+      tableSearchEl.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", bubbles: true }));
+      await vi.waitFor(() => {
+        expect(route.router.currentRoute.value.fullPath).toContain("search=ORD-001");
+      });
+      tableSearchEl.value = "";
+      tableSearchEl.dispatchEvent(new Event("input", { bubbles: true }));
+      tableSearchEl.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", bubbles: true }));
+      await vi.waitFor(() => {
+        expect(route.router.currentRoute.value.fullPath).not.toContain("search=ORD-001");
+      });
 
       // Toggle a column locally via ObjectList's Columns popover (no extra read).
       const beforeToggleReads = route.readLog.filter((r) => r.member === "instanceTable").length;
@@ -738,6 +766,9 @@ describe("builtin-product-data-browser panel", () => {
 
       const drawer = document.querySelector(".el-drawer")!;
       expect(drawer).not.toBeNull();
+      // Opening the drawer with no active conditions starts empty instead of pre-inserting a blank row.
+      expect(drawer.querySelectorAll(".db-filter-row").length).toBe(0);
+
       async function pickSelectOption(selectEl: HTMLElement, label: string) {
         (selectEl.querySelector<HTMLElement>(".el-select__wrapper") ?? selectEl).click();
         await vi.waitFor(() => {
@@ -758,6 +789,13 @@ describe("builtin-product-data-browser panel", () => {
         });
       }
 
+      const addCondBtn = Array.from(drawer.querySelectorAll<HTMLButtonElement>("button")).find(
+        (btn) => btn.textContent?.includes("Add condition"),
+      )!;
+      addCondBtn.click();
+      await vi.waitFor(() => {
+        expect(drawer.querySelectorAll(".db-filter-row").length).toBe(1);
+      });
       const firstRowSelects = Array.from(drawer.querySelectorAll(".db-filter-row")[0]!.querySelectorAll<HTMLElement>(".el-select"));
       await pickSelectOption(firstRowSelects[0]!, "Amount");
       await pickSelectOption(firstRowSelects[1]!, "Greater than or equal");
@@ -767,9 +805,6 @@ describe("builtin-product-data-browser panel", () => {
       valueInput.dispatchEvent(new Event("input", { bubbles: true }));
 
       // Add a second null-check condition (value omitted per recordFiltersSchema).
-      const addCondBtn = Array.from(drawer.querySelectorAll<HTMLButtonElement>("button")).find(
-        (btn) => btn.textContent?.includes("Add condition"),
-      )!;
       addCondBtn.click();
       await vi.waitFor(() => {
         expect(drawer.querySelectorAll(".db-filter-row").length).toBe(2);
@@ -801,6 +836,7 @@ describe("builtin-product-data-browser panel", () => {
           { field: "note", operator: "notnull" },
         ]);
         expect(filteredRead!.inputs.sort).toEqual({ field: "amount", order: "desc" });
+        expect(element.querySelector("[data-table-filter-tag]")?.textContent).toContain("3 filters");
       });
 
       // Clicking a table row navigates to object detail /browser/views?selected=Order~ord-1.
@@ -902,7 +938,7 @@ describe("builtin-product-data-browser panel", () => {
         expect(route.readLog.some((r) => r.member === "instanceGraph" && r.dataName === "overview")).toBe(true);
       });
 
-      const searchInput = element.querySelector<HTMLInputElement>('.db-graph-search-input input')!;
+      const searchInput = element.querySelector<HTMLInputElement>('[data-graph-inspector] .db-graph-search-input input')!;
       expect(searchInput).toBeTruthy();
       searchInput.focus();
       searchInput.value = "ORD";
@@ -910,10 +946,10 @@ describe("builtin-product-data-browser panel", () => {
 
       await vi.waitFor(() => {
         expect(route.readLog.some((r) => r.member === "graphSearchResults" && r.inputs.search === "ORD")).toBe(true);
-        expect(element.querySelector(".db-graph-search-popover")?.textContent).toContain("ORD-001");
+        expect(element.querySelector("[data-graph-candidates]")?.textContent).toContain("ORD-001");
       });
 
-      const resultItem = element.querySelector<HTMLButtonElement>(".db-graph-search-popover .sdk-object-list-item-btn")!;
+      const resultItem = element.querySelector<HTMLButtonElement>("[data-graph-candidates] .sdk-object-list-item-btn")!;
       expect(resultItem).toBeTruthy();
       resultItem.click();
 
