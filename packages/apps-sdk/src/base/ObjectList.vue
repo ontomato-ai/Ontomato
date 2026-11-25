@@ -3106,7 +3106,9 @@ function rowOperationsFor(row: PlatformObjectRecord): Readonly<Record<string, Li
 }
 
 const busyRowActions = ref<ReadonlySet<string>>(new Set());
+const busyWriteRowActions = ref<ReadonlySet<string>>(new Set());
 const rowOpRunning = computed(() => busyRowActions.value.size > 0);
+const writeRowOpRunning = computed(() => busyWriteRowActions.value.size > 0);
 const isGroupLocked = computed(() => isActionLockGroupBusy(props.actionLockGroup));
 
 function rowActionBusyKey(row: PlatformObjectRecord, actionId: string): string {
@@ -3118,11 +3120,17 @@ function isRowActionBusy(row: PlatformObjectRecord, actionId: string): boolean {
   return busyRowActions.value.has(rowActionBusyKey(row, actionId));
 }
 
-function markRowActionBusy(busyKey: string, busy: boolean) {
+function markRowActionBusy(busyKey: string, busy: boolean, isWrite = false) {
   const next = new Set(busyRowActions.value);
   if (busy) next.add(busyKey);
   else next.delete(busyKey);
   busyRowActions.value = next;
+  if (isWrite) {
+    const nextWrite = new Set(busyWriteRowActions.value);
+    if (busy) nextWrite.add(busyKey);
+    else nextWrite.delete(busyKey);
+    busyWriteRowActions.value = nextWrite;
+  }
 }
 
 function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowActionItem[] {
@@ -3389,9 +3397,10 @@ async function executeRowOperation(
   const operationId = panel.instance.operationIdOf(slot.slot, operationName);
   const capturedCompositeKey = panelRowOperationKey(row, fallbackClassName);
   const busyKey = `${capturedCompositeKey}\0${operationName}`;
+  const isWriteOp = descriptor.effect !== "read";
   const lockGroup = props.actionLockGroup;
   const lock = { instanceId: listInstanceId.value, rowKey: capturedCompositeKey, actionId: operationName };
-  if (busyRowActions.value.has(busyKey)) return "skipped";
+  if (busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value)) return "skipped";
   if (lockGroup && !acquireActionLock(lockGroup, lock)) return "skipped";
   const ref = rowObjectRef(row);
   const rowSummary = { className: ref.className, primaryKey: ref.primaryKey, label: row.label || ref.primaryKey };
@@ -3403,7 +3412,7 @@ async function executeRowOperation(
     if (listUnmounted || panel.instance.isDisposed()) {
       return { ok: false, message: "The list was closed or unmounted." };
     }
-    if (phase === "confirm" && (busyRowActions.value.has(busyKey) || (lockGroup && isActionLockGroupBusy(lockGroup)))) {
+    if (phase === "confirm" && (busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value) || (lockGroup && isActionLockGroupBusy(lockGroup)))) {
       return { ok: false, message: "Another row operation is currently running." };
     }
     const liveFallback = activeType.value ?? rowObjectType;
@@ -3444,7 +3453,7 @@ async function executeRowOperation(
     };
   };
 
-  markRowActionBusy(busyKey, true);
+  markRowActionBusy(busyKey, true, isWriteOp);
   rowOpFailure.value = null;
   rowOpRead.value = null;
   rowOpReceipt.value = null;
@@ -3533,10 +3542,10 @@ async function executeRowOperation(
           isStillValid: deferred.isStillValid,
           cancel: deferred.cancelNow,
           async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
-            if (lockGroup && !acquireActionLock(lockGroup, lock)) {
+            if (writeRowOpRunning.value || (lockGroup && !acquireActionLock(lockGroup, lock))) {
               return { ok: false, intentId: preparation.intentId, reason: "failed", message: "Another row action is currently running." };
             }
-            markRowActionBusy(busyKey, true);
+            markRowActionBusy(busyKey, true, true);
             rowOpFailure.value = null;
             rowOpReceipt.value = null;
             try {
@@ -3578,7 +3587,7 @@ async function executeRowOperation(
                 message: rowOpFailure.value.message,
               };
             } finally {
-              markRowActionBusy(busyKey, false);
+              markRowActionBusy(busyKey, false, true);
               if (lockGroup) releaseActionLock(lockGroup, lock);
             }
           },
@@ -3611,7 +3620,7 @@ async function executeRowOperation(
     });
     return "executed";
   } finally {
-    markRowActionBusy(busyKey, false);
+    markRowActionBusy(busyKey, false, isWriteOp);
     if (lockGroup) releaseActionLock(lockGroup, lock);
   }
 }
@@ -3633,6 +3642,7 @@ async function runRowOperation(
   const descriptor = admittedOpMap.value[operationName];
   const binding = member.projection.operations?.[operationName];
   if (!descriptor || !binding) return;
+  if (descriptor.effect !== "read" && writeRowOpRunning.value) return;
   const rowOp = rowOperationsFor(row)[operationName];
   if (!rowOp || !rowOp.available) return;
 
@@ -3744,16 +3754,16 @@ watch(
               };
             }
           }
-          if (isGroupLocked.value || isRowActionBusy(row, operationName)) {
+          const descriptor = admittedOpMap.value[operationName];
+          if (!descriptor) {
+            return missingOperationDescriptorResult(memberOperationsState.value, operationName);
+          }
+          if (isGroupLocked.value || isRowActionBusy(row, operationName) || (descriptor.effect !== "read" && writeRowOpRunning.value)) {
             return {
               ok: false,
               reason: "action_unavailable",
               message: `List is busy executing another row operation; cannot run '${operationName}' on row '${rowKey}'.`,
             };
-          }
-          const descriptor = admittedOpMap.value[operationName];
-          if (!descriptor) {
-            return missingOperationDescriptorResult(memberOperationsState.value, operationName);
           }
           const buttonState = rowActionButtonState(row, operationName);
           if (!buttonState.ok) {
