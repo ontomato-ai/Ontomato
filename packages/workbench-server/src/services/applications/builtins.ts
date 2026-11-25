@@ -381,6 +381,7 @@ export const workbenchApplications: BuiltinApplication[] = [
         "panelId": "builtin-product-ops-dsl-console",
         "path": "/ops/dsl",
         "access": { "permissionCode": "observer" },
+        "defaultAgent": { "kind": "preset", "agentKind": "ops-diagnosis" },
         "icon": "function",
         "names": {
           "en": "DSL execution",
