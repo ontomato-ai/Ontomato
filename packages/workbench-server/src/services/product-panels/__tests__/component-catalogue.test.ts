@@ -4,6 +4,7 @@ import { SDK_COMPONENT } from "@ontomato/contracts/platform-object-types";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import {
+  listSdkComponents,
   readSdkComponentConfigRows,
   readSdkComponentDataRows,
   readSdkComponentInputRows,
@@ -24,6 +25,7 @@ vi.mock("../../app-builder/sdk", () => ({
           module: "@ontomato/sdk/base",
           exportName: "SampleList",
           role: "control",
+          group: "list",
           meaning: "Shows a list of records.",
           effects: "Reads records through the platform.",
           bindsElement: ["PlatformObjectType:*"],
@@ -55,6 +57,7 @@ vi.mock("../../app-builder/sdk", () => ({
           module: "@ontomato/sdk/base",
           exportName: "ObjectRelations",
           role: "control",
+          group: "graph",
           meaning: "Shows an object's relations.",
           inputs: {
             selected: { kind: "object", objectType: "@any" },
@@ -71,6 +74,7 @@ vi.mock("../../app-builder/sdk", () => ({
           module: "@ontomato/sdk/panel",
           exportName: "WildcardBox",
           role: "presentation",
+          group: "layout",
           meaning: "Accepts any datum name.",
           data: {
             "*": { results: ["panelRecord"], required: false },
@@ -119,6 +123,10 @@ beforeAll(() => {
         messages: {
           ...en,
           "panels.sdkComponent.roleControl": "控件",
+          "panels.sdkComponent.group": "用途分组",
+          "panels.sdkComponent.group.list": "列表",
+          "panels.sdkComponent.group.graph": "图谱",
+          "panels.sdkComponent.group.layout": "布局",
           "panels.sdkComponent.yes": "是",
           "panels.sdkComponent.no": "否",
           "panels.sdkComponent.wildcard": "任意名称",
@@ -149,6 +157,7 @@ it("formats platform:SDKComponent record and all five specification tables accor
       module: "@ontomato/sdk/base",
       exportName: "SampleList",
       role: "控件",
+      group: "列表",
       meaning: "Shows a list of records.",
       effects: "Reads records through the platform.",
     },
@@ -221,4 +230,30 @@ it("describes the two ObjectRelations wiring choices in the reader's locale", as
   for (const rows of [inputs, outputs]) {
     expect(rows.find(row => row.label === "visibleRelationKinds")?.fields.type).toBe(en["panels.sdkComponent.portRelationKinds"]);
   }
+});
+
+it("lists components in canonical purpose group order and filters full catalogue by group and search", async () => {
+  const all = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN"));
+  expect(all.map(row => ({ key: row.primaryKey, group: row.fields.group }))).toEqual([
+    { key: "@ontomato/sdk:SampleList", group: "列表" },
+    { key: "@ontomato/sdk:ObjectRelations", group: "图谱" },
+    { key: "@ontomato/sdk:WildcardBox", group: "布局" },
+    { key: "@acme/widgets:ActionCard", group: undefined },
+  ]);
+
+  const graphOnly = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", { group: "graph" }));
+  expect(graphOnly.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:ObjectRelations"]);
+
+  const listAndSearch = panelRecordListSchema.parse(
+    await listSdkComponents(owner, "zh-CN", { group: "list", search: "records" }),
+  );
+  expect(listAndSearch.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:SampleList"]);
+
+  const mismatchedGroup = panelRecordListSchema.parse(
+    await listSdkComponents(owner, "zh-CN", { group: "layout", search: "SampleList" }),
+  );
+  expect(mismatchedGroup).toEqual([]);
+
+  const byGroupLabel = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", { search: "图谱" }));
+  expect(byGroupLabel.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:ObjectRelations"]);
 });

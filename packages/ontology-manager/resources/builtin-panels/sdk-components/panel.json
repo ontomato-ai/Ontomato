@@ -8,6 +8,13 @@
         },
         "deepLink": true
       },
+      "group": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
       "selected": {
         "type": {
           "kind": "object",
@@ -21,13 +28,22 @@
         "component": "ObjectList",
         "type": "platform:SDKComponent",
         "data": {
-          "rows": "catalogue"
+          "rows": {
+            "read": "catalogue",
+            "params": {
+              "group": {
+                "state": "group"
+              }
+            }
+          }
         },
         "state": {
           "search": "search"
         },
         "config": {
           "layout": "table",
+          "groupBy": "group",
+          "groupEmptyLabel": "components.group.other",
           "showChevron": true,
           "searchable": false,
           "showFooter": false,
@@ -38,23 +54,24 @@
             {
               "key": "label",
               "labelKey": "components.table.component",
-              "minWidth": 180
+              "width": 220,
+              "minWidth": 160
             },
             {
               "key": "package",
               "labelKey": "components.table.package",
-              "minWidth": 150
+              "width": 160,
+              "minWidth": 130
             },
             {
               "key": "meaning",
               "labelKey": "components.table.meaning",
-              "minWidth": 240,
-              "wrap": true
+              "minWidth": 220
             }
           ]
         },
         "name": "组件目录",
-        "description": "当前 SDK 发行声明的组件，按名称和用途搜索。",
+        "description": "当前 SDK 发行声明的组件，按用途分组展示，支持按用途筛选与关键词搜索。",
         "id": "builtin-product-257c4795-da58-46dd-8cc2-5145e1735b1f"
       },
       "header": {
@@ -87,6 +104,7 @@
             "module",
             "exportName",
             "role",
+            "group",
             "bindsElement",
             "meaning",
             "effects"
@@ -346,9 +364,22 @@
         "components.table.package": "所属包",
         "components.table.meaning": "含义",
         "components.search.placeholder": "筛选基础组件",
+        "components.group.label": "用途分组",
+        "components.group.all": "全部用途",
+        "components.group.list": "列表",
+        "components.group.detail": "详情",
+        "components.group.form": "表单",
+        "components.group.action": "操作",
+        "components.group.chart": "图表",
+        "components.group.graph": "图谱",
+        "components.group.content": "内容",
+        "components.group.conversation": "对话",
+        "components.group.layout": "布局",
+        "components.group.other": "其他",
         "components.count": "{count} 项",
         "components.list.empty": "当前发行未声明基础组件",
         "components.list.noMatch": "未找到匹配的基础组件",
+        "components.list.clearFilters": "清除筛选",
         "detail.back": "返回基础组件",
         "detail.loading": "正在读取组件声明…",
         "detail.forbidden": "当前账号无权查看这个组件。",
@@ -389,9 +420,22 @@
         "components.table.package": "Package",
         "components.table.meaning": "Meaning",
         "components.search.placeholder": "Filter base components",
+        "components.group.label": "Purpose group",
+        "components.group.all": "All purposes",
+        "components.group.list": "Lists",
+        "components.group.detail": "Details",
+        "components.group.form": "Forms",
+        "components.group.action": "Actions",
+        "components.group.chart": "Charts",
+        "components.group.graph": "Graphs",
+        "components.group.content": "Content",
+        "components.group.conversation": "Conversation",
+        "components.group.layout": "Layout",
+        "components.group.other": "Other",
         "components.count": "{count} items",
         "components.list.empty": "No base components declared in the current release",
         "components.list.noMatch": "No matching base components",
+        "components.list.clearFilters": "Clear filters",
         "detail.back": "Back to base components",
         "detail.loading": "Loading component declaration…",
         "detail.forbidden": "Your account does not have permission to view this component.",
@@ -432,9 +476,22 @@
         "components.table.package": "所屬套件",
         "components.table.meaning": "含義",
         "components.search.placeholder": "篩選基礎組件",
+        "components.group.label": "用途分組",
+        "components.group.all": "全部用途",
+        "components.group.list": "列表",
+        "components.group.detail": "詳情",
+        "components.group.form": "表單",
+        "components.group.action": "操作",
+        "components.group.chart": "圖表",
+        "components.group.graph": "圖譜",
+        "components.group.content": "內容",
+        "components.group.conversation": "對話",
+        "components.group.layout": "佈局",
+        "components.group.other": "其他",
         "components.count": "{count} 項",
         "components.list.empty": "目前發行未宣告基礎組件",
         "components.list.noMatch": "未找到符合的基礎組件",
+        "components.list.clearFilters": "清除篩選",
         "detail.back": "返回基礎組件",
         "detail.loading": "正在讀取組件宣告…",
         "detail.forbidden": "目前帳號無權檢視這個組件。",

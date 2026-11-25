@@ -695,7 +695,12 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("sdkComponent", "product"),
     reads: {
       count: countRead,
-      catalogue: { source: "type", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecordList" },
+      catalogue: {
+        source: "type",
+        parameterMode: "fixed",
+        params: { search: "keyword", group: "sdkComponentGroup" },
+        result: "panelRecordList",
+      },
       definition: { source: "object", parameterMode: "fixed", params: {}, result: "sdkComponentDefinition" },
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       dataRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },

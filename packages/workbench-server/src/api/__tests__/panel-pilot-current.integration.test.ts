@@ -1208,9 +1208,17 @@ it("reads the SDK component catalogue, record, detail tables, and definition fro
   const read = await ownerReadPanel("sdk-components", {
     components: {
       componentId: "@ontomato/sdk:PanelData",
-      inputs: { search: { kind: "scalar", type: "string" }, component: { kind: "object", objectType: componentType } },
+      inputs: {
+        search: { kind: "scalar", type: "string" },
+        group: { kind: "scalar", type: "string" },
+        component: { kind: "object", objectType: componentType },
+      },
       data: {
-        matches: { source: typeSource, read: "catalogue", params: { search: { input: "search" } } },
+        matches: {
+          source: typeSource,
+          read: "catalogue",
+          params: { search: { input: "search" }, group: { input: "group" } },
+        },
         definition: { source: { object: { input: "component" } }, read: "definition", params: {} },
         record: { source: { object: { input: "component" } }, read: "record", params: {} },
         dataRows: { source: { object: { input: "component" } }, read: "dataRows", params: {} },
@@ -1226,9 +1234,17 @@ it("reads the SDK component catalogue, record, detail tables, and definition fro
   expect(await read("components", "matches", { search: "oBJECTsUMMARY" })).toEqual({
     status: "ready", value: [{
       primaryKey: "@ontomato/sdk:ObjectSummary", label: "ObjectSummary",
-      fields: { package: "@ontomato/sdk", meaning: summary.meaning }, fieldLabels: { package: "SDK package", meaning: "Purpose" },
+      fields: { package: "@ontomato/sdk", group: "Details", meaning: summary.meaning },
+      fieldLabels: { package: "SDK package", group: "Purpose group", meaning: "Purpose" },
     }],
   });
+  expect(await read("components", "matches", { group: "list" })).toMatchObject({
+    status: "ready",
+    value: expect.arrayContaining([
+      expect.objectContaining({ primaryKey: "@ontomato/sdk:ObjectList", fields: expect.objectContaining({ group: "Lists" }) }),
+    ]),
+  });
+  expect(await read("components", "matches", { group: "list", search: "ObjectSummary" })).toEqual({ status: "empty" });
   expect(await read("components", "matches", { search: "light or dark theme" })).toMatchObject({
     status: "ready", value: expect.arrayContaining([expect.objectContaining({ primaryKey: "@ontomato/sdk:MarkdownView" })]),
   });
