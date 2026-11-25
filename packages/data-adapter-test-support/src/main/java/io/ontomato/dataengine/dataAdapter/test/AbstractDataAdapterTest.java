@@ -1508,6 +1508,37 @@ public abstract class AbstractDataAdapterTest {
 		}
 	}
 
+	@Test
+	void multipleRelationshipTypesAreRejectedNotReducedToTheFirstType() {
+		assume(DataAdapterCapability.READ_QUERY);
+		assumeFalse(capabilities().contains(DataAdapterCapability.RELATIONSHIP_EDGES),
+				"this source traverses edges natively");
+
+		JSONArray types = JSONArray.of(firstRelation(), secondRelation());
+		DslContractViolationException error = assertThrows(DslContractViolationException.class,
+				() -> readQuery(twoClassDslWithTypes(types)));
+		assertTrue(error.getViolations().stream().anyMatch(
+				v -> v.getCode() == DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT
+						&& v.getDslPath() != null
+						&& v.getDslPath().endsWith(".type")), error.getMessage());
+		assertTrue(error.getMessage().contains("exactly one named relationship type"), error.getMessage());
+	}
+
+	@Test
+	void wildcardRelationshipTypeIsRejectedNotTraversedAsOneType() {
+		assume(DataAdapterCapability.READ_QUERY);
+		assumeFalse(capabilities().contains(DataAdapterCapability.RELATIONSHIP_EDGES),
+				"this source traverses edges natively");
+
+		DslContractViolationException error = assertThrows(DslContractViolationException.class,
+				() -> readQuery(twoClassDslWithTypes(JSONArray.of("*"))));
+		assertTrue(error.getViolations().stream().anyMatch(
+				v -> v.getCode() == DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT
+						&& v.getDslPath() != null
+						&& v.getDslPath().endsWith(".type")), error.getMessage());
+		assertTrue(error.getMessage().contains("exactly one named relationship type"), error.getMessage());
+	}
+
 	/** A two-class read with an explicit hop range on its single relationship. */
 	private String twoClassDslWithHops(int minHops, int maxHops) {
 		JSONArray objects = new JSONArray();
@@ -1516,6 +1547,19 @@ public abstract class AbstractDataAdapterTest {
 		JSONObject relation = readRelation(0, 1, firstRelation());
 		relation.put("min_hops", minHops);
 		relation.put("max_hops", maxHops);
+		JSONArray relationships = new JSONArray();
+		relationships.add(relation);
+		JSONArray fields = new JSONArray();
+		fields.add(readField("s", primaryKey(), "source_id"));
+		return singleStepDsl(objects, relationships, fields, null, null, null);
+	}
+
+	private String twoClassDslWithTypes(JSONArray types) {
+		JSONArray objects = new JSONArray();
+		objects.add(readObject(0, "s", 0));
+		objects.add(readObject(1, "t", 1));
+		JSONObject relation = readRelation(0, 1, firstRelation());
+		relation.put("type", types);
 		JSONArray relationships = new JSONArray();
 		relationships.add(relation);
 		JSONArray fields = new JSONArray();
