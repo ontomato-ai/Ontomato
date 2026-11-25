@@ -23,6 +23,9 @@ const agents = vi.hoisted(() => [
 const [sales, retired, opsDiagnosis] = agents;
 const sent = vi.hoisted(() => [] as string[]);
 const filled = vi.hoisted(() => [] as string[]);
+const directory = vi.hoisted(() => ({
+  listAgents: async () => agents,
+}));
 
 vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
   const { defineComponent, h } = await import("vue");
@@ -38,26 +41,15 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => {
     }),
     ShellNavBody: { name: "ShellNavBody", template: "<div />" },
     ShellColumn: { name: "ShellColumn", template: "<div><slot /></div>" },
-    useAgentNav: (options: { setSessionId(id: string | null): void; onLeaveConversation(): void }) => ({
-      agents: { value: agents },
-      sessions: { value: [] },
-      loadAgents: async () => {},
-      loadSessions: async () => {},
-      startNew: () => {
-        options.setSessionId(null);
-        options.onLeaveConversation();
-      },
-      selectSession: (id: string) => {
-        options.setSessionId(id);
-        options.onLeaveConversation();
-      },
-    }),
     useSessionRunFeed: () => {},
   };
 });
 vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
 vi.mock("../assistant-host", () => ({
-  createAssistantClient: () => ({}),
+  createAssistantClient: () => ({
+    listAgents: () => directory.listAgents(),
+    listSessions: async () => ({ sessions: [], nextCursor: null }),
+  }),
   createAssistantFeedback: () => ({}),
   createPanelOperationSettings: () => ({ read: async () => null }),
 }));
@@ -72,8 +64,23 @@ afterEach(() => {
   sessionStorage.clear();
   sent.splice(0);
   filled.splice(0);
+  directory.listAgents = async () => agents;
   vi.restoreAllMocks();
 });
+
+async function flush(turns = 4) {
+  for (let index = 0; index < turns; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 async function openChat(query: Record<string, string>, standalone = false) {
   const path = standalone ? "/applications/app-data-agent-workbench/workbench" : platformRoutes.chat.path;
@@ -182,5 +189,161 @@ describe("a link to one agent", () => {
     expect(sent).toEqual([]);
     expect(filled).toEqual(["Diagnose this Turn (sessionId: s-2, runId: r-2)."]);
     expect(router.currentRoute.value.query).toEqual({});
+  });
+
+  it("waits for a pending /api/assistant/agents request before selecting an agentKind deep link without page", async () => {
+    const pending = deferred<typeof agents>();
+    directory.listAgents = () => pending.promise;
+    const error = vi.spyOn(ElMessage, "error");
+
+    const { router, shell } = await openChat({});
+    await router.push({
+      path: platformRoutes.chat.path,
+      query: { agentKind: "ops-diagnosis", prefill: "Diagnose this Turn (sessionId: s-3, runId: r-3)." },
+    });
+    await flush();
+
+    // While the directory is still loading, never report the agent unavailable or prefill prematurely.
+    expect(error).not.toHaveBeenCalled();
+    expect(filled).toEqual([]);
+    expect(sent).toEqual([]);
+
+    pending.resolve(agents);
+    await flush(6);
+
+    expect(error).not.toHaveBeenCalled();
+    expect(shell.props("agentId")).toBe(opsDiagnosis!.id);
+    expect(shell.props("sessionId") ?? null).toBeNull();
+    expect(filled).toEqual(["Diagnose this Turn (sessionId: s-3, runId: r-3)."]);
+    expect(sent).toEqual([]);
+    expect(router.currentRoute.value.query).toEqual({});
+  });
+
+  it("waits for a pending directory before sending an agentId deep link prompt once", async () => {
+    const pending = deferred<typeof agents>();
+    directory.listAgents = () => pending.promise;
+    const error = vi.spyOn(ElMessage, "error");
+
+    const { router, shell } = await openChat({});
+    await router.push({
+      path: platformRoutes.chat.path,
+      query: { agentId: opsDiagnosis!.id, prompt: "Inspect slow query" },
+    });
+    await flush();
+
+    expect(error).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+
+    pending.resolve(agents);
+    await flush(6);
+
+    expect(error).not.toHaveBeenCalled();
+    expect(shell.props("agentId")).toBe(opsDiagnosis!.id);
+    expect(sent).toEqual(["Inspect slow query"]);
+    expect(router.currentRoute.value.query).toEqual({});
+  });
+
+  it.each([
+    ["missing", [sales!]],
+    ["disabled", [sales!, { ...opsDiagnosis!, enabled: false }]],
+  ])("reports unavailable only after the directory resolves with a %s target", async (_case, listed) => {
+    const pending = deferred<typeof agents>();
+    directory.listAgents = () => pending.promise;
+    const error = vi.spyOn(ElMessage, "error");
+
+    const { router, shell } = await openChat({});
+    await router.push({
+      path: platformRoutes.chat.path,
+      query: { agentKind: "ops-diagnosis", prefill: "Draft preserved" },
+    });
+    await flush();
+
+    expect(error).not.toHaveBeenCalled();
+    expect(filled).toEqual([]);
+
+    pending.resolve(listed);
+    await flush(6);
+
+    expect(error).toHaveBeenCalledWith(i18n.global.t("assistant.agentUnavailable"));
+    expect(shell.props("agentId")).toBe(sales!.id);
+    expect(filled).toEqual(["Draft preserved"]);
+    expect(sent).toEqual([]);
+  });
+
+  it("reports the directory failure reason instead of agentUnavailable when /api/assistant/agents fails", async () => {
+    const pending = deferred<typeof agents>();
+    directory.listAgents = () => pending.promise;
+    const error = vi.spyOn(ElMessage, "error");
+
+    const { router } = await openChat({});
+    await router.push({
+      path: platformRoutes.chat.path,
+      query: { agentKind: "ops-diagnosis", prefill: "Keep my draft" },
+    });
+    await flush();
+
+    expect(error).not.toHaveBeenCalled();
+
+    pending.reject(new Error("Agent directory unavailable (503)"));
+    await flush(6);
+
+    expect(error).toHaveBeenCalledWith("Agent directory unavailable (503)");
+    expect(error).not.toHaveBeenCalledWith(i18n.global.t("assistant.agentUnavailable"));
+    expect(filled).toEqual(["Keep my draft"]);
+    expect(sent).toEqual([]);
+  });
+
+  it("applies only the latest deep link when a second navigation arrives while the directory is still loading", async () => {
+    const pending = deferred<typeof agents>();
+    directory.listAgents = () => pending.promise;
+    const error = vi.spyOn(ElMessage, "error");
+
+    const { router, shell } = await openChat({});
+    await router.push({
+      path: platformRoutes.chat.path,
+      query: { agentKind: "ops-diagnosis", prefill: "First link" },
+    });
+    await router.push({
+      path: platformRoutes.chat.path,
+      query: { agentId: sales!.id, prompt: "Second link" },
+    });
+    await flush();
+
+    expect(error).not.toHaveBeenCalled();
+    expect(filled).toEqual([]);
+    expect(sent).toEqual([]);
+
+    pending.resolve(agents);
+    await flush(6);
+
+    expect(error).not.toHaveBeenCalled();
+    expect(shell.props("agentId")).toBe(sales!.id);
+    expect(filled).toEqual([]);
+    expect(sent).toEqual(["Second link"]);
+  });
+
+  it("retries the directory when a deep link arrives after an earlier directory read failed", async () => {
+    let attempt = 0;
+    directory.listAgents = async () => {
+      attempt += 1;
+      if (attempt === 1) throw new Error("Initial load failed");
+      return agents;
+    };
+    const error = vi.spyOn(ElMessage, "error");
+
+    const { router, shell } = await openChat({});
+    expect(error).toHaveBeenCalledWith("Initial load failed");
+    error.mockClear();
+
+    await router.push({
+      path: platformRoutes.chat.path,
+      query: { agentKind: "ops-diagnosis", prefill: "Recovered link" },
+    });
+    await flush(6);
+
+    expect(attempt).toBe(2);
+    expect(error).not.toHaveBeenCalled();
+    expect(shell.props("agentId")).toBe(opsDiagnosis!.id);
+    expect(filled).toEqual(["Recovered link"]);
   });
 });

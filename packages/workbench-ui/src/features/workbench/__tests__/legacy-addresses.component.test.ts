@@ -32,6 +32,7 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
   ShellColumn: { name: "ShellColumn", template: "<div><slot /></div>" },
   useAgentNav: () => ({
     agents: { value: [] },
+    agentsState: { value: "ready" },
     sessions: { value: [] },
     sessionsState: { value: "ready" },
     nextCursor: { value: null },
