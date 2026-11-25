@@ -111,6 +111,16 @@ export type {
   ScheduledTaskRunView,
   ScheduledTaskSummaryItem,
 } from "../base/scheduled-task-summary-types";
+export { default as EffectivePermissionsView } from "../base/EffectivePermissionsView.vue";
+export type {
+  EffectivePermissionApiItem,
+  EffectivePermissionDataRow,
+  EffectivePermissionMenuGroup,
+  EffectivePermissionOrgRoleGrant,
+  EffectivePermissionOrgShareItem,
+  EffectivePermissionShareRole,
+  EffectivePermissionShareRoleRule,
+} from "../base/effective-permissions-types";
 export {
   PathTree,
   buildPathTree,

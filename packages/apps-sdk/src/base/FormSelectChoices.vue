@@ -2,10 +2,13 @@
 import { computed, ref, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
+import { ElCheckbox, ElCheckboxGroup } from "element-plus/es/components/checkbox/index";
 import { ElInput } from "element-plus/es/components/input/index";
 import { ElRadio, ElRadioGroup } from "element-plus/es/components/radio/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElTag } from "element-plus/es/components/tag/index";
+import { ElTooltip } from "element-plus/es/components/tooltip/index";
+import { curatedIcon } from "@ontomato/platform-shell/icons";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { findPanelFormOption, type PanelFormOption } from "@ontomato/contracts/form-fields";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
@@ -27,8 +30,15 @@ const props = defineProps({
 });
 const emit = defineEmits<{ change: [value: RuntimeJsonValue]; clear: [] }>();
 const { t } = useI18n();
+const helpIcon = curatedIcon("circle-help");
 
 const isList = computed(() => props.control.presentation === "checklist" || props.control.presentation === "tree");
+const isCheckbox = computed(() => props.control.presentation === "checkbox");
+const hasDescribedOptions = computed(() => props.control.options.some(optionNote));
+const dropdownFilterable = computed(() => Boolean(props.control.filterable || props.control.allowCreate));
+const dropdownClearable = computed(() => props.control.clearable ?? (!props.required && !props.control.multiple));
+const dropdownCollapseTags = computed(() => Boolean(props.control.multiple && props.control.collapseTags));
+
 const selected = computed<RuntimeJsonValue[]>(() => {
   if (props.control.multiple) return Array.isArray(props.value) ? props.value : [];
   if (props.value == null) return [];
@@ -53,7 +63,7 @@ const dropdownValues = computed(() => selectedOptions.value.flatMap(({ option, v
 }));
 const retained = computed(() => selectedOptions.value.filter(({ option, value }) =>
   option ? option.disabled && !isList.value
-    : isList.value || !props.control.allowCreate || typeof value !== "string"));
+    : isList.value || isCheckbox.value || !props.control.allowCreate || typeof value !== "string"));
 const singleDropdownValue = computed<DropdownValue | undefined>(() => {
   if (dropdownValues.value[0] !== undefined) return dropdownValues.value[0];
   const held = retained.value[0];
@@ -93,26 +103,34 @@ function createChoice() {
 }
 
 function chooseDropdown(keys: DropdownValue | DropdownValue[] | undefined) {
-  if (Array.isArray(keys)) {
-    const next = keys.map(fromDropdown);
-    if (next.every(canChoose)) emit("change", [...retained.value.map(({ value }) => value), ...next]);
-  } else if (keys === undefined) {
+  if (props.control.multiple) {
+    const picked = Array.isArray(keys) ? keys.map(fromDropdown).filter(canChoose) : [];
+    emit("change", [...retained.value.map(({ value }) => value), ...picked]);
+  } else if (keys === undefined || keys === "") {
     emit("clear");
-  } else {
-    const next = fromDropdown(keys);
-    if (canChoose(next)) emit("change", next);
+  } else if (typeof keys !== "object" && keys !== RETIRED) {
+    const value = fromDropdown(keys);
+    if (canChoose(value)) emit("change", value);
   }
 }
 
-function replaceOptions(scope: readonly PanelFormOption[], replacements: readonly RuntimeJsonValue[]) {
-  const kept = selected.value.filter(value => !findPanelFormOption(scope, value));
-  emit("change", [...kept, ...replacements]);
+function chooseCheckboxes(keys: Array<string | number | boolean>) {
+  const picked = keys
+    .filter((key): key is DropdownValue => typeof key === "string" || typeof key === "number")
+    .map(fromDropdown)
+    .filter(canChoose);
+  emit("change", [...retained.value.map(({ value }) => value), ...picked]);
 }
 
-function toggleOptions(options: PanelFormOption[], checked: boolean) {
+function replaceOptions(options: readonly PanelFormOption[], additions: readonly RuntimeJsonValue[]) {
+  const kept = selected.value.filter(value => !options.some(option => jsonValuesEqual(option.value, value)));
+  emit("change", [...kept, ...additions]);
+}
+
+function toggleOptions(options: readonly PanelFormOption[], checked: boolean) {
   if (checked) {
-    const added = options.filter(option => !option.disabled && !isSelected(option));
-    emit("change", [...selected.value, ...added.map(option => option.value)]);
+    const selectable = options.filter(option => !option.disabled && !isSelected(option));
+    if (selectable.length) emit("change", [...selected.value, ...selectable.map(option => option.value)]);
   } else replaceOptions(options, []);
 }
 
@@ -153,6 +171,37 @@ const tagEntry = computed(() => {
       :disabled="disabled"
       @toggle="toggleOptions"
     ></form-select-checklist>
+    <el-checkbox-group
+      v-else-if="isCheckbox"
+      :model-value="dropdownValues"
+      :aria-label="label"
+      :disabled="disabled"
+      class="sdk-form-select-checkbox-group"
+      @update:model-value="chooseCheckboxes"
+    >
+      <div
+        v-for="(option, index) in control.options"
+        :key="index"
+        class="sdk-form-select-checkbox-item"
+        :title="option.disabledReason ?? undefined"
+      >
+        <el-checkbox
+          :value="optionKey(option, index)"
+          :disabled="option.disabled"
+        >
+          {{ option.label }}
+        </el-checkbox>
+        <el-tooltip
+          v-if="option.description"
+          :content="option.description"
+          placement="top"
+        >
+          <span class="sdk-form-select-checkbox-help" tabindex="0" :aria-label="option.description">
+            <component :is="helpIcon" :size="14" aria-hidden="true" />
+          </span>
+        </el-tooltip>
+      </div>
+    </el-checkbox-group>
     <el-radio-group
       v-else-if="control.presentation === 'radio'"
       :model-value="dropdownValues[0]"
@@ -184,16 +233,20 @@ const tagEntry = computed(() => {
       v-else
       :model-value="control.multiple ? dropdownValues : singleDropdownValue"
       :multiple="control.multiple"
-      :filterable="control.allowCreate"
+      :filterable="dropdownFilterable"
       :allow-create="control.allowCreate"
-      :clearable="!required && !control.multiple"
+      :clearable="dropdownClearable"
+      :collapse-tags="dropdownCollapseTags"
+      :collapse-tags-tooltip="dropdownCollapseTags"
       :value-on-clear="() => undefined"
       :default-first-option="control.allowCreate"
-      :fit-input-width="control.options.some(optionNote)"
+      :fit-input-width="hasDescribedOptions || control.multiple"
       :placeholder="control.placeholder ?? undefined"
       :aria-label="label"
       :disabled="disabled"
       class="sdk-form-select-choices"
+      :class="{ 'is-multiple-wrap': control.multiple && !dropdownCollapseTags }"
+      popper-class="sdk-form-select-popper"
       @update:model-value="chooseDropdown"
     >
       <el-option
@@ -203,9 +256,9 @@ const tagEntry = computed(() => {
         :label="option.label"
         :disabled="option.disabled"
         :title="optionNote(option) || undefined"
-        :class="{ 'sdk-reference-option-described': optionNote(option) }"
+        :class="optionNote(option) ? 'sdk-reference-option-described' : 'sdk-form-select-option-wrap'"
       >
-        <span class="sdk-reference-option-label">{{ option.label }}</span>
+        <span :class="optionNote(option) ? 'sdk-reference-option-label' : 'sdk-form-select-option-label'">{{ option.label }}</span>
         <span v-if="optionNote(option)" class="sdk-reference-option-description">{{ optionNote(option) }}</span>
       </el-option>
       <el-option
@@ -235,6 +288,19 @@ const tagEntry = computed(() => {
 .sdk-form-select-choices {
   width: 100%;
 }
+.sdk-form-select-choices.is-multiple-wrap :deep(.el-select__selected-item .el-tag) {
+  height: auto;
+  min-height: 22px;
+  max-width: 100%;
+  padding-block: 2px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.sdk-form-select-choices.is-multiple-wrap :deep(.el-select__selected-item .el-tag__content) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .sdk-form-select-presets {
   display: flex;
   flex-wrap: wrap;
@@ -244,28 +310,40 @@ const tagEntry = computed(() => {
 .sdk-form-select-presets > button {
   margin: 0;
 }
+.sdk-form-select-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-lg);
+  align-items: center;
+}
+.sdk-form-select-checkbox-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sdk-form-select-checkbox-help {
+  display: inline-flex;
+  align-items: center;
+  color: var(--el-text-color-secondary);
+  cursor: help;
+}
 .sdk-form-select-list + .el-input {
   margin-top: var(--spacing-sm);
 }
 .sdk-form-select-tag {
   display: inline-flex;
-  align-items: center;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--spacing-xs);
-  min-height: 24px;
-  font-size: var(--text-sm);
-  color: var(--el-text-color-regular);
+  min-height: var(--control-height);
 }
 .sdk-form-select-tag-plain {
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-xs);
+  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
 }
-.sdk-form-select-tag-detail {
+.sdk-form-select-tag-detail,
+.sdk-form-select-tag-empty {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
 }
-.sdk-form-select-tag-empty {
-  color: var(--el-text-color-placeholder);
-}
 </style>
-<style scoped src="./form-option.css"></style>

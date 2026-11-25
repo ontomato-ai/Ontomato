@@ -4041,3 +4041,86 @@ test("expandPanelAuthoringMember supports static GroupedGrid with constrained pe
     /itemIds/,
   );
 });
+
+test("group E pack 1 contracts validate secret autoDownload and extended form control presentation options", async () => {
+  const { panelSecretDeliverySchema } = await import("./panel-agent");
+  const { panelFormFieldSchema } = await import("./panel-projection");
+
+  const secret = panelSecretDeliverySchema.parse({
+    title: "API Keys",
+    download: {
+      filename: "keys.csv",
+      contentType: "text/csv",
+      content: "a,b\n1,2",
+      autoDownload: true,
+    },
+  });
+  assert.equal(secret.download?.autoDownload, true);
+
+  const option = { value: "a", label: "Alpha", description: "Desc", disabled: false, disabledReason: null };
+  assert.equal(panelFormFieldSchema.safeParse({
+    path: "/roles", label: "Roles", valueSchema: {}, required: false, readOnly: false,
+    control: {
+      kind: "select", multiple: true, options: [option],
+      filterable: true, clearable: true, collapseTags: true, presentation: "checkbox",
+    },
+  }).success, true);
+
+  // Single select rejects checkbox presentation and collapseTags.
+  assert.equal(panelFormFieldSchema.safeParse({
+    path: "/role", label: "Role", valueSchema: {}, required: false, readOnly: false,
+    control: { kind: "select", multiple: false, options: [option], presentation: "checkbox" },
+  }).success, false);
+  assert.equal(panelFormFieldSchema.safeParse({
+    path: "/role", label: "Role", valueSchema: {}, required: false, readOnly: false,
+    control: { kind: "select", multiple: false, options: [option], collapseTags: true },
+  }).success, false);
+
+  // Choice matrix table presentation with headers and indented child row.
+  assert.equal(panelFormFieldSchema.safeParse({
+    path: "/columns", label: "Columns", valueSchema: {}, required: false, readOnly: false,
+    control: {
+      kind: "choice-matrix",
+      presentation: "table",
+      rowHeader: "Field",
+      choiceHeader: "Access",
+      options: [option],
+      rows: [
+        { key: "attr", label: "Attribute", disabled: false, disabledReason: null },
+        { key: "attr.metric", label: "Metric", indent: true, disabled: false, disabledReason: null },
+      ],
+    },
+  }).success, true);
+
+  // Collapsible rows variable picker and multi-column/numbered object-array + panel object.
+  assert.equal(panelFormFieldSchema.safeParse({
+    path: "/filter", label: "Filter", valueSchema: {}, required: false, readOnly: false,
+    control: {
+      kind: "text", multiline: true, variablesCollapsible: true, variablesPresentation: "rows",
+      variables: [{ label: "Account", items: [{ label: "ID", value: "${user.id}", badge: "string" }] }],
+    },
+  }).success, true);
+
+  assert.equal(panelFormFieldSchema.safeParse({
+    path: "/steps", label: "Steps", valueSchema: {}, required: false, readOnly: false,
+    control: {
+      kind: "object-array",
+      columns: 4,
+      numbered: true,
+      reorderable: false,
+      itemFields: [
+        {
+          path: "/policy", label: "Policy", valueSchema: {}, required: false, readOnly: false,
+          control: {
+            kind: "object",
+            columns: 3,
+            presentation: "panel",
+            fields: [
+              { path: "/mode", label: "Mode", valueSchema: {}, required: false, readOnly: false, control: { kind: "text" } },
+            ],
+          },
+        },
+      ],
+    },
+  }).success, true);
+});

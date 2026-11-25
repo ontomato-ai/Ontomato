@@ -835,6 +835,10 @@ const simpleControls = [
         badge: z.string().min(1).optional(),
       }).strict()),
     }).strict()).optional(),
+    /** Collapse variable groups behind a toggle bar (collapsed by default). */
+    variablesCollapsible: z.boolean().optional(),
+    /** Variable picker layout: inline `chips` (default) or three-column `rows` (label | badge | code). */
+    variablesPresentation: z.enum(["chips", "rows"]).optional(),
   }).strict(),
   /** Each locale edits a string keyed by locale code in the owner's JSON object. */
   z.object({
@@ -852,9 +856,15 @@ const simpleControls = [
     multiple: z.boolean().optional(),
     /** The owner permits adding a value to the selection. */
     allowCreate: z.boolean().optional(),
+    /** Enable local option filtering in dropdown presentation. */
+    filterable: z.boolean().optional(),
+    /** Allow clearing the current selection directly in dropdown presentation. */
+    clearable: z.boolean().optional(),
+    /** Collapse selected multiple-choice tags into a summary tag with tooltip. */
+    collapseTags: z.boolean().optional(),
     placeholder: z.string().nullish(),
     /** The kind defines the value and selection rules. Presentation only changes how choices are drawn. */
-    presentation: z.enum(["dropdown", "radio", "checklist", "tree", "tag"]).optional(),
+    presentation: z.enum(["dropdown", "radio", "checkbox", "checklist", "tree", "tag"]).optional(),
     /** Named selections of declared options, for multiple selection only. */
     presets: z.array(z.object({
       label: z.string().min(1),
@@ -865,11 +875,19 @@ const simpleControls = [
     kind: z.literal("choice-matrix"),
     /** Shared tier choices for every row; same shape as select options. */
     options: z.array(panelFormOptionSchema),
+    /** Presentation only changes how rows are drawn: `cards` (default) or compact `table` with segmented buttons. */
+    presentation: z.enum(["cards", "table"]).optional(),
+    /** Optional table header label for the row-name column when `presentation` is `"table"`. */
+    rowHeader: z.string().min(1).optional(),
+    /** Optional table header label for the choice column when `presentation` is `"table"`. */
+    choiceHeader: z.string().min(1).optional(),
     rows: z.array(z.object({
       key: z.string().min(1),
       label: z.string().min(1),
       description: z.string().nullable().optional(),
       badge: z.string().min(1).optional(),
+      /** Visually indent this row as a child of the preceding row (e.g. a metric under an attribute). */
+      indent: z.boolean().optional(),
       disabled: z.boolean(),
       disabledReason: z.string().min(1).nullable(),
     }).strict().refine(
@@ -917,8 +935,10 @@ const arrayControl = z.object({
   itemKeyPath: fieldPath.optional(),
   /** Presentation only changes how rows are drawn: bordered `cards` (default), single-row `inline` grid, or compact `table`. */
   presentation: z.enum(["cards", "inline", "table"]).optional(),
-  /** Grid column count inside each item card (`1` or `2`). */
-  columns: z.union([z.literal(1), z.literal(2)]).optional(),
+  /** Grid column count inside each item card (`1` to `4`). */
+  columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
+  /** Display a 1-based sequence number badge on each card item. */
+  numbered: z.boolean().optional(),
   /** Whether Move Up / Move Down controls are offered; defaults to `true` for cards and `false` for inline/table. */
   reorderable: z.boolean().optional(),
   /** When true, the row set is fixed by the owner (no Add, Remove, or Reorder controls). */
@@ -940,8 +960,10 @@ const objectControl = z.object({
   defaultObject: runtimeJsonObjectSchema.optional(),
   /** Relative JSON Pointer to a fixed-option scalar select or hidden discriminator in `fields` choosing the active variant. */
   variantBy: fieldPath.optional(),
-  /** Grid column count for this object's child fields (`1` or `2`). */
-  columns: z.union([z.literal(1), z.literal(2)]).optional(),
+  /** Grid column count for this object's child fields (`1` to `4`). */
+  columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
+  /** Visual framing of the nested object group: `plain` (default) or shaded `panel`. */
+  presentation: z.enum(["plain", "panel"]).optional(),
 }).strict();
 
 const fieldShape = z.object({
@@ -1020,12 +1042,16 @@ export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema }
     return;
   }
   if (control.kind === "select") {
-    const { multiple, presentation, presets } = control;
+    const { multiple, presentation, presets, collapseTags } = control;
     if ((multiple && (presentation === "radio" || presentation === "tag"))
-      || (!multiple && (presentation === "checklist" || presentation === "tree")))
+      || (!multiple && (presentation === "checkbox" || presentation === "checklist" || presentation === "tree")))
       ctx.addIssue({
         code: z.ZodIssueCode.custom, path: ["control", "presentation"],
-        message: "Radio and tag require single selection and checklist or tree requires multiple selection",
+        message: "Radio and tag require single selection and checkbox, checklist, or tree requires multiple selection",
+      });
+    if (!multiple && collapseTags)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "collapseTags"], message: "collapseTags requires multiple selection",
       });
     if (!multiple && presets)
       ctx.addIssue({

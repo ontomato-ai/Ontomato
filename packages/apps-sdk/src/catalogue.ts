@@ -957,6 +957,26 @@ export const components: readonly ComponentMetadata[] = [
     },
   }),
   defineComponentMeta({
+    componentId: "EffectivePermissionsView",
+    module: "@ontomato/sdk/base",
+    exportName: "EffectivePermissionsView",
+    role: "presentation",
+    group: "detail",
+    panelUsable: false,
+    meaning:
+      "Governance-domain effective permissions view shared by Organization Management and Member Detail. Renders a bordered description table (direct roles, organization role grants, indented shared-data sources with row-rule popovers, app-grouped menus, collapsible searchable API list) and three-tab data permission tables.",
+    effects: "Reads bound permission summary and list data as the reader; writes nothing.",
+    bindsElement: ["PlatformObjectType:platform:User"],
+    data: {
+      record: { results: ["panelRecord"], required: true },
+      orgShares: { results: ["panelRecordList"], required: false },
+      apiPermissions: { results: ["panelRecordList"], required: false },
+      subjectData: { results: ["panelRecordList"], required: false },
+      managedData: { results: ["panelRecordList"], required: false },
+      effectiveData: { results: ["panelRecordList"], required: false },
+    },
+  }),
+  defineComponentMeta({
     componentId: "CurrentEntry",
     module: "@ontomato/sdk/base",
     exportName: "CurrentEntry",
