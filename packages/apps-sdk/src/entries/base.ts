@@ -11,8 +11,6 @@ export type {
   ObjectListRowActionCondition,
   ObjectListRowActionItem,
   ObjectListRowActionPrefill,
-  ObjectListRowActionResultEvent,
-  ObjectListRowActionRowSummary,
   ObjectListRowActions,
   ObjectListRowOperationState,
   ObjectListRowTone,

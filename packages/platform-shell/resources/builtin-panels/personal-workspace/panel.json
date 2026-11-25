@@ -341,7 +341,7 @@
                 "kind": "operation",
                 "operation": "unfavorite",
                 "labelKey": "action.unfavorite",
-                "danger": true
+                "tone": "danger"
               }
             ]
           }
@@ -428,7 +428,7 @@
                 "kind": "operation",
                 "operation": "unfavorite",
                 "labelKey": "action.unfavorite",
-                "danger": true
+                "tone": "danger"
               }
             ]
           }
@@ -719,7 +719,7 @@
                 "kind": "operation",
                 "operation": "unfavorite",
                 "labelKey": "action.unfavorite",
-                "danger": true
+                "tone": "danger"
               }
             ]
           }

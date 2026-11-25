@@ -145,6 +145,7 @@
           "searchable": false,
           "fallbackToFirst": false,
           "groupBy": "typeLabel",
+          "rowResultDisplay": "expand",
           "emptyText": "models.empty",
           "columns": [
             {
@@ -171,13 +172,13 @@
                 "kind": "local",
                 "id": "edit",
                 "labelKey": "models.edit",
-                "primary": true
+                "tone": "primary"
               },
               {
                 "kind": "operation",
                 "operation": "deleteModel",
                 "labelKey": "models.delete",
-                "danger": true
+                "tone": "danger"
               }
             ]
           }

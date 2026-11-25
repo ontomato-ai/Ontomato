@@ -788,8 +788,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         label,
         icon: item.icon,
         iconOnly: item.iconOnly,
-        danger: Boolean(item.danger),
-        primary: Boolean(item.primary),
+        tone: item.tone ?? "default",
         disabled: false,
       });
       continue;
@@ -809,8 +808,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         label,
         icon: item.icon ?? "Sparkles",
         iconOnly: item.iconOnly,
-        danger: Boolean(item.danger),
-        primary: Boolean(item.primary),
+        tone: item.tone ?? "default",
         disabled: false,
       });
       continue;
@@ -838,8 +836,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
       icon: item.icon,
       iconOnly: item.iconOnly,
       busy: sharedBusy,
-      danger: Boolean(item.danger),
-      primary: Boolean(item.primary),
+      tone: item.tone ?? (descriptor?.inspectImpact ? "danger" : "default"),
       prefill: item.prefill,
       disabled: unavailable,
       reason,

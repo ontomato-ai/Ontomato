@@ -377,7 +377,7 @@
                 "kind": "operation",
                 "operation": "revoke",
                 "labelKey": "action.revoke",
-                "danger": true,
+                "tone": "danger",
                 "when": {
                   "field": "revocable",
                   "equals": true

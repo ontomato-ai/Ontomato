@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
+import type { PanelRowActionTone } from "@ontomato/contracts/panel-projection";
 import { curatedIcon } from "@ontomato/platform-shell";
 import type { ObjectListRowActionPrefill } from "./object-list-types";
 
@@ -23,8 +24,7 @@ export interface ResolvedRowActionItem {
   readonly iconOnly?: boolean;
   readonly active?: boolean;
   readonly busy?: boolean;
-  readonly danger: boolean;
-  readonly primary: boolean;
+  readonly tone: PanelRowActionTone;
   readonly disabled: boolean;
   readonly running?: boolean;
   readonly reason?: string;
@@ -57,8 +57,8 @@ const inlineLimit = computed(() => Math.max(0, Math.floor(props.maxVisible)));
 const inlineItems = computed(() => props.items.slice(0, inlineLimit.value));
 const overflowItems = computed(() => {
   const rest = props.items.slice(inlineLimit.value);
-  const regular = rest.filter((item) => !item.danger);
-  const danger = rest.filter((item) => item.danger);
+  const regular = rest.filter((item) => item.tone !== "danger");
+  const danger = rest.filter((item) => item.tone === "danger");
   return [...regular, ...danger];
 });
 
@@ -85,8 +85,10 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
       type="button"
       class="sdk-object-list-action-btn"
       :class="{
-        'is-danger': item.danger,
-        'is-primary': item.primary,
+        'is-primary': item.tone === 'primary',
+        'is-success': item.tone === 'success',
+        'is-warning': item.tone === 'warning',
+        'is-danger': item.tone === 'danger',
         'is-icon-only': item.iconOnly,
         'is-bordered': item.iconOnly && iconVariant === 'bordered',
         'is-active': item.active,
@@ -157,9 +159,17 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
             v-for="(item, index) in overflowItems"
             :key="item.key"
             :command="item.key"
-            :divided="item.danger && index > 0 && !overflowItems[index - 1]?.danger"
-            :disabled="item.disabled || item.busy || busy"
-            :class="['sdk-object-list-more-item', { 'is-danger': item.danger }]"
+            :divided="item.tone === 'danger' && index > 0 && overflowItems[index - 1]?.tone !== 'danger'"
+            :disabled="item.disabled || item.busy || item.running || busy"
+            :class="[
+              'sdk-object-list-more-item',
+              {
+                'is-primary': item.tone === 'primary',
+                'is-success': item.tone === 'success',
+                'is-warning': item.tone === 'warning',
+                'is-danger': item.tone === 'danger',
+              },
+            ]"
             :data-action-kind="item.kind"
             :data-operation="item.operation"
             :data-local-action="item.id"
@@ -217,6 +227,27 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
 .sdk-object-list-action-btn.is-icon-only:hover:not(:disabled) {
   background: var(--el-fill-color);
   color: var(--el-text-color-primary);
+}
+.sdk-object-list-action-btn.is-icon-only.is-primary {
+  color: var(--el-color-primary);
+}
+.sdk-object-list-action-btn.is-icon-only.is-primary:hover:not(:disabled) {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.sdk-object-list-action-btn.is-icon-only.is-success {
+  color: var(--el-color-success);
+}
+.sdk-object-list-action-btn.is-icon-only.is-success:hover:not(:disabled) {
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
+}
+.sdk-object-list-action-btn.is-icon-only.is-warning {
+  color: var(--el-color-warning);
+}
+.sdk-object-list-action-btn.is-icon-only.is-warning:hover:not(:disabled) {
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
 }
 .sdk-object-list-action-btn.is-icon-only.is-danger {
   color: var(--el-color-danger);
@@ -282,7 +313,23 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
   outline-offset: 1px;
 }
 .sdk-object-list-action-btn.is-primary {
+  color: var(--el-color-primary);
   font-weight: 600;
+}
+.sdk-object-list-action-btn.is-primary:hover:not(:disabled) {
+  background: var(--el-color-primary-light-9);
+}
+.sdk-object-list-action-btn.is-success {
+  color: var(--el-color-success);
+}
+.sdk-object-list-action-btn.is-success:hover:not(:disabled) {
+  background: var(--el-color-success-light-9);
+}
+.sdk-object-list-action-btn.is-warning {
+  color: var(--el-color-warning);
+}
+.sdk-object-list-action-btn.is-warning:hover:not(:disabled) {
+  background: var(--el-color-warning-light-9);
 }
 .sdk-object-list-action-btn.is-danger {
   color: var(--el-color-danger);
@@ -347,6 +394,31 @@ function handleOverflowCommand(command: string | number | Record<string, unknown
 </style>
 
 <style>
+.sdk-object-list-more-menu .el-dropdown-menu__item.sdk-object-list-more-item.is-primary {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.sdk-object-list-more-menu .el-dropdown-menu__item.sdk-object-list-more-item.is-primary:not(.is-disabled):hover,
+.sdk-object-list-more-menu .el-dropdown-menu__item.sdk-object-list-more-item.is-primary:not(.is-disabled):focus {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.sdk-object-list-more-menu .el-dropdown-menu__item.sdk-object-list-more-item.is-success {
+  color: var(--el-color-success);
+}
+.sdk-object-list-more-menu .el-dropdown-menu__item.sdk-object-list-more-item.is-success:not(.is-disabled):hover,
+.sdk-object-list-more-menu .el-dropdown-menu__item.sdk-object-list-more-item.is-success:not(.is-disabled):focus {
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
+}
+.sdk-object-list-more-menu .el-dropdown-menu__item.sdk-object-list-more-item.is-warning {
+  color: var(--el-color-warning);
+}
+.sdk-object-list-more-menu .el-dropdown-menu__item.sdk-object-list-more-item.is-warning:not(.is-disabled):hover,
+.sdk-object-list-more-menu .el-dropdown-menu__item.sdk-object-list-more-item.is-warning:not(.is-disabled):focus {
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
+}
 .sdk-object-list-more-menu .el-dropdown-menu__item.sdk-object-list-more-item.is-danger {
   color: var(--el-color-danger);
 }

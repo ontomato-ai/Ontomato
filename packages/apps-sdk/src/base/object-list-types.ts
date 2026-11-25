@@ -56,25 +56,6 @@ export interface ObjectListStateSnapshot {
   readonly retry: (() => void) | null;
 }
 
-/** Safe row summary carried by `row-action-result` events. */
-export interface ObjectListRowActionRowSummary {
-  readonly className: string;
-  readonly primaryKey: string;
-  readonly label: string;
-}
-
-/** Payload emitted by `ObjectList`'s `row-action-result` event. */
-export interface ObjectListRowActionResultEvent {
-  readonly actionId: string;
-  readonly row: ObjectListRowActionRowSummary;
-  readonly ref: ObjectListRef;
-  readonly ok: boolean;
-  readonly outcome?: unknown;
-  readonly data?: unknown;
-  readonly message?: string;
-  readonly error?: string;
-}
-
 /** Event payload emitted when an inline tab rename commits a changed label. */
 export interface ObjectListRenameCommitPayload {
   readonly ref: ObjectListRef;

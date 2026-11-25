@@ -214,6 +214,7 @@ export const panelReadOperationSectionsResultSchema = z.object({
   kind: z.literal("sections"),
   sections: z.array(panelReadOperationSectionSchema).nonempty(),
   defaultSectionId: z.string().min(1).max(120).optional(),
+  message: z.string().min(1).optional(),
 }).strict().superRefine(({ defaultSectionId, sections }, ctx) => {
   if (defaultSectionId !== undefined && !sections.some(section => section.id === defaultSectionId)) {
     ctx.addIssue({
@@ -227,10 +228,15 @@ export type PanelReadOperationSectionsResult = z.infer<typeof panelReadOperation
 
 /** The JSON success body of a read. File-producing reads send bytes with attachment headers. */
 export const panelReadOperationJsonResultSchema = z.union([
-  z.object({ kind: z.literal("markdown"), markdown: z.string() }).strict(),
+  z.object({
+    kind: z.literal("markdown"),
+    markdown: z.string(),
+    message: z.string().min(1).optional(),
+  }).strict(),
   z.object({
     kind: z.literal("json"),
     value: runtimeJsonValueSchema,
+    message: z.string().min(1).optional(),
     truncation: panelReadOperationTruncationSchema.optional(),
   }).strict(),
   panelReadOperationSectionsResultSchema,

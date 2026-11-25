@@ -111,14 +111,14 @@
                 "kind": "operation",
                 "operation": "deleteDraft",
                 "labelKey": "action.delete",
-                "danger": true,
+                "tone": "danger",
                 "when": { "field": "published", "equals": false }
               },
               {
                 "kind": "operation",
                 "operation": "deletePublished",
                 "labelKey": "action.delete",
-                "danger": true,
+                "tone": "danger",
                 "when": { "field": "published", "equals": true }
               }
             ]

@@ -84,6 +84,12 @@ export const panelObjectListColumnSchema = z.object({
   tagEffect: z.enum(["light", "plain"]).optional().describe(
     "Visual fill style for tag pills in this column ('light' filled by default, or 'plain' outlined).",
   ),
+  resultFrom: z.object({
+    operation: z.string().min(1),
+    field: z.string().min(1).optional(),
+  }).strict().optional().describe(
+    "Derive this cell's displayed value from this row's latest platform-recorded result of the named row operation. Optional `field` picks a key from an object result; tone comes from the value itself (or `danger` on error).",
+  ),
 }).strict();
 export type PanelObjectListColumn = z.infer<typeof panelObjectListColumnSchema>;
 
@@ -103,14 +109,17 @@ const rowActionWhenSchema = z.union([
   z.array(panelObjectListRowActionConditionSchema).min(1),
 ]).optional();
 
+/** Five-level semantic tone for row actions in ObjectList and GroupedGrid. */
+export const panelRowActionToneSchema = z.enum(["default", "primary", "success", "warning", "danger"]);
+export type PanelRowActionTone = z.infer<typeof panelRowActionToneSchema>;
+
 const rowActionBaseFields = {
   labelKey: panelMessageKeySchema.optional(),
   label: z.string().min(1).optional(),
   icon: z.string().min(1).optional(),
   iconOnly: z.boolean().optional(),
   active: z.boolean().optional(),
-  danger: z.boolean().optional(),
-  primary: z.boolean().optional(),
+  tone: panelRowActionToneSchema.optional(),
   when: rowActionWhenSchema,
   disabledWhen: rowActionWhenSchema,
 };

@@ -244,6 +244,8 @@ export interface DirectPanelInstance extends PanelInstance {
   projectionVersion(member: string): number;
   /** True while any declared projection or nested panel member is still resolving asynchronously. */
   isLoading(): boolean;
+  /** Platform toast channel shared by read and write operations on this direct panel instance. */
+  readonly notify: NonNullable<PanelInstanceOptions["notify"]>;
   /** Registers a panel-local back/close step (LIFO) with the enclosing host. */
   readonly registerBackHandler?: DirectPanelRun["registerBackHandler"];
   /** Unified host confirmation for leaving unsaved edits. */
@@ -449,8 +451,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       ? { member, selection: { stateValue: stateObject(stateValue as PanelFieldValue)! } }
       : segmentOf(member);
   };
+  const notify: NonNullable<PanelInstanceOptions["notify"]> =
+    options.notify ?? (({ kind, text }) => { ElMessage({ type: kind, message: text, grouping: true }); });
   const instance = createPanelInstance(direct, {
     ...options,
+    notify,
     segmentOf,
     // The shared machinery reads no projection of a direct panel; its members are read here.
     readProjection: () => Promise.reject(new Error("A direct panel's members read their projections through the instance")),
@@ -1086,6 +1091,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     },
     projectionVersion: (member: string) => versions.get(member) ?? 0,
     isLoading: () => pendingPlacings > 0 || [...nestedMounts].some((mount) => mount.isLoading?.() ?? false),
+    notify,
     ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
     ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
   });
@@ -1132,7 +1138,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     // The member's projection is the platform's own record here: its declared entry goes to the page's composer as it is.
     expandPageComposer: async (entry, click) => instance.expandPageComposer(entry, click),
     navigate: (address) => instance.navigate(address),
-    notify: ({ kind, text }) => { ElMessage({ type: kind, message: text, grouping: true }); },
+    notify: (message) => instance.notify(message),
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),
     ...(instance.registerBackHandler ? { registerBackHandler: instance.registerBackHandler } : {}),

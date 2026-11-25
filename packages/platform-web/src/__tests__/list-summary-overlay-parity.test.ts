@@ -10,7 +10,8 @@ import { curatedIcon } from "@ontomato/platform-shell";
 import ObjectList from "../../../apps-sdk/src/base/ObjectList.vue";
 import ObjectSummary from "../../../apps-sdk/src/base/ObjectSummary.vue";
 import ObjectTitle from "../../../apps-sdk/src/base/ObjectTitle.vue";
-import type { ObjectListRowActionResultEvent, ObjectListStateSnapshot } from "../../../apps-sdk/src/base/object-list-types";
+import OperationButton from "../../../apps-sdk/src/base/OperationButton.vue";
+import type { ObjectListStateSnapshot } from "../../../apps-sdk/src/base/object-list-types";
 import { createSdkOverlay } from "../../../apps-sdk/src/ui/SdkOverlay";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
 import { PanelFormAdapters } from "../../../apps-sdk/src/panel/forms";
@@ -39,6 +40,7 @@ function createTestI18n() {
           dataEmpty: "No data",
           dataUnreachable: "Service unreachable",
           dataNoMatch: "No matches",
+          readerLoading: "Loading...",
           retry: "Retry",
           listSelectAll: "Select all",
           listClearFilters: "Clear filters",
@@ -623,13 +625,6 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     expect(call.prefill).toContain("platform:WorkspaceResource");
     expect(call.submit).toBe(false);
     expect(call.newSession).toBe(true);
-
-    const results = wrapper.emitted("row-action-result") as [ObjectListRowActionResultEvent][] | undefined;
-    expect(results?.[0]?.[0]).toMatchObject({
-      actionId: "ask",
-      ok: true,
-      row: { className: "platform:WorkspaceResource", primaryKey: "doc-42", label: "Quarterly Revenue Report" },
-    });
   });
 
   it("W-15: resolves ObjectTitle from selected slot, explicit target, and fallback", async () => {
@@ -687,10 +682,11 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
       makeRecord({ primaryKey: "log-2", label: "Update", fields: { actor: "bob", status: "ok" } }),
     ];
     const retryFn = vi.fn();
-    const datumState = shallowRef<MemberDataState>({
-      status: "ready",
+    const firstReady = {
+      status: "ready" as const,
       value: { rows, total: 12 } as never,
-    });
+    };
+    const datumState = shallowRef<MemberDataState>(firstReady);
 
     const { wrapper } = mountObjectList({
       datumState,
@@ -699,12 +695,11 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
         columns: [{ key: "actor", label: "Actor" }, { key: "status", label: "Status" }],
         border: true,
         stripe: true,
-        preserveOnError: true,
       },
       slots: {
         status: (scope: unknown) => {
           const s = scope as ObjectListStateSnapshot;
-          return h("span", { class: "status-probe" }, `count=${s.count};total=${s.total};error=${s.error ?? "none"}`);
+          return h("span", { class: "status-probe" }, `count=${s.count};total=${s.total};error=${s.error ?? "none"};refreshing=${s.refreshing}`);
         },
       },
     });
@@ -715,20 +710,33 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     expect(table.classes()).toContain("is-striped");
     expect(table.attributes("data-border")).toBe("true");
     expect(table.attributes("data-stripe")).toBe("true");
-    expect(wrapper.find(".status-probe").text()).toBe("count=2;total=12;error=none");
+    expect(wrapper.find(".status-probe").text()).toBe("count=2;total=12;error=none;refreshing=false");
 
-    // Transition to error: rows stay rendered and top error alert with retry appears.
-    datumState.value = { status: "error", message: "Audit query timed out", retry: retryFn };
+    // Transition to error carrying `previous`: rows stay rendered and top error alert with retry appears automatically.
+    datumState.value = { status: "error", message: "Audit query timed out", retry: retryFn, previous: firstReady };
     await flushPromises();
 
     expect(wrapper.findAll("tbody tr")).toHaveLength(2);
     const alert = wrapper.find(".sdk-object-list-preserved-error");
     expect(alert.exists()).toBe(true);
     expect(alert.text()).toContain("Audit query timed out");
-    expect(wrapper.find(".status-probe").text()).toBe("count=2;total=12;error=Audit query timed out");
+    expect(wrapper.find(".status-probe").text()).toBe("count=2;total=12;error=Audit query timed out;refreshing=false");
 
     await alert.find("button").trigger("click");
     expect(retryFn).toHaveBeenCalledTimes(1);
+
+    // Retry loading carrying `previous`: rows stay visible with refreshing indicator (no blank flash).
+    datumState.value = { status: "loading", previous: firstReady };
+    await flushPromises();
+    expect(wrapper.findAll("tbody tr")).toHaveLength(2);
+    expect(wrapper.find(".sdk-object-list").attributes("data-refreshing")).toBe("true");
+    expect(wrapper.find(".status-probe").text()).toBe("count=2;total=12;error=none;refreshing=true");
+
+    // Error without `previous` (e.g. after target switch or forbidden): no stale rows or preserved-error banner.
+    datumState.value = { status: "error", message: "Fatal target error" };
+    await flushPromises();
+    expect(wrapper.findAll("tbody tr")).toHaveLength(0);
+    expect(wrapper.find(".sdk-object-list-preserved-error").exists()).toBe(false);
   });
 
   it("AL-08: renders ObjectSummary in presentation='pre' mode and restores trigger focus after SdkOverlay closes", async () => {
@@ -848,7 +856,7 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     triggerBtn.remove();
   });
 
-  it("PM-03 & EM-07: renders layout='accordion' with chevron, code badge, description, and pretty-printed JSON detail", async () => {
+  it("PM-03 & EM-07: renders layout='accordion' driven by expandedKeys/rowExpandMode with columns and #row-detail", async () => {
     const tools: PlatformObjectRecord[] = [
       makeRecord({
         primaryKey: "search_orders",
@@ -865,59 +873,119 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
         className: TOOL_TYPE,
         label: "Raw Tool",
         fields: {
-          codeId: "custom.code",
-          summary: "Custom description text",
-          payload: "{\"limit\":10}",
+          name: "custom.code",
+          description: "Custom description text",
+          inputSchema: "{\"limit\":10}",
         },
       }),
     ];
 
     const { wrapper } = mountObjectList({
       objectType: TOOL_TYPE,
-      datumState: shallowRef<MemberDataState>({ status: "ready", value: [tools[0]] as never }),
+      datumState: shallowRef<MemberDataState>({ status: "ready", value: tools as never }),
       props: {
         layout: "accordion",
-        accordionDetailLabelKey: "gallery.schemaLabel",
+        subtitleField: "name",
+        rowExpandMode: "single",
+        columns: [
+          { key: "description" },
+          { key: "inputSchema", labelKey: "gallery.schemaLabel" },
+        ],
       },
     });
     await flushPromises();
 
-    const item = wrapper.find("details.sdk-object-list-accordion-item");
-    expect(item.exists()).toBe(true);
-    expect(item.find(".sdk-object-list-accordion-arrow").exists()).toBe(true);
-    expect(item.find(".sdk-object-list-accordion-title").text()).toBe("Search Orders");
-    expect(item.find("code.sdk-object-list-accordion-code").text()).toBe("orders.search");
-    expect(item.find(".sdk-object-list-accordion-desc").text()).toBe("Find orders matching customer or date range");
-    expect(item.find(".sdk-object-list-accordion-detail-label").text()).toBe("Input Schema");
-    expect(item.find("pre.sdk-object-list-accordion-pre").text()).toBe(
+    const items = wrapper.findAll(".sdk-object-list-accordion-item");
+    expect(items).toHaveLength(2);
+    expect(items[0].find(".sdk-object-list-accordion-arrow").exists()).toBe(true);
+    expect(items[0].find(".sdk-object-list-accordion-title").text()).toBe("Search Orders");
+    expect(items[0].find("code.sdk-object-list-accordion-code").text()).toBe("orders.search");
+    expect(items[0].find(".sdk-object-list-accordion-summary").attributes("aria-expanded")).toBe("false");
+    expect(items[0].find(".sdk-object-list-accordion-body").exists()).toBe(false);
+
+    // Click first item header to expand.
+    await items[0].find(".sdk-object-list-accordion-summary").trigger("click");
+    await nextTick();
+    expect(items[0].attributes("data-expanded")).toBe("true");
+    expect(items[0].find(".sdk-object-list-accordion-summary").attributes("aria-expanded")).toBe("true");
+    expect(items[0].find(".sdk-object-list-accordion-desc").text()).toBe("Find orders matching customer or date range");
+    expect(items[0].find(".sdk-object-list-accordion-detail-label").text()).toBe("Input Schema");
+    expect(items[0].find("pre.sdk-object-list-accordion-pre").text()).toBe(
       JSON.stringify({ type: "object", properties: { query: { type: "string" } } }, null, 2),
     );
 
-    const { wrapper: customFields } = mountObjectList({
+    // Single-expand mode collapses item 0 when item 1 expands.
+    await items[1].find(".sdk-object-list-accordion-summary").trigger("click");
+    await nextTick();
+    expect(items[0].find(".sdk-object-list-accordion-body").exists()).toBe(false);
+    expect(items[1].attributes("data-expanded")).toBe("true");
+    expect(items[1].find("pre.sdk-object-list-accordion-pre").text()).toBe(JSON.stringify({ limit: 10 }, null, 2));
+
+    // Multiple-expand mode with unified #row-detail slot (never exposes raw row.fields).
+    const detailScopes: Record<string, unknown>[] = [];
+    const { wrapper: multiSlot } = mountObjectList({
       objectType: TOOL_TYPE,
-      datumState: shallowRef<MemberDataState>({ status: "ready", value: [tools[1]] as never }),
+      datumState: shallowRef<MemberDataState>({ status: "ready", value: tools as never }),
       props: {
         layout: "accordion",
-        accordionCodeField: "codeId",
-        accordionDescriptionField: "summary",
-        accordionDetailField: "payload",
+        rowExpandMode: "multiple",
+      },
+      slots: {
+        "row-detail": (scope: unknown) => {
+          const s = scope as Record<string, unknown> & { ref: { primaryKey: string }; collapse: () => void };
+          detailScopes.push(s);
+          return h("div", { class: "custom-accordion-detail" }, `detail:${s.ref.primaryKey}`);
+        },
       },
     });
     await flushPromises();
-    expect(customFields.find("code.sdk-object-list-accordion-code").text()).toBe("custom.code");
-    expect(customFields.find(".sdk-object-list-accordion-desc").text()).toBe("Custom description text");
-    expect(customFields.find("pre.sdk-object-list-accordion-pre").text()).toBe(JSON.stringify({ limit: 10 }, null, 2));
+    const multiItems = multiSlot.findAll(".sdk-object-list-accordion-item");
+    await multiItems[0].find(".sdk-object-list-accordion-summary").trigger("click");
+    await multiItems[1].find(".sdk-object-list-accordion-summary").trigger("click");
+    await nextTick();
+    expect(multiSlot.findAll(".custom-accordion-detail").map((n) => n.text())).toEqual([
+      "detail:search_orders",
+      "detail:raw_tool",
+    ]);
+    expect(detailScopes[0]).not.toHaveProperty("fields");
+    expect(detailScopes[0]).toHaveProperty("operationResults");
+    expect(typeof detailScopes[0].clearOperationResult).toBe("function");
+    expect(typeof detailScopes[0].collapse).toBe("function");
   });
 
-  it("EM-04 & EM-05: supports per-(rowKey, actionId) busy isolation, read-only operation dispatch, rowFieldOverrides, curated icons, and iconOnly danger buttons", async () => {
+  it("EM-04 & EM-05: supports per-(rowKey, actionId) busy isolation, declarative column.resultFrom, platform readOperation message toast, curated icons, and 5-level tone buttons", async () => {
     expect(curatedIcon("RefreshCw")).not.toBeNull();
     expect(curatedIcon("Plug")).not.toBeNull();
     expect(curatedIcon("Pencil")).not.toBeNull();
     expect(curatedIcon("Trash2")).not.toBeNull();
 
-    const pendingProbe = deferred<PanelReadOperationResult>();
-    const readOperation = vi.fn().mockReturnValueOnce(pendingProbe.promise);
-    const writeOperation = vi.fn().mockResolvedValue(writeSuccess());
+    const pendingProbe1 = deferred<PanelReadOperationResult>();
+    const pendingProbe2 = deferred<PanelReadOperationResult>();
+    const readOpMock = vi.fn()
+      .mockReturnValueOnce(pendingProbe1.promise)
+      .mockReturnValueOnce(pendingProbe2.promise);
+    const notifyMock = vi.fn();
+
+    const sharedManifest = panelManifestSchema.parse({
+      state: {},
+      members: { list: { target: { projectionId: "list-projection" } } },
+    });
+    const sharedInstance = createPanelInstance(sharedManifest, {
+      pageKey: "mcp-servers",
+      url: () => "/mcp-servers",
+      label: () => "MCP Servers",
+      text: (key) => key,
+      readProjection: () => Promise.reject(new Error("unused")),
+      notify: notifyMock,
+      operations: {
+        describe: () => Promise.reject(new Error("unused")),
+        read: readOpMock,
+        upload: () => Promise.reject(new Error("unused")),
+        prepare: () => Promise.reject(new Error("unused")),
+        cancel: () => Promise.resolve(),
+      },
+      confirmOperation: () => Promise.resolve({ decision: "cancel" as const }),
+    });
 
     const probeOp: PanelOwnerOperationDescriptor = {
       kind: "action",
@@ -943,8 +1011,8 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     const rowActions: PanelObjectListRowActions = {
       maxVisible: 3,
       items: [
-        { kind: "operation", operation: "probe", labelKey: "gallery.probe", icon: "Plug" },
-        { kind: "operation", operation: "remove", labelKey: "gallery.delete", icon: "Trash2", iconOnly: true, danger: true },
+        { kind: "operation", operation: "probe", labelKey: "gallery.probe", icon: "Plug", tone: "primary" },
+        { kind: "operation", operation: "remove", labelKey: "gallery.delete", icon: "Trash2", iconOnly: true, tone: "danger" },
       ],
     };
 
@@ -954,30 +1022,36 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     ];
 
     const { wrapper } = mountObjectList({
+      sharedInstance,
       datumState: shallowRef<MemberDataState>({ status: "ready", value: rows as never }),
       declaredOps: {
         probe: { operation: { kind: "PlatformOperation", id: "mcp.probe" } },
         remove: { operation: { kind: "PlatformOperation", id: "mcp.delete" } },
       },
       admittedOps: { probe: probeOp, remove: deleteOp },
-      readOperation,
-      writeOperation,
       props: {
         layout: "table",
-        columns: [{ key: "status", label: "Status" }],
+        columns: [
+          {
+            key: "status",
+            label: "Status",
+            resultFrom: { operation: "probe", field: "status" },
+          },
+        ],
         rowActions,
-        rowFieldOverrides: {},
       },
     });
     await flushPromises();
 
     const tableRows = wrapper.findAll("tbody tr");
     expect(tableRows).toHaveLength(2);
+    expect(tableRows[0].find("td").text()).toContain("unknown");
 
     const row1Buttons = tableRows[0].findAll(".sdk-object-list-action-btn");
     const row2Buttons = tableRows[1].findAll(".sdk-object-list-action-btn");
 
-    // Verify iconOnly danger trash button has aria-label & title but no text label.
+    // Verify 5-level tone classes on regular primary button and iconOnly danger trash button.
+    expect(row1Buttons[0].classes()).toContain("is-primary");
     const deleteBtn = row1Buttons[1];
     expect(deleteBtn.classes()).toContain("is-icon-only");
     expect(deleteBtn.classes()).toContain("is-danger");
@@ -986,36 +1060,159 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     expect(deleteBtn.text().trim()).toBe("");
     expect(deleteBtn.find(".sdk-object-list-action-icon").exists()).toBe(true);
 
-    // Click probe on row 1: only row 1 probe button is busy; row 2 probe remains idle.
+    // Click probe on row 1: only row 1 probe button is busy and row 1 status cell shows loading state.
     await row1Buttons[0].trigger("click");
     await nextTick();
     expect(row1Buttons[0].attributes("aria-busy")).toBe("true");
     expect(row1Buttons[1].attributes("aria-busy")).toBeUndefined();
     expect(row2Buttons[0].attributes("aria-busy")).toBeUndefined();
-    expect(readOperation).toHaveBeenCalledTimes(1);
-    expect(writeOperation).not.toHaveBeenCalled();
+    expect(wrapper.findAll("tbody tr")[0].find("td").text()).toContain("Loading...");
+    expect(readOpMock).toHaveBeenCalledTimes(1);
 
-    pendingProbe.resolve(readSuccess({ reachable: true, status: "Reachable" }));
+    // Resolve with toned object value and top-level read `message`:
+    // cell derives display text and value-carried tone, bottom JSON dump is suppressed, and platform layer notifies toast.
+    pendingProbe1.resolve({
+      kind: "json",
+      value: { reachable: true, status: { label: "Reachable", tone: "success" } },
+      message: "Connection verified",
+    });
     await flushPromises();
 
     expect(row1Buttons[0].attributes("aria-busy")).toBeUndefined();
-    const results = wrapper.emitted("row-action-result") as [ObjectListRowActionResultEvent][] | undefined;
-    expect(results?.[0]?.[0]).toMatchObject({
-      actionId: "probe",
-      ok: true,
-      data: { reachable: true, status: "Reachable" },
-      row: { className: APP_TYPE, primaryKey: "srv-1", label: "Server 1" },
-    });
-
-    // Apply rowFieldOverrides to update row 1 status cell in-place without reloading.
-    await wrapper.setProps({
-      rowFieldOverrides: {
-        "srv-1": { status: "Reachable" },
-      },
-    });
-    await nextTick();
-
-    expect(wrapper.findAll("tbody tr")[0].find("td").text()).toContain("Reachable");
+    const row1Tag = wrapper.findAll("tbody tr")[0].find(".sdk-object-list-tag");
+    expect(row1Tag.exists()).toBe(true);
+    expect(row1Tag.text()).toBe("Reachable");
+    expect(row1Tag.attributes("data-tone")).toBe("success");
     expect(wrapper.findAll("tbody tr")[1].find("td").text()).toContain("unknown");
+    expect(wrapper.find(".sdk-object-list-op-feedback").exists()).toBe(false);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith({ kind: "success", text: "Connection verified" });
+
+    // Trigger probe on row 2 and fail: row 2 cell shows error message with automatic `danger` tone.
+    await row2Buttons[0].trigger("click");
+    pendingProbe2.reject(new Error("Connection timed out"));
+    await flushPromises();
+
+    const row2Tag = wrapper.findAll("tbody tr")[1].find(".sdk-object-list-tag");
+    expect(row2Tag.exists()).toBe(true);
+    expect(row2Tag.text()).toBe("Connection timed out");
+    expect(row2Tag.attributes("data-tone")).toBe("danger");
+  });
+
+  it("PanelInstance.readOperation notifies result.message uniformly across OperationButton and honors notifySuccess: false", async () => {
+    const readOpMock = vi.fn()
+      .mockResolvedValueOnce({ kind: "json", value: { ok: true }, message: "Dry run passed" } satisfies PanelReadOperationResult)
+      .mockResolvedValueOnce({ kind: "json", value: { ok: true }, message: "Suppressed message" } satisfies PanelReadOperationResult)
+      .mockResolvedValueOnce({ kind: "json", value: { ok: true } } satisfies PanelReadOperationResult);
+    const notifyMock = vi.fn();
+
+    const projection: ProductProjection = {
+      id: "check-op-proj",
+      name: "Check",
+      description: "",
+      visibility: "domain",
+      domainId: "domain",
+      ownerId: "owner",
+      editable: true,
+      revision: 1,
+      createdAt: "",
+      updatedAt: "",
+      componentId: "@ontomato/sdk:OperationButton",
+      inputs: {},
+      outputs: {},
+      config: {},
+      data: {},
+      operations: {
+        dryRun: { operation: { kind: "PlatformOperation", id: "demo.dryRun" } },
+      },
+    };
+    const manifest = panelManifestSchema.parse({
+      state: {},
+      members: { check: { target: { projectionId: projection.id } } },
+    });
+    const instance = createPanelInstance(manifest, {
+      pageKey: "demo-check",
+      url: () => "/demo-check",
+      label: () => "Demo",
+      text: (key) => key,
+      readProjection: () => Promise.reject(new Error("unused")),
+      notify: notifyMock,
+      operations: {
+        describe: () => Promise.reject(new Error("unused")),
+        read: readOpMock,
+        upload: () => Promise.reject(new Error("unused")),
+        prepare: () => Promise.reject(new Error("unused")),
+        cancel: () => Promise.resolve(),
+      },
+      confirmOperation: () => Promise.resolve({ decision: "cancel" as const }),
+    });
+
+    const dryRunOp: PanelOwnerOperationDescriptor = {
+      kind: "action",
+      handlerRef: "demo.dryRun",
+      effect: "read",
+      target: { source: "none" },
+      batch: false,
+      label: "Dry run",
+      inputSchema: {},
+      resultSchema: {},
+    };
+    const i18n = createTestI18n();
+    const panel = {
+      instance,
+      manifest,
+      notify: notifyMock,
+      navigate: vi.fn(),
+      t: (key: string) => key,
+    } as unknown as PanelContext;
+    const member: PanelMemberContext = {
+      key: "check",
+      projection,
+      scoped: true,
+      operations: computed(() => ({ status: "ready", value: { dryRun: dryRunOp } })),
+      inputs: computed(() => ({})),
+      data: {
+        read: async () => ({ status: "empty" }),
+        use: () => computed<MemberDataState>(() => ({ status: "empty" })),
+      },
+    };
+
+    const mountButton = (notifySuccess?: boolean) =>
+      mount(OperationButton, {
+        props: { operation: "dryRun", ...(notifySuccess !== undefined ? { notifySuccess } : {}) },
+        global: {
+          plugins: [i18n],
+          provide: {
+            [panelContextKey as symbol]: panel,
+            [panelMemberKey as symbol]: () => member,
+            [projectionKey as symbol]: { slot: "check", projection },
+          },
+        },
+      });
+
+    // 1. Default notifySuccess (true): read result with `message` triggers platform toast.
+    const w1 = mountButton();
+    await flushPromises();
+    await w1.find("button").trigger("click");
+    await flushPromises();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith({ kind: "success", text: "Dry run passed" });
+    w1.unmount();
+
+    // 2. notifySuccess: false suppresses read result toast.
+    const w2 = mountButton(false);
+    await flushPromises();
+    await w2.find("button").trigger("click");
+    await flushPromises();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    w2.unmount();
+
+    // 3. Read result without `message` stays silent.
+    const w3 = mountButton();
+    await flushPromises();
+    await w3.find("button").trigger("click");
+    await flushPromises();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    w3.unmount();
   });
 });

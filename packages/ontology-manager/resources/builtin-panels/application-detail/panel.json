@@ -237,7 +237,7 @@
                 "kind": "local",
                 "id": "edit",
                 "labelKey": "action.edit",
-                "primary": true,
+                "tone": "primary",
                 "when": {
                   "field": "canEdit",
                   "equals": true
@@ -247,7 +247,7 @@
                 "kind": "operation",
                 "operation": "deleteEntry",
                 "labelKey": "action.delete",
-                "danger": true,
+                "tone": "danger",
                 "when": {
                   "field": "canEdit",
                   "equals": true
@@ -418,7 +418,7 @@
                 "kind": "operation",
                 "operation": "revoke",
                 "labelKey": "grants.revoke",
-                "danger": true,
+                "tone": "danger",
                 "when": {
                   "field": "revocable",
                   "equals": true

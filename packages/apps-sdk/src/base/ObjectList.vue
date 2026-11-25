@@ -36,7 +36,7 @@ import { appIcon, curatedIcon } from "@ontomato/platform-shell/icons";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { useLocalDraftStore } from "../panel/local-drafts";
-import { paramValues } from "../panel/direct";
+import { paramValues, type MemberReadyData } from "../panel/direct";
 import {
   classifyDispatchResponseForAction,
   classifyDispatchResponseForConfirmation,
@@ -127,7 +127,6 @@ import type {
   ObjectListRenameCommitPayload,
   ObjectListRowActionCondition,
   ObjectListRowActionPrefill,
-  ObjectListRowActionResultEvent,
   ObjectListRowActions as ObjectListRowActionsConfig,
   ObjectListRowOperationState,
   ObjectListRowTone,
@@ -221,14 +220,8 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "exportFileName",
   "skeletonCount",
   "actionErrorPlacement",
-  "preserveOnError",
   "border",
   "stripe",
-  "rowFieldOverrides",
-  "accordionCodeField",
-  "accordionDescriptionField",
-  "accordionDetailField",
-  "accordionDetailLabelKey",
   "showRowIndex",
   "pinPrimaryColumn",
   "rowActivation",
@@ -274,8 +267,8 @@ const props = withDefaults(
      * `"list"` forces the compact list, `"table"` draws the table when `columns` is given, `"cards"` draws a
      * responsive card grid showing label, subtitle, status, tags and any configured `columns`, `"tabs"` draws a
      * single-row horizontal tab strip with overflow scroll buttons and compact per-tab row actions, and `"accordion"`
-     * draws a collapsible disclosure list with rotating chevron, title, monospace identifier, description and
-     * formatted structured detail block.
+     * draws a collapsible disclosure list driven by `expandedKeys` / `rowExpandMode` and rendering `#row-detail` or
+     * configured `columns` / record fields.
      * The compact list uses the object's `label` as its main title and has no `titleField` prop. To display a
      * different title field, use `"table"` with explicit `columns` or a row slot.
      */
@@ -393,22 +386,10 @@ const props = withDefaults(
     skeletonCount?: number;
     /** Where row-action errors render: `"inline"` (default, below the list) or `"top"` (a dismissible error banner at the top of the list). */
     actionErrorPlacement?: "inline" | "top";
-    /** When `true`, keeps the previous successful result visible and overlays an error retry alert above the list if a subsequent read fails. Defaults to `false`. */
-    preserveOnError?: boolean;
     /** Draw vertical cell borders in `"table"` layout. Defaults to `false`. */
     border?: boolean;
     /** Draw alternating zebra-striped rows in `"table"` layout. Defaults to `false`. */
     stripe?: boolean;
-    /** Optional per-row field overrides indexed by `primaryKey` or `${className}:${primaryKey}`, merged over row fields for derived status/probe display. */
-    rowFieldOverrides?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
-    /** Field key shown as the monospace `<code>` identifier in `"accordion"` layout; defaults to `name` or `primaryKey`. */
-    accordionCodeField?: string;
-    /** Field key shown as the expanded description paragraph in `"accordion"` layout; defaults to `description` or `subtitle`. */
-    accordionDescriptionField?: string;
-    /** Field key shown as the formatted `<pre>` detail block in `"accordion"` layout; defaults to `inputSchema`, `schema`, or `details`. */
-    accordionDetailField?: string;
-    /** Optional panel message key for the muted label displayed above the `<pre>` detail block in `"accordion"` layout. */
-    accordionDetailLabelKey?: string;
     /** Show a 1-based leading row index column (`50px` wide) in table layout, offset by current page; defaults to `false`. */
     showRowIndex?: boolean;
     /** Pin the first visible table column to the left (`position: sticky; left: 0`) and style its text as a primary clickable link when rows are activatable; defaults to `false`. */
@@ -503,14 +484,8 @@ const props = withDefaults(
     exportFileName: undefined,
     skeletonCount: 6,
     actionErrorPlacement: "inline",
-    preserveOnError: false,
     border: false,
     stripe: false,
-    rowFieldOverrides: undefined,
-    accordionCodeField: undefined,
-    accordionDescriptionField: undefined,
-    accordionDetailField: undefined,
-    accordionDetailLabelKey: undefined,
     showRowIndex: false,
     pinPrimaryColumn: false,
     rowActivation: "click",
@@ -553,8 +528,6 @@ const emit = defineEmits<{
   "clear-filters": [];
   /** Emitted when the reader clicks a local button (`kind: "local"`) in the built-in row action column. */
   "row-action": [payload: { id: string; ref: ObjectListRef; index: number }];
-  /** Emitted when a row operation or conversation action settles (read or write, success or failure). */
-  "row-action-result": [payload: ObjectListRowActionResultEvent];
   /** Emitted after a declared row operation dispatches and the owner answers. */
   "operation-done": [operation: string, outcome: OperationOutcome, ref: ObjectListRef];
   /** Emitted when an inline tab rename commits a changed non-empty label. */
@@ -819,13 +792,7 @@ const hasChooseListener = Boolean(
 const hasUpdateSelectedListener = Boolean(
   vnodeProps && (typeof vnodeProps["onUpdate:selected"] === "function" || Array.isArray(vnodeProps["onUpdate:selected"])),
 );
-const hasSelectionRecordListener = Boolean(
-  vnodeProps && (typeof vnodeProps.onSelectionRecord === "function" || Array.isArray(vnodeProps.onSelectionRecord)),
-);
-const hasRowActionResultListener = Boolean(
-  vnodeProps && (typeof vnodeProps.onRowActionResult === "function" || Array.isArray(vnodeProps.onRowActionResult)),
-);
-const rowSelectable = hasSelectedBinding || hasChooseListener || hasUpdateSelectedListener || hasSelectionRecordListener;
+const rowSelectable = hasSelectedBinding || hasChooseListener || hasUpdateSelectedListener;
 const rowActivatable = computed(() => rowSelectable || Boolean(props.openOutput));
 const cardHeaderActions = computed(() => isCards.value && props.rowActions?.placement === "header");
 const usesCursorPages = computed(() => pageMode === "cursor" && props.pagination === "pages");
@@ -1150,20 +1117,7 @@ if (pageMode === "page") {
 
 const datumState = useMemberData(datumName);
 const refreshDatum = useMemberRefresh(datumName);
-const lastValidRows = ref<readonly PlatformObjectRecord[]>([]);
-const lastValidRowOperations = ref<PanelRowOperationsMap>({});
-const lastValidTotal = ref<number | null>(null);
-const lastValidHasTotal = ref(false);
-const lastValidNextCursor = ref<string | undefined>(undefined);
 const highlightedIdentity = ref<string | null>(null);
-
-function clearStaleSnapshot() {
-  lastValidRows.value = [];
-  lastValidRowOperations.value = {};
-  lastValidTotal.value = null;
-  lastValidHasTotal.value = false;
-  lastValidNextCursor.value = undefined;
-}
 const hasSupplement = Object.hasOwn(member.projection.data, "supplement");
 const supplementState = hasSupplement ? useMemberData("supplement") : null;
 
@@ -1190,16 +1144,18 @@ const isCompleteList = computed<boolean>(() => {
   return datumState.value.status === "ready" ? Array.isArray(datumState.value.value) : true;
 });
 
-const lastGoodSnapshot = shallowRef<{
-  readonly parsed: ParsedListData;
-  readonly rowOperations?: PanelRowOperationsMap;
-} | null>(null);
+const activeReadyDatum = computed<MemberReadyData | undefined>(() => {
+  const state = datumState.value;
+  if (state.status === "ready") return state;
+  if (state.status === "error" || state.status === "loading") return state.previous;
+  return undefined;
+});
 
-const liveParsedData = computed<ParsedListData>(() => {
-  if (datumState.value.status !== "ready") {
+function parseReadyDatum(ready: MemberReadyData | undefined): ParsedListData {
+  if (!ready) {
     return { rows: [], total: null, hasTotal: false, diagnostics: [], status: "ok" };
   }
-  const value = datumState.value.value;
+  const value = ready.value;
   if (datumName === "objects") {
     const response = value as unknown as PlatformOntologyObjectsResponse;
     if (response.status !== "ok") {
@@ -1241,20 +1197,20 @@ const liveParsedData = computed<ParsedListData>(() => {
     diagnostics: queryResult.diagnostics ?? [],
     status: "ok",
   };
-});
+}
 
-const hasPreservedSnapshot = computed(() => props.preserveOnError === true && lastGoodSnapshot.value !== null);
-const isPreservingOnError = computed(() => hasPreservedSnapshot.value && datumState.value.status === "error");
-const isRefreshingWithPreserved = computed(() => hasPreservedSnapshot.value && datumState.value.status === "loading");
+const parsedData = computed<ParsedListData>(() => parseReadyDatum(activeReadyDatum.value));
+const hasPreviousOnError = computed(
+  () => datumState.value.status === "error" && Boolean(datumState.value.previous) && parsedData.value.status === "ok",
+);
+const hasPreviousOnLoading = computed(
+  () => datumState.value.status === "loading" && Boolean(datumState.value.previous) && parsedData.value.status === "ok",
+);
+const isRefreshingWithPrevious = computed(
+  () => hasPreviousOnLoading.value || (datumState.value.status === "ready" && Boolean(datumState.value.refreshing)),
+);
 
-const parsedData = computed<ParsedListData>(() => {
-  if ((isPreservingOnError.value || isRefreshingWithPreserved.value) && lastGoodSnapshot.value) {
-    return lastGoodSnapshot.value.parsed;
-  }
-  return liveParsedData.value;
-});
-
-const liveRows = computed<readonly PlatformObjectRecord[]>(() => {
+const rawRows = computed<readonly PlatformObjectRecord[]>(() => {
   if (pageMode === "cursor" && !usesCursorPages.value && cursorBatches.value.length > 0) {
     const seen = new Set<string>();
     const merged: PlatformObjectRecord[] = [];
@@ -1271,7 +1227,7 @@ const liveRows = computed<readonly PlatformObjectRecord[]>(() => {
   return parsedData.value.rows;
 });
 
-const liveRowOperations = computed<PanelRowOperationsMap>(() => {
+const mergedRowOperations = computed<PanelRowOperationsMap>(() => {
   if (pageMode === "cursor" && !usesCursorPages.value && cursorBatches.value.length > 0) {
     const merged: Record<string, PanelRowOperationsMap[string]> = {};
     for (const batch of cursorBatches.value) {
@@ -1282,51 +1238,37 @@ const liveRowOperations = computed<PanelRowOperationsMap>(() => {
     }
     return merged;
   }
-  return datumState.value.status === "ready" && datumState.value.rowOperations
-    ? datumState.value.rowOperations
-    : {};
+  return activeReadyDatum.value?.rowOperations ?? {};
 });
 
-// Keep accumulated cursor batches and stale snapshots synced synchronously with datumState so `rows`, `listResult` and `listed` stay consistent.
+// Keep accumulated cursor batches synced synchronously with datumState so `rows`, `listResult`, and `listed` stay consistent.
 watch(
   datumState,
   (state) => {
     if (state.status === "loading" || (state.status === "ready" && state.refreshing)) return;
     if (state.status === "empty") {
-      lastGoodSnapshot.value = {
-        parsed: {
-          rows: [],
-          total: isCompleteList.value ? 0 : null,
-          hasTotal: isCompleteList.value,
-          diagnostics: [],
-          status: "ok",
-        },
-      };
-      clearStaleSnapshot();
       cursorBatches.value = [];
       loadingMore.value = false;
       pendingAppendCursor = null;
       return;
     }
-    if (state.status !== "ready" || liveParsedData.value.status !== "ok") {
+    if (state.status !== "ready" || parsedData.value.status !== "ok") {
       if (state.status === "error") {
         loadingMore.value = false;
-        if (isPreservingOnError.value || (pendingAppendCursor !== null && cursorBatches.value.length > 0)) return;
+        if (hasPreviousOnError.value || (pendingAppendCursor !== null && cursorBatches.value.length > 0)) return;
         pendingAppendCursor = null;
         return;
       }
-      clearStaleSnapshot();
       cursorBatches.value = [];
       loadingMore.value = false;
       pendingAppendCursor = null;
       return;
     }
-    lastGoodSnapshot.value = { parsed: liveParsedData.value, rowOperations: state.rowOperations };
-    lastKnownTotal.value = liveParsedData.value.total;
-    lastKnownHasTotal.value = liveParsedData.value.hasTotal;
+    lastKnownTotal.value = parsedData.value.total;
+    lastKnownHasTotal.value = parsedData.value.hasTotal;
     if (pageMode === "cursor") {
       const activeCursor = typeof currentParams.value.cursor === "string" ? currentParams.value.cursor : null;
-      const incoming = liveParsedData.value.rows;
+      const incoming = parsedData.value.rows;
       const incomingRowOps = state.rowOperations;
       if (activeCursor === null) {
         cursorBatches.value = [{ cursor: null, rows: incoming, rowOperations: incomingRowOps }];
@@ -1344,36 +1286,8 @@ watch(
       loadingMore.value = false;
       pendingAppendCursor = null;
     }
-    const snapshotRows = liveRows.value;
-    if (snapshotRows.length > 0) {
-      lastValidRows.value = snapshotRows;
-      lastValidRowOperations.value = liveRowOperations.value;
-      lastValidTotal.value = liveParsedData.value.total;
-      lastValidHasTotal.value = liveParsedData.value.hasTotal;
-      lastValidNextCursor.value = liveParsedData.value.nextCursor;
-    } else {
-      clearStaleSnapshot();
-    }
   },
   { immediate: true, flush: "sync" },
-);
-
-const isShowingStaleData = computed(
-  () => datumState.value.status === "error" && lastValidRows.value.length > 0,
-);
-const staleErrorMessage = computed(() =>
-  datumState.value.status === "error" ? (datumState.value.message || t("platform.dataUnreachable")) : "",
-);
-function retryStaleLoad() {
-  if (datumState.value.status === "error" && datumState.value.retry) {
-    datumState.value.retry();
-    return;
-  }
-  refreshDatum();
-}
-
-const rawRows = computed<readonly PlatformObjectRecord[]>(() =>
-  isShowingStaleData.value ? lastValidRows.value : liveRows.value,
 );
 
 const supplementLookup = computed<{
@@ -1405,62 +1319,30 @@ const supplementLookup = computed<{
 
 const mergedRows = computed<readonly PlatformObjectRecord[]>(() => {
   const lookup = supplementLookup.value;
-  const overrides = props.rowFieldOverrides;
-  const hasOverrides = Boolean(overrides && Object.keys(overrides).length > 0);
-  if ((!lookup && !hasOverrides) || rawRows.value.length === 0) return rawRows.value;
+  if (!lookup || rawRows.value.length === 0) return rawRows.value;
   const primaryKeyCounts = new Map<string, number>();
   for (const row of rawRows.value) {
     primaryKeyCounts.set(row.primaryKey, (primaryKeyCounts.get(row.primaryKey) ?? 0) + 1);
   }
-  const fallbackClassName = activeType.value ?? rowObjectType;
   return rawRows.value.map((row) => {
-    let current = row;
-    if (lookup) {
-      const sup = lookup.byIdentity.get(rowIdentityKey(row))
-        ?? (primaryKeyCounts.get(row.primaryKey) === 1 ? lookup.byPrimaryKey.get(row.primaryKey) : undefined);
-      if (sup) {
-        const fieldLabels = row.fieldLabels || sup.fieldLabels
-          ? { ...(row.fieldLabels ?? {}), ...(sup.fieldLabels ?? {}) }
-          : undefined;
-        const tones = row.tones || sup.tones
-          ? { ...(row.tones ?? {}), ...(sup.tones ?? {}) }
-          : undefined;
-        const tags = row.tags ?? sup.tags;
-        current = {
-          ...row,
-          ...(row.subtitle === undefined && sup.subtitle !== undefined ? { subtitle: sup.subtitle } : {}),
-          fields: { ...(row.fields ?? {}), ...(sup.fields ?? {}) },
-          ...(fieldLabels ? { fieldLabels } : {}),
-          ...(tones ? { tones } : {}),
-          ...(tags ? { tags } : {}),
-        };
-      }
-    }
-    if (hasOverrides && overrides) {
-      const compositeKey = `${current.className ?? fallbackClassName}:${current.primaryKey}`;
-      const byPrimaryKey = Object.hasOwn(overrides, current.primaryKey) ? overrides[current.primaryKey] : undefined;
-      const byComposite = Object.hasOwn(overrides, compositeKey) ? overrides[compositeKey] : undefined;
-      const patch = byPrimaryKey && byComposite
-        ? { ...byPrimaryKey, ...byComposite }
-        : (byComposite ?? byPrimaryKey);
-      if (patch && Object.keys(patch).length > 0) {
-        const nextFields: Record<string, PanelRecordFieldValue> = { ...current.fields };
-        let nextLabel = current.label;
-        let nextSubtitle = current.subtitle;
-        for (const [key, value] of Object.entries(patch)) {
-          if (key === "label" && typeof value === "string") nextLabel = value;
-          if (key === "subtitle" && typeof value === "string") nextSubtitle = value;
-          nextFields[key] = value as PanelRecordFieldValue;
-        }
-        current = {
-          ...current,
-          label: nextLabel,
-          ...(nextSubtitle !== undefined ? { subtitle: nextSubtitle } : {}),
-          fields: nextFields,
-        };
-      }
-    }
-    return current;
+    const sup = lookup.byIdentity.get(rowIdentityKey(row))
+      ?? (primaryKeyCounts.get(row.primaryKey) === 1 ? lookup.byPrimaryKey.get(row.primaryKey) : undefined);
+    if (!sup) return row;
+    const fieldLabels = row.fieldLabels || sup.fieldLabels
+      ? { ...(row.fieldLabels ?? {}), ...(sup.fieldLabels ?? {}) }
+      : undefined;
+    const tones = row.tones || sup.tones
+      ? { ...(row.tones ?? {}), ...(sup.tones ?? {}) }
+      : undefined;
+    const tags = row.tags ?? sup.tags;
+    return {
+      ...row,
+      ...(row.subtitle === undefined && sup.subtitle !== undefined ? { subtitle: sup.subtitle } : {}),
+      fields: { ...(row.fields ?? {}), ...(sup.fields ?? {}) },
+      ...(fieldLabels ? { fieldLabels } : {}),
+      ...(tones ? { tones } : {}),
+      ...(tags ? { tags } : {}),
+    };
   });
 });
 
@@ -1511,7 +1393,6 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => {
 
 const total = computed<number | null>(() => {
   if (hasActiveLocalFilter.value) return rows.value.length;
-  if (isShowingStaleData.value) return lastValidTotal.value;
   if (datumState.value.status === "empty" && isCompleteList.value) return 0;
   return parsedData.value.total;
 });
@@ -1519,11 +1400,9 @@ const effectiveHasTotal = computed(
   () =>
     isCompleteList.value
       ? (canSearch.value || hasActiveLocalFilter.value)
-      : isShowingStaleData.value
-        ? lastValidHasTotal.value
-        : parsedData.value.hasTotal,
+      : parsedData.value.hasTotal,
 );
-const nextCursor = computed(() => (isShowingStaleData.value ? lastValidNextCursor.value : parsedData.value.nextCursor));
+const nextCursor = computed(() => parsedData.value.nextCursor);
 const queryStatus = computed(() => parsedData.value.status);
 const diagnostics = computed(() => parsedData.value.diagnostics);
 const queryReason = computed(() => parsedData.value.reason);
@@ -1628,7 +1507,6 @@ watch(
     hiddenColumnKeys.value = new Set();
     columnToggleOpen.value = false;
     highlightedIdentity.value = null;
-    clearStaleSnapshot();
   },
   { flush: "sync" },
 );
@@ -1951,6 +1829,12 @@ onBeforeUnmount(() => {
 const LONG_TEXT = 24;
 /** A column's text in a row, as the cell shows it. */
 function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string {
+  const derived = resolveResultFromCell(row, column);
+  if (derived) {
+    if (derived.hasExplicitLabel) return derived.text;
+    const mappedLabel = columnMapped(row, column)?.label;
+    return mappedLabel ?? derived.text;
+  }
   return displayFieldText(rawRecordField(row, column.key), locale.value, t, column.listSeparator ?? ", ");
 }
 /** A column's secondary line text in a row, when `subtitleKey` is configured. */
@@ -2044,7 +1928,7 @@ const footerReady = computed(
   () =>
     (datumState.value.status === "ready" && queryStatus.value === "ok" && (rows.value.length > 0 || (isTable.value && usesCursorPages.value)))
     || (loadingMore.value && rows.value.length > 0)
-    || isShowingStaleData.value,
+    || ((hasPreviousOnError.value || hasPreviousOnLoading.value) && rows.value.length > 0),
 );
 const footerHasTotal = computed(() => (loadingMore.value ? lastKnownHasTotal.value : effectiveHasTotal.value));
 const footerTotal = computed<number | null>(() => (loadingMore.value ? lastKnownTotal.value : total.value));
@@ -2101,7 +1985,8 @@ const showRangeSummary = computed(
     && rows.value.length > 0
     && (
       (datumState.value.status === "ready" && queryStatus.value === "ok")
-      || isShowingStaleData.value
+      || hasPreviousOnError.value
+      || hasPreviousOnLoading.value
       || loadingMore.value
     ),
 );
@@ -2225,10 +2110,10 @@ function clearFilters() {
 const resolvedEmptyHint = computed(() => (props.emptyHint ? panel.t(props.emptyHint) : ""));
 
 const listResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(() => {
-  if ((loadingMore.value || isShowingStaleData.value) && rows.value.length > 0) {
+  if (loadingMore.value && rows.value.length > 0) {
     return { status: "ready", value: rows.value };
   }
-  if (isPreservingOnError.value || isRefreshingWithPreserved.value) {
+  if (hasPreviousOnError.value || hasPreviousOnLoading.value) {
     if (rows.value.length > 0) {
       return { status: "ready", value: rows.value };
     }
@@ -2263,13 +2148,14 @@ function retryLoad() {
     state.retry();
     return;
   }
-  member.data.refresh?.();
+  refreshDatum();
 }
 
 const listStateSnapshot = computed<ObjectListStateSnapshot>(() => {
-  const status = datumState.value.status;
-  const isLoading = status === "loading";
-  const isRefreshing = isLoading && (initialLoadDone || lastGoodSnapshot.value !== null || rows.value.length > 0);
+  const state = datumState.value;
+  const isLoading = state.status === "loading";
+  const isRefreshing = (isLoading && (initialLoadDone || Boolean(state.previous) || rows.value.length > 0))
+    || (state.status === "ready" && Boolean(state.refreshing));
   const resolvedTotal = footerTotal.value ?? total.value;
   return {
     page: currentPage.value,
@@ -3009,59 +2895,88 @@ function cardTooltip(row: PlatformObjectRecord): string {
   return description ? `${row.label}\n${description}` : row.label;
 }
 
-function accordionCodeText(row: PlatformObjectRecord): string {
-  if (props.accordionCodeField) {
-    return props.accordionCodeField === "primaryKey"
-      ? row.primaryKey
-      : fieldValue(row, props.accordionCodeField);
-  }
-  const nameVal = fieldValue(row, "name");
-  const candidate = nameVal || row.primaryKey;
-  return candidate && candidate !== row.label ? candidate : "";
+function accordionSubtitleText(row: PlatformObjectRecord): string {
+  const title = row.label || row.primaryKey;
+  const candidate = props.subtitleField
+    ? (props.subtitleField === "primaryKey" ? row.primaryKey : fieldValue(row, props.subtitleField))
+    : (row.subtitle ?? "");
+  return candidate && candidate !== title ? candidate : "";
 }
 
-function accordionDescriptionText(row: PlatformObjectRecord): string {
-  if (props.accordionDescriptionField) {
-    return fieldValue(row, props.accordionDescriptionField);
+function formatAccordionFieldValue(rawField: unknown): { readonly text: string; readonly isPre: boolean } {
+  const raw =
+    rawField !== null &&
+    typeof rawField === "object" &&
+    !Array.isArray(rawField) &&
+    (rawField as { kind?: unknown }).kind === "json" &&
+    "value" in rawField
+      ? (rawField as { value: unknown }).value
+      : rawField;
+  if (raw === undefined || raw === null || raw === "") {
+    return { text: "", isPre: false };
   }
-  return fieldValue(row, "description") || fieldValue(row, summaryKey.value);
-}
-
-function accordionDetailText(row: PlatformObjectRecord): string {
-  const keys = props.accordionDetailField ? [props.accordionDetailField] : ["inputSchema", "schema", "details"];
-  for (const key of keys) {
-    const rawField = rawRecordField(row, key);
-    const raw =
-      rawField !== null &&
-      typeof rawField === "object" &&
-      !Array.isArray(rawField) &&
-      (rawField as { kind?: unknown }).kind === "json" &&
-      "value" in rawField
-        ? (rawField as { value: unknown }).value
-        : rawField;
-    if (raw === undefined || raw === null || raw === "") continue;
-    if (typeof raw === "string") {
-      const trimmed = raw.trim();
-      if (!trimmed) continue;
-      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-        try {
-          return JSON.stringify(JSON.parse(trimmed), null, 2);
-        } catch {
-          return raw;
-        }
-      }
-      return raw;
-    }
-    if (typeof raw === "object") {
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return { text: "", isPre: false };
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
       try {
-        return JSON.stringify(raw, null, 2);
+        return { text: JSON.stringify(JSON.parse(trimmed), null, 2), isPre: true };
       } catch {
-        return String(raw);
+        return { text: raw, isPre: raw.includes("\n") };
       }
     }
-    return String(raw);
+    return { text: raw, isPre: raw.includes("\n") };
   }
-  return "";
+  if (typeof raw === "number" || typeof raw === "boolean") {
+    return { text: scalarFieldText(raw, t), isPre: false };
+  }
+  if (typeof raw === "object") {
+    const fieldVal = raw as PlatformObjectRecord["fields"][string];
+    if (isRecordReference(fieldVal)) return { text: referenceDisplayLabel(fieldVal), isPre: false };
+    if (isRecordChildReference(fieldVal)) return { text: childReferenceDisplayLabel(fieldVal), isPre: false };
+    try {
+      return { text: JSON.stringify(raw, null, 2), isPre: true };
+    } catch {
+      return { text: String(raw), isPre: false };
+    }
+  }
+  return { text: String(raw), isPre: false };
+}
+
+interface AccordionBodyField {
+  readonly key: string;
+  readonly label: string;
+  readonly text: string;
+  readonly isPre: boolean;
+}
+
+function accordionBodyFields(row: PlatformObjectRecord): readonly AccordionBodyField[] {
+  const entries: AccordionBodyField[] = [];
+  if (visibleColumns.value.length > 0) {
+    for (const column of visibleColumns.value) {
+      const derived = resolveResultFromCell(row, column);
+      const formatted = derived
+        ? { text: columnText(row, column), isPre: false }
+        : formatAccordionFieldValue(rawRecordField(row, column.key));
+      if (!formatted.text) continue;
+      const label = column.labelKey
+        ? panel.t(column.labelKey)
+        : column.key === "description"
+          ? ""
+          : (row.fieldLabels?.[column.key] ?? ownerFieldLabels.value[column.key] ?? column.key);
+      entries.push({ key: column.key, label, text: formatted.text, isPre: formatted.isPre });
+    }
+    return entries;
+  }
+  for (const [key, rawField] of Object.entries(row.fields ?? {})) {
+    if (props.subtitleField && key === props.subtitleField) continue;
+    const formatted = formatAccordionFieldValue(rawField);
+    if (!formatted.text) continue;
+    const explicitLabel = row.fieldLabels?.[key];
+    const label = key === "description" && !explicitLabel ? "" : (explicitLabel ?? key);
+    entries.push({ key, label, text: formatted.text, isPre: formatted.isPre });
+  }
+  return entries;
 }
 
 function choose(row: PlatformObjectRecord) {
@@ -3256,6 +3171,7 @@ function arrayHasChildReference(row: PlatformObjectRecord, key: string): boolean
 }
 
 function usesTypedValueCell(row: PlatformObjectRecord, column: ObjectListColumn): boolean {
+  if (resolveResultFromCell(row, column)) return false;
   if (column.kind !== "text" && childReferenceField(row, column.key)) return true;
   const raw = rawRecordField(row, column.key);
   if (Array.isArray(raw)) {
@@ -3293,8 +3209,161 @@ function subtitleSegments(row: PlatformObjectRecord, column: ObjectListColumn) {
   return column.subtitleEmptyKey ? [{ text: panel.t(column.subtitleEmptyKey), hit: false }] : [];
 }
 
+const VALID_RESULT_TONES = new Set<string>(["default", "info", "success", "warning", "danger"]);
+
+function normalizeResultTone(value: unknown): string | undefined {
+  return typeof value === "string" && VALID_RESULT_TONES.has(value) ? value : undefined;
+}
+
+function readDotPath(root: unknown, path: string): unknown {
+  if (root === null || root === undefined || typeof root !== "object") return undefined;
+  if (!Array.isArray(root) && Object.hasOwn(root, path)) {
+    return (root as Record<string, unknown>)[path];
+  }
+  let current: unknown = root;
+  for (const segment of path.split(".")) {
+    if (current === null || current === undefined || typeof current !== "object" || Array.isArray(current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+function formatResultScalar(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+interface ResolvedResultFromCell {
+  readonly rawValue: unknown;
+  readonly text: string;
+  readonly tone?: string;
+  readonly running?: boolean;
+  readonly isError?: boolean;
+  readonly hasExplicitLabel?: boolean;
+  readonly hasExplicitTone?: boolean;
+}
+
+function resolveResultFromCell(row: PlatformObjectRecord, column: ObjectListColumn): ResolvedResultFromCell | null {
+  const source = column.resultFrom;
+  if (!source) return null;
+  const opState = rowResultsFor(row)[source.operation];
+  if (!opState) return null;
+  if (opState.running) {
+    return {
+      rawValue: null,
+      text: t("platform.readerLoading"),
+      tone: "info",
+      running: true,
+      hasExplicitLabel: true,
+      hasExplicitTone: true,
+    };
+  }
+  if (opState.error) {
+    return {
+      rawValue: opState.error,
+      text: opState.error,
+      tone: "danger",
+      isError: true,
+      hasExplicitLabel: true,
+      hasExplicitTone: true,
+    };
+  }
+  if (opState.receipt && !(opState.receipt.kind === "dispatched" && opState.receipt.outcome?.kind === "success")) {
+    const message = opState.receipt.kind === "not-dispatched"
+      ? opState.receipt.message
+      : opState.receipt.outcome && opState.receipt.outcome.kind !== "batch"
+        ? saidRowOp(opState.receipt.outcome)
+        : t("platform.operationUnknown", { message: "" });
+    return {
+      rawValue: message,
+      text: message,
+      tone: "danger",
+      isError: true,
+      hasExplicitLabel: true,
+      hasExplicitTone: true,
+    };
+  }
+  if (opState.result) {
+    const res = opState.result;
+    if (res.kind === "json") {
+      const rawField = source.field ? readDotPath(res.value, source.field) : res.value;
+      let text = "";
+      let rawValue: unknown = rawField;
+      let explicitTone: string | undefined;
+      let hasExplicitLabel = false;
+      if (
+        rawField !== null
+        && typeof rawField === "object"
+        && !Array.isArray(rawField)
+        && ("label" in rawField || "text" in rawField || "tone" in rawField || "value" in rawField)
+      ) {
+        const obj = rawField as { label?: unknown; text?: unknown; value?: unknown; tone?: unknown };
+        explicitTone = normalizeResultTone(obj.tone);
+        if ("value" in obj && obj.value !== undefined) {
+          rawValue = obj.value;
+        }
+        if (typeof obj.label === "string" && obj.label !== "") {
+          text = obj.label;
+          hasExplicitLabel = true;
+        } else if (typeof obj.text === "string" && obj.text !== "") {
+          text = obj.text;
+          hasExplicitLabel = true;
+        } else if (obj.value !== undefined) {
+          text = formatResultScalar(obj.value);
+        }
+      } else if (rawField !== undefined && rawField !== null) {
+        text = formatResultScalar(rawField);
+      } else if (typeof res.message === "string" && res.message !== "") {
+        text = res.message;
+        rawValue = res.message;
+        hasExplicitLabel = true;
+      }
+      return {
+        rawValue,
+        text,
+        tone: explicitTone,
+        hasExplicitLabel,
+        hasExplicitTone: explicitTone !== undefined,
+      };
+    }
+    if (res.kind === "markdown") {
+      return { rawValue: res.markdown, text: res.markdown, hasExplicitLabel: true };
+    }
+    if (res.kind === "file") {
+      return { rawValue: res.name, text: res.name, hasExplicitLabel: true };
+    }
+  }
+  return null;
+}
+
+const resultFromOperations = computed<ReadonlySet<string>>(() => {
+  const names = new Set<string>();
+  for (const col of allColumns.value) {
+    if (col.resultFrom?.operation) names.add(col.resultFrom.operation);
+  }
+  return names;
+});
+
 function columnMapped(row: PlatformObjectRecord, column: ObjectListColumn): ResolvedValueMapEntry | null {
   if (!column.valueMap) return null;
+  const derived = resolveResultFromCell(row, column);
+  if (derived) {
+    if (derived.running || derived.isError) return null;
+    return resolveValueMapEntry(derived.rawValue, column.valueMap, {
+      locale: locale.value,
+      panelText: panel.t,
+      t,
+      te,
+    });
+  }
   return resolveValueMapEntry(rawRecordField(row, column.key), column.valueMap, {
     locale: locale.value,
     panelText: panel.t,
@@ -3357,12 +3426,23 @@ function statusFieldTone(row: PlatformObjectRecord, field: string): string {
 }
 
 function columnIsTag(row: PlatformObjectRecord, column: ObjectListColumn): boolean {
+  const derived = resolveResultFromCell(row, column);
+  if (derived) {
+    const mapped = columnMapped(row, column);
+    if (derived.text === "" && !mapped?.label) return false;
+    return column.kind === "tag" || Boolean(derived.tone) || Boolean(mapped?.tone);
+  }
   if (fieldValue(row, column.key) === "") return false;
   if (column.kind !== "text" && recordTagField(row, column.key)) return true;
   return column.kind === "tag" || Boolean(columnMapped(row, column)?.tone);
 }
 
 function columnTone(row: PlatformObjectRecord, column: ObjectListColumn): string {
+  const derived = resolveResultFromCell(row, column);
+  if (derived) {
+    if (derived.hasExplicitTone && derived.tone) return derived.tone;
+    return columnMapped(row, column)?.tone ?? derived.tone ?? "default";
+  }
   const tag = recordTagField(row, column.key);
   if (tag) return tag.tone ?? "default";
   return columnMapped(row, column)?.tone ?? row.tones?.[column.key] ?? "default";
@@ -3385,6 +3465,13 @@ function columnIconName(row: PlatformObjectRecord, column: ObjectListColumn): st
 }
 
 function columnCellSegments(row: PlatformObjectRecord, column: ObjectListColumn) {
+  const derived = resolveResultFromCell(row, column);
+  if (derived) {
+    const display = derived.hasExplicitLabel
+      ? derived.text
+      : (columnMapped(row, column)?.label ?? derived.text);
+    return [{ text: display || columnEmpty(column), hit: false }];
+  }
   const mappedLabel = columnMapped(row, column)?.label;
   if (mappedLabel) return textSegmentsFor(row, column.key, mappedLabel);
   return cellSegments(row, column.key, columnEmpty(column));
@@ -3403,15 +3490,11 @@ watch(someVisibleChecked, () => {
 const memberOperationsState = useMemberOperations();
 const admittedOpMap = computed(() => admittedOperations(memberOperationsState.value));
 
-const mergedRowOperations = computed<PanelRowOperationsMap>(() => {
-  if ((isPreservingOnError.value || isRefreshingWithPreserved.value) && lastGoodSnapshot.value?.rowOperations) {
-    return lastGoodSnapshot.value.rowOperations;
-  }
-  return isShowingStaleData.value ? lastValidRowOperations.value : liveRowOperations.value;
-});
-
 const rowOperationResults = ref<Readonly<Record<string, Readonly<Record<string, ObjectListRowOperationState>>>>>({});
 const lastNoneModeFeedback = ref<{ readonly rowKey: string; readonly operationName: string } | null>(null);
+const lastNoneModeFeedbackConsumedByColumn = computed(() =>
+  Boolean(lastNoneModeFeedback.value && resultFromOperations.value.has(lastNoneModeFeedback.value.operationName)),
+);
 
 function rowResultsForKey(rowKey: string): Readonly<Record<string, ObjectListRowOperationState>> {
   return rowOperationResults.value[rowKey] ?? {};
@@ -3440,7 +3523,7 @@ function setRowOpState(rowKey: string, opName: string, state: ObjectListRowOpera
 function clearRowOperationResult(rowKey: string, operationName?: string) {
   const prevRow = rowOperationResults.value[rowKey];
   if (!prevRow) {
-    if (!hasRowDetailSlot.value) collapseRowKey(rowKey);
+    if (!hasRowDetailSlot.value && !isAccordion.value) collapseRowKey(rowKey);
     return;
   }
   if (!operationName) {
@@ -3448,7 +3531,7 @@ function clearRowOperationResult(rowKey: string, operationName?: string) {
     delete next[rowKey];
     rowOperationResults.value = next;
     if (lastNoneModeFeedback.value?.rowKey === rowKey) lastNoneModeFeedback.value = null;
-    if (!hasRowDetailSlot.value) collapseRowKey(rowKey);
+    if (!hasRowDetailSlot.value && !isAccordion.value) collapseRowKey(rowKey);
     return;
   }
   if (!(operationName in prevRow)) return;
@@ -3457,7 +3540,7 @@ function clearRowOperationResult(rowKey: string, operationName?: string) {
   const next = { ...rowOperationResults.value };
   if (Object.keys(nextRow).length === 0) {
     delete next[rowKey];
-    if (!hasRowDetailSlot.value) collapseRowKey(rowKey);
+    if (!hasRowDetailSlot.value && !isAccordion.value) collapseRowKey(rowKey);
   } else {
     next[rowKey] = nextRow;
   }
@@ -3593,8 +3676,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         iconOnly: item.iconOnly,
         active: item.active,
         busy: isRowActionBusy(row, opName) || isRowWriteOperationInFlight(row, opName),
-        danger: item.danger ?? op.danger,
-        primary: Boolean(item.primary),
+        tone: item.tone ?? (op.danger ? "danger" : "default"),
         disabled: disabledByCondition || !op.available,
         running: Boolean(op.running),
         reason: op.unavailable?.reason,
@@ -3617,8 +3699,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         iconOnly: item.iconOnly,
         active: item.active,
         busy: isRowActionBusy(row, item.id),
-        danger: Boolean(item.danger),
-        primary: Boolean(item.primary),
+        tone: item.tone ?? "default",
         disabled: disabledByCondition,
       });
       return;
@@ -3634,8 +3715,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
       iconOnly: item.iconOnly,
       active: item.active,
       busy: isRowActionBusy(row, item.id),
-      danger: Boolean(item.danger),
-      primary: Boolean(item.primary),
+      tone: item.tone ?? "default",
       disabled: disabledByCondition,
     });
   });
@@ -3868,7 +3948,6 @@ async function executeRowOperation(
     isWriteOp && target?.kind === "object" && Boolean(panel.instance.isObjectWriteInFlight?.(target, operationKey));
   if (busyRowActions.value.has(busyKey) || (isWriteOp && writeRowOpRunning.value) || isSharedWriteBusy()) return { status: "skipped" };
   const ref = rowObjectRef(row);
-  const rowSummary = { className: ref.className, primaryKey: ref.primaryKey, label: row.label || ref.primaryKey };
   const input: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
     ? wrapActionOperationInput(descriptor.inputSchema, boundInput, providedInput)
     : { ...providedInput, ...boundInput };
@@ -3929,19 +4008,6 @@ async function executeRowOperation(
       } else if (effectiveRowResultDisplay.value === "none") {
         lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName };
       }
-      const data = readResult.kind === "json"
-        ? readResult.value
-        : readResult.kind === "markdown"
-          ? readResult.markdown
-          : readResult;
-      emit("row-action-result", {
-        actionId: operationName,
-        row: rowSummary,
-        ref,
-        ok: true,
-        outcome: readResult,
-        data,
-      });
       return { status: "executed", result: readResult };
     }
     const applyRowAnswer = (
@@ -3955,37 +4021,13 @@ async function executeRowOperation(
         named: answer.named,
       });
       if (answered?.kind === "success") {
-        const message = saidRowOp(answered);
-        panel.notify({ kind: "success", text: message });
-        emit("row-action-result", {
-          actionId: operationName,
-          row: rowSummary,
-          ref,
-          ok: true,
-          outcome: answered,
-          data: answered,
-          message,
-        });
+        panel.notify({ kind: "success", text: saidRowOp(answered) });
       } else {
         if (effectiveRowResultDisplay.value === "expand") {
           expandRowKey(rowIdKey);
         } else if (effectiveRowResultDisplay.value === "none") {
           lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName };
         }
-        const message = answer.response.kind === "not-dispatched"
-          ? answer.response.message
-          : answered && answered.kind !== "batch"
-            ? saidRowOp(answered)
-            : t("platform.operationUnknown", { message: "" });
-        emit("row-action-result", {
-          actionId: operationName,
-          row: rowSummary,
-          ref,
-          ok: false,
-          outcome: answered ?? null,
-          message,
-          error: message,
-        });
       }
       if (answered) emit("operation-done", operationName, answered, ref);
       return answered;
@@ -4047,15 +4089,6 @@ async function executeRowOperation(
               } else if (effectiveRowResultDisplay.value === "none") {
                 lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName };
               }
-              emit("row-action-result", {
-                actionId: operationName,
-                row: rowSummary,
-                ref,
-                ok: false,
-                outcome: null,
-                message,
-                error: message,
-              });
               return {
                 ok: false,
                 intentId: preparation.intentId,
@@ -4096,15 +4129,6 @@ async function executeRowOperation(
     } else if (effectiveRowResultDisplay.value === "none") {
       lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName };
     }
-    emit("row-action-result", {
-      actionId: operationName,
-      row: rowSummary,
-      ref,
-      ok: false,
-      outcome: null,
-      message,
-      error: message,
-    });
     return { status: "executed", error: message };
   } finally {
     markRowActionBusy(busyKey, false, isWriteOp);
@@ -4374,8 +4398,6 @@ async function runConversationRowAction(
   const busyKey = `${capturedCompositeKey}\0${actionId}`;
   if (busyRowActions.value.has(busyKey)) return;
 
-  const ref = rowObjectRef(row);
-  const rowSummary = { className: ref.className, primaryKey: ref.primaryKey, label: row.label || ref.primaryKey };
   const target = resolveConversationTarget(item);
   const prefill = resolveConversationPrompt(row, item);
   const declared = slot.projection.conversationEntry;
@@ -4392,28 +4414,12 @@ async function runConversationRowAction(
       ...(submit !== undefined ? { submit } : {}),
       ...(newSession !== undefined ? { newSession } : {}),
     }, event);
-    emit("row-action-result", {
-      actionId,
-      row: rowSummary,
-      ref,
-      ok: true,
-      data: { target, prefill, ref },
-    });
   } catch (reason) {
     const error = reason instanceof Error ? reason : new Error(String(reason));
     setRowOpState(rowIdKey, actionId, { running: false, error: error.message });
     if (effectiveRowResultDisplay.value === "none") {
       lastNoneModeFeedback.value = { rowKey: rowIdKey, operationName: actionId };
     }
-    emit("row-action-result", {
-      actionId,
-      row: rowSummary,
-      ref,
-      ok: false,
-      outcome: null,
-      message: error.message,
-      error: error.message,
-    });
   } finally {
     markRowActionBusy(busyKey, false);
   }
@@ -4483,10 +4489,11 @@ function rowActionsSlotProps(row: PlatformObjectRecord, index: number): RowActio
 }
 
 function cellSlotProps(row: PlatformObjectRecord, index: number, column: ObjectListColumn): CellSlotScope {
+  const derived = resolveResultFromCell(row, column);
   return {
     ...rowActionsSlotProps(row, index),
     column,
-    value: rawRecordField(row, column.key),
+    value: derived ? derived.rawValue : rawRecordField(row, column.key),
     displayText: columnText(row, column),
     tone: columnTone(row, column),
   };
@@ -4538,7 +4545,12 @@ defineExpose({
 </script>
 
 <template>
-  <div class="sdk-object-list" :class="{ 'sdk-object-list-compact': isCompact, 'sdk-object-list-tabs-mode': isTabs }">
+  <div
+    class="sdk-object-list"
+    :class="{ 'sdk-object-list-compact': isCompact, 'sdk-object-list-tabs-mode': isTabs }"
+    :data-refreshing="isRefreshingWithPrevious ? 'true' : undefined"
+    :aria-busy="isRefreshingWithPrevious ? 'true' : undefined"
+  >
     <div v-if="showToolbar" class="sdk-object-list-toolbar" :class="{ 'sdk-object-list-toolbar-sticky': isStickyCheckBar }">
       <div v-if="canSearch" class="sdk-object-list-search-wrap">
         <svg class="sdk-object-list-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -4645,37 +4657,24 @@ defineExpose({
     />
 
     <el-alert
-      v-if="isPreservingOnError && currentErrorMessage"
+      v-if="hasPreviousOnError && currentErrorMessage"
       class="sdk-object-list-preserved-error"
+      data-testid="object-list-stale-error"
       type="error"
       :closable="false"
       show-icon
       :title="currentErrorMessage"
     >
-      <el-button text size="small" @click="retryLoad">{{ dataStateLabels.retry }}</el-button>
-    </el-alert>
-
-    <div
-      v-else-if="isShowingStaleData"
-      class="sdk-object-list-stale-error"
-      data-testid="object-list-stale-error"
-      role="alert"
-    >
-      <span class="sdk-object-list-stale-error-text">
-        {{ t("platform.listLoadFailedShowingPrevious") }}
-        <template v-if="staleErrorMessage"> ({{ staleErrorMessage }})</template>
-      </span>
-      <ElButton
+      <el-button
         text
-        type="primary"
         size="small"
         class="sdk-object-list-stale-retry"
         data-testid="object-list-stale-retry"
-        @click="retryStaleLoad"
+        @click="retryLoad"
       >
-        {{ t("common.retry") }}
-      </ElButton>
-    </div>
+        {{ dataStateLabels.retry }}
+      </el-button>
+    </el-alert>
 
     <div
       v-if="showRangeSummary"
@@ -5348,30 +5347,39 @@ defineExpose({
       </div>
 
       <div v-else-if="isAccordion" class="sdk-object-list-accordion">
-        <details
+        <div
           v-for="(row, rowIndex) in rows"
           :key="rowIdentityKey(row)"
           class="sdk-object-list-accordion-item"
+          :class="{ 'is-expanded': isRowExpanded(row) }"
           :data-row-key="rowIdentityKey(row)"
+          :data-expanded="isRowExpanded(row) ? 'true' : undefined"
         >
-          <summary class="sdk-object-list-accordion-summary">
-            <span class="sdk-object-list-accordion-arrow" aria-hidden="true">
-              <component :is="curatedIcon('chevron-right')" :size="14" aria-hidden="true" />
-            </span>
-            <span class="sdk-object-list-accordion-heading">
-              <strong class="sdk-object-list-accordion-title">
-                <template v-for="(part, index) in textSegmentsFor(row, 'label', row.label)" :key="index">
-                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                </template>
-              </strong>
-              <code v-if="accordionCodeText(row)" class="sdk-object-list-accordion-code">{{ accordionCodeText(row) }}</code>
-            </span>
-            <span
-              v-if="statusField && fieldValue(row, statusField) !== ''"
-              class="sdk-object-list-tag"
-              :data-tone="statusFieldTone(row, statusField)"
-            >{{ fieldValue(row, statusField) }}</span>
-            <div v-if="hasActionColumn" class="sdk-object-list-accordion-actions" @click.stop.prevent>
+          <div class="sdk-object-list-accordion-header">
+            <button
+              type="button"
+              class="sdk-object-list-accordion-summary"
+              :aria-expanded="isRowExpanded(row)"
+              @click="toggleRowExpanded(row)"
+            >
+              <span class="sdk-object-list-accordion-arrow" aria-hidden="true">
+                <component :is="curatedIcon('chevron-right')" :size="14" aria-hidden="true" />
+              </span>
+              <span class="sdk-object-list-accordion-heading">
+                <strong class="sdk-object-list-accordion-title">
+                  <template v-for="(part, index) in textSegmentsFor(row, 'label', row.label || row.primaryKey)" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </strong>
+                <code v-if="accordionSubtitleText(row)" class="sdk-object-list-accordion-code">{{ accordionSubtitleText(row) }}</code>
+              </span>
+              <span
+                v-if="statusField && fieldValue(row, statusField) !== ''"
+                class="sdk-object-list-tag"
+                :data-tone="statusFieldTone(row, statusField)"
+              >{{ fieldValue(row, statusField) }}</span>
+            </button>
+            <div v-if="hasActionColumn" class="sdk-object-list-accordion-actions" @click.stop>
               <ObjectListRowActions
                 :items="resolvedRowActionsFor(row)"
                 :max-visible="rowActions?.maxVisible ?? 2"
@@ -5380,17 +5388,8 @@ defineExpose({
                 @trigger="(item, ev) => triggerRowAction(row, rowIndex, item, ev)"
               />
             </div>
-          </summary>
-          <div class="sdk-object-list-accordion-body">
-            <p v-if="accordionDescriptionText(row)" class="sdk-object-list-accordion-desc">
-              {{ accordionDescriptionText(row) }}
-            </p>
-            <template v-if="accordionDetailText(row)">
-              <div v-if="accordionDetailLabelKey" class="sdk-object-list-accordion-detail-label">
-                {{ panel.t(accordionDetailLabelKey) }}
-              </div>
-              <pre class="sdk-object-list-accordion-pre">{{ accordionDetailText(row) }}</pre>
-            </template>
+          </div>
+          <div v-if="isRowExpanded(row)" class="sdk-object-list-accordion-body">
             <div v-if="hasRowDetailSlot" class="sdk-object-list-detail-host">
               <list-row-slot-host
                 :list-slot="member.key"
@@ -5402,11 +5401,61 @@ defineExpose({
                 :run-operation="(opName, extra) => runRowOperation(row, opName, extra)"
                 :clear-operation-result="(opName) => clearRowOperationResult(rowIdentityKey(row), opName)"
                 :render-slot="slots['row-detail']!"
-                :slot-props="{ ...rowRefSlotProps(row, rowIndex), collapse: () => collapseRowKey(rowIdentityKey(row)) }"
+                :slot-props="{
+                  ...rowRefSlotProps(row, rowIndex),
+                  collapse: () => collapseRowKey(rowIdentityKey(row)),
+                  operationResults: rowResultsFor(row),
+                  clearOperationResult: (opName?: string) => clearRowOperationResult(rowIdentityKey(row), opName),
+                }"
               />
             </div>
+            <template v-else>
+              <template v-for="field in accordionBodyFields(row)" :key="field.key">
+                <div v-if="field.label" class="sdk-object-list-accordion-detail-label">
+                  {{ field.label }}
+                </div>
+                <pre v-if="field.isPre" class="sdk-object-list-accordion-pre">{{ field.text }}</pre>
+                <p v-else class="sdk-object-list-accordion-desc">{{ field.text }}</p>
+              </template>
+              <div
+                v-if="effectiveRowResultDisplay === 'expand' && rowOperationFeedbackEntries(row).length > 0"
+                class="sdk-object-list-row-result-panel"
+              >
+                <div class="sdk-object-list-row-result-header">
+                  <button
+                    type="button"
+                    class="sdk-object-list-row-result-close"
+                    :aria-label="t('platform.listRowResultClose')"
+                    :title="t('platform.listRowResultClose')"
+                    @click.stop="clearRowOperationResult(rowIdentityKey(row))"
+                  >
+                    {{ t("platform.listRowResultClose") }}
+                  </button>
+                </div>
+                <div
+                  v-for="item in rowOperationFeedbackEntries(row)"
+                  :key="item.operationName"
+                  class="sdk-object-list-row-result-entry"
+                  :data-operation="item.operationName"
+                >
+                  <p v-if="item.state.error" class="sdk-object-list-op-alert" role="alert">{{ item.state.error }}</p>
+                  <OperationResult
+                    v-if="item.state.result"
+                    :result="item.state.result"
+                    :operation-slot="member.key"
+                    :operation-name="item.operationName"
+                  />
+                  <template v-if="item.state.receipt && !(item.state.receipt.kind === 'dispatched' && item.state.receipt.outcome?.kind === 'success')">
+                    <p v-if="item.state.receipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ item.state.receipt.message }}</p>
+                    <p v-else-if="!item.state.receipt.outcome" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
+                    <OperationBatchReceipt v-else-if="item.state.receipt.outcome.kind === 'batch'" :items="item.state.receipt.outcome.items" :named="item.state.named ?? []" />
+                    <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="item.state.receipt.outcome.kind">{{ saidRowOp(item.state.receipt.outcome) }}</p>
+                  </template>
+                </div>
+              </div>
+            </template>
           </div>
-        </details>
+        </div>
       </div>
 
       <div
@@ -6289,12 +6338,12 @@ defineExpose({
     ></operation-input-dialog>
 
     <div
-      v-if="noneModeFeedbackState && ((actionErrorPlacement !== 'top' && (noneModeFeedbackState.error || (noneModeFeedbackState.receipt && !(noneModeFeedbackState.receipt.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'success')))) || (noneModeFeedbackState.receipt?.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'batch') || (noneModeFeedbackState.result && !hasRowActionResultListener))"
+      v-if="noneModeFeedbackState && ((actionErrorPlacement !== 'top' && (noneModeFeedbackState.error || (noneModeFeedbackState.receipt && !(noneModeFeedbackState.receipt.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'success')))) || (noneModeFeedbackState.receipt?.kind === 'dispatched' && noneModeFeedbackState.receipt.outcome?.kind === 'batch') || (noneModeFeedbackState.result && !lastNoneModeFeedbackConsumedByColumn))"
       class="sdk-object-list-op-feedback"
     >
       <p v-if="actionErrorPlacement !== 'top' && noneModeFeedbackState.error" class="sdk-object-list-op-alert" role="alert">{{ noneModeFeedbackState.error }}</p>
       <OperationResult
-        v-if="noneModeFeedbackState.result && !hasRowActionResultListener"
+        v-if="noneModeFeedbackState.result && !lastNoneModeFeedbackConsumedByColumn"
         :result="noneModeFeedbackState.result"
         :operation-slot="member.key"
         :operation-name="lastNoneModeFeedback?.operationName"
@@ -6304,7 +6353,7 @@ defineExpose({
         <template v-else-if="actionErrorPlacement !== 'top'">
           <p v-if="noneModeFeedbackState.receipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ noneModeFeedbackState.receipt.message }}</p>
           <p v-else-if="!noneModeFeedbackState.receipt.outcome" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
-          <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="noneModeFeedbackState.receipt.outcome.kind">{{ saidRowOp(noneModeFeedbackState.receipt.outcome) }}</p>
+          <p v-else-if="noneModeFeedbackState.receipt.outcome.kind !== 'batch'" class="sdk-object-list-op-alert" role="alert" :data-outcome="noneModeFeedbackState.receipt.outcome.kind">{{ saidRowOp(noneModeFeedbackState.receipt.outcome) }}</p>
         </template>
       </template>
     </div>
@@ -7262,17 +7311,25 @@ defineExpose({
 .sdk-object-list-accordion-item:last-child {
   border-bottom: 0;
 }
-.sdk-object-list-accordion-summary {
+.sdk-object-list-accordion-header {
   align-items: center;
-  cursor: pointer;
   display: flex;
   gap: var(--spacing-sm);
-  line-height: 28px;
-  list-style: none;
-  overflow-wrap: anywhere;
 }
-.sdk-object-list-accordion-summary::-webkit-details-marker {
-  display: none;
+.sdk-object-list-accordion-summary {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  display: flex;
+  flex: 1 1 auto;
+  font: inherit;
+  gap: var(--spacing-sm);
+  line-height: 28px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 0;
+  text-align: left;
 }
 .sdk-object-list-accordion-summary:focus-visible {
   outline: 2px solid var(--el-color-primary);
@@ -7284,7 +7341,7 @@ defineExpose({
   flex: 0 0 14px;
   transition: transform var(--transition-fast);
 }
-.sdk-object-list-accordion-item[open] > .sdk-object-list-accordion-summary > .sdk-object-list-accordion-arrow {
+.sdk-object-list-accordion-item.is-expanded > .sdk-object-list-accordion-header > .sdk-object-list-accordion-summary > .sdk-object-list-accordion-arrow {
   transform: rotate(90deg);
 }
 .sdk-object-list-accordion-heading {
@@ -7353,23 +7410,6 @@ defineExpose({
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs);
-}
-.sdk-object-list-stale-error {
-  align-items: center;
-  background: var(--el-color-danger-light-9, #fef0f0);
-  border: 1px solid var(--el-color-danger-light-7, #fcd3d3);
-  border-radius: var(--radius-sm);
-  color: var(--el-color-danger-text, var(--el-color-danger));
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  font-size: var(--text-xs);
-  gap: var(--spacing-sm);
-  justify-content: space-between;
-  padding: var(--spacing-xs) var(--spacing-sm);
-}
-.sdk-object-list-stale-error-text {
-  min-width: 0;
 }
 .sdk-object-list-range-bar {
   color: var(--el-text-color-secondary);

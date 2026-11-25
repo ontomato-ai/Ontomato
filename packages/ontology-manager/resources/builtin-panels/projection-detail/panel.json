@@ -434,7 +434,7 @@
                 "kind": "operation",
                 "operation": "revoke",
                 "labelKey": "grants.revoke",
-                "danger": true,
+                "tone": "danger",
                 "when": {
                   "field": "revocable",
                   "equals": true

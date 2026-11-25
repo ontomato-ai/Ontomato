@@ -79,6 +79,8 @@ export interface PanelInstanceOptions {
   operations: PanelHumanOperations;
   /** The host's confirmation and single dispatch of a prepared write. */
   confirmOperation: ConfirmPanelOperation;
+  /** Platform toast channel for notifying the reader of operation messages (shared by read and write operations). */
+  notify?: (message: { kind: "success" | "info" | "warning" | "error"; text: string }) => void;
   /**
    * Where this instance sits in the panel the reader opened (a panel placed from another's state), or nothing for the
    * opened panel itself: every member path, operation ID and page-context selection of this instance starts with it.
@@ -86,6 +88,12 @@ export interface PanelInstanceOptions {
   memberPath?: PanelMemberPath;
   /** A member's segment of a path: its key, with the selection that placed it where the panel's state chose it. */
   segmentOf?: (member: string) => PanelMemberPath[number];
+}
+
+/** Per-invocation options for read operations. */
+export interface PanelReadOperationOptions {
+  /** When `false`, suppresses automatic platform toast notification of `result.message`. Defaults to `true`. */
+  readonly notifySuccess?: boolean;
 }
 
 /** A path that names at least one member: a nested publisher's, as the platform finds its operations by. */
@@ -342,7 +350,12 @@ export interface PanelInstance {
   /** Stages a file the reader picked for one of this panel's operations that declares an upload (see `PanelHumanOperations.upload`). */
   uploadFile(operationId: string, file: File): Promise<PanelUploadReceipt>;
   /** Runs a read-only operation as the reader: what it read, with nothing written and nothing reported changed. */
-  readOperation(operationId: string, call: PanelReadCall, agentRun?: PanelAgentRunRef): Promise<PanelReadOperationResult>;
+  readOperation(
+    operationId: string,
+    call: PanelReadCall,
+    agentRun?: PanelAgentRunRef,
+    readOptions?: PanelReadOperationOptions,
+  ): Promise<PanelReadOperationResult>;
   /**
    * Runs a write as the reader, the way an agent's runs: one intent freezes the calls, the host confirms it where the
    * owner or a batch asks and dispatches it once. What the owner reports changed comes back through the host's refresh
@@ -678,9 +691,34 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       for (const key of writeKeys) inFlightObjectWrites.delete(key);
     }
   }
+  function notifyReadResult(
+    result: PanelReadOperationResult,
+    readOptions?: PanelReadOperationOptions,
+  ): PanelReadOperationResult {
+    if (
+      readOptions?.notifySuccess !== false
+      && result.kind !== "file"
+      && typeof result.message === "string"
+      && result.message.trim() !== ""
+    ) {
+      options.notify?.({ kind: "success", text: result.message });
+    }
+    return result;
+  }
+  async function readOperation(
+    operationId: string,
+    call: PanelReadCall,
+    agentRun?: PanelAgentRunRef,
+    readOptions?: PanelReadOperationOptions,
+  ): Promise<PanelReadOperationResult> {
+    const result = await options.operations.read(operationId, call, operationPath(operationId), agentRun);
+    return notifyReadResult(result, readOptions);
+  }
   const operations = computed<PanelOperationBinding[]>(() => [
     ...panelOperations(instance, registrations.value, forms, writeOperation,
-      (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
+      async (operationId, call) => notifyReadResult(
+        await options.operations.read(operationId, call, operationPath(operationId)),
+      ),
       (member, name) => ({ id: operationIdOf(member, name), memberPath: publisherPath(member) })),
     // A placed panel's operations are published under their own full paths and run by that panel.
     ...[...publishers.values()].flatMap((publisher) => publisher.value.operations),
@@ -1226,7 +1264,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       return result;
     },
     describeOperation: (operationId) => options.operations.describe(operationId, operationPath(operationId)),
-    readOperation: (operationId, call, agentRun) => options.operations.read(operationId, call, operationPath(operationId), agentRun),
+    readOperation,
     uploadFile: (operationId, file) => options.operations.upload(operationId, file, operationPath(operationId)),
     writeOperation,
     isObjectWriteInFlight,
