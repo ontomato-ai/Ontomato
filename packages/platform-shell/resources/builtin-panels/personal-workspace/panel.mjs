@@ -177,6 +177,8 @@ await mountPanel({
     const isCustomHome = computed(() => isCustomHomeOutput.value === true);
 
     const gridHiddenCount = usePanelOutput("workspaceGrid", "hiddenCount");
+    const favoriteDashboardsLoaded = usePanelOutput("favoriteDashboards", "loadedCount");
+    const hasFavoriteDashboards = computed(() => (favoriteDashboardsLoaded.value ?? 0) > 0);
     const pinnedSessionsLoaded = usePanelOutput("pinnedSessions", "loadedCount");
     const hasPinnedSessions = computed(() => (pinnedSessionsLoaded.value ?? 0) > 0);
 
@@ -233,27 +235,40 @@ await mountPanel({
       },
     });
 
+    const selectedCardLabel = ref("");
     const selectedCard = computed(() => values.value.selectedCard ?? null);
     const hasSelectedCard = computed(() => Boolean(selectedCard.value?.primaryKey));
+    const selectedCardTitle = computed(() => selectedCardLabel.value);
     const selectedCardPath = computed(() =>
       selectedCard.value?.primaryKey ? cardPathFromPrimaryKey(selectedCard.value.primaryKey) : "",
     );
     const cardDrawerOpen = computed({
       get: () => hasSelectedCard.value,
       set: (open) => {
-        if (!open && hasSelectedCard.value) instance.state.set("selectedCard", null);
+        if (!open && hasSelectedCard.value) {
+          selectedCardLabel.value = "";
+          instance.state.set("selectedCard", null);
+        }
       },
     });
 
+    const selectedTaskLabel = ref("");
+    const selectedTaskOpenPath = ref("");
     const selectedTask = computed(() => values.value.selectedTask ?? null);
     const hasSelectedTask = computed(() => Boolean(selectedTask.value?.primaryKey));
-    const selectedTaskPath = computed(() =>
-      selectedTask.value?.primaryKey ? taskPathFromPrimaryKey(selectedTask.value.primaryKey) : "",
-    );
+    const selectedTaskTitle = computed(() => selectedTaskLabel.value);
+    const selectedTaskPath = computed(() => {
+      if (selectedTaskOpenPath.value) return selectedTaskOpenPath.value;
+      return selectedTask.value?.primaryKey ? taskPathFromPrimaryKey(selectedTask.value.primaryKey) : "";
+    });
     const taskDrawerOpen = computed({
       get: () => hasSelectedTask.value,
       set: (open) => {
-        if (!open && hasSelectedTask.value) instance.state.set("selectedTask", null);
+        if (!open && hasSelectedTask.value) {
+          selectedTaskLabel.value = "";
+          selectedTaskOpenPath.value = "";
+          instance.state.set("selectedTask", null);
+        }
       },
     });
 
@@ -357,22 +372,34 @@ await mountPanel({
       instance.state.set("selectedObject", { className: ref.className, primaryKey: ref.primaryKey });
     }
 
-    function onChooseCard(ref) {
+    function onSelectCard(card) {
+      const ref = card?.ref ?? (card?.id ? { className: "platform:DashboardCard", primaryKey: card.id } : null);
       if (!ref?.className || !ref?.primaryKey) return;
       if (openModeMetrics.value === "page") {
-        openPath(cardPathFromPrimaryKey(ref.primaryKey));
+        openPath(card?.row?.outputs?.openPath || cardPathFromPrimaryKey(ref.primaryKey));
         return;
       }
+      selectedCardLabel.value = typeof card?.name === "string" ? card.name : "";
       instance.state.set("selectedCard", { className: ref.className, primaryKey: ref.primaryKey });
     }
 
-    function onChooseTask(ref) {
+    function onSelectTask(task) {
+      const ref = task?.ref ?? (task?.id ? { className: "platform:ScheduledTask", primaryKey: task.id } : null);
       if (!ref?.className || !ref?.primaryKey) return;
+      const targetPath = task?.row?.outputs?.openPath || taskPathFromPrimaryKey(ref.primaryKey);
       if (openModeTasks.value === "page") {
-        openPath(taskPathFromPrimaryKey(ref.primaryKey));
+        openPath(targetPath);
         return;
       }
+      selectedTaskLabel.value = typeof task?.title === "string" ? task.title : "";
+      selectedTaskOpenPath.value = targetPath;
       instance.state.set("selectedTask", { className: ref.className, primaryKey: ref.primaryKey });
+    }
+
+    function onResolveTask(task) {
+      const taskId = task?.id ?? task?.ref?.primaryKey;
+      if (!taskId) return;
+      openPath(taskPathFromPrimaryKey(taskId));
     }
 
     return {
@@ -384,6 +411,7 @@ await mountPanel({
       isCustomHome,
       hiddenCount,
       hiddenItems,
+      hasFavoriteDashboards,
       hasPinnedSessions,
       activePresetId,
       presets: PRESET_LIST,
@@ -395,9 +423,11 @@ await mountPanel({
       selectedObjectPath,
       objectDrawerOpen,
       hasSelectedCard,
+      selectedCardTitle,
       selectedCardPath,
       cardDrawerOpen,
       hasSelectedTask,
+      selectedTaskTitle,
       selectedTaskPath,
       taskDrawerOpen,
       bindProjection,
@@ -411,8 +441,9 @@ await mountPanel({
       restoreBlock,
       restoreAllHidden,
       onChooseObject,
-      onChooseCard,
-      onChooseTask,
+      onSelectCard,
+      onSelectTask,
+      onResolveTask,
     };
   },
 });

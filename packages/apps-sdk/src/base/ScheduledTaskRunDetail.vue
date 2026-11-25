@@ -78,32 +78,43 @@ function translate(key: string, fallback: string): string {
   return i18n && i18n.te(key) ? i18n.t(key) : fallback;
 }
 
-function readStr(record: PlatformObjectRecord, ...keys: string[]): string | null {
+function readRawField(record: Record<string, unknown>, key: string): unknown {
+  if (record.fields && typeof record.fields === "object") {
+    return rawRecordField(record as unknown as PlatformObjectRecord, key);
+  }
+  return record[key];
+}
+
+function readStr(record: Record<string, unknown>, ...keys: string[]): string | null {
   for (const key of keys) {
-    const val = rawRecordField(record, key);
+    const val = readRawField(record, key);
     if (typeof val === "string" && val.trim()) return val.trim();
   }
   return null;
 }
 
-function parseRecordRun(record: PlatformObjectRecord): ScheduledTaskRunView | null {
+function extractPauseMessage(record: Record<string, unknown>): string | null {
+  const pauseObj = readRawField(record, "pause") as Record<string, unknown> | undefined;
+  return readStr(record, "pauseMessage", "pauseReason")
+    ?? (typeof pauseObj?.message === "string" && pauseObj.message.trim() ? pauseObj.message.trim() : null);
+}
+
+function parseRecordRun(record: Record<string, unknown>): ScheduledTaskRunView | null {
   const status = readStr(record, "status", "lastRunStatus");
   const startedAt = readStr(record, "startedAt", "lastRunStartedAt");
   const finishedAt = readStr(record, "finishedAt", "lastRunFinishedAt");
   const trigger = readStr(record, "trigger", "triggerType");
-  const pauseObj = rawRecordField(record, "pause") as Record<string, unknown> | undefined;
-  const pauseMessage = readStr(record, "pauseMessage")
-    ?? (typeof pauseObj?.message === "string" ? pauseObj.message : null);
-  const errObj = rawRecordField(record, "error") as Record<string, unknown> | undefined;
+  const pauseMessage = extractPauseMessage(record);
+  const errObj = readRawField(record, "error") as Record<string, unknown> | undefined;
   const errorMessage = readStr(record, "errorMessage", "lastRunError")
     ?? (typeof errObj?.message === "string" ? errObj.message : null);
-  const snapshotObj = rawRecordField(record, "snapshot") as Record<string, unknown> | undefined;
+  const snapshotObj = readRawField(record, "snapshot") as Record<string, unknown> | undefined;
   const timeZone = readStr(record, "timeZone")
     ?? (typeof snapshotObj?.timeZone === "string" ? snapshotObj.timeZone : null);
   const result = readStr(record, "result", "outputText");
   const resultSummary = readStr(record, "resultSummary", "summary");
 
-  if (!status && !startedAt && !result && !resultSummary && !errorMessage && !pauseMessage) {
+  if (!status && !startedAt && !result && !resultSummary && !errorMessage) {
     return null;
   }
   return {
@@ -127,13 +138,19 @@ const resolvedData = computed<DataStateResult<ScheduledTaskRunView>>(() => {
   const state = recordState.value;
   if (state.status !== "ready") return state as DataStateResult<ScheduledTaskRunView>;
   if (!state.value || typeof state.value !== "object") return { status: "empty" };
-  const parsed = parseRecordRun(state.value as unknown as PlatformObjectRecord);
+  const parsed = parseRecordRun(state.value as unknown as Record<string, unknown>);
   return parsed ? { status: "ready", value: parsed } : { status: "empty" };
 });
 
 const effectivePause = computed(() => {
   if (props.pauseMessage) return props.pauseMessage;
-  return resolvedData.value.status === "ready" ? (resolvedData.value.value.pauseMessage ?? null) : null;
+  if (resolvedData.value.status === "ready" && resolvedData.value.value.pauseMessage) {
+    return resolvedData.value.value.pauseMessage;
+  }
+  if (recordState && recordState.value.status === "ready" && recordState.value.value && typeof recordState.value.value === "object") {
+    return extractPauseMessage(recordState.value.value as unknown as Record<string, unknown>);
+  }
+  return null;
 });
 
 function cleanResultParagraphs(run: ScheduledTaskRunView): string[] {
