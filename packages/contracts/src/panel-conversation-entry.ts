@@ -15,6 +15,8 @@ export const panelConversationEntryFields = z.object({
   target: pageComposerAgentTargetSchema,
   prefill: z.string().optional(),
   prefillKey: z.string().min(1).optional(),
+  submit: z.boolean().optional(),
+  newSession: z.boolean().optional(),
 }).strict();
 export const panelConversationEntrySchema = panelConversationEntryFields.refine(
   (entry) => entry.prefill === undefined || entry.prefillKey === undefined,

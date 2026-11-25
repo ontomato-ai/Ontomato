@@ -330,12 +330,27 @@ export const builtinNativeEntrySchema = z.object({
 }).strict();
 export type BuiltinNativeEntry = z.infer<typeof builtinNativeEntrySchema>;
 
-/** Entry table item exposed by the catalog and frame menu: a panel entry or a built-in native page entry. */
-export const applicationMenuEntrySchema = z.union([applicationPanelUseSchema, builtinNativeEntrySchema]);
+export const frameConversationEntrySchema = builtinNativeEntrySchema.extend({
+  kind: z.literal("frame-conversation"),
+});
+export type FrameConversationEntry = z.infer<typeof frameConversationEntrySchema>;
+
+export const panelApplicationEntryUseSchema = z.union([applicationPanelUseSchema, frameConversationEntrySchema]);
+
+/** Entry table item exposed by the catalog and frame menu. */
+export const applicationMenuEntrySchema = z.union([applicationPanelUseSchema, frameConversationEntrySchema, builtinNativeEntrySchema]);
 export type ApplicationMenuEntry = z.infer<typeof applicationMenuEntrySchema>;
 
 export function isNativeApplicationEntry(entry: ApplicationMenuEntry): entry is BuiltinNativeEntry {
   return "kind" in entry && entry.kind === "native";
+}
+
+export function isFrameConversationEntry(entry: ApplicationMenuEntry): entry is FrameConversationEntry {
+  return "kind" in entry && entry.kind === "frame-conversation";
+}
+
+export function isApplicationPanelUse(entry: ApplicationMenuEntry): entry is ApplicationPanelUse {
+  return "panelId" in entry;
 }
 
 export const panelUseRefSchema = z.object({ applicationId: id, useId: id }).strict();
@@ -355,7 +370,7 @@ export type ApplicationEntryMenu = z.infer<typeof applicationEntryMenuSchema>;
 
 export const applicationEntryResolutionSchema = z.object({
   applicationId: id,
-  use: applicationPanelUseSchema,
+  use: panelApplicationEntryUseSchema,
   framePanelId: id.optional(),
   theme: panelThemeOverridesSchema.optional(),
   menu: applicationEntryMenuSchema,
@@ -365,7 +380,8 @@ export type ApplicationEntryResolution = z.infer<typeof applicationEntryResoluti
 /** Only the host hands this context to an application's frame. */
 export const currentApplicationEntrySchema = panelUseRefSchema.extend({
   pageKey: applicationPanelUseSchema.shape.pageKey,
-  panelId: applicationPanelUseSchema.shape.panelId,
+  panelId: applicationPanelUseSchema.shape.panelId.optional(),
+  kind: z.enum(["panel", "native", "frame-conversation"]).optional(),
   path: applicationPanelUsePathSchema,
 }).readonly();
 export type CurrentApplicationEntry = z.infer<typeof currentApplicationEntrySchema>;
@@ -377,8 +393,11 @@ export const applicationFrameContextSchema = z.object({
 export type ApplicationFrameContext = z.infer<typeof applicationFrameContextSchema>;
 
 export function applicationFrameContextOf({ applicationId, use, menu }: ApplicationEntryResolution): ApplicationFrameContext {
-  const { id: useId, pageKey, panelId, path } = use;
-  return applicationFrameContextSchema.parse({ currentEntry: { applicationId, useId, pageKey, panelId, path }, menu });
+  const { id: useId, pageKey, path } = use;
+  const placement = isFrameConversationEntry(use)
+    ? { kind: use.kind }
+    : { kind: "panel", panelId: use.panelId };
+  return applicationFrameContextSchema.parse({ currentEntry: { applicationId, useId, pageKey, path, ...placement }, menu });
 }
 
 /** Origin of reads on a frame's own members. Resolve the granted frame from the application use. */
@@ -407,6 +426,7 @@ export const applicationPanelReferencesRequestSchema = z.object({
   /** Submit on creation or when the icon changes. Unchanged stored values are not checked here. */
   icon: domainApplicationIconSchema.optional(),
   framePanelId: id.optional(),
+  frameConversationEntryIds: z.array(id).optional(),
   uses: z.array(applicationPanelUseSchema.pick({ id: true, panelId: true, inputs: true, defaultAgent: true, pageComposer: true }).extend({
     icon: domainApplicationIconSchema.optional(),
   })),
@@ -764,7 +784,7 @@ export const applicationPanelUsesParamsSchema = z.object({ applicationId: id }).
  */
 export const registerApplicationPanelUsesRequestSchema = z.object({
   entry: panelApplicationEntrySchema,
-  panelUses: z.array(applicationPanelUseSchema),
+  panelUses: z.array(panelApplicationEntryUseSchema),
   /** Required when creating an application; omitted updates retain existing metadata and entry access. */
   declaration: applicationMetadataSchema.optional(),
   entryAccess: z.array(id).min(1).optional(),
@@ -786,7 +806,7 @@ export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesRe
 
 /** A maintenance read is the full declaration and uses, independent of the viewer's visible menu. */
 export const applicationPanelUsesManagementSchema = applicationPanelUsesResponseSchema.extend({
-  panelUses: z.array(applicationPanelUseSchema),
+  panelUses: z.array(panelApplicationEntryUseSchema),
   declaration: applicationMetadataSchema,
   entryAccess: z.array(id).min(1),
   allowStandalone: z.boolean().optional(),

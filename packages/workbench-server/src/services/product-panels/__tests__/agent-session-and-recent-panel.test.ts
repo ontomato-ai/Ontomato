@@ -11,6 +11,14 @@ const state = vi.hoisted(() => ({
   catalog: [] as Array<{ id: string; names: Record<string, string>; icon: string }>,
 }));
 
+vi.mock("../../../infrastructure/agent-runtime/client", () => ({
+  RuntimeClient: class {
+    async sessionStatuses() {
+      return [{ session: { id: state.sessions[0]?.sessionId }, latestRun: { status: "running" } }];
+    }
+  },
+}));
+
 vi.mock("../../assistant/store", () => ({
   assistantStore: {
     listUserSessions: vi.fn(async (_owner, opts?: { search?: string; limit?: number }) => {
@@ -118,6 +126,7 @@ describe("platform:AgentSession and platform:RecentVisit panel reads and rename"
         primaryKey: "11111111-1111-4111-8111-111111111111",
         label: "Quarterly Revenue",
         subtitle: `Analyst · ${expectedSessionTime}`,
+        fields: { running: true },
         outputs: {
           openPath: "/agents/chat?agentId=22222222-2222-4222-8222-222222222222&sessionId=11111111-1111-4111-8111-111111111111",
           favorited: true,

@@ -270,9 +270,15 @@ it("session settings compare the authenticated owner even when a session is read
  await expect(ownPanelSettings(owner,root)).rejects.toMatchObject({code:"FORBIDDEN"});
  expect((await panelOperationStore.settings(owner,root)).confirmBeforeExecute).toBe(true);
 });
-it("declines unsupported business/test authority before an owner write",async()=>{
+it("requires the human root and confirmation for build-test page operations",async()=>{
  current.channel!.authority.executionKind="build-test";
- await expect(prepareLiveAction(action())).rejects.toMatchObject({code:"BUILD_TEST_UNSUPPORTED"});expect(ownerWrites()).toHaveLength(0);
+ await expect(prepareLiveAction(action())).rejects.toMatchObject({code:"BUILD_TEST_UNSUPPORTED"});
+ current.channel!.root = { session, runId: current.id };
+ current.channel!.userRecipient = { session, actor: current.channel!.actor };
+ automatic = true;
+ const preparation = await prepareLiveAction(action());
+ expect(preparation).toMatchObject({ autoMode: false, questionId: expect.any(String) });
+ expect(ownerWrites()).toHaveLength(0);
 });
 
 it("rejects a declaration whose target type does not match its platform operation",async()=>{

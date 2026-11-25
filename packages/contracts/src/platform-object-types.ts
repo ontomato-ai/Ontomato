@@ -125,6 +125,7 @@ export const ADD_FAVORITE = "favorites.add";
 export const REMOVE_FAVORITE = "favorites.remove";
 export const MOVE_FAVORITE = "favorites.move";
 export const RENAME_AGENT_SESSION = "agentSessions.rename";
+export const DELETE_AGENT_SESSION = "agentSessions.delete";
 export const SET_HOME_PANEL = "productPanels.setAsHome";
 export const RESET_HOME_PANEL = "productPanels.resetHome";
 export const SET_ACTION_STATUS = "actions.setStatus";
@@ -1157,7 +1158,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       list: {
         source: "type",
         parameterMode: "fixed",
-        params: { search: "keyword", limit: "size" },
+        params: { search: "keyword", limit: "size", agentKind: "agentKind", agentId: "agentId" },
         result: "panelRecordList",
         outputs: {
           openPath: { kind: "scalar", type: "string" },
@@ -1175,7 +1176,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
     },
-    operations: [RENAME_AGENT_SESSION],
+    operations: [RENAME_AGENT_SESSION, DELETE_AGENT_SESSION],
   },
 };
 

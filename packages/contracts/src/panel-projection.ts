@@ -270,6 +270,8 @@ export const panelReadParameterSchemas = {
   panelFormValues: panelFormValuesSchema,
   changedField: fieldPath.nullable(),
   keyword: z.string(),
+  agentKind: z.string().trim().min(1),
+  agentId: z.string().uuid(),
   offset: z.number().int().nonnegative(),
   limit: positiveInteger.max(100),
   workspaceCommit: workspaceCommitSchema,
@@ -318,6 +320,8 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
   switch (parameter) {
     case "changedField":
     case "keyword":
+    case "agentKind":
+    case "agentId":
     case "workspaceCommit":
     case "workspacePath":
     case "workspaceDiffTarget":

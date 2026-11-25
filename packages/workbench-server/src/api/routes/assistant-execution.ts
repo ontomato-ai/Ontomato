@@ -1,3 +1,4 @@
+import { isLivePresentationEligibleRun } from "../../services/agent-host/presentation";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { requirePanelSkillForRun } from "../../services/product-panels/operations";
 import {
@@ -47,7 +48,8 @@ async function panelReader(req: Request, runId: string, source: ProductPanelRead
   const run = await runForOwner(owner, runId);
   if (!run.channel || run.status !== "running")
     throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
-  if (run.channel.authority.executionKind !== "live")
+  if (run.channel.authority.executionKind === "build-test"
+      && !isLivePresentationEligibleRun({ host: "workbench", owner, runId, sessionId: run.sessionId, channel: run.channel }))
     throw new HttpError(422, "Page skill reads do not support test data", "BUILD_TEST_UNSUPPORTED");
   const { use } = await requirePanelSkillForRun(owner, credentials, run,
     source.kind === "frame" ? { ...source, root: "frame" } : source);

@@ -1212,7 +1212,7 @@ test("current entry is supplied from the resolved use and its slot cannot overri
   };
   const menu = { groups: [], panelUses: [use] };
   const frameContext = applicationFrameContextOf({ applicationId, use, menu });
-  assert.deepEqual(frameContext, { currentEntry: { applicationId, useId, pageKey: use.pageKey, panelId: use.panelId, path }, menu });
+  assert.deepEqual(frameContext, { currentEntry: { applicationId, useId, pageKey: use.pageKey, panelId: use.panelId, path, kind: "panel" }, menu });
   assert.equal(Object.isFrozen(frameContext.currentEntry), true);
   assert.equal(applicationFrameSourceSchema.safeParse({ kind: "frame", applicationId, useId, panelId: "another" }).success, false);
   const content = { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } };

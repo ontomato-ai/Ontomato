@@ -554,6 +554,8 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       list: (_selection, params) => agentSessions.list({
         search: readParams.keyword.optional().parse(params.search),
         limit: readParams.size.optional().parse(params.limit),
+        agentKind: readParams.agentKind.optional().parse(params.agentKind),
+        agentId: readParams.agentId.optional().parse(params.agentId),
       }),
       record: selection => agentSessions.record(selection.primaryKey!),
     },
