@@ -5,6 +5,7 @@ import { writeBundledAppSdkFixture } from "../../../__tests__/fixtures/bundled-a
 import { installContentLayout } from "../../../content/layout";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
+import type { EntryDependency } from "@ontomato/contracts/entry-dependencies";
 import { HttpError } from "../../../utils/errors";
 const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), grantBatch: vi.fn(), grantedIds: vi.fn(), managementAccess: vi.fn(), register: vi.fn(), share: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
 vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ query: mocks.query }), qualifiedTable: (name: string) => name }));
@@ -13,6 +14,7 @@ vi.mock("../../product-governance/grants", () => ({ requireProductGrant: mocks.g
   shareProductResource: mocks.share, grantedProductIds: mocks.grantedIds, productManagementAccess: mocks.managementAccess }));
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: async () => undefined }));
 vi.mock("../definition-stream", () => ({ notifyProductDefinitionChanged: mocks.notify }));
+vi.mock("../entry-dependency-publication", () => ({ deliverEntryDependencyPublications: vi.fn() }));
 import { readCurrentPanel, readCurrentProjection, readCurrentProjectionRecords, saveCurrentPanel, saveCurrentProjection, validateApplicationPanelReferences } from "../current";
 import type { CurrentProductRow } from "../../../infrastructure/product-current";
 
@@ -39,6 +41,7 @@ afterAll(() => rm(runtimeRoot, { recursive: true }));
 
 beforeEach(() => {
   vi.resetAllMocks(); mocks.edits = []; rows = new Map();
+  const dependencies = new Map<string, EntryDependency[]>();
   mocks.grantedIds.mockImplementation(async () => mocks.edits);
   mocks.managementAccess.mockImplementation(async ({ id }: { id: string }, { ownerId }: { ownerId: string | null }) => ({
     allowed: true, authored: ownerId === owner.userId, editable: mocks.edits.includes(id),
@@ -46,6 +49,17 @@ beforeEach(() => {
   mocks.grantBatch.mockImplementation(async (ids: readonly string[]) => Object.fromEntries(ids.map(id => [id, true])));
   mocks.register.mockImplementation(async (_owner, id: string) => { mocks.edits.push(id); });
   mocks.query.mockImplementation(async (sql: string, args: unknown[] = []) => {
+    if (sql.startsWith("SELECT panel_id,dependencies FROM product_panel_entry_dependencies")) {
+      const [reference] = JSON.parse(String(args[1])) as Pick<EntryDependency, "objectType" | "objectKey">[];
+      return { rows: [...dependencies].filter(([, list]) =>
+        list.some(item => item.objectType === reference.objectType && item.objectKey === reference.objectKey),
+      ).map(([panel_id, dependencies]) => ({ panel_id, dependencies })) };
+    }
+    if (sql.startsWith("INSERT INTO product_panel_entry_dependencies")) {
+      dependencies.set(String(args[1]), JSON.parse(String(args[2])));
+      return { rows: [] };
+    }
+    if (sql.startsWith("INSERT INTO product_publication_outbox")) return { rows: [] };
     const kind = sql.includes("product_panels") ? "panel" : "projection";
     const key = `${kind}:${args[1]}`;
     if (sql.startsWith("SELECT id,definition")) return { rows: [...rows.entries()]

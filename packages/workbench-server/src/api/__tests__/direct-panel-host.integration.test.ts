@@ -35,6 +35,7 @@ import scheduleExamples from "../../../../contracts/examples/platform-schedules.
 import { protectedSkillRef } from "../../core/skills/providers";
 import { installContentLayout } from "../../content/layout";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { readSseFrames } from "../../infrastructure/agent-runtime/client";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
@@ -92,6 +93,7 @@ const builtinUse = {
   entrance: { access: "domain-member" as const, pageKey: "catalogue" },
 };
 let builtinUses: (typeof builtinUse)[] = [];
+let framedEntryRegistered = false;
 
 beforeAll(async () => {
   configureI18n({
@@ -125,6 +127,16 @@ beforeAll(async () => {
   registerPanelSkillProvider();
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === "pilot"
+    ? [
+      { entryId: "app-mixed/mixed", roots: { panelIds: [codePanelId], agentIds: [] } },
+      ...(framedEntryRegistered ? [{ entryId: "app-frame-host/framed", roots: {
+        panelIds: [frameHostContentId, frameHostPanelId], agentIds: [],
+      } }] : []),
+      ...(state.operationFrameId ? [{ entryId: "app-frame-host/operable", roots: {
+        panelIds: [frameOperationContentId, state.operationFrameId], agentIds: [],
+      } }] : []),
+    ] : [] });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     grants.add(req.body.id);
@@ -934,6 +946,7 @@ it("uses the authorized frame root for its record, snapshot, member reads, neste
     },
   });
   expect(frame.status, await frame.text()).toBe(200);
+  framedEntryRegistered = true;
   const source = { kind: "frame", applicationId: "app-frame-host", useId: "framed" };
   const getFrame = (id = frameHostPanelId, useId = source.useId, suffix = "") => request("GET", `product-panels/${id}${suffix}?` +
     new URLSearchParams({ applicationId: source.applicationId, useId, source: "frame" }));

@@ -78,7 +78,7 @@ function fixedTarget(target: PanelPlacement["target"]): Target {
   return "panelId" in target ? { kind: "panel", id: target.panelId } : { kind: "projection", id: target.projectionId };
 }
 
-function collectReferences(
+export function collectReferences(
   panel: Pick<PanelDefinition, "manifest">, details: ReadonlyMap<string, string>, saved: readonly SavedPlacement[] = [],
 ): Reference[] {
   const { state, members } = panel.manifest;

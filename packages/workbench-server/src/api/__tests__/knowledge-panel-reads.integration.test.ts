@@ -12,6 +12,7 @@ import { APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE } from "@ontoma
 import { productPanelOperationsReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { productPanelInputSchema, productProjectionInputSchema } from "@ontomato/contracts/product-panels";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -311,6 +312,8 @@ beforeAll(async () => {
   await ensurePanelOperationsSchema(state.pool);
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === "knowledge-domain"
+    ? [{ entryId: "app-knowledge/knowledge", roots: { panelIds: [panelId], agentIds: [] } }] : [] });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     resourceIds.add(req.body.id);

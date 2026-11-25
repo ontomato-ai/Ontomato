@@ -12,8 +12,10 @@ vi.mock("../../../infrastructure/postgres-transaction", () => ({
 }));
 vi.mock("../../../infrastructure/product-write-lock", () => ({ lockProducts: vi.fn() }));
 vi.mock("../../product-governance/grants", () => ({ requireProductGrant: state.requireGrant }));
-vi.mock("../object-detail", () => ({ requireDetailPanel: state.requirePanel }));
+vi.mock("../object-detail", () => ({ requireDetailPanel: state.requirePanel, findObjectDetailPanelId: async () => "old" }));
 vi.mock("../references", () => ({ validateObjectDetailPanelMapping: state.validate }));
+vi.mock("../entry-dependency-store", () => ({ compileRegisteredPanelRoots: vi.fn(), queueDependencyPublication: vi.fn() }));
+vi.mock("../entry-dependency-publication", () => ({ deliverEntryDependencyPublications: vi.fn() }));
 
 const owner = { domainId: "domain", userId: "modeler" };
 const viewer = { token: "modeling-token" };
@@ -21,6 +23,7 @@ const viewer = { token: "modeling-token" };
 beforeEach(() => { vi.resetAllMocks(); });
 
 it("authorizes only the new panel when replacing a binding and needs no panel grant to clear it", async () => {
+  state.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ panel_id: "new" }] });
   state.requireGrant.mockImplementation(async (id, verb) => {
     if (id !== "new" || verb !== "use") throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
   });

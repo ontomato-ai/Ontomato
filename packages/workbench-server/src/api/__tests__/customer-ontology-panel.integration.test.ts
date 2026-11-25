@@ -11,6 +11,7 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { productPanelReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -150,6 +151,8 @@ beforeAll(async () => {
   const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === "facts"
+    ? [{ entryId: `${use.applicationId}/${use.useId}`, roots: { panelIds: [panelId], agentIds: [] } }] : [] });
   app.post("/product-governance/register", (req, res) => { resourceIds.add(req.body.id); res.json({ success: true }); });
   app.post("/product-governance/check", (req, res) => res.json({ allowed: resourceIds.has(req.body.id) }));
   app.post("/product-governance/resources", (_req, res) => res.json({ ids: [...resourceIds] }));

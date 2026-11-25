@@ -190,6 +190,11 @@ beforeEach(() => {
     if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql) || sql.includes("pg_advisory_xact_lock"))
       return { rows: [] };
     if (sql.includes("FROM product_object_details")) return { rows: [] };
+    if (sql.startsWith("SELECT panel_id,dependencies FROM product_panel_entry_dependencies")
+      || sql.startsWith("INSERT INTO product_panel_entry_dependencies")
+      || sql.startsWith("INSERT INTO product_publication_outbox")
+      || sql.startsWith("SELECT dependency_sequence,dependency_change FROM product_publication_outbox"))
+      return { rows: [] };
     const table = (sql.match(/(?:FROM|INTO) (product_panels|product_projections)/)?.[1]) as Table;
     const collection = records[table];
     const id = String(values[1]);

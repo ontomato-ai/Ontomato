@@ -55,7 +55,7 @@ class PanelApplicationsTest {
     private static JSONObject app(String id, String renderer, List<ApplicationPanelUse> uses) {
         return JSONObject.of("id", id, "domainId", "domain", "ownerUserId", "author",
             "entry", JSONObject.of("renderer", renderer, "path", renderer.equals("panels") ? "/applications/" + id : "/" + id), "panelUses", uses,
-            "pageSkills", List.of(), "entryAccess", List.of("domain-member"));
+            "pageSkills", List.of(), "entryAccess", List.of("domain-member"), "panelSettings", new JSONObject());
     }
     private static ApplicationController.PanelRegistration body(List<ApplicationPanelUse> uses, boolean create) {
         return body("app-panel-a", uses, create);

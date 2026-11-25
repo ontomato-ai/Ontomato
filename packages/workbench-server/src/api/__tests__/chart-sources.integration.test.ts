@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { config } from "../../config/application";
 import { installContentLayout } from "../../content/layout";
@@ -97,6 +98,8 @@ beforeAll(async () => {
   const { createChartProjectionsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { prefix: "/java", token: "governance", entries: domain => domain === "domain"
+    ? [{ entryId: "chart-pilot/chart", roots: { panelIds: ["chart-pilot"], agentIds: [] } }] : [] });
   app.post("/java/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("governance");
     expect(req.body).toMatchObject({ domainId: "domain", ownerId: "alice" });
@@ -178,7 +181,8 @@ beforeEach(async () => {
   aliceUse = true;
   bobDeniedUse = undefined;
   bobEdit = false;
-  await state.pool!.query(`TRUNCATE ${table("dashboards")}, ${table("product_panels")}, ${table("product_projections")}`);
+  await state.pool!.query(`TRUNCATE ${table("dashboards")}, ${table("product_panels")}, ${table("product_projections")},
+    ${table("product_panel_entry_dependencies")}, ${table("product_publication_outbox")}`);
   await createDashboard({
     id: source.dashboardId, ownerId: "alice", domainId: "domain", name: "Board",
     groups: [

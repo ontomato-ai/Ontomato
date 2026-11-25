@@ -15,6 +15,7 @@ import {
 import { productPanelOperationsReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { productPanelInputSchema, productProjectionInputSchema } from "@ontomato/contracts/product-panels";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { installContentLayout } from "../../content/layout";
 import { registerSkillProvider } from "../../core/skills/providers";
 import { configureI18n } from "../../i18n";
@@ -337,6 +338,8 @@ beforeAll(async () => {
 
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === domainId
+    ? [{ entryId: "app-m7/owners", roots: { panelIds: [panelId], agentIds: [] } }] : [] });
   app.post("/product-governance/register", (req, res) => {
     resourceIds.add(req.body.id);
     res.json({ success: true });

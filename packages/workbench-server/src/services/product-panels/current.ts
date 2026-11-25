@@ -23,9 +23,12 @@ import { assistantStore } from "../assistant/store";
 import { configuredAssistantSkills } from "../assistant/skill-selection";
 import { resolveDefaultAgent } from "../assistant/default-agents";
 import { panelSkillRef } from "./skill-identity";
-import { findPanelUsers, validateCurrentProductReferences } from "./references";
+import { collectReferences, findPanelUsers, validateCurrentProductReferences } from "./references";
 import { validateProjectionComponent } from "./component-catalogue";
 import { panelDefinition, projectionDefinition } from "./render-definitions";
+import { storedPanelAuthoringDefinition } from "./entry-dependency-compiler";
+import { compileRegisteredPanelRoots, updatePanelDependencies } from "./entry-dependency-store";
+import { deliverEntryDependencyPublications } from "./entry-dependency-publication";
 
 type CurrentDefinition = ProductPanelInput | ProductProjectionInput;
 
@@ -154,6 +157,14 @@ async function currentForSave(owner: ProductOwner, credentials: AssistantCredent
   return existing;
 }
 
+async function validateProjectionForSave(client: PoolClient, owner: ProductOwner, id: string, input: ProductProjectionInput) {
+  await validateProjectionComponent(id, input, undefined, { domainId: owner.domainId, authorId: owner.userId, client });
+  const target = input.conversationEntry?.target;
+  if (target?.kind === "id" && !await assistantStore.findAgent(target.id, owner.domainId, client)) {
+    throw new HttpError(400, `Projection '${id}', conversationEntry.target.id '${target.id}' is not in this domain`, "INVALID_PANEL_REFERENCE");
+  }
+}
+
 export async function insertCurrentProduct(client: PoolClient, owner: ProductOwner, credentials: AssistantCredentials,
   kind: CurrentProductKind, id: string, input: CurrentDefinition): Promise<CurrentProductRow> {
   domainProductIdSchema.parse(id);
@@ -165,13 +176,12 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
     [owner.domainId, id],
   );
   if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");
-  if ("componentId" in input) await validateProjectionComponent(id, input, undefined, {
-    domainId: owner.domainId, authorId: owner.userId, client,
-  });
+  if ("componentId" in input) await validateProjectionForSave(client, owner, id, input);
   await registerProductResource(owner, id, input.visibility === "domain", { createOnly: true });
   await requireProductGrant(id, "edit", credentials);
   const result = await client.query(`INSERT INTO ${t(currentProductTables[kind])} (domain_id,id,owner_id,definition) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)]);
   if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
+  await updatePanelDependencies(client, owner.domainId, owner.userId, kind, id);
   return result.rows[0];
 }
 
@@ -179,9 +189,7 @@ async function save(owner: ProductOwner, credentials: AssistantCredentials, kind
   input: CurrentDefinition, revision: number, solePanelId?: string) {
   const row = await transaction(async client => {
     await lockProducts(client, owner);
-    if (revision !== 0 && "componentId" in input) await validateProjectionComponent(id, input, undefined, {
-      domainId: owner.domainId, authorId: owner.userId, client,
-    });
+    if (revision !== 0 && "componentId" in input) await validateProjectionForSave(client, owner, id, input);
     if (solePanelId !== undefined) {
       const users = await findPanelUsers(owner.domainId, "projection", id, client);
       if (users.length !== 1 || users[0]!.id !== solePanelId)
@@ -191,9 +199,11 @@ async function save(owner: ProductOwner, credentials: AssistantCredentials, kind
     if (revision === 0) return insertCurrentProduct(client, owner, credentials, kind, id, input);
     const result = await client.query(`UPDATE ${t(currentProductTables[kind])} SET definition=$3::jsonb,revision=revision+1,updated_at=now() WHERE domain_id=$1 AND id=$2 AND revision=$4 RETURNING ${currentProductColumns}`, [owner.domainId, id, JSON.stringify(input), revision]);
     if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
+    await updatePanelDependencies(client, owner.domainId, owner.userId, kind, id);
     return result.rows[0];
   });
   await notifyProductDefinitionChanged({ kind: "definition-changed", domainId: owner.domainId, target: { kind, id } });
+  await deliverEntryDependencyPublications(owner.domainId);
   return currentProductRecord(row, true);
 }
 export async function saveCurrentProjection(
@@ -224,41 +234,40 @@ export async function saveCurrentPanel(owner: ProductOwner, credentials: Assista
 
 /** Java authorizes the registrant. This service call checks the current definitions used by the declaration. */
 export async function validateApplicationPanelReferences(request: Omit<ApplicationPanelReferencesRequest, "domainId"> & { domainId: string | null }, locale?: string) {
-  const { domainId, framePanelId, uses, delivery, theme } = request;
+  const { domainId, framePanelId, uses, delivery, theme, frameConversationEntryIds } = request;
   if (theme) {
     const [issue] = themeOverrideProblems(theme);
     if (issue) {
       throw new HttpError(400, `Application theme '${issue.mode}.${issue.name}': ${issue.message}`, "INVALID_PANEL_THEME");
     }
   }
+  if (framePanelId === undefined && !uses.length && !delivery.panels.length && !delivery.projections.length
+    && !frameConversationEntryIds?.length) return;
+  await transaction(async client => {
+    if (domainId !== null) await lockProducts(client, { domainId });
+    await validateApplicationReferences(client, request, locale);
+  });
+}
+
+async function validateApplicationReferences(client: PoolClient,
+  request: Omit<ApplicationPanelReferencesRequest, "domainId"> & { domainId: string | null }, locale?: string) {
+  const { domainId, framePanelId, uses, delivery } = request;
   const panels = new Map<string, Pick<ProductPanel, "manifest">>();
   const projections = new Set<string>();
   const pending = new Set(uses.map(use => use.panelId));
   if (framePanelId !== undefined) pending.add(framePanelId);
   for (const panelId of pending) {
-    const row = await findCurrentProduct(domainId, "panel", panelId);
+    const row = await findCurrentProduct(domainId, "panel", panelId, client);
     if (!row) throw new HttpError(400, `Panel '${panelId}' is not a current definition`, "INVALID_PANEL_REFERENCE");
-    const definition = row.definition && typeof row.definition === "object" && !Array.isArray(row.definition)
-      && "manifest" in row.definition && row.definition.manifest && typeof row.definition.manifest === "object"
-      && !Array.isArray(row.definition.manifest) && "commands" in row.definition.manifest
-      ? (() => {
-          const { commands: _removed, ...restManifest } = row.definition.manifest as Record<string, unknown>;
-          return { ...row.definition, manifest: restManifest };
-        })()
-      : row.definition;
+    const definition = storedPanelAuthoringDefinition(row.definition);
     const panel = (row.domainId === null ? builtinProductPanelInputSchema : productPanelInputSchema).parse(definition);
     panels.set(panelId, panel);
-    for (const { target } of Object.values(panel.manifest.members)) {
-      if ("panelId" in target) pending.add(target.panelId);
-      else if ("projectionId" in target) projections.add(target.projectionId);
-      else if ("candidates" in target) {
-        if ("panelIds" in target.candidates) for (const id of target.candidates.panelIds) pending.add(id);
-        if ("projectionIds" in target.candidates) for (const id of target.candidates.projectionIds) projections.add(id);
-      }
+    for (const { target } of collectReferences(panel, new Map())) {
+      (target.kind === "panel" ? pending : projections).add(target.id);
     }
   }
 
-  const projectionRows = projections.size ? await findCurrentProducts(domainId, "projection", [...projections]) : new Map();
+  const projectionRows = await findCurrentProducts(domainId, "projection", [...projections], client);
   const chatProjectionIds = new Set(
     [...projectionRows.values()]
       .filter(row => {
@@ -273,15 +282,9 @@ export async function validateApplicationPanelReferences(request: Omit<Applicati
     seen.add(panelId);
     const panel = panels.get(panelId);
     if (!panel) return false;
-    for (const { target } of Object.values(panel.manifest.members)) {
-      if ("projectionId" in target && chatProjectionIds.has(target.projectionId)) return true;
-      if ("panelId" in target && panelContainsAgentChat(target.panelId, seen)) return true;
-      if ("candidates" in target) {
-        if ("projectionIds" in target.candidates && target.candidates.projectionIds.some(id => chatProjectionIds.has(id))) return true;
-        if ("panelIds" in target.candidates && target.candidates.panelIds.some(id => panelContainsAgentChat(id, seen))) return true;
-      }
-    }
-    return false;
+    return collectReferences(panel, new Map()).some(({ target }) => target.kind === "projection"
+      ? chatProjectionIds.has(target.id)
+      : panelContainsAgentChat(target.id, seen));
   }
 
   const frameHasAgentChat = framePanelId !== undefined && chatProjectionIds.size > 0 && panelContainsAgentChat(framePanelId);
@@ -343,4 +346,5 @@ export async function validateApplicationPanelReferences(request: Omit<Applicati
     if (!panels.has(id)) throw new HttpError(400, `Panel '${id}' is not reachable from the application`, "INVALID_PANEL_DELIVERY");
   for (const id of delivery.projections)
     if (!projections.has(id)) throw new HttpError(400, `Projection '${id}' is not reachable from the application`, "INVALID_PANEL_DELIVERY");
+  await compileRegisteredPanelRoots(client, domainId, pending);
 }

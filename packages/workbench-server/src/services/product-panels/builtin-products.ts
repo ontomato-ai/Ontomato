@@ -5,7 +5,7 @@ import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
 import { panelModuleImports } from "@ontomato/contracts/panel-module";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
-import { builtinProductIdSchema } from "@ontomato/contracts/product-record-id";
+import { BUILTIN_PRODUCT_ID_PREFIX, builtinProductIdSchema } from "@ontomato/contracts/product-record-id";
 import {
   builtinProductPanelInputSchema, builtinProductProjectionInputSchema,
   productPanelInputSchema,
@@ -14,10 +14,13 @@ import {
 import { runtimeRoot } from "../../content/layout";
 import { qualifiedTable } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
-import { builtinProductTables, type CurrentProductKind } from "../../infrastructure/product-current";
+import { builtinProductTables, currentProductTables, type CurrentProductKind } from "../../infrastructure/product-current";
+import { lockProducts } from "../../infrastructure/product-write-lock";
 import { readPanelComponentCatalogue, validateProjectionComponent } from "./component-catalogue";
 import { validateBuiltinProductReferences } from "./references";
 import { platformTypeEntries } from "./type-table";
+import { compileRegisteredPanelRoots, installBuiltinPanelDependencies } from "./entry-dependency-store";
+import { readAffectedEntryRoots } from "./entry-dependency-publication";
 
 const workspaceIdentity = z.object({
   panels: z.array(z.object({
@@ -114,6 +117,28 @@ export async function registerBuiltinProducts(root = path.join(runtimeRoot(), "d
         [ids, [...definitions.values()].map(value => JSON.stringify(value))],
       );
       await client.query(`DELETE FROM ${table} WHERE NOT (id=ANY($1::text[]))`, [ids]);
+    }
+    await installBuiltinPanelDependencies(client, [...panels.keys()]);
+  });
+}
+
+/** Bootstrap the closure for existing entries. Read only identities until the owner selects the formal roots. */
+export async function installRegisteredPanelDependencies() {
+  const panels = qualifiedTable(currentProductTables.panel);
+  const details = qualifiedTable("product_object_details");
+  await transaction(async client => {
+    const { rows } = await client.query<{ domain_id: string; panel_ids: string[]; detail_panel_ids: string[] }>(
+      `SELECT domain_id,
+         ARRAY(SELECT id FROM ${panels} p WHERE p.domain_id=domains.domain_id AND NOT starts_with(id,$1)) AS panel_ids,
+         ARRAY(SELECT DISTINCT panel_id FROM ${details} d WHERE d.domain_id=domains.domain_id) AS detail_panel_ids
+       FROM (SELECT domain_id FROM ${panels} UNION SELECT domain_id FROM ${details}) AS domains
+       ORDER BY domain_id`, [BUILTIN_PRODUCT_ID_PREFIX],
+    );
+    for (const { domain_id, panel_ids, detail_panel_ids } of rows) {
+      await lockProducts(client, { domainId: domain_id });
+      const entries = panel_ids.length ? await readAffectedEntryRoots(domain_id, panel_ids) : [];
+      const roots = new Set([...detail_panel_ids, ...entries.flatMap(({ roots }) => roots.panelIds)]);
+      await compileRegisteredPanelRoots(client, domain_id, roots);
     }
   });
 }

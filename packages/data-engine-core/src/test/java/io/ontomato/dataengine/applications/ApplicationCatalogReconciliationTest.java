@@ -49,6 +49,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
 
     @BeforeEach void setup() {
         new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
+        new ApplicationEntryEvents(jdbc).run();
         access = mock(ApplicationAccess.class);
         when(access.withPageSkillAuthorization(any(), any())).thenCallRealMethod();
         when(access.enterableApplicationIds(anyList(), any())).thenCallRealMethod();

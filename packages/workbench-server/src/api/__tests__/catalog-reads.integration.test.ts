@@ -25,6 +25,7 @@ import { installContentLayout } from "../../content/layout";
 import { config } from "../../config/application";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../../services/product-panels/catalog-reads";
 import { readCurrentProjection } from "../../services/product-panels/current";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 
 const state = vi.hoisted(() => ({
   pool: undefined as pg.Pool | undefined,
@@ -150,6 +151,11 @@ beforeAll(async () => {
   const { productPanelsRouter, panelOperationsRouter } = await import("../routes/product-panels");
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { prefix: "/java", token: "governance", entries: domain => domain === owner.domainId
+    ? entryValues.panelUses.map(use => ({
+      entryId: `${applicationId}/${use.id}`,
+      roots: { panelIds: [...new Set([use.panelId, entryValues.framePanelId])], agentIds: [] },
+    })) : [] });
   mockApplicationEntry(app, "/java/platform/applications", (req, res) => {
     expect([viewer.token, "executor"]).toContain(req.header("tk"));
     expect(req.query).toMatchObject({ applicationId, useId: publicUse.id });
@@ -210,9 +216,11 @@ beforeAll(async () => {
   await once(server, "listening");
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   config.dataQuery.baseUrl = base + "/java";
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "governance");
 });
 
 afterAll(async () => {
+  vi.unstubAllEnvs();
   config.dataQuery.baseUrl = previousQueryUrl;
   if (server) await new Promise<void>(resolve => server.close(() => resolve()));
   if (root) await rm(root, { recursive: true, force: true });
@@ -320,8 +328,9 @@ it("reports an unreadable panel beside healthy results without losing its stored
   }]);
   state.use.push(id);
   try {
-    const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
+    const { registerBuiltinProducts, installRegisteredPanelDependencies } = await import("../../services/product-panels/builtin-products");
     await registerBuiltinProducts();
+    await installRegisteredPanelDependencies();
     const response = await fetch(`${base}/api/product-panels?q=directory&sort=name&limit=1`);
     expect(response.status).toBe(200);
     const first = await response.json();

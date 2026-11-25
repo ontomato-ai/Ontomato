@@ -13,6 +13,7 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { productPanelOperationsReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { panelHumanOperationPreparationSchema } from "@ontomato/contracts/panel-agent";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
+import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -104,6 +105,8 @@ beforeAll(async () => {
 
   const app = express();
   app.use(express.json());
+  mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === "domain"
+    ? [{ entryId: `${use.applicationId}/${use.useId}`, roots: { panelIds: ["panel-orders"], agentIds: [] } }] : [] });
   const grants = new Set<string>();
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
