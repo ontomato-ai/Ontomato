@@ -238,7 +238,7 @@ public class OntologyGenerationService {
       throw error;
     }
     try {
-      if ("action".equals(kind)) {
+      if ("action".equals(kind) && !classes.isEmpty()) {
         String sandbox = operations.openSandbox(run, owner, expiresAt, classes);
         store.update("UPDATE ontology_generations SET sandbox_id=? WHERE run_id=?", sandbox, uuid(run));
       }

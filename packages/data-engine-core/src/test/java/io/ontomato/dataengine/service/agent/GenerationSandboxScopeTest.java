@@ -37,13 +37,17 @@ class GenerationSandboxScopeTest {
 
   @Test
   void anEmptyGateWaitsForTheTargetAndSampleDeclarations() throws Exception {
-    operations.openSandbox("run", owner, 100L, List.of());
-    verify(sandbox).open(owner.domainId(), owner.userId(), "run", 100L, List.of());
     stubDomainRule();
+    String runId = java.util.UUID.randomUUID().toString();
     when(store.transaction(any())).thenAnswer(call -> call.<Supplier<?>>getArgument(0).get());
+    when(sandbox.open(owner.domainId(), owner.userId(), runId, 100L, List.of("student", "workflow_run")))
+        .thenReturn("sb-1");
     when(sandbox.validateSample(any(), eq(Map.of()), eq(owner.domainId()))).thenAnswer(call -> call.getArgument(0));
-    var row = JSONObject.of("kind", "action", "sandbox_id", "run");
-    var window = new GenerationOperations.Window("run", owner, "action", () -> row, null,
+    var row = JSONObject.of("kind", "action");
+    var access = new io.ontomato.dataengine.service.QueryAccessService.Access(
+        new io.ontomato.dataengine.service.QueryAccessService.GrantUser(owner.userId(), owner.domainId()),
+        null, null, null, 100L, List.of());
+    var window = new GenerationOperations.Window(runId, owner, "action", () -> row, access,
         () -> {}, null);
     var input = JSONObject.of("classNames", List.of("workflow_run"),
         "objDatas", JSONArray.of(JSONObject.of("className", "student", "rows", new JSONArray())),
@@ -51,7 +55,9 @@ class GenerationSandboxScopeTest {
 
     operations.storeSamples(window, operations.authorSamples(owner.domainId(), input, List.of()));
 
-    verify(sandbox).replaceClasses(eq("run"), eq(List.of("student", "workflow_run")), any(), eq(owner.domainId()));
+    verify(sandbox).open(owner.domainId(), owner.userId(), runId, 100L, List.of("student", "workflow_run"));
+    verify(store).update(eq("UPDATE ontology_generations SET sandbox_id=? WHERE run_id=?"), eq("sb-1"), eq(java.util.UUID.fromString(runId)));
+    verify(sandbox).replaceClasses(eq("sb-1"), eq(List.of("student", "workflow_run")), any(), eq(owner.domainId()));
   }
 
   private void stubDomainRule() {

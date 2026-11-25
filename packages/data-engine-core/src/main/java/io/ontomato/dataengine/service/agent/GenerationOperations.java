@@ -142,16 +142,26 @@ public class GenerationOperations {
     sandboxService.close(sandbox, domain);
   }
 
-  private String sandbox(JSONObject row) {
-    if (!"action".equals(row.getString("kind")) || row.getString("sandbox_id") == null)
+  private void requireActionRun(JSONObject row) {
+    if (!"action".equals(row.getString("kind")))
       throw AgentHttpException.invalid("Only Action generation has a write sandbox")
           .localized("Authoring.writeSandboxActionOnly", Map.of());
+  }
+
+  private String sandbox(JSONObject row) {
+    requireActionRun(row);
+    if (row.getString("sandbox_id") == null)
+      throw AgentHttpException.invalid("Prepare test data first")
+          .localized("Authoring.prepareFirst", Map.of());
     return row.getString("sandbox_id");
   }
 
   public JSONObject prepare(String run, Owner owner, JSONObject body) throws Exception {
     var window = legacy(run, owner, "action");
-    store.transaction(() -> sandbox(window.gate().get()));
+    store.transaction(() -> {
+      requireActionRun(window.gate().get());
+      return null;
+    });
     var access = window.access();
     return storeSamples(window, authorSamples(owner.domainId(), body,
         QueryAccessService.classScope(access.permission(), access.classNames())));
@@ -174,11 +184,17 @@ public class GenerationOperations {
     window.recheck().run();
     store.transaction(() -> {
       var row = window.gate().get();
-      String sandboxId = sandbox(row), domain = window.owner().domainId();
+      requireActionRun(row);
+      String domain = window.owner().domainId();
       var declared = row.getList("sandboxClasses", String.class);
       var classes = new TreeSet<String>();
       if (declared != null) classes.addAll(declared);
       classes.addAll(data.getList("classNames", String.class));
+      String sandboxId = row.getString("sandbox_id");
+      if (sandboxId == null) {
+        sandboxId = openSandbox(window.run(), window.owner(), window.access().expiresAt(), List.copyOf(classes));
+        store.update("UPDATE ontology_generations SET sandbox_id=? WHERE run_id=?", sandboxId, uuid(window.run()));
+      }
       sandboxService.replaceClasses(sandboxId, List.copyOf(classes), data, domain);
       return null;
     });
