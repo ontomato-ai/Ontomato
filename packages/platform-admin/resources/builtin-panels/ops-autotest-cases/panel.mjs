@@ -1,4 +1,4 @@
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   mountPanel,
   usePanelContext,
@@ -17,6 +17,8 @@ await mountPanel({
   setup() {
     const { instance, notify, t } = usePanelContext();
     const values = instance.state.values;
+    const panelRootRef = ref(null);
+    const caseSetListRef = ref(null);
 
     const selected = computed(() => values.value.selected ?? null);
     const selectedKey = computed(() => selected.value?.primaryKey ?? "");
@@ -30,6 +32,23 @@ await mountPanel({
     const caseSetDraft = usePanelFormDraft("caseSetForm", {
       when: () => Boolean(selectedKey.value),
     });
+    const draftDirty = computed(() => Boolean(caseSetDraft.value?.dirty));
+    const draftSaving = computed(() => Boolean(caseSetDraft.value?.saving));
+    const draftCanSave = computed(() => {
+      const draft = caseSetDraft.value;
+      if (!draft || draft.saving) return false;
+      return draft.canSave !== undefined ? draft.canSave : Boolean(draft.dirty);
+    });
+
+    function saveDraft() {
+      if (!draftCanSave.value || draftSaving.value) return;
+      caseSetDraft.value?.save();
+    }
+
+    function revertDraft() {
+      if (!draftDirty.value || draftSaving.value) return;
+      caseSetDraft.value?.discard();
+    }
 
     // Re-describe the form when switching between form and JSON mode while preserving unsaved edits.
     watch(
@@ -91,6 +110,7 @@ await mountPanel({
     });
 
     const importBusy = computed(() => importOp.running.value);
+    const importEditorLanguage = computed(() => (importFormat.value === "csv" ? "text" : "json"));
     const canSubmitImport = computed(
       () => !importBusy.value && importName.value.trim().length > 0 && importContent.value.trim().length > 0,
     );
@@ -186,11 +206,61 @@ await mountPanel({
       notify({ kind: "success", text: t("detail.deleted") });
     }
 
+    function focusCaseSetSelector() {
+      const container = caseSetListRef.value;
+      if (!container) return;
+      const target = container.querySelector(
+        'input[type="search"], .sdk-object-list-search, input, [role="listbox"], button, [tabindex]',
+      );
+      if (target instanceof HTMLElement) {
+        target.focus();
+        if (target instanceof HTMLInputElement) {
+          target.select();
+        }
+      }
+    }
+
+    // Keyboard shortcuts matching the original page: Ctrl/Cmd+S saves, Ctrl/Cmd+P focuses the case set selector.
+    function onKeyDown(event) {
+      if (!panelRootRef.value?.isConnected) return;
+      const mod = event.ctrlKey || event.metaKey;
+      if (!mod || event.altKey || event.shiftKey) return;
+      const key = typeof event.key === "string" ? event.key.toLowerCase() : "";
+      if (key === "s") {
+        event.preventDefault();
+        if (!importOpen.value && draftCanSave.value && !draftSaving.value) {
+          saveDraft();
+        }
+      } else if (key === "p") {
+        event.preventDefault();
+        focusCaseSetSelector();
+      }
+    }
+
+    onMounted(() => {
+      if (typeof window !== "undefined") {
+        window.addEventListener("keydown", onKeyDown);
+      }
+    });
+
+    onBeforeUnmount(() => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("keydown", onKeyDown);
+      }
+    });
+
     return {
       t,
+      panelRootRef,
+      caseSetListRef,
       selectedKey,
       editModeOptions,
       caseSetDraft,
+      draftDirty,
+      draftSaving,
+      draftCanSave,
+      saveDraft,
+      revertDraft,
       importOpen,
       importName,
       importFormat,
@@ -199,6 +269,7 @@ await mountPanel({
       importError,
       importFileInput,
       importBusy,
+      importEditorLanguage,
       canSubmitImport,
       openImport,
       closeImport,

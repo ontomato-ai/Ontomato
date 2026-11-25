@@ -1,50 +1,103 @@
 <style>
   [v-cloak] { display: none; }
   .ops-knowledge-page {
+    --pane-list-width: 320px;
     display: flex;
     flex: 1 1 auto;
-    flex-direction: column;
     height: 100%;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+    padding: var(--page-section-padding, var(--spacing-md));
+    box-sizing: border-box;
     container: ops-knowledge-page / inline-size;
   }
-  .ops-knowledge-body {
+  .ops-knowledge-workspace {
     display: flex;
     flex: 1 1 auto;
+    gap: 10px;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
-    box-sizing: border-box;
   }
-  .ops-knowledge-layout {
-    flex: 1 1 auto;
+  .ops-knowledge-tree-card,
+  .ops-knowledge-content-card {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
     min-height: 0;
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
+    border: 1px solid var(--sdk-border-color-light, var(--ui-divider));
+    border-radius: 8px;
     background: var(--sdk-bg-color);
     overflow: hidden;
   }
-  .ops-knowledge-aside {
+  .ops-knowledge-tree-card {
+    width: var(--pane-list-width);
+    flex-shrink: 0;
+  }
+  .ops-knowledge-tree-header {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--sdk-border-color-light, var(--ui-divider));
+  }
+  .ops-knowledge-tree-title {
+    color: var(--sdk-text-color-primary);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ops-knowledge-icon-btn {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--sdk-text-color-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .ops-knowledge-icon-btn:hover {
+    background: var(--sdk-fill-color-light);
+    color: var(--sdk-text-color-primary);
+  }
+  .ops-knowledge-icon-btn:focus-visible {
+    outline: 2px solid var(--sdk-color-primary);
+    outline-offset: 1px;
+  }
+  .ops-knowledge-tree-body {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    padding: var(--spacing-sm);
+    padding: 8px 10px;
+    overflow: hidden;
     box-sizing: border-box;
+  }
+  .ops-knowledge-content-card {
+    flex: 1 1 auto;
   }
   .ops-knowledge-doc-header {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacing-md);
+    gap: 16px;
     min-width: 0;
-    padding: var(--spacing-sm) var(--spacing-lg);
-    border-bottom: 1px solid var(--ui-divider);
+    padding: var(--spacing-md) var(--page-section-padding, var(--spacing-lg));
+    border-bottom: 1px solid var(--sdk-border-color-light, var(--ui-divider));
   }
   .ops-knowledge-doc-header-main {
     flex: 1 1 auto;
@@ -53,63 +106,102 @@
   .ops-knowledge-doc-time {
     flex-shrink: 0;
     color: var(--sdk-text-color-secondary);
-    font-size: var(--text-xs);
+    font-size: 12px;
+    white-space: nowrap;
   }
-  .ops-knowledge-reader {
-    display: flex;
+  .ops-knowledge-reader-scroll {
     flex: 1 1 auto;
-    flex-direction: column;
     min-width: 0;
     min-height: 0;
-    padding: var(--spacing-md) var(--spacing-lg) var(--spacing-xl);
+    overflow: auto;
+    padding: var(--page-section-padding, var(--spacing-lg));
     box-sizing: border-box;
+  }
+  .ops-knowledge-reader-body {
+    width: 100%;
+    max-width: 980px;
+  }
+  .ops-knowledge-empty {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-lg);
   }
   .ops-knowledge-fill {
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
   }
-  @container ops-knowledge-page (max-width: 45rem) {
-    .ops-knowledge-body {
-      padding: var(--spacing-sm) var(--spacing-md) calc(var(--page-content-gap) + 56px);
-    }
-    .ops-knowledge-doc-header {
-      flex-wrap: wrap;
+  @container ops-knowledge-page (max-width: 720px) {
+    .ops-knowledge-page {
       padding: var(--spacing-sm) var(--spacing-md);
     }
-    .ops-knowledge-reader {
-      padding: var(--spacing-md);
+    .ops-knowledge-workspace {
+      flex-direction: column;
+      overflow: auto;
+    }
+    .ops-knowledge-tree-card {
+      width: 100%;
+      height: 40%;
+      min-height: 200px;
+    }
+    .ops-knowledge-content-card {
+      flex: 1 0 320px;
+    }
+    .ops-knowledge-doc-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--spacing-xs);
+      padding: var(--spacing-sm) var(--spacing-md);
+    }
+    .ops-knowledge-reader-scroll {
+      padding: 16px;
     }
   }
 </style>
 
 <div id="app" v-cloak class="ops-knowledge-page">
-  <page-header :title="t('panel.title')">
-    <template #actions>
-      <sdk-button text :aria-label="t('panel.refresh')" @click="refresh">
-        {{ t("panel.refresh") }}
-      </sdk-button>
-    </template>
-  </page-header>
+  <div class="ops-knowledge-workspace">
+    <aside class="ops-knowledge-tree-card">
+      <div class="ops-knowledge-tree-header">
+        <span class="ops-knowledge-tree-title">{{ t("panel.treeTitle") }}</span>
+        <sdk-tooltip :content="t('panel.refresh')">
+          <button
+            type="button"
+            class="ops-knowledge-icon-btn"
+            :aria-label="t('panel.refresh')"
+            @click="refresh"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+              <path d="M8 16H3v5" />
+            </svg>
+          </button>
+        </sdk-tooltip>
+      </div>
+      <div class="ops-knowledge-tree-body">
+        <projection slot="tree" class="ops-knowledge-fill"></projection>
+      </div>
+    </aside>
 
-  <div class="ops-knowledge-body">
-    <two-pane-layout
-      class="ops-knowledge-layout"
-      mode="split"
-      :selected="Boolean(filePath)"
-      :selection-key="filePath"
-      :back-label="t('panel.back')"
-      :empty-label="t('panel.selectHint')"
-      @back="clearSelection"
-    >
-      <template #aside>
-        <div class="ops-knowledge-aside">
-          <projection slot="tree" class="ops-knowledge-fill"></projection>
-        </div>
-      </template>
-
-      <template #header>
-        <div v-if="filePath" class="ops-knowledge-doc-header">
+    <main class="ops-knowledge-content-card">
+      <template v-if="filePath">
+        <div class="ops-knowledge-doc-header">
           <div class="ops-knowledge-doc-header-main">
             <projection slot="docHeader"></projection>
           </div>
@@ -117,15 +209,15 @@
             <projection slot="updatedAt"></projection>
           </div>
         </div>
+        <div class="ops-knowledge-reader-scroll shell-dock-room">
+          <div class="ops-knowledge-reader-body">
+            <projection slot="reader" class="ops-knowledge-fill"></projection>
+          </div>
+        </div>
       </template>
-
-      <div class="ops-knowledge-reader">
-        <projection slot="reader" class="ops-knowledge-fill"></projection>
-      </div>
-
-      <template #empty>
+      <div v-else class="ops-knowledge-empty">
         <sdk-empty :description="t('panel.selectHint')"></sdk-empty>
-      </template>
-    </two-pane-layout>
+      </div>
+    </main>
   </div>
 </div>

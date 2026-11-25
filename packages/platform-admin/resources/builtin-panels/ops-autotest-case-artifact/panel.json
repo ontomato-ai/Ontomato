@@ -8,6 +8,21 @@
         },
         "deepLink": true
       },
+      "activeRun": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AutotestRun"
+        },
+        "deepLink": false
+      },
+      "runSearch": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "default": ""
+      },
       "filePath": {
         "type": {
           "kind": "scalar",
@@ -24,6 +39,95 @@
       }
     },
     "members": {
+      "runs": {
+        "component": "ObjectList",
+        "type": "platform:AutotestRun",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "activeRun",
+          "search": "runSearch"
+        },
+        "operations": {
+          "keep": {
+            "operation": "autotestRun.keep",
+            "target": "row"
+          },
+          "unkeep": {
+            "operation": "autotestRun.unkeep",
+            "target": "row"
+          },
+          "delete": {
+            "operation": "autotestRun.delete",
+            "target": "row"
+          }
+        },
+        "config": {
+          "layout": "list",
+          "statusField": "statusLabel",
+          "subtitleField": "summaryLine",
+          "subtitleLines": 1,
+          "fallbackToFirst": false,
+          "searchable": true,
+          "searchPlaceholder": "runs.searchPlaceholder",
+          "searchFields": [
+            "label",
+            "caseSetName",
+            "runId",
+            "statusLabel",
+            "keptLabel",
+            "summaryLine"
+          ],
+          "emptyText": "runs.empty",
+          "emptyHint": "runs.emptyHint",
+          "noMatchText": "runs.noMatch",
+          "showFooter": false,
+          "rowActions": {
+            "maxVisible": 2,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "keep",
+                "labelKey": "runs.keep",
+                "icon": "star",
+                "iconOnly": true,
+                "when": {
+                  "field": "kept",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "unkeep",
+                "labelKey": "runs.unkeep",
+                "icon": "star-filled",
+                "iconOnly": true,
+                "active": true,
+                "when": {
+                  "field": "kept",
+                  "equals": true
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "delete",
+                "labelKey": "runs.delete",
+                "icon": "x",
+                "iconOnly": true,
+                "danger": true,
+                "disabledWhen": {
+                  "field": "active",
+                  "equals": true
+                }
+              }
+            ]
+          }
+        },
+        "name": "Test runs",
+        "description": "Compact list of automatic test runs keeping run-list navigation context visible while inspecting a case artifact.",
+        "id": "builtin-product-9f1a2b3c-4d5e-4f6a-8b7c-1d2e3f4a5b01"
+      },
       "header": {
         "component": "ObjectHeader",
         "type": "platform:AutotestCaseArtifact",
@@ -32,11 +136,11 @@
           "record": "record"
         },
         "config": {
-          "subtitle": "",
+          "subtitleField": "question",
           "statusField": "verdictLabel"
         },
         "name": "Case artifact header",
-        "description": "Displays the autotest case title and evaluation verdict badge, and exposes record loading status and identifiers.",
+        "description": "Displays the autotest case title, question subtitle, and evaluation verdict badge, and exposes record loading status and identifiers.",
         "id": "builtin-product-0484c833-0852-478f-92b4-809d5029aef3"
       },
       "diagnose": {
@@ -45,6 +149,7 @@
         "prefillKey": "panel.diagnosePrefill",
         "config": {
           "type": "primary",
+          "size": "small",
           "labelKey": "panel.diagnose"
         },
         "name": "Diagnose this case",
@@ -57,35 +162,12 @@
         "target": "selected",
         "operation": "autotestCaseArtifact.download",
         "config": {
-          "type": "default"
+          "type": "default",
+          "size": "small"
         },
         "name": "Download artifacts",
         "description": "Downloads the autotest case artifact directory as a ZIP archive.",
         "id": "builtin-product-04078dc5-9b00-4c00-9a4d-058de52e6b46"
-      },
-      "caseSummary": {
-        "component": "ObjectSummary",
-        "type": "platform:AutotestCaseArtifact",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
-        "config": {
-          "showTitle": false,
-          "fields": [
-            "caseId",
-            "runId",
-            "verdictLabel",
-            "question"
-          ],
-          "copyableFields": [
-            "caseId",
-            "runId"
-          ]
-        },
-        "name": "Case summary",
-        "description": "Shows the case identifier, test batch identifier, evaluation verdict, and test question.",
-        "id": "builtin-product-acf6b8bc-9c32-4467-a519-27efb45e9eb2"
       },
       "evidenceNotice": {
         "component": "InfoBanner",
@@ -116,26 +198,12 @@
           "rows": "evidenceGaps"
         },
         "config": {
-          "layout": "table",
+          "layout": "list",
           "searchable": false,
           "showFooter": false,
-          "fallbackToFirst": false,
-          "emptyText": "panel.noGaps",
-          "columns": [
-            {
-              "key": "source",
-              "width": 140
-            },
-            {
-              "key": "code",
-              "width": 160
-            },
-            {
-              "key": "message",
-              "minWidth": 260,
-              "wrap": true
-            }
-          ]
+          "subtitleField": "source",
+          "statusField": "code",
+          "emptyText": "panel.noGaps"
         },
         "name": "Evidence gaps",
         "description": "Lists missing or degraded evidence warnings recorded while resolving this case.",
@@ -161,17 +229,17 @@
             },
             {
               "key": "sessionId",
-              "minWidth": 220,
+              "minWidth": 200,
               "wrap": true
             },
             {
               "key": "runId",
-              "minWidth": 220,
+              "minWidth": 200,
               "wrap": true
             },
             {
               "key": "artifactIds",
-              "minWidth": 220,
+              "minWidth": 200,
               "wrap": true
             }
           ]
@@ -208,37 +276,15 @@
           "search": "fileSearch"
         },
         "config": {
-          "fallbackToFirst": true,
-          "searchable": true,
-          "searchPlaceholder": "panel.fileSearchPlaceholder",
+          "fallbackToFirst": false,
+          "searchable": false,
           "label": "panel.filesTitle",
           "emptyText": "panel.filesEmpty",
           "noMatchText": "panel.filesNoMatch"
         },
         "name": "Artifact files",
-        "description": "Displays the searchable directory tree of artifact files for the selected case.",
+        "description": "Displays the searchable directory tree of artifact files for the selected case; files load on demand when clicked.",
         "id": "builtin-product-d28a9806-313d-466e-8674-b2fb9d2baa2a"
-      },
-      "fileHeader": {
-        "component": "ObjectHeader",
-        "type": "platform:AutotestCaseArtifact",
-        "target": "selected",
-        "data": {
-          "record": {
-            "read": "file",
-            "params": {
-              "path": {
-                "state": "filePath"
-              }
-            }
-          }
-        },
-        "config": {
-          "subtitleField": "path"
-        },
-        "name": "Selected file header",
-        "description": "Shows the active artifact filename and relative path.",
-        "id": "builtin-product-f6437afd-b0d1-41d8-8604-879926c2d42e"
       },
       "fileReader": {
         "component": "ObjectTextReader",
@@ -274,16 +320,11 @@
       "en": {
         "panel.name": "Case artifacts",
         "panel.back": "Back to test results",
-        "panel.refresh": "Refresh",
+        "panel.backShort": "Back",
         "panel.retry": "Retry",
-        "panel.diagnose": "Diagnose this case",
+        "panel.diagnose": "Diagnose",
         "panel.diagnosePrefill": "Diagnose this autotest case artifact",
-        "panel.caseBadge": "Case: {id}",
         "panel.runBadge": "Run: {id}",
-        "panel.overviewTitle": "Case details",
-        "panel.evidenceTitle": "Evidence overview",
-        "panel.evidenceGapsTitle": "Evidence gaps",
-        "panel.evidenceRunsTitle": "Evidence runs",
         "panel.evidenceRaw": "Raw evidence references",
         "panel.noGaps": "No evidence gaps detected.",
         "panel.noRuns": "No evidence runs recorded.",
@@ -292,27 +333,28 @@
         "panel.filesEmpty": "This case has no artifact files.",
         "panel.filesNoMatch": "No matching artifact files.",
         "panel.fileSelectHint": "Select an artifact file on the left to inspect its contents.",
-        "panel.backToFiles": "Back to files",
         "panel.loading": "Loading case artifacts…",
         "panel.forbidden": "Your account does not have permission to view this case artifact.",
         "panel.notFound": "Case artifacts were not found or have been removed.",
         "panel.loadFailed": "Failed to load case artifacts.",
         "panel.emptySelection": "No autotest case selected",
-        "panel.emptySelectionHint": "Open a case from Test results to inspect its evidence references and artifact files."
+        "panel.emptySelectionHint": "Open a case from Test results to inspect its evidence references and artifact files.",
+        "runs.searchPlaceholder": "Search by case set, run ID, or status",
+        "runs.empty": "No test runs yet",
+        "runs.emptyHint": "Run an automatic test to inspect results here.",
+        "runs.noMatch": "No matching test runs",
+        "runs.keep": "Keep",
+        "runs.unkeep": "Remove keep",
+        "runs.delete": "Delete"
       },
       "zh-CN": {
         "panel.name": "用例产物",
         "panel.back": "返回测试结果",
-        "panel.refresh": "刷新",
+        "panel.backShort": "返回",
         "panel.retry": "重试",
-        "panel.diagnose": "诊断此用例",
+        "panel.diagnose": "诊断",
         "panel.diagnosePrefill": "诊断当前自动测试用例产物",
-        "panel.caseBadge": "用例：{id}",
         "panel.runBadge": "批次：{id}",
-        "panel.overviewTitle": "用例详情",
-        "panel.evidenceTitle": "证据概览",
-        "panel.evidenceGapsTitle": "证据缺口告警",
-        "panel.evidenceRunsTitle": "证据运行记录",
         "panel.evidenceRaw": "原始证据引用 JSON",
         "panel.noGaps": "未发现证据缺口。",
         "panel.noRuns": "暂无证据运行记录。",
@@ -321,27 +363,28 @@
         "panel.filesEmpty": "该用例下暂无产物文件。",
         "panel.filesNoMatch": "没有匹配的产物文件。",
         "panel.fileSelectHint": "从左侧文件树选择一个产物文件查看内容。",
-        "panel.backToFiles": "返回文件列表",
         "panel.loading": "正在读取用例产物…",
         "panel.forbidden": "当前账号无权查看此用例产物。",
         "panel.notFound": "用例产物不存在或已删除。",
         "panel.loadFailed": "读取用例产物失败。",
         "panel.emptySelection": "未指定自动测试用例",
-        "panel.emptySelectionHint": "请从测试结果页选择一条用例进入，以查看其证据引用与产物文件。"
+        "panel.emptySelectionHint": "请从测试结果页选择一条用例进入，以查看其证据引用与产物文件。",
+        "runs.searchPlaceholder": "按用例集、批次 ID 或状态搜索",
+        "runs.empty": "暂无测试批次",
+        "runs.emptyHint": "运行一次自动测试后将在此展示结果。",
+        "runs.noMatch": "没有匹配的测试批次",
+        "runs.keep": "保留",
+        "runs.unkeep": "取消保留",
+        "runs.delete": "删除"
       },
       "zh-TW": {
         "panel.name": "用例產物",
         "panel.back": "返回測試結果",
-        "panel.refresh": "重新整理",
+        "panel.backShort": "返回",
         "panel.retry": "重試",
-        "panel.diagnose": "診斷此用例",
+        "panel.diagnose": "診斷",
         "panel.diagnosePrefill": "診斷目前自動測試用例產物",
-        "panel.caseBadge": "用例：{id}",
         "panel.runBadge": "批次：{id}",
-        "panel.overviewTitle": "用例詳情",
-        "panel.evidenceTitle": "證據概覽",
-        "panel.evidenceGapsTitle": "證據缺口警示",
-        "panel.evidenceRunsTitle": "證據執行紀錄",
         "panel.evidenceRaw": "原始證據參照 JSON",
         "panel.noGaps": "未發現證據缺口。",
         "panel.noRuns": "尚無證據執行紀錄。",
@@ -350,27 +393,28 @@
         "panel.filesEmpty": "此用例下尚無產物檔案。",
         "panel.filesNoMatch": "沒有符合的產物檔案。",
         "panel.fileSelectHint": "從左側檔案樹選擇一個產物檔案以檢視內容。",
-        "panel.backToFiles": "返回檔案列表",
         "panel.loading": "正在讀取用例產物…",
         "panel.forbidden": "目前帳號無權檢視此用例產物。",
         "panel.notFound": "找不到用例產物或已刪除。",
         "panel.loadFailed": "讀取用例產物失敗。",
         "panel.emptySelection": "尚未指定自動測試用例",
-        "panel.emptySelectionHint": "請從測試結果頁選擇一筆用例進入，以檢視其證據參照與產物檔案。"
+        "panel.emptySelectionHint": "請從測試結果頁選擇一筆用例進入，以檢視其證據參照與產物檔案。",
+        "runs.searchPlaceholder": "依用例集、批次 ID 或狀態搜尋",
+        "runs.empty": "尚無測試批次",
+        "runs.emptyHint": "執行一次自動測試後將在此顯示結果。",
+        "runs.noMatch": "沒有符合的測試批次",
+        "runs.keep": "保留",
+        "runs.unkeep": "取消保留",
+        "runs.delete": "刪除"
       },
       "ja": {
         "panel.name": "ケース成果物",
         "panel.back": "テスト結果に戻る",
-        "panel.refresh": "更新",
+        "panel.backShort": "戻る",
         "panel.retry": "再試行",
-        "panel.diagnose": "このケースを診断",
+        "panel.diagnose": "診断",
         "panel.diagnosePrefill": "この自動テストケースの成果物を診断してください",
-        "panel.caseBadge": "ケース: {id}",
         "panel.runBadge": "実行: {id}",
-        "panel.overviewTitle": "ケース詳細",
-        "panel.evidenceTitle": "証跡概要",
-        "panel.evidenceGapsTitle": "証跡の欠落警告",
-        "panel.evidenceRunsTitle": "証跡の実行履歴",
         "panel.evidenceRaw": "生の証跡参照 JSON",
         "panel.noGaps": "証跡の欠落はありません。",
         "panel.noRuns": "記録された証跡実行はありません。",
@@ -379,27 +423,28 @@
         "panel.filesEmpty": "このケースには成果物ファイルがありません。",
         "panel.filesNoMatch": "一致する成果物ファイルがありません。",
         "panel.fileSelectHint": "左側のツリーから成果物ファイルを選択して内容を確認してください。",
-        "panel.backToFiles": "ファイル一覧に戻る",
         "panel.loading": "ケース成果物を読み込み中…",
         "panel.forbidden": "このケース成果物を表示する権限がありません。",
         "panel.notFound": "ケース成果物が見つからないか、削除されています。",
         "panel.loadFailed": "ケース成果物の読み込みに失敗しました。",
         "panel.emptySelection": "自動テストケースが選択されていません",
-        "panel.emptySelectionHint": "テスト結果ページからケースを開いて、証跡参照と成果物ファイルを確認してください。"
+        "panel.emptySelectionHint": "テスト結果ページからケースを開いて、証跡参照と成果物ファイルを確認してください。",
+        "runs.searchPlaceholder": "ケースセット名・実行 ID・状態で検索",
+        "runs.empty": "テストバッチがありません",
+        "runs.emptyHint": "自動テストを実行するとここに結果が表示されます。",
+        "runs.noMatch": "一致するテストバッチがありません",
+        "runs.keep": "保持",
+        "runs.unkeep": "保持解除",
+        "runs.delete": "削除"
       },
       "de": {
         "panel.name": "Fall-Artefakte",
         "panel.back": "Zurück zu den Testergebnissen",
-        "panel.refresh": "Aktualisieren",
+        "panel.backShort": "Zurück",
         "panel.retry": "Erneut versuchen",
-        "panel.diagnose": "Diesen Fall diagnostizieren",
+        "panel.diagnose": "Diagnostizieren",
         "panel.diagnosePrefill": "Dieses Autotest-Fall-Artefakt diagnostizieren",
-        "panel.caseBadge": "Fall: {id}",
         "panel.runBadge": "Lauf: {id}",
-        "panel.overviewTitle": "Falldetails",
-        "panel.evidenceTitle": "Belegübersicht",
-        "panel.evidenceGapsTitle": "Beleglücken",
-        "panel.evidenceRunsTitle": "Belegläufe",
         "panel.evidenceRaw": "Rohe Belegreferenzen (JSON)",
         "panel.noGaps": "Keine Beleglücken erkannt.",
         "panel.noRuns": "Keine Belegläufe aufgezeichnet.",
@@ -408,27 +453,28 @@
         "panel.filesEmpty": "Dieser Fall enthält keine Artefaktdateien.",
         "panel.filesNoMatch": "Keine passenden Artefaktdateien.",
         "panel.fileSelectHint": "Wählen Sie links eine Artefaktdatei aus, um deren Inhalt anzuzeigen.",
-        "panel.backToFiles": "Zurück zu den Dateien",
         "panel.loading": "Fall-Artefakte werden geladen…",
         "panel.forbidden": "Sie haben keine Berechtigung, dieses Fall-Artefakt anzusehen.",
         "panel.notFound": "Fall-Artefakte wurden nicht gefunden oder entfernt.",
         "panel.loadFailed": "Fall-Artefakte konnten nicht geladen werden.",
         "panel.emptySelection": "Kein Autotest-Fall ausgewählt",
-        "panel.emptySelectionHint": "Öffnen Sie einen Fall aus den Testergebnissen, um dessen Belegreferenzen und Artefaktdateien zu prüfen."
+        "panel.emptySelectionHint": "Öffnen Sie einen Fall aus den Testergebnissen, um dessen Belegreferenzen und Artefaktdateien zu prüfen.",
+        "runs.searchPlaceholder": "Nach Testset, Lauf-ID oder Status suchen",
+        "runs.empty": "Noch keine Testläufe",
+        "runs.emptyHint": "Starten Sie einen automatischen Testlauf, um Ergebnisse hier zu prüfen.",
+        "runs.noMatch": "Keine passenden Testläufe",
+        "runs.keep": "Aufbewahren",
+        "runs.unkeep": "Aufbewahrung entfernen",
+        "runs.delete": "Löschen"
       },
       "fr": {
         "panel.name": "Artefacts de cas",
         "panel.back": "Retour aux résultats de test",
-        "panel.refresh": "Actualiser",
+        "panel.backShort": "Retour",
         "panel.retry": "Réessayer",
-        "panel.diagnose": "Diagnostiquer ce cas",
+        "panel.diagnose": "Diagnostiquer",
         "panel.diagnosePrefill": "Diagnostiquer cet artefact de cas de test automatique",
-        "panel.caseBadge": "Cas : {id}",
         "panel.runBadge": "Exécution : {id}",
-        "panel.overviewTitle": "Détails du cas",
-        "panel.evidenceTitle": "Aperçu des preuves",
-        "panel.evidenceGapsTitle": "Alertes de preuves manquantes",
-        "panel.evidenceRunsTitle": "Exécutions de preuve",
         "panel.evidenceRaw": "Références de preuves brutes (JSON)",
         "panel.noGaps": "Aucune lacune de preuve détectée.",
         "panel.noRuns": "Aucune exécution de preuve enregistrée.",
@@ -437,27 +483,28 @@
         "panel.filesEmpty": "Ce cas ne contient aucun fichier d'artefact.",
         "panel.filesNoMatch": "Aucun fichier d'artefact correspondant.",
         "panel.fileSelectHint": "Sélectionnez un fichier d'artefact à gauche pour consulter son contenu.",
-        "panel.backToFiles": "Retour aux fichiers",
         "panel.loading": "Chargement des artefacts du cas…",
         "panel.forbidden": "Votre compte n'a pas l'autorisation de consulter cet artefact de cas.",
         "panel.notFound": "Les artefacts du cas sont introuvables ou ont été supprimés.",
         "panel.loadFailed": "Impossible de charger les artefacts du cas.",
         "panel.emptySelection": "Aucun cas de test automatique sélectionné",
-        "panel.emptySelectionHint": "Ouvrez un cas depuis les résultats de test pour inspecter ses références de preuves et ses fichiers d'artefacts."
+        "panel.emptySelectionHint": "Ouvrez un cas depuis les résultats de test pour inspecter ses références de preuves et ses fichiers d'artefacts.",
+        "runs.searchPlaceholder": "Rechercher par jeu de cas, ID ou statut",
+        "runs.empty": "Aucun lot de test pour le moment",
+        "runs.emptyHint": "Lancez un test automatique pour consulter les résultats ici.",
+        "runs.noMatch": "Aucun lot de test correspondant",
+        "runs.keep": "Conserver",
+        "runs.unkeep": "Ne plus conserver",
+        "runs.delete": "Supprimer"
       },
       "it": {
         "panel.name": "Artefatti del caso",
         "panel.back": "Torna ai risultati dei test",
-        "panel.refresh": "Aggiorna",
+        "panel.backShort": "Indietro",
         "panel.retry": "Riprova",
-        "panel.diagnose": "Diagnostica questo caso",
+        "panel.diagnose": "Diagnostica",
         "panel.diagnosePrefill": "Diagnostica questo artefatto di caso di test automatico",
-        "panel.caseBadge": "Caso: {id}",
         "panel.runBadge": "Esecuzione: {id}",
-        "panel.overviewTitle": "Dettagli del caso",
-        "panel.evidenceTitle": "Panoramica delle evidenze",
-        "panel.evidenceGapsTitle": "Avvisi di evidenze mancanti",
-        "panel.evidenceRunsTitle": "Esecuzioni di evidenza",
         "panel.evidenceRaw": "Riferimenti evidenze grezzi (JSON)",
         "panel.noGaps": "Nessuna lacuna nelle evidenze rilevata.",
         "panel.noRuns": "Nessuna esecuzione di evidenza registrata.",
@@ -466,27 +513,28 @@
         "panel.filesEmpty": "Questo caso non contiene file di artefatti.",
         "panel.filesNoMatch": "Nessun file di artefatti corrispondente.",
         "panel.fileSelectHint": "Seleziona un file di artefatti a sinistra per visualizzarne il contenuto.",
-        "panel.backToFiles": "Torna ai file",
         "panel.loading": "Caricamento artefatti del caso…",
         "panel.forbidden": "Il tuo account non dispone dell'autorizzazione per visualizzare questo artefatto.",
         "panel.notFound": "Artefatti del caso non trovati o rimossi.",
         "panel.loadFailed": "Impossibile caricare gli artefatti del caso.",
         "panel.emptySelection": "Nessun caso di test automatico selezionato",
-        "panel.emptySelectionHint": "Apri un caso dai risultati dei test per esaminare i riferimenti alle evidenze e i file di artefatti."
+        "panel.emptySelectionHint": "Apri un caso dai risultati dei test per esaminare i riferimenti alle evidenze e i file di artefatti.",
+        "runs.searchPlaceholder": "Cerca per set di casi, ID o stato",
+        "runs.empty": "Nessuna esecuzione di test",
+        "runs.emptyHint": "Avvia un test automatico per consultare i risultati qui.",
+        "runs.noMatch": "Nessuna esecuzione corrispondente",
+        "runs.keep": "Conserva",
+        "runs.unkeep": "Rimuovi conservazione",
+        "runs.delete": "Elimina"
       },
       "ar": {
         "panel.name": "مخرجات حالة الاختبار",
         "panel.back": "العودة إلى نتائج الاختبار",
-        "panel.refresh": "تحديث",
+        "panel.backShort": "رجوع",
         "panel.retry": "إعادة المحاولة",
-        "panel.diagnose": "تشخيص هذه الحالة",
+        "panel.diagnose": "تشخيص",
         "panel.diagnosePrefill": "شخّص مخرجات حالة الاختبار التلقائي الحالية",
-        "panel.caseBadge": "الحالة: {id}",
         "panel.runBadge": "التشغيل: {id}",
-        "panel.overviewTitle": "تفاصيل الحالة",
-        "panel.evidenceTitle": "نظرة عامة على الأدلة",
-        "panel.evidenceGapsTitle": "تنبيهات نقص الأدلة",
-        "panel.evidenceRunsTitle": "عمليات تشغيل الأدلة",
         "panel.evidenceRaw": "مراجع الأدلة الخام (JSON)",
         "panel.noGaps": "لم يتم رصد أي نقص في الأدلة.",
         "panel.noRuns": "لا توجد عمليات تشغيل أدلة مسجلة.",
@@ -495,13 +543,19 @@
         "panel.filesEmpty": "لا تحتوي هذه الحالة على ملفات مخرجات.",
         "panel.filesNoMatch": "لا توجد ملفات مخرجات مطابقة.",
         "panel.fileSelectHint": "اختر ملف مخرجات من الشجرة لاستعراض محتواه.",
-        "panel.backToFiles": "العودة إلى الملفات",
         "panel.loading": "جارٍ تحميل مخرجات الحالة…",
         "panel.forbidden": "ليست لديك صلاحية عرض مخرجات حالة الاختبار هذه.",
         "panel.notFound": "تعذر العثور على مخرجات الحالة أو تمت إزالتها.",
         "panel.loadFailed": "تعذر تحميل مخرجات الحالة.",
         "panel.emptySelection": "لم يتم تحديد حالة اختبار تلقائي",
-        "panel.emptySelectionHint": "افتح حالة من صفحة نتائج الاختبار لاستعراض مراجع الأدلة وملفات المخرجات."
+        "panel.emptySelectionHint": "افتح حالة من صفحة نتائج الاختبار لاستعراض مراجع الأدلة وملفات المخرجات.",
+        "runs.searchPlaceholder": "ابحث باسم مجموعة الحالات أو المعرّف أو الحالة",
+        "runs.empty": "لا توجد دفعات اختبار بعد",
+        "runs.emptyHint": "شغّل اختبارًا تلقائيًا لاستعراض النتائج هنا.",
+        "runs.noMatch": "لا توجد دفعات اختبار مطابقة",
+        "runs.keep": "الاحتفاظ",
+        "runs.unkeep": "إلغاء الاحتفاظ",
+        "runs.delete": "حذف"
       }
     }
   }

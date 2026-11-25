@@ -22,6 +22,7 @@
         "draft": "dslForm",
         "config": {
           "type": "primary",
+          "size": "small",
           "showResult": false,
           "labelKey": "panel.execute"
         },
@@ -35,90 +36,82 @@
     "messages": {
       "en": {
         "panel.title": "DSL execution",
-        "panel.description": "Compose a read-only DSL JSON query and inspect tabular records alongside raw responses.",
-        "panel.editorTitle": "DSL query",
-        "panel.resultTitle": "Execution result",
         "panel.execute": "Execute DSL",
         "panel.reset": "Reset template",
         "panel.clear": "Clear",
+        "panel.resizePanes": "Resize editor and result panes",
         "panel.emptyResult": "Run a DSL query to inspect results here",
+        "panel.executeSuccess": "Execution succeeded",
         "panel.executeFailed": "DSL execution failed"
       },
       "zh-CN": {
         "panel.title": "DSL 执行",
-        "panel.description": "编写只读 DSL JSON 查询并查看数据表格与原始响应结果。",
-        "panel.editorTitle": "DSL 查询",
-        "panel.resultTitle": "执行结果",
         "panel.execute": "执行 DSL",
         "panel.reset": "重置模板",
         "panel.clear": "清空",
+        "panel.resizePanes": "拖动调整编辑区与结果区宽度",
         "panel.emptyResult": "执行 DSL 查询后在此查看结果",
+        "panel.executeSuccess": "执行成功",
         "panel.executeFailed": "DSL 执行失败"
       },
       "zh-TW": {
         "panel.title": "DSL 執行",
-        "panel.description": "撰寫唯讀 DSL JSON 查詢並檢視資料表格與原始回應結果。",
-        "panel.editorTitle": "DSL 查詢",
-        "panel.resultTitle": "執行結果",
         "panel.execute": "執行 DSL",
         "panel.reset": "重設範本",
         "panel.clear": "清空",
+        "panel.resizePanes": "拖曳調整編輯區與結果區寬度",
         "panel.emptyResult": "執行 DSL 查詢後於此檢視結果",
+        "panel.executeSuccess": "執行成功",
         "panel.executeFailed": "DSL 執行失敗"
       },
       "ja": {
         "panel.title": "DSL 実行",
-        "panel.description": "読み取り専用の DSL JSON クエリを編集し、テーブル結果と生レスポンスを確認します。",
-        "panel.editorTitle": "DSL クエリ",
-        "panel.resultTitle": "実行結果",
         "panel.execute": "DSL を実行",
         "panel.reset": "テンプレートに戻す",
         "panel.clear": "クリア",
+        "panel.resizePanes": "エディタと結果ペインの幅を調整",
         "panel.emptyResult": "DSL クエリを実行するとここに結果が表示されます",
+        "panel.executeSuccess": "実行に成功しました",
         "panel.executeFailed": "DSL の実行に失敗しました"
       },
       "de": {
         "panel.title": "DSL-Ausführung",
-        "panel.description": "Erstellen Sie schreibgeschützte DSL-JSON-Abfragen und prüfen Sie Tabellen- sowie Rohdaten.",
-        "panel.editorTitle": "DSL-Abfrage",
-        "panel.resultTitle": "Ausführungsergebnis",
         "panel.execute": "DSL ausführen",
         "panel.reset": "Vorlage zurücksetzen",
         "panel.clear": "Leeren",
+        "panel.resizePanes": "Breite von Editor- und Ergebnisbereich anpassen",
         "panel.emptyResult": "Führen Sie eine DSL-Abfrage aus, um Ergebnisse anzuzeigen",
+        "panel.executeSuccess": "Ausführung erfolgreich",
         "panel.executeFailed": "DSL-Ausführung fehlgeschlagen"
       },
       "fr": {
         "panel.title": "Exécution DSL",
-        "panel.description": "Rédigez une requête DSL JSON en lecture seule et consultez les résultats tabulaires et bruts.",
-        "panel.editorTitle": "Requête DSL",
-        "panel.resultTitle": "Résultat d'exécution",
         "panel.execute": "Exécuter DSL",
         "panel.reset": "Réinitialiser",
         "panel.clear": "Effacer",
+        "panel.resizePanes": "Redimensionner les volets éditeur et résultats",
         "panel.emptyResult": "Exécutez une requête DSL pour afficher les résultats ici",
+        "panel.executeSuccess": "Exécution réussie",
         "panel.executeFailed": "Échec de l'exécution DSL"
       },
       "it": {
         "panel.title": "Esecuzione DSL",
-        "panel.description": "Modifica una query DSL JSON in sola lettura e consulta i risultati tabellari e grezzi.",
-        "panel.editorTitle": "Query DSL",
-        "panel.resultTitle": "Risultato esecuzione",
         "panel.execute": "Esegui DSL",
         "panel.reset": "Ripristina modello",
         "panel.clear": "Pulisci",
+        "panel.resizePanes": "Ridimensiona i pannelli editor e risultati",
         "panel.emptyResult": "Esegui una query DSL per visualizzare i risultati qui",
+        "panel.executeSuccess": "Esecuzione riuscita",
         "panel.executeFailed": "Esecuzione DSL non riuscita"
       },
       "ar": {
         "panel.title": "تنفيذ DSL",
-        "panel.description": "أنشئ استعلام DSL JSON للقراءة فقط وراجع النتائج الجدولية والاستجابة الخام.",
-        "panel.editorTitle": "استعلام DSL",
-        "panel.resultTitle": "نتيجة التنفيذ",
         "panel.execute": "تنفيذ DSL",
         "panel.reset": "إعادة تعيين القالب",
         "panel.clear": "مسح",
+        "panel.resizePanes": "تغيير عرض لوحتي المحرر والنتائج",
         "panel.emptyResult": "نفّذ استعلام DSL لعرض النتائج هنا",
+        "panel.executeSuccess": "تم التنفيذ بنجاح",
         "panel.executeFailed": "فشل تنفيذ DSL"
       }
     }

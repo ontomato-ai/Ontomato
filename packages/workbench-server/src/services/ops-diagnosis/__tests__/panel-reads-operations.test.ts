@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as panelCheck from "@ontomato/contracts/panel-check";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 import { panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
+import type { DiagnosisEvidence } from "@ontomato/contracts/ops-diagnosis";
 import {
   AUTOTEST_CASE_ARTIFACT,
   AUTOTEST_RUN,
@@ -29,6 +30,8 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { HttpError } from "../../../utils/errors";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
+import { buildTurnWorkspace } from "../../../platform/diagnosis/observe/workspaces/builder";
+import { loadManifest, saveManifest } from "../../../platform/diagnosis/observe/workspaces/store";
 import { panelServerOperation, type PanelOperationHost, type PanelReadServerOperation, type PanelWriteServerOperation } from "../../product-panels/server-operations";
 import { platformTypeEntries } from "../../product-panels/type-table";
 import {
@@ -56,7 +59,7 @@ const mocks = vi.hoisted(() => ({
   autotestDataDir: "",
   keptArtifacts: new Set<string>(),
   verifyDomain: vi.fn(async () => {}),
-  buildTurnWorkspace: vi.fn(),
+  resolveEvidence: vi.fn(),
   executeDslViaBackend: vi.fn(),
   activeRun: null as { runId: string } | null,
 }));
@@ -123,8 +126,8 @@ vi.mock("../../../platform/diagnosis/observe/workspaces/assistant-source", () =>
   assistantEvidenceReader: () => ({ verifyDomain: mocks.verifyDomain }),
 }));
 
-vi.mock("../../../platform/diagnosis/observe/workspaces/builder", () => ({
-  buildTurnWorkspace: mocks.buildTurnWorkspace,
+vi.mock("../../../platform/diagnosis/observe/workspaces/diagnosis-source", () => ({
+  diagnosisEvidenceReader: () => ({ resolve: mocks.resolveEvidence }),
 }));
 
 vi.mock("../../data-query/dsl-executor", () => ({
@@ -142,6 +145,36 @@ function makeHost(domainId = "domain-a", locale = "en"): PanelOperationHost {
   };
 }
 
+function turnEvidence(turnKey: string): DiagnosisEvidence {
+  return {
+    target: { kind: "turn", turnKey },
+    resolvedAt: "2026-11-25T01:00:00.000Z",
+    runs: [],
+    logQueries: [],
+    gaps: [],
+  };
+}
+
+function defer<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+function holdTurnCollection() {
+  const started = defer<void>();
+  const result = defer<DiagnosisEvidence>();
+  mocks.resolveEvidence.mockImplementationOnce(() => {
+    started.resolve();
+    return result.promise;
+  });
+  return { started: started.promise, ...result };
+}
+
 let tempRoot = "";
 
 beforeEach(() => {
@@ -153,7 +186,7 @@ beforeEach(() => {
   mocks.activeRun = null;
   mocks.assertObserveAccess.mockReset().mockResolvedValue(undefined);
   mocks.verifyDomain.mockReset().mockResolvedValue(undefined);
-  mocks.buildTurnWorkspace.mockReset();
+  mocks.resolveEvidence.mockReset();
 
   fs.mkdirSync(path.join(mocks.knowledgeDir, "guides"), { recursive: true });
   fs.writeFileSync(path.join(mocks.knowledgeDir, "index.md"), "# Ops Guide\n\nSee [Logs](./guides/logs.md).", "utf8");
@@ -264,7 +297,7 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     }
 
     const buildOp = globalWrite(BUILD_TURN_EVIDENCE);
-    mocks.buildTurnWorkspace.mockResolvedValueOnce({ workspaceId: "turn.threadA.9", turnKey: "turn.threadA.9" });
+    mocks.resolveEvidence.mockResolvedValueOnce(turnEvidence("turn.threadA.9"));
     const built = await buildOp.execute(host, null, { turnKey: "turn.threadA.9" }, "i2");
     expect(built).toMatchObject({
       kind: "success",
@@ -274,7 +307,85 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     const deleteOp = objectWrite(DELETE_TURN_EVIDENCE);
     expect(await deleteOp.inspectImpact?.inspect(host, [{ target, input: {} }])).toMatchObject({ total: 1 });
     expect(await deleteOp.execute(host, target, {}, "i3")).toMatchObject({ kind: "success" });
-    expect((await adapter.list()).length).toBe(0);
+    expect((await adapter.list()).map((row) => row.primaryKey)).toEqual(["turn.threadA.9"]);
+  });
+
+  it.each(["first build", "rebuild"])("reads a collecting Turn during a %s and then reads the persisted result", async (mode) => {
+    const turnKey = "turn.threadA.3";
+    const keptKey = "turn.threadA.4";
+    const host = makeHost();
+    const { domainId } = host.executor.owner;
+    const adapter = createTurnEvidenceReadAdapter(host.executor.owner, host.executor.credentials);
+    const other = makeHost("domain-b");
+    const otherAdapter = createTurnEvidenceReadAdapter(other.executor.owner, other.executor.credentials);
+    saveManifest(keptKey, { workspaceId: keptKey, domainId, status: "completed", createdAt: "2026-11-25T01:00:00.000Z" });
+    mocks.keptArtifacts.add(`turn-workspace:${keptKey}`);
+    if (mode === "rebuild") {
+      saveManifest(turnKey, { workspaceId: turnKey, domainId, status: "completed", createdAt: "2026-11-25T00:00:00.000Z" });
+    } else {
+      await expect(adapter.record(turnKey)).rejects.toMatchObject({ status: 404 });
+    }
+
+    const collection = holdTurnCollection();
+    const build = globalWrite(BUILD_TURN_EVIDENCE).execute(host, null, { turnKey }, "i1");
+    await collection.started;
+    const duplicate = buildTurnWorkspace({ turnKey, domainId });
+    try {
+      const rows = await adapter.list();
+      expect(rows.map((row) => row.primaryKey)).toEqual([turnKey, keptKey]);
+      expect(rows[0]).toMatchObject({
+        fields: { status: "collecting", statusLabel: expect.any(String), statusTone: "info", hasEvidence: false },
+        tones: { statusLabel: "info" },
+      });
+      expect(rows[0]!.fields.statusLabel).not.toBe("collecting");
+      const detail = await adapter.record(turnKey);
+      expect(detail).toMatchObject({
+        primaryKey: turnKey,
+        fields: {
+          status: "collecting",
+          statusLabel: rows[0]!.fields.statusLabel,
+          statusTone: "info",
+          createdAt: rows[0]!.fields.createdAt,
+        },
+        tones: { statusLabel: "info" },
+        outputs: { status: "collecting", kept: false, hasEvidence: false },
+      });
+      expect(await adapter.evidenceRuns(turnKey)).toEqual([]);
+      expect(await adapter.evidenceGaps(turnKey)).toEqual([]);
+      expect(await adapter.files(turnKey)).toEqual([]);
+      expect(await otherAdapter.list()).toEqual([]);
+      await expect(otherAdapter.record(turnKey)).rejects.toMatchObject({ status: 404 });
+      await expect(buildTurnWorkspace({ turnKey, domainId: "domain-b" })).rejects.toMatchObject({ status: 404 });
+    } finally {
+      collection.resolve(turnEvidence(turnKey));
+      await Promise.all([build, duplicate]);
+    }
+
+    expect(mocks.resolveEvidence).toHaveBeenCalledTimes(1);
+    expect(await build).toMatchObject({ kind: "success", data: { turnKey } });
+    expect(loadManifest(turnKey)).toMatchObject({ status: "completed", evidence: turnEvidence(turnKey) });
+    expect((await adapter.list()).map((row) => row.primaryKey)).toEqual([keptKey, turnKey]);
+    expect(await adapter.record(turnKey)).toMatchObject({ outputs: { status: "completed", hasEvidence: true } });
+  });
+
+  it("propagates a failed first collection and removes the in-progress Turn", async () => {
+    const turnKey = "turn.threadA.3";
+    const host = makeHost();
+    const adapter = createTurnEvidenceReadAdapter(host.executor.owner, host.executor.credentials);
+    const collection = holdTurnCollection();
+    const build = globalWrite(BUILD_TURN_EVIDENCE).execute(host, null, { turnKey }, "i1");
+    await collection.started;
+    const error = new HttpError(503, "Evidence source unavailable", "DEPENDENCY_UNAVAILABLE");
+    const failed = expect(build).rejects.toBe(error);
+    try {
+      expect(await adapter.record(turnKey)).toMatchObject({ outputs: { status: "collecting" } });
+    } finally {
+      collection.reject(error);
+      await failed;
+    }
+    expect(loadManifest(turnKey)).toBeNull();
+    expect(await adapter.list()).toEqual([]);
+    await expect(adapter.record(turnKey)).rejects.toMatchObject({ status: 404 });
   });
 
   it("reads AutotestRun results, enforces busy delete protection, and serves AutotestCaseArtifact files and ZIPs", async () => {

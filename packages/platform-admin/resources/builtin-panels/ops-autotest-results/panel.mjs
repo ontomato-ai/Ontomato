@@ -10,9 +10,9 @@ const DEFAULT_CASE_DETAIL_PATH = "/ops/autotest/case";
 const VALID_VERDICTS = new Set(["all", "correct", "wrong", "abnormal"]);
 
 /*
- * Built-in automatic test results panel: two-pane run catalog and run inspection view with
- * owner-computed metrics, retention/download/delete operations, verdict filtering, manual
- * refresh (no client-side polling timers), and navigation to AutotestCaseArtifact details.
+ * Built-in automatic test results panel: frameless 280px run list with inline retention/delete
+ * row actions, compact single-row run summary header, verdict filter, and 6-column clickable
+ * case results table navigating directly to AutotestCaseArtifact details.
  */
 await mountPanel({
   setup() {
@@ -29,9 +29,8 @@ await mountPanel({
         : DEFAULT_CASE_DETAIL_PATH;
     });
 
-    // Owner-declared read-only outputs from AutotestRun.record (zero client calculation).
-    const runActive = usePanelOutput("runHeader", "active");
-    const runKept = usePanelOutput("runHeader", "kept");
+    // Owner-declared read-only output from AutotestRun.record (zero client calculation).
+    const runActive = usePanelOutput("runStatus", "active");
 
     const verdictOptions = [
       { value: "all", labelKey: "filter.all" },
@@ -82,12 +81,6 @@ await mountPanel({
       void navigate(panelAddress(caseDetailPath.value, { selected: primaryKey })).catch(() => undefined);
     }
 
-    function onResultRowAction({ id, ref }) {
-      if (id === "openArtifact") {
-        openCaseArtifact(ref);
-      }
-    }
-
     function onKeepDone(outcome) {
       if (outcome?.kind !== "success") return;
       instance.refreshObjects();
@@ -107,19 +100,26 @@ await mountPanel({
       notify({ kind: "success", text: t("notice.deleted") });
     }
 
+    function onRunRowOperationDone(operationName, outcome, rowRef) {
+      if (outcome?.kind !== "success") return;
+      if (operationName === "delete" && rowRef?.primaryKey && rowRef.primaryKey === selectedKey.value) {
+        instance.state.setState({ selected: null, verdict: "all" });
+      }
+      instance.refreshObjects();
+    }
+
     return {
       t,
       selectedKey,
       runActive,
-      runKept,
       verdictOptions,
       refresh,
       clearSelection,
       openCaseArtifact,
-      onResultRowAction,
       onKeepDone,
       onUnkeepDone,
       onDeleteDone,
+      onRunRowOperationDone,
     };
   },
 });

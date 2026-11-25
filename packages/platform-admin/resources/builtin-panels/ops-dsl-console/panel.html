@@ -2,40 +2,39 @@
   [v-cloak] { display: none; }
   .ops-dsl-page {
     display: flex;
-    flex-direction: column;
+    flex: 1 1 auto;
+    box-sizing: border-box;
+    width: 100%;
     height: 100%;
     min-width: 0;
     min-height: 0;
+    padding: var(--page-section-padding, var(--spacing-md));
     overflow: hidden;
     background: var(--sdk-bg-color);
     container: ops-dsl-page / inline-size;
   }
-  .ops-dsl-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    flex-wrap: wrap;
-  }
-  .ops-dsl-body {
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
-    padding: var(--spacing-md) var(--page-gutter) var(--spacing-lg);
-    box-sizing: border-box;
-    display: grid;
-    grid-template-columns: minmax(320px, 44%) minmax(0, 1fr);
-    gap: var(--spacing-md);
-    overflow: hidden;
+  .ops-dsl-page.is-dragging,
+  .ops-dsl-page.is-dragging * {
+    cursor: col-resize;
+    user-select: none;
   }
   .ops-dsl-pane {
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    margin: 4px;
     border: 1px solid var(--sdk-border-color, var(--ui-border));
     border-radius: var(--radius-md);
     background: var(--sdk-bg-color);
     overflow: hidden;
+  }
+  .ops-dsl-left {
+    flex: 0 0 auto;
+    width: var(--ops-dsl-left-width, 42%);
+  }
+  .ops-dsl-right {
+    flex: 1 1 auto;
   }
   .ops-dsl-pane-header {
     display: flex;
@@ -43,7 +42,7 @@
     justify-content: space-between;
     gap: var(--spacing-sm);
     padding: var(--spacing-sm) var(--spacing-md);
-    border-bottom: 1px solid var(--sdk-border-color-lighter, var(--ui-divider));
+    border-bottom: 1px solid var(--sdk-border-color, var(--ui-border));
     background: var(--sdk-fill-color-light);
     flex-shrink: 0;
   }
@@ -52,40 +51,89 @@
     font-size: var(--text-sm);
     font-weight: var(--font-semibold);
     color: var(--sdk-text-color-primary);
+    white-space: nowrap;
   }
-  .ops-dsl-pane-body {
+  .ops-dsl-pane-actions {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .ops-dsl-execute-slot {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+  }
+  .ops-dsl-editor-wrap {
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
-    padding: var(--spacing-md);
+    padding: var(--spacing-sm);
     box-sizing: border-box;
-    overflow: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .ops-dsl-form-slot,
+  .ops-dsl-form-slot .sdk-owner-form,
+  .ops-dsl-form-slot .sdk-owner-form-inner,
+  .ops-dsl-form-slot .sdk-owner-form-body,
+  .ops-dsl-code-field {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .ops-dsl-form-slot .sdk-owner-form-body {
+    overflow: hidden;
+  }
+  .ops-dsl-code-field {
+    gap: var(--spacing-xs);
+  }
+  .ops-dsl-code-field .code-editor {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+  }
+  .ops-dsl-field-error {
+    margin: 0;
+    flex-shrink: 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-color-danger-text, var(--sdk-color-danger));
+  }
+  .ops-dsl-drag-handle {
+    width: 5px;
+    margin: 4px 0;
+    flex-shrink: 0;
+    cursor: col-resize;
+    border-radius: 2px;
+    background: var(--sdk-border-color-lighter, var(--ui-divider));
+    transition: background-color 0.15s ease;
+  }
+  .ops-dsl-drag-handle:hover,
+  .ops-dsl-page.is-dragging .ops-dsl-drag-handle {
+    background: var(--sdk-color-primary-light-5, var(--sdk-color-primary));
+  }
+  .ops-dsl-result-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: 0 var(--spacing-md) var(--spacing-sm);
+    box-sizing: border-box;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
-  }
-  .ops-dsl-form-slot {
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .ops-dsl-form-slot .sdk-owner-form,
-  .ops-dsl-form-slot .sdk-owner-form-inner {
-    height: auto;
-    min-height: 100%;
-  }
-  .ops-dsl-form-slot .sdk-owner-form-body {
-    overflow: visible;
-  }
-  .ops-dsl-form-slot .code-editor {
-    min-height: 360px;
   }
   .ops-dsl-result-view {
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
+    height: 100%;
     margin-block-start: 0;
   }
   .ops-dsl-empty {
@@ -97,49 +145,82 @@
   }
   .ops-dsl-error {
     flex-shrink: 0;
+    margin-block-start: var(--spacing-sm);
   }
-  @container ops-dsl-page (max-width: 56rem) {
+  @container ops-dsl-page (max-width: 45rem) {
     .ops-dsl-page {
-      height: auto;
-      min-height: 100%;
+      flex-direction: column;
+      gap: var(--spacing-sm);
       overflow: auto;
     }
-    .ops-dsl-body {
-      grid-template-columns: minmax(0, 1fr);
-      overflow: visible;
-    }
     .ops-dsl-pane {
-      min-height: 360px;
+      flex: 1 0 300px;
+      margin: 0;
+    }
+    .ops-dsl-left {
+      width: 100%;
+      --pane-dock-space: 0px;
+    }
+    .ops-dsl-drag-handle {
+      display: none;
     }
   }
 </style>
 
-<div id="app" v-cloak class="ops-dsl-page">
-  <page-header :title="t('panel.title')" :description="t('panel.description')">
-    <template #actions>
-      <div class="ops-dsl-actions">
-        <sdk-button @click="resetDraft">{{ t("panel.reset") }}</sdk-button>
-        <sdk-button @click="clearDraft">{{ t("panel.clear") }}</sdk-button>
-        <projection slot="executeDsl" @read="onExecuteRead" @error="onExecuteError"></projection>
-      </div>
-    </template>
-  </page-header>
-
-  <div class="ops-dsl-body">
-    <section class="ops-dsl-pane ops-dsl-editor-pane">
+<div id="app" v-cloak>
+  <div
+    ref="splitContainer"
+    class="ops-dsl-page"
+    :class="{ 'is-dragging': isDragging }"
+    :style="{ '--ops-dsl-left-width': leftPercent + '%' }"
+  >
+    <section class="ops-dsl-pane ops-dsl-left">
       <header class="ops-dsl-pane-header">
-        <h2 class="ops-dsl-pane-title">{{ t("panel.editorTitle") }}</h2>
+        <span class="ops-dsl-pane-title">{{ t("panel.title") }}</span>
+        <div class="ops-dsl-pane-actions">
+          <sdk-button size="small" text @click="resetDraft">{{ t("panel.reset") }}</sdk-button>
+          <sdk-button size="small" text @click="clearDraft">{{ t("panel.clear") }}</sdk-button>
+          <projection
+            slot="executeDsl"
+            class="ops-dsl-execute-slot"
+            @read="onExecuteRead"
+            @error="onExecuteError"
+          ></projection>
+        </div>
       </header>
-      <div class="ops-dsl-pane-body">
-        <projection slot="dslForm" class="ops-dsl-form-slot"></projection>
+      <div class="ops-dsl-editor-wrap">
+        <projection slot="dslForm" class="ops-dsl-form-slot">
+          <template #field-dsl="{ value, error, disabled, set }">
+            <div class="ops-dsl-code-field">
+              <code-editor
+                class="ops-dsl-code-editor"
+                :model-value="typeof value === 'string' ? value : ''"
+                language="json"
+                :readonly="disabled"
+                :min-height="240"
+                content-end-space="var(--pane-dock-space, 0px)"
+                @update:model-value="set($event)"
+              ></code-editor>
+              <p v-if="error" class="ops-dsl-field-error" role="alert">{{ error }}</p>
+            </div>
+          </template>
+        </projection>
       </div>
     </section>
 
-    <section class="ops-dsl-pane ops-dsl-result-pane">
-      <header class="ops-dsl-pane-header">
-        <h2 class="ops-dsl-pane-title">{{ t("panel.resultTitle") }}</h2>
-      </header>
-      <div class="ops-dsl-pane-body">
+    <div
+      class="ops-dsl-drag-handle"
+      role="separator"
+      aria-orientation="vertical"
+      :aria-label="t('panel.resizePanes')"
+      :aria-valuenow="Math.round(leftPercent)"
+      aria-valuemin="25"
+      aria-valuemax="70"
+      @mousedown="onDragStart"
+    ></div>
+
+    <section class="ops-dsl-pane ops-dsl-right">
+      <div class="ops-dsl-result-body">
         <sdk-alert
           v-if="executionError"
           type="error"

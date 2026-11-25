@@ -1,119 +1,110 @@
 <style>
   [v-cloak] { display: none; }
   .ops-results-page {
+    --pane-list-width: 280px;
     display: flex;
     flex: 1 1 auto;
-    flex-direction: column;
     height: 100%;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
     container: ops-results-page / inline-size;
   }
-  .ops-results-body {
+  .ops-results-list-detail {
     display: flex;
     flex: 1 1 auto;
+    height: 100%;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
-    box-sizing: border-box;
-  }
-  .ops-results-layout {
-    --pane-list-width: clamp(18rem, 29%, 22rem);
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
   }
   .ops-results-aside {
     display: flex;
-    flex: 1 1 auto;
     flex-direction: column;
-    gap: var(--spacing-sm);
+    width: var(--pane-list-width);
+    flex-shrink: 0;
     min-width: 0;
     min-height: 0;
+    padding: 6px;
+    border-inline-end: 1px solid var(--ui-divider);
+    box-sizing: border-box;
+    overflow: hidden;
   }
-  .ops-results-aside-head {
+  .ops-results-main {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-sm);
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
-  .ops-results-aside-title {
-    margin: 0;
+  .ops-results-back {
+    display: none;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+    height: var(--nav-row-height, 36px);
+    padding: 0 12px;
+    border: 0;
+    border-bottom: 1px solid var(--ui-divider);
+    background: transparent;
+    color: var(--sdk-text-color-regular);
+    font: inherit;
     font-size: var(--text-sm);
-    font-weight: var(--font-semibold);
+    cursor: pointer;
+    text-align: start;
+  }
+  .ops-results-back:hover {
+    background: var(--sdk-fill-color-light);
     color: var(--sdk-text-color-primary);
   }
-  .ops-results-fill {
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
-  }
-  .ops-results-header-stack {
+  .ops-results-detail-header {
     display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    min-width: 0;
-  }
-  .ops-results-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: var(--spacing-xs);
-  }
-  .ops-results-meta-strip {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-sm) var(--spacing-lg);
-    font-size: var(--text-xs);
-    color: var(--sdk-text-color-secondary);
-  }
-  .ops-results-meta-item {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-    min-width: 0;
-  }
-  .ops-results-meta-label {
-    color: var(--sdk-text-color-secondary);
-    white-space: nowrap;
-  }
-  .ops-results-detail-stack {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    gap: var(--spacing-md);
-    min-width: 0;
-    min-height: 0;
-  }
-  .ops-results-banner-wrap,
-  .ops-results-metrics-wrap {
-    flex: 0 0 auto;
-    min-width: 0;
-  }
-  .ops-results-table-section {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    min-width: 0;
-    min-height: 16rem;
-  }
-  .ops-results-table-toolbar {
-    display: flex;
-    flex: 0 0 auto;
+    flex-shrink: 0;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: var(--spacing-sm) var(--spacing-md);
+    gap: 8px 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--ui-divider);
+    min-width: 0;
   }
-  .ops-results-section-title {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: var(--font-semibold);
+  .ops-results-header-left {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .ops-results-run-id {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
     color: var(--sdk-text-color-primary);
+    overflow-wrap: anywhere;
+  }
+  .ops-results-header-summary {
+    color: var(--sdk-text-color-secondary);
+    font-size: 12px;
+    min-width: 0;
+  }
+  .ops-results-header-actions {
+    display: flex;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .ops-results-banner-wrap {
+    flex-shrink: 0;
+    padding: 8px 16px 0;
+  }
+  .ops-results-filter-bar {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    padding: 8px 16px;
   }
   .ops-results-table-wrap {
     display: flex;
@@ -121,114 +112,108 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    padding: 0 16px calc(16px + var(--pane-dock-space, 0px));
+    box-sizing: border-box;
+    overflow: hidden;
   }
-  @container ops-results-page (max-width: 45rem) {
-    .ops-results-body {
-      padding: var(--spacing-sm) var(--spacing-md) calc(var(--page-content-gap) + 56px);
-    }
-    .ops-results-actions {
+  .ops-results-empty {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-xl);
+  }
+  .ops-results-fill {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+  @container ops-results-page (max-width: 720px) {
+    .ops-results-aside {
       width: 100%;
+      border-inline-end: 0;
+    }
+    .ops-results-list-detail.is-selected .ops-results-aside,
+    .ops-results-list-detail:not(.is-selected) .ops-results-main {
+      display: none;
+    }
+    .ops-results-back {
+      display: flex;
+    }
+    .ops-results-detail-header {
+      padding: 8px 12px;
+    }
+    .ops-results-filter-bar {
+      padding: 8px 12px;
+    }
+    .ops-results-table-wrap {
+      padding: 0 12px calc(12px + var(--pane-dock-space, 0px));
     }
   }
 </style>
 
 <div id="app" v-cloak class="ops-results-page">
-  <page-header :title="t('panel.title')" :description="t('panel.description')">
-    <template #actions>
-      <sdk-button :aria-label="t('panel.refresh')" @click="refresh">
-        {{ t("panel.refresh") }}
-      </sdk-button>
-    </template>
-  </page-header>
+  <div class="ops-results-list-detail" :class="{ 'is-selected': Boolean(selectedKey) }">
+    <aside class="ops-results-aside">
+      <projection
+        slot="runs"
+        class="ops-results-fill"
+        @operation-done="onRunRowOperationDone"
+      ></projection>
+    </aside>
 
-  <div class="ops-results-body">
-    <two-pane-layout
-      class="ops-results-layout"
-      mode="split"
-      :selected="Boolean(selectedKey)"
-      :selection-key="selectedKey"
-      :back-label="t('panel.back')"
-      :empty-label="t('panel.selectHint')"
-      @back="clearSelection"
-    >
-      <template #aside>
-        <div class="ops-results-aside">
-          <div class="ops-results-aside-head">
-            <h3 class="ops-results-aside-title">{{ t("runs.title") }}</h3>
-          </div>
-          <projection slot="runs" class="ops-results-fill"></projection>
-        </div>
-      </template>
+    <section class="ops-results-main">
+      <button v-if="selectedKey" type="button" class="ops-results-back" @click="clearSelection">
+        <span aria-hidden="true">←</span>
+        <span>{{ t("panel.back") }}</span>
+      </button>
 
-      <template #header>
-        <div v-if="selectedKey" class="ops-results-header-stack">
-          <projection slot="runHeader">
-            <template #actions>
-              <div class="ops-results-actions">
-                <projection slot="keepRun" @done="onKeepDone"></projection>
-                <projection slot="unkeepRun" @done="onUnkeepDone"></projection>
-                <projection slot="downloadRun"></projection>
-                <projection slot="deleteRun" @done="onDeleteDone"></projection>
-              </div>
-            </template>
-          </projection>
-
-          <div class="ops-results-meta-strip">
-            <div v-if="runKept" class="ops-results-meta-item">
-              <projection slot="runKept"></projection>
-            </div>
-            <div class="ops-results-meta-item">
-              <span class="ops-results-meta-label">{{ t("detail.startedAt") }}:</span>
-              <projection slot="runStartedAt"></projection>
-            </div>
-            <div class="ops-results-meta-item">
-              <span class="ops-results-meta-label">{{ t("detail.finishedAt") }}:</span>
-              <projection slot="runFinishedAt"></projection>
+      <template v-if="selectedKey">
+        <div class="ops-results-detail-header">
+          <div class="ops-results-header-left">
+            <span class="ops-results-run-id">{{ selectedKey }}</span>
+            <projection slot="runStatus"></projection>
+            <div class="ops-results-header-summary">
+              <projection slot="runSummary"></projection>
             </div>
           </div>
+          <div class="ops-results-header-actions">
+            <projection slot="keepRun" @done="onKeepDone"></projection>
+            <projection slot="unkeepRun" @done="onUnkeepDone"></projection>
+            <projection slot="downloadRun"></projection>
+            <projection slot="deleteRun" @done="onDeleteDone"></projection>
+          </div>
         </div>
-      </template>
 
-      <div v-if="selectedKey" class="ops-results-detail-stack">
         <div v-if="runActive" class="ops-results-banner-wrap">
-          <info-banner
-            tone="info"
-            :text="t('detail.activeNotice')"
-          >
+          <info-banner compact tone="info" :text="t('detail.activeNotice')">
             <template #actions>
               <sdk-button size="small" @click="refresh">{{ t("panel.refresh") }}</sdk-button>
             </template>
           </info-banner>
         </div>
 
-        <div class="ops-results-metrics-wrap">
-          <projection slot="runMetrics"></projection>
+        <div class="ops-results-filter-bar">
+          <segmented-control
+            state="verdict"
+            default-value="all"
+            :options="verdictOptions"
+            :aria-label="t('filter.verdict')"
+          ></segmented-control>
         </div>
 
-        <section class="ops-results-table-section">
-          <div class="ops-results-table-toolbar">
-            <h3 class="ops-results-section-title">{{ t("results.title") }}</h3>
-            <segmented-control
-              state="verdict"
-              default-value="all"
-              :options="verdictOptions"
-              :aria-label="t('filter.verdict')"
-            ></segmented-control>
-          </div>
-          <div class="ops-results-table-wrap">
-            <projection
-              slot="results"
-              class="ops-results-fill"
-              @choose="openCaseArtifact"
-              @row-action="onResultRowAction"
-            ></projection>
-          </div>
-        </section>
-      </div>
-
-      <template #empty>
-        <sdk-empty :description="t('panel.selectHint')"></sdk-empty>
+        <div class="ops-results-table-wrap">
+          <projection
+            slot="results"
+            class="ops-results-fill"
+            @choose="openCaseArtifact"
+          ></projection>
+        </div>
       </template>
-    </two-pane-layout>
+
+      <div v-else class="ops-results-empty">
+        <sdk-empty :description="t('panel.selectHint')"></sdk-empty>
+      </div>
+    </section>
   </div>
 </div>
