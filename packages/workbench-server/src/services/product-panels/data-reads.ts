@@ -59,6 +59,7 @@ import { createAutotestCaseSetReadAdapter } from "../ops-diagnosis/case-sets-pan
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import { createGovernanceReadAdapters } from "../governance/panel-reads";
+import { loadPolicyWorkbenchCatalog } from "../governance/policy-catalog";
 import type { SkillResolveRequest } from "../skills/panel-reads";
 import { createApplicationReadAdapter } from "./application-catalogue";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
@@ -124,7 +125,9 @@ function customerReads(owner: ProductOwner, viewer: AssistantCredentials, caller
 
 function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation): Record<string, Record<string, ReadAdapter>> {
   const schedules = createScheduledTaskReadAdapter(viewer);
-  const governance = createGovernanceReadAdapters(viewer);
+  const governance = createGovernanceReadAdapters(viewer, {
+    loadPolicyCatalog: () => loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale),
+  });
   const ontology = async () => {
     const { createPlatformOntologyReadAdapter } = await import("../platform-ontology/panel-reads");
     return createPlatformOntologyReadAdapter(owner, viewer, callerUserName);
