@@ -4,6 +4,12 @@ import static org.mockito.Mockito.*;
 import com.alibaba.fastjson2.*;
 import com.sun.net.httpserver.HttpServer;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.AuthorizationStore;
+import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.RoleResolution;
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
 import io.ontomato.dataengine.service.impl.*;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.config.BusinessConfig;
@@ -224,6 +230,14 @@ class BuildTestPostgresIntegrationTest {
       var access=new QueryAccessService.Access(owner,permission,null,null,null).withTarget(target);
       var metrics=spy(new MetricViewServiceImpl());ReflectionTestUtils.setField(metrics,"abcProgramService",programs);ReflectionTestUtils.setField(metrics,"adminService",admin);
       ReflectionTestUtils.setField(metrics, "subjectValues", new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
+      var metricSubjects = mock(AuthorizationSubjects.class);
+      when(metricSubjects.resolveRoles(owner.getDomainId(), owner.getId())).thenReturn(
+          new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false));
+      var metricPolicies = mock(AuthorizationStore.class);
+      when(metricPolicies.policies(owner.getDomainId(), Set.of())).thenReturn(List.of());
+      var metricAuthorization = new AuthorizationService(metricSubjects, metricPolicies,
+          new ManagementOperations(List.of()), mock(CapabilityGrantLookup.class), mock(DataPermissionLookup.class));
+      ReflectionTestUtils.setField(metrics, "definitions", new CapabilityDefinitions(metricAuthorization, identity));
       var dsl=QueryPackage.fromDsl(query.toJSONString());
       var read=QueryPackageExecution.execute(UUID.randomUUID().toString(),dsl,new JSONObject(),JSONObject.of("age","Age"),access,"en",1,ontology,python);
       assertTrue(read.rows().stream().anyMatch(value->JSONObject.from(value).getIntValue("age")==99));
@@ -240,6 +254,7 @@ class BuildTestPostgresIntegrationTest {
         readFunction.setParameters(QueryPackage.definitions(readPackage));
         var returns=new io.ontomato.dataengine.bean.function.ReturnDef();returns.setColumnLabels(readPackage==dsl?JSONObject.of("age","Age"):JSONObject.of("total","Total"));readFunction.setReturnDef(returns);
         var metric=new io.ontomato.dataengine.bean.metricView.MetricView();metric.setId("metric-test");metric.setDomainId("contract");metric.setStatus(io.ontomato.dataengine.bean.metricView.MetricView.STATUS_PUBLISHED);metric.setFunction(readFunction);metric.setBindings(new ArrayList<>());
+        metric.setCreatedBy(owner.getId());
         doReturn(metric).when(metrics).queryById("metric-test","contract");
         var values=QueryPackage.parameters(readPackage,null);
         assertNotNull(metrics.testExecute(metric,null,values,"en",owner,permission,1,target)[0]);
