@@ -63,7 +63,7 @@ export interface ComponentMetadata {
    * `config` in `components.json` and `docs/components/<ComponentId>.md`; host-only inputs, platform-fixed styles, and
    * single-page presentation knobs stay out of author-facing documentation unless explicitly declared here.
    */
-  readonly config?: readonly string[];
+  readonly configProps?: readonly string[];
   /** The parameters it takes, by name; a projection's `inputs` are these. */
   readonly inputs?: Readonly<Record<string, DirectPanelPortType>>;
   /**
@@ -108,7 +108,7 @@ export interface ComponentPorts {
 /** The catalogue a build writes as `components.json`: every declared component of one SDK version, with its ports. */
 export interface ComponentCatalogue {
   readonly version: string;
-  readonly components: readonly (Omit<ComponentMetadata, "config"> & {
+  readonly components: readonly (Omit<ComponentMetadata, "configProps"> & {
     readonly config?: ComponentPorts["props"];
     readonly ports: ComponentPorts;
   })[];

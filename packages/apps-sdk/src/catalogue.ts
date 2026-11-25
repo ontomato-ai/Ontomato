@@ -64,7 +64,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Draws one ECharts option in the platform's chart theme, following its light and dark modes; it computes no value and reads nothing itself. In a panel, write `<e-chart>` in the template, without an import; the import is for an application page outside a panel.",
     bindsElement: ["MetricView:*", "Definition:*"],
-    config: ["option", "theme", "height"],
+    configProps: ["option", "theme", "height"],
   }),
   defineComponentMeta({
     componentId: "FormFields",
@@ -75,7 +75,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Draws owner-declared form fields in owner order and limits; use `<form-fields>` for custom non-projection forms (`ObjectForm` for projections). In a panel, write `<form-fields>` in the template, without an import; the import is for an application page outside a panel.",
     bindsElement: ["Action:*"],
-    config: ["fields", "values", "errors", "disabled", "choosePlaceholder", "readOnly"],
+    configProps: ["fields", "values", "errors", "disabled", "choosePlaceholder", "readOnly"],
   }),
   defineComponentMeta({
     componentId: "CodeEditor",
@@ -84,7 +84,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "content",
     meaning: "Edits code or structured text such as JSON, in the page's light or dark theme; it validates nothing. In a panel, write `<code-editor>` in the template, without an import; the import is for an application page outside a panel.",
-    config: ["modelValue", "language", "placeholder", "minHeight", "readonly", "contentEndSpace"],
+    configProps: ["modelValue", "language", "placeholder", "minHeight", "readonly", "contentEndSpace"],
   }),
   defineComponentMeta({
     componentId: "MarkdownView",
@@ -93,7 +93,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "content",
     meaning: "Draws a text as the platform reads Markdown, in the page's light or dark theme. In a panel, write `<markdown-view>` in the template, without an import; the import is for an application page outside a panel.",
-    config: ["content", "final", "nodes"],
+    configProps: ["content", "final", "nodes"],
   }),
   defineComponentMeta({
     componentId: "TablePreview",
@@ -102,7 +102,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "content",
     meaning: "Draws text cells as a table with paging; it reads no business meaning out of them. In a panel, write `<table-preview>` in the template, without an import; the import is for an application page outside a panel.",
-    config: ["table", "pageSize", "arrange"],
+    configProps: ["table", "pageSize", "arrange"],
   }),
   defineComponentMeta({
     componentId: "HtmlPreview",
@@ -111,7 +111,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "content",
     meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame. In a panel, write `<html-preview>` in the template, without an import; the import is for an application page outside a panel.",
-    config: ["html", "sandbox", "referrerpolicy", "title"],
+    configProps: ["html", "sandbox", "referrerpolicy", "title"],
   }),
   defineComponentMeta({
     componentId: "AppPreview",
@@ -129,7 +129,7 @@ export const components: readonly ComponentMetadata[] = [
       activePage: { kind: "scalar", type: "string" },
       selection: { kind: "json" },
     },
-    config: ["appId", "revision", "entryId", "reloadKey"],
+    configProps: ["appId", "revision", "entryId", "reloadKey"],
   }),
   defineComponentMeta({
     componentId: "AgentChat",
@@ -153,7 +153,7 @@ export const components: readonly ComponentMetadata[] = [
       sessionId: { kind: "scalar", type: "string" },
       busy: { kind: "scalar", type: "boolean" },
     },
-    config: [
+    configProps: [
       "showHeader", "placeholderKey", "sessionContext", "collapsed", "greeting", "greetingKey", "description",
       "descriptionKey", "feedback",
     ],
@@ -281,7 +281,7 @@ export const components: readonly ComponentMetadata[] = [
       selectedLabel: { kind: "scalar", type: "string" },
       activeLabel: { kind: "scalar", type: "string" },
     },
-    config: [
+    configProps: [
       "layout", "columns", "statusField", "statusStyle", "tagsField", "subtitleField", "subtitleLines", "pageSize",
       "fallbackToFirst", "toggleable", "emptyText", "emptyHint", "noMatchText", "searchPlaceholder", "pagination",
       "pageSizes", "showChevron", "showHeader", "showFooter", "creatingRow", "searchable", "searchFields", "groupBy",
@@ -321,7 +321,7 @@ export const components: readonly ComponentMetadata[] = [
       itemCount: { kind: "scalar", type: "number" },
       hiddenCount: { kind: "scalar", type: "number" },
     },
-    config: [
+    configProps: [
       "columns", "rowHeight", "gap", "groupKeyField", "groupTitleField", "groupsField", "sectionField",
       "colSpanField", "rowSpanField", "orderField", "minColSpan", "maxColSpan", "minRowSpan", "maxRowSpan",
       "editable", "locked", "lockReason", "collapsible", "groupSurface", "itemSurface", "rowSizing",
@@ -347,7 +347,7 @@ export const components: readonly ComponentMetadata[] = [
     readOnlyOutputs: {
       total: { kind: "scalar", type: "number" },
     },
-    config: ["label", "labelKey", "items", "appearance", "omitWhenUnavailable"],
+    configProps: ["label", "labelKey", "items", "appearance", "omitWhenUnavailable"],
   }),
   defineComponentMeta({
     componentId: "ObjectSummary",
@@ -364,7 +364,7 @@ export const components: readonly ComponentMetadata[] = [
       label: { kind: "scalar", type: "string" },
       status: { kind: "scalar", type: "string" },
     },
-    config: [
+    configProps: [
       "fields", "showTitle", "layout", "statusField", "tagsField", "bodyField", "emptyText", "missingText",
       "copyableFields", "presentation", "density", "keyValueFields", "bordered", "columns",
     ],
@@ -383,7 +383,7 @@ export const components: readonly ComponentMetadata[] = [
     readOnlyOutputs: {
       label: { kind: "scalar", type: "string" },
     },
-    config: ["slot", "target", "fallback", "fallbackKey", "tag"],
+    configProps: ["slot", "target", "fallback", "fallbackKey", "tag"],
   }),
   defineComponentMeta({
     componentId: "ObjectHeader",
@@ -401,7 +401,7 @@ export const components: readonly ComponentMetadata[] = [
       status: { kind: "scalar", type: "string" },
       errorMessage: { kind: "scalar", type: "string" },
     },
-    config: [
+    configProps: [
       "title", "subtitle", "subtitleField", "statusField", "status", "statusTone", "operations",
       "maxVisibleOperations", "fallbackTitle",
     ],
@@ -427,7 +427,7 @@ export const components: readonly ComponentMetadata[] = [
       dirty: { kind: "scalar", type: "boolean" },
       draft: { kind: "json" },
     },
-    config: [
+    configProps: [
       "fixedFields", "layout", "labelPosition", "labelWidth", "actions", "presentation", "groups", "cardColumns",
       "activeGroup", "allowStepJump", "unassignedFields", "showToc", "columns", "showChangeSummary",
       "changeSummaryTitle", "persistDraft", "unsavedSwitchMode",
@@ -465,7 +465,7 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformOperation:*", "Action:*"],
     // The button reads no datum: its operation is the projection's, described by its owner as admitted now.
     data: {},
-    config: [
+    configProps: [
       "operation", "type", "plain", "text", "showBatchCount", "icon", "parameters", "label", "labelKey", "size",
       "disabled", "hideWhenUnavailable", "showResult", "notifySuccess",
     ],
@@ -478,7 +478,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "action",
     meaning:
       "Displays the result of a read-only panel operation (`markdown`, `json`, `file`, or tabbed `sections`). When bound to an operation descriptor via `operationSlot` and `operationName`, renders owner-declared `resultSections` tabs (respecting `defaultSectionId`) even before the operation has executed, showing `emptyText` inside empty tabs until execution populates them. Pure presentation: reads and writes nothing itself.",
-    config: ["result", "operationSlot", "operationName", "emptyText"],
+    configProps: ["result", "operationSlot", "operationName", "emptyText"],
   }),
   defineComponentMeta({
     componentId: "DataAdapterTestReport",
@@ -502,7 +502,7 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformOperation:*"],
     // The control reads no datum: its operation is the projection's, described by its owner as admitted now.
     data: {},
-    config: ["operation", "params", "label", "type", "dialogTitle", "intro", "rules", "chooseLabel", "disabled"],
+    configProps: ["operation", "params", "label", "type", "dialogTitle", "intro", "rules", "chooseLabel", "disabled"],
   }),
   defineComponentMeta({
     componentId: "ReferencePicker",
@@ -525,7 +525,7 @@ export const components: readonly ComponentMetadata[] = [
     outputs: {
       selected: { kind: "object", objectType: "@binding" },
     },
-    config: [
+    configProps: [
       "placeholder", "placeholderKey", "clearable", "disabled", "size", "groupBy", "metaField", "showDraftIndicator",
       "fallbackToFirst", "refreshable",
     ],
@@ -572,7 +572,7 @@ export const components: readonly ComponentMetadata[] = [
       nodeCount: { kind: "scalar", type: "number" },
       edgeCount: { kind: "scalar", type: "number" },
     },
-    config: ["edgeEnds", "editable", "categories", "nodeCategory", "layout", "hint"],
+    configProps: ["edgeEnds", "editable", "categories", "nodeCategory", "layout", "hint"],
   }),
   defineComponentMeta({
     componentId: "MetricChart",
@@ -589,7 +589,7 @@ export const components: readonly ComponentMetadata[] = [
       template: { results: ["chartTemplate"], required: true },
       result: { results: ["metricOutput"], required: true },
     },
-    config: [
+    configProps: [
       "title", "fileOverride", "metricOverride", "viewMode", "allowViewToggle", "allowZoom", "zoomed",
       "tableMaxRows", "truncationDisplay", "minHeight",
     ],
@@ -602,7 +602,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "graph",
     meaning:
       "Draws caller-supplied nodes and edges as a lightweight SVG graph; use `<graph-canvas>` for simple static graphs. Draws the nodes and edges it is given as a light SVG graph, each node in the tone its caller gives it and marked when its ID is among the selected ones, and hands back the selection a reader's choice results in and the part of the graph in view. What the nodes are, which may be chosen and what a choice implies are its caller's: it reads nothing and decides nothing about them.",
-    config: ["label", "nodes", "edges", "selected", "selection", "layout", "maxHeight"],
+    configProps: ["label", "nodes", "edges", "selected", "selection", "layout", "maxHeight"],
   }),
   defineComponentMeta({
     componentId: "InteractiveGraphCanvas",
@@ -612,7 +612,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "graph",
     meaning:
       "Draws caller-supplied nodes and edges on a pan/zoom/drag canvas with PNG export; use for non-projection interactive graphs. Draws the nodes and edges it is given as an interactive canvas that a reader pans, zooms and drags: each node coloured by its category from the edition's palette, edges labelled, dashed or weighted as given, and invisible anchors for aggregated edges. It hands back the selection a reader's choice results in, the part of the graph in view, a double-click, a dragged node's new place and a click on empty canvas, and gives its caller the current positions and an image of the view. What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.",
-    config: [
+    configProps: [
       "label", "nodes", "edges", "selected", "selectedEdges", "selection", "layout", "maxHeight", "categories",
       "labelWidth", "nodeSize", "labelSize", "readableLabels", "editable",
     ],
@@ -688,7 +688,7 @@ export const components: readonly ComponentMetadata[] = [
       drawingProgress: { kind: "json" },
       versionChanged: { kind: "scalar", type: "boolean" },
     },
-    config: [
+    configProps: [
       "label", "fitMode", "expandOn", "showLegend", "showToolbar", "aggregateEdges", "showEdgeLabels",
       "showNeighborControls", "neighborPageSize", "maxHeight",
     ],
@@ -719,7 +719,7 @@ export const components: readonly ComponentMetadata[] = [
       edgeCount: { kind: "scalar", type: "number" },
       label: { kind: "scalar", type: "string" },
     },
-    config: ["input", "emptyText", "showRelationFilter", "allowSetStart", "showSummary", "collapseEmptyGroups"],
+    configProps: ["input", "emptyText", "showRelationFilter", "allowSetStart", "showSummary", "collapseEmptyGroups"],
   }),
   defineComponentMeta({
     componentId: "SegmentedControl",
@@ -731,7 +731,7 @@ export const components: readonly ComponentMetadata[] = [
       "Switches one declared scalar panel state between mutually exclusive options supplied by the owner's `counts` datum (`[{key, label, count}]`) or static configuration. It binds no ontology element.",
     data: { counts: { results: ["panelGroupCounts"], required: false } },
     outputs: { value: { kind: "scalar", type: "string" } },
-    config: ["options", "state", "modelValue", "defaultValue", "ariaLabel", "ariaLabelKey", "disabled"],
+    configProps: ["options", "state", "modelValue", "defaultValue", "ariaLabel", "ariaLabelKey", "disabled"],
   }),
   defineComponentMeta({
     componentId: "TwoPaneLayout",
@@ -741,7 +741,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "layout",
     meaning:
       "Responsive list-detail two-pane layout that switches to alternating view in narrow containers; use for split list-detail panels. List-detail layout in one bordered block: side-by-side (`mode: 'split'`, left pane at `--pane-list-width`) or full-width alternating (`mode: 'switch'`), automatically switching to full-width alternating when its own container width is at or below `--pane-narrow-breakpoint` (680px). Fills definite container height with independent pane scrolling, keeps `#aside` DOM alive across switches to preserve scroll position and filters, scrolls `#default` back to top when `selectionKey` changes, provides fixed `#header`, `#tabs`, and `#footer` regions plus `#empty` placeholder, and omits `selected` to preserve legacy always-visible two-pane usage. It binds nothing.",
-    config: ["mode", "selected", "creating", "selectionKey", "backLabel", "emptyLabel"],
+    configProps: ["mode", "selected", "creating", "selectionKey", "backLabel", "emptyLabel"],
   }),
   defineComponentMeta({
     componentId: "WorkbenchLayout",
@@ -751,7 +751,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "layout",
     meaning:
       "Three-pane workbench layout (sidebar, center canvas, detail pane) collapsing side panes in narrow containers; use for graph/canvas pages. Three-pane workbench layout for graph and canvas pages: collapsible left `#aside` (`--workbench-aside-width`), full-height center canvas (`#default`), and selection-driven right detail pane (`--workbench-detail-width`) with fixed `#detail-header`, `#detail-tabs`, scrollable `#detail` (resets scroll to top on `selectionKey` change), and `#detail-footer`. Below `--workbench-narrow-breakpoint` (880px), the canvas stays full width while both side panes become mutually exclusive floating overlays (at most one open at a time). It binds nothing.",
-    config: ["detailOpen", "asideOpen", "selectionKey", "asideLabel", "detailLabel"],
+    configProps: ["detailOpen", "asideOpen", "selectionKey", "asideLabel", "detailLabel"],
   }),
   defineComponentMeta({
     componentId: "SectionGroup",
@@ -761,7 +761,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "layout",
     meaning:
       "One titled group of a page's content, with one line of what it is for and the platform's spacing and hairline between groups that follow one another. It binds nothing.",
-    config: ["title", "description"],
+    configProps: ["title", "description"],
   }),
   defineComponentMeta({
     componentId: "PageHeader",
@@ -771,7 +771,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "layout",
     meaning:
       "Page header with title, back link, `#actions`, and draft controls. Pure presentational page header rendered by a panel at the top of its content: optional leading visual, explicit back link, single-line title (plain text, locale map `names`, or a projection-bound component in `#title`), configurable `density` (`bar` / `compact` / `expanded`), optional description, flexible right-side actions/controls (`#actions` or default slot), and optional Save/Discard draft controls (`draft`). It asks nothing from the platform host and adapts to its own container width.",
-    config: ["title", "description", "backLabel", "density", "draft", "labels"],
+    configProps: ["title", "description", "backLabel", "density", "draft", "labels"],
   }),
   defineComponentMeta({
     componentId: "AppMenu",
@@ -782,7 +782,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Official application navigation menu column shared by the platform shell and application frame panels. Inside an application frame panel, `<app-menu>` automatically renders the admitted entries from `usePanelContext().entryMenu`, highlights `usePanelContext().currentEntry.path`, adapts to a compact selector on narrow screens, and navigates via `usePanelContext().navigate(id)` unless a custom `@select` handler is provided. Use the `#item-trailing` slot (`{ item }`) to place trailing projections or indicators per row, `:item-trailing-text` for plain-text option suffixes in the compact mobile selector, and `:icons` for curated platform icon keys.",
     effects: "Navigates within the platform through the panel host when the reader selects a menu entry; reads no business data itself.",
-    config: ["title", "groups", "itemTrailingText", "icons", "foot", "activeId", "ariaLabel", "autoNavigate"],
+    configProps: ["title", "groups", "itemTrailingText", "icons", "foot", "activeId", "ariaLabel", "autoNavigate"],
   }),
   defineComponentMeta({
     componentId: "TypedValue",
@@ -798,7 +798,7 @@ export const components: readonly ComponentMetadata[] = [
       record: { results: ["panelRecord"], required: false },
       result: { results: ["metricOutput"], required: false },
     },
-    config: [
+    configProps: [
       "value", "field", "rowIndex", "kind", "tone", "valueMap", "unit", "numberFormat", "separator", "listStyle",
       "emptyText", "emptyKey", "truncate",
     ],
@@ -817,7 +817,7 @@ export const components: readonly ComponentMetadata[] = [
       record: { results: ["panelRecord"], required: false },
       result: { results: ["metricOutput"], required: false },
     },
-    config: [
+    configProps: [
       "template", "templateKey", "values", "rowIndex", "fieldFormats", "emptyPlaceholder", "emptyText", "emptyKey",
       "inline",
     ],
@@ -836,7 +836,7 @@ export const components: readonly ComponentMetadata[] = [
       record: { results: ["panelRecord"], required: false },
       result: { results: ["metricOutput"], required: false },
     },
-    config: [
+    configProps: [
       "tone", "toneField", "valueMap", "icon", "title", "titleKey", "text", "textKey", "field", "template",
       "templateKey", "fieldFormats", "rowIndex", "compact", "hideIcon", "hideWhenEmpty",
     ],
@@ -862,7 +862,7 @@ export const components: readonly ComponentMetadata[] = [
         objectTypes: ["platform:OntologyType"],
       },
     },
-    config: [
+    configProps: [
       "reference", "field", "caption", "captionKey", "title", "titleField", "subtitle", "subtitleField", "icon",
       "iconField", "badge", "badgeField", "badgeTone", "classNameField", "targetClassName", "rowIndex", "appearance",
       "buttonType", "buttonSize", "buttonLabel", "buttonLabelKey", "clickable", "compact", "emptyText", "emptyKey",
@@ -884,7 +884,7 @@ export const components: readonly ComponentMetadata[] = [
       rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
       objects: { results: ["panelOntologyObjects"], required: false },
     },
-    config: [
+    configProps: [
       "label", "labelKey", "value", "field", "rowIndex", "unit", "unitKey", "description", "descriptionKey", "tone",
       "numberFormat", "formats", "items", "variant", "surface", "showLabel", "truncationDisplay", "columns",
       "emptyText",
@@ -898,7 +898,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "form",
     meaning:
       "Renders a selected subset of an enclosing `ObjectForm`'s fields (`fields`, `parent`, `section`, `group`, or `rest`) inside panel-authored layouts, including field slots. Absolute field paths and `parent` can select active object sub-fields. Every slice shares form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and live assistant form filling. It reads nothing itself and binds no ontology element.",
-    config: ["fields", "parent", "section", "group", "rest", "exclude", "inlineAdvanced", "columns"],
+    configProps: ["fields", "parent", "section", "group", "rest", "exclude", "inlineAdvanced", "columns"],
   }),
   defineComponentMeta({
     componentId: "PathTree",
@@ -908,7 +908,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "content",
     meaning:
       "Arranges slash-separated paths into a collapsible folder/file tree; use `<path-tree>` for non-projection lists (`ObjectTree` for projections). Arranges a flat list of slash-separated paths into a folder-first, name-sorted, default-expanded tree; clicking a folder only collapses or expands it, while clicking a file emits its key and highlights the active row. It reads nothing and carries no business rules.",
-    config: [
+    configProps: [
       "items", "mode", "selectedKey", "label", "defaultExpandAll", "emptyText", "searchable", "search",
       "searchPlaceholder", "noMatchText", "directoryIndexFile", "selectableFolders",
     ],
@@ -921,7 +921,7 @@ export const components: readonly ComponentMetadata[] = [
     group: "content",
     meaning:
       "Displays offset-paged plain-text segments with a More button; use `<segmented-text-reader>` standalone (`ObjectTextReader` for projections). Displays offset-paged plain-text segments for a selected source with a close control and a More button when another offset exists, coordinating shared activeAnchor state so multiple placements on one page expand only one reader at a time.",
-    config: [
+    configProps: [
       "sources", "anchor", "activeAnchor", "activeSourceId", "page", "loading", "error", "moreLabel", "closeLabel",
       "emptyText", "loadingText",
     ],
@@ -944,7 +944,7 @@ export const components: readonly ComponentMetadata[] = [
       selected: { kind: "scalar", type: "string" },
       search: { kind: "scalar", type: "string" },
     },
-    config: [
+    configProps: [
       "pathField", "parentField", "selectableFolders", "defaultKey", "fallbackToFirst", "emptyText", "label",
       "searchable", "searchPlaceholder", "noMatchText", "directoryIndexFile",
     ],
@@ -970,7 +970,7 @@ export const components: readonly ComponentMetadata[] = [
       activeAnchor: { kind: "scalar", type: "string" },
       activePath: { kind: "scalar", type: "string" },
     },
-    config: ["textField", "format", "pathField", "anchor", "moreLabel", "closeLabel", "emptyText"],
+    configProps: ["textField", "format", "pathField", "anchor", "moreLabel", "closeLabel", "emptyText"],
   }),
   defineComponentMeta({
     componentId: "AnnotatedCode",
@@ -998,7 +998,7 @@ export const components: readonly ComponentMetadata[] = [
       activeSegmentId: { kind: "scalar", type: "string" },
       selectedRef: { kind: "scalar", type: "string" },
     },
-    config: ["emptyText", "refActionLabel", "language"],
+    configProps: ["emptyText", "refActionLabel", "language"],
   }),
   defineComponentMeta({
     componentId: "ConversationEntry",
@@ -1012,7 +1012,7 @@ export const components: readonly ComponentMetadata[] = [
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     // A button the host acts on: it reads nothing from the platform, and says so, so a placement may carry it as a member.
     data: {},
-    config: [
+    configProps: [
       "presentation", "labelKey", "placeholderKey", "minLines", "attachPage", "type", "icon", "disabled", "prefill",
     ],
   }),
@@ -1228,7 +1228,7 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Renders the active application entry inside a frame panel (`<current-entry member='content'>`); use only in custom frame panels. Where an application's frame panel shows the entry the reader opened: write <current-entry member=\"content\"> in the frame's template for its member whose target is {fromPlatform: \"currentEntry\", candidates: {rule: \"applicationEntry\"}}. The content drawn there is the one the platform already admitted and runs, never started again here; the frame chooses where it goes, not which panel or with what inputs. The frame's code reads the entry shown and the menu the same resolution gave through usePanelContext().currentEntry and .entryMenu, to draw its menu and mark the entry; opening another entry goes through navigate. Outside an application's frame the place says it shows nothing; a member that is not the current entry is refused in its place.",
     effects: "Reads nothing and writes nothing: the platform places the admitted content.",
-    config: ["member"],
+    configProps: ["member"],
   }),
   defineComponentMeta({
     componentId: "PanelData",
@@ -1264,6 +1264,6 @@ export const components: readonly ComponentMetadata[] = [
         ],
       },
     },
-    config: [],
+    configProps: [],
   }),
 ];

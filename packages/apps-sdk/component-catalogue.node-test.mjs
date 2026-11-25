@@ -707,12 +707,12 @@ test("resolveDeclaredConfig emits strictly declared author-facing props and reje
     { name: "host-client", type: "object", description: "", required: false },
   ];
   assert.deepEqual(
-    resolveDeclaredConfig({ componentId: "Demo", config: ["layout", "pageSize"] }, vueProps, { requireDeclaration: true })
+    resolveDeclaredConfig({ componentId: "Demo", configProps: ["layout", "pageSize"] }, vueProps, { requireDeclaration: true })
       ?.map((p) => p.name),
     ["layout", "page-size"],
   );
   assert.equal(
-    resolveDeclaredConfig({ componentId: "PanelData", config: [] }, [], { requireDeclaration: true }),
+    resolveDeclaredConfig({ componentId: "PanelData", configProps: [] }, [], { requireDeclaration: true }),
     undefined,
   );
   assert.equal(
@@ -721,14 +721,14 @@ test("resolveDeclaredConfig emits strictly declared author-facing props and reje
   );
   assert.throws(
     () => resolveDeclaredConfig({ componentId: "Undocumented" }, vueProps, { requireDeclaration: true }),
-    /must explicitly declare its author-facing `config` prop list/,
+    /must explicitly declare its author-facing `configProps` prop list/,
   );
   assert.throws(
-    () => resolveDeclaredConfig({ componentId: "Demo", config: ["missingProp"] }, vueProps, { requireDeclaration: true }),
+    () => resolveDeclaredConfig({ componentId: "Demo", configProps: ["missingProp"] }, vueProps, { requireDeclaration: true }),
     /is not declared on its Vue component/,
   );
   assert.throws(
-    () => resolveDeclaredConfig({ componentId: "Demo", config: ["pageSize", "page-size"] }, vueProps, { requireDeclaration: true }),
-    /declares duplicate `config` prop/,
+    () => resolveDeclaredConfig({ componentId: "Demo", configProps: ["pageSize", "page-size"] }, vueProps, { requireDeclaration: true }),
+    /declares duplicate `configProps` prop/,
   );
 });

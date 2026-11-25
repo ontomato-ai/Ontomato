@@ -17,7 +17,8 @@ export function generatePackageComponents({ root, catalogue, tsconfig, sources }
       throw new Error(`${catalogue}:${line}: write the component's own name; the package name '${manifest.name}' is added`);
     const found = ports.get(`${metadata.module}#${metadata.exportName}`);
     if (!found) throw new Error(`${catalogue}:${line}: no --source exports ${metadata.exportName} as module ${metadata.module}`);
-    const { config: _declaredConfig, ...restMetadata } = metadata;
+    const restMetadata = { ...metadata };
+    delete restMetadata.configProps;
     const resolvedConfig = resolveDeclaredConfig(metadata, found.props, { defaultToAll: true });
     return {
       ...restMetadata, componentId: `${manifest.name}:${metadata.componentId}`,
