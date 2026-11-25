@@ -227,11 +227,16 @@ afterEach(() => {
 });
 
 describe("Observe and Autotest panel owner reads and operations", () => {
-  it("lists and reads OpsKnowledge documents and enforces observe access", async () => {
+  it("lists and reads OpsKnowledge documents including directory index.md and enforces observe access", async () => {
+    fs.writeFileSync(path.join(mocks.knowledgeDir, "guides/index.md"), "# Guides Index\n\nOverview.", "utf8");
     const adapter = createOpsKnowledgeReadAdapter({ domainId: "domain-a", userId: "user-1" }, { token: "tok", locale: "en" });
     const files = await adapter.files();
-    expect(files.map((item) => item.primaryKey)).toEqual(["guides/logs.md", "index.md"]);
+    expect(files.map((item) => item.primaryKey)).toEqual(["guides/index.md", "guides/logs.md", "index.md"]);
     expect(files[0]!.className).toBe(OPS_KNOWLEDGE);
+
+    const guideIndex = await adapter.record("guides/index.md");
+    expect(guideIndex.label).toBe("Guides Index");
+    expect(guideIndex.fields.path).toBe("guides/index.md");
 
     const doc = await adapter.record("guides/logs.md");
     expect(doc.label).toBe("Log Guide");
@@ -483,11 +488,21 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     mocks.activeRun = { runId };
     const metaPath = path.join(runDir, "run.json");
     const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-    fs.writeFileSync(metaPath, JSON.stringify({ ...meta, status: "stopping" }));
-    for (const result of [await runAdapter.list(), await runAdapter.record(runId), await runAdapter.results(runId)]) {
-      expect(unwrapReadDirective(result).directive).toEqual({ rereadAfterMs: 5000 });
+    for (const activeStatus of ["running", "stopping"] as const) {
+      fs.writeFileSync(metaPath, JSON.stringify({ ...meta, status: activeStatus }));
+      for (const result of [
+        await runAdapter.list(),
+        await runAdapter.record(runId),
+        await runAdapter.results(runId),
+        await runAdapter.results(runId, { verdict: "abnormal" }),
+      ]) {
+        expect(unwrapReadDirective(result).directive).toEqual({ rereadAfterMs: 5000 });
+      }
     }
     fs.writeFileSync(metaPath, JSON.stringify(meta));
+    for (const settled of [await runAdapter.list(), await runAdapter.record(runId), await runAdapter.results(runId)]) {
+      expect(unwrapReadDirective(settled).directive).toBeUndefined();
+    }
     const deleteRunOp = objectWrite(DELETE_AUTOTEST_RUN);
     expect(await deleteRunOp.unavailable?.(host, runTarget)).toBeDefined();
     expect(await deleteRunOp.execute(host, runTarget, {}, "r2")).toMatchObject({ kind: "refusal", code: "RUN_BUSY" });

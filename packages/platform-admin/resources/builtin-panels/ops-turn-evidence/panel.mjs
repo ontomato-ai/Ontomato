@@ -3,10 +3,9 @@ import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel
 
 /*
  * Built-in turn evidence panel: full-height frameless 280px list-detail workspace browser with
- * inline retention and delete row actions, on-demand artifact file inspection, and diagnosis entry.
+ * Enter-to-select-or-collect searchSubmit, inline retention/delete row actions, on-demand
+ * artifact file inspection, and diagnosis entry.
  */
-
-const TURN_EVIDENCE_TYPE = "platform:TurnEvidence";
 
 await mountPanel({
   setup() {
@@ -68,19 +67,6 @@ await mountPanel({
       instance.state.setState({ selected: null, filePath: null, fileSearch: null });
     }
 
-    function onBuildDone(outcome) {
-      if (outcome?.kind !== "success") return;
-      const created = outcome.created;
-      const primaryKey = created?.primaryKey || (typeof outcome.data?.turnKey === "string" ? outcome.data.turnKey : "");
-      if (!primaryKey) return;
-      const className = created?.objectType || TURN_EVIDENCE_TYPE;
-      instance.state.setState({
-        selected: { className, primaryKey },
-        filePath: null,
-        fileSearch: null,
-      });
-    }
-
     function onDeleteDone(outcome) {
       if (outcome?.kind !== "success") return;
       instance.state.setState({ selected: null, filePath: null, fileSearch: null });
@@ -104,7 +90,6 @@ await mountPanel({
       showGaps,
       refresh,
       clearSelection,
-      onBuildDone,
       onDeleteDone,
       onTurnRowOperationDone,
     };

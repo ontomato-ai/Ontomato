@@ -30,6 +30,7 @@
         "config": {
           "defaultKey": "index.md",
           "fallbackToFirst": true,
+          "directoryIndexFile": "index.md",
           "searchable": true,
           "searchPlaceholder": "panel.searchPlaceholder",
           "label": "panel.treeTitle",
