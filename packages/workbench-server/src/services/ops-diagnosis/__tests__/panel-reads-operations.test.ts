@@ -550,9 +550,12 @@ describe("Observe and Autotest panel owner reads and operations", () => {
       await expect(executeOp.execute(host, call)).rejects.toMatchObject({ status });
     }
 
+    const businessError = { error: "Invalid DSL step", dsl: { problem: "bad", answer: { steps: [] } } };
     mocks.backendPost.mockResolvedValueOnce(backendJson({ error: "Execution failed" }));
+    mocks.backendPost.mockResolvedValueOnce(backendJson(businessError));
+    mocks.backendPost.mockResolvedValueOnce(backendJson({ success: true, data: businessError }));
     mocks.backendPost.mockRejectedValueOnce(new BackendResponseError(400, JSON.stringify(executionError), jsonHeaders));
-    for (const value of [{ error: "Execution failed" }, executionError]) {
+    for (const value of [{ error: "Execution failed" }, businessError, businessError, executionError]) {
       expect(panelReadOperationResultSchema.parse(await executeOp.execute(host, call))).toMatchObject({
         kind: "sections",
         defaultSectionId: "raw",
@@ -671,6 +674,11 @@ describe("Observe and Autotest panel owner reads and operations", () => {
     expect(mod).not.toContain("localStorage");
     expect(html).not.toContain("<el-");
     expect(html).not.toContain("--el-");
+    expect(html).toContain('operation-slot="executeDsl"');
+    expect(desc.manifest.members.dslForm.config).toMatchObject({
+      actions: "none",
+      persistDraft: true,
+    });
 
     const locales = ["en", "zh-CN", "zh-TW", "ja", "de", "fr", "it", "ar"];
     const messages = desc.content.messages as Record<string, Record<string, string>>;

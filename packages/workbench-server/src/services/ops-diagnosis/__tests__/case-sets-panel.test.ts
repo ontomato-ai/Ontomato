@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as panelCheck from "@ontomato/contracts/panel-check";
 import {
   AUTOTEST_CASE_SET,
   CREATE_AUTOTEST_CASE_SET,
@@ -430,5 +431,50 @@ describe("AutotestCaseSet panel reads and operations", () => {
       expect(deleted.affected?.removed).toEqual([{ objectType: AUTOTEST_CASE_SET, primaryKey: id }]);
     }
     expect(getCaseSet(id, "domain-a")).toBeNull();
+  });
+
+  it("validates ops-autotest-cases builtin panel source with TestcaseWorkbench, local draft persistence, and 8-locale parity", async () => {
+    const repoRoot = path.resolve(__dirname, "../../../../../..");
+    const { checkBuiltinPanelSource } = await import(
+      path.resolve(repoRoot, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs")
+    );
+    const dir = path.resolve(repoRoot, "packages/platform-admin/resources/builtin-panels/ops-autotest-cases");
+    await checkBuiltinPanelSource(dir, { ...panelCheck, draftReadOperationIds: [] });
+
+    const mod = fs.readFileSync(path.resolve(dir, "panel.mjs"), "utf8");
+    const html = fs.readFileSync(path.resolve(dir, "panel.html"), "utf8");
+    const desc = JSON.parse(fs.readFileSync(path.resolve(dir, "panel.json"), "utf8"));
+
+    expect(mod).not.toContain("localStorage");
+    expect(html).not.toContain("<el-");
+    expect(html).not.toContain("--el-");
+    expect(html).not.toContain("segmented-control");
+    expect(html).not.toContain("ops-cases-footer");
+
+    expect(desc.manifest.state).not.toHaveProperty("editMode");
+    expect(desc.manifest.members.caseSets.config).toMatchObject({
+      showDraftIndicator: true,
+      fallbackToFirst: true,
+    });
+    expect(desc.manifest.members.caseSetForm).toMatchObject({
+      component: "TestcaseWorkbench",
+      type: AUTOTEST_CASE_SET,
+      target: "selected",
+      data: { form: "form" },
+      operation: `${AUTOTEST_CASE_SET}.save`,
+      config: {
+        persistDraft: true,
+        unsavedSwitchMode: "save-discard-cancel",
+        showFooterBar: true,
+      },
+    });
+
+    const locales = ["en", "zh-CN", "zh-TW", "ja", "de", "fr", "it", "ar"];
+    const messages = desc.content.messages as Record<string, Record<string, string>>;
+    expect(Object.keys(messages).sort()).toEqual([...locales].sort());
+    const enKeys = Object.keys(messages.en!).sort();
+    for (const locale of locales) {
+      expect(Object.keys(messages[locale]!).sort()).toEqual(enKeys);
+    }
   });
 });
