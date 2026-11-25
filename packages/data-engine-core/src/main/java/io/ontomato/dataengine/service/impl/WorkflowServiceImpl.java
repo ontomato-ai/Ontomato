@@ -97,11 +97,10 @@ public class WorkflowServiceImpl implements WorkflowService {
     private Workflow publish(String id, String domainId, String principalId) {
         Workflow workflow = requireForUpdate(id, domainId);
         validate(workflow, domainId, true);
+        if (Workflow.STATUS_ACTIVE.equals(workflow.getStatus()))
+            grants.revokeActivatedBy(domainId, workflow.getId(), workflow.getVersion());
         int version = workflows.publishVersion(workflow);
         for (WorkflowStep step : workflow.getSteps()) {
-            // Case-scoped steps are authorized per Case at execution time; a role-level grant would
-            // widen a temporary process to the whole role and outlive the Case.
-            if (Boolean.TRUE.equals(step.getCaseScoped())) continue;
             grants.grant(domainId, workflow.getId(), step.getRoleCode(), CapabilityGrantLookup.ACTION,
                     step.getActionId(), version, step.getStepNo(), GrantScope.freeze(step.getScope(), workflow.getRunContract()));
         }
@@ -195,7 +194,7 @@ public class WorkflowServiceImpl implements WorkflowService {
                 String where = "step " + step.getStepNo();
                 if (step.getStepNo() == null || step.getStepNo() < 1 || !numbers.add(step.getStepNo()))
                     problems.add(where + " requires a unique positive stepNo");
-                if (step.getScope() == null && !Boolean.TRUE.equals(step.getCaseScoped()))
+                if (step.getScope() == null)
                     problems.add(where + " must declare its scope");
                 if (step.getRoleCode() == null || step.getRoleCode().isBlank()) {
                     problems.add(where + " names no role");
@@ -249,8 +248,6 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     private void validateTarget(WorkflowStep step, Action action, Workflow workflow, List<String> problems) {
-        // A temporary process has no fact class to match; its Case owns the run.
-        if (temporary(workflow) || Boolean.TRUE.equals(step.getCaseScoped())) return;
         if (step.getScope() == null) return;
         var target = action.getTarget();
         var contract = workflow.getRunContract();

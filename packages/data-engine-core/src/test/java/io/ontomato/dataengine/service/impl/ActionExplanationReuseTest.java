@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -56,6 +57,7 @@ class ActionExplanationReuseTest {
       }
     });
     ReflectionTestUtils.setField(service, "store", store);
+    ReflectionTestUtils.setField(service, "authorization", mock(ActionAuthorization.class));
     ReflectionTestUtils.setField(service, "actionDao", actions);
     ReflectionTestUtils.setField(service, "generationService", generation);
     ReflectionTestUtils.setField(service, "langService", mock(LangService.class));

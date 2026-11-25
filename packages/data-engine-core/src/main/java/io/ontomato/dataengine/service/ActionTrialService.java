@@ -23,22 +23,25 @@ import org.springframework.web.server.ResponseStatusException;
 @Slf4j
 @Service
 public class ActionTrialService {
+  @org.springframework.beans.factory.annotation.Autowired
+  private OntologyQueryService queries;
+
   private final ActionTrialStore trials;
   private final LangService messages;
   private final ActionService actions;
-  private final IdentityService identity;
+  private final io.ontomato.dataengine.service.authorization.ActionAuthorization authorization;
   private final DataSandboxService sandboxes;
   private final ActionPreconditionService preconditions;
   private final IdentitySnapshotLookup identitySnapshots;
   private final ABCProgramService programs;
 
   public ActionTrialService(ActionTrialStore trials, LangService messages, ActionService actions,
-      IdentityService identity, DataSandboxService sandboxes, ActionPreconditionService preconditions,
+      io.ontomato.dataengine.service.authorization.ActionAuthorization authorization, DataSandboxService sandboxes, ActionPreconditionService preconditions,
       IdentitySnapshotLookup identitySnapshots, ABCProgramService programs) {
     this.trials = trials;
     this.messages = messages;
     this.actions = actions;
-    this.identity = identity;
+    this.authorization = authorization;
     this.sandboxes = sandboxes;
     this.preconditions = preconditions;
     this.identitySnapshots = identitySnapshots;
@@ -61,12 +64,8 @@ public class ActionTrialService {
       throw invalid(error.getMessage());
     }
 
-    try {
-      identity.requireActionExecutionAccess(user.getId(), domain);
-    } catch (ResponseStatusException error) {
-      if (error.getStatusCode().value() != 403) throw error;
-      throw forbidden(detail(error));
-    }
+    var subject = authorization.subject(user);
+    authorization.requireEdit(subject, action);
 
     JSONObject sample;
     try {
@@ -115,7 +114,9 @@ public class ActionTrialService {
             messages.get(lang, "Action.trialSandboxUnavailable") + ": " + detail(error));
       }
       var sandboxTarget = ExecutionTarget.actionTrial(sandboxId, sampleClasses, expiresAt);
-      var result = execute(trialId, action, bound, params, lang, user, permission, timeoutMinutes, sandboxTarget);
+      var admission = authorization.requireExecution(subject, action,
+          new io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone(), sandboxTarget);
+      var result = execute(trialId, action, bound, params, lang, user, permission, timeoutMinutes, sandboxTarget, admission);
       var trial = trials.record(trialId, domain, action.getId(), digest, result, user.getId());
       String status = trials.statusCode(trial);
       return JSONObject.of("trialId", trial.id(), "actionId", actionId, "digest", digest,
@@ -134,20 +135,26 @@ public class ActionTrialService {
   }
 
   private PythonExecuteResult execute(String trialId, Action action, Function function, JSONObject params,
-      String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception {
+      String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target,
+      CapabilityGrantLookup.Admission admission) throws Exception {
     long started = System.currentTimeMillis();
     try {
       if (action.getTarget() != null) {
-        action.getTarget().key(params);
+        String key = action.getTarget().key(params);
         String targetClass = DBSchemaUtil.normalizeClassName(action.getTarget().className(), trials.classes(user.getDomainId()));
         target.requireClasses(List.of(targetClass));
+        if (!admission.unrestricted() && !queries.actionTargetExists(action.getTarget(), key, admission,
+            new QueryAccessService.Access(user, permission, null, null, null).withTarget(target)))
+          return failed(messages.get(lang, "Action.targetOutsideScope"), started);
       }
       var verdict = preconditions.evaluate(action, params, user, permission, target);
       if (!verdict.satisfied())
         return failed(messages.get(lang, "Action.preconditionFailed") + ": " + String.join("; ", verdict.violations()), started);
       var snapshot = identitySnapshots.snapshot(user, user.getDomainId());
+      var grant = ActionRuntimeGrant.capture(action, user, params,
+          new io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone());
       Object[] execution = programs.execute(trialId, function, user.getId(), permission, target.sandboxId(),
-          lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, snapshot, target));
+          lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, snapshot, target, grant));
       PythonExecuteResult result = (PythonExecuteResult) execution[1];
       if (ActionTrialStore.passed(result)) {
         if (execution[0] != null)

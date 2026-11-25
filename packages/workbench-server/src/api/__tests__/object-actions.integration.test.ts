@@ -128,7 +128,7 @@ beforeAll(async () => {
   });
   app.post("/action/queryList", (req, res) => {
     expect(req.header("tk")).toBe("alice");
-    expect(req.body).toEqual({ status: "PUBLISHED" });
+    expect(req.body).toEqual({ purpose: "execute", status: "PUBLISHED" });
     res.json({ success: true, data: [stored()] });
   });
   mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
@@ -142,7 +142,7 @@ beforeAll(async () => {
   });
   app.post("/action/queryById", (req, res) => {
     expect(req.header("tk")).toBe("alice");
-    expect(req.body).toEqual({ id: actionId });
+    expect(req.body).toEqual({ id: actionId, purpose: "execute" });
     res.json({ success: true, data: stored() });
   });
   app.post("/action/form", (req, res) => {

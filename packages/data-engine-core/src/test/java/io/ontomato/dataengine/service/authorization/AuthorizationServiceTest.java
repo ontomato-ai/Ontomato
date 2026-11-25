@@ -77,7 +77,39 @@ class AuthorizationServiceTest {
 
         when(workflow.stepAdmissions("user", "domain", "review", 2)).thenReturn(Map.of());
         assertFalse(authorization.decideAction(ctx,
-                new Action(action, new WorkflowStep("review", 2, 1), ExecutionTarget.LIVE, published)).decision().allowed());
+                new Action(action, new WorkflowStep("review", 2, 1, "run", null, null), ExecutionTarget.LIVE, published)).decision().allowed());
+    }
+
+    @Test
+    void scopeAlternativesKeepEachGrantPairedWithTheRootsOfItsMatchingRole() {
+        var roles = Set.of("direct", "assigned", "without-root");
+        when(subjects.resolveRoles("domain", "user")).thenReturn(new RoleResolution(
+                roles, Set.of("direct"), List.of(), Set.of("membership"),
+                Map.of("assigned", Set.of("position"), "direct", Set.of("organization-grant")), false));
+        when(store.policies("domain", roles)).thenReturn(roles.stream()
+                .map(role -> new PolicyRef(role, "policy", PolicyKind.OBJECT)).toList());
+        when(subjects.organizationCodes("domain", Set.of("membership", "organization-grant"), GrantScope.Kind.self_descendants))
+                .thenReturn(List.of("under-direct"));
+        when(subjects.organizationCodes("domain", Set.of("position"), GrantScope.Kind.self_descendants))
+                .thenReturn(List.of("under-position"));
+        when(store.objectGrants(action, Verb.EXECUTE, Set.of("policy"))).thenReturn(List.of(
+                new ObjectGrant("policy", action, Verb.EXECUTE,
+                        new GrantScope(GrantScope.Kind.self_descendants, "Ticket", "organization")),
+                new ObjectGrant("policy", action, Verb.EXECUTE,
+                        new GrantScope(GrantScope.Kind.assigned_to_self, "Other", "assignee"))));
+
+        var ctx = authorization.resolveSubject(new VerifiedIdentity("domain", "user", CredentialLimit.UNRESTRICTED));
+        var admission = authorization.decideAction(ctx,
+                new Action(action, new Standalone(), ExecutionTarget.LIVE, published)).admission();
+        assertEquals(Set.of(
+                new CapabilityGrantLookup.Match("Ticket", "organization", List.of("under-direct")),
+                new CapabilityGrantLookup.Match("Ticket", "organization", List.of("under-position")),
+                new CapabilityGrantLookup.Match("Other", "assignee", List.of("user"))), Set.copyOf(admission.matches()));
+        var condition = admission.restrict("Ticket", com.alibaba.fastjson2.JSONObject.of("field", "id", "operator", "=", "value", "T1"));
+        assertTrue(condition.toJSONString().contains("under-direct"));
+        assertTrue(condition.toJSONString().contains("under-position"));
+        assertFalse(condition.toJSONString().contains("assignee"));
+        verify(subjects, never()).organizationCodes(eq("domain"), eq(Set.of()), any());
     }
 
     @Test

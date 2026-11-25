@@ -264,6 +264,7 @@ public final class ActionForm {
     properties.put("id", PanelFormFields.schema("string"));
     properties.put("name", JSONObject.of("type", "string", "minLength", 1));
     properties.put("description", PanelFormFields.schema("string"));
+    properties.put("coauthorIds", PanelFormFields.arraySchema(PanelFormFields.schema("string")));
     properties.put("target", nullableObject());
     properties.put("submissionCriteria", nullableObject());
     properties.put("approvalMode", PanelFormFields.schema("string"));

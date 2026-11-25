@@ -54,6 +54,10 @@ import io.ontomato.dataengine.service.agent.ActionCreationService;
 import io.ontomato.dataengine.service.impl.ActionDraftService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.WorkflowStep;
+import io.ontomato.dataengine.service.ExecutionTarget;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SystemUtils;
 
@@ -80,6 +84,15 @@ public class ActionController {
 	
 	@Autowired
 	private ActionService actionService;
+
+    @Autowired private ActionAuthorization authorization;
+
+    @ExceptionHandler(ActionAuthorization.Denied.class)
+    public ResponseEntity<JSONObject> forbidden(ActionAuthorization.Denied denied) {
+        var body = new JSONObject();
+        denied.writeTo(body);
+        return ResponseEntity.status(403).body(body);
+    }
 
 	@Autowired
 	private CaseExecutionGuard caseExecutionGuard;
@@ -119,6 +132,7 @@ public class ActionController {
 			ret.put("success", true);
 			ret.put("data", action);
 		} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -132,10 +146,12 @@ public class ActionController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
+			authorization.requireCreate(authorization.subject(user));
 			List<String> examples = actionService.exampleRequests(lang, user.getDomainId());
 			ret.put("success", true);
 			ret.put("data", JSONObject.of("examples", examples));
 		} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -184,6 +200,10 @@ public class ActionController {
 				throw new OwnerFieldRefusal("ACTION_FUNCTION_INVALID", "/function", "invalid_object", e.getMessage());
 			}
             Action action = param.to(Action.class);
+            if (param.get("coauthorIds") != null && (!(param.get("coauthorIds") instanceof List<?> authors)
+                    || authors.stream().anyMatch(author -> !(author instanceof String id) || id.isBlank())))
+                throw new OwnerFieldRefusal("ACTION_COAUTHORS_INVALID", "/coauthorIds", "invalid_option",
+                        "Expected an array of nonempty user IDs.");
             action.setFunction(acceptedFunction);
             action.setStatus(requestedStatus);
 			action.setDomainId(user.getDomainId());
@@ -193,6 +213,7 @@ public class ActionController {
 			ret.put("data", withDisplay(saved, subjectNames(user.getDomainId(), List.of(saved)), lang));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -205,6 +226,7 @@ public class ActionController {
 	@GetMapping("/action/creationAgent")
     @ResponseBody
     public JSONObject creationAgent() {
+        authorization.requireCreate(authorization.subject(SystemUtils.getCurUser()));
 		return JSONObject.of("success", true, "data", JSONObject.of("agentId", ActionCreationService.AGENT));
 	}
 
@@ -226,6 +248,7 @@ public class ActionController {
 			ret.put("success", true);
 			ret.put("data", draft);
 		} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -245,6 +268,7 @@ public class ActionController {
 			ret.put("success", true);
 			ret.put("data", action);
 		} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -258,9 +282,10 @@ public class ActionController {
 		JSONObject ret = new JSONObject();
 		try {
 			String id = param.getString("id");
-			actionService.delete(id, lang);
+			actionService.delete(id, lang, SystemUtils.getCurUser());
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -274,13 +299,16 @@ public class ActionController {
 	@PostMapping("/action/queryById")
     @ResponseBody
     public JSONObject queryById(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, defaultValue = "en") String lang,
-		@RequestBody JSONObject param) {
+		@RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest request) {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
 			String id = param.getString("id");
 			if ("delete-availability".equals(param.getString("purpose"))) {
-				var reason = actionService.systemDeletionRefusal(id, user.getDomainId(), lang);
+				Action action = actionService.queryById(id);
+                if (action != null && user.getDomainId().equals(action.getDomainId()))
+                    authorization.requireEdit(authorization.subject(user), action);
+                var reason = actionService.systemDeletionRefusal(id, user.getDomainId(), lang);
 				return JSONObject.of("success", true, "data", JSONObject.of("reason", reason));
 			}
 			Action action = actionService.queryById(id);
@@ -288,7 +316,19 @@ public class ActionController {
 			if (action == null || !user.getDomainId().equals(action.getDomainId())) {
 				ret.put("data", null);
 			} else {
-				ObjectNode display = withDisplay(action, subjectNames(user.getDomainId(), List.of(action)), lang);
+				if ("execute".equals(param.getString("purpose"))) {
+                    var target = buildTests.resolve(request);
+                    if (!target.testing() && !Action.STATUS_PUBLISHED.equals(action.getStatus()))
+                        throw new OwnerRefusal("ACTION_NOT_EXECUTABLE", langService.get(lang, "Action.notPublished"));
+                    var subject = authorization.subject(user);
+                    authorization.requireExecution(subject, action,
+                            new io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone(), target);
+                    return JSONObject.of("success", true, "data", executionDefinition(action));
+                }
+                var subject = authorization.subject(user);
+                if ("publication-review".equals(param.getString("purpose"))) authorization.requireEdit(subject, action);
+                else authorization.requireDefinition(subject, action);
+                ObjectNode display = withDisplay(action, subjectNames(user.getDomainId(), List.of(action)), lang);
 				if ("publication-review".equals(param.getString("purpose"))) {
 					display.set("sandboxTrialLabel", display.get("trialStatusLabel"));
 					if (action.getCodeSegments() == null || action.getCodeSegments().isEmpty())
@@ -297,6 +337,7 @@ public class ActionController {
 				ret.put("data", display);
 			}
 		} catch (OwnerRefusal e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -316,20 +357,37 @@ public class ActionController {
 			User user = SystemUtils.getCurUser();
 			String status = param.getString("status");
 			String className = param.getString("className");
-			ret.put("success", true);
-			if (param.getBooleanValue("countOnly")) {
-				ret.put("data", JSONObject.of("total", actionService.count(status, null, className, user.getDomainId())));
-			} else {
-				List<Action> actions = actionService.queryList(status, null, className, user.getDomainId());
-				ret.put("data", withDisplay(actions, user.getDomainId(), lang));
-			}
+            var subject = authorization.subject(user);
+            boolean execution = "execute".equals(param.getString("purpose"));
+            java.util.function.Predicate<Action> visible = execution
+                    ? action -> authorization.standalone(subject, action, ExecutionTarget.LIVE).admitted()
+                    : action -> authorization.allowsDefinition(subject, action);
+            String selectedStatus = execution ? Action.STATUS_PUBLISHED : status;
+            ret.put("success", true);
+            if (param.getBooleanValue("countOnly")) {
+                ret.put("data", JSONObject.of("total", actionService.count(selectedStatus, null, className, user.getDomainId(), visible)));
+            } else {
+                var actions = actionService.queryList(selectedStatus, null, className, user.getDomainId()).stream().filter(visible).toList();
+                if (execution) ret.put("data", actions.stream().map(ActionController::executionDefinition).toList());
+                else ret.put("data", withDisplay(actions, user.getDomainId(), lang));
+            }
 		} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
 		}
 		return ret;
 	}
+
+    static JSONObject executionDefinition(Action action) {
+        var function = action.getFunction();
+        return JSONObject.of("id", action.getId(), "name", action.getName(), "target", action.getTarget(),
+                "status", action.getStatus(), "description", action.getDescription(),
+                "codeHash", action.getCodeHash(), "approvalMode", action.getApprovalMode(),
+                "definition", JSONObject.of("affects", action.getDefinition().get("affects")),
+                "function", function == null ? null : JSONObject.of("parameters", function.getParameters()));
+    }
 
 	@org.springframework.beans.factory.annotation.Autowired
 	private io.ontomato.dataengine.service.SandboxPermissionService sandboxPermissions;
@@ -348,9 +406,10 @@ public class ActionController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			ret.put("data", actionService.definitionForm(param, lang, user.getDomainId()));
+			ret.put("data", actionService.definitionForm(param, lang, user));
 			ret.put("success", true);
 		} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -365,7 +424,9 @@ public class ActionController {
 		try {
 			User user = SystemUtils.getCurUser();
 			List<ActionService.StatusResult> results = actionService.setStatus(user.getDomainId(), user.getId(),
-					statusIds(param), param.getString("status"), lang);
+                    statusIds(param), param.getString("status"), lang);
+            if (results.stream().allMatch(result -> result.refusal() instanceof ActionAuthorization.Denied))
+                throw (ActionAuthorization.Denied) results.getFirst().refusal();
 			JSONArray items = new JSONArray();
 			for (ActionService.StatusResult result : results) {
 				if (result.data() != null) {
@@ -380,6 +441,7 @@ public class ActionController {
 			ret.put("data", JSONObject.of("items", items));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -420,6 +482,7 @@ public class ActionController {
 			ret.put("success", true);
 			ret.put("data", actionService.reExplainActions(ids, missingOnly == null || missingOnly, lang));
 		} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -437,6 +500,7 @@ public class ActionController {
 					.contentType(MediaType.APPLICATION_OCTET_STREAM)
 					.body(data);
 		} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			log.error(e.getMessage(), e);
 			return ResponseEntity.internalServerError().build();
 		}
@@ -450,6 +514,7 @@ public class ActionController {
 		try {
 			ret = actionService.importActions(file.getBytes(), lang);
 		} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -473,19 +538,24 @@ public class ActionController {
 				actions = actionService.find(question.trim(), className, user.getDomainId());
 			}
 			JSONArray actionDefs = new JSONArray();
-			for (Action action : actions) {
-				JSONObject actionDef = new JSONObject();
+            var subject = authorization.subject(user);
+            for (Action action : actions) {
+                if (!Action.STATUS_PUBLISHED.equals(action.getStatus()) || action.getFunction() == null
+                        || !authorization.standalone(subject, action, ExecutionTarget.LIVE).admitted()) continue;
+                JSONObject actionDef = new JSONObject();
 				actionDef.put("id", action.getId());
 				actionDef.put("name", action.getName());
-				actionDef.put("logic", action.getFunction().getLogic());
+                actionDef.put("description", action.getDescription());
+                actionDef.put("status", action.getStatus());
 				actionDef.put("parameters", action.getFunction().getParameters());
 				actionDef.put("returnDef", action.getFunction().getReturnDef());
-				actionDef.put("definition", action.getDefinition());
+				actionDef.put("definition", JSONObject.of("affects", action.getDefinition().get("affects")));
 				actionDefs.add(actionDef);
 			}
 			ret.put("success", true);
 			ret.put("data", actionDefs);
 		} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -497,19 +567,24 @@ public class ActionController {
 	 * An Action's form: without {@code values} its fields and their initial text from the bound {@code parameters};
 	 * with them the field errors, or the typed parameters that {@code /action/execute} then takes.
 	 */
-	@BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+	@BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
 	@PostMapping("/action/form")
     @ResponseBody
-    public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+    public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param,
+            jakarta.servlet.http.HttpServletRequest request) {
 		JSONObject ret = new JSONObject();
 		try {
 			JSONObject bound = param.getJSONObject("parameters");
 			JSONArray readOnly = param.getJSONArray("readOnlyParameters");
-			ret.put("data", actionService.form(param.getString("id"), bound == null ? new JSONObject() : bound,
+            User user = SystemUtils.getCurUser();
+            var permission = identityService.getCurrentUserDataPermission();
+            var target = agentExecutionScope.target(request, user, permission, buildTests.resolve(request));
+            ret.put("data", actionService.form(param.getString("id"), bound == null ? new JSONObject() : bound,
 					param.getJSONObject("values"), readOnly == null ? List.of() : readOnly.toJavaList(String.class),
-					lang, SystemUtils.getCurUser()));
+					lang, user, permission, target));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -533,6 +608,7 @@ public class ActionController {
 					identityService.getCurrentUserDataPermission(), executionTimeout(user)));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -567,7 +643,9 @@ public class ActionController {
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();
-			caseExecutionGuard.verify(executionRequest, id, user);
+			var path = caseExecutionGuard.resolve(executionRequest, id, paramJson, user);
+            if (path instanceof WorkflowStep && files != null && !files.isEmpty())
+                throw new ActionAuthorization.Denied("WORKFLOW_STEP_FORBIDDEN", "Workflow steps do not accept uploaded files.");
 			JSONObject p = JSONObject.parseObject(paramJson);
 			if (files != null && !files.isEmpty()) {
 				for (String key : p.keySet()) {
@@ -587,13 +665,14 @@ public class ActionController {
 				}
 			}
 			int timeoutMinutes = executionTimeout(user);
-			PythonExecuteResult result = actionService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)));
+			PythonExecuteResult result = actionService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes, agentExecutionScope.target(executionRequest,user,curUserDataPermission,buildTests.resolve(executionRequest)), path);
 			if (result.getError() != null && !"".equals(result.getError().trim())) {
 				throw new Exception(result.getError());
 			}
 			ret.put("success", true);
 			ret.put("data", result);
 		} catch (OwnerRefusal e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -605,11 +684,11 @@ public class ActionController {
             }
             io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		} finally {
-			caseExecutionGuard.clear();
 			for (Path tempFile : tempFiles) {
 				try {
 					Files.deleteIfExists(tempFile);
 				} catch (Exception e) {
+            if (e instanceof ActionAuthorization.Denied denied) throw denied;
 					log.error(e.getMessage(), e);
 				}
 			}
