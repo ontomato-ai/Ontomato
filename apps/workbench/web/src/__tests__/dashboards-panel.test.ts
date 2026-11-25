@@ -640,17 +640,30 @@ describe("builtin-product-dashboards panel", () => {
       expect(element.textContent).toContain("4,200");
     }, { timeout: 4000 });
 
-    // Empty group "Pipeline" is rendered with custom group-empty copy.
+    // Empty group "Pipeline" is rendered with the restored group-empty guidance and highlight copy.
     const groups = [...element.querySelectorAll<HTMLElement>(".sdk-grouped-grid-group")];
     expect(groups.map((g) => g.getAttribute("data-group-id"))).toEqual(["g1", "g2"]);
-    expect(groups[1]!.textContent).toContain("No cards in this group yet");
+    expect(groups[1]!.textContent).toContain("No charts in this group yet");
+    expect(groups[1]!.textContent).toContain("Add to dashboard");
+
+    // D-05: topbar has no extra Add group or Refresh all toolbar, and createBoard uses the default button style.
+    expect(element.querySelector('[data-action="add-group"]')).toBeNull();
+    expect(element.querySelector('[data-action="refresh-all"]')).toBeNull();
+    const createBtn = element.querySelector<HTMLButtonElement>('[data-member="createBoard"] button')!;
+    expect(createBtn).not.toBeNull();
+    expect(createBtn.classList.contains("el-button--primary")).toBe(false);
+    expect(createBtn.classList.contains("is-plain")).toBe(false);
+    expect(createBtn.classList.contains("el-button--small")).toBe(false);
+
+    // D-09: groups are non-collapsible and use a single overflow dropdown trigger instead of 3 exposed icon buttons.
+    expect(element.querySelector(".sdk-grouped-grid-collapse-btn")).toBeNull();
+    expect(groups[0]!.querySelector('[data-action="group-menu"]')).not.toBeNull();
+    expect(groups[0]!.querySelector('[data-action="rename-group"]')).toBeNull();
 
     // No saveLayout fired on initial load.
     expect(dispatched.filter((item) => item.operationId.endsWith("saveLayout"))).toHaveLength(0);
 
     // Clicking createBoard opens its input dialog and selects the newly created dashboard after submit.
-    const createBtn = element.querySelector<HTMLButtonElement>('[data-member="createBoard"] button')!;
-    expect(createBtn).not.toBeNull();
     createBtn.click();
     await flush();
 
@@ -687,16 +700,19 @@ describe("builtin-product-dashboards panel", () => {
     // Deep-link restore MUST NOT invoke saveLayout.
     expect(dispatched.filter((item) => item.operationId.endsWith("saveLayout"))).toHaveLength(0);
 
-    // User drags group g2 before g1 -> immediately invokes dashboards.saveLayout with mapped card IDs.
+    // User drags group g2 before g1 -> debounced 400ms before invoking dashboards.saveLayout silently.
     const groups = [...element.querySelectorAll<HTMLElement>(".sdk-grouped-grid-group")];
     const handle = groups[1]!.querySelector<HTMLElement>('[data-testid="grouped-grid-group-handle"]')!;
     handle.dispatchEvent(new Event("dragstart", { bubbles: true }));
     groups[0]!.dispatchEvent(new Event("dragover", { bubbles: true, cancelable: true }));
     groups[0]!.dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
 
+    // Immediately after drop, debounce timer has not fired yet.
+    expect(dispatched.filter((item) => item.operationId.endsWith("boardGrid.saveLayout"))).toHaveLength(0);
+
     await vi.waitFor(() => {
       expect(dispatched.some((item) => item.operationId.endsWith("boardGrid.saveLayout"))).toBe(true);
-    });
+    }, { timeout: 1500 });
 
     const saveCall = dispatched.find((item) => item.operationId.endsWith("boardGrid.saveLayout"))!.call;
     expect(saveCall.target).toEqual({ kind: "object", objectType: DASHBOARD, primaryKey: "d1" });
@@ -713,39 +729,110 @@ describe("builtin-product-dashboards panel", () => {
     });
   });
 
-  it("opens Parameters (ObjectForm) and Metric Source (ObjectSummary) dialogs and refreshes a single card without reloading the board", async () => {
-    const { element, reads } = await openDashboardsPanel();
+  it("opens group overflow menu with Add group above and dispatches createGroup with insertIndex", async () => {
+    const { element, dispatched } = await openDashboardsPanel();
+
+    await vi.waitFor(() => {
+      expect(element.querySelectorAll(".sdk-grouped-grid-group").length).toBe(2);
+    });
+
+    const groups = [...element.querySelectorAll<HTMLElement>(".sdk-grouped-grid-group")];
+    groups[1]!.querySelector<HTMLButtonElement>('[data-action="group-menu"]')!.click();
+    await flush();
+
+    const addAboveItems = [...document.querySelectorAll<HTMLElement>('[data-action="add-group-above"]')];
+    expect(addAboveItems.length).toBeGreaterThanOrEqual(2);
+    addAboveItems[1]!.click();
+    await flush();
+
+    const input = document.querySelector<HTMLInputElement>("#db-group-title-input")!;
+    expect(input).not.toBeNull();
+    input.value = "Margins";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+
+    const confirmBtn = document.querySelector<HTMLButtonElement>(".el-dialog__footer .el-button--primary")!;
+    confirmBtn.click();
+
+    await vi.waitFor(() => {
+      expect(dispatched.some((item) => item.operationId.endsWith("boardGrid.createGroup"))).toBe(true);
+    });
+    expect(dispatched.find((item) => item.operationId.endsWith("boardGrid.createGroup"))!.call.input).toEqual({
+      title: "Margins",
+      insertIndex: 1,
+    });
+  });
+
+  it("opens Parameters from chart card funnel and Metric Source from metric card overflow menu with card-named dialog titles and Close footer", async () => {
+    const { element } = await openDashboardsPanel();
 
     await vi.waitFor(() => {
       expect(element.querySelector('[data-primary-key="d1/c1"]')).not.toBeNull();
+      expect(element.querySelector('[data-primary-key="d1/m1"]')).not.toBeNull();
       expect(element.querySelector(".mock-echart")).not.toBeNull();
     });
 
     const chartCardEl = element.querySelector<HTMLElement>('[data-primary-key="d1/c1"]')!;
+    const metricCardEl = element.querySelector<HTMLElement>('[data-primary-key="d1/m1"]')!;
 
-    // Single-card refresh only re-fetches chartCard data, NOT boardGrid or metricCard.
-    const readsBefore = reads.length;
-    chartCardEl.querySelector<HTMLButtonElement>('[data-action="refresh-card"]')!.click();
-    await vi.waitFor(() => {
-      const after = reads.slice(readsBefore);
-      expect(after.some((req) => req.memberPath.at(-1)?.member === "chartCard" && "dataName" in req && req.dataName === "result")).toBe(true);
-    });
-    const refreshedMembers = new Set(reads.slice(readsBefore).map((req) => req.memberPath.at(-1)?.member));
-    expect(refreshedMembers.has("chartCard")).toBe(true);
-    expect(refreshedMembers.has("boardGrid")).toBe(false);
-    expect(refreshedMembers.has("metricCard")).toBe(false);
+    // D-13: chart card header only exposes the Filter parameters icon (no single-card refresh or metric-source icon);
+    // metric card header renders no inline icon actions.
+    expect(chartCardEl.querySelector('[data-action="refresh-card"]')).toBeNull();
+    expect(chartCardEl.querySelector('[data-action="card-metric-source"]')).toBeNull();
+    expect(chartCardEl.querySelector('[data-action="card-parameters"]')).not.toBeNull();
+    expect(metricCardEl.querySelector(".db-card-actions")).toBeNull();
 
-    // Clicking Parameters opens ObjectForm for the selected card.
+    // Clicking Parameters on the chart card opens ObjectForm with the card name in the dialog title.
     chartCardEl.querySelector<HTMLButtonElement>('[data-action="card-parameters"]')!.click();
     await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("Revenue by Region · Edit parameters");
       expect(document.body.textContent).toContain("Fiscal year");
     });
 
-    // Clicking Metric Source opens ObjectSummary with MetricView reference.
-    chartCardEl.querySelector<HTMLButtonElement>('[data-action="card-metric-source"]')!.click();
+    // Opening Metric Source from the metric card's overflow menu shows the card name in the title and a Close button.
+    const metricMoreBtn = metricCardEl.querySelector<HTMLButtonElement>(".sdk-object-list-action-more-btn")!;
+    expect(metricMoreBtn).not.toBeNull();
+    metricMoreBtn.click();
+    await flush();
+
+    const sourceMenuItem = document.querySelector<HTMLElement>('[data-local-action="metricSource"]')!;
+    expect(sourceMenuItem).not.toBeNull();
+    sourceMenuItem.click();
     await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("Total Revenue · Metric source");
       expect(document.body.textContent).toContain("Revenue Metric");
       expect(document.body.textContent).toContain("Published");
+    });
+
+    const closeBtn = document.querySelector<HTMLButtonElement>('[data-action="close-metric-source"]')!;
+    expect(closeBtn).not.toBeNull();
+    closeBtn.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-action="close-metric-source"]')).toBeNull();
+    });
+  });
+
+  it("renders centered icon empty state for a dashboard with no groups and supports creating the first group with 50-char limit", async () => {
+    const state = initialBoardState();
+    state.groupsByBoard.d2 = [];
+    const { element } = await openDashboardsPanel({
+      initialPath: "/dashboards?dashboardId=d2",
+      state,
+    });
+
+    await vi.waitFor(() => {
+      const empty = element.querySelector<HTMLElement>('[data-testid="dashboard-groups-empty"]');
+      expect(empty).not.toBeNull();
+      expect(empty!.querySelector(".db-empty-icon")?.textContent).toContain("📊");
+      const btn = empty!.querySelector<HTMLButtonElement>('[data-action="create-first-group"]')!;
+      expect(btn.classList.contains("el-button--large")).toBe(true);
+    });
+
+    element.querySelector<HTMLButtonElement>('[data-action="create-first-group"]')!.click();
+    await vi.waitFor(() => {
+      const input = document.querySelector<HTMLInputElement>("#db-group-title-input");
+      expect(input).not.toBeNull();
+      expect(input!.getAttribute("maxlength")).toBe("50");
     });
   });
 
