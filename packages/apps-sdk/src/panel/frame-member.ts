@@ -4,7 +4,7 @@ import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import { awaitsInputs, memberReadKey, paramValues, readMemberDatum, runValues, type MemberData, type PanelReadPort, type MemberDataState, type MemberInputs } from "./direct";
+import { awaitsInputs, memberReadKey, paramValues, readMemberDatum, runValues, type MemberData, type PanelReadPort, type MemberDataState, type MemberInputs, type MemberReadyData } from "./direct";
 import type { PanelInstance } from "./instance";
 import { adapterPart, registeredPlatformObjects, type PlatformGraphNeighborsQuery, type PlatformObjectRecord } from "./platform-objects";
 
@@ -168,6 +168,11 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         return JSON.stringify([object, requiredParams.map((param) => values[param] ?? null)]);
       };
       let lastTargetKey: string | null = null;
+      let lastReady: MemberReadyData | undefined;
+      const snapshotReady = (ready: Extract<MemberDataState, { status: "ready" }>): MemberReadyData =>
+        ready.rowOperations !== undefined
+          ? { status: "ready", value: ready.value, rowOperations: ready.rowOperations }
+          : { status: "ready", value: ready.value };
       const reread = (): Promise<void> => {
         const reading = ++sequence;
         const nextTargetKey = datumTargetKeyOf();
@@ -176,6 +181,7 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
         // Re-reading the same target keeps the shown record on screen until the new answer arrives. Switching targets
         // clears the previous target's ready state immediately.
         if (targetChanged) {
+          lastReady = undefined;
           state.value = awaitsInputs(projection, data, placement, inputs(), own())
             ? { status: "awaiting" }
             : { status: "loading" };
@@ -184,13 +190,25 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
             state.value = { ...state.value, refreshing: true };
           }
         } else {
-          state.value = { status: "loading" };
+          state.value = lastReady ? { status: "loading", previous: lastReady } : { status: "loading" };
         }
         return answer(name, inputs()).then(
           (result) => {
             if (reading !== sequence) return;
             loadedTargetKey.value = nextTargetKey;
-            state.value = result;
+            if (result.status === "ready") {
+              lastReady = snapshotReady(result);
+              state.value = result;
+            } else if (result.status === "error") {
+              state.value = {
+                ...result,
+                ...(lastReady ? { previous: lastReady } : {}),
+                retry: () => { void reread(); },
+              };
+            } else {
+              lastReady = undefined;
+              state.value = result;
+            }
           },
           (reason: unknown) => {
             if (reading !== sequence) return;
@@ -202,6 +220,8 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
               status: "error",
               message: reason instanceof Error ? reason.message : String(reason),
               ...(code ? { code } : {}),
+              ...(lastReady ? { previous: lastReady } : {}),
+              retry: () => { void reread(); },
             };
           },
         );
@@ -214,7 +234,9 @@ export function frameMemberData(projection: DirectProjection, slot: string, inst
           || ("type" in data.source && data.source.type.id === changed.objectType)) return reread();
       }));
       return computed<MemberDataState>(() => {
-        if (hasTarget && state.value.status === "ready" && datumTargetKeyOf() !== loadedTargetKey.value) {
+        const hasTargetData = state.value.status === "ready"
+          || ((state.value.status === "error" || state.value.status === "loading") && state.value.previous !== undefined);
+        if (hasTarget && hasTargetData && datumTargetKeyOf() !== loadedTargetKey.value) {
           return awaitsInputs(projection, data, placement, inputs(), own())
             ? { status: "awaiting" }
             : { status: "loading" };

@@ -34,15 +34,28 @@ import { memberComponentId } from "./projection-element";
 /** The objects and types an operation reports it changed. */
 export type PanelOperationAffected = ReturnType<typeof panelOperationAffectedSchema.parse>;
 
+/** The last successful datum answer for the same target, kept beside a failed or retrying read. */
+export type MemberReadyData = Extract<PanelDataState, { status: "ready" }>;
+
 /**
  * One named datum of a member as a component shows it: the host's answer, still loading, or awaiting a selection. A
  * failure carries `retry`, which reads it again; one the platform never answered (the page reached nothing) is
- * `unreachable`, and is worded in the reader's language where it is shown, not with the browser's own words.
+ * `unreachable`, and is worded in the reader's language where it is shown, not with the browser's own words. When
+ * re-reading the same target fails (or retries from a failure), `previous` carries the last successful answer for that
+ * target; switching targets, losing access (`forbidden`), or receiving `empty` clears `previous`.
  */
 export type MemberDataState =
-  | (Extract<PanelDataState, { status: "ready" }> & { readonly refreshing?: true })
-  | Exclude<PanelDataState, { status: "error" | "ready" }>
-  | { status: "error"; message: string; code?: string; unreachable?: true; retry?: () => void }
+  | (MemberReadyData & { readonly refreshing?: true })
+  | Exclude<PanelDataState, { status: "error" | "ready" | "loading" }>
+  | { status: "loading"; readonly previous?: MemberReadyData }
+  | {
+      status: "error";
+      message: string;
+      code?: string;
+      unreachable?: true;
+      retry?: () => void;
+      readonly previous?: MemberReadyData;
+    }
   | { status: "awaiting" };
 
 /** A projection input's value: a JSON value as the member and the run supply it; absent while nothing is supplied. */
@@ -741,7 +754,12 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             return JSON.stringify([object, requiredParams.map((param) => values[param] ?? null)]);
           };
           let lastTargetKey: string | null = null;
+          let lastReady: MemberReadyData | undefined;
           let metricSourceObjectTypes: readonly string[] | undefined;
+          const snapshotReady = (ready: Extract<MemberDataState, { status: "ready" }>): MemberReadyData =>
+            ready.rowOperations !== undefined
+              ? { status: "ready", value: ready.value, rowOperations: ready.rowOperations }
+              : { status: "ready", value: ready.value };
           const reread = (): Promise<void> => {
             // Unseen, the instance reads nothing; `lastTargetKey` stays on the last target read while active so
             // returning to a different target clears the stale record immediately.
@@ -754,6 +772,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             // a different target (or clearing it) drops the previous target's ready state immediately so neither the
             // view nor derived outputs treat the earlier target's data as ready for the new target.
             if (targetChanged) {
+              lastReady = undefined;
               state.value = awaitsInputs(projection, entryData, placement, inputs(), own())
                 ? { status: "awaiting" }
                 : { status: "loading" };
@@ -762,7 +781,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
                 state.value = { ...state.value, refreshing: true };
               }
             } else {
-              state.value = { status: "loading" };
+              state.value = lastReady ? { status: "loading", previous: lastReady } : { status: "loading" };
             }
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
             return answer(name, inputs()).then((result) => {
@@ -774,8 +793,21 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
                 }
               }
               loadedTargetKey.value = nextTargetKey;
-              // A failure is read again on request, as a refresh reads it.
-              state.value = result.status === "error" ? { ...result, retry: () => { state.value = { status: "loading" }; void reread(); } } : result;
+              if (result.status === "ready") {
+                lastReady = snapshotReady(result);
+                state.value = result;
+              } else if (result.status === "error") {
+                // A failure is read again on request, and keeps the same target's last ready answer beside the reason.
+                state.value = {
+                  ...result,
+                  ...(lastReady ? { previous: lastReady } : {}),
+                  retry: () => { void reread(); },
+                };
+              } else {
+                // Losing permission (`forbidden`), `empty`, or `awaiting` clears any previous answer immediately.
+                lastReady = undefined;
+                state.value = result;
+              }
             });
           };
           const entry = {
@@ -795,7 +827,9 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), reread, { immediate: true });
           const effectiveState = computed<MemberDataState>(() => {
             if (addressPending.value && hasTarget) return { status: "loading" };
-            if (hasTarget && state.value.status === "ready" && datumTargetKeyOf() !== loadedTargetKey.value) {
+            const hasTargetData = state.value.status === "ready"
+              || ((state.value.status === "error" || state.value.status === "loading") && state.value.previous !== undefined);
+            if (hasTarget && hasTargetData && datumTargetKeyOf() !== loadedTargetKey.value) {
               return awaitsInputs(projection, entryData, placement, inputs(), own())
                 ? { status: "awaiting" }
                 : { status: "loading" };
