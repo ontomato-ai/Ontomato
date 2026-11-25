@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.Set;
 import com.alibaba.fastjson2.JSONException;
 import io.ontomato.dataengine.config.ServiceConst;
+import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.authorization.AuthorizationService;
 import java.util.UUID;
 import javax.crypto.Mac;
@@ -32,7 +33,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @DependsOn("jdbcInitDb")
 public class QueryGrantService {
-  private static final int VERSION = 2;
+  private static final int VERSION = 3;
+  private static final String ACTION_EXECUTION = "action-execution";
   public static final String ATTRIBUTE = QueryGrantService.class.getName();
   private final JdbcTemplate jdbc;
   private final String signingKey;
@@ -85,8 +87,19 @@ public class QueryGrantService {
   private String issueDerived(PythonAuthority authority, String run, long expiresAt, JSONObject binding) {
     var sandbox = sandboxId(authority.sandboxId());
     var classes = authority.classNames();
-    var operations = operations(authority.purpose(), binding);
     var target = authority.target();
+    var action = authority.action();
+    String purpose = action == null ? authority.purpose() : ACTION_EXECUTION;
+    var operations = operations(purpose, binding);
+    if (action != null) {
+      if (!"sandbox-write".equals(authority.purpose()) || authority.parentGrant() != null
+          || !authority.userId().equals(action.userId()) || !authority.domainId().equals(action.domainId())
+          || !Objects.equals(sandbox, target.sandboxId()) || (sandbox != null && !target.testing())
+          || (action.workflowStep() != null && (target.mode() != ExecutionTarget.Mode.LIVE
+              || (action.target() != null && !action.target().equals(action.workflowStep().target())))))
+        throw forbidden();
+      binding.put("actionExecution", action);
+    }
     if (target.expiresAt() != null) expiresAt = Math.min(expiresAt, target.expiresAt());
     if (target.contextId() != null)
       expiresAt = Math.min(expiresAt, requireContext(binding, authority.userId(), authority.domainId(), classes).expiresAt());
@@ -111,7 +124,7 @@ public class QueryGrantService {
       binding.put("ancestors", ancestors);
       binding.put("requiresQueryAccess", parent.getBooleanValue("requiresQueryAccess"));
     }
-    return issue(authority.userId(), authority.domainId(), authority.purpose(), run, expiresAt,
+    return issue(authority.userId(), authority.domainId(), purpose, run, expiresAt,
         classes, sandbox, binding, operations, true);
   }
 
@@ -167,6 +180,7 @@ public class QueryGrantService {
       List<String> classNames,
       String sandboxId,
       JSONObject binding) {
+    if (ACTION_EXECUTION.equals(purpose)) throw forbidden();
     var claims = binding == null ? new JSONObject() : binding;
     return issue(userId, domainId, purpose, runId, expiresAt, classNames, sandboxId(sandboxId),
         claims, operations(purpose, claims), true);
@@ -174,6 +188,7 @@ public class QueryGrantService {
 
   public String issueForTarget(String purpose, String runId, long expiresAt,
       QueryAccessService.Access access, JSONObject binding) {
+    if (ACTION_EXECUTION.equals(purpose)) throw forbidden();
     var target = access.target();
     if (target.expiresAt() != null) expiresAt = Math.min(expiresAt, target.expiresAt());
     if (target.contextId() != null) {
@@ -189,6 +204,7 @@ public class QueryGrantService {
 
   /** The authoring owner binds the child to its actual write sandbox before issuing the parent. */
   public String issueAuthoringParent(PythonAuthority authority, String runId, long expiresAt) {
+    if (authority.action() != null) throw forbidden();
     var binding = executionBinding(authority);
     var target = authority.target();
     if (target.contextId() != null)
@@ -251,7 +267,8 @@ public class QueryGrantService {
     var claims = verify(token, runId);
     if (call == null || "authoring-test".equals(claims.getString("purpose"))
         || !operationKeys(claims).contains(call.operation()) || !call.matches(claims)
-        || "action-trial".equals(claims.getString("executionKind")) && claims.getList("classNames", String.class).isEmpty())
+        || (ACTION_EXECUTION.equals(claims.getString("purpose")) || "action-trial".equals(claims.getString("executionKind")))
+            && claims.getList("classNames", String.class).isEmpty())
       throw forbidden();
     return claims;
   }
@@ -321,7 +338,7 @@ public class QueryGrantService {
 
   private static boolean allowsDelegation(JSONObject parent, String childPurpose) {
     return switch (parent.getString("purpose")) {
-      case "package-read", "knowledge-governance" -> false;
+      case "package-read", "knowledge-governance", ACTION_EXECUTION -> false;
       case "authoring-test" -> childPurpose.equals(parent.getString("delegatedPurpose"))
           || "user-read".equals(parent.getString("delegatedPurpose")) && "package-read".equals(childPurpose);
       case "retrieval-exploration", "ontology-generation", "user-read", "sandbox-write" ->
@@ -339,6 +356,11 @@ public class QueryGrantService {
       }
       case "user-read" -> operations.addAll(QueryGrantOperation.QUERY);
       case "package-read" -> operations.add(QueryGrantOperation.DATA_QUERY);
+      case ACTION_EXECUTION -> {
+        operations.addAll(QueryGrantOperation.WRITE);
+        operations.add(QueryGrantOperation.DATA_QUERY);
+        operations.add(QueryGrantOperation.DATA_DISTINCT);
+      }
       case "sandbox-write" -> {
         operations.addAll(QueryGrantOperation.WRITE);
         if ("action-trial".equals(binding.getString("executionKind"))) {
@@ -354,6 +376,22 @@ public class QueryGrantService {
       default -> throw new IllegalArgumentException("Invalid grant purpose");
     }
     return operations;
+  }
+
+  public static boolean isActionExecution(JSONObject claims) {
+    return ACTION_EXECUTION.equals(claims.getString("purpose"));
+  }
+
+  /** Invoked after verifyRequest and edition-specific restoration of the credential's current caller. */
+  public void requireActionOwner(JSONObject claims, User user, ActionRuntimeGrant.Owner owner) throws Exception {
+    var action = claims.getJSONObject("actionExecution").toJavaObject(ActionRuntimeGrant.class);
+    if (!action.domainId().equals(user.getDomainId()) || !action.userId().equals(user.getId()))
+      throw new OwnerRefusal("ACTION_SUBJECT_MISMATCH", "The current user does not match the action execution.");
+    owner.requireCurrent(user, action, target(claims));
+  }
+
+  static boolean readsThroughWriteProgram(JSONObject claims) {
+    return "sandbox-write".equals(claims.getString("purpose")) || isActionExecution(claims);
   }
 
   public static ExecutionTarget target(JSONObject claims) {

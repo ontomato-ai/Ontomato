@@ -69,7 +69,8 @@ async function catalogueGrants(owner: ProductOwner, credentials: AssistantCreden
      FROM ${currentProductRows(kind)} AS definitions WHERE domain_id IS NULL OR domain_id=$1`, [owner.domainId],
   );
   const { decisions, editable } = await currentDefinitionAccess(kind, rows, owner.domainId, credentials, readEdits);
-  const visible = rows.filter((row, index) => decisions[index].allowed || editable.has(row.id)).map(row => row.id);
+  const visible = rows.filter((row, index) => decisions[index].allowed || (kind === "panel" && editable.has(row.id)))
+    .map(row => row.id);
   return { visible, edited: editable };
 }
 

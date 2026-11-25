@@ -49,9 +49,9 @@ class QueryGrantScopeTest {
   }
 
   @Test void previouslyIssuedGrantDoesNotSurviveTheFormatCutover() throws Exception {
-    var old = JSONObject.of("iss", "ontology", "aud", "ontology-query", "runId", "run",
+    var old = JSONObject.of("version", 2, "iss", "ontology", "aud", "ontology-query", "runId", "run",
         "userId", "user", "domainId", "domain", "jti", "existing", "expiresAt", deadline,
-        "purpose", "user-read", "classNames", List.of("Order"));
+        "purpose", "sandbox-write", "operations", List.of("WRITE_UPDATE"), "classNames", List.of("Order"));
     var encoder = Base64.getUrlEncoder().withoutPadding();
     var payload = encoder.encodeToString(JSON.toJSONBytes(old));
     var mac = Mac.getInstance("HmacSHA256");
