@@ -62,6 +62,8 @@ const props = withDefaults(
     columns?: number;
     /** Base height in pixels for one grid row track (default `160`). */
     rowHeight?: number;
+    /** Optional per-section row track height overrides in pixels, keyed by section value. */
+    sectionRowHeights?: Readonly<Record<string, number>>;
     /** Grid gap in pixels between cells (default `16`). */
     gap?: number;
     /** Item record field holding the group identifier (default `"groupId"`). */
@@ -104,6 +106,7 @@ const props = withDefaults(
   {
     columns: 12,
     rowHeight: 160,
+    sectionRowHeights: undefined,
     gap: 16,
     groupKeyField: "groupId",
     groupTitleField: "groupTitle",
@@ -168,6 +171,12 @@ const selectedParam = useMemberParam("selected");
 
 const effectiveColumns = computed(() => Math.max(1, Math.min(24, Math.floor(props.columns || 12))));
 const effectiveRowHeight = computed(() => Math.max(48, Math.floor(props.rowHeight || 160)));
+function sectionRowHeight(sectionKey: string | null | undefined): number {
+  const override = sectionKey && sectionKey !== "__default__" ? props.sectionRowHeights?.[sectionKey] : undefined;
+  return typeof override === "number" && Number.isFinite(override) && override > 0
+    ? Math.max(48, Math.floor(override))
+    : effectiveRowHeight.value;
+}
 const effectiveGap = computed(() => Math.max(0, Math.floor(props.gap ?? 16)));
 const effectiveMaxColSpan = computed(() => Math.max(1, Math.min(effectiveColumns.value, Math.floor(props.maxColSpan || effectiveColumns.value))));
 const effectiveMinColSpan = computed(() => Math.max(1, Math.min(effectiveMaxColSpan.value, Math.floor(props.minColSpan || 1))));
@@ -612,7 +621,7 @@ function startItemResize(item: GroupedGridItem, event: PointerEvent) {
   const cols = effectiveColumns.value;
   const gap = effectiveGap.value;
   const colUnit = Math.max(24, (trackWidth - gap * (cols - 1)) / cols + gap);
-  const rowUnit = Math.max(48, effectiveRowHeight.value + gap);
+  const rowUnit = Math.max(48, sectionRowHeight(item.section) + gap);
 
   activeResize.value = {
     itemKey: item.key,
@@ -800,6 +809,7 @@ const gridCssVars = computed(() => ({
                 v-for="section in group.sections"
                 :key="section.key"
                 class="sdk-grouped-grid-track"
+                :style="{ '--gg-row-height': `${sectionRowHeight(section.key)}px` }"
                 :data-section="section.key === '__default__' ? undefined : section.key"
               >
                 <article
