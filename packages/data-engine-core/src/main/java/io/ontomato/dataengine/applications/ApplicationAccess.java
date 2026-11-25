@@ -10,7 +10,6 @@ import java.util.stream.Collectors;
 public interface ApplicationAccess {
     User entryUser(String credential);
     boolean administrator(User user);
-    void requireConnectedRegistration(User user);
     boolean canMaintain(JSONObject application, User user);
     boolean canEnter(JSONObject application, User user);
     default void requireLegacyProductAuthor(User publisher, String authorId) {}

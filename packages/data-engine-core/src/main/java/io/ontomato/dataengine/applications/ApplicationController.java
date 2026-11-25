@@ -8,6 +8,8 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.ProductGrantService.OwnerFacts;
 import io.ontomato.dataengine.service.WorkbenchServiceAuthentication;
+import io.ontomato.dataengine.service.authorization.ManagementEndpoint;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Locale;
@@ -15,9 +17,20 @@ import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
 
 @RestController
 public class ApplicationController {
+    private static final String CONNECT_APPLICATION = "applications.connected.create";
+
+    @Component
+    static final class Operations implements ManagementOperations.Contributor {
+        @Override
+        public List<ManagementOperations.Operation> managementOperations() {
+            return List.of(new ManagementOperations.Operation(CONNECT_APPLICATION, ManagementOperations.Access.CHANGE));
+        }
+    }
+
     public static final String DECLARATIONS = "/platform/applications/self/declarations";
     public static final String PANEL_USES_BY_PANEL = "/platform/applications/panel-uses/by-panel";
     public static final String PANEL_SKILL_SOURCES = "/platform/applications/panel-skill-sources";
@@ -155,6 +168,7 @@ public class ApplicationController {
         return R.of(catalog.pageSkills(current(), entrance, panelId));
     }
     @PostMapping("/platform/applications/connected")
+    @ManagementEndpoint(CONNECT_APPLICATION)
     public R<JSONObject> connected(@RequestBody Connected body) {
         return R.of(catalog.connected(body.id(), body.declaration(), body.upstream(), body.upstreamPrefix(), current()));
     }
