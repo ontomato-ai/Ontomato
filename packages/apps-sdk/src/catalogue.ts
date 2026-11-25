@@ -108,13 +108,30 @@ export const components: readonly ComponentMetadata[] = [
     meaning: "Draws a whole HTML document in a sandboxed frame; the document runs nothing outside that frame. In a panel, write `<html-preview>` in the template, without an import; the import is for an application page outside a panel.",
   }),
   defineComponentMeta({
+    componentId: "AppPreview",
+    module: "@ontomato/sdk/preview",
+    exportName: "AppPreview",
+    role: "presentation",
+    group: "content",
+    meaning:
+      "Embeds an application preview (candidate panel, live panel, or legacy hosted preview) through the platform host without exposing preview tokens or raw iframe URLs, reporting navigation, selection, and status.",
+    effects:
+      "Loads the target application preview through the platform host under server-enforced authorization; writes no business data itself.",
+    data: {},
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      activePage: { kind: "scalar", type: "string" },
+      selection: { kind: "json" },
+    },
+  }),
+  defineComponentMeta({
     componentId: "AgentChat",
     module: "@ontomato/sdk/chat",
     exportName: "AgentChat",
     role: "control",
     group: "conversation",
     meaning:
-      "Holds a live conversation with one declared platform agent inside a panel member (declaring `agent: 'page-default' | { kind: 'id', id } | { kind: 'preset', agentKind }`) or in a standalone page. Sessions and history stay on the agent platform (never duplicated per panel), access follows the signed-in reader's agent grants and business gates, optional `sessionId` state syncs the active session, and any application entry hosting it must declare `pageComposer: 'none'` so the page does not show two places to ask.",
+      "Holds a live conversation with one declared platform agent inside a panel member (declaring `agent: 'page-default' | { kind: 'id', id } | { kind: 'preset', agentKind }`) or in a standalone page. Sessions and history stay on the agent platform (never duplicated per panel), access follows the signed-in reader's agent grants and business gates, optional `sessionId` state syncs the active session, and the host suppresses its default composer while the chat owns that surface. Pass `sessionContext` as opaque session creation input, `collapsed` for a compact composer, and `greeting`, `greetingKey`, `description`, or `descriptionKey` to customize the empty state. The `composer-context` slot sits above the input, and `message-actions` receives `{ item, runId, outcome }` beneath each response. The component emits `expand`, `entry-triggered` (`{ slot, submit, newSession, sessionId }`), and `run-complete` (`{ sessionId, runId, ok, outcome? }`).",
     effects: "Sends the reader's messages to the agent platform as the signed-in user, shares its session history, and writes only the panel's optional `sessionId` state.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     data: {},
@@ -257,7 +274,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "list",
     meaning:
-      "Arranges records or items into collapsible grid groups with drag-and-drop reordering, resizing, and row actions; use for dashboards or card boards. Arranges either records from its `rows` (`panelRecordList`) datum (optionally preserving empty groups and group order from a parent container `record` datum's `groupsField`) or fixed static items from `items` (with optional `groups` and typed `layout` state) into collapsible groups on a responsive CSS grid (`columns`, `rowHeight`, `gap`) with optional stacked section tracks (`sectionField`, `sectionOrder`), drag-and-drop group and item reordering (within or across groups), pointer-driven cell resizing (`colSpanField`, `rowSpanField`, or per-item span bounds), optional item hiding (`allowHide`) and header toggles (`showGroupHeaders`, `showItemHeaders`), selection highlight and scroll-into-view (`selected`), and built-in per-item `rowActions`. Renders each cell body via the scoped `#item` slot (alongside `#item-header-actions`, `#group-header-actions`, `#group-empty`, and `#empty`) and never fetches cell body content itself. Writes `layout` state and emits `layout-change` only when the reader finishes a drag, resize, or hide interaction, never on initial load or restore.",
+      "Collapsible grid groups with drag, resize, and row actions. Arranges either records from its `rows` (`panelRecordList`) datum (optionally preserving empty groups and group order from a parent container `record` datum's `groupsField`) or fixed static items from `items` (with optional `groups` and typed `layout` state) into collapsible groups on a responsive CSS grid (`columns`, `sectionColumns`, `rowHeight`, `sectionRowHeights`, `rowSizing`, `gap`) with optional stacked section tracks (`sectionField`, `sectionOrder`, `sectionResizeAxes`), configurable outer group and item surfaces (`groupSurface`, `itemSurface`, `itemHeaderDivider`), hover-revealed or always-visible controls (`controlsVisibility`), whole-grid draft preview (`draftMode`, `draftNotice`, `draftOverrides`), drag-and-drop group and item reordering (within or across groups), pointer-driven cell resizing (`colSpanField`, `rowSpanField`, or per-item span bounds), optional item hiding (`allowHide`) and header toggles (`showGroupHeaders`, `showItemHeaders`), selection highlight and scroll-into-view (`selected`), and built-in per-item `rowActions`. Renders each cell body via the scoped `#item` slot (alongside `#item-header-actions`, `#item-header-extra`, `#group-header-actions`, `#group-empty`, and `#empty`) and never fetches cell body content itself. Writes `layout` state and emits `layout-change` only when the reader finishes a drag, resize, or hide interaction, never on initial load or restore.",
     effects:
       "In record mode, reads its `rows` list and optional container `record` datum as the reader, writes the panel's `selected` state, and runs declared per-item operations through the platform coordinator. In fixed-member mode, reads and writes the panel's typed `layout` state without querying any datum.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
@@ -383,7 +400,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "action",
     meaning:
-      "Dedicated structured presentation for a data adapter connection test outcome (catalog tables/views or search engine indices, plus metadata descriptions and semantic success/error alert). Pure presentation: reads and writes nothing itself.",
+      "Structured report for a data adapter connection test outcome (alert, metadata descriptions, and table or index lists). Pure presentation: reads and writes nothing itself.",
   }),
   defineComponentMeta({
     componentId: "FileUploadControl",
@@ -405,7 +422,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "form",
     meaning:
-      "Dropdown picker for selecting one object reference with search and paging; use in toolbars or `ObjectForm` `#field-*` slots. Chooses a reference from the bound type's records or option catalogue in either of two modes. In form-field mode (when placed inside an `ObjectForm` field Vue slot such as `#field-skills`, `#field-modelSelection.modelId`, `#field-items.*.skillId`, or `#field`), it connects automatically to the enclosing form field and writes the owner's own value (a skill's whole reference, a model's key) into the form so the choice is saved and discarded with it; `options` finds choices, `selected` resolves the values already in the form, descriptions and empty defaults are shown, and unavailable values remain listed with the owner's reason. In standalone inline mode (when rendered outside a form field slot), it renders a compact, filterable single-select dropdown directly at the `<Projection>` site (suited for workbench toolbars such as path start/target pickers), reading either `data.rows` (`panelRecordList` filtered locally in memory with zero extra requests, or paged `panelRecordQuery` whose `search` parameter is forwarded to the owner's read, and optionally grouped by a record field via `groupBy`) or `data.options` (`panelOptionList`), and syncing the chosen `{ className, primaryKey }` (or `null` when cleared) through the `selected` output/member parameter; when the selected object is absent from the loaded choices, `data.selected` can read the owner's `resolve` (`panelOptionList`) or `record` (`panelRecord`, sourced from the selected object input). When the choices are forbidden or unreachable, the dropdown is disabled with a readable tooltip. Both modes expose an `#option` Vue slot to customize option rows.",
+      "Dropdown picker for selecting one object reference with search and paging; use in toolbars or `ObjectForm` `#field-*` slots. Chooses a reference from the bound type's records or option catalogue in either of two modes. In form-field mode (when placed inside an `ObjectForm` field Vue slot such as `#field-skills`, `#field-modelSelection.modelId`, `#field-items.*.skillId`, or `#field`), it connects automatically to the enclosing form field and writes the owner's own value (a skill's whole reference, a model's key) into the form so the choice is saved and discarded with it; `options` finds choices, `selected` resolves the values already in the form, descriptions and empty defaults are shown, and unavailable values remain listed with the owner's reason. In standalone inline mode (when rendered outside a form field slot), it renders a compact, filterable single-select dropdown directly at the `<Projection>` site (suited for workbench toolbars such as path start/target pickers), reading either `data.rows` (`panelRecordList` filtered locally in memory with zero extra requests, or paged `panelRecordQuery` whose `search` parameter is forwarded to the owner's read, and optionally grouped by a record field via `groupBy`) or `data.options` (`panelOptionList`), and syncing the chosen `{ className, primaryKey }` (or `null` when cleared) through the `selected` output/member parameter; when the selected object is absent from the loaded choices, `data.selected` can read the owner's `resolve` (`panelOptionList`) or `record` (`panelRecord`, sourced from the selected object input). Both modes can display a right-aligned secondary metadata/count text on each option via `metaField` (a record/option field path) or `optionMeta` (a map from option primaryKey to count/text). When the choices are forbidden or unreachable, the dropdown is disabled with a readable tooltip. Both modes expose an `#option` Vue slot to customize option rows.",
     effects: "Reads the bound type's options or records as the reader; writes only the target form field in form-field mode, or the panel's `selected` state in standalone inline mode.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // A standalone picker can read a selected object outside the current page through the owner's record read.
@@ -470,7 +487,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "chart",
     meaning:
-      "Draws a dashboard chart (`template` + MetricView `result`) that updates with panel parameters; use to embed published charts. Draws one chart as its source card draws it: the card's chart file (`template`) filled with a MetricView's output (`result`) for the card's saved parameters and the values the panel binds over them. The platform supplies both, and an output with no rows is the owner's empty answer. It fills the height of the box its member is placed in and falls back to a 320px default height when that box has no definite height. The projection keeps no drawing, query or data of its own.",
+      "Draws a dashboard chart (`template` + MetricView `result`). Draws one chart as its source card draws it: the card's chart file (`template`) filled with a MetricView's output (`result`) for the card's saved parameters and the values the panel binds over them. Supports optional fullscreen zoom (`zoomable` / `v-model:zoomed`), formatted data-table overlay switching (`viewMode` / `allowDataView`), hover-revealed or slot-integrated truncation indicator (`truncationDisplay` + `truncation-change`), and flicker-free refresh (`keepPreviousOnRefresh`). It fills the height of the box its member is placed in and falls back to a 320px default height when that box has no definite height. The projection keeps no drawing, query or data of its own.",
     effects: "Sends no request of its own: the platform reads the source card's template and the MetricView's output, both as the reader.",
     bindsElement: ["MetricView:*"],
     // The chart file and the output it is filled with: drawn once both are read.
@@ -504,8 +521,8 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "graph",
     meaning:
-      "Draws an interactive ontology graph with schema, sampled-overview, and paginated one-hop neighbor modes; use for ontology explorers. Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared types and relation kinds by layer with per-type readable counts and access statuses; sampled overview mode (`overview` and optional deferred `connections` ports) arranges nodes into grouped clusters with obstacle-avoiding group headings, aggregated inter-group edges (which fade behind a selected node's direct edges), generation/empty/truncation notices, and version-conflict recovery; instance mode expands one-hop neighbors with optional paginated loading (`offset`, `limit`) and direction/target-group/relation filtering. Preserves complete object identities, highlights drawn query matches, syncs `visibleLayers`, `visibleRelationKinds`, `expandedNodes`, and per-person `positions` (`json`) bidirectionally with panel state, distinguishes no-neighbors, owner-refused and read-failed outcomes, provides toolbar controls (aggregated edges, edge labels, zoom, fit, relayout, refresh, PNG export) plus `#toolbar` and `#overlay` slots, and publishes read-only summary outputs. The graph fills the height of the box its member is placed in and falls back to a 420px canvas height when that box has no definite height.",
-    effects: "Reads the bound graph source's schema, counts, starting node, sampled overview, deferred connections, and paginated one-hop neighbors as the reader; writes only the panel's own selection, layer filter, relation-kind filter, expanded-nodes, and personal positions state.",
+      "Draws an interactive ontology graph with schema, sampled-overview, and paginated one-hop neighbor modes; use for ontology explorers. Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared types and relation kinds by layer with per-type readable counts and access statuses; sampled overview mode (`overview` and optional deferred `connections` ports) renders a borderless dot-grid panorama (`fitMode: 'fit'` by default when `overview` is bound) with grouped clusters, clickable tinted group headings (`selectedGroup` / `@select-group`), aggregated inter-group edges (which fade behind a selected node's direct edges), 2-second automatic polling during `GENERATING`, refreshable `NOT_GENERATED` empty state, batch drawing progress, and version-conflict recovery; instance mode supports click-to-inspect and double-click-to-expand (`expandOn: 'activate'` by default when `overview` is bound), a node-anchored floating action bar (expand / load more / direct neighbors only), floating top-left back-to-overview button, and batch-submitted direction/target-group/relation-kind/fit-after-expand neighbor filters. Preserves complete object identities, highlights drawn query matches, syncs `visibleLayers`, `visibleRelationKinds`, `expandedNodes`, `selectedGroup`, and per-person `positions` (`json`) bidirectionally with panel state, distinguishes no-neighbors, owner-refused and read-failed outcomes, provides a bottom-left floating toolbar with Display Settings popover (edge labels, aggregate edges), zoom, fit, relayout, refresh, PNG export, bottom-right interaction hint, `#toolbar` and `#overlay` slots, and publishes read-only summary outputs (`groups`, `relationKinds`, `drawnNodeCount`, `drawnEdgeCount`, `overviewEdgesTruncated`, `complete`, `failures`, `neighborProgress`, `drawingProgress`).",
+    effects: "Reads the bound graph source's schema, counts, starting node, sampled overview, deferred connections, and paginated one-hop neighbors as the reader; writes only the panel's own selection, group filter, layer filter, relation-kind filter, expanded-nodes, and personal positions state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // Expanding from a node is what the graph does; optional overview, deferred connections, and schema/counts/start reads activate when a placement supplies them.
     data: {
@@ -528,6 +545,7 @@ export const components: readonly ComponentMetadata[] = [
       start: { kind: "object", objectType: "@any" },
       selected: { kind: "object", objectType: "@any" },
       selectedType: { kind: "scalar", type: "string" },
+      selectedGroup: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
       visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
       expandedNodes: { kind: "list", items: { kind: "object", objectType: "@any" } },
@@ -536,6 +554,7 @@ export const components: readonly ComponentMetadata[] = [
       selectedNode: { kind: "object", objectType: "@any" },
       selected: { kind: "object", objectType: "@any" },
       selectedType: { kind: "scalar", type: "string" },
+      selectedGroup: { kind: "scalar", type: "string" },
       // The relation kinds drawn, read as well as written: a page's own kind filter and the graph follow one choice.
       visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
       visibleLayers: { kind: "list", items: { kind: "scalar", type: "string" } },
@@ -552,7 +571,16 @@ export const components: readonly ComponentMetadata[] = [
       sampleToken: { kind: "scalar", type: "string" },
       nodeCount: { kind: "scalar", type: "number" },
       edgeCount: { kind: "scalar", type: "number" },
+      drawnNodeCount: { kind: "scalar", type: "number" },
+      drawnEdgeCount: { kind: "scalar", type: "number" },
+      overviewEdgesTruncated: { kind: "scalar", type: "boolean" },
+      complete: { kind: "scalar", type: "boolean" },
+      failures: { kind: "list", items: { kind: "scalar", type: "string" } },
+      groups: { kind: "json" },
+      relationKinds: { kind: "json" },
       hasMoreNeighbors: { kind: "scalar", type: "boolean" },
+      neighborProgress: { kind: "json" },
+      drawingProgress: { kind: "json" },
       versionChanged: { kind: "scalar", type: "boolean" },
     },
   }),
@@ -628,7 +656,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "layout",
     meaning:
-      "Presentational page header with title, back link, `#actions`, and Save/Discard draft controls (`:draft`); place at the top of a panel. Pure presentational page header rendered by a panel at the top of its content: optional leading visual, explicit back link, single-line title (plain text or a projection-bound component in `#title`), optional description, flexible right-side actions/controls (`#actions` or default slot), and optional Save/Discard draft controls (`draft`). It asks nothing from the platform host and adapts to its own container width.",
+      "Page header with title, back link, `#actions`, and draft controls. Pure presentational page header rendered by a panel at the top of its content: optional leading visual, explicit back link, single-line title (plain text, locale map `names`, or a projection-bound component in `#title`), configurable `density` (`bar` / `compact` / `expanded`), optional description, flexible right-side actions/controls (`#actions` or default slot), and optional Save/Discard draft controls (`draft`). It asks nothing from the platform host and adapts to its own container width.",
   }),
   defineComponentMeta({
     componentId: "AppMenu",
@@ -692,7 +720,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "detail",
     meaning:
-      "Displays a clickable object reference card with icon, title, key, and status badge; use for related-object navigation links. Displays one clickable object reference card — leading icon or monogram, optional role caption (such as Source or Target), primary localized display name, secondary monospace API name / primary key, and optional status badge — emitting `navigate` (and writing declared navigation output) on click. Reads a reference field (`field`) or the object itself from `record` (`panelRecord`) or metric `result` (`metricOutput`), or renders a direct `reference` / `record` prop standalone.",
+      "Clickable object reference card or button (`appearance`). Displays one clickable object reference — either as a bordered reference card (leading icon or monogram, optional role caption, primary localized display name, secondary monospace API name / primary key, and optional status badge) or as a compact action button (`appearance=\"button\"`, `buttonType`, `buttonSize`, `buttonLabel`) — emitting `navigate` (and writing declared navigation output) on click. Reads a reference field (`field`) or the object itself from `record` (`panelRecord`) or metric `result` (`metricOutput`), or renders a direct `reference` / `record` prop standalone.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -714,7 +742,7 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     group: "chart",
     meaning:
-      "Displays statistical KPI metric cards from a MetricView, record, list, or query `total`; use for headers, dashboards, and summaries. Displays one or more statistical metric cards (label + tabular numeral + optional unit, description, and semantic tone) in `card`, `compact`, or `inline` variants for ontology headers, dashboards, and catalog summaries. Directly consumes a MetricView's `result` (`metricOutput`, extracting a scalar or named column from the first or `rowIndex` row, and surfacing truncation hints), a single `record` (`panelRecord`), `rows` (`panelRecordList` uses list length; `panelRecordQuery` uses strictly the owner-returned `total`, never loaded row counts), or `objects` (`panelOntologyObjects` owner `total`), or standalone `value`/`items` props. Pure presentation: never computes aggregations on the client.",
+      "KPI metric cards from a MetricView, record, list, or query `total`. Displays one or more statistical metric cards (label + tabular numeral + optional unit, description, and semantic tone) in `card`, `compact`, or `inline` variants with configurable `surface` (`card` or `bare` for embedding inside outer dashboard cards), `showLabel`, `valueSize` (`default` or `large` 32px KPI numeral), `truncationDisplay`, and flicker-free `keepPreviousOnRefresh`. Directly consumes a MetricView's `result` (`metricOutput`), a single `record` (`panelRecord`), `rows` (`panelRecordList` uses list length; `panelRecordQuery` uses strictly the owner-returned `total`), or `objects` (`panelOntologyObjects` owner `total`), or standalone `value`/`items` props. Pure presentation: never computes aggregations on the client.",
     effects: "Reads the bound MetricView `result`, `record`, `rows`, or `objects` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*", "MetricView:*"],
     data: {
@@ -822,11 +850,71 @@ export const components: readonly ComponentMetadata[] = [
     role: "control",
     group: "conversation",
     meaning:
-      "Places a conversation entry targeting an agent — button (`button`) or embedded prompt box (`inline`, with `pageComposer: 'none'`); use to start agent chats. In its default button presentation, clicking asks the platform host to expand the page's composer with the projection's declared conversationEntry without sending a message; in presentation='inline', renders the platform's inline composer (agent selector and prompt input) directly inside the page and serves sibling ConversationEntry triggers while mounted (typically paired with pageComposer: 'none' on the application entry).",
-    effects: "In button mode, requests the host to expand the page's composer without sending; in inline mode, submits the reader's typed prompt to the platform agent counter.",
+      "Places a conversation entry targeting an agent — button (`button`) or embedded prompt box (`inline`, with `pageComposer: 'none'`); use to start agent chats. In its default button presentation, clicking asks the platform host to expand the page's composer with the projection's declared conversationEntry. Declare `submit: true` to send non-empty prefill on the click, or `newSession: true` to start a fresh conversation. The optional `prefill` prop supplies text at click time; in presentation='inline', renders the platform's inline composer (agent selector and prompt input) directly inside the page and serves sibling ConversationEntry triggers while mounted (typically paired with pageComposer: 'none' on the application entry).",
+    effects: "Applies the declared conversation behavior on click. In inline mode, sends the reader's typed prompt to the platform agent counter.",
     bindsElement: ["PlatformObjectType:platform:AgentDefinition"],
     // A button the host acts on: it reads nothing from the platform, and says so, so a placement may carry it as a member.
     data: {},
+  }),
+  defineComponentMeta({
+    componentId: "DashboardMetricPreview",
+    module: "@ontomato/sdk/base",
+    exportName: "DashboardMetricPreview",
+    role: "control",
+    group: "chart",
+    meaning:
+      "Workspace dashboard KPI and chart preview. Renders scalar KPI tiles (3-column grid) above thumbnail charts (2-column grid, 220px height) from `rows` (`platform:DashboardCard`) or direct `cards`, selecting clicked items into `selected` state.",
+    effects: "Reads its bound `rows` datum as the reader and writes the panel's `selected` state on click.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+    },
+    inputs: {
+      selected: { kind: "object", objectType: "@data:rows" },
+    },
+    outputs: {
+      selected: { kind: "object", objectType: "@data:rows" },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "ScheduledTaskSummaryList",
+    module: "@ontomato/sdk/base",
+    exportName: "ScheduledTaskSummaryList",
+    role: "control",
+    group: "list",
+    meaning:
+      "Workspace scheduled task attention summary and grouped list. Renders a three-counter top strip (Needs intervention, Recent results, Running), three priority-ordered task sections with status dots and multi-line excerpts, and an inline Resolve action for paused or failed tasks.",
+    effects: "Reads its bound `rows` datum as the reader and writes `selected` / `resolveTarget` panel state when the reader opens or resolves a task.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+    },
+    inputs: {
+      selected: { kind: "object", objectType: "@data:rows" },
+    },
+    outputs: {
+      selected: { kind: "object", objectType: "@data:rows" },
+      resolveTarget: { kind: "object", objectType: "@data:rows" },
+    },
+    readOnlyOutputs: {
+      issueCount: { kind: "scalar", type: "number" },
+      resultCount: { kind: "scalar", type: "number" },
+      runningCount: { kind: "scalar", type: "number" },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "ScheduledTaskRunDetail",
+    module: "@ontomato/sdk/base",
+    exportName: "ScheduledTaskRunDetail",
+    role: "presentation",
+    group: "detail",
+    meaning:
+      "Scheduled task recent-run detail view. Renders pause/failure callout banners, status dot and trigger strip, two-column Started/Finished timestamp `<dl>`, cleaned multi-paragraph execution output, and a Refresh button.",
+    effects: "Reads its bound `record` datum as the reader and refreshes it when the reader clicks Refresh.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      record: { results: ["panelRecord", "scheduledTaskRun"], required: false },
+    },
   }),
   defineComponentMeta({
     componentId: "CurrentEntry",
@@ -864,7 +952,7 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAppId", "direction", "editMode",
+          "agentId", "agentKind", "business", "by", "category", "changedField", "className", "commit", "componentId", "cursor", "defaultAppId", "direction", "editMode",
           "entryId", "favoritesOnly", "filters", "group", "keyword", "layers", "limit", "node", "object", "objectType", "offset",
           "operation", "orgId", "origin", "page", "parentId", "path", "primaryKey", "rating", "relationKinds",
           "runId", "sampleToken", "scope", "search", "section", "size", "sort", "source", "sourceType", "status",

@@ -35,6 +35,7 @@ export const baseComponents = {
   FormFields: () => import("@ontomato/foundation-ui/form").then(module => module.FormFields),
   TablePreview: () => import("@ontomato/foundation-ui/preview").then(module => module.TablePreview),
   HtmlPreview: () => import("@ontomato/foundation-ui/preview").then(module => module.HtmlPreview),
+  AppPreview: () => import("./preview/AppPreview.vue").then(module => module.default),
   SegmentedTextReader: () => import("@ontomato/foundation-ui/reader").then(module => module.SegmentedTextReader),
   ObjectTree: () => import("./base/ObjectTree.vue").then(module => module.default),
   ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),
@@ -43,4 +44,7 @@ export const baseComponents = {
   PanelData: () => import("./base/PanelData.vue").then(module => module.default),
   CurrentEntry: () => import("./base/CurrentEntry.vue").then(module => module.default),
   MetricChart: () => import("./base/MetricChart.vue").then(module => module.default),
+  DashboardMetricPreview: () => import("./base/DashboardMetricPreview.vue").then(module => module.default),
+  ScheduledTaskSummaryList: () => import("./base/ScheduledTaskSummaryList.vue").then(module => module.default),
+  ScheduledTaskRunDetail: () => import("./base/ScheduledTaskRunDetail.vue").then(module => module.default),
 };

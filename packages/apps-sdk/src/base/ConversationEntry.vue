@@ -42,6 +42,7 @@ const props = withDefaults(
     icon?: "book-open";
     /** Disables the entry control. */
     disabled?: boolean;
+    prefill?: string;
   }>(),
   {
     presentation: "button",
@@ -80,7 +81,7 @@ const buttonLabel = computed(() => {
   return t("platform.conversationEntryOpen");
 });
 
-async function openComposer() {
+async function openComposer(event: MouseEvent) {
   if (props.disabled || opening.value) return;
   failure.value = null;
   const entry = slot.projection.conversationEntry;
@@ -95,12 +96,14 @@ async function openComposer() {
     // The panel's text answers the key itself where neither the reader's language nor the default has words for it:
     // the composer then opens with no sentence, never with the key.
     const keyed = entry.prefillKey !== undefined ? panel.t(entry.prefillKey) : undefined;
-    const prefill = entry.prefillKey !== undefined ? (keyed === entry.prefillKey ? undefined : keyed) : entry.prefill;
+    const prefill = props.prefill ?? (keyed === entry.prefillKey ? undefined : keyed) ?? entry.prefill;
     await panel.expandPageComposer({
       slot: slot.slot,
       target: entry.target,
+      ...(entry.submit !== undefined ? { submit: entry.submit } : {}),
+      ...(entry.newSession !== undefined ? { newSession: entry.newSession } : {}),
       ...(prefill !== undefined ? { prefill } : {}),
-    });
+    }, event);
     emit("expanded");
   } catch (reason: unknown) {
     const err = reason instanceof Error ? reason : new Error(String(reason));
@@ -118,6 +121,7 @@ const readingAgents = ref(false);
 const inlineEntry = shallowRef<ComposerEntry | null>(null);
 let pendingExpand: PanelConversationEntry | null = null;
 let loadSeq = 0;
+let newSession = false;
 
 const inlinePlaceholder = computed(() => {
   if (props.placeholderKey) {
@@ -136,14 +140,20 @@ const inlineLabels = computed(() => ({
 
 const activeAgentId = computed(() => chosen.value ?? agents.value[0]?.id ?? null);
 
-const expandInline: PageComposerExpand = (request) => {
+const expandInline: PageComposerExpand = async (request) => {
   if (readingAgents.value) {
     pendingExpand = request;
     return;
   }
   const named = entryAgent(request.target, agents.value, null, undefined);
+  newSession = named !== null && request.newSession === true;
   if (named) chosen.value = named;
-  inlineEntry.value = { text: request.prefill ?? null, seq: (inlineEntry.value?.seq ?? 0) + 1 };
+  const text = request.prefill?.trim();
+  if (named && request.submit && text) {
+    await sendInline(text, true);
+    return;
+  }
+  inlineEntry.value = { text: request.prefill ?? (newSession ? "" : null), seq: (inlineEntry.value?.seq ?? 0) + 1 };
 };
 
 watch(
@@ -153,6 +163,7 @@ watch(
     agents.value = [];
     chosen.value = null;
     pendingExpand = null;
+    newSession = false;
     readingAgents.value = false;
     if (mode !== "inline" || !counter) return;
     readingAgents.value = true;
@@ -194,11 +205,19 @@ watch(
 );
 onBeforeUnmount(() => withdrawComposer?.());
 
-function sendInline(text: string) {
+async function sendInline(text: string, submit = false) {
   if (props.disabled || !counter || !activeAgentId.value) return;
   const pageAddress = props.attachPage ? panel.instance.pageContext.value.url : undefined;
-  counter.ask(activeAgentId.value, text, pageAddress);
-  emit("sent", text);
+  try {
+    if (submit || newSession) await counter.ask(activeAgentId.value, text, pageAddress, { submit: true, newSession });
+    else await counter.ask(activeAgentId.value, text, pageAddress);
+    newSession = false;
+    emit("sent", text);
+  } catch (reason) {
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    failure.value = error;
+    emit("error", error);
+  }
 }
 </script>
 

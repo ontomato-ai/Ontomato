@@ -12,6 +12,10 @@ const mocks = vi.hoisted(() => ({
   runtimeRequest: vi.fn(),
   settings: vi.fn(),
 }));
+vi.mock("../../../services/agent-host/presentation", async (original) => ({
+  ...await original<typeof import("../../../services/agent-host/presentation")>(),
+  hasActivePresentationForRun: () => true,
+}));
 vi.mock("../../../services/assistant/execution", () => ({ runForOwner: mocks.runForOwner }));
 vi.mock("../../../services/product-panels/operation-store", () => ({ panelOperationStore: { settings: mocks.settings } }));
 vi.mock("../../../infrastructure/agent-runtime/client", () => ({
@@ -75,7 +79,20 @@ function post(url: string, body: object) {
   });
 }
 
-it.each([true, undefined])("honors requireConfirmation=%s for local actions in full-auto mode", async (requireConfirmation) => {
+it.each([
+  { executionKind: "live", requireConfirmation: true },
+  { executionKind: "live", requireConfirmation: undefined },
+  { executionKind: "build-test", requireConfirmation: false },
+])("handles local action confirmation in full-auto mode (%j)", async ({ executionKind, requireConfirmation }) => {
+  const actor = { id: "reader", domainId: "domain" };
+  mocks.runForOwner.mockResolvedValue({
+    status: "running",
+    sessionId,
+    channel: {
+      agent: { providerId: session.providerId }, actor, root: { session, runId }, requestedBy: null,
+      userRecipient: { session, actor }, authority: { executionKind },
+    },
+  });
   const response = await post(endpoint, {
     agentRun: { sessionId, runId, toolCallId: "discard" },
     operationLabel: "Discard",
@@ -85,7 +102,7 @@ it.each([true, undefined])("honors requireConfirmation=%s for local actions in f
   expect(response.status).toBe(200);
   const result = await response.json();
 
-  if (requireConfirmation) {
+  if (executionKind === "build-test" || requireConfirmation) {
     expect(result).toMatchObject({ autoMode: false, questionId: expect.any(String) });
     expect(mocks.runtimeRequest).toHaveBeenCalledWith(
       "/v1/channel/user-questions", "POST",

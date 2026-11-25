@@ -164,7 +164,7 @@ public class ApplicationCatalog {
         var admittedUses = domainId == null ? List.<ApplicationPanelUse>of() : applications.stream()
             .filter(app -> isPanelSkillApplication(app) && canEnter(app, user))
             .flatMap(app -> entryAdmittedPanelUses(app, user, pageKeys).stream())
-            .filter(use -> !use.nativeEntry()).toList();
+            .filter(ApplicationPanelUse::panelEntry).toList();
         var mappings = new LinkedHashMap<String, PageSkills.Mapping>();
         for (var mapping : access.pageSkills(nativeMappings, user)) mappings.put(mapping.locator(), mapping);
         for (var group : PanelSkills.groups(admittedUses))
@@ -180,7 +180,7 @@ public class ApplicationCatalog {
             .flatMap(app -> {
                 var applicationNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
                 return pageKeys.activeUses(app).stream()
-                    .filter(use -> !use.nativeEntry())
+                    .filter(ApplicationPanelUse::panelEntry)
                     .map(use -> PanelSkills.source(app.getString("id"), use, applicationNames));
             })
             .toList();
@@ -565,10 +565,11 @@ public class ApplicationCatalog {
                 if (old.isPresent() && (!service.equals(old.get().getString("ownerService")) || old.get().getString("domainId") != null))
                     throw denied();
                 for (var use : declaration.panelUses())
-                    if (!use.nativeEntry() && !BuiltinProductIds.isValid(use.panelId()))
+                    if (use.panelEntry() && !BuiltinProductIds.isValid(use.panelId()))
                         throw bad("Built-in application entry " + use.pageKey() + " must reference a platform panel: " + use.panelId());
                 if (d.framePanelId() != null && !BuiltinProductIds.isValid(d.framePanelId()))
                     throw bad("Built-in application " + d.id() + " framePanelId must reference a platform panel: " + d.framePanelId());
+                requireConversationFrame(declaration.panelUses(), d.framePanelId());
                 var root = builtinPanelRoot(d.entry());
                 if ((root != null && inAssignedSpace(root)) || declaration.panelUses().stream().anyMatch(use -> inAssignedSpace(use.path())))
                     throw bad("Built-in applications cannot occupy the assigned application space");
@@ -732,7 +733,7 @@ public class ApplicationCatalog {
             ApplicationPanelUse.validate(uses, app.getString("domainId") == null);
             for (var use : uses) {
                 if (!panelPages.add(use.pageKey())) throw bad("Panel use page keys must be unique in the domain");
-                if (use.nativeEntry()) continue;
+                if (!use.panelEntry()) continue;
                 panelOwners.computeIfAbsent(use.locator(), ignored -> new HashSet<>()).add(applicationId);
                 if (use.defaultAgent() != null) reserveDefault(defaults, use.locator(), use.pageKey());
             }
@@ -797,7 +798,7 @@ public class ApplicationCatalog {
     public List<PanelUseLocation> panelUsesByPanel(String domainId, String panelId) {
         return applicationsInDomain(domainId).stream().filter(ApplicationCatalog::isPanelSkillApplication)
             .flatMap(app -> app.getList("panelUses", ApplicationPanelUse.class).stream()
-                .filter(use -> !use.nativeEntry() && panelId.equals(use.panelId()))
+                .filter(use -> use.panelEntry() && panelId.equals(use.panelId()))
                 .map(use -> new PanelUseLocation(app.getString("id"),
                     app.getObject("names", new TypeReference<Map<String, String>>() {}), use.id(), use.path())))
             .toList();
@@ -904,6 +905,11 @@ public class ApplicationCatalog {
         return result;
     }
 
+    private static void requireConversationFrame(List<ApplicationPanelUse> uses, String framePanelId) {
+        if (framePanelId == null && uses.stream().anyMatch(ApplicationPanelUse::frameConversationEntry))
+            throw bad("Frame conversation entry requires an application frame containing AgentChat");
+    }
+
     private static void validatePanelSettings(PanelSettings settings) {
         if (settings.framePanelId() != null && settings.framePanelId().isBlank())
             throw bad("framePanelId must be nonblank");
@@ -918,10 +924,14 @@ public class ApplicationCatalog {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Panel application " + app.getString("id") + " must be re-registered with complete canonical paths");
         var uses = entryAdmittedPanelUses(app, user, pageKeys);
-        var panelIds = uses.stream().filter(use -> !use.nativeEntry()).map(ApplicationPanelUse::panelId).distinct().toList();
+        var panelIds = uses.stream().filter(use -> !use.nativeEntry())
+            .map(use -> use.frameConversationEntry() ? app.getJSONObject("panelSettings").getString("framePanelId") : use.panelId())
+            .distinct().toList();
         if (panelIds.isEmpty()) return uses;
         var allowed = grants.allowedBatchFor(user.getDomainId(), user.getId(), panelIds, "use");
-        return uses.stream().filter(use -> use.nativeEntry() || allowed.get(use.panelId())).toList();
+        return uses.stream().filter(use -> use.nativeEntry() || allowed.get(
+            use.frameConversationEntry() ? app.getJSONObject("panelSettings").getString("framePanelId") : use.panelId()
+        )).toList();
     }
 
     private List<ApplicationPanelUse> entryAdmittedPanelUses(JSONObject app, User user, BuiltinPageKeys pageKeys) {
@@ -960,8 +970,9 @@ public class ApplicationCatalog {
         }
         var settings = new PanelSettings(body.framePanelId(), body.theme(), body.delivery());
         validatePanelSettings(settings);
+        requireConversationFrame(uses, settings.framePanelId());
         existing.ifPresent(app -> requireDomainMaintainer(app, user));
-        var ids = new HashSet<>(uses.stream().map(ApplicationPanelUse::panelId).toList());
+        var ids = new HashSet<>(uses.stream().filter(ApplicationPanelUse::panelEntry).map(ApplicationPanelUse::panelId).toList());
         if (settings.framePanelId() != null) ids.add(settings.framePanelId());
         for (var panelId : ids) if (!grants.allowed(panelId, "use")) throw denied();
         return transactions.execute(tx -> {

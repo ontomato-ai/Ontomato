@@ -342,17 +342,17 @@ const filteredGroups = computed<readonly RelationGroup[]>(() => {
 });
 
 const GROUP_STATUS_PRIORITY: Readonly<Record<PlatformGraphStatus, number>> = {
-  refused: 0,
-  failed: 1,
-  unavailable: 2,
-  ok: 3,
+  ok: 0,
+  refused: 1,
+  failed: 2,
+  unavailable: 3,
 };
 
 const displayedGroups = computed<readonly RelationGroup[]>(() => {
-  if (!props.collapseEmptyGroups) return filteredGroups.value;
-  return filteredGroups.value
-    .filter((group) => group.edges.length > 0 || group.status !== "ok" || group.truncated)
-    .sort((left, right) => GROUP_STATUS_PRIORITY[left.status] - GROUP_STATUS_PRIORITY[right.status]);
+  const source = props.collapseEmptyGroups
+    ? filteredGroups.value.filter((group) => group.edges.length > 0 || group.status !== "ok" || group.truncated)
+    : [...filteredGroups.value];
+  return source.sort((left, right) => GROUP_STATUS_PRIORITY[left.status] - GROUP_STATUS_PRIORITY[right.status]);
 });
 
 const collapsedEmptyGroups = computed<readonly RelationGroup[]>(() => {
@@ -656,7 +656,7 @@ function statusText(status: PlatformGraphStatus): string {
               class="sdk-object-relations-status"
               :data-status="group.status === 'ok' ? 'empty' : group.status"
             >
-              <span class="sdk-object-relations-status-label">{{ statusText(group.status) }}</span>
+              <span v-if="group.status !== 'unavailable' || !group.reason" class="sdk-object-relations-status-label">{{ statusText(group.status) }}</span>
               <span v-if="group.reason" class="sdk-object-relations-reason">{{ group.reason }}</span>
             </p>
           </div>

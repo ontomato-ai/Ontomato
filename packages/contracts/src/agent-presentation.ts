@@ -189,7 +189,7 @@ const notOpenedResultSchema = z.object({
   status: z.literal("not_opened"),
   reason: z.enum([
     "view_unavailable", "not_viewing_session", "sidebar_unavailable",
-    "forbidden", "not_found", "unsupported_target", "blocked_unsaved", "superseded", "previous_step_failed",
+    "forbidden", "not_found", "unsupported_target", "outside_embedded_host", "blocked_unsaved", "superseded", "previous_step_failed",
   ]),
   current: displaySnapshotSchema,
   error: displayErrorSchema.optional(),

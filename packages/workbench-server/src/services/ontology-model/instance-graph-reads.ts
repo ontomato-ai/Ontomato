@@ -3,12 +3,16 @@ import type { PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import {
   platformOntologyEdgeSchema, platformOntologyNodeRefSchema,
   type PlatformOntologyEdge, type PlatformOntologyNode, type PlatformOntologyNodeRef,
+  type PlatformOntologyRelationStatus,
 } from "@ontomato/contracts/platform-ontology-data";
 import { config } from "../../config/application";
+import { createLogger } from "../../logging/logger";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { tForLocale } from "../../i18n";
 import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+
+const logger = createLogger("instance-graph-reads");
 
 const graphReply = z.discriminatedUnion("success", [
   z.object({ success: z.literal(false), code: z.string().optional(), message: z.string() }),
@@ -22,9 +26,19 @@ const rawEdge = z.object({
   to: platformOntologyNodeRefSchema,
   type: platformOntologyEdgeSchema.shape.relationKind,
 });
+const rawRelationStatus = z.object({
+  relationKind: platformOntologyEdgeSchema.shape.relationKind,
+  label: z.string().nullish(),
+  status: z.enum(["ok", "refused", "failed", "unavailable"]),
+  edgeCount: z.number().int().nonnegative(),
+  reasonCode: z.string().nullish(),
+  truncated: z.boolean().optional(),
+});
 const rawClassCount = z.object({ class: z.string(), instanceCount: z.number().int().nonnegative() });
 const rawConnections = z.object({
-  overviewEdges: z.array(rawEdge), overviewEdgesTruncated: z.boolean(),
+  overviewEdges: z.array(rawEdge),
+  overviewEdgesTruncated: z.boolean(),
+  relations: z.array(rawRelationStatus).optional(),
 });
 const rawOverview = rawConnections.partial().extend({
   classes: z.array(rawClassCount.extend({
@@ -41,9 +55,45 @@ const rawSearch = z.object({
 });
 const rawNeighbors = z.object({
   nodes: z.array(rawNode).nonempty(), edges: z.array(rawEdge),
+  relations: z.array(rawRelationStatus).optional(),
   nextOffset: z.number().int().nonnegative().nullish(), total: z.number().int().nonnegative().nullish(),
   version: z.string(),
 });
+
+const RELATION_REASON_KEYS: Readonly<Record<string, string>> = {
+  RELATION_MISSING_JOIN_FIELDS: "relationMissingJoinFields",
+  RELATION_GRAPH_TYPE_UNSUPPORTED: "relationGraphTypeUnsupported",
+  RELATION_CROSS_SOURCE_UNSUPPORTED: "relationCrossSourceUnsupported",
+  RELATION_SOURCE_UNSUPPORTED: "relationSourceUnsupported",
+  RELATION_FORBIDDEN: "relationForbidden",
+  RELATION_READ_FAILED: "relationReadFailed",
+};
+
+function relationReasonText(
+  entry: z.infer<typeof rawRelationStatus>,
+  text: (field: string) => string,
+): string | undefined {
+  if (entry.status === "ok") return undefined;
+  const mappedKey = entry.reasonCode ? RELATION_REASON_KEYS[entry.reasonCode] : undefined;
+  if (mappedKey) return text(mappedKey);
+  if (entry.status === "refused") return text("relationForbidden");
+  if (entry.status === "unavailable") return text("relationSourceUnsupported");
+  return text("relationReadFailed");
+}
+
+function toRelationStatus(
+  entry: z.infer<typeof rawRelationStatus>,
+  text: (field: string) => string,
+): PlatformOntologyRelationStatus {
+  const reason = relationReasonText(entry, text);
+  return {
+    relationKind: entry.relationKind,
+    ...(entry.label ? { label: entry.label } : {}),
+    status: entry.status,
+    edgeCount: entry.edgeCount,
+    ...(reason ? { reason } : {}),
+  };
+}
 
 function toNode(raw: z.infer<typeof rawNode>): PlatformOntologyNode {
   return {
@@ -70,8 +120,18 @@ export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
       : await backendPost(`instance-graph-${operation}`, url, body, options);
     const answer = graphReply.parse(JSON.parse(response.text));
     if (!answer.success) {
-      const conflict = answer.code === "GRAPH_VERSION_CHANGED";
-      throw new HttpError(conflict ? 409 : 502, answer.message, answer.code ?? "INSTANCE_GRAPH_READ_FAILED");
+      logger.warn("Instance graph read failed", {
+        operation,
+        code: answer.code ?? "INSTANCE_GRAPH_READ_FAILED",
+        ownerMessage: answer.message,
+      });
+      if (answer.code === "GRAPH_VERSION_CHANGED") {
+        throw new HttpError(409, text("graphVersionChanged"), "GRAPH_VERSION_CHANGED");
+      }
+      if (answer.code === "GRAPH_SAMPLE_EXPIRED") {
+        throw new HttpError(409, text("graphSampleExpired"), "GRAPH_SAMPLE_EXPIRED");
+      }
+      throw new HttpError(502, text("graphReadFailed"), answer.code ?? "INSTANCE_GRAPH_READ_FAILED");
     }
     return answer;
   }
@@ -96,13 +156,17 @@ export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
           totalCount: group.instanceCount, sampleCount: group.sampleCount,
         })),
         nodes: graph.overviewNodes.map(toNode),
-        edges: graph.overviewEdges?.map(edge => toEdge(edge)),
-        edgesTruncated: graph.overviewEdgesTruncated,
+        ...(graph.relations ? { relations: graph.relations.map(entry => toRelationStatus(entry, text)) } : {}),
       };
     },
     async connections(version: string, sampleToken?: string) {
       const graph = rawConnections.extend({ version: z.string() }).parse(await ready("connections", { version, sampleToken }));
-      return { version: graph.version, edges: graph.overviewEdges.map(edge => toEdge(edge)), truncated: graph.overviewEdgesTruncated };
+      return {
+        version: graph.version,
+        edges: graph.overviewEdges.map(edge => toEdge(edge)),
+        truncated: graph.overviewEdgesTruncated,
+        ...(graph.relations ? { relations: graph.relations.map(entry => toRelationStatus(entry, text)) } : {}),
+      };
     },
     async statistics() {
       const graph = rawStatistics.parse(await ready("statistics"));
@@ -127,13 +191,21 @@ export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
       const [center, ...neighbors] = graph.nodes.map(toNode);
       const edges = graph.edges.map(edge => toEdge(edge,
         edge.from.className === node.className && edge.from.primaryKey === node.primaryKey ? "outgoing" : "incoming"));
-      const counts = new Map<string, number>();
-      for (const edge of edges) counts.set(edge.relationKind, (counts.get(edge.relationKind) ?? 0) + 1);
+      const relations = graph.relations
+        ? graph.relations.map(entry => ({
+          ...toRelationStatus(entry, text),
+          ...(entry.truncated !== undefined ? { truncated: entry.truncated } : {}),
+        }))
+        : (() => {
+          const counts = new Map<string, number>();
+          for (const edge of edges) counts.set(edge.relationKind, (counts.get(edge.relationKind) ?? 0) + 1);
+          return [...counts].map(([relationKind, edgeCount]) => ({
+            relationKind, edgeCount, status: "ok" as const, truncated: graph.nextOffset != null,
+          }));
+        })();
       return {
         node: center, neighbors, edges,
-        relations: [...counts].map(([relationKind, edgeCount]) => ({
-          relationKind, edgeCount, status: "ok", truncated: graph.nextOffset != null,
-        })),
+        relations,
         nextOffset: graph.nextOffset ?? null, total: graph.total ?? null, version: graph.version,
       };
     },

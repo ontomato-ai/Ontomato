@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { defineComponent, h, nextTick, ref } from "vue";
+import { defineComponent, h, nextTick, ref, shallowRef } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
@@ -86,7 +86,7 @@ function createPort(): PanelHostPort {
     snapshot: async (id: string) => ({ panel: { id, revision: panelRecord.revision }, projections: [] }),
     mode: { kind: "view" },
     coded: async (_source, run: DirectPanelRun, target: CodedPanelTarget) => {
-      const selected = ref<PanelDeepLinkStateValue | null>(
+      const selected = shallowRef<PanelDeepLinkStateValue | null>(
         (run.initial.selected as PanelDeepLinkStateValue | undefined) ?? null,
       );
 

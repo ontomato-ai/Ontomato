@@ -1,3 +1,5 @@
+import { documentVisible } from "@ontomato/foundation-ui/visibility";
+import type { ConversationDisplay } from "./conversation-display";
 import type { InjectionKey, DeepReadonly, Ref } from "vue";
 import type { AgentHostObjectChangedFrame, AgentHostSessionRunFrame } from "@ontomato/contracts/agent-host";
 import type { PresentationBinding, PresentationFrame, PresentationReceipt } from "@ontomato/contracts/agent-presentation";
@@ -25,3 +27,43 @@ export interface PageSessionStream {
   attach(shell: SessionStreamShell): () => void;
 }
 export const pageSessionStream: InjectionKey<PageSessionStream> = Symbol("page-session-stream");
+
+/** The live display belongs to the visible conversation whose run sent the request. */
+export function conversationStreamShell(display: ConversationDisplay, sessionId: () => string | null): SessionStreamShell {
+  return {
+  present: async (frame) => {
+    const verifyActive = () =>
+      !documentVisible()
+        ? ("view_unavailable" as const)
+        : frame.sessionId !== sessionId()
+          ? ("not_viewing_session" as const)
+          : null;
+    const unavailableReason = verifyActive();
+    if (unavailableReason) {
+      // Never return another session's or hidden tab's display/form snapshot on rejection.
+      const unknown = { known: false as const, reason: unavailableReason };
+      if (frame.target.kind === "observe") {
+        return { status: "observed", reason: unavailableReason, current: unknown };
+      }
+      if (frame.target.kind === "fill_form") {
+        return { status: "not_filled", reason: unavailableReason, current: unknown };
+      }
+      if (frame.target.kind === "page_action") {
+        return { status: "not_executed", reason: unavailableReason, current: unknown };
+      }
+      return { status: "not_opened", reason: unavailableReason, current: unknown };
+    }
+    return display.present(frame, verifyActive);
+  },
+  objectChanged: ({ session, target, affected, operation }) => {
+    if (session.sessionId === sessionId()) {
+      display.refreshObjects({
+        target,
+        ...(affected ? { affected } : {}),
+        ...(operation ? { operation } : {}),
+      });
+    }
+  },
+  ready: () => display.refreshObjects({ target: null }),
+  };
+}

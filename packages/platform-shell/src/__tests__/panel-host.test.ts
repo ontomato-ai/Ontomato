@@ -234,7 +234,7 @@ describe("the panel host", () => {
     await Promise.all([a.ready, b.ready, q.ready]);
 
     // Three instances, each from its own use relation: two of panel P and one of Q.
-    const panelOf = (view: typeof a) => view.source.value?.kind === "registered" ? view.source.value.use.panelId : null;
+    const panelOf = (view: typeof a) => view.source.value?.kind === "registered" ? view.source.value.panel.id : null;
     expect(panelOf(a)).toBe("panel-p");
     expect(panelOf(b)).toBe("panel-p");
     expect(panelOf(q)).toBe("panel-q");

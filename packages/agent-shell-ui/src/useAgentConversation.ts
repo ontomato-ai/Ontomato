@@ -1,4 +1,5 @@
 import type { ObservedPageTarget, PresentationBinding } from "@ontomato/contracts/agent-presentation";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { historyCursor } from "@ontomato/contracts/session-history";
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
@@ -39,6 +40,7 @@ export function useAgentConversation(
   agent: () => string | null,
   presentation: () => PresentationBinding | null = () => null,
   pageSkill: () => PageSkillContext | null = () => null,
+  sessionContext: () => Record<string, RuntimeJsonValue> | undefined = () => undefined,
 ) {
   const state = reactive<ConversationState>(emptyConversation());
   const loading = ref(false);
@@ -298,15 +300,18 @@ export function useAgentConversation(
     pendingInput.value = text;
     let createdSession: AgentHostSession | null = null;
     try {
-      createdSession = state.sessionId ? null : await client.createSession(agentId);
+      const view = presentation();
+      const binding = view && { viewId: view.viewId, ...(initialPage === undefined ? {} : { initialPage }) };
+      const page = pageSkill();
+      if (!state.sessionId) {
+        const context = sessionContext();
+        createdSession = await client.createSession(context === undefined ? agentId : { agentId, context });
+      }
       if (current !== token) return null;
       if (createdSession) {
         state.sessionId = createdSession.id;
         state.workspaceId = createdSession.workspaceId ?? null;
       }
-      const view = presentation();
-      const binding = view && { viewId: view.viewId, ...(initialPage === undefined ? {} : { initialPage }) };
-      const page = pageSkill();
       const result = await client.send(state.sessionId!, {
         message: text, ...reply, ...(binding ? { presentationBinding: binding } : {}), ...(page ? { pageSkillContext: page } : {}),
       });

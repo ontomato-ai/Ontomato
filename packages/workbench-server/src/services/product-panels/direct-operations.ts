@@ -473,7 +473,7 @@ export async function describeRowOperationsForRows(
 export async function declaredDirectOperation(
   owner: ProductOwner,
   credentials: AssistantCredentials,
-  use: ApplicationPanelUse,
+  use: ApplicationPanelUse | undefined,
   panel: ProductPanel,
   id: string,
   target?: PanelOperationTarget | null,

@@ -107,9 +107,9 @@ export interface PanelContext {
   resources(projection: ProductProjection): Promise<void>;
   /**
    * Asks the host to expand the page's composer with the slot's declared agent target and optional prefill text.
-   * Never sends a message; the host enforces that the request matches the slot's declared projection.
+   * The official entry control supplies the reader's click for declared submit and new-session actions.
    */
-  expandPageComposer(request: AppBridgeExpandPageComposer): Promise<void>;
+  expandPageComposer(request: AppBridgeExpandPageComposer, click?: MouseEvent): Promise<void>;
   /**
    * Opens one of the platform's addresses, such as `/agents/chat?agentId=…`. When it cannot — not the platform's own
    * address, a page the reader may not open — the platform says why on the page, and this rejects with that reason.

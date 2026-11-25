@@ -46,6 +46,7 @@ const canvasRecorder = {
   emitBlank: null as (() => void) | null,
   emitMove: null as ((id: string, pos: GraphCanvasPoint) => void) | null,
   emitViewport: null as ((viewport: GraphCanvasViewport) => void) | null,
+  emitProgress: null as ((progress: { drawn: number; total: number }) => void) | null,
 };
 
 function resetCanvasRecorder() {
@@ -61,6 +62,7 @@ function resetCanvasRecorder() {
   canvasRecorder.emitBlank = null;
   canvasRecorder.emitMove = null;
   canvasRecorder.emitViewport = null;
+  canvasRecorder.emitProgress = null;
 }
 
 vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
@@ -80,12 +82,13 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
       readableLabels: { type: Boolean, default: false },
       maxHeight: { type: Number, default: undefined },
     },
-    emits: ["update:selected", "activate", "blank", "move", "viewport", "resized"],
+    emits: ["update:selected", "activate", "blank", "move", "viewport", "resized", "progress"],
     setup(props, { emit, expose }) {
       canvasRecorder.emitSelect = (ids: string[]) => emit("update:selected", ids);
       canvasRecorder.emitActivate = (element: GraphCanvasElement) => emit("activate", element);
       canvasRecorder.emitBlank = () => emit("blank");
       canvasRecorder.emitMove = (id: string, pos: GraphCanvasPoint) => emit("move", id, pos);
+      canvasRecorder.emitProgress = (progress: { drawn: number; total: number }) => emit("progress", progress.drawn, progress.total);
       canvasRecorder.emitViewport = (viewport: GraphCanvasViewport) => {
         canvasRecorder.viewport = viewport;
         emit("viewport", viewport);
@@ -510,20 +513,29 @@ it("supports paginated neighbor loading (nextOffset), direction/target-group fil
     },
   );
 
-  // Start in overview, select Factory 1, click "Explore neighbors"
+  // Start in overview, emit viewport, select Factory 1, click floating "Explore neighbors"
   await vi.waitFor(() => expect(canvasRecorder.nodes.filter((n) => !n.anchor).length).toBe(4));
+  canvasRecorder.emitViewport!({ x: -1200, y: -1200, width: 2400, height: 2400, zoom: 1 });
   canvasRecorder.emitSelect!([encodeGraphNodeId(factory1)]);
   await nextTick();
+  expect(element.querySelector('[data-graph-node-actions]')).not.toBeNull();
   element.querySelector<HTMLButtonElement>('[data-graph-action="explore-neighbors"]')!.click();
 
-  // First neighbor page loads (1 of 2), showing Load More button and hasMoreNeighbors output
+  // First neighbor page loads (1 of 2), showing Load More button in floating actions and hasMoreNeighbors / neighborProgress outputs
   await vi.waitFor(() => expect(instance.outputs.graph?.activeMode).toBe("instance"));
   await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(2));
   expect(instance.outputs.graph?.hasMoreNeighbors).toBe(true);
-  expect(element.querySelector('[data-graph-neighbors-progress]')?.textContent).toContain("1");
-  expect(element.querySelector('[data-graph-neighbors-progress]')?.textContent).toContain("2");
+  expect(instance.outputs.graph?.neighborProgress).toEqual({ loaded: 1, total: 2, hasMore: true });
 
-  // Click Load More to append offset=1 neighbor without losing existing nodes
+  // Single-click on another node in instance mode selects it without expanding
+  const readsBeforeSingleClick = reads.filter((r) => r.dataName === "neighbors").length;
+  canvasRecorder.emitSelect!([encodeGraphNodeId(order1)]);
+  await nextTick();
+  expect(reads.filter((r) => r.dataName === "neighbors").length).toBe(readsBeforeSingleClick);
+
+  // Re-select root Factory 1 and click Load More to append offset=1 neighbor without losing existing nodes
+  canvasRecorder.emitSelect!([encodeGraphNodeId(factory1)]);
+  await nextTick();
   element.querySelector<HTMLButtonElement>('[data-graph-action="load-more-neighbors"]')!.click();
   await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(3));
   expect(instance.outputs.graph?.hasMoreNeighbors).toBe(false);
@@ -531,29 +543,47 @@ it("supports paginated neighbor loading (nextOffset), direction/target-group fil
   expect(pageReads[0]?.runtimeParams).toMatchObject({ limit: 2, offset: 0, direction: "both" });
   expect(pageReads[1]?.runtimeParams).toMatchObject({ limit: 2, offset: 1, direction: "both" });
 
-  // Switch direction filter to incoming & target group filter to Line
-  const directionSelect = element.querySelector<HTMLSelectElement>('[data-graph-filter="direction"]')!;
-  directionSelect.value = "incoming";
-  directionSelect.dispatchEvent(new Event("change"));
-  await nextTick();
-  await vi.waitFor(() => expect(reads.filter((r) => r.dataName === "neighbors").length).toBe(3));
-  expect(reads.filter((r) => r.dataName === "neighbors").at(-1)?.runtimeParams).toMatchObject({
-    direction: "incoming",
-    offset: 0,
+  // Open neighbor filter popover: changing direction/target group drafts does NOT trigger reads until Apply is clicked
+  const filterBtn = element.querySelector<HTMLButtonElement>('[data-graph-action="neighbor-filters"]')!;
+  filterBtn.click();
+  const applyBtn = await vi.waitFor(() => {
+    const btn = document.querySelector<HTMLButtonElement>('[data-graph-action="apply-filters"]');
+    expect(btn).not.toBeNull();
+    return btn!;
   });
-
-  const targetGroupSelect = element.querySelector<HTMLSelectElement>('[data-graph-filter="target-group"]')!;
-  targetGroupSelect.value = "Order";
-  targetGroupSelect.dispatchEvent(new Event("change"));
+  const directionWrapper = document.querySelector<HTMLElement>('[data-graph-filter="direction"] .el-select__wrapper')!;
+  directionWrapper.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   await nextTick();
-  await vi.waitFor(() => expect(reads.filter((r) => r.dataName === "neighbors").length).toBe(4));
+  const incomingOpt = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+    .find((el) => el.textContent?.includes("Incoming"))!;
+  incomingOpt.click();
+  await nextTick();
+  // Draft change must NOT fire a neighbor read before Apply
+  expect(reads.filter((r) => r.dataName === "neighbors").length).toBe(2);
+
+  const targetWrapper = document.querySelector<HTMLElement>('[data-graph-filter="target-group"] .el-select__wrapper')!;
+  targetWrapper.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await nextTick();
+  const orderOpt = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+    .find((el) => el.textContent?.trim() === "Order")!;
+  orderOpt.click();
+  await nextTick();
+  expect(reads.filter((r) => r.dataName === "neighbors").length).toBe(2);
+
+  applyBtn.click();
+  await vi.waitFor(() => expect(reads.filter((r) => r.dataName === "neighbors").length).toBe(3));
   expect(reads.filter((r) => r.dataName === "neighbors").at(-1)?.runtimeParams).toMatchObject({
     direction: "incoming",
     targetClass: "Order",
     offset: 0,
   });
 
-  // Back to overview returns cleanly to sampled overview mode
+  // Back to overview floating button returns cleanly to sampled overview mode
+  await vi.waitFor(() => {
+    const btn = element.querySelector<HTMLButtonElement>('[data-graph-action="back-to-overview"]');
+    expect(btn).not.toBeNull();
+    expect(btn!.disabled).toBe(false);
+  });
   element.querySelector<HTMLButtonElement>('[data-graph-action="back-to-overview"]')!.click();
   await vi.waitFor(() => expect(instance.outputs.graph?.activeMode).toBe("overview"));
   expect(canvasRecorder.nodes.filter((n) => !n.anchor)).toHaveLength(4);
@@ -624,6 +654,7 @@ it("surfaces GRAPH_VERSION_CHANGED conflicts from connections and neighbors and 
   expect(instance.outputs.graph?.versionChanged).toBe(false);
 
   // Version conflict during neighbor exploration also surfaces non-blockingly and recovers back to overview
+  canvasRecorder.emitViewport!({ x: -1200, y: -1200, width: 2400, height: 2400, zoom: 1 });
   canvasRecorder.emitSelect!([encodeGraphNodeId(factory1)]);
   await nextTick();
   element.querySelector<HTMLButtonElement>('[data-graph-action="explore-neighbors"]')!.click();
@@ -813,4 +844,175 @@ it("keeps backward-compatible type and instance modes working without overview p
   expect(legacyNeighborRead?.runtimeParams?.offset).toBeUndefined();
   expect(legacyNeighborRead?.runtimeParams?.direction).toBeUndefined();
   expect(legacyNeighborRead?.runtimeParams?.targetClass).toBeUndefined();
+});
+
+it("exposes overview diagnostics outputs, clickable group headings, NOT_GENERATED refresh, GENERATING auto-poll, and drawing progress", async () => {
+  let phase: "not-generated" | "generating" | "ready" = "not-generated";
+  const baseProjection = overviewProjection();
+  const projection: ProductProjection = {
+    ...baseProjection,
+    inputs: {
+      ...baseProjection.inputs,
+      selectedGroup: { kind: "scalar", type: "string" },
+    },
+    outputs: {
+      ...baseProjection.outputs,
+      selectedGroup: { kind: "scalar", type: "string" },
+    },
+  };
+  const manifest: PanelManifest = {
+    ...overviewManifest(),
+    state: {
+      ...overviewManifest().state,
+      selectedGroup: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      graph: {
+        target: { projectionId: "sampled-graph" },
+        inputs: {
+          start: { state: "start" },
+          selected: { state: "selected" },
+          selectedGroup: { state: "selectedGroup" },
+          query: { state: "query" },
+        },
+        outputs: {
+          selectedNode: { state: "selected" },
+          selectedGroup: { state: "selectedGroup" },
+          positions: { state: "positions" },
+        },
+      },
+    },
+  };
+  const { instance, element, reads } = mountDirect(
+    manifest,
+    { "sampled-graph": projection },
+    (request) => {
+      if (request.dataName === "overview") {
+        if (phase === "not-generated") {
+          return ready({
+            status: "NOT_GENERATED",
+            complete: true,
+            groups: [],
+            nodes: [],
+            edges: [],
+            failures: [],
+            edgesTruncated: false,
+          });
+        }
+        if (phase === "generating") {
+          return ready({
+            status: "GENERATING",
+            complete: false,
+            groups: [],
+            nodes: [],
+            edges: [],
+            failures: [],
+            edgesTruncated: false,
+          });
+        }
+        return ready({
+          ...readyOverviewPayload(true),
+          complete: false,
+          edgesTruncated: true,
+          failures: ["Line: timeout"],
+        });
+      }
+      return ready({});
+    },
+  );
+
+  // 1. NOT_GENERATED shows empty state with refresh button
+  await vi.waitFor(() => expect(element.querySelector('[data-graph-state="not-generated"]')).not.toBeNull());
+  const refreshBtn = element.querySelector<HTMLButtonElement>('[data-graph-state="not-generated"] [data-graph-action="refresh"]')!;
+  expect(refreshBtn).not.toBeNull();
+
+  // 2. Click refresh -> GENERATING -> auto-polls after 2000ms into READY
+  vi.useFakeTimers();
+  try {
+    phase = "generating";
+    refreshBtn.click();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(instance.outputs.graph?.graphStatus).toBe("GENERATING");
+    const readsBeforePoll = reads.filter((r) => r.dataName === "overview").length;
+    phase = "ready";
+    await vi.advanceTimersByTimeAsync(2050);
+    expect(reads.filter((r) => r.dataName === "overview").length).toBeGreaterThan(readsBeforePoll);
+  } finally {
+    vi.useRealTimers();
+  }
+  await vi.waitFor(() => expect(instance.outputs.graph?.graphStatus).toBe("READY"));
+
+  // 3. Diagnostic outputs reflect overview metadata
+  expect(instance.outputs.graph?.groups).toEqual([
+    { id: "Factory", label: "Factory", totalCount: 10, sampleCount: 2 },
+    { id: "Order", label: "Order", totalCount: 15, sampleCount: 2 },
+  ]);
+  expect(instance.outputs.graph?.drawnNodeCount).toBe(4);
+  expect(instance.outputs.graph?.overviewEdgesTruncated).toBe(true);
+  expect(instance.outputs.graph?.complete).toBe(false);
+  expect(instance.outputs.graph?.failures).toEqual(["Line: timeout"]);
+
+  // 4. @progress event updates drawingProgress output
+  canvasRecorder.emitProgress!({ drawn: 2, total: 4 });
+  await nextTick();
+  expect(instance.outputs.graph?.drawingProgress).toEqual({ drawn: 2, total: 4 });
+  canvasRecorder.emitProgress!({ drawn: 4, total: 4 });
+  await nextTick();
+  expect(instance.outputs.graph?.drawingProgress).toBeNull();
+
+  // 5. Clicking a group heading button toggles selectedGroup state
+  canvasRecorder.emitViewport!({ x: -1200, y: -1200, width: 2400, height: 2400, zoom: 1 });
+  await nextTick();
+  const factoryHeading = element.querySelector<HTMLButtonElement>('[data-graph-group-heading="Factory"]');
+  expect(factoryHeading).not.toBeNull();
+  factoryHeading!.click();
+  await nextTick();
+  expect(instance.state.values.value.selectedGroup).toBe("Factory");
+  expect(factoryHeading!.classList.contains("is-selected")).toBe(true);
+});
+
+it("displays an overview notice listing omitted relationships and their reasons from deferred connections", async () => {
+  const { element } = mountDirect(
+    overviewManifest(),
+    { "sampled-graph": overviewProjection() },
+    (request) => {
+      if (request.dataName === "overview") return ready(readyOverviewPayload(false));
+      if (request.dataName === "connections") {
+        return ready({
+          version: "v-1",
+          truncated: false,
+          edges: [
+            {
+              id: "e-conn-1",
+              relationKind: "produces",
+              label: "Produces",
+              from: { className: "Factory", primaryKey: "f-1" },
+              to: { className: "Order", primaryKey: "o-1" },
+              direction: "outgoing" as const,
+              derived: false,
+            },
+          ],
+          relations: [
+            { relationKind: "produces", label: "Produces", status: "ok", edgeCount: 1 },
+            {
+              relationKind: "rel_r014",
+              label: "Related task",
+              status: "unavailable",
+              edgeCount: 0,
+              reason: "This relationship does not declare join fields; add them to read it.",
+            },
+          ],
+        });
+      }
+      return ready({ node: factory1, neighbors: [], edges: [], relations: [] });
+    },
+  );
+
+  await vi.waitFor(() => {
+    const notice = element.querySelector("[data-graph-state='overview-relations-omitted']");
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent).toContain("1");
+    expect(notice?.textContent).toContain("Related task");
+    expect(notice?.textContent).toContain("This relationship does not declare join fields; add them to read it.");
+  });
 });

@@ -76,6 +76,7 @@ export const runtimeAgentEventSchema = z.discriminatedUnion("type", [
       errorMessage: z.string().nullable(),
       answerMessageId: runtimeIdSchema.nullable(),
       workspaceCommit: workspaceCommitSchema.nullable(),
+      outcome: runtimeJsonValueSchema.optional(),
     })
     .strict(),
   z

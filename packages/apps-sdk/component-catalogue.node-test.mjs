@@ -78,6 +78,7 @@ const DECLARED_DATA = {
   // Readable as a member it reads nothing; an empty table says so, and Node registers it on that declaration.
   ConversationEntry: {},
   AgentChat: {},
+  AppPreview: {},
   ObjectTree: { files: ["panelRecordList"] },
   ObjectTextReader: { sources: ["panelRecordList"], page: ["panelRecordQuery"], record: ["panelRecord"] },
   AnnotatedCode: { content: ["annotatedCode"] },
@@ -239,6 +240,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       start: anyObject,
       selected: anyObject,
       selectedType: { kind: "scalar", type: "string" },
+      selectedGroup: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
       visibleLayers: stringList,
       expandedNodes: anyObjectList,
@@ -248,6 +250,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       selectedNode: anyObject,
       selected: anyObject,
       selectedType: { kind: "scalar", type: "string" },
+      selectedGroup: { kind: "scalar", type: "string" },
       visibleRelationKinds: platformRelationKindList,
       visibleLayers: stringList,
       expandedNodes: anyObjectList,
@@ -380,11 +383,20 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     ]);
     assert.deepEqual(Object.keys(declared.get("OntologyGraph").readOnlyOutputs ?? {}).sort(), [
       "activeMode",
+      "complete",
+      "drawingProgress",
+      "drawnEdgeCount",
+      "drawnNodeCount",
       "edgeCount",
+      "failures",
       "graphStatus",
       "graphVersion",
+      "groups",
       "hasMoreNeighbors",
+      "neighborProgress",
       "nodeCount",
+      "overviewEdgesTruncated",
+      "relationKinds",
       "sampleToken",
       "startDetail",
       "startLabel",
@@ -423,7 +435,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const componentsDoc = readFileSync(join(out, version, "docs/components.md"), "utf8");
     const componentsDocBytes = Buffer.byteLength(componentsDoc, "utf8");
     assert.ok(
-      componentsDocBytes < 10_000,
+      componentsDocBytes < 12_000,
       `docs/components.md overview must stay within a few KB (got ${componentsDocBytes} bytes)`,
     );
     assert.doesNotMatch(componentsDoc, /^Binds:/mu, "docs/components.md must not emit misleading bare 'Binds:' lines");
@@ -445,10 +457,15 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
     }
-    for (const included of ["ObjectList", "ObjectForm", "ConversationEntry", "AgentChat", "PageHeader", "MarkdownView"]) {
+    for (const included of ["ObjectList", "ObjectForm", "ConversationEntry", "AgentChat", "AppPreview", "PageHeader", "MarkdownView"]) {
       const entry = catalogue.components.find((c) => c.componentId === included);
       assert.equal(entry?.panelUsable, true, `${included} must derive panelUsable === true`);
     }
+    assert.deepEqual(Object.keys(declared.get("AppPreview").readOnlyOutputs ?? {}).sort(), [
+      "activePage",
+      "selection",
+      "status",
+    ]);
     const uiPrimitivesDoc = readFileSync(join(out, version, "docs/components/ui-primitives.md"), "utf8");
     const themeTokensDoc = readFileSync(join(out, version, "docs/components/theme-tokens.md"), "utf8");
     assert.match(uiPrimitivesDoc, /`<sdk-button>`/);

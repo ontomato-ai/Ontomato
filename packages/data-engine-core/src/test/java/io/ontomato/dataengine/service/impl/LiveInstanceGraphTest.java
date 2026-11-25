@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
@@ -16,6 +18,7 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
+import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
@@ -277,5 +280,149 @@ class LiveInstanceGraphTest {
         assertEquals(1000, result.getJSONObject("data").getJSONArray("overviewNodes").size());
         assertEquals(10000, result.getJSONObject("data").getLongValue("nodeCount"));
         assertEquals(3, result.getJSONObject("data").getJSONArray("classes").size());
+    }
+
+    @Test void neighborhoodIsolatesUnsupportedRefusedAndFailedRelationsWhileKeepingReadableOnes() throws Exception {
+        var admin = mock(AdminService.class);
+        var configs = mock(BusinessConfigService.class);
+        var adapters = mock(DataAdapterRegistry.class);
+        var adapter = mock(DataAdapter.class);
+        when(configs.get("test")).thenReturn(new BusinessConfig());
+        when(admin.getJSONRule("test")).thenReturn(JSONObject.parseObject("""
+            {"classDef":[
+              {"className":"Task","showName":"Task","attrs":[{"name":"id","primaryKey":true},{"name":"title","bizzkey":true}]},
+              {"className":"User","showName":"User","attrs":[{"name":"id","primaryKey":true},{"name":"name","bizzkey":true}]}],
+             "relationship_rule":{
+               "rel_ok":{"fromclass":"Task","toclass":"User","fromField":"owner_id","toField":"id","desc":"Assigned to"},
+               "rel_missing":{"fromclass":"Task","toclass":"User","desc":"Related task"},
+               "rel_graph":{"fromclass":"Task","toclass":"User","type":"graph","desc":"Graph link"},
+               "rel_cross":{"fromclass":"Task","toclass":"User","fromField":"owner_id","toField":"id","desc":"Cross source"},
+               "rel_denied":{"fromclass":"Task","toclass":"User","fromField":"owner_id","toField":"id","desc":"Secret link"},
+               "rel_boom":{"fromclass":"Task","toclass":"User","fromField":"owner_id","toField":"id","desc":"Broken link"}
+             }}
+            """));
+        when(adapters.create(any(), any())).thenReturn(adapter);
+        when(adapter.executeDsl(anyString(), anyString(), any(), anyList())).thenAnswer(call -> {
+            JSONObject step = JSON.parseArray(call.getArgument(0, String.class)).getJSONObject(0)
+                    .getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
+            JSONObject pattern = step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0);
+            if (!pattern.containsKey("relationship")) {
+                return JSONArray.of(JSONObject.of("answer", JSONArray.of(JSONObject.of("pk", "t1", "name", "Fix bug")))).toJSONString();
+            }
+            String relType = pattern.getJSONArray("relationship").getJSONObject(0).getJSONArray("type").getString(0);
+            return switch (relType) {
+                case "rel_ok" -> JSONArray.of(JSONObject.of("answer", JSONArray.of(JSONObject.of("pk", "u1", "name", "Alice")))).toJSONString();
+                case "rel_missing" -> throw new DslContractViolationException(
+                        DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
+                        "relationship[rel_missing]",
+                        "relationship [rel_missing] declares type 'graph', which this source cannot traverse");
+                case "rel_graph" -> throw new DslContractViolationException(
+                        DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
+                        "relationship[rel_graph]",
+                        "relationship [rel_graph] declares type 'graph', which this source cannot traverse");
+                case "rel_cross" -> throw new DslContractViolationException(
+                        DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
+                        "answer.steps[0].patterns[].objects[].class",
+                        "a graph query may not span data sources: `Task` is in `a`; `User` is in `b`;");
+                case "rel_denied" -> throw new ResponseStatusException(HttpStatus.FORBIDDEN, "denied");
+                case "rel_boom" -> throw new RuntimeException("SQL syntax error near secret_table");
+                default -> JSONArray.of(JSONObject.of("answer", new JSONArray())).toJSONString();
+            };
+        });
+
+        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query(
+                "neighborhood",
+                JSONObject.of("node", JSONObject.of("className", "Task", "primaryKey", "t1")),
+                fullPermission(),
+                "test");
+        assertTrue(result.getBooleanValue("success"), result.toJSONString());
+        JSONObject data = result.getJSONObject("data");
+        assertEquals(1, data.getJSONArray("edges").size());
+        assertEquals("rel_ok", data.getJSONArray("edges").getJSONObject(0).getString("type"));
+
+        var statuses = new java.util.LinkedHashMap<String, JSONObject>();
+        for (Object item : data.getJSONArray("relations")) {
+            JSONObject status = (JSONObject) item;
+            statuses.put(status.getString("relationKind"), status);
+        }
+        assertEquals("ok", statuses.get("rel_ok").getString("status"));
+        assertEquals("Assigned to", statuses.get("rel_ok").getString("label"));
+        assertEquals(1, statuses.get("rel_ok").getIntValue("edgeCount"));
+
+        assertEquals("unavailable", statuses.get("rel_missing").getString("status"));
+        assertEquals("Related task", statuses.get("rel_missing").getString("label"));
+        assertEquals("RELATION_MISSING_JOIN_FIELDS", statuses.get("rel_missing").getString("reasonCode"));
+
+        assertEquals("unavailable", statuses.get("rel_graph").getString("status"));
+        assertEquals("RELATION_GRAPH_TYPE_UNSUPPORTED", statuses.get("rel_graph").getString("reasonCode"));
+
+        assertEquals("unavailable", statuses.get("rel_cross").getString("status"));
+        assertEquals("RELATION_CROSS_SOURCE_UNSUPPORTED", statuses.get("rel_cross").getString("reasonCode"));
+
+        assertEquals("refused", statuses.get("rel_denied").getString("status"));
+        assertEquals("RELATION_FORBIDDEN", statuses.get("rel_denied").getString("reasonCode"));
+
+        assertEquals("failed", statuses.get("rel_boom").getString("status"));
+        assertEquals("RELATION_READ_FAILED", statuses.get("rel_boom").getString("reasonCode"));
+        assertFalse(statuses.get("rel_boom").toJSONString().contains("secret_table"));
+    }
+
+    @Test void overviewAndParallelConnectionsIsolateUnsupportedRelationsAndReportStatuses() throws Exception {
+        var admin = mock(AdminService.class);
+        var configs = mock(BusinessConfigService.class);
+        var adapters = mock(DataAdapterRegistry.class);
+        var adapter = mock(DataAdapter.class);
+        when(configs.get("test")).thenReturn(new BusinessConfig());
+        var rules = new JSONObject();
+        for (int i = 0; i < 6; i++) {
+            rules.put("ok_" + i, JSONObject.of("fromclass", "A", "toclass", "B", "fromField", "b_id", "toField", "id", "desc", "Link " + i));
+        }
+        rules.put("missing_rel", JSONObject.of("fromclass", "A", "toclass", "B", "desc", "Unmapped link"));
+        when(admin.getJSONRule("test")).thenReturn(JSONObject.of("classDef", JSONArray.of(
+                JSONObject.of("className", "A", "attrs", JSONArray.of(JSONObject.of("name", "id", "primaryKey", true))),
+                JSONObject.of("className", "B", "attrs", JSONArray.of(JSONObject.of("name", "id", "primaryKey", true)))),
+                "relationship_rule", rules));
+        when(adapters.create(any(), any())).thenReturn(adapter);
+        when(adapter.executeDsl(anyString(), anyString(), any(), anyList())).thenAnswer(call -> {
+            JSONObject step = JSON.parseArray(call.getArgument(0, String.class)).getJSONObject(0)
+                    .getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
+            JSONObject output = step.getJSONObject("output");
+            JSONObject pattern = step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0);
+            JSONArray rows = new JSONArray();
+            if ("count".equals(output.getJSONArray("fields").getJSONObject(0).getString("function"))) {
+                rows.add(JSONObject.of("cnt", 1));
+            } else if (pattern.containsKey("relationship")) {
+                String relType = pattern.getJSONArray("relationship").getJSONObject(0).getJSONArray("type").getString(0);
+                if ("missing_rel".equals(relType)) {
+                    throw new DslContractViolationException(
+                            DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
+                            "relationship[missing_rel]",
+                            "relationship [missing_rel] declares type 'graph'");
+                }
+                rows.add(JSONObject.of("source", "1", "target", "1"));
+            } else {
+                rows.add(JSONObject.of("pk", "1", "name", "1"));
+            }
+            return JSONArray.of(JSONObject.of("answer", rows)).toJSONString();
+        });
+
+        var service = new LiveInstanceGraph(admin, configs, adapters);
+        JSONObject nodes = service.query("nodes", new JSONObject(), fullPermission(), "test");
+        assertTrue(nodes.getBooleanValue("success"), nodes.toJSONString());
+        JSONObject connections = service.query("connections", JSONObject.of(
+                "version", nodes.getJSONObject("data").getString("version"),
+                "sampleToken", nodes.getJSONObject("data").getString("sampleToken")), fullPermission(), "test");
+        assertTrue(connections.getBooleanValue("success"), connections.toJSONString());
+        JSONObject connData = connections.getJSONObject("data");
+        assertEquals(6, connData.getJSONArray("overviewEdges").size());
+        JSONObject missingStatus = null;
+        for (Object item : connData.getJSONArray("relations")) {
+            JSONObject status = (JSONObject) item;
+            if ("missing_rel".equals(status.getString("relationKind"))) missingStatus = status;
+        }
+        assertNotNull(missingStatus);
+        assertEquals("unavailable", missingStatus.getString("status"));
+        assertEquals("Unmapped link", missingStatus.getString("label"));
+        assertEquals("RELATION_MISSING_JOIN_FIELDS", missingStatus.getString("reasonCode"));
     }
 }

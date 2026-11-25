@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { confirmDanger } from "@ontomato/platform-shell";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { PageHeaderDraft, PageHeaderLabels } from "./page-header-types";
 
 /**
@@ -15,12 +16,16 @@ const props = withDefaults(
   defineProps<{
     /** The page's title text; omit when supplying custom content via `#title` or when the header carries only actions. */
     title?: string;
+    /** Optional locale-keyed title map resolved against the active UI locale when `title` is omitted. */
+    names?: Readonly<Record<string, string>> | null;
     /** Optional single-line subtitle/description shown beside (compact) or below (expanded) the title. */
     description?: string | null;
     /** Explicit label for the back button (for example "Back to relation types"); omitted hides the back button. */
     backLabel?: string;
     /** Dense single-row layout with bottom hairline (default `true`); set `false` for an expanded hero header. */
     compact?: boolean;
+    /** Explicit header density: `"bar"` (48px single-entry application bar), `"compact"` (dense row), or `"expanded"` (hero header). Overrides `compact` when set. */
+    density?: "bar" | "compact" | "expanded";
     /** Optional draft controls (unsaved notice, Discard and Save) shown at the right edge of the actions area. */
     draft?: PageHeaderDraft | null;
     /** Optional label overrides for the draft controls; defaults to platform i18n (`platform.save`, `platform.discard`, `platform.unsavedChanges`). */
@@ -28,9 +33,11 @@ const props = withDefaults(
   }>(),
   {
     title: "",
+    names: null,
     description: null,
     backLabel: undefined,
     compact: true,
+    density: undefined,
     draft: null,
     labels: undefined,
   },
@@ -82,6 +89,18 @@ const resolvedLabels = computed<PageHeaderLabels>(() => ({
   keepEditing: props.labels?.keepEditing ?? translate("platform.keepEditing", "Keep editing"),
 }));
 
+const currentLocale = computed(() => i18n?.locale.value ?? "en");
+
+const resolvedTitle = computed(() => {
+  if (props.title) return props.title;
+  if (!props.names) return "";
+  return localizedApplicationText(props.names, currentLocale.value) ?? "";
+});
+
+const effectiveDensity = computed<"bar" | "compact" | "expanded">(() =>
+  props.density ?? (props.compact ? "compact" : "expanded"),
+);
+
 const draftSaving = computed(() => Boolean(props.draft?.saving));
 const draftDirty = computed(() => Boolean(props.draft?.dirty));
 const draftCanSave = computed(() => {
@@ -121,13 +140,19 @@ function handleSave() {
 </script>
 
 <template>
-  <header class="sdk-page-header" :class="{ compact }">
+  <header
+    class="sdk-page-header"
+    :class="{
+      compact: effectiveDensity === 'compact' || effectiveDensity === 'bar',
+      bar: effectiveDensity === 'bar',
+    }"
+  >
     <div
-      v-if="$slots.leading || backLabel || $slots.title || title || $slots.description || description || $slots.actions || $slots.default || draft"
+      v-if="$slots.leading || backLabel || $slots.title || resolvedTitle || $slots.description || description || $slots.actions || $slots.default || draft"
       class="sdk-page-header-row"
     >
-      <div v-if="$slots.leading || backLabel || $slots.title || title || $slots.description || description" class="sdk-page-header-text">
-        <div v-if="$slots.leading || backLabel || $slots.title || title" class="sdk-page-header-heading">
+      <div v-if="$slots.leading || backLabel || $slots.title || resolvedTitle || $slots.description || description" class="sdk-page-header-text">
+        <div v-if="$slots.leading || backLabel || $slots.title || resolvedTitle" class="sdk-page-header-heading">
           <span v-if="$slots.leading" class="sdk-page-header-leading"><slot name="leading" /></span>
           <button v-if="backLabel" type="button" class="sdk-page-header-back" @click="emit('back')">
             <svg
@@ -147,9 +172,9 @@ function handleSave() {
             </svg>
             <span>{{ backLabel }}</span>
           </button>
-          <span v-if="backLabel && ($slots.title || title)" class="sdk-page-header-back-divider" aria-hidden="true" />
+          <span v-if="backLabel && ($slots.title || resolvedTitle)" class="sdk-page-header-back-divider" aria-hidden="true" />
           <div v-if="$slots.title" class="sdk-page-header-title-slot"><slot name="title" /></div>
-          <h1 v-else-if="title" class="sdk-page-header-title">{{ title }}</h1>
+          <h1 v-else-if="resolvedTitle" class="sdk-page-header-title">{{ resolvedTitle }}</h1>
         </div>
         <div v-if="$slots.description" class="sdk-page-header-description"><slot name="description" /></div>
         <p v-else-if="description" class="sdk-page-header-description">{{ description }}</p>
@@ -483,6 +508,14 @@ function handleSave() {
 .sdk-page-header.compact {
   padding-block: var(--spacing-md);
   border-bottom: 1px solid var(--el-border-color);
+}
+
+/* Single-entry application frame header bar: exact 48px height matching PlatformPageHeader standalone bar. */
+.sdk-page-header.bar {
+  min-height: 48px;
+  padding-block: 8px;
+  justify-content: center;
+  background: var(--el-bg-color);
 }
 
 .sdk-page-header.compact .sdk-page-header-row {

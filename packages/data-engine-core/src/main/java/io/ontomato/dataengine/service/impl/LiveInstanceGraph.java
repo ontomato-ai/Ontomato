@@ -2,22 +2,28 @@ package io.ontomato.dataengine.service.impl;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
@@ -25,6 +31,7 @@ import com.alibaba.fastjson2.JSONObject;
 
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
+import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
 import io.ontomato.dataengine.dataAdapter.DslExecutionMode;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
@@ -41,6 +48,7 @@ import io.ontomato.dataengine.util.DslUtil;
  */
 @Service
 public class LiveInstanceGraph {
+    private static final Logger LOG = LoggerFactory.getLogger(LiveInstanceGraph.class);
     private final AdminService admin;
     private final BusinessConfigService configs;
     private final DataAdapterRegistry adapters;
@@ -114,7 +122,16 @@ public class LiveInstanceGraph {
     }
 
     private record ObjectType(String name, String showName, String pk, String label, List<String> searchFields, boolean hasBusinessName) {}
-    private record Relation(String type, ObjectType from, ObjectType to) {}
+    private record Relation(
+            String type,
+            String label,
+            ObjectType from,
+            ObjectType to,
+            String declaredType,
+            boolean hasJoinFields,
+            boolean hasLinkTable) {}
+    private record RelationFailure(String status, String reasonCode) {}
+    private record OverviewRelationResult(List<JSONObject> rows, RelationFailure failure) {}
 
     static String identifier(String value) {
         if (value == null || !value.matches("[A-Za-z_][A-Za-z0-9_]*"))
@@ -180,13 +197,84 @@ public class LiveInstanceGraph {
             };
             return ready(data);
         } catch (CompletionException e) {
-            Throwable cause = e.getCause() == null ? e : e.getCause();
-            return JSONObject.of("success", false, "message", cause.getMessage());
+            Throwable cause = unwrap(e);
+            LOG.warn("Instance graph operation '{}' failed: {}", operation, cause.getMessage(), cause);
+            return errorReply(cause);
         } catch (Exception e) {
-            return JSONObject.of("success", false, "message", e.getMessage());
+            Throwable cause = unwrap(e);
+            LOG.warn("Instance graph operation '{}' failed: {}", operation, cause.getMessage(), cause);
+            return errorReply(cause);
         } finally {
             permits.release();
         }
+    }
+
+    private static JSONObject errorReply(Throwable cause) {
+        String code = "INSTANCE_GRAPH_READ_FAILED";
+        String message = cause.getMessage() == null ? "Instance graph query failed." : cause.getMessage();
+        if (cause instanceof IllegalStateException && message.startsWith("Graph sample expired")) {
+            code = "GRAPH_SAMPLE_EXPIRED";
+        } else if (cause instanceof IllegalArgumentException) {
+            code = "INSTANCE_GRAPH_INVALID_REQUEST";
+        }
+        return JSONObject.of("success", false, "code", code, "message", message);
+    }
+
+    private static Throwable unwrap(Throwable error) {
+        Throwable current = error;
+        while ((current instanceof CompletionException || current instanceof ExecutionException) && current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private static String nonBlankText(Object value) {
+        if (!(value instanceof String text)) return null;
+        String trimmed = text.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static RelationFailure classifyRelationFailure(Relation relation, Throwable error) {
+        Throwable cause = unwrap(error);
+        if (cause instanceof ResponseStatusException statusError && statusError.getStatusCode().value() == 403) {
+            return new RelationFailure("refused", "RELATION_FORBIDDEN");
+        }
+        if (cause instanceof DslContractViolationException violationError) {
+            for (var violation : violationError.getViolations()) {
+                String detail = violation.getDetail() == null ? "" : violation.getDetail();
+                if (detail.contains("span data sources")) {
+                    return new RelationFailure("unavailable", "RELATION_CROSS_SOURCE_UNSUPPORTED");
+                }
+            }
+            if (relation.declaredType == null && !relation.hasJoinFields && !relation.hasLinkTable) {
+                return new RelationFailure("unavailable", "RELATION_MISSING_JOIN_FIELDS");
+            }
+            if ("graph".equals(relation.declaredType)) {
+                return new RelationFailure("unavailable", "RELATION_GRAPH_TYPE_UNSUPPORTED");
+            }
+            if (("fk".equals(relation.declaredType) && !relation.hasJoinFields) || "n:n".equals(relation.declaredType)) {
+                return new RelationFailure("unavailable", "RELATION_MISSING_JOIN_FIELDS");
+            }
+            return new RelationFailure("unavailable", "RELATION_SOURCE_UNSUPPORTED");
+        }
+        LOG.warn("Failed to read instance graph relation '{}': {}", relation.type, cause.getMessage(), cause);
+        return new RelationFailure("failed", "RELATION_READ_FAILED");
+    }
+
+    private static JSONObject relationEntry(
+            Relation relation,
+            String status,
+            int edgeCount,
+            String reasonCode,
+            Boolean truncated) {
+        JSONObject entry = JSONObject.of(
+                "relationKind", relation.type,
+                "label", relation.label,
+                "status", status,
+                "edgeCount", edgeCount);
+        if (reasonCode != null) entry.put("reasonCode", reasonCode);
+        if (truncated != null) entry.put("truncated", truncated);
+        return entry;
     }
 
     private JSONObject ready(JSONObject data) {
@@ -289,11 +377,25 @@ public class LiveInstanceGraph {
     private List<Relation> relations(Map<String, Object> schema, Map<String, ObjectType> types) {
         List<Relation> relations = new ArrayList<>();
         var rules = (Map<String, Map<String, Object>>) schema.get("relationship_rule");
+        if (rules == null) return relations;
         for (var entry : rules.entrySet()) {
             var rule = entry.getValue();
+            if (rule == null) continue;
             ObjectType from = types.get(rule.get("fromclass"));
             ObjectType to = types.get(rule.get("toclass"));
-            if (from != null && to != null) relations.add(new Relation(entry.getKey(), from, to));
+            if (from == null || to == null) continue;
+            String label = nonBlankText(rule.get("desc"));
+            String declaredType = nonBlankText(rule.get("type"));
+            boolean hasJoinFields = nonBlankText(rule.get("fromField")) != null && nonBlankText(rule.get("toField")) != null;
+            boolean hasLinkTable = nonBlankText(rule.get("linkTable")) != null;
+            relations.add(new Relation(
+                    entry.getKey(),
+                    label != null ? label : entry.getKey(),
+                    from,
+                    to,
+                    declaredType,
+                    hasJoinFields,
+                    hasLinkTable));
         }
         relations.sort(Comparator.comparing(Relation::type));
         return relations;
@@ -348,20 +450,26 @@ public class LiveInstanceGraph {
         JSONObject connections = cacheKey.nodesOnly
                 ? JSONObject.of("overviewEdges", new JSONArray(), "overviewEdgesTruncated", false)
                 : overviewConnections(adapter, pool, relations, ids);
-        org.slf4j.LoggerFactory.getLogger(LiveInstanceGraph.class).info(
+        LOG.info(
                 "Instance graph overview: nodes={}, statisticsMs={}, samplingMs={}, connectionsMs={}, nodesOnly={}",
                 nodes.size(), (counted - started) / 1_000_000, (sampledAt - counted) / 1_000_000,
                 (System.nanoTime() - sampledAt) / 1_000_000, cacheKey.nodesOnly);
-        return JSONObject.of("classes", classes, "overviewNodes", nodes, "sampleToken", UUID.randomUUID().toString(), "overviewEdges", connections.get("overviewEdges"),
-                "overviewEdgesTruncated", connections.get("overviewEdgesTruncated"), "nodeCount", statistics.get("nodeCount"), "edgeCount", null,
-                "version", version, "live", true,
+        JSONObject payload = JSONObject.of("classes", classes, "overviewNodes", nodes, "sampleToken", UUID.randomUUID().toString(),
+                "overviewEdges", connections.get("overviewEdges"),
+                "overviewEdgesTruncated", connections.get("overviewEdgesTruncated"), "nodeCount", statistics.get("nodeCount"),
+                "edgeCount", null, "version", version, "live", true,
                 "relationTypes", new JSONArray(relations.stream().map(Relation::type).toList()));
+        if (connections.containsKey("relations")) {
+            payload.put("relations", connections.get("relations"));
+        }
+        return payload;
     }
 
     private JSONObject overviewConnections(Reader adapter, AdapterPool pool, List<Relation> relations,
             Map<String, List<String>> ids) throws Exception {
         long started = System.nanoTime();
         JSONArray edges = new JSONArray();
+        JSONArray relationStatuses = new JSONArray();
         boolean truncated = false;
         if (relations.size() < 6) {
             relationLoop:
@@ -370,9 +478,21 @@ public class LiveInstanceGraph {
                 if (remaining <= 0) { truncated = true; break; }
                 List<String> from = ids.get(relation.from.name), to = ids.get(relation.to.name);
                 if (from.isEmpty() || to.isEmpty()) continue;
-                for (JSONObject row : runDsl(adapter, relationDsl(relation, from, to, remaining + 1))) {
-                    if (edges.size() == MAX_OVERVIEW_EDGES) { truncated = true; break relationLoop; }
-                    addOverviewEdge(edges, relation, row);
+                try {
+                    int relationEdges = 0;
+                    for (JSONObject row : runDsl(adapter, relationDsl(relation, from, to, remaining + 1))) {
+                        if (edges.size() == MAX_OVERVIEW_EDGES) {
+                            truncated = true;
+                            relationStatuses.add(relationEntry(relation, "ok", relationEdges, null, null));
+                            break relationLoop;
+                        }
+                        addOverviewEdge(edges, relation, row);
+                        relationEdges++;
+                    }
+                    relationStatuses.add(relationEntry(relation, "ok", relationEdges, null, null));
+                } catch (Exception e) {
+                    RelationFailure failure = classifyRelationFailure(relation, e);
+                    relationStatuses.add(relationEntry(relation, failure.status, 0, failure.reasonCode, null));
                 }
             }
         } else {
@@ -382,28 +502,46 @@ public class LiveInstanceGraph {
                 if (remaining <= 0) { truncated = true; break; }
                 int end = Math.min(index + 4, relations.size());
                 List<Relation> active = new ArrayList<>();
-                List<AdapterTask<List<JSONObject>>> tasks = new ArrayList<>();
+                List<AdapterTask<OverviewRelationResult>> tasks = new ArrayList<>();
                 for (Relation relation : relations.subList(index, end)) {
                     List<String> from = ids.get(relation.from.name), to = ids.get(relation.to.name);
                     if (from.isEmpty() || to.isEmpty()) continue;
                     active.add(relation);
-                    tasks.add(taskAdapter -> runDsl(taskAdapter, relationDsl(relation, from, to, remaining + 1)));
+                    tasks.add(taskAdapter -> {
+                        try {
+                            return new OverviewRelationResult(runDsl(taskAdapter, relationDsl(relation, from, to, remaining + 1)), null);
+                        } catch (Exception e) {
+                            return new OverviewRelationResult(List.of(), classifyRelationFailure(relation, e));
+                        }
+                    });
                 }
-                List<List<JSONObject>> results = parallel(tasks, pool);
+                List<OverviewRelationResult> results = parallel(tasks, pool);
                 for (int i = 0; i < active.size(); i++) {
                     Relation relation = active.get(i);
-                    for (JSONObject row : results.get(i)) {
-                        if (edges.size() == MAX_OVERVIEW_EDGES) { truncated = true; break relationLoop; }
-                        addOverviewEdge(edges, relation, row);
+                    OverviewRelationResult result = results.get(i);
+                    if (result.failure != null) {
+                        relationStatuses.add(relationEntry(relation, result.failure.status, 0, result.failure.reasonCode, null));
+                        continue;
                     }
+                    int relationEdges = 0;
+                    for (JSONObject row : result.rows) {
+                        if (edges.size() == MAX_OVERVIEW_EDGES) {
+                            truncated = true;
+                            relationStatuses.add(relationEntry(relation, "ok", relationEdges, null, null));
+                            break relationLoop;
+                        }
+                        addOverviewEdge(edges, relation, row);
+                        relationEdges++;
+                    }
+                    relationStatuses.add(relationEntry(relation, "ok", relationEdges, null, null));
                 }
                 index = end;
             }
         }
-        org.slf4j.LoggerFactory.getLogger(LiveInstanceGraph.class).info(
+        LOG.info(
                 "Instance graph connections: relations={}, edges={}, durationMs={}",
                 relations.size(), edges.size(), (System.nanoTime() - started) / 1_000_000);
-        return JSONObject.of("overviewEdges", edges, "overviewEdgesTruncated", truncated);
+        return JSONObject.of("overviewEdges", edges, "overviewEdgesTruncated", truncated, "relations", relationStatuses);
     }
 
     private JSONObject relationDsl(Relation relation, List<String> from, List<String> to, int limit) {
@@ -571,6 +709,8 @@ public class LiveInstanceGraph {
         nodes.put(List.of(className, key), node(center, centerRows.get(0)));
 
         List<JSONObject> neighborRows = new ArrayList<>();
+        Map<String, JSONObject> relationStatusMap = new LinkedHashMap<>();
+        Set<String> truncatedRelations = new HashSet<>();
         // Every relation group only needs its own top slice for the requested page, never the full neighbourhood.
         int fetchLimit = offset + limit + 1;
         boolean truncated = false;
@@ -586,38 +726,55 @@ public class LiveInstanceGraph {
                 outgoingAllowed = false;
                 incomingAllowed = false;
             }
+            if (!outgoingAllowed && !incomingAllowed) continue;
             boolean selfLoop = relation.from.name.equals(relation.to.name);
-            if (outgoingAllowed) {
-                JSONObject fromObj = object(0, "f", relation.from.name, conditions(condition(relation.from.pk, "=", key)));
-                JSONObject toObj = object(1, "t", relation.to.name, null);
-                JSONObject dsl = dsl(objects(fromObj, toObj), relationships(relation(0, 1, relation.type)),
-                        fields(field("t", relation.to.pk, "pk"), field("t", relation.to.label, "name")), null,
-                        limit(fetchLimit, 0));
-                List<JSONObject> rows = runDsl(adapter, dsl);
-                if (rows.size() >= fetchLimit) truncated = true;
-                for (JSONObject row : rows) {
-                    neighborRows.add(JSONObject.of("type", relation.type, "class", relation.to.name,
-                            "pk", row.getString("pk"), "name", row.getString("name"), "classLabel",
-                            relation.to.showName, "outgoing", true));
+            List<JSONObject> relationRows = new ArrayList<>();
+            boolean relationTruncated = false;
+            try {
+                if (outgoingAllowed) {
+                    JSONObject fromObj = object(0, "f", relation.from.name, conditions(condition(relation.from.pk, "=", key)));
+                    JSONObject toObj = object(1, "t", relation.to.name, null);
+                    JSONObject dsl = dsl(objects(fromObj, toObj), relationships(relation(0, 1, relation.type)),
+                            fields(field("t", relation.to.pk, "pk"), field("t", relation.to.label, "name")), null,
+                            limit(fetchLimit, 0));
+                    List<JSONObject> rows = runDsl(adapter, dsl);
+                    if (rows.size() >= fetchLimit) {
+                        truncated = true;
+                        relationTruncated = true;
+                    }
+                    for (JSONObject row : rows) {
+                        relationRows.add(JSONObject.of("type", relation.type, "class", relation.to.name,
+                                "pk", row.getString("pk"), "name", row.getString("name"), "classLabel",
+                                relation.to.showName, "outgoing", true));
+                    }
                 }
-            }
-            if (incomingAllowed) {
-                JSONObject fromObj = object(0, "f", relation.from.name, null);
-                JSONObject toObj = object(1, "t", relation.to.name, conditions(condition(relation.to.pk, "=", key)));
-                // A self-loop relation in the incoming direction must not list the node as its own neighbour.
-                if (selfLoop) {
-                    fromObj.put("conditions", conditions(condition(relation.from.pk, "!=", key)));
+                if (incomingAllowed) {
+                    JSONObject fromObj = object(0, "f", relation.from.name, null);
+                    JSONObject toObj = object(1, "t", relation.to.name, conditions(condition(relation.to.pk, "=", key)));
+                    // A self-loop relation in the incoming direction must not list the node as its own neighbour.
+                    if (selfLoop) {
+                        fromObj.put("conditions", conditions(condition(relation.from.pk, "!=", key)));
+                    }
+                    JSONObject dsl = dsl(objects(fromObj, toObj), relationships(relation(0, 1, relation.type)),
+                            fields(field("f", relation.from.pk, "pk"), field("f", relation.from.label, "name")), null,
+                            limit(fetchLimit, 0));
+                    List<JSONObject> rows = runDsl(adapter, dsl);
+                    if (rows.size() >= fetchLimit) {
+                        truncated = true;
+                        relationTruncated = true;
+                    }
+                    for (JSONObject row : rows) {
+                        relationRows.add(JSONObject.of("type", relation.type, "class", relation.from.name,
+                                "pk", row.getString("pk"), "name", row.getString("name"), "classLabel",
+                                relation.from.showName, "outgoing", false));
+                    }
                 }
-                JSONObject dsl = dsl(objects(fromObj, toObj), relationships(relation(0, 1, relation.type)),
-                        fields(field("f", relation.from.pk, "pk"), field("f", relation.from.label, "name")), null,
-                        limit(fetchLimit, 0));
-                List<JSONObject> rows = runDsl(adapter, dsl);
-                if (rows.size() >= fetchLimit) truncated = true;
-                for (JSONObject row : rows) {
-                    neighborRows.add(JSONObject.of("type", relation.type, "class", relation.from.name,
-                            "pk", row.getString("pk"), "name", row.getString("name"), "classLabel",
-                            relation.from.showName, "outgoing", false));
-                }
+                neighborRows.addAll(relationRows);
+                if (relationTruncated) truncatedRelations.add(relation.type);
+                relationStatusMap.put(relation.type, relationEntry(relation, "ok", 0, null, relationTruncated));
+            } catch (Exception e) {
+                RelationFailure failure = classifyRelationFailure(relation, e);
+                relationStatusMap.put(relation.type, relationEntry(relation, failure.status, 0, failure.reasonCode, false));
             }
         }
 
@@ -633,17 +790,28 @@ public class LiveInstanceGraph {
         int end = Math.min(offset + limit, sorted.size());
         boolean more = truncated || end < sorted.size();
         JSONArray edges = new JSONArray();
+        Map<String, Integer> returnedCounts = new LinkedHashMap<>();
         for (int i = offset; i < end; i++) {
             JSONObject n = sorted.get(i);
             String otherClass = n.getString("class");
             String otherKey = n.getString("pk");
+            String relationType = n.getString("type");
             nodes.putIfAbsent(List.of(otherClass, otherKey), JSONObject.of("id", otherClass + ":" + otherKey,
                     "class", otherClass, "primaryKey", otherKey, "name", n.getString("name"), "classLabel", n.getString("classLabel")));
             edges.add(n.getBooleanValue("outgoing")
-                    ? graphEdge(className, key, otherClass, otherKey, n.getString("type"))
-                    : graphEdge(otherClass, otherKey, className, key, n.getString("type")));
+                    ? graphEdge(className, key, otherClass, otherKey, relationType)
+                    : graphEdge(otherClass, otherKey, className, key, relationType));
+            returnedCounts.merge(relationType, 1, Integer::sum);
+        }
+        for (var entry : relationStatusMap.entrySet()) {
+            JSONObject status = entry.getValue();
+            if ("ok".equals(status.getString("status"))) {
+                status.put("edgeCount", returnedCounts.getOrDefault(entry.getKey(), 0));
+                status.put("truncated", truncatedRelations.contains(entry.getKey()) || more);
+            }
         }
         return JSONObject.of("nodes", new JSONArray(nodes.values()), "edges", edges,
+                "relations", new JSONArray(relationStatusMap.values()),
                 "total", more ? null : sorted.size(),
                 "nextOffset", more ? offset + edges.size() : null, "version", version);
     }

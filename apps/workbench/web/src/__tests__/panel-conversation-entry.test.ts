@@ -70,7 +70,7 @@ describe("a panel's conversation entry", () => {
 
     await expect(invoke("expand-page-composer", { slot: "governance", ...declared })).resolves.toBeNull();
     expect(expand).toHaveBeenCalledTimes(1);
-    expect(expand).toHaveBeenLastCalledWith(declared);
+    expect(expand).toHaveBeenLastCalledWith({ slot: "governance", ...declared });
 
     const forged = [
       { slot: "governance", target: { kind: "id", id: "someone-else" }, prefill: declared.prefill },

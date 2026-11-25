@@ -13,6 +13,7 @@ import {
 import {
   applicationPanelAddress,
   panelAddressState,
+  panelUsePath,
   parseApplicationPanelAddress,
 } from "@ontomato/contracts/panel-host";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
@@ -21,7 +22,7 @@ import {
   isBuiltinProductId,
   isNativeApplicationEntry,
   type ApplicationEntryMenu,
-  type ApplicationPanelUse,
+  type ApplicationEntryResolution,
   type CurrentApplicationEntry,
 } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
@@ -29,8 +30,11 @@ import {
   builtinFramePanelHost,
   cachedApplicationFrameManifest,
   framePanelHost,
+  type FrameChatOptions,
   type PanelObjectChange,
 } from "./panel-host";
+import { usePanelConversationDisplay } from "./panel-conversation-display";
+import { usePanelSessionRuns } from "./panel-session-runs";
 import { useApplicationCatalog } from "./catalog";
 import {
   applicationFrameHostKey,
@@ -167,9 +171,10 @@ const catalogApp = computed(() =>
     : null,
 );
 
-const anchorUse = computed<ApplicationPanelUse | null>(() => {
+type EntryUse = ApplicationEntryResolution["use"];
+const anchorUse = computed<EntryUse | null>(() => {
   const panelUse = catalogApp.value?.panelUses?.find(
-    (entry): entry is ApplicationPanelUse => !isNativeApplicationEntry(entry),
+    (entry): entry is EntryUse => !isNativeApplicationEntry(entry),
   );
   return panelUse ?? matchingPanelEntry.value?.use ?? null;
 });
@@ -183,20 +188,49 @@ function handleFrameObjectChange(change: PanelObjectChange) {
   matchingPanelEntry.value?.onObjectChange(change);
 }
 
+const feed = usePanelSessionRuns(
+  () => !props.blocked && Boolean(matchingPanelEntry.value || effectiveFrame.value),
+  handleFrameObjectChange,
+);
+const display = usePanelConversationDisplay({
+  router,
+  address: () => effectiveFrame.value ? route.fullPath : null,
+  contains(path) {
+    const frame = effectiveFrame.value;
+    if (!frame) return false;
+    return path === route.path
+      || entryMenu.value.panelUses.some(entry => panelUsePath(entry.path) === path)
+      || Boolean(frame.hostGroups?.some(group => group.items.some(item => item.id === path)));
+  },
+  panel: () => matchingPanelEntry.value?.panel ?? null,
+  refresh: handleFrameObjectChange,
+});
+const frameComposer = ref<{ key: string; declared: boolean } | null>(null);
+const composerClaims = ref(0);
+
 let cachedPort: { key: string; port: PanelHostPort } | null = null;
 const port = computed<PanelHostPort | null>(() => {
   const frame = effectiveFrame.value;
   const key = frameKey.value;
   if (!frame || !key) return null;
   if (cachedPort?.key === key) return cachedPort.port;
+  const chat: FrameChatOptions = {
+    display: () => display,
+    claimComposer() {
+      composerClaims.value++;
+      return () => { composerClaims.value--; };
+    },
+    feed,
+    onPanelLoaded: declared => { frameComposer.value = { key, declared }; },
+  };
   const use = anchorUse.value;
   if (use) {
-    const created = framePanelHost(frame.applicationId, use, frame.framePanelId, handleFrameObjectChange, router);
+    const created = framePanelHost(frame.applicationId, use, frame.framePanelId, handleFrameObjectChange, router, chat);
     cachedPort = { key, port: markRaw(created) };
     return cachedPort.port;
   }
   if (frame.hostGroups?.length || isBuiltinProductId(frame.framePanelId)) {
-    const created = builtinFramePanelHost(frame.applicationId, frame.framePanelId, router);
+    const created = builtinFramePanelHost(frame.applicationId, frame.framePanelId, router, chat);
     cachedPort = { key, port: markRaw(created) };
     return cachedPort.port;
   }
@@ -329,7 +363,7 @@ const currentEntryValue = computed<CurrentApplicationEntry>(() => {
       applicationId: panel.applicationId,
       useId: panel.use.id,
       pageKey: panel.use.pageKey,
-      panelId: panel.use.panelId,
+      ...("panelId" in panel.use ? { panelId: panel.use.panelId, kind: "panel" } : { kind: panel.use.kind }),
       path: frame?.activePageId ?? route.path,
     };
   }
@@ -385,6 +419,11 @@ provide(applicationFrameHostKey, {
   frameState,
   active: frameActive,
   surfaceReady: frameReady,
+  liveState: display.liveState,
+  ownsComposer: computed(() => composerClaims.value > 0 || (
+    frameComposer.value?.key === frameKey.value && frameComposer.value.declared
+  )),
+  feed,
   refreshFrame,
   registerPanelEntry(registration) {
     panelEntryRef.value = registration;

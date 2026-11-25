@@ -7,7 +7,7 @@ import type {
   AgentHostAgentList,
   AgentHostSendResult, AgentHostSendRequest,
   AgentHostArtifactResolution,
-  AgentHostCreateSessionResponse,
+  AgentHostCreateSession, AgentHostCreateSessionResponse,
   AgentHostRunSnapshot,
   AgentHostSession,
   AgentHostSessionPage,
@@ -113,7 +113,7 @@ export interface AgentHostClient {
   /** The agent's conversations, or those of the client's workspace when it has one. */
   listSessions(agentId: string, cursor: string | null): Promise<AgentHostSessionPage>;
   /** A new conversation with the agent, inside the client's workspace when it has one. */
-  createSession(agentId: string): Promise<AgentHostSession>;
+  createSession(input: string | AgentHostCreateSession): Promise<AgentHostSession>;
   readHistory(sessionId: string, query?: SessionHistoryQuery): Promise<AgentHostSessionHistory>;
   deleteSession(sessionId: string): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;
@@ -299,10 +299,10 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       if (options.workspace) return options.workspace.listSessions(cursor);
       return json<AgentHostSessionPage>(`/sessions?${query({ agentId, ...(cursor ? { cursor } : {}) })}`);
     },
-    async createSession(agentId) {
-      const workspaceId = options.workspace?.id ?? options.workspaceIdForAgent?.(agentId);
-      const body = workspaceId ? { agentId, workspaceId } : { agentId };
-      return (await json<AgentHostCreateSessionResponse>("/sessions", send("POST", body, true))).session;
+    async createSession(input) {
+      const body = typeof input === "string" ? { agentId: input } : input;
+      const workspaceId = body.workspaceId ?? options.workspace?.id ?? options.workspaceIdForAgent?.(body.agentId);
+      return (await json<AgentHostCreateSessionResponse>("/sessions", send("POST", { ...body, ...(workspaceId ? { workspaceId } : {}) }, true))).session;
     },
     async readHistory(sessionId, input = {}) {
       return agentHostSessionHistorySchema.parse(await json(`${session(sessionId)}/history?${new URLSearchParams(input)}`));

@@ -31,8 +31,11 @@ const props = defineProps<{
   /** A message is on its way: the composer holds the next one until it has arrived. */
   sending: boolean;
   feedback?: ShellFeedbackPort;
+  collapsed?: boolean;
+  greeting?: string;
+  description?: string;
 }>();
-const emit = defineEmits<{ send: [text: string]; stop: []; retry: []; loadOlder: [] }>();
+const emit = defineEmits<{ send: [text: string]; stop: []; retry: []; loadOlder: []; expand: [] }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
 /** The reader's message as written: the page or file line it carries is the agent's, not shown in the bubble. */
@@ -222,7 +225,12 @@ watch(() => shell.taskFocus?.value, async (focus) => {
 });
 
 /** A message sent while nothing runs starts a turn and takes the top; one sent into a running reply joins its process. */
+function expandFromComposer(event: MouseEvent) {
+  if (props.collapsed && event.target instanceof HTMLElement && !event.target.closest("button")) emit("expand");
+}
+
 async function send(text: string) {
+  if (props.collapsed) emit("expand");
   anchor.value = null;
   const starts = !props.busy;
   if (starts) {
@@ -238,15 +246,15 @@ async function send(text: string) {
 
 <template>
   <div class="conversation">
-    <div v-if="empty" class="empty">
+    <div v-if="empty && !collapsed" class="empty">
       <div class="empty-inner" :class="{ 'custom-welcome': $slots.welcome }">
         <slot name="welcome" :agent="agent">
           <div v-if="agent" class="empty-agent">
             <AgentAvatar :icon="agent.icon" :size="36" />
             <span>{{ agent.name }}</span>
           </div>
-          <h1 class="greeting">{{ labels.greeting }}</h1>
-          <p v-if="agent?.description" class="agent-description">{{ agent.description }}</p>
+          <h1 class="greeting">{{ greeting ?? labels.greeting }}</h1>
+          <p v-if="description ?? agent?.description" class="agent-description">{{ description ?? agent?.description }}</p>
         </slot>
         <ShellQuestions />
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
@@ -256,6 +264,7 @@ async function send(text: string) {
     </div>
     <template v-else>
       <div
+         v-show="!collapsed"
          ref="scroller"
          class="scroller"
         :class="{ 'initial-load-error': loadError && !loading && !items.length && pendingInput === null }"
@@ -289,7 +298,10 @@ async function send(text: string) {
               </div>
             </div>
             <div v-else-if="item.kind === 'notification'" class="agent-notification" :class="{ failed: item.error }" :role="item.error ? 'alert' : 'note'"><CircleAlert :size="14" /><ShellMarkdown v-if="item.markdownRunId" class="notification-markdown" :content="item.text" final :run-id="item.markdownRunId" /><span v-else>{{ item.text }}</span></div>
-            <ShellResponse v-else :item="item" :session-id="sessionId" :feedback="feedback" />
+            <template v-else>
+              <ShellResponse :item="item" :session-id="sessionId" :feedback="feedback" />
+              <slot name="message-actions" :item="item" :run-id="item.runId" />
+            </template>
           </template>
           <div v-if="pendingInput !== null" class="user-turn" :data-pin="pinTarget === PENDING || undefined">
             <div class="user-bubble pending">{{ written(pendingInput) }}</div>
@@ -300,9 +312,9 @@ async function send(text: string) {
         </div>
         <div ref="room" aria-hidden="true" />
       </div>
-      <div class="dock">
+      <div class="dock" :class="{ compact: collapsed }">
         <button
-          v-if="!stick"
+          v-if="!collapsed && !stick"
           type="button"
           class="to-bottom"
           :aria-label="labels.scrollToBottom"
@@ -313,7 +325,9 @@ async function send(text: string) {
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
         <ShellQuestions />
         <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
-        <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" :labels="labels" :entry="entry" @send="send" @stop="emit('stop')" />
+        <div @click="expandFromComposer">
+          <ShellComposer :busy="busy" :sending="sending" :disabled="!agent?.enabled" :min-lines="collapsed ? 1 : undefined" :labels="labels" :entry="entry" @send="send" @stop="emit('stop')" />
+        </div>
       </div>
     </template>
   </div>
@@ -518,6 +532,8 @@ async function send(text: string) {
  * Content scrolling under the composer fades out instead of being cut, into whatever the conversation sits on: the
  * application's area in the agent shell (in dark mode darker than a surface), a dialog's surface elsewhere.
  */
+.dock.compact { padding-bottom: 0; }
+.dock.compact::before { display: none; }
 .dock::before {
   content: "";
   position: absolute;

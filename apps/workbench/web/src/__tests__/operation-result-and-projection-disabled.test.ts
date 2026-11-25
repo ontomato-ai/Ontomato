@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { computed, createApp, defineComponent, h, nextTick, provide, ref } from "vue";
+import { computed, createApp, defineComponent, h, nextTick, provide, ref, shallowRef } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -37,7 +37,7 @@ afterEach(() => {
 
 describe("OperationResult", () => {
   it("toggles Markdown preview/source and shows localized no-result text when empty", async () => {
-    const result = ref<PanelReadOperationResult>({ kind: "markdown", markdown: "# Summary\n\nValue: **99**" });
+    const result = shallowRef<PanelReadOperationResult>({ kind: "markdown", markdown: "# Summary\n\nValue: **99**" });
     const host = document.createElement("div");
     document.body.append(host);
     const app = createApp(defineComponent({
@@ -73,7 +73,7 @@ describe("OperationResult", () => {
   });
 
   it("renders JSON value with optional truncation alert (rowLimit or dash fallback and hint)", async () => {
-    const result = ref<PanelReadOperationResult>({
+    const result = shallowRef<PanelReadOperationResult>({
       kind: "json",
       value: [{ count: 7 }],
       truncation: { rowLimit: 20000, hint: "Narrow date range" },

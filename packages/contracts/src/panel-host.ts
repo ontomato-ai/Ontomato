@@ -15,7 +15,7 @@ import { platformObjectTypes } from "./platform-object-types";
 import { domainComponentIdSchema, domainComponentRuntimeSchema } from "./domain-component-runtime";
 import { panelCompletedOperationSchema, panelOperationAffectedSchema, panelOwnerOperationDescriptorSchema } from "./panel-operations";
 import { panelLocalOperationNameSchema } from "./panel-projection";
-import { applicationFrameSourceSchema, applicationPanelUsePathSchema, applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
+import { applicationFrameSourceSchema, applicationPanelUsePathSchema, panelApplicationEntryUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { productCurrentIdParamsSchema } from "./product-record-id";
 import { definitionRevisionSchema, type ProductDefinitionRevision, type ProductDefinitionTarget } from "./product-subscriptions";
 import { workspaceDiffSchema, workspaceIdSchema } from "./workspaces";
@@ -33,7 +33,7 @@ export const PANEL_HOST_CHANNEL = "ontomato-panel-v1";
 export const registeredPanelSourceSchema = z.object({
   kind: z.literal("registered"),
   applicationId: z.string().min(1),
-  use: applicationPanelUseSchema,
+  use: panelApplicationEntryUseSchema,
   panel: productPanelSchema,
 }).strict();
 

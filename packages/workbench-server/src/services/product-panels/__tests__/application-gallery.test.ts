@@ -1,17 +1,22 @@
 import { tmpdir } from "node:os";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { panelRecordQuerySchema } from "@ontomato/contracts/panel-projection";
 import type { HomeItemRef } from "@ontomato/contracts/platform-home";
 import { APPLICATION, AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import { installContentLayout } from "../../../content/layout";
 
 const state = vi.hoisted(() => ({
   favorites: [] as HomeItemRef[],
+  favoritesError: null as Error | null,
   catalog: [] as Record<string, unknown>[],
   agents: [] as Array<{ id: string; name: string; description: string; icon: string | null; enabled: boolean }>,
 }));
 
 vi.mock("../../platform-home/service", () => ({
-  readFavorites: vi.fn(async () => [...state.favorites]),
+  readFavorites: vi.fn(async () => {
+    if (state.favoritesError) throw state.favoritesError;
+    return [...state.favorites];
+  }),
   addHomeFavorite: vi.fn(async (_owner, item: HomeItemRef) => {
     const key = `${item.kind}:${item.id}`;
     if (!state.favorites.some(existing => `${existing.kind}:${existing.id}` === key)) {
@@ -89,6 +94,7 @@ beforeEach(() => {
     { kind: "application", id: "dashboards" },
     { kind: "agent", id: "11111111-1111-4111-8111-111111111111" },
   ];
+  state.favoritesError = null;
   state.catalog = [
     {
       id: "home",
@@ -180,10 +186,12 @@ beforeEach(() => {
 });
 
 describe("application gallery real-object reads and favorite operations", () => {
-  it("lists visible applications in rail order with real identities, openPath outputs, category and search filters", async () => {
+  it("lists visible applications in rail order followed by enabled agents with real identities, openPath outputs, category and search filters", async () => {
     const adapter = createApplicationReadAdapter(owner, viewer);
-    const all = await adapter.available({ category: "all" });
-    expect(all.map(row => ({
+    const all = panelRecordQuerySchema.parse(await adapter.available({ category: "all" }));
+    expect(all.total).toBe(4);
+    expect(all.diagnostics).toBeUndefined();
+    expect(all.rows.map(row => ({
       id: row.primaryKey,
       className: row.className,
       favorite: row.fields.favorite,
@@ -192,15 +200,67 @@ describe("application gallery real-object reads and favorite operations", () => 
       { id: "dashboards", className: APPLICATION, favorite: true, openPath: "/dashboards" },
       { id: "data-governance", className: APPLICATION, favorite: false, openPath: "/__external/data-governance" },
       { id: "settings", className: APPLICATION, favorite: false, openPath: "/settings" },
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        className: AGENT_DEFINITION,
+        favorite: true,
+        openPath: "/agents/chat?agentId=11111111-1111-4111-8111-111111111111",
+      },
     ]);
 
-    expect((await adapter.available({ category: "agents" }))).toEqual([]);
-    expect((await adapter.available({ category: "admin" })).map(row => row.primaryKey)).toEqual([
+    expect((await adapter.available({ category: "agents" })).rows.map(row => ({
+      id: row.primaryKey,
+      className: row.className,
+      favorite: row.fields.favorite,
+      openPath: row.outputs?.openPath,
+    }))).toEqual([{
+      id: "11111111-1111-4111-8111-111111111111",
+      className: AGENT_DEFINITION,
+      favorite: true,
+      openPath: "/agents/chat?agentId=11111111-1111-4111-8111-111111111111",
+    }]);
+    expect((await adapter.available({ category: "admin" })).rows.map(row => row.primaryKey)).toEqual([
       "data-governance",
       "settings",
     ]);
-    expect((await adapter.available({ search: "metrics" })).map(row => row.primaryKey)).toEqual(["dashboards"]);
-    expect((await adapter.available({ favoritesOnly: true })).map(row => row.primaryKey)).toEqual(["dashboards"]);
+    expect((await adapter.available({ search: "metrics" })).rows.map(row => row.primaryKey)).toEqual(["dashboards"]);
+    expect((await adapter.available({ search: "analyst" })).rows.map(row => ({
+      id: row.primaryKey,
+      className: row.className,
+    }))).toEqual([{ id: "11111111-1111-4111-8111-111111111111", className: AGENT_DEFINITION }]);
+    expect((await adapter.available({ favoritesOnly: true })).rows.map(row => ({
+      id: row.primaryKey,
+      className: row.className,
+    }))).toEqual([
+      { id: "dashboards", className: APPLICATION },
+      { id: "11111111-1111-4111-8111-111111111111", className: AGENT_DEFINITION },
+    ]);
+  });
+
+  it("still returns applications and agents with a localized diagnostic notice when favorites fail to load", async () => {
+    state.favoritesError = new Error("preferences storage offline");
+    const adapter = createApplicationReadAdapter(owner, viewer);
+    const degraded = panelRecordQuerySchema.parse(await adapter.available({ category: "all" }));
+    expect(degraded.diagnostics).toEqual([en["panels.favorite.loadUnavailable"]]);
+    expect(degraded.total).toBe(4);
+    expect(degraded.rows.map(row => ({
+      id: row.primaryKey,
+      className: row.className,
+      hasFavoriteField: Object.hasOwn(row.fields, "favorite"),
+      openPath: row.outputs?.openPath,
+    }))).toEqual([
+      { id: "dashboards", className: APPLICATION, hasFavoriteField: false, openPath: "/dashboards" },
+      { id: "data-governance", className: APPLICATION, hasFavoriteField: false, openPath: "/__external/data-governance" },
+      { id: "settings", className: APPLICATION, hasFavoriteField: false, openPath: "/settings" },
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        className: AGENT_DEFINITION,
+        hasFavoriteField: false,
+        openPath: "/agents/chat?agentId=11111111-1111-4111-8111-111111111111",
+      },
+    ]);
+
+    await expect(adapter.available({ favoritesOnly: true })).rejects.toThrow("preferences storage offline");
   });
 
   it("lists enabled agents with real AgentDefinition identities and openPath outputs", async () => {
@@ -249,6 +309,10 @@ describe("application gallery real-object reads and favorite operations", () => 
 
     const unpinnedAgent = await unfavOp.execute(host, agentTarget("11111111-1111-4111-8111-111111111111"), {}, "i-5");
     expect(unpinnedAgent.kind).toBe("success");
+    if (unpinnedAgent.kind === "success") {
+      expect(unpinnedAgent.affected?.objectTypes).toContain(APPLICATION);
+      expect(unpinnedAgent.affected?.objectTypes).toContain(AGENT_DEFINITION);
+    }
     expect(state.favorites.some(item => item.kind === "agent")).toBe(false);
   });
 });

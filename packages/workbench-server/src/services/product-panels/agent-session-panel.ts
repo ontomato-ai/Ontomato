@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
-import { AGENT_SESSION, FAVORITE, RENAME_AGENT_SESSION } from "@ontomato/contracts/platform-object-types";
+import { AGENT_SESSION, DELETE_AGENT_SESSION, FAVORITE, RENAME_AGENT_SESSION } from "@ontomato/contracts/platform-object-types";
 import { resolveLocale, tForLocale } from "../../i18n";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { assistantStore } from "../assistant/store";
@@ -76,11 +77,15 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
   };
 
   return {
-    async list(params: { search?: string; limit?: number } = {}): Promise<PanelRecord[]> {
+    async list(params: { search?: string; limit?: number; agentKind?: string; agentId?: string } = {}): Promise<PanelRecord[]> {
       const [sessions, favoriteKeys] = await Promise.all([
         assistantStore.listUserSessions(owner, params),
         readFavoriteKeySet(owner),
       ]);
+      const statuses = sessions.length
+        ? await new RuntimeClient(owner.domainId, undefined, owner.userId).sessionStatuses(sessions.map(item => item.sessionId))
+        : [];
+      const runningIds = new Set(statuses.filter(item => item.latestRun?.status === "running").map(item => item.session.id));
       return sessions.map(item => {
         const displayTitle = cleanSessionDisplayTitle(item.title, untitled);
         const favorited = favoriteKeys.has(favoriteTargetKey(AGENT_SESSION, item.sessionId));
@@ -98,6 +103,7 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
             agentName: item.agentName,
             updatedAt: item.updatedAt,
             favorite: favorited,
+            running: runningIds.has(item.sessionId),
           },
           fieldLabels,
           outputs: {
@@ -109,9 +115,10 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
     },
 
     async record(sessionId: string): Promise<PanelRecord> {
-      const [session, favorited] = await Promise.all([
+      const [session, favorited, statuses] = await Promise.all([
         assistantStore.session(sessionId, owner),
         isFavoriteTarget(owner, AGENT_SESSION, sessionId),
+        new RuntimeClient(owner.domainId, undefined, owner.userId).sessionStatuses([sessionId]),
       ]);
       const displayTitle = cleanSessionDisplayTitle(session.title, untitled);
       const openPath = sessionOpenPath(session.agent_id, session.id);
@@ -124,6 +131,7 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
           agentId: session.agent_id,
           updatedAt: session.updated_at.toISOString(),
           favorite: favorited,
+          running: statuses[0]?.latestRun?.status === "running",
         },
         fieldLabels,
         outputs: {
@@ -133,6 +141,11 @@ export function createAgentSessionReadAdapter(owner: ProductOwner, viewer: Assis
       };
     },
   };
+}
+
+async function ownedSessionLabel(host: PanelOperationHost, primaryKey: string): Promise<string> {
+  const session = await assistantStore.session(primaryKey, host.initiator.owner);
+  return cleanSessionDisplayTitle(session.title, sessionText(host.locale, "untitled"));
 }
 
 export const agentSessionServerOperations: readonly PanelWriteServerOperation[] = [
@@ -176,6 +189,53 @@ export const agentSessionServerOperations: readonly PanelWriteServerOperation[] 
       } catch (error) {
         if (!(error instanceof HttpError) || error.status < 400 || error.status >= 500) throw error;
         return { kind: "refusal", code: error.code ?? "SESSION_RENAME_REFUSED", message: error.message };
+      }
+    },
+  },
+  {
+    handlerRef: DELETE_AGENT_SESSION,
+    labelKey: "panels.agentSession.delete",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: DELETE_AGENT_SESSION },
+    effect: "write",
+    batch: false,
+    targetType: AGENT_SESSION,
+    targetInput: "session",
+    targetSchema: sessionTargetSchema,
+    inputSchema: z.object({}).strict(),
+    resultSchema: renameResultSchema.pick({ sessionId: true }),
+    targetLabel: (host, { primaryKey }) => ownedSessionLabel(host, primaryKey),
+    inspectImpact: {
+      handlerRef: `${DELETE_AGENT_SESSION}.inspect-impact`,
+      async inspect(host, calls) {
+        const { primaryKey } = sessionTargetSchema.parse(calls[0]!.target);
+        const name = await ownedSessionLabel(host, primaryKey);
+        return {
+          summary: tForLocale(host.locale, "panels.agentSession.deleteImpact", { name }),
+          objects: [{ target: { objectType: AGENT_SESSION, primaryKey }, label: name }],
+          total: 1,
+        };
+      },
+    },
+    done(host, name) {
+      return tForLocale(host.locale, "panels.agentSession.deleted", { name });
+    },
+    async execute({ executor }, target) {
+      const { primaryKey } = sessionTargetSchema.parse(target);
+      const { assistantService } = await import("../assistant/service");
+      try {
+        await assistantService.delete(primaryKey, executor.owner);
+        return {
+          kind: "success",
+          data: { sessionId: primaryKey },
+          affected: {
+            objectTypes: [AGENT_SESSION, FAVORITE],
+            objects: [{ objectType: AGENT_SESSION, primaryKey }],
+          },
+        };
+      } catch (error) {
+        if (!(error instanceof HttpError) || error.status < 400 || error.status >= 500) throw error;
+        return { kind: "refusal", code: error.code ?? "SESSION_DELETE_REFUSED", message: error.message };
       }
     },
   },

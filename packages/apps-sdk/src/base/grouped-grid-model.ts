@@ -31,8 +31,10 @@ export interface BuildGroupedGridOptions {
   readonly rows: readonly PlatformObjectRecord[];
   readonly rowObjectType: string;
   readonly columns: number;
+  readonly sectionColumns?: Readonly<Record<string, number>>;
   readonly minColSpan: number;
-  readonly maxColSpan: number;
+  readonly sectionMinColSpans?: Readonly<Record<string, number>>;
+  readonly maxColSpan?: number;
   readonly minRowSpan: number;
   readonly maxRowSpan: number;
   readonly groupsField: string;
@@ -44,6 +46,34 @@ export interface BuildGroupedGridOptions {
   readonly rowSpanField: string;
   readonly orderField: string;
   readonly fallbackGroupTitle?: string;
+}
+
+/** Resolve the effective grid column count for an optional section track. */
+export function resolveSectionColumns(
+  section: string | null | undefined,
+  defaultColumns: number,
+  sectionColumns?: Readonly<Record<string, number>>,
+): number {
+  const base = Math.max(1, Math.min(24, Math.floor(defaultColumns || 12)));
+  if (!section || section === "__default__") return base;
+  const override = sectionColumns?.[section];
+  return typeof override === "number" && Number.isFinite(override) && override > 0
+    ? Math.max(1, Math.min(24, Math.floor(override)))
+    : base;
+}
+
+/** Resolve effective minimum column span for an optional section track. */
+export function resolveSectionMinColSpan(
+  section: string | null | undefined,
+  defaultMinColSpan: number,
+  maxCols: number,
+  sectionMinColSpans?: Readonly<Record<string, number>>,
+): number {
+  const override = section && section !== "__default__" ? sectionMinColSpans?.[section] : undefined;
+  const raw = typeof override === "number" && Number.isFinite(override) && override > 0
+    ? Math.floor(override)
+    : Math.floor(defaultMinColSpan || 1);
+  return Math.max(1, Math.min(maxCols, raw));
 }
 
 export function clampGridSpan(value: unknown, min: number, max: number, fallback: number): number {
@@ -136,8 +166,6 @@ export function buildGroupSections(
 
 /** Build ordered groups and grid items from optional container record + flat item records. */
 export function buildGroupedGridGroups(options: BuildGroupedGridOptions): GroupedGridGroup[] {
-  const maxCols = Math.max(1, Math.min(options.columns, options.maxColSpan));
-  const minCols = Math.max(1, Math.min(maxCols, options.minColSpan));
   const minRows = Math.max(1, options.minRowSpan);
   const maxRows = Math.max(minRows, options.maxRowSpan);
 
@@ -150,8 +178,8 @@ export function buildGroupedGridGroups(options: BuildGroupedGridOptions): Groupe
   options.rows.forEach((row, rowIndex) => {
     const rawGroupId = readStringField(row, options.groupKeyField);
     const groupId = rawGroupId || "__ungrouped__";
-    const groupTitle = readStringField(row, options.groupTitleField)
-      || (rawGroupId || options.fallbackGroupTitle || "");
+    const explicitGroupTitle = readStringField(row, options.groupTitleField);
+    const groupTitle = explicitGroupTitle || options.fallbackGroupTitle || "";
     let group = groupMap.get(groupId);
     if (!group) {
       group = {
@@ -161,13 +189,24 @@ export function buildGroupedGridGroups(options: BuildGroupedGridOptions): Groupe
         items: [],
       };
       groupMap.set(groupId, group);
-    } else if (!group.title && groupTitle) {
-      group.title = groupTitle;
+    } else if (!group.title && explicitGroupTitle) {
+      group.title = explicitGroupTitle;
     }
 
     const section = options.sectionField ? (readStringField(row, options.sectionField) || undefined) : undefined;
+    const sectionCols = resolveSectionColumns(section, options.columns, options.sectionColumns);
+    const sectionMaxCols = options.maxColSpan !== undefined
+      ? Math.max(1, Math.min(sectionCols, Math.floor(options.maxColSpan)))
+      : sectionCols;
+    const sectionMinCols = resolveSectionMinColSpan(section, options.minColSpan, sectionMaxCols, options.sectionMinColSpans);
+
     const order = readNumericField(row, options.orderField) ?? rowIndex;
-    const colSpan = clampGridSpan(rawRecordField(row, options.colSpanField), minCols, maxCols, Math.min(6, maxCols));
+    const colSpan = clampGridSpan(
+      rawRecordField(row, options.colSpanField),
+      sectionMinCols,
+      sectionMaxCols,
+      Math.min(6, sectionMaxCols),
+    );
     const rowSpan = clampGridSpan(rawRecordField(row, options.rowSpanField), minRows, maxRows, 1);
     const itemRef: ObjectListRef = {
       className: row.className || options.rowObjectType,
@@ -187,6 +226,8 @@ export function buildGroupedGridGroups(options: BuildGroupedGridOptions): Groupe
       order,
       colSpan,
       rowSpan,
+      minColSpan: sectionMinCols,
+      maxColSpan: sectionMaxCols,
     });
   });
 

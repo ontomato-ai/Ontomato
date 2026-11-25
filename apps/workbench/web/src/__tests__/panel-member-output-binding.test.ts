@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { computed, defineComponent, h, ref } from "vue";
+import { computed, defineComponent, h, ref, shallowRef } from "vue";
 import { createI18n } from "vue-i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 it("wires a member's draft to reactive props and reads without exposing it as public state", async () => {
-  const draft = ref<RuntimeJsonValue>({
+  const draft = shallowRef<RuntimeJsonValue>({
     function: { code: "initial" },
     "a/b": [{ "~code": "escaped" }],
   });

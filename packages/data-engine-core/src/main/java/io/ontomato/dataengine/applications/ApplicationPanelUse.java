@@ -23,6 +23,7 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
                                   Map<String, Map<String, Object>> inputs, String groupKey, String icon, String kind,
                                   String pageComposer) {
     public static final String NATIVE_KIND = "native";
+    public static final String FRAME_CONVERSATION_KIND = "frame-conversation";
     public static final String PAGE_COMPOSER_BOTTOM = "bottom";
     public static final String PAGE_COMPOSER_NONE = "none";
 
@@ -57,6 +58,14 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
     /** True when this entry points to a built-in native page rather than a product panel. */
     public boolean nativeEntry() {
         return NATIVE_KIND.equals(kind);
+    }
+
+    public boolean frameConversationEntry() {
+        return FRAME_CONVERSATION_KIND.equals(kind);
+    }
+
+    public boolean panelEntry() {
+        return kind == null;
     }
 
     private static final class DescriptionsDeserializer extends JsonDeserializer<Map<String, String>> {
@@ -147,10 +156,12 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
                 || use.access().kind() != null && !use.access().kind().equals("domain-member"))
                 throw ApplicationCatalog.bad("Invalid or duplicate panel use");
             if (use.kind() != null) {
-                if (!allowNative || !NATIVE_KIND.equals(use.kind()))
+                if (use.nativeEntry() && !allowNative)
                     throw ApplicationCatalog.bad("Native entries are allowed only on built-in applications: " + use.pageKey());
+                if (!use.nativeEntry() && !use.frameConversationEntry())
+                    throw ApplicationCatalog.bad("Invalid entry kind: " + use.kind());
                 if (use.panelId() != null || use.inputs() != null || use.defaultAgent() != null || use.pageComposer() != null)
-                    throw ApplicationCatalog.bad("Native entry " + use.pageKey() + " cannot declare panelId, inputs, defaultAgent, or pageComposer");
+                    throw ApplicationCatalog.bad(use.kind() + " entry " + use.pageKey() + " cannot declare panelId, inputs, defaultAgent, or pageComposer");
             } else if (use.panelId() == null || use.panelId().isBlank()) {
                 throw ApplicationCatalog.bad("Invalid or duplicate panel use");
             }

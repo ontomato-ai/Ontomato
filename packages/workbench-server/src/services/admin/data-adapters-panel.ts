@@ -5,7 +5,6 @@ import {
   multiDataSourceType,
   type ConfigurationProblem,
   type DataAdapterConnection,
-  type DataAdapterFieldInfo,
   type DataAdapterInfo,
   type DataAdapterTestResult,
   type DataSourceEntry,
@@ -29,6 +28,7 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import {
   DATA_ADAPTER_CONFIG,
+  SAVE_DATA_ADAPTER_ROUTING,
   TEST_DATA_ADAPTER_CONNECTION,
 } from "@ontomato/contracts/platform-object-types";
 import { assertPermission } from "../../identity/installed";
@@ -451,6 +451,34 @@ function extractIncomingRealEdges(rawRoutes: unknown): Map<string, string> {
   return map;
 }
 
+type SourceCatalogEntry = {
+  id: string;
+  adapterType: string;
+};
+
+function normalizeSourceCatalogFromStored(
+  stored: MultiDataSourceDefinition | null,
+  sourceAdapters: readonly DataAdapterInfo[],
+): SourceCatalogEntry[] {
+  return normalizeMultiSourceRowsFromStored(stored, sourceAdapters).map((row) => ({
+    id: row.id.trim(),
+    adapterType: row.adapter.adapterType,
+  }));
+}
+
+function normalizeSourceCatalogFromIncoming(raw: unknown): SourceCatalogEntry[] | null {
+  if (!Array.isArray(raw)) return null;
+  const entries: SourceCatalogEntry[] = [];
+  for (const item of raw) {
+    if (!isPlainObject(item)) continue;
+    entries.push({
+      id: typeof item.id === "string" ? item.id.trim() : "",
+      adapterType: typeof item.adapterType === "string" ? item.adapterType.trim() : "",
+    });
+  }
+  return entries;
+}
+
 function resolveConnectionPayload(
   adapter: DataAdapterInfo,
   draftConn: Record<string, unknown>,
@@ -768,7 +796,9 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
       };
 
       if (adapterMode === multiDataSourceType) {
-        const ontology = await readOntologyOutline(host, actor.credentials);
+        // Multi-source mode keeps data source editing independent from the ontology outline
+        // (`/admin/getSchema`), which is lazy-loaded by `routingForm` so an outline error never
+        // blocks editing or saving data sources.
         const sourceAdapters = adapters.filter((a) => a.type !== multiDataSourceType);
         const defaultSourceType = sourceAdapters[0]?.type ?? "";
         const storedMulti = config.multiDataSource;
@@ -776,70 +806,6 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
         const dataSources = !incoming || switchedMode
           ? normalizeMultiSourceRowsFromStored(storedMulti, sourceAdapters)
           : normalizeMultiSourceRowsFromIncoming(incoming.dataSources, sourceAdapters);
-
-        const routableIds = [...new Set(dataSources.map((s) => s.id.trim()).filter((id) => id.length > 0))];
-        const routableOptions: PanelFormOption[] = routableIds.map((id) => ({
-          value: id,
-          label: id,
-          description: null,
-          disabled: false,
-          disabledReason: null,
-        }));
-        const fallbackSource = dataSources.length === 1 && dataSources[0]!.id.trim()
-          ? dataSources[0]!
-          : null;
-
-        const storedClassMap = new Map((storedMulti?.classes ?? []).map((c) => [c.forOntoMap, c.sourceId]));
-        const incomingClassRoutes = !incoming || switchedMode
-          ? undefined
-          : (isPlainObject(incoming.classRoutes) ? incoming.classRoutes : undefined);
-        const classRoutes: Record<string, string> = {};
-        for (const className of ontology.classNames) {
-          const candidate = incomingClassRoutes && typeof incomingClassRoutes[className] === "string"
-            ? (incomingClassRoutes[className] as string)
-            : (incomingClassRoutes ? "" : (storedClassMap.get(className) ?? ""));
-          classRoutes[className] = candidate;
-        }
-
-        const storedRealEdges = new Map((storedMulti?.relationships ?? []).map((r) => [r.forOntoMap, r.realEdge]));
-        const incomingRealEdges = !incoming || switchedMode
-          ? new Map<string, string>()
-          : extractIncomingRealEdges(incoming.relationshipRoutes);
-
-        const adapterByType = new Map(sourceAdapters.map((a) => [a.type, a]));
-        const sourceAdapterTypeById = new Map<string, string>();
-        for (const row of dataSources) {
-          const trimmedId = row.id.trim();
-          if (trimmedId && !sourceAdapterTypeById.has(trimmedId)) {
-            sourceAdapterTypeById.set(trimmedId, row.adapter.adapterType);
-          }
-        }
-
-        const relationshipRoutes = ontology.relationships.map((rel) => {
-          const from = classRoutes[rel.fromClass]?.trim() || fallbackSource?.id.trim() || undefined;
-          const to = classRoutes[rel.toClass]?.trim() || fallbackSource?.id.trim() || undefined;
-          const sameSourceId = from !== undefined && from === to ? from : undefined;
-          const crossSource = from !== undefined && to !== undefined && from !== to;
-          const sourceType = sameSourceId ? sourceAdapterTypeById.get(sameSourceId) : undefined;
-          const isGraph = Boolean(sourceType && adapterByType.get(sourceType)?.requiresJoinFields === false);
-          const realEdge = incomingRealEdges.has(rel.name)
-            ? incomingRealEdges.get(rel.name)!
-            : (storedRealEdges.get(rel.name) ?? "");
-          const edgeEditable = isGraph || realEdge.trim().length > 0;
-          const sourceSummary = crossSource
-            ? t("panels.dataAdapters.multiSourceCrossSourceSummary", { from, to })
-            : sameSourceId ?? t("panels.dataAdapters.multiSourceUnrouted");
-          return {
-            relationship: rel.name,
-            ends: `${rel.fromClass} → ${rel.toClass}`,
-            sourceSummary,
-            edge: {
-              mode: edgeEditable ? "editable" : "readonly",
-              realEdge,
-            },
-          };
-        });
-        const anyEdgeEditable = relationshipRoutes.some((row) => row.edge.mode === "editable");
 
         const adapterVariants: Record<string, PanelFormField[]> = {};
         for (const adapter of sourceAdapters) {
@@ -872,7 +838,6 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
           help: dataSources.length === 0 ? t("panels.dataAdapters.multiSourceNoSources") : undefined,
           required: true,
           readOnly: false,
-          refreshOnChange: true,
           valueSchema: cachedZodToRuntimeJsonSchema(z.array(z.record(z.unknown()))),
           control: {
             kind: "object-array",
@@ -889,7 +854,6 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
                 label: t("panels.dataAdapters.fields.sourceId"),
                 required: true,
                 readOnly: false,
-                refreshOnChange: true,
                 valueSchema: cachedZodToRuntimeJsonSchema(z.string().min(1)),
                 control: { kind: "text", placeholder: t("panels.dataAdapters.fields.sourceIdPlaceholder") },
               },
@@ -925,7 +889,6 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
                       label: t("panels.dataAdapters.fields.sourceAdapterType"),
                       required: true,
                       readOnly: false,
-                      refreshOnChange: true,
                       valueSchema: cachedZodToRuntimeJsonSchema(z.string().min(1)),
                       control: { kind: "select", options: sourceAdapterOptions },
                     },
@@ -937,181 +900,52 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
           },
         };
 
-        const classRouteFields: PanelFormField[] = ontology.classNames.length > 0
-          ? ontology.classNames.map((className): PanelFormField => {
-            const current = classRoutes[className] ?? "";
-            const options: PanelFormOption[] = [...routableOptions];
-            if (current && !routableIds.includes(current)) {
-              options.push({
-                value: current,
-                label: current,
-                description: null,
-                disabled: true,
-                disabledReason: t("panels.dataAdapters.errors.unknownSource", { id: current }),
-              });
-            }
-            return {
-              path: `/classRoutes/${escapeJsonPointer(className)}`,
-              section: "classRoutes",
-              label: className,
-              required: false,
-              readOnly: false,
-              refreshOnChange: true,
-              valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-              control: {
-                kind: "select",
-                options,
-                placeholder: fallbackSource ? fallbackSource.id.trim() : t("panels.dataAdapters.multiSourceUnrouted"),
-              },
-            };
-          })
-          : [
-            {
-              path: "/classRoutesNotice",
-              section: "classRoutes",
-              label: t("panels.dataAdapters.fields.classRoutes"),
-              required: false,
-              readOnly: true,
-              valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-              control: { kind: "text" },
-            },
-          ];
+        const storedClassRoutes: Record<string, string> = {};
+        for (const entry of storedMulti?.classes ?? []) {
+          storedClassRoutes[entry.forOntoMap] = entry.sourceId;
+        }
+        const storedRelationshipRoutes = (storedMulti?.relationships ?? []).map((entry) => ({
+          relationship: entry.forOntoMap,
+          edge: { realEdge: entry.realEdge },
+        }));
+        const classRoutes = incoming && !switchedMode && isPlainObject(incoming.classRoutes)
+          ? incoming.classRoutes
+          : storedClassRoutes;
+        const relationshipRoutes = incoming && !switchedMode && Array.isArray(incoming.relationshipRoutes)
+          ? incoming.relationshipRoutes
+          : storedRelationshipRoutes;
 
-        const relationshipRoutesField: PanelFormField = {
-          path: "/relationshipRoutes",
-          section: "relationshipRoutes",
-          label: t("panels.dataAdapters.fields.relationshipRoutes"),
-          help: ontology.relationships.length === 0
-            ? t("panels.dataAdapters.multiSourceNoRelationships")
-            : undefined,
+        const hiddenClassRoutesField: PanelFormField = {
+          path: "/classRoutes",
+          label: t("panels.dataAdapters.fields.classRoutes"),
           required: false,
-          readOnly: !anyEdgeEditable || ontology.relationships.length === 0,
-          refreshOnChange: anyEdgeEditable,
+          readOnly: false,
+          valueSchema: cachedZodToRuntimeJsonSchema(z.record(z.string())),
+          control: { kind: "hidden" },
+        };
+        const hiddenRelationshipRoutesField: PanelFormField = {
+          path: "/relationshipRoutes",
+          label: t("panels.dataAdapters.fields.relationshipRoutes"),
+          required: false,
+          readOnly: false,
           valueSchema: cachedZodToRuntimeJsonSchema(z.array(z.record(z.unknown()))),
-          control: {
-            kind: "object-array",
-            itemKeyPath: "/relationship",
-            itemFields: [
-              {
-                path: "/relationship",
-                label: t("panels.dataAdapters.fields.relationship"),
-                required: false,
-                readOnly: true,
-                valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-                control: { kind: "text" },
-              },
-              {
-                path: "/ends",
-                label: t("panels.dataAdapters.fields.relationshipEnds"),
-                required: false,
-                readOnly: true,
-                valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-                control: { kind: "text" },
-              },
-              {
-                path: "/sourceSummary",
-                label: t("panels.dataAdapters.fields.relationshipSource"),
-                required: false,
-                readOnly: true,
-                valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-                control: { kind: "text" },
-              },
-              {
-                path: "/edge",
-                label: t("panels.dataAdapters.fields.realEdgeSection"),
-                required: true,
-                readOnly: false,
-                valueSchema: cachedZodToRuntimeJsonSchema(z.record(z.unknown())),
-                control: {
-                  kind: "object",
-                  defaultObject: { mode: "readonly", realEdge: "" },
-                  variantBy: "/mode",
-                  fields: [
-                    {
-                      path: "/mode",
-                      label: t("panels.dataAdapters.fields.edgeMode"),
-                      required: true,
-                      readOnly: true,
-                      valueSchema: cachedZodToRuntimeJsonSchema(z.enum(["editable", "readonly"])),
-                      control: {
-                        kind: "select",
-                        options: [
-                          {
-                            value: "editable",
-                            label: t("panels.dataAdapters.edgeMode.editable"),
-                            description: null,
-                            disabled: false,
-                            disabledReason: null,
-                          },
-                          {
-                            value: "readonly",
-                            label: t("panels.dataAdapters.edgeMode.readonly"),
-                            description: null,
-                            disabled: false,
-                            disabledReason: null,
-                          },
-                        ],
-                      },
-                    },
-                  ],
-                  variants: {
-                    editable: [
-                      {
-                        path: "/realEdge",
-                        label: t("panels.dataAdapters.fields.realEdge"),
-                        required: false,
-                        readOnly: false,
-                        valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-                        control: {
-                          kind: "text",
-                          placeholder: t("panels.dataAdapters.fields.realEdgePlaceholder"),
-                        },
-                      },
-                    ],
-                    readonly: [
-                      {
-                        path: "/realEdge",
-                        label: t("panels.dataAdapters.fields.realEdge"),
-                        required: false,
-                        readOnly: true,
-                        readOnlyReason: t("panels.dataAdapters.fields.realEdgeReadOnlyReason"),
-                        valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-                        control: { kind: "text" },
-                      },
-                    ],
-                  },
-                },
-              },
-            ],
-          },
+          control: { kind: "hidden" },
         };
 
         const sections: PanelFormSection[] = [
           { key: "mode", title: t("panels.dataAdapters.sections.mode") },
           { key: "dataSources", title: t("panels.dataAdapters.sections.dataSources") },
-          {
-            key: "classRoutes",
-            title: t("panels.dataAdapters.sections.classRoutes"),
-            ...(fallbackSource
-              ? { hint: t("panels.dataAdapters.multiSourceSingleFallback", { id: fallbackSource.id.trim() }) }
-              : {}),
-          },
-          { key: "relationshipRoutes", title: t("panels.dataAdapters.sections.relationshipRoutes") },
         ];
-
-        const values: PanelFormValues = {
-          adapterMode: multiDataSourceType,
-          dataSources,
-          ...(ontology.classNames.length > 0
-            ? { classRoutes }
-            : { classRoutesNotice: t("panels.dataAdapters.multiSourceNoClasses") }),
-          relationshipRoutes,
-        };
 
         return {
           sections,
-          fields: [modeField, dataSourcesField, ...classRouteFields, relationshipRoutesField],
-          values,
+          fields: [modeField, dataSourcesField, hiddenClassRoutesField, hiddenRelationshipRoutesField],
+          values: {
+            adapterMode: multiDataSourceType,
+            dataSources,
+            classRoutes,
+            relationshipRoutes,
+          },
           errors: [],
           save: {
             method: "POST",
@@ -1162,6 +996,280 @@ export function createDataAdapterConfigReads(actor: PanelOperationActor) {
         },
       };
     },
+
+    async routingForm(
+      primaryKey: string,
+      inputs: Pick<PanelFormRequest, "values" | "changedField">,
+    ): Promise<PanelFormDescription> {
+      requireDomainKey(primaryKey);
+      const [config, adaptersData, ontology] = await Promise.all([
+        readBusinessConfig(host, actor.credentials),
+        readDataAdapters(host, actor.credentials),
+        readOntologyOutline(host, actor.credentials),
+      ]);
+      const sourceAdapters = adaptersData.adapters.filter((a) => a.type !== multiDataSourceType);
+      const storedMulti = config.multiDataSource;
+      const incoming = inputs.values;
+      const incomingSourceCatalog = incoming ? normalizeSourceCatalogFromIncoming(incoming.sourceCatalog) : null;
+      const sourceCatalog = incomingSourceCatalog ?? normalizeSourceCatalogFromStored(storedMulti, sourceAdapters);
+
+      const routableIds = [...new Set(sourceCatalog.map((s) => s.id).filter((id) => id.length > 0))];
+      const routableOptions: PanelFormOption[] = routableIds.map((id) => ({
+        value: id,
+        label: id,
+        description: null,
+        disabled: false,
+        disabledReason: null,
+      }));
+      const fallbackSource = sourceCatalog.length === 1 && sourceCatalog[0]!.id
+        ? sourceCatalog[0]!
+        : null;
+
+      const storedClassMap = new Map((storedMulti?.classes ?? []).map((c) => [c.forOntoMap, c.sourceId]));
+      const incomingClassRoutes = incoming && isPlainObject(incoming.classRoutes)
+        ? incoming.classRoutes
+        : undefined;
+      const classRoutes: Record<string, string> = {};
+      for (const className of ontology.classNames) {
+        const candidate = incomingClassRoutes && typeof incomingClassRoutes[className] === "string"
+          ? (incomingClassRoutes[className] as string)
+          : (incomingClassRoutes ? "" : (storedClassMap.get(className) ?? ""));
+        classRoutes[className] = candidate;
+      }
+
+      const storedRealEdges = new Map((storedMulti?.relationships ?? []).map((r) => [r.forOntoMap, r.realEdge]));
+      const incomingRealEdges = incoming
+        ? extractIncomingRealEdges(incoming.relationshipRoutes)
+        : new Map<string, string>();
+
+      const adapterByType = new Map(sourceAdapters.map((a) => [a.type, a]));
+      const sourceAdapterTypeById = new Map<string, string>();
+      for (const row of sourceCatalog) {
+        if (row.id && !sourceAdapterTypeById.has(row.id)) {
+          sourceAdapterTypeById.set(row.id, row.adapterType);
+        }
+      }
+
+      const relationshipRoutes = ontology.relationships.map((rel) => {
+        const from = classRoutes[rel.fromClass]?.trim() || fallbackSource?.id || undefined;
+        const to = classRoutes[rel.toClass]?.trim() || fallbackSource?.id || undefined;
+        const sameSourceId = from !== undefined && from === to ? from : undefined;
+        const crossSource = from !== undefined && to !== undefined && from !== to;
+        const sourceType = sameSourceId ? sourceAdapterTypeById.get(sameSourceId) : undefined;
+        const isGraph = Boolean(sourceType && adapterByType.get(sourceType)?.requiresJoinFields === false);
+        const realEdge = incomingRealEdges.has(rel.name)
+          ? incomingRealEdges.get(rel.name)!
+          : (storedRealEdges.get(rel.name) ?? "");
+        const edgeEditable = isGraph || realEdge.trim().length > 0;
+        const sourceSummary = crossSource
+          ? t("panels.dataAdapters.multiSourceCrossSourceSummary", { from, to })
+          : sameSourceId ?? t("panels.dataAdapters.multiSourceUnrouted");
+        return {
+          relationship: rel.name,
+          ends: `${rel.fromClass} → ${rel.toClass}`,
+          sourceSummary,
+          edge: {
+            mode: edgeEditable ? "editable" : "readonly",
+            realEdge,
+          },
+        };
+      });
+      const anyEdgeEditable = relationshipRoutes.some((row) => row.edge.mode === "editable");
+
+      const classRouteFields: PanelFormField[] = ontology.classNames.length > 0
+        ? ontology.classNames.map((className): PanelFormField => {
+          const current = classRoutes[className] ?? "";
+          const options: PanelFormOption[] = [...routableOptions];
+          if (current && !routableIds.includes(current)) {
+            options.push({
+              value: current,
+              label: current,
+              description: null,
+              disabled: true,
+              disabledReason: t("panels.dataAdapters.errors.unknownSource", { id: current }),
+            });
+          }
+          return {
+            path: `/classRoutes/${escapeJsonPointer(className)}`,
+            section: "classRoutes",
+            label: className,
+            required: false,
+            readOnly: routableIds.length === 0,
+            refreshOnChange: true,
+            valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+            control: {
+              kind: "select",
+              options,
+              placeholder: fallbackSource ? fallbackSource.id : t("panels.dataAdapters.multiSourceUnrouted"),
+            },
+          };
+        })
+        : [
+          {
+            path: "/classRoutesNotice",
+            section: "classRoutes",
+            label: t("panels.dataAdapters.fields.classRoutes"),
+            required: false,
+            readOnly: true,
+            valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+            control: { kind: "text" },
+          },
+        ];
+
+      const relationshipRoutesField: PanelFormField = {
+        path: "/relationshipRoutes",
+        section: "relationshipRoutes",
+        label: t("panels.dataAdapters.fields.relationshipRoutes"),
+        help: ontology.relationships.length === 0
+          ? t("panels.dataAdapters.multiSourceNoRelationships")
+          : undefined,
+        required: false,
+        readOnly: !anyEdgeEditable || ontology.relationships.length === 0,
+        refreshOnChange: anyEdgeEditable,
+        valueSchema: cachedZodToRuntimeJsonSchema(z.array(z.record(z.unknown()))),
+        control: {
+          kind: "object-array",
+          itemKeyPath: "/relationship",
+          itemFields: [
+            {
+              path: "/relationship",
+              label: t("panels.dataAdapters.fields.relationship"),
+              required: false,
+              readOnly: true,
+              valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+              control: { kind: "text" },
+            },
+            {
+              path: "/ends",
+              label: t("panels.dataAdapters.fields.relationshipEnds"),
+              required: false,
+              readOnly: true,
+              valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+              control: { kind: "text" },
+            },
+            {
+              path: "/sourceSummary",
+              label: t("panels.dataAdapters.fields.relationshipSource"),
+              required: false,
+              readOnly: true,
+              valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+              control: { kind: "text" },
+            },
+            {
+              path: "/edge",
+              label: t("panels.dataAdapters.fields.realEdgeSection"),
+              required: true,
+              readOnly: false,
+              valueSchema: cachedZodToRuntimeJsonSchema(z.record(z.unknown())),
+              control: {
+                kind: "object",
+                defaultObject: { mode: "readonly", realEdge: "" },
+                variantBy: "/mode",
+                fields: [
+                  {
+                    path: "/mode",
+                    label: t("panels.dataAdapters.fields.edgeMode"),
+                    required: true,
+                    readOnly: true,
+                    valueSchema: cachedZodToRuntimeJsonSchema(z.enum(["editable", "readonly"])),
+                    control: {
+                      kind: "select",
+                      options: [
+                        {
+                          value: "editable",
+                          label: t("panels.dataAdapters.edgeMode.editable"),
+                          description: null,
+                          disabled: false,
+                          disabledReason: null,
+                        },
+                        {
+                          value: "readonly",
+                          label: t("panels.dataAdapters.edgeMode.readonly"),
+                          description: null,
+                          disabled: false,
+                          disabledReason: null,
+                        },
+                      ],
+                    },
+                  },
+                ],
+                variants: {
+                  editable: [
+                    {
+                      path: "/realEdge",
+                      label: t("panels.dataAdapters.fields.realEdge"),
+                      required: false,
+                      readOnly: false,
+                      valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+                      control: {
+                        kind: "text",
+                        placeholder: t("panels.dataAdapters.fields.realEdgePlaceholder"),
+                      },
+                    },
+                  ],
+                  readonly: [
+                    {
+                      path: "/realEdge",
+                      label: t("panels.dataAdapters.fields.realEdge"),
+                      required: false,
+                      readOnly: true,
+                      readOnlyReason: t("panels.dataAdapters.fields.realEdgeReadOnlyReason"),
+                      valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
+                      control: { kind: "text" },
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      };
+
+      const sourceCatalogField: PanelFormField = {
+        path: "/sourceCatalog",
+        label: t("panels.dataAdapters.fields.dataSources"),
+        required: false,
+        readOnly: false,
+        refreshOnChange: true,
+        valueSchema: cachedZodToRuntimeJsonSchema(z.array(z.object({ id: z.string(), adapterType: z.string() }))),
+        control: { kind: "hidden" },
+      };
+
+      const classRoutesHint = routableIds.length === 0
+        ? t("panels.dataAdapters.multiSourceNoSources")
+        : (fallbackSource
+          ? t("panels.dataAdapters.multiSourceSingleFallback", { id: fallbackSource.id })
+          : undefined);
+
+      const sections: PanelFormSection[] = [
+        {
+          key: "classRoutes",
+          title: t("panels.dataAdapters.sections.classRoutes"),
+          ...(classRoutesHint ? { hint: classRoutesHint } : {}),
+        },
+        { key: "relationshipRoutes", title: t("panels.dataAdapters.sections.relationshipRoutes") },
+      ];
+
+      const values: PanelFormValues = {
+        sourceCatalog,
+        ...(ontology.classNames.length > 0
+          ? { classRoutes }
+          : { classRoutesNotice: t("panels.dataAdapters.multiSourceNoClasses") }),
+        relationshipRoutes,
+      };
+
+      return {
+        sections,
+        fields: [sourceCatalogField, ...classRouteFields, relationshipRoutesField],
+        values,
+        errors: [],
+        save: {
+          method: "POST",
+          path: "/api/data-query/businessConfig/useMultiDataSource",
+          bodySchema: cachedZodToRuntimeJsonSchema(z.record(z.unknown())),
+        },
+      };
+    },
   };
 }
 
@@ -1204,7 +1312,6 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
       }
 
       if (adapterMode === multiDataSourceType) {
-        const ontology = await readOntologyOutline(host, host.executor.credentials);
         const sourceAdapters = adapters.filter((a) => a.type !== multiDataSourceType);
         const adapterByType = new Map(sourceAdapters.map((a) => [a.type, a]));
         const rows = normalizeMultiSourceRowsFromIncoming(values.dataSources, sourceAdapters);
@@ -1283,17 +1390,21 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
           };
         }
 
-        const rawClassRoutes = isPlainObject(values.classRoutes) ? values.classRoutes : {};
-        const classes = ontology.classNames.flatMap((className) => {
-          const sourceId = typeof rawClassRoutes[className] === "string" ? (rawClassRoutes[className] as string).trim() : "";
-          return sourceId ? [{ forOntoMap: className, sourceId }] : [];
-        });
+        // Submit routes synced from `routingForm` when present, or preserve stored routes so
+        // saving data sources never depends on `/admin/getSchema`.
+        const classes = isPlainObject(values.classRoutes)
+          ? Object.entries(values.classRoutes).flatMap(([className, rawSourceId]) => {
+              const sourceId = typeof rawSourceId === "string" ? rawSourceId.trim() : "";
+              return sourceId ? [{ forOntoMap: className, sourceId }] : [];
+            })
+          : (config.multiDataSource?.classes ?? []).map(({ forOntoMap, sourceId }) => ({ forOntoMap, sourceId }));
 
-        const incomingRealEdges = extractIncomingRealEdges(values.relationshipRoutes);
-        const relationships = ontology.relationships.flatMap(({ name }) => {
-          const realEdge = incomingRealEdges.get(name)?.trim() ?? "";
-          return realEdge ? [{ forOntoMap: name, realEdge }] : [];
-        });
+        const relationships = Array.isArray(values.relationshipRoutes)
+          ? [...extractIncomingRealEdges(values.relationshipRoutes).entries()].flatMap(([name, rawEdge]) => {
+              const realEdge = rawEdge.trim();
+              return realEdge ? [{ forOntoMap: name, realEdge }] : [];
+            })
+          : (config.multiDataSource?.relationships ?? []).map(({ forOntoMap, realEdge }) => ({ forOntoMap, realEdge }));
 
         const definition: MultiDataSourceDefinition = {
           dataSources: builtSources,
@@ -1305,7 +1416,8 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
           const rejection = multiDataSourceRejectionSchema.safeParse(envelope);
           if (rejection.success && rejection.data.data.problems.length > 0) {
             const problems = rejection.data.data.problems;
-            const mappedErrors = problems.map((problem) => mapMultiSourceProblemToFieldError(problem, rows, ontology));
+            const emptyOutline: OntologyOutline = { classNames: [], relationships: [] };
+            const mappedErrors = problems.map((problem) => mapMultiSourceProblemToFieldError(problem, rows, emptyOutline));
             const summary = problems.map((p) => `${p.path}: ${p.detail}`).join("; ");
             return {
               kind: "refusal",
@@ -1345,6 +1457,90 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
       return {
         kind: "success",
         data: { adapterMode: selected.type },
+        affected: affected(DATA_ADAPTER_CONFIG, DOMAIN_KEY, [DATA_ADAPTER_CONFIG]),
+      };
+    },
+  },
+  {
+    handlerRef: SAVE_DATA_ADAPTER_ROUTING,
+    labelKey: "panels.dataAdapters.operations.saveRouting",
+    kind: "form.save",
+    effect: "write",
+    batch: false,
+    binding: { kind: "PlatformObjectType", id: DATA_ADAPTER_CONFIG },
+    targetType: DATA_ADAPTER_CONFIG,
+    targetSchema: dataAdapterTargetSchema,
+    inputSchema: saveInputSchema,
+    resultSchema: saveResultSchema,
+    draftInput: (input) => saveInputSchema.parse(input).values,
+    async execute(
+      host: PanelOperationHost,
+      _target: PanelOperationTarget,
+      input: Record<string, unknown>,
+    ): Promise<SinglePanelOperationOutcome> {
+      const locale = host.locale;
+      const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
+      const { values } = saveInputSchema.parse(input);
+      const [config, adaptersData, ontology] = await Promise.all([
+        readBusinessConfig(host, host.executor.credentials),
+        readDataAdapters(host, host.executor.credentials),
+        readOntologyOutline(host, host.executor.credentials),
+      ]);
+      const storedSources: DataSourceEntry[] = (config.multiDataSource?.dataSources ?? []).map((entry) => ({
+        id: entry.id,
+        label: entry.label,
+        adapterType: entry.adapterType,
+        readOnly: Boolean(entry.readOnly),
+        connection: entry.connection,
+      }));
+      if (storedSources.length === 0) {
+        return {
+          kind: "refusal",
+          code: "INVALID_MULTI_DATA_SOURCE",
+          message: t("panels.dataAdapters.multiSourceSaveSourcesFirst"),
+          errors: [],
+        };
+      }
+
+      const rawClassRoutes = isPlainObject(values.classRoutes) ? values.classRoutes : {};
+      const classes = ontology.classNames.flatMap((className) => {
+        const sourceId = typeof rawClassRoutes[className] === "string" ? (rawClassRoutes[className] as string).trim() : "";
+        return sourceId ? [{ forOntoMap: className, sourceId }] : [];
+      });
+
+      const incomingRealEdges = extractIncomingRealEdges(values.relationshipRoutes);
+      const relationships = ontology.relationships.flatMap(({ name }) => {
+        const realEdge = incomingRealEdges.get(name)?.trim() ?? "";
+        return realEdge ? [{ forOntoMap: name, realEdge }] : [];
+      });
+
+      const definition: MultiDataSourceDefinition = {
+        dataSources: storedSources,
+        classes,
+        relationships,
+      };
+      const envelope = await ownerPost(host, "/businessConfig/useMultiDataSource", definition, envelopeWithDataSchema);
+      if (!envelope.success) {
+        const rejection = multiDataSourceRejectionSchema.safeParse(envelope);
+        if (rejection.success && rejection.data.data.problems.length > 0) {
+          const problems = rejection.data.data.problems;
+          const sourceAdapters = adaptersData.adapters.filter((a) => a.type !== multiDataSourceType);
+          const rows = normalizeMultiSourceRowsFromStored(config.multiDataSource, sourceAdapters);
+          const mappedErrors = problems.map((problem) => mapMultiSourceProblemToFieldError(problem, rows, ontology));
+          const summary = problems.map((p) => `${p.path}: ${p.detail}`).join("; ");
+          return {
+            kind: "refusal",
+            code: "MULTI_DATA_SOURCE_REJECTED",
+            message: t("panels.dataAdapters.errors.multiSourceRejected", { details: summary }),
+            errors: mappedErrors,
+          };
+        }
+        return ownerWriteFailure(envelope, "MULTI_DATA_SOURCE_SAVE_FAILED", t("panels.dataAdapters.errors.saveFailed"));
+      }
+
+      return {
+        kind: "success",
+        data: { adapterMode: multiDataSourceType },
         affected: affected(DATA_ADAPTER_CONFIG, DOMAIN_KEY, [DATA_ADAPTER_CONFIG]),
       };
     },

@@ -9,15 +9,22 @@ export type {
 } from "../base/object-list-types";
 export { default as GroupedGrid } from "../base/GroupedGrid.vue";
 export type {
+  GroupedGridControlsVisibility,
+  GroupedGridDividerStyle,
   GroupedGridGroup,
   GroupedGridGroupSlotScope,
   GroupedGridGroupSummary,
+  GroupedGridGroupSurface,
   GroupedGridItem,
+  GroupedGridItemDraftOverride,
   GroupedGridItemSlotScope,
+  GroupedGridItemSurface,
   GroupedGridLayoutChange,
   GroupedGridLayoutGroup,
   GroupedGridLayoutItem,
   GroupedGridLayoutState,
+  GroupedGridResizeAxis,
+  GroupedGridRowSizing,
   GroupedGridSection,
   GroupedGridStaticGroupConfig,
   GroupedGridStaticItemConfig,
@@ -71,6 +78,14 @@ export { default as ConversationEntry } from "../base/ConversationEntry.vue";
 export { default as PanelData } from "../base/PanelData.vue";
 export { default as CurrentEntry } from "../base/CurrentEntry.vue";
 export { default as MetricChart } from "../base/MetricChart.vue";
+export { default as DashboardMetricPreview } from "../base/DashboardMetricPreview.vue";
+export type { DashboardMetricPreviewCard } from "../base/dashboard-metric-preview-types";
+export { default as ScheduledTaskSummaryList } from "../base/ScheduledTaskSummaryList.vue";
+export { default as ScheduledTaskRunDetail } from "../base/ScheduledTaskRunDetail.vue";
+export type {
+  ScheduledTaskRunView,
+  ScheduledTaskSummaryItem,
+} from "../base/scheduled-task-summary-types";
 export {
   PathTree,
   buildPathTree,

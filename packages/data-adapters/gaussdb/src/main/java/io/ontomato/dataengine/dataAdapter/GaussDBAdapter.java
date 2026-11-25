@@ -262,6 +262,7 @@ public class GaussDBAdapter implements DataAdapter {
 			String subSelectFrom = "";
 			JSONArray relationships = firstStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
 					.getJSONArray("relationship");
+			KeyFieldGraphContract.requireSupported(relationships, "relationship");
 			if (relationships != null && relationships.size() > 0) {
 				Set<Integer> inJoinIdxs = new HashSet<>();
 				Set<Integer> inJoinRelIndexes = new HashSet<>();

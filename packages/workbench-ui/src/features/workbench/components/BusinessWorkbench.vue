@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
@@ -455,6 +455,11 @@ const bottomEntry = computed<ShellBottomEntry | null>(() =>
  */
 let consumedLink: string | null = null;
 let pendingLink: string | null = null;
+let linkRequest = 0;
+const unmounted = ref(false);
+onBeforeUnmount(() => {
+  unmounted.value = true;
+});
 /** The page a link's message comes from while the link chooses its conversation; that page stays open. */
 let placingFrom: string | null = null;
 /**
@@ -478,7 +483,7 @@ const knowsPage = () =>
  * was shown where it failed, and there is nothing to check a link's agent against or to send it with.
  */
 async function pageKnown(): Promise<boolean> {
-  const settled = () => knowsPage() || nav.agentsState.value === "error";
+  const settled = () => unmounted.value || knowsPage() || nav.agentsState.value === "error";
   if (!settled()) {
     await new Promise<void>((resolve) => {
       const stop = watch(settled, (now) => {
@@ -488,7 +493,29 @@ async function pageKnown(): Promise<boolean> {
       });
     });
   }
-  return nav.agentsState.value !== "error";
+  return !unmounted.value && nav.agentsState.value !== "error";
+}
+/**
+ * Waits for the agent directory to finish loading before judging whether a requested agent is available. If an earlier
+ * read had already failed, retries once so the reader either reaches the agent or sees why the directory failed.
+ */
+async function agentsKnown(): Promise<boolean> {
+  if (nav.agentsState.value === "error") {
+    await nav.loadAgents().catch((error) => {
+      if (!unmounted.value) ElMessage.error(error instanceof Error ? error.message : String(error));
+    });
+  }
+  const settled = () => unmounted.value || nav.agentsState.value !== "loading";
+  if (!settled()) {
+    await new Promise<void>((resolve) => {
+      const stop = watch(settled, (now) => {
+        if (!now) return;
+        stop();
+        resolve();
+      });
+    });
+  }
+  return !unmounted.value && nav.agentsState.value === "ready";
 }
 const linkAddress = () =>
   JSON.stringify([
@@ -517,6 +544,8 @@ async function openRequestedAgent() {
   const address = linkAddress();
   if (pendingLink === address || consumedLink === address) return;
   pendingLink = address;
+  const request = ++linkRequest;
+  const stale = () => unmounted.value || request !== linkRequest;
   const session = queryText(route.query.sessionId);
   const prompt = queryText(route.query.prompt);
   const prefill = queryText(route.query.prefill);
@@ -532,10 +561,14 @@ async function openRequestedAgent() {
     ...query
   } = route.query;
   await router.replace({ query: page ? { ...query, page } : query });
+  if (stale()) return;
   // The page the message was written on is beside the conversation from the start: the agent is one of those offered on
-  // it, and the message carries its skill, once the conversation knows it. Its agents not read, the message ends here,
+  // it, and the message carries its skill, once the conversation knows it. Without a page, wait for the agent directory
+  // to finish loading before concluding the requested agent is unavailable. Its agents not read, the message ends here,
   // unsent; the same address arriving again is the reader trying again.
-  if (page && !(await pageKnown())) return giveBack(draft);
+  const ready = page ? await pageKnown() : await agentsKnown();
+  if (stale()) return;
+  if (!ready) return giveBack(draft);
   const matched = id
     ? nav.agents.value.find((agent) => agent.id === id && agent.enabled)
     : nav.agents.value.find((agent) => agent.kind === kind && agent.enabled);
@@ -547,6 +580,7 @@ async function openRequestedAgent() {
   agentId.value = targetId;
   // Switching agents starts a new conversation in the navigation; what the link names comes after that.
   await nextTick();
+  if (stale()) return;
   placingFrom = page?.split("?")[0] ?? null;
   if (session) {
     nav.selectSession(session);
@@ -558,6 +592,10 @@ async function openRequestedAgent() {
     // looked up in the host's list rather than in a list that is still empty, or every page message would start anew.
     const held = readRememberedSession(targetId);
     if (held && !nav.sessions.value.some((row) => row.id === held)) await nav.loadSessions();
+    if (stale()) {
+      placingFrom = null;
+      return;
+    }
     const workspaceId = workspaceFromPage(page);
     const continuing = held !== null && nav.sessions.value.some((row) =>
       row.id === held && (!workspaceId || row.workspaceId === workspaceId),
@@ -570,16 +608,25 @@ async function openRequestedAgent() {
   // shown; opened anew, it says again which skill it reaches once drawn, and the message carries that.
   if (page) {
     await display.navigate(page, { view: "side", history: "replace" });
+    if (stale()) return;
     await nextTick();
-    if (!(await pageKnown())) return giveBack(draft);
+    if (stale()) return;
+    if (!(await pageKnown())) {
+      if (stale()) return;
+      return giveBack(draft);
+    }
+    if (stale()) return;
   }
   if (prompt) {
     await nextTick();
+    if (stale()) return;
     await shell.value!.send(prompt);
   } else if (prefill) {
     await nextTick();
+    if (stale()) return;
     shell.value!.fill(prefill);
   }
+  if (stale()) return;
   // Placed: the address is spent, and the same one arriving again is the reader's next message.
   pendingLink = null;
   consumedLink = address;

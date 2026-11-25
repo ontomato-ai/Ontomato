@@ -112,7 +112,7 @@ watch(() => props.entry?.seq, () => {
   opened.value = true;
   if (entry.text !== null) text.value = entry.text;
   void Promise.resolve().then(() => input.value?.focus());
-});
+}, { immediate: true });
 function unfold() {
   setCollapsed(false);
   void Promise.resolve().then(() => input.value?.focus());

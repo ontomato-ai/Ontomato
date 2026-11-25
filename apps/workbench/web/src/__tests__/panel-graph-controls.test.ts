@@ -571,16 +571,16 @@ it("supports ObjectRelations summary, empty-group collapsing, edge bindings, rel
   expect(document.querySelector('.sdk-object-relations-summary-item[data-status="failed"]')?.textContent).toContain("panel.failed-kind");
   expect(document.querySelector('.sdk-object-relations-summary-item[data-status="unavailable"]')?.textContent).toContain("panel.unavailable-kind");
 
-  // Non-ok groups are expanded first in refused -> failed -> unavailable order, followed by non-empty ok groups
+  // Readable ok groups appear first, followed by non-ok groups in refused -> failed -> unavailable order
   const renderedKinds = [...document.querySelectorAll(".sdk-object-relations-group")].map((el) =>
     el.getAttribute("data-relation-kind"),
   );
   expect(renderedKinds).toEqual([
+    "panel.uses-projection",
+    "panel.invokes-action",
     "panel.refused-kind",
     "panel.failed-kind",
     "panel.unavailable-kind",
-    "panel.uses-projection",
-    "panel.invokes-action",
   ]);
   // Two empty ok kinds collapsed into one summary line instead of occupying two group cards
   expect(document.querySelector('.sdk-object-relations-empty-kinds')?.textContent).toContain("2");

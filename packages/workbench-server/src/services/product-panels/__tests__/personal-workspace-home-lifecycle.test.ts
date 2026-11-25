@@ -166,7 +166,7 @@ describe("personal workspace home panel lifecycle", () => {
 
     const homeRef = { applicationId: "home", useId: "home" };
     const defaultEntry = await requirePanelEntry(credentials, homeRef, owner);
-    expect(defaultEntry.use.panelId).toBe("builtin-product-personal-workspace");
+    expect(defaultEntry.use).toMatchObject({ panelId: "builtin-product-personal-workspace" });
     expect(defaultEntry.framePanelId).toBe("builtin-product-platform-frame");
 
     const defaultRoot = await requireRegisteredPanelRoot(owner, credentials, homeRef);
@@ -233,7 +233,7 @@ describe("personal workspace home panel lifecycle", () => {
     expect(state.homePanelId).toBe(CUSTOM_HOME_PANEL_ID);
 
     const customEntry = await requirePanelEntry(credentials, homeRef, owner);
-    expect(customEntry.use.panelId).toBe(CUSTOM_HOME_PANEL_ID);
+    expect(customEntry.use).toMatchObject({ panelId: CUSTOM_HOME_PANEL_ID });
 
     const customUseEntry = await requirePanelUseEntry(credentials, homeRef, owner);
     expect(customUseEntry.use.panelId).toBe(CUSTOM_HOME_PANEL_ID);
@@ -254,7 +254,7 @@ describe("personal workspace home panel lifecycle", () => {
     expect(state.homePanelId).toBeNull();
 
     const restoredEntry = await requirePanelEntry(credentials, homeRef, owner);
-    expect(restoredEntry.use.panelId).toBe("builtin-product-personal-workspace");
+    expect(restoredEntry.use).toMatchObject({ panelId: "builtin-product-personal-workspace" });
 
     const restoredRoot = await requireRegisteredPanelRoot(owner, credentials, homeRef);
     expect(restoredRoot.panel.id).toBe("builtin-product-personal-workspace");

@@ -73,7 +73,9 @@ const favoriteText = (locale: string | undefined, key: string) => tForLocale(loc
 
 function favoriteAffected(objectType: string, primaryKey: string) {
   return {
-    objectTypes: [FAVORITE, objectType],
+    objectTypes: objectType === AGENT_DEFINITION
+      ? [FAVORITE, objectType, APPLICATION]
+      : [FAVORITE, objectType],
     objects: [
       { objectType, primaryKey },
     ],

@@ -1,3 +1,4 @@
+import { hasActivePresentationForRun, isLivePresentationEligibleRun } from "../../services/agent-host/presentation";
 import { randomUUID } from "node:crypto";
 import {
   cancelPanelOperationIntentRequestSchema, createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
@@ -395,11 +396,14 @@ panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (
   if (!root) {
     throw new HttpError(409, "Execution has no authenticated human session", "USER_SESSION_UNAVAILABLE");
   }
-  if (run.channel.authority.executionKind !== "live") {
+  const buildTest = run.channel.authority.executionKind === "build-test";
+  if (buildTest && (!isLivePresentationEligibleRun({
+    host: "workbench", owner, runId: input.agentRun.runId, sessionId: run.sessionId, channel: run.channel,
+  }) || !hasActivePresentationForRun("workbench", owner, input.agentRun.runId))) {
     throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
   }
   const settings = await panelOperationStore.settings(owner, root);
-  const autoMode = input.requireConfirmation ? false : !settings.confirmBeforeExecute;
+  const autoMode = !buildTest && !input.requireConfirmation && !settings.confirmBeforeExecute;
   const intentId = randomUUID();
   const questionId = autoMode ? null : randomUUID();
   if (!autoMode && questionId) {
