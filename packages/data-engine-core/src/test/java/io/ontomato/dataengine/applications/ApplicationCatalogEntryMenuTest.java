@@ -62,6 +62,49 @@ class ApplicationCatalogEntryMenuTest {
         assertFalse(multiDetail.getBooleanValue("singleEntry"));
     }
 
+    @Test void entryMenuIncludesFrameConversationWithoutAffectingGroupsOrSingleEntry() {
+        var access = mock(ApplicationAccess.class);
+        var grants = mock(ProductGrantService.class);
+        var user = new QueryAccessService.GrantUser("reader", "domain-a");
+        var conversation = new ApplicationPanelUse("ops-diagnosis", "ops-diagnosis", null, "/ops/diagnosis",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, null, null, null, null, null,
+            ApplicationPanelUse.FRAME_CONVERSATION_KIND, null);
+        var grouped = new ApplicationPanelUse("ops-results", "ops-results", "builtin-product-ops-results", "/ops/results",
+            new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("en", "Test results"), null, null, "autotest", null, null, null);
+        var detail = use("ops-case-detail", null);
+        var autotestGroup = new ApplicationCatalog.Group("autotest", Map.of("en", "Automatic tests"), 10);
+        var unusedGroup = new ApplicationCatalog.Group("unused", Map.of("en", "Unused"), 20);
+        var app = JSONObject.of(
+            "id", "operations",
+            "kind", "native",
+            "entry", JSONObject.of("path", "/ops", "renderer", "operations"),
+            "names", Map.of("en", "Operations diagnosis"),
+            "groups", List.of(autotestGroup, unusedGroup),
+            "panelSettings", JSONObject.of("framePanelId", "builtin-product-ops-frame"),
+            "panelUses", List.of(conversation, grouped, detail));
+
+        when(access.withPageSkillAuthorization(any(), any())).thenCallRealMethod();
+        when(access.canEnter(any(), any())).thenReturn(true);
+        when(access.panelUses(List.of(conversation, grouped, detail), user)).thenReturn(List.of(conversation, grouped, detail));
+        when(grants.allowedBatchFor("domain-a", "reader",
+            List.of("builtin-product-ops-frame", grouped.panelId(), detail.panelId()), "use"))
+            .thenReturn(Map.of("builtin-product-ops-frame", true, grouped.panelId(), true, detail.panelId(), true));
+
+        var catalog = spy(new ApplicationCatalog(mock(JdbcTemplate.class), mock(TransactionTemplate.class), access,
+            "{}", mock(PanelResources.class), grants));
+        doReturn(List.of(app)).when(catalog).all();
+
+        var fromConversation = (ApplicationCatalog.EntryMenu) catalog.resolveEntry("operations", conversation.id(), user).get("menu");
+        var fromFeature = (ApplicationCatalog.EntryMenu) catalog.resolveEntry("operations", grouped.id(), user).get("menu");
+
+        assertEquals(List.of(conversation, grouped), fromConversation.panelUses());
+        assertEquals(List.of(conversation, grouped), fromFeature.panelUses());
+        assertEquals(List.of(autotestGroup), fromConversation.groups());
+        assertEquals(List.of(autotestGroup), fromFeature.groups());
+        assertTrue(fromConversation.singleEntry());
+        assertTrue(fromFeature.singleEntry());
+    }
+
     private static ApplicationPanelUse use(String id, Map<String, String> names) {
         return new ApplicationPanelUse(id, id, "panel-" + id, "/" + id,
             new ApplicationPanelUse.Access(null, "domain-member"), null, names);
