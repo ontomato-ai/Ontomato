@@ -68,6 +68,7 @@
         },
         "config": {
           "showTitle": false,
+          "density": "comfortable",
           "emptyText": "odb.empty",
           "missingText": "odb.missing"
         },

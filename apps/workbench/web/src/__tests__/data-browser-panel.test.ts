@@ -186,6 +186,10 @@ const { panel: browserPanel, projections } = expandDataBrowserPanel();
 interface HarnessOptions {
   canConfigure?: boolean;
   savedPositions?: Record<string, { x: number; y: number }>;
+  overviewNodeCount?: number;
+  overviewTruncated?: boolean;
+  overviewComplete?: boolean;
+  overviewFailures?: readonly string[];
 }
 
 function mountBrowserRoute(options: HarnessOptions = {}) {
@@ -285,9 +289,11 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
           status: "READY",
           version: "v-1",
           sampleToken: "tok-1",
-          nodeCount: 2,
+          nodeCount: options.overviewNodeCount ?? 2,
           edgeCount: 1,
           relationTypes: ["placedBy"],
+          ...(options.overviewComplete !== undefined ? { complete: options.overviewComplete } : {}),
+          ...(options.overviewFailures ? { failures: options.overviewFailures } : {}),
           groups: [
             { id: "Order", label: "Order", totalCount: 12, sampleCount: 1 },
             { id: "Customer", label: "Customer", totalCount: 5, sampleCount: 1 },
@@ -304,7 +310,7 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
         status: "ready",
         value: {
           version: "v-1",
-          truncated: false,
+          truncated: options.overviewTruncated ?? false,
           edges: [
             {
               id: "edge-1",
@@ -391,12 +397,20 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
     if (member === "graphSearchClassPicker") {
       return {
         status: "ready",
-        value: {
-          options: [
-            { primaryKey: "Order", value: "Order", label: "Order Display" },
-            { primaryKey: "Customer", value: "Customer", label: "Customer Display" },
-          ],
-        },
+        value: [
+          {
+            className: OBJECT_TYPE,
+            primaryKey: "Order",
+            label: "Order Display",
+            fields: { className: "Order", classLabel: "Order Display", instanceCount: 12, sampleCount: 1 },
+          },
+          {
+            className: OBJECT_TYPE,
+            primaryKey: "Customer",
+            label: "Customer Display",
+            fields: { className: "Customer", classLabel: "Customer Display", instanceCount: 5, sampleCount: 1 },
+          },
+        ],
       };
     }
     if (member === "classPicker" || member === "classCatalogProbe" || member === "classNamesProbe") {
@@ -698,6 +712,12 @@ describe("builtin-product-data-browser panel", () => {
       const instanceTableProjection = projections.get("builtin-product-9f3c1e20-4b7d-4e92-a814-000000000009");
       expect(instanceTableProjection?.config?.pagination).toBe("pages");
       expect(instanceTableProjection?.config?.pageSizes).toEqual([20, 50, 100]);
+      expect(instanceTableProjection?.config?.showRowIndex).toBe(true);
+      expect(instanceTableProjection?.config?.pinPrimaryColumn).toBe(true);
+      expect(instanceTableProjection?.config?.rowActivation).toBe("dblclick");
+      expect(instanceTableProjection?.config?.showPageJumper).toBe(true);
+      expect(instanceTableProjection?.config?.showRangeBar).toBe(true);
+      expect(element.querySelector('[data-testid="object-list-range-bar"]')).not.toBeNull();
       expect(route.router.currentRoute.value.fullPath).toContain("viewMode=table");
       expect(route.router.currentRoute.value.fullPath).not.toContain("page=");
       expect(route.router.currentRoute.value.fullPath).not.toContain("size=");
@@ -839,10 +859,13 @@ describe("builtin-product-data-browser panel", () => {
         expect(element.querySelector("[data-table-filter-tag]")?.textContent).toContain("3 filters");
       });
 
-      // Clicking a table row navigates to object detail /browser/views?selected=Order~ord-1.
+      // Single-clicking a table row highlights without navigating; double-clicking opens object detail /browser/views?selected=Order~ord-1.
       const firstRow = element.querySelector<HTMLElement>("tbody tr")!;
       expect(firstRow).toBeTruthy();
       firstRow.click();
+      await Promise.resolve();
+      expect(route.router.currentRoute.value.fullPath).toContain("/browser/data");
+      firstRow.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       await vi.waitFor(() => {
         expect(route.router.currentRoute.value.fullPath).toBe("/browser/views?selected=Order~ord-1");
       });
@@ -956,6 +979,79 @@ describe("builtin-product-data-browser panel", () => {
       await vi.waitFor(() => {
         expect(route.readLog.some((r) => r.member === "instanceGraph" && r.dataName === "neighbors")).toBe(true);
         expect(element.querySelector("[data-node-inspector]")?.textContent).toContain("ORD-001");
+      });
+
+      // Inspector neighborhood filter commits atomically to state.neighborFilter on Apply (no immediate re-read on draft edit).
+      await vi.waitFor(() => {
+        expect(element.querySelector("[data-inspector-neighbor-filter]")).not.toBeNull();
+      });
+      const neighborReadsBefore = route.readLog.filter((r) => r.member === "instanceGraph" && r.dataName === "neighbors").length;
+      const directionSelect = element.querySelector<HTMLElement>('[data-inspector-filter="direction"]')!;
+      (directionSelect.querySelector<HTMLElement>(".el-select__wrapper") ?? directionSelect).click();
+      await vi.waitFor(() => {
+        const option = Array.from(document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")).find(
+          (item) => item.textContent?.trim() === "Incoming",
+        );
+        expect(option).toBeTruthy();
+        option!.click();
+      });
+      expect(route.readLog.filter((r) => r.member === "instanceGraph" && r.dataName === "neighbors").length).toBe(neighborReadsBefore);
+
+      const applyNeighborBtn = element.querySelector<HTMLButtonElement>('[data-inspector-filter="apply"]')!;
+      applyNeighborBtn.click();
+      await vi.waitFor(() => {
+        const filteredRead = route.readLog.find(
+          (r) => r.member === "instanceGraph" && r.dataName === "neighbors" && r.runtimeParams?.direction === "incoming",
+        );
+        expect(filteredRead).toBeTruthy();
+      });
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("wires Category 2 graph config, displays sampled counts & truncation/failure info popover, and renders metaField counts on class picker", async () => {
+    const instanceGraphProjection = projections.get("builtin-product-9f3c1e20-4b7d-4e92-a814-000000000001");
+    expect(instanceGraphProjection?.config?.fitMode).toBe("fit");
+    expect(instanceGraphProjection?.config?.expandOn).toBe("activate");
+    expect(instanceGraphProjection?.config?.showHint).toBe(true);
+    expect(instanceGraphProjection?.config?.showNeighborControls).toBe(false);
+    const classPickerProjection = projections.get("builtin-product-9f3c1e20-4b7d-4e92-a814-000000000002");
+    expect(classPickerProjection?.config?.metaField).toBe("instanceCount");
+    const nodeSummaryProjection = projections.get("builtin-product-9f3c1e20-4b7d-4e92-a814-000000000005");
+    expect(nodeSummaryProjection?.config?.density).toBe("compact");
+
+    const route = mountBrowserRoute({
+      overviewNodeCount: 17,
+      overviewTruncated: true,
+      overviewComplete: false,
+      overviewFailures: ["LegacyType: data source unavailable"],
+    });
+    const { app, element } = await route.open(dataBrowserUse.path);
+    try {
+      await vi.waitFor(() => {
+        expect(element.querySelector("[data-graph-stats-summary]")?.textContent).toContain("Showing 2 / 17 instances");
+      }, { timeout: 5000 });
+
+      const infoBtn = element.querySelector<HTMLButtonElement>("[data-graph-info-trigger]")!;
+      expect(infoBtn).toBeTruthy();
+      expect(infoBtn.classList.contains("is-warning")).toBe(true);
+      infoBtn.click();
+      await vi.waitFor(() => {
+        expect(document.body.textContent).toContain("Overview connections reached the display limit");
+        expect(document.body.textContent).toContain("LegacyType: data source unavailable");
+      });
+
+      // Opening the graph search class picker renders instanceCount meta values via ReferencePicker metaField.
+      const pickerTrigger = element.querySelector<HTMLElement>("[data-graph-inspector] .el-select__wrapper")!;
+      expect(pickerTrigger).toBeTruthy();
+      pickerTrigger.click();
+      await vi.waitFor(() => {
+        const metas = Array.from(document.querySelectorAll<HTMLElement>("[data-picker-option-meta]")).map(
+          (el) => el.textContent?.trim(),
+        );
+        expect(metas).toContain("12");
+        expect(metas).toContain("5");
       });
     } finally {
       app.unmount();

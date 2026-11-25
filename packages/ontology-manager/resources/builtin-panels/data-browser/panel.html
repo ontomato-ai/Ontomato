@@ -21,10 +21,75 @@
   .db-graph-stats-bar {
     display: inline-flex;
     align-items: center;
+    gap: 6px;
     font-size: var(--text-xs);
     color: var(--sdk-text-color-secondary);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+  }
+
+  .db-graph-progress-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: var(--radius-xs, 4px);
+    background: var(--sdk-fill-color-light, var(--ui-fill-tertiary));
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .db-graph-info-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-xs, 4px);
+    background: transparent;
+    color: var(--sdk-text-color-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .db-graph-info-btn:hover {
+    background: var(--sdk-fill-color-light, var(--ui-fill-tertiary));
+    color: var(--sdk-text-color-primary);
+  }
+
+  .db-graph-info-btn.is-warning {
+    color: var(--sdk-color-warning);
+  }
+
+  .db-graph-info-popover {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--sdk-text-color-regular);
+  }
+
+  .db-graph-info-popover strong {
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-sm);
+  }
+
+  .db-graph-info-popover p {
+    margin: 0;
+  }
+
+  .db-graph-info-warn {
+    padding: 6px 8px;
+    border-radius: var(--radius-xs, 4px);
+    background: var(--sdk-color-warning-light-9);
+    color: var(--sdk-color-warning);
+  }
+
+  .db-graph-info-failures {
+    margin: 4px 0 0;
+    padding-inline-start: 16px;
+    color: var(--sdk-text-color-secondary);
   }
 
   .db-graph-workspace,
@@ -264,6 +329,31 @@
     margin: 0;
   }
 
+  .db-neighbor-filter {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--sdk-border-color-light, var(--ui-divider));
+    flex-shrink: 0;
+  }
+
+  .db-neighbor-filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .db-neighbor-filter-label {
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+
+  .db-neighbor-apply-btn {
+    width: 100%;
+    margin: 0;
+  }
+
   .db-inspector-empty {
     display: grid;
     flex: 1 1 auto;
@@ -472,9 +562,47 @@
 
     <page-header :title="t('db.title')" :description="t('db.description')">
       <template #actions>
-        <span v-if="isGraphMode && graphStatsLabel" class="db-graph-stats-bar" data-graph-stats-summary>
-          {{ graphStatsLabel }}
-        </span>
+        <div v-if="isGraphMode && (graphStatsLabel || graphDrawingLabel)" class="db-graph-stats-bar">
+          <span v-if="graphStatsLabel" data-graph-stats-summary>{{ graphStatsLabel }}</span>
+          <span v-if="graphDrawingLabel" class="db-graph-progress-pill" data-graph-drawing-progress>
+            {{ graphDrawingLabel }}
+          </span>
+          <span v-else-if="graphNeighborProgressLabel" class="db-graph-progress-pill" data-graph-neighbor-progress>
+            {{ graphNeighborProgressLabel }}
+          </span>
+          <sdk-popover
+            v-if="graphStatsLabel"
+            trigger="click"
+            placement="bottom-end"
+            :width="300"
+          >
+            <template #reference>
+              <button
+                type="button"
+                class="db-graph-info-btn"
+                :class="{ 'is-warning': graphHasNotice }"
+                :aria-label="t('db.graphInfoLabel')"
+                :title="t('db.graphInfoLabel')"
+                data-graph-info-trigger
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              </button>
+            </template>
+            <div class="db-graph-info-popover" data-graph-info-popover>
+              <strong>{{ t("db.graphOverviewTitle") }}</strong>
+              <p>{{ t("db.graphOverviewInfo") }}</p>
+              <div v-if="graphIsEdgesTruncated" class="db-graph-info-warn" data-graph-truncated-notice>
+                {{ t("db.graphEdgesTruncated") }}
+              </div>
+              <div v-if="graphIsIncomplete" class="db-graph-info-warn" data-graph-incomplete-notice>
+                <p>{{ t("db.graphIncomplete") }}</p>
+                <ul v-if="graphFailureList.length > 0" class="db-graph-info-failures">
+                  <li v-for="(item, idx) in graphFailureList" :key="idx">{{ item }}</li>
+                </ul>
+              </div>
+            </div>
+          </sdk-popover>
+        </div>
         <segmented-control
           state="viewMode"
           default-value="graph"
@@ -528,6 +656,82 @@
               <projection slot="graphSearchResults" @choose="focusSearchedInstance"></projection>
             </div>
           </div>
+
+          <section
+            v-if="isGraphInstanceMode"
+            class="db-neighbor-filter"
+            :aria-label="t('db.neighborFilterTitle')"
+            data-inspector-neighbor-filter
+          >
+            <div class="db-section-label"><span>{{ t("db.neighborFilterTitle") }}</span></div>
+            <div v-if="neighborTargetOptions.length > 0" class="db-neighbor-filter-field">
+              <span class="db-neighbor-filter-label">{{ t("db.neighborTargetClass") }}</span>
+              <sdk-select
+                v-model="draftNeighborTargetClass"
+                size="small"
+                clearable
+                filterable
+                :placeholder="t('db.allClasses')"
+                data-inspector-filter="target-class"
+              >
+                <sdk-option
+                  v-for="item in neighborTargetOptions"
+                  :key="item.id"
+                  :label="item.label"
+                  :value="item.id"
+                ></sdk-option>
+              </sdk-select>
+            </div>
+            <div v-if="neighborRelationKindOptions.length > 0" class="db-neighbor-filter-field">
+              <span class="db-neighbor-filter-label">{{ t("db.neighborRelationKind") }}</span>
+              <sdk-select
+                v-model="draftNeighborRelationKind"
+                size="small"
+                clearable
+                filterable
+                :placeholder="t('db.allRelations')"
+                data-inspector-filter="relation-kind"
+              >
+                <sdk-option
+                  v-for="item in neighborRelationKindOptions"
+                  :key="item.id"
+                  :label="item.label"
+                  :value="item.id"
+                ></sdk-option>
+              </sdk-select>
+            </div>
+            <div class="db-neighbor-filter-field">
+              <span class="db-neighbor-filter-label">{{ t("db.neighborDirection") }}</span>
+              <sdk-select
+                v-model="draftNeighborDirection"
+                size="small"
+                data-inspector-filter="direction"
+              >
+                <sdk-option
+                  v-for="item in neighborDirectionOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                ></sdk-option>
+              </sdk-select>
+            </div>
+            <sdk-checkbox
+              v-model="draftFitAfterExpand"
+              size="small"
+              data-inspector-filter="fit-after-expand"
+            >
+              {{ t("db.fitAfterExpand") }}
+            </sdk-checkbox>
+            <sdk-button
+              type="primary"
+              size="small"
+              class="db-neighbor-apply-btn"
+              data-inspector-filter="apply"
+              @click="applyNeighborFilter"
+            >
+              {{ t("db.applyNeighborFilter") }}
+            </sdk-button>
+          </section>
 
           <div v-if="hasSelectedNode" class="db-detail-content" data-node-inspector>
             <div class="db-detail-title">

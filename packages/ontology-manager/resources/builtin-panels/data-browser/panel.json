@@ -85,6 +85,11 @@
           }
         }
       },
+      "neighborFilter": {
+        "type": {
+          "kind": "json"
+        }
+      },
       "filters": {
         "type": {
           "kind": "json"
@@ -116,22 +121,27 @@
         "state": {
           "start": "graphStart",
           "selectedNode": "selectedNode",
+          "selectedGroup": "graphSearchClassName",
           "query": "graphQuery",
           "positions": "positions",
           "expandedNodes": "expandedNodes",
-          "visibleRelationKinds": "visibleRelationKinds"
+          "visibleRelationKinds": "visibleRelationKinds",
+          "neighborFilter": "neighborFilter"
         },
         "config": {
+          "fitMode": "fit",
+          "expandOn": "activate",
           "showLayerFilter": false,
           "showLegend": false,
           "showToolbar": true,
+          "showHint": true,
           "aggregateEdges": true,
           "showEdgeLabels": true,
           "showAggregateToggle": true,
           "showEdgeLabelToggle": true,
           "showZoomControls": true,
           "showRefreshControl": true,
-          "showNeighborControls": true,
+          "showNeighborControls": false,
           "neighborPageSize": 50
         },
         "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000001"
@@ -142,8 +152,7 @@
         "description": "Optional object type filter narrowing instance graph search results.",
         "type": "platform:ObjectType",
         "data": {
-          "options": "options",
-          "selected": "resolve"
+          "rows": "instanceGraphClasses"
         },
         "state": {
           "selected": "graphSearchClass"
@@ -151,7 +160,8 @@
         "config": {
           "placeholderKey": "db.allClasses",
           "clearable": true,
-          "size": "default"
+          "size": "default",
+          "metaField": "instanceCount"
         },
         "id": "builtin-product-9f3c1e20-4b7d-4e92-a814-000000000002"
       },
@@ -224,6 +234,7 @@
         },
         "config": {
           "showTitle": false,
+          "density": "compact",
           "emptyText": "db.nodeSummaryEmpty",
           "missingText": "db.nodeSummaryMissing"
         },
@@ -321,6 +332,11 @@
           "exportable": true,
           "searchable": false,
           "showChevron": false,
+          "showRowIndex": true,
+          "pinPrimaryColumn": true,
+          "rowActivation": "dblclick",
+          "showPageJumper": true,
+          "showRangeBar": true,
           "emptyText": "db.tableEmpty",
           "noMatchText": "db.tableNoMatch",
           "pagination": "pages",
@@ -480,7 +496,26 @@
         "db.inspectorEmptyTitle": "Select a graph element",
         "db.inspectorEmptyDesc": "Click a node on the canvas or search above to inspect its attributes and relationships.",
         "db.filterCount": "{n} filters",
-        "db.filtersApplied": "Filters and sort applied."
+        "db.filtersApplied": "Filters and sort applied.",
+        "db.graphOverviewTitle": "Instance overview",
+        "db.graphStatsSampled": "Showing {drawn} / {total} instances · {edges} relations",
+        "db.graphStatsLoaded": "Loaded {drawn} instances · {edges} relations",
+        "db.graphDrawingProgress": "Drawing {drawn}/{total}",
+        "db.graphNeighborProgress": "{loaded} / {total} neighbors",
+        "db.graphInfoLabel": "Graph summary details",
+        "db.graphOverviewInfo": "Overview samples representative instances per type. Click a group header or pick a type to browse all records, and double-click a node to explore its neighborhood.",
+        "db.graphEdgesTruncated": "Overview connections reached the display limit and were truncated. Explore a single node to inspect all of its relations.",
+        "db.graphIncomplete": "Some object types or relations could not be loaded completely:",
+        "db.neighborFilterTitle": "Neighborhood filter",
+        "db.neighborTargetClass": "Target object type",
+        "db.neighborRelationKind": "Relationship type",
+        "db.allRelations": "All relationship types",
+        "db.neighborDirection": "Direction",
+        "db.directionBoth": "Both directions",
+        "db.directionOutgoing": "Outgoing",
+        "db.directionIncoming": "Incoming",
+        "db.fitAfterExpand": "Fit view after expanding",
+        "db.applyNeighborFilter": "Apply filter"
       },
       "zh-CN": {
         "panel.name": "对象浏览器",
@@ -541,7 +576,26 @@
         "db.inspectorEmptyTitle": "选择一个图谱元素",
         "db.inspectorEmptyDesc": "点击画布上的节点或在上方搜索实例，以查看其属性与关联关系。",
         "db.filterCount": "{n} 项筛选",
-        "db.filtersApplied": "筛选与排序已应用。"
+        "db.filtersApplied": "筛选与排序已应用。",
+        "db.graphOverviewTitle": "实例总览",
+        "db.graphStatsSampled": "已显示 {drawn} / 共 {total} 个实例 · {edges} 条关系",
+        "db.graphStatsLoaded": "已加载 {drawn} 个实例 · {edges} 条关系",
+        "db.graphDrawingProgress": "绘制中 {drawn}/{total}",
+        "db.graphNeighborProgress": "已载 {loaded}/{total} 邻域",
+        "db.graphInfoLabel": "图谱统计说明",
+        "db.graphOverviewInfo": "实例总览按对象类型抽样展示代表性实例。点击分组标题或在右侧选择类型可检索全部实例，双击节点或使用节点上方动作条可展开邻域。",
+        "db.graphEdgesTruncated": "总览连线达到显示上限并已截断，展开单个节点可查看完整关系。",
+        "db.graphIncomplete": "部分对象类型或关系未能完整加载：",
+        "db.neighborFilterTitle": "邻域筛选",
+        "db.neighborTargetClass": "邻居类型",
+        "db.neighborRelationKind": "关系类型",
+        "db.allRelations": "全部关系类型",
+        "db.neighborDirection": "方向",
+        "db.directionBoth": "全部方向",
+        "db.directionOutgoing": "出向",
+        "db.directionIncoming": "入向",
+        "db.fitAfterExpand": "展开后自适应视图",
+        "db.applyNeighborFilter": "应用筛选"
       },
       "zh-TW": {
         "panel.name": "物件瀏覽器",
@@ -602,7 +656,26 @@
         "db.inspectorEmptyTitle": "選擇一個圖譜元素",
         "db.inspectorEmptyDesc": "點擊畫布上的節點或在上方搜尋實例，以檢視其屬性與關聯關係。",
         "db.filterCount": "{n} 項篩選",
-        "db.filtersApplied": "已套用篩選與排序。"
+        "db.filtersApplied": "已套用篩選與排序。",
+        "db.graphOverviewTitle": "實例總覽",
+        "db.graphStatsSampled": "已顯示 {drawn} / 共 {total} 個實例 · {edges} 條關係",
+        "db.graphStatsLoaded": "已載入 {drawn} 個實例 · {edges} 條關係",
+        "db.graphDrawingProgress": "繪製中 {drawn}/{total}",
+        "db.graphNeighborProgress": "已載入 {loaded}/{total} 鄰域",
+        "db.graphInfoLabel": "圖譜統計說明",
+        "db.graphOverviewInfo": "實例總覽依物件類型抽樣顯示代表性實例。點擊分組標題或在右側選擇類型可檢索全部實例，連按兩下節點或使用節點上方動作列可展開鄰域。",
+        "db.graphEdgesTruncated": "總覽連線已達顯示上限並截斷，展開單一節點可檢視完整關係。",
+        "db.graphIncomplete": "部分物件類型或關係未能完整載入：",
+        "db.neighborFilterTitle": "鄰域篩選",
+        "db.neighborTargetClass": "鄰居類型",
+        "db.neighborRelationKind": "關係類型",
+        "db.allRelations": "全部關係類型",
+        "db.neighborDirection": "方向",
+        "db.directionBoth": "全部方向",
+        "db.directionOutgoing": "出向",
+        "db.directionIncoming": "入向",
+        "db.fitAfterExpand": "展開後自適應檢視",
+        "db.applyNeighborFilter": "套用篩選"
       },
       "ja": {
         "panel.name": "オブジェクトブラウザー",
@@ -663,7 +736,26 @@
         "db.inspectorEmptyTitle": "グラフ要素を選択",
         "db.inspectorEmptyDesc": "キャンバス上のノードをクリックするか上部から検索して属性と関係を確認します。",
         "db.filterCount": "{n} 件のフィルター",
-        "db.filtersApplied": "フィルターと並び替えを適用しました。"
+        "db.filtersApplied": "フィルターと並び替えを適用しました。",
+        "db.graphOverviewTitle": "インスタンス概要",
+        "db.graphStatsSampled": "{drawn} / 全 {total} 件表示 · {edges} 件のリレーション",
+        "db.graphStatsLoaded": "{drawn} 件読み込み済み · {edges} 件のリレーション",
+        "db.graphDrawingProgress": "描画中 {drawn}/{total}",
+        "db.graphNeighborProgress": "近傍 {loaded}/{total}",
+        "db.graphInfoLabel": "グラフ統計の説明",
+        "db.graphOverviewInfo": "概要はタイプごとの代表的なインスタンスをサンプリング表示します。グループ見出しをクリックするか右側のタイプ選択で全件検索でき、ノードをダブルクリックすると近傍を展開できます。",
+        "db.graphEdgesTruncated": "概要の接続数が表示上限に達したため一部省略されました。個別ノードを展開すると全リレーションを確認できます。",
+        "db.graphIncomplete": "一部のオブジェクトタイプまたはリレーションを読み込めませんでした：",
+        "db.neighborFilterTitle": "近傍フィルター",
+        "db.neighborTargetClass": "対象オブジェクトタイプ",
+        "db.neighborRelationKind": "リレーション種別",
+        "db.allRelations": "すべてのリレーション種別",
+        "db.neighborDirection": "方向",
+        "db.directionBoth": "双方向",
+        "db.directionOutgoing": "出力方向",
+        "db.directionIncoming": "入力方向",
+        "db.fitAfterExpand": "展開後にビューを自動調整",
+        "db.applyNeighborFilter": "フィルターを適用"
       },
       "de": {
         "panel.name": "Objektbrowser",
@@ -724,7 +816,26 @@
         "db.inspectorEmptyTitle": "Ein Graphelement auswählen",
         "db.inspectorEmptyDesc": "Klicken Sie auf einen Knoten oder suchen Sie oben, um Attribute und Beziehungen zu prüfen.",
         "db.filterCount": "{n} Filter",
-        "db.filtersApplied": "Filter und Sortierung angewendet."
+        "db.filtersApplied": "Filter und Sortierung angewendet.",
+        "db.graphOverviewTitle": "Instanzübersicht",
+        "db.graphStatsSampled": "{drawn} / {total} Instanzen angezeigt · {edges} Beziehungen",
+        "db.graphStatsLoaded": "{drawn} Instanzen geladen · {edges} Beziehungen",
+        "db.graphDrawingProgress": "Zeichne {drawn}/{total}",
+        "db.graphNeighborProgress": "{loaded} / {total} Nachbarn",
+        "db.graphInfoLabel": "Hinweise zur Graph-Statistik",
+        "db.graphOverviewInfo": "Die Übersicht zeigt repräsentative Stichproben je Objekttyp. Klicken Sie auf eine Gruppenüberschrift oder wählen Sie einen Typ, um alle Einträge zu suchen, und doppelklicken Sie auf einen Knoten, um seine Nachbarschaft zu erweitern.",
+        "db.graphEdgesTruncated": "Die Übersichtsverbindungen haben das Anzeigelimit erreicht und wurden gekürzt. Erweitern Sie einen einzelnen Knoten, um alle Beziehungen zu sehen.",
+        "db.graphIncomplete": "Einige Objekttypen oder Beziehungen konnten nicht vollständig geladen werden:",
+        "db.neighborFilterTitle": "Nachbarschaftsfilter",
+        "db.neighborTargetClass": "Ziel-Objekttyp",
+        "db.neighborRelationKind": "Beziehungstyp",
+        "db.allRelations": "Alle Beziehungstypen",
+        "db.neighborDirection": "Richtung",
+        "db.directionBoth": "Beide Richtungen",
+        "db.directionOutgoing": "Ausgehend",
+        "db.directionIncoming": "Eingehend",
+        "db.fitAfterExpand": "Ansicht nach Erweiterung anpassen",
+        "db.applyNeighborFilter": "Filter anwenden"
       },
       "fr": {
         "panel.name": "Explorateur d'objets",
@@ -785,7 +896,26 @@
         "db.inspectorEmptyTitle": "Sélectionnez un élément du graphe",
         "db.inspectorEmptyDesc": "Cliquez sur un nœud ou effectuez une recherche ci-dessus pour inspecter ses attributs et relations.",
         "db.filterCount": "{n} filtres",
-        "db.filtersApplied": "Filtres et tri appliqués."
+        "db.filtersApplied": "Filtres et tri appliqués.",
+        "db.graphOverviewTitle": "Aperçu des instances",
+        "db.graphStatsSampled": "{drawn} / {total} instances affichées · {edges} relations",
+        "db.graphStatsLoaded": "{drawn} instances chargées · {edges} relations",
+        "db.graphDrawingProgress": "Rendu {drawn}/{total}",
+        "db.graphNeighborProgress": "{loaded} / {total} voisins",
+        "db.graphInfoLabel": "Détails des statistiques du graphe",
+        "db.graphOverviewInfo": "L'aperçu échantillonne des instances représentatives par type. Cliquez sur un titre de groupe ou choisissez un type pour parcourir tous les enregistrements, et double-cliquez sur un nœud pour explorer son voisinage.",
+        "db.graphEdgesTruncated": "Les connexions de l'aperçu ont atteint la limite d'affichage et ont été tronquées. Explorez un nœud individuel pour voir toutes ses relations.",
+        "db.graphIncomplete": "Certains types d'objets ou relations n'ont pas pu être chargés complètement :",
+        "db.neighborFilterTitle": "Filtre de voisinage",
+        "db.neighborTargetClass": "Type d'objet cible",
+        "db.neighborRelationKind": "Type de relation",
+        "db.allRelations": "Tous les types de relations",
+        "db.neighborDirection": "Direction",
+        "db.directionBoth": "Les deux sens",
+        "db.directionOutgoing": "Sortantes",
+        "db.directionIncoming": "Entrantes",
+        "db.fitAfterExpand": "Ajuster la vue après l'expansion",
+        "db.applyNeighborFilter": "Appliquer le filtre"
       },
       "it": {
         "panel.name": "Browser oggetti",
@@ -846,7 +976,26 @@
         "db.inspectorEmptyTitle": "Seleziona un elemento del grafo",
         "db.inspectorEmptyDesc": "Fai clic su un nodo o cerca sopra per visualizzarne attributi e relazioni.",
         "db.filterCount": "{n} filtri",
-        "db.filtersApplied": "Filtri e ordinamento applicati."
+        "db.filtersApplied": "Filtri e ordinamento applicati.",
+        "db.graphOverviewTitle": "Panoramica istanze",
+        "db.graphStatsSampled": "{drawn} / {total} istanze mostrate · {edges} relazioni",
+        "db.graphStatsLoaded": "{drawn} istanze caricate · {edges} relazioni",
+        "db.graphDrawingProgress": "Disegno {drawn}/{total}",
+        "db.graphNeighborProgress": "{loaded} / {total} vicini",
+        "db.graphInfoLabel": "Dettagli statistiche grafo",
+        "db.graphOverviewInfo": "La panoramica mostra istanze rappresentative per tipo. Fai clic su un'intestazione di gruppo o seleziona un tipo per cercare tutti i record e fai doppio clic su un nodo per esplorarne il vicinato.",
+        "db.graphEdgesTruncated": "Le connessioni della panoramica hanno raggiunto il limite di visualizzazione e sono state troncate. Esplora un singolo nodo per vedere tutte le sue relazioni.",
+        "db.graphIncomplete": "Alcuni tipi di oggetto o relazioni non sono stati caricati completamente:",
+        "db.neighborFilterTitle": "Filtro vicinato",
+        "db.neighborTargetClass": "Tipo di oggetto di destinazione",
+        "db.neighborRelationKind": "Tipo di relazione",
+        "db.allRelations": "Tutti i tipi di relazione",
+        "db.neighborDirection": "Direzione",
+        "db.directionBoth": "Entrambe le direzioni",
+        "db.directionOutgoing": "In uscita",
+        "db.directionIncoming": "In entrata",
+        "db.fitAfterExpand": "Adatta vista dopo l'espansione",
+        "db.applyNeighborFilter": "Applica filtro"
       },
       "ar": {
         "panel.name": "متصفح الكائنات",
@@ -907,7 +1056,26 @@
         "db.inspectorEmptyTitle": "اختر عنصرًا من المخطط",
         "db.inspectorEmptyDesc": "انقر على عقدة في اللوحة أو ابحث أعلاه لمعاينة سماتها وعلاقاتها.",
         "db.filterCount": "{n} مرشحات",
-        "db.filtersApplied": "تم تطبيق التصفية والفرز."
+        "db.filtersApplied": "تم تطبيق التصفية والفرز.",
+        "db.graphOverviewTitle": "نظرة عامة على المثيلات",
+        "db.graphStatsSampled": "عرض {drawn} / {total} مثيل · {edges} علاقة",
+        "db.graphStatsLoaded": "تم تحميل {drawn} مثيل · {edges} علاقة",
+        "db.graphDrawingProgress": "جارٍ الرسم {drawn}/{total}",
+        "db.graphNeighborProgress": "{loaded} / {total} مجاور",
+        "db.graphInfoLabel": "تفاصيل إحصاءات المخطط",
+        "db.graphOverviewInfo": "تعرض النظرة العامة عينة ممثلة لكل نوع كائن. انقر على عنوان مجموعة أو اختر نوعًا لاستعراض جميع السجلات، وانقر نقرًا مزدوجًا على عقدة لاستكشاف جوارها.",
+        "db.graphEdgesTruncated": "وصلت روابط النظرة العامة إلى حد العرض وتم اقتطاعها. استكشف عقدة منفردة لعرض جميع علاقاتها.",
+        "db.graphIncomplete": "تعذر تحميل بعض أنواع الكائنات أو العلاقات بالكامل:",
+        "db.neighborFilterTitle": "تصفية الجوار",
+        "db.neighborTargetClass": "نوع الكائن المستهدف",
+        "db.neighborRelationKind": "نوع العلاقة",
+        "db.allRelations": "جميع أنواع العلاقات",
+        "db.neighborDirection": "الاتجاه",
+        "db.directionBoth": "كلا الاتجاهين",
+        "db.directionOutgoing": "صادر",
+        "db.directionIncoming": "وارد",
+        "db.fitAfterExpand": "ملاءمة العرض بعد التوسيع",
+        "db.applyNeighborFilter": "تطبيق التصفية"
       }
     }
   }

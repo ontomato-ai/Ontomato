@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { PanelRecordQuery } from "@ontomato/contracts/panel-projection";
+import type { PanelRecord, PanelRecordQuery } from "@ontomato/contracts/panel-projection";
+import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import {
   platformOntologyEdgeSchema, platformOntologyNodeRefSchema,
   type PlatformOntologyEdge, type PlatformOntologyNode, type PlatformOntologyNodeRef,
@@ -171,6 +172,32 @@ export function createInstanceGraphReadAdapter(viewer: AssistantCredentials) {
     async statistics() {
       const graph = rawStatistics.parse(await ready("statistics"));
       return { counts: graph.classes.map(item => ({ type: item.class, layer: "fact", status: "ok", count: item.instanceCount })) };
+    },
+    async classes(): Promise<PanelRecord[]> {
+      const { status, data } = await read("nodes");
+      if (status !== "READY") return [];
+      const graph = rawOverview.parse(data);
+      const fieldLabels = {
+        className: text("className"),
+        classLabel: text("classLabel"),
+        instanceCount: text("instanceCount"),
+        sampleCount: text("sampleCount"),
+      };
+      return graph.classes.map(group => {
+        const label = group.classLabel ?? group.class;
+        return {
+          className: OBJECT_TYPE,
+          primaryKey: group.class,
+          label,
+          fields: {
+            className: group.class,
+            classLabel: label,
+            instanceCount: group.instanceCount,
+            sampleCount: group.sampleCount,
+          },
+          fieldLabels,
+        };
+      });
     },
     async search(term?: string, className?: string, version?: string): Promise<PanelRecordQuery> {
       const graph = rawSearch.parse(await ready("search", { term, class: className, version }));
