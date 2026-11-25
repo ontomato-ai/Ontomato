@@ -104,6 +104,26 @@ describe("the application catalog", () => {
     expect(catalog.loading.value).toBe(true);
   });
 
+  it("does not restore the previous subject's entries after a reset during a read", async () => {
+    resetApplicationCatalog();
+    const catalog = useApplicationCatalog();
+    const previous = catalogFixture();
+    const previousRead = catalog.ensureCatalog();
+    resetApplicationCatalog();
+    const current = previous.filter(app => app.id === "home");
+    const currentRead = catalog.ensureCatalog();
+
+    answer({ success: true, data: previous });
+    await previousRead;
+    expect(catalog.applications.value).toEqual([]);
+    expect(catalog.loading.value).toBe(true);
+
+    answer({ success: true, data: current });
+    await currentRead;
+    expect(catalog.applications.value).toEqual(current);
+    expect(catalog.loading.value).toBe(false);
+  });
+
   it("loads a single application on demand, merges it over navigation summaries, and clears it on reset", async () => {
     resetApplicationCatalog();
     const fullApps = catalogFixture();
