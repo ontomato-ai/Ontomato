@@ -57,6 +57,13 @@ export interface ComponentMetadata {
    * when any of that kind applies.
    */
   readonly bindsElement?: readonly string[];
+  /**
+   * Author-facing configuration prop names (camelCase, matching Vue `defineProps` and `panel.json` `config` keys).
+   * The SDK build resolves each declared name against the component's Vue prop metadata and emits ONLY this list as
+   * `config` in `components.json` and `docs/components/<ComponentId>.md`; host-only inputs, platform-fixed styles, and
+   * single-page presentation knobs stay out of author-facing documentation unless explicitly declared here.
+   */
+  readonly config?: readonly string[];
   /** The parameters it takes, by name; a projection's `inputs` are these. */
   readonly inputs?: Readonly<Record<string, DirectPanelPortType>>;
   /**
@@ -101,7 +108,10 @@ export interface ComponentPorts {
 /** The catalogue a build writes as `components.json`: every declared component of one SDK version, with its ports. */
 export interface ComponentCatalogue {
   readonly version: string;
-  readonly components: readonly (ComponentMetadata & { readonly ports: ComponentPorts })[];
+  readonly components: readonly (Omit<ComponentMetadata, "config"> & {
+    readonly config?: ComponentPorts["props"];
+    readonly ports: ComponentPorts;
+  })[];
 }
 
 /** A component the catalogue describes, resolved back to the export a page imports. */

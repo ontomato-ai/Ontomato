@@ -794,7 +794,7 @@ describe("ObjectList / ObjectSummary / ObjectTitle / SdkOverlay parity pack", ()
     };
 
     const summaryWrapper = mount(ObjectSummary, {
-      props: { presentation: "pre", textField: "detail" },
+      props: { presentation: "pre", fields: ["detail"] },
       global: {
         plugins: [i18n],
         provide: {

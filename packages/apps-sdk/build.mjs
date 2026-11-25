@@ -24,6 +24,7 @@ import {
   componentPorts,
   exportedTypeDefinitions,
   referenceMarkdown,
+  resolveDeclaredConfig,
   themeTokensMarkdown,
   uiPrimitivesMarkdown,
 } from "./reference.mjs";
@@ -213,10 +214,11 @@ async function main() {
   // `@ontomato/sdk/ui` publishes the data-free UI primitives documented under `uiPrimitives` and `uiDirectives`.
   const publicEntries = ENTRIES.filter((entry) => entry.specifier.startsWith("@ontomato/") && entry.specifier !== "@ontomato/sdk/ui");
   checkCatalogue(publicEntries, components, HERE, join(HERE, "tsconfig.json"));
-  // Each component's meaning, configuration and data are its declaration's; its ports are read from its source, as the
-  // reference reads them. The configuration a projection sets is the component's props, kept apart from the inputs a
-  // placement supplies at run time. The contract's own schema accepts the catalogue before it ships, so a component this
-  // version cannot describe, or a datum naming a read result no owner registers, fails the build rather than the reader.
+  // Each component's meaning, declared author-facing config list, and data are its catalogue declaration's; its ports
+  // are read from its Vue source, as the reference reads them. Author-facing `config` emits strictly the props declared
+  // in `catalogue.ts` (never auto-dumping host-only inputs, platform-fixed styles, or single-page knobs). The contract's
+  // own schema accepts the catalogue before it ships, so a component this version cannot describe, or a datum naming a
+  // read result no owner registers, fails the build rather than the reader.
   const ports = componentPorts({ root: HERE, tsconfig: join(HERE, "tsconfig.json"), entries: publicEntries });
   const panelBaseIds = baseComponentIds(join(HERE, "src/base-components.ts"));
   const { uiPrimitives, uiDirectives, themeTokens } = buildUiCatalogue();
@@ -227,8 +229,10 @@ async function main() {
       // Derive panel usability from runtime facts unless explicitly overridden: a component is usable in a registered
       // panel if it declares projection `data` or is registered in `baseComponents` as a panel template tag.
       const panelUsable = metadata.panelUsable ?? (metadata.data !== undefined || panelBaseIds.has(metadata.componentId));
-      // A component with no props sets nothing: it declares no configuration rather than an empty one.
-      return { ...metadata, panelUsable, ...(declared.props.length ? { config: declared.props } : {}), ports: declared };
+      const { config: _declaredConfig, ...restMetadata } = metadata;
+      const resolvedConfig = resolveDeclaredConfig(metadata, declared.props, { requireDeclaration: panelUsable });
+      // A component with no author-facing configuration declares none rather than an empty list.
+      return { ...restMetadata, panelUsable, ...(resolvedConfig?.length ? { config: resolvedConfig } : {}), ports: declared };
     }),
     uiPrimitives,
     uiDirectives,
