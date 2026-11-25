@@ -70,4 +70,23 @@ describe("account deletion delivery", () => {
       expect(readEvents).toHaveBeenCalledTimes(2);
     } finally { vi.useRealTimers(); }
   });
+
+  it("resumes pending dependency deliveries even when no new platform events arrive", async () => {
+    vi.useFakeTimers();
+    const deps = {
+      readCursor: async () => "0", saveCursor: vi.fn(), cleanup: vi.fn(),
+      readEvents: async () => ({ events: [], nextCursor: "0", hasMore: false }),
+    };
+    const deliver = vi.fn().mockRejectedValueOnce(new Error("permission service unavailable")).mockResolvedValue(undefined);
+    const stop = startAccountDeletionConsumer(deps, 1000, deliver);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(deliver).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(deliver).toHaveBeenCalledTimes(2);
+    } finally {
+      await stop();
+      vi.useRealTimers();
+    }
+  });
 });

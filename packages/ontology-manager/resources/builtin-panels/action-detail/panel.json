@@ -115,7 +115,41 @@
         },
         "operation": "platform:Action.save",
         "config": {
-          "actions": "none"
+          "actions": "none",
+          "presentation": "cards",
+          "cardColumns": 2,
+          "groups": [
+            {
+              "key": "definition",
+              "titleKey": "definitionCard",
+              "column": "main",
+              "fields": [
+                "/name",
+                "/description",
+                "/status",
+                "/target"
+              ]
+            },
+            {
+              "key": "logic",
+              "titleKey": "logicCard",
+              "column": "side",
+              "fields": [
+                "/function/name",
+                "/function/parameters",
+                "/function/returnDef/classNames",
+                "/function/logic"
+              ]
+            },
+            {
+              "key": "code",
+              "titleKey": "codeCard",
+              "column": "full",
+              "fields": [
+                "/function/code"
+              ]
+            }
+          ]
         },
         "id": "builtin-product-a3c180a8-d545-49d8-aa51-2b1b7e6b1dd5"
       },
@@ -129,8 +163,11 @@
         "config": {
           "showTitle": false,
           "fields": [
+            "derivationStatus",
             "declaredTarget",
-            "affects"
+            "affects",
+            "businessOperations",
+            "negativeEffect"
           ]
         },
         "id": "builtin-product-3947548c-1965-4eda-b7a7-471c7134fed7"
@@ -178,6 +215,12 @@
               "key": "guards",
               "listSeparator": "",
               "minWidth": 160,
+              "wrap": true
+            },
+            {
+              "key": "locate",
+              "listSeparator": "",
+              "minWidth": 180,
               "wrap": true
             }
           ]
@@ -323,6 +366,9 @@
         "name": "Name",
         "condition": "Condition",
         "definition": "Definition",
+        "definitionCard": "Definition",
+        "logicCard": "Function logic",
+        "codeCard": "Code",
         "derived": "Derived definition",
         "code": "Code explanation",
         "effects": "What it changes",
@@ -362,6 +408,9 @@
         "name": "名称",
         "condition": "条件",
         "definition": "定义",
+        "definitionCard": "定义",
+        "logicCard": "函数逻辑",
+        "codeCard": "代码",
         "derived": "推导定义",
         "code": "代码解释",
         "effects": "会做的改动",

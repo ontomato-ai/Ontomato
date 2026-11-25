@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { platformTaskRunSchema, platformTaskSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
+import { platformScheduleFormSchema, platformTaskRunSchema, platformTaskSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
 import examples from "../../../contracts/examples/platform-schedules.json";
 import { createScheduledTaskReads } from "../panel-reads";
 import { scheduledTaskPanelMessages, scheduledTaskPanelTextEn } from "../panel-text";
@@ -255,4 +255,108 @@ it("loads latestRunRecord with full run output, pause notice without run, and su
     finishedAt: "2026-11-25T08:00:10Z",
   });
   expect(String(fallback.fields.errorMessage)).toContain("Timeout");
+});
+
+it("exposes earlier-result state, duration fallback, localized run error, status notice, and read-only timeZone with app icons", async () => {
+  const baseTask = platformTaskSchema.parse(examples.creates[0]!.response);
+  const completedNoSummary: PlatformTask = {
+    ...baseTask,
+    id: "task-duration",
+    activeRunId: null,
+    pause: { code: "credential_invalid", message: "Credential expired" },
+    lastRun: {
+      id: "run-2",
+      taskId: "task-duration",
+      trigger: "schedule",
+      status: "completed",
+      scheduledAt: "2026-11-25T08:00:00Z",
+      startedAt: "2026-11-25T08:00:01Z",
+      finishedAt: "2026-11-25T08:01:06Z",
+      error: null,
+      resultSummary: null,
+      resultLink: null,
+      spendTime: 65_000,
+    },
+    latestResult: {
+      runId: "run-1",
+      link: { appId: "agents", path: "/agents/sessions/run-1" },
+    },
+  };
+  const failedNoResult: PlatformTask = {
+    ...baseTask,
+    id: "task-failed-no-result",
+    activeRunId: null,
+    pause: null,
+    lastRun: {
+      id: "run-3",
+      taskId: "task-failed-no-result",
+      trigger: "manual",
+      status: "failed",
+      scheduledAt: null,
+      startedAt: "2026-11-25T09:00:00Z",
+      finishedAt: "2026-11-25T09:00:02Z",
+      error: { code: "permission_denied", message: "Missing role" },
+      resultSummary: null,
+      resultLink: null,
+      spendTime: 2_000,
+    },
+    latestResult: null,
+  };
+  const formExample = platformScheduleFormSchema.parse(examples.forms.find(entry => entry.name === "agents-empty")!.response);
+
+  const reads = createScheduledTaskReads({
+    async list() {
+      return { tasks: [completedNoSummary, failedNoResult], timeZone: "Asia/Shanghai" };
+    },
+    async task(id) {
+      return id === completedNoSummary.id ? completedNoSummary : failedNoResult;
+    },
+    async form() {
+      return formExample;
+    },
+    async runs() {
+      return { runs: [], nextCursor: null };
+    },
+    async run() {
+      throw new Error("unused");
+    },
+    async applications() {
+      return [{ id: "agents", name: "Agents", description: "Run agents", available: true, unavailableReason: null, taskCount: 2, icon: "bot" }];
+    },
+    async applicationsStatus() {
+      return {
+        applications: [{ id: "agents", name: "Agents", description: "Run agents", available: true, unavailableReason: null, taskCount: 2, icon: "bot" }],
+        missingIds: ["missing-app"],
+      };
+    },
+  }, "en", translate);
+
+  const list = await reads.list();
+  expect(list[0]!.fields).toMatchObject({
+    hasEarlierResult: true,
+    resultActionState: "earlier",
+    resultStateLabel: "View earlier result",
+    lastRunSummary: "Took 1 min 5 s",
+  });
+  expect(list[0]!.outputs).toMatchObject({ hasEarlierResult: true, lastRunStatus: "completed" });
+  expect(list[1]!.fields).toMatchObject({
+    hasEarlierResult: false,
+    resultActionState: "none",
+    resultStateLabel: "No result yet",
+    lastRunSummary: "The creator lacks a permission it needs: Missing role",
+  });
+
+  const status = await reads.status();
+  expect(status.outputs).toMatchObject({
+    canCreate: false,
+    applicationsFailed: false,
+    hasCredentialPaused: true,
+  });
+  expect(String(status.outputs?.applicationsProblem)).toContain("missing-app");
+
+  const createForm = await reads.createForm({ defaultAppId: "agents" });
+  const appField = createForm.fields.find(f => f.path === "/task/appId")!;
+  const tzField = createForm.fields.find(f => f.path === "/task/timeZone")!;
+  expect(tzField.readOnly).toBe(true);
+  expect(appField.control.kind === "select" ? appField.control.options[0]?.icon : undefined).toBe("bot");
 });

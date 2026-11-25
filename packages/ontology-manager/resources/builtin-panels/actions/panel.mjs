@@ -12,6 +12,11 @@ const DETAIL_PATH = "/ontology/assets/actions/detail";
 const ActionsCatalog = {
   setup() {
     const { instance, navigate, notify, t } = usePanelContext();
+    const state = instance.state.values;
+    const batchStatus = computed({
+      get: () => state.value.batchStatus || "PUBLISHED",
+      set: (next) => instance.state.set("batchStatus", next || "PUBLISHED"),
+    });
     const sandboxStatus = usePanelOutput("sandboxCapability", "sandboxStatus");
     const canCheckSandbox = computed(() => sandboxStatus.value === "failed" || sandboxStatus.value === "unchecked");
     const showSandboxNotice = computed(() => canCheckSandbox.value || sandboxStatus.value === "unsupported");
@@ -39,12 +44,12 @@ const ActionsCatalog = {
     }
 
     return {
+      batchStatus,
       openDetail,
       sandboxStatus,
       canCheckSandbox,
       showSandboxNotice,
       onSandboxChecked,
-      refresh: () => instance.refreshObjects(),
     };
   },
 };

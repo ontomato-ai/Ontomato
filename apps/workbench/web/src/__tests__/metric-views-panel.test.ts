@@ -230,6 +230,21 @@ function metricFormDescription(mode: "create" | "edit", key: string) {
         valueSchema: { type: "string" },
       },
       {
+        path: "/status",
+        label: "Status",
+        required: false,
+        readOnly: false,
+        control: {
+          kind: "select",
+          options: [
+            { value: "PENDING_REVIEW", label: "Pending review", description: null, disabled: false, disabledReason: null },
+            { value: "PUBLISHED", label: "Published", description: null, disabled: false, disabledReason: null },
+            { value: "UNUSED", label: "Unused", description: null, disabled: false, disabledReason: null },
+          ],
+        },
+        valueSchema: { type: "string" },
+      },
+      {
         path: "/bindings",
         label: "Parameter bindings",
         required: false,
@@ -253,6 +268,7 @@ function metricFormDescription(mode: "create" | "edit", key: string) {
     ],
     values: {
       name: mode === "create" ? "" : `Metric ${key}`,
+      status: mode === "create" ? "PENDING_REVIEW" : "PUBLISHED",
       function: {
         queryPackage: {
           manifest: {
@@ -1030,22 +1046,26 @@ describe("metric-views two-entry builtin panels", () => {
         "metric detail ready",
       );
 
-      // Trial projections stay unmounted while testOpen is false.
+      // Trial operations stay unavailable while testOpen is false.
       expect(await harness.controller()!.executeAction!({ operation: "testMarkdown.test", agentRun: AGENT_RUN })).toMatchObject({
         ok: false,
-        reason: "action_not_found",
+        reason: "action_unavailable",
       });
       expect(await harness.controller()!.executeAction!({ operation: "testJson.testExecute", agentRun: AGENT_RUN })).toMatchObject({
         ok: false,
-        reason: "action_not_found",
+        reason: "action_unavailable",
       });
 
       const openTestBtn = () =>
         Array.from(mounted.element.querySelectorAll<HTMLButtonElement>(".sdk-page-header .mv-detail-actions button")).find(
           (b) => b.textContent?.trim() === "Test",
         );
-      const findTrialButton = (member: "testMarkdown" | "testJson") =>
-        document.body.querySelector<HTMLButtonElement>(`[data-member='${member}'] button`);
+      const findTrialButton = (member: "testMarkdown" | "testJson") => {
+        const label = member === "testMarkdown" ? "Test and generate Markdown" : "Test and return JSON";
+        return Array.from(document.body.querySelectorAll<HTMLButtonElement>(".mv-test-footer-actions button")).find(
+          (b) => b.textContent?.trim() === label,
+        ) ?? null;
+      };
       const explicitInputs = () =>
         Array.from(document.body.querySelectorAll<HTMLInputElement>(".mv-test-params input"));
 
@@ -1057,7 +1077,7 @@ describe("metric-views two-entry builtin panels", () => {
           explicitInputs().length === 2
           && findTrialButton("testMarkdown")?.disabled === false
           && findTrialButton("testJson")?.disabled === false,
-        "test dialog opened with explicit inputs and enabled trial projections",
+        "test dialog opened with explicit inputs and enabled trial buttons in footer",
       );
       expect(explicitInputs().map((i) => i.value)).toEqual(["2025", "\"US\""]);
 
@@ -1066,7 +1086,7 @@ describe("metric-views two-entry builtin panels", () => {
       await waitFor(
         () =>
           harness.readOperations.includes("testMarkdown.test")
-          && document.body.querySelector("[data-member='testMarkdown']")?.textContent?.includes("Total: 42") === true,
+          && document.body.querySelector(".mv-test-markdown-preview")?.textContent?.includes("Total: 42") === true,
         "Markdown trial renders preview",
       );
       expect(harness.readCalls.at(-1)).toMatchObject({
@@ -1078,8 +1098,8 @@ describe("metric-views two-entry builtin panels", () => {
       await waitFor(
         () =>
           harness.readOperations.includes("testJson.testExecute")
-          && document.body.querySelector("[data-member='testJson']")?.textContent?.includes("\"total\": 42") === true
-          && document.body.querySelector("[data-member='testJson']")?.textContent?.includes("20000") === true,
+          && document.body.querySelector(".mv-test-body")?.textContent?.includes("\"total\": 42") === true
+          && document.body.querySelector(".mv-test-body")?.textContent?.includes("20000") === true,
         "JSON trial renders JSON and truncation warning",
       );
       expect(harness.readCalls.at(-1)?.input).not.toHaveProperty("bindingId");
@@ -1157,7 +1177,7 @@ describe("metric-views two-entry builtin panels", () => {
       );
       closeBtn!.click();
       await waitFor(
-        () => document.body.querySelector("[data-member='testMarkdown']") === null,
+        () => document.body.querySelector(".mv-test-body") === null,
         "dialog closed",
       );
 
@@ -1174,7 +1194,7 @@ describe("metric-views two-entry builtin panels", () => {
 
       // 5. Close, reopen directly on binding:0 via agent present, then switch to explicit: falls back to defaults.
       harness.controller()!.applyState({ testOpen: false });
-      await waitFor(() => document.body.querySelector("[data-member='testMarkdown']") === null, "closed via state");
+      await waitFor(() => document.body.querySelector(".mv-test-body") === null, "closed via state");
       harness.controller()!.applyState({ testOpen: true, testSource: "binding:0" });
       await waitFor(
         () => (harness.context()?.state?.testParameters as Record<string, unknown> | undefined)?.year === 2024,

@@ -621,17 +621,19 @@ describe("Functions two-entry panels (catalog -> detail)", () => {
       expect(nameInput().value).toBe("Revenue query");
       expect(discardBtn()).toBeNull();
 
-      // Edit again and click Save in header -> dispatches save and settles clean.
+      // Edit again and click Save in header -> dispatches save and returns to catalog (FN-06).
       nameInput().value = "Revenue query updated";
       nameInput().dispatchEvent(new Event("input"));
       await vi.waitFor(() => expect(saveBtn().disabled).toBe(false), { timeout: 3000 });
       saveBtn().click();
       await vi.waitFor(() => expect(app.savedPayloads).toHaveLength(1), { timeout: 3000 });
-      await vi.waitFor(() => expect(saveBtn().disabled).toBe(true), { timeout: 3000 });
-      expect(app.router.currentRoute.value.path).toBe(DETAIL_PATH);
-      expect(panelAddressState(app.router.currentRoute.value.fullPath)).toEqual({ selected: "fn-read-1" });
+      await vi.waitFor(() => expect(app.router.currentRoute.value.path).toBe(CATALOG_PATH), { timeout: 3000 });
 
-      // Edit again and click Back -> host unsaved guard intercepts; Cancel stays, Confirm returns to catalog.
+      // Re-open detail, edit again and click Back -> host unsaved guard intercepts; Cancel stays, Confirm returns to catalog.
+      await app.router.push(panelAddress(DETAIL_PATH, { selected: "fn-read-1" }));
+      await vi.waitFor(() => {
+        expect(app.element.querySelector('[data-field="/name"] input')).not.toBeNull();
+      }, { timeout: 3000 });
       nameInput().value = "Unsaved draft name";
       nameInput().dispatchEvent(new Event("input"));
       await vi.waitFor(() => expect(saveBtn().disabled).toBe(false), { timeout: 3000 });

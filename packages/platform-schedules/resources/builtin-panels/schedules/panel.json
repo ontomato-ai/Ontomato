@@ -52,6 +52,19 @@
       }
     },
     "members": {
+      "pageNotice": {
+        "component": "InfoBanner",
+        "type": "platform:ScheduledTask",
+        "data": {
+          "record": "status"
+        },
+        "config": {
+          "tone": "warning",
+          "field": "applicationsProblem",
+          "hideWhenEmpty": true
+        },
+        "id": "builtin-product-9f2c8b14-6d71-4e3a-8c52-1a4b9e6d0f31"
+      },
       "appFilter": {
         "component": "SegmentedControl",
         "type": "platform:ScheduledTask",
@@ -89,17 +102,54 @@
             "state": "app"
           }
         },
+        "operations": {
+          "enable": {
+            "operation": "platform:ScheduledTask.setEnabled",
+            "target": "row",
+            "params": {
+              "enabled": {
+                "literal": true
+              },
+              "revision": {
+                "rowField": "revision"
+              }
+            }
+          },
+          "disable": {
+            "operation": "platform:ScheduledTask.setEnabled",
+            "target": "row",
+            "params": {
+              "enabled": {
+                "literal": false
+              },
+              "revision": {
+                "rowField": "revision"
+              }
+            }
+          },
+          "runNow": {
+            "operation": "schedules.runNow",
+            "target": "row"
+          },
+          "delete": {
+            "operation": "platform:ScheduledTask.delete",
+            "target": "row",
+            "params": {
+              "revision": {
+                "rowField": "revision"
+              }
+            }
+          }
+        },
         "config": {
           "layout": "cards",
+          "skeletonCount": 3,
           "subtitleField": "settings",
           "subtitleLines": 2,
           "statusField": "stateLabel",
           "searchPlaceholder": "filter.search",
           "searchFields": [
-            "label",
-            "settings",
-            "applicationName",
-            "frequency"
+            "label"
           ],
           "emptyText": "empty.none",
           "noMatchText": "empty.noMatch",
@@ -144,11 +194,14 @@
               "key": "lastRunSummary"
             },
             {
+              "key": "resultStateLabel"
+            },
+            {
               "key": "pauseReason"
             }
           ],
           "rowActions": {
-            "maxVisible": 2,
+            "maxVisible": 3,
             "items": [
               {
                 "kind": "local",
@@ -162,22 +215,80 @@
               },
               {
                 "kind": "local",
+                "id": "viewResult",
+                "labelKey": "card.viewResult",
+                "tone": "primary",
+                "when": {
+                  "field": "resultActionState",
+                  "equals": "latest"
+                }
+              },
+              {
+                "kind": "local",
+                "id": "viewEarlierResult",
+                "labelKey": "card.viewEarlierResult",
+                "tone": "primary",
+                "when": {
+                  "field": "resultActionState",
+                  "equals": "earlier"
+                }
+              },
+              {
+                "kind": "local",
+                "id": "recordsQuick",
+                "labelKey": "action.records",
+                "tone": "primary",
+                "when": {
+                  "field": "lastRun",
+                  "in": [
+                    "failed",
+                    "skipped"
+                  ]
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "enable",
+                "labelKey": "action.enable",
+                "when": {
+                  "field": "enabled",
+                  "equals": false
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "disable",
+                "labelKey": "action.disable",
+                "when": {
+                  "field": "enabled",
+                  "equals": true
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "runNow",
+                "labelKey": "action.runNow"
+              },
+              {
+                "kind": "local",
                 "id": "edit",
                 "labelKey": "action.edit"
               },
               {
                 "kind": "local",
                 "id": "records",
-                "labelKey": "action.records"
+                "labelKey": "action.records",
+                "when": {
+                  "field": "lastRun",
+                  "notIn": [
+                    "failed",
+                    "skipped"
+                  ]
+                }
               },
               {
-                "kind": "local",
-                "id": "runNow",
-                "labelKey": "action.runNow"
-              },
-              {
-                "kind": "local",
-                "id": "delete",
+                "kind": "operation",
+                "operation": "delete",
                 "labelKey": "action.delete",
                 "tone": "danger"
               }
@@ -229,6 +340,10 @@
             "frequency",
             "timeZone",
             "nextRun",
+            "lastRun",
+            "lastRunAt",
+            "lastRunSummary",
+            "resultStateLabel",
             "notifyEmail"
           ]
         },
@@ -257,10 +372,17 @@
               "kind": "time"
             },
             {
+              "key": "scheduledAt",
+              "kind": "time"
+            },
+            {
               "key": "duration"
             },
             {
               "key": "error"
+            },
+            {
+              "key": "resultPath"
             }
           ],
           "rowActions": {
@@ -316,6 +438,9 @@
           "createForm": "createForm"
         },
         "operation": "platform:ScheduledTask.save",
+        "config": {
+          "showToc": false
+        },
         "id": "builtin-product-1a694994-8d2f-4ae7-8367-08c64b7cffed"
       },
       "newForm": {
@@ -334,6 +459,9 @@
           }
         },
         "operation": "platform:ScheduledTask.create",
+        "config": {
+          "showToc": false
+        },
         "id": "builtin-product-81d6942e-922d-4964-a998-b48dbd0ec7c3"
       },
       "opEnable": {
@@ -373,47 +501,70 @@
     "messages": {
       "zh-CN": {
         "panel.name": "定时任务",
+        "intro": "让应用按计划运行，并查看每次执行记录",
         "newTask": "新建任务",
+        "retry": "重试",
         "filter.label": "按应用筛选",
         "filter.search": "搜索任务",
         "empty.none": "还没有定时任务",
-        "empty.noMatch": "没有匹配的定时任务",
+        "empty.app": "这个应用下还没有定时任务",
+        "empty.search": "没有标题包含「{query}」的任务",
+        "empty.noMatch": "没有符合当前筛选条件的定时任务",
+        "empty.clearFilters": "清除筛选",
         "state.paused": "已暂停",
-        "card.review": "检查配置",
-        "action.toggle": "按时运行此任务",
+        "card.review": "核对并保存",
+        "card.viewResult": "查看结果",
+        "card.viewEarlierResult": "查看上一次结果",
+        "card.noResult": "没有结果",
+        "action.toggle": "按计划运行此任务",
+        "action.enable": "启用",
+        "action.disable": "停用",
         "action.runNow": "立即运行",
         "action.edit": "编辑",
-        "action.records": "执行记录",
+        "action.records": "运行记录",
         "action.delete": "删除",
         "action.close": "关闭",
         "action.viewResult": "查看结果",
         "form.newTitle": "新建定时任务",
         "form.editTitle": "编辑定时任务",
-        "form.subtitle": "填写标题，选应用和时间，再填应用需要的内容。保存新建的任务会直接启用。",
-        "form.identity": "任务以你的身份、在你的权限内运行；你失去它需要的权限时，任务会暂停并在卡片上说明原因。",
-        "form.conflictHint": "提示版本冲突时，点“放弃”载入最新内容，核对后再保存。",
-        "message.saved": "任务已保存。",
-        "message.created": "任务已新建并启用。",
-        "message.enabled": "任务已启用。",
-        "message.disabled": "任务已停用。",
-        "message.stillPaused": "仍处于暂停：{reason}",
-        "message.runStarted": "已开始运行，结束后结果会显示在记录里。",
-        "message.runCompleted": "运行完成。",
-        "message.runSkipped": "这次运行被跳过：{reason}",
+        "form.subtitle": "填写标题、选择应用与频率，再补齐应用所需内容。新建的任务保存后会直接启用。",
+        "form.appPlaceholder": "请选择应用",
+        "form.notifyEmail": "通知邮箱",
+        "form.notifyPlaceholder": "选填。跑完发一封信，成功、失败都发",
+        "form.identity": "按你的身份和权限运行；如果你失去了所需权限，任务会暂停，并在卡片上说明原因。",
+        "form.cancel": "取消",
+        "form.save": "保存",
+        "form.createAndEnable": "保存并启用",
+        "form.loadLatest": "载入最新",
+        "form.reloadForm": "重算表单",
+        "form.formChanged": "打开期间应用表单已变更，请点击“重算表单”采纳最新声明，核对后再保存。",
+        "form.changedElsewhere": "任务刚刚在别处被修改，请点击“载入最新”采纳最新内容与修订，核对后再保存。",
+        "message.saved": "已保存任务。",
+        "message.created": "已创建并启用任务。",
+        "message.enabled": "已启用任务。",
+        "message.disabled": "已停用任务。",
+        "message.stillPaused": "仍处于暂停状态：{reason}",
+        "message.runStarted": "已开始运行，结束后在记录中查看结果。",
+        "message.runCompleted": "运行已完成。",
+        "message.runSkipped": "本次运行已跳过：{reason}",
         "message.runFailed": "运行失败：{reason}",
         "message.runActive": "这个任务正在运行，已打开它的记录。",
-        "message.refused": "没能完成：{reason}",
-        "message.unconfirmed": "没有收到明确结果，请稍后查看任务状态。",
-        "message.conflict": "这个任务刚在别处改过，已载入最新内容，请核对后再保存。",
-        "message.notReady": "任务信息还在读取，请稍候再试。",
-        "message.linkUnavailable": "链接指向的执行记录不可用。",
-        "runs.title": "执行记录",
+        "message.refused": "操作未完成：{reason}",
+        "message.unconfirmed": "没有收到明确结果，请稍后确认任务状态。",
+        "message.conflict": "任务刚刚在别处被修改，已刷新列表，请核对后再操作。",
+        "message.gone": "这个任务已不存在，已从列表移除。",
+        "message.notReady": "任务还在加载，请稍后再试。",
+        "message.linkUnavailable": "链接指向的运行记录不可用。",
+        "runs.title": "运行记录",
+        "runs.titleFor": "运行记录 · {title}",
         "runs.empty": "还没有运行记录。",
-        "runs.linked": "运行详情",
-        "runs.refreshing": "运行中，每 5 秒刷新一次",
-        "runs.details": "查看详情",
+        "runs.linked": "链接打开的运行记录",
+        "runs.refreshing": "运行中每 5 秒自动刷新",
+        "runs.details": "详情",
+        "runs.hide": "收起详情",
+        "runs.viewResult": "查看结果",
         "runStatus.running": "运行中",
-        "runStatus.completed": "已完成",
+        "runStatus.completed": "完成",
         "runStatus.failed": "失败",
         "runStatus.skipped": "已跳过",
         "runError.credential_invalid": "后台凭证已失效",
@@ -430,18 +581,28 @@
         "runError.autotest_busy": "上一批自动测试仍在运行",
         "runError.prior_run_active": "这个任务的上一次运行仍在进行",
         "runError.legacy_failure": "升级前失败",
-        "notice.credentialRefused": "后台凭证没有续期，因凭证暂停的任务会继续暂停。请重新登录后打开此页。{reason}"
+        "notice.credentialRefused": "后台凭证没有续期（{reason}），因凭证暂停的任务会继续暂停。请重新登录后打开此页。"
       },
       "en": {
         "panel.name": "Scheduled tasks",
+        "intro": "Schedule application tasks and review their execution history",
         "newTask": "New task",
+        "retry": "Retry",
         "filter.label": "Filter by application",
         "filter.search": "Search tasks",
         "empty.none": "No scheduled tasks yet",
+        "empty.app": "No scheduled tasks in this application yet",
+        "empty.search": "No task title contains “{query}”",
         "empty.noMatch": "No scheduled tasks match the current filter",
+        "empty.clearFilters": "Clear filters",
         "state.paused": "Paused",
-        "card.review": "Check configuration",
+        "card.review": "Check and save",
+        "card.viewResult": "View result",
+        "card.viewEarlierResult": "View earlier result",
+        "card.noResult": "No result yet",
         "action.toggle": "Run this task on its schedule",
+        "action.enable": "Enable",
+        "action.disable": "Disable",
         "action.runNow": "Run now",
         "action.edit": "Edit",
         "action.records": "Run records",
@@ -450,9 +611,18 @@
         "action.viewResult": "View result",
         "form.newTitle": "New scheduled task",
         "form.editTitle": "Edit scheduled task",
-        "form.subtitle": "Give it a title, choose the application and the time, then fill in what the application needs. A new task is switched on when saved.",
+        "form.subtitle": "Give it a title, choose the application and the time, then fill in what the application needs.",
+        "form.appPlaceholder": "Choose an application",
+        "form.notifyEmail": "Email",
+        "form.notifyPlaceholder": "Optional. One message after each run, success or failure.",
         "form.identity": "Runs as you, within your permissions; if you lose a permission it needs, the task pauses and its card says why.",
-        "form.conflictHint": "On a version conflict, choose Discard to load the latest version, check it, then save again.",
+        "form.cancel": "Cancel",
+        "form.save": "Save",
+        "form.createAndEnable": "Save and enable",
+        "form.loadLatest": "Load latest",
+        "form.reloadForm": "Reload form",
+        "form.formChanged": "The application's form changed while you were editing. Reload the form, check the fields, and save again.",
+        "form.changedElsewhere": "This task was changed elsewhere. Load the latest version, check it, and save again.",
         "message.saved": "The task was saved.",
         "message.created": "The task was created and switched on.",
         "message.enabled": "The task was switched on.",
@@ -465,14 +635,18 @@
         "message.runActive": "This task is already running; its record is open.",
         "message.refused": "Not done: {reason}",
         "message.unconfirmed": "No clear result came back; check the task's state shortly.",
-        "message.conflict": "This task was just changed elsewhere; its latest version is loaded. Check it and save again.",
+        "message.conflict": "This task was just changed elsewhere and has been refreshed; try again.",
+        "message.gone": "This task is no longer available.",
         "message.notReady": "The task is still loading; try again in a moment.",
         "message.linkUnavailable": "The run record this link points to is not available.",
         "runs.title": "Run records",
+        "runs.titleFor": "Run records · {title}",
         "runs.empty": "No runs yet.",
-        "runs.linked": "Run details",
+        "runs.linked": "The run this link opened",
         "runs.refreshing": "Refreshes every 5 seconds while it runs",
         "runs.details": "Details",
+        "runs.hide": "Hide details",
+        "runs.viewResult": "View result",
         "runStatus.running": "Running",
         "runStatus.completed": "Completed",
         "runStatus.failed": "Failed",
@@ -491,7 +665,7 @@
         "runError.autotest_busy": "The previous test batch was still running",
         "runError.prior_run_active": "The previous run of this task was still going",
         "runError.legacy_failure": "It failed before the upgrade",
-        "notice.credentialRefused": "The background credential was not renewed. Affected tasks remain paused. Sign in and open this page again. {reason}"
+        "notice.credentialRefused": "Your background credential was not renewed ({reason}), so tasks paused on it stay paused. Open this page again after signing in with your account."
       }
     }
   }

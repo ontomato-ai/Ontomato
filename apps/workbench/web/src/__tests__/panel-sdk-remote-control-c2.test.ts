@@ -760,9 +760,8 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
 
       // 2. Select task-1 via live state controller (same as `present`).
       controller!.applyState({ selectedTask: { className: SCHEDULED_TASK, primaryKey: taskId } });
-      await vi.waitFor(() => expect(mounted.element.querySelector('[data-action="run-now"]')).not.toBeNull());
 
-      // Wait for operations read on selected task to settle.
+      // Wait for detailHeader and operations read on selected task to settle.
       await vi.waitFor(async () => {
         const missing = await controller!.executeAction!({
           operation: "opEnable.setEnabled",

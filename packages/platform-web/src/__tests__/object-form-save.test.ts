@@ -6,11 +6,12 @@ import type { PanelFormDescription, ProjectionOperationParam } from "@ontomato/c
 import { panelManifestSchema } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
+import ReferenceChoice from "../../../apps-sdk/src/base/ReferenceChoice.vue";
 import ObjectForm from "../../../apps-sdk/src/base/ObjectForm.vue";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
 import { resolveFormSaveAnswer } from "../../../apps-sdk/src/panel/member-forms";
 import { PanelFormAdapters } from "../../../apps-sdk/src/panel/forms";
-import type { PanelInstance, PanelWriteResult } from "../../../apps-sdk/src/panel/instance";
+import { PanelConfirmationDeferred, PanelOperationDeferred, type PanelInstance, type PanelWriteResult } from "../../../apps-sdk/src/panel/instance";
 import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/panel/member";
 import type { MemberOperationsState } from "../../../apps-sdk/src/panel/member-operations";
 import { createPanelState } from "../../../apps-sdk/src/panel/state";
@@ -68,7 +69,7 @@ function customerAction(
 const editTarget = { input: "target" };
 const updateCustomer = { operation: { kind: "Action", id: "update-customer" }, target: editTarget } as const;
 
-function openForm({ platform = false, auxiliary = false, campus, actions, createForm = description("") }: {
+function openForm({ platform = false, auxiliary = false, campus, actions, createForm = description(""), renderFields = false, confirmLeaveUnsaved }: {
   platform?: boolean;
   auxiliary?: boolean;
   campus?: ProjectionOperationParam;
@@ -77,6 +78,8 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
     admitted: Record<string, PanelOwnerOperationDescriptor>;
   };
   createForm?: PanelFormDescription;
+  renderFields?: boolean;
+  confirmLeaveUnsaved?: () => Promise<boolean>;
 } = {}) {
   const className = platform ? platformType : customerType;
   const type = platform ? { kind: "PlatformObjectType" as const, id: className } : { kind: "ObjectType" as const, id: className };
@@ -124,6 +127,7 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
     .mockResolvedValue(receipt());
   const instance = {
     state, forms, writeOperation: write,
+    isDisposed: () => false,
     onObjectChanged: () => () => {},
     onOperationCompleted: () => () => {},
     operationIdOf: (slot, name) => `${slot}.${name}`,
@@ -131,9 +135,9 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
     registerActionHandler: () => () => {},
     objectName: () => null,
   } satisfies Pick<PanelInstance, "state" | "forms" | "writeOperation" | "onObjectChanged"
-    | "onOperationCompleted" | "operationIdOf" | "memberPathOf" | "registerActionHandler" | "objectName">;
+    | "isDisposed" | "onOperationCompleted" | "operationIdOf" | "memberPathOf" | "registerActionHandler" | "objectName">;
   const notify = vi.fn();
-  const panel = { instance, manifest, notify } satisfies Pick<PanelContext, "manifest" | "notify"> & { instance: typeof instance };
+  const panel = { instance, manifest, notify, confirmLeaveUnsaved } satisfies Pick<PanelContext, "manifest" | "notify" | "confirmLeaveUnsaved"> & { instance: typeof instance };
   const operations = shallowRef<MemberOperationsState>({
     status: "ready",
     value: {
@@ -149,7 +153,7 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
   };
   const wrapper = mount(ObjectForm, {
     props: { fixedFields: projection.config.fixedFields as InstanceType<typeof ObjectForm>["$props"]["fixedFields"] },
-    slots: { default: () => "Customer editor" },
+    slots: renderFields ? {} : { default: () => "Customer editor" },
     global: {
       plugins: [createI18n({ legacy: false, locale: "en", missingWarn: false, fallbackWarn: false })],
       provide: {
@@ -159,7 +163,7 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
       },
     },
   });
-  return { wrapper, state, write, selectedRead, notify, operations, form: forms.handle("form")! };
+  return { wrapper, state, write, selectedRead, notify, operations, forms, panel, member, form: forms.handle("form")! };
 }
 
 const affectedKeys = [[], ["existing-customer"], ["existing-customer", "another-customer"]];
@@ -710,5 +714,176 @@ describe("ObjectForm save", () => {
     await expect(form.submit()).resolves.toMatchObject({ primaryKey: "bk-new" });
     expect(write.mock.calls[0]?.[0]).toBe("form.persist");
     wrapper.unmount();
+  });
+});
+
+function fieldSaveDescription(): PanelFormDescription {
+  const form = description("Existing");
+  return {
+    ...form,
+    submitOn: "blur",
+    fields: form.fields.map(field => field.path === "/campus" ? { ...field, submitOn: "change" }
+      : field.path === "/note" ? { ...field, submitOn: "manual" } : field),
+  };
+}
+
+describe("Automatic field save", () => {
+  it("queues blur and change writes, saves just their paths, and keeps the manual draft", async () => {
+    const { wrapper, form, state, write, selectedRead } = openForm({ platform: true, renderFields: true });
+    const before = fieldSaveDescription();
+    state.set("selected", objectRef(platformType, "article"));
+    selectedRead.resolve(before);
+    await flushPromises();
+
+    form.set("/note", "Unsaved");
+    const first = deferred<PanelWriteResult>();
+    const second = deferred<PanelWriteResult>();
+    write.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const name = wrapper.get('[data-field="/name"] input');
+    await name.setValue("New name");
+    expect(write).not.toHaveBeenCalled();
+    const blurred = name.trigger("focusout");
+    form.setFromControl!("/campus", "New campus");
+    await blurred;
+    await flushPromises();
+
+    expect(form.submitting.value).toBe(true);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0]?.[1]).toMatchObject({ call: { input: {
+      submittedFields: ["/name"],
+      values: { name: "New name", campus: before.values.campus, note: "" },
+    } } });
+    before.values.name = "New name";
+    first.resolve(receipt());
+    await flushPromises();
+    expect(write.mock.calls[1]?.[1]).toMatchObject({ call: { input: {
+      submittedFields: ["/campus"],
+      values: { campus: "New campus", note: "" },
+    } } });
+    second.resolve({ decision: "cancel", named: [] });
+    await flushPromises();
+    expect(form.values.value).toMatchObject({ name: "New name", campus: before.values.campus, note: "Unsaved" });
+    expect(form.dirty.value).toBe(true);
+    expect(form.submitting.value).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("holds a requested target switch while saving and preserves a refused field edit", async () => {
+    const confirmLeaveUnsaved = vi.fn(async () => false);
+    const { wrapper, form, state, write, selectedRead } = openForm({ platform: true, confirmLeaveUnsaved });
+    const original = objectRef(platformType, "article");
+    state.set("selected", original);
+    selectedRead.resolve(fieldSaveDescription());
+    await flushPromises();
+
+    const pending = deferred<PanelWriteResult>();
+    write.mockReturnValueOnce(pending.promise);
+    form.setFromControl!("/campus", "Unaccepted");
+    state.set("selected", objectRef(platformType, "other"));
+    await flushPromises();
+    expect(form.submitting.value).toBe(true);
+    expect(confirmLeaveUnsaved).not.toHaveBeenCalled();
+    pending.resolve({
+      decision: "confirm", named: [],
+      response: { kind: "dispatched", intentId: "save-intent", outcome: { kind: "refusal", code: "VALIDATION_FAILED", message: "Rejected field" } },
+    });
+    await flushPromises();
+    expect(confirmLeaveUnsaved).toHaveBeenCalledOnce();
+    expect(state.values.value.selected).toEqual(original);
+    expect(form.dirty.value).toBe(true);
+    expect(form.values.value.campus).toBe("Unaccepted");
+    wrapper.unmount();
+  });
+
+  it.each([false, true])("stages an agent field write until the confirmation is answered (approve: %s)", async (approve) => {
+    const { wrapper, form, forms, state, write, selectedRead } = openForm({ platform: true });
+    const before = fieldSaveDescription();
+    state.set("selected", objectRef(platformType, "article"));
+    selectedRead.resolve(before);
+    await flushPromises();
+    const cancel = vi.fn(async () => {});
+    const dispatch = vi.fn(async () => {
+      expect(write.mock.calls[0]?.[2]?.evaluateSubmission?.("confirm")?.ok).toBe(true);
+      before.values.name = "Proposed";
+      return receipt();
+    });
+    const preparation = {
+      intentId: "save-intent", questionId: "confirm-save", operationId: "form.persist", label: "Save",
+      confirmation: { kind: "none" },
+    } satisfies ConstructorParameters<typeof PanelOperationDeferred>[0]["preparation"];
+    write.mockRejectedValueOnce(new PanelOperationDeferred({
+      preparation, named: [], isStillValid: () => ({ ok: true }), dispatchNow: dispatch, cancelNow: cancel,
+    }));
+
+    const filled = await forms.fill("form", { "/name": "Proposed", "/note": "Manual draft" }, {
+      executeWrite: async (operation, submit) => {
+        try {
+          await submit({ agentRun: { sessionId: "session", runId: "run", toolCallId: "tool" } });
+          throw new Error("Expected a deferred save");
+        } catch (error) {
+          if (!(error instanceof PanelConfirmationDeferred)) throw error;
+          return { ok: true, kind: "awaiting_confirmation", operation, ...preparation, confirmation: error.confirmation };
+        }
+      },
+    });
+    expect(write.mock.calls[0]?.[1]).toMatchObject({ call: { input: {
+      submittedFields: ["/name"], values: { name: "Proposed", note: "" },
+    } } });
+    expect(filled).toMatchObject({ ok: true, write: { kind: "awaiting_confirmation" } });
+    expect(form.values.value).toMatchObject({ name: "Existing", note: "Manual draft" });
+    if (filled.ok && filled.write?.ok && filled.write.kind === "awaiting_confirmation") {
+      if (approve) {
+        await expect(filled.write.confirmation.dispatch()).resolves.toMatchObject({ ok: true });
+      } else {
+        await filled.write.confirmation.cancel({ code: "OPERATION_CANCELLED", message: "Cancelled" });
+      }
+    }
+    expect(cancel).toHaveBeenCalledTimes(approve ? 0 : 1);
+    expect(dispatch).toHaveBeenCalledTimes(approve ? 1 : 0);
+    expect(form.values.value).toMatchObject({ name: approve ? "Proposed" : "Existing", note: "Manual draft" });
+    wrapper.unmount();
+  });
+});
+
+describe("ReferenceChoice refresh", () => {
+  it("keeps the active keyword, selected value and loaded options across failure and retry", async () => {
+    const { wrapper: formWrapper, form, panel, member } = openForm({ platform: true });
+    await flushPromises();
+    form.set("/name", "held");
+    form.set("/note", "unsaved");
+    const option = { primaryKey: "held", value: "held", label: "Selected item", unavailable: { reason: "Owner reason" } };
+    type Read = PanelMemberContext["data"]["read"];
+    const read = vi.fn<Parameters<Read>, ReturnType<Read>>()
+      .mockResolvedValue({ status: "ready", value: { options: [option] } });
+    const projection = { ...member.projection, config: { refreshable: true } };
+    const wrapper = mount(ReferenceChoice, {
+      props: { formSlot: "form", path: "/name" },
+      global: {
+        plugins: [createI18n({ legacy: false, locale: "en", missingWarn: false, fallbackWarn: false })],
+        provide: {
+          [panelContextKey]: panel,
+          [panelMemberKey]: () => ({ ...member, projection, data: { ...member.data, read } }),
+          [projectionKey]: { slot: "reference", projection, inputs: {} },
+        },
+      },
+    });
+    await flushPromises();
+    const select = wrapper.findComponent({ name: "ElSelect" });
+    await (select.props("remoteMethod") as (word: string) => Promise<void>)("needle");
+    read.mockRejectedValueOnce(new Error("private transport detail"))
+      .mockResolvedValueOnce({ status: "error", message: "private owner detail" });
+    await wrapper.get('button[aria-label="common.refresh"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).not.toContain("private");
+    expect(select.props("modelValue")).toBe("held");
+    expect(wrapper.findComponent({ name: "ElOption" }).props("disabled")).toBe(true);
+    await wrapper.get('[role="alert"] button').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect(read.mock.calls.at(-2)).toMatchObject(["options", { keyword: "needle" }]);
+    expect(read.mock.calls.at(-1)).toEqual(["selected", { values: ["held"] }]);
+    expect(form.values.value).toMatchObject({ name: "held", note: "unsaved" });
+    wrapper.unmount();
+    formWrapper.unmount();
   });
 });

@@ -34,6 +34,7 @@ export interface FormControls {
   hasInvalid(path: string): boolean;
   invalidText(path: string): string | undefined;
   set(path: string, value: RuntimeJsonValue): void;
+  blur?(path: string): void;
   /** Leaves the field at `path` out of the values: a choice cleared, which the owner then does not receive. */
   remove(path: string): void;
   /**

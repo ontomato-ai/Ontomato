@@ -19,20 +19,25 @@
     min-width: 0;
     padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
+  .mv-count {
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
   .mv-batch-select { width: 9.5rem; }
 </style>
 <div id="app" v-cloak>
   <div class="mv-page">
     <page-header :title="t('metricViews.title')" :description="t('metricViews.description')">
       <template #actions>
-        <sdk-button text :aria-label="t('metricViews.refresh')" :title="t('metricViews.refresh')" @click="refresh">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-        </sdk-button>
-        <sdk-button type="primary" @click="startCreate">{{ t("metricViews.new") }}</sdk-button>
+        <sdk-button type="primary" icon="chart-column" @click="startCreate">{{ t("metricViews.new") }}</sdk-button>
       </template>
     </page-header>
     <section class="mv">
       <projection slot="list" @choose="openDetail">
+        <template #filters>
+          <span v-if="listTotal !== null" class="mv-count" role="status">{{ t("metricViews.itemCount", { count: listTotal }) }}</span>
+        </template>
         <template #batch-actions>
           <sdk-select v-model="batchStatus" size="small" class="mv-batch-select" :aria-label="t('metricViews.batchStatus')">
             <sdk-option value="PENDING_REVIEW" :label="t('metricViews.status.PENDING_REVIEW')"></sdk-option>

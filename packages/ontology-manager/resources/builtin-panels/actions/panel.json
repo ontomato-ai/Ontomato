@@ -18,6 +18,13 @@
         },
         "deepLink": true,
         "default": ""
+      },
+      "batchStatus": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "PUBLISHED"
       }
     },
     "members": {
@@ -73,8 +80,7 @@
               "labelKey": "name",
               "subtitleKey": "subtitle",
               "subtitleEmptyKey": "noDescription",
-              "minWidth": 220,
-              "wrap": true
+              "minWidth": 220
             },
             {
               "key": "function",
@@ -82,7 +88,6 @@
             },
             {
               "key": "origin",
-              "kind": "tag",
               "width": 100
             },
             {
@@ -113,10 +118,16 @@
         "type": "platform:Action",
         "target": "checked",
         "operation": "actions.setStatus",
+        "operationParams": {
+          "status": {
+            "state": "batchStatus"
+          }
+        },
         "config": {
           "type": "primary",
           "size": "small",
-          "showBatchCount": false
+          "showBatchCount": false,
+          "labelKey": "batchApply"
         },
         "id": "builtin-product-39ff2e7f-6122-4362-8558-7b206ca3606d"
       },
@@ -138,15 +149,20 @@
     "messages": {
       "en": {
         "pageTitle": "Actions",
-        "pageDescription": "Manage domain action definitions, status, derived rules, and code explanations",
-        "refresh": "Refresh",
+        "pageDescription": "Define operations on business objects and how they are executed",
         "keywordPlaceholder": "Filter by name or description",
+        "itemCount": "{count} items",
         "noDescription": "No description",
         "name": "Name",
         "empty": "This domain has no actions yet.",
         "noMatch": "No action matches that keyword.",
         "newAction": "New action",
         "newActionPrefill": "Help me create an action: ",
+        "batchStatus": "Status",
+        "batchApply": "Update status",
+        "status.PENDING_REVIEW": "Pending review",
+        "status.PUBLISHED": "Published",
+        "status.UNUSED": "Unused",
         "sandbox.probeNote": "Checking creates and immediately deletes one empty probe table or its equivalent in the business data source.",
         "sandbox.check": "Check permission",
         "sandbox.recheck": "Re-check permission",
@@ -156,15 +172,20 @@
       },
       "zh-CN": {
         "pageTitle": "动作",
-        "pageDescription": "维护域内动作定义、状态、推导规则与代码解释",
-        "refresh": "刷新",
+        "pageDescription": "定义对业务对象的操作以及执行方式",
         "keywordPlaceholder": "按名称或描述筛选",
+        "itemCount": "{count} 项",
         "noDescription": "未填写说明",
         "name": "名称",
         "empty": "本域还没有动作。",
         "noMatch": "没有名称或描述匹配这个关键字的动作。",
         "newAction": "新建动作",
         "newActionPrefill": "帮我新建一个动作：",
+        "batchStatus": "状态",
+        "batchApply": "批量修改状态",
+        "status.PENDING_REVIEW": "待审核",
+        "status.PUBLISHED": "已发布",
+        "status.UNUSED": "未使用",
         "sandbox.probeNote": "检查会在业务数据源中创建一张空的探测表或等效对象，并立即删除。",
         "sandbox.check": "检查权限",
         "sandbox.recheck": "重新检查",

@@ -209,6 +209,7 @@ export type FormFieldRejection = z.infer<typeof formFieldRejectionSchema>;
 
 /** In-browser request to fill explicit fields on a mounted live form. */
 export interface FormFillRequestInput {
+  readonly agentRun?: PageActionRequestInput["agentRun"];
   readonly member?: string;
   readonly memberPath?: readonly string[];
   readonly values: Readonly<Record<string, RuntimeJsonValue>>;
@@ -229,6 +230,7 @@ export type FormFillOutcome =
       readonly member: string;
       readonly memberPath?: readonly string[];
       readonly filledFields: readonly string[];
+      readonly write?: PageActionOutcome;
       readonly rejectedFields?: readonly FormFieldRejection[];
     }
   | {

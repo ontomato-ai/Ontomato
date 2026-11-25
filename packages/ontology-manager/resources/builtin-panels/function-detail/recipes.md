@@ -6,13 +6,13 @@
 ## 这一页有什么
 
 - 单层页头左侧是返回按钮（回到 `/ontology/assets/functions`），中间在详情态显示当前函数的名称与操作类型（`header`），新建态显示「新建函数」；右侧放删除按钮（`remove`，仅就绪且属主允许删除时显示）与页头保存/放弃条（绑定到表单 `definition`）。
-- 正文只渲染一份由属主描述的整宽表单 `definition`（`platform:Function` 的 `form` / `createForm`），名称字段 `/name` 只出现一次。
+- 正文由单份属主表单 `definition`（`platform:Function` 的 `form` / `createForm`）分左右两张卡片呈现：左卡为名称、说明与操作类型（单选，已有函数固定），右卡为函数逻辑（读函数的查询包/列标签/说明，写函数的行内参数/返回类/说明/Python 代码），名称字段 `/name` 只出现一次。
 - 当目标函数正在加载、无权查看、加载失败或不存在时，原位展示状态提示，不挂载表单。
 
 ## 进入详情态与新建态
 
-- 查看或修改已有函数：用 `present` 打开 `/ontology/assets/functions/detail`，设 `{ selected: { className: "platform:Function", primaryKey: "<id>" } }`。
-- 新建函数：用 `present` 打开 `/ontology/assets/functions/detail`，设 `{ selected: null, mode: "create" }`。新建保存成功后状态自动收敛为 `{ selected: { className: "platform:Function", primaryKey: "<newId>" }, mode: null }`；放弃或取消新建会返回目录 `/ontology/assets/functions`。
+- 查看或修改已有函数：用 `present` 打开 `/ontology/assets/functions/detail`，设 `{ selected: { className: "platform:Function", primaryKey: "<id>" } }`。编辑保存成功后提示保存成功并返回目录 `/ontology/assets/functions`。
+- 新建函数：用 `present` 打开 `/ontology/assets/functions/detail`，设 `{ selected: null, mode: "create" }`。新建保存成功后状态自动收敛为 `{ selected: { className: "platform:Function", primaryKey: "<newId>" }, mode: null }` 并留在详情页；放弃或取消新建会返回目录 `/ontology/assets/functions`。
 
 ## 填写表单与保存
 

@@ -3709,6 +3709,20 @@ const controlField = { path: "/field", label: "Field", valueSchema: {}, required
 const choiceOption = { label: "Read", value: 1, description: null, disabled: false, disabledReason: null };
 const parsesControl = (control: unknown) => panelFormFieldSchema.safeParse({ ...controlField, control }).success;
 
+test("form submit timing is optional and rejects unsupported triggers", () => {
+  const field = { ...controlField, control: { kind: "text" } };
+  const form = { fields: [field], values: {}, errors: [], save: ownerSave };
+  assert.equal(panelFormDescriptionSchema.parse(form).submitOn, undefined);
+  assert.equal(panelFormFieldSchema.parse(field).submitOn, undefined);
+  for (const submitOn of ["manual", "blur", "change"]) {
+    const parsed = panelFormDescriptionSchema.parse({ ...form, submitOn, fields: [{ ...field, submitOn }] });
+    assert.equal(parsed.submitOn, submitOn);
+    assert.equal(parsed.fields[0]?.submitOn, submitOn);
+  }
+  assert.equal(panelFormDescriptionSchema.safeParse({ ...form, submitOn: "input" }).success, false);
+  assert.equal(panelFormFieldSchema.safeParse({ ...field, submitOn: "input" }).success, false);
+});
+
 test("select presentation follows cardinality and presets reference declared values", () => {
   const value = { kind: "api", id: 1 };
   const option = { ...choiceOption, value, badge: "GET", groupPath: ["API", "Reports"] };
