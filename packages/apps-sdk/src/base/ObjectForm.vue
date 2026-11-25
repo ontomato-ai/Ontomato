@@ -1006,7 +1006,7 @@ watch([requestedTarget, requestedFixedValues, memberInputKey], async () => {
   let savedBeforeSwitch = false;
   if (shouldDiscard) {
     confirmingSwitch = true;
-    let leave = false;
+    let leave: boolean;
     try {
       if (effectiveUnsavedSwitchMode.value === "save-discard-cancel") {
         const decision = await confirmUnsavedSwitch(
