@@ -382,7 +382,7 @@ it("resolves retrieval_scope_id from the server turn on retrieval and ontology c
 });
 
 it("relays multipart bytes, the query and the owner's response status and headers", async () => {
- const upstream = vi.fn(async (_url: string, _request: RequestInit) => new Response("owner response", {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => new Response("owner response", {
    status: 422, headers: { "Content-Type": "text/plain", "X-Owner-Result": "rejected", "Cache-Control": "no-store" },
  }));
  vi.stubGlobal("fetch", upstream);
@@ -407,7 +407,7 @@ it("relays multipart bytes, the query and the owner's response status and header
 });
 
 it("carries the verified execution marker to the credential owner and returns its refusal", async () => {
- const upstream = vi.fn(async (_url: string, request: RequestInit) =>
+ const upstream = vi.fn(async (_url: string, request: NonNullable<Parameters<typeof fetch>[1]>) =>
    new Headers(request.headers).get("X-Ontomato-Agent-Execution") === run
      ? Response.json({ code: "FORBIDDEN" }, { status: 403 })
      : Response.json({ data: "fixture-generated-key" }));
