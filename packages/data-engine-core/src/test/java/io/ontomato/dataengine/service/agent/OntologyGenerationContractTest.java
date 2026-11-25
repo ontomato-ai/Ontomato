@@ -348,7 +348,7 @@ class OntologyGenerationContractTest {
     verifyNoInteractions(sandboxService, python);
     reset(identity);
     var opened = generation.open("action", UUID.randomUUID().toString(), null, owner, true);
-    verify(sandboxService).createSampleStructure(anyString(), any(), eq(owner.domainId()));
+    verifyNoInteractions(sandboxService);
     doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN))
         .when(identity).requireActionExecutionAccess(owner.userId(), owner.domainId());
     assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> operations.test(opened.getString("runId"), owner,

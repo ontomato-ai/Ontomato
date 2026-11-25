@@ -24,7 +24,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -282,8 +282,12 @@ class OntologyModelServiceImplTest {
 		verify(jsonRuleDao, never()).save(any(), any());
 	}
 
+	static List<String> offeredAttributeTypes() {
+		return ATTRIBUTE_TYPES;
+	}
+
 	@ParameterizedTest
-	@ValueSource(strings = {"varchar", "int", "float", "datetime", "boolean", "text"})
+	@MethodSource("offeredAttributeTypes")
 	void everyOfferedAttributeTypeCanBeCreated(String type) {
 		var created = service.createAttribute("Device",
 				new AttributeCreate("extra", "Extra", type, "", true, false, false), user, "en");

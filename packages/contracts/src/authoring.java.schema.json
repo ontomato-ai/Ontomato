@@ -263,6 +263,13 @@
     "prepareRequest": {
       "type": "object",
       "properties": {
+        "classNames": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "objDatas": {
           "type": "array",
           "items": {

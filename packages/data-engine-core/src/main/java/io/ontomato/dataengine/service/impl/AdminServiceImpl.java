@@ -29,6 +29,7 @@ import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.AdminService;
+import io.ontomato.dataengine.service.OntologyModelService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.util.FileUtil;
 import io.ontomato.dataengine.dataAdapter.DslExecutionMode;
@@ -555,6 +556,7 @@ public class AdminServiceImpl implements AdminService {
 	
 	@Override
 	public void writeJSONRule(Map<String, Object> jsonRule, String domainId) {
+		OntologyModelService.normalizeRuleAttributeTypes(jsonRule, true);
 		validatePrimaryKey(jsonRule);
 		jsonRuleDao.save(jsonRule, domainId);
 	}

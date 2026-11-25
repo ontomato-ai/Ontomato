@@ -737,11 +737,6 @@ public class Neo4jAdapter implements DataAdapter {
 		// Neo4j creates labels on first use; no schema object to create.
 	}
 
-	private boolean isSupportedType(String type) {
-		return "varchar".equals(type) || "text".equals(type) || "int".equals(type) || "long".equals(type)
-				|| "double".equals(type) || "date".equals(type) || "timestamp".equals(type)
-				|| "vector".equals(type);
-	}
 
 	@Override
 	public void createEdgeType(String namespace, String edgeName) {
@@ -762,10 +757,8 @@ public class Neo4jAdapter implements DataAdapter {
 			for (Map<String, Object> attrDef : attrDefs) {
 				if (attrDef.get("enable") == null || (Boolean) attrDef.get("enable")) {
 					String type = (String) attrDef.get("type");
-					if (isSupportedType(type)) {
-						fields.add((String) attrDef.get("name"));
-						attrTypeMap.put((String) attrDef.get("name"), type);
-					}
+					fields.add((String) attrDef.get("name"));
+					attrTypeMap.put((String) attrDef.get("name"), type);
 				}
 			}
 		}
@@ -797,7 +790,7 @@ public class Neo4jAdapter implements DataAdapter {
 	 * A vector attribute is stored as a text property holding the JSON array string
 	 * {@code [{"path":"...","text":"..."},...]}; serialize a non-string value before writing.
 	 */
-	private Object normalizeValue(String type, Object value) {
+	static Object normalizeValue(String type, Object value) {
 		if ("vector".equals(type) && value != null && !(value instanceof String)) {
 			return JSON.toJSONString(value);
 		}
@@ -823,10 +816,8 @@ public class Neo4jAdapter implements DataAdapter {
 			for (Map<String, Object> attrDef : attrDefs) {
 				if (attrDef.get("enable") == null || (Boolean) attrDef.get("enable")) {
 					String type = (String) attrDef.get("type");
-					if (isSupportedType(type)) {
-						attrNames.add((String) attrDef.get("name"));
-						attrTypeMap.put((String) attrDef.get("name"), type);
-					}
+					attrNames.add((String) attrDef.get("name"));
+					attrTypeMap.put((String) attrDef.get("name"), type);
 				}
 			}
 		}
@@ -869,9 +860,7 @@ public class Neo4jAdapter implements DataAdapter {
 			for (Map<String, Object> attrDef : attrDefs) {
 				if (attrDef.get("enable") == null || (Boolean) attrDef.get("enable")) {
 					String type = (String) attrDef.get("type");
-					if (isSupportedType(type)) {
-						attrTypeMap.put((String) attrDef.get("name"), type);
-					}
+					attrTypeMap.put((String) attrDef.get("name"), type);
 				}
 			}
 		}

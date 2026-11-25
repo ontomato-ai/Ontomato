@@ -11,6 +11,7 @@ import io.ontomato.dataengine.util.*;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
@@ -57,6 +58,7 @@ public class GenerationOperations {
     var generation = store.one("SELECT * FROM ontology_generations WHERE run_id=?", uuid(run));
     String selected=row.getJSONObject("request").getString("executionUserId");
     if ("action".equals(generation.getString("kind"))) requireWriteAccess(new Owner(selected==null?owner.userId():selected,owner.domainId()));
+    generation.put("sandboxClasses", row.getJSONObject("request").getList("sandboxClasses", String.class));
     return generation;
   }
 
@@ -109,20 +111,38 @@ public class GenerationOperations {
     return store.transaction(() -> gate(run, owner).getString("source"));
   }
 
-  public void createSandbox(String sandbox, String domain) throws Exception {
-    createSandbox(sandbox, domain, List.of());
+  @SuppressWarnings("unchecked")
+  List<String> sandboxClasses(String domain, List<String> requested, List<String> allowed) {
+    if (requested.isEmpty()) return List.of();
+    var definitions = (List<Map<String, Object>>) schemas.query(domain).get("classDef");
+    var names = definitions.stream().map(cls -> (String) cls.get("className")).collect(Collectors.toSet());
+    return requested.stream().map(name -> {
+      String canonical = DBSchemaUtil.normalizeClassName(name, definitions);
+      if (!names.contains(canonical)) throw AgentHttpException.invalid("Unknown sandbox class: " + name);
+      requireSampleAccess(canonical, allowed);
+      return canonical;
+    }).distinct().sorted().toList();
   }
 
-  @SuppressWarnings("unchecked")
-  void createSandbox(String sandbox, String domain, List<String> classes) throws Exception {
-    var schema = schemas.query(domain);
+  void createSandbox(String sandbox, String domain, List<String> classes) {
+    if (classes.isEmpty()) return;
     var objects = new JSONArray();
-    for (var cls : (List<Map<String, Object>>) schema.get("classDef")) {
-      String name = (String) cls.get("className");
-      if (classes.isEmpty() || classes.contains(name))
-        objects.add(JSONObject.of("className", name, "rows", new JSONArray()));
-    }
+    for (String name : classes) objects.add(JSONObject.of("className", name, "rows", new JSONArray()));
     sandboxService.createSampleStructure(sandbox, JSONObject.of("objDatas", objects), domain);
+  }
+
+  private static void requireSampleAccess(String name, List<String> allowed) {
+    if (!allowed.isEmpty() && !allowed.contains(name))
+      throw new AgentHttpException(403, "FORBIDDEN", "Sample class is outside the authoring scope: " + name)
+          .localized("Authoring.sampleOutsideScope", Map.of("className", name));
+  }
+
+  public static List<String> requestedSandboxClasses(JSONObject body) {
+    if (!body.containsKey("classNames")) return List.of();
+    if (!(body.get("classNames") instanceof List<?> names)
+        || names.stream().anyMatch(name -> !(name instanceof String text) || text.isBlank()))
+      throw AgentHttpException.invalid("classNames must be an array of nonempty strings");
+    return body.getList("classNames", String.class);
   }
 
   public void dropSandbox(String sandbox, String domain) {
@@ -144,7 +164,9 @@ public class GenerationOperations {
   public JSONObject prepare(String run, Owner owner, JSONObject body) throws Exception {
     var window = legacy(run, owner, "action");
     store.transaction(() -> sandbox(window.gate().get()));
-    return storeSamples(window, authorSamples(owner.domainId(), body, List.of()));
+    var access = window.access();
+    return storeSamples(window, authorSamples(owner.domainId(), body,
+        QueryAccessService.classScope(access.permission(), access.classNames())));
   }
 
   JSONObject authorSamples(String domain, JSONObject body, List<String> allowed) {
@@ -153,25 +175,42 @@ public class GenerationOperations {
     if (body.getJSONArray("vectorDatas") != null)
       for (var item : body.getJSONArray("vectorDatas")) ((JSONObject) item).remove("fileId");
     JSONObject data = sandboxService.validateSample(body, Map.of(), domain);
-    if (!allowed.isEmpty()) {
-      for (var item : data.getJSONArray("objDatas").toJavaList(JSONObject.class)) {
-        String name = item.getString("className");
-        if (!allowed.contains(name))
-          throw new AgentHttpException(403, "FORBIDDEN", "Sample class is outside the authoring scope: " + name)
-              .localized("Authoring.sampleOutsideScope", Map.of("className", name));
-      }
-    }
+    var requested = new ArrayList<>(requestedSandboxClasses(body));
+    for (var item : data.getJSONArray("objDatas").toJavaList(JSONObject.class))
+      requested.add(item.getString("className"));
+    data.put("classNames", sandboxClasses(domain, requested, allowed));
     return data;
   }
 
   JSONObject storeSamples(Window window, JSONObject data) throws Exception {
     window.recheck().run();
     store.transaction(() -> {
-      window.gate().get();
+      var row = window.gate().get();
+      String sandboxId = sandbox(row), domain = window.owner().domainId();
+      var declared = row.getList("sandboxClasses", String.class);
+      var previous = row.getJSONObject("test_data");
+      var before = sampleClassSet(declared, previous);
+      var after = sampleClassSet(declared, data);
+      if (!before.equals(after)) {
+        if (!before.isEmpty()) sandboxService.dropNamespace(sandboxId, domain);
+        createSandbox(sandboxId, domain, List.copyOf(after));
+      }
       window.samples().accept(data);
       return null;
     });
     return JSONObject.of("prepared", true);
+  }
+
+  private static Set<String> sampleClassSet(List<String> declared, JSONObject samples) {
+    var classes = new TreeSet<String>();
+    if (declared != null) classes.addAll(declared);
+    if (samples != null) {
+      var names = samples.getList("classNames", String.class);
+      if (names != null) classes.addAll(names);
+      else for (var item : samples.getJSONArray("objDatas").toJavaList(JSONObject.class))
+        classes.add(item.getString("className"));
+    }
+    return classes;
   }
 
   public JSONObject reset(String run, Owner owner) {

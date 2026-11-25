@@ -180,7 +180,6 @@ public class ActionCreationService {
               return false;
             });
     try {
-      operations.createSandbox(sandbox, owner.domainId());
       var skills = definitions.publishActionCreation();
       var row =
           store.one(

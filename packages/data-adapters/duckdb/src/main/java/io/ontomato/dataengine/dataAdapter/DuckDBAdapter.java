@@ -229,10 +229,13 @@ public class DuckDBAdapter implements DataAdapter {
 									if ("varchar".equals(type) || "text".equals(type)) {
 										sqlCond = "\"" + alias + "\"." + attr + " " + cond.getString("operator")
 												+ " '" + cond.getString("value").replace("'", "''") + "'";
-									} else if ("int".equals(type) || "long".equals(type) || "double".equals(type)) {
+									} else if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
 										sqlCond = "\"" + alias + "\"." + attr + " " + cond.getString("operator")
 												+ " " + cond.get("value");
-									} else if ("date".equals(type) || "timestamp".equals(type)) {
+									} else if ("boolean".equals(type)) {
+										sqlCond = "\"" + alias + "\"." + attr + " " + cond.getString("operator")
+												+ " " + booleanLiteral(cond.get("value"));
+									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
 										sqlCond = "\"" + alias + "\"." + attr + " " + cond.getString("operator")
 												+ " " + timeLiteral(cond.get("value"));
 									}
@@ -255,10 +258,10 @@ public class DuckDBAdapter implements DataAdapter {
 										|| ">=".equals(cond.getString("operator"))
 										|| "<=".equals(cond.getString("operator"))
 										|| "<".equals(cond.getString("operator"))) {
-									if ("int".equals(type) || "long".equals(type) || "double".equals(type)) {
+									if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
 										sqlCond = "\"" + alias + "\"." + attr + " " + cond.getString("operator")
 												+ " " + cond.get("value");
-									} else if ("date".equals(type) || "timestamp".equals(type)) {
+									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
 										sqlCond = "\"" + alias + "\"." + attr + " " + cond.getString("operator")
 												+ " " + timeLiteral(cond.get("value"));
 									} else if ("varchar".equals(type)) {
@@ -267,10 +270,10 @@ public class DuckDBAdapter implements DataAdapter {
 									}
 								} else if ("between".equals(cond.getString("operator"))) {
 									JSONArray value = cond.getJSONArray("value");
-									if ("int".equals(type) || "long".equals(type) || "double".equals(type)) {
+									if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
 										sqlCond = "(\"" + alias + "\"." + attr + " >= " + value.get(0)
 												+ " and \"" + alias + "\"." + attr + " <= " + value.get(1) + ")";
-									} else if ("date".equals(type) || "timestamp".equals(type)) {
+									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
 										sqlCond = "(\"" + alias + "\"." + attr + " >= " + timeLiteral(value.get(0))
 												+ " and \"" + alias + "\"." + attr
 												+ " <= " + timeLiteral(value.get(1)) + ")";
@@ -287,14 +290,21 @@ public class DuckDBAdapter implements DataAdapter {
 										}
 										in = "(" + in.substring(0, in.length() - 1) + ")";
 										sqlCond = "\"" + alias + "\"." + attr + " in " + in;
-									} else if ("int".equals(type) || "long".equals(type) || "double".equals(type)) {
+									} else if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
 										String in = "";
 										for (int j = 0; j < value.size(); j++) {
 											in += value.get(j) + ",";
 										}
 										in = "(" + in.substring(0, in.length() - 1) + ")";
 										sqlCond = "\"" + alias + "\"." + attr + " in " + in;
-									} else if ("date".equals(type) || "timestamp".equals(type)) {
+									} else if ("boolean".equals(type)) {
+										String in = "";
+										for (int j = 0; j < value.size(); j++) {
+											in += booleanLiteral(value.get(j)) + ",";
+										}
+										in = "(" + in.substring(0, in.length() - 1) + ")";
+										sqlCond = "\"" + alias + "\"." + attr + " in " + in;
+									} else if ("date".equals(type) || "timestamp".equals(type) || "datetime".equals(type)) {
 										String in = "";
 										for (int j = 0; j < value.size(); j++) {
 											in += timeLiteral(value.get(j)) + ",";
@@ -838,6 +848,22 @@ public class DuckDBAdapter implements DataAdapter {
 		}
 	}
 
+	static String columnType(String type) {
+		return switch (type) {
+			case "varchar" -> "varchar";
+			case "text" -> "varchar";
+			case "int" -> "integer";
+			case "long" -> "bigint";
+			case "float" -> "float";
+			case "double" -> "double";
+			case "boolean" -> "boolean";
+			case "date" -> "date";
+			case "timestamp", "datetime" -> "timestamp";
+			case "vector" -> "varchar";
+			default -> throw new IllegalArgumentException("Unsupported attribute type: " + type);
+		};
+	}
+
 	@Override
 	public void createClass(String namespace, Map<String, Object> classDef) {
 		try {
@@ -848,28 +874,7 @@ public class DuckDBAdapter implements DataAdapter {
 				for (Map<String, Object> attr : attrs) {
 					if (attr.get("enable") == null || (Boolean)attr.get("enable")) {
 						String name = (String) attr.get("name");
-						String type = (String) attr.get("type");
-						if (name != null && isSupportedType(type)) {
-							String ty = "";
-							if ("varchar".equals(type)) {
-								ty = "varchar";
-							} else if ("text".equals(type)) {
-								ty = "varchar";
-							} else if ("int".equals(type)) {
-								ty = "integer";
-							} else if ("long".equals(type)) {
-								ty = "bigint";
-							} else if ("double".equals(type)) {
-								ty = "double";
-							} else if ("date".equals(type)) {
-								ty = "date";
-							} else if ("timestamp".equals(type)) {
-								ty = "timestamp";
-							} else if ("vector".equals(type)) {
-								ty = "varchar";
-							}
-							fields.add(name + " " + ty);
-						}
+						fields.add(name + " " + columnType((String) attr.get("type")));
 					}
 				}
 			}
@@ -887,11 +892,6 @@ public class DuckDBAdapter implements DataAdapter {
 		}
 	}
 
-	private boolean isSupportedType(String type) {
-		return "varchar".equals(type) || "text".equals(type) || "int".equals(type) || "long".equals(type)
-				|| "double".equals(type) || "date".equals(type) || "timestamp".equals(type)
-				|| "vector".equals(type);
-	}
 
 	@Override
 	public void createEdgeType(String namespace, String edgeName) {
@@ -927,23 +927,7 @@ public class DuckDBAdapter implements DataAdapter {
 				if (!fieldName.equals(attr.get("name"))) {
 					continue;
 				}
-				String type = (String) attr.get("type");
-				if ("int".equals(type)) {
-					return "integer";
-				}
-				if ("long".equals(type)) {
-					return "bigint";
-				}
-				if ("double".equals(type)) {
-					return "double";
-				}
-				if ("date".equals(type)) {
-					return "date";
-				}
-				if ("timestamp".equals(type)) {
-					return "timestamp";
-				}
-				return "varchar";
+				return columnType((String) attr.get("type"));
 			}
 		}
 		return "varchar";
@@ -1016,14 +1000,11 @@ public class DuckDBAdapter implements DataAdapter {
 			List<Map<String, Object>> attrDefs = (List<Map<String, Object>>)classDef.get("attrs");
 			for (Map<String, Object> attrDef : attrDefs) {
 				if (attrDef.get("enable") == null || (Boolean)attrDef.get("enable")) {
-					String type = (String) attrDef.get("type");
-					if (isSupportedType(type)) {
-						if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
-							idIndex = fields.size();
-						}
-						fields.add((String)attrDef.get("name"));
-						attrTypeMap.put((String)attrDef.get("name"), (String)attrDef.get("type"));
+					if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
+						idIndex = fields.size();
 					}
+					fields.add((String)attrDef.get("name"));
+					attrTypeMap.put((String)attrDef.get("name"), (String)attrDef.get("type"));
 				}
 			}
 		}
@@ -1091,13 +1072,10 @@ public class DuckDBAdapter implements DataAdapter {
 			List<Map<String, Object>> attrDefs = (List<Map<String, Object>>)classDef.get("attrs");
 			for (Map<String, Object> attrDef : attrDefs) {
 				if (attrDef.get("enable") == null || (Boolean)attrDef.get("enable")) {
-					String type = (String) attrDef.get("type");
-					if (isSupportedType(type)) {
-						if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
-							pk = (String)attrDef.get("name");
-						}
-						attrTypeMap.put((String)attrDef.get("name"), (String)attrDef.get("type"));
+					if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
+						pk = (String)attrDef.get("name");
 					}
+					attrTypeMap.put((String)attrDef.get("name"), (String)attrDef.get("type"));
 				}
 			}
 		}
@@ -1245,14 +1223,20 @@ public class DuckDBAdapter implements DataAdapter {
 		}
 	}
 
+	private static String booleanLiteral(Object value) {
+		return ((Boolean) value).toString();
+	}
+
 	private String toSqlValue(String type, Object value, SimpleDateFormat ymd, SimpleDateFormat ymdhms) throws Exception {
 		String valueSql = "";
 		if ("varchar".equals(type) || "text".equals(type) || "vector".equals(type)) {
 			String strValue = "vector".equals(type) && value != null && !(value instanceof String)
 					? JSON.toJSONString(value) : (String)value;
             valueSql = "'" + strValue.replace("'", "''") + "'";
-		} else if ("int".equals(type) || "long".equals(type) || "double".equals(type)) {
+		} else if ("int".equals(type) || "long".equals(type) || "float".equals(type) || "double".equals(type)) {
 			valueSql = value + "";
+		} else if ("boolean".equals(type)) {
+			valueSql = booleanLiteral(value);
 		} else if ("date".equals(type)) {
 			try {
 				valueSql = "'" + ymd.format(ymd.parse((String)value)) + "'";
@@ -1260,7 +1244,7 @@ public class DuckDBAdapter implements DataAdapter {
 				log.error(e.getMessage(), e);
 				throw new Exception("Invalid format for a date field, expected yyyy-MM-dd");
 			}
-		} else if ("timestamp".equals(type)) {
+		} else if ("timestamp".equals(type) || "datetime".equals(type)) {
 			try {
 				valueSql = "'" + ymdhms.format(ymdhms.parse((String)value)) + "'";
 			} catch (Exception e) {
@@ -1290,10 +1274,7 @@ public class DuckDBAdapter implements DataAdapter {
 			List<Map<String, Object>> attrDefs = (List<Map<String, Object>>)classDef.get("attrs");
 			for (Map<String, Object> attrDef : attrDefs) {
 				if (attrDef.get("enable") == null || (Boolean)attrDef.get("enable")) {
-					String type = (String) attrDef.get("type");
-					if (isSupportedType(type)) {
-						attrTypeMap.put((String)attrDef.get("name"), (String)attrDef.get("type"));
-					}
+					attrTypeMap.put((String)attrDef.get("name"), (String)attrDef.get("type"));
 				}
 			}
 		}

@@ -118,17 +118,17 @@ public class OntologyGenerationController {
 
   @BuildTestAccess(BuildTestAccess.Access.TEST_DATA)
   @PostMapping("/gates")
-  public Object open(@RequestBody JSONObject body, HttpServletRequest request) {
+  public Object open(@RequestBody Map<String, Object> input, HttpServletRequest request) {
     access.authenticated(request);
-    AgentJson.fields(body, "kind", "source");
+    var body = body(input);
+    AgentJson.fields(body, "kind", "source", "classNames");
     var caller = access.current(request);
-    var query = caller.access();
     return generation.openExternal(
         AgentJson.text(body, "kind"),
         UUID.randomUUID().toString(),
         body.getString("source"),
         caller.owner(),
-        QueryAccessService.classScope(query.permission(), query.classNames()));
+        GenerationOperations.requestedSandboxClasses(body), caller.access());
   }
 
   private Owner owner(String run, HttpServletRequest request) throws Exception {
@@ -188,7 +188,7 @@ public class OntologyGenerationController {
   public Object prepare(
       @PathVariable String run, @RequestBody JSONObject body, HttpServletRequest request)
       throws Exception {
-    AgentJson.fields(body, "objDatas", "relDatas", "vectorDatas");
+    AgentJson.fields(body, "objDatas", "relDatas", "vectorDatas", "classNames");
     return operations.prepare(run, owner(run, request), body);
   }
 

@@ -11,6 +11,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter.Feature;
 
+import io.ontomato.dataengine.service.OntologyModelService;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 
@@ -90,6 +91,7 @@ public class JSONRuleDao {
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 		}
+		if (jsonRule != null) OntologyModelService.normalizeRuleAttributeTypes(jsonRule, false);
 		return jsonRule;
 	}
 }

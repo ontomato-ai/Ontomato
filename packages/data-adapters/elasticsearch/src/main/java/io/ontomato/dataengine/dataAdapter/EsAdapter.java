@@ -48,8 +48,6 @@ public class EsAdapter implements DataAdapter {
 	/** Default bound for application-side working sets; overflow returns a marked partial result. */
 	static final long DEFAULT_MAX_MATERIALIZE = 100_000;
 
-	private static final Set<String> SUPPORTED_TYPES = Set.of(
-			"varchar", "text", "int", "long", "double", "date", "timestamp", "vector");
 
 	/**
 	 * The junction index's only field besides the two keys: the pairing digest, which is stored so a
@@ -262,9 +260,7 @@ public class EsAdapter implements DataAdapter {
 					if (attr.get("enable") == null || (Boolean) attr.get("enable")) {
 						String name = (String) attr.get("name");
 						String type = (String) attr.get("type");
-						if (name != null && isSupportedType(type)) {
-							properties.put(name, mappingOf(type));
-						}
+						properties.put(name, mappingOf(type));
 					}
 				}
 			}
@@ -335,30 +331,27 @@ public class EsAdapter implements DataAdapter {
 		return mapping;
 	}
 
-	private JSONObject mappingOf(String type) {
+	static JSONObject mappingOf(String type) {
 		JSONObject mapping = new JSONObject();
 		switch (type) {
 			case "varchar" -> mapping.put("type", "keyword");
 			case "text", "vector" -> mapping.put("type", "text");
 			case "int" -> mapping.put("type", "integer");
 			case "long" -> mapping.put("type", "long");
-			case "double" -> mapping.put("type", "double");
+			case "float", "double", "boolean" -> mapping.put("type", type);
 			case "date" -> {
 				mapping.put("type", "date");
 				mapping.put("format", "yyyy-MM-dd");
 			}
-			case "timestamp" -> {
+			case "timestamp", "datetime" -> {
 				mapping.put("type", "date");
 				mapping.put("format", "yyyy-MM-dd HH:mm:ss");
 			}
-			default -> mapping.put("type", "keyword");
+			default -> throw new IllegalArgumentException("Unsupported attribute type: " + type);
 		}
 		return mapping;
 	}
 
-	private boolean isSupportedType(String type) {
-		return type != null && SUPPORTED_TYPES.contains(type);
-	}
 
 	// ----------------------------------------------------------------------------------
 	// Object CRUD
@@ -2533,9 +2526,7 @@ public class EsAdapter implements DataAdapter {
 		if (attrs != null) {
 			for (Map<String, Object> attr : attrs) {
 				if (attr.get("enable") == null || (Boolean) attr.get("enable")) {
-					if (isSupportedType((String) attr.get("type"))) {
-						types.put((String) attr.get("name"), (String) attr.get("type"));
-					}
+					types.put((String) attr.get("name"), (String) attr.get("type"));
 				}
 			}
 		}
