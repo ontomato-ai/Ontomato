@@ -249,6 +249,62 @@ events, output types and defaults.
 - **Multi-select outside a form:** Bind `ObjectList.data.rows` to a list/query of references and
   `state.checked` to a list of those references. For an operation input requiring IDs, watch the checked state
   in `panel.mjs` and map its `primaryKey` values to a list of scalar IDs for the binding.
+- **Server field filters and sorting on customer `ObjectType` lists (`query`):** Customer ontology `query` reads
+  (and `platform:ObjectType.instances`) accept optional `filters` (`recordFilters`) and `sort` (`recordSort`)
+  parameters executed server-side across the whole class before counting `total` and paging (the viewer must have read
+  permission on every referenced field):
+  - `filters`: JSON array of `{ field, operator, value? }` combined with logical **AND**. Supported `operator` values
+    are `"eq"`, `"ne"`, `"contains"` (string `value` required), `"gt"`, `"lt"`, `"gte"`, `"lte"`, `"null"`, and
+    `"notnull"` (`"null"` and `"notnull"` forbid `value`; all other operators require scalar `string | number | boolean`
+    `value`).
+  - `sort`: JSON object `{ field, order: "asc" | "desc" }` (the class primary key is appended as a stable tie-breaker).
+  - Declare `filters` and/or `sort` in `manifest.state` as `{ "type": { "kind": "json" }, "default": null }` (`null`
+    omits the parameter), bind them under `data.rows.params`, and put filter/sort controls in `<template #filters>` (clear
+    both in `@clear-filters` as well). `ObjectList` automatically resets to page 1 when `filters` or `sort` changes.
+
+```json
+{
+  "manifest": {
+    "state": {
+      "selected": { "type": { "kind": "object", "objectType": "WorkItem" }, "deepLink": true },
+      "search": { "type": { "kind": "scalar", "type": "string" }, "default": "", "deepLink": true },
+      "listFilters": { "type": { "kind": "json" }, "default": null },
+      "listSort": { "type": { "kind": "json" }, "default": null }
+    },
+    "members": {
+      "list": {
+        "component": "ObjectList",
+        "type": "WorkItem",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "filters": { "state": "listFilters" },
+              "sort": { "state": "listSort" }
+            }
+          }
+        },
+        "state": { "selected": "selected", "search": "search" },
+        "config": { "layout": "table", "pagination": "pages", "pageSize": 20 }
+      }
+    }
+  }
+}
+```
+
+Example values written to `listFilters` and `listSort`:
+
+```js
+instance.state.setState("listFilters", [
+  { field: "category", operator: "eq", value: "teaching" },
+  { field: "status", operator: "ne", value: "archived" },
+]);
+instance.state.setState("listSort", { field: "updated_at", order: "desc" });
+// Clear filters / sort:
+instance.state.setState("listFilters", null);
+instance.state.setState("listSort", null);
+```
+
 - **Selection:** Search, filter, sorting and paging preserve the selected object. Set `fallbackToFirst: false` and
   use `listed` for optional initial selection only if the page opened without one. Keep a specified missing or
   forbidden item selected and show the header's state. On a successful delete, the SDK uses `affected.removed`
@@ -829,17 +885,49 @@ template `ref` to `<projection slot="...">` and call `memberRef.value?.refresh()
 ## Open the page composer and inline conversation entries
 
 Conversation shell chrome (history list, message stream, dockable page area) belongs to the platform shell rather than
-an application panel — do not build a custom chat page inside a panel.
+an application panel — do not build a custom chat page inside a panel, and do not import `@ontomato/sdk/chat` in
+`panel.mjs` (direct panels allow only `vue` and `@ontomato/sdk/panel`; `AgentChatPanel` / `AgentShell` are standalone
+shell components and cannot be placed as panel projections).
 
 - **Button entry (`presentation="button"`, default):** Add a `ConversationEntry` projection when the page needs a button
-  that opens the composer with a specific agent (`agent: "page-default" | { kind: "id", id } | { kind: "preset", agentKind }`)
-  and an optional opening line (`prefill` or multi-locale `prefillKey` in `content.messages`). The reader still sends
-  the message.
+  that opens the composer with a specific agent (`agent: "page-default"`, `{ "kind": "id", "id": "<agentId>" }`, or
+  `{ "kind": "preset", "agentKind": "<kind>" }`) and an optional opening line (`prefill` or multi-locale `prefillKey`
+  in `content.messages`). The reader still sends the message.
 - **Inline composer (`presentation="inline"`):** When a page itself serves as a conversation entry (such as a workspace
-  home), place a `ConversationEntry` member with `presentation="inline"` (supporting `placeholderKey`, `minLines`,
-  `agentPickerVariant`, `attachPage`, and `@sent`) and set `"pageComposer": "none"` on that entry in `panelUses` so the
-  host hides the bottom floating composer. While mounted, the inline `ConversationEntry` also serves sibling
-  `ConversationEntry` buttons on the same page.
+  home), place a `ConversationEntry` member pointing to the target agent with `presentation="inline"` (supporting
+  `placeholderKey`, `minLines`, `agentPickerVariant`, `attachPage`, and `@sent`) and set `"pageComposer": "none"` on
+  that entry in `panelUses` so the host hides the bottom floating composer. While mounted, the inline
+  `ConversationEntry` also serves sibling `ConversationEntry` buttons on the same page; submitting enters the platform
+  conversation shell with that agent.
+
+```json
+// panel.json (manifest.members)
+{
+  "askAssistant": {
+    "component": "ConversationEntry",
+    "agent": { "kind": "id", "id": "<agent-uuid>" },
+    "prefillKey": "chat.opening"
+  }
+}
+```
+
+```html
+<!-- panel.html -->
+<projection slot="askAssistant" presentation="inline" placeholder-key="chat.placeholder" :min-lines="3"></projection>
+```
+
+```json
+// registration.json (applications[].input.panelUses[] entry)
+{
+  "id": "home",
+  "pageKey": "home",
+  "panelId": "<panel-id>",
+  "path": "/applications/app-my-app/home",
+  "pageComposer": "none",
+  "access": { "kind": "domain-member" },
+  "names": { "en": "Home", "zh-CN": "首页" }
+}
+```
 
 ## Register and open
 

@@ -1138,3 +1138,68 @@ test("declarative targetTypes allows cross-owner OperationButton and ObjectList 
     state: multiState, components, typeTable: favoriteTable,
   }), /does not match target state type|compatible target/);
 });
+
+test("customer ObjectList expands json state bindings for server filters and sort on query read", async () => {
+  const { customerOntologyReads } = await import("./platform-object-types");
+  const { platformTypeTableResponseSchema } = await import("./platform-type-table");
+  const { productProjectionInputSchema } = await import("./product-panels");
+  const customerTable = platformTypeTableResponseSchema.parse({
+    objectTypes: {
+      WorkItem: { reads: customerOntologyReads, operations: [] },
+    },
+    resultSchemas: {
+      panelRecordQuery: {},
+      panelRecord: {},
+      panelFormDescription: {},
+    },
+  });
+  const listComponent = buildComponent("ObjectList", {
+    data: {
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: true, runtimeParams: ["search", "page", "size", "cursor"] },
+    },
+    inputs: {
+      selected: { kind: "object", objectType: "@binding" },
+      search: { kind: "scalar", type: "string" },
+    },
+    outputs: {
+      selected: { kind: "object", objectType: "@binding" },
+      search: { kind: "scalar", type: "string" },
+    },
+  });
+  const state = panelManifestSchema.parse({
+    state: {
+      selected: { type: { kind: "object", objectType: "WorkItem" }, deepLink: true },
+      search: { type: { kind: "scalar", type: "string" }, default: "", deepLink: true },
+      listFilters: { type: { kind: "json" }, default: null },
+      listSort: { type: { kind: "json" }, default: null },
+    },
+    members: {},
+  }).state;
+  const member = panelAuthoringMemberSchema.parse({
+    component: "ObjectList",
+    type: "WorkItem",
+    data: {
+      rows: {
+        read: "query",
+        params: {
+          filters: { state: "listFilters" },
+          sort: { state: "listSort" },
+        },
+      },
+    },
+    state: { selected: "selected", search: "search" },
+  });
+  assert("component" in member);
+  const expanded = expandPanelAuthoringMember("list", member, {
+    state, components: [listComponent], typeTable: customerTable,
+  });
+  assert.deepEqual(expanded.projection.inputs.filters, { kind: "json" });
+  assert.deepEqual(expanded.projection.inputs.sort, { kind: "json" });
+  assert.deepEqual(expanded.projection.data.rows.params.filters, { input: "filters" });
+  assert.deepEqual(expanded.projection.data.rows.params.sort, { input: "sort" });
+  assert.deepEqual(expanded.placement.inputs?.filters, { state: "listFilters" });
+  assert.deepEqual(expanded.placement.inputs?.sort, { state: "listSort" });
+  assert.doesNotThrow(() => productProjectionInputSchema.parse({
+    ...expanded.projection, name: "Work items", description: "", visibility: "domain",
+  }));
+});
