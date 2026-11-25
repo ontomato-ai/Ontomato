@@ -1088,12 +1088,13 @@ public class ApplicationCatalog {
     private static JSONObject entryResolution(JSONObject app, ApplicationPanelUse use, List<ApplicationPanelUse> allowed,
                                              BuiltinPageKeys pageKeys) {
         var named = allowed.stream().filter(entry -> entry.names() != null).toList();
+        var menuUses = allowed.stream().filter(entry -> entry.names() != null || entry.frameConversationEntry()).toList();
         var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
         var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
             .sorted(Comparator.comparingInt(Group::sort)).toList();
         var appNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
         var result = JSONObject.of("applicationId", app.getString("id"), "use", use, "framePanelId", entryFramePanelId(app),
-            "menu", new EntryMenu(appNames, groups, named, singleEntry(app, pageKeys)));
+            "menu", new EntryMenu(appNames, groups, menuUses, singleEntry(app, pageKeys)));
         var settings = app.getJSONObject("panelSettings");
         if (panelManaged(app) && settings != null && settings.containsKey("theme"))
             result.put("theme", settings.getJSONObject("theme"));
