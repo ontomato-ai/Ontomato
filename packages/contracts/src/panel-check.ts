@@ -42,7 +42,7 @@ export {
   BUILTIN_PRODUCT_ID_PREFIX, builtinProductIdSchema, domainProductIdSchema, isBuiltinProductId,
 } from "./product-record-id";
 export {
-  builtinApplicationPanelUseSchema, builtinProductPanelInputSchema, builtinProductProjectionInputSchema,
+  builtinApplicationPanelUseSchema, builtinNativeEntrySchema, builtinProductPanelInputSchema, builtinProductProjectionInputSchema,
 } from "./product-panels";
 export {
   COMPONENT_PACKAGES_PATH, componentPackageNameSchema, componentPackageManifestSchema,
