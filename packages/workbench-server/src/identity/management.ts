@@ -1,10 +1,10 @@
 import type { Request, RequestHandler } from "express";
 import type { WorkbenchManagementOperation } from "@ontomato/contracts/workbench-management";
-import { sendError } from "../api/utils/http";
 import { config } from "../config/application";
 import { environment } from "../config/environment";
 import { backendPost, buildBackendHeaders } from "../utils/backend-client";
 import { HttpError } from "../utils/errors";
+import { sendError } from "../utils/http-error-response";
 import { credentialsFromRequest, type AuthenticatedRequest } from "../utils/request-identity";
 import type { AssistantCredentials } from "../utils/assistant-credentials";
 

@@ -27,7 +27,7 @@ import { type NextFunction, Request, Response, Router } from "express";
 
 import { t , tApp } from "../../../i18n";
 import { createLogger } from "../../../logging/logger";
-import { sendError } from "../../../api/utils/http";
+import { sendError } from "../../../utils/http-error-response";
 import { initializeSse } from "../../../utils/sse";
 import {
   createEmptyCaseSet,
