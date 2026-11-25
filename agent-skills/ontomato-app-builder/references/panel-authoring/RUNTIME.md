@@ -508,6 +508,9 @@ in panel templates / slots) instead of formatting business fields in panel HTML:
 - `<object-list>` (`ObjectList`) also supports `layout: "tabs"` (horizontal tab strip with overflow buttons, per-tab
   `rowActions`, and `#tabs-extra`), `dynamicColumns: true` (derives table columns from owner `fieldLabels` and record
   `fields` when no static `columns` are set), `showColumnToggle`, and `exportable` (current-page UTF-8 BOM CSV export).
+  For customer `ObjectType` `query` reads, bind `data.rows.params.filters` (`[{ field, operator, value? }]` with
+  `eq|ne|contains|gt|lt|gte|lte|null|notnull`) and `data.rows.params.sort` (`{ field, order: "asc" | "desc" }`) to
+  `json` state (`default: null`) for whole-class server filtering and sorting before `total` and paging.
 - `<object-text-reader>` (`ObjectTextReader`) supports `format: "auto" | "plain" | "markdown" | "table" | "code" | "diff"`
   (parsing standard unified diffs into file summaries and line-numbered hunks) and writes clicked relative `.md` links
   to `activePath`.
