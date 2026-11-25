@@ -67,12 +67,118 @@
     overflow: visible;
   }
 
+  .proj-create-mode-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .proj-chart-picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-fill-color-lighter, var(--sdk-bg-color));
+  }
+  .proj-chart-picker-head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .proj-chart-picker-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .proj-chart-picker-desc {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .proj-chart-grid {
+    display: grid;
+    grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+    gap: var(--spacing-md);
+    min-width: 0;
+  }
+  .proj-chart-list-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .proj-chart-cards-box {
+    max-height: 18rem;
+    overflow: auto;
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-sm);
+    background: var(--sdk-bg-color);
+  }
+  .proj-chart-preview-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-sm);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+    min-height: 18rem;
+  }
+  .proj-chart-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .proj-binding-helper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    width: 100%;
+    min-width: 0;
+  }
+  .proj-binding-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-sm);
+    background: var(--sdk-fill-color-lighter, var(--sdk-bg-color));
+  }
+  .proj-binding-picker {
+    flex: 1 1 12rem;
+    min-width: 10rem;
+  }
+  .proj-binding-input {
+    width: 9rem;
+  }
+  .proj-binding-id {
+    flex: 1 1 10rem;
+    min-width: 8rem;
+  }
+  .proj-binding-error {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-color-danger);
+  }
+
   @container proj-page (max-width: 760px) {
     .proj-filter-select {
       width: 8.5rem;
     }
     .proj-filter-picker {
       width: 10.5rem;
+    }
+    .proj-chart-grid {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 </style>
@@ -90,8 +196,114 @@
 
       <div class="proj-create-body">
         <section class="proj-create-card">
+          <div class="proj-create-mode-bar">
+            <sdk-segmented v-model="createModeModel" :options="createModeOptions" size="default"></sdk-segmented>
+          </div>
+
+          <section v-if="createModeModel === 'chart'" class="proj-chart-picker">
+            <div class="proj-chart-picker-head">
+              <h3 class="proj-chart-picker-title">{{ t('chart.stepTitle') }}</h3>
+              <p class="proj-chart-picker-desc">{{ t('chart.stepDesc') }}</p>
+            </div>
+            <div class="proj-chart-grid">
+              <div class="proj-chart-list-col">
+                <projection slot="dashboardPicker"></projection>
+                <div class="proj-chart-cards-box">
+                  <projection v-if="selectedDashboardKey" slot="dashboardCardsList"></projection>
+                  <p v-else class="proj-chart-picker-desc" style="padding: var(--spacing-md);">{{ t('chart.noCards') }}</p>
+                </div>
+              </div>
+              <div class="proj-chart-preview-col">
+                <projection v-if="selectedChartCardKey && isSelectedCardChart" slot="chartCardPreview"></projection>
+                <p v-else-if="selectedChartCardKey && !isSelectedCardChart" class="proj-chart-picker-desc">{{ t('chart.nonChartHint') }}</p>
+                <p v-else class="proj-chart-picker-desc">{{ t('chart.selectHint') }}</p>
+              </div>
+            </div>
+            <div class="proj-chart-actions">
+              <span v-if="appliedChartLabel" class="proj-chart-picker-desc">{{ t('chart.appliedHint', { card: appliedChartLabel }) }}</span>
+              <span v-else class="proj-chart-picker-desc"></span>
+              <sdk-button type="primary" size="small" :disabled="!canApplyChartCard" @click="applySelectedChartCard">
+                {{ t('chart.applyCard') }}
+              </sdk-button>
+            </div>
+          </section>
+
           <div class="proj-form-wrap">
-            <projection slot="createForm" @saved="onCreated"></projection>
+            <projection slot="createForm" @saved="onCreated">
+              <template #field-data="{ field, value, error, changed, disabled, set }">
+                <sdk-form-item
+                  :label="field.label"
+                  :required="field.required"
+                  :error="error"
+                  :class="{ 'sdk-form-field-changed': changed }"
+                  data-field="/data"
+                >
+                  <div class="proj-binding-helper">
+                    <div v-if="!disabled" class="proj-binding-bar">
+                      <sdk-segmented v-model="dataBindKind" :options="dataBindKindOptions" size="small"></sdk-segmented>
+                      <sdk-input v-model="dataBindKey" class="proj-binding-input" size="small" :placeholder="t('binding.datumKey')"></sdk-input>
+                      <div class="proj-binding-picker">
+                        <projection v-if="dataBindKind === 'metric'" slot="bindingMetricPicker"></projection>
+                        <projection v-else slot="bindingObjectTypePicker"></projection>
+                      </div>
+                      <sdk-input v-model="dataBindManualId" class="proj-binding-id" size="small" :placeholder="t('binding.manualId')"></sdk-input>
+                      <sdk-button size="small" type="primary" plain :disabled="!canApplyDataBinding" @click="applyDataBinding(value, set)">
+                        {{ t('binding.apply') }}
+                      </sdk-button>
+                      <sdk-button size="small" text @click="showDataJson = !showDataJson">
+                        {{ showDataJson ? t('binding.hideJson') : t('binding.showJson') }}
+                      </sdk-button>
+                    </div>
+                    <template v-if="showDataJson || disabled">
+                      <sdk-input
+                        type="textarea"
+                        :rows="6"
+                        :disabled="disabled"
+                        :model-value="formatJsonField(value, 'data')"
+                        @update:model-value="onJsonFieldInput('data', $event, set)"
+                      ></sdk-input>
+                      <p v-if="jsonFieldErrors.data" class="proj-binding-error" role="alert">{{ jsonFieldErrors.data }}</p>
+                    </template>
+                  </div>
+                </sdk-form-item>
+              </template>
+
+              <template #field-operations="{ field, value, error, changed, disabled, set }">
+                <sdk-form-item
+                  :label="field.label"
+                  :required="field.required"
+                  :error="error"
+                  :class="{ 'sdk-form-field-changed': changed }"
+                  data-field="/operations"
+                >
+                  <div class="proj-binding-helper">
+                    <div v-if="!disabled" class="proj-binding-bar">
+                      <sdk-input v-model="opBindKey" class="proj-binding-input" size="small" :placeholder="t('binding.opKey')"></sdk-input>
+                      <div class="proj-binding-picker">
+                        <projection slot="bindingActionPicker"></projection>
+                      </div>
+                      <sdk-input v-model="opBindManualId" class="proj-binding-id" size="small" :placeholder="t('binding.manualId')"></sdk-input>
+                      <sdk-button size="small" type="primary" plain :disabled="!canApplyOperationBinding" @click="applyOperationBinding(value, set)">
+                        {{ t('binding.apply') }}
+                      </sdk-button>
+                      <sdk-button size="small" text @click="showOpsJson = !showOpsJson">
+                        {{ showOpsJson ? t('binding.hideJson') : t('binding.showJson') }}
+                      </sdk-button>
+                    </div>
+                    <template v-if="showOpsJson || disabled">
+                      <sdk-input
+                        type="textarea"
+                        :rows="5"
+                        :disabled="disabled"
+                        :model-value="formatJsonField(value, 'operations')"
+                        @update:model-value="onJsonFieldInput('operations', $event, set)"
+                      ></sdk-input>
+                      <p v-if="jsonFieldErrors.operations" class="proj-binding-error" role="alert">{{ jsonFieldErrors.operations }}</p>
+                    </template>
+                  </div>
+                </sdk-form-item>
+              </template>
+            </projection>
           </div>
         </section>
       </div>

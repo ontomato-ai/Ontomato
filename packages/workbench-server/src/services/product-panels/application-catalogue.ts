@@ -10,7 +10,7 @@ import { AGENT_DEFINITION, APPLICATION, APPLICATION_PANEL_USE, PRODUCT_PANEL } f
 import { allowsStandalone, applicationCatalogSchema, applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationPanelUseSchema, isApplicationPanelUse, registerApplicationPanelUsesRequestSchema, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
-import { applicationCatalogueScopeSchema, applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
+import { applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
 import { readFavorites } from "../platform-home/service";
 import { config } from "../../config/application";
 import { resolveLocale, tForLocale } from "../../i18n";
@@ -28,17 +28,23 @@ export const applicationDraftIdSchema = z.string().regex(/^app-[a-z0-9-]+$/);
 const createPath = /^\/platform\/applications\/(app-[a-z0-9-]+)\/panel-uses\?create=true$/;
 type FormParams = Partial<Pick<ApplicationCatalogueFormRequest, "values" | "changedField">>;
 type EditFormParams = FormParams & {
-  section: Exclude<ApplicationCatalogueFormRequest["section"], "create">;
+  section: ApplicationCatalogueFormRequest["section"];
   entryId?: string;
 };
 const ownerSuccessSchema = z.object({ success: z.literal(true) });
 const ownerData = <T>(text: string, schema: z.ZodType<T>) =>
   schema.parse(ownerSuccessSchema.extend({ data: z.unknown() }).parse(JSON.parse(text)).data);
+const applicationExtendedScopeSchema = z.enum(["visible", "maintainable", "mine", "shared"]);
+const pageParamSchema = z.union([
+  z.number().int().min(1),
+  z.object({ number: z.number().int().min(1), size: z.number().int().min(1).max(100) }).strict(),
+]);
 const querySchema = z.object({
   search: z.string().optional(),
-  scope: applicationCatalogueScopeSchema.optional(),
+  scope: applicationExtendedScopeSchema.optional(),
   sort: applicationCatalogueSortSchema.optional(),
   cursor: z.string().optional(),
+  page: pageParamSchema.optional(),
   size: z.number().int().min(1).max(100).optional(),
 }).strict();
 const catalogueCountSchema = z.object({ total: z.number().int().nonnegative() }).strict();
@@ -145,6 +151,21 @@ export function toApplicationPanelRecord(
       fields.themeSummary = themeSummary;
       fieldLabels.themeSummary = word("themeOverrides");
     }
+    const publicDeclaration = {
+      id: row.id,
+      source: row.source,
+      names: row.names,
+      descriptions: row.descriptions,
+      icon: row.icon,
+      ...(row.allowStandalone !== undefined && { allowStandalone: row.allowStandalone }),
+      entry: row.entry,
+      panelUses: row.panelUses,
+      groups: row.groups,
+      ...(row.framePanelId !== undefined && { framePanelId: row.framePanelId }),
+      ...(row.theme !== undefined && { theme: row.theme }),
+    };
+    fields.declarationJson = JSON.stringify(publicDeclaration, null, 2);
+    fieldLabels.declarationJson = tForLocale(language, "panels.productCatalog.projection.definitionJson");
   }
   const outputs: PanelRecord["outputs"] = "entry" in row
     ? {
@@ -184,9 +205,19 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
       return ownerData(response.text, applicationCatalogSchema);
     },
     async query(params: Record<string, unknown>) {
+      const { page, ...rest } = querySchema.parse(params);
       const query = new URLSearchParams();
-      for (const [key, value] of Object.entries(querySchema.parse(params)))
+      for (const [key, value] of Object.entries(rest)) {
         if (value !== undefined) query.set(key, String(value));
+      }
+      if (page !== undefined) {
+        if (typeof page === "number") {
+          query.set("page", String(page));
+        } else {
+          query.set("page", String(page.number));
+          if (rest.size === undefined) query.set("size", String(page.size));
+        }
+      }
       const response = await backendGet("application-catalogue", url(`${cataloguePath}?${query}`), options());
       return ownerData(response.text, applicationCatalogueQueryResultSchema);
     },
@@ -477,6 +508,20 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
     },
     async form(primaryKey: string, { section, entryId, values, changedField = null }: EditFormParams) {
       const target = { kind: "object", objectType: APPLICATION, primaryKey } as const;
+      if (section === "create" || (section === "entry" && entryId === "__copy__")) {
+        const { id, ...formValues } = values ?? {};
+        const draftId = applicationDraftIdSchema.optional().parse(id);
+        const draft = await form({
+          section: "create",
+          target,
+          values: values === undefined ? undefined : formValues,
+          changedField,
+        });
+        const allocatedId = createPath.exec(draft.save.path)?.[1];
+        if (!allocatedId || (draftId !== undefined && draftId !== allocatedId))
+          throw new HttpError(502, "The application owner returned an invalid draft save path", "APPLICATION_DRAFT_INVALID");
+        return { ...draft, values: { ...draft.values, id: allocatedId } };
+      }
       const schema = section === "identity"
         ? applicationIdentityUpdateSchema
         : section === "entry"
@@ -564,13 +609,14 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
       const panels = await panelNameMap();
       const ids = [...new Set(detail.panelUses.filter(isApplicationPanelUse).map(use => use.panelId).filter(Boolean))];
       return ids.map((panelId): PanelRecord => {
+        const accessible = panels.has(panelId);
         const label = panels.get(panelId) ?? panelId;
         return {
           primaryKey: panelId,
           className: PRODUCT_PANEL,
           label,
           ...(label !== panelId && { subtitle: panelId }),
-          fields: { id: panelId },
+          fields: { id: panelId, accessible },
           fieldLabels: { id: word("entryPanel") },
         };
       });

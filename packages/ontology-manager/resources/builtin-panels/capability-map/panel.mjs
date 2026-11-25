@@ -4,8 +4,8 @@ import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel
 /*
  * Four-layer capability map coordinator. All business reads and presentations live in official SDK projections
  * (`OntologyGraph`, `ObjectList`, `ReferencePicker`, `ObjectHeader`, `ObjectSummary`, `ObjectRelations`). This module
- * coordinates typed panel state (keeping URL-compatible `selectedType` synced with the internal `selectedTypeRef`
- * object reference), reads declared read-only projection outputs, and handles navigation to instance directories.
+ * coordinates typed panel state (keeping URL-compatible `selectedType` synced with `selectedTypeRef`) and owner-backed
+ * cross-type search focusing (collapsing unrelated nodes to a match and its one-hop neighbors).
  */
 
 const ONTOLOGY_TYPE = "platform:OntologyType";
@@ -45,8 +45,9 @@ const CapabilityMap = {
     const selectedType = computed(() => (typeof values.value.selectedType === "string" && values.value.selectedType ? values.value.selectedType : null));
     const selectedTypeRef = computed(() => identity(values.value.selectedTypeRef));
     const query = computed(() => (typeof values.value.query === "string" ? values.value.query : ""));
+    const hasQuery = computed(() => query.value.trim().length > 0);
 
-    // Read-only projection outputs published by `typeHeader` (`ObjectHeader`) and `graph` (`OntologyGraph`).
+    // Read-only projection outputs published by `typeHeader`, `graph`, and `searchResults`.
     const typeHeaderStatus = usePanelOutput("typeHeader", "status");
     const typeHeaderLabel = usePanelOutput("typeHeader", "label");
     const typeHeaderError = usePanelOutput("typeHeader", "errorMessage");
@@ -55,6 +56,7 @@ const CapabilityMap = {
     const graphStartLabel = usePanelOutput("graph", "startLabel");
     const graphStartDetail = usePanelOutput("graph", "startDetail");
     const graphRelationKindLabels = usePanelOutput("graph", "visibleRelationKindLabels");
+    const searchMatchLoadedCount = usePanelOutput("searchResults", "loadedCount");
 
     // Bidirectional loop-free sync between URL-friendly `selectedType` string and `selectedTypeRef` object state.
     watch(
@@ -118,6 +120,15 @@ const CapabilityMap = {
     const pickingStart = computed(() => values.value.pickingStart === true);
     const showUserPicker = computed(() => values.value.showUserPicker === true);
 
+    const searchMatchesCollapsed = ref(false);
+    const searchMatchCount = computed(() => (typeof searchMatchLoadedCount.value === "number" ? searchMatchLoadedCount.value : null));
+
+    watch(query, (next, prev) => {
+      if (next.trim() !== (prev ?? "").trim()) {
+        searchMatchesCollapsed.value = false;
+      }
+    });
+
     function onTypeChosen() {
       if (pickingStart.value) state.set("pickingStart", false);
     }
@@ -167,7 +178,7 @@ const CapabilityMap = {
       },
     );
 
-    /** Explicit user action to promote a node as instance-mode start and focus it in the right pane. */
+    /** Promotes a node as the instance-mode start, clearing extra expanded hops to focus it and its one-hop neighbors. */
     function onSetStart(node) {
       const target = identity(node);
       if (!target) return;
@@ -179,6 +190,14 @@ const CapabilityMap = {
         showUserPicker: false,
         pickingStart: false,
       });
+    }
+
+    /** Focuses a cross-type search hit, collapsing unrelated expanded nodes to the hit and its one-hop neighbors. */
+    function onFocusMatch(node) {
+      const target = identity(node);
+      if (!target) return;
+      searchMatchesCollapsed.value = true;
+      onSetStart(target);
     }
 
     function useSelectedAsStart() {
@@ -216,10 +235,6 @@ const CapabilityMap = {
       state.set("query", text || null);
     }
 
-    function clearQuery() {
-      state.set("query", null);
-    }
-
     function setMode(value) {
       const next = value === "type" ? "type" : "instance";
       if (next === mode.value) return;
@@ -245,6 +260,7 @@ const CapabilityMap = {
       selected,
       selectedType,
       query,
+      hasQuery,
       notice,
       typeHeaderStatus,
       typeHeaderLabel,
@@ -258,6 +274,8 @@ const CapabilityMap = {
       hiddenRelationKindTagCount,
       hiddenRelationKindTagTitle,
       clearRelationKinds,
+      searchMatchesCollapsed,
+      searchMatchCount,
       onTypeChosen,
       openInstances,
       pickerSection,
@@ -270,10 +288,10 @@ const CapabilityMap = {
       startLabel,
       startDetail,
       onSetStart,
+      onFocusMatch,
       useSelectedAsStart,
       resetStart,
       onQueryChange,
-      clearQuery,
       refresh: () => instance.refreshObjects(),
     };
   },

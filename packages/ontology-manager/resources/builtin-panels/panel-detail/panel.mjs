@@ -1,4 +1,4 @@
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import {
   mountPanel,
   panelAddress,
@@ -316,14 +316,28 @@ const PanelDetail = {
       },
     );
 
-    // In-form candidate projection/panel picker writing into /manifest/members on the live ObjectForm.
+    // In-form candidate projection/panel picker and visual member layout organizer (PN-05).
+    const LAYOUT_MARKER_RE = /<!--\s*ontomato-layout:(\{[\s\S]*?\})\s*-->/;
     const memberKind = ref("projection");
     const memberSlotName = ref("");
+    const memberAddZone = ref("main");
     const memberError = ref("");
     const memberKindOptions = computed(() => [
       { value: "projection", label: t("members.projection") },
       { value: "panel", label: t("members.panel") },
     ]);
+    const layoutModeOptions = computed(() => [
+      { value: "main-side", label: t("layout.modeMainSide") },
+      { value: "grid", label: t("layout.modeGrid") },
+    ]);
+    const layoutConfig = reactive({
+      mode: "main-side",
+      columns: 2,
+      sideWidth: "320px",
+      gap: 16,
+      zones: {},
+      spans: {},
+    });
 
     const memberForm = computed(() => (showEditForm.value ? instance.forms.handle("form") : null));
     const canPickMembers = computed(() => {
@@ -332,6 +346,193 @@ const PanelDetail = {
       const membersField = formHandle.fields.value.find((field) => field.path === "/manifest/members");
       return Boolean(membersField && !membersField.readOnly);
     });
+    const currentHtmlText = computed(() => {
+      const raw = memberForm.value?.values.value?.content?.html;
+      return typeof raw === "string" ? raw : "";
+    });
+    const isLayoutManagedHtml = computed(() => LAYOUT_MARKER_RE.test(currentHtmlText.value));
+
+    function parseLayoutFromHtml(html) {
+      const match = LAYOUT_MARKER_RE.exec(html);
+      if (!match) return;
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (parsed.mode === "grid" || parsed.mode === "main-side") layoutConfig.mode = parsed.mode;
+        if (typeof parsed.columns === "number" && parsed.columns >= 1 && parsed.columns <= 4) layoutConfig.columns = parsed.columns;
+        if (typeof parsed.sideWidth === "string" && parsed.sideWidth) layoutConfig.sideWidth = parsed.sideWidth;
+        if (typeof parsed.gap === "number" && parsed.gap >= 0 && parsed.gap <= 48) layoutConfig.gap = parsed.gap;
+        if (parsed.zones && typeof parsed.zones === "object") layoutConfig.zones = { ...parsed.zones };
+        if (parsed.spans && typeof parsed.spans === "object") layoutConfig.spans = { ...parsed.spans };
+      } catch {
+        // Ignore malformed layout marker and preserve existing defaults.
+      }
+    }
+
+    watch(
+      [showEditForm, selectedKey],
+      ([active]) => {
+        if (active) parseLayoutFromHtml(currentHtmlText.value);
+      },
+      { immediate: true },
+    );
+
+    const editableMemberItems = computed(() => {
+      const raw = memberForm.value?.values.value?.manifest?.members;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+      return Object.entries(raw).map(([slot, entry], index) => {
+        const target = entry && typeof entry === "object" ? entry.target : null;
+        let targetText = "—";
+        if (target && typeof target === "object") {
+          if ("projectionId" in target) targetText = `${t("members.projection")} · ${target.projectionId}`;
+          else if ("panelId" in target) targetText = `${t("members.panel")} · ${target.panelId}`;
+          else if ("fromState" in target) targetText = `state:${target.fromState}`;
+          else if ("fromPlatform" in target) targetText = "platform";
+        }
+        const zone = layoutConfig.zones[slot] === "side" ? "side" : "main";
+        const span = typeof layoutConfig.spans[slot] === "number" && layoutConfig.spans[slot] >= 1 ? layoutConfig.spans[slot] : 1;
+        return { slot, index, targetText, zone, span };
+      });
+    });
+    const mainZoneMembers = computed(() => editableMemberItems.value.filter((item) => item.zone !== "side"));
+    const sideZoneMembers = computed(() => editableMemberItems.value.filter((item) => item.zone === "side"));
+    const layoutPreviewStyle = computed(() =>
+      layoutConfig.mode === "main-side"
+        ? {
+            gridTemplateColumns: `minmax(0, 1fr) ${layoutConfig.sideWidth}`,
+            gap: `${layoutConfig.gap}px`,
+          }
+        : {
+            gridTemplateColumns: `repeat(${layoutConfig.columns}, minmax(0, 1fr))`,
+            gap: `${layoutConfig.gap}px`,
+          },
+    );
+
+    function escapeSlotAttr(slot) {
+      return String(slot).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    }
+
+    function renderManagedLayoutHtml(items) {
+      const meta = {
+        mode: layoutConfig.mode,
+        columns: layoutConfig.columns,
+        sideWidth: layoutConfig.sideWidth,
+        gap: layoutConfig.gap,
+        zones: Object.fromEntries(items.map((item) => [item.slot, item.zone])),
+        spans: Object.fromEntries(items.map((item) => [item.slot, item.span])),
+      };
+      const marker = `<!-- ontomato-layout:${JSON.stringify(meta)} -->`;
+      if (layoutConfig.mode === "main-side") {
+        const mainSlots = items.filter((item) => item.zone !== "side")
+          .map((item) => `      <projection slot="${escapeSlotAttr(item.slot)}"></projection>`)
+          .join("\n");
+        const sideSlots = items.filter((item) => item.zone === "side")
+          .map((item) => `      <projection slot="${escapeSlotAttr(item.slot)}"></projection>`)
+          .join("\n");
+        return `${marker}
+<style>
+  .panel-layout { display: grid; grid-template-columns: minmax(0, 1fr) ${layoutConfig.sideWidth}; gap: ${layoutConfig.gap}px; padding: var(--spacing-md); }
+  .panel-zone { display: flex; flex-direction: column; gap: ${layoutConfig.gap}px; min-width: 0; }
+  @media (max-width: 760px) { .panel-layout { grid-template-columns: minmax(0, 1fr); } }
+</style>
+<div id="app" v-cloak>
+  <section class="panel-layout">
+    <main class="panel-zone">
+${mainSlots}
+    </main>
+    <aside class="panel-zone">
+${sideSlots}
+    </aside>
+  </section>
+</div>`;
+      }
+      const gridItems = items
+        .map((item) => {
+          const span = Math.min(item.span, layoutConfig.columns);
+          const styleAttr = span > 1 ? ` style="grid-column: span ${span};"` : "";
+          return `    <div class="panel-grid-cell"${styleAttr}><projection slot="${escapeSlotAttr(item.slot)}"></projection></div>`;
+        })
+        .join("\n");
+      return `${marker}
+<style>
+  .panel-grid { display: grid; grid-template-columns: repeat(${layoutConfig.columns}, minmax(0, 1fr)); gap: ${layoutConfig.gap}px; padding: var(--spacing-md); }
+  .panel-grid-cell { min-width: 0; }
+  @media (max-width: 760px) { .panel-grid { grid-template-columns: minmax(0, 1fr); } }
+</style>
+<div id="app" v-cloak>
+  <section class="panel-grid">
+${gridItems}
+  </section>
+</div>`;
+    }
+
+    function syncHtmlIfManaged(nextMembers) {
+      const formHandle = memberForm.value;
+      if (!formHandle || !isLayoutManagedHtml.value) return;
+      const items = Object.keys(nextMembers).map((slot) => ({
+        slot,
+        zone: layoutConfig.zones[slot] === "side" ? "side" : "main",
+        span: typeof layoutConfig.spans[slot] === "number" && layoutConfig.spans[slot] >= 1 ? layoutConfig.spans[slot] : 1,
+      }));
+      formHandle.set("/content/html", renderManagedLayoutHtml(items));
+    }
+
+    function applyVisualLayoutToHtml() {
+      const formHandle = memberForm.value;
+      if (!formHandle || !canPickMembers.value) return;
+      formHandle.set("/content/html", renderManagedLayoutHtml(editableMemberItems.value));
+      notify({ kind: "success", text: t("layout.applied") });
+    }
+
+    function onLayoutSettingChanged() {
+      const raw = memberForm.value?.values.value?.manifest?.members;
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        syncHtmlIfManaged(raw);
+      }
+    }
+
+    function moveDraftMember(slot, delta) {
+      const formHandle = memberForm.value;
+      if (!formHandle || !canPickMembers.value) return;
+      const raw = formHandle.values.value?.manifest?.members;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+      const entries = Object.entries(raw);
+      const index = entries.findIndex(([key]) => key === slot);
+      const targetIndex = index + delta;
+      if (index < 0 || targetIndex < 0 || targetIndex >= entries.length) return;
+      const [moved] = entries.splice(index, 1);
+      entries.splice(targetIndex, 0, moved);
+      const nextMembers = Object.fromEntries(entries);
+      formHandle.set("/manifest/members", nextMembers);
+      syncHtmlIfManaged(nextMembers);
+    }
+
+    function removeDraftMember(slot) {
+      const formHandle = memberForm.value;
+      if (!formHandle || !canPickMembers.value) return;
+      const raw = formHandle.values.value?.manifest?.members;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+      const nextMembers = Object.fromEntries(Object.entries(raw).filter(([key]) => key !== slot));
+      delete layoutConfig.zones[slot];
+      delete layoutConfig.spans[slot];
+      formHandle.set("/manifest/members", nextMembers);
+      syncHtmlIfManaged(nextMembers);
+    }
+
+    function toggleMemberZone(slot) {
+      layoutConfig.zones = {
+        ...layoutConfig.zones,
+        [slot]: layoutConfig.zones[slot] === "side" ? "main" : "side",
+      };
+      onLayoutSettingChanged();
+    }
+
+    function setMemberSpan(slot, span) {
+      layoutConfig.spans = {
+        ...layoutConfig.spans,
+        [slot]: Number(span) || 1,
+      };
+      onLayoutSettingChanged();
+    }
     const pickedProjectionLabel = usePanelOutput("memberProjectionPicker", "selectedLabel");
     const pickedPanelLabel = usePanelOutput("memberPanelPicker", "selectedLabel");
     const pickedMemberId = computed(() =>
@@ -377,7 +578,10 @@ const PanelDetail = {
         return;
       }
       const target = memberKind.value === "panel" ? { panelId: candidateId } : { projectionId: candidateId };
-      formHandle.set("/manifest/members", { ...current, [slotName]: { target } });
+      const nextMembers = { ...current, [slotName]: { target } };
+      layoutConfig.zones = { ...layoutConfig.zones, [slotName]: memberAddZone.value === "side" ? "side" : "main" };
+      formHandle.set("/manifest/members", nextMembers);
+      syncHtmlIfManaged(nextMembers);
       memberSlotName.value = "";
       memberError.value = "";
       state.setState({ memberPickProjection: null, memberPickPanel: null });
@@ -472,6 +676,45 @@ const PanelDetail = {
     function runDeletePanel() {
       if (!canRunDelete.value) return;
       void deletePanelOp.run();
+    }
+
+    // PN-04: Bound "Set as personal home" operation on the currently viewed available panel.
+    const setAsHomeOp = usePanelOperation("setAsHome", "setAsHome", {
+      available: () =>
+        Boolean(selectedKey.value)
+        && recordReady.value
+        && !recordUnavailable.value
+        && !showEditForm.value,
+      onSettled: (answer) => {
+        if (!answer || answer.decision !== "confirm") return;
+        const outcome = answer.response?.kind === "dispatched" ? answer.response.outcome : null;
+        if (outcome?.kind === "success") {
+          notify({ kind: "success", text: outcome.message || t("action.setAsHomeDone") });
+        } else if (outcome?.message) {
+          notify({ kind: "error", text: outcome.message });
+        }
+      },
+      onError: (reason) => {
+        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
+      },
+    });
+    const setAsHomeDescriptor = computed(() =>
+      setAsHomeOp.state.value.status === "ready" ? (setAsHomeOp.state.value.value?.setAsHome ?? null) : null,
+    );
+    const canSetAsHome = computed(
+      () =>
+        Boolean(selectedKey.value)
+        && recordReady.value
+        && !recordUnavailable.value
+        && !showEditForm.value
+        && Boolean(setAsHomeDescriptor.value)
+        && !setAsHomeDescriptor.value.unavailable,
+    );
+    const setAsHomeRunning = computed(() => setAsHomeOp.running.value);
+
+    function runSetAsHome() {
+      if (!canSetAsHome.value) return;
+      void setAsHomeOp.run();
     }
 
     // Copy / Save as template / Create from template dialog state aligned with detail entry conditions.
@@ -731,8 +974,22 @@ const PanelDetail = {
     });
 
     function cancelEditGuarded() {
-      void formBack.back();
+      return formBack.back();
     }
+
+    // PN-06: Unify Cancel and Discard into one guarded exit action without double confirmation.
+    const headerDraft = computed(() => {
+      const draft = editDraft.value;
+      if (!draft) return null;
+      return {
+        ...draft,
+        confirmDiscard: false,
+        discard: () => cancelEditGuarded(),
+      };
+    });
+    const headerDraftLabels = computed(() => ({
+      discard: t("action.cancel"),
+    }));
 
     // Route back to the catalog entry so the platform's unified unsaved-changes guard intercepts dirty edits.
     function goBack() {
@@ -788,7 +1045,12 @@ const PanelDetail = {
       showEditForm,
       pendingAutoEdit,
       editDraft,
+      headerDraft,
+      headerDraftLabels,
       shouldMountPreview,
+      canSetAsHome,
+      setAsHomeRunning,
+      runSetAsHome,
       canRunDelete,
       deleteRunning,
       runDeletePanel,
@@ -798,8 +1060,22 @@ const PanelDetail = {
       memberKind,
       memberKindOptions,
       memberSlotName,
+      memberAddZone,
       memberError,
       canPickMembers,
+      layoutModeOptions,
+      layoutConfig,
+      isLayoutManagedHtml,
+      editableMemberItems,
+      mainZoneMembers,
+      sideZoneMembers,
+      layoutPreviewStyle,
+      applyVisualLayoutToHtml,
+      onLayoutSettingChanged,
+      moveDraftMember,
+      removeDraftMember,
+      toggleMemberZone,
+      setMemberSpan,
       pickedMemberId,
       pickedMemberLabel,
       canAddPickedMember,

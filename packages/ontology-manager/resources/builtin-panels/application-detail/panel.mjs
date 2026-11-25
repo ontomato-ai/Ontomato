@@ -7,6 +7,7 @@ import {
   usePanelOutput,
 } from "@ontomato/sdk/panel";
 
+const APPLICATION = "platform:Application";
 const PANEL = "platform:ProductPanel";
 const PROJECTION = "platform:ProductProjection";
 const CATALOG_PATH = "/ontology/applications";
@@ -43,6 +44,31 @@ const ApplicationDetailPanel = {
       get: () => values.value.grantDialog === true,
       set: (open) => instance.state.set("grantDialog", open ? true : null),
     });
+    const copyDialogOpen = computed({
+      get: () => values.value.copyDialog === true,
+      set: (open) => instance.state.set("copyDialog", open ? true : false),
+    });
+    const copyNameSeededFor = ref("");
+    watch(
+      [copyDialogOpen, selectedKey, () => instance.forms.handle("copyForm")?.values.value?.declaration?.names],
+      ([open, key, names]) => {
+        if (!open || !key) {
+          copyNameSeededFor.value = "";
+          return;
+        }
+        if (copyNameSeededFor.value === key || !names || typeof names !== "object") return;
+        const handle = instance.forms.handle("copyForm");
+        if (!handle) return;
+        const entries = Object.entries(names).filter(([, v]) => typeof v === "string" && v.trim());
+        if (!entries.length) return;
+        copyNameSeededFor.value = key;
+        const nextNames = Object.fromEntries(
+          entries.map(([lang, text]) => [lang, t("copy.suffix", { name: text.trim() })]),
+        );
+        handle.set("/declaration/names", nextNames);
+      },
+      { deep: true },
+    );
     const grantPrincipalKindModel = computed({
       get: () => (values.value.grantPrincipalKind === "role" ? "role" : "principal"),
       set: (next) => {
@@ -278,6 +304,33 @@ const ApplicationDetailPanel = {
       }
     }
 
+    function openCopyDialog() {
+      if (!selectedKey.value || !recordReady.value) return;
+      copyNameSeededFor.value = "";
+      instance.state.set("copyDialog", true);
+    }
+
+    function closeCopyDialog() {
+      copyNameSeededFor.value = "";
+      instance.state.set("copyDialog", false);
+    }
+
+    function onCopied(saved) {
+      copyNameSeededFor.value = "";
+      instance.state.setState({
+        copyDialog: false,
+        ...(saved?.primaryKey ? { selected: { className: APPLICATION, primaryKey: saved.primaryKey } } : {}),
+      });
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("notify.copied") });
+    }
+
+    function onUsedPanelRowAction({ id, ref: rowRef }) {
+      if (id === "openPanel" && rowRef?.primaryKey) {
+        openPanelCatalogue(rowRef.primaryKey);
+      }
+    }
+
     function openPanelCatalogue(panelId) {
       if (!panelId) return;
       void openCatalogueRecord("/ontology/panels/detail", panelId);
@@ -305,6 +358,7 @@ const ApplicationDetailPanel = {
       entriesBulkMode,
       editingEntryId,
       entryDialogOpen,
+      copyDialogOpen,
       grantDialogOpen,
       grantPrincipalKindModel,
       grantVerbModel,
@@ -337,6 +391,10 @@ const ApplicationDetailPanel = {
       openGrantDialog,
       onGrantAdded,
       openApplication,
+      openCopyDialog,
+      closeCopyDialog,
+      onCopied,
+      onUsedPanelRowAction,
       openPanelCatalogue,
       onNavigateReference,
     };

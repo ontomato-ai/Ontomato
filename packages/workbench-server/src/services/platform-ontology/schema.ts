@@ -71,6 +71,8 @@ export {
   WORKFLOW,
 };
 
+export const ALL_PLATFORM_ONTOLOGY_TYPES = ONTOLOGY_TYPE;
+
 export const PLATFORM_ONTOLOGY_LAYERS: readonly PlatformOntologyLayer[] = platformOntologyLayers;
 
 export const PLATFORM_ONTOLOGY_TYPES: readonly PlatformOntologyType[] = Object.entries(platformObjectTypes)

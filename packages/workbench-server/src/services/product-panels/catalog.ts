@@ -225,17 +225,31 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   ]);
   const total = countRows[0]?.total ?? 0;
   const unavailableItems: { id: string; reason: string; revision?: number }[] = [];
-  const items = rows.slice(0, input.limit).flatMap(({ sortKey: _sortKey, definition, domainId, createdAt, updatedAt, template, ...row }) => {
-    const summary = {
+  type ListedProductItem = {
+    id: string;
+    ownerId: string | null;
+    name: string;
+    description: string;
+    visibility: ProductVisibility;
+    revision: number;
+    updatedAt: string;
+    editable: boolean;
+    componentId?: string;
+    template?: boolean;
+    objectTypes?: string[];
+    memberCount?: number;
+  };
+  const items: ListedProductItem[] = rows.slice(0, input.limit).flatMap<ListedProductItem>(({ sortKey: _sortKey, definition, domainId, createdAt, updatedAt, template, ...row }) => {
+    const summary: ListedProductItem = {
       ...row, ...(template == null ? {} : { template }), updatedAt: updatedAt.toISOString(),
       editable: row.ownerId !== null && edited.has(row.id),
     };
     if (!panelCatalog) {
       return [{ ...summary, objectTypes: projectionBoundObjectTypes(definition) }];
     }
-    const { unavailable } = cataloguePanel(owner, { ...row, definition, domainId, createdAt, updatedAt }, summary.editable);
-    if (!unavailable) return [summary];
-    unavailableItems.push(unavailable);
+    const { panel, unavailable } = cataloguePanel(owner, { ...row, definition, domainId, createdAt, updatedAt }, summary.editable);
+    if (!unavailable && panel) return [{ ...summary, memberCount: Object.keys(panel.manifest.members).length }];
+    if (unavailable) unavailableItems.push(unavailable);
     return [];
   });
   const last = rows[input.limit - 1];

@@ -14,7 +14,7 @@
           "kind": "scalar",
           "type": "boolean"
         },
-        "deepLink": false,
+        "deepLink": true,
         "default": false
       },
       "detailPath": {
@@ -46,9 +46,9 @@
           "noMatchText": "agents.noMatch",
           "columns": [
             {
-              "key": "label",
+              "key": "agentTitle",
               "labelKey": "col.name",
-              "minWidth": 200
+              "minWidth": 220
             },
             {
               "key": "category",
@@ -100,6 +100,8 @@
         "agents.empty": "No agents yet.",
         "agents.noMatch": "No matching agents.",
         "agents.created": "Agent created.",
+        "agents.createForbidden": "Creating agents requires the analysis-agent permission.",
+        "agents.createUnavailable": "Unable to verify agent creation permission right now.",
         "agents.accessDenied": "Reading and changing agent definitions requires the analysis-agent permission.",
         "search.placeholder": "Search agents by name, category or description",
         "col.name": "Name",
@@ -116,6 +118,8 @@
         "agents.empty": "暂无智能体。",
         "agents.noMatch": "未找到匹配的智能体。",
         "agents.created": "智能体已创建。",
+        "agents.createForbidden": "新建智能体需要 analysis-agent（业务智能体）权限。",
+        "agents.createUnavailable": "暂时无法校验新建智能体权限。",
         "agents.accessDenied": "读取和修改智能体定义需要 analysis-agent（业务智能体）权限。",
         "search.placeholder": "按名称、分类或说明搜索智能体",
         "col.name": "名称",
@@ -132,6 +136,8 @@
         "agents.empty": "尚無智慧體。",
         "agents.noMatch": "未找到相符的智慧體。",
         "agents.created": "已建立智慧體。",
+        "agents.createForbidden": "建立智慧體需要 analysis-agent 權限。",
+        "agents.createUnavailable": "暫時無法驗證建立智慧體權限。",
         "agents.accessDenied": "讀取與修改智慧體定義需要 analysis-agent 權限。",
         "search.placeholder": "依名稱、分類或說明搜尋智慧體",
         "col.name": "名稱",
@@ -148,6 +154,8 @@
         "agents.empty": "エージェントはまだありません。",
         "agents.noMatch": "一致するエージェントはありません。",
         "agents.created": "エージェントを作成しました。",
+        "agents.createForbidden": "エージェントの作成には analysis-agent 権限が必要です。",
+        "agents.createUnavailable": "エージェント作成権限を確認できませんでした。",
         "agents.accessDenied": "エージェント定義の参照・変更には analysis-agent 権限が必要です。",
         "search.placeholder": "名前・分類・説明でエージェントを検索",
         "col.name": "名前",
@@ -164,6 +172,8 @@
         "agents.empty": "لا يوجد وكلاء بعد.",
         "agents.noMatch": "لا يوجد وكلاء مطابقون.",
         "agents.created": "تم إنشاء الوكيل.",
+        "agents.createForbidden": "يتطلب إنشاء الوكلاء صلاحية analysis-agent.",
+        "agents.createUnavailable": "تعذر التحقق من صلاحية إنشاء الوكلاء حاليًا.",
         "agents.accessDenied": "تتطلب قراءة تعريفات الوكلاء وتعديلها صلاحية analysis-agent.",
         "search.placeholder": "ابحث عن الوكلاء بالاسم أو الفئة أو الوصف",
         "col.name": "الاسم",
@@ -180,6 +190,8 @@
         "agents.empty": "Aucun agent pour le moment.",
         "agents.noMatch": "Aucun agent correspondant.",
         "agents.created": "Agent créé.",
+        "agents.createForbidden": "La création d'agents nécessite l'autorisation analysis-agent.",
+        "agents.createUnavailable": "Impossible de vérifier l'autorisation de création d'agent pour le moment.",
         "agents.accessDenied": "La lecture et la modification des définitions d'agents nécessitent l'autorisation analysis-agent.",
         "search.placeholder": "Rechercher par nom, catégorie ou description",
         "col.name": "Nom",
@@ -196,6 +208,8 @@
         "agents.empty": "Noch keine Agenten.",
         "agents.noMatch": "Keine passenden Agenten.",
         "agents.created": "Agent erstellt.",
+        "agents.createForbidden": "Zum Erstellen von Agenten ist die Berechtigung analysis-agent erforderlich.",
+        "agents.createUnavailable": "Die Berechtigung zum Erstellen von Agenten konnte derzeit nicht geprüft werden.",
         "agents.accessDenied": "Zum Lesen und Ändern von Agentendefinitionen ist die Berechtigung analysis-agent erforderlich.",
         "search.placeholder": "Agenten nach Name, Kategorie oder Beschreibung suchen",
         "col.name": "Name",
@@ -212,6 +226,8 @@
         "agents.empty": "Nessun agente presente.",
         "agents.noMatch": "Nessun agente corrispondente.",
         "agents.created": "Agente creato.",
+        "agents.createForbidden": "La creazione degli agenti richiede l'autorizzazione analysis-agent.",
+        "agents.createUnavailable": "Impossibile verificare l'autorizzazione alla creazione dell'agente in questo momento.",
         "agents.accessDenied": "La lettura e la modifica delle definizioni degli agenti richiedono l'autorizzazione analysis-agent.",
         "search.placeholder": "Cerca agenti per nome, categoria o descrizione",
         "col.name": "Nome",

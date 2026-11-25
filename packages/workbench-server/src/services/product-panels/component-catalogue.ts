@@ -141,6 +141,17 @@ function formatSdkPortType(
   }
 }
 
+const MAX_CATALOGUE_BINDS_ELEMENT = 3;
+
+function summarizeBindsElement(bindsElement: readonly string[] | undefined): string[] | undefined {
+  if (!bindsElement?.length) return undefined;
+  if (bindsElement.length <= MAX_CATALOGUE_BINDS_ELEMENT) return [...bindsElement];
+  return [
+    ...bindsElement.slice(0, MAX_CATALOGUE_BINDS_ELEMENT),
+    `+${bindsElement.length - MAX_CATALOGUE_BINDS_ELEMENT}`,
+  ];
+}
+
 export async function countSdkComponents(owner: ProductOwner) {
   return { rows: [], total: (await readAuthorComponentCatalogue(owner)).size };
 }
@@ -186,6 +197,7 @@ export async function listSdkComponents(
     ) {
       continue;
     }
+    const summarizedBindsElement = summarizeBindsElement(bindsElement);
     matched.push({
       rank: sdkComponentGroupRank(group),
       record: {
@@ -197,7 +209,7 @@ export async function listSdkComponents(
           panelUsable: panelUsableLabel,
           ...(groupLabel && { group: groupLabel }),
         },
-        ...(bindsElement?.length ? { tags: { bindsElement: [...bindsElement] } } : {}),
+        ...(summarizedBindsElement ? { tags: { bindsElement: summarizedBindsElement } } : {}),
         tones: {
           role: role === "control" ? "info" : "default",
           panelUsable: panelUsable ? "success" : "default",

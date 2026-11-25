@@ -280,13 +280,95 @@
       border-bottom: 1px solid var(--sdk-border-color, var(--ui-border));
     }
   }
+
+  .pd-layout-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+  .pd-layout-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .pd-layout-control {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .pd-layout-preview {
+    display: grid;
+    min-width: 0;
+    padding: var(--spacing-sm);
+    border: 1px dashed var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-sm);
+    background: var(--sdk-fill-color-lighter, var(--sdk-bg-color));
+  }
+  .pd-layout-zone {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-sm);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .pd-layout-zone-title {
+    margin: 0;
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-secondary);
+  }
+  .pd-layout-member-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-sm);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .pd-layout-member-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .pd-layout-member-slot {
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .pd-layout-member-target {
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+    overflow-wrap: anywhere;
+  }
+  .pd-layout-member-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
 </style>
 
 <div id="app" v-cloak>
   <section class="pd-detail-page">
     <page-header
       :back-label="t('action.back')"
-      :draft="editDraft"
+      :draft="headerDraft"
+      :labels="headerDraftLabels"
       @back="goBack"
     >
       <template #title>
@@ -295,10 +377,10 @@
       </template>
       <template #actions>
         <template v-if="selectedKey && recordReady">
-          <!-- Edit mode: Cancel + Save/Discard (driven by :draft="editDraft") -->
+          <!-- Edit mode: unified single exit action (clean shows Cancel here; dirty hands off to PageHeader's Cancel/Save) -->
           <sdk-button
-            v-if="showEditForm"
-            :disabled="Boolean(editDraft && editDraft.saving)"
+            v-if="showEditForm && !(headerDraft && headerDraft.dirty)"
+            :disabled="Boolean(headerDraft && headerDraft.saving)"
             @click="cancelEditGuarded"
           >
             {{ t('action.cancel') }}
@@ -315,8 +397,11 @@
             {{ t('action.delete') }}
           </sdk-button>
 
-          <!-- Available panel view mode: primary Edit + More menu -->
-          <template v-else-if="!recordUnavailable">
+          <!-- Available panel view mode: Set as personal home + primary Edit + More menu -->
+          <template v-else-if="!recordUnavailable && !showEditForm">
+            <sdk-button v-if="canSetAsHome" :loading="setAsHomeRunning" @click="runSetAsHome">
+              {{ t('action.setAsHome') }}
+            </sdk-button>
             <sdk-button v-if="canEdit" type="primary" @click="startEdit">{{ t('action.edit') }}</sdk-button>
             <sdk-dropdown v-if="hasMoreActions" trigger="click" placement="bottom-end" @command="onMoreCommand">
               <sdk-button>
@@ -412,12 +497,126 @@
                 :placeholder="t('members.slotPlaceholder')"
                 :aria-label="t('members.slotPlaceholder')"
               ></sdk-input>
+              <sdk-select
+                v-if="layoutConfig.mode === 'main-side'"
+                v-model="memberAddZone"
+                size="small"
+                style="width: 6.5rem;"
+              >
+                <sdk-option value="main" :label="t('layout.zoneMain')"></sdk-option>
+                <sdk-option value="side" :label="t('layout.zoneSide')"></sdk-option>
+              </sdk-select>
               <sdk-button type="primary" size="small" :disabled="!canAddPickedMember" @click="addPickedMember">
                 {{ t('members.addExisting') }}
               </sdk-button>
             </div>
           </div>
           <p v-if="memberError" class="pd-error" role="alert">{{ memberError }}</p>
+        </section>
+
+        <!-- PN-05: Visual layout controls, member reorder/zone/span/remove, and live layout preview -->
+        <section v-if="canPickMembers" class="pd-layout-section">
+          <div class="pd-section-bar">
+            <h2 class="pd-section-title">{{ t('layout.title') }}</h2>
+            <sdk-button size="small" plain @click="applyVisualLayoutToHtml">
+              {{ t('layout.applyHtml') }}
+            </sdk-button>
+          </div>
+          <div class="pd-layout-controls">
+            <span class="pd-layout-control">
+              <span>{{ t('layout.mode') }}</span>
+              <sdk-segmented v-model="layoutConfig.mode" :options="layoutModeOptions" size="small" @change="onLayoutSettingChanged"></sdk-segmented>
+            </span>
+            <span v-if="layoutConfig.mode === 'grid'" class="pd-layout-control">
+              <span>{{ t('layout.columns') }}</span>
+              <sdk-select v-model="layoutConfig.columns" size="small" style="width: 5.5rem;" @change="onLayoutSettingChanged">
+                <sdk-option :value="1" label="1"></sdk-option>
+                <sdk-option :value="2" label="2"></sdk-option>
+                <sdk-option :value="3" label="3"></sdk-option>
+                <sdk-option :value="4" label="4"></sdk-option>
+              </sdk-select>
+            </span>
+            <span v-else class="pd-layout-control">
+              <span>{{ t('layout.sideWidth') }}</span>
+              <sdk-select v-model="layoutConfig.sideWidth" size="small" style="width: 6.5rem;" @change="onLayoutSettingChanged">
+                <sdk-option value="280px" label="280px"></sdk-option>
+                <sdk-option value="320px" label="320px"></sdk-option>
+                <sdk-option value="360px" label="360px"></sdk-option>
+                <sdk-option value="400px" label="400px"></sdk-option>
+              </sdk-select>
+            </span>
+            <span class="pd-layout-control">
+              <span>{{ t('layout.gap') }}</span>
+              <sdk-select v-model="layoutConfig.gap" size="small" style="width: 6rem;" @change="onLayoutSettingChanged">
+                <sdk-option :value="8" label="8px"></sdk-option>
+                <sdk-option :value="12" label="12px"></sdk-option>
+                <sdk-option :value="16" label="16px"></sdk-option>
+                <sdk-option :value="24" label="24px"></sdk-option>
+              </sdk-select>
+            </span>
+          </div>
+          <p class="pd-muted">{{ isLayoutManagedHtml ? t('layout.managedHint') : t('layout.customSourceHint') }}</p>
+
+          <p v-if="editableMemberItems.length === 0" class="pd-muted">{{ t('layout.emptyMembers') }}</p>
+          <div v-else-if="layoutConfig.mode === 'main-side'" class="pd-layout-preview" :style="layoutPreviewStyle">
+            <div class="pd-layout-zone">
+              <h3 class="pd-layout-zone-title">{{ t('layout.zoneMain') }}</h3>
+              <div v-for="item in mainZoneMembers" :key="item.slot" class="pd-layout-member-card">
+                <div class="pd-layout-member-meta">
+                  <span class="pd-layout-member-slot">{{ item.slot }}</span>
+                  <span class="pd-layout-member-target">{{ item.targetText }}</span>
+                </div>
+                <div class="pd-layout-member-actions">
+                  <sdk-button size="small" text @click="toggleMemberZone(item.slot)">{{ t('layout.zoneSide') }}</sdk-button>
+                  <sdk-button size="small" text :disabled="item.index === 0" @click="moveDraftMember(item.slot, -1)">{{ t('layout.moveUp') }}</sdk-button>
+                  <sdk-button size="small" text :disabled="item.index === editableMemberItems.length - 1" @click="moveDraftMember(item.slot, 1)">{{ t('layout.moveDown') }}</sdk-button>
+                  <sdk-button size="small" type="danger" text @click="removeDraftMember(item.slot)">{{ t('layout.remove') }}</sdk-button>
+                </div>
+              </div>
+            </div>
+            <div class="pd-layout-zone">
+              <h3 class="pd-layout-zone-title">{{ t('layout.zoneSide') }}</h3>
+              <div v-for="item in sideZoneMembers" :key="item.slot" class="pd-layout-member-card">
+                <div class="pd-layout-member-meta">
+                  <span class="pd-layout-member-slot">{{ item.slot }}</span>
+                  <span class="pd-layout-member-target">{{ item.targetText }}</span>
+                </div>
+                <div class="pd-layout-member-actions">
+                  <sdk-button size="small" text @click="toggleMemberZone(item.slot)">{{ t('layout.zoneMain') }}</sdk-button>
+                  <sdk-button size="small" text :disabled="item.index === 0" @click="moveDraftMember(item.slot, -1)">{{ t('layout.moveUp') }}</sdk-button>
+                  <sdk-button size="small" text :disabled="item.index === editableMemberItems.length - 1" @click="moveDraftMember(item.slot, 1)">{{ t('layout.moveDown') }}</sdk-button>
+                  <sdk-button size="small" type="danger" text @click="removeDraftMember(item.slot)">{{ t('layout.remove') }}</sdk-button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="pd-layout-preview" :style="layoutPreviewStyle">
+            <div
+              v-for="item in editableMemberItems"
+              :key="item.slot"
+              class="pd-layout-member-card"
+              :style="{ gridColumn: 'span ' + Math.min(item.span, layoutConfig.columns) }"
+            >
+              <div class="pd-layout-member-meta">
+                <span class="pd-layout-member-slot">{{ item.slot }}</span>
+                <span class="pd-layout-member-target">{{ item.targetText }}</span>
+              </div>
+              <div class="pd-layout-member-actions">
+                <sdk-select
+                  :model-value="Math.min(item.span, layoutConfig.columns)"
+                  size="small"
+                  style="width: 4.5rem;"
+                  :aria-label="t('layout.span')"
+                  @update:model-value="setMemberSpan(item.slot, $event)"
+                >
+                  <sdk-option v-for="n in layoutConfig.columns" :key="n" :value="n" :label="n + '/' + layoutConfig.columns"></sdk-option>
+                </sdk-select>
+                <sdk-button size="small" text :disabled="item.index === 0" @click="moveDraftMember(item.slot, -1)">{{ t('layout.moveUp') }}</sdk-button>
+                <sdk-button size="small" text :disabled="item.index === editableMemberItems.length - 1" @click="moveDraftMember(item.slot, 1)">{{ t('layout.moveDown') }}</sdk-button>
+                <sdk-button size="small" type="danger" text @click="removeDraftMember(item.slot)">{{ t('layout.remove') }}</sdk-button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <div class="pd-card pd-form-wrap">

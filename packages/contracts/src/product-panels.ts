@@ -589,7 +589,11 @@ const builtinProductCurrentSummarySchema = productCurrentSummarySchema.extend({
   visibility: builtinVisibility,
   editable: builtinProductRecordFields.editable,
 });
-const panelSummaryFields = panelDefinitionContentSchema.pick({ template: true }).shape;
+const panelSummaryFields = {
+  ...panelDefinitionContentSchema.pick({ template: true }).shape,
+  /** Derived count of declared members in the panel's manifest. */
+  memberCount: z.number().int().nonnegative().optional(),
+};
 const projectionSummaryFields = {
   ...projectionDefinition.pick({ componentId: true }).shape,
   /** Derived object types bound by the projection's existing data, operation, or chart bindings. */
