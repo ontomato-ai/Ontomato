@@ -78,7 +78,10 @@ async function readJson(res) {
   const text = await res.text();
   if (!res.ok) throw new Error(`${res.status}\n${text}`);
   const json = JSON.parse(text);
-  if (json?.success === false || json?.error) throw new Error(json.message ?? json.error?.message ?? json.error);
+  if (json?.success === false || json?.error) {
+    const detail = json.message ?? json.error?.message ?? json.error;
+    throw new Error(json.code ? `${json.code}: ${detail}` : detail);
+  }
   return json;
 }
 
@@ -171,49 +174,42 @@ async function runAuthorTest(author, input) {
   if (result.error) throw new Error(result.error);
 }
 
-async function generateAsset(api, prefix, args, workspaceId) {
-  const kind = prefix === "action" ? "action" : "metric-view";
+async function generateMetricView(api, args, workspaceId) {
   const save = takeFlag(args, "--save");
-  const sample = kind === "action" ? takeOption(args, "--sample") : null;
-  if (kind === "action" && save) {
-    if (args.length !== 1 || sample !== null) die("Usage: action generate --save <definition JSON or @file>");
-    return printData(await requestJson({ ...api, executionContext: undefined }, "POST", "/action/save",
-      JSON.parse(readInput(args[0]))));
-  }
-  if (args.length !== 1 || (kind === "action" && sample === null)) {
-    const sampleOption = kind === "action" ? " --sample <JSON or @file>" : "";
-    die(`Usage: ${kind} generate [--save]${sampleOption} <definition JSON or @file>`);
-  }
+  if (args.length !== 1) die("Usage: metric-view generate [--save] <definition JSON or @file>");
   const definition = JSON.parse(readInput(args[0]));
-  const fixtures = kind === "action" ? JSON.parse(readInput(sample)) : undefined;
-  const accepted = await withAuthoring(api, kind, workspaceId, async author => {
-    const definitionFunction = definition.function;
-    if (kind === "action") {
-      const input = { code: definitionFunction.code, parameterDefs: definitionFunction.parameters ?? [] };
-      await author("prepare", fixtures);
-      await author("reset", {});
-      await runAuthorTest(author, input);
-      const { explanationRef } = await author("explain-draft", input);
-      definition.explanationRef = explanationRef;
-    } else {
-      const { queryPackage } = definitionFunction;
-      const columnLabels = definitionFunction.returnDef?.columnLabels;
-      await runAuthorTest(author, { queryPackage, columnLabels });
-      for (const binding of definition.bindings ?? []) {
-        const bound = structuredClone(queryPackage);
-        for (const parameter of bound.manifest.parameterDefs) {
-          parameter.value = binding.parameters[parameter.name];
-        }
-        await runAuthorTest(author, { queryPackage: bound, columnLabels });
+  const accepted = await withAuthoring(api, "metric-view", workspaceId, async author => {
+    const { queryPackage, returnDef } = definition.function;
+    const columnLabels = returnDef?.columnLabels;
+    await runAuthorTest(author, { queryPackage, columnLabels });
+    for (const binding of definition.bindings ?? []) {
+      const bound = structuredClone(queryPackage);
+      for (const parameter of bound.manifest.parameterDefs) {
+        parameter.value = binding.parameters[parameter.name];
       }
+      await runAuthorTest(author, { queryPackage: bound, columnLabels });
     }
     return (await author("adopt", { definition })).definition;
   });
   if (save) {
-    printData(await requestJson({ ...api, executionContext: undefined }, "POST", `/${prefix}/save`, accepted));
+    printData(await requestJson({ ...api, executionContext: undefined }, "POST", "/metricView/save", accepted));
   } else {
     print(accepted);
   }
+}
+
+async function trialAction(api, args) {
+  const sample = takeOption(args, "--sample");
+  const parameters = takeOption(args, "--parameters");
+  if (args.length !== 1) {
+    die("Usage: action trial <id> [--sample <JSON or @file>] [--parameters <JSON or @file>]");
+  }
+  const body = { id: args[0] };
+  if (sample !== null) body.sample = JSON.parse(readInput(sample));
+  if (parameters !== null) body.parameters = JSON.parse(readInput(parameters));
+  const response = await requestJson({ ...api, executionContext: undefined }, "POST", "/action/trial", body);
+  printData(response);
+  if (response.data?.passed === false) process.exitCode = 1;
 }
 
 async function assetCommand(api, prefix, argv, workspaceId) {
@@ -224,7 +220,8 @@ async function assetCommand(api, prefix, argv, workspaceId) {
     const kind = prefix === "action" ? "action" : "metric-view";
     return print(await withAuthoring(api, kind, workspaceId, author => author("context")));
   }
-  if (sub === "generate") return generateAsset(api, prefix, rest, workspaceId);
+  if (sub === "generate" && prefix === "metricView") return generateMetricView(api, rest, workspaceId);
+  if (sub === "trial" && prefix === "action") return trialAction(api, rest);
   if (sub === "execute") {
     const bindingId = prefix === "metricView" ? takeOption(rest, "--binding") : null;
     const files = [];
@@ -643,8 +640,7 @@ function usage() {
   metric-view publish <id>
   metric-view delete <id>
   action context [--workspace <id>]
-  action generate --sample <JSON or @file> <definition JSON or @file>
-  action generate --save <definition JSON or @file>
+  action trial <id> [--sample <json|@file>] [--parameters <json|@file>]
   action find|get|save|publish|delete ...   (same arguments as metric-view)
   action re-explain [--missing] [--id <id> ...]
   action execute <id> [<param json|@file>] [--file <path> ...]`);
@@ -699,7 +695,8 @@ async function main() {
   if (cmd === "agent" && process.env.ONTOMATO_SKILL_SCENARIO === "platform") {
     return analystCommand({}, argv);
   }
-  const platformAuthoring = ["action", "metric-view"].includes(cmd) && ["context", "generate"].includes(argv[1])
+  const platformAuthoring = ((cmd === "metric-view" && ["context", "generate"].includes(argv[1]))
+    || (cmd === "action" && argv[1] === "context"))
     && isPlatformAuthoring();
   async function commandApi() {
     const cfg = loadConfig();

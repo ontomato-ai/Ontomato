@@ -5,15 +5,14 @@
 ## 页面在看什么
 
 - 单行 `<page-header>`：
-  - **查看态**：左侧「返回投影」返回 `/ontology/projections` + 投影名称与共享范围状态（`headerTitle`）；右侧主按钮「编辑」（仅可编辑时显示）+「更多」菜单（含「查看所属类」、复制、权限与共享、删除）。
-  - **编辑态**：右侧切换为「取消／保存」（由 `usePanelFormDraft("form")` 驱动脏态、禁用、放弃与保存），取消或离开有未保存改动时走平台统一的未保存离开确认弹窗。
+  - **查看态**：左侧「返回投影」返回 `/ontology/projections` + 投影名称与共享范围状态（`headerTitle`）；右侧主按钮「编辑」（仅可编辑时显示）+「更多」菜单（含复制、权限与共享、删除；所属类可通过定义中的真实类引用到达）。
+  - **编辑态**：右侧收口为单一「取消／保存」退出与提交动作（由 `usePanelFormDraft("form")` 驱动脏态与保存，取消在有未保存改动时走统一离开确认弹窗，不再与放弃按钮重复出现）。
 - 地址深链只携带视图定位状态：`selected`、`tab`（`overview` / `definition` / `usage` / `grants`）。`detailMode`（默认 `"view"`，可切 `"edit"`）及弹窗状态（`copyDialog`、`grantDialog` 等）为公开状态（`deepLink: false`），智能体可读可改但不写入地址。
 - 查看态分四个标签：
-  - `overview`（概览与预览）：基础属性摘要（`summary`，组件引用可跳转）与原位预览（`preview` 槽位挂载当前选中投影）。
+  - `overview`（概览与预览）：基础属性摘要（`summary`，组件引用可跳转）与原位预览（`preview` 槽位挂载当前选中投影；当投影声明了对象主键或输入端口时，可在预览区输入并按 Enter／点击查看传入临时预览输入）。
   - `definition`（定义与绑定）：数据来处/读法/参数表（`dataList`，来处引用可跳转至能力图谱、对象类、关系类、行动或指标视图）、组件配置表（`configList`）、输入/输出端口表（`inputsList` / `outputsList`）、属主登记的操作表（`operationsList`），以及可展开的完整 JSON 定义（`definitionSummary`）。
   - `usage`（使用方）：列出当前读者可见的使用面板（`usedByList`，点击跳转到面板页），并在存在无权查看的使用面板时提示隐藏数量。
   - `grants`（权限与共享，仅可编辑时显示）：域内共享开关（`shareEnable` / `shareDisable`）、授权列表与行级撤销（`grantsList.revoke`），以及通过成员/角色选择器添加授权的弹窗（`grantSubmit`）。
-- 「查看所属类」打开能力图谱（`/ontology/assets/capability-map`）的类型列表，深链参数为 `mode=type&view=list&selectedType=platform:ProductProjection`。
 
 ## 读写都按读者的真实身份
 

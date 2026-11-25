@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import type { PanelRowOperationAvailability, PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import {
@@ -68,6 +69,7 @@ import {
   resolveOperationInputFields,
 } from "./operation-dispatch";
 import { isActionValuesEnvelope, wrapActionOperationInput, type OperationInputField } from "./operation-input-schema";
+import { displayFieldText } from "./record-field";
 import OperationInputDialog from "./OperationInputDialog.vue";
 
 /**
@@ -225,7 +227,7 @@ defineSlots<{
   empty?(): unknown;
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const member = useMember();
@@ -786,8 +788,7 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         label,
         icon: item.icon,
         iconOnly: item.iconOnly,
-        danger: Boolean(item.danger || item.tone === "danger"),
-        primary: Boolean(item.primary || item.tone === "primary"),
+        tone: item.tone ?? "default",
         disabled: false,
       });
       continue;
@@ -799,14 +800,15 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         key: `conv:${item.id}:${i}`,
         kind: "conversation",
         id: item.id,
-        prompt: item.prompt,
-        promptKey: item.promptKey,
-        agent: item.agent,
+        target: item.target,
+        conversationPrefill: item.prefill,
+        prefillKey: item.prefillKey,
+        submit: item.submit,
+        newSession: item.newSession,
         label,
         icon: item.icon ?? "Sparkles",
         iconOnly: item.iconOnly,
-        danger: Boolean(item.danger || item.tone === "danger"),
-        primary: Boolean(item.primary || item.tone === "primary"),
+        tone: item.tone ?? "default",
         disabled: false,
       });
       continue;
@@ -818,6 +820,14 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
     const unavailable = availability ? !availability.available : !descriptor;
     if (unavailable && item.hideWhenUnavailable) continue;
     const reason = availability?.unavailable?.reason ?? (descriptor ? undefined : t("platform.operationUnavailable"));
+    const binding = member.projection.operations?.[item.operation];
+    const opTarget = binding
+      ? resolveRowOperationTarget(binding, row, rowObjectType, member.inputs.value)
+      : { kind: "object" as const, objectType: row.className ?? rowObjectType, primaryKey: row.primaryKey };
+    const opKey = descriptor?.handlerRef ?? panel.instance.operationIdOf(slot.slot, item.operation);
+    const sharedBusy = descriptor?.effect !== "read"
+      && opTarget?.kind === "object"
+      && Boolean(panel.instance.isObjectWriteInFlight?.(opTarget, opKey));
     resolved.push({
       key: `op:${item.operation}:${i}`,
       kind: "operation",
@@ -825,8 +835,8 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
       label,
       icon: item.icon,
       iconOnly: item.iconOnly,
-      danger: Boolean(item.danger || item.tone === "danger"),
-      primary: Boolean(item.primary || item.tone === "primary"),
+      busy: sharedBusy,
+      tone: item.tone ?? (descriptor?.inspectImpact ? "danger" : "default"),
       prefill: item.prefill,
       disabled: unavailable,
       reason,
@@ -906,6 +916,14 @@ async function executeRowOperation(
   const target = resolveRowOperationTarget(binding, row, rowObjectType, member.inputs.value);
   if (target === undefined) return;
   const operationId = panel.instance.operationIdOf(slot.slot, operation);
+  const operationKey = descriptor.handlerRef ?? operationId;
+  if (
+    descriptor.effect !== "read"
+    && target?.kind === "object"
+    && panel.instance.isObjectWriteInFlight?.(target, operationKey)
+  ) {
+    return;
+  }
   const input: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
     ? wrapActionOperationInput(descriptor.inputSchema, boundInput, providedInput)
     : { ...providedInput, ...boundInput };
@@ -917,7 +935,11 @@ async function executeRowOperation(
       await panel.instance.readOperation(operationId, { target, input });
       return;
     }
-    const answer = await panel.instance.writeOperation(operationId, { call: { target, input } });
+    const answer = await panel.instance.writeOperation(
+      operationId,
+      { call: { target, input } },
+      { handlerRef: descriptor.handlerRef },
+    );
     if (answer.decision === "cancel" || !answer.response) return;
     const outcome = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
     if (outcome?.kind === "success") {
@@ -946,7 +968,77 @@ async function submitPendingInputDialog(values: Record<string, RuntimeJsonValue>
   });
 }
 
-function triggerRowAction(item: GroupedGridItem, action: ResolvedRowActionItem) {
+function resolveConversationTarget(action: ResolvedRowActionItem): PanelConversationEntry["target"] {
+  return action.target ?? slot.projection.conversationEntry?.target ?? { kind: "page-default" };
+}
+
+function resolveConversationPrefill(item: GroupedGridItem, action: ResolvedRowActionItem): string {
+  const ref = item.itemRef;
+  const refJson = JSON.stringify({ className: ref.className, primaryKey: ref.primaryKey });
+  const rawTemplate = (() => {
+    if (action.prefillKey !== undefined) {
+      const translated = panel.t(action.prefillKey, {
+        label: item.row.label,
+        primaryKey: ref.primaryKey,
+        className: ref.className,
+        ref: refJson,
+      });
+      if (translated !== action.prefillKey) return translated;
+    }
+    if (action.conversationPrefill !== undefined) return action.conversationPrefill;
+    const declared = slot.projection.conversationEntry;
+    if (declared?.prefillKey !== undefined) {
+      const keyed = panel.t(declared.prefillKey, {
+        label: item.row.label,
+        primaryKey: ref.primaryKey,
+        className: ref.className,
+        ref: refJson,
+      });
+      if (keyed !== declared.prefillKey) return keyed;
+    }
+    return declared?.prefill;
+  })();
+  const interpolated = rawTemplate !== undefined
+    ? rawTemplate.replace(/\{([^{}]+)\}/g, (_match, rawKey: string) => {
+        const key = rawKey.trim();
+        if (key === "primaryKey") return ref.primaryKey;
+        if (key === "className") return ref.className;
+        if (key === "label") return item.row.label;
+        if (key === "ref") return refJson;
+        return displayFieldText(item.row.fields[key], locale.value, t);
+      })
+    : "";
+  if (!interpolated.trim()) {
+    return `${item.row.label || ref.primaryKey} ${refJson}`;
+  }
+  if (!interpolated.includes(ref.primaryKey) || !interpolated.includes(ref.className)) {
+    return `${interpolated}\n${refJson}`;
+  }
+  return interpolated;
+}
+
+async function runConversationRowAction(item: GroupedGridItem, action: ResolvedRowActionItem, event?: MouseEvent) {
+  const target = resolveConversationTarget(action);
+  const prefill = resolveConversationPrefill(item, action);
+  const declared = slot.projection.conversationEntry;
+  const submit = action.submit ?? declared?.submit;
+  const newSession = action.newSession ?? declared?.newSession;
+  lastOpNotice.value = null;
+  try {
+    await panel.expandPageComposer({
+      slot: slot.slot,
+      target,
+      prefill,
+      ...(submit !== undefined ? { submit } : {}),
+      ...(newSession !== undefined ? { newSession } : {}),
+    }, event);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    lastOpNotice.value = { tone: "danger", message };
+  }
+}
+
+function triggerRowAction(item: GroupedGridItem, action: ResolvedRowActionItem, event?: MouseEvent) {
   if (action.kind === "local" && action.id) {
     const address = action.to ? resolveRowActionAddress(action.to, item.row, rowObjectType) : null;
     if (address) {
@@ -954,6 +1046,10 @@ function triggerRowAction(item: GroupedGridItem, action: ResolvedRowActionItem) 
       return;
     }
     emit("row-action", { id: action.id, ref: item.itemRef, index: item.rowIndex });
+    return;
+  }
+  if (action.kind === "conversation") {
+    void runConversationRowAction(item, action, event);
     return;
   }
   if (action.kind === "operation" && action.operation) {
@@ -1525,7 +1621,7 @@ const gridCssVars = computed(() => ({
                         :max-visible="rowActions?.maxVisible ?? 0"
                         :busy="rowOpRunning"
                         :row-label="item.title || item.primaryKey"
-                        @trigger="(action) => triggerRowAction(item, action)"
+                        @trigger="(action, ev) => triggerRowAction(item, action, ev)"
                       />
                     </div>
                   </div>

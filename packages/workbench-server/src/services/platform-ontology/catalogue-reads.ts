@@ -53,11 +53,52 @@ async function readTypeSignatures(type: string) {
   return (await assemblePlatformOntologySchemaTypes()).find(spec => spec.id === type)!;
 }
 
+export interface RelationKindDisplay {
+  readonly label: string;
+  readonly fromLabel: string;
+  readonly toLabel: string;
+  readonly endpoints: string;
+}
+
+/**
+ * Resolves owner-authoritative distinguishable labels and endpoint metadata for every declared relation kind.
+ * When a locale pack maps multiple relation kinds to the same text, prepends the source type label so filter items,
+ * graph edges, and relation panels remain unambiguous in every locale.
+ */
+export function createRelationKindDisplayMap(locale: string | undefined): ReadonlyMap<string, RelationKindDisplay> {
+  const text = (key: string) => tForLocale(locale, key);
+  const typeLabel = (typeId: string) => text(platformObjectTypes[typeId]?.labelKey ?? typeId);
+  const baseLabels = PLATFORM_ONTOLOGY_RELATION_KINDS.map((relation) => text(relation.labelKey));
+  const counts = new Map<string, number>();
+  for (const label of baseLabels) {
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  const display = new Map<string, RelationKindDisplay>();
+  PLATFORM_ONTOLOGY_RELATION_KINDS.forEach((relation, index) => {
+    const baseLabel = baseLabels[index]!;
+    const fromLabel = typeLabel(relation.from);
+    const targetLabels = relationTargets(relation).map(typeLabel);
+    const toLabel = targetLabels.length <= 3
+      ? targetLabels.join(" / ")
+      : `${targetLabels.slice(0, 2).join(" / ")} +${targetLabels.length - 2}`;
+    const label = (counts.get(baseLabel) ?? 0) > 1 ? `${fromLabel} · ${baseLabel}` : baseLabel;
+    display.set(relation.id, {
+      label,
+      fromLabel,
+      toLabel,
+      endpoints: `${fromLabel} → ${toLabel}`,
+    });
+  });
+  return display;
+}
+
 export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer: AssistantCredentials) {
   const text = (key: string) => tForLocale(viewer.locale, key);
   const word = (key: string) => text(`panels.platformOntology.${key}`);
+  const relationDisplay = createRelationKindDisplayMap(viewer.locale);
 
   function typeCatalogRow(spec: PlatformOntologyType): PanelRecord {
+    const hasDetails = Boolean(platformTypeDetails[spec.id]);
     return {
       className: ONTOLOGY_TYPE,
       primaryKey: spec.id,
@@ -66,6 +107,7 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
         typeId: spec.id,
         layer: text(`platformOntology.layers.${spec.layer}`),
         layerId: spec.layer,
+        ...(hasDetails && { definition: text(`${detailKey(spec.labelKey)}.definition`) }),
       },
       fieldLabels: {
         typeId: word("typeId"),
@@ -104,7 +146,7 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
   ): PanelRecord {
     return {
       primaryKey: `${direction}:${relation.id}:${peer}`,
-      label: text(relation.labelKey),
+      label: relationDisplay.get(relation.id)?.label ?? text(relation.labelKey),
       fields: {
         direction, relationKind: relation.id, peer,
         peerLabel: text(platformObjectTypes[peer].labelKey!),
@@ -214,14 +256,23 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
     },
 
     relationKinds(): PanelRecord[] {
-      return PLATFORM_ONTOLOGY_RELATION_KINDS.map(relation => ({
-        className: ONTOLOGY_RELATION_KIND,
-        primaryKey: relation.id,
-        label: text(relation.labelKey),
-        fields: {
-          id: relation.id, from: relation.from, to: relation.to, derived: relation.derived, owner: relation.owner,
-        },
-      }));
+      return PLATFORM_ONTOLOGY_RELATION_KINDS.map((relation) => {
+        const display = relationDisplay.get(relation.id);
+        return {
+          className: ONTOLOGY_RELATION_KIND,
+          primaryKey: relation.id,
+          label: display?.label ?? text(relation.labelKey),
+          ...(display ? { subtitle: display.endpoints } : {}),
+          fields: {
+            id: relation.id,
+            from: relation.from,
+            to: relation.to,
+            ...(display ? { fromLabel: display.fromLabel, toLabel: display.toLabel, endpoints: display.endpoints } : {}),
+            derived: relation.derived,
+            owner: relation.owner,
+          },
+        };
+      });
     },
   };
 }

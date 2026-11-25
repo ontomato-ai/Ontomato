@@ -64,7 +64,7 @@
                 "kind": "operation",
                 "operation": "remove",
                 "labelKey": "board.delete",
-                "danger": true
+                "tone": "danger"
               }
             ]
           }
@@ -184,7 +184,7 @@
                 "kind": "operation",
                 "operation": "deleteCard",
                 "labelKey": "card.delete",
-                "danger": true
+                "tone": "danger"
               }
             ]
           }

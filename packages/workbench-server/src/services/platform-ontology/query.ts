@@ -39,6 +39,7 @@ import {
 import {
   ACTION,
   AGENT_DEFINITION,
+  ALL_PLATFORM_ONTOLOGY_TYPES,
   APPLICATION,
   ATTRIBUTE,
   BUSINESS_KNOWLEDGE,
@@ -457,12 +458,23 @@ async function evaluateProductGrantRelation(
   return { status: "ok", edges: [] };
 }
 
+type SearchableOntologyObjectItem = PlatformOntologyObjectItem & { readonly searchText?: string };
+
+function toPublicObjectItem(item: SearchableOntologyObjectItem, detailOverride?: string): PlatformOntologyObjectItem {
+  const detail = detailOverride !== undefined ? detailOverride : item.detail;
+  return {
+    node: item.node,
+    label: item.label,
+    ...(detail !== undefined ? { detail } : {}),
+  };
+}
+
 /** Lists all objects of a single declared type for counts, object picker, and label lookup. */
 async function readObjectsOfType(
   readers: PlatformOntologyOwnerReaders,
   typeId: string,
   includeDomainShared = true,
-): Promise<OwnerReadResult<PlatformOntologyObjectItem[]> | { ok: false; status: "unavailable"; reason: string }> {
+): Promise<OwnerReadResult<SearchableOntologyObjectItem[]> | { ok: false; status: "unavailable"; reason: string }> {
 
   switch (typeId) {
     case OBJECT_TYPE: {
@@ -474,6 +486,7 @@ async function readObjectsOfType(
           node: { className: OBJECT_TYPE, primaryKey: cls.className },
           label: cls.showName || cls.classDesc || cls.className,
           detail: cls.className,
+          ...(cls.classDesc ? { searchText: cls.classDesc } : {}),
         })),
       };
     }
@@ -501,6 +514,7 @@ async function readObjectsOfType(
           node: { className: RELATIONSHIP, primaryKey: rel.relationship },
           label: rel.showName || rel.desc || rel.relationship,
           detail: rel.fromclass && rel.toclass ? `${rel.fromclass} → ${rel.toclass}` : undefined,
+          ...(rel.desc ? { searchText: rel.desc } : {}),
         })),
       };
     }
@@ -572,6 +586,7 @@ async function readObjectsOfType(
         data: res.data.map((skill) => ({
           node: { className: SKILL, primaryKey: skill.primaryKey },
           label: skill.title,
+          ...(skill.description ? { searchText: skill.description } : {}),
         })),
       };
     }
@@ -720,6 +735,7 @@ async function readObjectsOfType(
           node: { className: PRODUCT_PROJECTION, primaryKey: projection.id },
           label: projection.name,
           detail: projection.componentId,
+          ...(projection.description ? { searchText: projection.description } : {}),
         })),
       };
     }
@@ -835,9 +851,100 @@ export async function readPlatformOntologyObjects(
   credentials: AssistantCredentials,
   input: PlatformOntologyObjectsRequest,
 ): Promise<PlatformOntologyObjectsResponse> {
-  const spec = requireTypeSpec(input.type);
   const page = Math.max(1, input.page ?? 1);
   const pageSize = Math.min(200, Math.max(1, input.pageSize ?? 50));
+  const keyword = input.keyword?.trim().toLowerCase() ?? "";
+
+  if (input.type === ALL_PLATFORM_ONTOLOGY_TYPES || input.type === "*") {
+    if (!keyword) {
+      return {
+        type: input.type,
+        layer: "capability",
+        status: "ok",
+        items: [],
+        total: 0,
+        page,
+        pageSize,
+      };
+    }
+
+    const readers = new PlatformOntologyOwnerReaders(owner, credentials);
+    const results = await Promise.all(
+      PLATFORM_ONTOLOGY_TYPES.map(async (spec) => ({
+        spec,
+        res: await readObjectsOfType(readers, spec.id, false),
+      })),
+    );
+
+    let okCount = 0;
+    let firstError: { status: PlatformOntologyStatus; reason?: string } | null = null;
+    const matched: Array<{ rank: number; item: PlatformOntologyObjectItem }> = [];
+
+    for (const { spec, res } of results) {
+      if (!res.ok) {
+        if (!firstError) firstError = { status: res.status, reason: res.reason };
+        continue;
+      }
+      okCount++;
+      const typeLabel = tForLocale(credentials.locale, spec.labelKey);
+      const typeLabelLower = typeLabel.toLowerCase();
+      for (const item of res.data) {
+        const labelLower = item.label.toLowerCase();
+        const detailLower = item.detail?.toLowerCase() ?? "";
+        const searchTextLower = item.searchText?.toLowerCase() ?? "";
+        const keyLower = item.node.primaryKey.toLowerCase();
+        let rank: number;
+        if (labelLower === keyword) rank = 0;
+        else if (labelLower.startsWith(keyword)) rank = 1;
+        else if (labelLower.includes(keyword)) rank = 2;
+        else if (searchTextLower.includes(keyword) || detailLower.includes(keyword)) rank = 3;
+        else if (keyLower.includes(keyword) || typeLabelLower.includes(keyword)) rank = 4;
+        else continue;
+
+        const detailText = item.searchText && item.searchText !== item.label
+          ? item.searchText
+          : item.detail;
+        const detail = detailText ? `${typeLabel} · ${detailText}` : typeLabel;
+        matched.push({
+          rank,
+          item: toPublicObjectItem(item, detail),
+        });
+      }
+    }
+
+    if (okCount === 0 && firstError) {
+      return {
+        type: input.type,
+        layer: "capability",
+        status: firstError.status,
+        ...(firstError.reason ? { reason: firstError.reason } : {}),
+        items: [],
+        total: 0,
+        page,
+        pageSize,
+      };
+    }
+
+    matched.sort(
+      (a, b) =>
+        a.rank - b.rank ||
+        a.item.label.localeCompare(b.item.label) ||
+        a.item.node.primaryKey.localeCompare(b.item.node.primaryKey),
+    );
+    const offset = (page - 1) * pageSize;
+
+    return {
+      type: input.type,
+      layer: "capability",
+      status: "ok",
+      items: matched.slice(offset, offset + pageSize).map(({ item }) => item),
+      total: matched.length,
+      page,
+      pageSize,
+    };
+  }
+
+  const spec = requireTypeSpec(input.type);
   const readers = new PlatformOntologyOwnerReaders(owner, credentials);
   const res = await readObjectsOfType(readers, spec.id);
 
@@ -854,13 +961,13 @@ export async function readPlatformOntologyObjects(
     };
   }
 
-  const keyword = input.keyword?.trim().toLowerCase() ?? "";
   const filtered = keyword
     ? res.data.filter(
         (item) =>
           item.label.toLowerCase().includes(keyword) ||
           item.node.primaryKey.toLowerCase().includes(keyword) ||
-          (item.detail?.toLowerCase().includes(keyword) ?? false),
+          (item.detail?.toLowerCase().includes(keyword) ?? false) ||
+          (item.searchText?.toLowerCase().includes(keyword) ?? false),
       )
     : res.data;
 
@@ -871,7 +978,7 @@ export async function readPlatformOntologyObjects(
     type: spec.id,
     layer: spec.layer,
     status: "ok",
-    items: sorted.slice(offset, offset + pageSize),
+    items: sorted.slice(offset, offset + pageSize).map((item) => toPublicObjectItem(item)),
     total: sorted.length,
     page,
     pageSize,

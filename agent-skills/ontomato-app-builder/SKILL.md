@@ -26,7 +26,7 @@ Build an application in three stages:
 | Area | Skill |
 | --- | --- |
 | Build ontology, mappings, and import business/test data | `ontomato-ontomap-builder` |
-| Generate Actions or MetricViews | `ontology-generation`, `metricview-generation` (or this skill's [GUIDE.md](GUIDE.md) via the authoring API) |
+| Author Actions or MetricViews | `ontology-generation`, `metricview-generation` (or this skill's [GUIDE.md](GUIDE.md): `action save` → `action trial` → `action publish` and `metric-view generate`) |
 | Build and publish multi-step business workflows & triggers | `ontomato-workflow-maker`, `ontomato-process-admin` |
 | Set up organizations, roles, and API/menu/data permissions | `ontomato-process-admin` |
 | Data retrieval, Q&A, and agent analysis | `ontomato-analyst`, `ontomato-analyst-assistant` (configure agents in platform agent settings / `platform:AgentDefinition`) |

@@ -80,12 +80,6 @@ await mountPanel({
 
     const discoverOp = usePanelOperation("discoverModels", "discover");
 
-    // ---- Row-action test result banner ----
-    const testStatus = shallowRef(null);
-    watch(selectedKey, () => {
-      testStatus.value = null;
-    });
-
     function connectionDraftValues() {
       return instance.forms.handle("connectionForm")?.values.value ?? {};
     }
@@ -250,19 +244,20 @@ await mountPanel({
       }
     }
 
-    function onModelRowActionResult(event) {
-      if (event?.actionId !== "testModel") return;
-      const modelName = event.row?.label || event.ref?.primaryKey || "";
-      if (event.ok) {
-        const value = event.data;
+    function formatModelTestResult(rowRef, state) {
+      if (!state || state.running) return null;
+      const modelName = rowRef?.primaryKey || "";
+      if (state.result && state.result.kind === "json") {
+        const value = state.result.value;
         const text = value?.type === "embedding"
           ? t("models.testEmbeddingOk", { name: modelName, dimensions: value.dimensions })
           : t("models.testChatOk", { name: modelName, reply: String(value?.content ?? "").slice(0, 80) || "OK" });
-        testStatus.value = { ok: true, text };
-      } else {
-        const message = event.error || event.message || "Unknown error";
-        testStatus.value = { ok: false, text: t("models.testFailed", { name: modelName, message }) };
+        return { ok: true, text };
       }
+      if (state.error) {
+        return { ok: false, text: t("models.testFailed", { name: modelName, message: state.error }) };
+      }
+      return null;
     }
 
     return {
@@ -282,7 +277,6 @@ await mountPanel({
       discoverCandidates,
       discoverQuery,
       filteredCandidates,
-      testStatus,
       openCreateConnection,
       openAddModel,
       openDiscover,
@@ -295,7 +289,7 @@ await mountPanel({
       onConnectionDeleted,
       onModelSaved,
       onModelRowAction,
-      onModelRowActionResult,
+      formatModelTestResult,
     };
   },
 });

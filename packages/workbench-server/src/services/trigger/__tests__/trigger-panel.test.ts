@@ -74,7 +74,7 @@ describe("built-in triggers panel validation", () => {
         { kind: "local", id: "edit", icon: "pencil", iconOnly: true },
         { kind: "operation", operation: "disable", when: { field: "statusCode", equals: "PUBLISHED" } },
         { kind: "operation", operation: "publish", when: { field: "statusCode", notEquals: "PUBLISHED" } },
-        { kind: "operation", operation: "remove", icon: "trash-2", iconOnly: true, danger: true },
+        { kind: "operation", operation: "remove", icon: "trash-2", iconOnly: true, tone: "danger" },
       ],
     });
 

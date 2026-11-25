@@ -17,7 +17,6 @@ import {
   PRODUCT_PANEL,
   RELATIONSHIP,
   SAVE_OBJECT_DETAIL_PANEL,
-  SET_PRIMARY_KEY,
   platformObjectTypes,
 } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
@@ -52,7 +51,6 @@ const actionTargetInputs: Record<string, string> = {
   [DELETE_OBJECT_TYPE]: "objectType",
   [CLEAR_OBJECT_DETAIL_PANEL]: "objectType",
   [DELETE_ATTRIBUTE]: "attribute",
-  [SET_PRIMARY_KEY]: "attribute",
 };
 
 const objectTypes = Object.fromEntries(
@@ -389,23 +387,82 @@ function createAttributeForm(classes: Array<{ primaryKey: string; label: string 
   };
 }
 
-function editAttributeForm(attr: { primaryKey: string; fields: { name: string } }) {
+function editAttributeForm(attr: SampleAttribute) {
+  const isPrimaryKey = attr.outputs.isPrimaryKey;
+  const pkEligible = attr.fields.type === "varchar";
+  const primaryKeyReadOnly = isPrimaryKey || !pkEligible;
+  const primaryKeyHelp = isPrimaryKey
+    ? "This attribute is already the primary key"
+    : (!pkEligible ? "Only varchar attributes can be set as the primary key" : undefined);
   return {
     fields: [
       {
-        path: "/name",
-        label: "Attribute name",
+        path: "/showName",
+        label: "Display name",
         control: { kind: "text" },
         valueSchema: {},
         required: true,
         readOnly: false,
       },
+      {
+        path: "/attrDesc",
+        label: "Description",
+        control: { kind: "text" },
+        valueSchema: {},
+        required: false,
+        readOnly: false,
+      },
+      {
+        path: "/enable",
+        label: "Enabled",
+        control: { kind: "switch" },
+        valueSchema: { type: "boolean" },
+        required: false,
+        readOnly: isPrimaryKey,
+        ...(isPrimaryKey ? { help: "Primary key attributes cannot be disabled" } : {}),
+      },
+      {
+        path: "/businessKey",
+        label: "Business key",
+        control: { kind: "switch" },
+        valueSchema: { type: "boolean" },
+        required: false,
+        readOnly: false,
+      },
+      {
+        path: "/primaryKey",
+        label: "Primary key",
+        control: { kind: "switch" },
+        valueSchema: { type: "boolean" },
+        required: false,
+        readOnly: primaryKeyReadOnly,
+        ...(primaryKeyHelp ? { help: primaryKeyHelp } : {}),
+      },
     ],
-    values: { name: attr.fields.name },
+    values: {
+      showName: attr.label,
+      attrDesc: attr.fields.attrDesc,
+      enable: attr.fields.enable === "true",
+      businessKey: attr.fields.businessKey === "true",
+      primaryKey: isPrimaryKey,
+    },
     errors: [],
     revision: 1,
     save: { method: "PUT", path: `/ontology/model/attribute/${attr.primaryKey}`, bodySchema: {} },
   };
+}
+
+async function expandAttributeRow(container: HTMLElement, label: string) {
+  const expandBtn = await vi.waitFor(() => {
+    const row = Array.from(container.querySelectorAll<HTMLTableRowElement>(".ot-detail-list-host tbody tr"))
+      .find((tr) => tr.textContent?.includes(label));
+    expect(row).toBeDefined();
+    const btn = row!.querySelector<HTMLButtonElement>("button.sdk-object-list-expand-btn");
+    expect(btn).not.toBeNull();
+    return btn!;
+  });
+  expandBtn.click();
+  await nextTick();
 }
 
 type PageControllerHandle = {
@@ -419,13 +476,10 @@ function mountObjectsRoute(
     attributes?: SampleAttribute[];
     onSaveObject?: (values: Record<string, unknown>, target: unknown) => unknown;
     onSaveAttribute?: (values: Record<string, unknown>) => unknown;
-    onSetPrimaryKey?: (target: unknown) => unknown;
+    onSaveAttributeRow?: (values: Record<string, unknown>, target: unknown) => unknown;
     onDeleteAttribute?: (target: unknown) => unknown;
     onRead?: (body: ProductPanelReadRequest) => Response | undefined;
-    attributeUnavailable?: (
-      member: "setPrimaryKey" | "deleteAttribute",
-      attribute: SampleAttribute | undefined,
-    ) => { reason: string } | undefined;
+    attributeDeleteUnavailable?: (attribute: SampleAttribute) => { reason: string } | undefined;
   } = {},
 ) {
   const objectTypesList = options.objectTypes ? [...options.objectTypes] : [...sampleObjectTypes];
@@ -463,10 +517,11 @@ function mountObjectsRoute(
       const values = ((call.input as { values?: Record<string, unknown> } | undefined)?.values) ?? {};
       return options.onSaveAttribute(values);
     }
-    if (operationId === "setPrimaryKey.setPrimaryKey" && options.onSetPrimaryKey) {
-      return options.onSetPrimaryKey(call.target);
+    if (operationId === "attributeRowForm.save" && options.onSaveAttributeRow) {
+      const values = ((call.input as { values?: Record<string, unknown> } | undefined)?.values) ?? {};
+      return options.onSaveAttributeRow(values, call.target);
     }
-    if (operationId === "deleteAttribute.delete" && options.onDeleteAttribute) {
+    if (operationId === "attributes.delete" && options.onDeleteAttribute) {
       return options.onDeleteAttribute(call.target);
     }
     return { kind: "success", data: {} };
@@ -510,39 +565,7 @@ function mountObjectsRoute(
             },
           });
         }
-        if (member === "setPrimaryKey") {
-          const key = (body.inputs?.attribute as { primaryKey?: string } | undefined)?.primaryKey;
-          const attr = attributesList.find((item) => item.primaryKey === key);
-          const unavailable = options.attributeUnavailable
-            ? options.attributeUnavailable("setPrimaryKey", attr)
-            : attr?.outputs.isPrimaryKey
-              ? { reason: "This attribute is already the primary key" }
-              : undefined;
-          return Response.json({
-            status: "ready",
-            value: {
-              setPrimaryKey: {
-                handlerRef: SET_PRIMARY_KEY,
-                kind: "action",
-                label: "Set as primary key",
-                effect: "write",
-                batch: false,
-                target: { source: "input", input: "attribute" },
-                inputSchema: {},
-                resultSchema: {},
-                ...(unavailable && { unavailable }),
-              },
-            },
-          });
-        }
-        if (member === "deleteAttribute") {
-          const key = (body.inputs?.attribute as { primaryKey?: string } | undefined)?.primaryKey;
-          const attr = attributesList.find((item) => item.primaryKey === key);
-          const unavailable = options.attributeUnavailable
-            ? options.attributeUnavailable("deleteAttribute", attr)
-            : attr?.outputs.isPrimaryKey
-              ? { reason: "Cannot delete the current primary key attribute" }
-              : undefined;
+        if (member === "attributes") {
           return Response.json({
             status: "ready",
             value: {
@@ -552,10 +575,26 @@ function mountObjectsRoute(
                 label: "Delete attribute",
                 effect: "write",
                 batch: false,
-                target: { source: "input", input: "attribute" },
+                target: { source: "row" },
                 inputSchema: {},
                 resultSchema: {},
-                ...(unavailable && { unavailable }),
+              },
+            },
+          });
+        }
+        if (member === "attributeRowForm") {
+          return Response.json({
+            status: "ready",
+            value: {
+              save: {
+                handlerRef: `${ATTRIBUTE}.save`,
+                kind: "form.save",
+                label: "Save",
+                effect: "write",
+                batch: false,
+                target: { source: "input", input: "target" },
+                inputSchema: {},
+                resultSchema: {},
               },
             },
           });
@@ -624,12 +663,29 @@ function mountObjectsRoute(
       if (member === "attributes") {
         const className = body.inputs?.className;
         const matched = attributesList.filter((item) => item.fields.className === className);
-        return Response.json(matched.length ? { status: "ready", value: matched } : { status: "empty" });
+        if (!matched.length) return Response.json({ status: "empty" });
+        const rowOperations = Object.fromEntries(
+          matched.map((item) => {
+            const unavailable = options.attributeDeleteUnavailable
+              ? options.attributeDeleteUnavailable(item)
+              : item.outputs.isPrimaryKey
+                ? { reason: "Cannot delete the current primary key attribute" }
+                : undefined;
+            return [
+              `${ATTRIBUTE}:${item.primaryKey}`,
+              { delete: unavailable ? { available: false, unavailable } : { available: true } },
+            ];
+          }),
+        );
+        return Response.json({ status: "ready", value: matched, rowOperations });
       }
-      if (member === "attributeDetail") {
+      if (member === "attributeRowForm") {
         const key = (body.inputs?.target as { primaryKey?: string } | undefined)?.primaryKey;
         const found = attributesList.find((item) => item.primaryKey === key);
-        return Response.json(found ? { status: "ready", value: found } : { status: "empty" });
+        return Response.json({
+          status: "ready",
+          value: found ? editAttributeForm(found) : emptyForm(),
+        });
       }
       if (member === "attributeForm") {
         if (body.dataName === "createForm") {
@@ -765,19 +821,43 @@ describe("ontology-objects cleaned builtin panel", () => {
     const rawState = source.manifest.state as Record<string, { type: unknown; deepLink?: boolean }>;
     expect(rawState.className).toBeUndefined();
     expect(objectsPanel.manifest.state.className).toBeUndefined();
+    expect(rawState.selectedAttribute).toBeUndefined();
     expect(rawState.creatingAttribute).toBeDefined();
     expect(rawState.creatingAttribute.type).toEqual({ kind: "scalar", type: "boolean" });
     expect(rawState.creatingAttribute.deepLink).not.toBe(true);
     expect(objectsPanel.manifest.state.creatingAttribute?.deepLink).toBe(false);
-    expect(rawState.selectedAttribute?.deepLink).toBe(true);
+    expect(rawState.editingAttribute).toBeDefined();
+    expect(rawState.editingAttribute.type).toEqual({ kind: "object", objectType: ATTRIBUTE });
+    expect(rawState.editingAttribute.deepLink).not.toBe(true);
+    expect(objectsPanel.manifest.state.editingAttribute?.deepLink).toBe(false);
+
+    // OO-02/03/04/08 structural contracts: 4-column catalog without searchableAttributes, bare 4-col MetricCard,
+    // 1050px detail breakpoint, and relations list without trailing chevron.
+    const catalogConfig = source.manifest.members.catalog.config as {
+      searchFields?: string[];
+      columns: Array<{ key: string }>;
+    };
+    expect(catalogConfig.columns.map((col) => col.key)).toEqual([
+      "label",
+      "classDesc",
+      "attributeCount",
+      "businessKeyCount",
+    ]);
+    expect(catalogConfig.searchFields).not.toContain("searchableAttributes");
+    expect(html).toContain("@container objects-page (max-width: 1050px)");
+    expect((source.manifest.members.relations.config as { showChevron?: boolean }).showChevron).toBe(false);
 
     expect(source.manifest.members.attributes.inputs).toEqual({
       className: { output: { member: "detail", name: "className" } },
     });
+    expect(source.manifest.members.attributes.operations).toEqual({
+      delete: "attributes.delete",
+    });
     expect(source.manifest.members.relations.inputs).toEqual({
       className: { output: { member: "detail", name: "className" } },
     });
-    expect((source.manifest.members.summary.config as { columns: number; items: Array<{ field: string }> })).toMatchObject({
+    expect((source.manifest.members.summary.config as { surface?: string; columns: number; items: Array<{ field: string }> })).toMatchObject({
+      surface: "bare",
       columns: 4,
       items: [
         { field: "attributeCount" },
@@ -786,9 +866,14 @@ describe("ontology-objects cleaned builtin panel", () => {
         { field: "relationshipCount" },
       ],
     });
-    expect((source.manifest.members.attributeDetail.config as { subtitleField?: string; statusField?: string })).toMatchObject({
-      subtitleField: "name",
-      statusField: "type",
+    expect((source.manifest.members as Record<string, unknown>).attributeDetail).toBeUndefined();
+    expect((source.manifest.members as Record<string, unknown>).setPrimaryKey).toBeUndefined();
+    expect((source.manifest.members as Record<string, unknown>).deleteAttribute).toBeUndefined();
+    expect(source.manifest.members.attributeRowForm).toMatchObject({
+      component: "ObjectForm",
+      type: ATTRIBUTE,
+      target: "editingAttribute",
+      config: { actions: "footer" },
     });
 
     const attrColumns = (source.manifest.members.attributes.config as { columns: Array<{ key: string; width?: number }> }).columns;
@@ -834,10 +919,7 @@ describe("ontology-objects cleaned builtin panel", () => {
   it("clears selected class when creating becomes true from detail view so objectForm opens in create mode instead of editing the old class", async () => {
     const savedCalls: Array<{ values: Record<string, unknown>; target: unknown }> = [];
     const route = mountObjectsRoute(
-      {
-        selected: "warehouse",
-        selectedAttribute: JSON.stringify(["warehouse", "code"]),
-      },
+      { selected: "warehouse" },
       {
         onSaveObject(values, target) {
           savedCalls.push({ values, target });
@@ -886,19 +968,25 @@ describe("ontology-objects cleaned builtin panel", () => {
     try {
       await vi.waitFor(() => {
         expect(element.textContent).toContain("Primary key property: Warehouse ID");
-        expect(document.querySelector('.el-drawer [data-field="/name"]')).not.toBeNull();
         expect(route.controller()).not.toBeNull();
       });
+
+      // Expand an attribute row so inline attributeRowForm is open before switching to create mode.
+      await expandAttributeRow(element, "Code");
+      await vi.waitFor(() => {
+        expect(element.querySelector('.ot-attr-editor [data-field="/showName"]')).not.toBeNull();
+      });
+      expect(route.router.currentRoute.value.fullPath).not.toContain("editingAttribute");
 
       // Agent sets creating: true directly from detail view without explicitly clearing selected.
       route.controller()!.applyState({ creating: true });
 
       await vi.waitFor(() => {
         expect(document.querySelector('.el-dialog [data-field="/className"]')).not.toBeNull();
-        expect(document.querySelector('.el-drawer [data-field="/name"]')).toBeNull();
+        expect(element.querySelector('.ot-attr-editor [data-field="/showName"]')).toBeNull();
       });
       expect(route.router.currentRoute.value.query.selected).toBeUndefined();
-      expect(route.router.currentRoute.value.query.selectedAttribute).toBeUndefined();
+      expect(route.router.currentRoute.value.fullPath).not.toContain("editingAttribute");
 
       // Fill create form and save: targets draft (create mode), never the old warehouse class.
       const classInput = document.querySelector<HTMLInputElement>('.el-dialog [data-field="/className"] input')!;
@@ -992,51 +1080,50 @@ describe("ontology-objects cleaned builtin panel", () => {
       document.body.innerHTML = "";
     }
 
-    // Non-primary-key attribute renders enabled Set as primary key and Delete buttons plus type status in drawer header
-    const nonPkRoute = mountObjectsRoute({
-      selected: "warehouse",
-      selectedAttribute: JSON.stringify(["warehouse", "code"]),
-    });
-    const nonPkMounted = await nonPkRoute.open();
+    // Inline attribute editor in #row-detail: non-primary-key attribute exposes editable /primaryKey switch and enabled Delete (no drawer or standalone Set as primary key button).
+    const detailRoute = mountObjectsRoute({ selected: "warehouse" });
+    const detailMounted = await detailRoute.open();
     try {
+      await expandAttributeRow(detailMounted.element, "Code");
       await vi.waitFor(() => {
-        const drawer = document.querySelector(".el-drawer");
-        expect(drawer?.textContent).toContain("Code");
-        expect(drawer?.textContent).toContain("code");
-        expect(drawer?.textContent).toContain("varchar");
-        const setPkBtn = Array.from(document.querySelectorAll<HTMLButtonElement>(".ot-drawer-footer button"))
-          .find((btn) => btn.textContent?.includes("Set as primary key"));
-        expect(setPkBtn).toBeTruthy();
-        expect(setPkBtn!.disabled).toBe(false);
-      });
-    } finally {
-      nonPkMounted.app.unmount();
-      leaveFrame();
-      document.body.innerHTML = "";
-    }
+        const editor = detailMounted.element.querySelector<HTMLElement>(".ot-attr-editor");
+        expect(editor).not.toBeNull();
+        expect(document.querySelector(".el-drawer")).toBeNull();
+        expect(editor!.querySelector('[data-field="/showName"] input')).not.toBeNull();
+        expect(editor!.querySelector('.ot-attr-switches [data-field="/enable"]')).not.toBeNull();
+        expect(editor!.querySelector('.ot-attr-switches [data-field="/businessKey"]')).not.toBeNull();
+        const pkSwitch = editor!.querySelector<HTMLElement>('.ot-attr-switches [data-field="/primaryKey"] .el-switch');
+        expect(pkSwitch).not.toBeNull();
+        expect(pkSwitch!.classList.contains("is-disabled")).toBe(false);
+        expect(editor!.textContent).not.toContain("Set as primary key");
 
-    // Primary-key attribute STILL renders Set as primary key and Delete buttons, disabled with owner unavailable reasons
-    const pkRoute = mountObjectsRoute({
-      selected: "warehouse",
-      selectedAttribute: JSON.stringify(["warehouse", "id"]),
-    });
-    const pkMounted = await pkRoute.open();
-    try {
+        const deleteBtn = editor!.querySelector<HTMLButtonElement>(".ot-attr-row-delete button");
+        expect(deleteBtn).not.toBeNull();
+        expect(deleteBtn!.textContent).toContain("Delete");
+        expect(deleteBtn!.disabled).toBe(false);
+        expect(editor!.querySelector(".ot-attr-delete-reason")).toBeNull();
+      });
+
+      // Expanding primary-key attribute switches inline editor to it; /primaryKey is read-only and Delete is disabled with batch rowOperations reason.
+      await expandAttributeRow(detailMounted.element, "Warehouse ID");
       await vi.waitFor(() => {
-        const footer = document.querySelector(".ot-drawer-footer")!;
-        const footerBtns = Array.from(footer.querySelectorAll<HTMLButtonElement>("button"));
-        const setPkBtn = footerBtns.find((btn) => btn.textContent?.includes("Set as primary key"));
-        const deleteBtn = footerBtns.find((btn) => btn.textContent?.includes("Delete"));
-        expect(setPkBtn).toBeTruthy();
-        expect(deleteBtn).toBeTruthy();
-        expect(setPkBtn!.disabled).toBe(true);
+        const editor = detailMounted.element.querySelector<HTMLElement>(".ot-attr-editor");
+        expect(editor).not.toBeNull();
+        expect(editor!.querySelector<HTMLInputElement>('[data-field="/showName"] input')?.value).toBe("Warehouse ID");
+        const pkField = editor!.querySelector<HTMLElement>('.ot-attr-switches [data-field="/primaryKey"]');
+        expect(pkField).not.toBeNull();
+        expect(pkField!.querySelector(".el-switch.is-disabled")).not.toBeNull();
+        expect(pkField!.textContent).toContain("This attribute is already the primary key");
+
+        const deleteBtn = editor!.querySelector<HTMLButtonElement>(".ot-attr-row-delete button");
+        expect(deleteBtn).not.toBeNull();
         expect(deleteBtn!.disabled).toBe(true);
-        const reasons = Array.from(footer.querySelectorAll(".sdk-operation-unavailable")).map((el) => el.textContent);
-        expect(reasons).toContain("This attribute is already the primary key");
-        expect(reasons).toContain("Cannot delete the current primary key attribute");
+        expect(editor!.querySelector(".ot-attr-delete-reason")?.textContent).toContain(
+          "Cannot delete the current primary key attribute",
+        );
       });
     } finally {
-      pkMounted.app.unmount();
+      detailMounted.app.unmount();
     }
   });
 
@@ -1066,15 +1153,12 @@ describe("ontology-objects cleaned builtin panel", () => {
       document.body.innerHTML = "";
     }
 
-    // Initial attributeDetail read failure inside drawer
+    // Initial attributeRowForm read failure inside expanded row
     const attrErrorRoute = mountObjectsRoute(
-      {
-        selected: "warehouse",
-        selectedAttribute: JSON.stringify(["warehouse", "code"]),
-      },
+      { selected: "warehouse" },
       {
         onRead(body) {
-          if (!("operations" in body) && body.memberPath[0]?.member === "attributeDetail") {
+          if (!("operations" in body) && body.memberPath[0]?.member === "attributeRowForm") {
             return Response.json({ status: "error", message: "Attribute metadata endpoint timed out" });
           }
           return undefined;
@@ -1083,47 +1167,71 @@ describe("ontology-objects cleaned builtin panel", () => {
     );
     const attrErrorMounted = await attrErrorRoute.open();
     try {
+      await expandAttributeRow(attrErrorMounted.element, "Code");
       await vi.waitFor(() => {
-        const drawer = document.querySelector(".el-drawer");
-        expect(drawer?.textContent).toContain("Attribute metadata endpoint timed out");
+        const editor = attrErrorMounted.element.querySelector<HTMLElement>(".ot-attr-editor");
+        expect(editor).not.toBeNull();
+        expect(editor!.textContent).toContain("Attribute metadata endpoint timed out");
       });
-      expect(document.querySelector(".el-drawer")?.textContent).not.toContain("Object type does not exist or has been deleted");
-      expect(document.querySelector(".ot-drawer-footer")).toBeNull();
+      expect(attrErrorMounted.element.querySelector(".ot-attr-editor")?.textContent).not.toContain(
+        "Object type does not exist or has been deleted",
+      );
     } finally {
       attrErrorMounted.app.unmount();
     }
   });
 
-  it("keeps mounted edit forms and unsaved input alive when re-reading detail or attributeDetail fails, and shows an inline error banner", async () => {
+  it("keeps mounted edit forms and unsaved input alive across background refresh failures, and shows an inline error banner on detail re-read failure", async () => {
     let failDetailReread = false;
-    let failAttrDetailReread = false;
+    let failAttrFormReread = false;
+    let saveCount = 0;
     const route = mountObjectsRoute(
-      {
-        selected: "warehouse",
-        selectedAttribute: JSON.stringify(["warehouse", "code"]),
-      },
+      { selected: "warehouse" },
       {
         onRead(body) {
           if (!("operations" in body) && body.memberPath[0]?.member === "detail" && failDetailReread) {
             return Response.json({ status: "error", message: "Temporary class refresh failure" });
           }
-          if (!("operations" in body) && body.memberPath[0]?.member === "attributeDetail" && failAttrDetailReread) {
+          if (!("operations" in body) && body.memberPath[0]?.member === "attributeRowForm" && failAttrFormReread) {
             return Response.json({ status: "error", message: "Temporary attribute refresh failure" });
           }
           return undefined;
         },
-        onSetPrimaryKey() {
-          // Return affected for both OBJECT_TYPE and ATTRIBUTE so both detail and attributeDetail re-read.
+        onSaveAttribute(values) {
+          saveCount += 1;
+          const attrName = String(values.name ?? `zone${saveCount}`);
+          const createdKey = JSON.stringify(["warehouse", attrName]);
+          route.attributes.push({
+            primaryKey: createdKey,
+            className: ATTRIBUTE,
+            label: attrName,
+            fields: {
+              className: String(values.className ?? "warehouse"),
+              classNameLabel: "Warehouse",
+              name: attrName,
+              type: "varchar",
+              attrDesc: attrName,
+              enable: "true",
+              businessKey: "false",
+              primaryKey: "false",
+            },
+            tones: { primaryKey: "default", businessKey: "default", enable: "success" },
+            outputs: { isPrimaryKey: false, className: "warehouse" },
+          });
+          // First create refreshes only ATTRIBUTE; second create refreshes OBJECT_TYPE to exercise detail re-read failure.
           return {
             kind: "success",
-            data: {},
-            affected: {
-              objects: [
-                { objectType: OBJECT_TYPE, primaryKey: "warehouse" },
-                { objectType: ATTRIBUTE, primaryKey: JSON.stringify(["warehouse", "code"]) },
-              ],
-              objectTypes: [OBJECT_TYPE, ATTRIBUTE],
-            },
+            data: { primaryKey: createdKey },
+            created: { objectType: ATTRIBUTE, primaryKey: createdKey },
+            affected: failDetailReread
+              ? {
+                objects: [{ objectType: OBJECT_TYPE, primaryKey: "warehouse" }],
+                objectTypes: [OBJECT_TYPE, ATTRIBUTE],
+              }
+              : {
+                objects: [{ objectType: ATTRIBUTE, primaryKey: JSON.stringify(["warehouse", "code"]) }],
+                objectTypes: [ATTRIBUTE],
+              },
           };
         },
       },
@@ -1132,39 +1240,70 @@ describe("ontology-objects cleaned builtin panel", () => {
     try {
       await vi.waitFor(() => {
         expect(element.querySelector<HTMLInputElement>('.ot-basic-form [data-field="/showName"] input')).not.toBeNull();
-        expect(document.querySelector<HTMLInputElement>('.el-drawer [data-field="/name"] input')).not.toBeNull();
+      });
+      await expandAttributeRow(element, "Code");
+      await vi.waitFor(() => {
+        expect(element.querySelector<HTMLInputElement>('.ot-attr-editor [data-field="/showName"] input')).not.toBeNull();
       });
 
-      // Type unsaved edits into both objectForm and attributeForm.
+      // Type unsaved edits into both objectForm and inline attributeRowForm.
       const objectInput = element.querySelector<HTMLInputElement>('.ot-basic-form [data-field="/showName"] input')!;
       objectInput.value = "Warehouse Draft Title";
       objectInput.dispatchEvent(new Event("input", { bubbles: true }));
 
-      const attrInput = document.querySelector<HTMLInputElement>('.el-drawer [data-field="/name"] input')!;
-      attrInput.value = "code_unsaved_draft";
+      const attrInput = element.querySelector<HTMLInputElement>('.ot-attr-editor [data-field="/showName"] input')!;
+      attrInput.value = "Code Unsaved Draft";
       attrInput.dispatchEvent(new Event("input", { bubbles: true }));
       await nextTick();
 
-      // Cause subsequent detail and attributeDetail re-reads to fail, then trigger an affected refresh via setPrimaryKey.
-      failDetailReread = true;
-      failAttrDetailReread = true;
+      await vi.waitFor(() => {
+        expect(element.querySelector(".ot-attr-unsaved")?.textContent).toContain("Unsaved changes (1)");
+      });
 
-      const setPkBtn = Array.from(document.querySelectorAll<HTMLButtonElement>(".ot-drawer-footer button"))
-        .find((btn) => btn.textContent?.includes("Set as primary key"))!;
-      expect(setPkBtn).toBeTruthy();
-      setPkBtn.click();
+      // 1. Trigger an ATTRIBUTE affected refresh while attributeRowForm re-reads fail: inline draft stays mounted intact.
+      failAttrFormReread = true;
+      route.controller()!.applyState({ creatingAttribute: true });
+      const nameInput1 = await vi.waitFor(() => {
+        const input = document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input');
+        expect(input).not.toBeNull();
+        return input!;
+      });
+      nameInput1.value = "zone1";
+      nameInput1.dispatchEvent(new Event("input", { bubbles: true }));
+      await nextTick();
+
+      const createSaveBtn1 = Array.from(document.querySelectorAll<HTMLButtonElement>(".el-dialog .sdk-owner-form-actions button"))
+        .find((btn) => btn.classList.contains("el-button--primary") || btn.textContent?.includes("Save") || btn.textContent?.includes("Create"))!;
+      createSaveBtn1.click();
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('.el-dialog [data-field="/name"]')).toBeNull();
+        expect(element.textContent).toContain("zone1");
+      });
+      expect(element.querySelector<HTMLInputElement>('.ot-attr-editor [data-field="/showName"] input')?.value)
+        .toBe("Code Unsaved Draft");
+
+      // 2. Trigger an OBJECT_TYPE affected refresh while detail re-reads fail: objectForm stays mounted with inline error banner.
+      failDetailReread = true;
+      route.controller()!.applyState({ creatingAttribute: true });
+      const nameInput2 = await vi.waitFor(() => {
+        const input = document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input');
+        expect(input).not.toBeNull();
+        return input!;
+      });
+      nameInput2.value = "zone2";
+      nameInput2.dispatchEvent(new Event("input", { bubbles: true }));
+      await nextTick();
+
+      const createSaveBtn2 = Array.from(document.querySelectorAll<HTMLButtonElement>(".el-dialog .sdk-owner-form-actions button"))
+        .find((btn) => btn.classList.contains("el-button--primary") || btn.textContent?.includes("Save") || btn.textContent?.includes("Create"))!;
+      createSaveBtn2.click();
 
       await vi.waitFor(() => {
         expect(element.querySelector(".ot-detail-error")?.textContent).toContain("Temporary class refresh failure");
-        expect(document.querySelector(".el-drawer")?.textContent).toContain("Temporary attribute refresh failure");
       });
-
-      // Both forms remain mounted with their unsaved values intact, and the drawer footer stays mounted.
       expect(element.querySelector<HTMLInputElement>('.ot-basic-form [data-field="/showName"] input')?.value)
         .toBe("Warehouse Draft Title");
-      expect(document.querySelector<HTMLInputElement>('.el-drawer [data-field="/name"] input')?.value)
-        .toBe("code_unsaved_draft");
-      expect(document.querySelector(".ot-drawer-footer")).not.toBeNull();
     } finally {
       app.unmount();
     }
@@ -1228,17 +1367,16 @@ describe("ontology-objects cleaned builtin panel", () => {
     }
   });
 
-  it("clears selectedAttribute when switching to creatingAttribute, opens edit drawer on save, and does not trigger manual refreshObjects after attribute writes", async () => {
-    const submittedPayloads: Array<Record<string, unknown>> = [];
+  it("creates an attribute in dialog, edits inline via attributeRowForm with /primaryKey switch, deletes via row action, and does not trigger manual refreshObjects", async () => {
+    const submittedCreates: Array<Record<string, unknown>> = [];
+    const submittedEdits: Array<{ values: Record<string, unknown>; target: unknown }> = [];
+    const deletedTargets: unknown[] = [];
     const createdKey = JSON.stringify(["warehouse", "region"]);
     const route = mountObjectsRoute(
-      {
-        selected: "warehouse",
-        selectedAttribute: JSON.stringify(["warehouse", "code"]),
-      },
+      { selected: "warehouse" },
       {
         onSaveAttribute(values) {
-          submittedPayloads.push(values);
+          submittedCreates.push(values);
           route.attributes.push({
             primaryKey: createdKey,
             className: ATTRIBUTE,
@@ -1266,17 +1404,23 @@ describe("ontology-objects cleaned builtin panel", () => {
             },
           };
         },
-        onSetPrimaryKey() {
+        onSaveAttributeRow(values, target) {
+          submittedEdits.push({ values, target });
+          const found = route.attributes.find((item) => item.primaryKey === createdKey);
+          if (found && typeof values.showName === "string") {
+            found.label = values.showName;
+          }
           return {
             kind: "success",
-            data: {},
+            data: { primaryKey: createdKey },
             affected: {
               objects: [{ objectType: ATTRIBUTE, primaryKey: createdKey }],
               objectTypes: [ATTRIBUTE],
             },
           };
         },
-        onDeleteAttribute() {
+        onDeleteAttribute(target) {
+          deletedTargets.push(target);
           const idx = route.attributes.findIndex((item) => item.primaryKey === createdKey);
           if (idx >= 0) route.attributes.splice(idx, 1);
           return {
@@ -1291,16 +1435,14 @@ describe("ontology-objects cleaned builtin panel", () => {
         },
       },
     );
-    const { app } = await route.open();
+    const { app, element } = await route.open();
     try {
-      // Initially editing "Code" attribute in drawer.
       await vi.waitFor(() => {
-        expect(document.body.textContent).toContain("Set as primary key");
-        expect(document.querySelector('.el-drawer [data-field="/name"]')).not.toBeNull();
+        expect(element.textContent).toContain("Code");
         expect(route.controller()).not.toBeNull();
       });
 
-      // Switch to creatingAttribute: true -> clears selectedAttribute and opens create dialog in create mode.
+      // Open create attribute dialog: /className is fixed to Warehouse and creatingAttribute stays out of URL.
       route.controller()!.applyState({ creatingAttribute: true });
 
       await vi.waitFor(() => {
@@ -1308,9 +1450,7 @@ describe("ontology-objects cleaned builtin panel", () => {
         expect(classField).not.toBeNull();
         expect(classField!.textContent).toContain("Warehouse");
         expect(classField!.querySelector(".el-select.is-disabled, .el-select__wrapper.is-disabled")).not.toBeNull();
-        expect(document.querySelector('.el-drawer [data-field="/name"]')).toBeNull();
       });
-      expect(route.router.currentRoute.value.query.selectedAttribute).toBeUndefined();
       expect(route.router.currentRoute.value.fullPath).not.toContain("creatingAttribute");
 
       const relationsReadsBeforeWrites = route.reads.filter(
@@ -1329,33 +1469,53 @@ describe("ontology-objects cleaned builtin panel", () => {
       expect(saveBtn).toBeTruthy();
       saveBtn!.click();
 
-      // After save: create dialog closes, edit drawer opens for the newly created attribute.
+      // After save: create dialog closes, no drawer opens, and the new attribute appears in the list via affected refresh.
       await vi.waitFor(() => {
-        expect(submittedPayloads).toEqual([{ className: "warehouse", name: "region" }]);
+        expect(submittedCreates).toEqual([{ className: "warehouse", name: "region" }]);
         expect(document.querySelector('.el-dialog [data-field="/className"]')).toBeNull();
-        expect(document.querySelector('.el-drawer [data-field="/name"]')).not.toBeNull();
-        expect(document.querySelector(".el-drawer")?.textContent).toContain("Region");
+        expect(document.querySelector(".el-drawer")).toBeNull();
+        expect(element.textContent).toContain("Region");
       });
-      expect(route.router.currentRoute.value.query.selectedAttribute).toBe(createdKey);
       expect(route.router.currentRoute.value.fullPath).not.toContain("creatingAttribute");
 
-      // Trigger setPrimaryKey then deleteAttribute on the newly created attribute.
-      const setPkBtn = Array.from(document.querySelectorAll<HTMLButtonElement>(".ot-drawer-footer button"))
-        .find((btn) => btn.textContent?.includes("Set as primary key"))!;
-      expect(setPkBtn).toBeTruthy();
-      setPkBtn.click();
+      // Expand the newly created attribute row to edit inline via attributeRowForm.
+      await expandAttributeRow(element, "Region");
+      await vi.waitFor(() => {
+        expect(element.querySelector<HTMLInputElement>('.ot-attr-editor [data-field="/showName"] input')?.value).toBe("Region");
+      });
+      expect(route.router.currentRoute.value.fullPath).not.toContain("editingAttribute");
+
+      // Toggle /primaryKey switch and save through attributeRowForm.save.
+      const pkSwitch = element.querySelector<HTMLElement>('.ot-attr-editor [data-field="/primaryKey"] .el-switch')!;
+      expect(pkSwitch).not.toBeNull();
+      pkSwitch.click();
       await nextTick();
 
-      const deleteBtn = Array.from(document.querySelectorAll<HTMLButtonElement>(".ot-drawer-footer button"))
-        .find((btn) => btn.textContent?.includes("Delete"))!;
-      expect(deleteBtn).toBeTruthy();
+      const inlineSaveBtn = await vi.waitFor(() => {
+        const btn = Array.from(element.querySelectorAll<HTMLButtonElement>(".ot-attr-editor .sdk-owner-form-actions button"))
+          .find((item) => item.textContent?.trim() === "Save" && !item.disabled);
+        expect(btn).toBeDefined();
+        return btn!;
+      });
+      inlineSaveBtn.click();
+
+      await vi.waitFor(() => {
+        expect(submittedEdits).toHaveLength(1);
+        expect(submittedEdits[0]!.values.primaryKey).toBe(true);
+      });
+
+      // Delete the attribute using the inline row-scoped Delete button (attributes.delete).
+      const deleteBtn = element.querySelector<HTMLButtonElement>(".ot-attr-editor .ot-attr-row-delete button")!;
+      expect(deleteBtn).not.toBeNull();
+      expect(deleteBtn.disabled).toBe(false);
       deleteBtn.click();
 
       await vi.waitFor(() => {
-        expect(document.querySelector('.el-drawer [data-field="/name"]')).toBeNull();
+        expect(deletedTargets).toHaveLength(1);
+        expect(element.textContent).not.toContain("Warehouse region");
       });
 
-      // None of attributeSaved / setPrimaryKey / deleteAttribute called manual refreshObjects(),
+      // None of attributeForm / attributeRowForm / attributes.delete called manual refreshObjects(),
       // so unrelated `relations` member was never re-read.
       const relationsReadsAfterWrites = route.reads.filter(
         (req) => !("operations" in req) && req.memberPath[0]?.member === "relations",
@@ -1366,27 +1526,93 @@ describe("ontology-objects cleaned builtin panel", () => {
     }
   });
 
-  it("keeps manual catalog header refresh button working via instance.refreshObjects()", async () => {
-    const route = mountObjectsRoute();
+  it("omits manual Refresh button from catalog header and refreshes catalog via owner affected after object type creation", async () => {
+    const route = mountObjectsRoute(
+      {},
+      {
+        onSaveObject(values) {
+          const createdKey = String(values.className ?? "order");
+          route.objectTypes.push({
+            primaryKey: createdKey,
+            className: OBJECT_TYPE,
+            label: String(values.showName ?? createdKey),
+            fields: {
+              className: createdKey,
+              showName: String(values.showName ?? createdKey),
+              classDesc: "Created order",
+              attributeCount: "1",
+              businessKeyCount: "0",
+              primaryKeyCount: "1",
+              relationshipCount: "0",
+              primaryKey: "ok",
+              primaryKeyName: "id",
+              searchableAttributes: [],
+            },
+            tones: { primaryKey: "success" },
+            outputs: {
+              className: createdKey,
+              primaryKeyStatus: "ok",
+              primaryKeyName: "id",
+              primaryKeyShowName: "ID",
+              primaryKeyCount: 1,
+              attributeCount: 1,
+              businessKeyCount: 0,
+              relationshipCount: 0,
+            },
+          });
+          return {
+            kind: "success",
+            data: { primaryKey: createdKey },
+            affected: {
+              objects: [{ objectType: OBJECT_TYPE, primaryKey: createdKey }],
+              objectTypes: [OBJECT_TYPE],
+            },
+          };
+        },
+      },
+    );
     const { app, element } = await route.open();
     try {
       await vi.waitFor(() => {
         expect(element.textContent).toContain("Warehouse");
       });
 
+      // OO-01: catalog header has no manual Refresh button.
+      expect(element.querySelector('button[aria-label="Refresh"]')).toBeNull();
+      const headerButtons = Array.from(element.querySelectorAll<HTMLButtonElement>(".sdk-page-header-actions button"));
+      expect(headerButtons.some((btn) => btn.textContent?.includes("Refresh"))).toBe(false);
+
       const catalogReadsBefore = route.reads.filter(
         (req) => !("operations" in req) && req.memberPath[0]?.member === "catalog",
       ).length;
 
-      const refreshBtn = element.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]');
-      expect(refreshBtn).toBeTruthy();
-      refreshBtn!.click();
+      // Creating an object type refreshes the catalog through owner affected declarations.
+      const createBtn = headerButtons.find((btn) => btn.textContent?.includes("New object type"))!;
+      expect(createBtn).toBeTruthy();
+      createBtn.click();
+
+      const classInput = await vi.waitFor(() => {
+        const input = document.querySelector<HTMLInputElement>('.el-dialog [data-field="/className"] input');
+        expect(input).not.toBeNull();
+        return input!;
+      });
+      const showInput = document.querySelector<HTMLInputElement>('.el-dialog [data-field="/showName"] input')!;
+      classInput.value = "order";
+      classInput.dispatchEvent(new Event("input", { bubbles: true }));
+      showInput.value = "Order";
+      showInput.dispatchEvent(new Event("input", { bubbles: true }));
+      await nextTick();
+
+      const saveBtn = Array.from(document.querySelectorAll<HTMLButtonElement>(".el-dialog .sdk-owner-form-actions button"))
+        .find((btn) => btn.classList.contains("el-button--primary") || btn.textContent?.includes("Save") || btn.textContent?.includes("Create"))!;
+      saveBtn.click();
 
       await vi.waitFor(() => {
         const catalogReadsAfter = route.reads.filter(
           (req) => !("operations" in req) && req.memberPath[0]?.member === "catalog",
         ).length;
         expect(catalogReadsAfter).toBeGreaterThan(catalogReadsBefore);
+        expect(element.textContent).toContain("Order");
       });
     } finally {
       app.unmount();

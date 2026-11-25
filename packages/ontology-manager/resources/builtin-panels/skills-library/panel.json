@@ -67,7 +67,7 @@
               {
                 "kind": "operation",
                 "operation": "remove",
-                "danger": true
+                "tone": "danger"
               }
             ]
           }

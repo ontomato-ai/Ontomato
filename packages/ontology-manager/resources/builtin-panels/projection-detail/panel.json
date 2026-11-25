@@ -97,6 +97,27 @@
         },
         "default": "use",
         "deepLink": false
+      },
+      "bindingObjectType": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        },
+        "deepLink": false
+      },
+      "bindingMetric": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:MetricView"
+        },
+        "deepLink": false
+      },
+      "bindingAction": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Action"
+        },
+        "deepLink": false
       }
     },
     "members": {
@@ -160,6 +181,38 @@
         "name": "投影详情 · 完整定义",
         "description": "选中投影的完整 JSON 定义。",
         "id": "builtin-product-482074f0-a535-4106-8ec1-d20eeff593c8"
+      },
+      "previewStage": {
+        "component": "GroupedGrid",
+        "config": {
+          "columns": 12,
+          "rowHeight": 120,
+          "gap": 0,
+          "itemSurface": "bare",
+          "rowSizing": "auto",
+          "itemHeaderDivider": "none",
+          "editable": false,
+          "showGroupHeaders": false,
+          "showItemHeaders": false,
+          "groups": [
+            {
+              "id": "preview",
+              "titleKey": "section.preview"
+            }
+          ],
+          "items": [
+            {
+              "id": "preview",
+              "titleKey": "section.preview",
+              "groupId": "preview",
+              "colSpan": 12,
+              "rowSpan": 1
+            }
+          ]
+        },
+        "name": "投影详情 · 预览容器",
+        "description": "承载动态预览槽位并为其提供合法插槽作用域以传入临时预览输入。",
+        "id": "builtin-product-d92e3b10-5c41-4e7a-8b12-6f4012a3d001"
       },
       "preview": {
         "target": {
@@ -434,7 +487,7 @@
                 "kind": "operation",
                 "operation": "revoke",
                 "labelKey": "grants.revoke",
-                "danger": true,
+                "tone": "danger",
                 "when": {
                   "field": "revocable",
                   "equals": true
@@ -601,6 +654,60 @@
         "name": "投影详情 · 编辑表单",
         "description": "属主的投影编辑表单：只改这次提交的字段。",
         "id": "builtin-product-e1d60d5e-a8d0-4158-ba0e-8b6d85f47b2e"
+      },
+      "bindingObjectTypePicker": {
+        "component": "ReferencePicker",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "bindingObjectType"
+        },
+        "config": {
+          "placeholderKey": "binding.pickObjectType",
+          "clearable": true,
+          "size": "small"
+        },
+        "name": "投影详情 · 对象类绑定选择",
+        "description": "按发布名称选择要绑定到投影数据的对象类。",
+        "id": "builtin-product-d92e3b10-5c41-4e7a-8b12-6f4012a3d002"
+      },
+      "bindingMetricPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:MetricView",
+        "data": {
+          "rows": "query"
+        },
+        "state": {
+          "selected": "bindingMetric"
+        },
+        "config": {
+          "placeholderKey": "binding.pickMetric",
+          "clearable": true,
+          "size": "small"
+        },
+        "name": "投影详情 · 指标视图绑定选择",
+        "description": "按发布名称选择要绑定到投影数据的指标视图。",
+        "id": "builtin-product-d92e3b10-5c41-4e7a-8b12-6f4012a3d003"
+      },
+      "bindingActionPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:Action",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "bindingAction"
+        },
+        "config": {
+          "placeholderKey": "binding.pickAction",
+          "clearable": true,
+          "size": "small"
+        },
+        "name": "投影详情 · 行动绑定选择",
+        "description": "按发布名称选择要绑定到投影操作的行动。",
+        "id": "builtin-product-d92e3b10-5c41-4e7a-8b12-6f4012a3d004"
       }
     }
   },
@@ -629,6 +736,24 @@
         "tab.grants": "权限与共享",
         "section.summary": "基本信息",
         "section.preview": "原位预览",
+        "preview.primaryKeyPlaceholder": "输入对象主键（{objectType}）",
+        "preview.classNamePlaceholder": "输入对象类名",
+        "preview.valuePlaceholder": "输入端口值（{port}）",
+        "preview.apply": "查看",
+        "preview.clear": "清空",
+        "preview.invalidJson": "端口 {port} 的 JSON 格式不正确",
+        "binding.kindObjectType": "对象类",
+        "binding.kindMetric": "指标视图",
+        "binding.pickObjectType": "按名称查找对象类",
+        "binding.pickMetric": "按名称查找指标视图",
+        "binding.pickAction": "按名称查找发布行动",
+        "binding.datumKey": "数据槽位名",
+        "binding.opKey": "操作槽位名",
+        "binding.manualId": "或输入已知 ID",
+        "binding.apply": "写入绑定",
+        "binding.showJson": "JSON 高级编辑",
+        "binding.hideJson": "收起 JSON",
+        "binding.invalidJson": "JSON 格式不正确",
         "section.data": "来处与读法",
         "section.config": "组件配置",
         "section.inputs": "输入端口",
@@ -710,6 +835,24 @@
         "tab.grants": "Permissions & sharing",
         "section.summary": "Basics",
         "section.preview": "Inline preview",
+        "preview.primaryKeyPlaceholder": "Enter primary key ({objectType})",
+        "preview.classNamePlaceholder": "Enter class name",
+        "preview.valuePlaceholder": "Enter value ({port})",
+        "preview.apply": "View",
+        "preview.clear": "Clear",
+        "preview.invalidJson": "Invalid JSON for port {port}",
+        "binding.kindObjectType": "Object type",
+        "binding.kindMetric": "Metric view",
+        "binding.pickObjectType": "Find object type by name",
+        "binding.pickMetric": "Find metric view by name",
+        "binding.pickAction": "Find published action by name",
+        "binding.datumKey": "Datum key",
+        "binding.opKey": "Operation key",
+        "binding.manualId": "Or enter known ID",
+        "binding.apply": "Apply binding",
+        "binding.showJson": "Advanced JSON",
+        "binding.hideJson": "Hide JSON",
+        "binding.invalidJson": "Invalid JSON format",
         "section.data": "Data sources & reads",
         "section.config": "Component configuration",
         "section.inputs": "Inputs",
@@ -791,6 +934,24 @@
         "tab.grants": "權限與共享",
         "section.summary": "基本資訊",
         "section.preview": "原位預覽",
+        "preview.primaryKeyPlaceholder": "輸入物件主鍵（{objectType}）",
+        "preview.classNamePlaceholder": "輸入物件類名",
+        "preview.valuePlaceholder": "輸入埠值（{port}）",
+        "preview.apply": "檢視",
+        "preview.clear": "清除",
+        "preview.invalidJson": "埠 {port} 的 JSON 格式不正確",
+        "binding.kindObjectType": "物件類",
+        "binding.kindMetric": "指標檢視",
+        "binding.pickObjectType": "依名稱查找物件類",
+        "binding.pickMetric": "依名稱查找指標檢視",
+        "binding.pickAction": "依名稱查找發佈行動",
+        "binding.datumKey": "資料槽位名",
+        "binding.opKey": "操作槽位名",
+        "binding.manualId": "或輸入已知 ID",
+        "binding.apply": "寫入綁定",
+        "binding.showJson": "JSON 進階編輯",
+        "binding.hideJson": "收合 JSON",
+        "binding.invalidJson": "JSON 格式不正確",
         "section.data": "來源與讀法",
         "section.config": "元件設定",
         "section.inputs": "輸入埠",

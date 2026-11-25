@@ -65,7 +65,7 @@
           "type": "danger",
           "plain": true,
           "icon": "trash",
-          "label": "删除"
+          "labelKey": "rel.delete"
         },
         "id": "builtin-product-655a5639-5fd3-4e29-9192-096597b6a77d"
       }
@@ -74,10 +74,28 @@
   "content": {
     "messages": {
       "en": {
+        "rel.back": "Back to relationship types",
+        "rel.delete": "Delete",
+        "rel.basicInfo": "Basic information",
+        "rel.connections": "Object connections",
+        "rel.connectionNote": "Relationships connect a source object and a target object; maintain the description and join fields here.",
+        "rel.loading": "Loading relationship type…",
+        "rel.forbidden": "You cannot read this relationship type.",
+        "rel.missing": "Relationship type does not exist or has been deleted",
+        "rel.loadError": "Failed to load relationship type. Please try again.",
         "card.from": "Source object",
         "card.to": "Target object"
       },
       "zh-CN": {
+        "rel.back": "返回关系类型",
+        "rel.delete": "删除",
+        "rel.basicInfo": "基本信息",
+        "rel.connections": "对象连接",
+        "rel.connectionNote": "关系连接来源对象和目标对象，可维护关系说明及关联字段。",
+        "rel.loading": "正在读取这条关系类型…",
+        "rel.forbidden": "当前账号无权读取这条关系类型。",
+        "rel.missing": "关系类型不存在或已删除",
+        "rel.loadError": "读取关系类型失败，请稍后重试",
         "card.from": "来源对象",
         "card.to": "目标对象"
       }

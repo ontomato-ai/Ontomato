@@ -56,9 +56,6 @@
     color: var(--sdk-text-color-secondary);
     font-weight: var(--font-regular);
   }
-  .relations-table-host .sdk-object-list-footer {
-    display: none;
-  }
   .relations-create-body .sdk-owner-form,
   .relations-create-body .sdk-owner-form-inner {
     height: auto;
@@ -83,21 +80,18 @@
   }
 </style>
 <div id="app">
-  <section class="relations">
-    <page-header title="关系类型" description="定义对象类型之间的关系及其关联端点">
+  <section ref="rootRef" class="relations">
+    <page-header :title="t('panel.name')" :description="t('panel.description')">
       <template #actions>
-        <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-        </sdk-button>
         <sdk-button type="primary" :disabled="creating" @click="startCreate">
           <svg class="relations-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-          <span>新建关系类型</span>
+          <span>{{ t("rel.create") }}</span>
         </sdk-button>
       </template>
     </page-header>
     <div class="relations-catalog">
       <div class="relations-toolbar">
-        <sdk-input class="relations-search" v-model="search" placeholder="筛选关系类型" aria-label="筛选关系类型" clearable>
+        <sdk-input class="relations-search" v-model="search" :placeholder="t('rel.search')" :aria-label="t('rel.search')" clearable>
           <template #prefix>
             <svg class="relations-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
           </template>
@@ -105,16 +99,16 @@
         <span v-if="countText" class="relations-count">{{ countText }}</span>
       </div>
       <div class="relations-table-host">
-        <projection slot="catalogue" @choose="open">
+        <projection slot="catalogue" :columns="relationColumns" @choose="open">
           <template #empty>
-            <sdk-empty description="未找到关系类型"></sdk-empty>
+            <sdk-empty :description="t('list.empty')"></sdk-empty>
           </template>
         </projection>
       </div>
     </div>
 
     <!-- Create relation dialog. -->
-    <sdk-dialog v-model="createDialog" title="新建关系类型" width="540px" append-to-body destroy-on-close>
+    <sdk-dialog v-model="createDialog" :title="t('rel.create')" :width="dialogWidth" append-to-body destroy-on-close>
       <div class="relations-create-body">
         <projection v-if="createDialog" slot="form" @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate"></projection>
       </div>

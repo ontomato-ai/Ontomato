@@ -222,7 +222,7 @@ export const en = {
   "panels.secret.outcomeUnknown": "The operation was dispatched, but its outcome is unknown.",
   "panels.confirmation.skipped": "{count} of the checked items will be skipped.",
   "panels.confirmation.noExecutableTargets": "0 executable items",
-  "panels.confirmation.deleteAgentImpact": "This deletes the selected agent definition.",
+  "panels.confirmation.deleteAgentImpact": "This deletes the selected agent definition. Existing conversations remain in history.",
   "panels.agentDefinition.grant": "Grant agent access",
   "panels.agentDefinition.revoke": "Revoke agent access",
   "panels.agentDefinition.share": "Share agent with domain",

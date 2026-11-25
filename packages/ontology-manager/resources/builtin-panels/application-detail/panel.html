@@ -187,6 +187,29 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
+  .apps-declaration-details {
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--sdk-bg-color);
+  }
+  .apps-declaration-details > summary {
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .apps-declaration-body {
+    margin-top: var(--spacing-sm);
+  }
+  .apps-declaration-body .sdk-object-summary-text {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--text-xs);
+    max-height: 22rem;
+    overflow: auto;
+    display: block;
+    white-space: pre;
+  }
 </style>
 
 <div id="app" v-cloak>
@@ -207,6 +230,7 @@
             <path d="M6 5h5v5" />
           </svg>
         </sdk-button>
+        <sdk-button @click="openCopyDialog">{{ t('action.copy') }}</sdk-button>
         <projection slot="deleteApp" @done="onDeleteDone"></projection>
       </template>
     </page-header>
@@ -262,6 +286,13 @@
           <h2 class="apps-card-title">{{ t('detail.readonlyTitle') }}</h2>
           <projection slot="summary" @navigate="onNavigateReference"></projection>
         </section>
+
+        <details class="apps-declaration-details">
+          <summary>{{ t('detail.declarationJson') }}</summary>
+          <div class="apps-declaration-body">
+            <projection slot="declarationSummary"></projection>
+          </div>
+        </details>
       </div>
 
       <!-- Tab 2: Entries -->
@@ -305,7 +336,7 @@
             <h2 class="apps-card-title">
               {{ usedPanelsTotal !== null ? t('assets.usedPanels', { count: usedPanelsTotal }) : t('assets.usedPanelsTitle') }}
             </h2>
-            <projection slot="usedPanelsList"></projection>
+            <projection slot="usedPanelsList" @row-action="onUsedPanelRowAction"></projection>
           </section>
 
           <section class="apps-card">
@@ -349,6 +380,25 @@
         <projection slot="grantsList"></projection>
       </div>
     </div>
+
+    <!-- Copy application dialog -->
+    <sdk-dialog
+      v-model="copyDialogOpen"
+      :title="t('copy.title')"
+      width="680px"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="apps-dialog-form">
+        <projection
+          v-if="copyDialogOpen && selectedKey"
+          slot="copyForm"
+          @saved="onCopied"
+          @discarded="closeCopyDialog"
+          @cancel="closeCopyDialog"
+        ></projection>
+      </div>
+    </sdk-dialog>
 
     <!-- Single-entry official ObjectForm dialog -->
     <sdk-dialog

@@ -5,7 +5,7 @@
 ## 看页面现在是什么
 
 - 状态 `selected` 是当前打开的关系类型（`{"className":"platform:Relationship","primaryKey":"<关系名>"}`）。
-- `headerTitle`（`ObjectHeader`）、`fromCard` / `toCard`（`ObjectRefCard`）均绑定选中关系类型的 `record`；读不到时页面显示「关系类型不存在或已删除」。
+- `headerTitle`（`ObjectHeader`）、`fromCard` / `toCard`（`ObjectRefCard`）均绑定选中关系类型的 `record`；无权限时显示无权提示，读失败时原位显示错误横幅（已读过同一条时保留草稿不卸下表单），确认不存在时显示「关系类型不存在或已删除」。
 
 ## 修改关系类型：填写表单，经保存后写入
 

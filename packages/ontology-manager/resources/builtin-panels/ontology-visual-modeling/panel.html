@@ -9,13 +9,21 @@
     overflow: hidden;
     container: visual-modeling / inline-size;
   }
+  /* Visually hidden probe container mounting official catalog/header projections without affecting layout. */
+  .vm-probe {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
   .vm-toolbar {
     display: flex;
+    min-height: 48px;
     align-items: center;
     flex-wrap: wrap;
     gap: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--page-gutter);
-    border-bottom: 1px solid var(--sdk-border-color-light, var(--ui-divider));
+    padding: var(--spacing-xs) var(--page-gutter);
     font-size: var(--text-sm);
     color: var(--sdk-text-color-secondary);
     flex: 0 0 auto;
@@ -25,20 +33,42 @@
     min-width: 0;
   }
   .vm-selection {
+    margin-left: auto;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
+    gap: var(--spacing-sm);
+  }
+  .vm-selection-actions {
+    display: inline-flex;
+    align-items: center;
     gap: var(--spacing-xs);
   }
+  .vm-selection-actions .sdk-panel-member {
+    display: inline-flex;
+    width: auto;
+    height: auto;
+  }
+  .vm-notice {
+    flex: 0 0 auto;
+    padding: var(--spacing-sm) var(--page-gutter);
+    border-top: 1px solid var(--sdk-border-color, var(--ui-border));
+    background: var(--sdk-bg-color);
+  }
+  .vm-notice-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+  /* Edge-to-edge workspace matching original VisualModeling + VisualModelingRightPanel hairline layout. */
   .vm-body {
     display: flex;
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md) var(--page-gutter) var(--page-content-gap);
     align-items: stretch;
     overflow: hidden;
+    border-top: 1px solid var(--sdk-border-color, var(--ui-border));
   }
   .vm-canvas {
     flex: 1 1 auto;
@@ -47,8 +77,6 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
     background-color: var(--sdk-bg-color-page);
     background-image: radial-gradient(var(--sdk-border-color, var(--ui-border)) 1px, transparent 1px);
     background-size: 20px 20px;
@@ -68,46 +96,51 @@
     min-height: 0;
   }
   .vm-side {
-    flex: 0 0 24rem;
-    width: 24rem;
+    flex: 0 0 var(--shell-inspector, 320px);
+    width: var(--shell-inspector, 320px);
     min-width: 0;
     min-height: 0;
     max-height: 100%;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
+    border-left: 1px solid var(--sdk-border-color, var(--ui-border));
     background: var(--sdk-bg-color);
-    padding: var(--spacing-md) var(--spacing-md) calc(var(--spacing-md) + var(--pane-dock-space, 0px));
-    overflow-y: auto;
-  }
-  .vm-side > *,
-  .vm-side-section > * {
-    flex: 0 0 auto;
+    overflow: hidden;
   }
   .vm-side-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--spacing-sm);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--sdk-border-color, var(--ui-border));
+    flex: 0 0 auto;
     min-width: 0;
   }
   .vm-side-header-main {
     flex: 1 1 auto;
     min-width: 0;
   }
-  .vm-side-actions {
+  .vm-side-content {
+    flex: 1 1 auto;
+    min-height: 0;
     display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--spacing-sm);
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg) calc(var(--spacing-md) + var(--pane-dock-space, 0px));
+    overflow-y: auto;
+  }
+  .vm-side-content > *,
+  .vm-side-section > * {
+    flex: 0 0 auto;
   }
   .vm-side-section {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
     min-width: 0;
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--sdk-border-color-light, var(--ui-divider));
   }
   .vm-section-head {
     display: flex;
@@ -117,6 +150,12 @@
     font-size: var(--text-xs);
     font-weight: var(--font-semibold);
     color: var(--sdk-text-color-secondary);
+  }
+  .vm-attr-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
   }
   .vm-side .sdk-panel-member,
   .vm-side .sdk-owner-form,
@@ -150,44 +189,79 @@
   .vm-attributes .sdk-object-list-card-fields {
     gap: 2px var(--spacing-sm);
   }
+  .vm-dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+  .vm-relation-ends {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+  .vm-relation-ends > .sdk-panel-member {
+    min-width: 0;
+  }
+  .vm-relation-arrow {
+    color: var(--sdk-text-color-placeholder);
+  }
   .vm-state {
     font-size: var(--text-sm);
     color: var(--sdk-text-color-secondary);
     margin: 0;
   }
 
-  @container visual-modeling (max-width: 860px) {
+  @container visual-modeling (max-width: 1400px) {
+    .vm-side {
+      flex-basis: 300px;
+      width: 300px;
+    }
+  }
+
+  @container visual-modeling (max-width: 900px) {
     .vm-body {
       flex: 1 1 auto;
       min-height: 0;
       flex-direction: column;
       overflow-y: auto;
       overflow-x: hidden;
-      padding-bottom: calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
+      padding-bottom: var(--pane-dock-space, 0px);
     }
     .vm-canvas {
-      flex: 1 0 min(22rem, 100%);
-      min-height: min(22rem, 100%);
+      flex: 1 0 360px;
+      min-height: 360px;
     }
     .vm-side {
       flex: 0 0 auto;
       width: 100%;
-      max-height: none;
-      overflow-y: visible;
+      max-height: 46cqh;
+      border-left: 0;
+      border-top: 1px solid var(--sdk-border-color, var(--ui-border));
     }
   }
 </style>
 
 <div id="app" ref="rootRef" class="visual-modeling">
-  <page-header :title="t('panel.name')">
+  <!-- Hidden catalog and edge header probes for relation defaults, edge toolbar label, and focus error detection. -->
+  <div class="vm-probe" aria-hidden="true">
+    <projection slot="objectCatalog"></projection>
+    <projection slot="relationCatalog"></projection>
+    <projection v-if="selectedEdge" slot="edgeHeader"></projection>
+  </div>
+
+  <page-header
+    :title="t('panel.name')"
+    :description="t('visualModeling.description')"
+    :back-label="fromPlayground ? t('visualModeling.backToGraph') : undefined"
+    @back="backToGraph"
+  >
     <template #actions>
-      <sdk-button text :aria-label="t('visualModeling.refresh')" :title="t('visualModeling.refresh')" @click="refresh">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-      </sdk-button>
-      <sdk-button @click="openRelationDialog">{{ t("visualModeling.addRelation") }}</sdk-button>
-      <sdk-button type="primary" @click="openClassDialog">{{ t("visualModeling.addObjectType") }}</sdk-button>
+      <sdk-button icon="link" @click="openRelationDialog">{{ t("visualModeling.addRelation") }}</sdk-button>
+      <sdk-button type="primary" icon="plus" @click="openClassDialog">{{ t("visualModeling.addObjectType") }}</sdk-button>
     </template>
   </page-header>
+
   <div class="vm-toolbar">
     <span class="vm-hint">{{ t("visualModeling.hint") }}</span>
     <div class="vm-selection">
@@ -198,10 +272,61 @@
         {{ t("visualModeling.selectedRelation", { name: selectedEdgeLabel }) }}
       </sdk-tag>
       <span v-else class="vm-state">{{ t("visualModeling.noSelection") }}</span>
-      <sdk-button v-if="selectedNode || selectedEdge" text size="small" @click="requestCloseSide">
-        {{ t("visualModeling.close") }}
-      </sdk-button>
+      <div class="vm-selection-actions">
+        <sdk-button
+          size="small"
+          icon="pencil"
+          :disabled="!canEditSelected"
+          @click="openEditSelectedDialog"
+        >
+          {{ t("visualModeling.edit") }}
+        </sdk-button>
+        <projection v-if="selectedNode" slot="classDelete" @done="onClassDeleted"></projection>
+        <projection v-else-if="selectedEdge" slot="relationDelete" @done="onRelationDeleted"></projection>
+        <sdk-button v-else type="danger" text size="small" icon="trash-2" disabled>
+          {{ t("visualModeling.delete") }}
+        </sdk-button>
+      </div>
     </div>
+  </div>
+
+  <div v-if="showEdgeBanner" class="vm-notice" data-vm-edge-status>
+    <info-banner
+      v-if="edgeForbidden"
+      compact
+      tone="warning"
+      :title="t('visualModeling.edgeForbiddenTitle')"
+      :text="t('visualModeling.edgeForbiddenText', { name: selectedEdge?.primaryKey ?? '' })"
+    >
+      <template #actions>
+        <sdk-button size="small" @click="requestCloseSide">{{ t("visualModeling.clearSelection") }}</sdk-button>
+      </template>
+    </info-banner>
+    <info-banner
+      v-else-if="edgeNotFound"
+      compact
+      tone="warning"
+      :title="t('visualModeling.focusRelationNotFoundTitle')"
+      :text="t('visualModeling.focusRelationNotFound', { name: selectedEdge?.primaryKey ?? '' })"
+    >
+      <template #actions>
+        <sdk-button size="small" @click="requestCloseSide">{{ t("visualModeling.clearSelection") }}</sdk-button>
+      </template>
+    </info-banner>
+    <info-banner
+      v-else-if="edgeReadError"
+      compact
+      tone="danger"
+      :title="t('visualModeling.edgeReadFailedTitle')"
+      :text="edgeHeaderError || t('visualModeling.readFailedFallback')"
+    >
+      <template #actions>
+        <div class="vm-notice-actions">
+          <sdk-button size="small" @click="retryDetail">{{ t("visualModeling.retry") }}</sdk-button>
+          <sdk-button size="small" @click="requestCloseSide">{{ t("visualModeling.clearSelection") }}</sdk-button>
+        </div>
+      </template>
+    </info-banner>
   </div>
 
   <div class="vm-body">
@@ -209,20 +334,60 @@
       <projection slot="graph"></projection>
     </div>
 
-    <aside v-if="selectedNode || selectedEdge" class="vm-side">
-      <template v-if="selectedNode">
-        <div class="vm-side-header">
-          <div class="vm-side-header-main">
-            <projection slot="nodeHeader"></projection>
+    <aside v-if="selectedNode" class="vm-side">
+      <div class="vm-side-header">
+        <div class="vm-side-header-main">
+          <div v-show="showNodeContent">
+            <projection
+              slot="nodeHeader"
+              :fallback-title="nodeEverReady ? (lastNodeLabel || selectedNode.primaryKey) : undefined"
+            ></projection>
           </div>
-          <sdk-button text size="small" @click="requestCloseSide">{{ t("visualModeling.close") }}</sdk-button>
+          <span v-if="!showNodeContent" class="vm-state">{{ selectedNode.primaryKey }}</span>
         </div>
-        <template v-if="nodeEverReady || !nodeMissing">
-          <projection slot="classForm"></projection>
-          <div class="vm-side-actions">
-            <sdk-button size="small" @click="browseData">{{ t("visualModeling.openData") }}</sdk-button>
-            <projection slot="classDelete" @done="onClassDeleted"></projection>
-          </div>
+        <sdk-button text size="small" @click="requestCloseSide">{{ t("visualModeling.close") }}</sdk-button>
+      </div>
+
+      <div class="vm-side-content">
+        <info-banner
+          v-if="nodeForbidden"
+          compact
+          tone="warning"
+          :title="t('visualModeling.nodeForbiddenTitle')"
+          :text="t('visualModeling.nodeForbiddenText', { name: selectedNode.primaryKey })"
+        >
+          <template #actions>
+            <sdk-button size="small" @click="requestCloseSide">{{ t("visualModeling.clearSelection") }}</sdk-button>
+          </template>
+        </info-banner>
+        <info-banner
+          v-else-if="nodeNotFound"
+          compact
+          tone="warning"
+          :title="t('visualModeling.focusObjectNotFoundTitle')"
+          :text="t('visualModeling.focusObjectNotFound', { name: selectedNode.primaryKey })"
+        >
+          <template #actions>
+            <sdk-button size="small" @click="requestCloseSide">{{ t("visualModeling.clearSelection") }}</sdk-button>
+          </template>
+        </info-banner>
+        <info-banner
+          v-else-if="nodeReadError"
+          compact
+          tone="danger"
+          :title="t('visualModeling.nodeReadFailedTitle')"
+          :text="nodeHeaderError || t('visualModeling.readFailedFallback')"
+        >
+          <template #actions>
+            <div class="vm-notice-actions">
+              <sdk-button size="small" @click="retryDetail">{{ t("visualModeling.retry") }}</sdk-button>
+              <sdk-button size="small" @click="requestCloseSide">{{ t("visualModeling.clearSelection") }}</sdk-button>
+            </div>
+          </template>
+        </info-banner>
+
+        <template v-if="showNodeContent">
+          <projection v-if="!editClassDialog" slot="classForm"></projection>
 
           <div class="vm-side-section">
             <div class="vm-section-head">
@@ -232,47 +397,34 @@
                   · {{ t("visualModeling.attributeCount", { count: attributesTotal }) }}
                 </template>
               </span>
-              <sdk-button text size="small" @click="newAttribute">{{ t("visualModeling.newAttribute") }}</sdk-button>
+              <sdk-button text size="small" icon="plus" @click="openAttributeDialog">
+                {{ t("visualModeling.newAttribute") }}
+              </sdk-button>
             </div>
             <div class="vm-attributes">
               <projection slot="attributes"></projection>
             </div>
           </div>
 
-          <div class="vm-side-section">
+          <div v-if="selectedAttribute" class="vm-side-section">
             <div class="vm-section-head">
-              <span>{{ selectedAttribute ? t("visualModeling.editAttribute") : t("visualModeling.newAttribute") }}</span>
+              <span>{{ t("visualModeling.editAttribute") }}</span>
             </div>
             <projection slot="attributeForm"></projection>
-            <div v-if="selectedAttribute" class="vm-selection">
+            <div class="vm-attr-actions">
               <projection slot="attributePrimaryKey"></projection>
               <projection slot="attributeDelete" @done="onAttributeDeleted"></projection>
             </div>
           </div>
         </template>
-      </template>
-
-      <template v-else>
-        <div class="vm-side-header">
-          <div class="vm-side-header-main">
-            <projection slot="edgeHeader"></projection>
-          </div>
-          <sdk-button text size="small" @click="requestCloseSide">{{ t("visualModeling.close") }}</sdk-button>
-        </div>
-        <template v-if="edgeEverReady || !edgeMissing">
-          <projection slot="relationForm"></projection>
-          <div class="vm-side-actions">
-            <projection slot="relationDelete" @done="onRelationDeleted"></projection>
-          </div>
-        </template>
-      </template>
+      </div>
     </aside>
   </div>
 
   <sdk-dialog
     :model-value="classDialog"
     :title="t('visualModeling.createClassTitle')"
-    :width="narrow ? '94%' : '540px'"
+    :width="narrow ? '94%' : '480px'"
     :before-close="handleDialogClose"
     append-to-body
     destroy-on-close
@@ -281,6 +433,25 @@
       <projection
         v-if="classDialog"
         slot="classCreate"
+        @saved="onClassCreated"
+        @discarded="closeDialog"
+        @cancel="closeDialog"
+      ></projection>
+    </div>
+  </sdk-dialog>
+
+  <sdk-dialog
+    :model-value="editClassDialog"
+    :title="t('visualModeling.editClassTitle')"
+    :width="narrow ? '94%' : '480px'"
+    :before-close="handleDialogClose"
+    append-to-body
+    destroy-on-close
+  >
+    <div class="vm-dialog-body">
+      <projection
+        v-if="editClassDialog"
+        slot="classForm"
         @saved="closeDialog"
         @discarded="closeDialog"
         @cancel="closeDialog"
@@ -291,16 +462,75 @@
   <sdk-dialog
     :model-value="relationDialog"
     :title="t('visualModeling.createRelationTitle')"
-    :width="narrow ? '94%' : '540px'"
+    :width="narrow ? '94%' : '400px'"
+    :before-close="handleDialogClose"
+    append-to-body
+    destroy-on-close
+  >
+    <div class="vm-dialog-body">
+      <info-banner compact tone="info" :text="t('visualModeling.joinFieldHint')"></info-banner>
+      <projection
+        v-if="relationDialog"
+        slot="relationCreate"
+        @saved="onRelationCreated"
+        @discarded="closeDialog"
+        @cancel="closeDialog"
+      ></projection>
+    </div>
+  </sdk-dialog>
+
+  <sdk-dialog
+    :model-value="editRelationDialog"
+    :title="t('visualModeling.editRelationTitle')"
+    :width="narrow ? '94%' : '400px'"
+    :before-close="handleDialogClose"
+    append-to-body
+    destroy-on-close
+  >
+    <div class="vm-dialog-body">
+      <info-banner
+        v-if="edgeReadError && edgeEverReady"
+        compact
+        tone="danger"
+        :title="t('visualModeling.edgeReadFailedTitle')"
+        :text="edgeHeaderError || t('visualModeling.readFailedFallback')"
+      >
+        <template #actions>
+          <sdk-button size="small" @click="retryDetail">{{ t("visualModeling.retry") }}</sdk-button>
+        </template>
+      </info-banner>
+      <template v-if="editRelationDialog && showEdgeContent">
+        <div class="vm-relation-ends">
+          <projection slot="relationEditFrom"></projection>
+          <svg class="vm-relation-arrow" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3 8h10M9.5 4.5 13 8l-3.5 3.5" />
+          </svg>
+          <projection slot="relationEditTo"></projection>
+        </div>
+        <info-banner compact tone="info" :text="t('visualModeling.joinFieldHint')"></info-banner>
+        <projection
+          slot="relationForm"
+          @saved="closeDialog"
+          @discarded="closeDialog"
+          @cancel="closeDialog"
+        ></projection>
+      </template>
+    </div>
+  </sdk-dialog>
+
+  <sdk-dialog
+    :model-value="attributeDialog"
+    :title="t('visualModeling.createAttributeTitle')"
+    :width="narrow ? '94%' : '440px'"
     :before-close="handleDialogClose"
     append-to-body
     destroy-on-close
   >
     <div class="vm-dialog-body">
       <projection
-        v-if="relationDialog"
-        slot="relationCreate"
-        @saved="closeDialog"
+        v-if="attributeDialog"
+        slot="attributeCreate"
+        @saved="onAttributeCreated"
         @discarded="closeDialog"
         @cancel="closeDialog"
       ></projection>

@@ -1,7 +1,8 @@
 <!--
   Four-layer capability map panel. Type mode renders declared platform types and relation kinds (graph or layer-grouped
-  table) with read-only class details; instance mode explores one-hop relations from a start object. Every business read
-  and presentation lives in official SDK projections; this template owns layout and panel state controls only.
+  table) with read-only class details; instance mode explores one-hop relations from a start object and supports
+  owner-backed cross-type search to focus a match and its one-hop neighbors. Every business read and presentation lives
+  in official SDK projections; this template owns layout and panel state controls only.
 -->
 <style>
   [v-cloak] { display: none; }
@@ -32,12 +33,12 @@
     background: var(--sdk-bg-color);
   }
   .capmap-search {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-    flex: 1 1 200px;
-    min-width: 160px;
+    flex: 1 1 220px;
+    min-width: 180px;
     max-width: 340px;
+  }
+  .capmap-search-icon {
+    color: var(--sdk-text-color-placeholder);
   }
   .capmap-actions {
     display: inline-flex;
@@ -84,9 +85,60 @@
     position: relative;
     display: flex;
     flex-direction: column;
+    gap: var(--spacing-sm);
     min-width: 0;
     min-height: 0;
     height: 100%;
+  }
+  .capmap-strip {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    min-width: 0;
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    overflow: hidden;
+  }
+  .capmap-strip-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-xs) var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-bottom: 1px solid var(--ui-divider);
+    background: var(--sdk-fill-color-lighter, var(--sdk-bg-color));
+    font-size: var(--text-xs);
+  }
+  .capmap-strip-title-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs) var(--spacing-sm);
+    min-width: 0;
+  }
+  .capmap-strip-title {
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .capmap-strip-meta {
+    color: var(--sdk-text-color-secondary);
+  }
+  .capmap-strip-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    flex-shrink: 0;
+  }
+  .capmap-strip-body {
+    max-height: 184px;
+    overflow-y: auto;
+    padding: var(--spacing-xs) var(--spacing-md);
+  }
+  .capmap-strip-body .sdk-object-list {
+    height: auto;
+    gap: 0;
   }
   .capmap-canvas {
     display: flex;
@@ -260,24 +312,37 @@
         aria-label-key="cm.viewLabel"
         @update:model-value="setView"
       ></segmented-control>
-      <div class="capmap-search">
-        <sdk-input
-          :model-value="query"
-          size="small"
-          clearable
-          :aria-label="mode === 'type' ? t('cm.searchType') : t('cm.searchInstance')"
-          :placeholder="mode === 'type' ? t('cm.searchType') : t('cm.searchInstance')"
-          @update:model-value="onQueryChange"
-        ></sdk-input>
-        <sdk-button v-if="query" size="small" data-cap-action="clear-query" @click="clearQuery">
-          {{ t('cm.clearSearch') }}
-        </sdk-button>
-      </div>
+      <sdk-input
+        :model-value="query"
+        class="capmap-search"
+        size="small"
+        clearable
+        :aria-label="mode === 'type' ? t('cm.searchType') : t('cm.searchInstance')"
+        :placeholder="mode === 'type' ? t('cm.searchType') : t('cm.searchInstance')"
+        @update:model-value="onQueryChange"
+      >
+        <template #prefix>
+          <svg class="capmap-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="m10.5 10.5 3 3" />
+          </svg>
+        </template>
+      </sdk-input>
+      <sdk-button
+        v-if="mode === 'instance' && hasQuery && searchMatchesCollapsed"
+        size="small"
+        type="primary"
+        plain
+        data-cap-action="show-search-matches"
+        @click="searchMatchesCollapsed = false"
+      >
+        {{ t('cm.showMatches', { count: searchMatchCount ?? 0 }) }}
+      </sdk-button>
       <div v-if="mode === 'type' && view === 'graph'" class="capmap-kind-filter">
         <sdk-popover
           trigger="click"
           placement="bottom-start"
-          :width="320"
+          :width="360"
         >
           <template #reference>
             <sdk-button
@@ -354,6 +419,30 @@
 
     <div class="capmap-body">
       <section class="capmap-main">
+        <div
+          v-if="mode === 'instance' && hasQuery"
+          v-show="!searchMatchesCollapsed"
+          class="capmap-strip"
+          data-cap-search-matches
+        >
+          <div class="capmap-strip-header">
+            <div class="capmap-strip-title-group">
+              <span class="capmap-strip-title">
+                {{ t('cm.searchMatchesTitle', { count: searchMatchCount ?? 0 }) }}
+              </span>
+              <span class="capmap-strip-meta">{{ t('cm.searchMatchesHint') }}</span>
+            </div>
+            <div class="capmap-strip-actions">
+              <sdk-button size="small" link data-cap-action="hide-search-matches" @click="searchMatchesCollapsed = true">
+                {{ t('cm.hideMatches') }}
+              </sdk-button>
+            </div>
+          </div>
+          <div class="capmap-strip-body">
+            <projection slot="searchResults" @choose="onFocusMatch"></projection>
+          </div>
+        </div>
+
         <div v-if="mode === 'instance' || view === 'graph'" class="capmap-canvas">
           <projection slot="graph"></projection>
         </div>

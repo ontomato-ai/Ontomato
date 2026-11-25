@@ -117,7 +117,7 @@
                 "operation": "delete",
                 "labelKey": "recent.delete",
                 "icon": "trash-2",
-                "danger": true
+                "tone": "danger"
               }
             ]
           }

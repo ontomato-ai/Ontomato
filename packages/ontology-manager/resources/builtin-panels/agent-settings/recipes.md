@@ -7,7 +7,7 @@ and Agent Platform (`/agents/settings`), each wiring its own sibling `detailPath
 ## State
 
 - `search` (`string`, `deepLink: true`): local search query filtering agents by name, category, status, or description.
-- `creating` (`boolean`, `deepLink: false`): opens the centered creation dialog (`createForm`) in place.
+- `creating` (`boolean`, `deepLink: true`): opens the centered creation dialog (`createForm`) in place (also reached via legacy `/ontology/agents/new` and `/agents/settings/new` redirects).
 - `detailPath` (`string`, `external: true`, `deepLink: false`): wired by the hosting application entry
   (`/ontology/agents/detail` or `/agents/settings/detail`).
 

@@ -1,6 +1,6 @@
 <!--
   Agent detail panel: full-width edit-on-open detail entry for a single platform:AgentDefinition.
-  PageHeader owns Back, ObjectHeader (with category badge), optional "View class" (ontology manager),
+  PageHeader owns Back, ObjectHeader (with live draft avatar, live draft title, and category badge),
   Delete (hidden when unavailable for preset, system, or view-only readers), and the Save/Discard draft bar.
   Editors (canGrant) also get a Permissions & sharing tab for domain-wide sharing and single-select
   3-level (use / view / edit) principal & role grants.
@@ -19,6 +19,16 @@
   .agent-detail-title {
     margin: 0;
     min-width: 0;
+  }
+  .agent-detail-avatar {
+    display: inline-grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    box-sizing: border-box;
+    border-radius: 30%;
+    color: var(--sdk-color-primary);
   }
   .agent-detail-body {
     display: flex;
@@ -53,7 +63,223 @@
     height: auto;
   }
   .agent-detail-form .sdk-owner-form-body {
+    display: flex;
+    flex-direction: column;
     overflow: visible;
+  }
+  .agent-detail-form .sdk-owner-form-draft-banner,
+  .agent-detail-form .sdk-owner-form-readonly {
+    order: -3;
+  }
+  .agent-detail-form .sdk-owner-form-changes {
+    order: -2;
+    margin-block: 0 var(--spacing-md);
+  }
+  .agent-detail-form .sdk-owner-form-changed {
+    order: -1;
+    margin-block: 0 var(--spacing-md);
+  }
+  /* Avatar & color split-labeled groups sharing /icon */
+  .agent-detail-avatar-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    width: 100%;
+  }
+  .agent-detail-avatar-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .agent-detail-avatar-icon,
+  .agent-detail-avatar-color {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    box-sizing: border-box;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+  .agent-detail-avatar-icon {
+    border: 1.5px solid var(--sdk-border-color);
+    background: var(--sdk-fill-color-extra-light);
+    color: var(--sdk-color-primary);
+  }
+  .agent-detail-avatar-icon:hover:not(:disabled),
+  .agent-detail-avatar-icon.active {
+    border-color: color-mix(in srgb, var(--sdk-color-primary) 50%, transparent);
+    background: var(--sdk-color-primary-light-9);
+  }
+  .agent-detail-avatar-icon.active {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--sdk-color-primary) 10%, transparent);
+  }
+  .agent-detail-avatar-color {
+    border: 2px solid transparent;
+  }
+  .agent-detail-avatar-color:hover:not(:disabled) {
+    border-color: var(--sdk-border-color-dark);
+  }
+  .agent-detail-avatar-color.active {
+    border-color: var(--sdk-color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--sdk-color-primary) 15%, transparent);
+  }
+  .agent-detail-avatar-icon:disabled,
+  .agent-detail-avatar-color:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  /* System prompt Markdown editor & preview */
+  .agent-detail-prompt-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    width: 100%;
+    min-width: 0;
+  }
+  .agent-detail-prompt-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    width: 100%;
+  }
+  .agent-detail-prompt-label {
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+    color: var(--sdk-text-color-regular);
+  }
+  .agent-detail-prompt-field.is-changed .agent-detail-prompt-label {
+    color: var(--sdk-color-primary);
+  }
+  .agent-detail-prompt-editor {
+    width: 100%;
+    min-width: 0;
+  }
+  .agent-detail-prompt-preview {
+    min-height: 560px;
+    padding: var(--spacing-md);
+    box-sizing: border-box;
+    border: 1px solid var(--sdk-border-color);
+    border-radius: var(--radius-md);
+    background: var(--sdk-fill-color-lighter);
+    overflow: auto;
+  }
+  .agent-detail-prompt-count {
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+    line-height: 1.4;
+  }
+  /* Skills card grid */
+  .agent-detail-skills-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    width: 100%;
+    min-width: 0;
+  }
+  .agent-detail-skills-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    width: 100%;
+  }
+  .agent-detail-skills-label {
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+    color: var(--sdk-text-color-regular);
+  }
+  .agent-detail-skills-field.is-changed .agent-detail-skills-label {
+    color: var(--sdk-color-primary);
+  }
+  .agent-detail-skills-count {
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .agent-detail-skills-help {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+    line-height: 1.5;
+  }
+  .agent-detail-skills-diagnostics {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+  .agent-detail-skills-loading {
+    margin: 0;
+    padding: var(--spacing-sm) 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .agent-detail-skill-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+    gap: var(--spacing-sm);
+    min-height: 48px;
+  }
+  .agent-detail-skill-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    padding: 12px;
+    background: var(--sdk-bg-color);
+    border: 1px solid var(--sdk-border-color-light);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+  .agent-detail-skill-card:hover:not(.is-disabled) {
+    border-color: var(--sdk-color-primary-light-7);
+    box-shadow: var(--sdk-box-shadow-light);
+  }
+  .agent-detail-skill-card.is-selected {
+    border-color: var(--sdk-color-primary);
+    background: var(--sdk-color-primary-light-9);
+  }
+  .agent-detail-skill-card.is-unavailable {
+    border-color: var(--sdk-color-warning-light-5);
+  }
+  .agent-detail-skill-card.is-disabled {
+    cursor: default;
+    opacity: 0.78;
+  }
+  .agent-detail-skill-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-xs);
+  }
+  .agent-detail-skill-title-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .agent-detail-skill-title {
+    overflow-wrap: anywhere;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+    line-height: 1.4;
+  }
+  .agent-detail-skill-desc {
+    overflow-wrap: anywhere;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+    line-height: 1.5;
+  }
+  .agent-detail-skill-reason {
+    overflow-wrap: anywhere;
+    font-size: var(--text-xs);
+    color: var(--sdk-color-warning-dark-2, var(--sdk-color-warning));
+    line-height: 1.4;
   }
   .agent-detail-share-bar {
     display: flex;
@@ -143,11 +369,70 @@
   <section class="agent-detail-page">
     <page-header :back-label="t('detail.back')" :draft="detailDraft" @back="goBack">
       <template #title>
-        <projection v-if="selectedKey" slot="header" :fallback-title="selectedKey"></projection>
+        <projection
+          v-if="selectedKey"
+          slot="header"
+          :title="liveTitle"
+          :fallback-title="selectedKey"
+        >
+          <template v-if="detailReady" #leading>
+            <span class="agent-detail-avatar" :style="avatarStyle(liveIcon)" aria-hidden="true">
+              <component :is="avatarAppIconByKey(avatarKeyOf(liveIcon))" v-if="avatarAppIconByKey(avatarKeyOf(liveIcon))" :size="17" />
+              <svg
+                v-else-if="avatarSvgKeyByKey(avatarKeyOf(liveIcon)) === 'TrendingUp'"
+                viewBox="0 0 24 24"
+                width="17"
+                height="17"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M16 7h6v6" />
+                <path d="m22 7-8.5 8.5-5-5L2 17" />
+              </svg>
+              <svg
+                v-else-if="avatarSvgKeyByKey(avatarKeyOf(liveIcon)) === 'Target'"
+                viewBox="0 0 24 24"
+                width="17"
+                height="17"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="6" />
+                <circle cx="12" cy="12" r="2" />
+              </svg>
+              <svg
+                v-else
+                viewBox="0 0 24 24"
+                width="17"
+                height="17"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 18V5" />
+                <path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4" />
+                <path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5" />
+                <path d="M17.997 5.125a4 4 0 0 1 2.526 5.77" />
+                <path d="M18 18a4 4 0 0 0 2-7.464" />
+                <path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517" />
+                <path d="M6 18a4 4 0 0 1-2-7.464" />
+                <path d="M6.003 5.125a4 4 0 0 0-2.526 5.77" />
+              </svg>
+            </span>
+          </template>
+        </projection>
         <h1 v-else class="agent-detail-title">{{ t("panel.name") }}</h1>
       </template>
       <template #actions>
-        <sdk-button v-if="detailReady && isOntologyEntry" text size="small" @click="viewType">{{ t("agents.viewType") }}</sdk-button>
         <!-- Keep remove mounted with v-show so PageHeader slots stay active and @done still fires after delete. -->
         <div v-show="detailReady">
           <projection slot="remove" @done="onRemoveDone"></projection>
@@ -175,8 +460,214 @@
         <section class="agent-detail-card">
           <div class="agent-detail-form">
             <projection slot="form" @saved="onSaved">
+              <template #field-icon="{ field, value, error, changed, disabled, set }">
+                <div class="agent-detail-avatar-fields" data-field="/icon">
+                  <sdk-form-item
+                    :label="field.label"
+                    :error="error"
+                    :class="{ 'sdk-form-field-changed': changed }"
+                  >
+                    <div class="agent-detail-avatar-choices" role="group" :aria-label="field.label">
+                      <button
+                        v-for="iconKey in avatarIconKeys"
+                        :key="iconKey"
+                        type="button"
+                        class="agent-detail-avatar-icon"
+                        :class="{ active: avatarKeyOf(value) === iconKey }"
+                        :title="iconKey"
+                        :aria-label="iconKey"
+                        :aria-pressed="avatarKeyOf(value) === iconKey"
+                        :disabled="disabled"
+                        @click="selectAvatarKey(value, iconKey, set)"
+                      >
+                        <component :is="avatarAppIconByKey(iconKey)" v-if="avatarAppIconByKey(iconKey)" :size="18" aria-hidden="true" />
+                        <svg
+                          v-else-if="avatarSvgKeyByKey(iconKey) === 'TrendingUp'"
+                          viewBox="0 0 24 24"
+                          width="18"
+                          height="18"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M16 7h6v6" />
+                          <path d="m22 7-8.5 8.5-5-5L2 17" />
+                        </svg>
+                        <svg
+                          v-else-if="avatarSvgKeyByKey(iconKey) === 'Target'"
+                          viewBox="0 0 24 24"
+                          width="18"
+                          height="18"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <circle cx="12" cy="12" r="6" />
+                          <circle cx="12" cy="12" r="2" />
+                        </svg>
+                        <svg
+                          v-else
+                          viewBox="0 0 24 24"
+                          width="18"
+                          height="18"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M12 18V5" />
+                          <path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4" />
+                          <path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5" />
+                          <path d="M17.997 5.125a4 4 0 0 1 2.526 5.77" />
+                          <path d="M18 18a4 4 0 0 0 2-7.464" />
+                          <path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517" />
+                          <path d="M6 18a4 4 0 0 1-2-7.464" />
+                          <path d="M6.003 5.125a4 4 0 0 0-2.526 5.77" />
+                        </svg>
+                      </button>
+                    </div>
+                  </sdk-form-item>
+                  <sdk-form-item
+                    :label="t('form.avatarColor')"
+                    :class="{ 'sdk-form-field-changed': changed }"
+                  >
+                    <div class="agent-detail-avatar-choices" role="group" :aria-label="t('form.avatarColor')">
+                      <button
+                        v-for="(swatch, index) in avatarSwatches"
+                        :key="index"
+                        type="button"
+                        class="agent-detail-avatar-color"
+                        :class="{ active: avatarSwatchIndexOf(value) === index }"
+                        :style="{ background: swatch }"
+                        :aria-label="t('form.avatarColorOption', { index: index + 1 })"
+                        :aria-pressed="avatarSwatchIndexOf(value) === index"
+                        :disabled="disabled"
+                        @click="selectAvatarColor(value, index, set)"
+                      ></button>
+                    </div>
+                  </sdk-form-item>
+                </div>
+              </template>
               <template #field-modelSelection.modelId><projection slot="model"></projection></template>
-              <template #field-skills><projection slot="skills"></projection></template>
+              <template #field-systemPrompt="{ field, value, error, changed, disabled, set }">
+                <sdk-form-item
+                  :error="error"
+                  :class="{ 'sdk-form-field-changed': changed }"
+                  data-field="/systemPrompt"
+                >
+                  <div class="agent-detail-prompt-field" :class="{ 'is-changed': changed }">
+                    <div class="agent-detail-prompt-head">
+                      <span class="agent-detail-prompt-label">{{ field.label }}</span>
+                      <sdk-button size="small" @click="promptPreview = !promptPreview">
+                        {{ promptPreview ? t("prompt.edit") : t("prompt.preview") }}
+                      </sdk-button>
+                    </div>
+                    <div v-if="promptPreview" class="agent-detail-prompt-preview">
+                      <markdown-view :content="typeof value === 'string' ? value : ''"></markdown-view>
+                    </div>
+                    <code-editor
+                      v-else
+                      class="agent-detail-prompt-editor"
+                      :model-value="typeof value === 'string' ? value : ''"
+                      language="markdown"
+                      :min-height="560"
+                      :readonly="disabled"
+                      @update:model-value="set($event)"
+                    ></code-editor>
+                    <small class="agent-detail-prompt-count">
+                      {{ t("prompt.characters", { count: (typeof value === "string" ? value : "").length }) }} · Markdown
+                    </small>
+                  </div>
+                </sdk-form-item>
+              </template>
+              <template #field-skills="{ field, value, error, changed, disabled, set }">
+                <projection v-if="!hasSkillGrid" slot="skills"></projection>
+                <sdk-form-item
+                  v-else
+                  :error="error"
+                  :class="{ 'sdk-form-field-changed': changed }"
+                  data-field="/skills"
+                >
+                  <div class="agent-detail-skills-field" :class="{ 'is-changed': changed }">
+                    <div class="agent-detail-skills-head">
+                      <span class="agent-detail-skills-label">{{ field.label }}</span>
+                      <span class="agent-detail-skills-count">
+                        {{ t("skills.selectedCount", { count: selectedSkillCount(value) }) }}
+                      </span>
+                    </div>
+                    <p v-if="field.help" class="agent-detail-skills-help">{{ field.help }}</p>
+                    <sdk-alert
+                      v-if="skillsError"
+                      type="error"
+                      :title="skillsError"
+                      :closable="false"
+                      show-icon
+                    ></sdk-alert>
+                    <div v-if="!skillsLoading && !skillsError && skillDiagnostics.length" class="agent-detail-skills-diagnostics">
+                      <sdk-alert
+                        v-for="(note, index) in skillDiagnostics"
+                        :key="index"
+                        type="warning"
+                        :title="note"
+                        :closable="false"
+                        show-icon
+                      ></sdk-alert>
+                    </div>
+                    <p v-if="skillsLoading" class="agent-detail-skills-loading" role="status">
+                      {{ t("skills.loading") }}
+                    </p>
+                    <div v-else-if="displayedSkills.length" class="agent-detail-skill-grid">
+                      <div
+                        v-for="skill in displayedSkills"
+                        :key="skill.primaryKey"
+                        class="agent-detail-skill-card"
+                        :class="{
+                          'is-selected': isSkillSelected(value, skill),
+                          'is-unavailable': Boolean(skill.unavailable),
+                          'is-disabled': disabled || (Boolean(skill.unavailable) && !isSkillSelected(value, skill)),
+                        }"
+                        :title="skill.unavailable?.reason || skill.description || undefined"
+                        @click="toggleSkill(value, skill, disabled, set)"
+                      >
+                        <div class="agent-detail-skill-header">
+                          <div class="agent-detail-skill-title-row">
+                            <span class="agent-detail-skill-title">{{ skill.label }}</span>
+                            <sdk-tag v-if="skill.unavailable" size="small" type="warning">
+                              {{ t("skills.unavailable") }}
+                            </sdk-tag>
+                          </div>
+                          <sdk-checkbox
+                            :model-value="isSkillSelected(value, skill)"
+                            :disabled="disabled || (Boolean(skill.unavailable) && !isSkillSelected(value, skill))"
+                            @click.stop
+                            @update:model-value="toggleSkill(value, skill, disabled, set)"
+                          ></sdk-checkbox>
+                        </div>
+                        <div v-if="skill.description" class="agent-detail-skill-desc">
+                          {{ skill.description }}
+                        </div>
+                        <div v-if="skill.unavailable?.reason" class="agent-detail-skill-reason">
+                          {{ skill.unavailable.reason }}
+                        </div>
+                      </div>
+                    </div>
+                    <sdk-empty
+                      v-else-if="!skillsError && !skillDiagnostics.length"
+                      :image-size="48"
+                      :description="t('skills.empty')"
+                    ></sdk-empty>
+                  </div>
+                </sdk-form-item>
+              </template>
               <template #field-enabledMcpServiceIds><projection slot="tools"></projection></template>
               <template #field-executionUserId><projection slot="executor"></projection></template>
               <template #field-classNames><projection slot="scope"></projection></template>

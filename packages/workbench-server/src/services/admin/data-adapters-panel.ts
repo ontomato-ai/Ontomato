@@ -1479,6 +1479,7 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
               code: "MULTI_DATA_SOURCE_REJECTED",
               message: t("panels.dataAdapters.errors.multiSourceRejected", { details: summary }),
               errors: mappedErrors,
+              details: { problems: problems.map((p) => ({ path: p.path, message: p.detail })) },
             };
           }
           return ownerWriteFailure(envelope, "MULTI_DATA_SOURCE_SAVE_FAILED", t("panels.dataAdapters.errors.saveFailed"));
@@ -1580,6 +1581,7 @@ export const dataAdaptersServerOperations: readonly PanelServerOperation[] = [
             code: "MULTI_DATA_SOURCE_REJECTED",
             message: t("panels.dataAdapters.errors.multiSourceRejected", { details: summary }),
             errors: mappedErrors,
+            details: { problems: problems.map((p) => ({ path: p.path, message: p.detail })) },
           };
         }
         return ownerWriteFailure(envelope, "MULTI_DATA_SOURCE_SAVE_FAILED", t("panels.dataAdapters.errors.saveFailed"));

@@ -1,4 +1,4 @@
-import { computed, nextTick, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import {
   mountPanel,
   panelAddress,
@@ -295,6 +295,258 @@ const ProjectionDetailPanel = {
       exitEdit();
     }
 
+    // PJ-09: Unify Cancel and Discard into one exit action with a single leave confirmation.
+    const headerDraft = computed(() => {
+      const draft = editDraft.value;
+      if (!draft) return null;
+      return {
+        ...draft,
+        confirmDiscard: false,
+        discard: () => cancelEdit(),
+      };
+    });
+    const headerDraftLabels = computed(() => ({
+      discard: t("action.cancel"),
+    }));
+
+    // PJ-03: Inspect declared preview input ports via direct instance.projectionOf("preview") and apply temporary inputs.
+    const previewPorts = ref([]);
+    const previewDraftValues = reactive({});
+    const previewDraftClasses = reactive({});
+    const appliedPreviewInputs = ref({});
+    const previewInputError = ref("");
+    const previewRevision = ref(0);
+    const hasAppliedPreviewInputs = computed(() => Object.keys(appliedPreviewInputs.value).length > 0);
+    const previewRenderKey = computed(() => `${selectedKey.value}:${previewRevision.value}`);
+
+    function resetPreviewInputs() {
+      for (const key of Object.keys(previewDraftValues)) delete previewDraftValues[key];
+      for (const key of Object.keys(previewDraftClasses)) delete previewDraftClasses[key];
+      appliedPreviewInputs.value = {};
+      previewInputError.value = "";
+    }
+
+    let previewPortSeq = 0;
+    watch(
+      [selectedKey, recordReady, tabModel, isEditMode],
+      async ([key, ready, tab, editing]) => {
+        const seq = ++previewPortSeq;
+        if (!key || !ready || editing || tab !== "overview") {
+          if (!key) {
+            previewPorts.value = [];
+            resetPreviewInputs();
+          }
+          return;
+        }
+        if (typeof instance.projectionOf !== "function") return;
+        try {
+          const projection = await instance.projectionOf("preview");
+          if (seq !== previewPortSeq) return;
+          const entries = Object.entries(projection?.inputs ?? {});
+          const nextPorts = entries.map(([name, port]) => {
+            if (port?.kind === "object") {
+              return { name, kind: "object", objectType: port.objectType || "@any", label: `${name} (${port.objectType || "@any"})` };
+            }
+            if (port?.kind === "object-union") {
+              const objectTypes = Array.isArray(port.objectTypes) ? port.objectTypes : [];
+              return { name, kind: "object-union", objectTypes, label: `${name}` };
+            }
+            if (port?.kind === "scalar") {
+              return { name, kind: "scalar", scalarType: port.type || "string", label: `${name} (${port.type || "string"})` };
+            }
+            return { name, kind: port?.kind || "json", label: `${name} (${port?.kind || "json"})` };
+          });
+          previewPorts.value = nextPorts;
+          for (const port of nextPorts) {
+            if (port.kind === "scalar" && port.scalarType === "boolean") {
+              if (!(port.name in previewDraftValues)) previewDraftValues[port.name] = false;
+            } else if (!(port.name in previewDraftValues)) {
+              previewDraftValues[port.name] = "";
+            }
+            if (port.kind === "object-union" && !(port.name in previewDraftClasses)) {
+              previewDraftClasses[port.name] = port.objectTypes[0] ?? "";
+            } else if (port.kind === "object" && port.objectType === "@any" && !(port.name in previewDraftClasses)) {
+              previewDraftClasses[port.name] = "";
+            }
+          }
+        } catch {
+          if (seq === previewPortSeq) previewPorts.value = [];
+        }
+      },
+      { immediate: true },
+    );
+
+    watch(selectedKey, () => {
+      previewPorts.value = [];
+      resetPreviewInputs();
+      previewRevision.value += 1;
+    });
+
+    function applyPreviewInputs() {
+      previewInputError.value = "";
+      const next = {};
+      for (const port of previewPorts.value) {
+        const raw = previewDraftValues[port.name];
+        if (port.kind === "object") {
+          const pk = typeof raw === "string" ? raw.trim() : "";
+          const cls = port.objectType === "@any"
+            ? (typeof previewDraftClasses[port.name] === "string" ? previewDraftClasses[port.name].trim() : "")
+            : port.objectType;
+          if (pk && cls) next[port.name] = { className: cls, primaryKey: pk };
+        } else if (port.kind === "object-union") {
+          const pk = typeof raw === "string" ? raw.trim() : "";
+          const cls = typeof previewDraftClasses[port.name] === "string" ? previewDraftClasses[port.name].trim() : "";
+          if (pk && cls) next[port.name] = { className: cls, primaryKey: pk };
+        } else if (port.kind === "scalar") {
+          if (port.scalarType === "boolean") {
+            next[port.name] = Boolean(raw);
+          } else if (port.scalarType === "number") {
+            const text = typeof raw === "string" ? raw.trim() : "";
+            if (text !== "") {
+              const num = Number(text);
+              if (Number.isFinite(num)) next[port.name] = num;
+            }
+          } else {
+            const text = typeof raw === "string" ? raw.trim() : "";
+            if (text !== "") next[port.name] = text;
+          }
+        } else {
+          const text = typeof raw === "string" ? raw.trim() : "";
+          if (text !== "") {
+            try {
+              next[port.name] = JSON.parse(text);
+            } catch {
+              previewInputError.value = t("preview.invalidJson", { port: port.name });
+              return;
+            }
+          }
+        }
+      }
+      appliedPreviewInputs.value = next;
+      previewRevision.value += 1;
+    }
+
+    function clearPreviewInputs() {
+      resetPreviewInputs();
+      previewRevision.value += 1;
+    }
+
+    // PJ-07: Quick binding pickers for ObjectType / MetricView data and Action operations alongside JSON advanced editing.
+    const dataBindKind = ref("objectType");
+    const dataBindKey = ref("rows");
+    const dataBindManualId = ref("");
+    const showDataJson = ref(true);
+    const opBindKey = ref("execute");
+    const opBindManualId = ref("");
+    const showOpsJson = ref(true);
+    const jsonDraftText = reactive({ data: null, operations: null });
+    const jsonFieldErrors = reactive({ data: "", operations: "" });
+
+    const dataBindKindOptions = computed(() => [
+      { value: "objectType", label: t("binding.kindObjectType") },
+      { value: "metric", label: t("binding.kindMetric") },
+    ]);
+
+    watch(dataBindKind, (kind) => {
+      if (kind === "metric" && (dataBindKey.value === "rows" || !dataBindKey.value.trim())) {
+        dataBindKey.value = "result";
+      } else if (kind === "objectType" && (dataBindKey.value === "result" || !dataBindKey.value.trim())) {
+        dataBindKey.value = "rows";
+      }
+    });
+
+    watch(isEditMode, (active) => {
+      if (!active) {
+        jsonDraftText.data = null;
+        jsonDraftText.operations = null;
+        jsonFieldErrors.data = "";
+        jsonFieldErrors.operations = "";
+        instance.state.setState({
+          bindingObjectType: null,
+          bindingMetric: null,
+          bindingAction: null,
+        });
+      }
+    });
+
+    const pickedObjectTypeId = computed(() => values.value.bindingObjectType?.primaryKey || "");
+    const pickedMetricId = computed(() => values.value.bindingMetric?.primaryKey || "");
+    const pickedActionId = computed(() => values.value.bindingAction?.primaryKey || "");
+    const resolvedDataTargetId = computed(() =>
+      dataBindManualId.value.trim() || (dataBindKind.value === "metric" ? pickedMetricId.value : pickedObjectTypeId.value),
+    );
+    const resolvedActionId = computed(() => opBindManualId.value.trim() || pickedActionId.value);
+    const canApplyDataBinding = computed(() => Boolean(dataBindKey.value.trim() && resolvedDataTargetId.value));
+    const canApplyOperationBinding = computed(() => Boolean(opBindKey.value.trim() && resolvedActionId.value));
+
+    function formatJsonField(value, fieldName) {
+      if (jsonDraftText[fieldName] !== null) return jsonDraftText[fieldName];
+      try {
+        return JSON.stringify(value ?? {}, null, 2);
+      } catch {
+        return "{}";
+      }
+    }
+
+    function onJsonFieldInput(fieldName, text, update) {
+      jsonDraftText[fieldName] = text;
+      const trimmed = typeof text === "string" ? text.trim() : "";
+      if (!trimmed) {
+        jsonFieldErrors[fieldName] = "";
+        update({});
+        return;
+      }
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          jsonFieldErrors[fieldName] = t("binding.invalidJson");
+          return;
+        }
+        jsonFieldErrors[fieldName] = "";
+        update(parsed);
+      } catch {
+        jsonFieldErrors[fieldName] = t("binding.invalidJson");
+      }
+    }
+
+    function applyDataBinding(currentValue, update) {
+      const key = dataBindKey.value.trim();
+      const targetId = resolvedDataTargetId.value;
+      if (!key || !targetId) return;
+      const base = currentValue && typeof currentValue === "object" && !Array.isArray(currentValue)
+        ? { ...currentValue }
+        : {};
+      base[key] = dataBindKind.value === "metric"
+        ? {
+            source: { object: { literal: { className: METRIC_VIEW_TYPE, primaryKey: targetId } } },
+            read: "result",
+            params: {},
+          }
+        : {
+            source: { type: { kind: "ObjectType", id: targetId } },
+            read: "query",
+            params: {},
+          };
+      jsonDraftText.data = null;
+      jsonFieldErrors.data = "";
+      update(base);
+    }
+
+    function applyOperationBinding(currentValue, update) {
+      const key = opBindKey.value.trim();
+      const actionId = resolvedActionId.value;
+      if (!key || !actionId) return;
+      const base = currentValue && typeof currentValue === "object" && !Array.isArray(currentValue)
+        ? { ...currentValue }
+        : {};
+      base[key] = {
+        operation: { kind: "Action", id: actionId },
+      };
+      jsonDraftText.operations = null;
+      jsonFieldErrors.operations = "";
+      update(base);
+    }
+
     function startEdit() {
       if (!canStartEdit.value) return;
       instance.state.setState({ detailMode: "edit", ...CLOSED_DIALOGS_PATCH });
@@ -358,9 +610,7 @@ const ProjectionDetailPanel = {
     }
 
     function onMoreCommand(command) {
-      if (command === "openClass") {
-        openClass();
-      } else if (command === "copy") {
+      if (command === "copy") {
         openCopy();
       } else if (command === "grants") {
         if (canOpenGrant.value) tabModel.value = "grants";
@@ -382,10 +632,6 @@ const ProjectionDetailPanel = {
     // Route back to the catalog entry so the platform's unified unsaved-changes guard intercepts dirty edits.
     function goBack() {
       void navigate(CATALOG_PATH).catch(() => undefined);
-    }
-
-    function openClass() {
-      void goTo(panelAddress(CAPABILITY_MAP, { mode: "type", view: "list", selectedType: PROJECTION_TYPE }));
     }
 
     function onChoosePanel(item) {
@@ -428,6 +674,32 @@ const ProjectionDetailPanel = {
       selectedLabel,
       isEditMode,
       editDraft,
+      headerDraft,
+      headerDraftLabels,
+      previewPorts,
+      previewDraftValues,
+      previewDraftClasses,
+      appliedPreviewInputs,
+      hasAppliedPreviewInputs,
+      previewRenderKey,
+      previewInputError,
+      applyPreviewInputs,
+      clearPreviewInputs,
+      dataBindKind,
+      dataBindKindOptions,
+      dataBindKey,
+      dataBindManualId,
+      showDataJson,
+      opBindKey,
+      opBindManualId,
+      showOpsJson,
+      jsonFieldErrors,
+      canApplyDataBinding,
+      canApplyOperationBinding,
+      formatJsonField,
+      onJsonFieldInput,
+      applyDataBinding,
+      applyOperationBinding,
       tabModel,
       tabItems,
       recordStatus,
@@ -463,7 +735,6 @@ const ProjectionDetailPanel = {
       onGrantAdded,
       onShareDone,
       onMoreCommand,
-      openClass,
       onChoosePanel,
       onNavigateReference,
       refresh: () => instance.refreshObjects(),

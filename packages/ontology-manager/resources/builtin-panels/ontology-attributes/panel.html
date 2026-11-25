@@ -50,82 +50,66 @@
     color: var(--sdk-text-color-primary);
     font-weight: var(--font-semibold);
   }
-  .attrs-detail {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 100%;
+
+  /* Inline attribute editor inside ObjectList #row-detail. */
+  .attrs-row-editor {
+    padding: var(--spacing-lg);
+    background: var(--sdk-fill-color-lighter, var(--ui-fill-quaternary));
   }
-  .attrs-detail-body {
-    display: grid;
-    grid-template-columns: minmax(320px, 1.25fr) minmax(260px, 0.75fr);
-    gap: var(--page-content-gap);
-    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
-    align-items: start;
-  }
-  .attrs-card {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    padding: var(--page-section-padding, var(--spacing-lg));
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-  }
-  .attrs-card h2 {
-    margin: 0;
-    color: var(--sdk-text-color-primary);
-    font-size: var(--text-lg);
-    font-weight: var(--font-semibold);
-  }
-  .attrs-form-wrap,
-  .attrs-owner-card {
-    margin-top: var(--spacing-lg);
-  }
-  .attrs-owner-note {
-    margin-top: var(--spacing-md);
-  }
-  .attrs-form-wrap .sdk-owner-form,
-  .attrs-form-wrap .sdk-owner-form-inner,
+  .attrs-row-editor .sdk-owner-form,
+  .attrs-row-editor .sdk-owner-form-inner,
   .attrs-create-body .sdk-owner-form,
   .attrs-create-body .sdk-owner-form-inner {
     height: auto;
   }
-  .attrs-form-wrap .sdk-owner-form-body,
+  .attrs-row-editor .sdk-owner-form-body,
   .attrs-create-body .sdk-owner-form-body {
     overflow: visible;
+  }
+  .attrs-row-editor .sdk-owner-form-actions {
+    border-top: 0;
+    background: transparent;
+    padding-block: var(--spacing-sm) 0;
+    margin-block-start: var(--spacing-sm);
+    flex-wrap: wrap;
   }
   .attrs-create-body .sdk-owner-form-actions {
     border-top: 0;
     margin-block-start: var(--spacing-sm);
     padding-block: var(--spacing-xs) 0;
   }
-  .attrs-note {
-    margin: 0;
-    padding: var(--spacing-lg);
+  .attrs-switches .sdk-object-form-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm) var(--spacing-xl, 24px);
+    align-items: flex-start;
+  }
+  .attrs-switches .sdk-object-form-fields > * {
+    flex: 0 1 auto;
+    min-width: 110px;
+  }
+  .attrs-create-switches .sdk-object-form-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--spacing-md);
+    align-items: start;
+  }
+  .attrs-row-delete {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs);
+    margin-inline-end: auto;
+  }
+  .attrs-delete-reason {
     color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+  }
+  .attrs-unsaved {
+    color: var(--sdk-color-warning);
     font-size: var(--text-sm);
-    text-align: center;
-  }
-  .attrs-failure {
-    color: var(--sdk-color-danger-text);
-  }
-  .attrs-missing {
-    padding: var(--spacing-2xl) var(--page-gutter);
-  }
-  .attrs-detail-error {
-    padding: var(--page-content-gap) var(--page-gutter);
-  }
-  .attrs-detail-banner {
-    grid-column: 1 / -1;
   }
 
-  @container attrs-page (max-width: 850px) {
-    .attrs-detail-body {
-      grid-template-columns: minmax(0, 1fr);
-      padding-block: var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
-    }
-  }
   @container attrs-page (max-width: 560px) {
     .attrs-toolbar {
       flex-direction: column;
@@ -135,97 +119,81 @@
     .attrs-toolbar .attrs-owner {
       width: 100%;
     }
+    .attrs-create-switches .sdk-object-form-fields {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 <div id="app">
   <section ref="rootRef" class="attrs-page">
-    <template v-if="!selectedKey">
-      <page-header :title="t('panel.name')" :description="t('attr.description')">
-        <template #actions>
-          <sdk-button text :aria-label="t('attr.refresh')" :title="t('attr.refresh')" @click="refresh">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-          </sdk-button>
-          <sdk-button type="primary" :disabled="creating" @click="startCreate">
-            <svg class="attrs-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-            <span>{{ t("attr.command.create") }}</span>
-          </sdk-button>
-        </template>
-      </page-header>
-      <div class="attrs-catalog">
-        <div class="attrs-toolbar">
-          <sdk-input
-            class="attrs-search"
-            v-model="search"
-            :placeholder="t('attr.search')"
-            :aria-label="t('attr.search')"
-            clearable
-          >
-            <template #prefix>
-              <svg class="attrs-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
-            </template>
-          </sdk-input>
-          <div class="attrs-owner">
-            <projection slot="ownerPicker"></projection>
-          </div>
-          <span v-if="countText" class="attrs-count">{{ countText }}</span>
-        </div>
-        <div class="attrs-table-host">
-          <projection
-            slot="attributes"
-            @choose="onChoose"
-            @navigate="openOwner"
-            @clear-filters="clearFilters"
-          ></projection>
-        </div>
-      </div>
-    </template>
-
-    <div v-else class="attrs-detail">
-      <page-header :back-label="t('attr.back')" :draft="formDraft" @back="back">
-        <template #title>
-          <span v-show="detailStatus === 'ready'">
-            <projection slot="detail"></projection>
-          </span>
-          <h1 v-if="detailStatus !== 'ready'">{{ selectedKey }}</h1>
-        </template>
-        <template #actions>
-          <template v-if="showDetailBody">
-            <projection slot="setPrimaryKey"></projection>
-            <projection slot="remove" @done="onRemoveDone"></projection>
+    <page-header :title="t('panel.name')" :description="t('attr.description')">
+      <template #actions>
+        <sdk-button type="primary" :disabled="creating" @click="startCreate">
+          <svg class="attrs-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          <span>{{ t("attr.command.create") }}</span>
+        </sdk-button>
+      </template>
+    </page-header>
+    <div class="attrs-catalog">
+      <div class="attrs-toolbar">
+        <sdk-input
+          class="attrs-search"
+          v-model="search"
+          :placeholder="t('attr.search')"
+          :aria-label="t('attr.search')"
+          clearable
+        >
+          <template #prefix>
+            <svg class="attrs-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
           </template>
-        </template>
-      </page-header>
-
-      <p v-if="(detailStatus === 'loading' || detailStatus === 'awaiting') && !detailEverReady" class="attrs-note" role="status">{{ t("attr.loading") }}</p>
-      <p v-else-if="detailStatus === 'forbidden'" class="attrs-note attrs-failure" role="alert">{{ t("attr.forbidden") }}</p>
-      <div v-else-if="detailStatus === 'empty' || detailStatus === 'missing'" class="attrs-missing">
-        <sdk-empty :description="t('attr.notFound')"></sdk-empty>
+        </sdk-input>
+        <div class="attrs-owner">
+          <projection slot="ownerPicker"></projection>
+        </div>
+        <span v-if="countText" class="attrs-count">{{ countText }}</span>
       </div>
-      <div v-else-if="detailStatus === 'error' && !detailEverReady" class="attrs-detail-error" role="alert">
-        <info-banner tone="danger" :text="detailErrorText"></info-banner>
-      </div>
-      <div v-else class="attrs-detail-body">
-        <info-banner v-if="detailStatus === 'error'" class="attrs-detail-banner" tone="danger" :text="detailErrorText" role="alert"></info-banner>
-        <section class="attrs-card">
-          <h2>{{ t("attr.editing") }}</h2>
-          <div class="attrs-form-wrap">
-            <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
-          </div>
-        </section>
-        <section class="attrs-card">
-          <h2>{{ t("attr.ownerSection") }}</h2>
-          <div class="attrs-owner-card">
-            <projection slot="ownerCard" @navigate="openOwner"></projection>
-          </div>
-          <info-banner class="attrs-owner-note" tone="info" :text="t('attr.ownerHint')"></info-banner>
-        </section>
+      <div class="attrs-table-host">
+        <projection
+          slot="attributes"
+          :columns="attributeColumns"
+          @navigate="openOwner"
+          @clear-filters="clearFilters"
+        >
+          <template #row-detail="{ ref: attrRef }">
+            <row-target-sync :target="attrRef" class="attrs-row-editor">
+              <projection :key="attrRef.primaryKey" slot="attributeRowForm" :inputs="{ target: attrRef }">
+                <template #default>
+                  <object-form-fields :fields="['/showName', '/attrDesc']"></object-form-fields>
+                  <div class="attrs-switches">
+                    <object-form-fields :fields="['/enable', '/businessKey', '/primaryKey']"></object-form-fields>
+                  </div>
+                </template>
+                <template #actions="{ saving, asking, canSettle, changedCount, save, discard }">
+                  <row-delete-button :disabled="saving" :label="t('attr.delete')"></row-delete-button>
+                  <span v-if="canSettle" class="attrs-unsaved" role="status">{{ t("attr.unsaved", { count: changedCount }) }}</span>
+                  <sdk-button v-if="canSettle" :disabled="saving || asking" @click="discard()">{{ t("attr.discard") }}</sdk-button>
+                  <sdk-button type="primary" :loading="saving" :disabled="!canSettle || asking" @click="save()">
+                    {{ t("attr.save") }}
+                  </sdk-button>
+                </template>
+              </projection>
+            </row-target-sync>
+          </template>
+        </projection>
       </div>
     </div>
 
-    <!-- Create attribute dialog (mutually exclusive with detail editing since creating clears selected). -->
+    <!-- Create attribute dialog (owner class stays freely selectable from the catalog). -->
     <sdk-dialog v-model="createDialog" :title="t('attr.creating')" :width="narrow ? '94%' : '540px'" append-to-body destroy-on-close>
       <div class="attrs-create-body">
-        <projection v-if="createDialog" slot="form" @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate"></projection>
+        <projection v-if="createDialog" slot="form" @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate">
+          <template #default>
+            <object-form-fields :fields="['/className', '/name', '/type', '/showName', '/attrDesc']"></object-form-fields>
+            <div class="attrs-create-switches">
+              <object-form-fields :fields="['/enable', '/businessKey', '/primaryKey']"></object-form-fields>
+            </div>
+          </template>
+        </projection>
       </div>
     </sdk-dialog>
   </section>

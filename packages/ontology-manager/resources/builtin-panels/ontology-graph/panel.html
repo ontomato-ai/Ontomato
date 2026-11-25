@@ -1,6 +1,7 @@
 <style>
   /* Full-bleed edge-to-edge three-column ontology graph workbench: no outer frame card, no page gutter. */
   .og {
+    --og-narrow-breakpoint: 900px;
     position: relative;
     display: flex;
     flex: 1;
@@ -23,7 +24,7 @@
     flex: 1;
     height: 100%;
     min-height: 0;
-    grid-template-columns: 248px minmax(320px, 1fr) 310px;
+    grid-template-columns: var(--shell-list-panel, 264px) minmax(320px, 1fr) var(--shell-inspector, 320px);
     overflow: hidden;
   }
   .og-explorer,
@@ -50,8 +51,9 @@
     padding: var(--spacing-md);
     border-bottom: 1px solid var(--sdk-border-color-light, var(--ui-divider));
   }
-  .og-search-box .el-input {
+  .og-search-box > * {
     width: 100%;
+    min-width: 0;
   }
   .og-search-icon {
     color: var(--sdk-text-color-placeholder);
@@ -176,11 +178,8 @@
     color: var(--sdk-text-color-placeholder);
     user-select: none;
   }
-  .og-refresh-icon {
-    flex: none;
-  }
 
-  /* Center graph canvas + top-center floating path toast. */
+  /* Center graph canvas. */
   .og-graph {
     position: relative;
     min-width: 0;
@@ -203,34 +202,6 @@
     flex: 1 1 auto;
     height: 100%;
     min-height: 0;
-  }
-  .og-toast {
-    position: absolute;
-    top: 44px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 10;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-    border-radius: var(--radius-md);
-    border: 1px solid transparent;
-    font-size: var(--text-sm);
-    line-height: 1.4;
-    white-space: nowrap;
-    box-shadow: var(--elevation-overlay, 0 4px 12px rgba(15, 23, 42, 0.08));
-    pointer-events: none;
-  }
-  .og-toast.is-success {
-    background: var(--sdk-color-success-light-9, #f0f9eb);
-    border-color: var(--sdk-color-success-light-5, #b3e19d);
-    color: var(--sdk-color-success, #67c23a);
-  }
-  .og-toast.is-warning {
-    background: var(--sdk-color-warning-light-9, #fdf6ec);
-    border-color: var(--sdk-color-warning-light-5, #f3d19e);
-    color: var(--sdk-color-warning, #e6a23c);
   }
   .og-graph-empty {
     position: absolute;
@@ -297,6 +268,9 @@
   .og-detail-content {
     padding: var(--spacing-md) var(--spacing-md) calc(var(--spacing-lg) + var(--pane-dock-space, 0px));
   }
+  .og-detail-banner {
+    margin-top: var(--spacing-sm);
+  }
   .og-detail-header .sdk-object-header-row {
     flex-wrap: nowrap;
     align-items: center;
@@ -354,25 +328,14 @@
   }
   .og-section .sdk-panel-member,
   .og-section .sdk-object-list,
-  .og-section .sdk-object-list-items,
   .og-section .sdk-object-list-table-wrap {
     height: auto;
     overflow: visible;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-  .og-section .sdk-object-list-table {
-    width: 100%;
-    table-layout: fixed;
   }
   .og-section .sdk-object-list-table td {
-    height: auto;
-    padding: 7px 0;
+    padding: 8px 0;
     border-bottom: 1px solid var(--sdk-border-color-extra-light, var(--ui-divider));
-  }
-  .og-section .sdk-object-list-table td:last-child {
-    padding-left: var(--spacing-sm);
+    background: transparent;
   }
   .og-section .sdk-object-list-cell-main {
     color: var(--sdk-text-color-regular);
@@ -386,26 +349,49 @@
     font-size: var(--text-xs);
     line-height: 1.35;
   }
-  .og-relations-list .sdk-object-list-item-btn,
-  .og-relations-list .sdk-object-list-item-btn.sdk-object-list-item-two-line {
-    min-height: 44px;
-    padding: 7px 4px;
+  /* Three-segment "source -> relation name -> target" rows in object details. */
+  .og-relations-list .sdk-object-list-table {
+    table-layout: fixed;
+    width: 100%;
   }
-  .og-relations-list .sdk-object-list-item-label {
+  .og-relations-list .sdk-object-list-table td {
+    padding: 8px 4px;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-regular);
+  }
+  .og-relations-list .sdk-object-list-table td:first-child {
+    padding-left: 0;
+  }
+  .og-relations-list .sdk-object-list-table td:last-child {
+    padding-right: 0;
+  }
+  .og-relations-list .sdk-object-list-cell-main {
+    font-size: var(--text-xs);
+    font-weight: var(--font-normal);
+  }
+  .og-connection-name {
+    display: inline-block;
+    max-width: 94px;
+    overflow: hidden;
     color: var(--sdk-color-primary, var(--brand-link));
     font-size: var(--text-xs);
-    font-weight: var(--font-semibold);
-    line-height: 1.35;
-  }
-  .og-relations-list .sdk-object-list-item-sub {
-    color: var(--sdk-text-color-regular);
-    font-size: var(--text-xs);
-    line-height: 1.35;
+    font-weight: var(--font-medium);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
   }
   .og-flow {
     display: grid;
-    gap: var(--spacing-sm);
+    gap: var(--spacing-md);
     margin-top: var(--spacing-md);
+  }
+  .og-flow .sdk-object-ref-button {
+    width: 100%;
+    min-height: 42px;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    background: var(--sdk-fill-color-light, var(--ui-fill-tertiary));
+    color: var(--sdk-text-color-primary);
   }
   .og-flow-link {
     display: flex;
@@ -450,7 +436,7 @@
     font-size: var(--text-xs);
     line-height: var(--leading-relaxed);
   }
-  .og-missing {
+  .og-state-box {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -459,6 +445,15 @@
     gap: var(--spacing-sm);
     padding: var(--spacing-xl) var(--spacing-md);
     text-align: center;
+  }
+  .og-state-box .sdk-info-banner {
+    width: 100%;
+    text-align: left;
+  }
+  .og-state-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
   }
   .og-missing-key {
     padding: 2px 8px;
@@ -478,20 +473,19 @@
     color: var(--sdk-color-danger);
   }
 
-  /* Responsive columns based on panel container width (not viewport width). */
-  @container (max-width: 1150px) {
+  /* Responsive columns based on panel container width (matching OntologyPlayground breakpoints). */
+  @container (max-width: 1200px) {
     .og-grid {
-      grid-template-columns: 224px minmax(300px, 1fr) 292px;
+      grid-template-columns: 210px minmax(300px, 1fr) 280px;
     }
   }
-  @container (max-width: 1020px) {
-    .og-grid {
-      grid-template-columns: 210px minmax(260px, 1fr) 272px;
-    }
-  }
-  @container (max-width: 760px) {
+  @container (max-width: 900px) {
     .og {
       overflow: auto;
+    }
+    .og-summary {
+      width: 100%;
+      justify-content: space-between;
     }
     .og-grid {
       display: grid;
@@ -519,30 +513,36 @@
       padding-bottom: calc(var(--spacing-lg) + var(--pane-dock-space, 0px));
     }
   }
-  @container (max-width: 500px) {
+  @container (max-width: 560px) {
     .og-summary {
       flex-wrap: wrap;
-      gap: var(--spacing-xs);
+      gap: var(--spacing-sm);
     }
     .og-graph {
-      min-height: 440px;
+      min-height: 420px;
     }
   }
 </style>
 <div id="app">
-  <section class="og" v-sdk-loading="loading">
-    <page-header title="本体图谱" description="探索本体中对象类型、属性与关系的结构">
+  <section ref="rootRef" class="og" v-sdk-loading="loading">
+    <page-header :title="t('panel.name')" :description="t('ontologyGraph.description')">
       <template #actions>
-        <div class="og-summary" aria-label="本体资源统计">
+        <div class="og-summary" :aria-label="t('ontologyGraph.statsLabel')">
           <projection slot="objectStats"></projection>
           <span class="og-summary-sep" aria-hidden="true">·</span>
           <projection slot="attributeStats"></projection>
           <span class="og-summary-sep" aria-hidden="true">·</span>
           <projection slot="relationStats"></projection>
         </div>
-        <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
-          <svg class="og-refresh-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-        </sdk-button>
+        <sdk-button
+          text
+          icon="refresh-cw"
+          :loading="refreshing"
+          :disabled="refreshing"
+          :aria-label="t('ontologyGraph.refresh')"
+          :title="t('ontologyGraph.refresh')"
+          @click="refresh"
+        ></sdk-button>
       </template>
     </page-header>
 
@@ -555,8 +555,8 @@
         <div class="og-search-box">
           <sdk-input
             :model-value="search"
-            placeholder="搜索 本体模型"
-            aria-label="搜索 本体模型"
+            :placeholder="t('ontologyGraph.searchPlaceholder')"
+            :aria-label="t('ontologyGraph.searchPlaceholder')"
             clearable
             @update:model-value="setSearch"
           >
@@ -567,7 +567,7 @@
               </svg>
             </template>
           </sdk-input>
-          <div class="og-segments" role="group" aria-label="按类型筛选">
+          <div class="og-segments" role="group" :aria-label="t('ontologyGraph.filterByType')">
             <button
               v-for="option in filterOptions"
               :key="option.value"
@@ -580,7 +580,7 @@
         </div>
         <div ref="listEl" class="og-list">
           <div v-show="showObjectsSection" class="og-list-section">
-            <p>对象类型 · {{ objectFilteredCount ?? 0 }}</p>
+            <p>{{ t("ontologyGraph.objectTypes") }} · {{ objectFilteredCount ?? 0 }}</p>
             <projection
               slot="objectList"
               @choose="onObjectChosen"
@@ -594,7 +594,7 @@
             </projection>
           </div>
           <div v-show="showRelationsSection" class="og-list-section">
-            <p>关系类型 · {{ relationFilteredCount ?? 0 }}</p>
+            <p>{{ t("ontologyGraph.relationTypes") }} · {{ relationFilteredCount ?? 0 }}</p>
             <projection
               slot="relationList"
               @choose="onRelationChosen"
@@ -608,41 +608,26 @@
             </projection>
           </div>
           <div v-if="listEmpty" class="og-list-empty">
-            <sdk-empty description="未找到匹配资源" :image-size="54"></sdk-empty>
+            <sdk-empty :description="t('ontologyGraph.noMatchingResources')" :image-size="54"></sdk-empty>
           </div>
         </div>
       </aside>
 
       <main class="og-graph">
-        <div
-          v-if="toast"
-          class="og-toast"
-          :class="toast.type === 'success' ? 'is-success' : 'is-warning'"
-          role="status"
-          data-graph-path-toast
-        >
-          <svg v-if="toast.type === 'success'" viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true">
-            <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm2.85 5.1-3.3 3.4a.65.65 0 0 1-.93 0l-1.47-1.5a.65.65 0 1 1 .93-.91l1 1.02 2.84-2.92a.65.65 0 0 1 .93.91Z"/>
-          </svg>
-          <svg v-else viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true">
-            <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm0 3a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4.5Zm0 7a.85.85 0 1 1 0-1.7.85.85 0 0 1 0 1.7Z"/>
-          </svg>
-          <span>{{ toast.text }}</span>
-        </div>
         <div class="og-canvas">
-          <projection slot="graph"></projection>
+          <projection slot="graph" :hint="graphHint"></projection>
         </div>
         <div v-if="graphEmpty" class="og-graph-empty">
           <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M9 3v6M15 3v6M6 9h12v4a6 6 0 0 1-6 6 6 6 0 0 1-6-6z"/></svg>
-          <strong>暂无对象类型</strong>
-          <span>请先在对象类型页面创建对象类型</span>
+          <strong>{{ t("ontologyGraph.noObjects") }}</strong>
+          <span>{{ t("ontologyGraph.createObjectsFirst") }}</span>
         </div>
       </main>
 
       <aside class="og-side">
         <section class="og-path">
           <div class="og-path-head">
-            <strong title="沿着关系方向，在两个对象类型之间查找最短路径">路径查找</strong>
+            <strong :title="t('ontologyGraph.pathFinderDesc')">{{ t("ontologyGraph.pathFinder") }}</strong>
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="6" cy="19" r="3" />
               <path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" />
@@ -651,21 +636,26 @@
           </div>
           <div class="og-path-controls">
             <projection slot="pathFromPicker"></projection>
-            <svg class="og-path-arrow" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>
+            <svg class="og-path-arrow" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M3 8h10M9.5 4.5 13 8l-3.5 3.5" />
+            </svg>
             <projection slot="pathToPicker"></projection>
           </div>
           <div class="og-path-action">
             <sdk-button class="og-path-btn" type="primary" plain :disabled="!canFindPath" @click="findPath">
-              查找路径
+              {{ t("ontologyGraph.findPath") }}
             </sdk-button>
           </div>
         </section>
 
         <section class="og-detail">
           <template v-if="hasObjectSelection">
-            <div v-show="!isMissingObject" class="og-detail-content">
+            <div v-show="!showObjectStateBox" class="og-detail-content">
               <div class="og-detail-header">
-                <projection slot="objectHeader">
+                <projection
+                  slot="objectHeader"
+                  :fallback-title="objectEverReady ? (lastObjectLabel || requestedObjectKey) : undefined"
+                >
                   <template #leading>
                     <span class="og-icon og-icon-object" aria-hidden="true">
                       <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.8 14 4.6v6.8L8 14.2 2 11.4V4.6z"/><path d="M2 4.6 8 7.4l6-2.8M8 7.4v6.8"/></svg>
@@ -679,11 +669,23 @@
                           <rect x="9.5" y="9.5" width="4.5" height="4.5" rx="1" />
                           <path d="M4.25 6.5v2.75a2 2 0 0 0 2 2H9.5" />
                         </svg>
-                        去建模
+                        {{ t("ontologyGraph.goModeling") }}
                       </span>
                     </sdk-button>
                   </template>
                 </projection>
+              </div>
+              <div v-if="isErrorObject && objectEverReady" class="og-detail-banner" data-graph-error-selection>
+                <info-banner
+                  compact
+                  tone="danger"
+                  :title="t('ontologyGraph.objectReadFailedTitle')"
+                  :text="objectHeaderError || t('ontologyGraph.readFailedFallback')"
+                >
+                  <template #actions>
+                    <sdk-button size="small" @click="retryDetail">{{ t("ontologyGraph.retry") }}</sdk-button>
+                  </template>
+                </info-banner>
               </div>
               <template v-if="objectReady">
                 <p class="og-description">
@@ -691,35 +693,65 @@
                 </p>
                 <div class="og-section">
                   <div class="og-section-label">
-                    <span>属性</span>
+                    <span>{{ t("ontologyGraph.attributes") }}</span>
                     <small>{{ objectAttributesTotal ?? "" }}</small>
                   </div>
                   <projection slot="objectAttributes"></projection>
                 </div>
                 <div class="og-section og-relations-list">
                   <div class="og-section-label">
-                    <span>关联关系</span>
+                    <span>{{ t("ontologyGraph.relatedRelations") }}</span>
                     <small>{{ objectRelationsTotal ?? "" }}</small>
                   </div>
                   <projection
                     slot="objectRelations"
                     @choose="onRelationChosen"
-                  ></projection>
+                  >
+                    <template #cell-label="{ displayText }">
+                      <span class="og-connection-name" :title="displayText">{{ displayText }}</span>
+                    </template>
+                  </projection>
                 </div>
               </template>
               <p v-if="navigationError" class="og-note og-failure">{{ navigationError }}</p>
             </div>
-            <div v-if="isMissingObject" class="og-missing" data-graph-missing-selection>
-              <sdk-empty description="对象类型不存在或已删除" :image-size="48"></sdk-empty>
+            <div v-if="isForbiddenObject" class="og-state-box" data-graph-forbidden-selection>
+              <info-banner
+                compact
+                tone="warning"
+                :title="t('ontologyGraph.objectForbiddenTitle')"
+                :text="t('ontologyGraph.forbiddenDesc')"
+              ></info-banner>
               <code class="og-missing-key">{{ requestedObjectKey }}</code>
-              <sdk-button size="small" @click="clearSelection">清除选择</sdk-button>
+              <sdk-button size="small" @click="clearSelection">{{ t("ontologyGraph.clearSelection") }}</sdk-button>
+            </div>
+            <div v-else-if="isMissingObject" class="og-state-box" data-graph-missing-selection>
+              <sdk-empty :description="t('ontologyGraph.objectMissing')" :image-size="48"></sdk-empty>
+              <code class="og-missing-key">{{ requestedObjectKey }}</code>
+              <sdk-button size="small" @click="clearSelection">{{ t("ontologyGraph.clearSelection") }}</sdk-button>
+            </div>
+            <div v-else-if="isErrorObject && !objectEverReady" class="og-state-box" data-graph-error-selection>
+              <info-banner
+                compact
+                tone="danger"
+                :title="t('ontologyGraph.objectReadFailedTitle')"
+                :text="objectHeaderError || t('ontologyGraph.readFailedFallback')"
+              ></info-banner>
+              <code class="og-missing-key">{{ requestedObjectKey }}</code>
+              <div class="og-state-actions">
+                <sdk-button size="small" @click="retryDetail">{{ t("ontologyGraph.retry") }}</sdk-button>
+                <sdk-button size="small" @click="clearSelection">{{ t("ontologyGraph.clearSelection") }}</sdk-button>
+              </div>
             </div>
           </template>
 
           <template v-else-if="hasRelationSelection">
-            <div v-show="!isMissingRelation" class="og-detail-content">
+            <div v-show="!showRelationStateBox" class="og-detail-content">
               <div class="og-detail-header">
-                <projection slot="relationHeader">
+                <projection
+                  slot="relationHeader"
+                  :fallback-title="relationEverReady ? (lastRelationLabel || requestedRelationKey) : undefined"
+                >
                   <template #leading>
                     <span class="og-icon og-icon-relation" aria-hidden="true">
                       <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3.5" cy="8" r="1.6"/><circle cx="12.5" cy="8" r="1.6"/><path d="M5.3 8h5.4"/></svg>
@@ -733,11 +765,23 @@
                           <rect x="9.5" y="9.5" width="4.5" height="4.5" rx="1" />
                           <path d="M4.25 6.5v2.75a2 2 0 0 0 2 2H9.5" />
                         </svg>
-                        去建模
+                        {{ t("ontologyGraph.goModeling") }}
                       </span>
                     </sdk-button>
                   </template>
                 </projection>
+              </div>
+              <div v-if="isErrorRelation && relationEverReady" class="og-detail-banner" data-graph-error-selection>
+                <info-banner
+                  compact
+                  tone="danger"
+                  :title="t('ontologyGraph.relationReadFailedTitle')"
+                  :text="relationHeaderError || t('ontologyGraph.readFailedFallback')"
+                >
+                  <template #actions>
+                    <sdk-button size="small" @click="retryDetail">{{ t("ontologyGraph.retry") }}</sdk-button>
+                  </template>
+                </info-banner>
               </div>
               <template v-if="relationReady">
                 <div class="og-flow">
@@ -748,16 +792,36 @@
                   </div>
                   <projection slot="relationTo" @navigate="onNavigateObject"></projection>
                 </div>
-                <p class="og-description">
-                  <projection slot="relationDesc"></projection>
-                </p>
               </template>
               <p v-if="navigationError" class="og-note og-failure">{{ navigationError }}</p>
             </div>
-            <div v-if="isMissingRelation" class="og-missing" data-graph-missing-selection>
-              <sdk-empty description="关系类型不存在或已删除" :image-size="48"></sdk-empty>
+            <div v-if="isForbiddenRelation" class="og-state-box" data-graph-forbidden-selection>
+              <info-banner
+                compact
+                tone="warning"
+                :title="t('ontologyGraph.relationForbiddenTitle')"
+                :text="t('ontologyGraph.forbiddenDesc')"
+              ></info-banner>
               <code class="og-missing-key">{{ requestedRelationKey }}</code>
-              <sdk-button size="small" @click="clearSelection">清除选择</sdk-button>
+              <sdk-button size="small" @click="clearSelection">{{ t("ontologyGraph.clearSelection") }}</sdk-button>
+            </div>
+            <div v-else-if="isMissingRelation" class="og-state-box" data-graph-missing-selection>
+              <sdk-empty :description="t('ontologyGraph.relationMissing')" :image-size="48"></sdk-empty>
+              <code class="og-missing-key">{{ requestedRelationKey }}</code>
+              <sdk-button size="small" @click="clearSelection">{{ t("ontologyGraph.clearSelection") }}</sdk-button>
+            </div>
+            <div v-else-if="isErrorRelation && !relationEverReady" class="og-state-box" data-graph-error-selection>
+              <info-banner
+                compact
+                tone="danger"
+                :title="t('ontologyGraph.relationReadFailedTitle')"
+                :text="relationHeaderError || t('ontologyGraph.readFailedFallback')"
+              ></info-banner>
+              <code class="og-missing-key">{{ requestedRelationKey }}</code>
+              <div class="og-state-actions">
+                <sdk-button size="small" @click="retryDetail">{{ t("ontologyGraph.retry") }}</sdk-button>
+                <sdk-button size="small" @click="clearSelection">{{ t("ontologyGraph.clearSelection") }}</sdk-button>
+              </div>
             </div>
           </template>
 
@@ -771,8 +835,8 @@
                 <path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z" />
               </svg>
             </div>
-            <strong>选择一个图谱元素</strong>
-            <span>对象属性、业务描述和关联关系将在这里展示。</span>
+            <strong>{{ t("ontologyGraph.selectGraphElement") }}</strong>
+            <span>{{ t("ontologyGraph.inspectorEmptyDesc") }}</span>
           </div>
         </section>
       </aside>

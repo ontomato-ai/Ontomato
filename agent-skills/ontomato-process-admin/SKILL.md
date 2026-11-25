@@ -322,19 +322,29 @@ node client.mjs grant-save '{
 - 人事聘任 Action 接收 `run_id`。通过后关闭原现任历史，按申请的目标等级新增一条真实现任历史，并把申请置为已完成；生效日期默认取聘任完成日。
 - 这样允许“六级升五级”或“八级升七级”，也允许人员从未任过五级而直接晋升五级。要求“目标等级的现任记录已经存在”在业务上是错误的。
 
-命令与三步流：
+命令与三步闭环（唯一入口，平台内外一致）：
 
 ```bash
 node client.mjs actions
-node client.mjs action-save ./actions.json      # 1. 保存为 PENDING_REVIEW 草稿（新建省略 id，由服务端返回）
-node client.mjs action-reexplain '{"ids":["<actionId>"]}'  # 2. 如有需要，生成/重算解读
-node client.mjs action-publish <actionId>         # 3. 审阅确认后置为 PUBLISHED（POST /action/setStatus）
-node client.mjs action-get <actionId>
+node client.mjs action-save ./actions.json        # 1. 保存为 PENDING_REVIEW 草稿（新建省略 id，由服务端返回，不要求试跑）
+node client.mjs action-trial <actionId> '{
+  "sample": {
+    "objDatas": [{ "className": "<技术类名>", "rows": [{ "id": "sample-1" }] }],
+    "relDatas": [],
+    "vectorDatas": []
+  },
+  "parameters": { "<参数名>": "<试跑实参值>" }
+}'                                                # 2. 沙箱试跑（唯一对外入口 POST /action/trial）
+node client.mjs action-get <actionId>             #    核对 codeSegments 非空且 trialStatus=passed
+node client.mjs action-reexplain '{"ids":["<actionId>"],"missingOnly":true}'  # 如有需要，同步补齐解读
+node client.mjs action-publish <actionId>         # 3. 发布（POST /action/setStatus）
 node client.mjs action-retire <actionId>          # 退休置为 UNUSED（不删）
 ```
 
-- **新建严禁自编 `id`**（以及 `function.id`）：先通过 `action-save` 存为 `PENDING_REVIEW` 草稿，由服务端生成并返回 `id` 后再填入 `workflow.json` 的 `steps[].actionId`；修改已有草稿时才带 `id`。
-- **异步解读与发布时序**：`action-save`（`POST /action/save`）立刻返回草稿、解读在后台异步生成，存完立刻 `action-publish` 会因解读未就绪被拒（`ACTION_EXPLANATION_REQUIRED`）。发布前先用 `action-get <actionId>` 确认 `codeSegments` 非空且与当前代码一致；若尚未生成，稍等几秒再查，或执行 `action-reexplain '{"ids":["<actionId>"],"missingOnly":true}'` 同步补齐后再调 `action-publish <actionId>`（`POST /action/setStatus`）。不要通过 `/action/save` 直接改写 `status=PUBLISHED`。
+- **新建严禁自编 `id`**（以及 `function.id`）：先通过 `action-save` 存为 `PENDING_REVIEW` 草稿，由服务端生成并返回 `id` 后再试跑、发布，最后填入 `workflow.json` 的 `steps[].actionId`；修改已有草稿时才带 `id`。
+- **唯一沙箱试跑入口（`POST /action/trial`）**：`action-trial <actionId> [<json|@json>]` 面向已保存的动作（支持 `PENDING_REVIEW`）。服务端一次走完开业务库短表沙箱 → 载入样例 → 校验前置条件并执行 → 按规范摘要记录回执 → 关闭沙箱。`sample` 可省略（默认空样例，仅允许纯计算 Python，禁止任何数据读写、绝不落入实库）；有目标类或读写类的动作须在 `sample.objDatas` 中提供对应类的样例行。试跑未通过（`passed=false`）时命令输出完整 JSON 并返回非零退出码；常见拒码：`ACTION_NOT_FOUND`、`ACTION_TRIAL_INVALID`、`ACTION_TRIAL_FORBIDDEN`、`ACTION_TRIAL_SANDBOX_UNAVAILABLE`。
+- **规范摘要与重跑口径**：试跑回执按 `(domainId, codeHash, target {className, keyParameter}, parameters [{name, type, classNames}])` 绑定——改代码、改目标类/主键参数、改参数声明结构都会使旧试跑失效，须重新 `action-trial`；仅换试跑实参值不失效。
+- **异步解读与发布闸门**：`action-save`（`POST /action/save`）立刻返回草稿、解读在后台异步生成。发布（`action-publish <actionId>` → `POST /action/setStatus`）依次校验两道闸门：① 解读已就绪且与当前代码一致（未就绪拒 `ACTION_EXPLANATION_REQUIRED`，可稍等或运行 `action-reexplain '{"ids":["<actionId>"],"missingOnly":true}'`）；② 当前摘要最近一次试跑成功（从未试跑或改定义后未重跑拒 `ACTION_TRIAL_REQUIRED`，最近一次试跑失败拒 `ACTION_TRIAL_FAILED`）。`action-get` / `actions` 同步返回 `trialStatus`（`passed|failed|notRun`）、`trialStatusLabel`、`lastTrialAt`、`lastTrialError`、`publishBlockedCode`、`publishBlockedReason`。不要通过 `/action/save` 直接改写 `status=PUBLISHED`。
 
 ---
 

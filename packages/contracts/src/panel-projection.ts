@@ -84,6 +84,12 @@ export const panelObjectListColumnSchema = z.object({
   tagEffect: z.enum(["light", "plain"]).optional().describe(
     "Visual fill style for tag pills in this column ('light' filled by default, or 'plain' outlined).",
   ),
+  resultFrom: z.object({
+    operation: z.string().min(1),
+    field: z.string().min(1).optional(),
+  }).strict().optional().describe(
+    "Derive this cell's displayed value from this row's latest platform-recorded result of the named row operation. Optional `field` picks a key from an object result; tone comes from the value itself (or `danger` on error).",
+  ),
 }).strict();
 export type PanelObjectListColumn = z.infer<typeof panelObjectListColumnSchema>;
 
@@ -103,15 +109,17 @@ const rowActionWhenSchema = z.union([
   z.array(panelObjectListRowActionConditionSchema).min(1),
 ]).optional();
 
+/** Five-level semantic tone for row actions in ObjectList and GroupedGrid. */
+export const panelRowActionToneSchema = z.enum(["default", "primary", "success", "warning", "danger"]);
+export type PanelRowActionTone = z.infer<typeof panelRowActionToneSchema>;
+
 const rowActionBaseFields = {
   labelKey: panelMessageKeySchema.optional(),
   label: z.string().min(1).optional(),
   icon: z.string().min(1).optional(),
   iconOnly: z.boolean().optional(),
   active: z.boolean().optional(),
-  tone: z.enum(["default", "primary", "danger"]).optional(),
-  danger: z.boolean().optional(),
-  primary: z.boolean().optional(),
+  tone: panelRowActionToneSchema.optional(),
   when: rowActionWhenSchema,
   disabledWhen: rowActionWhenSchema,
 };
@@ -132,12 +140,22 @@ export const panelObjectListRowActionItemSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("conversation"),
     id: z.string().min(1),
-    prompt: z.string().optional(),
-    promptKey: panelMessageKeySchema.optional(),
-    agent: z.union([z.string().min(1), pageComposerAgentTargetSchema]).optional(),
+    target: pageComposerAgentTargetSchema.optional(),
+    prefill: z.string().optional(),
+    prefillKey: panelMessageKeySchema.optional(),
+    submit: z.boolean().optional(),
+    newSession: z.boolean().optional(),
     ...rowActionBaseFields,
   }).strict(),
-]);
+]).superRefine((item, ctx) => {
+  if (item.kind === "conversation" && item.prefill !== undefined && item.prefillKey !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Write the opening sentence out or name its message key, not both",
+      path: ["prefillKey"],
+    });
+  }
+});
 export type PanelObjectListRowActionItem = z.infer<typeof panelObjectListRowActionItemSchema>;
 
 /** Built-in action column configuration for ObjectList. */

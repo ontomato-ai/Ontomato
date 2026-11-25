@@ -624,9 +624,20 @@ class OntologyModelServiceImplTest {
 		assertEquals("Admin.form.primaryKeyEnableLocked", enable.get("readOnlyReason").asText());
 		var primaryKey = fieldOf(form, "/primaryKey");
 		assertTrue(primaryKey.get("readOnly").asBoolean());
-		assertEquals("Admin.form.primaryKeySwitchHint", primaryKey.get("readOnlyReason").asText());
+		assertEquals("Admin.attr.primaryKeyLocked", primaryKey.get("readOnlyReason").asText());
 		assertEquals(Map.of("className", "Device", "name", "id", "type", "varchar", "showName", "id", "attrDesc", "",
 				"enable", true, "businessKey", false, "primaryKey", true), form.values());
+
+		var nonPrimaryVarchar = service.attributeForm(open("object", "platform:Attribute", "[\"Device\",\"site_id\"]"),
+				user, "en");
+		assertFalse(fieldOf(nonPrimaryVarchar, "/primaryKey").get("readOnly").asBoolean());
+		assertFalse(fieldOf(nonPrimaryVarchar, "/primaryKey").has("readOnlyReason"));
+		assertTrue(nonPrimaryVarchar.save().bodySchema().get("properties").has("primaryKey"));
+
+		var nonVarchar = service.attributeForm(open("object", "platform:Attribute", "[\"Device\",\"size\"]"),
+				user, "en");
+		assertTrue(fieldOf(nonVarchar, "/primaryKey").get("readOnly").asBoolean());
+		assertEquals("Admin.attr.primaryKeyInvalid", fieldOf(nonVarchar, "/primaryKey").get("readOnlyReason").asText());
 	}
 
 	@Test
@@ -657,8 +668,10 @@ class OntologyModelServiceImplTest {
 		assertEquals(400, fieldOf(form, "/desc").get("control").get("maxLength").asInt());
 		assertEquals("Admin.form.selectFromclass", fieldOf(form, "/fromclass").get("control").get("placeholder").asText());
 		assertEquals("Admin.form.enterFromField", fieldOf(form, "/fromField").get("control").get("placeholder").asText());
+		assertTrue(fieldOf(form, "/fromField").get("control").get("filterable").asBoolean());
 		assertEquals("Admin.form.selectToclass", fieldOf(form, "/toclass").get("control").get("placeholder").asText());
 		assertEquals("Admin.form.enterToField", fieldOf(form, "/toField").get("control").get("placeholder").asText());
+		assertTrue(fieldOf(form, "/toField").get("control").get("filterable").asBoolean());
 
 		// A field held for the class before is no longer one of the new class's attributes; a matching one stays.
 		var changed = service.relationshipForm(new FormRequest(new FormTarget("draft", "platform:Relationship", null),
@@ -696,6 +709,9 @@ class OntologyModelServiceImplTest {
 		assertEquals("Admin.form.apiName", fieldOf(form, "/relationship").get("label").asText());
 		assertEquals("Admin.form.relationDesc", fieldOf(form, "/desc").get("label").asText());
 		assertEquals(400, fieldOf(form, "/desc").get("control").get("maxLength").asInt());
+		assertEquals(4, fieldOf(form, "/desc").get("control").get("rows").asInt());
+		assertTrue(fieldOf(form, "/fromField").get("control").get("filterable").asBoolean());
+		assertTrue(fieldOf(form, "/toField").get("control").get("filterable").asBoolean());
 		assertEquals(Map.of("relationship", "owns", "fromclass", "Device", "fromField", "site_id", "toclass", "Site",
 				"toField", "id", "desc", "owns"), form.values());
 		assertEquals(List.of("id", "site_id", "size"), optionValues(fieldOf(form, "/fromField")));
@@ -748,12 +764,44 @@ class OntologyModelServiceImplTest {
 		var checked = service.attributeForm(new FormRequest(new FormTarget("object", "platform:Attribute",
 				"[\"Device\",\"site_id\"]"),
 				Map.of("className", "Whatever", "name", "Whatever", "showName", " Site link ", "attrDesc", "d",
-						"enable", false, "businessKey", true, "primaryKey", true),
+						"enable", false, "businessKey", true, "primaryKey", false),
 				null), user, "en");
 		assertEquals(Map.of("className", "Device", "name", "site_id", "type", "varchar", "showName", "Site link",
 				"attrDesc", "d", "enable", false, "businessKey", true, "primaryKey", false), checked.values());
 		assertEquals(false, checked.values().get("primaryKey"));
+
+		var promotedDraft = service.attributeForm(new FormRequest(new FormTarget("object", "platform:Attribute",
+				"[\"Device\",\"site_id\"]"),
+				Map.of("showName", "Site link", "attrDesc", "d", "enable", true, "businessKey", true,
+						"primaryKey", true),
+				null), user, "en");
+		assertEquals(true, promotedDraft.values().get("primaryKey"));
+
+		var disabledPromotion = assertThrows(OntologyModelException.class,
+				() -> service.attributeForm(new FormRequest(new FormTarget("object", "platform:Attribute",
+						"[\"Device\",\"site_id\"]"),
+						Map.of("showName", "Site link", "attrDesc", "d", "enable", false, "businessKey", true,
+								"primaryKey", true),
+						null), user, "en"));
+		assertValidation(disabledPromotion, List.of("/values/enable"), List.of("invalid_option"));
 		verify(jsonRuleDao, never()).save(any(), any());
+	}
+
+	@Test
+	void updatingAnAttributeCanAtomicallyPromotePrimaryKeyAndRefusesInvalidOrLockedChanges() {
+		var promoted = service.updateAttribute("Device", "site_id",
+				new AttributeUpdate("Site ID", "linked site", true, true, true), user, "en");
+		assertTrue(promoted.primaryKey());
+		assertEquals("Site ID", promoted.showName());
+		assertEquals(List.of("site_id"), primaryKeyNames(findClass(savedRule(), "Device")));
+
+		assertCode(409, "PRIMARY_KEY_LOCKED", () -> service.updateAttribute("Device", "site_id",
+				new AttributeUpdate("Site ID", "linked site", true, true, false), user, "en"));
+
+		var invalidType = assertThrows(OntologyModelException.class,
+				() -> service.updateAttribute("Device", "size",
+						new AttributeUpdate("Size", "", true, false, true), user, "en"));
+		assertValidation(invalidType, List.of("/values/primaryKey"), List.of("invalid_option"));
 	}
 
 	@Test

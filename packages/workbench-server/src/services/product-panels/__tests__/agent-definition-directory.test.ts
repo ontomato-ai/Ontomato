@@ -52,8 +52,8 @@ const modelSelection = { modelId: "chat-model" };
 const retrieval = { id: retrievalId, kind: "retrieval", name: "Data retrieval", modelSelection };
 const builder = { id: builderId, kind: "app-builder", model_selection: modelSelection };
 const diagnosis = { id: DIAGNOSIS_AGENT_ID, kind: "ops-diagnosis", model_selection: modelSelection };
-const preset = { id: presetId, name: "Preset", description: "", enabled: true, kind: "regular" };
-const custom = { id: customId, name: "Custom", description: "", enabled: false, kind: customId };
+const preset = { id: presetId, name: "Preset", description: "", enabled: true, kind: "regular", icon: '{"key":"Sparkles","color":"#EEF7FF"}' };
+const custom = { id: customId, name: "Custom", description: "", enabled: false, kind: customId, icon: null };
 const fetchOwner = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>();
 const target = (primaryKey: string) => ({ kind: "object" as const, objectType: AGENT_DEFINITION, primaryKey });
 const [save, remove, grant, revoke, share] = agentDefinitionOperations;
@@ -90,9 +90,17 @@ it("combines four sources with localized category fields and stable outputs", as
     [builderId, "system", "System"], [DIAGNOSIS_AGENT_ID, "system", "System"], [retrievalId, "system", "System"],
   ]);
   expect(rows.slice(2).every(row => row.tones?.enabled === "success")).toBe(true);
+  expect(rows.map(row => [row.primaryKey, row.fields?.icon, row.fields?.agentTitle])).toEqual([
+    [presetId, '{"key":"Sparkles","color":"#EEF7FF"}', ["Preset", '{"key":"Sparkles","color":"#EEF7FF"}']],
+    [customId, "", ["Custom", ""]],
+    [builderId, "", ["App builder", ""]],
+    [DIAGNOSIS_AGENT_ID, "", ["Operations diagnosis", ""]],
+    [retrievalId, "", ["Data retrieval", ""]],
+  ]);
   const customRecord = await directory.record(customId);
   expect(customRecord.outputs).toMatchObject({ category: "custom", canEdit: true, canGrant: true, domainShared: true });
   expect(customRecord.fields?.domainShared).toBe(true);
+  expect((await directory.record(presetId)).fields?.icon).toBe('{"key":"Sparkles","color":"#EEF7FF"}');
   expect((await directory.record(retrievalId)).fieldLabels?.category).toBe("Category");
   await expect(directory.count()).resolves.toEqual({ rows: [], total: 5 });
 });
@@ -192,4 +200,26 @@ it("routes model saves to the three owners with the initiator's credentials", as
 it("removes the transitional types from the platform contract", () => {
   expect(platformObjectTypes).not.toHaveProperty("platform:DiagnosisModel");
   expect(platformObjectTypes).not.toHaveProperty("platform:BuilderAgent");
+});
+
+it("keeps the history-preservation notice in the delete confirmation impact", async () => {
+  const host = operationHost(requester);
+  vi.spyOn(host, "requestWorkbench").mockResolvedValueOnce(Response.json({
+    id: customId,
+    name: "Custom",
+    description: "",
+    icon: null,
+    enabled: false,
+    systemPrompt: "",
+    engine: "pi",
+    modelSelection,
+    skills: [],
+    classNames: [],
+    enabledMcpServiceIds: [],
+    executionUserId: null,
+    sortOrder: 0,
+  }));
+  const impact = await remove.inspectImpact!.inspect(host, [{ target: target(customId), input: {} }]);
+  expect(impact?.summary).toBe("This deletes the selected agent definition. Existing conversations remain in history.");
+  expect(impact?.objects).toEqual([{ target: { objectType: AGENT_DEFINITION, primaryKey: customId }, label: "Custom" }]);
 });

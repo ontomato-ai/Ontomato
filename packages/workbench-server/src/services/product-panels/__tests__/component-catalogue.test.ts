@@ -96,6 +96,13 @@ vi.mock("../../component-packages/store", () => ({
           componentId: "@acme/widgets:ActionCard",
           role: "control",
           meaning: "Runs a declared package operation.",
+          bindsElement: [
+            "PlatformObjectType:*",
+            "ObjectType:*",
+            "Action:*",
+            "MetricView:*",
+            "Relationship:*",
+          ],
           operations: [{ name: "approve", handlerRef: "orders.approve" }],
           ports: { props: [], slots: [], events: [] },
         },
@@ -260,6 +267,7 @@ it("lists components in canonical purpose group order with summary attributes an
     {
       primaryKey: "@acme/widgets:ActionCard",
       fields: { package: "@acme/widgets", role: "控件", panelUsable: "面板可用" },
+      tags: { bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Action:*", "+2"] },
       tones: { role: "info", panelUsable: "success" },
     },
   ]);
@@ -275,4 +283,18 @@ it("lists components in canonical purpose group order with summary attributes an
 
   const byMeaning = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", "records"));
   expect(byMeaning.map(row => row.primaryKey)).toEqual(["@ontomato/sdk:SampleList"]);
+
+  // Search still matches truncated bindsElement items, while detail retains the full list.
+  const byOverflowBinding = panelRecordListSchema.parse(await listSdkComponents(owner, "zh-CN", "Relationship:*"));
+  expect(byOverflowBinding.map(row => row.primaryKey)).toEqual(["@acme/widgets:ActionCard"]);
+  expect(byOverflowBinding[0]?.tags?.bindsElement).toEqual(["PlatformObjectType:*", "ObjectType:*", "Action:*", "+2"]);
+
+  const detail = panelRecordSchema.parse(await readSdkComponentRecord(owner, "@acme/widgets:ActionCard", "zh-CN"));
+  expect(detail.tags?.bindsElement).toEqual([
+    "PlatformObjectType:*",
+    "ObjectType:*",
+    "Action:*",
+    "MetricView:*",
+    "Relationship:*",
+  ]);
 });

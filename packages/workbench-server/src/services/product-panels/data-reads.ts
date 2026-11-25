@@ -730,6 +730,12 @@ function effectiveInputs(
   return values;
 }
 
+const extendedApplicationScopeSchema = z.enum(["visible", "maintainable", "mine", "shared"]);
+function parseReadParameter(parameter: keyof typeof panelReadParameterSchemas, value: unknown): unknown {
+  if (parameter === "applicationScope") return extendedApplicationScopeSchema.parse(value);
+  return panelReadParameterSchemas[parameter].parse(value);
+}
+
 async function readParameters(
   projection: ProductProjection, member: ReadMember, dataName: string, data: DirectProjectionData,
   declaration: PlatformReadDeclaration, inputs: ReadInputs, runtimeParams: ProductPanelReadRequest["runtimeParams"],
@@ -744,7 +750,7 @@ async function readParameters(
       if (!parameter || !names.includes(name))
         throw new HttpError(400, `Runtime parameter '${name}' is not declared for data '${dataName}'`, "PANEL_RUNTIME_PARAMETER_UNKNOWN");
       if (value == null) continue;
-      const parsed = panelReadParameterSchemas[parameter].parse(value);
+      const parsed = parseReadParameter(parameter, value);
       if (!authoredReadParameterSource(data.params, name, member)) resolved.set(name, parsed);
     }
   }
@@ -754,7 +760,7 @@ async function readParameters(
     const parameter = panelReadParameterId(declaration, name);
     if (!source || !parameter) continue;
     const value = "literal" in source ? source.literal : inputs["input" in source ? source.input : name];
-    if (value != null) resolved.set(name, panelReadParameterSchemas[parameter].parse(value));
+    if (value != null) resolved.set(name, parseReadParameter(parameter, value));
     else if (readParameterUsesStateField(source, member))
       throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");
   }

@@ -1070,7 +1070,7 @@ it("reads agent settings and reference options with the panel viewer", async () 
     status: "ready", value: { save: { kind: "form.save", target: { source: "draft", slot: "definition" } } },
   });
   const disabled = { primaryKey: agentId, label: "Inventory analyst",
-    fields: { name: "Inventory analyst", description: "Inventory summary", enabled: "Disabled", category: "Custom" }, tones: { enabled: "default" } };
+    fields: { name: "Inventory analyst", description: "Inventory summary", icon: "", agentTitle: ["Inventory analyst", ""], enabled: "Disabled", category: "Custom" }, tones: { enabled: "default" } };
   expect(await ready("agents", "rows")).toContainEqual(expect.objectContaining(disabled));
   expect(await ready("summary", "record", { agent })).toMatchObject({
     ...disabled, fieldLabels: { description: "Description", enabled: "Enabled", category: "Category" },

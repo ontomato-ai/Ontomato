@@ -11,7 +11,7 @@ import {
 } from "@ontomato/contracts/platform-ontology";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { ProductOwner } from "../product-governance/grants";
-import { createPlatformOntologyCatalogueReads } from "./catalogue-reads";
+import { createPlatformOntologyCatalogueReads, createRelationKindDisplayMap } from "./catalogue-reads";
 import {
   readPlatformOntologyCounts,
   readPlatformOntologyNeighbors,
@@ -48,11 +48,20 @@ export function createPlatformOntologyReadAdapter(
   viewer: AssistantCredentials,
   callerUserName?: string,
 ): PlatformOntologyReadAdapter {
+  const relationDisplay = createRelationKindDisplayMap(viewer.locale);
+
   return {
     ...createPlatformOntologyCatalogueReads(owner, viewer),
 
-    schema(): Promise<PlatformOntologySchemaResponse> {
-      return readPlatformOntologySchema();
+    async schema(): Promise<PlatformOntologySchemaResponse> {
+      const base = await readPlatformOntologySchema();
+      return {
+        ...base,
+        relationKinds: base.relationKinds.map((relation) => {
+          const display = relationDisplay.get(relation.id);
+          return display ? { ...relation, label: display.label } : relation;
+        }),
+      };
     },
 
     counts(): Promise<PlatformOntologyCountsResponse> {
@@ -65,11 +74,22 @@ export function createPlatformOntologyReadAdapter(
       };
     },
 
-    neighbors(
+    async neighbors(
       params: PlatformOntologyNeighborsRequest | Record<string, unknown>,
     ): Promise<PlatformOntologyNeighborsResponse> {
       const input = platformOntologyNeighborsRequestSchema.parse(params);
-      return readPlatformOntologyNeighbors(owner, viewer, input, callerUserName);
+      const result = await readPlatformOntologyNeighbors(owner, viewer, input, callerUserName);
+      return {
+        ...result,
+        edges: result.edges.map((edge) => {
+          const display = relationDisplay.get(edge.relationKind);
+          return display ? { ...edge, label: display.label } : edge;
+        }),
+        relations: result.relations.map((relation) => {
+          const display = relationDisplay.get(relation.relationKind);
+          return display ? { ...relation, label: display.label } : relation;
+        }),
+      };
     },
 
     objects(

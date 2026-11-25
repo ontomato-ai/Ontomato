@@ -74,6 +74,14 @@
           "type": "string"
         },
         "default": "use"
+      },
+      "copyDialog": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": false
       }
     },
     "members": {
@@ -148,6 +156,51 @@
           ]
         },
         "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a01"
+      },
+      "declarationSummary": {
+        "component": "ObjectSummary",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "declarationJson"
+          ],
+          "copyableFields": [
+            "declarationJson"
+          ]
+        },
+        "name": "应用详情 · 完整公开声明",
+        "description": "按读者可读权限展示当前应用的完整公开声明 JSON 并支持一键复制。",
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a21"
+      },
+      "copyForm": {
+        "component": "ObjectForm",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": {
+          "form": {
+            "read": "form",
+            "params": {
+              "section": {
+                "literal": "entry"
+              },
+              "entryId": {
+                "literal": "__copy__"
+              }
+            }
+          }
+        },
+        "operation": "platform:Application.save",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "应用详情 · 复制应用表单",
+        "description": "基于当前应用的允许复制入口声明与面板引用创建应用副本。",
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a22"
       },
       "save": {
         "component": "ObjectForm",
@@ -237,7 +290,7 @@
                 "kind": "local",
                 "id": "edit",
                 "labelKey": "action.edit",
-                "primary": true,
+                "tone": "primary",
                 "when": {
                   "field": "canEdit",
                   "equals": true
@@ -247,7 +300,7 @@
                 "kind": "operation",
                 "operation": "deleteEntry",
                 "labelKey": "action.delete",
-                "danger": true,
+                "tone": "danger",
                 "when": {
                   "field": "canEdit",
                   "equals": true
@@ -316,7 +369,22 @@
           "searchable": false,
           "fallbackToFirst": true,
           "emptyText": "assets.noPanels",
-          "subtitleField": "subtitle"
+          "subtitleField": "subtitle",
+          "rowActions": {
+            "maxVisible": 1,
+            "items": [
+              {
+                "kind": "local",
+                "id": "openPanel",
+                "labelKey": "assets.openPanelShort",
+                "tone": "primary",
+                "when": {
+                  "field": "accessible",
+                  "equals": true
+                }
+              }
+            ]
+          }
         },
         "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a0c"
       },
@@ -418,7 +486,7 @@
                 "kind": "operation",
                 "operation": "revoke",
                 "labelKey": "grants.revoke",
-                "danger": true,
+                "tone": "danger",
                 "when": {
                   "field": "revocable",
                   "equals": true
@@ -561,6 +629,7 @@
         "action.back": "返回应用",
         "action.cancel": "取消",
         "action.openApp": "打开应用",
+        "action.copy": "复制",
         "action.retry": "重试",
         "action.edit": "编辑",
         "action.delete": "删除",
@@ -570,6 +639,9 @@
         "detail.runtimeTitle": "运行与配置摘要",
         "detail.identityTitle": "身份与说明",
         "detail.readonlyTitle": "应用信息",
+        "detail.declarationJson": "完整公开声明（JSON）",
+        "copy.title": "复制应用",
+        "copy.suffix": "{name}（副本）",
         "tab.identity": "基本信息",
         "tab.entries": "入口",
         "tab.assets": "面板与投影",
@@ -597,6 +669,7 @@
         "assets.selectPanel": "从左侧选择一个面板查看它用到的投影。",
         "assets.noMembers": "该面板未引用其他投影或嵌套面板。",
         "assets.openPanel": "在面板目录打开",
+        "assets.openPanelShort": "打开面板",
         "assets.colTarget": "成员",
         "assets.colKind": "类型",
         "assets.colSlot": "槽位",
@@ -621,6 +694,7 @@
         "grants.selectRole": "搜索或选择角色",
         "grants.submit": "授予",
         "notify.saved": "更改已保存。",
+        "notify.copied": "已复制并创建新应用。",
         "notify.deleted": "应用已删除。"
       },
       "en": {
@@ -628,6 +702,7 @@
         "action.back": "Back to applications",
         "action.cancel": "Cancel",
         "action.openApp": "Open application",
+        "action.copy": "Copy",
         "action.retry": "Retry",
         "action.edit": "Edit",
         "action.delete": "Delete",
@@ -637,6 +712,9 @@
         "detail.runtimeTitle": "Runtime summary",
         "detail.identityTitle": "Identity & description",
         "detail.readonlyTitle": "Application details",
+        "detail.declarationJson": "Full public declaration (JSON)",
+        "copy.title": "Copy application",
+        "copy.suffix": "{name} (Copy)",
         "tab.identity": "Basics",
         "tab.entries": "Entries",
         "tab.assets": "Panels & projections",
@@ -664,6 +742,7 @@
         "assets.selectPanel": "Select a panel to view the projections it uses.",
         "assets.noMembers": "This panel does not reference other projections or nested panels.",
         "assets.openPanel": "Open in Panels",
+        "assets.openPanelShort": "Open panel",
         "assets.colTarget": "Member",
         "assets.colKind": "Kind",
         "assets.colSlot": "Slot",
@@ -688,6 +767,7 @@
         "grants.selectRole": "Search or select a role",
         "grants.submit": "Grant",
         "notify.saved": "Changes saved.",
+        "notify.copied": "Application copied.",
         "notify.deleted": "Application deleted."
       },
       "zh-TW": {
@@ -695,6 +775,7 @@
         "action.back": "返回應用",
         "action.cancel": "取消",
         "action.openApp": "開啟應用",
+        "action.copy": "複製",
         "action.retry": "重試",
         "action.edit": "編輯",
         "action.delete": "刪除",
@@ -704,6 +785,9 @@
         "detail.runtimeTitle": "執行與設定摘要",
         "detail.identityTitle": "身分與說明",
         "detail.readonlyTitle": "應用資訊",
+        "detail.declarationJson": "完整公開聲明（JSON）",
+        "copy.title": "複製應用",
+        "copy.suffix": "{name}（副本）",
         "tab.identity": "基本資訊",
         "tab.entries": "入口",
         "tab.assets": "面板與投影",
@@ -731,6 +815,7 @@
         "assets.selectPanel": "從左側選擇一個面板檢視它用到的投影。",
         "assets.noMembers": "此面板未引用其他投影或巢狀面板。",
         "assets.openPanel": "在面板目錄開啟",
+        "assets.openPanelShort": "開啟面板",
         "assets.colTarget": "成員",
         "assets.colKind": "類型",
         "assets.colSlot": "槽位",
@@ -755,6 +840,7 @@
         "grants.selectRole": "搜尋或選擇角色",
         "grants.submit": "授予",
         "notify.saved": "變更已儲存。",
+        "notify.copied": "已複製並建立新應用。",
         "notify.deleted": "應用已刪除。"
       }
     }
