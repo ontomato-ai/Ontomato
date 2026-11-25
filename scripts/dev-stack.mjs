@@ -499,6 +499,13 @@ async function stopGroup(ctx, roles, label, notes, failures) {
     else notes.push(`${label} pid ${entry.pid} timed out, killed after identity confirmation`);
   }
 }
+function runtimeContainers(ctx, runningOnly = false) {
+  const result = run("docker", ["ps", ...(runningOnly ? [] : ["-a"]), "-q",
+    "--filter", `label=dev.stack.root=${ctx.root}`, "--filter", "label=dev.stack.service=agent-runtime"]);
+  if (result.status !== 0) throw new Error(`Agent runtime lookup failed: ${result.stderr?.trim()}`);
+  return result.stdout.trim().split(/\s+/).filter(Boolean);
+}
+
 async function down(ctx) {
   const dbPort = integerLiteral(process.env.POSTGRES_PORT ?? "5432", "POSTGRES_PORT");
   const notes = [];
@@ -510,6 +517,10 @@ async function down(ctx) {
   try {
     requireDocker();
     assertNoForeignProject(ctx);
+    for (const id of runtimeContainers(ctx, true)) {
+      const result = run("docker", ["stop", id]);
+      if (result.status !== 0) failures.push(`Agent runtime stop failed: ${result.stderr?.trim()}`);
+    }
     const result = compose(ctx, dbPort, ["down"]);
     if (result.status !== 0) failures.push(`PG stop failed: ${result.stderr.trim() || `rc=${result.status}`}`);
     else notes.push(`PG stopped (project ${ctx.project}, volume preserved)`);
@@ -524,9 +535,12 @@ function status(ctx) {
   const javaPort = resolveJavaPort(ctx);
   process.stdout.write(`[dev] Project ${ctx.project}\n[dev] Root ${ctx.root}\n`);
   let pgOwned = false;
+  let runtimeOwned = false;
   try {
     requireDocker();
     assertNoForeignProject(ctx);
+    runtimeOwned = runtimeContainers(ctx, true).length > 0;
+    process.stdout.write(`[dev] Agent runtime container: ${runtimeOwned ? "running" : "not running"}\n`);
     const pg = postgresState(ctx, dbPort);
     pgOwned = Boolean(pg?.running && pg.published);
     process.stdout.write(`[dev] PG: ${pgOwned ? `${pg.state}/${pg.health} port ${pg.published ? "published" : "not published on local port"}` : "not running"}\n`);
@@ -543,7 +557,7 @@ function status(ctx) {
   }
   const ports = pgOwned ? [[javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"]] : [[dbPort, "PG"], [javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"]];
   for (const [port, label] of ports)
-    if (foreignListeners(port, snapshot.group).length) process.stdout.write(`[dev] ${label} port ${port} occupied by external process\n`);
+    if (!(runtimeOwned && label === "Agent runtime") && foreignListeners(port, snapshot.group).length) process.stdout.write(`[dev] ${label} port ${port} occupied by external process\n`);
 }
 const LOG_TAIL_LINES = 10;
 const LOG_READ_BYTES = 64 * 1024;

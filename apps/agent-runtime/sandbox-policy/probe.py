@@ -39,7 +39,11 @@ print("mounts: only selected skill and system files are readable; session, nativ
 
 print("probe: network bridge", flush=True)
 interfaces = subprocess.check_output(["/usr/sbin/ip", "-j", "link"], text=True)
-assert [interface["ifname"] for interface in json.loads(interfaces)] == ["lo"]
+links = json.loads(interfaces)
+# Some kernels create dormant tunnel devices in every new network namespace.
+assert [link["ifname"] for link in links if "UP" in link["flags"]] == ["lo"], interfaces
+addresses = json.loads(subprocess.check_output(["/usr/sbin/ip", "-j", "address"], text=True))
+assert all(not link.get("addr_info") for link in addresses if link["ifname"] != "lo"), addresses
 assert subprocess.check_output(["/usr/sbin/ip", "route"], text=True).strip() == ""
 assert subprocess.check_output(["/usr/sbin/ip", "-6", "route", "show", "default"], text=True).strip() == ""
 for url, message in [(gateway, b"gateway"), (callback, b"callback")]:
@@ -54,7 +58,7 @@ for endpoint in denied:
     else:
         sock.close()
         raise AssertionError(f"unexpected network access: {endpoint}")
-print("network: both relays respond, only lo, other session/database/container/external addresses blocked", flush=True)
+print("network: both relays respond, only lo is active, other session/database/container/external addresses blocked", flush=True)
 
 print("probe: private channel", flush=True)
 with socket.socket(fileno=3) as channel:

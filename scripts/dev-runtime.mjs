@@ -1,77 +1,9 @@
 // Local assembly for the independent public runtime; product wrappers supply the database name.
-import { accessSync, constants, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { parseEnv as readDotEnv } from "node:util";
 import { ensureRuntimeCredentials } from "./runtime-credentials.mjs";
-
-// Runtime Python setup, shared by the development runtime entry points.
-export function pythonExecutable(appDir, platform = process.platform) {
-  return join(
-    appDir,
-    ".venv",
-    ...(platform === "win32" ? ["Scripts", "python.exe"] : ["bin", "python"]),
-  );
-}
-
-// The venv follows the runtime's requirements file: created with the host Python when missing and
-// reinstalled when the file changes. The installed file's hash is kept inside the venv, so a venv
-// created by hand is brought up to date once and then reused.
-export function ensurePythonEnv(
-  appDir,
-  requirements,
-  env = process.env,
-  platform = process.platform,
-) {
-  const python = pythonExecutable(appDir, platform);
-  const venv = join(appDir, ".venv");
-  const marker = join(venv, "requirements.sha256");
-  const hash = createHash("sha256")
-    .update(readFileSync(requirements))
-    .digest("hex");
-  if (
-    executable(python) &&
-    existsSync(marker) &&
-    readFileSync(marker, "utf8") === hash
-  )
-    return python;
-  if (!executable(python)) {
-    const host = platform === "win32" ? ["py", "-3"] : ["python3"];
-    runSetup(
-      host[0],
-      [...host.slice(1), "-m", "venv", venv],
-      env,
-      `Creating ${venv} with ${host.join(" ")}`,
-    );
-  }
-  runSetup(
-    python,
-    ["-m", "pip", "install", "-r", requirements],
-    env,
-    `Installing ${requirements}`,
-  );
-  writeFileSync(marker, hash);
-  return python;
-}
-
-function runSetup(command, args, env, description) {
-  console.log(`[python] ${description}`);
-  const result = spawnSync(command, args, { env, stdio: "inherit" });
-  if (result.status !== 0)
-    throw new Error(
-      `${description} failed${result.error ? `: ${result.error.message}` : ""}; Python 3.10+ is required`,
-    );
-}
-
-function executable(path) {
-  try {
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export function runtimeEnvironment(
   { root, runtimeDatabase },
@@ -115,6 +47,57 @@ export function runtimeEnvironment(
   env.AGENT_RUNTIME_ROOT ||= join(root, "data/agent-runtime");
   env.AGENT_RUNTIME_HOST = "127.0.0.1";
   return env;
+}
+
+function dockerHostUrl(value) {
+  const url = new URL(value);
+  if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) url.hostname = "host.docker.internal";
+  return url.href;
+}
+
+export function startDockerRuntime(root, publicRoot, env, stdio) {
+  const policy = join(publicRoot, "apps/agent-runtime/sandbox-policy");
+  const image = env.AGENT_RUNTIME_DEV_IMAGE || "ghcr.io/ontomato-ai/ontomato-agent-runtime:edge";
+  const port = env.AGENT_RUNTIME_PORT;
+  const containerEnv = {
+    AGENT_RUNTIME_DATABASE: env.AGENT_RUNTIME_DATABASE,
+    AGENT_RUNTIME_SCHEMA: env.AGENT_RUNTIME_SCHEMA,
+    AGENT_RUNTIME_HOSTS: env.AGENT_RUNTIME_HOSTS,
+    AGENT_CHANNEL_PROVIDERS: JSON.stringify(JSON.parse(env.AGENT_CHANNEL_PROVIDERS).map(provider => ({
+      ...provider, url: dockerHostUrl(provider.url),
+    }))),
+    AGENT_RUNTIME_DATABASE_URL: env.AGENT_RUNTIME_DATABASE_URL && dockerHostUrl(env.AGENT_RUNTIME_DATABASE_URL),
+    POSTGRES_HOST: ["localhost", "127.0.0.1", "::1"].includes(env.POSTGRES_HOST) ? "host.docker.internal" : env.POSTGRES_HOST,
+    POSTGRES_PORT: env.POSTGRES_PORT,
+    POSTGRES_USER: env.POSTGRES_USER,
+    POSTGRES_PASSWORD: env.POSTGRES_PASSWORD,
+    ONTOMATO_MODEL_RUNTIME_TOKEN: env.ONTOMATO_MODEL_RUNTIME_TOKEN,
+    LLM_BASE_URL: env.LLM_BASE_URL && dockerHostUrl(env.LLM_BASE_URL),
+    LLM_API_KEY: env.LLM_API_KEY,
+    LLM_MODEL: env.LLM_MODEL,
+    AGENT_RUNTIME_EVENT_BUFFER_SIZE: env.AGENT_RUNTIME_EVENT_BUFFER_SIZE,
+  };
+  mkdirSync(env.AGENT_RUNTIME_ROOT, { recursive: true });
+  // Native development previously used UID 0. Initialize its missing counter without replacing an existing one.
+  // The container still validates the counter against assigned UIDs before accepting work.
+  try {
+    writeFileSync(join(env.AGENT_RUNTIME_ROOT, "worker-next-uid"), "20000\n", { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+  }
+  const envArgs = Object.entries(containerEnv).flatMap(([name, value]) => value === undefined ? [] : ["--env", name]);
+  return spawn("docker", ["run", "--rm", "--init", "--pull=missing",
+    "--label", `dev.stack.root=${root}`,
+    "--label", "dev.stack.service=agent-runtime",
+    "--add-host", "host.docker.internal:host-gateway",
+    "--publish", `127.0.0.1:${port}:3001`,
+    "--cap-add", "SYS_ADMIN", "--cap-add", "NET_ADMIN",
+    "--security-opt", `seccomp=${join(policy, "seccomp.json")}`,
+    "--security-opt", env.AGENT_RUNTIME_LSM || "no-new-privileges=true",
+    "--mount", `type=bind,source=${env.AGENT_RUNTIME_ROOT},target=/data`,
+    "--mount", `type=bind,source=${join(policy, "probe.py")},target=/usr/local/lib/ontomato-sandbox/probe.py,readonly`,
+    ...envArgs, image,
+  ], { cwd: root, stdio, env: { ...process.env, ...containerEnv } });
 }
 
 // Poll only while the child still belongs to this invocation; bounded startup, no request retry semantics.
