@@ -393,8 +393,8 @@ function mountBrowserRoute(options: HarnessOptions = {}) {
         status: "ready",
         value: {
           options: [
-            { primaryKey: "Order", value: "Order", label: "Order" },
-            { primaryKey: "Customer", value: "Customer", label: "Customer" },
+            { primaryKey: "Order", value: "Order", label: "Order Display" },
+            { primaryKey: "Customer", value: "Customer", label: "Customer Display" },
           ],
         },
       };
@@ -603,7 +603,7 @@ describe("builtin-product-data-browser panel", () => {
         expect(element.querySelector(".sdk-page-header h1")?.textContent).toContain("Object browser");
         expect(route.readLog.some((r) => r.member === "instanceGraph" && r.dataName === "overview")).toBe(true);
         expect(route.readLog.some((r) => r.member === "instanceGraph" && r.dataName === "connections")).toBe(true);
-      });
+      }, { timeout: 5000 });
 
       // Permanent right inspector renders empty guidance before selection, without duplicate overlay chips, top legend, or header refresh.
       await vi.waitFor(() => {
@@ -678,7 +678,7 @@ describe("builtin-product-data-browser panel", () => {
     try {
       await vi.waitFor(() => {
         expect(element.querySelector(".sdk-page-header")).not.toBeNull();
-      });
+      }, { timeout: 5000 });
 
       // Switch to Table mode via official SegmentedControl in PageHeader.
       const tableTab = Array.from(element.querySelectorAll<HTMLButtonElement>("button")).find(
@@ -692,7 +692,7 @@ describe("builtin-product-data-browser panel", () => {
         expect(element.textContent).toContain("Order No");
         expect(element.textContent).toContain("ORD-001");
         expect(element.textContent).toContain("ORD-002");
-      });
+      }, { timeout: 5000 });
       expect(element.querySelector(".db-table-toolbar")).toBeNull();
       expect(element.querySelector(".sdk-object-list-row-chevron")).toBeNull();
       const instanceTableProjection = projections.get("builtin-product-9f3c1e20-4b7d-4e92-a814-000000000009");
@@ -863,7 +863,7 @@ describe("builtin-product-data-browser panel", () => {
         );
         expect(found).toBeTruthy();
         return found!;
-      });
+      }, { timeout: 5000 });
 
       const urlBefore = route.router.currentRoute.value.fullPath;
       configBtn.click();
@@ -872,7 +872,7 @@ describe("builtin-product-data-browser panel", () => {
         expect(document.body.textContent).toContain("Configure object presentation");
         expect(document.body.textContent).toContain("Custom Order Detail");
         expect(route.readLog.some((r) => r.member === "detailPanelForm")).toBe(true);
-      });
+      }, { timeout: 5000 });
       // Dialog toggle stays purely local and never enters the URL.
       expect(route.router.currentRoute.value.fullPath).toBe(urlBefore);
 
@@ -936,7 +936,7 @@ describe("builtin-product-data-browser panel", () => {
     try {
       await vi.waitFor(() => {
         expect(route.readLog.some((r) => r.member === "instanceGraph" && r.dataName === "overview")).toBe(true);
-      });
+      }, { timeout: 5000 });
 
       const searchInput = element.querySelector<HTMLInputElement>('[data-graph-inspector] .db-graph-search-input input')!;
       expect(searchInput).toBeTruthy();

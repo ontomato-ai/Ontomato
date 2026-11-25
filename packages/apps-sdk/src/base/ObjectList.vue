@@ -21,6 +21,8 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { ElButton } from "element-plus/es/components/button/index";
+import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import AgentAvatar from "@ontomato/agent-shell-ui/agent-avatar";
 import { appIcon } from "@ontomato/platform-shell/icons";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
@@ -40,7 +42,7 @@ import {
   PanelSubmissionStaleError,
   type SubmissionEvaluator,
 } from "../panel/operation-binding";
-import { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam } from "../panel/member";
+import { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam, useMemberRefresh } from "../panel/member";
 import { admittedOperations, missingOperationDescriptorResult } from "../panel/member-operations";
 import type {
   PlatformChildFieldReference,
@@ -189,6 +191,11 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "showColumnToggle",
   "exportable",
   "exportFileName",
+  "showRowIndex",
+  "pinPrimaryColumn",
+  "rowActivation",
+  "showPageJumper",
+  "showRangeBar",
 ]);
 
 interface ParsedListData {
@@ -326,6 +333,20 @@ const props = withDefaults(
     exportable?: boolean;
     /** Optional base file name (`.csv` added if omitted) for current-page CSV export; defaults to `records-YYYY-MM-DD.csv`. */
     exportFileName?: string;
+    /** Show a 1-based leading row index column (`50px` wide) in table layout, offset by current page; defaults to `false`. */
+    showRowIndex?: boolean;
+    /** Pin the first visible table column to the left (`position: sticky; left: 0`) and style its text as a primary clickable link when rows are activatable; defaults to `false`. */
+    pinPrimaryColumn?: boolean;
+    /**
+     * How table rows trigger activation (`choose` / `openOutput`): `"click"` (default) activates on single click;
+     * `"dblclick"` highlights the row on single click (preserving text selection) and activates on double-click or
+     * primary-column link click.
+     */
+    rowActivation?: "click" | "dblclick";
+    /** Show a "Go to page" jumper input in the pagination footer when in numeric `page` mode with known total pages; defaults to `true`. */
+    showPageJumper?: boolean;
+    /** Show a compact range summary bar (`Showing X–Y of Z`) above the list or table when rows are loaded; defaults to `false`. */
+    showRangeBar?: boolean;
   }>(),
   {
     layout: "auto",
@@ -359,6 +380,11 @@ const props = withDefaults(
     showColumnToggle: false,
     exportable: false,
     exportFileName: undefined,
+    showRowIndex: false,
+    pinPrimaryColumn: false,
+    rowActivation: "click",
+    showPageJumper: true,
+    showRangeBar: false,
   },
 );
 
@@ -536,7 +562,9 @@ const cursorStack = ref<readonly (string | null)[]>([null]);
 
 const searchParam = isWritableParam("search") ? useMemberParam(paramNameOf("search")) : null;
 const cursorParam = pageMode === "cursor" ? useMemberParam(paramNameOf("cursor")) : null;
-const sizeParam = pageMode === "cursor" && "size" in signatureParams ? useMemberParam(paramNameOf("size")) : null;
+const sizeParam = (pageMode === "cursor" || pageMode === "page") && "size" in signatureParams
+  ? useMemberParam(paramNameOf("size"))
+  : null;
 const pageParam = pageMode === "page" ? useMemberParam(paramNameOf("page")) : null;
 const selectedParam = useMemberParam("selected");
 const checkedParam = useMemberParam("checked");
@@ -585,6 +613,9 @@ if (pageMode === "cursor" && sizeParam && !isAuthoredParam("size")) {
 }
 if (pageMode === "page" && pageParam && !isAuthoredParam("page")) {
   pageParam.set({ number: 1, size: effectivePageSize.value });
+}
+if (pageMode === "page" && sizeParam && !isAuthoredParam("size")) {
+  sizeParam.set(effectivePageSize.value);
 }
 
 function resetPaging() {
@@ -659,10 +690,12 @@ const showRowChevron = computed(
 const showListChevron = computed(
   () => Boolean(props.showChevron) && !isTable.value && !isCards.value && !hasActionColumn.value,
 );
+const showRowIndexColumn = computed(() => Boolean(props.showRowIndex) && isTable.value);
 const tableColumnCount = computed(
   () =>
     (hasRowDetailSlot.value ? 1 : 0)
     + (canCheck ? 1 : 0)
+    + (showRowIndexColumn.value ? 1 : 0)
     + visibleColumns.value.length
     + (hasActionColumn.value ? 1 : 0)
     + (showRowChevron.value ? 1 : 0),
@@ -811,6 +844,21 @@ if (pageMode === "page") {
 }
 
 const datumState = useMemberData(datumName);
+const refreshDatum = useMemberRefresh(datumName);
+const lastValidRows = ref<readonly PlatformObjectRecord[]>([]);
+const lastValidRowOperations = ref<PanelRowOperationsMap>({});
+const lastValidTotal = ref<number | null>(null);
+const lastValidHasTotal = ref(false);
+const lastValidNextCursor = ref<string | undefined>(undefined);
+const highlightedIdentity = ref<string | null>(null);
+
+function clearStaleSnapshot() {
+  lastValidRows.value = [];
+  lastValidRowOperations.value = {};
+  lastValidTotal.value = null;
+  lastValidHasTotal.value = false;
+  lastValidNextCursor.value = undefined;
+}
 const hasSupplement = Object.hasOwn(member.projection.data, "supplement");
 const supplementState = hasSupplement ? useMemberData("supplement") : null;
 
@@ -885,47 +933,7 @@ const parsedData = computed<ParsedListData>(() => {
   };
 });
 
-// Keep accumulated cursor batches synced synchronously with datumState so `rows`, `listResult` and `listed` stay consistent.
-watch(
-  datumState,
-  (state) => {
-    if (state.status === "loading") return;
-    if (state.status !== "ready" || parsedData.value.status !== "ok") {
-      if (state.status === "error" && pendingAppendCursor !== null && cursorBatches.value.length > 0) {
-        loadingMore.value = false;
-        return;
-      }
-      cursorBatches.value = [];
-      loadingMore.value = false;
-      pendingAppendCursor = null;
-      return;
-    }
-    lastKnownTotal.value = parsedData.value.total;
-    lastKnownHasTotal.value = parsedData.value.hasTotal;
-    if (pageMode !== "cursor") return;
-    const activeCursor = typeof currentParams.value.cursor === "string" ? currentParams.value.cursor : null;
-    const incoming = parsedData.value.rows;
-    const incomingRowOps = state.rowOperations;
-    if (activeCursor === null) {
-      cursorBatches.value = [{ cursor: null, rows: incoming, rowOperations: incomingRowOps }];
-    } else if (pendingAppendCursor === activeCursor) {
-      const existingIndex = cursorBatches.value.findIndex((batch) => batch.cursor === activeCursor);
-      cursorBatches.value = existingIndex >= 0
-        ? cursorBatches.value.map((batch, index) => (index === existingIndex ? { cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps } : batch))
-        : [...cursorBatches.value, { cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps }];
-    } else {
-      const existingIndex = cursorBatches.value.findIndex((batch) => batch.cursor === activeCursor);
-      cursorBatches.value = existingIndex >= 0
-        ? cursorBatches.value.map((batch, index) => (index === existingIndex ? { cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps } : batch))
-        : [{ cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps }];
-    }
-    loadingMore.value = false;
-    pendingAppendCursor = null;
-  },
-  { immediate: true, flush: "sync" },
-);
-
-const rawRows = computed<readonly PlatformObjectRecord[]>(() => {
+const liveRows = computed<readonly PlatformObjectRecord[]>(() => {
   if (pageMode === "cursor" && !usesCursorPages.value && cursorBatches.value.length > 0) {
     const seen = new Set<string>();
     const merged: PlatformObjectRecord[] = [];
@@ -941,6 +949,94 @@ const rawRows = computed<readonly PlatformObjectRecord[]>(() => {
   }
   return parsedData.value.rows;
 });
+
+const liveRowOperations = computed<PanelRowOperationsMap>(() => {
+  if (pageMode === "cursor" && !usesCursorPages.value && cursorBatches.value.length > 0) {
+    const merged: Record<string, PanelRowOperationsMap[string]> = {};
+    for (const batch of cursorBatches.value) {
+      if (!batch.rowOperations) continue;
+      for (const [key, ops] of Object.entries(batch.rowOperations)) {
+        merged[key] = ops;
+      }
+    }
+    return merged;
+  }
+  return datumState.value.status === "ready" && datumState.value.rowOperations
+    ? datumState.value.rowOperations
+    : {};
+});
+
+// Keep accumulated cursor batches synced synchronously with datumState so `rows`, `listResult` and `listed` stay consistent.
+watch(
+  datumState,
+  (state) => {
+    if (state.status === "loading") return;
+    if (state.status !== "ready" || parsedData.value.status !== "ok") {
+      if (state.status === "error") {
+        loadingMore.value = false;
+        if (pendingAppendCursor !== null && cursorBatches.value.length > 0) return;
+        pendingAppendCursor = null;
+        return;
+      }
+      clearStaleSnapshot();
+      cursorBatches.value = [];
+      loadingMore.value = false;
+      pendingAppendCursor = null;
+      return;
+    }
+    lastKnownTotal.value = parsedData.value.total;
+    lastKnownHasTotal.value = parsedData.value.hasTotal;
+    if (pageMode === "cursor") {
+      const activeCursor = typeof currentParams.value.cursor === "string" ? currentParams.value.cursor : null;
+      const incoming = parsedData.value.rows;
+      const incomingRowOps = state.rowOperations;
+      if (activeCursor === null) {
+        cursorBatches.value = [{ cursor: null, rows: incoming, rowOperations: incomingRowOps }];
+      } else if (pendingAppendCursor === activeCursor) {
+        const existingIndex = cursorBatches.value.findIndex((batch) => batch.cursor === activeCursor);
+        cursorBatches.value = existingIndex >= 0
+          ? cursorBatches.value.map((batch, index) => (index === existingIndex ? { cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps } : batch))
+          : [...cursorBatches.value, { cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps }];
+      } else {
+        const existingIndex = cursorBatches.value.findIndex((batch) => batch.cursor === activeCursor);
+        cursorBatches.value = existingIndex >= 0
+          ? cursorBatches.value.map((batch, index) => (index === existingIndex ? { cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps } : batch))
+          : [{ cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps }];
+      }
+      loadingMore.value = false;
+      pendingAppendCursor = null;
+    }
+    const snapshotRows = liveRows.value;
+    if (snapshotRows.length > 0) {
+      lastValidRows.value = snapshotRows;
+      lastValidRowOperations.value = liveRowOperations.value;
+      lastValidTotal.value = parsedData.value.total;
+      lastValidHasTotal.value = parsedData.value.hasTotal;
+      lastValidNextCursor.value = parsedData.value.nextCursor;
+    } else {
+      clearStaleSnapshot();
+    }
+  },
+  { immediate: true, flush: "sync" },
+);
+
+const isShowingStaleData = computed(
+  () => datumState.value.status === "error" && lastValidRows.value.length > 0,
+);
+const staleErrorMessage = computed(() =>
+  datumState.value.status === "error" ? (datumState.value.message || t("platform.dataUnreachable")) : "",
+);
+function retryStaleLoad() {
+  if (datumState.value.status === "error" && datumState.value.retry) {
+    datumState.value.retry();
+    return;
+  }
+  refreshDatum();
+}
+
+const rawRows = computed<readonly PlatformObjectRecord[]>(() =>
+  isShowingStaleData.value ? lastValidRows.value : liveRows.value,
+);
 
 const supplementLookup = computed<{
   readonly byIdentity: ReadonlyMap<string, PlatformObjectRecord>;
@@ -1045,6 +1141,7 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => {
 
 const total = computed<number | null>(() => {
   if (hasActiveLocalFilter.value) return rows.value.length;
+  if (isShowingStaleData.value) return lastValidTotal.value;
   if (datumState.value.status === "empty" && isCompleteList.value) return 0;
   return parsedData.value.total;
 });
@@ -1052,9 +1149,11 @@ const effectiveHasTotal = computed(
   () =>
     isCompleteList.value
       ? (canSearch.value || hasActiveLocalFilter.value)
-      : parsedData.value.hasTotal,
+      : isShowingStaleData.value
+        ? lastValidHasTotal.value
+        : parsedData.value.hasTotal,
 );
-const nextCursor = computed(() => parsedData.value.nextCursor);
+const nextCursor = computed(() => (isShowingStaleData.value ? lastValidNextCursor.value : parsedData.value.nextCursor));
 const queryStatus = computed(() => parsedData.value.status);
 const diagnostics = computed(() => parsedData.value.diagnostics);
 const queryReason = computed(() => parsedData.value.reason);
@@ -1153,6 +1252,8 @@ watch(
     lastDynamicFieldLabels.value = {};
     hiddenColumnKeys.value = new Set();
     columnToggleOpen.value = false;
+    highlightedIdentity.value = null;
+    clearStaleSnapshot();
   },
   { flush: "sync" },
 );
@@ -1376,7 +1477,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil((total.value ?? 0) / eff
 
 type PaginationItem = number | "ellipsis";
 
-const showNumericPages = computed(() => pageMode === "page" && parsedData.value.hasTotal);
+const showNumericPages = computed(() => pageMode === "page" && effectiveHasTotal.value);
 
 const paginationItems = computed<readonly PaginationItem[]>(() => {
   const pages = totalPages.value;
@@ -1395,7 +1496,8 @@ const paginationItems = computed<readonly PaginationItem[]>(() => {
 const footerReady = computed(
   () =>
     (datumState.value.status === "ready" && queryStatus.value === "ok" && (rows.value.length > 0 || (isTable.value && usesCursorPages.value)))
-    || (loadingMore.value && rows.value.length > 0),
+    || (loadingMore.value && rows.value.length > 0)
+    || isShowingStaleData.value,
 );
 const footerHasTotal = computed(() => (loadingMore.value ? lastKnownHasTotal.value : effectiveHasTotal.value));
 const footerTotal = computed<number | null>(() => (loadingMore.value ? lastKnownTotal.value : total.value));
@@ -1405,13 +1507,14 @@ const showFooterTotal = computed(() => footerHasTotal.value && footerTotal.value
   || (datumState.value.status === "empty" && isCompleteList.value)
 ));
 
-const showPageSizeSelect = computed(
-  () =>
-    usesCursorPages.value
-    && footerReady.value
-    && Boolean(sizeParam && isWritableParam("size"))
-    && (props.pageSizes?.length ?? 0) > 0,
-);
+const showPageSizeSelect = computed(() => {
+  if (!footerReady.value || (props.pageSizes?.length ?? 0) === 0) return false;
+  if (usesCursorPages.value) return Boolean(sizeParam && isWritableParam("size"));
+  if (pageMode === "page") {
+    return Boolean((pageParam && isWritableParam("page")) || (sizeParam && isWritableParam("size")));
+  }
+  return false;
+});
 
 const showPageControls = computed(
   () =>
@@ -1419,6 +1522,51 @@ const showPageControls = computed(
     && footerReady.value
     && ((footerHasTotal.value && (footerTotal.value ?? 0) > effectivePageSize.value) || currentPage.value > 1),
 );
+
+const showPageJumperControl = computed(
+  () => props.showPageJumper !== false && showPageControls.value && showNumericPages.value,
+);
+
+const jumperText = ref(String(currentPage.value));
+watch(currentPage, (page) => {
+  jumperText.value = String(page);
+});
+
+function commitPageJump() {
+  const parsed = Math.trunc(Number(jumperText.value));
+  if (Number.isFinite(parsed) && parsed >= 1) {
+    const clamped = Math.min(totalPages.value, parsed);
+    if (clamped !== currentPage.value) goPage(clamped);
+  }
+  jumperText.value = String(currentPage.value);
+}
+
+function rowDisplayIndex(rowIndex: number): number {
+  if (pageMode === "page" || usesCursorPages.value) {
+    return (currentPage.value - 1) * effectivePageSize.value + rowIndex + 1;
+  }
+  return rowIndex + 1;
+}
+
+const showRangeSummary = computed(
+  () =>
+    Boolean(props.showRangeBar)
+    && rows.value.length > 0
+    && (
+      (datumState.value.status === "ready" && queryStatus.value === "ok")
+      || isShowingStaleData.value
+      || loadingMore.value
+    ),
+);
+
+const rangeSummaryText = computed(() => {
+  const start = rowDisplayIndex(0);
+  const end = start + rows.value.length - 1;
+  if (footerHasTotal.value && footerTotal.value !== null) {
+    return t("platform.listShowingRangeOfTotal", { start, end, total: footerTotal.value });
+  }
+  return t("platform.listShowingRange", { start, end });
+});
 
 const showCursorPageControls = computed(
   () => usesCursorPages.value && footerReady.value,
@@ -1436,7 +1584,7 @@ const showFooter = computed(
   () =>
     !isTabs.value
     && props.showFooter !== false
-    && (showFooterTotal.value || showPageControls.value || showCursorPageControls.value || showLoadMore.value),
+    && (showFooterTotal.value || showPageSizeSelect.value || showPageControls.value || showCursorPageControls.value || showLoadMore.value),
 );
 
 const showCheckRow = computed(
@@ -1530,7 +1678,7 @@ function clearFilters() {
 const resolvedEmptyHint = computed(() => (props.emptyHint ? panel.t(props.emptyHint) : ""));
 
 const listResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(() => {
-  if (loadingMore.value && rows.value.length > 0) {
+  if ((loadingMore.value || isShowingStaleData.value) && rows.value.length > 0) {
     return { status: "ready", value: rows.value };
   }
   const state = datumState.value;
@@ -1747,7 +1895,7 @@ function onSearchInput(event: Event) {
 function goPage(nextPage: number) {
   if (nextPage < 1 || nextPage === currentPage.value) return;
   if (pageMode === "page" && pageParam) {
-    if (parsedData.value.hasTotal && nextPage > totalPages.value) return;
+    if (effectiveHasTotal.value && nextPage > totalPages.value) return;
     pendingScrollToTop = true;
     currentPage.value = nextPage;
     pageParam.set({ number: nextPage, size: effectivePageSize.value });
@@ -1791,8 +1939,8 @@ function goCursorPrev() {
   cursorParam.set(nextStack[nextStack.length - 1] ?? null);
 }
 
-function onPageSizeChange(event: Event) {
-  const next = Number((event.target as HTMLSelectElement).value);
+function onPageSizeChange(nextValue: number | string) {
+  const next = Number(nextValue);
   if (!Number.isFinite(next) || next <= 0 || next === activePageSize.value) return;
   activePageSize.value = next;
   pendingScrollToTop = true;
@@ -1803,7 +1951,8 @@ function onPageSizeChange(event: Event) {
     cursorParam?.set(null);
     sizeParam?.set(next);
   } else if (pageMode === "page") {
-    pageParam?.set({ number: 1, size: next });
+    if (pageParam && isWritableParam("page")) pageParam.set({ number: 1, size: next });
+    if (sizeParam && isWritableParam("size")) sizeParam.set(next);
   }
 }
 
@@ -2090,6 +2239,7 @@ function rowLeadingIcon(row: PlatformObjectRecord): string | null {
 }
 
 function choose(row: PlatformObjectRecord) {
+  highlightedIdentity.value = rowIdentityKey(row);
   const openTarget = rowOpenPath(row);
   if (openTarget) {
     void panel.navigate(openTarget);
@@ -2106,6 +2256,23 @@ function choose(row: PlatformObjectRecord) {
     activeRowLabel.value = next ? (row.label || row.primaryKey) : null;
     emit("choose", next);
   }
+}
+
+function isPinnedPrimaryColumn(columnIndex: number): boolean {
+  return Boolean(props.pinPrimaryColumn) && columnIndex === 0;
+}
+
+function onTableRowClick(row: PlatformObjectRecord) {
+  if (props.rowActivation === "dblclick") {
+    highlightedIdentity.value = rowIdentityKey(row);
+    return;
+  }
+  if (rowActivatable.value) choose(row);
+}
+
+function onTableRowDblclick(row: PlatformObjectRecord) {
+  if (props.rowActivation !== "dblclick") return;
+  if (rowActivatable.value) choose(row);
 }
 
 function focusRowByIdentity(identity: string, mode: "table" | "cards" | "list") {
@@ -2345,21 +2512,9 @@ watch(someVisibleChecked, () => {
 const memberOperationsState = useMemberOperations();
 const admittedOpMap = computed(() => admittedOperations(memberOperationsState.value));
 
-const mergedRowOperations = computed<PanelRowOperationsMap>(() => {
-  if (pageMode === "cursor" && !usesCursorPages.value && cursorBatches.value.length > 0) {
-    const merged: Record<string, PanelRowOperationsMap[string]> = {};
-    for (const batch of cursorBatches.value) {
-      if (!batch.rowOperations) continue;
-      for (const [key, ops] of Object.entries(batch.rowOperations)) {
-        merged[key] = ops;
-      }
-    }
-    return merged;
-  }
-  return datumState.value.status === "ready" && datumState.value.rowOperations
-    ? datumState.value.rowOperations
-    : {};
-});
+const mergedRowOperations = computed<PanelRowOperationsMap>(() =>
+  isShowingStaleData.value ? lastValidRowOperations.value : liveRowOperations.value,
+);
 
 function rowOperationsFor(row: PlatformObjectRecord): Readonly<Record<string, ListRowSlotOperation>> {
   const fallbackClassName = activeType.value ?? rowObjectType;
@@ -3134,6 +3289,38 @@ defineExpose({
     <ul v-if="diagnostics.length" class="sdk-object-list-diagnostics" role="status">
       <li v-for="note in diagnostics" :key="note">{{ note }}</li>
     </ul>
+
+    <div
+      v-if="isShowingStaleData"
+      class="sdk-object-list-stale-error"
+      data-testid="object-list-stale-error"
+      role="alert"
+    >
+      <span class="sdk-object-list-stale-error-text">
+        {{ t("platform.listLoadFailedShowingPrevious") }}
+        <template v-if="staleErrorMessage"> ({{ staleErrorMessage }})</template>
+      </span>
+      <ElButton
+        text
+        type="primary"
+        size="small"
+        class="sdk-object-list-stale-retry"
+        data-testid="object-list-stale-retry"
+        @click="retryStaleLoad"
+      >
+        {{ t("common.retry") }}
+      </ElButton>
+    </div>
+
+    <div
+      v-if="showRangeSummary"
+      class="sdk-object-list-range-bar"
+      data-testid="object-list-range-bar"
+      role="status"
+    >
+      {{ rangeSummaryText }}
+    </div>
+
     <p
       v-if="datumState.status === 'ready' && queryStatus !== 'ok'"
       class="sdk-object-list-status"
@@ -3181,10 +3368,11 @@ defineExpose({
                   @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
                 />
               </th>
+              <th v-if="showRowIndexColumn" class="sdk-object-list-index-col">{{ t("platform.listRowIndex") }}</th>
               <th
-                v-for="column in visibleColumns"
+                v-for="(column, colIndex) in visibleColumns"
                 :key="column.key"
-                :class="columnFit.get(column.key)"
+                :class="[columnFit.get(column.key), { 'sdk-object-list-col-pinned-left': isPinnedPrimaryColumn(colIndex) }]"
                 :style="columnStyle(column)"
               >{{ columnLabel(column) }}</th>
               <th
@@ -3233,9 +3421,15 @@ defineExpose({
                   :ref="(el) => setRowElement(entry.key, el)"
                   :tabindex="rowSelectable ? 0 : undefined"
                   data-row-item="true"
+                  :data-highlighted="rowActivation === 'dblclick' && entry.key === highlightedIdentity ? 'true' : undefined"
                   :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
-                  :class="{ chosen: entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
-                  @click="rowSelectable ? choose(entry.row) : undefined"
+                  :class="{
+                    chosen: entry.key === chosenIdentity,
+                    highlighted: rowActivation === 'dblclick' && entry.key === highlightedIdentity,
+                    'is-non-selectable': !rowActivatable || rowActivation === 'dblclick',
+                  }"
+                  @click="onTableRowClick(entry.row)"
+                  @dblclick="onTableRowDblclick(entry.row)"
                   @keydown="rowSelectable ? onRowKeydown(entry.row, $event) : undefined"
                 >
                   <td v-if="hasRowDetailSlot" class="sdk-object-list-expand-col" @click.stop>
@@ -3257,10 +3451,11 @@ defineExpose({
                       @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                     />
                   </td>
+                  <td v-if="showRowIndexColumn" class="sdk-object-list-index-col">{{ rowDisplayIndex(entry.rowIndex) }}</td>
                   <td
-                    v-for="column in visibleColumns"
+                    v-for="(column, colIndex) in visibleColumns"
                     :key="column.key"
-                    :class="columnFit.get(column.key)"
+                    :class="[columnFit.get(column.key), { 'sdk-object-list-col-pinned-left': isPinnedPrimaryColumn(colIndex) }]"
                     :style="columnStyle(column)"
                     :title="columnCellSlot(column.key) ? undefined : cellTitle(entry.row, column)"
                   >
@@ -3347,7 +3542,17 @@ defineExpose({
                           <component :is="appIcon(columnIconName(entry.row, column)!)" :size="16" :stroke-width="1.75" />
                         </span>
                         <div class="sdk-object-list-cell-text">
-                          <span class="sdk-object-list-cell-main">
+                          <button
+                            v-if="isPinnedPrimaryColumn(colIndex) && rowActivatable"
+                            type="button"
+                            class="sdk-object-list-primary-link"
+                            @click.stop="choose(entry.row)"
+                          >
+                            <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
+                              <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                            </template>
+                          </button>
+                          <span v-else class="sdk-object-list-cell-main">
                             <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
                               <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                             </template>
@@ -3432,7 +3637,17 @@ defineExpose({
                         <component :is="appIcon(columnIconName(entry.row, column)!)" :size="16" :stroke-width="1.75" />
                       </span>
                       <div class="sdk-object-list-cell-text">
-                        <span class="sdk-object-list-cell-main">
+                        <button
+                          v-if="isPinnedPrimaryColumn(colIndex) && rowActivatable"
+                          type="button"
+                          class="sdk-object-list-primary-link"
+                          @click.stop="choose(entry.row)"
+                        >
+                          <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
+                            <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                          </template>
+                        </button>
+                        <span v-else class="sdk-object-list-cell-main">
                           <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
                             <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                           </template>
@@ -4153,21 +4368,28 @@ defineExpose({
       <span v-if="showFooterTotal" class="sdk-object-list-count sdk-object-list-page-total" role="status">
         {{ t("platform.listTotal", { count: footerTotal }) }}
       </span>
-      <select
+      <ElSelect
         v-if="showPageSizeSelect"
+        size="small"
         class="sdk-object-list-page-size"
-        :value="effectivePageSize"
+        popper-class="sdk-object-list-page-size-popper"
+        data-testid="object-list-page-size"
+        :persistent="false"
+        :model-value="effectivePageSize"
         :aria-label="t('platform.listPerPage', { size: effectivePageSize })"
-        @change="onPageSizeChange"
+        @update:model-value="onPageSizeChange"
       >
-        <option v-for="option in pageSizes" :key="option" :value="option">
-          {{ t("platform.listPerPage", { size: option }) }}
-        </option>
-      </select>
+        <ElOption
+          v-for="option in pageSizes"
+          :key="option"
+          :label="t('platform.listPerPage', { size: option })"
+          :value="option"
+        />
+      </ElSelect>
       <template v-if="showPageControls">
         <button
           type="button"
-          class="sdk-object-list-btn sdk-object-list-prev"
+          class="sdk-object-list-btn sdk-object-list-prev sdk-object-list-page-pill"
           :disabled="currentPage <= 1"
           @click="goPage(currentPage - 1)"
         >
@@ -4179,7 +4401,7 @@ defineExpose({
             <button
               v-else
               type="button"
-              class="sdk-object-list-btn sdk-object-list-page-num"
+              class="sdk-object-list-btn sdk-object-list-page-num sdk-object-list-page-pill"
               :class="{ active: item === currentPage }"
               :aria-current="item === currentPage ? 'page' : undefined"
               @click="goPage(item)"
@@ -4193,12 +4415,26 @@ defineExpose({
         </span>
         <button
           type="button"
-          class="sdk-object-list-btn sdk-object-list-next"
+          class="sdk-object-list-btn sdk-object-list-next sdk-object-list-page-pill"
           :disabled="!footerHasTotal || currentPage >= totalPages"
           @click="goPage(currentPage + 1)"
         >
           {{ t("platform.listNextPage") }}
         </button>
+        <span v-if="showPageJumperControl" class="sdk-object-list-page-jumper" data-testid="object-list-page-jumper">
+          <span class="sdk-object-list-page-jumper-label">{{ t("platform.listGoTo") }}</span>
+          <input
+            v-model="jumperText"
+            type="number"
+            min="1"
+            :max="totalPages"
+            class="sdk-object-list-page-jumper-input"
+            data-testid="object-list-page-jumper-input"
+            :aria-label="t('platform.listGoToPage')"
+            @keydown.enter="commitPageJump"
+            @blur="commitPageJump"
+          />
+        </span>
       </template>
       <template v-else-if="showCursorPageControls">
         <button
@@ -4564,6 +4800,12 @@ defineExpose({
 .sdk-object-list-table tbody tr.chosen {
   background: var(--ui-fill-secondary);
 }
+.sdk-object-list-table tbody tr.highlighted {
+  background: var(--brand-primary-tint, var(--ui-fill-secondary));
+}
+.sdk-object-list-table tbody tr.highlighted:hover {
+  background: var(--brand-primary-tint, var(--ui-fill-secondary));
+}
 .sdk-object-list-table tbody tr:focus-visible {
   outline: 2px solid var(--brand-link);
   outline-offset: -2px;
@@ -4571,6 +4813,56 @@ defineExpose({
 .sdk-object-list-check-col,
 .sdk-object-list-expand-col {
   width: var(--control-height);
+}
+.sdk-object-list-index-col {
+  width: 50px;
+  min-width: 50px;
+  max-width: 50px;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.sdk-object-list-col-pinned-left {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--el-bg-color);
+  box-shadow: 4px 0 8px -6px rgba(0, 0, 0, 0.12);
+}
+.sdk-object-list-table th.sdk-object-list-col-pinned-left {
+  background: var(--sdk-fill-color, var(--ui-fill-tertiary));
+  z-index: 3;
+}
+.sdk-object-list-table tbody tr:hover .sdk-object-list-col-pinned-left {
+  background: var(--ui-fill-tertiary);
+}
+.sdk-object-list-table tbody tr.chosen .sdk-object-list-col-pinned-left {
+  background: var(--ui-fill-secondary);
+}
+.sdk-object-list-table tbody tr.highlighted .sdk-object-list-col-pinned-left {
+  background: var(--brand-primary-tint, var(--ui-fill-secondary));
+}
+.sdk-object-list-primary-link {
+  background: none;
+  border: 0;
+  color: var(--el-color-primary);
+  cursor: pointer;
+  display: inline-block;
+  font: inherit;
+  font-weight: var(--font-medium);
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+.sdk-object-list-primary-link:hover {
+  text-decoration: underline;
+}
+.sdk-object-list-primary-link:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
 }
 .sdk-object-list-expand-btn {
   align-items: center;
@@ -4952,12 +5244,37 @@ defineExpose({
   flex-wrap: wrap;
   gap: var(--spacing-xs);
 }
+.sdk-object-list-stale-error {
+  align-items: center;
+  background: var(--el-color-danger-light-9, #fef0f0);
+  border: 1px solid var(--el-color-danger-light-7, #fcd3d3);
+  border-radius: var(--radius-sm);
+  color: var(--el-color-danger-text, var(--el-color-danger));
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  font-size: var(--text-xs);
+  gap: var(--spacing-sm);
+  justify-content: space-between;
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+.sdk-object-list-stale-error-text {
+  min-width: 0;
+}
+.sdk-object-list-range-bar {
+  color: var(--el-text-color-secondary);
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-xs);
+  padding: 0 var(--spacing-xs);
+}
 .sdk-object-list-pagination {
   align-items: center;
   display: flex;
   flex: 0 0 auto;
   flex-wrap: wrap;
-  gap: var(--spacing-sm);
+  gap: 6px;
   justify-content: flex-end;
   padding-top: var(--spacing-xs);
 }
@@ -4976,47 +5293,93 @@ defineExpose({
   margin-right: 0;
 }
 .sdk-object-list-page-size {
-  height: var(--control-height-sm);
-  padding: 0 var(--spacing-sm);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-sm);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-primary);
-  font-size: var(--text-xs);
-  cursor: pointer;
+  width: 112px;
 }
 .sdk-object-list-page-arrow {
-  min-width: var(--control-height-sm);
+  min-width: 28px;
+  height: 28px;
   padding: 0 var(--spacing-xs);
+  background: var(--el-fill-color-light, #f0f2f5);
   border-color: transparent;
   font-size: var(--text-base);
 }
 .sdk-object-list-page-current {
-  min-width: 24px;
+  min-width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--sdk-color-primary);
   text-align: center;
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
-  color: var(--el-text-color-primary);
+  color: var(--sdk-bg-color, #fff);
   font-variant-numeric: tabular-nums;
 }
-.sdk-object-list-page-num {
-  min-width: var(--control-height-sm);
+.sdk-object-list-page-pill {
+  background: var(--el-fill-color-light, #f0f2f5);
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  height: 28px;
+  min-width: 28px;
   padding: 0 var(--spacing-sm);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.sdk-object-list-page-pill:hover:not(:disabled) {
+  color: var(--el-color-primary);
+  background: var(--el-fill-color, #ebeef5);
+}
+.sdk-object-list-page-num {
+  min-width: 28px;
+  padding: 0 6px;
 }
 .sdk-object-list-page-num.active {
   background: var(--sdk-color-primary);
   border-color: var(--sdk-color-primary);
-  color: var(--sdk-bg-color);
+  color: var(--sdk-bg-color, #fff);
   font-weight: var(--font-semibold);
 }
 .sdk-object-list-page-num.active:hover:not(:disabled) {
   background: var(--sdk-color-primary);
+  color: var(--sdk-bg-color, #fff);
 }
 .sdk-object-list-page-ellipsis {
   color: var(--sdk-text-color-secondary);
   font-size: var(--text-sm);
-  padding: 0 var(--spacing-xs);
+  padding: 0 2px;
   user-select: none;
+}
+.sdk-object-list-page-jumper {
+  align-items: center;
+  color: var(--el-text-color-secondary);
+  display: inline-flex;
+  font-size: var(--text-xs);
+  gap: 6px;
+  margin-left: 4px;
+}
+.sdk-object-list-page-jumper-input {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color, var(--ui-border));
+  border-radius: var(--radius-sm);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  height: 28px;
+  padding: 0 6px;
+  text-align: center;
+  width: 48px;
+  -moz-appearance: textfield;
+}
+.sdk-object-list-page-jumper-input::-webkit-inner-spin-button,
+.sdk-object-list-page-jumper-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.sdk-object-list-page-jumper-input:focus {
+  border-color: var(--el-color-primary);
+  outline: none;
 }
 .sdk-object-list-diagnostics {
   color: var(--el-color-warning-text);
