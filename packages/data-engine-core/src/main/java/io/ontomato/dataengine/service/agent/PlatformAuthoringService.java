@@ -32,7 +32,7 @@ public class PlatformAuthoringService {
   private final QueryGrantService grants;
   private final IdentityService identity;
   private final DataPermissionLookup permissions;
-  private final BuildTestContextService buildTests;
+  private final DataSandboxService buildTests;
   private final ActionService actions;
   private final ActionDao actionDao;
   private final MetricViewService metrics;
@@ -42,7 +42,7 @@ public class PlatformAuthoringService {
   public PlatformAuthoringService(OntologyAgentStore store, GovernanceRuntimeClient runtime,
       RuntimeCodeClient code, GenerationOperations operations, OntologyGenerationService generation,
       OntologyQueryService ontology, QueryGrantService grants, @Lazy IdentityService identity,
-      @Lazy DataPermissionLookup permissions, BuildTestContextService buildTests,
+      @Lazy DataPermissionLookup permissions, DataSandboxService buildTests,
       @Lazy ActionService actions, ActionDao actionDao, @Lazy MetricViewService metrics, MetricViewDao metricDao,
       LangService messages) {
     this.store = store;
@@ -182,6 +182,9 @@ public class PlatformAuthoringService {
     };
   }
 
+  @org.springframework.beans.factory.annotation.Autowired
+  private SandboxPermissionService sandboxPermissions;
+
   private JSONObject context(String kind, QueryAccessService.Access access) throws Exception {
     var rule = ontology.rule(access);
     var classes = ((List<?>) rule.get("classDef")).stream()
@@ -193,8 +196,10 @@ public class PlatformAuthoringService {
         helpers = new String(guide.readAllBytes(), StandardCharsets.UTF_8) + "\n\n" + helpers;
       }
     }
-    return JSONObject.of("ontology", rule, "knowledge", ontology.knowledge(lookup, access),
+    var response = JSONObject.of("ontology", rule, "knowledge", ontology.knowledge(lookup, access),
         "helpers", JSONObject.of("markdown", helpers));
+    if ("action".equals(kind)) response.put("sandboxCapability", sandboxPermissions.read(access.user().getDomainId()));
+    return response;
   }
 
   private ActionService.ExplainedDraft explain(JSONObject input, QueryAccessService.Access access,
@@ -344,8 +349,7 @@ public class PlatformAuthoringService {
       }
       row.put("kind", kind);
       return row;
-    }, access, data -> store.update("UPDATE ontology_platform_authoring_runs SET test_data=?::jsonb WHERE run_id=?",
-        AgentJson.json(data), uuid(run.id())), () -> {
+    }, access, () -> {
           if (access.expiresAt() <= System.currentTimeMillis()) throw closed();
           requireActive(run);
           if (access.target().testing()) executionTarget(run);
@@ -356,7 +360,7 @@ public class PlatformAuthoringService {
     store.transaction(() -> {
       var row = open(run);
       if (row.getString("sandbox_id") != null) return null;
-      String sandbox = "a" + run.id().replace("-", "");
+      String sandbox = operations.openSandbox(run.id(), run.owner(), run.expiresAt(), List.of());
       store.update("UPDATE ontology_platform_authoring_runs SET sandbox_id=?, sandbox_context=? WHERE run_id=?",
           sandbox, contextId, uuid(run.id()));
       return null;
@@ -426,7 +430,7 @@ public class PlatformAuthoringService {
           AgentJson.json(JSONObject.of("error", "Authoring execution closed")), uuid(execution));
     }
     if (work.sandbox() != null) operations.dropSandbox(work.sandbox(), owner.domainId());
-    store.update("UPDATE ontology_platform_authoring_runs SET test_data=NULL,sandbox_id=NULL WHERE run_id=?", uuid(run));
+    store.update("UPDATE ontology_platform_authoring_runs SET sandbox_id=NULL WHERE run_id=?", uuid(run));
   }
 
   private static void requireAction(String kind) {

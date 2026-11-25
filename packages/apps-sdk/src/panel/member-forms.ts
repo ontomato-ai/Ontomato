@@ -1,6 +1,6 @@
 import { normalizePanelSecretPointer, panelInputPointer, panelSchemaSecretPaths, panelSecretPathsOverlap, splitPanelSecrets } from "@ontomato/contracts/panel-secrets";
 import { declaredCustomerFormSaveName, hasDeclaredPlatformFormSave } from "@ontomato/contracts/panel-projection";
-import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeJsonObject, RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { formFieldPointer } from "@ontomato/contracts/form-fields";
 import type {
@@ -46,6 +46,7 @@ export interface FormSaveContext {
 /** Outcome returned by a form save: the saved/created object primary key (or null when an action did not report one). */
 export interface FormSaveResult {
   readonly primaryKey: string | null;
+  readonly data?: RuntimeJsonObject;
   readonly secretGenerated?: boolean;
   readonly message?: string;
 }
@@ -410,7 +411,7 @@ export function resolveFormSaveAnswer(
   const outcome = response.outcome;
   if (outcome === null) throw new Error("Whether the owner saved is not known");
   if (outcome.kind === "success") {
-    const receipt = { message: outcome.message, ...(outcome.secretGenerated && { secretGenerated: true }) };
+    const receipt = { data: outcome.data, message: outcome.message, ...(outcome.secretGenerated && { secretGenerated: true }) };
     if (target.kind === "object") return { primaryKey: target.primaryKey, ...receipt };
     const { created } = outcome;
     const primaryKey = created && (objectType === null || created.objectType === objectType) ? created.primaryKey : null;

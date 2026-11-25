@@ -8,9 +8,12 @@ import {
   multiDataSourceType,
   type DataAdapterInfo,
   type MultiDataSourceDefinition,
+  type SandboxCapability,
 } from "@ontomato/contracts/data-adapters";
 import { panelFormDescriptionSchema, type PanelFormValues } from "@ontomato/contracts/panel-projection";
 import {
+  ACTION,
+  CHECK_DATA_ADAPTER_SANDBOX_PERMISSION,
   DATA_ADAPTER_CONFIG,
   SAVE_DATA_ADAPTER_ROUTING,
   TEST_DATA_ADAPTER_CONNECTION,
@@ -53,12 +56,15 @@ let storedConfig: {
   dataAdapter: string;
   dataAdapterConnections: Record<string, Record<string, string>>;
   multiDataSource: MultiDataSourceDefinition | null;
+  sandboxCapability?: SandboxCapability;
 };
 let installedAdapters: DataAdapterInfo[];
+let reportedCurrentType: string | undefined;
 let storedSchema: {
   classDefs: Array<{ name: string }>;
   relationshipDefs: Record<string, { fromClass: string; toClass: string }>;
 };
+let nextSingleSaveResponse: unknown | null;
 let nextMultiSaveResponse: unknown | null;
 let nextTestResponse: unknown | null;
 let failSchemaRead: boolean;
@@ -129,6 +135,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  reportedCurrentType = undefined;
   assertPermission.mockReset();
   assertPermission.mockResolvedValue(undefined);
   savedSingleBodies = [];
@@ -227,6 +234,7 @@ beforeEach(() => {
     },
   };
 
+  nextSingleSaveResponse = null;
   mockFetch.mockReset();
   mockFetch.mockImplementation(async (url: string, init?: FetchInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -236,7 +244,7 @@ beforeEach(() => {
     if (url === "/api/data-query/businessConfig/dataAdapters") {
       return Response.json({
         success: true,
-        data: { currentType: storedConfig.dataAdapter, adapters: installedAdapters },
+        data: { currentType: reportedCurrentType ?? storedConfig.dataAdapter, adapters: installedAdapters },
       });
     }
     if (url === "/api/data-query/admin/getSchema") {
@@ -248,12 +256,17 @@ beforeEach(() => {
     }
     if (url === "/api/data-query/businessConfig/useDataAdapter") {
       savedSingleBodies.push(body);
-      return Response.json({ success: true });
+      return Response.json(nextSingleSaveResponse ?? { success: true });
     }
     if (url === "/api/data-query/businessConfig/useMultiDataSource") {
       savedMultiBodies.push(body);
       if (nextMultiSaveResponse) return Response.json(nextMultiSaveResponse);
       return Response.json({ success: true });
+    }
+    if (url === "/api/data-query/businessConfig/checkSandboxPermission") {
+      expect(init?.method).toBe("POST");
+      expect(body).toEqual({});
+      return Response.json({ success: true, data: { sandboxCapability: failedCapability } });
     }
     if (url === "/api/data-query/businessConfig/testDataAdapter") {
       testedBodies.push(body);
@@ -262,6 +275,7 @@ beforeEach(() => {
         success: true,
         data: {
           kind: "catalog",
+          sandboxCapability: failedCapability,
           elapsedMs: 14,
           databaseProduct: "PostgreSQL",
           databaseVersion: "16.2",
@@ -280,6 +294,11 @@ beforeEach(() => {
   });
 });
 
+const failedCapability = {
+  status: "failed", supported: true, canCreateAndDrop: false, reason: "CREATE denied",
+  probeNote: "Creates and drops an empty probe table", details: { operation: "create" },
+} satisfies SandboxCapability;
+
 describe("platform:DataAdapterConfig record read", () => {
   it("summarizes single-source and multi-source configurations without leaking secrets", async () => {
     const reads = createDataAdapterConfigReads(actor);
@@ -290,14 +309,45 @@ describe("platform:DataAdapterConfig record read", () => {
     expect(single.fields.mode).toBe("Single source");
     expect(single.fields.summary).toContain("jdbc:postgresql://db:5432/app");
     expect(JSON.stringify(single)).not.toContain("******");
-    expect(single.outputs).toEqual({ currentType: "postgresql", mode: "single", configured: true });
+    expect(single.outputs).toMatchObject({
+      currentType: "postgresql", mode: "single", configured: true,
+      sandboxStatus: "unchecked", sandboxSupported: true, sandboxCanCreateAndDrop: false,
+    });
+    expect(single.fields.sandboxStatus).toBe("Not checked yet");
+    expect(mockFetch.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
+      ["/api/data-query/businessConfig/getConfig", "GET"],
+      ["/api/data-query/businessConfig/dataAdapters", "GET"],
+    ]);
 
     storedConfig.dataAdapter = multiDataSourceType;
+    storedConfig.sandboxCapability = failedCapability;
     const multi = await reads.record("domain");
     expect(multi.fields.mode).toBe("Multi-source");
     expect(multi.fields.summary).toContain("crm (PostgreSQL)");
     expect(multi.fields.summary).toContain("graph (M3 Graph)");
-    expect(multi.outputs).toEqual({ currentType: "multi", mode: "multi", configured: true });
+    expect(multi.outputs).toMatchObject({
+      currentType: "multi", mode: "multi", configured: true, sandboxStatus: "failed", sandboxReason: "CREATE denied",
+    });
+    expect(multi.fields.sandboxDetail).toContain("CREATE denied");
+  });
+
+  it("keeps an unconfigured domain ineligible for a permission check", async () => {
+    storedConfig.dataAdapter = "";
+    const record = await createDataAdapterConfigReads(actor).record("domain");
+    expect(record.outputs).toMatchObject({ configured: false, sandboxStatus: "unsupported", sandboxSupported: false });
+    expect(record.fields.sandboxDetail).toContain("Configure a business data source");
+  });
+
+  it("uses the installed current type to display sandbox capability when the saved adapter type is absent", async () => {
+    storedConfig.dataAdapter = "";
+    reportedCurrentType = "postgresql";
+    storedConfig.sandboxCapability = failedCapability;
+
+    const record = await createDataAdapterConfigReads(actor).record("domain");
+    expect(record.outputs).toMatchObject({
+      currentType: "postgresql", configured: true, sandboxStatus: "failed", sandboxSupported: true,
+    });
+    expect(record.fields.sandboxDetail).toContain("CREATE denied");
   });
 
   it("rejects unknown primary keys with 404", async () => {
@@ -633,6 +683,7 @@ describe("platform:DataAdapterConfig.save operation", () => {
 
   it("saves routing-only changes through platform:DataAdapterConfig.saveRouting and maps routing rejection problems to exact fields", async () => {
     const op = saveRoutingOp();
+    nextMultiSaveResponse = { success: true, data: { sandboxCapability: failedCapability } };
 
     const ok = await op.execute(makeHost(), domainTarget, {
       values: {
@@ -643,7 +694,10 @@ describe("platform:DataAdapterConfig.save operation", () => {
         ],
       },
     }, "intent-r1");
-    expect(ok.kind).toBe("success");
+    expect(ok).toMatchObject({
+      kind: "success", data: { sandboxCapability: failedCapability },
+      affected: { objectTypes: [DATA_ADAPTER_CONFIG, ACTION] },
+    });
     expect(savedMultiBodies[0]).toMatchObject({
       classes: [
         { forOntoMap: "Order", sourceId: "graph" },
@@ -686,6 +740,30 @@ describe("platform:DataAdapterConfig.save operation", () => {
   });
 });
 
+describe("sandbox permission writes", () => {
+  it("checks the saved configuration only on the explicit operation and invalidates both panels", async () => {
+    const check = dataAdaptersServerOperations.find((op) => op.handlerRef === CHECK_DATA_ADAPTER_SANDBOX_PERMISSION);
+    if (!check || check.effect !== "write" || check.kind !== "action" || !check.targetLabel || check.batch) {
+      throw new Error("Missing targeted check operation");
+    }
+    await expect(check.execute(makeHost(), domainTarget, {}, "intent-check")).resolves.toMatchObject({
+      kind: "success", data: { sandboxCapability: failedCapability },
+      affected: { objectTypes: [DATA_ADAPTER_CONFIG, ACTION] },
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the failed permission check as part of a successful single-source save", async () => {
+    nextSingleSaveResponse = { success: true, data: { sandboxCapability: failedCapability } };
+    await expect(saveOp().execute(makeHost(), domainTarget, {
+      values: { adapterMode: "postgresql", connection: { url: "jdbc:postgresql://db:5432/app", user: "appuser" } },
+    }, "intent-save")).resolves.toMatchObject({
+      kind: "success", data: { adapterMode: "postgresql", sandboxCapability: failedCapability },
+      affected: { objectTypes: [DATA_ADAPTER_CONFIG, ACTION] },
+    });
+  });
+});
+
 describe("dataAdapters.testConnection read operation", () => {
   it("tests single-source draft with restored secret and formats catalog Markdown report", async () => {
     const op = testOp();
@@ -714,6 +792,10 @@ describe("dataAdapters.testConnection read operation", () => {
     expect(res.markdown).toContain("PostgreSQL JDBC Driver 42.7.3");
     expect(res.markdown).toContain("`orders`");
     expect(res.markdown).toContain("`active_orders`");
+    expect(res.markdown).toContain("Action trial & sandbox permission");
+    expect(res.markdown).toContain("actions cannot be published");
+    expect(res.markdown).toContain("CREATE denied");
+    expect(res.markdown).toContain("immediately deletes one empty probe table");
   });
 
   it("tests a specific multi-source data source by sourceId and formats search Markdown report", async () => {
@@ -721,6 +803,7 @@ describe("dataAdapters.testConnection read operation", () => {
       success: true,
       data: {
         kind: "search",
+        sandboxCapability: { ...failedCapability, status: "unsupported", supported: false, details: {} },
         elapsedMs: 7,
         databaseProduct: "OpenSearch",
         databaseVersion: "2.13.0",
@@ -767,6 +850,9 @@ describe("dataAdapters.testConnection read operation", () => {
     expect(res.markdown).toContain("`prod-es`");
     expect(res.markdown).toContain("`orders-2026`");
     expect(res.markdown).toContain("`customers`");
+    expect(res.markdown).toContain("does not support write actions");
+    expect(res.markdown).toContain("No probe object is created");
+    expect(res.markdown).not.toContain("immediately deletes");
 
     // Multi-source with multiple sources and missing sourceId fails cleanly
     await expect(op.execute(makeHost(), {
@@ -799,6 +885,7 @@ describe("built-in data-adapters panel validation", () => {
     const dataAdapterOps = typeMap.get(DATA_ADAPTER_CONFIG)?.operations?.map((o) => o.id) ?? [];
     expect(dataAdapterOps).toContain(`${DATA_ADAPTER_CONFIG}.save`);
     expect(dataAdapterOps).toContain(TEST_DATA_ADAPTER_CONNECTION);
+    expect(dataAdapterOps).toContain(CHECK_DATA_ADAPTER_SANDBOX_PERMISSION);
 
     const dir = resolve(repoRoot, "packages/platform-admin/resources/builtin-panels/data-adapters");
     await checkBuiltinPanelSource(dir, { ...panelCheck, draftReadOperationIds });

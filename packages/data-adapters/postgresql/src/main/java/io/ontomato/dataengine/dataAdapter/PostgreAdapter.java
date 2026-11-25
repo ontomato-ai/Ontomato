@@ -42,7 +42,7 @@ import io.ontomato.dataengine.util.HttpRequestUtil;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public class PostgreAdapter implements DataAdapter {
+public class PostgreAdapter extends SandboxDataAdapter {
 
 	private DataAdapterConnection connection;
 	private Map<String, Object> jsonRule;
@@ -744,6 +744,7 @@ public class PostgreAdapter implements DataAdapter {
 
 	@Override
 	public String sandboxClassName(String sandboxId, String className) {
+		if (sandboxTarget != null) return sandboxTarget.classTable(className);
 		return inSandbox(sandboxId) ? sandboxId + className : className;
 	}
 
@@ -855,7 +856,8 @@ public class PostgreAdapter implements DataAdapter {
 			throw new IllegalArgumentException("Unknown sandbox resource: " + resource);
 		}
 		try {
-			executeSql("drop table if exists " + recordedTable(resource.getString("schema"), resource.getString("name")));
+			executeSql("drop table if exists " + (resource.getString("schema") == null ? quoteIdentifier(resource.getString("name"))
+					: recordedTable(resource.getString("schema"), resource.getString("name"))));
 		} catch (Exception failure) {
 			throw new IllegalStateException("Cannot drop recorded sandbox table: " + resource, failure);
 		}
@@ -1360,6 +1362,7 @@ public class PostgreAdapter implements DataAdapter {
 	 * because the read path receives the already-rewritten names and nothing else.</p>
 	 */
 	private String junctionTableName(OntologyRelation rel) {
+		if (sandboxTarget != null) return physicalIdentifier(sandboxTarget.edgeTable(rel.name()));
 		String prefix = "";
 		List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
 		if (classDefs != null) {
@@ -1381,6 +1384,7 @@ public class PostgreAdapter implements DataAdapter {
 	 * cannot be plain equality.
 	 */
 	private boolean classMatches(String dslClassName, String ontoClassName) {
+		if (sandboxTarget != null) return dslClassName.equals(sandboxTarget.classTable(ontoClassName));
 		if (ontoClassName == null) {
 			return false;
 		}
@@ -1392,6 +1396,7 @@ public class PostgreAdapter implements DataAdapter {
 
 	/** The junction table's physical name: it follows the same namespace rule as a class's table. */
 	private String junctionTable(String namespace, OntologyRelation rel) {
+		if (sandboxTarget != null) return physicalIdentifier(sandboxTarget.edgeTable(rel.name()));
 		return classIdentifier(namespace, rel.linkTable());
 	}
 
@@ -1528,11 +1533,13 @@ public class PostgreAdapter implements DataAdapter {
 		DslExecutionResult result = null;
 		JSONObject data = null;
 		if (inSandbox) { // Handle the logic of appending sandboxId to class names in the DSL
+			classDefs = sandboxClasses(classDefs);
+			jsonRule.put("classDef", classDefs);
 			for (Map<String, Object> classDef : classDefs) {
 				String className = sandboxClassName(sandboxId, (String) classDef.get("className"));
 				classDef.put("className", className);
 			}
-			String sandboxDslStr = addSandboxId(dslStr, sandboxId);
+			String sandboxDslStr = rewriteSandboxDsl(dslStr, sandboxId);
 			result = HttpRequestUtil.executeDsl(dataRagConfig, this, sandboxDslStr, null, true, jsonRule, vectorResourceDao, userDataPermission, DslExecutionMode.OPTIMIZED, domainId)[1];
 			data = result.data();
 		} else {
@@ -1547,35 +1554,6 @@ public class PostgreAdapter implements DataAdapter {
 		return dataMap;
 	}
 
-	private String addSandboxId(String dslStr, String sandboxId) {
-		JSONArray dsls = JSON.parseArray(dslStr);
-		for (int dslIndex = 0; dslIndex < dsls.size(); dslIndex++) {
-			JSONObject dsl = dsls.getJSONObject(dslIndex);
-			JSONObject answer = dsl == null ? null : dsl.getJSONObject("answer");
-			JSONArray steps = answer == null ? null : answer.getJSONArray("steps");
-			if (steps == null) {
-				continue;
-			}
 
-			JSONObject step = steps.getJSONObject(0);
-			JSONObject graph = step == null ? null : step.getJSONObject("graph");
-			JSONArray patterns = graph == null ? null : graph.getJSONArray("patterns");
-			if (patterns == null) {
-				continue;
-			}
-			JSONArray objects = patterns.getJSONObject(0).getJSONArray("objects");
-			if (objects == null) {
-				continue;
-			}
-			for (int objectIndex = 0; objectIndex < objects.size(); objectIndex++) {
-				JSONObject object = objects.getJSONObject(objectIndex);
-				if (object != null) {
-					String fullClassName = sandboxClassName(sandboxId, object.getString("class"));
-					object.put("class", fullClassName);
-				}
-			}
-		}
-		return JSON.toJSONString(dsls, Feature.WriteMapNullValue);
-	}
 
 }

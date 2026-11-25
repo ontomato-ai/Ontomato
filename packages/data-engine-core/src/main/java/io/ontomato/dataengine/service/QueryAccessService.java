@@ -14,7 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class QueryAccessService {
   @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy
-  private BuildTestContextService contexts;
+  private DataSandboxService contexts;
   private final IdentityService identity;
   private final DataPermissionLookup permissions;
   private final QueryGrantService grants;
@@ -65,7 +65,7 @@ public class QueryAccessService {
     identity.requireQueryAccess();
     return new Access(
         user, identity.getCurrentUserDataPermission(), null, null,
-        identity.getCurrentCredentialExpiresAt()).withTarget(request.getHeader(BuildTestContextService.HEADER)==null ? ExecutionTarget.LIVE : contexts.resolve(request));
+        identity.getCurrentCredentialExpiresAt()).withTarget(request.getHeader(DataSandboxService.HEADER)==null ? ExecutionTarget.LIVE : contexts.resolve(request));
   }
 
   public static java.util.List<String> classScope(UserDataPermission permission, java.util.List<String> requested) {

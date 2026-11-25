@@ -38,7 +38,7 @@ import io.ontomato.dataengine.util.HttpRequestUtil;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public class SqlServerAdapter implements DataAdapter {
+public class SqlServerAdapter extends SandboxDataAdapter {
 
 	private DataAdapterConnection connection;
 	private Map<String, Object> jsonRule;
@@ -674,6 +674,7 @@ public class SqlServerAdapter implements DataAdapter {
 
 	@Override
 	public String sandboxClassName(String sandboxId, String className) {
+		if (sandboxTarget != null) return sandboxTarget.classTable(className);
 		return sandboxId + className;
 	}
 
@@ -746,20 +747,20 @@ public class SqlServerAdapter implements DataAdapter {
 	@Override
 	public void createClass(String namespace, Map<String, Object> classDef) {
 		try {
-			String fullClassName = namespace + ((String) classDef.get("className")).trim();
+			String fullClassName = (inSandbox(namespace) ? sandboxClassName(namespace, (String) classDef.get("className")) : ((String) classDef.get("className")).trim());
 			List<Map<String, Object>> attrs = (List<Map<String, Object>>) classDef.get("attrs");
 			List<String> fields = new ArrayList<String>();
 			if (attrs != null) {
 				for (Map<String, Object> attr : attrs) {
 					if (attr.get("enable") == null || (Boolean)attr.get("enable")) {
 						String name = (String) attr.get("name");
-						fields.add(name + " " + columnType((String) attr.get("type")));
+						fields.add(quoteIdentifier(name) + " " + columnType((String) attr.get("type")));
 					}
 				}
 			}
 
 			StringBuilder sql = new StringBuilder();
-			sql.append("create table ").append(fullClassName).append(" ( \n");
+			sql.append("create table ").append(writeTable(fullClassName)).append(" ( \n");
 			for (int i = 0; i < fields.size(); i++) {
 				String field = fields.get(i);
 				sql.append(" ").append(field).append(" " + (i == fields.size() - 1 ? "" : ",") + "\n");
@@ -767,7 +768,7 @@ public class SqlServerAdapter implements DataAdapter {
 			sql.append(" );");
 			executeUpdate(sql.toString());
 		} catch (Exception e) {
-			throw new IllegalStateException("Sandbox structure operation failed", e);
+			throw new IllegalStateException("Cannot create class [" + classDef.get("className") + "]: " + e.getMessage(), e);
 		}
 	}
 
@@ -781,16 +782,16 @@ public class SqlServerAdapter implements DataAdapter {
 			if (!rel.junction()) {
 				return;
 			}
-			String table = junctionTable(namespace, rel);
+			String table = writeTable(junctionTable(namespace, rel));
 			// SQL Server has no `create table if not exists`; object_id is the idempotent form. It runs
 			// through executeDdl rather than executeUpdate: this driver rejects a guarded DDL sent as a
 			// batch inside a transaction ("valid transaction descriptor"), while a plain statement runs.
 			executeDdl("if object_id(N'" + table + "', N'U') is null create table " + table + " (\n"
-					+ " " + rel.linkTableFromField() + " " + joinColumnType(rel.fromClass(), rel.fromField()) + ",\n"
-					+ " " + rel.linkTableToField() + " " + joinColumnType(rel.toClass(), rel.toField()) + "\n"
+					+ " " + quoteIdentifier(rel.linkTableFromField()) + " " + joinColumnType(rel.fromClass(), rel.fromField()) + ",\n"
+					+ " " + quoteIdentifier(rel.linkTableToField()) + " " + joinColumnType(rel.toClass(), rel.toField()) + "\n"
 					+ ");");
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Cannot create relationship [" + edgeName + "]: " + e.getMessage(), e);
 		}
 	}
 
@@ -824,6 +825,7 @@ public class SqlServerAdapter implements DataAdapter {
 	 * because the read path receives the already-rewritten names and nothing else.</p>
 	 */
 	private String junctionTableName(OntologyRelation rel) {
+		if (sandboxTarget != null) return sandboxTarget.edgeTable(rel.name());
 		String prefix = "";
 		List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
 		if (classDefs != null) {
@@ -845,6 +847,7 @@ public class SqlServerAdapter implements DataAdapter {
 	 * comparison cannot be plain equality.
 	 */
 	private boolean classMatches(String dslClassName, String ontoClassName) {
+		if (sandboxTarget != null) return dslClassName.equals(sandboxTarget.classTable(ontoClassName));
 		if (ontoClassName == null) {
 			return false;
 		}
@@ -856,6 +859,7 @@ public class SqlServerAdapter implements DataAdapter {
 
 	/** The junction table's physical name: it follows the same namespace rule as a class's table. */
 	private String junctionTable(String namespace, OntologyRelation rel) {
+		if (sandboxTarget != null) return sandboxTarget.edgeTable(rel.name());
 		return inSandbox(namespace) ? sandboxClassName(namespace, rel.linkTable()) : rel.linkTable();
 	}
 
@@ -866,7 +870,7 @@ public class SqlServerAdapter implements DataAdapter {
 		SimpleDateFormat ymdhms = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
 		boolean inSandbox = inSandbox(namespace);
-		String fullClassName = inSandbox ? namespace + ((String) classDef.get("className")) : (String) classDef.get("className");
+		String fullClassName = inSandbox ? sandboxClassName(namespace, (String) classDef.get("className")) : (String) classDef.get("className");
 
 		int idIndex = -1;
 		List<String> fields = new ArrayList<String>();
@@ -893,8 +897,8 @@ public class SqlServerAdapter implements DataAdapter {
 					throw new Exception("The insert statement must contain the primary key [" + pk + "] field");
 				}
 				StringBuilder sql = new StringBuilder();
-				sql.append("insert into ").append(fullClassName).append("(");
-				sql.append(String.join(",", fields));
+				sql.append("insert into ").append(writeTable(fullClassName)).append("(");
+				sql.append(String.join(",", fields.stream().map(SqlServerAdapter::quoteIdentifier).toList()));
 				sql.append(") values(");
 				for (int j = 0; j < fields.size(); j++) {
 					if (j > 0) {
@@ -911,10 +915,23 @@ public class SqlServerAdapter implements DataAdapter {
 				sql.append(")");
 				sqls.add(sql.toString());
 			}
-			executeUpdate(sqls);
+			try {
+				executeUpdate(sqls);
+			} catch (Exception failure) {
+				throw new IllegalStateException("Cannot insert class ["
+					+ classDef.get("className") + "]: " + failure.getMessage(), failure);
+			}
 		} else {
 			throw new Exception("The insert statement must contain the primary key field");
 		}
+	}
+
+	private static String quoteIdentifier(String identifier) {
+		return "[" + identifier.replace("]", "]]") + "]";
+	}
+
+	private String writeTable(String identifier) {
+		return sandboxTarget == null ? identifier : quoteIdentifier(identifier);
 	}
 
 	private boolean inSandbox(String sandboxId) {
@@ -928,7 +945,7 @@ public class SqlServerAdapter implements DataAdapter {
 		SimpleDateFormat ymdhms = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
 		boolean inSandbox = inSandbox(namespace);
-		String fullClassName = inSandbox ? namespace + ((String) classDef.get("className")) : (String) classDef.get("className");
+		String fullClassName = inSandbox ? sandboxClassName(namespace, (String) classDef.get("className")) : (String) classDef.get("className");
 
 		Map<String, String> attrTypeMap = new HashMap<String, String>();
 		String pk = null;
@@ -952,7 +969,7 @@ public class SqlServerAdapter implements DataAdapter {
 			String type = attrTypeMap.get(key);
 			if (type != null) {
 				Object value = setValues.get(key);
-				setStr += key + " = ";
+				setStr += quoteIdentifier(key) + " = ";
 				if (value != null) {
 					setStr += toSqlValue(type, value, ymd, ymdhms);
 				} else {
@@ -966,13 +983,18 @@ public class SqlServerAdapter implements DataAdapter {
 		if (setStr.length() > 0) {
 			setStr = setStr.substring(0, setStr.length() - 1);
 		}
-		String sql = "update " + fullClassName + " set " + setStr;
+		String sql = "update " + writeTable(fullClassName) + " set " + setStr;
 		String whereStr = generateWhere(where, attrTypeMap, ymd, ymdhms);
 		if (!"".equals(whereStr.trim())) {
 			sql += " where " + whereStr;
 		}
 
-		executeUpdate(sql);
+		try {
+			executeUpdate(sql);
+		} catch (Exception failure) {
+			throw new IllegalStateException("Cannot update class ["
+				+ classDef.get("className") + "]: " + failure.getMessage(), failure);
+		}
 	}
 
 	private String generateWhere(JSONObject condition, Map<String, String> attrTypeMap, SimpleDateFormat ymd, SimpleDateFormat ymdhms) throws Exception {
@@ -1022,21 +1044,21 @@ public class SqlServerAdapter implements DataAdapter {
 			case "like":
 				Object value = condition.get("value");
 				String valueSql = toSqlValue(type, value, ymd, ymdhms);
-				return field + " " + operator + " " + valueSql;
+				return quoteIdentifier(field) + " " + operator + " " + valueSql;
 			case "between":
 				JSONArray betweenArr = condition.getJSONArray("value");
-				return field + " between " + toSqlValue(type, betweenArr.get(0), ymd, ymdhms) + " and " + toSqlValue(type, betweenArr.get(1), ymd, ymdhms);
+				return quoteIdentifier(field) + " between " + toSqlValue(type, betweenArr.get(0), ymd, ymdhms) + " and " + toSqlValue(type, betweenArr.get(1), ymd, ymdhms);
 			case "in":
 				JSONArray vs = condition.getJSONArray("value");
 				String inValue = "(";
 				for (int i = 0; i < vs.size(); i++) {
 					inValue += toSqlValue(type, vs.get(i), ymd, ymdhms) + (i == vs.size() - 1 ? ")" : ",");
 				}
-				return field + " in " + inValue;
+				return quoteIdentifier(field) + " in " + inValue;
 			case "is":
-				return field + " is null";
+				return quoteIdentifier(field) + " is null";
 			case "is not":
-				return field + " is not null";
+				return quoteIdentifier(field) + " is not null";
 			default:
 				throw new IllegalArgumentException("Invalid where condition: " + condition);
 		}
@@ -1123,7 +1145,7 @@ public class SqlServerAdapter implements DataAdapter {
 		SimpleDateFormat ymdhms = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
 		boolean inSandbox = inSandbox(namespace);
-		String fullClassName = inSandbox ? namespace + ((String) classDef.get("className")) : (String) classDef.get("className");
+		String fullClassName = inSandbox ? sandboxClassName(namespace, (String) classDef.get("className")) : (String) classDef.get("className");
 
 		Map<String, String> attrTypeMap = new HashMap<String, String>();
 		if (classDef.get("attrs") != null) {
@@ -1135,13 +1157,18 @@ public class SqlServerAdapter implements DataAdapter {
 			}
 		}
 
-		String sql = "delete from " + fullClassName;
+		String sql = "delete from " + writeTable(fullClassName);
 		String whereStr = generateWhere(where, attrTypeMap, ymd, ymdhms);
 		if (!"".equals(whereStr.trim())) {
 			sql += " where " + whereStr;
 		}
 
-		executeUpdate(sql);
+		try {
+			executeUpdate(sql);
+		} catch (Exception failure) {
+			throw new IllegalStateException("Cannot delete class ["
+				+ classDef.get("className") + "]: " + failure.getMessage(), failure);
+		}
 	}
 
 	@Override
@@ -1193,13 +1220,13 @@ public class SqlServerAdapter implements DataAdapter {
 					// share one key value. Nothing to write — the connection IS the equal key. Not a gap.
 					return;
 				} else {
-					String fullClassName = inSandbox ? namespace + ((String) targetClassDef.get("className")) : (String) targetClassDef.get("className");
-					sql = "update " + fullClassName + " set " + targetInnerField + " = " + toSqlValue("varchar", sourceObjId, null, null) + " where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
+					String fullClassName = inSandbox ? sandboxClassName(namespace, (String) targetClassDef.get("className")) : (String) targetClassDef.get("className");
+					sql = "update " + writeTable(fullClassName) + " set " + quoteIdentifier(targetInnerField) + " = " + toSqlValue("varchar", sourceObjId, null, null) + " where " + quoteIdentifier(targetPk) + " = " + toSqlValue("varchar", targetObjId, null, null);
 				}
 			} else {
 				if (targetPk.equals(targetInnerField)) {
-					String fullClassName = inSandbox ? namespace + ((String) sourceClassDef.get("className")) : (String) sourceClassDef.get("className");
-					sql = "update " + fullClassName + " set " + sourceInnerField + " = " + toSqlValue("varchar", targetObjId, null, null) + " where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
+					String fullClassName = inSandbox ? sandboxClassName(namespace, (String) sourceClassDef.get("className")) : (String) sourceClassDef.get("className");
+					sql = "update " + writeTable(fullClassName) + " set " + quoteIdentifier(sourceInnerField) + " = " + toSqlValue("varchar", targetObjId, null, null) + " where " + quoteIdentifier(sourcePk) + " = " + toSqlValue("varchar", sourceObjId, null, null);
 				} else {
 					// Neither end is a primary key: no column can carry this connection, so a junction
 					// table is the only realization. Saying so beats silently writing nothing.
@@ -1219,12 +1246,12 @@ public class SqlServerAdapter implements DataAdapter {
 	/** Insert one junction row, or leave it alone when this exact pairing is already recorded. */
 	private void insertJunctionRow(String namespace, OntologyRelation rel, String sourceObjId, String targetObjId)
 			throws Exception {
-		String table = junctionTable(namespace, rel);
-		String sql = "insert into " + table + " (" + rel.linkTableFromField() + ", " + rel.linkTableToField() + ")"
+		String table = writeTable(junctionTable(namespace, rel));
+		String sql = "insert into " + table + " (" + quoteIdentifier(rel.linkTableFromField()) + ", " + quoteIdentifier(rel.linkTableToField()) + ")"
 				+ " select " + toSqlValue("varchar", sourceObjId, null, null) + ", "
 				+ toSqlValue("varchar", targetObjId, null, null)
-				+ " where not exists (select 1 from " + table + " where " + rel.linkTableFromField() + " = "
-				+ toSqlValue("varchar", sourceObjId, null, null) + " and " + rel.linkTableToField() + " = "
+				+ " where not exists (select 1 from " + table + " where " + quoteIdentifier(rel.linkTableFromField()) + " = "
+				+ toSqlValue("varchar", sourceObjId, null, null) + " and " + quoteIdentifier(rel.linkTableToField()) + " = "
 				+ toSqlValue("varchar", targetObjId, null, null) + ")";
 		executeUpdate(sql);
 	}
@@ -1256,9 +1283,9 @@ public class SqlServerAdapter implements DataAdapter {
 		}
 		if (rel.junction()) {
 			// Removing an edge removes that one pairing; the classes keep their rows.
-			String table = junctionTable(namespace, rel);
-			executeUpdate("delete from " + table + " where " + rel.linkTableFromField() + " = "
-					+ toSqlValue("varchar", sourceObjId, null, null) + " and " + rel.linkTableToField() + " = "
+			String table = writeTable(junctionTable(namespace, rel));
+			executeUpdate("delete from " + table + " where " + quoteIdentifier(rel.linkTableFromField()) + " = "
+					+ toSqlValue("varchar", sourceObjId, null, null) + " and " + quoteIdentifier(rel.linkTableToField()) + " = "
 					+ toSqlValue("varchar", targetObjId, null, null));
 			return;
 		}
@@ -1280,13 +1307,13 @@ public class SqlServerAdapter implements DataAdapter {
 					// A 1:1 shared key: the connection is the equal key value, so there is no column to clear.
 					return;
 				} else {
-					String fullClassName = inSandbox ? namespace + ((String) targetClassDef.get("className")) : (String) targetClassDef.get("className");
-					sql = "update " + fullClassName + " set " + targetInnerField + " = null where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
+					String fullClassName = inSandbox ? sandboxClassName(namespace, (String) targetClassDef.get("className")) : (String) targetClassDef.get("className");
+					sql = "update " + writeTable(fullClassName) + " set " + quoteIdentifier(targetInnerField) + " = null where " + quoteIdentifier(targetPk) + " = " + toSqlValue("varchar", targetObjId, null, null);
 				}
 			} else {
 				if (targetPk.equals(targetInnerField)) {
-					String fullClassName = inSandbox ? namespace + ((String) sourceClassDef.get("className")) : (String) sourceClassDef.get("className");
-					sql = "update " + fullClassName + " set " + sourceInnerField + " = null where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
+					String fullClassName = inSandbox ? sandboxClassName(namespace, (String) sourceClassDef.get("className")) : (String) sourceClassDef.get("className");
+					sql = "update " + writeTable(fullClassName) + " set " + quoteIdentifier(sourceInnerField) + " = null where " + quoteIdentifier(sourcePk) + " = " + toSqlValue("varchar", sourceObjId, null, null);
 				} else {
 					throw new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
 							"relationship_rule[" + relationName + "]",
@@ -1369,7 +1396,7 @@ public class SqlServerAdapter implements DataAdapter {
 	public JSONArray queryVectorAttr(Map<String, Object> classDef, String attrName, String objectId) throws Exception {
 		String fullClassName = (String) classDef.get("className");
 		String pk = DslUtil.getPrimaryKey(classDef);
-		String sql = "select " + attrName + " from " + fullClassName + " where " + pk + " = '" + objectId.replace("'", "''") + "'";
+		String sql = "select " + quoteIdentifier(attrName) + " from " + writeTable(fullClassName) + " where " + quoteIdentifier(pk) + " = '" + objectId.replace("'", "''") + "'";
 		JSONArray rows = executeSql(sql);
 		if (rows == null || rows.isEmpty()) {
 			throw new IllegalArgumentException("Object " + objectId + " of class " + fullClassName + " does not exist");
@@ -1393,11 +1420,13 @@ public class SqlServerAdapter implements DataAdapter {
 		DslExecutionResult result = null;
 		JSONObject data = null;
 		if (inSandbox) {
+			classDefs = sandboxClasses(classDefs);
+			jsonRule.put("classDef", classDefs);
 			for (Map<String, Object> classDef : classDefs) {
-				String className = sandboxId + ((String) classDef.get("className")).trim();
+				String className = sandboxClassName(sandboxId, (String) classDef.get("className"));
 				classDef.put("className", className);
 			}
-			String sandboxDslStr = addSandboxId(dslStr, sandboxId);
+			String sandboxDslStr = rewriteSandboxDsl(dslStr, sandboxId);
 			result = HttpRequestUtil.executeDsl(dataRagConfig, this, sandboxDslStr, null, true, jsonRule, vectorResourceDao, userDataPermission, DslExecutionMode.OPTIMIZED, domainId)[1];
 			data = result.data();
 		} else {
@@ -1412,35 +1441,6 @@ public class SqlServerAdapter implements DataAdapter {
 		return dataMap;
 	}
 
-	private String addSandboxId(String dslStr, String sandboxId) {
-		JSONArray dsls = JSON.parseArray(dslStr);
-		for (int dslIndex = 0; dslIndex < dsls.size(); dslIndex++) {
-			JSONObject dsl = dsls.getJSONObject(dslIndex);
-			JSONObject answer = dsl == null ? null : dsl.getJSONObject("answer");
-			JSONArray steps = answer == null ? null : answer.getJSONArray("steps");
-			if (steps == null) {
-				continue;
-			}
 
-			JSONObject step = steps.getJSONObject(0);
-			JSONObject graph = step == null ? null : step.getJSONObject("graph");
-			JSONArray patterns = graph == null ? null : graph.getJSONArray("patterns");
-			if (patterns == null) {
-				continue;
-			}
-			JSONArray objects = patterns.getJSONObject(0).getJSONArray("objects");
-			if (objects == null) {
-				continue;
-			}
-			for (int objectIndex = 0; objectIndex < objects.size(); objectIndex++) {
-				JSONObject object = objects.getJSONObject(objectIndex);
-				if (object != null) {
-					String fullClassName = sandboxId + object.getString("class").trim();
-					object.put("class", fullClassName);
-				}
-			}
-		}
-		return JSON.toJSONString(dsls, Feature.WriteMapNullValue);
-	}
 
 }

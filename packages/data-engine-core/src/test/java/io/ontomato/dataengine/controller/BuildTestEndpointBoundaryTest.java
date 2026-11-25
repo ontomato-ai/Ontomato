@@ -20,7 +20,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class BuildTestEndpointBoundaryTest {
-  private static final String HEADER = BuildTestContextService.HEADER;
+  private static final String HEADER = DataSandboxService.HEADER;
   private static final String CONTEXT = "{\"kind\":\"build-test\",\"contextId\":\"context-a\"}";
   private static final String UNBOUND_CONTEXT = "{\"kind\":\"build-test\",\"contextId\":null}";
 

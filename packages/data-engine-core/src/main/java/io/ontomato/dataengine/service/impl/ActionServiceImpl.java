@@ -40,7 +40,6 @@ import io.ontomato.dataengine.service.OwnerFieldRefusal;
 import io.ontomato.dataengine.service.OwnerRefusal;
 import io.ontomato.dataengine.service.PanelFormFields;
 import io.ontomato.dataengine.service.ParameterForms;
-import io.ontomato.dataengine.service.SandboxService;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.OntologyAgentAccess;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
@@ -74,7 +73,6 @@ public class ActionServiceImpl implements ActionService {
 
   @Autowired private BusinessConfigService businessConfigService;
 
-  @Autowired private SandboxService sandboxService;
 
   @Autowired private ActionDao actionDao;
 

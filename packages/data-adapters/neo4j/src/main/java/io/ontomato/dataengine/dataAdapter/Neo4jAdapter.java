@@ -50,7 +50,7 @@ import lombok.extern.slf4j.Slf4j;
  * the second step groups/aggregates/sorts over them.</p>
  */
 @Slf4j
-public class Neo4jAdapter implements DataAdapter {
+public class Neo4jAdapter extends SandboxDataAdapter {
 
 	/** An unbounded hop range (max_hops = -1) is capped here so a traversal cannot run away. */
 	private static final int MAX_HOPS = 10;
@@ -683,6 +683,7 @@ public class Neo4jAdapter implements DataAdapter {
 
 	@Override
 	public String sandboxClassName(String sandboxId, String className) {
+		if (sandboxTarget != null) return sandboxTarget.classTable(className);
 		return sandboxId + className;
 	}
 
@@ -699,11 +700,42 @@ public class Neo4jAdapter implements DataAdapter {
       createClass(namespace,definition);
       return JSONObject.of("kind","label","name",sandboxClassName(namespace,(String)definition.get("className")));
     }
+    @Override
+    public JSONObject sandboxClassArtifact(String namespace, String name) {
+      return JSONObject.of("kind", "label", "name", sandboxClassName(namespace, name));
+    }
+
+    @Override
+    public JSONObject sandboxEdgeArtifact(String name) {
+      return null;
+    }
+
     @Override public void dropRecordedResource(JSONObject resource) {
       try {
         var query=new CypherQuery();String label=query.next();query.params.put(label,resource.getString("name"));
         query.text="MATCH (n) WHERE $"+label+" IN labels(n) DETACH DELETE n";executeWrite(query);
       } catch(Exception failure) { throw new IllegalStateException("Cannot drop recorded label: "+resource,failure); }
+    }
+
+    @Override
+    public SandboxCapability probeSandboxPermission(String deployTag) {
+      return SandboxCapability.probe(deployTag, name -> {
+        var query = new CypherQuery();
+        query.text = "CREATE (:" + name + ")";
+        executeWrite(query);
+      }, name -> dropRecordedResource(JSONObject.of("kind", "label", "name", name)));
+    }
+
+    @Override
+    public List<JSONObject> listSandboxArtifacts(String deploymentPrefix) {
+      try {
+        return withSession(session -> session.run(
+            "CALL db.labels() YIELD label WHERE label STARTS WITH $prefix RETURN label",
+            Map.of("prefix", deploymentPrefix)).list(row ->
+                JSONObject.of("kind", "label", "name", row.get("label").asString())));
+      } catch (Exception failure) {
+        throw new IllegalStateException("Cannot list sandbox labels: " + failure.getMessage(), failure);
+      }
     }
 
     @Override
@@ -746,7 +778,7 @@ public class Neo4jAdapter implements DataAdapter {
 	@Override
 	public void insertObjects(String namespace, Map<String, Object> classDef, JSONArray objs) throws Exception {
 		boolean inSandbox = inSandbox(namespace);
-		String fullClassName = inSandbox ? namespace + ((String) classDef.get("className")) : (String) classDef.get("className");
+		String fullClassName = inSandbox ? sandboxClassName(namespace, (String) classDef.get("className")) : (String) classDef.get("className");
 
 		List<String> fields = new ArrayList<>();
 		Map<String, String> attrTypeMap = new HashMap<>();
@@ -805,7 +837,7 @@ public class Neo4jAdapter implements DataAdapter {
 	public void updateObjects(String namespace, Map<String, Object> classDef, JSONObject setValues, JSONObject where)
 			throws Exception {
 		boolean inSandbox = inSandbox(namespace);
-		String fullClassName = inSandbox ? namespace + ((String) classDef.get("className")) : (String) classDef.get("className");
+		String fullClassName = inSandbox ? sandboxClassName(namespace, (String) classDef.get("className")) : (String) classDef.get("className");
 
 		Map<String, String> attrTypeMap = new HashMap<>();
 		Set<String> attrNames = new HashSet<>();
@@ -851,7 +883,7 @@ public class Neo4jAdapter implements DataAdapter {
 	@Override
 	public void deleteObjects(String namespace, Map<String, Object> classDef, JSONObject where) throws Exception {
 		boolean inSandbox = inSandbox(namespace);
-		String fullClassName = inSandbox ? namespace + ((String) classDef.get("className")) : (String) classDef.get("className");
+		String fullClassName = inSandbox ? sandboxClassName(namespace, (String) classDef.get("className")) : (String) classDef.get("className");
 
 		Map<String, String> attrTypeMap = new HashMap<>();
 		if (classDef.get("attrs") != null) {
@@ -985,7 +1017,7 @@ public class Neo4jAdapter implements DataAdapter {
 		String targetParam = cypher.next();
 		cypher.params.put(sourceParam, sourceObjId);
 		cypher.params.put(targetParam, targetObjId);
-		cypher.text = "match (s:`" + prefix + rel.fromClass() + "`), (t:`" + prefix + rel.toClass()
+		cypher.text = "match (s:`" + sandboxClassName(prefix, rel.fromClass()) + "`), (t:`" + sandboxClassName(prefix, rel.toClass())
 				+ "`) where s." + primaryKeyOf(rel.fromClass()) + " = $" + sourceParam
 				+ " and t." + primaryKeyOf(rel.toClass()) + " = $" + targetParam
 				+ " merge (s)-[:`" + rel.type() + "`]->(t)";
@@ -1002,7 +1034,7 @@ public class Neo4jAdapter implements DataAdapter {
 		String targetParam = cypher.next();
 		cypher.params.put(sourceParam, sourceObjId);
 		cypher.params.put(targetParam, targetObjId);
-		cypher.text = "match (s:`" + prefix + rel.fromClass() + "`)-[r:`" + rel.type() + "`]->(t:`" + prefix + rel.toClass()
+		cypher.text = "match (s:`" + sandboxClassName(prefix, rel.fromClass()) + "`)-[r:`" + rel.type() + "`]->(t:`" + sandboxClassName(prefix, rel.toClass())
 				+ "`) where s." + primaryKeyOf(rel.fromClass()) + " = $" + sourceParam
 				+ " and t." + primaryKeyOf(rel.toClass()) + " = $" + targetParam
 				+ " delete r";
@@ -1049,11 +1081,13 @@ public class Neo4jAdapter implements DataAdapter {
 		DslExecutionResult result;
 		JSONObject data;
 		if (inSandbox) {
+			classDefs = sandboxClasses(classDefs);
+			jsonRule.put("classDef", classDefs);
 			for (Map<String, Object> classDef : classDefs) {
-				String className = sandboxId + ((String) classDef.get("className")).trim();
+				String className = sandboxClassName(sandboxId, (String) classDef.get("className"));
 				classDef.put("className", className);
 			}
-			String sandboxDslStr = addSandboxId(dslStr, sandboxId);
+			String sandboxDslStr = rewriteSandboxDsl(dslStr, sandboxId);
 			result = HttpRequestUtil.executeDsl(dataRagConfig, this, sandboxDslStr, null, true, jsonRule, vectorResourceDao,
 					userDataPermission, DslExecutionMode.OPTIMIZED, domainId)[1];
 			data = result.data();
@@ -1070,34 +1104,6 @@ public class Neo4jAdapter implements DataAdapter {
 		return dataMap;
 	}
 
-	private String addSandboxId(String dslStr, String sandboxId) {
-		JSONArray dsls = JSON.parseArray(dslStr);
-		for (int dslIndex = 0; dslIndex < dsls.size(); dslIndex++) {
-			JSONObject dsl = dsls.getJSONObject(dslIndex);
-			JSONObject answer = dsl == null ? null : dsl.getJSONObject("answer");
-			JSONArray steps = answer == null ? null : answer.getJSONArray("steps");
-			if (steps == null) {
-				continue;
-			}
-			JSONObject step = steps.getJSONObject(0);
-			JSONObject graph = step == null ? null : step.getJSONObject("graph");
-			JSONArray patterns = graph == null ? null : graph.getJSONArray("patterns");
-			if (patterns == null) {
-				continue;
-			}
-			JSONArray objects = patterns.getJSONObject(0).getJSONArray("objects");
-			if (objects == null) {
-				continue;
-			}
-			for (int objectIndex = 0; objectIndex < objects.size(); objectIndex++) {
-				JSONObject object = objects.getJSONObject(objectIndex);
-				if (object != null) {
-					String fullClassName = sandboxId + object.getString("class").trim();
-					object.put("class", fullClassName);
-				}
-			}
-		}
-		return JSON.toJSONString(dsls, Feature.WriteMapNullValue);
-	}
+
 
 }

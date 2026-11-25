@@ -56,6 +56,7 @@ class BusinessConfigControllerDataAdapterTest {
 				new FakeDataAdapterProvider("duckdb", "DuckDB", List.of("url"), Map.of("url", "jdbc:duckdb:/data/example.duckdb")),
 				new FakeDataAdapterProvider("m3", "M3", List.of("url", "company", "user", "password"),
 						Map.of("url", "192.0.2.72:8080"))), new DataRagConfig());
+		ReflectionTestUtils.setField(controller, "sandboxPermissions", mock(io.ontomato.dataengine.service.SandboxPermissionService.class));
 		ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
 		ReflectionTestUtils.setField(controller, "dataAdapterRegistry", registry);
 	}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sandboxCapabilitySchema } from "@ontomato/contracts/data-adapters";
 import {
   actionBusinessMeaningSchema, actionCodeSegmentSchema, actionDefinitionSchema, actionExplanationSchema,
   type ActionCodeSegment, type ActionDefinition, type ActionExplanation, type ActionSegmentKind,
@@ -19,10 +20,11 @@ import { config } from "../../config/application";
 import { createLogger } from "../../logging/logger";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
+import { backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
 import type { ProductOwner } from "../product-governance/grants";
 import { objectActionDeclaration, readRefusal, storedObjectActionSchema } from "./object-actions";
+import { sandboxPermissionPresentation } from "../product-panels/sandbox-permission";
 import { operationHost } from "../product-panels/operation-host";
 import { describeServerOperation, panelServerOperation } from "../product-panels/server-operations";
 
@@ -430,7 +432,10 @@ function actionOwner(viewer: AssistantCredentials) {
   const options = { headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers) };
   const base = config.dataQuery.baseUrl.replace(/\/$/, "");
   return async function owner<T>(name: string, path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
-    const envelope = ownerEnvelopeSchema.parse(JSON.parse((await backendPost(name, base + path, body, options)).text));
+    const response = body === undefined
+      ? await backendGet(name, base + path, options)
+      : await backendPost(name, base + path, body, options);
+    const envelope = ownerEnvelopeSchema.parse(JSON.parse(response.text));
     if (!envelope.success) throw readRefusal(envelope, "ACTION_READ_FAILED", "The owner could not read the actions");
     return schema.parse(envelope.data);
   };
@@ -501,6 +506,28 @@ export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantC
     }, panelFormDescriptionSchema);
   }
   return {
+    async sandboxCapability(): Promise<PanelRecord> {
+      const { status, supported, canCreateAndDrop, reason, probeNote } =
+        await owner("action-sandbox-capability", "/action/sandboxCapability", undefined, sandboxCapabilitySchema);
+      const sandbox = sandboxPermissionPresentation({ status, reason }, viewer.locale);
+      return {
+        primaryKey: "domain",
+        label: translate("panels.dataAdapters.sandbox.title"),
+        fields: { sandboxStatus: sandbox.status, sandboxDetail: sandbox.detail },
+        fieldLabels: {
+          sandboxStatus: translate("panels.dataAdapters.sandbox.status"),
+          sandboxDetail: translate("panels.dataAdapters.sandbox.detail"),
+        },
+        tones: { sandboxStatus: sandbox.tone },
+        outputs: {
+          sandboxStatus: status,
+          sandboxSupported: supported,
+          sandboxCanCreateAndDrop: canCreateAndDrop,
+          sandboxReason: reason,
+          sandboxProbeNote: probeNote,
+        },
+      };
+    },
     async list(): Promise<PanelRecord[]> {
       const labels = fieldLabels();
       return (await readActions()).map(action => actionRecord(action, labels));

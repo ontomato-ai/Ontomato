@@ -298,6 +298,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       form: (_selection, params) => dslQuery.form(formParams(params)),
     },
     [ACTION]: {
+      sandboxCapability: async () => (await actions()).sandboxCapability(),
       count: async () => (await actions()).count(),
       list: async () => (await actions()).list(),
       record: async selection => (await actions()).record(selection.primaryKey!),

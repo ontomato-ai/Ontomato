@@ -59,11 +59,22 @@ class BuildTestPostgresIntegrationTest {
     var writes=new WriteFunctionOperationServiceImpl();
     ReflectionTestUtils.setField(writes,"dataRagConfig",queryConfig);
     ReflectionTestUtils.setField(writes,"jsonRuleDao",rules);ReflectionTestUtils.setField(writes,"dataAdapterRegistry",registry);ReflectionTestUtils.setField(writes,"businessConfigService",configs);ReflectionTestUtils.setField(writes,"vectorResourceDao",vectors);
-    var sandbox=spy(new SandboxServiceImpl());
-    ReflectionTestUtils.setField(sandbox,"jsonRuleDao",rules);ReflectionTestUtils.setField(sandbox,"dataAdapterRegistry",registry);ReflectionTestUtils.setField(sandbox,"businessConfigService",configs);ReflectionTestUtils.setField(sandbox,"vectorResourceDao",vectors);ReflectionTestUtils.setField(sandbox,"writes",writes);
     var grants=new QueryGrantService(jdbc,"fixture-signing",new WorkbenchServiceAuthentication("fixture-service"));grants.initialize();
     var runtimeProxy=mock(RuntimeCodeClient.class);
-    var contexts=new BuildTestContextService(jdbc,identity,sandbox,rules,configs,grants,runtimeProxy);contexts.initialize();ReflectionTestUtils.setField(grants,"contexts",contexts);
+    var deployment=mock(SandboxDeployment.class);
+    when(deployment.tag()).thenReturn("dep001");
+    var locks=new java.util.concurrent.locks.ReentrantReadWriteLock();
+    when(deployment.operationLock()).thenReturn(locks.readLock());
+    when(deployment.scanLock()).thenReturn(locks.writeLock());
+    jdbc.execute("CREATE TABLE business_config (id text PRIMARY KEY)");
+    jdbc.update("INSERT INTO business_config VALUES ('contract')");
+    var contexts=spy(new SandboxFixture(jdbc,identity,rules,configs,grants,runtimeProxy,deployment));
+    ReflectionTestUtils.setField(contexts,"dataAdapterRegistry",registry);
+    ReflectionTestUtils.setField(contexts,"vectorResourceDao",vectors);
+    ReflectionTestUtils.setField(contexts,"writes",writes);
+    contexts.initialize();
+    ReflectionTestUtils.setField(grants,"contexts",contexts);
+    ReflectionTestUtils.setField(writes,"dataSandboxes",contexts);
     var admin=mock(AdminService.class);when(admin.getJSONRule("contract")).thenAnswer(call->JSON.parseObject(rule.toJSONString()));
     var ontology=new OntologyQueryService(admin,null,null,null);ReflectionTestUtils.setField(ontology,"writes",writes);ReflectionTestUtils.setField(ontology,"grants",grants);
     var http=new WriteFunctionOperationController();ReflectionTestUtils.setField(http,"jsonRuleDao",rules);ReflectionTestUtils.setField(http,"writeFunctionOperationService",writes);
@@ -180,15 +191,16 @@ class BuildTestPostgresIntegrationTest {
       jdbc.execute("INSERT INTO contract_person(id,name,age) VALUES('contract-person-1','real',7)");
       var created=contexts.create("workspace",sample,Map.of());
       String id=created.getString("contextId");
-      var boundary=new MockHttpServletRequest();boundary.addHeader(BuildTestContextService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString());
+      var boundary=new MockHttpServletRequest();boundary.addHeader(DataSandboxService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString());
       var target=contexts.resolve(boundary);
       var vector=created.getJSONArray("resources").toJavaList(JSONObject.class).stream().filter(resource->"vector".equals(resource.getString("kind"))).findFirst().orElseThrow();
-      assertNotEquals(vector.getString("logicalName"),vector.getString("name"),"The fixture must exercise server-truncated names");
-      assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?",Integer.class,vector.getString("schema"),vector.getString("name")));
+      assertTrue(vector.getString("name").matches("ot_sb_[a-z0-9]{6}_[a-z0-9]{8}_v[0-9]{2,}"),vector.toJSONString());
+      assertTrue(vector.getString("name").length()<=63,"Short internal sandbox names must avoid identifier truncation");
+      assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?",Integer.class,schema,vector.getString("name")));
       Path vectorDirectory=Path.of(vector.getString("directory"));
       // Exercise file deletion without claiming vector ingestion through an absent embedding service.
       Files.copy(Path.of("../../data-engine-core/src/test/resources/agent-contracts/files/example-1.txt"),vectorDirectory.resolve("cleanup-fixture.txt"));
-      assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+target.sandboxId()+"contract_person WHERE id='contract-person-1'",String.class));
+      assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+contexts.resolveTarget(target.sandboxId()).classTable("contract_person")+" WHERE id='contract-person-1'",String.class));
       var function=JSON.parseArray(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/actions.json"))).getJSONObject(0).getJSONObject("function").to(Function.class);function.setDomainId("contract");
       function.getParameters().get(0).setValue("contract-person-1");function.getParameters().get(1).setValue(99);
       var action=JSON.parseArray(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/actions.json"))).getJSONObject(0).to(io.ontomato.dataengine.bean.action.Action.class);
@@ -205,8 +217,8 @@ class BuildTestPostgresIntegrationTest {
       ReflectionTestUtils.setField(actions, "workflowRuns", mock(WorkflowRunResolver.class));
       var result=actions.execute(action.getId(),JSONObject.of("id","contract-person-1","age",99),"en",owner,permission,1,target);
       assertNull(result.getError());
-      assertEquals(99,jdbc.queryForObject("SELECT age FROM "+target.sandboxId()+"contract_person WHERE id='contract-person-1'",Integer.class));
-      assertEquals(22,jdbc.queryForObject("SELECT age FROM "+target.sandboxId()+"contract_person WHERE id='contract-person-2'",Integer.class));
+      assertEquals(99,jdbc.queryForObject("SELECT age FROM "+contexts.resolveTarget(target.sandboxId()).classTable("contract_person")+" WHERE id='contract-person-1'",Integer.class));
+      assertEquals(22,jdbc.queryForObject("SELECT age FROM "+contexts.resolveTarget(target.sandboxId()).classTable("contract_person")+" WHERE id='contract-person-2'",Integer.class));
       assertEquals(7,jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'",Integer.class));
       var query=JSON.parseObject("{\"answer\":{\"steps\":[{\"graph\":{\"patterns\":[{\"objects\":[{\"idx\":0,\"variable\":\"p\",\"class\":\"contract_person\"}]}]},\"output\":{\"to_user\":true,\"fields\":[{\"variable\":\"p\",\"field\":\"age\",\"as\":\"age\"}]}}]}}");
       var access=new QueryAccessService.Access(owner,permission,null,null,null).withTarget(target);
@@ -236,43 +248,42 @@ class BuildTestPostgresIntegrationTest {
       function.getReturnDef().setClassNames(List.of("contract_person","contract_group"));
       function.setCode("# ontomato-python:2\nfrom query_runtime import deleteEdge, createEdge\ndeleteEdge('person_group','contract_person','contract-person-1','contract_group','contract-group-1')\ncreateEdge('person_group','contract_person','contract-person-1','contract_group','contract-group-1')\n");
       result=actions.execute(action.getId(),JSONObject.of("id","contract-person-1","age",99),"en",owner,permission,1,target);assertNull(result.getError());
-      assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+target.sandboxId()+"contract_person WHERE id='contract-person-1'",String.class));
+      assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+contexts.resolveTarget(target.sandboxId()).classTable("contract_person")+" WHERE id='contract-person-1'",String.class));
       function.setCode("# ontomato-python:2\nfrom query_runtime import delete\ndelete('contract_person',{'field':'id','operator':'=','value':'contract-person-1'})\n");
       result=actions.execute(action.getId(),JSONObject.of("id","contract-person-1","age",99),"en",owner,permission,1,target);assertNull(result.getError());
-      assertEquals(2,jdbc.queryForObject("SELECT count(*) FROM "+target.sandboxId()+"contract_person",Integer.class));
+      assertEquals(2,jdbc.queryForObject("SELECT count(*) FROM "+contexts.resolveTarget(target.sandboxId()).classTable("contract_person")+"",Integer.class));
       var afterDelete=(JSONArray)metrics.execute("metric-test",null,JSONObject.of("threshold",20),null,"en",owner,permission,1,target)[0];
       assertEquals(45,afterDelete.getJSONObject(0).getIntValue("total"));
       assertEquals(7,jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'",Integer.class));
-      contexts.close(id);assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%"));
+      contexts.close(id);assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,contexts.resolveTarget(target.sandboxId()).namespace()+"%"));
       assertFalse(Files.exists(vectorDirectory),"Delete the recorded directory, not the truncated table-name directory");
       assertTrue(contexts.status(id).getJSONArray("resources").toJavaList(JSONObject.class).stream().allMatch(resource->"DELETED".equals(resource.getString("cleanupStatus"))));
       var next=contexts.create("workspace",sample,Map.of());var restored=contexts.require(next.getString("contextId"),"builder","contract");
-      assertEquals(21,jdbc.queryForObject("SELECT age FROM "+restored.sandboxId()+"contract_person WHERE id='contract-person-1'",Integer.class));
-      assertEquals(3,jdbc.queryForObject("SELECT count(*) FROM "+restored.sandboxId()+"contract_person",Integer.class));
-      assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+restored.sandboxId()+"contract_person WHERE id='contract-person-1'",String.class));
+      assertEquals(21,jdbc.queryForObject("SELECT age FROM "+contexts.resolveTarget(restored.sandboxId()).classTable("contract_person")+" WHERE id='contract-person-1'",Integer.class));
+      assertEquals(3,jdbc.queryForObject("SELECT count(*) FROM "+contexts.resolveTarget(restored.sandboxId()).classTable("contract_person")+"",Integer.class));
+      assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+contexts.resolveTarget(restored.sandboxId()).classTable("contract_person")+" WHERE id='contract-person-1'",String.class));
       contexts.close(next.getString("contextId"));
-      assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+restored.sandboxId()+"%"));
-      exerciseWorkspaceConcurrency(contexts,sandbox,sample);
-      exerciseFailures(contexts,sandbox,config,connection,jdbc,adminDb,schema,vectors,sample,identity,grants,programs,function,permission,writes,rule);
+      assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,contexts.resolveTarget(restored.sandboxId()).namespace()+"%"));
+      exerciseWorkspaceConcurrency(contexts,sample);
+      exerciseFailures(contexts,config,connection,jdbc,adminDb,schema,vectors,sample,identity,grants,programs,function,permission,writes,rule);
       rule.getJSONArray("classDef").getJSONObject(0).getJSONArray("attrs").add(JSONObject.of("name","attachment_extra","type","vector"));
-      var collision=assertThrows(org.springframework.web.server.ResponseStatusException.class,()->contexts.create("collision",sample,Map.of()));
-      assertTrue(collision.getReason().startsWith("BUILD_TEST_SCHEMA_FAILED"),collision.getReason());
-      assertTrue(collision.getReason().contains("attachment-contract") && collision.getReason().contains("attachment_extra-contract"),collision.getReason());
-      String collisionSandbox=jdbc.queryForObject("SELECT data->>'sandboxId' FROM build_test_contexts WHERE workspace_id='collision'",String.class);
-      assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+collisionSandbox+"%"));
+      var twoVectors = contexts.create("two-vectors", sample, Map.of());
+      var vectorTables = contexts.resolveTarget(twoVectors.getString("contextId")).vectorTables().values();
+      assertEquals(2, Set.copyOf(vectorTables).size());
+      contexts.close(twoVectors.getString("contextId"));
    } finally {
     if(ontologyHttp!=null)ontologyHttp.stop(0);
     if(runtimeProcess!=null){runtimeProcess.destroy();runtimeProcess.waitFor(5,java.util.concurrent.TimeUnit.SECONDS);if(runtimeProcess.isAlive())runtimeProcess.destroyForcibly();}
     adminDb.execute("DROP SCHEMA "+schema+" CASCADE");adminDb.execute("DROP SCHEMA IF EXISTS "+schema+"_runtime CASCADE");
    }
  }
- private void exerciseWorkspaceConcurrency(BuildTestContextService contexts,SandboxServiceImpl sandbox,JSONObject sample) throws Exception {
+ private void exerciseWorkspaceConcurrency(SandboxFixture contexts,JSONObject sample) throws Exception {
    var entered=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
    var first=new java.util.concurrent.atomic.AtomicBoolean(true);
    doAnswer(call->{
      if(first.compareAndSet(true,false)) { entered.countDown();assertTrue(release.await(20,java.util.concurrent.TimeUnit.SECONDS)); }
      return call.callRealMethod();
-   }).when(sandbox).createSampleStructure(anyString(),any(),anyString(),any());
+   }).when(contexts).createSampleStructure(any(),any(),anyString(),any());
    try(var executor=java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
      try {
        var a=executor.submit(()->contexts.create("serial-workspace",sample,Map.of()));
@@ -289,7 +300,7 @@ class BuildTestPostgresIntegrationTest {
        contexts.close(replacement.getString("contextId"));contexts.close(b.getString("contextId"));
        System.out.println("BUILD_TEST_CONCURRENCY_PASS independent workspace proceeds; same workspace serializes and replaces the old context");
      } finally { release.countDown(); }
-   } finally { doCallRealMethod().when(sandbox).createSampleStructure(anyString(),any(),anyString(),any()); }
+   } finally { doCallRealMethod().when(contexts).createSampleStructure(any(),any(),anyString(),any()); }
  }
  private static String signedClaims(JSONObject claims) throws Exception {
    String encoded=Base64.getUrlEncoder().withoutPadding().encodeToString(JSON.toJSONBytes(claims));
@@ -300,10 +311,10 @@ class BuildTestPostgresIntegrationTest {
    var failure=assertThrows(org.springframework.web.server.ResponseStatusException.class,action);
    assertTrue(failure.getReason().contains(code),failure.toString());
  }
- private static long cleanups(SandboxService sandbox) {
+ private static long cleanups(DataSandboxService sandbox) {
    return mockingDetails(sandbox).getInvocations().stream().filter(call->call.getMethod().getName().equals("dropSampleStructure")).count();
  }
- private void exerciseFailures(BuildTestContextService contexts,SandboxServiceImpl sandbox,BusinessConfig config,
+ private void exerciseFailures(SandboxFixture contexts,BusinessConfig config,
      DataAdapterConnection connection,JdbcTemplate jdbc,JdbcTemplate admin,String schema,VectorResourceDao vectors,
      JSONObject sample,IdentityService identity,QueryGrantService grants,ABCProgramServiceImpl programs,Function function,
      UserDataPermission permission,WriteFunctionOperationService writes,JSONObject rule) throws Exception {
@@ -321,10 +332,10 @@ class BuildTestPostgresIntegrationTest {
    var queryMvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new io.ontomato.dataengine.controller.OntologyQueryController(access,(OntologyQueryService)ReflectionTestUtils.getField(programs,"ontology"),null,null)).build();
    queryMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/ontology/query/execute-dsl")
        .contentType("application/json").content("{\"dsl\":{}}")
-       .header(BuildTestContextService.HEADER,"{\"kind\":\"build-test\",\"contextId\":null}"))
+       .header(DataSandboxService.HEADER,"{\"kind\":\"build-test\",\"contextId\":null}"))
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest())
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BUILD_TEST_CONTEXT_REQUIRED"));
-   var missing=new MockHttpServletRequest();missing.addHeader(BuildTestContextService.HEADER,"{\"kind\":\"build-test\",\"contextId\":null}");
+   var missing=new MockHttpServletRequest();missing.addHeader(DataSandboxService.HEADER,"{\"kind\":\"build-test\",\"contextId\":null}");
    expectCode("BUILD_TEST_CONTEXT_REQUIRED",()->contexts.resolve(missing));
    expectCode("BUILD_TEST_CONTEXT_NOT_FOUND",()->contexts.require(UUID.randomUUID().toString(),"builder","contract"));
    ReflectionTestUtils.setField(contexts,"ttlMinutes",2L);
@@ -335,7 +346,7 @@ class BuildTestPostgresIntegrationTest {
    var target=contexts.require(id,"builder","contract");
    queryMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/ontology/query/distinct-values")
        .contentType("application/json").content("{\"className\":\"outside\",\"attribute\":\"id\"}")
-       .header(BuildTestContextService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString()))
+       .header(DataSandboxService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString()))
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden())
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BUILD_TEST_FORBIDDEN"));
 
@@ -345,20 +356,20 @@ class BuildTestPostgresIntegrationTest {
      expectCode("BUILD_TEST_CONTEXT_CHANGED",()->contexts.require(id,"builder","contract"));
      queryMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/ontology/query/distinct-values")
          .contentType("application/json").content("{\"className\":\"contract_person\",\"attribute\":\"age\"}")
-         .header(BuildTestContextService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString()))
+         .header(DataSandboxService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString()))
          .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isConflict())
          .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BUILD_TEST_CONTEXT_CHANGED"));
    } finally {age.put("type",priorType);}
    expectCode("BUILD_TEST_FORBIDDEN",()->contexts.require(id,"other","contract"));
    expectCode("BUILD_TEST_FORBIDDEN",()->contexts.require(id,"builder","other-domain"));
-   jdbc.update("UPDATE build_test_contexts SET state='PREPARING' WHERE id=?",id);
+   jdbc.update("UPDATE data_sandboxes SET state='PREPARING' WHERE id=?",id);
    expectCode("BUILD_TEST_CONTEXT_NOT_READY",()->contexts.require(id,"builder","contract"));
-   jdbc.update("UPDATE build_test_contexts SET state='READY' WHERE id=?",id);
+   jdbc.update("UPDATE data_sandboxes SET state='READY' WHERE id=?",id);
    var invalid=JSON.parseObject(JSON.toJSONString(function),Function.class);
-   int resourceCount=jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%");
+   int resourceCount=jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,contexts.resolveTarget(target.sandboxId()).namespace()+"%");
    assertTrue(assertThrows(IllegalArgumentException.class,()->writes.appendVector("contract_person","age","contract-person-1","text",null,"txt",target.sandboxId(),"contract")).getMessage().contains("attrName"));
    assertTrue(assertThrows(IllegalArgumentException.class,()->writes.deleteVector("contract_person","age","contract-person-1","file.txt",target.sandboxId(),"contract")).getMessage().contains("attrName"));
-   assertEquals(resourceCount,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%"));
+   assertEquals(resourceCount,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,contexts.resolveTarget(target.sandboxId()).namespace()+"%"));
    invalid.getReturnDef().setClassNames(List.of());
    expectCode("BUILD_TEST_FORBIDDEN",()->programs.execute(UUID.randomUUID().toString(),invalid,"builder",permission,target.sandboxId(),"en",1,"contract",new ABCProgramService.ExecutionContext(null, null, target)));
    invalid.getReturnDef().setClassNames(List.of("outside"));
@@ -376,22 +387,22 @@ class BuildTestPostgresIntegrationTest {
    expectCode("BUILD_TEST_FORBIDDEN",()->grants.verify(emptyScope,grantRun,"/ontology/query/execute-dsl"));
    claims.remove("contextId");String noContext=signedClaims(claims);
    expectCode("Invalid, expired or revoked query grant",()->grants.verify(noContext,grantRun,"/ontology/query/execute-dsl"));
-   jdbc.update("UPDATE build_test_contexts SET expires_at=0 WHERE id=?",id);
+   jdbc.update("UPDATE data_sandboxes SET expires_at=0 WHERE id=?",id);
    expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->contexts.require(id,"builder","contract"));
    expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->grants.verify(token,grantRun,"/ontology/query/execute-dsl"));
    // This protocol-only credential never started a runtime execution; remove its fixture row.
    jdbc.update("DELETE FROM query_runtime_grants WHERE run_id=? AND context_id=?",grantRun,id);
-   contexts.expire();
-   assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%"));
+   contexts.cleanupExpired();
+   assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,contexts.resolveTarget(target.sandboxId()).namespace()+"%"));
    expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->contexts.require(id,"builder","contract"));
    var closed=contexts.create("closed",sample,Map.of());contexts.close(closed.getString("contextId"));
    expectCode("BUILD_TEST_CONTEXT_CLOSED",()->contexts.require(closed.getString("contextId"),"builder","contract"));
    // Past its deadline an ended test still reads as ended, as its status says.
-   jdbc.update("UPDATE build_test_contexts SET expires_at=0 WHERE id=?",closed.getString("contextId"));
+   jdbc.update("UPDATE data_sandboxes SET expires_at=0 WHERE id=?",closed.getString("contextId"));
    expectCode("BUILD_TEST_CONTEXT_CLOSED",()->contexts.require(closed.getString("contextId"),"builder","contract"));
    config.setDataAdapter("gaussdb");
    expectCode("BUILD_TEST_UNSUPPORTED",()->contexts.create("unsupported",sample,Map.of()));config.setDataAdapter("postgresql");
-   assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM build_test_contexts WHERE workspace_id='unsupported'",Integer.class));
+   assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM data_sandboxes WHERE scope_key='unsupported'",Integer.class));
    var missingFile=JSON.parseObject(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/sample.json")));
    expectCode("BUILD_TEST_SAMPLE_INVALID",()->contexts.create("missing-file",missingFile,Map.of()));
    System.out.println("BUILD_TEST_FAILURE_CASES_PASS missing/not-ready/prepare-failed/definition-changed/expired/closed/owner/domain/empty-scope/outside-scope/unsupported/missing-file/auth-before-lookup; rejected Actions issued no grants; protocol-only grant fixture removed; invalid vector attributes created no resources");
@@ -403,20 +414,20 @@ class BuildTestPostgresIntegrationTest {
      admin.execute("GRANT USAGE ON SCHEMA "+schema+" TO "+role);
      connection.put("user",role);connection.put("password","fixture-only");
      expectCode("BUILD_TEST_SCHEMA_FAILED",()->contexts.create("no-create",sample,Map.of()));
-     var row=JSON.parseObject(jdbc.queryForObject("SELECT data::text FROM build_test_contexts WHERE workspace_id='no-create'",String.class));
+     var row=JSON.parseObject(jdbc.queryForObject("SELECT data::text FROM data_sandboxes WHERE scope_key='no-create'",String.class));
      assertTrue(row.getString("prepareError").contains("permission denied"),row.toJSONString());
      String failedId=contexts.current("no-create").getString("contextId");
      expectCode("BUILD_TEST_CONTEXT_NOT_READY",()->contexts.require(failedId,"builder","contract"));
-     verify(sandbox,times(1)).createSampleStructure(eq(row.getString("sandboxId")),any(),eq("contract"),any());
-     long attempts=cleanups(sandbox);contexts.expire();assertEquals(attempts,cleanups(sandbox));
-     assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+row.getString("sandboxId")+"%"));
+     verify(contexts,times(1)).createSampleStructure(argThat(sampleTarget -> sampleTarget.sandboxId().equals(failedId)),any(),eq("contract"),any());
+     long attempts=cleanups(contexts);contexts.cleanupExpired();assertEquals(attempts,cleanups(contexts));
+     assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,contexts.resolveTarget(contexts.current("no-create").getString("contextId")).namespace()+"%"));
      admin.execute("GRANT CREATE ON SCHEMA "+schema+" TO "+role);
      var cleanup=contexts.create("cleanup-denied",sample,Map.of());String cleanupId=cleanup.getString("contextId");
      var table=cleanup.getJSONArray("resources").toJavaList(JSONObject.class).stream().filter(resource->"table".equals(resource.getString("kind"))).findFirst().orElseThrow();
      admin.execute("ALTER TABLE "+schema+"."+table.getString("name")+" OWNER TO "+originalUser);
      expectCode("BUILD_TEST_CLEANUP_FAILED",()->contexts.close(cleanupId));
      String error=contexts.status(cleanupId).getString("cleanupError");
-     attempts=cleanups(sandbox);contexts.expire();assertEquals(attempts,cleanups(sandbox));
+     attempts=cleanups(contexts);contexts.cleanupExpired();assertEquals(attempts,cleanups(contexts));
      assertEquals(error,contexts.status(cleanupId).getString("cleanupError"));
      admin.execute("ALTER TABLE "+schema+"."+table.getString("name")+" OWNER TO "+role);
      assertEquals("",contexts.retryCleanup(cleanupId).getString("cleanupError"));
@@ -430,13 +441,14 @@ class BuildTestPostgresIntegrationTest {
    Object prior=ReflectionTestUtils.getField(vectors,"dirName");ReflectionTestUtils.setField(vectors,"dirName",folder);
    try {
      expectCode("BUILD_TEST_DATA_FAILED",()->contexts.create("directory-denied",sample,Map.of()));
-     var row=JSON.parseObject(jdbc.queryForObject("SELECT data::text FROM build_test_contexts WHERE workspace_id='directory-denied'",String.class));
-     String cleanupError=jdbc.queryForObject("SELECT cleanup_error FROM build_test_contexts WHERE workspace_id='directory-denied'",String.class);
-     assertTrue(cleanupError.contains("not confirmed"),cleanupError);
-     verify(sandbox,times(1)).createSampleStructure(eq(row.getString("sandboxId")),any(),eq("contract"),any());
-     long attempts=cleanups(sandbox);contexts.expire();assertEquals(attempts,cleanups(sandbox));
-     assertEquals(2,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+row.getString("sandboxId")+"%"));
-     System.out.println("BUILD_TEST_FAILURE_CASES_PASS directory-unwritable; original preparation error retained, cleanup-unconfirmed retained, two recorded business tables remain; no automatic retry");
+     var row=JSON.parseObject(jdbc.queryForObject("SELECT data::text FROM data_sandboxes WHERE scope_key='directory-denied'",String.class));
+     String cleanupError=jdbc.queryForObject("SELECT cleanup_error FROM data_sandboxes WHERE scope_key='directory-denied'",String.class);
+     assertEquals("", cleanupError);
+     String failedId = contexts.current("directory-denied").getString("contextId");
+     verify(contexts,times(1)).createSampleStructure(argThat(sampleTarget -> sampleTarget.sandboxId().equals(failedId)),any(),eq("contract"),any());
+     long attempts=cleanups(contexts);contexts.cleanupExpired();assertEquals(attempts,cleanups(contexts));
+     assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,contexts.resolveTarget(contexts.current("directory-denied").getString("contextId")).namespace()+"%"));
+     System.out.println("BUILD_TEST_FAILURE_CASES_PASS directory-unwritable; original preparation error retained, registered business tables removed; no automatic retry");
    } finally {
      ReflectionTestUtils.setField(vectors,"dirName",prior);
      Files.setPosixFilePermissions(directory,java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));Files.delete(directory);
@@ -444,4 +456,15 @@ class BuildTestPostgresIntegrationTest {
    assertEquals(7,jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'",Integer.class));
  }
 
+ private static class SandboxFixture extends DataSandboxService {
+   SandboxFixture(JdbcTemplate jdbc, IdentityService identity, JSONRuleDao rules, BusinessConfigService configs,
+       QueryGrantService grants, RuntimeCodeClient runtime, SandboxDeployment deployment) {
+     super(jdbc, identity, rules, configs, grants, runtime, deployment);
+   }
+
+   @Override
+   protected void createSampleStructure(SandboxTarget target, JSONObject data, String domain, Runnable save) {
+     super.createSampleStructure(target, data, domain, save);
+   }
+ }
 }

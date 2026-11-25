@@ -60,7 +60,7 @@ public class MetricViewController {
     }
 
     @org.springframework.beans.factory.annotation.Autowired
-    private io.ontomato.dataengine.service.BuildTestContextService buildTests;
+    private io.ontomato.dataengine.service.DataSandboxService buildTests;
 
 
 	@Autowired

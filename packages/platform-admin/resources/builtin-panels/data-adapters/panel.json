@@ -18,6 +18,33 @@
       }
     },
     "members": {
+      "sandboxCapability": {
+        "component": "ObjectSummary",
+        "type": "platform:DataAdapterConfig",
+        "target": "domain",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "sandboxStatus",
+            "sandboxDetail"
+          ]
+        },
+        "id": "builtin-product-acea10fe-079e-4a0f-99bd-8768f261e643"
+      },
+      "checkSandboxPermission": {
+        "component": "OperationButton",
+        "type": "platform:DataAdapterConfig",
+        "target": "domain",
+        "operation": "dataAdapters.checkSandboxPermission",
+        "config": {
+          "labelKey": "sandbox.check",
+          "size": "small"
+        },
+        "id": "builtin-product-cf97d22c-223c-40ce-bf6d-d5ac86412ce4"
+      },
       "adapterForm": {
         "component": "ObjectForm",
         "type": "platform:DataAdapterConfig",
@@ -76,96 +103,160 @@
         "panel.description": "Configure the data source where the ontology reads its records, or route ontology classes across multiple data sources.",
         "saved": "Data adapter configuration saved.",
         "test.title": "Connection test",
-        "test.description": "Test the current unsaved connection settings without saving or switching the domain adapter.",
-        "test.multiDescription": "Select one configured data source from the draft to test its connection without saving.",
+        "test.description": "Test the current unsaved connection settings without saving or switching the domain adapter. Testing a writable connection also checks create and drop permissions by creating and immediately deleting one empty probe table or its equivalent.",
+        "test.multiDescription": "Select one configured data source from the draft to test its connection without saving. Testing a writable connection also checks create and drop permissions by creating and immediately deleting one empty probe table or its equivalent.",
         "test.sourceLabel": "Data source to test",
         "test.sourcePlaceholder": "Select a data source",
         "test.noSources": "Add a data source with an ID above before testing a connection.",
-        "test.run": "Test connection"
+        "test.run": "Test connection",
+        "sandbox.title": "Action trial & sandbox permission",
+        "sandbox.probeNote": "Checking creates and immediately deletes one empty probe table or its equivalent in the business data source.",
+        "sandbox.check": "Check permission",
+        "sandbox.passed": "The probe table was created and deleted successfully.",
+        "sandbox.failed": "Action trials cannot run and actions cannot be published until create and drop permission is granted. {reason}",
+        "sandbox.unsupported": "This data source type does not support write actions. No probe object is created for a read-only source.",
+        "sandbox.savedFailed": "Configuration saved, but the sandbox permission check failed. Action trials and publishing are unavailable until create and drop permission is granted. {reason}",
+        "sandbox.savedUnsupported": "Configuration saved. This data source is read-only and does not support write actions."
       },
       "zh-CN": {
         "panel.name": "数据适配器",
         "panel.description": "配置本体读取数据的数据源，或在多源模式下将本体类路由到多个数据源。",
         "saved": "数据适配器配置已保存。",
         "test.title": "连接测试",
-        "test.description": "按当前表单草稿测试连接，不保存配置也不切换域适配器。",
-        "test.multiDescription": "从当前多源草稿中选择一个数据源测试连接，不会保存改动。",
+        "test.description": "按当前表单草稿测试连接，不保存配置也不切换域适配器。测试可写连接时，还会创建并立即删除一张空的探测表或等效对象，以检查建表和删表权限。",
+        "test.multiDescription": "从当前多源草稿中选择一个数据源测试连接，不会保存改动。测试可写连接时，还会创建并立即删除一张空的探测表或等效对象，以检查建表和删表权限。",
         "test.sourceLabel": "待测数据源",
         "test.sourcePlaceholder": "选择要测试的数据源",
         "test.noSources": "请先在上方添加并填写数据源 ID，再测试连接。",
-        "test.run": "测试连接"
+        "test.run": "测试连接",
+        "sandbox.title": "动作试跑与沙箱权限",
+        "sandbox.probeNote": "检查会在业务数据源中创建一张空的探测表或等效对象，并立即删除。",
+        "sandbox.check": "检查权限",
+        "sandbox.passed": "已成功创建并删除探测表。",
+        "sandbox.failed": "获得建表和删表权限后才能试跑或发布动作。{reason}",
+        "sandbox.unsupported": "当前数据源类型不支持写动作。只读数据源不会创建探测对象。",
+        "sandbox.savedFailed": "配置已保存，但沙箱权限检查失败。获得建表和删表权限后才能试跑或发布动作。{reason}",
+        "sandbox.savedUnsupported": "配置已保存。当前数据源为只读，不支持写动作。"
       },
       "zh-TW": {
         "panel.name": "資料轉接器",
         "panel.description": "設定本體讀取資料的資料來源，或在多來源模式下將本體類別路由至多個資料來源。",
         "saved": "資料轉接器設定已儲存。",
         "test.title": "連線測試",
-        "test.description": "依目前表單草稿測試連線，不儲存設定亦不切換域轉接器。",
-        "test.multiDescription": "從目前多來源草稿選擇一個資料來源進行連線測試，不會儲存變更。",
+        "test.description": "依目前表單草稿測試連線，不儲存設定亦不切換域轉接器。測試可寫入的連線時，也會建立並立即刪除一張空的探測表或等效物件，以檢查建表與刪表權限。",
+        "test.multiDescription": "從目前多來源草稿選擇一個資料來源進行連線測試，不會儲存變更。測試可寫入的連線時，也會建立並立即刪除一張空的探測表或等效物件，以檢查建表與刪表權限。",
         "test.sourceLabel": "待測資料來源",
         "test.sourcePlaceholder": "選擇要測試的資料來源",
         "test.noSources": "請先於上方新增並填寫資料來源 ID，再測試連線。",
-        "test.run": "測試連線"
+        "test.run": "測試連線",
+        "sandbox.title": "動作試跑與沙箱權限",
+        "sandbox.probeNote": "檢查會在業務資料來源中建立一張空的探測表或等效物件，並立即刪除。",
+        "sandbox.check": "檢查權限",
+        "sandbox.passed": "已成功建立並刪除探測表。",
+        "sandbox.failed": "取得建表與刪表權限後才能試跑或發佈動作。{reason}",
+        "sandbox.unsupported": "目前的資料來源類型不支援寫入動作。唯讀資料來源不會建立探測物件。",
+        "sandbox.savedFailed": "設定已儲存，但沙箱權限檢查失敗。取得建表與刪表權限後才能試跑或發佈動作。{reason}",
+        "sandbox.savedUnsupported": "設定已儲存。目前資料來源為唯讀，不支援寫入動作。"
       },
       "ja": {
         "panel.name": "データアダプター",
         "panel.description": "オントロジーがレコードを読み取るデータソースを設定するか、マルチソースモードで複数データソースへルーティングします。",
         "saved": "データアダプター設定を保存しました。",
         "test.title": "接続テスト",
-        "test.description": "現在の未保存の接続設定を、保存やアダプター切替を行わずにテストします。",
-        "test.multiDescription": "下書き内のデータソースを 1 つ選択し、保存せずに接続テストを実行します。",
+        "test.description": "現在の未保存の接続設定を、保存やアダプター切替を行わずにテストします。書き込み可能な接続をテストする場合は、空の確認用テーブルまたは同等のオブジェクトを1つ作成して直ちに削除し、作成・削除権限も確認します。",
+        "test.multiDescription": "下書き内のデータソースを 1 つ選択し、保存せずに接続テストを実行します。書き込み可能な接続をテストする場合は、空の確認用テーブルまたは同等のオブジェクトを1つ作成して直ちに削除し、作成・削除権限も確認します。",
         "test.sourceLabel": "テスト対象データソース",
         "test.sourcePlaceholder": "データソースを選択",
         "test.noSources": "接続テストの前に、上で ID を持つデータソースを追加してください。",
-        "test.run": "接続テスト"
+        "test.run": "接続テスト",
+        "sandbox.title": "アクションの試行とサンドボックス権限",
+        "sandbox.probeNote": "確認時に業務データソースに空の確認用テーブルまたは同等のオブジェクトを1つ作成し、直ちに削除します。",
+        "sandbox.check": "権限を確認",
+        "sandbox.passed": "確認用テーブルの作成と削除に成功しました。",
+        "sandbox.failed": "テーブルの作成・削除権限が付与されるまで、アクションの試行と公開はできません。{reason}",
+        "sandbox.unsupported": "この種類のデータソースは書き込みアクションに対応していません。読み取り専用のデータソースには確認用オブジェクトを作成しません。",
+        "sandbox.savedFailed": "設定を保存しましたが、サンドボックス権限を確認できませんでした。テーブルの作成・削除権限が付与されるまで、アクションの試行と公開はできません。{reason}",
+        "sandbox.savedUnsupported": "設定を保存しました。このデータソースは読み取り専用で、書き込みアクションには対応していません。"
       },
       "de": {
         "panel.name": "Datenadapter",
         "panel.description": "Konfigurieren Sie die Datenquelle der Ontologie oder leiten Sie Ontologieklassen im Multi-Source-Modus an mehrere Datenquellen weiter.",
         "saved": "Datenadapter-Konfiguration gespeichert.",
         "test.title": "Verbindungstest",
-        "test.description": "Testen Sie die aktuellen ungespeicherten Verbindungseinstellungen, ohne den Domänenadapter zu speichern oder umzuschalten.",
-        "test.multiDescription": "Wählen Sie eine Datenquelle aus dem Entwurf aus, um die Verbindung ohne Speichern zu testen.",
+        "test.description": "Testen Sie die aktuellen ungespeicherten Verbindungseinstellungen, ohne den Domänenadapter zu speichern oder umzuschalten. Beim Test einer beschreibbaren Verbindung werden auch die Berechtigungen zum Anlegen und Löschen geprüft. Dazu wird eine leere Testtabelle oder ein gleichwertiges Objekt angelegt und sofort wieder gelöscht.",
+        "test.multiDescription": "Wählen Sie eine Datenquelle aus dem Entwurf aus, um die Verbindung ohne Speichern zu testen. Beim Test einer beschreibbaren Verbindung werden auch die Berechtigungen zum Anlegen und Löschen geprüft. Dazu wird eine leere Testtabelle oder ein gleichwertiges Objekt angelegt und sofort wieder gelöscht.",
         "test.sourceLabel": "Zu testende Datenquelle",
         "test.sourcePlaceholder": "Datenquelle auswählen",
         "test.noSources": "Fügen Sie oben zuerst eine Datenquelle mit ID hinzu, bevor Sie die Verbindung testen.",
-        "test.run": "Verbindung testen"
+        "test.run": "Verbindung testen",
+        "sandbox.title": "Aktionstest und Sandbox-Berechtigung",
+        "sandbox.probeNote": "Die Prüfung legt in der Geschäftsdatenquelle eine leere Testtabelle oder ein gleichwertiges Objekt an und löscht sie sofort wieder.",
+        "sandbox.check": "Berechtigung prüfen",
+        "sandbox.passed": "Die Testtabelle wurde erfolgreich angelegt und gelöscht.",
+        "sandbox.failed": "Aktionen können erst getestet und veröffentlicht werden, wenn die Berechtigungen zum Anlegen und Löschen von Tabellen erteilt wurden. {reason}",
+        "sandbox.unsupported": "Dieser Datenquellentyp unterstützt keine schreibenden Aktionen. Bei einer schreibgeschützten Quelle wird kein Testobjekt angelegt.",
+        "sandbox.savedFailed": "Konfiguration gespeichert, aber die Prüfung der Sandbox-Berechtigungen ist fehlgeschlagen. Aktionen können erst getestet und veröffentlicht werden, wenn die Berechtigungen zum Anlegen und Löschen von Tabellen erteilt wurden. {reason}",
+        "sandbox.savedUnsupported": "Konfiguration gespeichert. Diese Datenquelle ist schreibgeschützt und unterstützt keine schreibenden Aktionen."
       },
       "fr": {
         "panel.name": "Adaptateurs de données",
         "panel.description": "Configurez la source de données lue par l'ontologie ou routez les classes d'ontologie entre plusieurs sources de données.",
         "saved": "Configuration de l'adaptateur de données enregistrée.",
         "test.title": "Test de connexion",
-        "test.description": "Testez les paramètres de connexion non enregistrés sans sauvegarder ni changer l'adaptateur du domaine.",
-        "test.multiDescription": "Sélectionnez une source de données du brouillon pour tester sa connexion sans enregistrer.",
+        "test.description": "Testez les paramètres de connexion non enregistrés sans sauvegarder ni changer l'adaptateur du domaine. Le test d’une connexion inscriptible vérifie aussi les droits de création et de suppression en créant puis en supprimant immédiatement une table vide de test ou un objet équivalent.",
+        "test.multiDescription": "Sélectionnez une source de données du brouillon pour tester sa connexion sans enregistrer. Le test d’une connexion inscriptible vérifie aussi les droits de création et de suppression en créant puis en supprimant immédiatement une table vide de test ou un objet équivalent.",
         "test.sourceLabel": "Source de données à tester",
         "test.sourcePlaceholder": "Sélectionner une source de données",
         "test.noSources": "Ajoutez d'abord une source de données avec un identifiant ci-dessus avant de tester la connexion.",
-        "test.run": "Tester la connexion"
+        "test.run": "Tester la connexion",
+        "sandbox.title": "Essai d’action et autorisations du bac à sable",
+        "sandbox.probeNote": "La vérification crée une table vide de test, ou un objet équivalent, dans la source de données métier et la supprime immédiatement.",
+        "sandbox.check": "Vérifier les autorisations",
+        "sandbox.passed": "La table de vérification a bien été créée puis supprimée.",
+        "sandbox.failed": "Les actions ne peuvent être essayées ni publiées tant que les droits de création et de suppression de tables ne sont pas accordés. {reason}",
+        "sandbox.unsupported": "Ce type de source de données ne prend pas en charge les actions d’écriture. Aucun objet de vérification n’est créé pour une source en lecture seule.",
+        "sandbox.savedFailed": "La configuration est enregistrée, mais la vérification des autorisations du bac à sable a échoué. Les actions ne peuvent être essayées ni publiées tant que les droits de création et de suppression de tables ne sont pas accordés. {reason}",
+        "sandbox.savedUnsupported": "La configuration est enregistrée. Cette source est en lecture seule et ne prend pas en charge les actions d’écriture."
       },
       "it": {
         "panel.name": "Adattatori dati",
         "panel.description": "Configura la sorgente dati da cui l'ontologia legge i record oppure instrada le classi dell'ontologia su più sorgenti dati.",
         "saved": "Configurazione adattatore dati salvata.",
         "test.title": "Test di connessione",
-        "test.description": "Verifica le impostazioni di connessione non salvate senza salvare o cambiare l'adattatore del dominio.",
-        "test.multiDescription": "Seleziona una sorgente dati dalla bozza per testarne la connessione senza salvare.",
+        "test.description": "Verifica le impostazioni di connessione non salvate senza salvare o cambiare l'adattatore del dominio. Il test di una connessione abilitata alla scrittura verifica anche le autorizzazioni di creazione ed eliminazione, creando ed eliminando subito una tabella vuota di prova o un oggetto equivalente.",
+        "test.multiDescription": "Seleziona una sorgente dati dalla bozza per testarne la connessione senza salvare. Il test di una connessione abilitata alla scrittura verifica anche le autorizzazioni di creazione ed eliminazione, creando ed eliminando subito una tabella vuota di prova o un oggetto equivalente.",
         "test.sourceLabel": "Sorgente dati da testare",
         "test.sourcePlaceholder": "Seleziona una sorgente dati",
         "test.noSources": "Aggiungi prima una sorgente dati con un ID sopra per eseguire il test di connessione.",
-        "test.run": "Testa connessione"
+        "test.run": "Testa connessione",
+        "sandbox.title": "Prova delle azioni e autorizzazioni della sandbox",
+        "sandbox.probeNote": "La verifica crea una tabella vuota di prova o un oggetto equivalente nell’origine dati aziendale e la elimina subito.",
+        "sandbox.check": "Verifica autorizzazioni",
+        "sandbox.passed": "La tabella di verifica è stata creata ed eliminata correttamente.",
+        "sandbox.failed": "Le azioni si possono provare e pubblicare solo dopo aver ottenuto le autorizzazioni per creare ed eliminare tabelle. {reason}",
+        "sandbox.unsupported": "Questo tipo di origine dati non supporta le azioni di scrittura. Per le origini in sola lettura non si creano oggetti di verifica.",
+        "sandbox.savedFailed": "Configurazione salvata, ma la verifica delle autorizzazioni della sandbox non è riuscita. Le azioni si possono provare e pubblicare solo dopo aver ottenuto le autorizzazioni per creare ed eliminare tabelle. {reason}",
+        "sandbox.savedUnsupported": "Configurazione salvata. Questa origine dati è in sola lettura e non supporta le azioni di scrittura."
       },
       "ar": {
         "panel.name": "محولات البيانات",
         "panel.description": "قم بتكوين مصدر البيانات الذي تقرأ منه الأنطولوجيا سجلاتها، أو توجيه فئات الأنطولوجيا عبر عدة مصادر بيانات.",
         "saved": "تم حفظ إعدادات محول البيانات.",
         "test.title": "اختبار الاتصال",
-        "test.description": "اختبر إعدادات الاتصال غير المحفوظة الحالية دون حفظ أو تبديل محول النطاق.",
-        "test.multiDescription": "اختر مصدر بيانات من المسودة لاختبار اتصاله دون حفظ التغييرات.",
+        "test.description": "اختبر إعدادات الاتصال غير المحفوظة الحالية دون حفظ أو تبديل محول النطاق. يتحقق اختبار الاتصال القابل للكتابة أيضًا من أذونات الإنشاء والحذف بإنشاء جدول اختبار فارغ واحد أو كائن مكافئ وحذفه فورًا.",
+        "test.multiDescription": "اختر مصدر بيانات من المسودة لاختبار اتصاله دون حفظ التغييرات. يتحقق اختبار الاتصال القابل للكتابة أيضًا من أذونات الإنشاء والحذف بإنشاء جدول اختبار فارغ واحد أو كائن مكافئ وحذفه فورًا.",
         "test.sourceLabel": "مصدر البيانات للاختبار",
         "test.sourcePlaceholder": "اختر مصدر بيانات",
         "test.noSources": "أضف مصدر بيانات بمعرف أعلاه قبل اختبار الاتصال.",
-        "test.run": "اختبار الاتصال"
+        "test.run": "اختبار الاتصال",
+        "sandbox.title": "تجربة الإجراءات وأذونات بيئة الاختبار",
+        "sandbox.probeNote": "ينشئ التحقق جدول اختبار فارغًا واحدًا أو كائنًا مكافئًا في مصدر بيانات الأعمال ويحذفه فورًا.",
+        "sandbox.check": "التحقق من الأذونات",
+        "sandbox.passed": "تم إنشاء جدول التحقق وحذفه بنجاح.",
+        "sandbox.failed": "لا يمكن تجربة الإجراءات أو نشرها حتى يتم منح أذونات إنشاء الجداول وحذفها. {reason}",
+        "sandbox.unsupported": "هذا النوع من مصادر البيانات لا يدعم إجراءات الكتابة. لا يُنشأ أي كائن للتحقق في مصدر للقراءة فقط.",
+        "sandbox.savedFailed": "تم حفظ الإعدادات، لكن فشل التحقق من أذونات بيئة الاختبار. لا يمكن تجربة الإجراءات أو نشرها حتى يتم منح أذونات إنشاء الجداول وحذفها. {reason}",
+        "sandbox.savedUnsupported": "تم حفظ الإعدادات. مصدر البيانات هذا للقراءة فقط ولا يدعم إجراءات الكتابة."
       }
     }
   }

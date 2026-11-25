@@ -260,7 +260,10 @@ it("tells the page's code the form was saved, with the object, and that it was d
   note.dispatchEvent(new Event("input"));
   await nextTick();
   await instance.invoke("form.save");
-  expect(saved).toHaveBeenCalledWith({ className: SCHEDULED_TASK, primaryKey: "t-1" });
+  expect(saved).toHaveBeenCalledWith(
+    { className: SCHEDULED_TASK, primaryKey: "t-1" },
+    expect.objectContaining({ primaryKey: "t-1" }),
+  );
 
   note.value = "y";
   note.dispatchEvent(new Event("input"));

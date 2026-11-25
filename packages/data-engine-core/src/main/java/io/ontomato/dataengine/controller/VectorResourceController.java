@@ -1,6 +1,6 @@
 package io.ontomato.dataengine.controller;
 
-import io.ontomato.dataengine.service.BuildTestContextService;
+import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.WriteFunctionOperationService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.ExecutionTarget;
@@ -38,7 +38,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class VectorResourceController {
-    @Autowired private BuildTestContextService buildTests;
+    @Autowired private DataSandboxService buildTests;
     @Autowired private WriteFunctionOperationService writes;
     @Autowired private IdentityService identity;
 

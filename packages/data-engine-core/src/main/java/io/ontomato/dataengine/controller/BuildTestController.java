@@ -5,7 +5,7 @@ import org.springframework.http.MediaType;
 import com.alibaba.fastjson2.JSON;
 import org.springframework.web.server.ResponseStatusException;
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.service.BuildTestContextService;
+import io.ontomato.dataengine.service.DataSandboxService;
 import java.util.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -13,8 +13,8 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 @RequestMapping("/ontology/build-tests")
 public class BuildTestController {
-  private final BuildTestContextService contexts;
-  public BuildTestController(BuildTestContextService contexts) { this.contexts=contexts; }
+  private final DataSandboxService contexts;
+  public BuildTestController(DataSandboxService contexts) { this.contexts=contexts; }
   @ExceptionHandler(ResponseStatusException.class)
   public ResponseEntity<JSONObject> failure(ResponseStatusException failure) {
     String message=failure.getReason();

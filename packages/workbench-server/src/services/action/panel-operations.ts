@@ -1,10 +1,13 @@
 import { z } from "zod";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { ACTION, DELETE_ACTION, FUNCTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
+import { ACTION, CHECK_ACTION_SANDBOX_PERMISSION, DELETE_ACTION, FUNCTION, SET_ACTION_STATUS } from "@ontomato/contracts/panel-client-requests";
+import { DATA_ADAPTER_CONFIG } from "@ontomato/contracts/platform-object-types";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormDescriptionSchema, panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
+import { HttpError } from "../../utils/errors";
+import { checkSandboxPermission, sandboxPermissionResultSchema } from "../product-panels/sandbox-permission";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type {
   PanelBatchCalls, PanelImpactInspector, PanelOperationTarget, PanelRecordTarget, PanelServerOperation,
@@ -162,6 +165,30 @@ const publishActionImpact: PanelImpactInspector = {
 
 
 export const m6ServerOperations = [
+  {
+    handlerRef: CHECK_ACTION_SANDBOX_PERMISSION,
+    labelKey: "panels.action.operations.checkSandboxPermission",
+    kind: "action",
+    effect: "write",
+    batch: false,
+    binding: { kind: "PlatformOperation", id: CHECK_ACTION_SANDBOX_PERMISSION },
+    targetType: ACTION,
+    targetSchema: z.null(),
+    inputSchema: z.object({}).strict(),
+    resultSchema: sandboxPermissionResultSchema,
+    async execute(host: Host & { locale?: string }): Promise<SinglePanelOperationOutcome> {
+      try {
+        return await checkSandboxPermission(host, [ACTION, DATA_ADAPTER_CONFIG]);
+      } catch (error) {
+        if (!(error instanceof HttpError && error.status === 403)) throw error;
+        return {
+          kind: "refusal",
+          code: "SANDBOX_CHECK_FORBIDDEN",
+          message: tForLocale(host.locale, "panels.action.sandbox.checkForbidden"),
+        };
+      }
+    },
+  },
   {
     handlerRef: `${ACTION}.save`,
     labelKey: "panels.action.operations.save",

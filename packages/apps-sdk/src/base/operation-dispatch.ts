@@ -231,6 +231,7 @@ export function useOperationRunner(options: {
   t: OperationTranslator;
   /** Checks whether the mounted UI entry (button or overflow item) is still visible and enabled. */
   isEntryAvailable?: (operationName: string) => { readonly ok: true } | { readonly ok: false; readonly message: string };
+  notifySuccess?: () => boolean;
   onDone?: (operationName: string, outcome: OperationOutcome) => void;
   onRead?: (operationName: string, result: PanelReadOperationResult) => void;
 }): OperationRunner {
@@ -397,8 +398,11 @@ export function useOperationRunner(options: {
           }
         }
         const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
-        if (answered?.kind === "success") panel.notify({ kind: "success", text: said(answered) });
-        else receipt.value = answer.response;
+        if (answered?.kind === "success") {
+          if (options.notifySuccess?.() !== false) panel.notify({ kind: "success", text: said(answered) });
+        } else {
+          receipt.value = answer.response;
+        }
         if (answered) options.onDone?.(operationName, answered);
         return answered;
       };

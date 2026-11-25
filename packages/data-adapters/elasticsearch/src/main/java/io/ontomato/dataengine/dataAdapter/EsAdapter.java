@@ -39,7 +39,7 @@ import lombok.extern.slf4j.Slf4j;
  * that marker survives later aggregation and projection. Object CRUD uses one class/index at a time.</p>
  */
 @Slf4j
-public class EsAdapter implements DataAdapter {
+public class EsAdapter extends SandboxDataAdapter {
 
 	/** Engine cap on a single terms clause. */
 	static final int MAX_TERMS = 65536;
@@ -181,21 +181,53 @@ public class EsAdapter implements DataAdapter {
     @Override public void validateSandboxClasses(String namespace,List<Map<String,Object>> classes) {
       var names=new java.util.HashMap<String,String>();
       for(var cls:classes) {
-        String logical=(String)cls.get("className"),key=EsNaming.indexName(namespace,logical),previous=names.putIfAbsent(key,logical);
+        String logical=(String)cls.get("className"),key=sandboxClassName(namespace,logical),previous=names.putIfAbsent(key,logical);
         if(previous!=null) throw new IllegalArgumentException("Sandbox index collision: "+previous+" and "+logical+" resolve to "+key);
       }
     }
     @Override public JSONObject createRecordedClass(String namespace,Map<String,Object> definition) {
       createClass(namespace,definition);
       try {
-        var indices=http().getArray("/_cat/indices/"+EsNaming.indexName(namespace,(String)definition.get("className")),Map.of("format","json","h","index"));
+        var indices=http().getArray("/_cat/indices/"+sandboxClassName(namespace,(String)definition.get("className")),Map.of("format","json","h","index"));
         if(indices.size()!=1) throw new IllegalStateException("Database did not identify the created index");
         return JSONObject.of("kind","index","name",indices.getJSONObject(0).getString("index"));
       } catch(Exception failure) { throw new IllegalStateException("Cannot identify sandbox index",failure); }
     }
+    @Override
+    public JSONObject sandboxEdgeArtifact(String name) {
+      return JSONObject.of("kind", "index", "name", sandboxTarget.edgeTable(name));
+    }
+
+    @Override
+    public JSONObject sandboxClassArtifact(String namespace, String name) {
+      return JSONObject.of("kind", "index", "name", sandboxClassName(namespace, name));
+    }
+
     @Override public void dropRecordedResource(JSONObject resource) {
-      try { http().delete("/"+resource.getString("name")); }
-      catch(Exception failure) { throw new IllegalStateException("Cannot drop recorded index: "+resource,failure); }
+      try {
+        http().delete("/" + resource.getString("name"));
+      } catch (Exception failure) {
+        if (failure.getCause() instanceof org.elasticsearch.client.ResponseException response
+            && (response.getResponse().getStatusLine().getStatusCode() == 404
+                || failure.getMessage().contains("index_not_found_exception"))) return;
+        throw new IllegalStateException("Cannot drop recorded index: " + resource, failure);
+      }
+    }
+
+    @Override
+    public SandboxCapability probeSandboxPermission(String deployTag) {
+      return SandboxCapability.probe(deployTag, name -> http().put("/" + name, new JSONObject()),
+          name -> http().delete("/" + name));
+    }
+
+    @Override
+    public List<JSONObject> listSandboxArtifacts(String deploymentPrefix) {
+      try {
+        return indicesOf(deploymentPrefix).stream().filter(name -> name.startsWith(deploymentPrefix))
+            .map(name -> JSONObject.of("kind", "index", "name", name)).toList();
+      } catch (Exception failure) {
+        throw new IllegalStateException("Cannot list sandbox indices: " + failure.getMessage(), failure);
+      }
     }
 
     @Override
@@ -251,7 +283,7 @@ public class EsAdapter implements DataAdapter {
 	@Override
 	public void createClass(String namespace, Map<String, Object> classDef) {
 		try {
-			String index = EsNaming.indexName(namespace, (String) classDef.get("className"));
+			String index = sandboxClassName(namespace, (String) classDef.get("className"));
 			JSONObject properties = new JSONObject();
 			@SuppressWarnings("unchecked")
 			List<Map<String, Object>> attrs = (List<Map<String, Object>>) classDef.get("attrs");
@@ -276,7 +308,7 @@ public class EsAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			throw new IllegalStateException("Sandbox structure operation failed", e);
+			throw new IllegalStateException("Cannot create class [" + classDef.get("className") + "]: " + e.getMessage(), e);
 		}
 	}
 
@@ -321,7 +353,7 @@ public class EsAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Cannot create relationship [" + edgeName + "]: " + e.getMessage(), e);
 		}
 	}
 
@@ -360,7 +392,7 @@ public class EsAdapter implements DataAdapter {
 	@Override
 	public void insertObjects(String namespace, Map<String, Object> classDef, JSONArray objs) throws Exception {
 		String className = (String) classDef.get("className");
-		String index = EsNaming.indexName(namespace, className);
+		String index = sandboxClassName(namespace, className);
 		Map<String, String> attrTypes = attrTypes(classDef);
 		String pk = DslUtil.getPrimaryKey(classDef);
 		if (pk == null) {
@@ -397,7 +429,7 @@ public class EsAdapter implements DataAdapter {
 	public void updateObjects(String namespace, Map<String, Object> classDef, JSONObject setValues, JSONObject where)
 			throws Exception {
 		String className = (String) classDef.get("className");
-		String index = EsNaming.indexName(namespace, className);
+		String index = sandboxClassName(namespace, className);
 		Map<String, String> attrTypes = attrTypes(classDef);
 		String pk = DslUtil.getPrimaryKey(classDef);
 
@@ -435,7 +467,7 @@ public class EsAdapter implements DataAdapter {
 	@Override
 	public void deleteObjects(String namespace, Map<String, Object> classDef, JSONObject where) throws Exception {
 		String className = (String) classDef.get("className");
-		String index = EsNaming.indexName(namespace, className);
+		String index = sandboxClassName(namespace, className);
 		Map<String, String> attrTypes = attrTypes(classDef);
 		JSONObject body = new JSONObject();
 		body.put("query", buildWhereQuery(where, attrTypes, index));
@@ -476,7 +508,7 @@ public class EsAdapter implements DataAdapter {
 		}
 
 		if (rel.junction()) {
-			String index = EsNaming.indexName(namespace, rel.linkTable());
+			String index = junctionIndex(namespace, rel);
 			String pairId = pairId(sourceObjId, targetObjId);
 			if (connect) {
 				// The pair digest is the document id, so re-adding a pairing overwrites it instead of
@@ -513,11 +545,11 @@ public class EsAdapter implements DataAdapter {
 
 		if (sourcePk.equals(sourceInnerField)) {
 			if (!targetPk.equals(targetInnerField)) {
-				String index = EsNaming.indexName(namespace, (String) targetClassDef.get("className"));
+				String index = sandboxClassName(namespace, (String) targetClassDef.get("className"));
 				setFieldByPk(index, targetPk, targetObjId, targetInnerField, connect ? sourceObjId : null);
 			}
 		} else if (targetPk.equals(targetInnerField)) {
-			String index = EsNaming.indexName(namespace, (String) sourceClassDef.get("className"));
+			String index = sandboxClassName(namespace, (String) sourceClassDef.get("className"));
 			setFieldByPk(index, sourcePk, sourceObjId, sourceInnerField, connect ? targetObjId : null);
 		} else {
 			// Neither end is a primary key: no document field can carry this connection, so a junction
@@ -593,10 +625,12 @@ public class EsAdapter implements DataAdapter {
 		JSONObject dataMap = new JSONObject();
 		DslExecutionResult result;
 		if (sandboxId != null && !sandboxId.trim().isEmpty()) {
+			classDefs = sandboxClasses(classDefs);
+			jsonRule.put("classDef", classDefs);
 			for (Map<String, Object> classDef : classDefs) {
-				classDef.put("className", sandboxId + ((String) classDef.get("className")).trim());
+				classDef.put("className", sandboxClassName(sandboxId, (String) classDef.get("className")));
 			}
-			String sandboxDsl = addSandboxId(dslStr, sandboxId);
+			String sandboxDsl = rewriteSandboxDsl(dslStr, sandboxId);
 			result = HttpRequestUtil.executeDsl(dataRagConfig, this, sandboxDsl, null, true, jsonRule, vectorResourceDao,
 					userDataPermission, DslExecutionMode.OPTIMIZED, domainId)[1];
 		} else {
@@ -610,32 +644,7 @@ public class EsAdapter implements DataAdapter {
 		return dataMap;
 	}
 
-	private String addSandboxId(String dslStr, String sandboxId) {
-		JSONArray dsls = JSON.parseArray(dslStr);
-		for (int dslIndex = 0; dslIndex < dsls.size(); dslIndex++) {
-			JSONObject steps = dsls.getJSONObject(dslIndex).getJSONObject("answer");
-			JSONArray stepList = steps == null ? null : steps.getJSONArray("steps");
-			if (stepList == null) {
-				continue;
-			}
-			JSONObject graph = stepList.getJSONObject(0).getJSONObject("graph");
-			JSONArray patterns = graph == null ? null : graph.getJSONArray("patterns");
-			if (patterns == null) {
-				continue;
-			}
-			JSONArray objects = patterns.getJSONObject(0).getJSONArray("objects");
-			if (objects == null) {
-				continue;
-			}
-			for (int i = 0; i < objects.size(); i++) {
-				JSONObject object = objects.getJSONObject(i);
-				if (object != null) {
-					object.put("class", sandboxId + object.getString("class").trim());
-				}
-			}
-		}
-		return JSON.toJSONString(dsls, Feature.WriteMapNullValue);
-	}
+
 
 	// ----------------------------------------------------------------------------------
 	// Read path: DSL -> rows
@@ -1575,6 +1584,7 @@ public class EsAdapter implements DataAdapter {
 	 * already namespace-prefixed and physically spelled, so the comparison cannot be plain equality.
 	 */
 	private boolean classMatches(String dslClassName, String ontoClassName) {
+		if (sandboxTarget != null) return dslClassName.equals(sandboxTarget.classTable(ontoClassName));
 		if (ontoClassName == null) {
 			return false;
 		}
@@ -1584,6 +1594,7 @@ public class EsAdapter implements DataAdapter {
 
 	/** The junction index's physical name on the write path: it follows the same namespace rule as a class. */
 	private String junctionIndex(String namespace, OntologyRelation rel) {
+		if (sandboxTarget != null) return sandboxTarget.edgeTable(rel.name());
 		return EsNaming.indexName(namespace, rel.linkTable());
 	}
 
@@ -1594,6 +1605,7 @@ public class EsAdapter implements DataAdapter {
 	 * definition, because the read path receives the already-rewritten names and nothing else.
 	 */
 	private String junctionIndexName(OntologyRelation rel) {
+		if (sandboxTarget != null) return sandboxTarget.edgeTable(rel.name());
 		String prefix = "";
 		for (Map<String, Object> classDef : classDefs()) {
 			String className = (String) classDef.get("className");
@@ -2555,6 +2567,7 @@ public class EsAdapter implements DataAdapter {
 
 	@Override
 	public String sandboxClassName(String sandboxId, String className) {
+		if (sandboxTarget != null) return sandboxTarget.classTable(className);
 		return EsNaming.indexName(sandboxId, className);
 	}
 

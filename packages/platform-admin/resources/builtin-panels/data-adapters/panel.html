@@ -95,14 +95,30 @@
     <div class="da-body">
       <section class="da-section">
         <div class="da-form-wrap">
-          <projection slot="adapterForm" @saved="onAdapterSaved"></projection>
+          <projection slot="adapterForm" @saved="(_target, outcome) => onAdapterSaved(outcome)"></projection>
         </div>
       </section>
 
       <section v-if="isMultiMode" class="da-section">
         <div class="da-form-wrap">
-          <projection slot="routingForm" @saved="onRoutingSaved"></projection>
+          <projection slot="routingForm" @saved="(_target, outcome) => onRoutingSaved(outcome)"></projection>
         </div>
+      </section>
+
+      <section class="da-section da-test-section">
+        <div class="da-section-head">
+          <div class="da-section-title-group">
+            <h2 class="da-section-title">{{ t('sandbox.title') }}</h2>
+            <p v-if="sandboxSupported" class="da-section-hint">{{ t('sandbox.probeNote') }}</p>
+          </div>
+          <projection
+            v-if="configured && sandboxSupported"
+            slot="checkSandboxPermission"
+            :notify-success="false"
+            @done="onSandboxChecked"
+          ></projection>
+        </div>
+        <projection slot="sandboxCapability"></projection>
       </section>
 
       <section class="da-section da-test-section">

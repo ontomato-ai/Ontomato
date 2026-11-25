@@ -11,6 +11,21 @@
     min-height: 100%;
     container: actions-page / inline-size;
   }
+  .ac-capability {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    margin: var(--spacing-md) var(--page-gutter) 0;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--sdk-border-color);
+    border-radius: var(--radius-md);
+  }
+  .ac-capability p {
+    margin: var(--spacing-xs) 0 0;
+    color: var(--sdk-text-color-secondary);
+  }
   .ac-catalog {
     display: flex;
     flex-direction: column;
@@ -30,6 +45,19 @@
         <projection slot="newAction"></projection>
       </template>
     </page-header>
+    <aside v-show="showSandboxNotice" class="ac-capability" aria-live="polite">
+      <div>
+        <projection slot="sandboxCapability"></projection>
+        <p v-if="canCheckSandbox">{{ t('sandbox.probeNote') }}</p>
+      </div>
+      <projection
+        v-if="canCheckSandbox"
+        slot="checkSandboxPermission"
+        :label="t(sandboxStatus === 'failed' ? 'sandbox.recheck' : 'sandbox.check')"
+        :notify-success="false"
+        @done="onSandboxChecked"
+      ></projection>
+    </aside>
     <div class="ac-catalog">
       <projection slot="catalog" @choose="openDetail">
         <template #batch-actions>

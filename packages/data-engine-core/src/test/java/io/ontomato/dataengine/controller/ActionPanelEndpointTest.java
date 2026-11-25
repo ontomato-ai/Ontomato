@@ -3,6 +3,7 @@ package io.ontomato.dataengine.controller;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -14,7 +15,7 @@ import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.security.CaseExecutionGuard;
 import io.ontomato.dataengine.service.ActionService;
-import io.ontomato.dataengine.service.BuildTestContextService;
+import io.ontomato.dataengine.service.DataSandboxService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.FormFields;
@@ -46,7 +47,9 @@ class ActionPanelEndpointTest {
   private final LangService langService = mock(LangService.class);
   private final CaseExecutionGuard caseExecutionGuard = mock(CaseExecutionGuard.class);
   private final BusinessConfigService businessConfigService = mock(BusinessConfigService.class);
-  private final BuildTestContextService buildTests = mock(BuildTestContextService.class);
+  private final DataSandboxService buildTests = mock(DataSandboxService.class);
+  private final io.ontomato.dataengine.service.SandboxPermissionService sandboxPermissions =
+      mock(io.ontomato.dataengine.service.SandboxPermissionService.class);
   private final IdentityService identityService = mock(IdentityService.class);
   private final AgentExecutionScope agentExecutionScope = mock(AgentExecutionScope.class);
   private final ActionController controller = new ActionController(agentExecutionScope);
@@ -73,6 +76,8 @@ class ActionPanelEndpointTest {
     ReflectionTestUtils.setField(controller, "caseExecutionGuard", caseExecutionGuard);
     ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
     ReflectionTestUtils.setField(controller, "buildTests", buildTests);
+    ReflectionTestUtils.setField(controller, "sandboxPermissions", sandboxPermissions);
+    when(sandboxPermissions.read("domain")).thenReturn(JSONObject.of("status", "unchecked"));
     SubjectDirectory subjects = mock(SubjectDirectory.class);
     when(subjects.subjectsInDomain("domain")).thenReturn(List.of());
     ReflectionTestUtils.setField(controller, "subjectDirectory", subjects);
@@ -161,12 +166,27 @@ class ActionPanelEndpointTest {
     JSONObject body = perform("/action/definitionForm", """
         {"target":{"kind":"draft"},"values":{"name":""},"changedField":null}""");
 
+    assertFalse(body.getJSONObject("data").containsKey("sandboxCapability"));
+    verifyNoInteractions(sandboxPermissions);
     assertTrue(body.getBooleanValue("success"));
     JSONArray errors = body.getJSONObject("data").getJSONArray("errors");
     assertEquals(1, errors.size());
     assertEquals("/function/operation", errors.getJSONObject(0).getString("field"));
     assertEquals("invalid_option", errors.getJSONObject(0).getString("code"));
     assertEquals("expected OPERATION_WRITE", errors.getJSONObject(0).getString("message"));
+  }
+
+  @Test
+  void sandboxCapabilityHasItsOwnReadEndpoint() throws Exception {
+    var mvc = MockMvcBuilders.standaloneSetup(controller)
+        .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    var response = mvc.perform(get("/action/sandboxCapability"))
+        .andExpect(status().isOk()).andReturn().getResponse();
+    var body = JSON.parseObject(response.getContentAsString());
+    assertTrue(body.getBooleanValue("success"));
+    assertEquals("unchecked", body.getJSONObject("data").getString("status"));
+    verify(sandboxPermissions).read("domain");
+    verifyNoMoreInteractions(sandboxPermissions);
   }
 
   @Test

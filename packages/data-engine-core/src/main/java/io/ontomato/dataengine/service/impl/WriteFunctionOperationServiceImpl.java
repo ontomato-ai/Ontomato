@@ -48,13 +48,16 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 	
 	@Autowired
 	private VectorResourceDao vectorResourceDao;
+
+	@Autowired
+	private io.ontomato.dataengine.service.DataSandboxService dataSandboxes;
 	
 	@Override
 	public void insert(String className, JSONArray objs, String sandboxId, String domainId) throws Exception {
 		Map<String, Object> classDef = getClassDefByClassName(className, domainId);
 		if (classDef != null) {
 			validateInsertObjects(classDef, objs);
-			DataAdapter adapter = getDataAdapter(domainId);
+			DataAdapter adapter = getDataAdapter(domainId, sandboxId);
 			adapter.insertObjects(sandboxId, classDef, objs);
 		} else {
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
@@ -131,7 +134,13 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		String prefixClassName = sandbox ? adapter.sandboxClassName(sandboxId, className) : className;
 		for (String objectId : objectIds) {
 			for (String va : vectorAttrs) {
-				vectorResourceDao.deleteByObjectId(prefixClassName, va, objectId, domainId);
+				if (sandbox) {
+					vectorResourceDao.deleteByObjectId(prefixClassName, va,
+						adapter.sandboxObjectId(sandboxId, className, objectId),
+						domainId, adapter.sandboxVectorTable(prefixClassName, va));
+				} else {
+					vectorResourceDao.deleteByObjectId(prefixClassName, va, objectId, domainId);
+				}
 			}
 		}
 	}
@@ -210,7 +219,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		Map<String, Object> classDef = getClassDefByClassName(className, domainId);
 		if (classDef != null) {
 			rejectVectorAttrs(classDef, setValues, domainId);
-			DataAdapter adapter = getDataAdapter(domainId);
+			DataAdapter adapter = getDataAdapter(domainId, sandboxId);
 			adapter.updateObjects(sandboxId, classDef, setValues, where);
 		} else {
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
@@ -222,7 +231,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		Map<String, Object> classDef = getClassDefByClassName(className, domainId);
 		if (classDef != null) {
 			Map<String, Object> jsonRule = jsonRuleDao.query(domainId);
-			DataAdapter adapter = getDataAdapter(domainId, jsonRule);
+			DataAdapter adapter = getDataAdapter(domainId, jsonRule, sandboxId);
 			cleanupVectorAttrs(adapter, classDef, className, where, sandboxId, domainId);
 			adapter.deleteObjects(sandboxId, classDef, where);
 		} else {
@@ -235,7 +244,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		Map<String, Object> jsonRule = jsonRuleDao.query(domainId);
 		Map<String, Object> relationship_rule = (Map<String, Object>)jsonRule.get("relationship_rule");
 		if (relationship_rule.get(relationName) != null) {
-			DataAdapter adapter = getDataAdapter(domainId, jsonRule);
+			DataAdapter adapter = getDataAdapter(domainId, jsonRule, sandboxId);
 			adapter.createEdge(sandboxId, relationName, sourceClassName, sourceObjId, targetClassName, targetObjId);
 		} else {
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.relationNotExist") + "[" + relationName + "]");
@@ -247,7 +256,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		Map<String, Object> jsonRule = jsonRuleDao.query(domainId);
 		Map<String, Object> relationship_rule = (Map<String, Object>)jsonRule.get("relationship_rule");
 		if (relationship_rule.get(relationName) != null) {
-			DataAdapter adapter = getDataAdapter(domainId, jsonRule);
+			DataAdapter adapter = getDataAdapter(domainId, jsonRule, sandboxId);
 			adapter.deleteEdge(sandboxId, relationName, sourceClassName, sourceObjId, targetClassName, targetObjId);
 		} else {
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.relationNotExist") + "[" + relationName + "]");
@@ -257,7 +266,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 	@Override
 	public Map<String, Object> query(JSONObject dsl, String sandboxId, String domainId) throws Exception {
 		Map<String, Object> jsonRule = jsonRuleDao.query(domainId);
-		DataAdapter adapter = getDataAdapter(domainId, jsonRule);
+		DataAdapter adapter = getDataAdapter(domainId, jsonRule, sandboxId);
 		return adapter.query(dsl, sandboxId, domainId, vectorResourceDao, dataRagConfig);
 	}
 	
@@ -296,17 +305,19 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
 		}
         if(!collectVectorAttrs(classDef).contains(attrName)) throw new IllegalArgumentException("attrName: not an enabled vector attribute: "+attrName);
-		DataAdapter adapter = getDataAdapter(domainId);
+		DataAdapter adapter = getDataAdapter(domainId, sandboxId);
 		boolean sandbox = inSandbox(sandboxId);
 		String prefixClassName = sandbox ? adapter.sandboxClassName(sandboxId, className) : className;
-		String prefixObjectId = sandbox ? adapter.sandboxObjectId(sandboxId, objectId) : objectId;
+		String prefixObjectId = sandbox ? adapter.sandboxObjectId(sandboxId, className, objectId) : objectId;
 		
 		VectorResource resource = new VectorResource();
 		resource.setClassName(prefixClassName);
 		resource.setAttrName(attrName);
 		resource.setObjectId(prefixObjectId);
 		resource.setContent(content);
-		VectorResource saved = vectorResourceDao.insert(resource, is, suffix, domainId);
+		VectorResource saved = sandbox
+			? vectorResourceDao.insert(resource, is, suffix, domainId, null, adapter.sandboxVectorTable(prefixClassName, attrName))
+			: vectorResourceDao.insert(resource, is, suffix, domainId);
 		if (saved == null) {
 			throw new Exception("Failed to save vector resource for class [" + className + "] attr [" + attrName + "]");
 		}
@@ -338,13 +349,14 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
 		}
         if(!collectVectorAttrs(classDef).contains(attrName)) throw new IllegalArgumentException("attrName: not an enabled vector attribute: "+attrName);
-		DataAdapter adapter = getDataAdapter(domainId);
+		DataAdapter adapter = getDataAdapter(domainId, sandboxId);
 		boolean sandbox = inSandbox(sandboxId);
 		String prefixClassName = sandbox ? adapter.sandboxClassName(sandboxId, className) : className;
-		String prefixObjectId = sandbox ? adapter.sandboxObjectId(sandboxId, objectId) : objectId;
+		String prefixObjectId = sandbox ? adapter.sandboxObjectId(sandboxId, className, objectId) : objectId;
 		
-		vectorResourceDao.update(prefixClassName, attrName, prefixObjectId, fileId, content, is, domainId);
-		String path = vectorResourceDao.generatePath(prefixClassName, attrName, domainId, fileId);
+		String table = adapter.sandboxVectorTable(prefixClassName, attrName);
+		vectorResourceDao.update(prefixClassName, attrName, prefixObjectId, fileId, content, is, domainId, table);
+		String path = vectorResourceDao.generatePath(prefixClassName, attrName, domainId, fileId, table);
 		
 		JSONArray current = readVectorAttr(adapter, classDef, prefixClassName, attrName, prefixObjectId);
 		JSONArray updated = new JSONArray();
@@ -365,13 +377,14 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
 		}
         if(!collectVectorAttrs(classDef).contains(attrName)) throw new IllegalArgumentException("attrName: not an enabled vector attribute: "+attrName);
-		DataAdapter adapter = getDataAdapter(domainId);
+		DataAdapter adapter = getDataAdapter(domainId, sandboxId);
 		boolean sandbox = inSandbox(sandboxId);
 		String prefixClassName = sandbox ? adapter.sandboxClassName(sandboxId, className) : className;
-		String prefixObjectId = sandbox ? adapter.sandboxObjectId(sandboxId, objectId) : objectId;
+		String prefixObjectId = sandbox ? adapter.sandboxObjectId(sandboxId, className, objectId) : objectId;
 		
-		String path = vectorResourceDao.generatePath(prefixClassName, attrName, domainId, fileId);
-		vectorResourceDao.delete(prefixClassName, attrName, prefixObjectId, path, domainId);
+		String table = adapter.sandboxVectorTable(prefixClassName, attrName);
+		String path = vectorResourceDao.generatePath(prefixClassName, attrName, domainId, fileId, table);
+		vectorResourceDao.delete(prefixClassName, attrName, prefixObjectId, path, domainId, table);
 		
 		JSONArray current = readVectorAttr(adapter, classDef, prefixClassName, attrName, prefixObjectId);
 		JSONArray updated = new JSONArray();
@@ -384,16 +397,16 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		writeVectorAttr(adapter, classDef, attrName, objectId, sandboxId, updated);
 	}
 	
-	private DataAdapter getDataAdapter(String domainId) {
+	private DataAdapter getDataAdapter(String domainId, String sandboxId) {
 		BusinessConfig businessConfig = businessConfigService.get(domainId);
-		DataAdapter adapter = dataAdapterRegistry.create(businessConfig, null);
-		return adapter;
+		var adapter = dataAdapterRegistry.create(businessConfig, null);
+		return inSandbox(sandboxId) ? adapter.forSandbox(dataSandboxes.resolveTarget(sandboxId, domainId)) : adapter;
 	}
 	
-	private DataAdapter getDataAdapter(String domainId, Map<String, Object> jsonRule) {
+	private DataAdapter getDataAdapter(String domainId, Map<String, Object> jsonRule, String sandboxId) {
 		BusinessConfig businessConfig = businessConfigService.get(domainId);
-		DataAdapter adapter = dataAdapterRegistry.create(businessConfig, jsonRule);
-		return adapter;
+		var adapter = dataAdapterRegistry.create(businessConfig, jsonRule);
+		return inSandbox(sandboxId) ? adapter.forSandbox(dataSandboxes.resolveTarget(sandboxId, domainId)) : adapter;
 	}
 
 }

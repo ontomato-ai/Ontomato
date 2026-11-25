@@ -168,6 +168,8 @@ export const ADD_MODEL_ENTRY = "modelConnections.addModel";
 export const DELETE_MODEL_ENTRY = "modelEntries.delete";
 export const REBUILD_VECTORS = "modelUsage.rebuildVectors";
 export const PAUSE_VECTOR_REBUILD = "modelUsage.pauseVectorRebuild";
+export const CHECK_DATA_ADAPTER_SANDBOX_PERMISSION = "dataAdapters.checkSandboxPermission";
+export const CHECK_ACTION_SANDBOX_PERMISSION = "actions.checkSandboxPermission";
 export const TEST_DATA_ADAPTER_CONNECTION = "dataAdapters.testConnection";
 export const SAVE_DATA_ADAPTER_ROUTING = `${DATA_ADAPTER_CONFIG}.saveRouting`;
 export const SAVE_OBJECT_DETAIL_PANEL = `${OBJECT_TYPE}.saveDetailPanel`;
@@ -560,8 +562,18 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       derivedParameters: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       derivedConditions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       annotatedExplanation: { source: "object", parameterMode: "fixed", params: {}, result: "annotatedCode" },
+      sandboxCapability: {
+        source: "type", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          sandboxStatus: { kind: "scalar", type: "string" },
+          sandboxSupported: { kind: "scalar", type: "boolean" },
+          sandboxCanCreateAndDrop: { kind: "scalar", type: "boolean" },
+          sandboxReason: { kind: "scalar", type: "string" },
+          sandboxProbeNote: { kind: "scalar", type: "string" },
+        },
+      },
     },
-    operations: [`${ACTION}.save`, SET_ACTION_STATUS, DELETE_ACTION],
+    operations: [`${ACTION}.save`, SET_ACTION_STATUS, DELETE_ACTION, CHECK_ACTION_SANDBOX_PERMISSION],
   },
   [WORKFLOW]: {
     ...describeType("workflow", "capability"),
@@ -1104,12 +1116,17 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           currentType: { kind: "scalar", type: "string" },
           mode: { kind: "scalar", type: "string" },
           configured: { kind: "scalar", type: "boolean" },
+          sandboxStatus: { kind: "scalar", type: "string" },
+          sandboxSupported: { kind: "scalar", type: "boolean" },
+          sandboxCanCreateAndDrop: { kind: "scalar", type: "boolean" },
+          sandboxReason: { kind: "scalar", type: "string" },
+          sandboxProbeNote: { kind: "scalar", type: "string" },
         },
       },
       form: modelReads.form,
       routingForm: modelReads.form,
     },
-    operations: [`${DATA_ADAPTER_CONFIG}.save`, SAVE_DATA_ADAPTER_ROUTING, TEST_DATA_ADAPTER_CONNECTION],
+    operations: [`${DATA_ADAPTER_CONFIG}.save`, SAVE_DATA_ADAPTER_ROUTING, TEST_DATA_ADAPTER_CONNECTION, CHECK_DATA_ADAPTER_SANDBOX_PERMISSION],
   },
   [FAVORITE]: {
     ...describeType("favorite"),

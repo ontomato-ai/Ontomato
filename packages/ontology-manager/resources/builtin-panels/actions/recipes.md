@@ -16,6 +16,11 @@ dedicated detail entry `/ontology/assets/actions/detail`.
 - The header's primary **New action** button (`newAction`) opens this page's agent input with an opening line without
   sending it. There is no blank manual creation form on the catalog page.
 
+## Sandbox permission
+
+- Read `sandboxCapability.record` to see the domain's saved state without probing. For an unchecked or failed writable source, use **Check permission** or **Re-check permission**. This operation creates and immediately deletes one empty probe table or its equivalent in the business data source.
+- If the reader cannot run the check, ask a domain administrator to check permissions in Data Adapters settings. A read-only source does not support write actions and creates no probe object.
+
 ## Changing status (batch)
 
 - After the reader checks actions (`checked`), call `page_action` `setStatus.setStatus` (targeting `checked`) with

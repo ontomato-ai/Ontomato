@@ -204,7 +204,7 @@ public class OntologyGenerationService {
     var request = new JSONObject();
     if (channelManaged) request.put("agentChannel", true);
     if (!classes.isEmpty()) request.put("sandboxClasses", classes);
-    String sandbox = kind.equals("action") ? "a" + run.replace("-", "") : null;
+    long expiresAt = System.currentTimeMillis() + deadlineSeconds(kind) * 1000L;
     String agent = agentId(kind);
     if (!external && !channelManaged) active.add(run);
     try {
@@ -228,7 +228,7 @@ public class OntologyGenerationService {
                 uuid(run),
                 businessId,
                 kind,
-                sandbox,
+                null,
                 source,
                 sessions.getNodeId());
             return null;
@@ -238,7 +238,10 @@ public class OntologyGenerationService {
       throw error;
     }
     try {
-      if (sandbox != null) operations.createSandbox(sandbox, owner.domainId(), classes);
+      if ("action".equals(kind) && !classes.isEmpty()) {
+        String sandbox = operations.openSandbox(run, owner, expiresAt, classes);
+        store.update("UPDATE ontology_generations SET sandbox_id=? WHERE run_id=?", sandbox, uuid(run));
+      }
     } catch (RuntimeException error) {
       close(session, run, owner);
       throw error;
@@ -503,7 +506,7 @@ public class OntologyGenerationService {
       store.transaction(
           () -> {
             store.update(
-                "UPDATE ontology_generations SET source=NULL,test_data=NULL,sandbox_id=NULL WHERE"
+                "UPDATE ontology_generations SET source=NULL,sandbox_id=NULL WHERE"
                     + " run_id=?",
                 uuid(run));
             store.update(

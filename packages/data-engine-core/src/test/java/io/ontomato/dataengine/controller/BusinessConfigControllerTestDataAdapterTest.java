@@ -44,6 +44,8 @@ class BusinessConfigControllerTestDataAdapterTest {
 	private final BusinessConfigService businessConfigService = mock(BusinessConfigService.class);
 	private final BusinessConfig businessConfig = new BusinessConfig();
 	private final BusinessConfigController controller = new BusinessConfigController();
+	private final io.ontomato.dataengine.service.SandboxPermissionService permissions =
+			mock(io.ontomato.dataengine.service.SandboxPermissionService.class);
 	private final StubProvider duckdb = new StubProvider("duckdb", List.of("url"));
 	private final StubProvider postgresql = new StubProvider("postgresql", List.of("url", "user", "password"));
 	private final StubProvider m3 = new StubProvider("m3", List.of("url", "company", "user", "password"));
@@ -63,8 +65,22 @@ class BusinessConfigControllerTestDataAdapterTest {
 		businessConfig.getDataAdapterConnections().clear();
 		when(businessConfigService.get("d1")).thenReturn(businessConfig);
 		DataAdapterRegistry registry = new DataAdapterRegistry(List.of(duckdb, postgresql, m3), new DataRagConfig());
+		ReflectionTestUtils.setField(controller, "sandboxPermissions", permissions);
 		ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
 		ReflectionTestUtils.setField(controller, "dataAdapterRegistry", registry);
+	}
+
+	@Test
+	void getConfigReadsThePriorCapabilityAndOnlyExplicitCheckRunsTheProbe() {
+		var unchecked = JSONObject.of("status", "unchecked");
+		var passed = JSONObject.of("status", "passed");
+		when(permissions.read("d1", businessConfig)).thenReturn(unchecked);
+		when(permissions.check("d1")).thenReturn(passed);
+		assertEquals(unchecked, controller.getConfig().getJSONObject("data").getJSONObject("sandboxCapability"));
+		verify(permissions, never()).check("d1");
+
+		assertEquals(passed, controller.checkSandboxPermission().getJSONObject("data").getJSONObject("sandboxCapability"));
+		verify(permissions).check("d1");
 	}
 
 	@Test

@@ -57,6 +57,7 @@ class BusinessConfigControllerSecretTest {
 		ConnectionSecretCodec codec = new ConnectionSecretCodec(
 				registry, new SecretCipher(KEY, SecretCipher.Mode.DUAL));
 
+		ReflectionTestUtils.setField(controller, "sandboxPermissions", mock(io.ontomato.dataengine.service.SandboxPermissionService.class));
 		ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
 		ReflectionTestUtils.setField(controller, "dataAdapterRegistry", registry);
 		ReflectionTestUtils.setField(controller, "connectionSecretCodec", codec);

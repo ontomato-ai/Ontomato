@@ -53,6 +53,7 @@ class BusinessConfigControllerGenericConnectionTest {
 						List.of("url", "account", "warehouse", "role", "database", "schema", "user", "password"),
 						Map.of("url", "jdbc:snowflake://acct", "account", "acct")),
 				new RequiredProvider()), new DataRagConfig());
+		ReflectionTestUtils.setField(controller, "sandboxPermissions", mock(io.ontomato.dataengine.service.SandboxPermissionService.class));
 		ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
 		ReflectionTestUtils.setField(controller, "dataAdapterRegistry", registry);
 	}

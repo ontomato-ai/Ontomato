@@ -17,7 +17,7 @@ public class AgentCaller {
   private final IdentityService identity;
   private final ProductGrantService productGrants;
   @org.springframework.beans.factory.annotation.Autowired
-  private io.ontomato.dataengine.service.BuildTestContextService contexts;
+  private io.ontomato.dataengine.service.DataSandboxService contexts;
 
   @org.springframework.beans.factory.annotation.Autowired
   private AgentExecutionAccess executions;
@@ -122,7 +122,7 @@ public class AgentCaller {
         token=servlet.getRequest().getHeader("tk"); key=servlet.getRequest().getHeader("X-API-Key");
         Long expiry=identity.getCurrentCredentialExpiresAt();
         if(expiry!=null) deadline=Math.min(deadline,expiry);
-        if(servlet.getRequest().getHeader(io.ontomato.dataengine.service.BuildTestContextService.HEADER)!=null) access=access.withTarget(contexts.resolve(servlet.getRequest()));
+        if(servlet.getRequest().getHeader(io.ontomato.dataengine.service.DataSandboxService.HEADER)!=null) access=access.withTarget(contexts.resolve(servlet.getRequest()));
       }
     }
     return new OntologyAgentAccess.Context(owner,access,token,key,language,deadline,caller,access.executionUserId());
