@@ -61,29 +61,14 @@
         "default": false,
         "deepLink": false
       },
-      "grantPrincipalKind": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "default": "principal",
-        "deepLink": false
-      },
-      "grantUser": {
+      "grantPolicy": {
         "type": {
           "kind": "object",
-          "objectType": "platform:User"
+          "objectType": "platform:PermissionPolicy"
         },
         "deepLink": false
       },
-      "grantRole": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:Role"
-        },
-        "deepLink": false
-      },
-      "grantPrincipalId": {
+      "grantPolicyId": {
         "type": {
           "kind": "scalar",
           "type": "string"
@@ -95,7 +80,7 @@
           "kind": "scalar",
           "type": "string"
         },
-        "default": "use",
+        "default": "USE",
         "deepLink": false
       },
       "bindingObjectType": {
@@ -439,11 +424,8 @@
               "state": "selected"
             },
             "params": {
-              "principalKind": {
-                "rowField": "principalKind"
-              },
-              "principalId": {
-                "rowField": "principalId"
+              "policyId": {
+                "rowField": "policyId"
               },
               "verb": {
                 "rowField": "verb"
@@ -459,14 +441,8 @@
           "emptyText": "grants.none",
           "columns": [
             {
-              "key": "principalKindLabel",
-              "labelKey": "grants.kind",
-              "kind": "tag",
-              "width": 120
-            },
-            {
               "key": "label",
-              "labelKey": "grants.principalCol",
+              "labelKey": "grants.policy",
               "subtitleKey": "subtitle",
               "minWidth": 180
             },
@@ -500,35 +476,19 @@
         "description": "选中投影的使用与编辑授权记录。",
         "id": "builtin-product-1f892084-9d70-4e8f-8f61-79b010e7093b"
       },
-      "userPicker": {
+      "policyPicker": {
         "component": "ReferencePicker",
-        "type": "platform:User",
+        "type": "platform:PermissionPolicy",
         "data": {
           "options": "options",
           "selected": "resolve"
         },
         "state": {
-          "selected": "grantUser"
+          "selected": "grantPolicy"
         },
         "config": {
           "size": "default",
-          "placeholderKey": "grants.selectMember"
-        },
-        "id": "builtin-product-1e9a0f36-14c2-4ecb-8c7d-436fa2edc008"
-      },
-      "rolePicker": {
-        "component": "ReferencePicker",
-        "type": "platform:Role",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "state": {
-          "selected": "grantRole"
-        },
-        "config": {
-          "size": "default",
-          "placeholderKey": "grants.selectRole"
+          "placeholderKey": "grants.selectPolicy"
         },
         "id": "builtin-product-266b6aad-efd5-4423-96a6-a15b69dd3e1e"
       },
@@ -538,11 +498,8 @@
         "target": "selected",
         "operation": "productProjections.grant",
         "operationParams": {
-          "principalKind": {
-            "state": "grantPrincipalKind"
-          },
-          "principalId": {
-            "state": "grantPrincipalId"
+          "policyId": {
+            "state": "grantPolicyId"
           },
           "verb": {
             "state": "grantVerb"
@@ -783,12 +740,9 @@
         "usedBy.count": "{count} 个面板",
         "usedBy.hiddenHint": "另有 {count} 个面板用它，你没有这些面板的使用授权。",
         "grants.none": "暂无单独授权记录。",
-        "grants.kind": "主体类型",
-        "grants.principalCol": "主体",
+        "grants.policy": "对象策略",
         "grants.verb": "权限",
         "grants.actions": "操作",
-        "grants.principal": "成员",
-        "grants.role": "角色",
         "grants.domain": "域内成员",
         "grants.use": "使用",
         "grants.edit": "编辑",
@@ -797,11 +751,10 @@
         "grants.dialogTitle": "添加授权",
         "grants.shareTitle": "向本域成员共享",
         "grants.sharedDesc": "已向本域所有成员开放使用权限。",
-        "grants.privateDesc": "当前仅对下方授权的成员与角色开放。",
+        "grants.privateDesc": "此对象的访问权限由下方对象策略控制。",
         "grants.enableShare": "开启域内共享",
         "grants.disableShare": "关闭域内共享",
-        "grants.selectMember": "搜索或选择成员",
-        "grants.selectRole": "搜索或选择角色",
+        "grants.selectPolicy": "选择对象策略",
         "grants.submit": "授予",
         "copy.title": "复制投影",
         "copy.nameLabel": "新名称",
@@ -882,12 +835,9 @@
         "usedBy.count": "{count} panels",
         "usedBy.hiddenHint": "{count} additional panel(s) use this projection without your access.",
         "grants.none": "No individual grants.",
-        "grants.kind": "Principal type",
-        "grants.principalCol": "Principal",
+        "grants.policy": "Object policy",
         "grants.verb": "Permission",
         "grants.actions": "Actions",
-        "grants.principal": "Member",
-        "grants.role": "Role",
         "grants.domain": "Domain members",
         "grants.use": "Use",
         "grants.edit": "Edit",
@@ -896,11 +846,10 @@
         "grants.dialogTitle": "Add grant",
         "grants.shareTitle": "Share with domain members",
         "grants.sharedDesc": "Use access is open to all domain members.",
-        "grants.privateDesc": "Only the granted members and roles below can access this projection.",
+        "grants.privateDesc": "Access follows the object policies below.",
         "grants.enableShare": "Enable domain sharing",
         "grants.disableShare": "Disable domain sharing",
-        "grants.selectMember": "Search or select a member",
-        "grants.selectRole": "Search or select a role",
+        "grants.selectPolicy": "Choose an object policy",
         "grants.submit": "Grant",
         "copy.title": "Copy projection",
         "copy.nameLabel": "New name",
@@ -981,12 +930,9 @@
         "usedBy.count": "{count} 個面板",
         "usedBy.hiddenHint": "另有 {count} 個面板使用它，你沒有這些面板的使用授權。",
         "grants.none": "暫無單獨授權記錄。",
-        "grants.kind": "主體類型",
-        "grants.principalCol": "主體",
+        "grants.policy": "物件策略",
         "grants.verb": "權限",
         "grants.actions": "操作",
-        "grants.principal": "成員",
-        "grants.role": "角色",
         "grants.domain": "網域成員",
         "grants.use": "使用",
         "grants.edit": "編輯",
@@ -995,11 +941,10 @@
         "grants.dialogTitle": "新增授權",
         "grants.shareTitle": "向本網域成員共享",
         "grants.sharedDesc": "已向本網域所有成員開放使用權限。",
-        "grants.privateDesc": "目前僅對下方授權的成員與角色開放。",
+        "grants.privateDesc": "此物件的存取權限由下方物件策略控制。",
         "grants.enableShare": "開啟網域共享",
         "grants.disableShare": "關閉網域共享",
-        "grants.selectMember": "搜尋或選擇成員",
-        "grants.selectRole": "搜尋或選擇角色",
+        "grants.selectPolicy": "選擇物件策略",
         "grants.submit": "授予",
         "copy.title": "複製投影",
         "copy.nameLabel": "新名稱",
@@ -1062,12 +1007,9 @@
         "usedBy.count": "{count} 件のパネル",
         "usedBy.hiddenHint": "他にアクセス権のない {count} 件のパネルが使用しています。",
         "grants.none": "個別の権限はありません。",
-        "grants.kind": "対象の種類",
-        "grants.principalCol": "対象",
+        "grants.policy": "オブジェクトポリシー",
         "grants.verb": "権限",
         "grants.actions": "操作",
-        "grants.principal": "メンバー",
-        "grants.role": "ロール",
         "grants.domain": "ドメインメンバー",
         "grants.use": "使用",
         "grants.edit": "編集",
@@ -1076,11 +1018,10 @@
         "grants.dialogTitle": "権限を追加",
         "grants.shareTitle": "ドメインメンバーに共有",
         "grants.sharedDesc": "ドメイン内の全メンバーに使用権限が開放されています。",
-        "grants.privateDesc": "以下の権限を持つメンバーとロールのみがアクセスできます。",
+        "grants.privateDesc": "アクセスは以下のオブジェクトポリシーに従います。",
         "grants.enableShare": "ドメイン共有を有効化",
         "grants.disableShare": "ドメイン共有を無効化",
-        "grants.selectMember": "メンバーを検索または選択",
-        "grants.selectRole": "ロールを検索または選択",
+        "grants.selectPolicy": "オブジェクトポリシーを選択",
         "grants.submit": "付与",
         "copy.title": "プロジェクションを複製",
         "copy.nameLabel": "新しい名前",
@@ -1143,12 +1084,9 @@
         "usedBy.count": "{count} لوحة",
         "usedBy.hiddenHint": "تستخدم {count} لوحة إضافية هذا الإسقاط دون صلاحية عرض لديك.",
         "grants.none": "لا توجد صلاحيات فردية.",
-        "grants.kind": "نوع الجهة",
-        "grants.principalCol": "الجهة",
+        "grants.policy": "سياسة الكائن",
         "grants.verb": "الصلاحية",
         "grants.actions": "الإجراءات",
-        "grants.principal": "عضو",
-        "grants.role": "دور",
         "grants.domain": "أعضاء النطاق",
         "grants.use": "استخدام",
         "grants.edit": "تعديل",
@@ -1157,11 +1095,10 @@
         "grants.dialogTitle": "إضافة صلاحية",
         "grants.shareTitle": "مشاركة مع أعضاء النطاق",
         "grants.sharedDesc": "صلاحية الاستخدام متاحة لجميع أعضاء النطاق.",
-        "grants.privateDesc": "متاح فقط للأعضاء والأدوار المصرح لها أدناه.",
+        "grants.privateDesc": "يخضع الوصول لسياسات الكائن أدناه.",
         "grants.enableShare": "تفعيل مشاركة النطاق",
         "grants.disableShare": "إيقاف مشاركة النطاق",
-        "grants.selectMember": "ابحث أو اختر عضواً",
-        "grants.selectRole": "ابحث أو اختر دوراً",
+        "grants.selectPolicy": "اختر سياسة كائن",
         "grants.submit": "منح",
         "copy.title": "نسخ الإسقاط",
         "copy.nameLabel": "الاسم الجديد",
@@ -1224,12 +1161,9 @@
         "usedBy.count": "{count} panneaux",
         "usedBy.hiddenHint": "{count} autre(s) panneau(x) l'utilisent sans accès visible.",
         "grants.none": "Aucune autorisation individuelle.",
-        "grants.kind": "Type de bénéficiaire",
-        "grants.principalCol": "Bénéficiaire",
+        "grants.policy": "Stratégie d’objet",
         "grants.verb": "Autorisation",
         "grants.actions": "Actions",
-        "grants.principal": "Membre",
-        "grants.role": "Rôle",
         "grants.domain": "Membres du domaine",
         "grants.use": "Utiliser",
         "grants.edit": "Modifier",
@@ -1238,11 +1172,10 @@
         "grants.dialogTitle": "Ajouter une autorisation",
         "grants.shareTitle": "Partager avec les membres du domaine",
         "grants.sharedDesc": "L'accès en utilisation est ouvert à tous les membres du domaine.",
-        "grants.privateDesc": "Uniquement accessible aux membres et rôles autorisés ci-dessous.",
+        "grants.privateDesc": "L’accès dépend des stratégies d’objet ci-dessous.",
         "grants.enableShare": "Activer le partage domaine",
         "grants.disableShare": "Désactiver le partage domaine",
-        "grants.selectMember": "Rechercher ou sélectionner un membre",
-        "grants.selectRole": "Rechercher ou sélectionner un rôle",
+        "grants.selectPolicy": "Choisir une stratégie d’objet",
         "grants.submit": "Accorder",
         "copy.title": "Copier la projection",
         "copy.nameLabel": "Nouveau nom",
@@ -1305,12 +1238,9 @@
         "usedBy.count": "{count} Panels",
         "usedBy.hiddenHint": "{count} weitere Panels ohne Zugriffsberechtigung verwenden diese Projektion.",
         "grants.none": "Keine Einzelberechtigungen.",
-        "grants.kind": "Empfängertyp",
-        "grants.principalCol": "Empfänger",
+        "grants.policy": "Objektrichtlinie",
         "grants.verb": "Berechtigung",
         "grants.actions": "Aktionen",
-        "grants.principal": "Mitglied",
-        "grants.role": "Rolle",
         "grants.domain": "Domänenmitglieder",
         "grants.use": "Verwenden",
         "grants.edit": "Bearbeiten",
@@ -1319,11 +1249,10 @@
         "grants.dialogTitle": "Berechtigung hinzufügen",
         "grants.shareTitle": "Für Domänenmitglieder freigeben",
         "grants.sharedDesc": "Nutzungszugriff ist für alle Domänenmitglieder geöffnet.",
-        "grants.privateDesc": "Nur für unten berechtigte Mitglieder und Rollen zugänglich.",
+        "grants.privateDesc": "Der Zugriff richtet sich nach den folgenden Objektrichtlinien.",
         "grants.enableShare": "Domänenfreigabe aktivieren",
         "grants.disableShare": "Domänenfreigabe deaktivieren",
-        "grants.selectMember": "Mitglied suchen oder wählen",
-        "grants.selectRole": "Rolle suchen oder wählen",
+        "grants.selectPolicy": "Objektrichtlinie auswählen",
         "grants.submit": "Erteilen",
         "copy.title": "Projektion kopieren",
         "copy.nameLabel": "Neuer Name",
@@ -1386,12 +1315,9 @@
         "usedBy.count": "{count} pannelli",
         "usedBy.hiddenHint": "Altri {count} pannelli la utilizzano senza autorizzazione di visualizzazione.",
         "grants.none": "Nessuna autorizzazione individuale.",
-        "grants.kind": "Tipo di destinatario",
-        "grants.principalCol": "Destinatario",
+        "grants.policy": "Criterio oggetto",
         "grants.verb": "Autorizzazione",
         "grants.actions": "Azioni",
-        "grants.principal": "Membro",
-        "grants.role": "Ruolo",
         "grants.domain": "Membri del dominio",
         "grants.use": "Usa",
         "grants.edit": "Modifica",
@@ -1400,11 +1326,10 @@
         "grants.dialogTitle": "Aggiungi autorizzazione",
         "grants.shareTitle": "Condividi con i membri del dominio",
         "grants.sharedDesc": "L'accesso in uso è aperto a tutti i membri del dominio.",
-        "grants.privateDesc": "Accessibile solo ai membri e ruoli autorizzati di seguito.",
+        "grants.privateDesc": "L’accesso è regolato dai criteri oggetto elencati sotto.",
         "grants.enableShare": "Attiva condivisione dominio",
         "grants.disableShare": "Disattiva condivisione dominio",
-        "grants.selectMember": "Cerca o seleziona un membro",
-        "grants.selectRole": "Cerca o seleziona un ruolo",
+        "grants.selectPolicy": "Scegli un criterio oggetto",
         "grants.submit": "Concedi",
         "copy.title": "Copia proiezione",
         "copy.nameLabel": "Nuovo nome",

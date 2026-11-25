@@ -14,7 +14,7 @@ vi.mock('../../../config/environment',()=>({environment:{agentRuntime:()=>({toke
 vi.mock('../../../config/application',()=>({config:{dataQuery:{baseUrl:'http://ontology.test'}}}));
 vi.mock('../../../utils/request-identity',async original=>({...await original<typeof import('../../../utils/request-identity')>(),requireDomainId:(req:{domainId:string})=>req.domainId}));
 import {assistantExecutionMountPath, assistantExecutionRouter, assistantOwnerCallbackPath} from '../assistant-execution';
-import {callbackCredential,unwrapCallbackCredential} from '../../../services/agent-runtime/callback-credential';
+import {callbackCredential,unwrapCallbackCredential,executionCallbackPurpose} from '../../../services/agent-runtime/callback-credential';
 import {checkBackendResponse} from '../../../utils/backend-client';
 const run='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 const nativeFetch=globalThis.fetch;
@@ -32,8 +32,8 @@ beforeAll(async()=>{
 afterAll(async()=>{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
 afterEach(()=>{vi.unstubAllGlobals();});
 beforeEach(()=>{vi.clearAllMocks();mocks.run.mockResolvedValue({status:"running"});mocks.ownedRun.mockResolvedValue({turn:{id:run,retrieval_scope_id:run},run:{status:"running",channel:{agent:{agentId:"agent"}}}});mocks.restore.mockResolvedValue({run:{},executionUserId:'V',retrievalScopeId:run,credentials:{apiKey:'selected-user-key',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':run}}});});
-function credential() {return callbackCredential({pathPrefix:`/api/assistant/executions/${run}/`,runId:run,expiresAt:Date.now()+60000,token:'initiator-token',apiKey:''}).value;}
-async function call(path:string,extra:Record<string,string>={},method='POST',token=credential()) {
+function credential(path: string) {return callbackCredential({scope:{purpose:"execution",capability:executionCallbackPurpose.parse(path.split("/")[0])},runId:run,expiresAt:Date.now()+60000,token:'initiator-token',apiKey:''}).value;}
+async function call(path:string,extra:Record<string,string>={},method='POST',token=credential(path)) {
  return nativeFetch(base+`/api/assistant/executions/${run}/`+path,{method,headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':token,'X-Ontomato-Run-Id':run,...extra},...(method==='GET'||method==='HEAD'?{}:{body:'{}'})});
 }
 it("resolves the workspace only for the active App Builder session", async () => {
@@ -57,6 +57,21 @@ it.each([{contextId:other},null])("binds action execution to the run workspace e
  expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
    .toBe(JSON.stringify({kind:"build-test",contextId:current?.contextId??null}));
 });
+it("does not let a build-test run select a different context or omit the marker for other data paths", async () => {
+ const upstream = vi.fn(async (_url: string, _request: NonNullable<Parameters<typeof fetch>[1]>) => Response.json({}));
+ vi.stubGlobal("fetch", upstream);
+ mocks.restore.mockResolvedValue({
+   run: { channel: { authority: { executionKind: "build-test", executionContextId: other } } },
+   credentials: { token: "initiator-token", locale: "en" },
+ });
+ const override = JSON.stringify({ kind: "build-test", contextId: run });
+ expect((await call("ontology/action/execute", { "X-Ontomato-Execution-Context": override })).status).toBe(403);
+ expect(upstream).not.toHaveBeenCalled();
+ expect((await call("ontology/dsl/executeV1")).status).toBe(200);
+ expect(new Headers(upstream.mock.calls[0]?.[1]?.headers).get("X-Ontomato-Execution-Context"))
+   .toBe(JSON.stringify({ kind: "build-test", contextId: other }));
+});
+
 it('restores the initiator before resolving the executor and forwards only ordinary business authentication',async()=>{
  const upstream=vi.fn(async()=>Response.json({rows:[{count:3}]}));vi.stubGlobal('fetch',upstream);
  const response=await call('ontology/ontology/query/execute-dsl',{'X-Ontomato-Query-Service-Token':'model-forged-service-token'});
@@ -91,9 +106,10 @@ it('keeps path, run, expiry and HTTP method checks at the callback boundary',asy
  expect((await call('workbench/api/assistant/agents',{},'DELETE')).status).toBe(200);
  expect((await call('workbench/api/assistant/agents',{},'OPTIONS')).status).toBe(200);
  expect((await call('workbench/api/assistant/agents',{},'POST','wbc1.invalid')).status).toBe(401);
+ expect((await call('workbench/api/assistant/agents',{},'GET',credential('ontology'))).status).toBe(401);
  expect((await call('workbench/api/assistant/agents',{},'GET')).status).toBe(200);
  expect((await call('ontology/ontology/query/overview',{'X-Ontomato-Run-Id':other})).status).toBe(401);
- const expired=callbackCredential({pathPrefix:`/api/assistant/executions/${run}/`,runId:run,expiresAt:Date.now()-1,token:'initiator-token',apiKey:''}).value;
+ const expired=callbackCredential({scope:{purpose:"execution",capability:"ontology"},runId:run,expiresAt:Date.now()-1,token:'initiator-token',apiKey:''}).value;
  expect((await call('ontology/ontology/query/overview',{},'GET',expired)).status).toBe(401);
 });
 
@@ -106,7 +122,7 @@ it('does not restore V when reading governance records as U',async()=>{
 
 it('does not accept an upstream path or headers on the fixed retrieval business entrance',async()=>{
  const upstream=vi.fn();vi.stubGlobal('fetch',upstream);
- const response=await nativeFetch(base+`/api/assistant/executions/${run}/retrieval`,{method:'POST',headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':credential(),'X-Ontomato-Run-Id':run},body:JSON.stringify({operation:'begin',key:other,input:{question:'Question'},path:'/internal/agent-execution/resolve',headers:{'X-Ontomato-Query-Service-Token':'model'}})});
+ const response=await nativeFetch(base+`/api/assistant/executions/${run}/retrieval`,{method:'POST',headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':credential("retrieval"),'X-Ontomato-Run-Id':run},body:JSON.stringify({operation:'begin',key:other,input:{question:'Question'},path:'/internal/agent-execution/resolve',headers:{'X-Ontomato-Query-Service-Token':'model'}})});
  expect(response.status).toBe(400);expect(upstream).not.toHaveBeenCalled();expect(mocks.restore).not.toHaveBeenCalled();
 });
 
@@ -186,7 +202,7 @@ it.each([
  vi.stubGlobal("fetch", upstream);
  mocks.run.mockResolvedValue({ status: "running", channel: {} });
  const response = await nativeFetch(base+`/api/assistant/executions/${run}/workbench`+path, {
-   method, headers: { "content-type": "application/json", "X-Ontomato-Callback-Credential": credential(), "X-Ontomato-Run-Id": run, tk: "oq.business.grant" },
+   method, headers: { "content-type": "application/json", "X-Ontomato-Callback-Credential": credential("workbench"), "X-Ontomato-Run-Id": run, tk: "oq.business.grant" },
    body: body === undefined ? undefined : JSON.stringify(body),
  });
  expect(response.status).toBe(200);
@@ -313,9 +329,13 @@ it("forwards projection catalog list queries with componentId and objectType fil
   );
 });
 
-it("forwards execution-context and reuse-panel headers when supplied", async () => {
+it("forwards the bound execution context and reuse-panel header", async () => {
   const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ ok: true }));
   vi.stubGlobal("fetch", upstream);
+  mocks.restore.mockResolvedValue({
+    run: { channel: { authority: { executionKind: "build-test", executionContextId: "ctx-1" } } },
+    credentials: { token: "initiator-token", locale: "en" },
+  });
   const response = await call("workbench/api/product-projections/proj-1", {
     "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test", contextId: "ctx-1" }),
     "X-Ontomato-Projection-Reuse-Panel": "panel-1",
@@ -353,7 +373,7 @@ it("lets only the current callback submit the App Builder definition for adoptio
  const definition={function:{code:"program"}};
  const adopted={definition,executionId:other,digest:"a".repeat(64)};
  mocks.adopt.mockResolvedValue(adopted);
- const headers={"content-type":"application/json","X-Ontomato-Callback-Credential":credential(),"X-Ontomato-Run-Id":run};
+ const headers={"content-type":"application/json","X-Ontomato-Callback-Credential":credential("authoring"),"X-Ontomato-Run-Id":run};
  const response=await nativeFetch(url,{method:"POST",headers,body:JSON.stringify({definition})});
  expect(response.status).toBe(200);
  expect(await response.json()).toEqual(adopted);
@@ -375,7 +395,7 @@ it("resolves retrieval_scope_id from the server turn on retrieval and ontology c
  mocks.restore.mockResolvedValue({run:{},executionUserId:null,retrievalScopeId:scope,credentials:{token:'initiator-token',locale:'en',headers:{'X-Ontomato-Retrieval-Caller-Id':scope}}});
 
  // Status/close retrieval operations look up the turn's retrieval_scope_id via ownedRun.
- const statusRes=await nativeFetch(base+`/api/assistant/executions/${run}/retrieval`,{method:'POST',headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':credential(),'X-Ontomato-Run-Id':run,'X-Ontomato-Retrieval-Caller-Id':other},body:JSON.stringify({operation:'status',retrievalId:other,retrievalRunId:other,key:other})});
+ const statusRes=await nativeFetch(base+`/api/assistant/executions/${run}/retrieval`,{method:'POST',headers:{'content-type':'application/json','X-Ontomato-Callback-Credential':credential("retrieval"),'X-Ontomato-Run-Id':run,'X-Ontomato-Retrieval-Caller-Id':other},body:JSON.stringify({operation:'status',retrievalId:other,retrievalRunId:other,key:other})});
  expect(statusRes.status).toBe(200);
  expect(new Headers(upstream.mock.calls[0]![1]?.headers).get('X-Ontomato-Retrieval-Caller-Id')).toBe(scope);
 
@@ -401,7 +421,7 @@ it("relays multipart bytes, the query and the owner's response status and header
  const response = await nativeFetch(base + `/api/assistant/executions/${run}/ontology/new-owner/import?x=a%2Fb&x=c`, {
    method: "PATCH", body,
    headers: {
-     "Content-Type": contentType, "X-Ontomato-Callback-Credential": credential(), "X-Ontomato-Run-Id": run,
+     "Content-Type": contentType, "X-Ontomato-Callback-Credential": credential("ontology"), "X-Ontomato-Run-Id": run,
      "X-Ontomato-Agent-Execution": "caller-supplied",
    },
  });

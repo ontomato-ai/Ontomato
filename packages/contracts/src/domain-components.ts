@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { componentDeclarationSchema } from "./apps-sdk";
 import { domainComponentIdSchema, domainComponentSourceSchema } from "./domain-component-runtime";
+import { objectPublicationAccessSchema } from "./object-publication";
 import { productCurrentIdParamsSchema } from "./product-record-id";
 
 export const DOMAIN_COMPONENTS_PATH = "/api/domain-components";
@@ -14,13 +15,13 @@ const revision = z.number().int().positive();
 const declaration = componentDeclarationSchema.extend({ componentId: domainComponentIdSchema });
 export const domainComponentInputSchema = z.object({
   name: z.string().trim().min(1).max(200),
-  visibility: z.enum(["private", "domain"]),
   declaration,
   source: domainComponentSourceSchema,
 }).strict();
 export type DomainComponentInput = z.infer<typeof domainComponentInputSchema>;
 
 export const registerDomainComponentRequestSchema = domainComponentInputSchema.extend({
+  publicationAccess: objectPublicationAccessSchema,
   declaration: declaration.extend({ componentId: domainComponentIdSchema.optional() }),
 });
 export const updateDomainComponentRequestSchema = domainComponentInputSchema.extend({ revision });
@@ -30,7 +31,7 @@ const currentFields = { domainId: id, revision, editable: z.boolean() };
 export const domainComponentSummarySchema = domainComponentInputSchema.omit({ source: true }).extend(currentFields);
 export const domainComponentRecordSchema = domainComponentInputSchema.extend({
   ...currentFields,
-  ownerId: id,
+  ownerId: id.nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

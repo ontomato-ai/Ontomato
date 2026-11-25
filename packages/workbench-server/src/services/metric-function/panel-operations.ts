@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { objectPublicationAccessSchema } from "@ontomato/contracts/object-publication";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
 import {
@@ -29,7 +30,10 @@ import {
 const deletedSchema = z.object({}).strict();
 /** The delete impact reads the name a confirming human recognizes and the bindings the delete takes with it. */
 const metricImpactSchema = z.object({ name: z.string(), bindings: z.array(z.unknown()) }).passthrough();
-const statusInputSchema = z.object({ status: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]) }).strict();
+const statusInputSchema = z.object({
+  status: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]),
+  publicationAccess: objectPublicationAccessSchema.optional(),
+}).strict();
 /**
  * The owner answers one status change per requested id: the saved metric, its refusal under the owner's code, or a
  * failure with no code.
@@ -53,7 +57,8 @@ const functionObjectTarget = z.object({
 }).strict();
 const metricSaveTarget = z.discriminatedUnion("kind", [metricObjectTarget, panelFormTargetSchema.options[1]]);
 const functionSaveTarget = z.discriminatedUnion("kind", [functionObjectTarget, panelFormTargetSchema.options[1]]);
-const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
+const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true })
+  .extend({ publicationAccess: objectPublicationAccessSchema.optional() }).strict();
 const deleteInputSchema = z.object({}).strict();
 
 /**
@@ -62,8 +67,8 @@ const deleteInputSchema = z.object({}).strict();
  */
 type StatusAnswer = { whole: SinglePanelOperationOutcome } | { items: Map<string, z.infer<typeof statusItemSchema>> };
 
-async function changeStatus(host: Host, ids: string[], status: string): Promise<StatusAnswer> {
-  const envelope = await ownerPost(host, "/metricView/setStatus", { ids, status }, ownerEnvelopeSchema);
+async function changeStatus(host: Host, ids: string[], input: z.infer<typeof statusInputSchema>): Promise<StatusAnswer> {
+  const envelope = await ownerPost(host, "/metricView/setStatus", { ids, ...input }, ownerEnvelopeSchema);
   if (!envelope.success) return { whole: ownerWriteFailure(envelope, STATUS_FAILED, "The owner could not change the status") };
   return { items: new Map(statusAnswerSchema.parse(envelope.data).items.map(item => [item.id, item])) };
 }
@@ -167,8 +172,8 @@ async function trial(host: Host, path: string, body: unknown, refusalCode: strin
  * every other saved value; without them the values are the whole definition.
  */
 function ownerSaveBody(target: PanelOperationTarget, input: Record<string, unknown>) {
-  const { values, submittedFields } = saveInputSchema.parse(input);
-  return { ...valuesForTarget(target, values), ...(submittedFields && { submittedFields }) };
+  const { values, submittedFields, publicationAccess } = saveInputSchema.parse(input);
+  return { ...valuesForTarget(target, values), ...(submittedFields && { submittedFields }), publicationAccess };
 }
 
 
@@ -227,23 +232,21 @@ export const m5ServerOperations = [
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"),
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("The status change acts on a selected metric");
-      const { status } = statusInputSchema.parse(input);
-      return statusOutcome(await changeStatus(host, [target.primaryKey], status), target.primaryKey);
+      return statusOutcome(await changeStatus(host, [target.primaryKey], statusInputSchema.parse(input)), target.primaryKey);
     },
     async executeBatch(host: Host, calls: readonly PanelBatchCalls[number][]): Promise<PanelOperationOutcome> {
-      // Each call may set its own status; the owner takes one status per request, so the calls go in one request per
-      // status and every call reads its own answer. A request with no authoritative answer leaves its calls unknown
-      // while the other requests' answers stand; when no request got one, the batch answers unknown as a whole.
-      const statuses = calls.map(call => statusInputSchema.parse(call.input).status);
+      // The owner takes one status and audience per request. Each item receives its own answer.
+      const inputs = calls.map(call => statusInputSchema.parse(call.input));
+      const keys = inputs.map(input => JSON.stringify(input));
       const answers = new Map<string, StatusAnswer>();
       let unanswered = "";
-      for (const status of new Set(statuses)) {
-        const ids = calls.filter((_, index) => statuses[index] === status).map(call => call.target.primaryKey);
+      for (const key of new Set(keys)) {
+        const ids = calls.filter((_, index) => keys[index] === key).map(call => call.target.primaryKey);
         try {
-          answers.set(status, await changeStatus(host, ids, status));
+          answers.set(key, await changeStatus(host, ids, inputs[keys.indexOf(key)]!));
         } catch (error) {
           unanswered = error instanceof Error ? error.message : String(error);
-          answers.set(status, { whole: { kind: "unknown", message: unanswered } });
+          answers.set(key, { whole: { kind: "unknown", message: unanswered } });
         }
       }
       if ([...answers.values()].every(answer => "whole" in answer && answer.whole.kind === "unknown"))
@@ -251,7 +254,7 @@ export const m5ServerOperations = [
       // A batch invocation is nonempty, so the items tuple starts with the first call's answer and spreads the rest.
       const [first, ...rest] = calls.map((call, index) => ({
         target: { objectType: call.target.objectType, primaryKey: call.target.primaryKey },
-        outcome: statusOutcome(answers.get(statuses[index]!)!, call.target.primaryKey),
+        outcome: statusOutcome(answers.get(keys[index]!)!, call.target.primaryKey),
       }));
       return { kind: "batch", items: [first!, ...rest] };
     },

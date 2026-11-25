@@ -1,3 +1,4 @@
+import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -89,6 +90,11 @@ beforeAll(async () => {
     expect(req.header(BUILD_TEST_HEADER)).toBeUndefined();
     expect(req.query.workspaceId).toBe(workspaceId);
     res.json(issuedContext);
+  });
+  mountCurrentProductDecisions(app, {
+    prefix: "/java", token: "fixture-service", domain: "domain",
+    allow: ({ target, ownerFacts, verb }, caller) =>
+      target.id === projectionId && ownerFacts.ownerId === "alice" && caller === "alice" && (verb === "EDIT" || canUseProjection),
   });
   app.post("/java/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");

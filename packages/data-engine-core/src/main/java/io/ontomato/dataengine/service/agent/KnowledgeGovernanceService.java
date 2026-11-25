@@ -147,7 +147,7 @@ public class KnowledgeGovernanceService {
     var result=open(id,run,owner,false,"workbench",session,deadline,null);
     result.put("token",grants.issue(executor,owner.domainId(),"knowledge-governance",run,
       Instant.parse(result.getString("expiresAt")).toEpochMilli(),List.of(),null,
-      JSONObject.of("initiatorUserId",owner.userId(),"executionUserId",selected)));
+      JSONObject.of("initiatorUserId",owner.userId(),"executionUserId",selected,"recordId",id)));
     return result;
   }
   public void closePlatform(String run,String domain) {

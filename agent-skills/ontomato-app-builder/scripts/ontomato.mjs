@@ -352,18 +352,21 @@ async function componentCommand(api, [command, ...args]) {
   if (command !== "register" || args.length !== 1) die("component list | read <id> | register <directory> [--revision <number>]");
   const directory = args[0];
   const file = path.join(directory, "component.json");
-  const definition = JSON.parse(fs.readFileSync(file, "utf8"));
+  const { publicationAccess, ...definition } = JSON.parse(fs.readFileSync(file, "utf8"));
+  delete definition.visibility;
   const template = fs.readFileSync(path.join(directory, "component.html"), "utf8");
   const moduleFile = path.join(directory, "component.mjs");
   const module = fs.existsSync(moduleFile) ? fs.readFileSync(moduleFile, "utf8") : undefined;
   const id = definition.declaration?.componentId;
   if (revision !== null && (!id || !Number.isSafeInteger(Number(revision)) || Number(revision) <= 0))
     die("Component update requires a saved component ID and a positive revision");
-  const body = { ...definition, source: { template, module }, ...(revision === null ? {} : { revision: Number(revision) }) };
+  if (revision === null && !publicationAccess)
+    die('Component registration requires publicationAccess in component.json: {"kind":"domain"} or {"kind":"policy","policyId":"..."}');
+  const body = { ...definition, source: { template, module }, ...(revision === null ? { publicationAccess } : { revision: Number(revision) }) };
   const { component } = await workbench(api, revision === null ? "POST" : "PUT", domainComponentPath(revision === null ? undefined : id), body);
   if (!id) {
     definition.declaration.componentId = component.declaration.componentId;
-    fs.writeFileSync(file, JSON.stringify(definition, null, 2) + "\n");
+    fs.writeFileSync(file, JSON.stringify({ ...definition, publicationAccess }, null, 2) + "\n");
   }
   print({ componentId: component.declaration.componentId, revision: component.revision });
 }

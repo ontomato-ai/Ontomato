@@ -4,6 +4,12 @@ import static org.mockito.Mockito.*;
 import com.alibaba.fastjson2.*;
 import com.sun.net.httpserver.HttpServer;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.AuthorizationStore;
+import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.RoleResolution;
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.ManagementOperations;
 import io.ontomato.dataengine.service.impl.*;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.config.BusinessConfig;
@@ -81,7 +87,7 @@ class BuildTestPostgresIntegrationTest {
     ontologyHttp=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
     ontologyHttp.createContext("/",exchange->{
       try {
-        var claims=grants.verify(exchange.getRequestHeaders().getFirst("tk"),exchange.getRequestHeaders().getFirst("X-Ontomato-Run-Id"),exchange.getRequestURI().getPath());
+        var claims=grants.verifyRequest(exchange.getRequestHeaders().getFirst("tk"),exchange.getRequestHeaders().getFirst("X-Ontomato-Run-Id"),exchange.getRequestMethod(),exchange.getRequestURI().getPath());
         var request=new MockHttpServletRequest();request.setAttribute(QueryGrantService.ATTRIBUTE,claims);RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
         var body=JSON.parseObject(exchange.getRequestBody().readAllBytes());
         Object result=switch(exchange.getRequestURI().getPath()) {
@@ -224,6 +230,14 @@ class BuildTestPostgresIntegrationTest {
       var access=new QueryAccessService.Access(owner,permission,null,null,null).withTarget(target);
       var metrics=spy(new MetricViewServiceImpl());ReflectionTestUtils.setField(metrics,"abcProgramService",programs);ReflectionTestUtils.setField(metrics,"adminService",admin);
       ReflectionTestUtils.setField(metrics, "subjectValues", new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
+      var metricSubjects = mock(AuthorizationSubjects.class);
+      when(metricSubjects.resolveRoles(owner.getDomainId(), owner.getId())).thenReturn(
+          new RoleResolution(Set.of(), Set.of(), List.of(), Set.of(), Map.of(), false));
+      var metricPolicies = mock(AuthorizationStore.class);
+      when(metricPolicies.policies(owner.getDomainId(), Set.of())).thenReturn(List.of());
+      var metricAuthorization = new AuthorizationService(metricSubjects, metricPolicies,
+          new ManagementOperations(List.of()), mock(CapabilityGrantLookup.class), mock(DataPermissionLookup.class));
+      ReflectionTestUtils.setField(metrics, "definitions", new CapabilityDefinitions(metricAuthorization, identity));
       var dsl=QueryPackage.fromDsl(query.toJSONString());
       var read=QueryPackageExecution.execute(UUID.randomUUID().toString(),dsl,new JSONObject(),JSONObject.of("age","Age"),access,"en",1,ontology,python);
       assertTrue(read.rows().stream().anyMatch(value->JSONObject.from(value).getIntValue("age")==99));
@@ -240,6 +254,7 @@ class BuildTestPostgresIntegrationTest {
         readFunction.setParameters(QueryPackage.definitions(readPackage));
         var returns=new io.ontomato.dataengine.bean.function.ReturnDef();returns.setColumnLabels(readPackage==dsl?JSONObject.of("age","Age"):JSONObject.of("total","Total"));readFunction.setReturnDef(returns);
         var metric=new io.ontomato.dataengine.bean.metricView.MetricView();metric.setId("metric-test");metric.setDomainId("contract");metric.setStatus(io.ontomato.dataengine.bean.metricView.MetricView.STATUS_PUBLISHED);metric.setFunction(readFunction);metric.setBindings(new ArrayList<>());
+        metric.setCreatedBy(owner.getId());
         doReturn(metric).when(metrics).queryById("metric-test","contract");
         var values=QueryPackage.parameters(readPackage,null);
         assertNotNull(metrics.testExecute(metric,null,values,"en",owner,permission,1,target)[0]);
@@ -384,12 +399,12 @@ class BuildTestPostgresIntegrationTest {
    String token=grants.issueExecution(PythonAuthority.read("builder","contract").withTarget(target),grantRun,target.expiresAt());
    var claims=JSON.parseObject(Base64.getUrlDecoder().decode(token.split("\\.")[1]));
    claims.put("classNames",new JSONArray());String emptyScope=signedClaims(claims);
-   expectCode("BUILD_TEST_FORBIDDEN",()->grants.verify(emptyScope,grantRun,"/ontology/query/execute-dsl"));
+   expectCode("BUILD_TEST_FORBIDDEN",()->grants.verifyRequest(emptyScope, grantRun, "POST", "/ontology/query/execute-dsl"));
    claims.remove("contextId");String noContext=signedClaims(claims);
-   expectCode("Invalid, expired or revoked query grant",()->grants.verify(noContext,grantRun,"/ontology/query/execute-dsl"));
+   expectCode("Invalid, expired or revoked query grant",()->grants.verifyRequest(noContext, grantRun, "POST", "/ontology/query/execute-dsl"));
    jdbc.update("UPDATE data_sandboxes SET expires_at=0 WHERE id=?",id);
    expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->contexts.require(id,"builder","contract"));
-   expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->grants.verify(token,grantRun,"/ontology/query/execute-dsl"));
+   expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->grants.verifyRequest(token, grantRun, "POST", "/ontology/query/execute-dsl"));
    // This protocol-only credential never started a runtime execution; remove its fixture row.
    jdbc.update("DELETE FROM query_runtime_grants WHERE run_id=? AND context_id=?",grantRun,id);
    contexts.cleanupExpired();

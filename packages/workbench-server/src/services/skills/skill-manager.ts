@@ -3,10 +3,10 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import AdmZip from "adm-zip";
 import type { AnalysisAgentSkillReference, SkillCatalog, SkillInfo, SkillDeleteResult, SkillFile } from "@ontomato/contracts/skills";
-import type { StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
+import { runtimeSkillKey, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { isProtectedSkillName } from "../../core/skills/providers";
-import { skillRegistryManager, type SkillRegistryManager } from "../../core/skills/registry/manager";
+import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { skillWriteRestriction, type SkillEntry } from "../../core/skills/types";
 import { readSkillPackage } from "../../core/skills/package";
 import { InvalidSkillPackageError, normalizeSkillPackagePath, parseSkillMarkdown, readSkillLabels } from "../../core/skills/manifest";
@@ -16,6 +16,7 @@ import { createLogger } from "../../logging/logger";
 import { HttpError } from "../../utils/errors";
 import { withDomainSkills } from "./operations";
 import { readSkillView } from "./view";
+import { decideDomainSkills, requireSkillAccess, requireSkillCreation, retireDomainSkill } from "./authorization";
 import { listAnalysisAgentSkillReferences, removeAnalysisAgentSkillReferences,
   restoreAnalysisAgentSkillReferences } from "../assistant/skill-references";
 
@@ -74,16 +75,22 @@ class SkillManager {
       writeRestriction: skillWriteRestriction(skill),
       title: labels?.title ?? skill.skill.name, description: labels?.description ?? skill.manifest.description };
   }
-  skillsInRegistry(registry: SkillRegistryManager, locale?: string): SkillInfo[] {
-    return registry.getSkills().map((s) => this.info(s, locale));
+  describeSkills(entries: readonly SkillEntry[], locale?: string): SkillInfo[] {
+    return entries.map((entry) => this.info(entry, locale));
   }
   async getAllSkills(domainId: string, credentials: AssistantCredentials): Promise<SkillCatalog> {
     const { registry, diagnostics } = await readSkillView(domainId, credentials);
-    return { skills: this.skillsInRegistry(registry, credentials.locale), ...(diagnostics && { diagnostics }) };
+    const entries = registry.getSkills();
+    const decisions = await decideDomainSkills(domainId, entries, "VIEW", credentials);
+    const readable = entries.filter(entry => entry.source.kind !== "domain" || decisions.get(runtimeSkillKey(entry.skill))!.allowed);
+    return { skills: this.describeSkills(readable, credentials.locale), ...(diagnostics && { diagnostics }) };
   }
   async getSkillInfo(domainId: string, id: string, credentials: AssistantCredentials) {
+    return this.info(await this.requireReadableSkill(domainId, id, credentials), credentials.locale);
+  }
+  async requireReadableSkill(domainId: string, id: string, credentials: AssistantCredentials) {
     const view = await readSkillView(domainId, credentials);
-    return this.info(view.requireSkillById(id), credentials.locale);
+    return requireSkillAccess(domainId, view.requireSkillById(id), "VIEW", credentials);
   }
   async searchSkills(domainId: string, query: string, credentials: AssistantCredentials): Promise<SkillCatalog> {
     const needle = query.trim().toLowerCase();
@@ -93,16 +100,28 @@ class SkillManager {
       [skill.id, skill.title, skill.description].some(value => value.toLowerCase().includes(needle))) };
   }
   async getSkillReferences(domainId: string, id: string, access: ReferenceAccess) {
+    const skill = await this.requireReadableSkill(domainId, id, access.credentials);
+    const references = await listAnalysisAgentSkillReferences(domainId, skill.skill);
+    return readableReferences(references, access);
+  }
+  private async requireEditableSkill(domainId: string, id: string, credentials: AssistantCredentials) {
+    const view = await readSkillView(domainId, credentials);
+    const skill = view.requireSkillById(id);
+    const source = requireWritable(skill);
+    await requireSkillAccess(domainId, skill, "EDIT", credentials);
+    return { skill, source };
+  }
+  async getDeleteSkillReferences(domainId: string, id: string, access: ReferenceAccess) {
     const view = await readSkillView(domainId, access.credentials);
     const skill = view.requireSkillById(id);
+    if (skillWriteRestriction(skill)) return null;
+    await requireSkillAccess(domainId, skill, "EDIT", access.credentials);
     const references = await listAnalysisAgentSkillReferences(domainId, skill.skill);
     return readableReferences(references, access);
   }
   async deleteSkill(domainId: string, id: string, access: ReferenceAccess): Promise<SkillDeleteResult> {
     return withDomainSkills(domainId, async () => {
-      const view = await readSkillView(domainId, access.credentials);
-      const skill = view.requireSkillById(id);
-      const source = requireWritable(skill);
+      const { skill, source } = await this.requireEditableSkill(domainId, id, access.credentials);
       const references = await listAnalysisAgentSkillReferences(domainId, skill.skill);
       const affectedAgents = await readableReferences(references, access);
       const trash = path.join(skillRegistryManager.getDomainSkillsRoot(domainId), ".trash", randomUUID());
@@ -112,13 +131,14 @@ class SkillManager {
       try {
         await removeAnalysisAgentSkillReferences(domainId, id);
         referencesRemoved = true;
-        fs.rmSync(trash, { recursive: true, force: true });
-        return { affectedAgents, cleanedAgentCount: affectedAgents.length };
+        await retireDomainSkill(domainId, skill, access.credentials);
       } catch (error) {
         if (fs.existsSync(trash)) fs.renameSync(trash, source.path);
         if (referencesRemoved) await restoreAnalysisAgentSkillReferences(domainId, id, references);
         throw error;
       }
+      fs.rmSync(trash, { recursive: true, force: true });
+      return { affectedAgents, cleanedAgentCount: affectedAgents.length };
     });
   }
 
@@ -155,8 +175,7 @@ class SkillManager {
 
   /** The package's files, relative to its root, for a reader to browse. */
   async listSkillFiles(domainId: string, id: string, credentials: AssistantCredentials): Promise<SkillFile[]> {
-    const view = await readSkillView(domainId, credentials);
-    const skill = view.requireSkillById(id);
+    const skill = await this.requireReadableSkill(domainId, id, credentials);
     return (await skill.provide()).files.map((file) => ({ path: file.path, size: Buffer.byteLength(file.content, "utf8") }))
       .sort((a, b) => (a.path < b.path ? -1 : 1));
   }
@@ -166,8 +185,7 @@ class SkillManager {
    * stays over it.
    */
   async readSkillFile(domainId: string, id: string, requestedPath: string, credentials: AssistantCredentials): Promise<string> {
-    const view = await readSkillView(domainId, credentials);
-    const skill = view.requireSkillById(id);
+    const skill = await this.requireReadableSkill(domainId, id, credentials);
     const relative = normalizeSkillPackagePath(requestedPath);
     if (!relative) throw new HttpError(400, `Invalid skill file path: ${requestedPath}`, "INVALID_SKILL_FILE_PATH");
     const source = (await skill.provide()).files.find((file) => file.path === relative)?.content;
@@ -180,8 +198,7 @@ class SkillManager {
     return frontmatter + fs.readFileSync(translated, "utf8");
   }
   async exportSkill(domainId: string, id: string, credentials: AssistantCredentials): Promise<Buffer> {
-    const view = await readSkillView(domainId, credentials);
-    const skill = view.requireSkillById(id);
+    const skill = await this.requireReadableSkill(domainId, id, credentials);
     const zip = new AdmZip();
     for (const file of (await skill.provide()).files) zip.addFile(file.path, Buffer.from(file.content, "utf8"));
     return zip.toBuffer();
@@ -190,7 +207,10 @@ class SkillManager {
   async importedSkill(domainId: string, bytes: Buffer, credentials: AssistantCredentials) {
     const { id } = openSkillZip(bytes);
     const existing = (await readSkillView(domainId, credentials)).registry.getSkillById(id);
-    return existing ? this.info(existing, credentials.locale) : null;
+    if (!existing) return null;
+    requireWritable(existing);
+    await requireSkillAccess(domainId, existing, "EDIT", credentials);
+    return this.info(existing, credentials.locale);
   }
   async importSkill(domainId: string, bytes: Buffer, credentials: AssistantCredentials, overwrite = false) {
     return withDomainSkills(domainId, async () => {
@@ -202,7 +222,10 @@ class SkillManager {
       let previousPath: string | null = null;
       if (existing) {
         previousPath = requireWritable(existing).path;
+        await requireSkillAccess(domainId, existing, "EDIT", credentials);
         if (!overwrite) throw new HttpError(409, `Skill already exists: ${id}`, "SKILL_EXISTS", { skillId: id });
+      } else {
+        await requireSkillCreation(credentials);
       }
       return this.replace(domainId, manifest, previousPath, (directory) => {
         // Overwrite replaces the whole package, including removed resources.

@@ -82,8 +82,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
     ReflectionTestUtils.setField(governance,"identityService",identity);
     governance.initialize();
     var access=new OntologyAgentAccess(mock(QueryAccessService.class),identity,grants,store);
-    var filter=new io.ontomato.dataengine.controller.QueryGrantFilter(grants);
-    ReflectionTestUtils.setField(filter,"executions",executions);
+    var filter=new io.ontomato.dataengine.controller.QueryGrantFilter(grants, executions, identity);
     http=MockMvcBuilders.standaloneSetup(new KnowledgeGovernanceController(governance,access))
       .addFilters(filter).setControllerAdvice(new OntologyAgentErrors((language, key) -> key)).setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
   }
@@ -122,7 +121,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
       .header("X-Ontomato-Session-Id",session).header("X-Ontomato-Run-Id",run).contentType(MediaType.APPLICATION_JSON).content(input)).andExpect(status().isBadRequest());
     assertEquals(before,governance.work(record,owner).toJSONString());
     assertEquals(run,new QueryGrantService(jdbc,"test-signing",new WorkbenchServiceAuthentication("service"))
-      .verify(token,run,"/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_input").getString("runId"));
+      .verifyRequest(token,run,"POST","/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_input").getString("runId"));
   }
   @Test void endedRuntimeRejectsWritesWithoutChangingTheRecord() throws Exception {open();change("saved");runtimeState.set("stopped");unchangedAfterRejection();}
   @Test void stoppedRuntimeRejectsWritesEvenBeforeCloseNotification() throws Exception {open();reason.set("aborted");runtimeState.set("stopped");unchangedAfterRejection();}
@@ -177,7 +176,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
       .header("X-Ontomato-Query-Service-Token","service").contentType(MediaType.APPLICATION_JSON).content(input.toJSONString()))
       .andExpect(status().isOk()).andReturn().getResponse();
     var result=JSONObject.parseObject(response.getContentAsString());
-    var grant=grants.verify(result.getString("token"),run,"/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_input");
+    var grant=grants.verifyRequest(result.getString("token"), run, "POST", "/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_input");
     assertEquals(owner.userId(),grant.getString("initiatorUserId"));
     assertEquals(owner.userId(),grant.getString("userId"));
     assertEquals(owner.userId(),jdbc.queryForObject("SELECT owner_id FROM ontology_governance_records WHERE id=?::uuid",String.class,record));
@@ -192,7 +191,7 @@ class GovernanceWindowTest extends PostgresTestDatabase {
   }
   @Test void selectedGrantKeepsOwnerAndUsesTheExecutionUserWithoutBorrowingItsIdentityForRecords() throws Exception {
     selectedWindow();
-    var claims=grants.verify(token,run,"/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_input");
+    var claims=grants.verifyRequest(token, run, "POST", "/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_input");
     assertEquals("executor",claims.getString("userId"));assertEquals("user",claims.getString("initiatorUserId"));
     assertEquals("executor",claims.getString("executionUserId"));
     assertEquals("user",jdbc.queryForObject("SELECT owner_id FROM ontology_governance_records WHERE id=?::uuid",String.class,record));

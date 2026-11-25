@@ -47,7 +47,7 @@ import { HttpError } from "../../../utils/errors";
 import { listAgentDefinitions } from "../../assistant/definitions";
 import { assistantSkillCatalog } from "../../assistant/skills";
 import { listPublishedDefinitions } from "../../business-definitions/definitions";
-import { grantedProductIds } from "../../product-governance/grants";
+import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 import { readPanelComponentCatalogue } from "../../product-panels/component-catalogue";
 import { listObjectDetailPanelMappings } from "../../product-panels/object-detail";
 import { PlatformOntologyOwnerReaders } from "../owners";
@@ -77,8 +77,9 @@ vi.mock("../../assistant/skills", () => ({
 vi.mock("../../business-definitions/definitions", () => ({
   listPublishedDefinitions: vi.fn(),
 }));
-vi.mock("../../product-governance/grants", () => ({
-  grantedProductIds: vi.fn(),
+vi.mock("../../product-governance/authorization", async original => ({
+  ...await original<typeof import("../../product-governance/authorization")>(),
+  decideObjects: (requests: ObjectDecisionRequest[]) => decideProductObjects(requests),
 }));
 vi.mock("../../product-panels/component-catalogue", () => ({
   readPanelComponentCatalogue: vi.fn(),
@@ -89,6 +90,17 @@ vi.mock("../../product-panels/object-detail", () => ({
 
 const assertPermissionMock = vi.fn();
 const pgQueryMock = vi.fn();
+const allowedUseIds = vi.fn<[], string[]>();
+const decideProductObjects = vi.fn(async (requests: ObjectDecisionRequest[]) => requests.map(request => {
+  if (!("target" in request) || !["PANEL", "PROJECTION"].includes(request.target.kind))
+    throw new Error("Expected product definition access");
+  expect(request.target.domainId).toBe(owner.domainId);
+  expect(request.ownerFacts).toEqual({
+    ownerId: request.target.id.startsWith("builtin-product-") ? null : owner.userId, state: "PUBLISHED",
+  });
+  return request.verb === "USE" && allowedUseIds().includes(request.target.id)
+    ? { allowed: true } : { allowed: false, code: "FORBIDDEN", reason: "Not admitted" };
+}));
 
 const owner = { domainId: "domain-1", userId: "user-1" };
 const credentials = { token: "tok-1", locale: "zh-CN" };
@@ -135,10 +147,24 @@ beforeEach(() => {
   } as unknown as WorkbenchIdentity);
 
   vi.mocked(getPostgresPool).mockReturnValue({
-    query: pgQueryMock,
+    query: async (sql: string, params?: unknown[]) => {
+      const result = await pgQueryMock(sql, params);
+      if (sql.startsWith('SELECT id,domain_id AS "domainId",owner_id AS "ownerId"')) {
+        expect(params).toEqual([owner.domainId]);
+        return { rows: result.rows.map(({ id }: { id: string }) => {
+          const builtin = id.startsWith("builtin-product-");
+          return { id, domainId: builtin ? null : owner.domainId, ownerId: builtin ? null : owner.userId };
+        }) };
+      }
+      if (sql.includes('AS definitions') && sql.includes('id=ANY($2::text[])') && Array.isArray(params?.[1])) {
+        const ids = new Set(params[1]);
+        return { rows: result.rows.filter(({ id }: { id: string }) => ids.has(id)) };
+      }
+      return result;
+    },
   } as unknown as ReturnType<typeof getPostgresPool>);
 
-  vi.mocked(grantedProductIds).mockResolvedValue([]);
+  allowedUseIds.mockReturnValue([]);
   vi.mocked(readPanelComponentCatalogue).mockResolvedValue({
     version: "1.0.0",
     digest: "sha256:test",
@@ -412,7 +438,7 @@ describe("platform-ontology composite query", () => {
 
   it("coalesces shared owners in counts and separates ok, refused, and failed statuses across all four layers", async () => {
     assertPermissionMock.mockRejectedValueOnce(new HttpError(403, "Missing analysis-agent permission", "PERMISSION_DENIED"));
-    vi.mocked(grantedProductIds).mockResolvedValue(["proj-kb", "panel-main"]);
+    allowedUseIds.mockReturnValue(["proj-kb", "panel-main"]);
     pgQueryMock.mockImplementation(async (sql: string) => {
       if (sql.includes("product_projections")) {
         return {
@@ -517,8 +543,10 @@ describe("platform-ontology composite query", () => {
     // /admin/getMetas must be called only once across ObjectType + Attribute + Relationship
     const metaCalls = vi.mocked(backendPost).mock.calls.filter(([, url]) => String(url).endsWith("/admin/getMetas"));
     expect(metaCalls).toHaveLength(1);
-    // grantedProductIds must be called only once across ProductProjection + ProductPanel
-    expect(grantedProductIds).toHaveBeenCalledTimes(1);
+    // The shared owner reads one facts batch per product kind across both counts.
+    expect(decideProductObjects.mock.calls.map(([requests]) => requests.map(request => "target" in request && request.target.kind)))
+      .toEqual(expect.arrayContaining([["PANEL"], ["PROJECTION"]]));
+    expect(decideProductObjects).toHaveBeenCalledTimes(2);
     expect(listAgentDefinitions).toHaveBeenCalledWith(owner, credentials);
     expect(assistantSkillCatalog).not.toHaveBeenCalled();
   });
@@ -705,7 +733,7 @@ describe("platform-ontology composite query", () => {
   });
 
   it("resolves real product-layer relations including merged projection bindings, panel containment, skills, and applications", async () => {
-    vi.mocked(grantedProductIds).mockResolvedValue([
+    allowedUseIds.mockReturnValue([
       "proj-kb-list",
       "proj-kb-form",
       "proj-kb-approve-only",
@@ -1204,7 +1232,7 @@ describe("platform-ontology composite query", () => {
     ]);
   });
 
-  it("retains builtin projection and child panel edges even though domain product grants exclude builtin IDs", async () => {
+  it("retains builtin projection and child panel edges admitted by product USE", async () => {
     const builtinProjRow = {
       id: "builtin-product-map-graph",
       definition: {
@@ -1265,7 +1293,7 @@ describe("platform-ontology composite query", () => {
       },
     };
 
-    vi.mocked(grantedProductIds).mockResolvedValue(["panel-domain-using-builtin"]);
+    allowedUseIds.mockReturnValue(["panel-domain-using-builtin", builtinProjRow.id, builtinParentPanelRow.id, builtinChildPanelRow.id]);
     pgQueryMock.mockImplementation(async (sql: string) => {
       if (sql.includes("product_projections")) return { rows: [builtinProjRow] };
       if (sql.includes("product_panels")) {
@@ -1940,7 +1968,7 @@ describe("platform-ontology composite query", () => {
       },
     };
 
-    vi.mocked(grantedProductIds).mockResolvedValue(["panel-1", "panel-bare", "proj-1"]);
+    allowedUseIds.mockReturnValue(["panel-1", "panel-bare", "proj-1"]);
     pgQueryMock.mockImplementation(async (sql: string) => {
       if (sql.includes("product_panels")) return { rows: [panelRow, barePanelRow] };
       if (sql.includes("product_projections")) return { rows: [projRow] };

@@ -1,4 +1,5 @@
 import { productPanelCatalogQuerySchema } from "@ontomato/contracts/product-catalog-query";
+import { objectPublicationAccessSchema } from "@ontomato/contracts/object-publication";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
@@ -39,6 +40,7 @@ import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
+import { requireObject } from "../product-governance/authorization";
 import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
 import { readHomePanel } from "../platform-home/service";
 import { platformHomeStore } from "../platform-home/store";
@@ -63,12 +65,33 @@ function catalogueQuery(params: Record<string, unknown>) {
   return { q: search, limit: size, scope, sort, cursor };
 }
 
-async function catalogueGrants(owner: ProductOwner, viewer: AssistantCredentials, kind: CatalogueKind, id: string) {
-  const { grants } = await currentProductGrants(owner, viewer, kind, id);
-  return { grants, shared: grants.some(({ principalKind, verb }) => principalKind === "domain" && verb === "use") };
+function catalogueGrants(owner: ProductOwner, viewer: AssistantCredentials, kind: CatalogueKind, id: string) {
+  return currentProductGrants(owner, viewer, kind, id);
 }
 
-function formFields(locale: string | undefined, editable: boolean, creating: boolean, builtin: boolean) {
+async function policyGrantRows(
+  owner: ProductOwner, viewer: AssistantCredentials, kind: CatalogueKind, id: string, label: (key: string) => string,
+): Promise<PanelRecord[]> {
+  const { grants, shared } = await catalogueGrants(owner, viewer, kind, id);
+  const className = kind === "panel" ? PRODUCT_PANEL : PRODUCT_PROJECTION;
+  const rows = grants.map(({ policyId, name, verb }): PanelRecord => ({
+    primaryKey: `${policyId}:${verb}`,
+    className,
+    label: name || policyId,
+    fields: { policyId, verb, verbLabel: label(verb === "EDIT" ? "grantEdit" : "grantUse"), revocable: true },
+    fieldLabels: { verbLabel: label("grantVerb") },
+    tones: { verbLabel: verb === "EDIT" ? "warning" : "default" },
+  }));
+  if (shared) rows.push({
+    primaryKey: "domain",
+    className,
+    label: label("grantDomain"),
+    fields: { verb: "USE", verbLabel: label("grantUse"), revocable: false },
+  });
+  return rows;
+}
+
+function formFields(locale: string | undefined, editable: boolean, creating: boolean, builtin: boolean, audience: unknown) {
   const label = (name: string) => tForLocale(locale, `panels.productCatalog.${name}`);
   const field = (path: string, schema: z.ZodTypeAny, control: PanelFormField["control"],
     { required = true, readOnly = !editable, help, labelKey = path.split("/").at(-1)!, labelText, refreshOnChange }: {
@@ -78,15 +101,21 @@ function formFields(locale: string | undefined, editable: boolean, creating: boo
     ...(help && { help }), ...(refreshOnChange && { refreshOnChange }),
   });
   const common = productPanelInputSchema.shape;
-  const visibility = builtin ? productVisibilitySchema : common.visibility;
+  const publicationLabel = (name: string) => tForLocale(locale, `panels.agentForm.publication.${name}`);
   const fields = [
     field("/name", common.name, { kind: "text" }),
     field("/description", common.description, { kind: "text", multiline: true }),
-    field("/visibility", visibility, {
-      kind: "select", options: visibility.options.map(value =>
-        option(value, value === "platform" ? tForLocale(locale, "panels.skill.sourcePublic") : label(value))),
-    }, { readOnly: !creating }),
   ];
+  if (creating) {
+    fields.push(field("/publicationAccess/kind", z.enum(["domain", "policy"]), {
+      kind: "select", options: ["domain", "policy"].map(value => option(value, publicationLabel(value))),
+    }, { labelText: publicationLabel("label"), refreshOnChange: true }));
+    if (audience && typeof audience === "object" && "kind" in audience && audience.kind === "policy")
+      fields.push(field("/publicationAccess/policyId", objectPublicationAccessSchema.options[1].shape.policyId,
+        { kind: "text" }, { labelText: publicationLabel("policyId") }));
+  } else if (builtin) {
+    fields.push(field("/visibility", productVisibilitySchema, { kind: "text" }, { readOnly: true }));
+  }
   return { field, fields };
 }
 
@@ -285,7 +314,7 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
   }
 
   function describeForm(id: string, values: Record<string, unknown>, editable: boolean, revision?: number) {
-    const { field, fields } = formFields(viewer.locale, editable, revision === undefined, values.visibility === "platform");
+    const { field, fields } = formFields(viewer.locale, editable, revision === undefined, values.visibility === "platform", values.publicationAccess);
     const { content, manifest, template, theme } = productPanelInputSchema.shape;
     const manifestShape = manifest.innerType().shape;
     return formResult("panel", id, [
@@ -374,13 +403,13 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
           outputs: diagnostics,
         };
       }
-      const isBuiltin = panel.visibility === "platform" || isBuiltinProductId(panel.id);
+      const isBuiltin = isBuiltinProductId(panel.id);
       const isTemplate = Boolean(panel.template);
       const [ownerNames, domainShared, hiddenUsedByCount] = await Promise.all([
         resolveOwnerNames([panel.ownerId], viewer),
         panel.editable
-          ? catalogueGrants(owner, viewer, "panel", primaryKey).then(result => result.shared).catch(() => panel.visibility === "domain")
-          : Promise.resolve(panel.visibility === "domain"),
+          ? catalogueGrants(owner, viewer, "panel", primaryKey).then(result => result.shared)
+          : false,
         currentProductUsedBy(owner, viewer, "panel", primaryKey).then(usage => usage.hiddenCount).catch(() => 0),
       ]);
       const editableLabel = panel.editable ? panelWord("editable") : appWord("readOnly");
@@ -619,40 +648,8 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
     grants(primaryKey: string) {
       return catalogueGrants(owner, viewer, "panel", primaryKey);
     },
-    async grantRows(primaryKey: string): Promise<PanelRecord[]> {
-      const { grants } = await currentProductGrants(owner, viewer, "panel", primaryKey);
-      const kindLabel = (kind: string) =>
-        kind === "domain" ? appWord("grantDomain") : kind === "role" ? appWord("grantRole") : appWord("grantPrincipal");
-      const verbLabel = (verb: string) => (verb === "edit" ? appWord("grantEdit") : appWord("grantUse"));
-      return grants.map((grant): PanelRecord => {
-        const isDomain = grant.principalKind === "domain";
-        const displayName = isDomain ? appWord("grantDomain") : (grant.principalName || grant.principalId);
-        const subtitle = !isDomain && grant.principalName && grant.principalName !== grant.principalId
-          ? grant.principalId
-          : undefined;
-        return {
-          primaryKey: `${grant.principalKind}:${grant.principalId}:${grant.verb}`,
-          className: PRODUCT_PANEL,
-          label: displayName,
-          ...(subtitle && { subtitle }),
-          fields: {
-            principalKind: grant.principalKind,
-            principalKindLabel: kindLabel(grant.principalKind),
-            principalId: grant.principalId,
-            verb: grant.verb,
-            verbLabel: verbLabel(grant.verb),
-            revocable: !isDomain,
-          },
-          fieldLabels: {
-            principalKindLabel: appWord("grantKind"),
-            verbLabel: appWord("grantVerb"),
-          },
-          tones: {
-            principalKindLabel: isDomain ? "success" : "info",
-            verbLabel: grant.verb === "edit" ? "warning" : "default",
-          },
-        };
-      });
+    grantRows(primaryKey: string) {
+      return policyGrantRows(owner, viewer, "panel", primaryKey, appWord);
     },
     async sourceFiles(primaryKey: string): Promise<PanelRecord[]> {
       const panel = await rawRecord(primaryKey);
@@ -772,10 +769,11 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
       return describeForm(primaryKey, { ...commonValues(panel), content, manifest, template: template ?? false,
         ...(theme !== undefined && { theme }), ...params.values }, panel.editable, panel.revision);
     },
-    createForm(params: FormParams) {
+    async createForm(params: FormParams) {
+      await requireObject({ create: "PANEL" }, viewer);
       const id = draftId(params.values);
       return describeForm(id, {
-        name: "", description: "", visibility: "private", template: false,
+        name: "", description: "", visibility: "private", publicationAccess: { kind: "domain" }, template: false,
         content: {
           html: '<div id="app"><section></section></div>',
           module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
@@ -925,7 +923,7 @@ export function toProductProjectionPanelRecord(
   const word = (key: string) => tForLocale(language, `panels.productCatalog.projection.${key}`);
   const isDetail = "data" in row;
   const isChart = row.componentId === METRIC_CHART_COMPONENT && row.visibility !== "platform";
-  const isBuiltin = row.visibility === "platform" || row.ownerId === null;
+  const isBuiltin = row.visibility === "platform" || isBuiltinProductId(row.id);
   const componentDisplay = extra?.componentLabel || shortComponentName(row.componentId);
   const ownerDisplay = row.ownerId === null ? word("platformOwner") : (extra?.ownerLabel || row.ownerId);
   const scopeLabel = row.visibility === "platform"
@@ -938,7 +936,7 @@ export function toProductProjectionPanelRecord(
   const accessTone = row.editable ? "success" : "info";
   const kindLabel = word(isChart ? "kindChart" : "kindStandard");
   const kindTone = isChart ? "warning" : "info";
-  const domainShared = extra?.domainShared ?? (row.visibility === "domain");
+  const domainShared = extra?.domainShared ?? false;
   const boundObjectTypes = isDetail ? projectionBoundObjectTypes(row) : (row.objectTypes ?? []);
   const objectTypesDisplay = formatBoundObjectTypes(boundObjectTypes, language);
 
@@ -1021,7 +1019,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
 
   async function resolveComponentLabels(): Promise<Map<string, string>> {
     try {
-      const catalogue = await readAuthorComponentCatalogue(owner);
+      const catalogue = await readAuthorComponentCatalogue(owner, viewer);
       return new Map([...catalogue].map(([componentId, item]) => [componentId, item.label]));
     } catch {
       return new Map();
@@ -1029,7 +1027,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
   }
 
   async function describeForm(id: string, values: Record<string, unknown>, editable: boolean, revision?: number, chart = false) {
-    const { field, fields } = formFields(viewer.locale, editable, revision === undefined, values.visibility === "platform");
+    const { field, fields } = formFields(viewer.locale, editable, revision === undefined, values.visibility === "platform", values.publicationAccess);
     if (chart) return formResult("projection", id, fields, values, revision);
     const schema = directProjectionPortsSchema.shape;
     if (revision === undefined && values.componentId === METRIC_CHART_COMPONENT) {
@@ -1039,7 +1037,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         field("/data", schema.data, { kind: "code", language: "json" }, { readOnly: true }),
       ], values, revision);
     }
-    const components = await readAuthorComponentCatalogue(owner);
+    const components = await readAuthorComponentCatalogue(owner, viewer);
     const candidates = [...components].filter(([key, item]) => key !== METRIC_CHART_COMPONENT && item.declaration.data !== undefined);
     const component = typeof values.componentId === "string" ? components.get(values.componentId)?.declaration : undefined;
     return formResult("projection", id, [
@@ -1087,7 +1085,7 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
     async componentOptions(): Promise<PanelRecord[]> {
       const [{ componentIds }, catalogue] = await Promise.all([
         listProjectionFilterFacets(owner, viewer),
-        readAuthorComponentCatalogue(owner).catch(() => new Map()),
+        readAuthorComponentCatalogue(owner, viewer).catch(() => new Map()),
       ]);
       const domainPackageLabel = tForLocale(language, "panels.sdkComponent.domain");
       const packageFieldLabel = tForLocale(language, "panels.sdkComponent.package");
@@ -1145,8 +1143,8 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
         resolveOwnerLabels([projection.ownerId]),
         resolveComponentLabels(),
         projection.editable
-          ? catalogueGrants(owner, viewer, "projection", primaryKey).then(result => result.shared).catch(() => projection.visibility === "domain")
-          : Promise.resolve(projection.visibility === "domain"),
+          ? catalogueGrants(owner, viewer, "projection", primaryKey).then(result => result.shared)
+          : false,
         currentProductUsedBy(owner, viewer, "projection", primaryKey).catch(() => ({ panels: [], hiddenCount: 0 })),
       ]);
       return toProductProjectionPanelRecord(projection, viewer.locale, {
@@ -1183,44 +1181,8 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
     grants(primaryKey: string) {
       return catalogueGrants(owner, viewer, "projection", primaryKey);
     },
-    async grantRows(primaryKey: string): Promise<PanelRecord[]> {
-      const projection = await rawRecord(primaryKey);
-      if (!projection.editable) {
-        throw new HttpError(403, "Projection edit Grant required", "PRODUCT_FORBIDDEN");
-      }
-      const { grants } = await currentProductGrants(owner, viewer, "projection", primaryKey);
-      const kindLabel = (kind: string) =>
-        kind === "domain" ? word("grantDomain") : kind === "role" ? word("grantRole") : word("grantPrincipal");
-      const verbLabel = (verb: string) => (verb === "edit" ? word("grantEdit") : word("grantUse"));
-      return grants.map((grant): PanelRecord => {
-        const isDomain = grant.principalKind === "domain";
-        const displayName = isDomain ? word("grantDomain") : (grant.principalName || grant.principalId);
-        const subtitle = !isDomain && grant.principalName && grant.principalName !== grant.principalId
-          ? grant.principalId
-          : undefined;
-        return {
-          primaryKey: `${grant.principalKind}:${grant.principalId}:${grant.verb}`,
-          className: PRODUCT_PROJECTION,
-          label: displayName,
-          ...(subtitle && { subtitle }),
-          fields: {
-            principalKind: grant.principalKind,
-            principalKindLabel: kindLabel(grant.principalKind),
-            principalId: grant.principalId,
-            verb: grant.verb,
-            verbLabel: verbLabel(grant.verb),
-            revocable: !isDomain,
-          },
-          fieldLabels: {
-            principalKindLabel: word("grantKind"),
-            verbLabel: word("grantVerb"),
-          },
-          tones: {
-            principalKindLabel: isDomain ? "success" : "info",
-            verbLabel: grant.verb === "edit" ? "warning" : "default",
-          },
-        };
-      });
+    grantRows(primaryKey: string) {
+      return policyGrantRows(owner, viewer, "projection", primaryKey, word);
     },
     async dataRows(primaryKey: string): Promise<PanelRecord[]> {
       const projection = await rawRecord(primaryKey);
@@ -1314,10 +1276,11 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
       };
       return describeForm(primaryKey, { ...values, ...params.values }, projection.editable, projection.revision, chart);
     },
-    createForm(params: FormParams) {
+    async createForm(params: FormParams) {
+      await requireObject({ create: "PROJECTION" }, viewer);
       const id = draftId(params.values);
       return describeForm(id, {
-        name: "", description: "", visibility: "private", componentId: "",
+        name: "", description: "", visibility: "private", publicationAccess: { kind: "domain" }, componentId: "",
         inputs: {}, outputs: {}, config: {}, data: {}, ...params.values, id,
       }, true);
     },

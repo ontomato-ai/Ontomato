@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { mountEntryDependencyOwner } from "../../__tests__/fixtures/entry-dependency-owner";
-import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
+import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { config } from "../../config/application";
 import { installContentLayout } from "../../content/layout";
 import { configureI18n } from "../../i18n";
@@ -68,7 +68,8 @@ const sampleCard = {
   id: source.cardId, name: "Source card", chartFile,
   query: { kind: "metric" as const, metricId, parameters }, layout: { colSpan: 6, rowSpan: 2 },
 };
-let registrations: { id: string; shared: boolean }[];
+let publications: string[];
+let retired: string[];
 let metricCallers: string[];
 let metricExecutions: unknown[];
 let aliceUse: boolean;
@@ -100,29 +101,24 @@ beforeAll(async () => {
   app.use(express.json());
   mountEntryDependencyOwner(app, { prefix: "/java", token: "governance", entries: domain => domain === "domain"
     ? [{ entryId: "chart-pilot/chart", roots: { panelIds: ["chart-pilot"], agentIds: [] } }] : [] });
-  app.post("/java/product-governance/register", (req, res) => {
+  mountCurrentProductDecisions(app, {
+    prefix: "/java", token: "governance", domain: "domain",
+    allow: ({ target, ownerFacts, verb }, caller) => {
+      const authored = caller === ownerFacts.ownerId;
+      return verb === "USE" ? (authored ? aliceUse : caller === "bob" && target.id !== bobDeniedUse)
+        : verb === "EDIT" && (authored || (caller === "bob" && bobEdit));
+    },
+  });
+  app.post("/java/authorization/objects/first-publication", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("governance");
-    expect(req.body).toMatchObject({ domainId: "domain", ownerId: "alice" });
-    registrations.push(req.body);
-    res.json({ success: true });
+    expect(req.body).toMatchObject({ target: { domainId: "domain" }, ownerFacts: { ownerId: "alice", state: "DRAFT" } });
+    publications.push(req.body.target.id);
+    res.json({ status: "granted" });
   });
-  app.post("/java/product-governance/check", (req, res) => {
-    const caller = req.header("tk");
-    if (req.body.target) expect(req.header("X-Ontomato-Query-Service-Token")).toBe("governance");
-    res.json(productGrantCheck(req.body, caller, (id, verb) => {
-      const owner = caller === "alice";
-      const canUse = owner ? aliceUse : id !== bobDeniedUse;
-      return registrations.some(resource => resource.id === id) &&
-        (verb === "use" ? canUse : owner || bobEdit);
-    }));
-  });
-  app.post("/java/product-governance/resources", (_req, res) => {
-    res.json({ ids: registrations.map(resource => resource.id) });
-  });
-  app.post("/java/product-governance/unregister", (req, res) => {
+  app.post("/java/authorization/objects/retire", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("governance");
-    registrations = registrations.filter(resource => resource.id !== req.body.id);
-    res.json({ success: true });
+    retired.push(req.body.target.id);
+    res.sendStatus(204);
   });
   app.get("/java/platform/applications/panel-uses/by-panel", (_req, res) => {
     res.json({ success: true, data: [] });
@@ -175,7 +171,8 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  registrations = [];
+  publications = [];
+  retired = [];
   metricCallers = [];
   metricExecutions = [];
   aliceUse = true;
@@ -208,7 +205,7 @@ async function register() {
   return registerChartProjectionResponseSchema.parse(await response.json()).projection;
 }
 
-it("registers the owner's chart once with the source binding, private grant and only bindable inputs", async () => {
+it("registers the owner's chart once with the source binding, private access and only bindable inputs", async () => {
   expect((await request(CHART_PROJECTION_SOURCES_PATH, "POST", source, "bob")).status).toBe(404);
   const first = await register();
   expect(first).toMatchObject({
@@ -228,7 +225,7 @@ it("registers the owner's chart once with the source binding, private grant and 
   expect(definition).not.toHaveProperty("chartSource");
   expect(first.inputs).toEqual({ year: { kind: "scalar", type: "number" }, subject: { kind: "object", objectType: "/Department" } });
   expect((await register()).id).toBe(first.id);
-  expect(registrations).toMatchObject([{ id: first.id, shared: false }]);
+  expect(publications).toEqual([]);
   expect(metricCallers).not.toContain("bob");
 });
 
@@ -241,7 +238,7 @@ it("looks up a readable chart, returning null, its authorized ID, or the Grant r
   aliceUse = false;
   const denied = await request(path);
   expect(denied.status).toBe(403);
-  expect(await denied.json()).toMatchObject({ error: { code: "PRODUCT_FORBIDDEN" } });
+  expect(await denied.json()).toMatchObject({ error: { code: "OBJECT_FORBIDDEN" } });
 });
 
 it("rejects generic source and metric changes", async () => {
@@ -406,7 +403,7 @@ it("removes an orphaned chart projection when its only panel is deleted and leav
   expect(await removal.json()).toEqual({
     success: true, deletedProjectionIds: [projection.id], retainedProjectionIdsWithoutEdit: [],
   });
-  expect(registrations.some(resource => resource.id === projection.id)).toBe(false);
+  expect(retired).toContain(projection.id);
   const path = CHART_PROJECTION_SOURCES_PATH + "?" + new URLSearchParams(source);
   expect(await (await request(path)).json()).toEqual({ projectionId: null });
   expect((await readBoard()).groups[0].charts[0]).toEqual(sampleCard);

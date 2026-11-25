@@ -1,3 +1,5 @@
+import { changeProductObjectGrantSchema } from "@ontomato/contracts/object-policy-access";
+import { objectPublicationAccessSchema } from "@ontomato/contracts/object-publication";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -12,7 +14,7 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import {
   changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema,
-  changeProductPanelDomainGrantResponseSchema, productGrantChangeResponseSchema,
+  productGrantChangeResponseSchema,
 } from "@ontomato/contracts/product-governance";
 import {
   METRIC_CHART_COMPONENT, applicationPanelUseSchema, copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, deleteProductCurrentResponseSchema,
@@ -42,7 +44,6 @@ import type { PanelImpactInspector, PanelOperationHost, PanelRecordTarget, Panel
 
 const savedId = productCurrentIdParamsSchema;
 const noData = z.object({}).strict();
-const grantInput = changeProductGrantRequestSchema.omit({ remove: true });
 const chartMetadata = registerProductProjectionRequestSchema.options[1].omit({ revision: true }).strip();
 type OutcomeData = Record<string, RuntimeJsonValue>;
 
@@ -278,7 +279,8 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
             }
             const sourceCard = parseDashboardCardPrimaryKey(literal.primaryKey);
             const chartService = createChartProjectionService(dashboardChartSources);
-            const registered = await chartService.register(owner, credentials, sourceCard);
+            const publication = objectPublicationAccessSchema.optional().parse(values.publicationAccess);
+            const registered = await chartService.register(owner, credentials, sourceCard, publication);
             const desiredName = typeof values.name === "string" && values.name.trim() ? values.name.trim() : registered.name;
             const desiredDescription = typeof values.description === "string" ? values.description : registered.description;
             if (registered.editable && (desiredName !== registered.name || desiredDescription !== registered.description)) {
@@ -290,18 +292,15 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
                 revision: registered.revision,
               });
             }
-            if (registered.editable && values.visibility === "domain" && registered.visibility !== "domain") {
-              await changeCurrentProductDomainGrant(owner, credentials, "projection", registered.id, true);
-            }
             return { primaryKey: registered.id, data: { id: registered.id }, created: true };
           }
           await saveCurrentProjection(owner, credentials, primaryKey,
             formValues(registerProductProjectionRequestSchema, { ...values, revision: expectedRevision }, fields));
         } else {
-          const { revision: parsedRevision, ...definition } = formValues(registerProductPanelRequestSchema, {
+          const { revision: parsedRevision, publicationAccess, ...definition } = formValues(registerProductPanelRequestSchema, {
             ...values, revision: expectedRevision,
           }, fields);
-          await saveCurrentPanel(owner, credentials, primaryKey, definition, parsedRevision);
+          await saveCurrentPanel(owner, credentials, primaryKey, definition, parsedRevision, publicationAccess);
         }
         return { primaryKey, data: { id: primaryKey }, created: target.kind === "draft" };
       }, locale ?? credentials.locale);
@@ -370,13 +369,13 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
         return { primaryKey, data: runtimeJsonObjectSchema.parse(result) };
       },
       { unavailable: panelDeleteUnavailable, inspectImpact: deleteProductImpact(kind, collection) }),
-    ...(["grant", "revoke"] as const).map(name => action(name, grantInput, noData,
+    ...(["grant", "revoke"] as const).map(name => action(name, changeProductObjectGrantSchema.omit({ remove: true }), noData,
       async ({ owner, credentials }, primaryKey, input) => {
         await changeCurrentProductGrant(owner, credentials, kind, primaryKey, { ...input, remove: name === "revoke" });
         return { primaryKey, data: {} };
       })),
     action("share", changeProductDomainGrantRequestSchema,
-      kind === "panel" ? changeProductPanelDomainGrantResponseSchema : productGrantChangeResponseSchema,
+      productGrantChangeResponseSchema,
       async ({ owner, credentials }, primaryKey, { shared }) => {
         const result = await changeCurrentProductDomainGrant(owner, credentials, kind, primaryKey, shared);
         return { primaryKey, data: runtimeJsonObjectSchema.parse(result) };

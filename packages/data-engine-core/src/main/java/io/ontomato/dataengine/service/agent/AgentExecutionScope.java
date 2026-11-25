@@ -18,7 +18,8 @@ public class AgentExecutionScope {
     if (caller == null) return target;
     var scoped = access.scopedQuery(new QueryAccessService.Access(user,permission,null,null,null).withTarget(target),caller);
     target.requireClasses(scoped.classNames());
-    return new ExecutionTarget(target.contextId(),target.sandboxId(),scoped.classNames(),target.expiresAt(),
+    long expiresAt = target.expiresAt() == null ? scoped.expiresAt() : Math.min(target.expiresAt(), scoped.expiresAt());
+    return new ExecutionTarget(target.contextId(),target.sandboxId(),scoped.classNames(),expiresAt,
         scoped.executionUserId(),scoped.initiatorUserId());
   }
 }

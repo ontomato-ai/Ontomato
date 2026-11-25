@@ -188,23 +188,11 @@ public class ActionCreationService {
               uuid(run));
       long remaining = deadline - System.currentTimeMillis();
       String generationToken =
-          grants.issue(
-              context.access().user().getId(),
-              owner.domainId(),
-              "ontology-generation",
-              run,
-              deadline,
-              context.access().classNames(),
-              null, JSONObject.of("executionUserId",context.executionUserId(),"initiatorUserId",owner.userId()));
+          grants.issueForTarget("ontology-generation", run, deadline, context.access(),
+              JSONObject.of("executionUserId", context.executionUserId(), "initiatorUserId", owner.userId()));
       String queryToken =
-          grants.issue(
-              context.access().user().getId(),
-              owner.domainId(),
-              "retrieval-exploration",
-              run,
-              deadline,
-              context.access().classNames(),
-              null, JSONObject.of("executionUserId",context.executionUserId(),"initiatorUserId",owner.userId()));
+          grants.issueForTarget("retrieval-exploration", run, deadline, context.access(),
+              JSONObject.of("executionUserId", context.executionUserId(), "initiatorUserId", owner.userId()));
       store.transaction(() -> store.gate(id, run, owner));
       String prompt =
           OntologyGenerationPrompts.getActionMakerUserMessage(

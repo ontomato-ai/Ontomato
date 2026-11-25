@@ -36,9 +36,8 @@ const CLOSED_DIALOGS_PATCH = {
   copyId: null,
   copyName: null,
   grantDialog: false,
-  grantUser: null,
-  grantRole: null,
-  grantPrincipalId: null,
+  grantPolicy: null,
+  grantPolicyId: null,
 };
 
 const ProjectionDetailPanel = {
@@ -124,9 +123,8 @@ const ProjectionDetailPanel = {
         }
         if (!patched?.has("grantDialog")) {
           if (values.value.grantDialog) resetPatch.grantDialog = false;
-          if (!patched?.has("grantUser") && values.value.grantUser !== null) resetPatch.grantUser = null;
-          if (!patched?.has("grantRole") && values.value.grantRole !== null) resetPatch.grantRole = null;
-          if (!patched?.has("grantPrincipalId") && values.value.grantPrincipalId !== null) resetPatch.grantPrincipalId = null;
+          if (!patched?.has("grantPolicy") && values.value.grantPolicy !== null) resetPatch.grantPolicy = null;
+          if (!patched?.has("grantPolicyId") && values.value.grantPolicyId !== null) resetPatch.grantPolicyId = null;
         }
         if (Object.keys(resetPatch).length > 0) {
           instance.state.setState(resetPatch);
@@ -224,50 +222,22 @@ const ProjectionDetailPanel = {
         if (!open) {
           instance.state.setState({
             grantDialog: false,
-            grantUser: null,
-            grantRole: null,
-            grantPrincipalId: null,
+            grantPolicy: null,
+            grantPolicyId: null,
           });
         } else if (canOpenGrant.value) {
           instance.state.set("grantDialog", true);
         }
       },
     });
-    const grantPrincipalKindModel = computed({
-      get: () => (values.value.grantPrincipalKind === "role" ? "role" : "principal"),
-      set: (next) => {
-        instance.state.setState({
-          grantPrincipalKind: next === "role" ? "role" : "principal",
-          grantUser: null,
-          grantRole: null,
-          grantPrincipalId: null,
-        });
-      },
-    });
     const grantVerbModel = computed({
-      get: () => (values.value.grantVerb === "edit" ? "edit" : "use"),
-      set: (next) => instance.state.set("grantVerb", next === "edit" ? "edit" : "use"),
+      get: () => (values.value.grantVerb === "EDIT" ? "EDIT" : "USE"),
+      set: (next) => instance.state.set("grantVerb", next === "EDIT" ? "EDIT" : "USE"),
     });
-    const grantPrincipalId = computed(() => values.value.grantPrincipalId ?? "");
-    const grantKindOptions = computed(() => [
-      { value: "principal", label: t("grants.principal") },
-      { value: "role", label: t("grants.role") },
-    ]);
-
-    // Sync grantPrincipalId from the selected User or Role ReferencePicker state.
+    const grantPolicyId = computed(() => values.value.grantPolicyId ?? "");
     watch(
-      () => ({
-        kind: grantPrincipalKindModel.value,
-        userId: values.value.grantUser?.primaryKey ?? "",
-        roleId: values.value.grantRole?.primaryKey ?? "",
-      }),
-      ({ kind, userId, roleId }) => {
-        const picked = kind === "role" ? roleId : userId;
-        const next = picked || null;
-        if ((values.value.grantPrincipalId ?? null) !== next) {
-          instance.state.set("grantPrincipalId", next);
-        }
-      },
+      () => values.value.grantPolicy?.primaryKey ?? null,
+      policyId => instance.state.set("grantPolicyId", policyId),
       { immediate: true },
     );
 
@@ -585,11 +555,9 @@ const ProjectionDetailPanel = {
     function openGrantDialog() {
       if (!canOpenGrant.value) return;
       instance.state.setState({
-        grantPrincipalKind: "principal",
-        grantUser: null,
-        grantRole: null,
-        grantPrincipalId: null,
-        grantVerb: "use",
+        grantPolicy: null,
+        grantPolicyId: null,
+        grantVerb: "USE",
         grantDialog: true,
       });
     }
@@ -598,15 +566,14 @@ const ProjectionDetailPanel = {
       if (outcome?.kind !== "success") return;
       instance.state.setState({
         grantDialog: false,
-        grantUser: null,
-        grantRole: null,
-        grantPrincipalId: null,
+        grantPolicy: null,
+        grantPolicyId: null,
       });
       instance.refreshObjects();
     }
 
     function onShareDone(outcome) {
-      if (outcome?.kind === "success") instance.refreshObjects();
+      if (outcome?.kind === "success" && outcome.data?.success === true) instance.refreshObjects();
     }
 
     function onMoreCommand(command) {
@@ -721,10 +688,8 @@ const ProjectionDetailPanel = {
       deleteRevision,
       deleteRunning,
       grantDialogOpen,
-      grantPrincipalKindModel,
       grantVerbModel,
-      grantPrincipalId,
-      grantKindOptions,
+      grantPolicyId,
       goBack,
       startEdit,
       cancelEdit,

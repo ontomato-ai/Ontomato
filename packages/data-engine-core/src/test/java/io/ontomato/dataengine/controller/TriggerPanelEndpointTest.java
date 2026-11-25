@@ -71,6 +71,7 @@ class TriggerPanelEndpointTest {
     new SpringBeanUtil().setApplicationContext(context);
 
     ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    ReflectionTestUtils.setField(controller, "definitions", io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain", "user-1"));
     ReflectionTestUtils.setField(controller, "triggers", triggers);
     ReflectionTestUtils.setField(controller, "service", service);
     ReflectionTestUtils.setField(controller, "actionService", actionService);
@@ -161,7 +162,7 @@ class TriggerPanelEndpointTest {
 
   @Test
   void countsTheDomainWithoutReadingTheList() throws Exception {
-    when(triggers.count("domain", null)).thenReturn(2L);
+    when(triggers.countCandidates("domain", null)).thenReturn(List.of(new Trigger(), new Trigger()));
 
     String body = mvc.perform(post("/trigger/queryList")
             .header("lang", "en")
@@ -173,7 +174,7 @@ class TriggerPanelEndpointTest {
     JSONObject json = JSON.parseObject(body);
     assertTrue(json.getBooleanValue("success"));
     assertEquals(2, json.getJSONObject("data").getIntValue("total"));
-    verify(triggers).count("domain", null);
+    verify(triggers).countCandidates("domain", null);
     verify(triggers, never()).queryList(anyString(), any());
   }
 

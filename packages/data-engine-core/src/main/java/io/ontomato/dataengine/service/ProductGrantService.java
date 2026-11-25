@@ -46,28 +46,8 @@ public class ProductGrantService implements InitializingBean {
             (row, index) -> new ProductGrants.Grant(row.getString(1), row.getString(2), row.getString(3)), domainId, id);
     }
 
-    public record ObjectTarget(String domainId, String kind, String id) {}
     public record OwnerFacts(String ownerId, String state) {}
-    public record ManagementAccess(boolean allowed, boolean authored, boolean editable) {}
 
-    /** The definition owner supplies facts. The authenticated request still determines the acting user. */
-    public ManagementAccess managementAccess(ObjectTarget target, OwnerFacts facts) {
-        var user = identity.getCurrentUser();
-        if (user == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
-        if (!target.domainId().equals(user.getDomainId())) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        if (!List.of("panel", "component").contains(target.kind()) || !"current".equals(facts.state()))
-            throw new IllegalArgumentException("Unsupported product management target or definition state");
-        boolean panel = "panel".equals(target.kind());
-        if (BuiltinProductIds.isReserved(target.id()))
-            return new ManagementAccess(panel && BuiltinProductIds.isValid(target.id()), false, false);
-        boolean authored = user.getId().equals(facts.ownerId());
-        String principalId = principals.productPrincipalId(user.getId());
-        var grants = resourceGrants(target.domainId(), target.id());
-        var roles = principals.effectiveRoles(user.getId(), target.domainId());
-        boolean editable = ProductGrants.allows(grants, principalId, roles, "edit");
-        boolean allowed = authored || editable || (panel && ProductGrants.allows(grants, principalId, roles, "use"));
-        return new ManagementAccess(allowed, authored, editable);
-    }
     public Map<String, Boolean> allowedBatch(Collection<String> ids, String verb) {
         var user = identity.getCurrentUser();
         return allowedBatchFor(user == null ? null : user.getDomainId(), user == null ? null : user.getId(), ids, verb);

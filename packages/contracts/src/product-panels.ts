@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { objectPublicationAccessSchema } from "./object-publication";
 import { domainComponentIdSchema, domainComponentRuntimeSchema } from "./domain-component-runtime";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
@@ -488,7 +489,7 @@ export type ProductPanelGetQuery = z.infer<typeof productPanelGetQuerySchema>;
 
 /** The source card owner creates chart projections; ordinary updates may only edit chart metadata. */
 export const registerProductProjectionRequestSchema = z.union([
-  ordinaryProjectionDefinition.extend({ revision: z.number().int().nonnegative() }).superRefine(validateDirectProjection),
+  ordinaryProjectionDefinition.extend({ revision: z.number().int().nonnegative(), publicationAccess: objectPublicationAccessSchema.optional() }).superRefine(validateDirectProjection),
   z.object({ ...editableDefinitionFields, componentId: z.literal(METRIC_CHART_COMPONENT), revision: currentRecordFields.revision }).strict(),
 ]);
 export type RegisterProductProjectionRequest = z.infer<typeof registerProductProjectionRequestSchema>;
@@ -533,6 +534,7 @@ export const chartSourceInUseErrorSchema = z.object({
 }).strict();
 
 export const registerProductPanelRequestSchema = productPanelInputSchema.extend({
+  publicationAccess: objectPublicationAccessSchema.optional(),
   revision: z.number().int().nonnegative(),
 });
 export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelRequestSchema>;

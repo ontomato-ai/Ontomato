@@ -33,6 +33,8 @@ import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.ActionForm;
 import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.ActionService;
+import io.ontomato.dataengine.service.ActionRuntimeGrant;
+import io.ontomato.dataengine.service.DataPermissionLookup;
 import io.ontomato.dataengine.service.ActionTrialStore;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.IdentitySnapshotLookup;
@@ -71,7 +73,7 @@ import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
-public class ActionServiceImpl implements ActionService {
+public class ActionServiceImpl implements ActionService, ActionRuntimeGrant.Owner {
 
   @Autowired private AdminService adminService;
 
@@ -102,6 +104,7 @@ public class ActionServiceImpl implements ActionService {
 
   @Autowired private ActionAuthorization authorization;
   @Autowired private OntologyQueryService queries;
+  @Autowired private DataPermissionLookup dataPermissions;
 
   @Autowired private IdentitySnapshotLookup identitySnapshots;
 
@@ -736,21 +739,45 @@ public class ActionServiceImpl implements ActionService {
 
   private Object[] executeAction(Action action, JSONObject param, String lang, User user, UserDataPermission permission,
       int timeoutMinutes, ExecutionTarget target, UUID runId, ActionPath path) throws Exception {
-    if (path instanceof WorkflowStep step) {
-      if (target.testing()) throw new ActionAuthorization.Denied("WORKFLOW_STEP_FORBIDDEN", "A workflow step requires live execution.");
-      workflowRuns.requireActiveStep(action, step);
-    }
+    requireActiveWorkflowStep(action, path, target);
     var admission = authorization.requireExecution(authorization.subject(user), action, path, target);
     Function function = MetricViewBindings.executionWriteFunction(action.getFunction(), param);
     checkExecutionTarget(action, param, lang, user, permission, target, admission, path);
+    var grant = ActionRuntimeGrant.capture(action, user, param, path);
     List<String> affectedTypes = ActionDefinitionProjector.project(action).getList("affects", String.class);
     Object[] execution = abcProgramService.execute((runId == null ? UUID.randomUUID() : runId).toString(), function, user.getId(), permission, target.testing() ? target.sandboxId() : ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
-        new ABCProgramService.ExecutionContext(runId, identitySnapshot(user, path), target));
+        new ABCProgramService.ExecutionContext(runId, identitySnapshot(user, path), target, grant));
     PythonExecuteResult result = (PythonExecuteResult) execution[1];
     if (result.getError() == null || result.getError().isBlank()) {
       result.setAffects(affectedTypes == null ? List.of() : affectedTypes);
     }
     return execution;
+  }
+
+  private void requireActiveWorkflowStep(Action action, ActionPath path, ExecutionTarget target) {
+    if (path instanceof WorkflowStep step) {
+      if (target.testing()) throw new ActionAuthorization.Denied("WORKFLOW_STEP_FORBIDDEN", "A workflow step requires live execution.");
+      workflowRuns.requireActiveStep(action, step);
+    }
+  }
+
+  @Override
+  public void requireCurrent(User user, ActionRuntimeGrant grant, ExecutionTarget execution) throws Exception {
+    var action = queryById(grant.actionId());
+    requireExecutable(action, "en", user, execution);
+    var path = grant.path();
+    requireActiveWorkflowStep(action, path, execution);
+    var subject = authorization.subject(user);
+    if (execution.actionTrial()) authorization.requireEdit(subject, action);
+    var admission = authorization.requireExecution(subject, action, path, execution);
+    var target = action.getTarget();
+    var row = grant.target();
+    if ((target == null) != (row == null) || target != null && !target.className().equals(row.className()))
+      throw new ActionAuthorization.Denied("ACTION_TARGET_CHANGED", "The action no longer targets this execution's object class.");
+    if (row != null && (!execution.actionTrial() || !admission.unrestricted())) {
+      var permission = dataPermissions.getDataPermission(user.getId(), user.getDomainId());
+      checkTargetScope(action, JSONObject.of(target.keyParameter(), row.key()), "en", user, permission, execution, admission, path);
+    }
   }
 
   private void checkExecutionTarget(Action action, JSONObject params, String lang, User user,

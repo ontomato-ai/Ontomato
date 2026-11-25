@@ -16,7 +16,13 @@ public interface ABCProgramService {
 	public Object[] execute(String sessionId, Function function, String userId, UserDataPermission curUserDataPermission, String sandboxId, String lang, int timeoutMinutes, String domainId) throws Exception;
 
     /** Execution facts supplied by the trusted caller, outside business parameters. */
-    record ExecutionContext(java.util.UUID executionId, com.alibaba.fastjson2.JSONObject identity, ExecutionTarget target) {}
+    record ExecutionContext(java.util.UUID executionId, com.alibaba.fastjson2.JSONObject identity,
+            ExecutionTarget target, ActionRuntimeGrant action) {
+        public ExecutionContext(java.util.UUID executionId, com.alibaba.fastjson2.JSONObject identity,
+                ExecutionTarget target) {
+            this(executionId, identity, target, null);
+        }
+    }
 
     /** Preserve durable admission and the caller-established identity in one execution context. */
     public Object[] execute(String sessionId, Function function, String userId, UserDataPermission permission,

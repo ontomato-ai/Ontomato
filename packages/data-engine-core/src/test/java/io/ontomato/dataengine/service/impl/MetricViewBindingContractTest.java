@@ -48,6 +48,8 @@ class MetricViewBindingContractTest {
   void setup() throws Exception {
     var transactions = mock(PlatformTransactionManager.class);
     when(transactions.getTransaction(any())).thenAnswer(call -> new SimpleTransactionStatus());
+    ReflectionTestUtils.setField(service, "definitions", io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain-a", "user-1"));
+    ReflectionTestUtils.setField(service, "firstPublication", mock(io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.class));
     ReflectionTestUtils.setField(service, "transactionManager", transactions);
     ReflectionTestUtils.setField(service, "metricViewDao", dao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
@@ -372,14 +374,22 @@ class MetricViewBindingContractTest {
   }
 
   @Test
-  void testExecuteRefusesAMetricTheCallerCannotRun() {
+  void testExecuteRefusesAMetricTheCallerCannotEdit() {
     var candidate = metric("domain-a");
     candidate.setStatus(MetricView.STATUS_PENDING_REVIEW);
-    candidate.setCreatedBy("someone-else");
+    candidate.setCreatedBy("untrusted-input");
     var saved = service.save(candidate, "en");
+    assertEquals("user-1", saved.getCreatedBy());
+    var definitions = (io.ontomato.dataengine.service.authorization.CapabilityDefinitions)
+        ReflectionTestUtils.getField(service, "definitions");
+    doThrow(new io.ontomato.dataengine.service.authorization.CapabilityDefinitions.Denied(
+        new io.ontomato.dataengine.service.authorization.AuthorizationService.Decision(false, "OBJECT_FORBIDDEN", "Edit denied")))
+        .when(definitions).require(any(), eq(io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access(
+            saved, io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb.EDIT)));
 
-    assertRefusal("METRIC_VIEW_NOT_EXECUTABLE",
+    assertThrows(io.ontomato.dataengine.service.authorization.CapabilityDefinitions.Denied.class,
         () -> service.testExecute(saved, null, new JSONObject(), "en", user, new UserDataPermission(), 1));
+    verifyNoInteractions(execution);
   }
 
   @Test

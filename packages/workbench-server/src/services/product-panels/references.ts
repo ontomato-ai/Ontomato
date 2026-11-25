@@ -15,12 +15,12 @@ import {
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
 import { currentProductRows, findCurrentProduct, type CurrentProductKind } from "../../infrastructure/product-current";
-import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
+import { isBuiltinProductId, isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { assertAppBuilderAccess } from "../app-builder/access";
-import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
-import { readPanelComponentCatalogue, readPanelDomainComponents, readProjectionComponent } from "./component-catalogue";
+import type { ProductOwner } from "../product-governance/grants";
+import { requireCurrentDefinitionUse } from "./access";
+import { readPanelComponentCatalogue, readPanelDomainComponents, readProjectionComponent, type ComponentScope } from "./component-catalogue";
 import { listObjectDetailPanelMappings } from "./object-detail";
 import { panelStateDomainPrefix, panelStateKeyNamespace } from "./personal-state-key";
 import type { panelOperationTargetCheck } from "./type-table";
@@ -310,9 +310,14 @@ function ports(definition: PanelDefinition | ProjectionDefinition) {
 
 async function incompatiblePort(
   source: ReferenceManifest, { wiring, fromObjectDetail }: Reference, definition: PanelDefinition | ProjectionDefinition,
-  readCatalogue = readPanelComponentCatalogue, domainId: string | null = null, client?: QueryClient,
+  readCatalogue = readPanelComponentCatalogue, scope?: ComponentScope,
 ) {
   const target = ports(definition);
+  let component;
+  if ("data" in definition && isDomainComponentId(definition.componentId)) {
+    component = await readProjectionComponent(definition.componentId, readCatalogue, scope);
+    if (!component) return `component '${definition.componentId}' is unavailable`;
+  }
   const implicit = new Set<string>();
   const reads = "data" in definition ? Object.entries(definition.data).map(([name, datum]) => ({
     name, datum, declaration: directReadDeclaration(definition, datum)!,
@@ -354,7 +359,7 @@ async function incompatiblePort(
   if ("data" in definition) {
     for (const { name, datum, declaration } of reads) {
       if (!missingRequiredReadParameters(declaration, datum.params, undefined, normalizedWiring).length) continue;
-      const component = await readProjectionComponent(definition.componentId, readCatalogue, domainId, client);
+      component ??= await readProjectionComponent(definition.componentId, readCatalogue, scope);
       const runtimeParams = appsSdkComponentDatum(component?.data, name)?.runtimeParams;
       const [missing] = missingRequiredReadParameters(declaration, datum.params, runtimeParams, normalizedWiring);
       if (missing !== undefined) return `data '${name}' requires parameter '${missing}'`;
@@ -391,7 +396,9 @@ export async function validateCurrentProductReferences(
       const issue = await checkOperationTarget(definition, toMemberWiring(reference.wiring));
       if (issue) return issue;
     }
-    return incompatiblePort(manifest, reference, definition, readCatalogue, isBuiltinProductId(reference.target.id) ? null : owner.domainId, client);
+    return incompatiblePort(manifest, reference, definition, readCatalogue, {
+      domainId: isBuiltinProductId(reference.target.id) ? null : owner.domainId, credentials, client,
+    });
   };
   if ("manifest" in input) {
     panels.set(id, input);
@@ -399,18 +406,15 @@ export async function validateCurrentProductReferences(
   }
   const saved = await loadSavedPlacements(owner.domainId, panels, client);
   if ("manifest" in input) {
-    const rejectUnavailable = async ({ target, key }: Reference) => {
-      await assertAppBuilderAccess(credentials);
+    const rejectUnavailable = ({ target, key }: Reference): never => {
       const kind = target.kind === "panel" ? "Panel" : "Projection";
       throw new HttpError(404, `Panel '${id}', member '${key}' – ${kind} '${target.id}' does not exist`, "PRODUCT_UNAVAILABLE");
     };
     const references = collectReferences(input, details);
     const invalidReference = references.find(({ target }) => target.kind === "panel" && invalidIds.has(target.id));
-    if (invalidReference) await rejectUnavailable(invalidReference);
+    if (invalidReference) rejectUnavailable(invalidReference);
     rejectCycles(panels, details, [id]);
-    await readPanelDomainComponents(owner.domainId, input.manifest.components, {
-      authorId: owner.userId, client, strict: true,
-    });
+    await readPanelDomainComponents({ domainId: owner.domainId, credentials, client }, input.manifest.components, { strict: true });
 
     const inspected = new Map<string, PanelDefinition | ProjectionDefinition>();
     const authorized = new Set<string>();
@@ -419,9 +423,11 @@ export async function validateCurrentProductReferences(
       const known = inspected.get(target.id);
       const stored = known ?? (target.kind === "panel" ? panels.get(target.id)
         : (await findCurrentProduct(owner.domainId, "projection", target.id, client))?.definition);
-      if (!stored) await rejectUnavailable(reference);
+      if (!stored) rejectUnavailable(reference);
       if (!reference.fromObjectDetail && !authorized.has(target.id)) {
-        await requireProductGrant(target.id, "use", credentials);
+        const row = await findCurrentProduct(owner.domainId, target.kind, target.id, client);
+        if (!row) return rejectUnavailable(reference);
+        await requireCurrentDefinitionUse(target.kind, row, owner.domainId, credentials);
         authorized.add(target.id);
       }
       const definition = known ?? (target.kind === "panel" ? panels.get(target.id)! : projectionDefinition(target.id, stored));
@@ -466,12 +472,14 @@ export async function validatePersonalPlacement(
   const [{ panels, invalidIds }, details] = await Promise.all([loadPanels(owner.domainId, client), loadDetails(owner.domainId, client)]);
   const unavailable = () => new HttpError(404, "Selected member does not exist", "PRODUCT_UNAVAILABLE");
   if (target.kind === "panel" && invalidIds.has(target.id)) throw unavailable();
-  await requireProductGrant(target.id, "use", viewer);
+  const row = await findCurrentProduct(owner.domainId, target.kind, target.id, client);
+  if (!row) throw unavailable();
+  await requireCurrentDefinitionUse(target.kind, row, owner.domainId, viewer);
   const definition = target.kind === "panel" ? panels.get(target.id) : await requireProjection(owner.domainId, target.id, client);
   if (!definition) throw unavailable();
 
   const issue = await incompatiblePort(panel.manifest, { key: field, target, wiring: placement }, definition, undefined,
-    isBuiltinProductId(target.id) ? null : owner.domainId, client);
+    { domainId: isBuiltinProductId(target.id) ? null : owner.domainId, credentials: viewer, client });
   if (issue) throw new HttpError(400, `Personal placement '${field}': ${issue}`, "PANEL_PORT_MISMATCH");
 
   if (target.kind === "panel") rejectCycles(panels, details, [target.id], ancestors);

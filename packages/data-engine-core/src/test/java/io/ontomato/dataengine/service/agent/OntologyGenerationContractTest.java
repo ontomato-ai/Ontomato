@@ -157,7 +157,7 @@ class OntologyGenerationContractTest {
                 assertEquals(
                     owner.domainId(),
                     grants
-                        .verify(token, run, "/ontology/ai/generation/runtime-context")
+                        .verifyRequest(token, run, "GET", "/ontology/ai/generation/runtime-context")
                         .getString("domainId"));
                 operations.test(run, owner, packageBody());
               }
@@ -376,10 +376,10 @@ class OntologyGenerationContractTest {
             System.currentTimeMillis() + 60000,
             List.of(),
             null);
-    assertDoesNotThrow(() -> grants.verify(token, run, "/ontology/ai/generation/" + run + "/context"));
+    assertDoesNotThrow(() -> grants.verifyRequest(token, run, "GET", "/ontology/ai/generation/runtime-context"));
     assertDoesNotThrow(
-        () -> grants.verify(token, run, "/ontology/ai/generation/" + run + "/source"));
-    var readClaims = grants.verify(token, run, "/ontology/query/overview");
+        () -> grants.verifyRequest(token, run, "GET", "/ontology/ai/generation/" + run + "/source"));
+    var readClaims = grants.verifyRequest(token, run, "GET", "/ontology/query/overview");
     assertEquals(owner.userId(), readClaims.getString("userId"));
     assertEquals(owner.domainId(), readClaims.getString("domainId"));
     for (String path :
@@ -390,10 +390,10 @@ class OntologyGenerationContractTest {
             "/ontology/ai/generation/" + UUID.randomUUID() + "/source"))
       assertThrows(
           org.springframework.web.server.ResponseStatusException.class,
-          () -> grants.verify(token, run, path));
+          () -> grants.verifyRequest(token, run, path.endsWith("/source") ? "GET" : "POST", path));
     grants.revoke(owner.domainId(), run);
     assertThrows(
         org.springframework.web.server.ResponseStatusException.class,
-        () -> grants.verify(token, run, "/ontology/ai/generation/" + run + "/context"));
+        () -> grants.verifyRequest(token, run, "GET", "/ontology/ai/generation/runtime-context"));
   }
 }

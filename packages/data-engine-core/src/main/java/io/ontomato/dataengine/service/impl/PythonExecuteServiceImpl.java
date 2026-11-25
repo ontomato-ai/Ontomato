@@ -95,8 +95,7 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
         if (authority.parentGrant() != null)
           grants.verify(
               authority.parentGrant().token(),
-              authority.parentGrant().runId(),
-              "/ontology/query/metrics/execute");
+              authority.parentGrant().runId());
         snapshot = runtime.execution(authority.domainId(), id);
         if (!"running".equals(snapshot.getString("status"))) {
           settled = true;

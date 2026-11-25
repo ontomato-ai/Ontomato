@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ObjectPublicationAccess } from "@ontomato/contracts/object-publication";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { dashboardCardPrimaryKey, parseDashboardCardPrimaryKey } from "@ontomato/contracts/dashboard";
@@ -15,8 +16,10 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { dashboardChartSources } from "../dashboard/chart-sources";
-import { grantedProductIds, requireProductGrant, type ProductOwner } from "../product-governance/grants";
-import { insertCurrentProduct } from "./current";
+import type { ProductOwner } from "../product-governance/grants";
+import { currentDefinitionAccess, requireCurrentDefinitionUse } from "./access";
+import { requireAllowed } from "../product-governance/authorization";
+import { insertCurrentProduct, requireCurrentProduct } from "./current";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 
 function chartProjectionId(domainId: string, source: ChartProjectionSource) {
@@ -49,9 +52,8 @@ function chartUnavailable() {
 }
 
 async function requireChartProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string, verb: "use" | "edit") {
-  await requireProductGrant(id, verb, credentials);
-  const row = await findCurrentProduct(owner.domainId, "projection", id);
-  if (!row || row.definition.componentId !== METRIC_CHART_COMPONENT) throw chartUnavailable();
+  const row = await requireCurrentProduct(owner, credentials, "projection", id, verb);
+  if (row.definition.componentId !== METRIC_CHART_COMPONENT) throw chartUnavailable();
   return chartProjectionSchema.parse(currentProductRecord(row, verb === "edit"));
 }
 
@@ -90,7 +92,7 @@ function association(projection: ChartProjection) {
 
 export function createChartProjectionService(dashboards: typeof dashboardChartSources) {
   return {
-    async register(owner: ProductOwner, credentials: AssistantCredentials, source: ChartProjectionSource) {
+    async register(owner: ProductOwner, credentials: AssistantCredentials, source: ChartProjectionSource, publicationAccess?: ObjectPublicationAccess) {
       const id = chartProjectionId(owner.domainId, source);
       const primaryKey = dashboardCardPrimaryKey(source);
       const { projection, created } = await transaction(async client => {
@@ -100,9 +102,9 @@ export function createChartProjectionService(dashboards: typeof dashboardChartSo
         if (existing) {
           if (existing.definition.componentId !== METRIC_CHART_COMPONENT)
             throw new HttpError(409, "Chart identity already belongs to another projection", "PRODUCT_ID_CONFLICT");
-          await requireProductGrant(id, "use", credentials);
-          const editable = (await grantedProductIds("edit", credentials)).includes(id);
-          const projection = chartProjectionSchema.parse(currentProductRecord(existing, editable));
+          const { decisions, editable } = await currentDefinitionAccess("projection", [existing], owner.domainId, credentials);
+          requireAllowed(decisions[0]);
+          const projection = chartProjectionSchema.parse(currentProductRecord(existing, editable.has(id)));
           if (projection.ownerId !== owner.userId || projection.metricId !== card.metricId ||
             chartCardKey(projection) !== primaryKey)
             throw chartMismatch();
@@ -123,7 +125,7 @@ export function createChartProjectionService(dashboards: typeof dashboardChartSo
             },
           },
         });
-        const row = await insertCurrentProduct(client, owner, credentials, "projection", id, input);
+        const row = await insertCurrentProduct(client, owner, credentials, "projection", id, input, publicationAccess);
         return { projection: chartProjectionSchema.parse(currentProductRecord(row, true)), created: true };
       });
       if (created) await notifyProductDefinitionChanged({ kind: "definition-changed", domainId: owner.domainId, target: { kind: "projection", id } });
@@ -136,7 +138,7 @@ export function createChartProjectionService(dashboards: typeof dashboardChartSo
       if (row?.definition.componentId !== METRIC_CHART_COMPONENT) return null;
       const projection = chartProjectionSchema.parse(currentProductRecord(row, false));
       if (chartCardKey(projection) !== dashboardCardPrimaryKey(source)) return null;
-      await requireProductGrant(id, "use", credentials);
+      await requireCurrentDefinitionUse("projection", row, owner.domainId, credentials);
       return id;
     },
     async read(owner: ProductOwner, credentials: AssistantCredentials, id: string) {

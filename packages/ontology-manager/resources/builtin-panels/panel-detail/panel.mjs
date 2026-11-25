@@ -29,9 +29,8 @@ const COPY_DIALOG_RESET = {
 
 const GRANT_DIALOG_RESET = {
   grantDialog: null,
-  grantUser: null,
-  grantRole: null,
-  grantPrincipalId: null,
+  grantPolicy: null,
+  grantPolicyId: null,
 };
 
 const PanelDetail = {
@@ -292,7 +291,7 @@ const PanelDetail = {
       }
       if (
         !patched.has("grantDialog")
-        && (values.value.grantDialog === true || values.value.grantUser || values.value.grantRole || values.value.grantPrincipalId)
+        && (values.value.grantDialog === true || values.value.grantPolicy || values.value.grantPolicyId)
       ) {
         Object.assign(patch, GRANT_DIALOG_RESET);
       }
@@ -848,44 +847,19 @@ ${gridItems}
         }
       },
     });
-    const grantPrincipalKindModel = computed({
-      get: () => (values.value.grantPrincipalKind === "role" ? "role" : "principal"),
-      set: (next) => {
-        state.setState({
-          grantPrincipalKind: next === "role" ? "role" : "principal",
-          grantUser: null,
-          grantRole: null,
-          grantPrincipalId: null,
-        });
-      },
-    });
     const grantVerbModel = computed({
-      get: () => (values.value.grantVerb === "edit" ? "edit" : "use"),
-      set: (next) => state.set("grantVerb", next === "edit" ? "edit" : "use"),
+      get: () => (values.value.grantVerb === "EDIT" ? "EDIT" : "USE"),
+      set: (next) => state.set("grantVerb", next === "EDIT" ? "EDIT" : "USE"),
     });
-    const grantPrincipalId = computed(() =>
-      typeof values.value.grantPrincipalId === "string" ? values.value.grantPrincipalId : "",
+    const grantPolicyId = computed(() =>
+      typeof values.value.grantPolicyId === "string" ? values.value.grantPolicyId : "",
     );
     const canSubmitGrant = computed(
-      () => grantEntryAllowed.value && grantDialogOpen.value && Boolean(grantPrincipalId.value),
+      () => grantEntryAllowed.value && grantDialogOpen.value && Boolean(grantPolicyId.value),
     );
-    const grantKindOptions = computed(() => [
-      { value: "principal", label: t("grants.principal") },
-      { value: "role", label: t("grants.role") },
-    ]);
-
     watch(
-      () => ({
-        kind: grantPrincipalKindModel.value,
-        userId: values.value.grantUser?.primaryKey ?? null,
-        roleId: values.value.grantRole?.primaryKey ?? null,
-      }),
-      ({ kind, userId, roleId }) => {
-        const nextId = kind === "role" ? roleId : userId;
-        if ((values.value.grantPrincipalId ?? null) !== nextId) {
-          state.set("grantPrincipalId", nextId);
-        }
-      },
+      () => values.value.grantPolicy?.primaryKey ?? null,
+      policyId => state.set("grantPolicyId", policyId),
       { immediate: true },
     );
 
@@ -907,11 +881,9 @@ ${gridItems}
     function openGrantDialog() {
       if (!grantEntryAllowed.value) return;
       state.setState({
-        grantPrincipalKind: "principal",
-        grantUser: null,
-        grantRole: null,
-        grantPrincipalId: null,
-        grantVerb: "use",
+        grantPolicy: null,
+        grantPolicyId: null,
+        grantVerb: "USE",
         grantDialog: true,
       });
     }
@@ -923,13 +895,8 @@ ${gridItems}
     }
 
     function onShareDone(outcome) {
-      if (outcome?.kind !== "success") return;
-      const skipped = Array.isArray(outcome.data?.skippedProjectionIds) ? outcome.data.skippedProjectionIds : [];
-      if (skipped.length) {
-        notify({ kind: "warning", text: t("grants.skipped", { ids: skipped.join(", ") }) });
-      } else {
-        notify({ kind: "success", text: t("grants.updated") });
-      }
+      if (outcome?.kind !== "success" || outcome.data?.success !== true) return;
+      notify({ kind: "success", text: t("grants.updated") });
       instance.refreshObjects();
     }
 
@@ -1094,11 +1061,9 @@ ${gridItems}
       copyActionLabelKey,
       grantEntryAllowed,
       grantDialogOpen,
-      grantPrincipalKindModel,
       grantVerbModel,
-      grantPrincipalId,
+      grantPolicyId,
       canSubmitGrant,
-      grantKindOptions,
       openCopyDialog,
       onCopyDone,
       openGrantDialog,
