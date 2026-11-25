@@ -706,6 +706,8 @@ it("guards canvas selection changes when the panel has unsaved form edits", asyn
     editingTarget: () => null,
     discard,
   });
+  instance.forms.bindInputState("classForm", "selectedClass");
+  instance.forms.bindInputState("classForm", "selectedRelation");
 
   try {
     // No-op: clicking the already-selected sole node does not prompt.

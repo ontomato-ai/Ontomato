@@ -11,6 +11,11 @@ export interface UnsavedChanges {
   dirty(): boolean;
   /** The addresses that edit this draft; going to any other one leaves it. */
   paths(): readonly string[];
+  /**
+   * Guards same-path address changes (query parameter change or returning to the bare path) before Vue Router moves
+   * the URL. Resolves `true` once any affected dirty forms have been confirmed and settled, or `false` to cancel.
+   */
+  guardSamePath?(fullPath: string): Promise<boolean>;
 }
 
 /**
@@ -26,8 +31,11 @@ export interface LeaveConfirmation {
 }
 
 export interface UnsavedChangesCheck {
-  /** Whether a navigation to `path` may go: asked when it leaves a dirty draft, unless the leave was just confirmed. */
-  allows(path: string): Promise<boolean>;
+  /**
+   * Whether a navigation to `path` (and optional `fullPath` including query string) may go: asked when leaving a dirty
+   * draft across paths, or when a same-path query/bare-path change affects a dirty form on the mounted page.
+   */
+  allows(path: string, fullPath?: string): Promise<boolean>;
   /** Whether any draft is dirty (closing or reloading the document). */
   dirty(): boolean;
 }
@@ -85,10 +93,19 @@ export function provideUnsavedChanges(ask: () => Promise<boolean>): UnsavedChang
     confirm,
   });
   return {
-    async allows(path) {
-      if (!leaves(path)) return true;
-      if (confirmed) return true;
-      return confirm();
+    async allows(path, fullPath) {
+      if (leaves(path)) {
+        if (confirmed) return true;
+        return confirm();
+      }
+      if (fullPath !== undefined) {
+        for (const entry of dirty()) {
+          if (!entry.paths().includes(path) || !entry.guardSamePath) continue;
+          const allowed = await entry.guardSamePath(fullPath);
+          if (!allowed) return false;
+        }
+      }
+      return true;
     },
     dirty: () => dirty().length > 0,
   };

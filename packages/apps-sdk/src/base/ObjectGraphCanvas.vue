@@ -20,6 +20,7 @@ import {
 } from "@ontomato/foundation-ui/graph/g6";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberOutput, useMemberParam } from "../panel/member";
+import type { PanelFieldValue } from "../panel/state";
 import { savePanelFile } from "../panel/save-file";
 import { useGraphRecords, type EdgeEndsConfig } from "./object-graph-data";
 import {
@@ -438,48 +439,59 @@ const drawnEdges = computed<GraphCanvasEdge[]>(() => {
   return base;
 });
 
-let selectionGuarding = false;
+const graphPlacement = panel.manifest.members[member.key];
+function boundStateField(paramName: string): string | null {
+  const input = graphPlacement?.inputs?.[paramName];
+  if (input && "state" in input && !("field" in input)) return input.state;
+  const output = graphPlacement?.outputs?.[paramName];
+  return output ? output.state : null;
+}
+
 /**
- * Guards canvas selection changes when the panel holds unsaved edits: synchronous when clean, otherwise confirms with
- * the host before discarding dirty drafts and applying the new selection.
+ * Applies node/edge selection changes atomically through `PanelInstance` so switching away from a dirty form is
+ * guarded once before panel state mutates and `choose` only fires if the switch is accepted.
  */
-function guardSelectionChange(apply: () => void): void {
-  if (!panel.instance.dirty()) {
-    apply();
+function commitSelection(
+  changes: { readonly node?: RuntimeJsonValue | null; readonly edge?: RuntimeJsonValue | null },
+  onApplied?: () => void,
+): void {
+  const statePatch: Record<string, PanelFieldValue> = {};
+  const localUpdates: (() => void)[] = [];
+  if ("node" in changes) {
+    const field = boundStateField("selectedNode");
+    if (field) statePatch[field] = (changes.node ?? null) as PanelFieldValue;
+    else localUpdates.push(() => { selectedNode.set(changes.node ?? null); });
+  }
+  if ("edge" in changes) {
+    const field = boundStateField("selectedEdge");
+    if (field) statePatch[field] = (changes.edge ?? null) as PanelFieldValue;
+    else localUpdates.push(() => { selectedEdge.set(changes.edge ?? null); });
+  }
+  const finish = () => {
+    for (const update of localUpdates) update();
+    onApplied?.();
+  };
+  if (!Object.keys(statePatch).length) {
+    finish();
     return;
   }
-  if (selectionGuarding) return;
-  if (!panel.confirmLeaveUnsaved) {
-    panel.instance.forms.discardAll();
-    apply();
-    return;
-  }
-  selectionGuarding = true;
-  void (async () => {
-    try {
-      const allowed = await panel.confirmLeaveUnsaved!();
-      if (!allowed) return;
-      panel.instance.forms.discardAll();
-      apply();
-    } finally {
-      selectionGuarding = false;
-    }
-  })();
+  const applied = panel.instance.state.setState(statePatch);
+  if (applied === false) return;
+  if (applied && typeof applied !== "boolean") void applied.then((ok) => { if (ok) finish(); });
+  else finish();
 }
 
 function chooseNode(ids: readonly string[]) {
   const nextId = ids[0] ?? null;
   if (nextId === null) {
     if (selectedNode.value.value === null) return;
-    guardSelectionChange(() => {
-      selectedNode.set(null);
-    });
+    commitSelection({ node: null });
     return;
   }
   if (selectedNodes.value.length === 1 && selectedNodes.value[0] === nextId && selectedEdge.value.value === null) return;
-  guardSelectionChange(() => {
-    if (selectedEdge.value.value !== null) selectedEdge.set(null);
-    selectedNode.set({ className: nodeType, primaryKey: nextId } as unknown as RuntimeJsonValue);
+  commitSelection({
+    ...(selectedEdge.value.value !== null ? { edge: null } : {}),
+    node: { className: nodeType, primaryKey: nextId } as unknown as RuntimeJsonValue,
   });
 }
 
@@ -487,15 +499,13 @@ function chooseEdge(ids: readonly string[]) {
   const nextId = ids.find((id) => id !== PENDING_GRAPH_EDGE_ID) ?? null;
   if (nextId === null) {
     if (selectedEdge.value.value === null) return;
-    guardSelectionChange(() => {
-      selectedEdge.set(null);
-    });
+    commitSelection({ edge: null });
     return;
   }
   if (selectedEdges.value.length === 1 && selectedEdges.value[0] === nextId && selectedNode.value.value === null) return;
-  guardSelectionChange(() => {
-    if (selectedNode.value.value !== null) selectedNode.set(null);
-    selectedEdge.set({ className: edgeType, primaryKey: nextId } as unknown as RuntimeJsonValue);
+  commitSelection({
+    ...(selectedNode.value.value !== null ? { node: null } : {}),
+    edge: { className: edgeType, primaryKey: nextId } as unknown as RuntimeJsonValue,
   });
 }
 
@@ -514,11 +524,13 @@ function activateElement(element: GraphCanvasElement) {
       emit("choose", refValue);
       return;
     }
-    guardSelectionChange(() => {
-      if (selectedEdge.value.value !== null) selectedEdge.set(null);
-      selectedNode.set(refValue as unknown as RuntimeJsonValue);
-      emit("choose", refValue);
-    });
+    commitSelection(
+      {
+        ...(selectedEdge.value.value !== null ? { edge: null } : {}),
+        node: refValue as unknown as RuntimeJsonValue,
+      },
+      () => emit("choose", refValue),
+    );
     return;
   }
   const alreadySelected =
@@ -529,19 +541,18 @@ function activateElement(element: GraphCanvasElement) {
     emit("choose", refValue);
     return;
   }
-  guardSelectionChange(() => {
-    if (selectedNode.value.value !== null) selectedNode.set(null);
-    selectedEdge.set(refValue as unknown as RuntimeJsonValue);
-    emit("choose", refValue);
-  });
+  commitSelection(
+    {
+      ...(selectedNode.value.value !== null ? { node: null } : {}),
+      edge: refValue as unknown as RuntimeJsonValue,
+    },
+    () => emit("choose", refValue),
+  );
 }
 
 function letGo() {
   if (selectedNode.value.value === null && selectedEdge.value.value === null) return;
-  guardSelectionChange(() => {
-    selectedNode.set(null);
-    selectedEdge.set(null);
-  });
+  commitSelection({ node: null, edge: null });
 }
 function connect(source: string, target: string) {
   connectFrom.set(source);

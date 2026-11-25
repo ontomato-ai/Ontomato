@@ -183,20 +183,21 @@ const selectedKey = computed<string | null>(() => {
 });
 const searchText = computed(() => (typeof search.value.value === "string" ? search.value.value : ""));
 
-function writeSelection(key: string | null) {
+function writeSelection(key: string | null, source: "human" | "auto" = "human") {
+  const writeOptions = { source };
   if (key === null) {
-    selected.set(null);
+    selected.set(null, writeOptions);
     return;
   }
   const record = recordsByKey.value.get(key);
   if (isObjectSelection.value) {
     const className = record?.className || selectedBindingType.value;
     if (className) {
-      selected.set({ className, primaryKey: record?.primaryKey ?? key });
+      selected.set({ className, primaryKey: record?.primaryKey ?? key }, writeOptions);
       return;
     }
   }
-  selected.set(record?.primaryKey ?? key);
+  selected.set(record?.primaryKey ?? key, writeOptions);
 }
 
 /**
@@ -221,11 +222,11 @@ watch([treeItems, answered], ([next, isAnswered]) => {
       fallback = firstTreeFile(buildPathTree(pathItems.value))?.key ?? null;
     }
   }
-  if (fallback !== null) writeSelection(fallback);
+  if (fallback !== null) writeSelection(fallback, "auto");
 }, { immediate: true });
 
 function onSelect(key: string | null) {
-  writeSelection(key);
+  writeSelection(key, "human");
 }
 
 function onSearch(value: string) {

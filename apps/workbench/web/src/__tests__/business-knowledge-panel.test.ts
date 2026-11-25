@@ -905,6 +905,7 @@ describe("business-knowledge builtin panel formTarget synchronization", () => {
       // Decline leaving: directory `selected` stays cleared (BK-03), form stays on A with unsaved edits intact.
       resolveConfirm!(false);
       resolveConfirm = null;
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       await vi.waitFor(() => {
         expect(route.router.currentRoute.value.query.selected).toBeUndefined();
@@ -927,7 +928,14 @@ describe("business-knowledge builtin panel formTarget synchronization", () => {
         expect(formHeading(element)).toBeNull();
         expect(route.router.currentRoute.value.query.selected).toBe(ENTRY_B);
         expect(element.textContent).toContain("Refunds settle within 3 business days.");
+      }, { timeout: 5000 });
+
+      // Entering Edit on B confirms formTarget is synced to B (no wasted form read while staying in view mode).
+      findButton(element, "Edit")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBe("Edit Knowledge");
         expect(route.formTargetReads.at(-1)).toEqual({ dataName: "form", targetPrimaryKey: ENTRY_B });
+        expect(titleInput(element)?.value).toBe("Refund SLA");
       }, { timeout: 5000 });
     } finally {
       app.unmount();
@@ -1687,14 +1695,14 @@ describe("business-knowledge builtin panel same-page unsaved navigation guard", 
 
       const listPatch = { address: use.path, state: { search: "Refund", status: "pending", checked: [knowledgeRef(ENTRY_B)] } };
       expect(controller.blocksNavigation!(listPatch)).toBe(false);
-      expect(await controller.probePresentation!(listPatch)).toBe(true);
+      expect(await controller.guardAgentPresentation!(listPatch)).toEqual({ ok: true });
       expect(element.querySelector('[data-field="/knowledgeTitle"]')).toBe(formEl);
       expect(titleInput(element)?.value).toBe("Order Cutoff Rule Unsaved Draft");
 
       for (const mode of ["create", "view"]) {
         const next = { address: currentAddress, state: { mode } };
-        expect(controller.blocksNavigation!(next)).toBe(false);
-        expect(await controller.probePresentation!(next)).toBe(false);
+        expect(controller.blocksNavigation!(next)).toBe(true);
+        expect(await controller.guardAgentPresentation!(next)).toMatchObject({ ok: false });
         expect(formHeading(element)).toBe("Edit Knowledge");
         expect(titleInput(element)?.value).toBe("Order Cutoff Rule Unsaved Draft");
       }

@@ -185,12 +185,30 @@ const openedResultSchema = z.object({
   current: selectedDisplaySchema,
   error: displayErrorSchema.optional(),
 }).strict();
+export const blockedUnsavedFormSchema = z.object({
+  member: runtimeKeySchema,
+  memberPath: z.array(runtimeKeySchema).min(1).optional(),
+  target: z.union([
+    z.object({
+      kind: z.literal("object"),
+      objectType: runtimeKeySchema,
+      primaryKey: runtimeKeySchema,
+    }).strict(),
+    z.object({
+      kind: z.literal("draft"),
+      id: z.string().min(1).max(200).optional(),
+    }).strict(),
+  ]).optional(),
+}).strict();
+export type BlockedUnsavedForm = z.infer<typeof blockedUnsavedFormSchema>;
+
 const notOpenedResultSchema = z.object({
   status: z.literal("not_opened"),
   reason: z.enum([
     "view_unavailable", "not_viewing_session", "sidebar_unavailable",
     "forbidden", "not_found", "unsupported_target", "outside_embedded_host", "blocked_unsaved", "superseded", "previous_step_failed",
   ]),
+  blockedForms: z.array(blockedUnsavedFormSchema).min(1).optional(),
   current: displaySnapshotSchema,
   error: displayErrorSchema.optional(),
 }).strict();

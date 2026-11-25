@@ -65,7 +65,14 @@ import type {
 import { projectionElement } from "../panel/projection-element";
 import { savePanelFile } from "../panel/save-file";
 import type { ListRowSlotOperation } from "../panel/slot-context";
-import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
+import {
+  stateChildObject,
+  stateObject,
+  stateObjects,
+  type PanelFieldValue,
+  type PanelStateChangeSource,
+  type PanelStateWriteResult,
+} from "../panel/state";
 import { resolveValueMapEntry, type ResolvedValueMapEntry } from "./display-value";
 import { useContainerWidth } from "./container-width";
 import ListRowSlotHost from "./ListRowSlotHost.vue";
@@ -2479,15 +2486,30 @@ function columnEmpty(column: ObjectListColumn): string {
   return column.emptyKey ? panel.t(column.emptyKey) : "—";
 }
 
-function setSelected(next: ObjectListSelection | null) {
+function setSelected(next: ObjectListSelection | null, source?: PanelStateChangeSource): PanelStateWriteResult {
+  const writeOptions = source ? { source } : undefined;
+  let applied: PanelStateWriteResult = true;
   if (placement.outputs?.selected) {
-    void panel.instance.output(member.key, "selected", next as RuntimeJsonValue);
+    applied = panel.instance.output(member.key, "selected", next as RuntimeJsonValue, writeOptions);
   } else if (hasSelectedBinding) {
-    selectedParam.set(next as RuntimeJsonValue);
+    applied = selectedParam.set(next as RuntimeJsonValue, writeOptions);
   }
-  if (hasSelectedBinding || hasUpdateSelectedListener) {
-    emit("update:selected", next);
+  const notifyUpdate = () => {
+    if (hasSelectedBinding || hasUpdateSelectedListener) {
+      emit("update:selected", next);
+    }
+  };
+  if (applied === false) {
+    return false;
   }
+  if (applied && typeof applied !== "boolean") {
+    return applied.then((ok) => {
+      if (ok) notifyUpdate();
+      return ok;
+    });
+  }
+  notifyUpdate();
+  return true;
 }
 
 function setChecked(next: readonly ObjectListRef[]) {
@@ -2505,7 +2527,7 @@ function selectInitially(listed: readonly PlatformObjectRecord[]) {
   if (initialLoadDone) return;
   initialLoadDone = true;
   if (hasSelectedBinding && props.fallbackToFirst && chosenIdentity.value === null && listed.length > 0) {
-    setSelected(rowSelectionValue(listed[0]!));
+    void setSelected(rowSelectionValue(listed[0]!), "auto");
   }
 }
 
@@ -2601,12 +2623,18 @@ const pendingSearchSelectPrimaryKey = ref<string | null>(null);
 
 function selectRowDirectly(row: PlatformObjectRecord) {
   const next = rowSelectionValue(row);
+  const finish = () => {
+    if (hasChooseListener) {
+      activeRowLabel.value = row.label || row.primaryKey;
+      emit("choose", next);
+    }
+  };
   if (hasSelectedBinding || hasUpdateSelectedListener) {
-    setSelected(next);
-  }
-  if (hasChooseListener) {
-    activeRowLabel.value = row.label || row.primaryKey;
-    emit("choose", next);
+    const applied = setSelected(next);
+    if (applied === true) finish();
+    else if (applied !== false) void applied.then((ok) => { if (ok) finish(); });
+  } else {
+    finish();
   }
 }
 
@@ -3239,22 +3267,32 @@ function accordionBodyFields(row: PlatformObjectRecord): readonly AccordionBodyF
 }
 
 function choose(row: PlatformObjectRecord) {
-  highlightedIdentity.value = rowIdentityKey(row);
   const openTarget = rowOpenPath(row);
   if (openTarget) {
+    highlightedIdentity.value = rowIdentityKey(row);
     void panel.navigate(openTarget);
   }
-  if (!rowSelectable) return;
+  if (!rowSelectable) {
+    if (!openTarget) highlightedIdentity.value = rowIdentityKey(row);
+    return;
+  }
   const identity = rowIdentityKey(row);
   const next = props.toggleable && chosenIdentity.value === identity
     ? null
     : rowSelectionValue(row);
+  const finish = () => {
+    highlightedIdentity.value = identity;
+    if (hasChooseListener) {
+      activeRowLabel.value = next ? (row.label || row.primaryKey) : null;
+      emit("choose", next);
+    }
+  };
   if (hasSelectedBinding || hasUpdateSelectedListener) {
-    setSelected(next);
-  }
-  if (hasChooseListener) {
-    activeRowLabel.value = next ? (row.label || row.primaryKey) : null;
-    emit("choose", next);
+    const applied = setSelected(next);
+    if (applied === true) finish();
+    else if (applied !== false) void applied.then((ok) => { if (ok) finish(); });
+  } else {
+    finish();
   }
 }
 

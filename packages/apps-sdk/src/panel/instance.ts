@@ -1,13 +1,15 @@
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
 import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import { computed, nextTick, reactive, readonly, ref, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
+import { computed, reactive, readonly, ref, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
+import { confirmDanger, confirmUnsavedSwitch } from "@ontomato/platform-shell";
 import type { PageContext, PageFormSnapshot, PageHighlight } from "@ontomato/contracts/page-context";
 import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
   type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
 import type {
+  BlockedUnsavedForm,
   ExpectedPageTarget,
   FormFillOutcome,
   FormFillRequestInput,
@@ -20,13 +22,15 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import { randomId } from "@ontomato/contracts/random-id";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import {
-  childObjectNameKey, createPanelState, objectNameKey, panelSelection, stateObject, stateObjects, type PanelInitialState, type PanelObjectRef,
-  type PanelStateStore,
+  checkPanelValue, childObjectNameKey, createPanelState, objectNameKey, panelSelection, stateObject, stateObjects,
+  type PanelFieldValue, type PanelInitialState, type PanelObjectRef, type PanelStateChangeSource, type PanelStateStore,
+  type PanelStateWriteResult,
 } from "./state";
 import type { PanelText } from "./text";
 import { panelOperations } from "./operations";
 import { memberInputValue, type PanelProjectionRegistration } from "./ports";
-import { PanelFormAdapters } from "./forms";
+import { PanelFormAdapters, type PanelDirtyFormEntry } from "./forms";
+import { jsonValuesEqual } from "./form-values";
 import { handlerFor } from "./handlers";
 import type { PanelOperationBinding } from "./types";
 import {
@@ -81,6 +85,8 @@ export interface PanelInstanceOptions {
   confirmOperation: ConfirmPanelOperation;
   /** Platform toast channel for notifying the reader of operation messages (shared by read and write operations). */
   notify?: (message: { kind: "success" | "info" | "warning" | "error"; text: string }) => void;
+  /** Host-level unsaved-change leave confirmation used when a human state change would switch a dirty form's target. */
+  confirmLeaveUnsaved?: () => Promise<boolean>;
   /**
    * Where this instance sits in the panel the reader opened (a panel placed from another's state), or nothing for the
    * opened panel itself: every member path, operation ID and page-context selection of this instance starts with it.
@@ -286,6 +292,21 @@ export function classifyDispatchResponseForConfirmation(
   };
 }
 
+/** One dirty form (local or nested) affected by a proposed panel state change. */
+export interface AffectedDirtyForm {
+  readonly entry: PanelDirtyFormEntry;
+  readonly memberPath: readonly string[];
+}
+
+/** Structured outcome of a guarded panel state change request. */
+export type PanelStateChangeResult =
+  | { readonly ok: true; readonly changed: boolean }
+  | {
+      readonly ok: false;
+      readonly reason: "cancelled" | "blocked_unsaved" | "skipped_auto";
+      readonly blockedForms: readonly BlockedUnsavedForm[];
+    };
+
 /** What a panel placed in one of an instance's members publishes into it: its operations, its unsaved changes. */
 export interface NestedPublisher {
   readonly instanceId: string;
@@ -293,6 +314,11 @@ export interface NestedPublisher {
   readonly operations: readonly PanelOperationBinding[];
   dirty(): boolean;
   readonly context: PageContext | null;
+  findAffectedDirtyForms?(
+    changedKeys: ReadonlySet<string>,
+    nextValues?: Readonly<Record<string, PanelFieldValue>>,
+  ): readonly AffectedDirtyForm[];
+  allDirtyForms?(): readonly AffectedDirtyForm[];
   memberInstances?(): Readonly<Record<string, string>>;
   entryInstances?(): Readonly<Record<string, string>>;
   checkedKeys?(): Readonly<Record<string, readonly string[]>>;
@@ -321,13 +347,24 @@ export interface PanelInstance {
   readonly pageContext: ComputedRef<PageContext>;
   /** Computed afresh from the registered projections; a reader never changes it. */
   readonly operations: Readonly<Ref<readonly PanelOperationBinding[]>>;
-  /** A member handed over a value at one of its outputs: the state field the member binds it to takes it. */
-  output(member: string, output: string, value: RuntimeJsonValue): void;
+  /**
+   * A member handed over a value at one of its outputs: the state field the member binds it to takes it, guarded
+   * against affecting any dirty form's target or fixed inputs.
+   */
+  output(
+    member: string,
+    output: string,
+    value: RuntimeJsonValue,
+    options?: { readonly source?: PanelStateChangeSource },
+  ): PanelStateWriteResult;
   /**
    * One parameter of a member, as its component reads and sets it: the panel state the member binds it to (its input of
    * that name, else its output of that name), or, unbound, the member's own value, which lives in this member alone.
    */
-  memberParam(member: string, name: string): { readonly value: ComputedRef<RuntimeJsonValue | null>; set(value: RuntimeJsonValue | null): void };
+  memberParam(member: string, name: string): {
+    readonly value: ComputedRef<RuntimeJsonValue | null>;
+    set(value: RuntimeJsonValue | null, options?: { readonly source?: PanelStateChangeSource }): PanelStateWriteResult;
+  };
   /** The values a member's component set for parameters bound to no state, by name. */
   ownParams(member: string): Readonly<Record<string, RuntimeJsonValue>>;
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
@@ -335,8 +372,36 @@ export interface PanelInstance {
   readonly forms: PanelFormAdapters;
   readonly secretDeliveries: Readonly<Ref<readonly PanelSecretDelivery[]>>;
   clearSecretDeliveries(): void;
-  blocksFormInputChange(fields: ReadonlySet<string>): boolean;
-  applyStatePreservingDrafts(patch: Readonly<Record<string, RuntimeJsonValue>>): Promise<boolean>;
+  /**
+   * Requests a guarded panel state change before mutating state:
+   * - Clean or unrelated changes commit synchronously and resolve `{ ok: true, changed }`.
+   * - Human changes affecting dirty forms ask confirmation once, settle only the affected forms on confirm, and commit;
+   *   cancel leaves state untouched and resolves `{ ok: false, reason: "cancelled", blockedForms }`.
+   * - Agent changes affecting dirty forms never prompt and resolve `{ ok: false, reason: "blocked_unsaved", blockedForms }`.
+   * - Automatic changes (`source: "auto"`, such as `fallbackToFirst`) skip silently without prompting.
+   */
+  requestStateChange(
+    patch: Readonly<Record<string, PanelFieldValue>>,
+    options?: { readonly source?: PanelStateChangeSource },
+  ): Promise<PanelStateChangeResult>;
+  /** Synchronously finds dirty forms (mounted or stashed, local or nested) affected by a proposed state patch. */
+  findBlockedForms(patch: Readonly<Record<string, PanelFieldValue>>): readonly BlockedUnsavedForm[];
+  /**
+   * Checks whether an agent state patch would affect any dirty form (after waiting for in-flight auto-saves to settle)
+   * without mutating panel state.
+   */
+  checkAgentStateChange(
+    patch: Readonly<Record<string, PanelFieldValue>>,
+  ): Promise<{ readonly ok: true } | { readonly ok: false; readonly blockedForms: readonly BlockedUnsavedForm[] }>;
+  /** Applies an already-authorized host state patch directly without invoking human confirmation dialogs. */
+  applyAuthorizedState(patch: Readonly<Record<string, PanelFieldValue>>): void;
+  /** Internal recursion helper for nested panel dependency checks. */
+  findAffectedDirtyForms(
+    changedKeys: ReadonlySet<string>,
+    nextValues?: Readonly<Record<string, PanelFieldValue>>,
+  ): readonly AffectedDirtyForm[];
+  /** All currently dirty forms (mounted or stashed) within this instance and its nested panels. */
+  allDirtyForms(): readonly AffectedDirtyForm[];
   formRegistries(): PanelFormAdapters[];
   /** True while an external address update changing deep-link state is held pending reactivation. */
   readonly addressPending?: Readonly<Ref<boolean>>;
@@ -470,7 +535,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const instanceId = randomId();
   let disposed = false;
   const secretDeliveries = shallowRef<readonly PanelSecretDelivery[]>([]);
-  const state = createPanelState(manifest, options.initial);
+  const rawState = createPanelState(manifest, options.initial);
   const objectListeners = new Set<(object: PanelObjectIdentity | null) => unknown>();
   const operationCompletedListeners = new Set<(event: PanelOperationCompletion) => void>();
   const activeRefreshes = ref(0);
@@ -723,12 +788,18 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     // A placed panel's operations are published under their own full paths and run by that panel.
     ...[...publishers.values()].flatMap((publisher) => publisher.value.operations),
   ]);
-  /** A member's output: the state it binds takes the value. */
-  function output(member: string, name: string, value: RuntimeJsonValue) {
+  /** A member's output: the state it binds takes the value, guarded against dirty form target changes. */
+  function output(
+    member: string,
+    name: string,
+    value: RuntimeJsonValue,
+    writeOptions?: { readonly source?: PanelStateChangeSource },
+  ): PanelStateWriteResult {
     const declaration = manifest.members[member];
     if (!declaration) throw new Error(`The panel declares no member '${member}'`);
     const bound = declaration.outputs?.[name];
-    if (bound) state.set(bound.state, value as never);
+    if (!bound) return true;
+    return applyGuardedWrite({ [bound.state]: value as PanelFieldValue }, writeOptions?.source ?? "human");
   }
   async function invoke(id: string, input?: Readonly<Record<string, unknown>>) {
     const found = operations.value.find((operation) => operation.id === id);
@@ -1029,60 +1100,340 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     }
   }
   const topLevelMemberKeys = Object.keys(manifest.members);
-  const forms = new PanelFormAdapters(topLevelMemberKeys);
+  const forms = new PanelFormAdapters(topLevelMemberKeys, () => disposed, options.translate);
+  const tr = (key: string, fallback: string): string => {
+    if (!options.translate) return fallback;
+    const translated = options.translate(key);
+    return translated && translated !== key ? translated : fallback;
+  };
   function memberStateInputs(member: string, visited: Set<string>, fields: Set<string>) {
     if (visited.has(member)) return;
     visited.add(member);
-    const declaration = manifest.members[member]!;
+    const declaration = manifest.members[member];
+    if (!declaration) return;
     if ("fromState" in declaration.target) fields.add(declaration.target.fromState);
     for (const input of Object.values(declaration.inputs ?? {})) {
       if ("state" in input) fields.add(input.state);
       if ("output" in input) {
-        const { member, name } = input.output;
-        const source = manifest.members[member]!;
-        const output = source.outputs?.[name];
-        if (output && !source.inputs?.[name]) fields.add(output.state);
-        memberStateInputs(member, visited, fields);
+        const { member: sourceMember, name } = input.output;
+        const source = manifest.members[sourceMember];
+        if (!source) continue;
+        const sourceOutput = source.outputs?.[name];
+        if (sourceOutput && !source.inputs?.[name]) fields.add(sourceOutput.state);
+        memberStateInputs(sourceMember, visited, fields);
       }
     }
   }
-  function blocksFormInputChange(changed: ReadonlySet<string>): boolean {
-    const fields = new Set<string>();
-    const visited = new Set<string>();
-    for (const { member, fields: bound } of forms.dirtyInputs()) {
-      memberStateInputs(member, visited, fields);
-      for (const field of bound) fields.add(field);
+  function allDirtyForms(): AffectedDirtyForm[] {
+    const result: AffectedDirtyForm[] = [];
+    for (const entry of forms.dirtyEntries()) {
+      result.push({
+        entry,
+        memberPath: memberPathOf(entry.slot).map((segment) => segment.member),
+      });
     }
-    for (const [member, publisher] of publishers) {
-      if (publisher.value.dirty()) memberStateInputs(member, visited, fields);
+    for (const publisher of publishers.values()) {
+      if (!publisher.value.dirty()) continue;
+      if (publisher.value.allDirtyForms) {
+        result.push(...publisher.value.allDirtyForms());
+      }
     }
-    return [...fields].some((field) => changed.has(field));
+    return result;
   }
+  function findAffectedDirtyForms(
+    changedKeys: ReadonlySet<string>,
+    nextValues?: Readonly<Record<string, PanelFieldValue>>,
+  ): AffectedDirtyForm[] {
+    if (!changedKeys.size) return [];
+    const affected: AffectedDirtyForm[] = [];
+    for (const entry of forms.dirtyEntries()) {
+      const deps = new Set<string>(entry.inputStateKeys);
+      memberStateInputs(entry.slot, new Set<string>(), deps);
+      if ([...deps].some((field) => changedKeys.has(field))) {
+        affected.push({
+          entry,
+          memberPath: memberPathOf(entry.slot).map((segment) => segment.member),
+        });
+      }
+    }
+    const syntheticNextState = nextValues
+      ? { state: { values: { value: nextValues } }, outputs: memberOutputStore }
+      : null;
+    const currentStateCtx = { state: { values: { value: rawState.values.value } }, outputs: memberOutputStore };
+    for (const [member, publisher] of publishers.entries()) {
+      if (!publisher.value.dirty()) continue;
+      const declaration = manifest.members[member];
+      if (!declaration) continue;
+      if ("fromState" in declaration.target && changedKeys.has(declaration.target.fromState)) {
+        if (publisher.value.allDirtyForms) affected.push(...publisher.value.allDirtyForms());
+        continue;
+      }
+      const childChangedKeys = new Set<string>();
+      const childNextValues: Record<string, PanelFieldValue> = {};
+      for (const [childKey, inputBinding] of Object.entries(declaration.inputs ?? {})) {
+        if ("state" in inputBinding) {
+          if (!changedKeys.has(inputBinding.state)) continue;
+          const prevVal = memberInputValue(currentStateCtx, inputBinding) ?? null;
+          if (syntheticNextState) {
+            const nextVal = memberInputValue(syntheticNextState, inputBinding) ?? null;
+            if (!jsonValuesEqual(prevVal, nextVal)) {
+              childChangedKeys.add(childKey);
+              childNextValues[childKey] = nextVal as PanelFieldValue;
+            }
+          } else {
+            childChangedKeys.add(childKey);
+          }
+        } else if ("output" in inputBinding) {
+          const upstreamDeps = new Set<string>();
+          memberStateInputs(inputBinding.output.member, new Set<string>(), upstreamDeps);
+          if ([...upstreamDeps].some((field) => changedKeys.has(field))) {
+            childChangedKeys.add(childKey);
+          }
+        }
+      }
+      if (childChangedKeys.size > 0 && publisher.value.findAffectedDirtyForms) {
+        affected.push(
+          ...publisher.value.findAffectedDirtyForms(
+            childChangedKeys,
+            Object.keys(childNextValues).length ? childNextValues : undefined,
+          ),
+        );
+      }
+    }
+    return affected;
+  }
+
+  function toBlockedUnsavedForm(item: AffectedDirtyForm): BlockedUnsavedForm {
+    const target = item.entry.editingTarget;
+    return {
+      member: item.entry.slot,
+      ...(item.memberPath.length > 1 ? { memberPath: item.memberPath.slice(0, -1) } : {}),
+      ...(target
+        ? {
+            target: target.kind === "object"
+              ? { kind: "object" as const, objectType: target.objectType, primaryKey: target.primaryKey }
+              : { kind: "draft" as const, ...(target.id !== undefined ? { id: target.id } : {}) },
+          }
+        : {}),
+    };
+  }
+
+  function validateAndDiffPatch(patch: Readonly<Record<string, PanelFieldValue>>) {
+    const entries = Object.entries(patch);
+    const checkedAll: Record<string, PanelFieldValue> = {};
+    const effectivePatch: Record<string, PanelFieldValue> = {};
+    for (const [name, value] of entries) {
+      const checked = checkPanelValue(manifest, name, value);
+      checkedAll[name] = checked;
+      if (!jsonValuesEqual(rawState.values.value[name], checked)) {
+        effectivePatch[name] = checked;
+      }
+    }
+    return { checkedAll, effectivePatch };
+  }
+
+  function findBlockedForms(patch: Readonly<Record<string, PanelFieldValue>>): readonly BlockedUnsavedForm[] {
+    const { effectivePatch } = validateAndDiffPatch(patch);
+    const changedKeys = new Set(Object.keys(effectivePatch));
+    if (!changedKeys.size || !instance.dirty()) return [];
+    const nextValues = { ...rawState.values.value, ...effectivePatch };
+    return findAffectedDirtyForms(changedKeys, nextValues).map(toBlockedUnsavedForm);
+  }
+
+  async function checkAgentStateChange(
+    patch: Readonly<Record<string, PanelFieldValue>>,
+  ): Promise<{ readonly ok: true } | { readonly ok: false; readonly blockedForms: readonly BlockedUnsavedForm[] }> {
+    const { effectivePatch } = validateAndDiffPatch(patch);
+    const changedKeys = new Set(Object.keys(effectivePatch));
+    if (!changedKeys.size || !instance.dirty()) return { ok: true };
+    const nextValues = { ...rawState.values.value, ...effectivePatch };
+    const affected = findAffectedDirtyForms(changedKeys, nextValues);
+    if (!affected.length) return { ok: true };
+    await Promise.all(affected.map((item) => item.entry.settleInFlight?.()));
+    const stillAffected = affected.filter((item) => item.entry.stillDirty());
+    if (!stillAffected.length) return { ok: true };
+    return { ok: false, blockedForms: stillAffected.map(toBlockedUnsavedForm) };
+  }
+
+  let humanGuardInFlight = false;
+
+  type GuardedStep =
+    | { readonly sync: true; readonly result: PanelStateChangeResult }
+    | { readonly sync: false; readonly promise: Promise<PanelStateChangeResult> };
+
+  function guardAndCommit(
+    patch: Readonly<Record<string, PanelFieldValue>>,
+    source: PanelStateChangeSource,
+  ): GuardedStep {
+    const { checkedAll, effectivePatch } = validateAndDiffPatch(patch);
+    const changedKeys = new Set(Object.keys(effectivePatch));
+    if (!changedKeys.size) {
+      if (Object.keys(checkedAll).length) rawState.setState(checkedAll);
+      return { sync: true, result: { ok: true, changed: false } };
+    }
+    if (!instance.dirty()) {
+      rawState.setState(checkedAll);
+      return { sync: true, result: { ok: true, changed: true } };
+    }
+    const nextValues = { ...rawState.values.value, ...effectivePatch };
+    const affected = findAffectedDirtyForms(changedKeys, nextValues);
+    if (!affected.length) {
+      rawState.setState(checkedAll);
+      return { sync: true, result: { ok: true, changed: true } };
+    }
+    const initialBlocked = affected.map(toBlockedUnsavedForm);
+    if (source === "auto") {
+      return {
+        sync: true,
+        result: { ok: false, reason: "skipped_auto", blockedForms: initialBlocked },
+      };
+    }
+    if (source === "agent") {
+      const hasInFlight = affected.some((item) => item.entry.settleInFlight !== undefined);
+      if (!hasInFlight) {
+        return {
+          sync: true,
+          result: { ok: false, reason: "blocked_unsaved", blockedForms: initialBlocked },
+        };
+      }
+      return {
+        sync: false,
+        promise: (async (): Promise<PanelStateChangeResult> => {
+          await Promise.all(affected.map((item) => item.entry.settleInFlight?.()));
+          if (disposed) return { ok: false, reason: "blocked_unsaved", blockedForms: initialBlocked };
+          const stillAffected = affected.filter((item) => item.entry.stillDirty());
+          if (!stillAffected.length) {
+            rawState.setState(checkedAll);
+            return { ok: true, changed: true };
+          }
+          return {
+            ok: false,
+            reason: "blocked_unsaved",
+            blockedForms: stillAffected.map(toBlockedUnsavedForm),
+          };
+        })(),
+      };
+    }
+    // Human-initiated change affecting one or more dirty forms.
+    if (humanGuardInFlight) {
+      return {
+        sync: true,
+        result: { ok: false, reason: "cancelled", blockedForms: initialBlocked },
+      };
+    }
+    humanGuardInFlight = true;
+    const promise = (async (): Promise<PanelStateChangeResult> => {
+      try {
+        const settlers = affected.flatMap((item) => (item.entry.settleInFlight ? [item.entry.settleInFlight()] : []));
+        if (settlers.length) {
+          await Promise.all(settlers);
+          if (disposed) return { ok: false, reason: "cancelled", blockedForms: initialBlocked };
+        }
+        const stillAffected = affected.filter((item) => item.entry.stillDirty());
+        if (!stillAffected.length) {
+          rawState.setState(checkedAll);
+          return { ok: true, changed: true };
+        }
+        const stillBlocked = stillAffected.map(toBlockedUnsavedForm);
+        const allThreeState = stillAffected.every(
+          (item) => item.entry.mounted && item.entry.unsavedSwitchMode === "save-discard-cancel",
+        );
+        if (allThreeState) {
+          const decision = await confirmUnsavedSwitch(
+            tr(
+              "platform.formLeaveUnsavedSwitch",
+              "This form has unsaved changes. Save before switching, or discard them?",
+            ),
+            tr("platform.unsavedChanges", "Unsaved changes"),
+            {
+              saveButtonText: tr("platform.formSaveAndSwitch", "Save and switch"),
+              discardButtonText: tr("platform.formDiscardChanges", "Discard changes"),
+            },
+          );
+          if (disposed || decision === "cancel") {
+            return { ok: false, reason: "cancelled", blockedForms: stillBlocked };
+          }
+          if (decision === "save") {
+            for (const item of stillAffected) {
+              if (!item.entry.stillDirty()) continue;
+              const saved = await item.entry.saveBeforeSwitch?.();
+              if (disposed || !saved || item.entry.stillDirty()) {
+                return { ok: false, reason: "cancelled", blockedForms: stillBlocked };
+              }
+            }
+          } else {
+            for (const item of stillAffected) {
+              if (item.entry.stillDirty()) item.entry.discard();
+            }
+          }
+          rawState.setState(checkedAll);
+          return { ok: true, changed: true };
+        }
+        const allowed = options.confirmLeaveUnsaved
+          ? await options.confirmLeaveUnsaved()
+          : await confirmDanger(
+              tr(
+                "platform.formLeaveUnsaved",
+                "This form has changes you have not saved. Discard them and open the other item?",
+              ),
+              tr("platform.unsavedChanges", "Unsaved changes"),
+              {
+                confirmButtonText: tr("platform.discard", "Discard"),
+                cancelButtonText: tr("platform.keepEditing", "Keep editing"),
+              },
+            );
+        if (disposed || !allowed) {
+          return { ok: false, reason: "cancelled", blockedForms: stillBlocked };
+        }
+        for (const item of stillAffected) {
+          if (item.entry.stillDirty()) item.entry.discard();
+        }
+        rawState.setState(checkedAll);
+        return { ok: true, changed: true };
+      } finally {
+        humanGuardInFlight = false;
+      }
+    })();
+    return { sync: false, promise };
+  }
+
+  function applyGuardedWrite(
+    patch: Readonly<Record<string, PanelFieldValue>>,
+    source: PanelStateChangeSource,
+  ): PanelStateWriteResult {
+    const step = guardAndCommit(patch, source);
+    if (step.sync) return step.result.ok;
+    return step.promise.then((res) => res.ok);
+  }
+
+  function requestStateChange(
+    patch: Readonly<Record<string, PanelFieldValue>>,
+    requestOptions?: { readonly source?: PanelStateChangeSource },
+  ): Promise<PanelStateChangeResult> {
+    const step = guardAndCommit(patch, requestOptions?.source ?? "human");
+    return step.sync ? Promise.resolve(step.result) : step.promise;
+  }
+
+  function applyAuthorizedState(patch: Readonly<Record<string, PanelFieldValue>>): void {
+    const { checkedAll } = validateAndDiffPatch(patch);
+    if (Object.keys(checkedAll).length) rawState.setState(checkedAll);
+  }
+
+  const state: PanelStateStore = {
+    values: rawState.values,
+    get lastPatchedKeys() {
+      return rawState.lastPatchedKeys;
+    },
+    field: (name) => rawState.field(name),
+    set: (name, value) => applyGuardedWrite({ [name]: value }, "human"),
+    setState: (patch) => applyGuardedWrite(patch, "human"),
+    deepLinkable: () => rawState.deepLinkable(),
+  };
 
   const formRegistries = (): PanelFormAdapters[] => [
     forms,
     ...[...publishers.values()].flatMap((publisher) => publisher.value.formRegistries()),
   ];
-  async function applyStatePreservingDrafts(patch: Readonly<Record<string, RuntimeJsonValue>>): Promise<boolean> {
-    const registries = formRegistries();
-    const drafts = registries.flatMap((registry) => registry.captureDirtyDrafts());
-    const previous = state.values.value;
-    for (const registry of registries) registry.probing = true;
-    try {
-      state.setState(patch);
-      await nextTick();
-      if (drafts.every((draft) => draft.stillMounted())) return true;
-      const restored = drafts.map((draft) => draft.restoreOnRemount());
-      state.setState(previous);
-      await nextTick();
-      // Projection components can resolve asynchronously even when their definitions are already held.
-      await Promise.all(restored);
-      await nextTick();
-      return false;
-    } finally {
-      for (const registry of registries) registry.probing = false;
-    }
-  }
   const memberOutputStore = reactive<Record<string, Record<string, RuntimeJsonValue | null>>>({});
   function setMemberOutput(member: string, name: string, value: RuntimeJsonValue | null) {
     let bucket = memberOutputStore[member];
@@ -1218,8 +1569,9 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const bound = input?.state ?? outputBinding?.state;
       if (bound !== undefined) {
         return {
-          value: computed(() => (state.values.value[bound] ?? null) as RuntimeJsonValue | null),
-          set: (value) => state.set(bound, value as never),
+          value: computed(() => (rawState.values.value[bound] ?? null) as RuntimeJsonValue | null),
+          set: (value, writeOptions) =>
+            applyGuardedWrite({ [bound]: value as PanelFieldValue }, writeOptions?.source ?? "human"),
         };
       }
       return {
@@ -1229,6 +1581,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
           if (value === null) delete kept[name];
           else kept[name] = value;
           own.value = { ...own.value, [member]: kept };
+          return true;
         },
       };
     },
@@ -1252,7 +1605,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const clearedStateKeys = new Set<string>();
       for (const [name, { type }] of Object.entries(manifest.state)) {
         if (type.kind !== "object") continue;
-        const held = stateObject(state.values.value[name]);
+        const held = stateObject(rawState.values.value[name]);
         if (held && gone(held)) clearedStateKeys.add(name);
       }
       // Discard dirty forms targeting removed objects (or bound to state fields being cleared) before mutating panel
@@ -1261,13 +1614,13 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
         registry.discardRemoved(removed, registry === forms ? clearedStateKeys : undefined);
       }
       for (const [name, { type }] of Object.entries(manifest.state)) {
-        const value = state.values.value[name];
+        const value = rawState.values.value[name];
         if (type.kind === "object") {
           const held = stateObject(value);
-          if (held && gone(held)) state.set(name, null);
+          if (held && gone(held)) rawState.set(name, null);
         } else if (type.kind === "list" && type.items.kind === "object") {
           const held = stateObjects(value);
-          if (held.some(gone)) state.set(name, held.filter((object) => !gone(object)));
+          if (held.some(gone)) rawState.set(name, held.filter((object) => !gone(object)));
         }
       }
     },
@@ -1290,9 +1643,13 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     outputs: memberOutputStore,
     setMemberOutput,
-    dirty: () => forms.probing || forms.dirty() || [...publishers.values()].some((publisher) => publisher.value.dirty()),
-    blocksFormInputChange,
-    applyStatePreservingDrafts,
+    dirty: () => forms.dirty() || [...publishers.values()].some((publisher) => publisher.value.dirty()),
+    requestStateChange,
+    findBlockedForms,
+    checkAgentStateChange,
+    applyAuthorizedState,
+    findAffectedDirtyForms,
+    allDirtyForms,
     formRegistries,
     memberPathOf,
     operationIdOf,

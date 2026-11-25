@@ -102,14 +102,19 @@ interface PanelStateStore {
   readonly lastPatchedKeys: ReadonlySet<string>;
   /** One field; the same value `values` holds. */
   field(name: string): Readonly<Ref<PanelFieldValue>>;
-  /** What the reader or a state operation set. A value of the wrong type for the field is refused here. */
-  set(name: string, value: PanelFieldValue): void;
+  /**
+   * Sets one declared state field. A value of the wrong type throws synchronously. When no dirty form depends on the
+   * changed field, the update commits synchronously and returns `true`; otherwise the platform guards the change first
+   * and resolves `true` if applied or `false` if cancelled/blocked (leaving state unchanged).
+   */
+  set(name: string, value: PanelFieldValue): PanelStateWriteResult;
   /**
    * Atomically updates multiple declared fields in one state assignment (for example changing a parent object while
-   * clearing its child selection, or switching mutually exclusive selections). Every entry is validated before any
-   * field changes, so reactive watchers and the host bridge never see a half-updated state.
+   * clearing its child selection, or switching mutually exclusive selections). Every entry is validated synchronously
+   * before any field changes. Returns `true` synchronously when unaffected, or a `Promise<boolean>` resolving `true`
+   * once confirmed and committed or `false` if cancelled/blocked (leaving all fields untouched).
    */
-  setState(patch: Readonly<Record<string, PanelFieldValue>>): void;
+  setState(patch: Readonly<Record<string, PanelFieldValue>>): PanelStateWriteResult;
   /** The fields an address or an open request may carry, with the values they hold now. */
   deepLinkable(): Record<string, PanelDeepLinkStateValue>;
 }
@@ -141,9 +146,10 @@ function usePanelOutputs(member: string): ComputedRef<Readonly<Record<string, Ru
 
 ### usePanelFormDraft
 
-Binds one mounted `ObjectForm` slot to `<page-header :draft="draft">`: returns `null` while the form slot is absent
-(or `when` is false), and otherwise exposes the header's draft controls and `refreshDraft()` wired straight to
-`instance.forms.handle(slot)`.
+Binds one `ObjectForm` slot to `<page-header :draft="draft">`: returns `null` while the form slot is absent with no
+stashed draft (or `when` is false), and otherwise exposes the header's draft controls and `refreshDraft()` wired
+straight to `instance.forms`. When a dirty form is temporarily hidden (for example on another tab), the header
+continues to display its unsaved indicator and Discard action until the form is remounted, saved, or discarded.
 
 ```ts
 function usePanelFormDraft(slot: MaybeRefOrGetter<string | null | undefined>, options?: UsePanelFormDraftOptions | undefined): ComputedRef<PanelFormDraftControls | null>
@@ -155,7 +161,7 @@ function usePanelFormDraft(slot: MaybeRefOrGetter<string | null | undefined>, op
 interface UsePanelFormDraftOptions {
   /**
    * Optional reactive guard controlling whether the draft controls are shown (for example `() => detail.value.status === "ready"`).
-   * Defaults to `true` whenever the form slot is mounted.
+   * Defaults to `true` whenever the form slot is mounted or holds a stashed unsaved draft on this panel instance.
    */
   when?: MaybeRefOrGetter<boolean>;
   /**

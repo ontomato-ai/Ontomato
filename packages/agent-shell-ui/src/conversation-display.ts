@@ -1,5 +1,6 @@
 import { computed, nextTick, shallowRef, watch } from "vue";
 import type {
+  BlockedUnsavedForm,
   DisplayLoad,
   DisplayPageAddressInput,
   DisplaySnapshot,
@@ -73,10 +74,16 @@ export interface DisplayPageController {
   /** Validates a public state patch against the currently mounted page before any URL or state mutation. */
   validateState?(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
+  /** Returns the dirty forms whose bound inputs would be changed by the proposed address/state. */
+  blockedForms?(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): readonly BlockedUnsavedForm[];
   /** Returns true when navigation changes inputs bound to a dirty form. */
   blocksNavigation?(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): boolean;
-  /** Tries a same-page state change, rolling it back if it removes a dirty form. */
-  probePresentation?(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): Promise<boolean | undefined>;
+  /** Guards a human same-page navigation before the URL moves, settling affected dirty forms on confirm. */
+  guardNavigation?(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): Promise<boolean>;
+  /** Checks whether an agent same-page presentation would affect any dirty form (after in-flight auto-saves settle). */
+  guardAgentPresentation?(
+    next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> },
+  ): Promise<{ readonly ok: true } | { readonly ok: false; readonly blockedForms: readonly BlockedUnsavedForm[] }>;
   /** Applies deep-link overrides before a new address reaches a mounted instance with unsaved edits. */
   presentationAddress?(address: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
@@ -261,8 +268,15 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     return unsaved.value || host.leave.leaves(next?.kind === "page" ? next.address : null);
   }
 
-  /** Leaving the shown page instance with unsaved changes asks the reader first; staying in it never asks. */
+  /** Leaving the shown page instance with unsaved changes asks the reader first; same-instance changes guard per form. */
   async function mayLeave(next: DisplayTarget | null): Promise<boolean> {
+    const current = page.value;
+    if (current && next?.kind === "page" && next.instance === current.instance) {
+      const controller = controllers.get(current.instance);
+      if (controller?.guardNavigation) {
+        return controller.guardNavigation({ address: next.address });
+      }
+    }
     return !dropsUnsaved(next) || host.leave.confirm();
   }
 
@@ -325,15 +339,40 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     };
   }
 
-  function notOpened(reason: NotOpenedReason, error?: { code: string; message: string }): DisplayPresentationResult {
-    return { status: "not_opened", reason, current: snapshot(), ...(error ? { error } : {}) };
+  function notOpened(
+    reason: NotOpenedReason,
+    error?: { code: string; message: string },
+    blockedForms?: readonly BlockedUnsavedForm[],
+  ): DisplayPresentationResult {
+    return {
+      status: "not_opened",
+      reason,
+      ...(blockedForms?.length ? { blockedForms: [...blockedForms] } : {}),
+      current: snapshot(),
+      ...(error ? { error } : {}),
+    };
   }
 
-  function blockedUnsaved(): DisplayPresentationResult {
-    return notOpened("blocked_unsaved", {
-      code: "UNSAVED_CHANGES",
-      message: "The current page has unsaved changes. Ask the user to save or discard them before navigating away.",
-    });
+  function describeBlockedForm(form: BlockedUnsavedForm): string {
+    const location = form.memberPath?.length ? [...form.memberPath, form.member].join(".") : form.member;
+    if (form.target?.kind === "object") {
+      return `${location} (${form.target.objectType} ${form.target.primaryKey})`;
+    }
+    if (form.target?.kind === "draft") {
+      return form.target.id ? `${location} (draft ${form.target.id})` : `${location} (draft)`;
+    }
+    return location;
+  }
+
+  function blockedUnsaved(blockedForms?: readonly BlockedUnsavedForm[]): DisplayPresentationResult {
+    const message = blockedForms?.length
+      ? `The current page has unsaved changes in ${blockedForms.map(describeBlockedForm).join(", ")}. Ask the user to save or discard them before changing targets.`
+      : "The current page has unsaved changes. Ask the user to save or discard them before navigating away.";
+    return notOpened(
+      "blocked_unsaved",
+      { code: "UNSAVED_CHANGES", message },
+      blockedForms,
+    );
   }
 
   function validateStatePatch(state: Record<string, RuntimeJsonValue>): { ok: true } | { ok: false; error: { code: string; message: string } } {
@@ -1085,12 +1124,11 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
         if (sameInstance && currentPage) {
           const controller = controllers.get(resolved.instance);
           const next = { address: resolved.address, state: rawState };
-          if (controller?.blocksNavigation?.(next)) return blockedUnsaved();
           const hasStatePatch = rawState !== undefined && Object.keys(rawState).length > 0;
           const basePathOf = (value: string) => value.split(/[?#]/, 1)[0]!;
           const sameBasePath = basePathOf(resolved.address) === basePathOf(currentPage.address);
-          // Validate the live state patch BEFORE mutating the browser address or selection so an invalid state field
-          // or value type leaves the current URL and selection completely untouched.
+          // Validate the live state patch BEFORE checking dirty forms or mutating the browser address so an invalid
+          // state field or value type leaves the current URL and selection completely untouched.
           if (hasStatePatch && controller?.validateState && sameBasePath) {
             try {
               controller.validateState(rawState);
@@ -1101,8 +1139,12 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               });
             }
           }
-          const probed = await controller?.probePresentation?.(next);
-          if (probed === false) return blockedUnsaved();
+          if (controller?.guardAgentPresentation) {
+            const check = await controller.guardAgentPresentation(next);
+            if (!check.ok) return blockedUnsaved(check.blockedForms);
+          } else if (controller?.blocksNavigation?.(next)) {
+            return blockedUnsaved(controller.blockedForms?.(next));
+          }
           if (presentationAppliesAddress(currentPage.address, resolved.address, hasStatePatch)) {
             // Apply an explicit address with its live overrides so a mounted component never sees a superseded value.
             const address = hasStatePatch && sameBasePath
@@ -1119,7 +1161,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               if (hasStatePatch) await nextTick();
             }
           }
-          if (hasStatePatch && probed !== true) {
+          if (hasStatePatch) {
             if (controller) {
               try {
                 controller.applyState(rawState);

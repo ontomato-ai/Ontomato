@@ -164,8 +164,10 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
       expose({
         applyState: record.applyState,
         validateState() {},
+        blockedForms: () => [],
         blocksNavigation: () => false,
-        probePresentation: async () => undefined,
+        guardNavigation: async () => true,
+        guardAgentPresentation: async () => ({ ok: true as const }),
         presentationAddress: (address: string) => address,
         refresh(target: PanelObjectChange["target"], affected?: PanelObjectChange["affected"], operation?: PanelObjectChange["operation"]) {
           record.refreshes.push({ target, affected, operation });

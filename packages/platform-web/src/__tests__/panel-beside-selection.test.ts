@@ -132,8 +132,9 @@ function createPort(): PanelHostPort {
         },
         publicState: (): Readonly<Record<string, RuntimeJsonValue>> =>
           selected.value ? { selected: selected.value as unknown as RuntimeJsonValue } : {},
-        blocksFormInputChange: () => false,
-        applyStatePreservingDrafts: async () => true,
+        findBlockedForms: () => [],
+        checkAgentStateChange: async () => ({ ok: true as const }),
+        guardStateChange: async () => true,
         setState() {},
         projectionsChanged() {},
         invoke: async () => {},

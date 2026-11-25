@@ -288,15 +288,18 @@ it("asks before moving the form off unsaved changes, and keeps them or discards 
     button.click();
   });
 
-  // The reader picks another task: they are asked, keep editing, and the panel is back on the task they edit.
-  instance.state.set("selectedTask", task("t-2"));
+  // The reader picks another task: they are asked, keep editing, and the panel stays on the task they edit.
+  const declined = instance.state.set("selectedTask", task("t-2"));
   await answer("Keep editing");
-  await vi.waitFor(() => expect(instance.state.values.value.selectedTask).toEqual(task("t-1")));
+  await expect(declined).resolves.toBe(false);
+  await vi.waitFor(() => expect(document.querySelector(".el-message-box")).toBeNull());
+  expect(instance.state.values.value.selectedTask).toEqual(task("t-1"));
   expect(input(element, "/note").value).toBe("half done");
 
   // Asked again, they discard: the other task is shown, and nothing was saved.
-  instance.state.set("selectedTask", task("t-2"));
+  const accepted = instance.state.set("selectedTask", task("t-2"));
   await answer("Discard");
+  await expect(accepted).resolves.toBe(true);
   await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-2"));
   expect(input(element, "/note").value).toBe("");
   expect(prepared).toEqual([]);

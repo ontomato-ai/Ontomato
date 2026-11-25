@@ -71,9 +71,29 @@ export function runPanel(options: PanelRunOptions): PanelRun {
   }
   function followAddress(next: string) {
     try {
-      instance.state.setState(addressStatePatch(next));
-      address.value = next;
-      options.onAddressPending?.(false);
+      const patch = addressStatePatch(next);
+      if (!Object.keys(patch).length) {
+        address.value = next;
+        options.onAddressPending?.(false);
+        return;
+      }
+      const applied = instance.state.setState(patch);
+      if (applied === true) {
+        address.value = next;
+        options.onAddressPending?.(false);
+      } else if (applied === false) {
+        options.onAddressPending?.(false);
+        reports.state(instance.deepLink(), address.value);
+      } else {
+        void applied.then(
+          (ok) => {
+            options.onAddressPending?.(false);
+            if (ok) address.value = next;
+            else reports.state(instance.deepLink(), address.value);
+          },
+          (reason) => reports.failed(reason),
+        );
+      }
     } catch (reason) {
       reports.failed(reason);
     }

@@ -160,14 +160,16 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       }, slots),
       address: (url) => panelRun.address(url),
       publicState: instance.publicState,
-      blocksFormInputChange: instance.blocksFormInputChange,
-      applyStatePreservingDrafts: instance.applyStatePreservingDrafts,
+      findBlockedForms: (patch) => instance.findBlockedForms(patch as Record<string, PanelFieldValue>),
+      checkAgentStateChange: (patch) => instance.checkAgentStateChange(patch as Record<string, PanelFieldValue>),
+      requestStateChange: (patch, requestOptions) =>
+        instance.requestStateChange(patch as Record<string, PanelFieldValue>, requestOptions),
       setState(patch) {
         const entries = Object.entries(patch);
         if (!entries.length) return;
         const checked: Record<string, PanelFieldValue> = {};
         for (const [name, value] of entries) checked[name] = checkPanelValue(options.manifest, name, value);
-        instance.state.setState(checked);
+        instance.applyAuthorizedState(checked);
       },
       refresh(target, affected, operation) {
         // Unseen, what an operation changed is held as everything; seen, only the data it concerns are read again.

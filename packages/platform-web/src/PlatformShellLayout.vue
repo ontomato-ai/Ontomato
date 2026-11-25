@@ -262,7 +262,7 @@ const unsaved = provideUnsavedChanges(() =>
     cancelButtonText: t("common.cancel"),
   }),
 );
-const removeLeaveCheck = router.beforeEach((to) => unsaved.allows(to.path));
+const removeLeaveCheck = router.beforeEach((to) => unsaved.allows(to.path, to.fullPath));
 function warnBeforeUnload(event: BeforeUnloadEvent) {
   if (!unsaved.dirty()) return;
   event.preventDefault();

@@ -58,6 +58,18 @@ export function stateObjects(value: PanelFieldValue | undefined): readonly Panel
  */
 export type PanelInitialState = Readonly<Record<string, RuntimeJsonValue>>;
 
+/**
+ * Result of writing one or more panel state fields: `true` synchronously when no dirty form target or fixed input is
+ * affected (so clean writes take effect immediately), `false` synchronously when skipped or rejected without prompting
+ * (for example an automatic fallback selection over a dirty form), or a `Promise<boolean>` when the platform asks the
+ * reader to confirm before switching (`true` once settled and applied, `false` if cancelled and left unchanged).
+ * Callers that act on the new value immediately after writing should `await` the result and check that it is `true`.
+ */
+export type PanelStateWriteResult = boolean | Promise<boolean>;
+
+/** Who initiated a panel state change, determining how affected dirty forms are guarded. */
+export type PanelStateChangeSource = "human" | "agent" | "auto";
+
 export interface PanelStateStore {
   /** Every declared field, by name, as the panel's template and script read them. */
   readonly values: Readonly<Ref<Readonly<Record<string, PanelFieldValue>>>>;
@@ -65,14 +77,19 @@ export interface PanelStateStore {
   readonly lastPatchedKeys: ReadonlySet<string>;
   /** One field; the same value `values` holds. */
   field(name: string): Readonly<Ref<PanelFieldValue>>;
-  /** What the reader or a state operation set. A value of the wrong type for the field is refused here. */
-  set(name: string, value: PanelFieldValue): void;
+  /**
+   * Sets one declared state field. A value of the wrong type throws synchronously. When no dirty form depends on the
+   * changed field, the update commits synchronously and returns `true`; otherwise the platform guards the change first
+   * and resolves `true` if applied or `false` if cancelled/blocked (leaving state unchanged).
+   */
+  set(name: string, value: PanelFieldValue): PanelStateWriteResult;
   /**
    * Atomically updates multiple declared fields in one state assignment (for example changing a parent object while
-   * clearing its child selection, or switching mutually exclusive selections). Every entry is validated before any
-   * field changes, so reactive watchers and the host bridge never see a half-updated state.
+   * clearing its child selection, or switching mutually exclusive selections). Every entry is validated synchronously
+   * before any field changes. Returns `true` synchronously when unaffected, or a `Promise<boolean>` resolving `true`
+   * once confirmed and committed or `false` if cancelled/blocked (leaving all fields untouched).
    */
-  setState(patch: Readonly<Record<string, PanelFieldValue>>): void;
+  setState(patch: Readonly<Record<string, PanelFieldValue>>): PanelStateWriteResult;
   /** The fields an address or an open request may carry, with the values they hold now. */
   deepLinkable(): Record<string, PanelDeepLinkStateValue>;
 }
@@ -127,14 +144,16 @@ export function createPanelState(manifest: PanelManifest, initial: PanelInitialS
       const next = checkPanelValue(manifest, name, value);
       patchedKeys = new Set([name]);
       values.value = { ...values.value, [name]: next };
+      return true;
     },
     setState(patch) {
       const entries = Object.entries(patch);
-      if (!entries.length) return;
+      if (!entries.length) return true;
       const checked: Record<string, PanelFieldValue> = {};
       for (const [name, value] of entries) checked[name] = checkPanelValue(manifest, name, value);
       patchedKeys = new Set(entries.map(([name]) => name));
       values.value = { ...values.value, ...checked };
+      return true;
     },
     deepLinkable() {
       return Object.fromEntries(Object.entries(values.value).filter((entry): entry is [string, PanelDeepLinkStateValue] => {

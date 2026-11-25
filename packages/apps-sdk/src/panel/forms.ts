@@ -1,10 +1,12 @@
-import { shallowReactive, shallowRef, type Ref } from "vue";
+import { shallowReactive, type Ref } from "vue";
+import { confirmDanger } from "@ontomato/platform-shell";
 import type { ExpectedPageTarget, FormFieldRejection, FormFillOutcome, PageActionOutcome } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
 import type { PanelFormTarget, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { PanelFormDescription, PanelFormField, PanelFormValues, ProjectionOperationBinding } from "@ontomato/contracts/panel-projection";
+import type { ObjectFormUnsavedSwitchMode } from "../base/object-form-types";
 import type { PanelAgentActionContext } from "./instance";
 
 /*
@@ -101,6 +103,39 @@ export interface PanelFormDraft {
   readonly agentFilledPaths: ReadonlySet<string>;
 }
 
+/** Draft capture and restore hooks registered by a form adapter so hiding a form preserves unsaved edits in the panel instance. */
+export interface PanelFormAdapterDraft<TDraft = PanelFormDraft> {
+  identity(): string;
+  inputStateKeys(): Iterable<string>;
+  capture(): TDraft | null;
+  restore(draft: TDraft): void;
+  /** Optional cleanup for persisted localStorage draft when a stashed (unmounted) draft is discarded. */
+  clearLocalDraft?(): void;
+}
+
+/** One dirty form draft retained on the panel instance while its component is hidden/unmounted (for example on another tab). */
+export interface StashedFormDraft {
+  readonly slot: string;
+  readonly identity: string;
+  readonly draft: unknown;
+  readonly inputStateKeys: readonly string[];
+  readonly editingTarget: PanelFormTarget | null;
+  readonly clearLocalDraft?: () => void;
+}
+
+/** Unified view of one currently dirty form (either mounted or stashed on the panel instance). */
+export interface PanelDirtyFormEntry {
+  readonly slot: string;
+  readonly mounted: boolean;
+  readonly inputStateKeys: readonly string[];
+  readonly editingTarget: PanelFormTarget | null;
+  readonly unsavedSwitchMode: ObjectFormUnsavedSwitchMode;
+  stillDirty(): boolean;
+  discard(): void;
+  settleInFlight?(): Promise<void>;
+  saveBeforeSwitch?(): Promise<boolean>;
+}
+
 /** One mounted form projection's adapter for live filling, submission, discard, and visibility snapshots. */
 export interface PanelFormAdapter {
   readonly handle: PanelFormHandle;
@@ -115,6 +150,17 @@ export interface PanelFormAdapter {
   ): Promise<PanelFormAdapterFillResult>;
   /** Saves what the form holds now, through the owner, at the revision it was read at where the owner has one. */
   submit(override?: FormSubmitOverride): Promise<unknown>;
+  /**
+   * Saves this form when the reader chooses "Save and switch" in a three-state confirmation.
+   * Displays owner refusals inline on the form and resolves `true` only when the save succeeded and cleared dirty state.
+   */
+  saveBeforeSwitch?(): Promise<boolean>;
+  /** Waits for any in-flight automatic field save (`submitOn: "blur" | "change"`) to settle before confirming a switch. */
+  settleInFlight?(): Promise<void>;
+  /** Switch confirmation mode configured on this form component (defaults to `"discard-or-cancel"`). */
+  unsavedSwitchMode?(): ObjectFormUnsavedSwitchMode;
+  /** Whether an explicit submission (`submit()`) is currently in flight, distinct from automatic field saves. */
+  saving?(): boolean;
   /** Whether this form holds unsaved changes of the reader's, as the host must be told. */
   dirty(): boolean;
   /** Drops the reader's unsaved changes and shows the form as its owner holds it. */
@@ -123,12 +169,7 @@ export interface PanelFormAdapter {
   editingTarget(): PanelFormTarget | null;
   /** Live snapshot of this form's current target, dirty state and values for page visibility; null while still loading. */
   snapshot?(): Omit<PageFormSnapshot, "member" | "memberPath"> | null;
-  readonly draft?: {
-    identity(): string;
-    inputStateKeys(): Iterable<string>;
-    capture(): PanelFormDraft;
-    restore(draft: PanelFormDraft): void;
-  };
+  readonly draft?: PanelFormAdapterDraft<unknown>;
 }
 
 const SCOPED_FORM_SEPARATOR = "\u0000";
@@ -144,21 +185,22 @@ export function scopedFormSlot(slot: string, scopeKey: string): string {
   return `${slot}${SCOPED_FORM_SEPARATOR}${scopeKey}`;
 }
 
-/** The form adapters one panel instance's projections registered, by slot. */
+/** The form adapters one panel instance's projections registered, by slot, plus any drafts stashed while hidden. */
 export class PanelFormAdapters {
   readonly #bySlot = shallowReactive(new Map<string, PanelFormAdapter>());
-  readonly #probing = shallowRef(false);
+  readonly #stashed = shallowReactive(new Map<string, StashedFormDraft>());
   readonly #boundState = new Map<string, Set<string>>();
-  readonly #rollback = new Map<string, { draft: PanelFormDraft; restored(): void }>();
 
-  constructor(private readonly memberOrder: readonly string[] = []) {}
+  constructor(
+    private readonly memberOrder: readonly string[] = [],
+    private readonly isDisposed: () => boolean = () => false,
+    private readonly translate?: (key: string) => string,
+  ) {}
 
-  get probing(): boolean {
-    return this.#probing.value;
-  }
-
-  set probing(value: boolean) {
-    this.#probing.value = value;
+  #tr(key: string, fallback: string): string {
+    if (!this.translate) return fallback;
+    const translated = this.translate(key);
+    return translated && translated !== key ? translated : fallback;
   }
 
   /** Declares a state input a panel's own code uses to derive a form binding. */
@@ -168,54 +210,129 @@ export class PanelFormAdapters {
     this.#boundState.set(slot, fields);
   }
 
+  /** State keys explicitly bound to `slot` via `bindInputState`. */
+  boundInputStates(slot: string): ReadonlySet<string> {
+    return this.#boundState.get(slot) ?? new Set<string>();
+  }
+
   dirtyInputs(): { member: string; fields: string[] }[] {
-    return [...this.#bySlot].flatMap(([key, adapter]) => {
-      if (!adapter.dirty()) return [];
+    return this.dirtyEntries().map((entry) => ({
+      member: entry.slot,
+      fields: [...entry.inputStateKeys],
+    }));
+  }
+
+  /** Whether `slot` currently has an unmounted dirty draft retained on this panel instance. */
+  hasStashedDraft(slot: string): boolean {
+    return this.#matchingStashed(slot).length > 0;
+  }
+
+  /** Consumes and returns a stashed draft for `slot` when remounted on the exact same draft identity. */
+  takeStashedDraft<TDraft = PanelFormDraft>(slot: string, identity: string): TDraft | undefined {
+    const saved = this.#stashed.get(slot);
+    if (!saved || saved.identity !== identity) return undefined;
+    this.#stashed.delete(slot);
+    return saved.draft as TDraft;
+  }
+
+  /** All currently dirty forms (mounted and stashed) in manifest declaration order. */
+  dirtyEntries(): PanelDirtyFormEntry[] {
+    const keysOrdered = this.#orderedSlots(new Set([...this.#bySlot.keys(), ...this.#stashed.keys()]));
+    const entries: PanelDirtyFormEntry[] = [];
+    for (const key of keysOrdered) {
       const member = baseFormSlot(key);
-      const bound = new Set<string>([
-        ...(this.#boundState.get(key) ?? []),
-        ...(this.#boundState.get(member) ?? []),
-        ...(adapter.draft?.inputStateKeys() ?? []),
-      ]);
-      return [{ member, fields: [...bound] }];
-    });
-  }
-
-  captureDirtyDrafts() {
-    return [...this.#bySlot].flatMap(([slot, adapter]) => {
-      if (!adapter.draft || !adapter.dirty()) return [];
-      const form = adapter.draft;
-      const identity = form.identity();
-      const draft = form.capture();
-      return [{
-        stillMounted: () => {
-          const current = this.#bySlot.get(slot);
-          return current?.draft?.identity() === identity && current.dirty();
-        },
-        restoreOnRemount: () => {
-          if (this.#bySlot.get(slot) === adapter) {
-            if (!adapter.dirty()) form.restore(draft);
-            return;
-          }
-          return new Promise<void>((restored) => this.#rollback.set(identity, { draft, restored }));
-        },
-      }];
-    });
-  }
-
-  takeRollback(identity: string): PanelFormDraft | undefined {
-    const saved = this.#rollback.get(identity);
-    if (!saved) return;
-    this.#rollback.delete(identity);
-    saved.restored();
-    return saved.draft;
+      const adapter = this.#bySlot.get(key);
+      if (adapter && adapter.dirty() && !adapter.saving?.()) {
+        const boundKeys = new Set<string>([
+          ...(this.#boundState.get(key) ?? []),
+          ...(this.#boundState.get(member) ?? []),
+          ...(adapter.draft?.inputStateKeys() ?? []),
+        ]);
+        entries.push({
+          slot: member,
+          mounted: true,
+          inputStateKeys: [...boundKeys],
+          editingTarget: adapter.editingTarget(),
+          unsavedSwitchMode: adapter.unsavedSwitchMode?.() ?? "discard-or-cancel",
+          stillDirty: () => (
+            this.#bySlot.get(key) === adapter
+              ? (adapter.dirty() && !adapter.saving?.())
+              : this.#stashed.has(key)
+          ),
+          discard: () => {
+            if (this.#bySlot.get(key) === adapter) adapter.discard();
+            const stashed = this.#stashed.get(key);
+            if (stashed) {
+              stashed.clearLocalDraft?.();
+              this.#stashed.delete(key);
+            }
+          },
+          ...(adapter.settleInFlight ? { settleInFlight: adapter.settleInFlight } : {}),
+          saveBeforeSwitch: adapter.saveBeforeSwitch ?? (async () => {
+            try {
+              const result = await adapter.submit();
+              return result !== false && result !== null && !adapter.dirty();
+            } catch {
+              return false;
+            }
+          }),
+        });
+        continue;
+      }
+      const stashed = this.#stashed.get(key);
+      if (stashed) {
+        const boundKeys = new Set<string>([
+          ...(this.#boundState.get(key) ?? []),
+          ...(this.#boundState.get(member) ?? []),
+          ...stashed.inputStateKeys,
+        ]);
+        entries.push({
+          slot: member,
+          mounted: false,
+          inputStateKeys: [...boundKeys],
+          editingTarget: stashed.editingTarget,
+          unsavedSwitchMode: "discard-or-cancel",
+          stillDirty: () => this.#stashed.has(key),
+          discard: () => {
+            const current = this.#stashed.get(key);
+            if (current) {
+              current.clearLocalDraft?.();
+              this.#stashed.delete(key);
+            }
+          },
+        });
+      }
+    }
+    return entries;
   }
 
   register(slot: string, adapter: PanelFormAdapter): () => void {
     if (!slot) throw new Error("A form projection registers under the slot whose declaration names it");
     if (this.#bySlot.has(slot)) throw new Error(`Slot '${slot}' already holds a form`);
     this.#bySlot.set(slot, adapter);
-    return () => this.#bySlot.delete(slot);
+    return () => {
+      if (this.#bySlot.get(slot) !== adapter) return;
+      if (!this.isDisposed() && adapter.dirty() && adapter.draft) {
+        const captured = adapter.draft.capture();
+        if (captured !== null && captured !== undefined) {
+          const member = baseFormSlot(slot);
+          const keys = new Set<string>([
+            ...(this.#boundState.get(slot) ?? []),
+            ...(this.#boundState.get(member) ?? []),
+            ...adapter.draft.inputStateKeys(),
+          ]);
+          this.#stashed.set(slot, {
+            slot,
+            identity: adapter.draft.identity(),
+            draft: captured,
+            inputStateKeys: [...keys],
+            editingTarget: adapter.editingTarget(),
+            ...(adapter.draft.clearLocalDraft ? { clearLocalDraft: adapter.draft.clearLocalDraft } : {}),
+          });
+        }
+      }
+      this.#bySlot.delete(slot);
+    };
   }
 
   #orderedSlots(slots: Iterable<string>): string[] {
@@ -235,6 +352,17 @@ export class PanelFormAdapters {
     const matches: [string, PanelFormAdapter][] = [];
     for (const [key, adapter] of this.#bySlot.entries()) {
       if (baseFormSlot(key) === slot) matches.push([key, adapter]);
+    }
+    return matches;
+  }
+
+  #matchingStashed(slot: string): [string, StashedFormDraft][] {
+    const direct = this.#stashed.get(slot);
+    if (direct) return [[slot, direct]];
+    if (slot.includes(SCOPED_FORM_SEPARATOR)) return [];
+    const matches: [string, StashedFormDraft][] = [];
+    for (const [key, stashed] of this.#stashed.entries()) {
+      if (baseFormSlot(key) === slot) matches.push([key, stashed]);
     }
     return matches;
   }
@@ -316,24 +444,33 @@ export class PanelFormAdapters {
   }
 
   /**
-   * Whether registered forms hold unsaved changes: checks every registered form when `slots` is omitted, or only the
+   * Whether registered or stashed forms hold unsaved changes: checks every form when `slots` is omitted, or only the
    * named form slot(s) when provided.
    */
   dirty(slots?: string | readonly string[]): boolean {
-    if (slots === undefined) return [...this.#bySlot.values()].some((adapter) => adapter.dirty());
+    if (slots === undefined) {
+      return [...this.#bySlot.values()].some((adapter) => adapter.dirty()) || this.#stashed.size > 0;
+    }
     const list = typeof slots === "string" ? [slots] : slots;
-    return list.some((slot) => this.#matchingEntries(slot).some(([, adapter]) => adapter.dirty()));
+    return list.some((slot) => (
+      this.#matchingEntries(slot).some(([, adapter]) => adapter.dirty())
+      || this.#matchingStashed(slot).length > 0
+    ));
   }
 
   /**
-   * Drops unsaved edits on dirty registered forms (used once leaving unsaved changes has been confirmed). When `slots`
-   * is provided, only dirty forms among those slots are discarded so sibling forms on the same panel stay intact.
+   * Drops unsaved edits on dirty registered and stashed forms (used once leaving unsaved changes has been confirmed).
+   * When `slots` is provided, only dirty forms among those slots are discarded so sibling forms on the same panel stay intact.
    */
   discardAll(slots?: readonly string[]): void {
     if (slots === undefined) {
       for (const adapter of this.#bySlot.values()) {
         if (adapter.dirty()) adapter.discard();
       }
+      for (const stashed of [...this.#stashed.values()]) {
+        stashed.clearLocalDraft?.();
+      }
+      this.#stashed.clear();
       return;
     }
     const seen = new Set<string>();
@@ -342,6 +479,12 @@ export class PanelFormAdapters {
         if (seen.has(key)) continue;
         seen.add(key);
         if (adapter.dirty()) adapter.discard();
+      }
+      for (const [key, stashed] of this.#matchingStashed(slot)) {
+        if (seen.has(`stash:${key}`)) continue;
+        seen.add(`stash:${key}`);
+        stashed.clearLocalDraft?.();
+        this.#stashed.delete(key);
       }
     }
   }
@@ -353,15 +496,19 @@ export class PanelFormAdapters {
     return override === undefined ? adapter.submit() : adapter.submit(override);
   }
 
-  /** Drops unsaved edits in a slot's form, restoring its owner baseline. */
+  /** Drops unsaved edits in a slot's mounted or stashed form, restoring its owner baseline. */
   discard(slot: string): void {
     this.#resolveSingle(slot)?.discard();
+    for (const [key, stashed] of this.#matchingStashed(slot)) {
+      stashed.clearLocalDraft?.();
+      this.#stashed.delete(key);
+    }
   }
 
   /**
-   * Discards dirty forms whose current object target is in `removed`, or whose bound state inputs include any state
-   * key in `clearedStateKeys` (for example, a draft whose `fixedFields` parent object was removed). Called before
-   * clearing panel state on removal so form target watchers do not prompt to keep editing or write deleted objects back.
+   * Discards dirty forms (mounted or stashed) whose current object target is in `removed`, or whose bound state inputs
+   * include any state key in `clearedStateKeys` (for example, a draft whose `fixedFields` parent object was removed).
+   * Called before clearing panel state on removal so form target watchers do not prompt or write deleted objects back.
    */
   discardRemoved(
     removed: readonly PanelObjectIdentity[],
@@ -370,10 +517,11 @@ export class PanelFormAdapters {
     const hasRemoved = removed.length > 0;
     const hasClearedStates = Boolean(clearedStateKeys?.size);
     if (!hasRemoved && !hasClearedStates) return;
-    for (const [slot, adapter] of [...this.#bySlot.entries()]) {
-      if (this.#bySlot.get(slot) !== adapter) continue;
-      if (!adapter.dirty() && !adapter.handle?.dirty?.value) continue;
-      const target = adapter.editingTarget();
+    const matchesRemoval = (
+      target: PanelFormTarget | null,
+      slot: string,
+      inputKeys: Iterable<string>,
+    ): boolean => {
       const targetRemoved =
         hasRemoved
         && target?.kind === "object"
@@ -381,26 +529,57 @@ export class PanelFormAdapters {
           ({ objectType, primaryKey }) =>
             objectType === target.objectType && primaryKey === target.primaryKey,
         );
+      if (targetRemoved) return true;
+      if (!hasClearedStates) return false;
       const base = baseFormSlot(slot);
-      const stateCleared =
-        !targetRemoved
-        && hasClearedStates
-        && (
-          [...(this.#boundState.get(slot) ?? []), ...(this.#boundState.get(base) ?? [])].some((key) => clearedStateKeys!.has(key))
-          || [...(adapter.draft?.inputStateKeys() ?? [])].some((key) => clearedStateKeys!.has(key))
-        );
-      if (targetRemoved || stateCleared) adapter.discard();
+      return (
+        [...(this.#boundState.get(slot) ?? []), ...(this.#boundState.get(base) ?? [])].some((key) => clearedStateKeys!.has(key))
+        || [...inputKeys].some((key) => clearedStateKeys!.has(key))
+      );
+    };
+    for (const [slot, adapter] of [...this.#bySlot.entries()]) {
+      if (this.#bySlot.get(slot) !== adapter) continue;
+      if (!adapter.dirty() && !adapter.handle?.dirty?.value) continue;
+      if (matchesRemoval(adapter.editingTarget(), slot, adapter.draft?.inputStateKeys() ?? [])) {
+        adapter.discard();
+      }
+    }
+    for (const [slot, stashed] of [...this.#stashed.entries()]) {
+      if (matchesRemoval(stashed.editingTarget, slot, stashed.inputStateKeys)) {
+        stashed.clearLocalDraft?.();
+        this.#stashed.delete(slot);
+      }
     }
   }
 
   /**
-   * Resets a slot's form to its owner baseline, optionally asking the platform's discard confirmation first when
-   * `options.confirm` is `true`. Resolves `false` when the slot has no mounted form or the reader cancels.
+   * Resets a slot's form (mounted or stashed) to its owner baseline, optionally asking the platform's discard
+   * confirmation first when `options.confirm` is `true`. Resolves `false` when no form/stash exists or the reader cancels.
    */
-  reset(slot: string, options?: { confirm?: boolean }): Promise<boolean> {
+  async reset(slot: string, options?: { confirm?: boolean }): Promise<boolean> {
     const adapter = this.#resolveSingle(slot);
-    if (!adapter) return Promise.resolve(false);
-    return adapter.handle.reset(options);
+    if (adapter) return adapter.handle.reset(options);
+    const stashedEntries = this.#matchingStashed(slot);
+    if (!stashedEntries.length) return false;
+    if (options?.confirm) {
+      const confirmed = await confirmDanger(
+        this.#tr("platform.formDiscardConfirm", "Discard the changes you have not saved?"),
+        this.#tr("platform.discard", "Discard"),
+        {
+          confirmButtonText: this.#tr("platform.discard", "Discard"),
+          cancelButtonText: this.#tr("platform.keepEditing", "Keep editing"),
+        },
+      );
+      if (!confirmed) return false;
+    }
+    for (const [key] of stashedEntries) {
+      const current = this.#stashed.get(key);
+      if (current) {
+        current.clearLocalDraft?.();
+        this.#stashed.delete(key);
+      }
+    }
+    return true;
   }
 
   /** Returns the current snapshot for a single mounted form slot, or null if not mounted or still loading. */

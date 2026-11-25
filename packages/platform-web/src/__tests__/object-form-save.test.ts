@@ -10,11 +10,9 @@ import ReferenceChoice from "../../../apps-sdk/src/base/ReferenceChoice.vue";
 import ObjectForm from "../../../apps-sdk/src/base/ObjectForm.vue";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
 import { resolveFormSaveAnswer } from "../../../apps-sdk/src/panel/member-forms";
-import { PanelFormAdapters } from "../../../apps-sdk/src/panel/forms";
-import { PanelConfirmationDeferred, PanelOperationDeferred, type PanelInstance, type PanelWriteResult } from "../../../apps-sdk/src/panel/instance";
+import { createPanelInstance, PanelConfirmationDeferred, PanelOperationDeferred, type PanelInstance, type PanelWriteResult } from "../../../apps-sdk/src/panel/instance";
 import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/panel/member";
 import type { MemberOperationsState } from "../../../apps-sdk/src/panel/member-operations";
-import { createPanelState } from "../../../apps-sdk/src/panel/state";
 
 const customerType = "Customer";
 const platformType = "platform:BusinessKnowledge";
@@ -117,26 +115,34 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
     state: { selected: { type: { kind: "object", objectType: className } }, campus: { type: { kind: "scalar", type: "string" } } },
     members: { form: { target: { projectionId: projection.id }, inputs: { target: { state: "selected" }, campus: { state: "campus" } } } },
   });
-  const state = createPanelState(manifest, { campus: "North" });
-  const forms = new PanelFormAdapters();
   const selectedRead = deferred<PanelFormDescription>();
   const read: PanelMemberContext["data"]["read"] = async name => ({
     status: "ready", value: name === "createForm" ? createForm : await selectedRead.promise,
   });
   const write = vi.fn<Parameters<PanelInstance["writeOperation"]>, ReturnType<PanelInstance["writeOperation"]>>()
     .mockResolvedValue(receipt());
-  const instance = {
-    state, forms, writeOperation: write,
-    isDisposed: () => false,
-    onObjectChanged: () => () => {},
-    onOperationCompleted: () => () => {},
-    operationIdOf: (slot, name) => `${slot}.${name}`,
-    memberPathOf: (member) => [{ member }],
-    registerActionHandler: () => () => {},
-    objectName: () => null,
-  } satisfies Pick<PanelInstance, "state" | "forms" | "writeOperation" | "onObjectChanged"
-    | "isDisposed" | "onOperationCompleted" | "operationIdOf" | "memberPathOf" | "registerActionHandler" | "objectName">;
   const notify = vi.fn();
+  const baseInstance = createPanelInstance(manifest, {
+    pageKey: "test-page",
+    url: () => "/test",
+    label: () => "Test",
+    initial: { campus: "North" },
+    readProjection: async () => projection,
+    text: (key: string) => key,
+    operations: {
+      describe: async () => { throw new Error("unexpected describe"); },
+      prepare: async () => { throw new Error("unexpected prepare"); },
+      read: async () => { throw new Error("unexpected read"); },
+      cancel: async () => {},
+      upload: async () => { throw new Error("unexpected upload"); },
+    },
+    confirmOperation: async () => { throw new Error("unexpected confirm"); },
+    notify,
+    confirmLeaveUnsaved,
+  });
+  const instance = { ...baseInstance, writeOperation: write };
+  const state = instance.state;
+  const forms = instance.forms;
   const panel = { instance, manifest, notify, confirmLeaveUnsaved } satisfies Pick<PanelContext, "manifest" | "notify" | "confirmLeaveUnsaved"> & { instance: typeof instance };
   const operations = shallowRef<MemberOperationsState>({
     status: "ready",

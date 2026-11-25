@@ -6,7 +6,7 @@ import { useI18n } from "vue-i18n";
 import { ElAlert } from "element-plus/es/components/alert/index";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElForm } from "element-plus/es/components/form/index";
-import { confirmDanger, confirmUnsavedSwitch } from "@ontomato/platform-shell";
+import { confirmDanger } from "@ontomato/platform-shell";
 import type { FormFieldRejection, PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -438,9 +438,7 @@ const inputStateKeys = computed(() => [
   ...(state.value === null ? [] : [state.value]),
   ...Object.values(props.fixedFields).flatMap((from) => "state" in from ? [from.state] : []),
 ]);
-let acceptedState = panel.instance.state.values.value;
-// A presentation probe must compare the requested inputs even while the form keeps displaying its accepted draft.
-const draftIdentity = () => JSON.stringify([panel.instance.memberPathOf(slot.slot), requestedTarget.value, requestedFixedValues.value]);
+const draftIdentity = () => JSON.stringify([panel.instance.memberPathOf(slot.slot), target.value, fixedValues.value]);
 /** Localized explanation shown on fields that the form's bound customer save Action does not accept. */
 const actionFieldReadOnlyReason = computed(() => (
   te("platform.formFieldNotSavedByAction")
@@ -768,9 +766,9 @@ function load(next: PanelFormTarget | null) {
   askNext = null;
   asking.value = false;
   flushOwnerAskWaiters();
-  const rollback = panel.instance.forms.takeRollback(draftIdentity());
-  if (rollback) {
-    restoreDraft(rollback);
+  const stashed = panel.instance.forms.takeStashedDraft<PanelFormDraft>(formSlotKey, draftIdentity());
+  if (stashed) {
+    restoreDraft(stashed);
     return;
   }
   if (next === null) {
@@ -806,6 +804,7 @@ onBeforeUnmount(() => {
   unmounted = true;
   latestRead += 1;
   askNext = null;
+  flushAutoPendingWaiters();
   unregisterDiscard?.();
   unregisterReset?.();
   unregisterSave?.();
@@ -1024,7 +1023,6 @@ watch(saveOperationName, (name) => {
   );
 }, { immediate: true });
 let pendingRefresh = false;
-let confirmingSwitch = false;
 const memberInputKey = computed(() => JSON.stringify(member.inputs.value));
 let acceptedMemberInputKey = memberInputKey.value;
 function formContextChanged() {
@@ -1033,13 +1031,12 @@ function formContextChanged() {
     || !jsonValuesEqual(requestedFixedValues.value, fixedValues.value);
 }
 /**
- * The target and the fixed values together identify what the reader is editing. Keep the accepted inputs until any
- * pending confirmation settles, including when one panel state change derives another.
+ * The target and the fixed values together identify what the reader is editing. Switching confirmation and draft
+ * settlement run in `PanelInstance` before panel state mutates; this watcher only syncs the accepted target and reloads.
  */
-watch([requestedTarget, requestedFixedValues, memberInputKey, autoPending], async () => {
-  if (confirmingSwitch || autoPending.value) return;
+watch([requestedTarget, requestedFixedValues, memberInputKey, autoPending], () => {
+  if (autoPending.value) return;
   if (!formContextChanged()) {
-    acceptedState = panel.instance.state.values.value;
     if (memberInputKey.value !== acceptedMemberInputKey) {
       acceptedMemberInputKey = memberInputKey.value;
       formInstanceId.value = randomId();
@@ -1047,63 +1044,7 @@ watch([requestedTarget, requestedFixedValues, memberInputKey, autoPending], asyn
     }
     return;
   }
-  const probing = panel.instance.forms.probing;
-  if (probing && dirty.value) return;
-  const shouldDiscard = !probing && canSettle.value && !saving.value;
-  let savedBeforeSwitch = false;
-  if (shouldDiscard) {
-    confirmingSwitch = true;
-    let leave: boolean;
-    try {
-      if (effectiveUnsavedSwitchMode.value === "save-discard-cancel") {
-        const decision = await confirmUnsavedSwitch(
-          tr("platform.formLeaveUnsavedSwitch", "This form has unsaved changes. Save before switching, or discard them?"),
-          tr("platform.unsavedChanges", "Unsaved changes"),
-          {
-            saveButtonText: tr("platform.formSaveAndSwitch", "Save and switch"),
-            discardButtonText: tr("platform.formDiscardChanges", "Discard changes"),
-          },
-        );
-        if (unmounted || !formContextChanged()) return;
-        if (decision === "discard") {
-          leave = true;
-        } else if (decision === "save") {
-          try {
-            await write(undefined, undefined, { allowPendingSwitch: true });
-            leave = true;
-            savedBeforeSwitch = true;
-          } catch (reason) {
-            if (!(reason instanceof PanelConfirmationDeferred)) {
-              showRefusal(reason);
-            }
-            leave = false;
-          }
-        } else {
-          leave = false;
-        }
-      } else {
-        leave = panel.confirmLeaveUnsaved
-          ? await panel.confirmLeaveUnsaved()
-          : await confirmDanger(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
-              confirmButtonText: t("platform.discard"),
-              cancelButtonText: t("platform.keepEditing"),
-            });
-      }
-    } finally {
-      confirmingSwitch = false;
-    }
-    if (unmounted || !formContextChanged()) return;
-    if (!leave) {
-      const current = panel.instance.state.values.value;
-      panel.instance.state.setState(Object.fromEntries(inputStateKeys.value.flatMap((name) =>
-        jsonValuesEqual(current[name], acceptedState[name]) ? [] : [[name, acceptedState[name]!]],
-      )));
-      return;
-    }
-  }
   pendingRefresh = false;
-  if (shouldDiscard && !savedBeforeSwitch) discard(false);
-  acceptedState = panel.instance.state.values.value;
   acceptedMemberInputKey = memberInputKey.value;
   target.value = requestedTarget.value;
   fixedValues.value = requestedFixedValues.value;
@@ -1227,6 +1168,17 @@ function queueFieldSave(path: string) {
   if (!autoPending.value) void drainFieldSaves();
 }
 
+const autoPendingWaiters: (() => void)[] = [];
+function flushAutoPendingWaiters() {
+  for (const resolve of autoPendingWaiters.splice(0)) resolve();
+}
+function settleInFlight(): Promise<void> {
+  if (!autoPending.value) return Promise.resolve();
+  return new Promise((resolve) => {
+    autoPendingWaiters.push(resolve);
+  });
+}
+
 async function drainFieldSaves() {
   autoPending.value = true;
   const into = target.value;
@@ -1259,6 +1211,7 @@ async function drainFieldSaves() {
   } finally {
     queuedFields.clear();
     autoPending.value = false;
+    flushAutoPendingWaiters();
   }
 }
 
@@ -2051,26 +2004,42 @@ useProjectionForm({
     };
   },
   submit: (override) => write(override),
+  async saveBeforeSwitch() {
+    try {
+      await write(undefined, undefined, { allowPendingSwitch: true });
+      return !dirty.value && !autoPending.value;
+    } catch (reason) {
+      if (!(reason instanceof PanelConfirmationDeferred)) showRefusal(reason);
+      return false;
+    }
+  },
+  settleInFlight,
+  unsavedSwitchMode: () => effectiveUnsavedSwitchMode.value,
+  saving: () => saving.value && !autoPending.value,
   dirty: () => dirty.value || autoPending.value,
   editingTarget: () => target.value,
   discard,
   draft: {
     identity: draftIdentity,
     inputStateKeys: () => inputStateKeys.value,
-    capture: () => ({
-      ownerOpened: ownerOpened.value!,
-      ownerShown: ownerShown.value!,
-      values: values.value,
-      changed: changed.value,
-      submitted: submitted.value,
-      invalid: invalid.value,
-      errors: errors.value,
-      refusal: refusal.value,
-      editedPaths: editedPaths.value,
-      userEditedPaths: userEditedPaths.value,
-      agentFilledPaths: agentFilledPaths.value,
-    }),
-    restore: restoreDraft,
+    capture: () => {
+      if (!ownerOpened.value || !ownerShown.value) return null;
+      return {
+        ownerOpened: ownerOpened.value,
+        ownerShown: ownerShown.value,
+        values: values.value,
+        changed: changed.value,
+        submitted: submitted.value,
+        invalid: invalid.value,
+        errors: errors.value,
+        refusal: refusal.value,
+        editedPaths: editedPaths.value,
+        userEditedPaths: userEditedPaths.value,
+        agentFilledPaths: agentFilledPaths.value,
+      };
+    },
+    restore: (draft) => restoreDraft(draft as PanelFormDraft),
+    clearLocalDraft: () => clearLocalDraft(target.value),
   },
   snapshot() {
     if (!opened.value) return null;

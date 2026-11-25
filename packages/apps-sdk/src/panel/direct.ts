@@ -560,6 +560,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         operations: placed.operations.value,
         dirty: () => placed.dirty(),
         context: placed.pageContext.value,
+        findAffectedDirtyForms: (changedKeys, nextValues) => placed.findAffectedDirtyForms(changedKeys, nextValues),
+        allDirtyForms: () => placed.allDirtyForms(),
         memberInstances: () => placed.memberInstances(),
         entryInstances: () => placed.entryInstances(),
         checkedKeys: () => placed.checkedKeys(),
@@ -747,6 +749,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             if (value === null) delete next[name];
             else next[name] = value;
             ownParamsRef.value = next;
+            return true as const;
           },
         });
         const memberContext: PanelMemberContext = {

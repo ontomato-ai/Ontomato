@@ -119,6 +119,7 @@ function start(revision = 0) {
               if (value === null) delete next[name];
               else next[name] = value;
               ownParamsRef.value = next;
+              return true as const;
             },
           })
         : undefined;

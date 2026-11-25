@@ -80,6 +80,7 @@ function mountObjectTree({
           value: computed(() => selectedRef.value),
           set(value: RuntimeJsonValue | null) {
             selectedRef.value = value;
+            return true as const;
           },
         };
       }
@@ -88,6 +89,7 @@ function mountObjectTree({
           value: computed(() => searchRef.value),
           set(value: RuntimeJsonValue | null) {
             searchRef.value = value;
+            return true as const;
           },
         };
       }
@@ -96,6 +98,7 @@ function mountObjectTree({
         value: computed(() => local.value),
         set(value: RuntimeJsonValue | null) {
           local.value = value;
+          return true as const;
         },
       };
     },

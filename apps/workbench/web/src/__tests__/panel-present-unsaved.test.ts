@@ -197,8 +197,7 @@ describe("an agent's presentation over a panel's unsaved form", () => {
       ...blockedUnsaved,
       current: { target: { url: scenario.address } },
     });
-    expect(form()).not.toBeNull();
-    expect(form()).not.toBe(original);
+    expect(form()).toBe(original);
     assertDirty();
     await vi.waitFor(() => {
       expect(jsonInput()?.value).toBe(invalid);
