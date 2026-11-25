@@ -22,21 +22,21 @@ function pinnedStateInput(ref: PanelStateRef | PanelStateFieldRef, state: Readon
  * cannot be overridden by client requests.
  */
 export function resolvePinnedInputs(
-  use: ApplicationPanelUse,
+  use: ApplicationPanelUse | undefined,
   trail: readonly ResolvedPanelPathStep[],
   leafMember: PanelMember,
   isFrameRoot: boolean,
 ): Map<string, unknown> {
   let pinnedState = new Map<string, unknown>();
   if (!isFrameRoot) {
-    for (const [stateName, ref] of Object.entries(use.inputs ?? {})) {
+    for (const [stateName, ref] of Object.entries(use?.inputs ?? {})) {
       if ("literal" in ref) pinnedState.set(stateName, ref.literal);
     }
   }
   for (const step of trail) {
     const nextPinned = new Map<string, unknown>();
     if ("target" in step.member && "fromPlatform" in step.member.target) {
-      for (const [stateName, ref] of Object.entries(use.inputs ?? {})) {
+      for (const [stateName, ref] of Object.entries(use?.inputs ?? {})) {
         if ("literal" in ref) nextPinned.set(stateName, ref.literal);
       }
     } else {

@@ -4,6 +4,8 @@ import { builtinApplicationSchema, type BuiltinApplication } from "@ontomato/con
 import { config } from "../../config/application";
 import { environment } from "../../config/environment";
 import { createLogger } from "../../logging/logger";
+import { isApplicationPanelUse, isFrameConversationEntry } from "@ontomato/contracts/product-panels";
+import { validateApplicationPanelReferences } from "../product-panels/current";
 import { workbenchApplications } from "./builtins";
 const logger = createLogger("application-catalog");
 const registration = z.object({ success: z.literal(true), data: z.object({ serviceId: z.literal("workbench"), applicationIds: z.array(z.string()) }) });
@@ -18,6 +20,23 @@ export class ApplicationCatalogClient {
     registration.parse(await response.json());
   }
 }
+/** Validate built-in application panel/frame references against current built-in definitions before registration. */
+export async function validateBuiltinApplicationReferences(declaration: BuiltinApplication[]) {
+  const parsed = z.array(builtinApplicationSchema).parse(declaration);
+  for (const { declaration, framePanelId } of parsed) {
+    const entries = declaration.panelUses ?? [];
+    const frameConversationEntryIds = entries.filter(isFrameConversationEntry).map(entry => entry.id);
+    if (framePanelId === undefined && !frameConversationEntryIds.length) continue;
+    await validateApplicationPanelReferences({
+      domainId: null,
+      framePanelId,
+      frameConversationEntryIds,
+      uses: entries.filter(isApplicationPanelUse).map(({ id, panelId, pageComposer }) => ({ id, panelId, pageComposer })),
+      delivery: { panels: [], projections: [] },
+    });
+  }
+}
+
 /** Java may still be starting. Each attempt and the entire registration wait have finite deadlines. */
 export async function registerWorkbenchApplications(
   client: Pick<ApplicationCatalogClient, "register">, declaration: BuiltinApplication[], timeoutMs = 120_000,
@@ -42,5 +61,6 @@ export async function registerWorkbenchApplications(
 
 
 export async function registerApplications() {
+  await validateBuiltinApplicationReferences(workbenchApplications);
   await registerWorkbenchApplications(new ApplicationCatalogClient(config.dataQuery.baseUrl, environment.agentRuntime().queryServiceToken), workbenchApplications);
 }

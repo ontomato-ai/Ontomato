@@ -15,7 +15,7 @@ import { applicationRootPath } from "@ontomato/contracts/platform-identity";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelDeepLinkStateValue, PanelManifest } from "@ontomato/contracts/panel-manifest";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import { applicationFrameContextOf, isNativeApplicationEntry, type ApplicationEntryResolution, type ApplicationPanelUse, type BundledPanelProjection, type ProductPanel } from "@ontomato/contracts/product-panels";
+import { applicationFrameContextOf, isApplicationPanelUse, isFrameConversationEntry, isNativeApplicationEntry, type ApplicationEntryResolution, type ApplicationPanelUse, type BundledPanelProjection, type ProductPanel } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { PageComposer, usePageCounter, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
@@ -30,6 +30,8 @@ import {
   type FrameState,
   type PanelFrameRegistration,
 } from "../application-frame-context";
+import { usePanelConversationDisplay, type DisplayedPanel } from "../panel-conversation-display";
+import { usePanelSessionRuns } from "../panel-session-runs";
 import EntryUnit from "./EntryUnit.vue";
 import { hostThemeMode } from "../app-host";
 import { useApplicationCatalog } from "../catalog";
@@ -87,7 +89,7 @@ const language = computed(() => ({ locale: locale.value, fallback: String(fallba
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
 /** What the conversation's and an operation's changes reach: the shown page's instance. */
 type ShownInstance = Pick<PanelInstanceView, "refresh" | "validateState" | "applyState" | "blocksNavigation" | "probePresentation" | "presentationAddress" | "fillForm" | "executeAction" | "snapshotMeta" | "isLoading">;
-const host = ref<ShownInstance | null>(null);
+const host = shallowRef<ShownInstance | null>(null);
 /** Enclosing single outer frame host at full page; null beside a conversation (`props.navigate`). */
 const outerFrame = props.navigate ? null : inject(applicationFrameHostKey, null);
 let pendingControllerState: Record<string, RuntimeJsonValue> | null = null;
@@ -101,59 +103,60 @@ watch(host, (nextHost) => {
     emit("display-loaded", panelUnavailable(error));
   }
 });
+const pageController: DisplayPageController = {
+  blocksNavigation(next) {
+    return host.value?.blocksNavigation(next) ?? false;
+  },
+  async probePresentation(next) {
+    return host.value?.probePresentation(next);
+  },
+  presentationAddress(address, patch) {
+    return host.value?.presentationAddress(address, patch) ?? address;
+  },
+  validateState(patch) {
+    host.value?.validateState(patch);
+  },
+  applyState(patch) {
+    if (!host.value) {
+      pendingControllerState = { ...(pendingControllerState ?? {}), ...patch };
+      return;
+    }
+    host.value.applyState(patch);
+  },
+  fillForm(request) {
+    if (!host.value) {
+      return Promise.resolve({
+        ok: false,
+        reason: "form_not_ready",
+        ...(request.member ? { member: request.member } : {}),
+        ...(request.memberPath ? { memberPath: request.memberPath } : {}),
+        message: "The panel is not mounted and ready for form filling.",
+      });
+    }
+    return host.value.fillForm(request);
+  },
+  executeAction(request) {
+    if (!host.value) {
+      return Promise.resolve({
+        ok: false,
+        reason: "action_not_ready",
+        operation: request.operation,
+        message: "The panel is not mounted and ready for actions.",
+      });
+    }
+    return host.value.executeAction(request);
+  },
+  snapshotMeta() {
+    return host.value?.snapshotMeta?.() ?? {};
+  },
+  isLoading() {
+    if (failure.value || missing.value) return false;
+    if (verifying.value || !host.value) return true;
+    return host.value.isLoading?.() ?? false;
+  },
+};
 if (props.registerPageController) {
-  const unregister = props.registerPageController({
-    blocksNavigation(next) {
-      return host.value?.blocksNavigation(next) ?? false;
-    },
-    async probePresentation(next) {
-      return host.value?.probePresentation(next);
-    },
-    presentationAddress(address, patch) {
-      return host.value?.presentationAddress(address, patch) ?? address;
-    },
-    validateState(patch) {
-      host.value?.validateState(patch);
-    },
-    applyState(patch) {
-      if (!host.value) {
-        pendingControllerState = { ...(pendingControllerState ?? {}), ...patch };
-        return;
-      }
-      host.value.applyState(patch);
-    },
-    fillForm(request) {
-      if (!host.value) {
-        return Promise.resolve({
-          ok: false,
-          reason: "form_not_ready",
-          ...(request.member ? { member: request.member } : {}),
-          ...(request.memberPath ? { memberPath: request.memberPath } : {}),
-          message: "The panel is not mounted and ready for form filling.",
-        });
-      }
-      return host.value.fillForm(request);
-    },
-    executeAction(request) {
-      if (!host.value) {
-        return Promise.resolve({
-          ok: false,
-          reason: "action_not_ready",
-          operation: request.operation,
-          message: "The panel is not mounted and ready for actions.",
-        });
-      }
-      return host.value.executeAction(request);
-    },
-    snapshotMeta() {
-      return host.value?.snapshotMeta?.() ?? {};
-    },
-    isLoading() {
-      if (failure.value || missing.value) return false;
-      if (verifying.value || !host.value) return true;
-      return host.value.isLoading?.() ?? false;
-    },
-  });
+  const unregister = props.registerPageController(pageController);
   onBeforeUnmount(() => {
     pendingControllerState = null;
     unregister();
@@ -164,7 +167,7 @@ if (props.registerPageController) {
  * one place either is taken in. Both the entry panel and the enclosing application frame re-read what they display.
  */
 function changed(change: PanelObjectChange) {
-  host.value?.refresh(change.target, change.affected, change.operation);
+  refreshContent(change);
   outerFrame?.refreshFrame(change);
   if (
     change.affected?.objectTypes?.includes(APPLICATION)
@@ -174,6 +177,9 @@ function changed(change: PanelObjectChange) {
   ) {
     window.dispatchEvent(new Event(HOME_PREFERENCES_CHANGED));
   }
+}
+function refreshContent(change: PanelObjectChange) {
+  host.value?.refresh(change.target, change.affected, change.operation);
 }
 watch(() => props.objectRefresh?.seq, () => {
   if (props.objectRefresh) changed(props.objectRefresh);
@@ -195,6 +201,8 @@ const ENTRY_TABLE_REFRESH_MS = 5 * 60 * 1000;
 interface KeptPage {
   use: ApplicationPanelUse;
   port: PanelHostPort;
+  controller: ShownInstance | null;
+  load: DisplayLoad;
   /** The instance's own address, with its state, as it last reported it: where it is shown again from its bare address. */
   reported: string;
   context: PageContext | null;
@@ -267,9 +275,10 @@ const currentResolution = computed(() =>
   resolution.value?.applicationId === props.applicationId ? resolution.value : null,
 );
 /** Known panel entry table for this application: authoritative resolution menu once received, else navigation catalog. */
-const entryTable = computed<readonly ApplicationPanelUse[]>(() =>
+type EntryUse = ApplicationEntryResolution["use"];
+const entryTable = computed<readonly EntryUse[]>(() =>
   (currentResolution.value?.menu.panelUses ?? catalogApp.value?.panelUses ?? []).filter(
-    (entry): entry is ApplicationPanelUse => !isNativeApplicationEntry(entry),
+    (entry): entry is EntryUse => !isNativeApplicationEntry(entry),
   ),
 );
 /** The entry an address opens: its own path, or the application's first listed entry at the application's own address. */
@@ -279,7 +288,7 @@ const entryPath = computed(() => {
   return first ? panelUsePath(first.path) : null;
 });
 
-function findEntryByPath(entries: readonly ApplicationPanelUse[], path: string): ApplicationPanelUse | null {
+function findEntryByPath(entries: readonly EntryUse[], path: string): EntryUse | null {
   return entries.find((candidate) => panelUsePath(candidate.path) === path) ?? null;
 }
 
@@ -391,10 +400,10 @@ onBeforeUnmount(() => {
   clearInterval(refreshTimer);
 });
 
-const listedUse = computed<ApplicationPanelUse | null>(() =>
+const listedUse = computed<EntryUse | null>(() =>
   entryPath.value ? findEntryByPath(entryTable.value, entryPath.value) : null,
 );
-const resolvedUse = computed<ApplicationPanelUse | null>(() => {
+const resolvedUse = computed<EntryUse | null>(() => {
   const path = entryPath.value;
   const answer = currentResolution.value;
   if (!path || !answer) return null;
@@ -408,7 +417,7 @@ const keptUse = computed<ApplicationPanelUse | null>(() => {
 /**
  * The base use relation the opened address names before any per-user home panel override.
  */
-const baseUse = computed<ApplicationPanelUse | null>(() => {
+const baseUse = computed<EntryUse | null>(() => {
   const path = entryPath.value;
   if (!path || verifying.value || deniedPath.value === path) return null;
   return resolvedUse.value ?? listedUse.value ?? keptUse.value;
@@ -487,7 +496,7 @@ onBeforeUnmount(() => {
  */
 const use = computed<ApplicationPanelUse | null>(() => {
   const resolved = baseUse.value;
-  if (!resolved) return null;
+  if (!resolved || !isApplicationPanelUse(resolved)) return null;
   if (props.applicationId === "home" && resolved.id === "home") {
     if (homePanelStatus.value === "loading" || homePanelStatus.value === "unavailable") return null;
     if (customHomePanel.value) {
@@ -499,6 +508,13 @@ const use = computed<ApplicationPanelUse | null>(() => {
     }
   }
   return resolved;
+});
+const frameConversation = computed(() => Boolean(baseUse.value && isFrameConversationEntry(baseUse.value)));
+watch(frameConversation, (active) => {
+  if (active) {
+    kept.value = [];
+    emit("display-loaded", { status: "ready" });
+  }
 });
 const homeUnavailableBanner = computed(() => isHomeMainEntry.value && homePanelStatus.value === "unavailable");
 /**
@@ -513,6 +529,7 @@ const missing = computed(() =>
   !verifying.value
   && !(isHomeMainEntry.value && (homePanelStatus.value === "loading" || homePanelStatus.value === "unavailable"))
   && !use.value
+  && !frameConversation.value
     ? t("platform.panelNotInApplication", { path: openedPath.value })
     : "",
 );
@@ -579,45 +596,21 @@ useApplicationFrame(() => expectingFrame.value);
 
 const frameContext = computed(() => {
   const answer = currentResolution.value;
-  if (!answer) return null;
+  const activeUse = use.value ?? baseUse.value;
+  if (!activeUse) return null;
+  const app = catalogApp.value;
   return applicationFrameContextOf({
-    ...answer,
-    use: use.value ?? answer.use,
+    applicationId: props.applicationId,
+    menu: answer?.menu ?? { names: app?.names, groups: app?.groups ?? [], panelUses: app?.panelUses ?? [] },
+    use: activeUse,
   });
 });
 
-if (outerFrame) {
-  const registration = computed<PanelFrameRegistration>(() => {
-    const answer = currentResolution.value;
-    const activeUse = use.value;
-    const context = frameContext.value;
-    const resolved = Boolean(answer || deniedPath.value || missing.value);
-    return {
-      applicationId: props.applicationId,
-      framePanelId: answer ? answer.framePanelId : (!deniedPath.value ? catalogApp.value?.framePanelId : undefined),
-      resolved,
-      missing: Boolean(missing.value),
-      use: activeUse,
-      currentEntry: context?.currentEntry ?? (activeUse ? {
-        applicationId: props.applicationId,
-        useId: activeUse.id,
-        pageKey: activeUse.pageKey,
-        panelId: activeUse.panelId,
-        path: panelUsePath(activeUse.path),
-      } : null),
-      menu: context?.menu ?? null,
-      onObjectChange(change) {
-        host.value?.refresh(change.target, change.affected, change.operation);
-      },
-    };
-  });
-  const unregisterFrameEntry = outerFrame.registerPanelEntry(registration);
-  onBeforeUnmount(unregisterFrameEntry);
-}
 
 const showContentLoading = computed(() =>
   !missing.value
   && !homeUnavailableBanner.value
+  && !frameConversation.value
   && !displayedPage.value
   && !(outerFrame?.active.value && !outerFrame.surfaceReady.value),
 );
@@ -642,7 +635,7 @@ const labels = computed<PanelHostLabels>(() => ({
  */
 const composerProblem = ref<string | null>(null);
 /** The page skill a message written on the shown page reaches, once its read or its checks have said which. */
-const shownSkill = ref<PageSkillContext | null>(null);
+const shownSkill = shallowRef<PageSkillContext | null>(null);
 /** The shown page's skill is known: a message beside it, and the page's own composer, reach it. */
 function passSkill(context: PageSkillContext) {
   shownSkill.value = context;
@@ -708,12 +701,62 @@ const requestedState = computed(() => panelAddressState(opened.value));
  */
 const pageName = computed(() => localizedApplicationText(use.value?.names, locale.value) ?? "");
 
-const shownPage = computed(() =>
+const shownPage = computed<KeptPage | null>(() =>
   kept.value.find((page) => page.use.id === use.value?.id && page.use.panelId === use.value?.panelId) ?? null,
 );
 watch(shownPage, (next) => {
-  if (!next) host.value = null;
+  host.value = next?.controller ?? null;
 });
+function displayedPanel(): DisplayedPanel | null {
+  const page = shownPage.value;
+  return page ? {
+    controller: page.controller ? pageController : null,
+    context: page.context,
+    skill: shownSkill.value,
+    dirty: page.dirty,
+    load: page.load,
+  } : null;
+}
+if (outerFrame) {
+  const registration = computed<PanelFrameRegistration>(() => {
+    const answer = currentResolution.value;
+    const activeUse = use.value;
+    const context = frameContext.value;
+    const resolved = Boolean(answer || deniedPath.value || missing.value);
+    return {
+      applicationId: props.applicationId,
+      framePanelId: answer ? answer.framePanelId : (!deniedPath.value ? catalogApp.value?.framePanelId : undefined),
+      resolved,
+      missing: Boolean(missing.value),
+      use: activeUse ?? baseUse.value,
+      panel: displayedPanel(),
+      currentEntry: context?.currentEntry ?? (activeUse ? {
+        applicationId: props.applicationId,
+        useId: activeUse.id,
+        pageKey: activeUse.pageKey,
+        panelId: activeUse.panelId,
+        kind: "panel",
+        path: panelUsePath(activeUse.path),
+      } : null),
+      menu: context?.menu ?? null,
+      onObjectChange(change) {
+        refreshContent(change);
+      },
+    };
+  });
+  const unregisterFrameEntry = outerFrame.registerPanelEntry(registration);
+  onBeforeUnmount(unregisterFrameEntry);
+}
+
+const embeddedDisplay = props.navigate ? null : usePanelConversationDisplay({
+  router,
+  address: () => shownPage.value ? addressOf(shownPage.value) : null,
+  contains: path => path === openedPath.value || path === entryPath.value,
+  panel: displayedPanel,
+  refresh: changed,
+});
+const feed = outerFrame?.feed ?? (props.navigate ? undefined : usePanelSessionRuns(() => Boolean(use.value), refreshContent));
+
 /**
  * The visually displayed page: the logical current page once its surface is ready, otherwise the retained previous
  * page of the same application for up to TRANSITION_PLACEHOLDER_DELAY_MS, else null (loading placeholder).
@@ -813,6 +856,8 @@ function openPage(use: ApplicationPanelUse): KeptPage {
   const page: KeptPage = {
     use,
     port: undefined!,
+    controller: null,
+    load: { status: "loading" },
     reported: pageAddress.value,
     context: null,
     dirty: false,
@@ -845,6 +890,8 @@ function openPage(use: ApplicationPanelUse): KeptPage {
       };
     },
     onPanelLoaded,
+    () => shownPage.value?.use.id === use.id ? embeddedDisplay : null,
+    feed,
   ));
   return page;
 }
@@ -886,9 +933,23 @@ function stateOf(page: KeptPage) {
   return page === shownPage.value && opened.value.includes("?") ? requestedState.value : panelAddressState(page.reported);
 }
 
+const frameLiveStatePatch = computed(() => {
+  const update = outerFrame?.liveState?.value;
+  return update && update.instance === entryPath.value ? update.patch : null;
+});
 const liveStatePatch = computed(() =>
   props.liveState && props.liveState.instance === openedPath.value ? props.liveState.patch : null,
 );
+
+function setPageHost(page: KeptPage, controller: ShownInstance | null) {
+  page.controller = controller;
+  if (page === shownPage.value) host.value = controller;
+}
+
+function reportLoad(page: KeptPage, load: DisplayLoad) {
+  page.load = load;
+  if (page === shownPage.value) emit("display-loaded", load);
+}
 
 function reportContext(page: KeptPage, context: PageContext) {
   page.context = { ...context, label: pageName.value || context.label };
@@ -922,7 +983,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         v-for="page in kept"
         v-show="page === displayedPage"
         :key="`${page.use.id}:${page.use.panelId}`"
-        :ref="(instance) => { if (page === shownPage) host = instance as ShownInstance | null; }"
+        :ref="(instance) => setPageHost(page, instance as ShownInstance | null)"
         :class="{ 'panel-host-page': !props.navigate }"
         :port="page.port"
         :labels="labels"
@@ -932,11 +993,11 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         :address="addressOf(page)"
         :initial="stateOf(page)"
         :entry-inputs="entryInputs(page.use)"
-        :live-state="page === shownPage ? liveStatePatch : null"
+        :live-state="page === shownPage ? (liveStatePatch ?? frameLiveStatePatch) : null"
         :frame-state="frameState"
         :history-back="!props.navigate"
         @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
-        @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
+        @display-loaded="(load: DisplayLoad) => reportLoad(page, load)"
         @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
         @context="(context: PageContext) => reportContext(page, context)"
         @surface-ready="(ready: boolean) => reportSurfaceReady(page, ready)"
@@ -957,7 +1018,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         </div>
       </div>
       <!-- Offered once the panel's read named the page's skill: the agents are the ones that skill reaches. -->
-      <template v-if="!props.navigate && (use?.pageComposer ?? shownPage?.use.pageComposer) !== 'none' && !(shownPage && embeddedChatCounts[shownPage.use.id]) && ((shownPage && shownSkill) || composerProblem)" #foot>
+      <template v-if="!props.navigate && (use?.pageComposer ?? shownPage?.use.pageComposer) !== 'none' && !frameConversation && !outerFrame?.ownsComposer?.value && !(shownPage && embeddedChatCounts[shownPage.use.id]) && ((shownPage && shownSkill) || composerProblem)" #foot>
         <PageComposer
           v-if="shownPage && shownSkill"
           :page="shownPage.reported"

@@ -163,7 +163,7 @@ export const assistantStore = {
   /** Lists user-origin sessions for the current user in the current domain, newest first. */
   async listUserSessions(
     owner: AssistantOwner,
-    options: { search?: string; limit?: number } = {},
+    options: { search?: string; limit?: number; agentKind?: string; agentId?: string } = {},
   ): Promise<Array<{ sessionId: string; agentId: string; agentName: string; title: string; updatedAt: string }>> {
     const limit = Math.max(1, Math.min(50, options.limit ?? 20));
     const search = options.search?.trim();
@@ -177,6 +177,14 @@ export const assistantStore = {
     if (search) {
       params.push(`%${search.replace(/[\\%_]/g, "\\$&")}%`);
       where.push(`(s.title ILIKE $${params.length} ESCAPE '\\' OR COALESCE(a.name, '') ILIKE $${params.length} ESCAPE '\\')`);
+    }
+    if (options.agentKind !== undefined) {
+      params.push(options.agentKind);
+      where.push(`a.kind=$${params.length}`);
+    }
+    if (options.agentId !== undefined) {
+      params.push(options.agentId);
+      where.push(`s.agent_id=$${params.length}`);
     }
     params.push(limit);
     const result = await db().query<{

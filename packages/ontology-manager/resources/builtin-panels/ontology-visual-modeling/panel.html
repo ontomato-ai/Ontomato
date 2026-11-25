@@ -79,7 +79,7 @@
     border: 1px solid var(--sdk-border-color, var(--ui-border));
     border-radius: var(--radius-md);
     background: var(--sdk-bg-color);
-    padding: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-md) calc(var(--spacing-md) + var(--pane-dock-space, 0px));
     overflow-y: auto;
   }
   .vm-side > *,
@@ -163,6 +163,7 @@
       flex-direction: column;
       overflow-y: auto;
       overflow-x: hidden;
+      padding-bottom: calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     }
     .vm-canvas {
       flex: 1 0 min(22rem, 100%);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject } from "vue";
+import { computed, inject, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { ChartDisplay, ChartFormat } from "@ontomato/contracts/chart-data";
 import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
@@ -65,6 +65,16 @@ const props = withDefaults(
     items?: readonly MetricCardItem[];
     /** Visual presentation: `"card"` (bordered KPI cards), `"compact"` (dense tiles), or `"inline"` (horizontal strip). */
     variant?: "card" | "compact" | "inline";
+    /** Outer container surface: `"card"` (default bordered box) or `"bare"` (borderless/frameless for embedding inside an outer card shell). */
+    surface?: "card" | "bare";
+    /** Whether to render the card's internal label header row (default `true`; set `false` when an outer container draws the title). */
+    showLabel?: boolean;
+    /** Numeric value typographic scale: `"default"` or `"large"` (32px semibold dashboard KPI numeral). */
+    valueSize?: "default" | "large";
+    /** How truncation notices are presented: `"badge"` (`!` circle), `"icon"` (14px warning triangle), or `"none"` (delegated to outer header). */
+    truncationDisplay?: "badge" | "icon" | "none";
+    /** Keep the previous rendered value visible while refreshing instead of flashing to `"…"` (default `true`). */
+    keepPreviousOnRefresh?: boolean;
     /** Optional maximum number of grid columns in multi-item `"card"` / `"compact"` mode; collapses on narrow containers. */
     columns?: number;
     /** Fallback text shown when a metric `result` has no rows or a bound field is absent. Defaults to `"—"`. */
@@ -88,10 +98,20 @@ const props = withDefaults(
     formats: undefined,
     items: undefined,
     variant: "card",
+    surface: "card",
+    showLabel: true,
+    valueSize: "default",
+    truncationDisplay: "badge",
+    keepPreviousOnRefresh: true,
     columns: undefined,
     emptyText: "—",
   },
 );
+
+const emit = defineEmits<{
+  /** Emitted whenever the bound metric output's truncation notice changes (or clears to `null`). */
+  "truncation-change": [hint: string | null];
+}>();
 
 defineSlots<{
   /** Optional leading icon rendered in single-card mode beside the label. */
@@ -226,6 +246,36 @@ const parsedSource = computed<ParsedSource>(() => {
   return { state: "ready", total: hasTotal ? query.total! : undefined, hasTotal };
 });
 
+const lastReadySource = ref<ParsedSource | null>(null);
+watch(
+  parsedSource,
+  (next) => {
+    if (next.state === "ready" || next.state === "empty") {
+      lastReadySource.value = next;
+    } else if (next.state === "error" || next.state === "forbidden" || next.state === "awaiting") {
+      lastReadySource.value = null;
+    }
+  },
+  { immediate: true },
+);
+
+const isRefreshing = computed(() =>
+  props.keepPreviousOnRefresh && parsedSource.value.state === "loading" && lastReadySource.value !== null,
+);
+
+const effectiveSource = computed<ParsedSource>(() =>
+  isRefreshing.value && lastReadySource.value ? lastReadySource.value : parsedSource.value,
+);
+
+const currentTruncationHint = computed<string | null>(() => effectiveSource.value.truncationHint ?? null);
+watch(
+  currentTruncationHint,
+  (hint) => {
+    emit("truncation-change", hint);
+  },
+  { immediate: true },
+);
+
 const effectiveFormats = computed<ChartDisplay["formats"] | undefined>(() => {
   if (props.formats && typeof props.formats === "object" && !Array.isArray(props.formats)) return props.formats;
   const fromConfig = rawConfig.value?.formats;
@@ -285,7 +335,7 @@ interface RenderedMetricItem {
 }
 
 const renderedItems = computed<readonly RenderedMetricItem[]>(() => {
-  const src = parsedSource.value;
+  const src = effectiveSource.value;
   return configuredItems.value.map((item) => {
     const explicitLabel = resolveLocalizedText({
       key: item.labelKey,
@@ -375,7 +425,7 @@ const accessibleSummary = computed<string | undefined>(() => {
     return item.label ? `${item.label}: ${val}` : val;
   });
   const text = parts.join(", ");
-  if (parsedSource.value.notice) return text ? `${text} (${parsedSource.value.notice})` : parsedSource.value.notice;
+  if (effectiveSource.value.notice) return text ? `${text} (${effectiveSource.value.notice})` : effectiveSource.value.notice;
   return text || undefined;
 });
 
@@ -387,16 +437,25 @@ function refresh() {
   }
 }
 
-defineExpose({ refresh });
+defineExpose({ refresh, truncationHint: currentTruncationHint });
 </script>
 
 <template>
   <div
     class="sdk-metric-card-group"
-    :class="[`is-${variant}`, { 'is-single': isSingle, 'has-fixed-cols': Boolean(columns && !isSingle && variant !== 'inline') }]"
+    :class="[
+      `is-${variant}`,
+      `is-surface-${surface}`,
+      `is-value-${valueSize}`,
+      {
+        'is-single': isSingle,
+        'is-refreshing': isRefreshing,
+        'has-fixed-cols': Boolean(columns && !isSingle && variant !== 'inline'),
+      },
+    ]"
     :style="gridStyle"
-    :data-state="parsedSource.state"
-    :title="parsedSource.notice"
+    :data-state="effectiveSource.state"
+    :title="effectiveSource.notice"
     :aria-busy="parsedSource.state === 'loading' ? 'true' : undefined"
     :aria-label="accessibleSummary"
   >
@@ -406,15 +465,31 @@ defineExpose({ refresh });
       class="sdk-metric-card"
       :data-tone="item.tone"
     >
-      <div v-if="item.label || (isSingle && $slots.icon) || (index === 0 && parsedSource.truncationHint)" class="sdk-metric-card-head">
+      <div
+        v-if="(showLabel && item.label) || (isSingle && $slots.icon) || (index === 0 && currentTruncationHint && truncationDisplay !== 'none')"
+        class="sdk-metric-card-head"
+      >
         <span v-if="isSingle && $slots.icon" class="sdk-metric-card-icon"><slot name="icon" /></span>
-        <span v-if="item.label" class="sdk-metric-card-label">{{ item.label }}</span>
+        <span v-if="showLabel && item.label" class="sdk-metric-card-label">{{ item.label }}</span>
         <span
-          v-if="index === 0 && parsedSource.truncationHint"
+          v-if="index === 0 && currentTruncationHint && truncationDisplay === 'icon'"
+          class="sdk-metric-card-truncation-icon"
+          role="note"
+          :title="currentTruncationHint"
+          :aria-label="currentTruncationHint"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+          </svg>
+        </span>
+        <span
+          v-else-if="index === 0 && currentTruncationHint && truncationDisplay === 'badge'"
           class="sdk-metric-card-truncation"
           role="note"
-          :title="parsedSource.truncationHint"
-          :aria-label="parsedSource.truncationHint"
+          :title="currentTruncationHint"
+          :aria-label="currentTruncationHint"
         >!</span>
       </div>
       <div class="sdk-metric-card-value-row">
@@ -469,9 +544,21 @@ defineExpose({ refresh });
   border-radius: var(--radius-md);
   background: var(--el-bg-color);
   box-sizing: border-box;
+  transition: opacity 0.15s ease;
 }
 
-.sdk-metric-card-group.is-compact .sdk-metric-card {
+.sdk-metric-card-group.is-refreshing .sdk-metric-card {
+  opacity: 0.65;
+}
+
+.sdk-metric-card-group.is-surface-bare .sdk-metric-card {
+  padding: 0 var(--spacing-md, 16px) var(--spacing-md, 14px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.sdk-metric-card-group.is-compact:not(.is-surface-bare) .sdk-metric-card {
   padding: var(--spacing-md);
 }
 
@@ -522,6 +609,16 @@ defineExpose({ refresh });
   line-height: 1;
 }
 
+.sdk-metric-card-truncation-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin-inline-start: auto;
+  color: var(--el-color-warning);
+  line-height: 1;
+}
+
 .sdk-metric-card-value-row {
   display: flex;
   align-items: baseline;
@@ -543,6 +640,16 @@ defineExpose({ refresh });
 .sdk-metric-card-group.is-compact .sdk-metric-card-value {
   font-size: var(--text-xl);
   line-height: var(--leading-xl);
+}
+
+.sdk-metric-card-group.is-value-large .sdk-metric-card-value {
+  font-size: 32px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.sdk-metric-card-group.is-value-large .sdk-metric-card-unit {
+  font-size: var(--text-xs, 12px);
 }
 
 .sdk-metric-card-group.is-inline .sdk-metric-card-value {

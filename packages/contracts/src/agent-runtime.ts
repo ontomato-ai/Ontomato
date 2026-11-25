@@ -26,6 +26,7 @@ import {
 } from "./agent-runtime-skills";
 import {
   runtimeIdSchema,
+  runtimeJsonValueSchema,
   runtimeKeySchema,
   runtimeRunStatusSchema,
   runtimeStopReasonSchema,
@@ -161,6 +162,7 @@ export const runtimeRunViewSchema = z.object({
 }).strict();
 export type RuntimeRunView = z.infer<typeof runtimeRunViewSchema>;
 export const runtimeRunPresentationSchema = z.object({
+  outcome: runtimeJsonValueSchema.optional(),
   details: z.array(z.object({
     detail: runtimeRunDetailSchema,
     timestamp: z.number(),

@@ -25,6 +25,11 @@ it("defines the room under the composer once, and both composers read it", () =>
   // Folded, its round button floats at the corner with the same room under it and leaves the page its whole height.
   const unfold = [...style("../components/ShellComposer.vue").matchAll(/\n\.composer-unfold \{([^}]*)\}/g)].map((rule) => rule[1]).join("");
   expect(unfold).toMatch(/pointer-events:\s*auto;/);
+  expect(unfold).toMatch(/background:\s*var\(--el-color-primary\);/);
+  expect(unfold).toMatch(/color:\s*var\(--on-primary\);/);
+  expect(unfold).toMatch(/box-shadow:/);
+  expect(unfold).not.toMatch(/box-shadow:\s*var\(--elevation-composer\);/);
+  expect(style("../components/ShellComposer.vue")).toMatch(/\.composer-unfold:hover\s*\{[^}]*background:\s*var\(--brand-primary-hover\);/s);
   const pageFolded = style("../components/PageComposer.vue").split(".page-ask:has(.composer-unfold) {")[1]!.split("}")[0]!;
   expect(pageFolded).toMatch(/padding:[^;]*var\(--shell-composer-foot\);/);
   expect(style("../components/ShellPagePane.vue")).toContain(".pane-dock:has(> .composer-unfold:only-child)");

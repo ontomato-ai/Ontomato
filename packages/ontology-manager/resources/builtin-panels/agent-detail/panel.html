@@ -25,7 +25,7 @@
     flex-direction: column;
     gap: var(--page-content-gap);
     min-width: 0;
-    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
   }
   .agent-detail-tabs {
     margin-bottom: calc(var(--spacing-sm) * -1);
@@ -131,7 +131,7 @@
 
   @container agent-detail-page (max-width: 640px) {
     .agent-detail-body {
-      padding-block: var(--spacing-md) calc(var(--page-content-gap) + 56px);
+      padding-block: var(--spacing-md) calc(var(--page-content-gap) + var(--pane-dock-space, 0px));
     }
     .agent-detail-card,
     .agent-detail-share-bar {

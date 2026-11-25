@@ -125,15 +125,15 @@ it("expands the page composer with exact projection-declared targets (preset, id
 
   presetBtn.click();
   await vi.waitFor(() => expect(expand).toHaveBeenCalledTimes(1));
-  expect(expand).toHaveBeenLastCalledWith(presetEntry);
+  expect(expand).toHaveBeenLastCalledWith({ slot: "preset", ...presetEntry });
 
   idBtn.click();
   await vi.waitFor(() => expect(expand).toHaveBeenCalledTimes(2));
-  expect(expand).toHaveBeenLastCalledWith(idEntry);
+  expect(expand).toHaveBeenLastCalledWith({ slot: "specific", ...idEntry });
 
   defaultBtn.click();
   await vi.waitFor(() => expect(expand).toHaveBeenCalledTimes(3));
-  expect(expand).toHaveBeenLastCalledWith(defaultEntry);
+  expect(expand).toHaveBeenLastCalledWith({ slot: "fallback", ...defaultEntry });
   expect(expandedCount).toBe(3);
   expect(document.querySelector('[role="alert"]')).toBeNull();
 });

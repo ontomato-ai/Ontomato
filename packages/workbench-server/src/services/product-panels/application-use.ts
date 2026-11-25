@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
-import { applicationEntryResolutionSchema } from "@ontomato/contracts/product-panels";
+import { applicationEntryResolutionSchema, isApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
@@ -29,7 +29,7 @@ export async function requirePanelEntry(
   const { data } = responseSchema.parse(JSON.parse(response.text));
   if (data.applicationId !== applicationId || data.use.id !== useId)
     throw new HttpError(502, "The entry owner returned another application or use", "PANEL_ENTRY_SOURCE_MISMATCH");
-  if (applicationId === "home" && useId === "home" && owner) {
+  if (applicationId === "home" && useId === "home" && owner && isApplicationPanelUse(data.use)) {
     const homePanelId = await platformHomeStore.homePanelId(owner);
     if (homePanelId !== null) {
       return { ...data, use: { ...data.use, panelId: homePanelId } };
@@ -44,7 +44,10 @@ export async function requirePanelUseEntry(
   owner?: PlatformHomeOwner,
 ) {
   try {
-    return await requirePanelEntry(credentials, ref, owner);
+    const entry = await requirePanelEntry(credentials, ref, owner);
+    if (!isApplicationPanelUse(entry.use))
+      throw new HttpError(404, "This entry has no content panel", "PANEL_ENTRY_UNAVAILABLE");
+    return { ...entry, use: entry.use };
   } catch (error) {
     if (error instanceof HttpError && error.status === 404)
       throw new HttpError(403, error.message, "FORBIDDEN");

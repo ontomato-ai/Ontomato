@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { PlatformPageHeader, type PlatformPageAction } from "@ontomato/platform-shell";
+import { useFootDockSpace } from "./use-foot-dock-space";
 
 /**
  * A page application's frame: the platform's one page header, then the page.
@@ -22,10 +24,12 @@ withDefaults(
   }>(),
   { description: null, actions: undefined },
 );
+const foot = ref<HTMLElement | null>(null);
+const { dockStyle } = useFootDockSpace(foot);
 </script>
 
 <template>
-  <div class="app-page">
+  <div class="app-page" :style="dockStyle">
     <PlatformPageHeader :class="{ 'app-navigation-header': navigationHeader }" :title="title" :description="description" :actions="actions" :labels="labels">
       <template v-if="$slots.actions" #actions><slot name="actions" /></template>
     </PlatformPageHeader>
@@ -36,7 +40,7 @@ withDefaults(
       What stands at the page's foot under its content (its composer): outside the part that scrolls, so the room under it
       is its own and not the page body's bottom padding added to it.
     -->
-    <div v-if="$slots.foot" class="app-page-foot platform-page-gutter"><slot name="foot" /></div>
+    <div v-if="$slots.foot" ref="foot" class="app-page-foot platform-page-gutter"><slot name="foot" /></div>
   </div>
 </template>
 
@@ -56,7 +60,7 @@ withDefaults(
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding-block: var(--page-content-gap) var(--spacing-xl);
+  padding-block: var(--page-content-gap) calc(var(--spacing-xl) + var(--pane-dock-space, 0px));
   container: platform-page / inline-size;
 }
 .app-page-foot {

@@ -4,8 +4,7 @@ import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { ShellLabels } from "../types";
 import { usePageCounter } from "../page-counter";
-import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand } from "../page-composer-entry";
-import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
+import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand, type PageComposerRequest } from "../page-composer-entry";
 import AgentPicker from "./AgentPicker.vue";
 import ShellComposer from "./ShellComposer.vue";
 
@@ -43,8 +42,9 @@ const pageDefault = ref<string | null>(null);
 const presets = shallowRef<Readonly<Record<string, string>> | undefined>(undefined);
 /** Whether the page's candidates are being read; a panel's entry that arrives meanwhile waits for them, the latest one counting. */
 const reading = ref(false);
-let waiting: PanelConversationEntry | null = null;
+let waiting: PageComposerRequest | null = null;
 let load = 0;
+let newSession = false;
 
 watch(
   () => (props.pageSkill ? JSON.stringify(props.pageSkill) : null),
@@ -56,6 +56,7 @@ watch(
     pageDefault.value = null;
     presets.value = undefined;
     waiting = null;
+    newSession = false;
     reading.value = false;
     if (skill?.mode === "member" && skill.member === null) return;
     reading.value = true;
@@ -104,24 +105,39 @@ function candidatesFailureReason(reason: unknown, own: string): string {
   return code === "PAGE_DEFAULT_AGENT_UNAVAILABLE" ? `${own} ${detail}` : detail;
 }
 
-function ask(text: string) {
+async function ask(text: string) {
   if (!agentId.value) return;
-  counter.ask(agentId.value, text, props.page);
+  try {
+    if (newSession) await counter.ask(agentId.value, text, props.page, { submit: true, newSession: true, pageSkill: props.pageSkill });
+    else await counter.ask(agentId.value, text, props.page);
+    newSession = false;
+  } catch (reason) {
+    emit("error", reason instanceof Error ? reason.message : String(reason));
+  }
 }
 
 /**
  * A panel's conversation entry on this page (design U18): the composer opens, takes the agent the entry names when it is
- * one of this page's candidates, and fills the entry's sentence for the reader to send. An agent it cannot name leaves
- * the composer on its own agent and only opens it. Nothing is sent from here.
+ * one of this page's candidates, and applies the click's declared behavior.
  */
 const entry = shallowRef<ComposerEntry | null>(null);
-const expand: PageComposerExpand = (request) => {
+const expand: PageComposerExpand = async (request) => {
   if (reading.value) {
     waiting = request;
     return;
   }
   const named = entryAgent(request.target, agents.value, pageDefault.value, presets.value);
+  newSession = named !== null && request.newSession === true;
   if (named) chosen.value = named;
+  const text = request.prefill?.trim();
+  if (named && request.submit && text) {
+    try {
+      await counter.ask(named, text, props.page, { submit: true, newSession: request.newSession, pageSkill: props.pageSkill });
+    } catch (reason) {
+      emit("error", reason instanceof Error ? reason.message : String(reason));
+    }
+    return;
+  }
   entry.value = { text: named ? request.prefill ?? null : null, seq: (entry.value?.seq ?? 0) + 1 };
 };
 /** The composer serves the page's entries while it is drawn or about to be: the page offers it an agent, or is being asked. */

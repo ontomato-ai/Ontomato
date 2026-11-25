@@ -79,6 +79,7 @@ const DECLARED_DATA = {
   // Readable as a member it reads nothing; an empty table says so, and Node registers it on that declaration.
   ConversationEntry: {},
   AgentChat: {},
+  AppPreview: {},
   ObjectTree: { files: ["panelRecordList"] },
   ObjectTextReader: { sources: ["panelRecordList"], page: ["panelRecordQuery"], record: ["panelRecord"] },
   AnnotatedCode: { content: ["annotatedCode"] },
@@ -240,6 +241,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       start: anyObject,
       selected: anyObject,
       selectedType: { kind: "scalar", type: "string" },
+      selectedGroup: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
       visibleLayers: stringList,
       expandedNodes: anyObjectList,
@@ -249,6 +251,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       selectedNode: anyObject,
       selected: anyObject,
       selectedType: { kind: "scalar", type: "string" },
+      selectedGroup: { kind: "scalar", type: "string" },
       visibleRelationKinds: platformRelationKindList,
       visibleLayers: stringList,
       expandedNodes: anyObjectList,
@@ -297,6 +300,27 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(subtitleLines?.required, false);
     assert.match(subtitleLines?.type ?? "", /number/);
     assert.match(subtitleLines?.description ?? "", /visible lines in a compact summary/);
+    const showRowIndex = declared.get("ObjectList").config.find(prop => prop.name === "show-row-index");
+    assert.equal(showRowIndex?.required, false);
+    assert.match(showRowIndex?.type ?? "", /boolean/);
+    assert.equal(showRowIndex?.default, "false");
+    const pinPrimaryColumn = declared.get("ObjectList").config.find(prop => prop.name === "pin-primary-column");
+    assert.equal(pinPrimaryColumn?.required, false);
+    assert.match(pinPrimaryColumn?.type ?? "", /boolean/);
+    assert.equal(pinPrimaryColumn?.default, "false");
+    const rowActivation = declared.get("ObjectList").config.find(prop => prop.name === "row-activation");
+    assert.equal(rowActivation?.required, false);
+    assert.match(rowActivation?.type ?? "", /"click"/);
+    assert.match(rowActivation?.type ?? "", /"dblclick"/);
+    assert.equal(rowActivation?.default, '"click"');
+    const showPageJumper = declared.get("ObjectList").config.find(prop => prop.name === "show-page-jumper");
+    assert.equal(showPageJumper?.required, false);
+    assert.match(showPageJumper?.type ?? "", /boolean/);
+    assert.equal(showPageJumper?.default, "true");
+    const showRangeBar = declared.get("ObjectList").config.find(prop => prop.name === "show-range-bar");
+    assert.equal(showRangeBar?.required, false);
+    assert.match(showRangeBar?.type ?? "", /boolean/);
+    assert.equal(showRangeBar?.default, "false");
     const countItems = declared.get("ObjectCount").config.find(prop => prop.name === "items");
     assert.equal(countItems?.required, false);
     assert.match(countItems?.type ?? "", /ObjectCountItem/);
@@ -332,6 +356,11 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(summaryShowTitle?.type ?? "", /boolean/);
     assert.equal(summaryShowTitle?.default, "true");
     assert.match(summaryShowTitle?.description ?? "", /record\.label/);
+    const summaryDensity = declared.get("ObjectSummary").config.find(prop => prop.name === "density");
+    assert.equal(summaryDensity?.required, false);
+    assert.match(summaryDensity?.type ?? "", /"comfortable"/);
+    assert.match(summaryDensity?.type ?? "", /"compact"/);
+    assert.equal(summaryDensity?.default, '"comfortable"');
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
     const readerFormat = declared.get("ObjectTextReader").config.find((prop) => prop.name === "format");
     assert.equal(readerFormat?.required, false);
@@ -382,11 +411,20 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     ]);
     assert.deepEqual(Object.keys(declared.get("OntologyGraph").readOnlyOutputs ?? {}).sort(), [
       "activeMode",
+      "complete",
+      "drawingProgress",
+      "drawnEdgeCount",
+      "drawnNodeCount",
       "edgeCount",
+      "failures",
       "graphStatus",
       "graphVersion",
+      "groups",
       "hasMoreNeighbors",
+      "neighborProgress",
       "nodeCount",
+      "overviewEdgesTruncated",
+      "relationKinds",
       "sampleToken",
       "startDetail",
       "startLabel",
@@ -425,7 +463,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const componentsDoc = readFileSync(join(out, version, "docs/components.md"), "utf8");
     const componentsDocBytes = Buffer.byteLength(componentsDoc, "utf8");
     assert.ok(
-      componentsDocBytes < 10_000,
+      componentsDocBytes < 12_000,
       `docs/components.md overview must stay within a few KB (got ${componentsDocBytes} bytes)`,
     );
     assert.doesNotMatch(componentsDoc, /^Binds:/mu, "docs/components.md must not emit misleading bare 'Binds:' lines");
@@ -447,10 +485,15 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
     }
-    for (const included of ["ObjectList", "ObjectForm", "ConversationEntry", "AgentChat", "PageHeader", "MarkdownView"]) {
+    for (const included of ["ObjectList", "ObjectForm", "ConversationEntry", "AgentChat", "AppPreview", "PageHeader", "MarkdownView"]) {
       const entry = catalogue.components.find((c) => c.componentId === included);
       assert.equal(entry?.panelUsable, true, `${included} must derive panelUsable === true`);
     }
+    assert.deepEqual(Object.keys(declared.get("AppPreview").readOnlyOutputs ?? {}).sort(), [
+      "activePage",
+      "selection",
+      "status",
+    ]);
     const uiPrimitivesDoc = readFileSync(join(out, version, "docs/components/ui-primitives.md"), "utf8");
     const themeTokensDoc = readFileSync(join(out, version, "docs/components/theme-tokens.md"), "utf8");
     assert.match(uiPrimitivesDoc, /`<sdk-button>`/);

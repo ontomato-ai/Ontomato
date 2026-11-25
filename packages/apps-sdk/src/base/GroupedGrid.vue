@@ -9,7 +9,8 @@ import {
   panelRowOperationKey,
 } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { usePanelContext, useProjectionSlot } from "../panel/context";
+import { usePanelContext, useProjectionForm, useProjectionSlot } from "../panel/context";
+import type { PanelFormAdapter, PanelFormHandle } from "../panel/forms";
 import { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam } from "../panel/member";
 import { admittedOperations } from "../panel/member-operations";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
@@ -24,17 +25,26 @@ import {
   moveGridItem,
   reorderGridGroups,
   resizeGridItem,
+  resolveSectionColumns,
+  resolveSectionMinColSpan,
   serializeStaticGridLayout,
   setStaticGridItemHidden,
 } from "./grouped-grid-model";
 import type {
+  GroupedGridControlsVisibility,
+  GroupedGridDividerStyle,
   GroupedGridGroup,
   GroupedGridGroupSlotScope,
   GroupedGridGroupSummary,
+  GroupedGridGroupSurface,
   GroupedGridItem,
+  GroupedGridItemDraftOverride,
   GroupedGridItemSlotScope,
+  GroupedGridItemSurface,
   GroupedGridLayoutChange,
   GroupedGridLayoutState,
+  GroupedGridResizeAxis,
+  GroupedGridRowSizing,
   GroupedGridStaticGroupConfig,
   GroupedGridStaticItemConfig,
 } from "./grouped-grid-types";
@@ -66,6 +76,8 @@ const props = withDefaults(
   defineProps<{
     /** Number of CSS grid columns (default `12`). */
     columns?: number;
+    /** Optional per-section CSS grid column count overrides, keyed by section value (for example `{ metric: 12, chart: 24 }`). */
+    sectionColumns?: Readonly<Record<string, number>>;
     /** Base height in pixels for one grid row track (default `160`). */
     rowHeight?: number;
     /** Optional per-section row track height overrides in pixels, keyed by section value. */
@@ -90,16 +102,36 @@ const props = withDefaults(
     orderField?: string;
     /** Minimum column span allowed when resizing (default `2`). */
     minColSpan?: number;
-    /** Maximum column span allowed when resizing (default `12`, capped at `columns`). */
+    /** Optional per-section minimum column span overrides, keyed by section value (for example `{ metric: 1, chart: 4 }`). */
+    sectionMinColSpans?: Readonly<Record<string, number>>;
+    /** Maximum column span allowed when resizing; omitted defaults to each section's column count. */
     maxColSpan?: number;
     /** Minimum row span allowed when resizing (default `1`). */
     minRowSpan?: number;
     /** Maximum row span allowed when resizing (default `6`). */
     maxRowSpan?: number;
+    /** Optional per-section resize axis constraint (`"both" | "horizontal" | "vertical" | "none"`). */
+    sectionResizeAxes?: Readonly<Record<string, GroupedGridResizeAxis>>;
     /** Enable drag-and-drop reordering and cell resize handles (default `true`). */
     editable?: boolean;
+    /** Lock drag reordering and resizing while keeping read/view controls usable (default `false`). */
+    locked?: boolean;
+    /** Optional explanation shown on disabled edit/resize controls while `locked` is true. */
+    lockReason?: string;
     /** Allow collapsing/expanding groups from the group header (default `true`). */
     collapsible?: boolean;
+    /** Outer surface presentation for each group container (`"plain"` or `"card"`, default `"plain"`). */
+    groupSurface?: GroupedGridGroupSurface;
+    /** Outer surface presentation for each item container (`"card"` or `"section"`, default `"card"`). */
+    itemSurface?: GroupedGridItemSurface;
+    /** Row track height strategy (`"fixed"` uses `rowHeight * rowSpan`; `"auto"` adapts to item content height). */
+    rowSizing?: GroupedGridRowSizing;
+    /** Bottom divider style under item headers (`"line"` or `"none"`, default `"line"`). */
+    itemHeaderDivider?: GroupedGridDividerStyle;
+    /** Optional per-section item header bottom divider overrides (`"line"` or `"none"`). */
+    sectionItemHeaderDivider?: Readonly<Record<string, GroupedGridDividerStyle>>;
+    /** When item header actions, drag grip, and resize handles are visible (`"hover"` or `"always"`, default `"hover"`). */
+    controlsVisibility?: GroupedGridControlsVisibility;
     /** Static item definitions for fixed-member mode (when no `rows` datum is bound). */
     items?: readonly GroupedGridStaticItemConfig[];
     /** Static group definitions for fixed-member mode (when no `rows` datum is bound). */
@@ -116,11 +148,20 @@ const props = withDefaults(
     emptyText?: string;
     /** Fallback text shown inside an empty group when `#group-empty` is not provided. */
     emptyGroupText?: string;
-    /** Optional list of item primary keys to mark with a subtle highlight ring (for example draft-modified items). */
+    /** Localized fallback title rendered when a group's title is empty (never falls back to raw group ID). */
+    emptyGroupTitle?: string;
+    /** Optional list of item primary keys to mark with a highlight ring (for example draft-modified items). */
     highlightedIds?: readonly string[];
+    /** Optional unsaved-draft preview banner text rendered above the grid with Save / Discard actions. */
+    draftNotice?: string;
+    /** Whether a draft save initiated from the preview banner is currently in flight. */
+    draftSaving?: boolean;
+    /** Register this grid with the panel's form registry (`instance.forms`) so agents can preview unsaved whole-grid edits. */
+    allowDraftPreview?: boolean;
   }>(),
   {
     columns: 12,
+    sectionColumns: undefined,
     rowHeight: 160,
     sectionRowHeights: undefined,
     gap: 16,
@@ -133,11 +174,21 @@ const props = withDefaults(
     rowSpanField: "rowSpan",
     orderField: "order",
     minColSpan: 2,
-    maxColSpan: 12,
+    sectionMinColSpans: undefined,
+    maxColSpan: undefined,
     minRowSpan: 1,
     maxRowSpan: 6,
+    sectionResizeAxes: undefined,
     editable: true,
+    locked: false,
+    lockReason: undefined,
     collapsible: true,
+    groupSurface: "plain",
+    itemSurface: "card",
+    rowSizing: "fixed",
+    itemHeaderDivider: "line",
+    sectionItemHeaderDivider: undefined,
+    controlsVisibility: "hover",
     items: undefined,
     groups: undefined,
     showGroupHeaders: true,
@@ -146,7 +197,11 @@ const props = withDefaults(
     rowActions: undefined,
     emptyText: undefined,
     emptyGroupText: undefined,
+    emptyGroupTitle: undefined,
     highlightedIds: undefined,
+    draftNotice: undefined,
+    draftSaving: false,
+    allowDraftPreview: false,
   },
 );
 
@@ -157,11 +212,17 @@ const emit = defineEmits<{
   select: [ref: ObjectListRef | null];
   /** Emitted when a local row action (`kind: "local"`) is triggered on an item. */
   "row-action": [payload: { id: string; ref: ObjectListRef; index: number }];
+  /** Emitted when the reader clicks Save in the unsaved draft preview banner. */
+  "draft-save": [draft: Readonly<Record<string, RuntimeJsonValue>>];
+  /** Emitted when the reader clicks Discard in the unsaved draft preview banner. */
+  "draft-discard": [];
 }>();
 
 defineSlots<{
   /** Cell body renderer; receives item metadata, reference, spans, selection, drag/resize state, and row operations. */
   item?(props: GroupedGridItemSlotScope): unknown;
+  /** Optional compact badge or indicator rendered beside the item title (for example a truncation warning icon). */
+  "item-title-suffix"?(props: GroupedGridItemSlotScope): unknown;
   /** Optional header controls rendered beside built-in row actions on each item card. */
   "item-header-actions"?(props: GroupedGridItemSlotScope): unknown;
   /** Optional controls rendered on the right side of each group header. */
@@ -190,6 +251,9 @@ const selectedParam = isRecordMode ? useMemberParam("selected") : null;
 const layoutParam = !isRecordMode ? useMemberParam("layout") : null;
 
 const effectiveColumns = computed(() => Math.max(1, Math.min(24, Math.floor(props.columns || 12))));
+function sectionColumnCount(sectionKey: string | null | undefined): number {
+  return resolveSectionColumns(sectionKey, effectiveColumns.value, props.sectionColumns);
+}
 const effectiveRowHeight = computed(() => Math.max(48, Math.floor(props.rowHeight || 160)));
 function sectionRowHeight(sectionKey: string | null | undefined): number {
   const override = sectionKey && sectionKey !== "__default__" ? props.sectionRowHeights?.[sectionKey] : undefined;
@@ -197,11 +261,29 @@ function sectionRowHeight(sectionKey: string | null | undefined): number {
     ? Math.max(48, Math.floor(override))
     : effectiveRowHeight.value;
 }
+function sectionResizeAxis(sectionKey: string | null | undefined): GroupedGridResizeAxis {
+  const override = sectionKey && sectionKey !== "__default__" ? props.sectionResizeAxes?.[sectionKey] : undefined;
+  return override ?? "both";
+}
+function sectionHeaderDivider(sectionKey: string | null | undefined): GroupedGridDividerStyle {
+  const override = sectionKey && sectionKey !== "__default__" ? props.sectionItemHeaderDivider?.[sectionKey] : undefined;
+  return override ?? props.itemHeaderDivider;
+}
 const effectiveGap = computed(() => Math.max(0, Math.floor(props.gap ?? 16)));
-const effectiveMaxColSpan = computed(() => Math.max(1, Math.min(effectiveColumns.value, Math.floor(props.maxColSpan || effectiveColumns.value))));
+const effectiveMaxColSpan = computed(() => (
+  props.maxColSpan !== undefined
+    ? Math.max(1, Math.min(24, Math.floor(props.maxColSpan)))
+    : effectiveColumns.value
+));
 const effectiveMinColSpan = computed(() => Math.max(1, Math.min(effectiveMaxColSpan.value, Math.floor(props.minColSpan || 1))));
 const effectiveMinRowSpan = computed(() => Math.max(1, Math.floor(props.minRowSpan || 1)));
 const effectiveMaxRowSpan = computed(() => Math.max(effectiveMinRowSpan.value, Math.min(24, Math.floor(props.maxRowSpan || 6))));
+const resolvedEmptyGroupTitle = computed(() => {
+  if (props.emptyGroupTitle?.trim()) return props.emptyGroupTitle.trim();
+  const key = "dashboard.unnamedDimension";
+  const translated = t(key);
+  return translated && translated !== key ? translated : "Untitled group";
+});
 
 const containerRecord = computed<PlatformObjectRecord | null>(() => {
   if (!recordState) return null;
@@ -268,8 +350,10 @@ const sourceGroups = computed<GroupedGridGroup[]>(() => {
     rows: rawRows.value,
     rowObjectType,
     columns: effectiveColumns.value,
+    sectionColumns: props.sectionColumns,
     minColSpan: effectiveMinColSpan.value,
-    maxColSpan: effectiveMaxColSpan.value,
+    sectionMinColSpans: props.sectionMinColSpans,
+    maxColSpan: props.maxColSpan,
     minRowSpan: effectiveMinRowSpan.value,
     maxRowSpan: effectiveMaxRowSpan.value,
     groupsField: props.groupsField,
@@ -283,8 +367,206 @@ const sourceGroups = computed<GroupedGridGroup[]>(() => {
   });
 });
 
+/* ── Unsaved draft preview & edit lock (D-26) ─────────────────────────────────────────────── */
+
+const internalDraftValues = shallowRef<Record<string, RuntimeJsonValue> | null>(null);
+const internalDraftSaving = ref(false);
+
+const hasInternalDraft = computed(() => internalDraftValues.value !== null && Object.keys(internalDraftValues.value).length > 0);
+const isLocked = computed(() => props.locked || hasInternalDraft.value);
+const effectiveLockReason = computed(() => {
+  if (props.lockReason) return props.lockReason;
+  if (hasInternalDraft.value) {
+    const key = "dashboard.previewLockedHint";
+    const translated = t(key);
+    return translated && translated !== key
+      ? translated
+      : "Save or discard the unsaved preview before making manual layout edits";
+  }
+  return "";
+});
+const canEdit = computed(() => props.editable && !isLocked.value);
+
+const draftItemOverrides = computed<Readonly<Record<string, GroupedGridItemDraftOverride>>>(() => {
+  const raw = internalDraftValues.value?.itemOverrides;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const map: Record<string, GroupedGridItemDraftOverride> = {};
+  for (const [id, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const obj = entry as Record<string, unknown>;
+    map[id] = {
+      ...(typeof obj.title === "string" ? { title: obj.title } : {}),
+      ...(obj.fileOverride !== undefined ? { fileOverride: obj.fileOverride } : {}),
+      ...(obj.fields && typeof obj.fields === "object" && !Array.isArray(obj.fields)
+        ? { fields: obj.fields as Record<string, unknown> }
+        : {}),
+    };
+  }
+  return map;
+});
+
+const draftGroupRenames = computed<Readonly<Record<string, string>>>(() => {
+  const raw = internalDraftValues.value?.groupRenames;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const map: Record<string, string> = {};
+  for (const [id, title] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof title === "string") map[id] = title;
+  }
+  return map;
+});
+
+const draftItemRenames = computed<Readonly<Record<string, string>>>(() => {
+  const raw = internalDraftValues.value?.itemRenames;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const map: Record<string, string> = {};
+  for (const [id, title] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof title === "string") map[id] = title;
+  }
+  return map;
+});
+
+const draftChangedIds = computed<ReadonlySet<string>>(() => {
+  const set = new Set<string>();
+  for (const id of Object.keys(draftItemRenames.value)) set.add(id);
+  for (const id of Object.keys(draftItemOverrides.value)) set.add(id);
+  const rawIds = internalDraftValues.value?.highlightedIds;
+  if (Array.isArray(rawIds)) {
+    for (const entry of rawIds) {
+      if (typeof entry === "string" && entry) set.add(entry);
+    }
+  }
+  return set;
+});
+
+const effectiveDraftNotice = computed(() => {
+  if (props.draftNotice) return props.draftNotice;
+  if (!hasInternalDraft.value) return "";
+  const explicit = internalDraftValues.value?.summary ?? internalDraftValues.value?.notice;
+  if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
+  const changedCount = draftChangedIds.value.size + Object.keys(draftGroupRenames.value).length;
+  return changedCount > 0
+    ? `${t("platform.unsavedChanges")} (${changedCount})`
+    : t("platform.unsavedChanges");
+});
+
+const effectiveDraftSaving = computed(() => props.draftSaving || internalDraftSaving.value);
+
+function applyDraftToGroups(groups: readonly GroupedGridGroup[]): readonly GroupedGridGroup[] {
+  if (!hasInternalDraft.value) return groups;
+  const gRenames = draftGroupRenames.value;
+  const iRenames = draftItemRenames.value;
+  const overrides = draftItemOverrides.value;
+  if (
+    Object.keys(gRenames).length === 0
+    && Object.keys(iRenames).length === 0
+    && Object.keys(overrides).length === 0
+  ) {
+    return groups;
+  }
+  return groups.map((group) => {
+    const nextGroupTitle = gRenames[group.id] ?? group.title;
+    const mapItem = (item: GroupedGridItem): GroupedGridItem => {
+      const renamed = iRenames[item.primaryKey] ?? iRenames[item.itemId] ?? overrides[item.primaryKey]?.title ?? overrides[item.itemId]?.title;
+      return renamed !== undefined ? { ...item, title: renamed } : item;
+    };
+    return {
+      ...group,
+      title: nextGroupTitle,
+      items: group.items.map(mapItem),
+      sections: group.sections.map((section) => ({ ...section, items: section.items.map(mapItem) })),
+    };
+  });
+}
+
+function discardDraft() {
+  internalDraftValues.value = null;
+  emit("draft-discard");
+}
+
+async function saveDraft() {
+  const payload = internalDraftValues.value ? { ...internalDraftValues.value } : {};
+  emit("draft-save", payload);
+}
+
+if (props.allowDraftPreview) {
+  const emptyFields = ref([] as const);
+  const emptyErrors = ref<Readonly<Record<string, string>>>({});
+  const formHandle: PanelFormHandle = {
+    fields: emptyFields,
+    values: computed(() => internalDraftValues.value ?? {}),
+    errors: emptyErrors,
+    changed: computed(() => new Set(Object.keys(internalDraftValues.value ?? {}))),
+    busy: effectiveDraftSaving,
+    dirty: hasInternalDraft,
+    dirtyFields: computed(() => new Set(Object.keys(internalDraftValues.value ?? {}))),
+    submitting: effectiveDraftSaving,
+    canSubmit: computed(() => hasInternalDraft.value && !effectiveDraftSaving.value),
+    set(path, value) {
+      const key = path.replace(/^\/+/, "");
+      internalDraftValues.value = { ...(internalDraftValues.value ?? {}), [key]: value };
+    },
+    async refreshDraft() {},
+    async submit() {
+      await saveDraft();
+    },
+    async reset() {
+      discardDraft();
+      return true;
+    },
+  };
+  const adapter: PanelFormAdapter = {
+    handle: formHandle,
+    async fill(values, options) {
+      if (hasInternalDraft.value && !options?.overwriteUnsaved) {
+        return {
+          ok: false,
+          reason: "blocked_unsaved",
+          message: "Grid already has unsaved preview edits",
+        };
+      }
+      const next: Record<string, RuntimeJsonValue> = { ...(internalDraftValues.value ?? {}), ...values };
+      internalDraftValues.value = next;
+      return { ok: true, filledFields: Object.keys(values) };
+    },
+    async submit() {
+      await saveDraft();
+    },
+    dirty: () => hasInternalDraft.value,
+    discard: () => discardDraft(),
+    editingTarget: () => {
+      const target = containerRecord.value;
+      if (!target) return null;
+      return {
+        kind: "object",
+        objectType: target.className || objectType,
+        primaryKey: target.primaryKey,
+      };
+    },
+    snapshot: () => {
+      const target = containerRecord.value;
+      if (!target && isRecordMode) return null;
+      return {
+        dirty: hasInternalDraft.value,
+        values: internalDraftValues.value ?? {},
+        dirtyFields: Object.keys(internalDraftValues.value ?? {}),
+        ...(target
+          ? {
+            target: {
+              kind: "object" as const,
+              objectType: target.className || objectType,
+              primaryKey: target.primaryKey,
+            },
+          }
+          : {}),
+      };
+    },
+  };
+  useProjectionForm(adapter);
+}
+
 /** Local optimistic layout applied immediately after a user drag/resize/hide until fresh data or state arrives. */
 const localGroups = shallowRef<GroupedGridGroup[] | null>(null);
+const dragPreviewGroups = shallowRef<GroupedGridGroup[] | null>(null);
 const localStaticLayout = shallowRef<GroupedGridLayoutState | null>(null);
 watch([rawRows, containerRecord], () => {
   if (isRecordMode) localGroups.value = null;
@@ -296,7 +578,9 @@ watch([externalLayoutState, () => props.items, () => props.groups], () => {
   }
 });
 
-const renderedGroups = computed<readonly GroupedGridGroup[]>(() => localGroups.value ?? sourceGroups.value);
+const renderedGroups = computed<readonly GroupedGridGroup[]>(() =>
+  applyDraftToGroups(dragPreviewGroups.value ?? localGroups.value ?? sourceGroups.value),
+);
 const currentStaticLayout = computed<GroupedGridLayoutState>(() => localStaticLayout.value ?? sourceStaticState.value.layoutState);
 
 const totalItems = computed(() => renderedGroups.value.reduce((sum, group) => sum + group.items.length, 0));
@@ -347,9 +631,19 @@ const selectedKey = computed<string | null>(() => {
   return `${obj.className}:${obj.primaryKey}`;
 });
 
-const highlightedSet = computed(() => new Set(props.highlightedIds ?? []));
+const highlightedSet = computed(() => {
+  const set = new Set(props.highlightedIds ?? []);
+  for (const id of draftChangedIds.value) set.add(id);
+  return set;
+});
 
-function selectItem(item: GroupedGridItem) {
+function isItemInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest("button, a, input, textarea, select, [role='button'], [role='menuitem'], .sdk-grouped-grid-resize-handle, [data-no-drag]"));
+}
+
+function selectItem(item: GroupedGridItem, event?: Event) {
+  if (event && isItemInteractiveTarget(event.target)) return;
   selectedParam?.set({ className: item.itemRef.className, primaryKey: item.itemRef.primaryKey });
   emit("select", item.itemRef);
 }
@@ -600,6 +894,7 @@ function clearDragState() {
   dropGroupTarget.value = null;
   draggingItemKey.value = null;
   dropItemTarget.value = null;
+  dragPreviewGroups.value = null;
 }
 
 function commitLayoutChange(next: GroupedGridGroup[] | null) {
@@ -614,7 +909,7 @@ function commitLayoutChange(next: GroupedGridGroup[] | null) {
 }
 
 function hideStaticItem(item: GroupedGridItem) {
-  if (isRecordMode) return;
+  if (isRecordMode || !canEdit.value) return;
   const nextLayout = setStaticGridItemHidden(currentStaticLayout.value, item.itemId, true);
   const built = buildStaticGroupedGridState({
     items: props.items ?? [],
@@ -634,7 +929,10 @@ function hideStaticItem(item: GroupedGridItem) {
 }
 
 function onGroupDragStart(groupId: string, event: DragEvent) {
-  if (!props.editable) return;
+  if (!canEdit.value) {
+    event.preventDefault();
+    return;
+  }
   draggingGroupId.value = groupId;
   draggingItemKey.value = null;
   if (event.dataTransfer) {
@@ -644,7 +942,7 @@ function onGroupDragStart(groupId: string, event: DragEvent) {
 }
 
 function onGroupDragOver(targetGroupId: string, event: DragEvent) {
-  if (!props.editable) return;
+  if (!canEdit.value) return;
   if (draggingGroupId.value && draggingGroupId.value !== targetGroupId) {
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
@@ -664,27 +962,36 @@ function onGroupDragOver(targetGroupId: string, event: DragEvent) {
 }
 
 function onGroupDrop(targetGroupId: string, event: DragEvent) {
-  if (!props.editable) return;
+  if (!canEdit.value) return;
   event.preventDefault();
+  const baseGroups = localGroups.value ?? sourceGroups.value;
   if (draggingGroupId.value) {
     const position = dropGroupTarget.value?.groupId === targetGroupId ? dropGroupTarget.value.position : "before";
-    const next = reorderGridGroups(renderedGroups.value, draggingGroupId.value, targetGroupId, position);
+    const next = reorderGridGroups(baseGroups, draggingGroupId.value, targetGroupId, position);
     clearDragState();
     commitLayoutChange(next);
     return;
   }
   if (draggingItemKey.value) {
-    const next = moveGridItem(renderedGroups.value, draggingItemKey.value, targetGroupId, {
-      sectionField: props.sectionField,
-      sectionOrder: props.sectionOrder,
-    });
+    const next = dragPreviewGroups.value
+      ?? moveGridItem(baseGroups, draggingItemKey.value, targetGroupId, {
+        sectionField: props.sectionField,
+        sectionOrder: props.sectionOrder,
+      });
     clearDragState();
     commitLayoutChange(next);
   }
 }
 
-function onItemDragStart(item: GroupedGridItem, event: DragEvent) {
-  if (!props.editable || activeResize.value) return;
+function onItemDragStart(item: GroupedGridItem, event: DragEvent, fromCard = false) {
+  if (!canEdit.value || activeResize.value) {
+    event.preventDefault();
+    return;
+  }
+  if (fromCard && isItemInteractiveTarget(event.target)) {
+    event.preventDefault();
+    return;
+  }
   event.stopPropagation();
   draggingItemKey.value = item.key;
   draggingGroupId.value = null;
@@ -695,27 +1002,41 @@ function onItemDragStart(item: GroupedGridItem, event: DragEvent) {
 }
 
 function onItemDragOver(groupId: string, targetItem: GroupedGridItem, event: DragEvent) {
-  if (!props.editable || !draggingItemKey.value || draggingItemKey.value === targetItem.key) return;
+  if (!canEdit.value || !draggingItemKey.value || draggingItemKey.value === targetItem.key) return;
   event.preventDefault();
   event.stopPropagation();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
   const el = event.currentTarget as HTMLElement | null;
   const rect = el?.getBoundingClientRect();
   const position: "before" | "after" = rect && event.clientX > rect.left + rect.width / 2 ? "after" : "before";
+  const prev = dropItemTarget.value;
+  if (prev?.groupId === groupId && prev.itemKey === targetItem.key && prev.position === position) return;
   dropItemTarget.value = { groupId, itemKey: targetItem.key, position };
-}
-
-function onItemDrop(groupId: string, targetItem: GroupedGridItem, event: DragEvent) {
-  if (!props.editable || !draggingItemKey.value) return;
-  event.preventDefault();
-  event.stopPropagation();
-  const position = dropItemTarget.value?.itemKey === targetItem.key ? dropItemTarget.value.position : "before";
-  const next = moveGridItem(renderedGroups.value, draggingItemKey.value, groupId, {
+  // Live smooth reorder preview while dragging (D-19).
+  const preview = moveGridItem(dragPreviewGroups.value ?? localGroups.value ?? sourceGroups.value, draggingItemKey.value, groupId, {
     targetItemKey: targetItem.key,
     position,
     sectionField: props.sectionField,
     sectionOrder: props.sectionOrder,
   });
+  if (preview) {
+    dragPreviewGroups.value = preview;
+  }
+}
+
+function onItemDrop(groupId: string, targetItem: GroupedGridItem, event: DragEvent) {
+  if (!canEdit.value || !draggingItemKey.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const baseGroups = localGroups.value ?? sourceGroups.value;
+  const position = dropItemTarget.value?.itemKey === targetItem.key ? dropItemTarget.value.position : "before";
+  const next = dragPreviewGroups.value
+    ?? moveGridItem(baseGroups, draggingItemKey.value, groupId, {
+      targetItemKey: targetItem.key,
+      position,
+      sectionField: props.sectionField,
+      sectionOrder: props.sectionOrder,
+    });
   clearDragState();
   commitLayoutChange(next);
 }
@@ -724,6 +1045,7 @@ function onItemDrop(groupId: string, targetItem: GroupedGridItem, event: DragEve
 
 interface ResizeSession {
   readonly itemKey: string;
+  readonly axis: GroupedGridResizeAxis;
   readonly startX: number;
   readonly startY: number;
   readonly startColSpan: number;
@@ -741,23 +1063,27 @@ interface ResizeSession {
 const activeResize = ref<ResizeSession | null>(null);
 
 function startItemResize(item: GroupedGridItem, event: PointerEvent) {
-  if (!props.editable) return;
+  const axis = sectionResizeAxis(item.section);
+  if (!canEdit.value || axis === "none") return;
   event.preventDefault();
   event.stopPropagation();
   const cellEl = (event.currentTarget as HTMLElement | null)?.closest<HTMLElement>(".sdk-grouped-grid-item");
   const trackEl = cellEl?.parentElement;
   const trackWidth = trackEl?.getBoundingClientRect().width || 960;
-  const cols = effectiveColumns.value;
+  const cols = sectionColumnCount(item.section);
   const gap = effectiveGap.value;
   const colUnit = Math.max(24, (trackWidth - gap * (cols - 1)) / cols + gap);
   const rowUnit = Math.max(48, sectionRowHeight(item.section) + gap);
 
+  const sectionMaxCols = props.maxColSpan !== undefined
+    ? Math.max(1, Math.min(cols, Math.floor(props.maxColSpan)))
+    : cols;
   const itemMaxCol = item.maxColSpan !== undefined
     ? Math.max(1, Math.min(cols, Math.floor(item.maxColSpan)))
-    : effectiveMaxColSpan.value;
+    : sectionMaxCols;
   const itemMinCol = item.minColSpan !== undefined
     ? Math.max(1, Math.min(itemMaxCol, Math.floor(item.minColSpan)))
-    : Math.min(itemMaxCol, effectiveMinColSpan.value);
+    : resolveSectionMinColSpan(item.section, effectiveMinColSpan.value, itemMaxCol, props.sectionMinColSpans);
   const itemMaxRow = item.maxRowSpan !== undefined
     ? Math.max(1, Math.min(24, Math.floor(item.maxRowSpan)))
     : effectiveMaxRowSpan.value;
@@ -767,6 +1093,7 @@ function startItemResize(item: GroupedGridItem, event: PointerEvent) {
 
   activeResize.value = {
     itemKey: item.key,
+    axis,
     startX: event.clientX,
     startY: event.clientY,
     startColSpan: item.colSpan,
@@ -789,20 +1116,24 @@ function startItemResize(item: GroupedGridItem, event: PointerEvent) {
 function onResizeMove(event: PointerEvent) {
   const session = activeResize.value;
   if (!session) return;
-  const deltaCols = Math.round((event.clientX - session.startX) / session.colUnit);
-  const deltaRows = Math.round((event.clientY - session.startY) / session.rowUnit);
-  session.colSpan = clampGridSpan(
-    session.startColSpan + deltaCols,
-    session.minColSpan,
-    session.maxColSpan,
-    session.startColSpan,
-  );
-  session.rowSpan = clampGridSpan(
-    session.startRowSpan + deltaRows,
-    session.minRowSpan,
-    session.maxRowSpan,
-    session.startRowSpan,
-  );
+  if (session.axis === "both" || session.axis === "horizontal") {
+    const deltaCols = Math.round((event.clientX - session.startX) / session.colUnit);
+    session.colSpan = clampGridSpan(
+      session.startColSpan + deltaCols,
+      session.minColSpan,
+      session.maxColSpan,
+      session.startColSpan,
+    );
+  }
+  if (session.axis === "both" || session.axis === "vertical") {
+    const deltaRows = Math.round((event.clientY - session.startY) / session.rowUnit);
+    session.rowSpan = clampGridSpan(
+      session.startRowSpan + deltaRows,
+      session.minRowSpan,
+      session.maxRowSpan,
+      session.startRowSpan,
+    );
+  }
 }
 
 function detachResizeListeners() {
@@ -840,6 +1171,7 @@ function displayRowSpan(item: GroupedGridItem): number {
 function itemSlotScope(group: GroupedGridGroup, item: GroupedGridItem): GroupedGridItemSlotScope {
   const colSpan = displayColSpan(item);
   const rowSpan = displayRowSpan(item);
+  const override = draftItemOverrides.value[item.primaryKey] ?? draftItemOverrides.value[item.itemId];
   return {
     itemId: item.itemId,
     title: item.title,
@@ -852,6 +1184,9 @@ function itemSlotScope(group: GroupedGridGroup, item: GroupedGridItem): GroupedG
     selected: selectedKey.value === item.key,
     dragging: draggingItemKey.value === item.key,
     resizing: activeResize.value?.itemKey === item.key,
+    locked: isLocked.value,
+    modified: highlightedSet.value.has(item.primaryKey),
+    ...(override ? { draftOverride: override } : {}),
     operations: rowOperationsFor(item.row),
     runOperation: (opName, extra) => dispatchRowOperation(item.row, opName, extra),
   };
@@ -863,8 +1198,13 @@ function groupSlotScope(group: GroupedGridGroup, index: number): GroupedGridGrou
     index,
     itemCount: group.items.length,
     collapsed: isGroupCollapsed(group.id),
+    locked: isLocked.value,
     toggleCollapse: () => toggleGroupCollapsed(group.id),
   };
+}
+
+function displayGroupTitle(group: GroupedGridGroup): string {
+  return group.title.trim() || resolvedEmptyGroupTitle.value;
 }
 
 const gridCssVars = computed(() => ({
@@ -875,7 +1215,46 @@ const gridCssVars = computed(() => ({
 </script>
 
 <template>
-  <div class="sdk-grouped-grid" :style="gridCssVars">
+  <div
+    class="sdk-grouped-grid"
+    :class="[
+      `is-group-surface-${groupSurface}`,
+      `is-item-surface-${itemSurface}`,
+      `is-row-sizing-${rowSizing}`,
+      `is-controls-${controlsVisibility}`,
+      { 'is-locked': isLocked },
+    ]"
+    :style="gridCssVars"
+  >
+    <div
+      v-if="effectiveDraftNotice"
+      class="sdk-grouped-grid-draft-bar"
+      role="status"
+      data-testid="grouped-grid-draft-bar"
+    >
+      <span class="sdk-grouped-grid-draft-text">{{ effectiveDraftNotice }}</span>
+      <div class="sdk-grouped-grid-draft-actions">
+        <button
+          type="button"
+          class="sdk-grouped-grid-draft-btn secondary"
+          :disabled="effectiveDraftSaving"
+          data-testid="grouped-grid-draft-discard"
+          @click="discardDraft"
+        >
+          {{ t("platform.discard") }}
+        </button>
+        <button
+          type="button"
+          class="sdk-grouped-grid-draft-btn primary"
+          :disabled="effectiveDraftSaving"
+          data-testid="grouped-grid-draft-save"
+          @click="saveDraft"
+        >
+          {{ t("platform.save") }}
+        </button>
+      </div>
+    </div>
+
     <p
       v-if="lastOpNotice"
       class="sdk-grouped-grid-op-outcome"
@@ -910,8 +1289,10 @@ const gridCssVars = computed(() => ({
             <span
               v-if="editable"
               class="sdk-grouped-grid-group-handle"
+              :class="{ 'is-disabled': isLocked }"
               data-testid="grouped-grid-group-handle"
-              draggable="true"
+              :draggable="canEdit"
+              :title="isLocked ? effectiveLockReason : undefined"
               aria-label="Drag to reorder group"
               @dragstart="onGroupDragStart(group.id, $event)"
               @dragend="clearDragState"
@@ -936,8 +1317,8 @@ const gridCssVars = computed(() => ({
               <span class="sdk-grouped-grid-collapse-icon" :class="{ collapsed: isGroupCollapsed(group.id) }" aria-hidden="true">▾</span>
             </button>
 
-            <h3 class="sdk-grouped-grid-group-title" :title="group.title || group.id">
-              {{ group.title || group.id }}
+            <h3 class="sdk-grouped-grid-group-title" :title="displayGroupTitle(group)">
+              {{ displayGroupTitle(group) }}
             </h3>
 
             <div v-if="$slots['group-header-actions']" class="sdk-grouped-grid-group-actions">
@@ -957,20 +1338,30 @@ const gridCssVars = computed(() => ({
                 v-for="section in group.sections"
                 :key="section.key"
                 class="sdk-grouped-grid-track"
-                :style="{ '--gg-row-height': `${sectionRowHeight(section.key)}px` }"
+                :style="{
+                  '--gg-columns': String(sectionColumnCount(section.key)),
+                  '--gg-row-height': `${sectionRowHeight(section.key)}px`,
+                }"
                 :data-section="section.key === '__default__' ? undefined : section.key"
+                :data-columns="sectionColumnCount(section.key)"
               >
                 <article
                   v-for="item in section.items"
                   :key="item.key"
                   :ref="(el) => setItemElement(item.key, el)"
                   class="sdk-grouped-grid-item"
+                  tabindex="0"
+                  role="group"
+                  :aria-label="item.title"
+                  :draggable="canEdit && isRecordMode"
                   :data-item-key="item.key"
                   :data-item-id="item.itemId"
                   :data-primary-key="item.primaryKey"
+                  :data-header-divider="sectionHeaderDivider(item.section)"
                   :class="{
                     'is-selected': selectedKey === item.key,
                     'is-highlighted': highlightedSet.has(item.primaryKey),
+                    'is-draft-modified': draftChangedIds.has(item.primaryKey) || Boolean(effectiveDraftNotice && highlightedSet.has(item.primaryKey)),
                     'is-dragging': draggingItemKey === item.key,
                     'is-resizing': activeResize?.itemKey === item.key,
                     'is-drop-before': dropItemTarget?.itemKey === item.key && dropItemTarget.position === 'before',
@@ -978,18 +1369,27 @@ const gridCssVars = computed(() => ({
                   }"
                   :style="{
                     gridColumn: `span ${displayColSpan(item)}`,
-                    gridRow: `span ${displayRowSpan(item)}`,
+                    ...(rowSizing === 'fixed' ? { gridRow: `span ${displayRowSpan(item)}` } : {}),
                   }"
-                  @click="selectItem(item)"
+                  @click="selectItem(item, $event)"
+                  @keydown.enter.self.prevent="selectItem(item)"
+                  @dragstart="isRecordMode ? onItemDragStart(item, $event, true) : undefined"
+                  @dragend="clearDragState"
                   @dragover="onItemDragOver(group.id, item, $event)"
                   @drop="onItemDrop(group.id, item, $event)"
                 >
-                  <div v-if="showItemHeaders" class="sdk-grouped-grid-item-header">
+                  <div
+                    v-if="showItemHeaders"
+                    class="sdk-grouped-grid-item-header"
+                    :class="`is-divider-${sectionHeaderDivider(item.section)}`"
+                  >
                     <span
-                      v-if="editable"
+                      v-if="editable && !isRecordMode"
                       class="sdk-grouped-grid-item-handle"
+                      :class="{ 'is-disabled': isLocked }"
                       data-testid="grouped-grid-item-handle"
-                      draggable="true"
+                      :draggable="canEdit"
+                      :title="isLocked ? effectiveLockReason : undefined"
                       aria-label="Drag to reorder item"
                       @click.stop
                       @dragstart="onItemDragStart(item, $event)"
@@ -1005,9 +1405,16 @@ const gridCssVars = computed(() => ({
                       </svg>
                     </span>
 
-                    <span class="sdk-grouped-grid-item-title" :title="item.title">
-                      {{ item.title }}
-                    </span>
+                    <div class="sdk-grouped-grid-item-heading">
+                      <span class="sdk-grouped-grid-item-title" :title="item.title">
+                        {{ item.title }}
+                      </span>
+                      <slot
+                        v-if="$slots['item-title-suffix']"
+                        name="item-title-suffix"
+                        v-bind="itemSlotScope(group, item)"
+                      ></slot>
+                    </div>
 
                     <div class="sdk-grouped-grid-item-actions" @click.stop>
                       <slot
@@ -1020,6 +1427,7 @@ const gridCssVars = computed(() => ({
                         type="button"
                         class="sdk-grouped-grid-hide-btn"
                         data-testid="grouped-grid-item-hide"
+                        :disabled="isLocked"
                         aria-label="Hide item"
                         title="Hide item"
                         @click.stop="hideStaticItem(item)"
@@ -1053,14 +1461,18 @@ const gridCssVars = computed(() => ({
                     class="sdk-grouped-grid-resize-badge"
                     aria-live="polite"
                   >
-                    {{ displayColSpan(item) }} × {{ displayRowSpan(item) }}
+                    {{ sectionResizeAxis(item.section) === 'horizontal' ? `${displayColSpan(item)} col` : `${displayColSpan(item)} × ${displayRowSpan(item)}` }}
                   </span>
 
                   <button
-                    v-if="editable"
+                    v-if="editable && sectionResizeAxis(item.section) !== 'none'"
                     type="button"
                     class="sdk-grouped-grid-resize-handle"
+                    :class="[`is-axis-${sectionResizeAxis(item.section)}`, { 'is-disabled': isLocked }]"
                     data-testid="grouped-grid-resize-handle"
+                    :disabled="isLocked"
+                    :aria-disabled="isLocked ? 'true' : undefined"
+                    :title="isLocked ? effectiveLockReason : 'Resize item'"
                     aria-label="Resize item"
                     @click.stop
                     @pointerdown="startItemResize(item, $event)"
@@ -1104,6 +1516,73 @@ const gridCssVars = computed(() => ({
   min-width: 0;
 }
 
+.sdk-grouped-grid-draft-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm, 12px);
+  padding: 10px 14px;
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: var(--radius-md, 8px);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm, 13px);
+}
+
+.sdk-grouped-grid-draft-text {
+  flex: 1 1 200px;
+  min-width: 0;
+  line-height: 1.5;
+}
+
+.sdk-grouped-grid-draft-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs, 8px);
+  flex: none;
+}
+
+.sdk-grouped-grid-draft-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: var(--text-xs, 12px);
+  font-weight: var(--font-medium, 500);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.sdk-grouped-grid-draft-btn.secondary {
+  border: 1px solid var(--el-border-color);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+}
+
+.sdk-grouped-grid-draft-btn.secondary:hover:not(:disabled) {
+  border-color: var(--el-border-color-hover, var(--el-border-color-dark));
+  background: var(--el-fill-color-light);
+}
+
+.sdk-grouped-grid-draft-btn.primary {
+  border: 1px solid var(--el-color-primary);
+  background: var(--el-color-primary);
+  color: #fff;
+}
+
+.sdk-grouped-grid-draft-btn.primary:hover:not(:disabled) {
+  background: var(--el-color-primary-light-3);
+  border-color: var(--el-color-primary-light-3);
+}
+
+.sdk-grouped-grid-draft-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .sdk-grouped-grid-group {
   display: flex;
   flex-direction: column;
@@ -1111,6 +1590,13 @@ const gridCssVars = computed(() => ({
   min-width: 0;
   border-radius: var(--radius-md, 8px);
   transition: box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.sdk-grouped-grid.is-group-surface-card .sdk-grouped-grid-group {
+  padding: var(--surface-padding, 16px);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md, 8px);
+  background: var(--el-bg-color);
 }
 
 .sdk-grouped-grid-group.is-dragging {
@@ -1133,32 +1619,56 @@ const gridCssVars = computed(() => ({
 .sdk-grouped-grid-group-header {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs, 6px);
-  min-height: 32px;
+  gap: var(--spacing-xs, 8px);
+  min-height: 36px;
   min-width: 0;
 }
 
-.sdk-grouped-grid-group-handle,
+.sdk-grouped-grid-group-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  color: var(--el-text-color-placeholder);
+  cursor: grab;
+  border-radius: var(--radius-md, 8px);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sdk-grouped-grid-group-handle:hover:not(.is-disabled) {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+
 .sdk-grouped-grid-item-handle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
+  width: 22px;
+  height: 22px;
   color: var(--el-text-color-placeholder);
   cursor: grab;
   border-radius: var(--radius-sm, 4px);
-  padding: 2px;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 
-.sdk-grouped-grid-group-handle:hover,
-.sdk-grouped-grid-item-handle:hover {
+.sdk-grouped-grid-item-handle:hover:not(.is-disabled) {
   color: var(--el-text-color-regular);
   background: var(--el-fill-color-light);
 }
 
-.sdk-grouped-grid-group-handle:active,
-.sdk-grouped-grid-item-handle:active {
+.sdk-grouped-grid-group-handle:active:not(.is-disabled),
+.sdk-grouped-grid-item-handle:active:not(.is-disabled) {
   cursor: grabbing;
+}
+
+.sdk-grouped-grid-group-handle.is-disabled,
+.sdk-grouped-grid-item-handle.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .sdk-grouped-grid-collapse-btn {
@@ -1194,7 +1704,7 @@ const gridCssVars = computed(() => ({
   margin: 0;
   flex: 1 1 auto;
   min-width: 0;
-  font-size: var(--text-md, 15px);
+  font-size: var(--text-lg, 16px);
   font-weight: var(--font-semibold, 600);
   color: var(--el-text-color-primary);
   overflow: hidden;
@@ -1238,32 +1748,65 @@ const gridCssVars = computed(() => ({
   min-width: 0;
 }
 
+.sdk-grouped-grid.is-row-sizing-auto .sdk-grouped-grid-track {
+  grid-auto-rows: auto;
+  align-items: start;
+}
+
 .sdk-grouped-grid-item {
+  container: sdk-grouped-grid-item / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border: 1px solid var(--ui-divider, var(--el-border-color-lighter));
+  padding: var(--surface-padding, 16px);
+  border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md, 8px);
   background: var(--el-bg-color);
+  box-shadow: var(--shadow-card, none);
   overflow: hidden;
   box-sizing: border-box;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
 }
 
-.sdk-grouped-grid-item:hover {
-  border-color: var(--el-border-color-hover, var(--el-border-color));
+.sdk-grouped-grid-item:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+
+.sdk-grouped-grid.is-item-surface-section .sdk-grouped-grid-item {
+  padding: var(--spacing-md, 16px) 0 0;
+  border: 0;
+  border-top: 1px solid var(--el-border-color-light);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.sdk-grouped-grid.is-row-sizing-auto .sdk-grouped-grid-item {
+  overflow: visible;
+}
+
+.sdk-grouped-grid.is-item-surface-card .sdk-grouped-grid-item:hover {
+  border-color: var(--el-border-color-dark, var(--el-border-color-hover, var(--el-border-color)));
 }
 
 .sdk-grouped-grid-item.is-selected {
   border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 2px var(--el-color-primary-light-8);
+  box-shadow: inset 0 0 0 2px var(--el-color-primary);
 }
 
 .sdk-grouped-grid-item.is-highlighted:not(.is-selected) {
   border-color: var(--el-color-warning);
   box-shadow: 0 0 0 2px var(--el-color-warning-light-8);
+}
+
+.sdk-grouped-grid-item.is-draft-modified:not(.is-selected) {
+  border-style: dashed;
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 2px var(--el-color-primary-light-8);
 }
 
 .sdk-grouped-grid-item.is-dragging {
@@ -1288,18 +1831,39 @@ const gridCssVars = computed(() => ({
 .sdk-grouped-grid-item-header {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs, 6px);
+  gap: var(--spacing-xs, 8px);
   flex: none;
-  padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px);
-  border-bottom: 1px solid var(--ui-divider, var(--el-border-color-extra-light));
+  padding: 0 0 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  min-width: 0;
+}
+
+.sdk-grouped-grid-item-header.is-divider-none {
+  padding: 0;
+  margin-bottom: 10px;
+  border-bottom: 0;
+}
+
+.sdk-grouped-grid.is-item-surface-section .sdk-grouped-grid-item-header {
+  padding: 0 0 10px;
+  margin-bottom: 4px;
+  border-bottom: 0;
+}
+
+.sdk-grouped-grid-item-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .sdk-grouped-grid-item-title {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   font-size: var(--text-sm, 13px);
-  font-weight: var(--font-medium, 500);
+  font-weight: var(--font-semibold, 600);
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1311,6 +1875,41 @@ const gridCssVars = computed(() => ({
   align-items: center;
   gap: 2px;
   flex: none;
+  transition: opacity 0.15s ease;
+}
+
+.sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item-actions,
+.sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item:hover .sdk-grouped-grid-item-actions,
+.sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item:focus-within .sdk-grouped-grid-item-actions,
+.sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item:has([aria-expanded="true"]) .sdk-grouped-grid-item-actions,
+.sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item:hover .sdk-grouped-grid-item-handle,
+.sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item:focus-within .sdk-grouped-grid-item-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item-actions,
+  .sdk-grouped-grid.is-controls-hover .sdk-grouped-grid-item-handle {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@container sdk-grouped-grid-item (max-width: 200px) {
+  .sdk-grouped-grid-item-header {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .sdk-grouped-grid-item-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 .sdk-grouped-grid-hide-btn {
@@ -1327,9 +1926,14 @@ const gridCssVars = computed(() => ({
   cursor: pointer;
 }
 
-.sdk-grouped-grid-hide-btn:hover {
+.sdk-grouped-grid-hide-btn:hover:not(:disabled) {
   background: var(--el-fill-color-light);
   color: var(--el-text-color-primary);
+}
+
+.sdk-grouped-grid-hide-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .sdk-grouped-grid-item-body {
@@ -1339,6 +1943,10 @@ const gridCssVars = computed(() => ({
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.sdk-grouped-grid.is-row-sizing-auto .sdk-grouped-grid-item-body {
+  overflow: visible;
 }
 
 .sdk-grouped-grid-item-fallback {
@@ -1363,19 +1971,22 @@ const gridCssVars = computed(() => ({
 
 .sdk-grouped-grid-resize-handle {
   position: absolute;
-  right: 2px;
-  bottom: 2px;
-  width: 14px;
-  height: 14px;
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: nwse-resize;
   opacity: 0;
   transition: opacity 0.15s ease;
 }
 
-.sdk-grouped-grid-resize-handle::after {
+.sdk-grouped-grid-resize-handle.is-axis-both {
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+.sdk-grouped-grid-resize-handle.is-axis-both::after {
   content: "";
   position: absolute;
   right: 3px;
@@ -1387,11 +1998,59 @@ const gridCssVars = computed(() => ({
   border-radius: 0 0 2px 0;
 }
 
+.sdk-grouped-grid-resize-handle.is-axis-horizontal {
+  top: 12px;
+  right: 0;
+  bottom: 12px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.sdk-grouped-grid-resize-handle.is-axis-horizontal::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  width: 3px;
+  height: 24px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: var(--el-border-color-dark, var(--el-text-color-placeholder));
+}
+
+.sdk-grouped-grid-resize-handle.is-axis-vertical {
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.sdk-grouped-grid-resize-handle.is-axis-vertical::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 24px;
+  height: 3px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--el-border-color-dark, var(--el-text-color-placeholder));
+}
+
+.sdk-grouped-grid-resize-handle.is-disabled {
+  cursor: not-allowed;
+}
+
 .sdk-grouped-grid-item:hover .sdk-grouped-grid-resize-handle,
 .sdk-grouped-grid-item.is-selected .sdk-grouped-grid-resize-handle,
 .sdk-grouped-grid-item.is-resizing .sdk-grouped-grid-resize-handle,
 .sdk-grouped-grid-resize-handle:focus-visible {
   opacity: 1;
+}
+
+.sdk-grouped-grid-item:hover .sdk-grouped-grid-resize-handle.is-disabled {
+  opacity: 0.35;
 }
 
 @container sdk-grouped-grid (max-width: 640px) {

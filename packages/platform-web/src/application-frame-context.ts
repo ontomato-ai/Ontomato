@@ -1,11 +1,14 @@
 import type { ComputedRef, InjectionKey } from "vue";
+import type { DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import { PANEL_FRAME_QUERY_PREFIX } from "@ontomato/contracts/panel-host";
 import type { PanelDeepLinkStateValue, PanelManifest } from "@ontomato/contracts/panel-manifest";
 import type {
   ApplicationEntryMenu,
-  ApplicationPanelUse,
+  ApplicationEntryResolution,
   CurrentApplicationEntry,
 } from "@ontomato/contracts/product-panels";
+import type { DisplayedPanel } from "./panel-conversation-display";
+import type { PanelSessionFeed } from "./panel-session-runs";
 import type { PanelObjectChange } from "./panel-host";
 
 export type FrameState = Record<string, PanelDeepLinkStateValue>;
@@ -17,7 +20,8 @@ export interface PanelFrameRegistration {
   resolved: boolean;
   /** True when the opened path is denied or missing in this application. */
   missing: boolean;
-  use: ApplicationPanelUse | null;
+  use: ApplicationEntryResolution["use"] | null;
+  panel: DisplayedPanel | null;
   currentEntry: CurrentApplicationEntry | null;
   menu: ApplicationEntryMenu | null;
   onObjectChange: (change: PanelObjectChange) => void;
@@ -30,6 +34,9 @@ export interface ApplicationFrameHostBridge {
   readonly active: ComputedRef<boolean>;
   /** True once the active outer frame panel's surface is ready. */
   readonly surfaceReady: ComputedRef<boolean>;
+  readonly liveState: ComputedRef<DisplayStateUpdate | null>;
+  readonly ownsComposer: ComputedRef<boolean>;
+  readonly feed: PanelSessionFeed;
   /** Refreshes the outer frame panel when the content page reports an object mutation. */
   refreshFrame(change: PanelObjectChange): void;
   /** Registers the mounted full-page panel route with the outer frame host; returns an unregister callback. */

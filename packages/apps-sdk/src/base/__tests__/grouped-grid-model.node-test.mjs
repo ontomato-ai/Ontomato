@@ -7,6 +7,7 @@ import {
   moveGridItem,
   reorderGridGroups,
   resizeGridItem,
+  resolveSectionColumns,
   serializeStaticGridLayout,
   setStaticGridItemHidden,
 } from "../grouped-grid-model.ts";
@@ -301,4 +302,51 @@ test("serializeStaticGridLayout and setStaticGridItemHidden preserve hidden item
   assert.equal(afterUnhide.groups[0].items[1].hidden, undefined);
   assert.equal(afterUnhide.groups[0].items[1].colSpan, 5);
   assert.equal(afterUnhide.groups[0].items[1].rowSpan, 3);
+});
+
+test("buildGroupedGridGroups honors sectionColumns so 12-col metric and 24-col chart tracks clamp independently", () => {
+  const rows = [
+    makeItem("m1", "g1", { section: "metric", colSpan: 3, rowSpan: 1, order: 0 }),
+    makeItem("m2", "g1", { section: "metric", colSpan: 18, rowSpan: 1, order: 1 }),
+    makeItem("c1", "g1", { section: "chart", colSpan: 12, rowSpan: 2, order: 0 }),
+    makeItem("c2", "g1", { section: "chart", colSpan: 20, rowSpan: 3, order: 1 }),
+  ];
+
+  assert.equal(resolveSectionColumns("metric", 12, { metric: 12, chart: 24 }), 12);
+  assert.equal(resolveSectionColumns("chart", 12, { metric: 12, chart: 24 }), 24);
+  assert.equal(resolveSectionColumns("other", 12, { metric: 12, chart: 24 }), 12);
+
+  const groups = buildGroupedGridGroups({
+    record: null,
+    rows,
+    rowObjectType: "test:Item",
+    columns: 12,
+    sectionColumns: { metric: 12, chart: 24 },
+    minColSpan: 1,
+    sectionMinColSpans: { metric: 1, chart: 4 },
+    minRowSpan: 1,
+    maxRowSpan: 6,
+    groupsField: "groups",
+    groupKeyField: "groupId",
+    groupTitleField: "groupTitle",
+    sectionField: "section",
+    sectionOrder: ["metric", "chart"],
+    colSpanField: "colSpan",
+    rowSpanField: "rowSpan",
+    orderField: "order",
+  });
+
+  const metricSection = groups[0].sections.find((s) => s.key === "metric");
+  const chartSection = groups[0].sections.find((s) => s.key === "chart");
+  assert.deepEqual(metricSection?.items.map((i) => i.colSpan), [3, 12]);
+  assert.deepEqual(metricSection?.items.map((i) => i.maxColSpan), [12, 12]);
+  assert.deepEqual(chartSection?.items.map((i) => i.colSpan), [12, 20]);
+  assert.deepEqual(chartSection?.items.map((i) => i.maxColSpan), [24, 24]);
+  assert.deepEqual(chartSection?.items.map((i) => i.minColSpan), [4, 4]);
+
+  const resized = resizeGridItem(groups, "test:Item:c1", 18, 3);
+  assert.ok(resized);
+  const updatedChart = resized[0].sections.find((s) => s.key === "chart")?.items.find((i) => i.primaryKey === "c1");
+  assert.equal(updatedChart?.colSpan, 18);
+  assert.equal(updatedChart?.rowSpan, 3);
 });

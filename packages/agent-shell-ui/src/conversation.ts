@@ -46,6 +46,7 @@ export interface RunView {
   id: string;
   status: RuntimeRunStatus;
   stopReason: RuntimeStopReason | null;
+  outcome?: RuntimeRunPresentation["outcome"];
   errorMessage: string | null;
   /** The message the runtime named as the run's answer once it stopped; every other message is process. */
   answerMessageId: string | null;
@@ -141,6 +142,7 @@ function toolOutput(content: { type: string; text?: string }[]): string {
 
 /** Replaces one run's live projection with an authoritative snapshot. */
 function applyRunPresentation(run: RunView, presentation: RuntimeRunPresentation) {
+  if (presentation.outcome !== undefined) run.outcome = presentation.outcome;
   if (presentation.details) run.details = Object.fromEntries(presentation.details.map(entry => [entry.detail.key, entry]));
   if (presentation.usageUpdate !== undefined) run.usageUpdate = presentation.usageUpdate;
 }
@@ -350,6 +352,7 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
       break;
     case "agent_end":
       run.status = event.status;
+      if (event.outcome !== undefined) run.outcome = event.outcome;
       run.stopReason = event.stopReason;
       run.errorMessage = event.errorMessage;
       run.answerMessageId = event.answerMessageId;

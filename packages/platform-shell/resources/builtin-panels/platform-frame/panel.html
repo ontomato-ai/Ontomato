@@ -50,6 +50,7 @@
   <div class="platform-frame">
     <app-menu v-if="showMenu" />
     <div class="platform-frame-content">
+      <page-header v-if="showSingleEntryHeader" density="bar" :names="singleEntryNames" />
       <current-entry member="content" />
     </div>
   </div>

@@ -38,7 +38,7 @@ export function executionBusinessCallbacks(
   _owner: AssistantOwner,
   initiatorCredentials: AssistantCredentials,
   runId: string,
-  options: { scope?: "full" | "app-builder" | "authoring-only"; expiresAt?: number } = {},
+  options: { scope?: "full" | "app-builder" | "authoring-only"; expiresAt?: number; pageControl?: boolean } = {},
 ): RuntimeBusinessCallbacks {
   const scope = options.scope ?? "full";
   const expiresAt = options.expiresAt ?? Date.now() + getQueryTimeoutMs();
@@ -47,11 +47,14 @@ export function executionBusinessCallbacks(
   if (scope === "authoring-only") return { authoring };
   const workbench = sealedCallback(`${base}/workbench`, `${base}/workbench/`, runId, expiresAt, initiatorCredentials);
   const ontology = sealedCallback(`${base}/ontology`, `${base}/ontology/`, runId, expiresAt, initiatorCredentials);
-  if (scope === "app-builder") return { workbench, ontology, authoring };
+  const panelCallbacks = scope === "full" || options.pageControl ? {
+    panelOperations: sealedCallback(`${base}/panels`, `${base}/panels/`, runId, expiresAt, initiatorCredentials),
+  } : {};
+  if (scope === "app-builder") return { workbench, ontology, authoring, ...panelCallbacks };
   return {
     workbench,
     ontology,
-    panelOperations: sealedCallback(`${base}/panels`, `${base}/panels/`, runId, expiresAt, initiatorCredentials),
+    ...panelCallbacks,
     authoring,
     retrieval: sealedCallback(`${base}/retrieval`, `${base}/retrieval`, runId, expiresAt, initiatorCredentials),
   };

@@ -1,3 +1,4 @@
+import { isLivePresentationEligibleRun } from "../agent-host/presentation";
 import { AGENT_EXECUTION_HEADER } from "@ontomato/contracts/agent-runtime-business-callbacks";
 import type { z } from "zod";
 import { randomUUID } from "node:crypto";
@@ -81,16 +82,15 @@ function requireHumanSecretInput(locale: AssistantCredentials["locale"]): never 
 }
 
 async function declaredOperation(
-  owner: AssistantOwner, credentials: AssistantCredentials, use: ApplicationPanelUse,
-  ref: PanelOperationRef, target?: PanelOperationCall["target"], frame?: ProductPanel,
+  owner: AssistantOwner, credentials: AssistantCredentials, panel: ProductPanel, rootPanelId: string, use: ApplicationPanelUse | undefined,
+  ref: PanelOperationRef, target: PanelOperationCall["target"] | undefined,
   options?: DeclaredDirectOperationOptions,
 ) {
-  const panel = frame ?? await readCurrentPanelRecord(owner, credentials, use.panelId);
   const operation = await declaredDirectOperation(owner, credentials, use, panel, ref.operationId, target, ref.memberPath, {
     ...options,
-    ...(frame && { isFrameRoot: true }),
+    ...(ref.root === "frame" && { isFrameRoot: true }),
   });
-  return { ...operation, rootPanelId: frame?.id ?? use.panelId };
+  return { ...operation, rootPanelId };
 }
 
 async function operationForUse(
@@ -100,10 +100,11 @@ async function operationForUse(
   if (ref.root === "frame") {
     const { applicationId, useId } = ref;
     const { panel, entry, framePanelId } = await requireRegisteredPanelRoot(owner, credentials, { kind: ref.root, applicationId, useId });
-    return declaredOperation(owner, credentials, entry, ref, target, panel, { framePanelId, ...options });
+    return declaredOperation(owner, credentials, panel, panel.id, entry, ref, target, { framePanelId, ...options });
   }
   const { use, framePanelId } = await requirePanelUseEntry(credentials, ref, owner);
-  return declaredOperation(owner, credentials, use, ref, target, undefined, { framePanelId, ...options });
+  const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
+  return declaredOperation(owner, credentials, panel, use.panelId, use, ref, target, { framePanelId, ...options });
 }
 
 function invocationTarget(
@@ -207,7 +208,8 @@ export async function readPanelOperation(owner: AssistantOwner, credentials: Ass
   if (request.agentRun) {
     const { run } = await requireActivePageRun(owner, request.agentRun);
     const { use, framePanelId } = await requirePanelSkillForRun(owner, credentials, run, request);
-    current = await declaredOperation(owner, credentials, use, request, request.call.target, undefined, { mode: "read", framePanelId });
+    const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
+    current = await declaredOperation(owner, credentials, panel, use.panelId, use, request, request.call.target, { mode: "read", framePanelId });
   } else {
     current = await operationForUse(owner, credentials, request, request.call.target, { mode: "read" });
   }
@@ -488,10 +490,12 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
       return humanPreparation(existing.intent);
     }
     const { run, channel, root } = await requireActivePageRun(owner, input.agentRun);
-    if (channel.authority.executionKind !== "live")
+    const buildTest = channel.authority.executionKind === "build-test";
+    if (buildTest && !isLivePresentationEligibleRun({ host: "workbench", owner, runId: run.id, sessionId: run.sessionId, channel }))
       throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
     const { use, framePanelId } = await requirePanelSkillForRun(owner, credentials, run, input);
-    const current = writeOperation(await declaredOperation(owner, credentials, use, input, invocationTarget(input), undefined, {
+    const panel = await readCurrentPanelRecord(owner, credentials, use.panelId);
+    const current = writeOperation(await declaredOperation(owner, credentials, panel, use.panelId, use, input, invocationTarget(input), {
       mode: "prepare",
       framePanelId,
     }));
@@ -506,7 +510,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     const host = operationHost({ owner, credentials });
     const confirmation = await humanConfirmation(current.handler, host, prepared);
     const settings = await store.settings(owner, root);
-    const autoMode = !settings.confirmBeforeExecute;
+    const autoMode = !buildTest && !settings.confirmBeforeExecute;
     const questionId = autoMode ? null : randomUUID();
     let questionPrompt: Awaited<ReturnType<typeof panelConfirmation>> | null = null;
     if (!autoMode) {

@@ -56,7 +56,7 @@ it("opens the page's composer with the member's declared agent and sentence, onc
     return found;
   });
   button.click();
-  await vi.waitFor(() => expect(expanded).toEqual([governance]));
+  await vi.waitFor(() => expect(expanded).toEqual([{ slot: "governance", ...governance }]));
   expect(element.querySelector("[role=alert]")).toBeNull();
   app.unmount();
 });
@@ -93,10 +93,10 @@ it("opens the composer with the opening sentence its key names, in the reader's 
     app.unmount();
     return expanded[0];
   }
-  expect(await opened("zh-CN")).toEqual({ target: governance.target, prefill: "帮我新建一个动作：" });
-  expect(await opened("en")).toEqual({ target: governance.target, prefill: "Help me create an action:" });
+  expect(await opened("zh-CN")).toEqual({ slot: "governance", target: governance.target, prefill: "帮我新建一个动作：" });
+  expect(await opened("en")).toEqual({ slot: "governance", target: governance.target, prefill: "Help me create an action:" });
   // A language the panel has no words in reads the deployment's default.
-  expect(await opened("fr")).toEqual({ target: governance.target, prefill: "Help me create an action:" });
+  expect(await opened("fr")).toEqual({ slot: "governance", target: governance.target, prefill: "Help me create an action:" });
   // Words in neither the reader's language nor the default: the composer opens with no sentence, never with the key.
-  expect(await opened("fr", { "zh-CN": { "actions.create": "帮我新建一个动作：" } })).toEqual({ target: governance.target });
+  expect(await opened("fr", { "zh-CN": { "actions.create": "帮我新建一个动作：" } })).toEqual({ slot: "governance", target: governance.target });
 });

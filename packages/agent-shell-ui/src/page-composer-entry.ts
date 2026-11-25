@@ -4,9 +4,10 @@ import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversat
 /**
  * A panel's conversation entry reaching the composer on screen (design U18). The host checks the request against the
  * panel's own declaration before it gets here; the composer then only opens, picks the target among this page's current
- * candidates and fills the text. It never sends.
+ * candidates and applies the declared click behavior.
  */
-export type PageComposerExpand = (request: PanelConversationEntry) => void;
+export type PageComposerRequest = PanelConversationEntry & { slot?: string };
+export type PageComposerExpand = (request: PageComposerRequest) => void | Promise<void>;
 
 /**
  * Where the composer on screen (a page's foot composer, or the one beside the conversation) registers its entry while it

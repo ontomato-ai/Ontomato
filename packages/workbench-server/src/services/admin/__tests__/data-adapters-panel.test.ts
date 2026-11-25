@@ -12,6 +12,7 @@ import {
 import { panelFormDescriptionSchema, type PanelFormValues } from "@ontomato/contracts/panel-projection";
 import {
   DATA_ADAPTER_CONFIG,
+  SAVE_DATA_ADAPTER_ROUTING,
   TEST_DATA_ADAPTER_CONNECTION,
 } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
@@ -60,6 +61,8 @@ let storedSchema: {
 };
 let nextMultiSaveResponse: unknown | null;
 let nextTestResponse: unknown | null;
+let failSchemaRead: boolean;
+let schemaReadCount: number;
 let savedSingleBodies: unknown[];
 let savedMultiBodies: unknown[];
 let testedBodies: unknown[];
@@ -77,6 +80,20 @@ function makeHost(): PanelOperationHost {
 function saveOp() {
   const found = dataAdaptersServerOperations.find((entry) => entry.handlerRef === `${DATA_ADAPTER_CONFIG}.save`);
   if (!found || found.effect !== "write" || found.batch) throw new Error("Missing save op");
+  return found as {
+    inputSchema: { parse(value: unknown): unknown };
+    execute(
+      host: PanelOperationHost,
+      target: PanelOperationTarget,
+      input: Record<string, unknown>,
+      intentId: string,
+    ): Promise<SinglePanelOperationOutcome>;
+  };
+}
+
+function saveRoutingOp() {
+  const found = dataAdaptersServerOperations.find((entry) => entry.handlerRef === SAVE_DATA_ADAPTER_ROUTING);
+  if (!found || found.effect !== "write" || found.batch) throw new Error("Missing saveRouting op");
   return found as {
     inputSchema: { parse(value: unknown): unknown };
     execute(
@@ -119,6 +136,8 @@ beforeEach(() => {
   testedBodies = [];
   nextMultiSaveResponse = null;
   nextTestResponse = null;
+  failSchemaRead = false;
+  schemaReadCount = 0;
 
   installedAdapters = [
     {
@@ -221,6 +240,10 @@ beforeEach(() => {
       });
     }
     if (url === "/api/data-query/admin/getSchema") {
+      schemaReadCount += 1;
+      if (failSchemaRead) {
+        return Response.json({ success: false, message: "Schema service unavailable" });
+      }
       return Response.json({ success: true, data: storedSchema });
     }
     if (url === "/api/data-query/businessConfig/useDataAdapter") {
@@ -339,7 +362,9 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
       }),
     );
 
-    expect(multiForm.sections?.map((s) => s.key)).toEqual(["mode", "dataSources", "classRoutes", "relationshipRoutes"]);
+    expect(multiForm.sections?.map((s) => s.key)).toEqual(["mode", "dataSources"]);
+    // DA-11: form read never fetches `/admin/getSchema`, even in multi-source mode.
+    expect(schemaReadCount).toBe(0);
     const dsField = multiForm.fields.find((f) => f.path === "/dataSources")!;
     expect(dsField.control.kind).toBe("object-array");
     if (dsField.control.kind !== "object-array") throw new Error("expected object-array");
@@ -355,11 +380,18 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
     expect(rows[0]!.adapter.connection.password).toBe("");
     expect(rows[1]!.adapter.connection.password).toBe("");
 
+    // Ontology outline is lazy-loaded by the separate `routingForm` read.
+    const routingForm = panelFormDescriptionSchema.parse(
+      await reads.routingForm("domain", { changedField: null }),
+    );
+    expect(schemaReadCount).toBe(1);
+    expect(routingForm.sections?.map((s) => s.key)).toEqual(["classRoutes", "relationshipRoutes"]);
+
     // Relationship derivations:
     // - MOUNTED_ON: Device(graph) -> Rack(graph) => graph, editable realEdge
     // - ORDER_DEVICE: Order(crm) -> Device(graph) => cross-source, readonly realEdge
     // - SELF_ORDER: Order(crm) -> Order(crm) => crm (SQL), readonly realEdge
-    const rels = multiForm.values.relationshipRoutes as Array<{
+    const rels = routingForm.values.relationshipRoutes as Array<{
       relationship: string;
       ends: string;
       sourceSummary: string;
@@ -388,10 +420,10 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
 
     // Re-route Order from crm to graph via refreshOnChange => ORDER_DEVICE & SELF_ORDER become graph + editable!
     const refreshed = panelFormDescriptionSchema.parse(
-      await reads.form("domain", {
+      await reads.routingForm("domain", {
         changedField: "/classRoutes/Order",
         values: {
-          ...multiForm.values,
+          ...routingForm.values,
           classRoutes: { Order: "graph", Device: "graph", Rack: "graph" },
         } as PanelFormValues,
       }),
@@ -407,21 +439,37 @@ describe("platform:DataAdapterConfig form read & Explanation 19 secret handling"
     });
   });
 
-  it("shows single-source fallback hint and routes unrouted classes when only one data source exists", async () => {
+  it("isolates ontology outline failures to routingForm while keeping adapterForm editable", async () => {
+    const reads = createDataAdapterConfigReads(actor);
+    failSchemaRead = true;
+
+    const multiForm = panelFormDescriptionSchema.parse(
+      await reads.form("domain", {
+        changedField: "/adapterMode",
+        values: { adapterMode: multiDataSourceType },
+      }),
+    );
+    expect(multiForm.sections?.map((s) => s.key)).toEqual(["mode", "dataSources"]);
+    expect(schemaReadCount).toBe(0);
+
+    await expect(reads.routingForm("domain", { changedField: null })).rejects.toThrow("Schema service unavailable");
+    expect(schemaReadCount).toBe(1);
+
+    // Once `/admin/getSchema` recovers, retrying `routingForm` succeeds cleanly.
+    failSchemaRead = false;
+    const recovered = panelFormDescriptionSchema.parse(
+      await reads.routingForm("domain", { changedField: null }),
+    );
+    expect(recovered.sections?.map((s) => s.key)).toEqual(["classRoutes", "relationshipRoutes"]);
+  });
+
+  it("shows single-source fallback hint and routes unrouted classes when only one data source exists in sourceCatalog", async () => {
     const reads = createDataAdapterConfigReads(actor);
     const refreshed = panelFormDescriptionSchema.parse(
-      await reads.form("domain", {
-        changedField: "/dataSources",
+      await reads.routingForm("domain", {
+        changedField: "/sourceCatalog",
         values: {
-          adapterMode: multiDataSourceType,
-          dataSources: [
-            {
-              id: "sole-graph",
-              label: "Only Graph",
-              readOnly: false,
-              adapter: { adapterType: "m3", connection: { url: "g:8080", company: "c", user: "u", password: "" } },
-            },
-          ],
+          sourceCatalog: [{ id: "sole-graph", adapterType: "m3" }],
           classRoutes: { Order: "", Device: "", Rack: "" },
           relationshipRoutes: [],
         },
@@ -546,7 +594,7 @@ describe("platform:DataAdapterConfig.save operation", () => {
       relationships: [{ forOntoMap: "MOUNTED_ON", realEdge: "mounted_on_rack" }],
     });
 
-    // Rejected save with data.problems => mapped precisely to field errors
+    // Rejected save with data.problems => maps dataSources problems and preserves full summary without reading schema
     nextMultiSaveResponse = {
       success: false,
       message: "Invalid multi-source configuration",
@@ -554,8 +602,6 @@ describe("platform:DataAdapterConfig.save operation", () => {
         problems: [
           { path: "dataSources[crm]", detail: "data source crm has invalid adapter type" },
           { path: "classDef[Order]", detail: "class Order is not routed to a data source" },
-          { path: "relationshipDef[ORDER_DEVICE]", detail: "the relationship crosses data sources" },
-          { path: "relationships[MOUNTED_ON]", detail: "physical edge name conflict" },
         ],
       },
     };
@@ -575,14 +621,64 @@ describe("platform:DataAdapterConfig.save operation", () => {
       },
     }, "intent-m2");
 
+    expect(schemaReadCount).toBe(0);
     expect(rejected).toMatchObject({
       kind: "refusal",
       code: "MULTI_DATA_SOURCE_REJECTED",
     });
     if (rejected.kind !== "refusal") throw new Error("expected refusal");
     expect(rejected.message).toContain("classDef[Order]");
+    expect(rejected.errors?.[0]?.field).toBe("/dataSources/0/adapter/adapterType");
+  });
+
+  it("saves routing-only changes through platform:DataAdapterConfig.saveRouting and maps routing rejection problems to exact fields", async () => {
+    const op = saveRoutingOp();
+
+    const ok = await op.execute(makeHost(), domainTarget, {
+      values: {
+        classRoutes: { Order: "graph", Device: "graph", Rack: "graph" },
+        relationshipRoutes: [
+          { relationship: "MOUNTED_ON", edge: { mode: "editable", realEdge: "mounted_on_rack" } },
+          { relationship: "ORDER_DEVICE", edge: { mode: "editable", realEdge: "order_uses_device" } },
+        ],
+      },
+    }, "intent-r1");
+    expect(ok.kind).toBe("success");
+    expect(savedMultiBodies[0]).toMatchObject({
+      classes: [
+        { forOntoMap: "Order", sourceId: "graph" },
+        { forOntoMap: "Device", sourceId: "graph" },
+        { forOntoMap: "Rack", sourceId: "graph" },
+      ],
+      relationships: [
+        { forOntoMap: "MOUNTED_ON", realEdge: "mounted_on_rack" },
+        { forOntoMap: "ORDER_DEVICE", realEdge: "order_uses_device" },
+      ],
+    });
+
+    nextMultiSaveResponse = {
+      success: false,
+      message: "Invalid multi-source routing",
+      data: {
+        problems: [
+          { path: "classDef[Order]", detail: "class Order is not routed to a data source" },
+          { path: "relationshipDef[ORDER_DEVICE]", detail: "the relationship crosses data sources" },
+          { path: "relationships[MOUNTED_ON]", detail: "physical edge name conflict" },
+        ],
+      },
+    };
+    const rejected = await op.execute(makeHost(), domainTarget, {
+      values: {
+        classRoutes: { Order: "crm" },
+        relationshipRoutes: [],
+      },
+    }, "intent-r2");
+    expect(rejected).toMatchObject({
+      kind: "refusal",
+      code: "MULTI_DATA_SOURCE_REJECTED",
+    });
+    if (rejected.kind !== "refusal") throw new Error("expected refusal");
     expect(rejected.errors?.map((e) => e.field)).toEqual([
-      "/dataSources/0/adapter/adapterType",
       "/classRoutes/Order",
       "/relationshipRoutes/1",
       "/relationshipRoutes/0/edge/realEdge",

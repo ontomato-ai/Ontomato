@@ -3,6 +3,31 @@ import type { PanelRowOperationAvailability } from "@ontomato/contracts/panel-ho
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import type { ObjectListRef } from "./object-list-types";
 
+/** Resize axis constraint for one grid section or item. */
+export type GroupedGridResizeAxis = "both" | "horizontal" | "vertical" | "none";
+
+/** Outer surface style for each group container. */
+export type GroupedGridGroupSurface = "plain" | "card";
+
+/** Outer surface style for each item container. */
+export type GroupedGridItemSurface = "card" | "section";
+
+/** Row height sizing strategy for grid tracks. */
+export type GroupedGridRowSizing = "fixed" | "auto";
+
+/** Bottom divider style under an item header. */
+export type GroupedGridDividerStyle = "line" | "none";
+
+/** When item header controls, drag grip, and resize handles are visible. */
+export type GroupedGridControlsVisibility = "hover" | "always";
+
+/** Optional unsaved draft override associated with one item during whole-grid draft preview. */
+export interface GroupedGridItemDraftOverride {
+  readonly title?: string;
+  readonly fileOverride?: unknown;
+  readonly fields?: Readonly<Record<string, unknown>>;
+}
+
 /** Static group definition for fixed-member mode of `GroupedGrid` (when no `rows` datum is bound). */
 export interface GroupedGridStaticGroupConfig {
   readonly id: string;
@@ -105,7 +130,7 @@ export interface GroupedGridLayoutChange {
   readonly groups: readonly GroupedGridLayoutGroup[];
 }
 
-/** Scoped props passed to `#item` and `#item-header-actions` slots. */
+/** Scoped props passed to `#item`, `#item-title-suffix`, and `#item-header-actions` slots. */
 export interface GroupedGridItemSlotScope {
   readonly itemId: string;
   readonly title: string;
@@ -118,6 +143,9 @@ export interface GroupedGridItemSlotScope {
   readonly selected: boolean;
   readonly dragging: boolean;
   readonly resizing: boolean;
+  readonly locked: boolean;
+  readonly modified: boolean;
+  readonly draftOverride?: GroupedGridItemDraftOverride;
   readonly operations: Readonly<Record<string, PanelRowOperationAvailability>>;
   readonly runOperation: (operation: string, extraInput?: Readonly<Record<string, RuntimeJsonValue>>) => Promise<void>;
 }
@@ -128,5 +156,6 @@ export interface GroupedGridGroupSlotScope {
   readonly index: number;
   readonly itemCount: number;
   readonly collapsed: boolean;
+  readonly locked: boolean;
   readonly toggleCollapse: () => void;
 }

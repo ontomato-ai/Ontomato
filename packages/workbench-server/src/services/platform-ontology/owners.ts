@@ -1,6 +1,6 @@
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
-import { isNativeApplicationEntry, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
+import { isApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import {
   domainProductGrantsResponseSchema,
   type DomainProductGrantEntry,
@@ -884,7 +884,7 @@ export class PlatformOntologyOwnerReaders {
           Object.values(app.names)[0] ??
           app.id,
         kind: app.kind,
-        panelIds: [...new Set((app.panelUses ?? []).filter((use): use is ApplicationPanelUse => !isNativeApplicationEntry(use)).map((use) => use.panelId))],
+        panelIds: [...new Set((app.panelUses ?? []).filter(isApplicationPanelUse).map((use) => use.panelId))],
       }));
     });
   }

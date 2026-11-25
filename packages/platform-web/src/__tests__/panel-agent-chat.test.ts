@@ -5,6 +5,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AgentChat as ShellAgentChat,
   panelChatHostKey,
+  pageSessionStream,
+  servePageComposerKey,
+  useConversationDisplay,
+  type PageComposerExpand,
+  type ConversationDisplay,
   type AgentHostAgent,
   type AgentHostClient,
   type PanelChatHost,
@@ -12,6 +17,7 @@ import {
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import en from "../../../workbench-ui/src/locales/en";
+import ConversationEntry from "../../../apps-sdk/src/base/ConversationEntry.vue";
 import AgentChat from "../../../apps-sdk/src/chat/AgentChat.vue";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
 import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/panel/member";
@@ -47,7 +53,10 @@ function makeClient(agents: AgentHostAgent[]): AgentHostClient {
       createdAt: "2026-11-25T00:00:00Z",
       updatedAt: "2026-11-25T00:00:00Z",
     })),
-    readHistory: vi.fn(async () => ({ messages: [], hasOlder: false, nextCursor: null })),
+    readHistory: vi.fn(async (id: string) => ({
+      session: { id, agentId: agents[0]?.id }, page: { messageSeq: 0, olderCursor: null },
+      runs: [], messages: [], pendingQuestions: [], notifications: [], latestRun: null,
+    })),
     deleteSession: vi.fn(async () => undefined),
     renameSession: vi.fn(async () => undefined),
     send: vi.fn(async () => ({
@@ -71,8 +80,14 @@ function makeClient(agents: AgentHostAgent[]): AgentHostClient {
           status: "stopped",
           stopReason: "completed",
           errorMessage: null,
+          answerMessageId: "answer-1",
+          finishedAt: "2026-11-25T00:00:01Z",
         },
-        messages: [],
+        cursor: { seq: 1, streamId: "stream" },
+        messages: [{ id: "answer-1", runId: "run-1", messageSeq: 2, contextSeq: 2,
+          message: { role: "assistant", content: [{ type: "text", text: "Response" }], timestamp: 2 } }],
+        pendingMessages: [], toolExecutions: [], artifacts: [], pendingQuestions: [],
+        outcome: { result: "complete" },
       },
       pendingQuestions: [],
     })),
@@ -115,6 +130,10 @@ function mountProjectionChat(options: {
   defaultAgent?: PanelChatHost["defaultAgent"];
   claimComposer?: () => () => void;
   sessionId?: string | null;
+  props?: Record<string, unknown>;
+  real?: boolean;
+  display?: () => ConversationDisplay;
+  provide?: Record<symbol, unknown>;
 }) {
   const client = makeClient(options.agents);
   const outputs = new Map<string, unknown>();
@@ -156,11 +175,22 @@ function mountProjectionChat(options: {
       return () => h("div", { class: "stub-shell-chat", "data-agent-id": props.agentId, "data-session-id": props.sessionId ?? "" });
     },
   });
+  let expand: PageComposerExpand;
+  const trigger = (request: Parameters<PageComposerExpand>[0]) => expand(request);
   const wrapper = mount(AgentChat, {
-    props: { sessionId: options.sessionId ?? null },
+    props: { sessionId: options.sessionId ?? null, ...options.props },
+    slots: {
+      "composer-context": "<div data-context />",
+      "message-actions": '<template #default="{ runId, outcome }"><div :data-result="runId">{{ outcome?.result }}</div></template>',
+    },
     global: {
       plugins: [i18n],
       provide: {
+        ...options.provide,
+        [servePageComposerKey as symbol]: (handler: PageComposerExpand) => {
+          expand = handler;
+          return () => {};
+        },
         [panelContextKey as symbol]: panelContext,
         [projectionKey as symbol]: { slot: "chat", projection },
         [panelMemberKey as symbol]: () => member,
@@ -168,24 +198,24 @@ function mountProjectionChat(options: {
           client: () => client,
           defaultAgent: options.defaultAgent,
           claimComposer: options.claimComposer,
+          display: options.display,
         } satisfies PanelChatHost,
       },
-      stubs: {
-        AgentChat: stub,
-      },
+      stubs: options.real ? {} : { AgentChat: stub },
     },
   });
-  return { wrapper, client, outputs, ShellAgentChat };
+  return { wrapper, client, outputs, trigger };
 }
 
 describe("AgentChat projection member", () => {
   it("resolves a declared agent ID through the platform client, syncs sessionId, claims composer, and resets on New chat", async () => {
     const release = vi.fn();
     const claimComposer = vi.fn(() => release);
-    const { wrapper, client, outputs } = mountProjectionChat({
+    const { wrapper, client, outputs, trigger } = mountProjectionChat({
       target: { kind: "id", id: DEPT_AGENT.id },
       agents: [REGULAR_AGENT, DEPT_AGENT],
       claimComposer,
+      real: true,
     });
     await flushPromises();
 
@@ -193,15 +223,34 @@ describe("AgentChat projection member", () => {
     expect(client.listAgents).toHaveBeenCalledTimes(1);
     expect(outputs.get("status")).toBe("ready");
     expect(wrapper.find(".sdk-agent-chat-title").text()).toBe("Department Helper");
-    expect(wrapper.find(".stub-shell-chat").attributes("data-agent-id")).toBe(DEPT_AGENT.id);
+    expect(wrapper.getComponent(ShellAgentChat).props("agentId")).toBe(DEPT_AGENT.id);
 
     // Sending creates a session through the shared platform AgentHostClient and writes sessionId back.
-    await (wrapper.vm as unknown as { send: (t: string) => Promise<void> }).send("Hello");
+    expect(wrapper.vm).not.toHaveProperty("send");
+    expect(wrapper.vm).not.toHaveProperty("reset");
+    const buttonProjection = { ...makeProjection({ kind: "id", id: DEPT_AGENT.id }),
+      conversationEntry: { target: { kind: "id" as const, id: DEPT_AGENT.id }, submit: true, newSession: true },
+    };
+    const button = mount(ConversationEntry, {
+      props: { prefill: "Hello" },
+      global: {
+        plugins: [i18n],
+        provide: {
+          [panelContextKey as symbol]: { expandPageComposer: trigger },
+          [projectionKey as symbol]: { slot: "start", projection: buttonProjection },
+        },
+      },
+    });
+    await button.get("button").trigger("click");
     await flushPromises();
     expect(client.createSession).toHaveBeenCalledWith(DEPT_AGENT.id);
     expect(client.send).toHaveBeenCalledWith("sess-created-1", { message: "Hello" });
     expect(wrapper.emitted("update:sessionId")?.[0]).toEqual(["sess-created-1"]);
     expect(outputs.get("sessionId")).toBe("sess-created-1");
+    expect(wrapper.emitted("entryTriggered")?.[0]).toEqual([
+      { slot: "start", submit: true, newSession: true, sessionId: "sess-created-1" },
+    ]);
+    button.unmount();
 
     // Clicking New chat resets the session back to null.
     await wrapper.find(".sdk-agent-chat-btn").trigger("click");
@@ -244,6 +293,70 @@ describe("AgentChat projection member", () => {
     expect(defaultRun.outputs.get("status")).toBe("ready");
     expect(defaultRun.wrapper.find(".stub-shell-chat").attributes("data-agent-id")).toBe(DEPT_AGENT.id);
     defaultRun.wrapper.unmount();
+  });
+
+  it("forwards opaque session context and outcome, and keeps the conversation through collapse", async () => {
+    const { wrapper, client, trigger } = mountProjectionChat({
+      target: { kind: "id", id: DEPT_AGENT.id },
+      agents: [DEPT_AGENT],
+      real: true,
+      props: { greeting: "Welcome", description: "Details", sessionContext: { token: ["a", 2] } },
+    });
+    await flushPromises();
+    expect(wrapper.get(".greeting").text()).toBe("Welcome");
+    expect(wrapper.get(".agent-description").text()).toBe("Details");
+    expect(wrapper.find("[data-context]").exists()).toBe(true);
+    const chat = wrapper.getComponent(ShellAgentChat).element;
+    await wrapper.setProps({ collapsed: true });
+    await wrapper.get("textarea").trigger("click");
+    expect(wrapper.emitted("expand")).toHaveLength(1);
+    await trigger({ slot: "start", target: { kind: "id", id: DEPT_AGENT.id }, prefill: "Hello", submit: true, newSession: true });
+    await flushPromises();
+    expect(wrapper.emitted("expand")).toHaveLength(2);
+    expect(client.createSession).toHaveBeenCalledWith({ agentId: DEPT_AGENT.id, context: { token: ["a", 2] } });
+    expect(wrapper.emitted("runComplete")?.[0]).toEqual([
+      { sessionId: "sess-created-1", runId: "run-1", ok: true, outcome: { result: "complete" } },
+    ]);
+    await wrapper.setProps({ collapsed: false });
+    expect(wrapper.getComponent(ShellAgentChat).element).toBe(chat);
+    expect(wrapper.get('[data-result="run-1"]').text()).toBe("complete");
+    expect(client.readHistory).not.toHaveBeenCalled();
+    await trigger({ target: { kind: "id", id: DEPT_AGENT.id }, prefill: "Draft", newSession: true });
+    await flushPromises();
+    expect(wrapper.get("textarea").element.value).toBe("Draft");
+    expect(wrapper.emitted("update:sessionId")?.at(-1)).toEqual([null]);
+    expect(client.send).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it("uses the enclosing view binding and refuses outside presentation on that view", async () => {
+    const display = useConversationDisplay({
+      features: () => [],
+      embedded: true,
+      initial: { page: { featureId: "panel", instance: "/current", address: "/current" }, view: "full" },
+      admit: async () => ({ ok: false, reason: "outside_embedded_host" }),
+      context: (page) => ({ url: page.address, label: "Panel", selection: [] }),
+      leave: { leaves: () => false, confirm: async () => true },
+    });
+    display.registerPageController("/current", { applyState: vi.fn() });
+    const attach = vi.fn((_shell: Parameters<import("../../../agent-shell-ui/src/session-run-notices").PageSessionStream["attach"]>[0]) => vi.fn());
+    const { wrapper, client, trigger } = mountProjectionChat({
+      target: { kind: "id", id: DEPT_AGENT.id }, agents: [DEPT_AGENT], real: true,
+      display: () => display,
+      provide: { [pageSessionStream as symbol]: { binding: { viewId: "current-view" }, attach } },
+    });
+    await flushPromises();
+    await trigger({ target: { kind: "id", id: DEPT_AGENT.id }, prefill: "Hello", submit: true });
+    expect(client.send).toHaveBeenCalledWith("sess-created-1", expect.objectContaining({
+      presentationBinding: { viewId: "current-view", initialPage: expect.objectContaining({ url: "/current" }) },
+    }));
+    const shell = attach.mock.calls[0]![0];
+    const result = await shell.present({
+      type: "presentation", sessionId: "sess-created-1", runId: "run-1", toolCallId: "call-1",
+      target: { kind: "page", address: "/elsewhere" },
+    });
+    expect(result).toMatchObject({ status: "not_opened", reason: "outside_embedded_host", current: { target: { url: "/current" } } });
+    wrapper.unmount();
   });
 
   it("preserves standalone mode when explicit client, agentId, agent and labels are passed", async () => {

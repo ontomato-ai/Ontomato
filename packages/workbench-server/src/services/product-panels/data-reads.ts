@@ -232,6 +232,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [DATA_ADAPTER_CONFIG]: {
       record: selection => dataAdapters.record(selection.primaryKey!),
       form: (selection, params) => dataAdapters.form(selection.primaryKey!, formParams(params)),
+      routingForm: (selection, params) => dataAdapters.routingForm(selection.primaryKey!, formParams(params)),
     },
     [MODEL_CONNECTION]: {
       list: () => modelConnections.list(),
@@ -554,6 +555,8 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       list: (_selection, params) => agentSessions.list({
         search: readParams.keyword.optional().parse(params.search),
         limit: readParams.size.optional().parse(params.limit),
+        agentKind: readParams.agentKind.optional().parse(params.agentKind),
+        agentId: readParams.agentId.optional().parse(params.agentId),
       }),
       record: selection => agentSessions.record(selection.primaryKey!),
     },

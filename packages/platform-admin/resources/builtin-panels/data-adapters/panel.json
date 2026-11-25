@@ -30,8 +30,23 @@
           "actions": "none"
         },
         "name": "Data adapter configuration",
-        "description": "Select the domain data adapter or configure multi-source connections and ontology routing",
+        "description": "Select the domain data adapter or configure multi-source connections",
         "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-500000000001"
+      },
+      "routingForm": {
+        "component": "ObjectForm",
+        "type": "platform:DataAdapterConfig",
+        "target": "domain",
+        "data": {
+          "form": "routingForm"
+        },
+        "operation": "platform:DataAdapterConfig.saveRouting",
+        "config": {
+          "actions": "none"
+        },
+        "name": "Ontology routing",
+        "description": "Route ontology classes and relationships across configured multi-source data sources",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-500000000003"
       },
       "testConnection": {
         "component": "OperationButton",

@@ -3,7 +3,7 @@ import { requireProductGrant } from "../product-governance/grants";
 import { closeGovernanceWindow } from "./governance";
 import { closeAuthoringRun } from "./authoring";
 import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
-import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
+import { agentHostSendResultSchema, type AgentHostCreateSession, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
 import { tForLocale, resolveLocale } from "../../i18n";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { ChannelProcessClient } from "../agent-host/process";
@@ -81,14 +81,19 @@ export const assistantService = {
   },
   agents: listAssistantAgents,
   /** Scheduled tasks start their conversations here too, marked with their origin. */
-  async create(id: string, owner: AssistantOwner, input: { agentId: string; workspaceId?: string }, credentials: AssistantCredentials, origin: SessionRow["origin"] = "user") {
+  async create(id: string, owner: AssistantOwner, input: AgentHostCreateSession, credentials: AssistantCredentials, origin: SessionRow["origin"] = "user") {
     const { agent } = await this.admitAgent(input.agentId, owner, credentials);
     const runtime = new RuntimeClient(owner.domainId, undefined, owner.userId);
     const builder = isAppBuilderKind(agent.kind);
-    if (builder && input.workspaceId) {
-      await runtime.request(`/v1/workspaces/${workspaceIdSchema.parse(input.workspaceId)}`);
+    const contextSchema = z.object({ workspaceId: builder ? workspaceIdSchema.optional() : z.never().optional() }).strict();
+    const context = contextSchema.optional().safeParse(input.context);
+    if (!context.success)
+      throw new HttpError(400, "Invalid session context for this agent", "INVALID_SESSION_CONTEXT", context.error.issues);
+    const workspaceId = input.workspaceId ?? context.data?.workspaceId;
+    if (builder && workspaceId) {
+      await runtime.request(`/v1/workspaces/${workspaceIdSchema.parse(workspaceId)}`);
     }
-    const createWorkspace = builder && input.workspaceId === undefined
+    const createWorkspace = builder && workspaceId === undefined
       ? async () => workspaceSchema.parse(await runtime.request("/v1/workspaces", "POST", {
         name: tForLocale(credentials.locale, "panels.appWorkspace.defaultName"),
       })).id
@@ -98,7 +103,7 @@ export const assistantService = {
       owner,
       input.agentId,
       origin,
-      input.workspaceId,
+      workspaceId,
       false,
       createWorkspace,
     );

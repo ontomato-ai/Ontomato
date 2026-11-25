@@ -208,7 +208,7 @@ export async function saveCurrentPanel(owner: ProductOwner, credentials: Assista
 }
 
 /** Java authorizes the registrant. This service call checks the current definitions used by the declaration. */
-export async function validateApplicationPanelReferences(request: ApplicationPanelReferencesRequest, locale?: string) {
+export async function validateApplicationPanelReferences(request: Omit<ApplicationPanelReferencesRequest, "domainId"> & { domainId: string | null }, locale?: string) {
   const { domainId, framePanelId, uses, delivery, theme } = request;
   if (theme) {
     const [issue] = themeOverrideProblems(theme);
@@ -269,10 +269,20 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
     return false;
   }
 
+  const frameHasAgentChat = framePanelId !== undefined && chatProjectionIds.size > 0 && panelContainsAgentChat(framePanelId);
+  if (request.frameConversationEntryIds?.length && !frameHasAgentChat) {
+    throw new HttpError(400, "Frame conversation entry requires an application frame containing AgentChat", "INVALID_FRAME_CONVERSATION_ENTRY");
+  }
   const frame = framePanelId === undefined ? undefined : panels.get(framePanelId)!;
   let definitions: Awaited<ReturnType<typeof assistantStore.agents>> | undefined;
   for (const use of uses) {
-    if (chatProjectionIds.size > 0 && use.pageComposer !== "none" && panelContainsAgentChat(use.panelId)) {
+    const entryHasAgentChat = chatProjectionIds.size > 0 && panelContainsAgentChat(use.panelId);
+    if (frameHasAgentChat && entryHasAgentChat) {
+      throw new HttpError(400,
+        `Entry '${use.id}' cannot mount AgentChat because the application frame already mounts AgentChat`,
+        "INVALID_PANEL_ENTRY_DUAL_AGENT_CHAT");
+    }
+    if (entryHasAgentChat && use.pageComposer !== "none") {
       throw new HttpError(
         400,
         `Entry '${use.id}' mounts AgentChat and must declare pageComposer: "none"`,
@@ -294,7 +304,7 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
     }
 
     const { defaultAgent } = use;
-    if (!defaultAgent) continue;
+    if (!defaultAgent || domainId === null) continue;
     if (!definitions) {
       const stored = await assistantStore.agents(domainId);
       const diagnosis = await assistantStore.opsDiagnosis?.(domainId);

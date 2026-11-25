@@ -20,7 +20,7 @@ export interface CurrentProductRow {
   revision: number; createdAt: Date; updatedAt: Date;
 }
 
-export async function findCurrentProduct(domain: string, kind: CurrentProductKind, id: string,
+export async function findCurrentProduct(domain: string | null, kind: CurrentProductKind, id: string,
   client: Pick<PoolClient, "query"> = getPostgresPool()): Promise<CurrentProductRow | undefined> {
   if (isBuiltinProductId(id)) {
     const result = await client.query<CurrentProductRow>(
@@ -35,7 +35,7 @@ export async function findCurrentProduct(domain: string, kind: CurrentProductKin
 }
 
 export async function findCurrentProducts(
-  domain: string, kind: CurrentProductKind, ids: readonly string[],
+  domain: string | null, kind: CurrentProductKind, ids: readonly string[],
   client: Pick<PoolClient, "query"> = getPostgresPool(),
 ): Promise<Map<string, CurrentProductRow>> {
   const builtinIds: string[] = [], domainIds: string[] = [];

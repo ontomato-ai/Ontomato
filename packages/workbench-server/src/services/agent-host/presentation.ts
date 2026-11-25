@@ -64,7 +64,7 @@ export interface LivePresentationRunEligibility {
 
 /**
  * Shared run-level eligibility rule for live page presentation and browser-side agent confirmation:
- * direct user root run on the matching host, same initiator/recipient actor and domain, and live authority.
+ * direct user root run on the matching host, same initiator/recipient actor and domain, and live or build-test authority.
  */
 export function isLivePresentationEligibleRun(input: LivePresentationRunEligibility): boolean {
   const { host, owner, runId, sessionId, channel } = input;
@@ -72,7 +72,7 @@ export function isLivePresentationEligibleRun(input: LivePresentationRunEligibil
   if (!isDirectUserRun(channel, sessionId)) return false;
   if (channel.root.runId !== runId || channel.root.session.sessionId !== sessionId) return false;
   if (channel.root.session.providerId !== host || channel.agent.providerId !== host) return false;
-  if (channel.authority.executionKind !== "live") return false;
+  if (channel.authority.executionKind !== "live" && channel.authority.executionKind !== "build-test") return false;
   if (!channel.userRecipient) return false;
   if (channel.userRecipient.actor.id !== channel.actor.id) return false;
   if (channel.userRecipient.actor.domainId !== owner.domainId || channel.actor.domainId !== owner.domainId) {

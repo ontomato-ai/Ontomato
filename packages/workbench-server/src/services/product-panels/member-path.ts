@@ -4,7 +4,7 @@ import {
 } from "@ontomato/contracts/panel-manifest";
 import {
   productPanelSchema, productProjectionSchema,
-  type ApplicationPanelUse, type PanelUseRef, type ProductPanel,
+  isApplicationPanelUse, type ApplicationPanelUse, type PanelUseRef, type ProductPanel,
 } from "@ontomato/contracts/product-panels";
 import type { PoolClient } from "pg";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
@@ -98,7 +98,7 @@ export class PanelReadBatchCache {
 
 export function registeredPanelRootId(source: RegisteredSource, { use, framePanelId }: PanelEntry) {
   // The entry owner only returns framePanelId for its panels renderer.
-  return source.kind === "frame" ? framePanelId : use.panelId;
+  return source.kind === "frame" ? framePanelId : isApplicationPanelUse(use) ? use.panelId : undefined;
 }
 
 export interface ResolvedPanelPathStep {
@@ -143,7 +143,7 @@ export async function requireRegisteredPanelRoot(
     throw new HttpError(404, "This entry does not use the requested application frame", "PANEL_FRAME_UNAVAILABLE");
 
   const record = await requireTarget(owner, viewer, { kind: "panel", id }, client, batchCache);
-  return { panel: parseStoredDefinition(productPanelSchema, record, "Panel"), entry: entry.use, framePanelId: entry.framePanelId };
+  return { panel: parseStoredDefinition(productPanelSchema, record, "Panel"), entry: isApplicationPanelUse(entry.use) ? entry.use : undefined, framePanelId: entry.framePanelId };
 }
 
 async function declaredTarget(

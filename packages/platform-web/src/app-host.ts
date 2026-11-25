@@ -34,7 +34,7 @@ import {panelUploadSize} from '@ontomato/contracts/panel-upload';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
 import type {AppBridgeConfirmPanelOperation,AppBridgeConfirmPanelOperationResult,AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
 import type {PanelConversationEntry} from '@ontomato/contracts/panel-conversation-entry';
-import {servePageComposerKey,type PageComposerExpand,type ServePageComposer} from '@ontomato/agent-shell-ui';
+import {servePageComposerKey,type PageComposerExpand,type PageComposerRequest,type ServePageComposer} from '@ontomato/agent-shell-ui';
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const publishedFrames=new WeakMap<object,string>();
@@ -255,7 +255,7 @@ const composers:PageComposerExpand[]=[];
 /**
  * A composer the reader sees registers how it expands while it is shown, and calls the returned function when it goes.
  * The one shown last answers; once it goes, the one before it does again. The composer alone expands, selects among its
- * page's candidates and fills the sentence; it never sends.
+ * page's candidates and applies its declared click behavior.
  */
 export const servePageComposer:ServePageComposer=expand=>{
   composers.push(expand);
@@ -267,21 +267,22 @@ export const servePageComposer:ServePageComposer=expand=>{
  * it; a frame naming anything else is refused before the composer hears of it.
  */
 function expandPageComposer(source:object,{slot,...asked}:AppBridgeExpandPageComposer){
+  if(asked.submit||asked.newSession)throw new Error('This conversation entry requires a reader click in the platform document');
   const panel=panelFrames.get(source);
   const projectionId=panel?.memberProjections.get(slot);
   const declared=projectionId===undefined?undefined:panel!.conversationEntries.get(projectionId);
   // Both sides are parsed by the same schema, so their keys come in the same order.
   if(!declared||JSON.stringify(declared)!==JSON.stringify(asked))throw new Error('This conversation entry is not declared by the panel');
-  expandDeclaredComposer(declared);
+  return expandDeclaredComposer({ ...declared, slot });
 }
 /**
  * Expands the page's composer, the one shown last, with a conversation entry a panel's member declares: a frame's once
  * this host has checked it against the record it read, a directly drawn panel's as the platform read it.
  */
-export function expandDeclaredComposer(entry:PanelConversationEntry){
+export function expandDeclaredComposer(entry:PageComposerRequest){
   const expand=composers.at(-1);
   if(!expand)throw new Error('This page has no composer');
-  expand(entry);
+  return expand(entry);
 }
 /**
  * A panel frame asks the platform to carry out a human intent it prepared at Node. Only its ID is the frame's, and the

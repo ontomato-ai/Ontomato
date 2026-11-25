@@ -26,6 +26,126 @@ await mountPanel({
     ));
 
     const isMultiMode = computed(() => formValues.value.adapterMode === MULTI_MODE);
+    const routingDraft = usePanelFormDraft("routingForm", { when: () => isMultiMode.value });
+    const routingFormDraft = usePanelOutput("routingForm", "draft");
+
+    const sourceCatalog = computed(() => {
+      if (!isMultiMode.value || !Array.isArray(formValues.value.dataSources)) return [];
+      return formValues.value.dataSources
+        .filter((row) => row && typeof row === "object")
+        .map((row) => ({
+          id: typeof row.id === "string" ? row.id.trim() : "",
+          adapterType: row.adapter && typeof row.adapter === "object" && typeof row.adapter.adapterType === "string"
+            ? row.adapter.adapterType.trim()
+            : "",
+        }));
+    });
+
+    // Keep the lazy-loaded routing form's source choices in sync with unsaved data source edits.
+    watch(
+      [
+        isMultiMode,
+        sourceCatalog,
+        () => Boolean(adapterDraft.value?.dirty),
+        () => instance.forms.handle("routingForm")?.fields.value.length ?? 0,
+      ],
+      ([multi, catalog, adapterDirty, routingFieldCount]) => {
+        if (!multi || routingFieldCount === 0) return;
+        const routingHandle = instance.forms.handle("routingForm");
+        if (!routingHandle) return;
+        if (!adapterDirty && !routingHandle.dirty.value) return;
+        const current = Array.isArray(routingHandle.values.value?.sourceCatalog)
+          ? routingHandle.values.value.sourceCatalog
+          : [];
+        if (JSON.stringify(catalog) !== JSON.stringify(current)) {
+          routingHandle.set("/sourceCatalog", catalog);
+        }
+      },
+      { flush: "post" },
+    );
+
+    // Mirror routing edits into adapterForm's hidden fields while adapterForm is dirty so one Save
+    // submits data sources and ontology routes atomically.
+    watch(
+      [isMultiMode, () => Boolean(adapterDraft.value?.dirty), routingFormDraft],
+      ([multi, adapterDirty]) => {
+        if (!multi || !adapterDirty) return;
+        const adapterHandle = instance.forms.handle("adapterForm");
+        const routingHandle = instance.forms.handle("routingForm");
+        if (!adapterHandle || !routingHandle || routingHandle.fields.value.length === 0) return;
+        const routingValues = routingHandle.values.value;
+        if (!routingValues || typeof routingValues !== "object") return;
+        if (
+          routingValues.classRoutes !== undefined
+          && JSON.stringify(routingValues.classRoutes) !== JSON.stringify(adapterHandle.values.value?.classRoutes)
+        ) {
+          adapterHandle.set("/classRoutes", routingValues.classRoutes);
+        }
+        if (
+          routingValues.relationshipRoutes !== undefined
+          && JSON.stringify(routingValues.relationshipRoutes) !== JSON.stringify(adapterHandle.values.value?.relationshipRoutes)
+        ) {
+          adapterHandle.set("/relationshipRoutes", routingValues.relationshipRoutes);
+        }
+      },
+      { flush: "post" },
+    );
+
+    const pageDraft = computed(() => {
+      const adapter = adapterDraft.value;
+      if (!adapter) return null;
+      const routing = isMultiMode.value ? routingDraft.value : null;
+      const adapterDirty = adapter.dirty;
+      const routingDirty = Boolean(routing?.dirty);
+      const dirty = adapterDirty || routingDirty;
+      const saving = adapter.saving || Boolean(routing?.saving);
+      const canSave = !saving && dirty && (
+        adapterDirty ? adapter.canSave : Boolean(routing?.canSave)
+      );
+      return {
+        dirty,
+        saving,
+        canSave,
+        save: () => {
+          const adapterHandle = instance.forms.handle("adapterForm");
+          const routingHandle = isMultiMode.value ? instance.forms.handle("routingForm") : undefined;
+          if (adapterDirty) {
+            if (isMultiMode.value && adapterHandle && routingHandle && routingHandle.fields.value.length > 0) {
+              const routingValues = routingHandle.values.value;
+              if (routingValues && typeof routingValues === "object") {
+                if (routingValues.classRoutes !== undefined) {
+                  adapterHandle.set("/classRoutes", routingValues.classRoutes);
+                }
+                if (routingValues.relationshipRoutes !== undefined) {
+                  adapterHandle.set("/relationshipRoutes", routingValues.relationshipRoutes);
+                }
+              }
+            }
+            void adapterHandle?.submit().catch(() => undefined);
+            return;
+          }
+          if (routingDirty) {
+            void routingHandle?.submit().catch(() => undefined);
+          }
+        },
+        discard: () => {
+          void (async () => {
+            const adapterHandle = instance.forms.handle("adapterForm");
+            const routingHandle = isMultiMode.value ? instance.forms.handle("routingForm") : undefined;
+            if (adapterDirty && adapterHandle) {
+              const confirmed = await adapterHandle.reset({ confirm: true });
+              if (confirmed && routingHandle) {
+                await routingHandle.reset({ confirm: false });
+              }
+              return;
+            }
+            if (routingDirty && routingHandle) {
+              await routingHandle.reset({ confirm: true });
+            }
+          })();
+        },
+      };
+    });
 
     const multiSources = computed(() => {
       if (!isMultiMode.value || !Array.isArray(formValues.value.dataSources)) return [];
@@ -100,14 +220,23 @@ await mountPanel({
       testActivated.value = true;
     }
 
-    function onSaved() {
+    function onAdapterSaved() {
+      const routingHandle = instance.forms.handle("routingForm");
+      if (routingHandle?.dirty.value) {
+        void routingHandle.reset({ confirm: false });
+      }
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("saved") });
+    }
+
+    function onRoutingSaved() {
       instance.refreshObjects();
       notify({ kind: "success", text: t("saved") });
     }
 
     return {
       t,
-      adapterDraft,
+      pageDraft,
       isMultiMode,
       multiSources,
       selectedTestSource,
@@ -115,7 +244,8 @@ await mountPanel({
       testResetKey,
       onTestTrigger,
       onTestRead,
-      onSaved,
+      onAdapterSaved,
+      onRoutingSaved,
     };
   },
 });
