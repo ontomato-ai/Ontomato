@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { ChevronDown, ChevronUp, Moon, PanelLeftOpen, Pin, PinOff } from "lucide-vue-next";
+import { ChevronDown, ChevronUp, Moon, Pin, PinOff } from "lucide-vue-next";
 import type {
   PlatformAccount,
   PlatformApp,
@@ -212,29 +212,17 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   <nav
     ref="railRoot"
     class="platform-rail"
-    :class="{ collapsed: !visuallyExpanded, floating }"
+    :class="{ collapsed: !visuallyExpanded, unpinned: collapsed, floating }"
     :aria-label="labels.applications"
     @mouseenter="onRailEnter"
     @mouseleave="onRailLeave"
   >
-    <!-- Visually collapsed: the pin/expand control alone. Expanded (hovered or pinned): brand mark, name, pin toggle. -->
-    <div v-if="!visuallyExpanded" class="rail-brand">
-      <ElTooltip v-bind="actionTooltipProps" :content="labels.expandRail">
-      <button
-        type="button"
-        class="rail-toggle"
-        :aria-label="labels.expandRail"
-        :aria-expanded="false"
-        :aria-pressed="false"
-        @click="toggle"
-      >
-        <PanelLeftOpen :size="16" aria-hidden="true" />
-      </button>
-      </ElTooltip>
-    </div>
-    <div v-else class="rail-brand">
-      <PlatformBrandMark :brand="markBrand" />
-      <span class="brand-name">{{ brandName }}</span>
+    <!-- The brand mark stays stationary in the icon column; widening reveals the brand name and pin control beside it. -->
+    <div class="rail-brand">
+      <span class="rail-brand-mark" aria-hidden="true">
+        <PlatformBrandMark :brand="markBrand" />
+      </span>
+      <span class="brand-name" :aria-hidden="!visuallyExpanded ? 'true' : undefined">{{ brandName }}</span>
       <ElTooltip v-bind="actionTooltipProps" :content="collapsed ? labels.expandRail : labels.collapseRail">
       <button
         type="button"
@@ -267,19 +255,19 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
               :href="app.href"
               target="_blank"
               rel="noopener noreferrer"
-              :title="app.built ? newTabLabel(app) : !visuallyExpanded ? app.label : undefined"
+              :title="app.built ? newTabLabel(app) : app.label"
               :aria-label="app.built ? newTabLabel(app) : !visuallyExpanded ? app.label : undefined"
             >
               <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-              <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
-              <ExternalLink v-if="app.built && visuallyExpanded" :size="12" class="rail-built-icon" aria-hidden="true" />
+              <span class="rail-label" :aria-hidden="!visuallyExpanded ? 'true' : undefined">{{ app.label }}</span>
+              <ExternalLink v-if="app.built" :size="12" class="rail-built-icon" aria-hidden="true" />
               <ExternalLink
-                v-else-if="visuallyExpanded"
+                v-else
                 class="rail-external"
                 :size="10"
-                :role="labels.opensInNewTab ? 'img' : undefined"
-                :aria-label="labels.opensInNewTab"
-                :aria-hidden="labels.opensInNewTab ? undefined : 'true'"
+                :role="visuallyExpanded && labels.opensInNewTab ? 'img' : undefined"
+                :aria-label="visuallyExpanded ? labels.opensInNewTab : undefined"
+                :aria-hidden="visuallyExpanded && labels.opensInNewTab ? undefined : 'true'"
               />
             </a>
             <!-- An external application whose address the host must resolve first (a signed jump). -->
@@ -287,19 +275,18 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
               v-else-if="app.open"
               type="button"
               class="rail-row external"
-              :title="!visuallyExpanded ? app.label : undefined"
+              :title="app.label"
               :aria-label="!visuallyExpanded ? app.label : undefined"
               @click="app.open()"
             >
               <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-              <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
+              <span class="rail-label" :aria-hidden="!visuallyExpanded ? 'true' : undefined">{{ app.label }}</span>
               <ExternalLink
-                v-if="visuallyExpanded"
                 class="rail-external"
                 :size="10"
-                :role="labels.opensInNewTab ? 'img' : undefined"
-                :aria-label="labels.opensInNewTab"
-                :aria-hidden="labels.opensInNewTab ? undefined : 'true'"
+                :role="visuallyExpanded && labels.opensInNewTab ? 'img' : undefined"
+                :aria-label="visuallyExpanded ? labels.opensInNewTab : undefined"
+                :aria-hidden="visuallyExpanded && labels.opensInNewTab ? undefined : 'true'"
               />
             </button>
             <span
@@ -310,7 +297,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
               :aria-label="!visuallyExpanded ? app.label : undefined"
             >
               <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-              <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
+              <span class="rail-label" :aria-hidden="!visuallyExpanded ? 'true' : undefined">{{ app.label }}</span>
             </span>
             <div
               v-else
@@ -322,12 +309,12 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
                 class="rail-row"
                 :class="{ active: app.id === activeAppId }"
                 :aria-current="app.id === activeAppId ? 'page' : undefined"
-                :title="!visuallyExpanded || app.built ? appLabel(app) : undefined"
+                :title="appLabel(app)"
                 :aria-label="!visuallyExpanded || app.built ? appLabel(app) : undefined"
                 @click="selectApp(app)"
               >
                 <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-                <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
+                <span class="rail-label" :aria-hidden="!visuallyExpanded ? 'true' : undefined">{{ app.label }}</span>
               </button>
               <ElTooltip v-if="visuallyExpanded && app.standaloneHref" v-bind="actionTooltipProps" :content="standaloneActionText">
                 <a
@@ -347,14 +334,18 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
               type="button"
               class="rail-row rail-more-toggle"
               :aria-expanded="buildersExpanded"
-              :title="!visuallyExpanded ? moreToggleAriaLabel(section.hiddenCount) : undefined"
+              :title="moreToggleAriaLabel(section.hiddenCount)"
               :aria-label="!visuallyExpanded ? moreToggleAriaLabel(section.hiddenCount) : undefined"
               @click="toggleBuildersExpanded"
             >
               <ChevronUp v-if="buildersExpanded" class="rail-icon" :size="16" aria-hidden="true" />
               <ChevronDown v-else class="rail-icon" :size="16" aria-hidden="true" />
-              <span v-if="visuallyExpanded" class="rail-label">{{ buildersExpanded ? collapseLabel : moreLabel }}</span>
-              <span v-if="visuallyExpanded && !buildersExpanded && section.hiddenCount > 0" class="rail-more-count">
+              <span class="rail-label" :aria-hidden="!visuallyExpanded ? 'true' : undefined">{{ buildersExpanded ? collapseLabel : moreLabel }}</span>
+              <span
+                v-if="!buildersExpanded && section.hiddenCount > 0"
+                class="rail-more-count"
+                :aria-hidden="!visuallyExpanded ? 'true' : undefined"
+              >
                 {{ section.hiddenCount }}
               </span>
             </button>
@@ -373,30 +364,29 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
           :href="app.href"
           target="_blank"
           rel="noopener noreferrer"
-          :title="!visuallyExpanded ? app.label : undefined"
+          :title="app.label"
           :aria-label="!visuallyExpanded ? app.label : undefined"
         >
           <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-          <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
+          <span class="rail-label" :aria-hidden="!visuallyExpanded ? 'true' : undefined">{{ app.label }}</span>
           <ExternalLink
-            v-if="visuallyExpanded"
             class="rail-external"
             :size="10"
-            :role="labels.opensInNewTab ? 'img' : undefined"
-            :aria-label="labels.opensInNewTab"
-            :aria-hidden="labels.opensInNewTab ? undefined : 'true'"
+            :role="visuallyExpanded && labels.opensInNewTab ? 'img' : undefined"
+            :aria-label="visuallyExpanded ? labels.opensInNewTab : undefined"
+            :aria-hidden="visuallyExpanded && labels.opensInNewTab ? undefined : 'true'"
           />
         </a>
         <button
           v-else-if="app.open"
           type="button"
           class="rail-row external"
-          :title="!visuallyExpanded ? app.label : undefined"
+          :title="app.label"
           :aria-label="!visuallyExpanded ? app.label : undefined"
           @click="app.open()"
         >
           <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-          <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
+          <span class="rail-label" :aria-hidden="!visuallyExpanded ? 'true' : undefined">{{ app.label }}</span>
         </button>
         <span
           v-else-if="app.unavailableHint"
@@ -406,7 +396,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
           :aria-label="!visuallyExpanded ? app.label : undefined"
         >
           <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-          <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
+          <span class="rail-label" :aria-hidden="!visuallyExpanded ? 'true' : undefined">{{ app.label }}</span>
         </span>
         <div
           v-else
@@ -418,12 +408,12 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
             class="rail-row"
             :class="{ active: app.id === activeAppId }"
             :aria-current="app.id === activeAppId ? 'page' : undefined"
-            :title="!visuallyExpanded ? app.label : undefined"
+            :title="app.label"
             :aria-label="!visuallyExpanded ? app.label : undefined"
             @click="selectApp(app)"
           >
             <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-            <span v-if="visuallyExpanded" class="rail-label">{{ app.label }}</span>
+            <span class="rail-label" :aria-hidden="!visuallyExpanded ? 'true' : undefined">{{ app.label }}</span>
           </button>
           <ElTooltip v-if="visuallyExpanded && app.standaloneHref" v-bind="actionTooltipProps" :content="standaloneActionText">
             <a
@@ -452,14 +442,17 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
         aria-haspopup="menu"
         :aria-expanded="menuOpen"
         :aria-label="labels.account"
-        :title="!visuallyExpanded ? account?.userName : undefined"
+        :title="account?.userName || labels.account"
         @click="menuOpen ? onMenuClose() : openMenu()"
         @keydown.escape="onMenuClose"
       >
-        <span v-if="account" class="account-avatar" aria-hidden="true">{{ initial }}</span>
-        <Moon v-else class="account-avatar-icon" :size="16" aria-hidden="true" />
-        <span v-if="visuallyExpanded && account" class="account-name">{{ account.userName }}</span>
-        <span v-if="visuallyExpanded && !account" class="account-name">{{ labels.account }}</span>
+        <span class="account-trigger-lead" aria-hidden="true">
+          <span v-if="account" class="account-avatar">{{ initial }}</span>
+          <Moon v-else class="account-avatar-icon" :size="16" />
+        </span>
+        <span class="account-name" :aria-hidden="!visuallyExpanded ? 'true' : undefined">
+          {{ account ? account.userName : labels.account }}
+        </span>
       </button>
       <div v-if="menuOpen" class="account-menu-anchor">
         <PlatformAccountMenu
@@ -499,13 +492,19 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
  * account and the foot are separated inside it (DESIGN.md "Layout").
  */
 .platform-rail {
+  /*
+   * Keep every icon on one stationary vertical and horizontal axis across collapsed and expanded states so hovering or
+   * pinning smoothly widens the rail to reveal labels without shifting any icon.
+   */
+  --rail-pad-x: calc((var(--shell-platform-rail-collapsed) - var(--shell-rail-button)) / 2);
+  --rail-icon-inset: calc((var(--shell-rail-button) - 16px) / 2);
   display: flex;
   flex-direction: column;
   width: var(--shell-platform-rail);
   flex-shrink: 0;
   height: 100%;
   min-height: 0;
-  padding: 10px 10px 12px;
+  padding: 8px var(--rail-pad-x) 12px;
   box-sizing: border-box;
   background: var(--shell-rail-bg);
   color: var(--el-text-color-regular);
@@ -514,30 +513,38 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   transition: width var(--transition-base), box-shadow var(--transition-fast);
   overflow: visible;
 }
-.platform-rail.collapsed {
-  width: var(--shell-platform-rail-collapsed);
-  align-items: center;
-  padding: 10px 0 12px;
-}
-/* Hover-expanded while unpinned: floats over the application surface without shifting or narrowing page content. */
-.platform-rail.floating {
+/* Unpinned rail stays positioned over the collapsed slot so widening and narrowing slide smoothly with no layout snap. */
+.platform-rail.unpinned {
   position: absolute;
   top: 0;
   left: 0;
   bottom: 0;
   z-index: 40;
+}
+.platform-rail.collapsed {
+  width: var(--shell-platform-rail-collapsed);
+}
+/* Hover-expanded while unpinned: floats over the application surface without shifting or narrowing page content. */
+.platform-rail.floating {
   width: var(--shell-platform-rail);
-  border-right: 1px solid var(--shell-app-edge);
   border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
-  box-shadow: var(--elevation-overlay);
+  box-shadow: inset -1px 0 0 var(--shell-app-edge), var(--elevation-overlay);
 }
 .rail-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   height: var(--shell-rail-button);
-  margin-bottom: 6px;
-  padding: 0 6px;
+  margin-bottom: 8px;
+  padding: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.rail-brand-mark {
+  display: grid;
+  place-items: center;
+  width: var(--shell-rail-button);
+  height: var(--shell-rail-button);
   flex-shrink: 0;
 }
 .brand-name {
@@ -549,6 +556,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: opacity var(--transition-fast);
 }
 .rail-toggle {
   display: grid;
@@ -557,12 +565,13 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   height: 28px;
   flex-shrink: 0;
   margin-left: auto;
+  margin-right: 4px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--el-text-color-secondary);
   cursor: pointer;
-  transition: background-color var(--transition-fast);
+  transition: background-color var(--transition-fast), opacity var(--transition-fast);
 }
 .rail-toggle:hover {
   background: var(--shell-rail-hover);
@@ -574,18 +583,6 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 .rail-toggle.pinned:hover {
   background: var(--shell-rail-hover);
   color: var(--brand-link);
-}
-/* Collapsed: the expand control is the top row, at the size of the icon rows below it. */
-.platform-rail.collapsed .rail-brand {
-  justify-content: center;
-  height: auto;
-  padding: 0;
-}
-.platform-rail.collapsed .rail-toggle {
-  width: var(--shell-rail-button);
-  height: var(--shell-rail-button);
-  margin-left: 0;
-  border-radius: var(--radius-md);
 }
 .rail-scroll {
   display: flex;
@@ -609,25 +606,30 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   padding: 0;
   list-style: none;
 }
+.rail-section > li,
+.rail-foot > li {
+  min-width: 0;
+}
 /* Management stays above the account and has the same separator as the other application groups. */
 .rail-foot {
   flex-shrink: 0;
+  overflow: hidden;
 }
-/* The hairline between the rail's sections: a short rule, never a group name. */
+/* The hairline between the rail's sections: stretches smoothly with the rail while keeping identical vertical rhythm. */
 .rail-divider {
   flex: 0 0 1px;
   height: 1px;
-  margin: 8px 10px;
+  margin: 8px 6px;
   background: var(--el-border-color);
 }
-.platform-rail.collapsed .rail-divider {
-  width: 24px;
-  margin: 8px auto;
-}
 .rail-item {
+  position: relative;
   display: flex;
   align-items: center;
+  width: 100%;
+  height: var(--shell-rail-button);
   border-radius: var(--radius-md);
+  overflow: hidden;
   transition: background-color var(--transition-fast);
 }
 .rail-item.has-standalone:hover {
@@ -642,7 +644,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 .rail-item.has-standalone > .rail-row {
   flex: 1;
   min-width: 0;
-  padding-right: 4px;
+  padding-right: 32px;
   background: transparent;
 }
 .rail-item.has-standalone > .rail-row:hover,
@@ -651,13 +653,15 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   background: transparent;
 }
 .rail-standalone {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--shell-platform-rail) - var(--rail-pad-x) * 2 - 28px);
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: none;
   width: 24px;
   height: 24px;
-  margin-right: 4px;
   border-radius: var(--radius-sm);
   color: var(--el-text-color-tertiary);
   opacity: 0.65;
@@ -679,17 +683,14 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
-.platform-rail.collapsed .rail-item {
-  justify-content: center;
-}
 .rail-row {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--rail-icon-inset);
   width: 100%;
-  min-height: 34px;
-  padding: 6px 10px;
+  height: var(--shell-rail-button);
+  padding: 0 10px 0 var(--rail-icon-inset);
   box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-md);
@@ -701,6 +702,8 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   font-weight: var(--font-normal);
   text-align: left;
   text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
   cursor: pointer;
   transition: background-color var(--transition-fast);
 }
@@ -736,23 +739,27 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   color: var(--el-text-color-tertiary);
 }
 /*
- * An expanded rail shows every application's name in full, in every language: a long name wraps onto a second line and
- * its row grows, rather than being cut to an ellipsis that tells the reader nothing.
+ * Every row stays single-line at a fixed height so icons below never shift when the rail widens; long names clip with
+ * an ellipsis and reveal their full title on hover.
  */
 .rail-label {
   flex: 1;
   min-width: 0;
   line-height: 1.25;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity var(--transition-fast);
 }
 .rail-external {
   flex-shrink: 0;
+  transition: opacity var(--transition-fast);
 }
 .rail-built-icon {
   flex: none;
   color: var(--el-text-color-secondary);
   opacity: 0.8;
+  transition: opacity var(--transition-fast);
 }
 .rail-more-toggle {
   color: var(--el-text-color-secondary);
@@ -763,19 +770,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   line-height: var(--leading-xs);
   font-variant-numeric: tabular-nums;
   color: var(--el-text-color-tertiary);
-}
-.platform-rail.collapsed .rail-row {
-  justify-content: center;
-  width: var(--shell-rail-button);
-  height: var(--shell-rail-button);
-  padding: 0;
-}
-.platform-rail.collapsed .rail-section,
-.platform-rail.collapsed .rail-foot {
-  align-items: center;
-}
-.platform-rail.collapsed .rail-foot {
-  width: 100%;
+  transition: opacity var(--transition-fast);
 }
 .rail-account {
   position: relative;
@@ -784,10 +779,10 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 .account-trigger {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
-  min-height: 34px;
-  padding: 6px 10px;
+  height: var(--shell-rail-button);
+  padding: 0 10px 0 0;
   box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-md);
@@ -795,8 +790,17 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   color: var(--el-text-color-regular);
   font: inherit;
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
   cursor: pointer;
   transition: background-color var(--transition-fast);
+}
+.account-trigger-lead {
+  display: grid;
+  place-items: center;
+  width: var(--shell-rail-button);
+  height: var(--shell-rail-button);
+  flex-shrink: 0;
 }
 .account-trigger:hover {
   background: var(--shell-rail-hover);
@@ -824,13 +828,17 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: opacity var(--transition-fast);
 }
-.platform-rail.collapsed .account-trigger {
-  justify-content: center;
-  width: var(--shell-rail-button);
-  height: var(--shell-rail-button);
-  padding: 0;
-  border-radius: var(--radius-md);
+.platform-rail.collapsed .brand-name,
+.platform-rail.collapsed .rail-toggle,
+.platform-rail.collapsed .rail-label,
+.platform-rail.collapsed .rail-external,
+.platform-rail.collapsed .rail-built-icon,
+.platform-rail.collapsed .rail-more-count,
+.platform-rail.collapsed .account-name {
+  opacity: 0;
+  pointer-events: none;
 }
 /* The menu anchors to the account row and opens upward, or beside the rail when it is collapsed. */
 .account-menu-anchor {

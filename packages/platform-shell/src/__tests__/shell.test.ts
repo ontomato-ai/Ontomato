@@ -81,8 +81,9 @@ describe("platform rail", () => {
     expect(row.getAttribute("aria-current")).toBe("page");
     expect(row.target).toBe("_blank");
     expect(row.relList.contains("noopener")).toBe(true);
-    expect(Boolean(row.querySelector(".rail-built-icon"))).toBe(!collapsed);
-    expect(row.textContent?.trim()).toBe(collapsed ? "" : "Sales");
+    expect(row.querySelector(".rail-built-icon")).not.toBeNull();
+    expect(row.querySelector(".rail-label")?.textContent?.trim()).toBe("Sales");
+    expect(row.querySelector(".rail-label")?.getAttribute("aria-hidden")).toBe(collapsed ? "true" : null);
   });
   it("keeps the platform's own applications at the foot above the account and opens the external one in a new tab", async () => {
     const root = await mount(PlatformRail, { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false });
@@ -191,22 +192,29 @@ describe("platform rail", () => {
   });
 
   /*
-   * Collapsed — the default — the rail is the icon column: names appear on hover only, and the expand control replaces
-   * the brand mark at the top (DESIGN.md "Applications and shells").
+   * Collapsed — the default — keeps the brand mark and application icons on one stationary axis while hiding labels
+   * visually and from assistive tech until the rail slides open, keeping accessible row names and full-name tooltips.
    */
-  it("collapses to icons only, keeping every accessible name and putting the expand control at the top", async () => {
+  it("collapses to stationary icons with brand mark, keeping accessible names and full-name tooltips", async () => {
     const expanded = await mount(PlatformRail, { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false });
     expect(expanded.querySelectorAll(".rail-label")).toHaveLength(apps.length);
+    expect([...expanded.querySelectorAll(".rail-label")].every((el) => el.getAttribute("aria-hidden") === null)).toBe(true);
     expect(expanded.querySelector(".brand-name")?.textContent).toBe("Ontomato");
     expect(expanded.querySelector(".rail-brand .rail-mark, .brand-mark")).not.toBeNull();
     expect(expanded.querySelector(".rail-toggle")?.getAttribute("aria-label")).toBe(labels.collapseRail);
+    // Single-line expanded rows always carry their full title so truncated names remain readable on hover.
+    [...expanded.querySelectorAll<HTMLElement>(".rail-row")].forEach((row, index) => {
+      expect(row.getAttribute("title")).toBe(apps[index].label);
+    });
     app?.unmount();
 
     const collapsedRoot = await mount(PlatformRail, { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: true });
-    // No visible names, but each row still carries its label for assistive technology and a tooltip.
-    expect(collapsedRoot.querySelectorAll(".rail-label")).toHaveLength(0);
-    expect(collapsedRoot.querySelector(".brand-name")).toBeNull();
-    expect(collapsedRoot.querySelector(".brand-mark, .brand-logo")).toBeNull();
+    // Labels stay mounted (aria-hidden) for smooth slide-out; brand mark stays stationary at the top.
+    const collapsedLabels = [...collapsedRoot.querySelectorAll(".rail-label")];
+    expect(collapsedLabels).toHaveLength(apps.length);
+    expect(collapsedLabels.every((el) => el.getAttribute("aria-hidden") === "true")).toBe(true);
+    expect(collapsedRoot.querySelector(".brand-name")?.getAttribute("aria-hidden")).toBe("true");
+    expect(collapsedRoot.querySelector(".rail-brand-mark .brand-mark, .rail-brand-mark .brand-logo")).not.toBeNull();
     expect(collapsedRoot.querySelector(".rail-toggle")?.getAttribute("aria-label")).toBe(labels.expandRail);
     const rows = [...collapsedRoot.querySelectorAll<HTMLElement>(".rail-row")];
     expect(rows).toHaveLength(apps.length);
@@ -353,14 +361,17 @@ describe("platform rail", () => {
     });
     const nav = root.querySelector<HTMLElement>(".platform-rail")!;
     expect(nav.classList.contains("collapsed")).toBe(true);
+    expect(nav.classList.contains("unpinned")).toBe(true);
     expect(nav.classList.contains("floating")).toBe(false);
 
     // Hover expands the rail as a floating overlay without changing pinned state.
     nav.dispatchEvent(new MouseEvent("mouseenter"));
     await nextTick();
     expect(nav.classList.contains("collapsed")).toBe(false);
+    expect(nav.classList.contains("unpinned")).toBe(true);
     expect(nav.classList.contains("floating")).toBe(true);
     expect(root.querySelectorAll(".rail-label")).toHaveLength(apps.length);
+    expect([...root.querySelectorAll(".rail-label")].every((el) => el.getAttribute("aria-hidden") === null)).toBe(true);
     expect(root.querySelector(".rail-toggle")?.getAttribute("aria-label")).toBe(labels.expandRail);
     expect(root.querySelector(".rail-toggle")?.getAttribute("aria-pressed")).toBe("false");
 
@@ -371,13 +382,15 @@ describe("platform rail", () => {
     nav.dispatchEvent(new MouseEvent("mouseleave"));
     await nextTick();
     expect(nav.classList.contains("collapsed")).toBe(false);
+    expect(nav.classList.contains("unpinned")).toBe(true);
     expect(nav.classList.contains("floating")).toBe(true);
 
-    // Clicking outside closes the account menu and collapses the unpinned rail.
+    // Clicking outside closes the account menu and collapses the unpinned rail smoothly.
     document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     await nextTick();
     expect(root.querySelector(".platform-account-menu")).toBeNull();
     expect(nav.classList.contains("collapsed")).toBe(true);
+    expect(nav.classList.contains("unpinned")).toBe(true);
     expect(nav.classList.contains("floating")).toBe(false);
   });
 });
