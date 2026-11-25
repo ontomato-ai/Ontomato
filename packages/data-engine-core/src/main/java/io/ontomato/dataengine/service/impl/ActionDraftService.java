@@ -109,8 +109,12 @@ public class ActionDraftService {
     return new Owner(user.getId(), user.getDomainId());
   }
 
+  @org.springframework.beans.factory.annotation.Autowired
+  private io.ontomato.dataengine.service.authorization.ActionAuthorization authorization;
+
   public JSONObject create(String sessionId, String runId, String lang) throws Exception {
     Owner owner = owner();
+    authorization.requireCreate(authorization.subject(owner.domainId(), owner.userId()));
     store.run(sessionId, runId, owner);
     store.one(
         "SELECT run_id FROM ontology_generations WHERE run_id=? AND kind='action'", uuid(runId));
@@ -287,6 +291,7 @@ public class ActionDraftService {
 
   public Action save(String draftId, String lang) throws Exception {
     Owner owner = owner();
+    authorization.requireCreate(authorization.subject(owner.domainId(), owner.userId()));
     Action saved = store.transaction(() -> saveSnapshot(draftId, owner, lang));
     actions.completeDraftInBackground(saved, owner, lang);
     return saved;
@@ -317,7 +322,8 @@ public class ActionDraftService {
     function.setDomainId(owner.domainId());
     action.setDomainId(owner.domainId());
     if (!ActionCodeExplanationValidator.ready(action)) ActionServiceImpl.clearExplanation(action);
-    if (action.getCreatedBy() == null) action.setCreatedBy(owner.userId());
+    action.setCreatedBy(owner.userId());
+    action.setCoauthorIds(null);
     action.setReviewedBy(null);
     action.setStatus(Action.STATUS_PENDING_REVIEW);
     Action saved = actions.persistDraft(action, lang);

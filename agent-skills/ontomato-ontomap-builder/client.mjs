@@ -239,48 +239,11 @@ async function pending(ontology, args, headers) {
   console.log(JSON.stringify({ source: "metric", count: limit - remaining, ...answer }, null, 2));
 }
 
-/**
- * What this subject may actually run, and why.
- *
- * Computed as the intersection of three things the platform keeps separately: the roles in effect
- * for the caller, the grants in force, and the actions that exist. A grant is in force only while its
- * workflow is active at exactly that revision, so a row left by an earlier revision is not reported —
- * listing it would promise authority the executor would refuse.
- */
+/** List standalone Actions from the owner's current policy decision. */
 async function listActions(ontology, headers) {
-  const me = (await json(`${ontology}/user/getCur`, headers)).data;
-  if (!me?.id) throw new Error("The current credential has no user id.");
-
-  const subjects = (await json(`${ontology}/workflow/subjects`, headers, {})).data ?? [];
-  const mine = subjects.find((subject) => subject.id === me.id);
-  const roleIds = new Set(mine?.roleIds ?? []);
-  if (!roleIds.size) {
-    console.log(JSON.stringify({ count: 0, actions: [], reason: "This subject holds no role in this domain." }, null, 2));
-    return;
-  }
-
-  const grants = (await json(`${ontology}/workflow/grants`, headers, {})).data ?? [];
-  const inForce = grants.filter((grant) => grant.inForce && roleIds.has(grant.roleId));
-
-  const actions = (await json(`${ontology}/action/queryList`, headers, {})).data ?? [];
-  const known = new Map(actions.map((action) => [action.id, action]));
-  const rows = inForce
-    .map((grant) => {
-      const action = known.get(grant.capabilityId);
-      return {
-        actionId: grant.capabilityId,
-        name: action?.name ?? grant.capabilityId,
-        status: action?.status ?? null,
-        role: grant.roleCode ?? grant.roleId,
-        source: grant.workflowId ? "process" : "direct",
-        workflowId: grant.workflowId ?? null,
-        workflowVersion: grant.activatedByWorkflowVersion ?? null,
-      };
-    })
-    // A grant for an unpublished or retired action is not something the caller can run.
-    .filter((row) => row.status === null || row.status === "PUBLISHED");
-
-  console.log(JSON.stringify({ count: rows.length, actions: rows }, null, 2));
+  const response = await json(`${ontology}/action/queryList`, headers, { purpose: "execute" });
+  const actions = response.data.map(({ id, name, status, target }) => ({ actionId: id, name, status, target }));
+  console.log(JSON.stringify({ count: actions.length, actions }, null, 2));
 }
 
 function flag(args,name) {

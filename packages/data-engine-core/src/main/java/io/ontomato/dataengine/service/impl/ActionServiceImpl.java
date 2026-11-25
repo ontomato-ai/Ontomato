@@ -1,6 +1,9 @@
 package io.ontomato.dataengine.service.impl;
 
-import io.ontomato.dataengine.security.CaseExecutionGuard;
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.ActionPath;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.WorkflowStep;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.OntologyQueryService;
 import io.ontomato.dataengine.service.ExecutionTarget;
@@ -97,12 +100,13 @@ public class ActionServiceImpl implements ActionService {
 
   @Autowired private ActionPreconditionService preconditions;
 
-  @Autowired private CapabilityGrantLookup capabilityGrants;
+  @Autowired private ActionAuthorization authorization;
   @Autowired private OntologyQueryService queries;
 
   @Autowired private IdentitySnapshotLookup identitySnapshots;
 
   @Autowired private WorkflowRunResolver workflowRuns;
+
 
   @PostConstruct
 	public void initService() {
@@ -214,6 +218,8 @@ public class ActionServiceImpl implements ActionService {
       boolean persistence,
       JSONObject structuredSpec)
       throws Exception {
+    var creator = SystemUtils.getCurUser();
+    authorization.requireCreate(authorization.subject(domainId, creator.getId()));
     String businessId = UUID.randomUUID().toString();
     Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
@@ -292,6 +298,7 @@ public class ActionServiceImpl implements ActionService {
       return generation.settle(
           () -> {
             if (persistence) {
+              action.setCreatedBy(creator.getId());
               ActionFunctionAdmission.requireSupported(function, langService, lang);
               return actionDao.saveWithFunction(action, lang);
             }
@@ -304,15 +311,23 @@ public class ActionServiceImpl implements ActionService {
   public Action save(Action action, String explanationRef, Owner owner, String lang) throws Exception {
     ActionForm.requireDraftStatus(action.getStatus());
     requireActionFunction(action.getFunction(), lang);
+    var subject = authorization.subject(owner.domainId(), owner.userId());
+    if (action.getId() == null) authorization.requireCreate(subject);
     Action saved = store.transaction(() -> {
       Action previous = null;
       if (action.getId() != null) {
         actionDao.lock(action.getId(), action.getDomainId());
-        previous = requireOwnedAction(action.getId(), action.getDomainId(), lang);
+        previous = requireOwnedAction(action.getId(), owner.domainId(), lang);
+        authorization.requireEdit(subject, previous);
+        if (action.getCoauthorIds() != null && !Objects.equals(action.getCoauthorIds(), previous.getCoauthorIds())
+            && !owner.userId().equals(previous.getCreatedBy()))
+          throw new ActionAuthorization.Denied("ACTION_COAUTHORS_FORBIDDEN", "Only the author can change coauthors.");
         if (scheduledReferences.referencesAction(action.getId())
             && !Objects.equals(previous.getFunction().getId(), action.getFunction().getId()))
           throw new OwnerRefusal("ACTION_REFERENCED", "A scheduled action must retain its referenced function");
       }
+      action.setDomainId(owner.domainId());
+      action.setCreatedBy(previous == null ? owner.userId() : previous.getCreatedBy());
       Function function = action.getFunction();
       function.setDomainId(action.getDomainId());
       if (function.getId() != null && (previous == null
@@ -436,17 +451,17 @@ public class ActionServiceImpl implements ActionService {
   }
 
   @Override
-	public void delete(String id, String lang) throws Exception {
+  public void delete(String id, String lang, User user) {
+    Action action = queryById(id);
+    if (action == null || !user.getDomainId().equals(action.getDomainId()))
+      throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
+    authorization.requireEdit(authorization.subject(user), action);
     if (scheduledReferences.referencesAction(id))
       throw new OwnerRefusal("ACTION_REFERENCED", "Action is referenced by a scheduled task");
-		Object[] exist = actionDao.queryById(id);
-		if (exist != null) {
-			Action existAction = (Action)exist[0];
-			OwnerRefusal refusal = systemDeletionRefusal(existAction, lang);
-			if (refusal != null) throw refusal;
-			actionDao.delete(id);
-		}
-	}
+    OwnerRefusal refusal = systemDeletionRefusal(action, lang);
+    if (refusal != null) throw refusal;
+    actionDao.delete(id);
+  }
 
   @Override
   public String systemDeletionRefusal(String id, String domainId, String lang) {
@@ -499,8 +514,10 @@ public class ActionServiceImpl implements ActionService {
 	}
 
   @Override
-	public long count(String status, String functionId, String className, String domainId) {
-		return actionDao.count(status, functionId, className, domainId);
+	public long count(String status, String functionId, String className, String domainId,
+      java.util.function.Predicate<Action> visible) {
+    return actionDao.queryList(status, functionId, className, domainId).stream()
+        .map(row -> (Action) row[0]).filter(visible).count();
 	}
 
   @Override
@@ -516,6 +533,7 @@ public class ActionServiceImpl implements ActionService {
 			Action action = (Action)o[0];
 			String functionId = (String)o[1];
 			action.setFunction(functionMap.get(functionId));
+			action.setDefinition(ActionDefinitionProjector.project(action));
 			actions.add(action);
 		}
 		return actions;
@@ -523,7 +541,10 @@ public class ActionServiceImpl implements ActionService {
 
   @Override
 	public byte[] exportActions(String lang) throws Exception {
-		List<Action> actions = queryList(null, null, null, null);
+		var user = SystemUtils.getCurUser();
+    var subject = authorization.subject(user);
+    List<Action> actions = queryList(null, null, null, user.getDomainId()).stream()
+        .filter(action -> authorization.allowsDefinition(subject, action)).toList();
 		String json = JSON.toJSONString(actions, Feature.WriteMapNullValue);
 		return ZipBundleUtil.zip("actions.json", json.getBytes(StandardCharsets.UTF_8));
 	}
@@ -534,8 +555,9 @@ public class ActionServiceImpl implements ActionService {
     byte[] jsonBytes = ZipBundleUtil.unzipFirstJson(zipData);
     JSONArray array = JSON.parseArray(new String(jsonBytes, StandardCharsets.UTF_8));
     User user = SystemUtils.getCurUser();
-    String domainId = user == null ? null : user.getDomainId();
-    String importer = user == null ? null : user.getId();
+    String domainId = user.getDomainId();
+    String importer = user.getId();
+    var subject = authorization.subject(user);
     int successCount = 0;
     JSONArray failures = new JSONArray();
     for (int i = 0; i < array.size(); i++) {
@@ -544,6 +566,15 @@ public class ActionServiceImpl implements ActionService {
         if (!(array.get(i) instanceof JSONObject)) throw new IllegalArgumentException("items[" + i + "]: expected an Action object; replace this item with a complete definition");
         JSONObject json = array.getJSONObject(i);
         actionId = json.getString("id");
+        Action previous = actionId == null ? null : queryById(actionId);
+        if (previous == null) authorization.requireCreate(subject);
+        else {
+          if (!domainId.equals(previous.getDomainId()))
+            throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
+          authorization.requireEdit(subject, previous);
+          var refusal = systemDeletionRefusal(previous, lang);
+          if (refusal != null) throw refusal;
+        }
         if (!(json.get("function") instanceof JSONObject rawFunction)) throw new IllegalArgumentException("Action.function: expected an embedded Function object");
         Function parsedFunction = Function.fromInput(rawFunction);
         Action action = json.to(Action.class);
@@ -552,18 +583,23 @@ public class ActionServiceImpl implements ActionService {
         if (function == null || function.getId() == null) {
           throw new Exception("Action " + actionId + " has no embedded function");
         }
+        if (previous != null && Action.STATUS_PUBLISHED.equals(previous.getStatus())
+            && !Objects.equals(previous.getFunction().getCode(), function.getCode()))
+          throw new OwnerRefusal("ACTION_PUBLISHED_FROZEN", langService.get(lang, "Action.publishedIsFrozen"));
+        function.setId(previous == null ? null : previous.getFunction().getId());
         ActionFunctionAdmission.requireSupported(function, langService, lang);
-        if (domainId != null) {
-          action.setDomainId(domainId);
-          function.setDomainId(domainId);
-        }
+        action.setDomainId(domainId);
+        function.setDomainId(domainId);
         ActionCodeExplanationValidator.requireReady(action);
         action.setAdopted(true);
         // A domain transfer preserves the asset's status and records the importer as its reviewer.
-        if (action.getCreatedBy() == null) action.setCreatedBy(importer);
+        action.setCreatedBy(previous == null ? importer : previous.getCreatedBy());
+        action.setCoauthorIds(null);
         action.setReviewedBy(importer);
         actionDao.saveWithFunction(action, lang);
         successCount++;
+      } catch (ActionAuthorization.Denied denied) {
+        throw denied;
       } catch (Exception e) {
         log.error("Failed to import action {}: {}", actionId, e.getMessage(), e);
         JSONObject failure = new JSONObject();
@@ -586,6 +622,7 @@ public class ActionServiceImpl implements ActionService {
       throws Exception {
     User user = SystemUtils.getCurUser();
     String domainId = user == null ? null : user.getDomainId();
+    var subject = authorization.subject(user);
     List<Action> actions = new ArrayList<Action>();
     JSONArray failures = new JSONArray();
     if (ids == null || ids.isEmpty()) {
@@ -608,9 +645,7 @@ public class ActionServiceImpl implements ActionService {
     for (Action action : actions) {
       String id = action.getId();
       try {
-        if (domainId != null && !domainId.equals(action.getDomainId())) {
-          throw new Exception("Action belongs to another domain");
-        }
+        authorization.requireEdit(subject, action);
         Function function = action.getFunction();
         if (function == null) {
           throw new Exception("Action has no embedded function");
@@ -648,7 +683,7 @@ public class ActionServiceImpl implements ActionService {
   }
 
   /** Asset validity is independent of the edition-owned admission decision. */
-  private void requireExecutable(Action action, String lang, User user) {
+  private void requireExecutable(Action action, String lang, User user, ExecutionTarget target) {
     if (action == null)
       throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
     if (!user.getDomainId().equals(action.getDomainId()) ||
@@ -657,7 +692,7 @@ public class ActionServiceImpl implements ActionService {
     // A stored action whose function row no longer exists keeps no program to run; saving never produces one.
     if (action.getFunction() == null)
       throw new OwnerRefusal("ACTION_NOT_EXECUTABLE", langService.get(lang, "Action.functionMissing"));
-    if (!Action.STATUS_PUBLISHED.equals(action.getStatus()))
+    if (!target.testing() && !Action.STATUS_PUBLISHED.equals(action.getStatus()))
       throw new OwnerRefusal("ACTION_NOT_EXECUTABLE", langService.get(lang, "Action.notPublished"));
     try {
       ActionFunctionAdmission.requireSupported(action.getFunction(), langService, lang);
@@ -672,8 +707,10 @@ public class ActionServiceImpl implements ActionService {
   }
 
   @Override
-  public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception {
-    Object[] o = run(queryById(id), param, lang, user, permission, timeoutMinutes, target, null);
+  public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target, ActionPath path) throws Exception {
+    Action action = queryById(id);
+    requireExecutable(action, lang, user, target);
+    Object[] o = executeAction(action, param, lang, user, permission, timeoutMinutes, target, null, path);
     PythonExecuteResult result = (PythonExecuteResult)o[1];
     if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
     else if (o[0] != null) {
@@ -687,9 +724,9 @@ public class ActionServiceImpl implements ActionService {
   @Override
   public PythonExecuteResult executeScheduled(Action action, JSONObject param, String lang, User creator,
       UserDataPermission permission, int timeoutMinutes, UUID runId) throws Exception {
-    requireExecutable(action, lang, creator);
+    requireExecutable(action, lang, creator, ExecutionTarget.LIVE);
     try {
-      return (PythonExecuteResult) executeAction(action, param, lang, creator, permission, timeoutMinutes, ExecutionTarget.LIVE, runId)[1];
+      return (PythonExecuteResult) executeAction(action, param, lang, creator, permission, timeoutMinutes, ExecutionTarget.LIVE, runId, new Standalone())[1];
     } catch (OwnerRefusal refusal) {
       PythonExecuteResult result = new PythonExecuteResult();
       result.setError(refusal.getMessage());
@@ -697,37 +734,18 @@ public class ActionServiceImpl implements ActionService {
     }
   }
 
-  private Object[] run(Action action, JSONObject param, String lang, User user, UserDataPermission permission,
-      int timeoutMinutes, ExecutionTarget target, UUID runId) throws Exception {
-    requireExecutable(action, lang, user);
-    return executeAction(action, param, lang, user, permission, timeoutMinutes, target, runId);
-  }
-
   private Object[] executeAction(Action action, JSONObject param, String lang, User user, UserDataPermission permission,
-      int timeoutMinutes, ExecutionTarget target, UUID runId) throws Exception {
-    boolean caseAuthorized = CaseExecutionGuard.allows(action.getId());
-    var admission = capabilityGrants.admission(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId());
-    if (!admission.admitted() && !caseAuthorized)
-      throw new OwnerRefusal("ACTION_NOT_GRANTED", langService.get(lang, "Action.notGranted"));
-    Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
-    String key = null;
-    if (action.getTarget() != null) {
-      key = action.getTarget().key(param);
-      if (!caseAuthorized) {
-        var access = new QueryAccessService.Access(user, permission, null, null, null).withTarget(target);
-        if (!queries.actionTargetExists(action.getTarget(), key, admission, access))
-          throw new OwnerRefusal("ACTION_TARGET_OUT_OF_SCOPE", langService.get(lang, "Action.targetOutsideScope"));
-      }
-    } else if (!caseAuthorized && !admission.unrestricted()) {
-      throw new OwnerRefusal("ACTION_TARGET_OUT_OF_SCOPE", langService.get(lang, "Action.targetOutsideScope"));
+      int timeoutMinutes, ExecutionTarget target, UUID runId, ActionPath path) throws Exception {
+    if (path instanceof WorkflowStep step) {
+      if (target.testing()) throw new ActionAuthorization.Denied("WORKFLOW_STEP_FORBIDDEN", "A workflow step requires live execution.");
+      workflowRuns.requireActiveStep(action, step);
     }
-    ActionPreconditionService.Verdict verdict = preconditions.evaluate(action, param, user, permission, target);
-    if (!verdict.satisfied())
-      throw new OwnerRefusal("ACTION_PRECONDITION_FAILED", langService.get(lang, "Action.preconditionFailed")
-          + ": " + String.join("; ", verdict.violations()));
+    var admission = authorization.requireExecution(authorization.subject(user), action, path, target);
+    Function function = MetricViewBindings.executionWriteFunction(action.getFunction(), param);
+    checkExecutionTarget(action, param, lang, user, permission, target, admission, path);
     List<String> affectedTypes = ActionDefinitionProjector.project(action).getList("affects", String.class);
     Object[] execution = abcProgramService.execute((runId == null ? UUID.randomUUID() : runId).toString(), function, user.getId(), permission, target.testing() ? target.sandboxId() : ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
-        new ABCProgramService.ExecutionContext(runId, identitySnapshot(action, user, key), target));
+        new ABCProgramService.ExecutionContext(runId, identitySnapshot(user, path), target));
     PythonExecuteResult result = (PythonExecuteResult) execution[1];
     if (result.getError() == null || result.getError().isBlank()) {
       result.setAffects(affectedTypes == null ? List.of() : affectedTypes);
@@ -735,20 +753,48 @@ public class ActionServiceImpl implements ActionService {
     return execution;
   }
 
-  private JSONObject identitySnapshot(
-      Action action, User user, String key) {
+  private void checkExecutionTarget(Action action, JSONObject params, String lang, User user,
+      UserDataPermission permission, ExecutionTarget target, CapabilityGrantLookup.Admission admission,
+      ActionPath path) throws Exception {
+    checkTargetScope(action, params, lang, user, permission, target, admission, path);
+    checkPreconditions(action, params, lang, user, permission, target);
+  }
+
+  private void checkTargetScope(Action action, JSONObject params, String lang, User user,
+      UserDataPermission permission, ExecutionTarget target, CapabilityGrantLookup.Admission admission,
+      ActionPath path) throws Exception {
+    if (action.getTarget() != null) {
+      String key = action.getTarget().key(params);
+      if (path instanceof WorkflowStep step
+          && (!action.getTarget().className().equals(step.targetClass()) || !key.equals(step.targetKey())))
+        throw new ActionAuthorization.Denied("WORKFLOW_STEP_FORBIDDEN", "The target differs from the workflow instance.");
+      var access = new QueryAccessService.Access(user, permission, null, null, null).withTarget(target);
+      if (!queries.actionTargetExists(action.getTarget(), key, admission, access))
+        throw new ActionAuthorization.Denied("ACTION_TARGET_OUT_OF_SCOPE", langService.get(lang, "Action.targetOutsideScope"));
+    }
+  }
+
+  private void checkPreconditions(Action action, JSONObject params, String lang, User user,
+      UserDataPermission permission, ExecutionTarget target) {
+    var verdict = preconditions.evaluate(action, params, user, permission, target);
+    if (!verdict.satisfied())
+      throw new OwnerRefusal("ACTION_PRECONDITION_FAILED", langService.get(lang, "Action.preconditionFailed")
+          + ": " + String.join("; ", verdict.violations()));
+  }
+
+  private JSONObject identitySnapshot(User user, ActionPath path) {
     JSONObject snapshot = identitySnapshots.snapshot(user, user.getDomainId());
-    String runId = key == null ? null : workflowRuns.resolve(user.getDomainId(), action.getId(), action.getTarget().className(), key);
-    if (runId != null) snapshot.put("workflowRunId", runId);
+    if (path instanceof WorkflowStep step) snapshot.put("workflowRunId", step.runId());
     return snapshot;
   }
 
   @Override
-  public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user) throws Exception {
+  public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang,
+      User user, UserDataPermission permission, ExecutionTarget target) throws Exception {
     Action action = queryById(id);
-    requireExecutable(action, lang, user);
-    if (!capabilityGrants.admission(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, id).admitted())
-      throw new OwnerRefusal("ACTION_NOT_GRANTED", langService.get(lang, "Action.notGranted"));
+    requireExecutable(action, lang, user, target);
+    var path = new Standalone();
+    var admission = authorization.requireExecution(authorization.subject(user), action, path, target);
     List<Parameter> parameters = action.getFunction().getParameters();
     var names = new HashSet<String>();
     for (Parameter parameter : parameters) {
@@ -776,18 +822,29 @@ public class ActionServiceImpl implements ActionService {
     form.put("fields", ParameterForms.fields(parameters, ParameterForms.Context.INTERACTIVE, "", lang));
     form.put("values", values);
     if (submitted == null) {
+      if (action.getTarget() != null && bound.get(action.getTarget().keyParameter()) != null)
+        checkTargetScope(action, bound, lang, user, permission, target, admission, path);
+      var criteria = action.getSubmissionCriteria();
+      if (criteria != null && criteria.getJSONArray("conditions") != null
+          && criteria.getJSONArray("conditions").toJavaList(JSONObject.class).stream()
+              .allMatch(condition -> bound.get(condition.getString("objectParameter")) != null))
+        checkPreconditions(action, bound, lang, user, permission, target);
       form.put("errors", ScheduleJson.array());
       form.put("parameters", null);
       return form;
     }
     var interpreted = ParameterForms.interactive(parameters, values, bound, readOnly, lang);
+    if (interpreted.errors().isEmpty())
+      checkExecutionTarget(action, interpreted.values(), lang, user, permission, target, admission, path);
     form.put("errors", interpreted.errors());
     form.put("parameters", interpreted.errors().isEmpty() ? interpreted.values() : null);
     return form;
   }
 
   @Override
-  public JSONObject definitionForm(JSONObject request, String lang, String domainId) {
+  public JSONObject definitionForm(JSONObject request, String lang, User user) {
+    String domainId = user.getDomainId();
+    var subject = authorization.subject(user);
     JSONObject target = request.getJSONObject("target");
     if (target == null) throw new IllegalArgumentException("target is required");
     String kind = target.getString("kind");
@@ -802,8 +859,10 @@ public class ActionServiceImpl implements ActionService {
       action = queryById(primaryKey);
       if (action == null || !domainId.equals(action.getDomainId()))
         throw new IllegalArgumentException("Action not found");
+      authorization.requireEdit(subject, action);
       existing = true;
     } else if ("draft".equals(kind)) {
+      authorization.requireCreate(subject);
       action = ActionForm.defaultValues().to(Action.class);
       action.setDomainId(domainId);
       existing = false;
@@ -836,12 +895,14 @@ public class ActionServiceImpl implements ActionService {
         || !Set.of(Action.STATUS_PENDING_REVIEW, Action.STATUS_PUBLISHED, Action.STATUS_UNUSED)
             .contains(status))
       throw new OwnerRefusal("ACTION_STATUS_INVALID", "status: expected PENDING_REVIEW, PUBLISHED or UNUSED");
+    var subject = authorization.subject(domainId, userId);
     List<StatusResult> results = new ArrayList<>();
     for (String id : new LinkedHashSet<>(ids)) {
       try {
         Action saved = store.transaction(() -> {
           actionDao.lock(id, domainId);
           Action action = requireOwnedAction(id, domainId, lang);
+          authorization.requireEdit(subject, action);
           if (Action.STATUS_PUBLISHED.equals(status)) {
             requireActionFunction(action.getFunction(), lang);
             actionTrials.requirePublishable(action, lang);

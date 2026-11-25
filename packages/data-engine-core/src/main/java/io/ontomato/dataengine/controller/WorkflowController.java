@@ -40,6 +40,9 @@ public class WorkflowController {
     private WorkflowService workflowService;
 
     @Autowired
+    private io.ontomato.dataengine.service.ActionService actions;
+
+    @Autowired
     private WorkflowDao workflowDao;
 
     @Autowired
@@ -292,7 +295,19 @@ public class WorkflowController {
                         ? workflowService.queryActiveById(id, user.getDomainId())
                         : workflowService.queryById(id, user.getDomainId());
                 ret.put("success", true);
-                ret.put("data", workflow == null ? null : render(workflow));
+                var definition = workflow == null ? null : render(workflow);
+                if (workflow != null && Workflow.STATUS_ACTIVE.equals(status) && "execution".equals(param.getString("purpose"))) {
+                    var descriptors = new JSONObject();
+                    for (String actionId : workflow.getSteps().stream().map(WorkflowStep::getActionId).distinct().toList()) {
+                        var action = actions.queryById(actionId);
+                        if (action == null || !user.getDomainId().equals(action.getDomainId())
+                                || !io.ontomato.dataengine.bean.action.Action.STATUS_PUBLISHED.equals(action.getStatus()))
+                            throw new IllegalStateException("Workflow action is unavailable: " + actionId);
+                        descriptors.put(actionId, ActionController.executionDefinition(action));
+                    }
+                    definition.put("executionActions", descriptors);
+                }
+                ret.put("data", definition);
             } else {
                 List<Workflow> workflows =
                         workflowService.queryList(status, user.getDomainId());

@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -58,6 +59,7 @@ class ActionStatusTest {
     trials = new ActionTrialStore(jdbc, schemas, langService);
     ReflectionTestUtils.setField(service, "actionTrials", trials);
     ReflectionTestUtils.setField(service, "store", store);
+    ReflectionTestUtils.setField(service, "authorization", mock(ActionAuthorization.class));
     ReflectionTestUtils.setField(service, "actionDao", actionDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "langService", langService);
