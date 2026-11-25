@@ -8,9 +8,9 @@ import {
   productProjectionUsedBySchema,
 } from "@ontomato/contracts/product-panels";
 import {
-  changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema, changeProductPanelDomainGrantResponseSchema,
-  productGrantChangeResponseSchema, productGrantsResponseSchema,
+  changeProductDomainGrantRequestSchema, productGrantChangeResponseSchema,
 } from "@ontomato/contracts/product-governance";
+import { changeProductObjectGrantSchema, productObjectAccessSchema } from "@ontomato/contracts/object-policy-access";
 import type { CurrentProductKind } from "../../infrastructure/product-current";
 import {
   changeCurrentProductDomainGrant, changeCurrentProductGrant, copyCurrentProduct, currentProductGrants, currentProductUsedBy,
@@ -60,12 +60,12 @@ export function mountProductCatalog(router: Router, kind: CurrentProductKind) {
   router.get("/:id/grants", wrap(async (req, res) => {
     const { owner, credentials } = context(req);
     const { id } = productCurrentIdParamsSchema.parse(req.params);
-    res.json(productGrantsResponseSchema.parse(await currentProductGrants(owner, credentials, kind, id)));
+    res.json(productObjectAccessSchema.parse(await currentProductGrants(owner, credentials, kind, id)));
   }));
   router.post("/:id/grants", wrap(async (req, res) => {
     const { owner, credentials } = context(req);
     const { id } = productCurrentIdParamsSchema.parse(req.params);
-    const grant = changeProductGrantRequestSchema.parse(req.body);
+    const grant = changeProductObjectGrantSchema.parse(req.body);
     await changeCurrentProductGrant(owner, credentials, kind, id, grant);
     res.json(productGrantChangeResponseSchema.parse({ success: true }));
   }));
@@ -74,7 +74,6 @@ export function mountProductCatalog(router: Router, kind: CurrentProductKind) {
     const { id } = productCurrentIdParamsSchema.parse(req.params);
     const { shared } = changeProductDomainGrantRequestSchema.parse(req.body);
     const result = await changeCurrentProductDomainGrant(owner, credentials, kind, id, shared);
-    const schema = kind === "panel" ? changeProductPanelDomainGrantResponseSchema : productGrantChangeResponseSchema;
-    res.json(schema.parse(result));
+    res.json(productGrantChangeResponseSchema.parse(result));
   }));
 }

@@ -247,7 +247,7 @@ test("checkPanelWorkspace accepts manifest.components for Vue slots, ObjectList 
     import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
     const domainComponent = registerDomainComponentRequestSchema.parse({
       name: "Application icon and localized name cell",
-      visibility: "domain",
+      publicationAccess: { kind: "domain" },
       declaration: {
         componentId: ${JSON.stringify(domainComponentId)},
         role: "presentation",

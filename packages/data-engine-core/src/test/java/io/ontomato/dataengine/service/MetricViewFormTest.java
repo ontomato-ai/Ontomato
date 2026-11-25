@@ -33,6 +33,8 @@ class MetricViewFormTest {
 
   @BeforeEach
   void setup() {
+    ReflectionTestUtils.setField(service, "definitions", io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain-a", "user-1"));
+    ReflectionTestUtils.setField(service, "firstPublication", mock(io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.class));
     ReflectionTestUtils.setField(service, "metricViewDao", metricViewDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "langService", langService);

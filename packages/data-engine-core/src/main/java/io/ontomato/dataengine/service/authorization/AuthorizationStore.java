@@ -5,6 +5,8 @@ import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 import io.ontomato.dataengine.bean.workflow.GrantScope;
 import java.util.List;
 import java.util.Set;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 /** Persists the policies owned by the authorization module. */
 public interface AuthorizationStore {
@@ -13,6 +15,15 @@ public interface AuthorizationStore {
     List<ObjectGrant> objectGrants(ObjectTarget target, Verb verb, Set<String> policyIds);
     Set<String> managementOperations(String domainId, Set<String> policyIds);
     Set<String> entryPolicies(ObjectTarget entry);
+
+    default boolean requiresFirstPublicationAudience() { return true; }
+    default PolicyRef domainPolicy(String domainId) {
+        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Ordinary object policies are not available");
+    }
+
+    default List<ObjectGrantView> objectGrantViews(ObjectTarget target) {
+        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Ordinary object policies are not available");
+    }
 
     void grantObject(ObjectGrant grant);
     void revokeObject(ObjectGrant grant);

@@ -44,6 +44,7 @@ class FunctionPanelEndpointTest {
     context.registerBean(IdentityService.class, () -> identityService);
     context.refresh();
     new SpringBeanUtil().setApplicationContext(context);
+    ReflectionTestUtils.setField(controller, "definitions", io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain", "user-1"));
     ReflectionTestUtils.setField(controller, "functionService", functionService);
     ReflectionTestUtils.setField(controller, "langService", langService);
     ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());

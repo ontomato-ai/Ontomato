@@ -1,3 +1,4 @@
+import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { z } from "zod";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
@@ -388,15 +389,15 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       resolve: async (_selection, params) => (await options()).models.resolve(params.values as readonly unknown[]),
     },
     [SDK_COMPONENT]: {
-      count: () => countSdkComponents(owner),
-      catalogue: (_selection, params) => listSdkComponents(owner, viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
-      definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer.locale),
-      record: selection => readSdkComponentRecord(owner, selection.primaryKey!, viewer.locale),
-      dataRows: selection => readSdkComponentDataRows(owner, selection.primaryKey!, viewer.locale),
-      configRows: selection => readSdkComponentConfigRows(owner, selection.primaryKey!, viewer.locale),
-      inputRows: selection => readSdkComponentInputRows(owner, selection.primaryKey!, viewer.locale),
-      outputRows: selection => readSdkComponentOutputRows(owner, selection.primaryKey!, viewer.locale),
-      operationRows: selection => readSdkComponentOperationRows(owner, selection.primaryKey!, viewer.locale),
+      count: () => countSdkComponents(owner, viewer),
+      catalogue: (_selection, params) => listSdkComponents(owner, viewer, panelReadParameterSchemas.keyword.optional().parse(params.search)),
+      definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer),
+      record: selection => readSdkComponentRecord(owner, selection.primaryKey!, viewer),
+      dataRows: selection => readSdkComponentDataRows(owner, selection.primaryKey!, viewer),
+      configRows: selection => readSdkComponentConfigRows(owner, selection.primaryKey!, viewer),
+      inputRows: selection => readSdkComponentInputRows(owner, selection.primaryKey!, viewer),
+      outputRows: selection => readSdkComponentOutputRows(owner, selection.primaryKey!, viewer),
+      operationRows: selection => readSdkComponentOperationRows(owner, selection.primaryKey!, viewer),
     },
     [USER]: {
       options: async (_selection, params) => (await options()).users.options({
@@ -739,11 +740,14 @@ function parseReadParameter(parameter: keyof typeof panelReadParameterSchemas, v
 async function readParameters(
   projection: ProductProjection, member: ReadMember, dataName: string, data: DirectProjectionData,
   declaration: PlatformReadDeclaration, inputs: ReadInputs, runtimeParams: ProductPanelReadRequest["runtimeParams"],
+  viewer: AssistantCredentials,
 ) {
   const resolved = new Map<string, unknown>();
   const runtime = Object.entries(runtimeParams ?? {});
-  if (runtime.length) {
-    const component = await readProjectionComponent(projection.componentId, undefined, projection.domainId);
+  if (runtime.length || isDomainComponentId(projection.componentId)) {
+    const component = await readProjectionComponent(projection.componentId, undefined, { domainId: projection.domainId, credentials: viewer });
+    if (!component && isDomainComponentId(projection.componentId))
+      throw new HttpError(404, "Domain component is unavailable", "PANEL_COMPONENT_UNAVAILABLE");
     const names = appsSdkComponentDatum(component?.data, dataName)?.runtimeParams ?? [];
     for (const [name, value] of runtime) {
       const parameter = panelReadParameterId(declaration, name);
@@ -813,7 +817,7 @@ export async function executeProjectionDataRead(
   if (!declaration) {
     throw new HttpError(422, `Read '${data.read}' is not registered for datum '${dataName}'`, "PANEL_READ_UNAVAILABLE");
   }
-  const params = await readParameters(projection, member, dataName, data, declaration, inputs, runtimeParams);
+  const params = await readParameters(projection, member, dataName, data, declaration, inputs, runtimeParams, viewer);
   if (declaration.parameterMode === "fixed") {
     for (const name of declaration.requiredParams ?? [])
       if (!Object.hasOwn(params, name)) throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");

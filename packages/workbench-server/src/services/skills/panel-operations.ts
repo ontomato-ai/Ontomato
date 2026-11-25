@@ -4,7 +4,6 @@ import { AGENT_DEFINITION, DELETE_SKILL, EXPORT_SKILL, IMPORT_SKILL, SKILL } fro
 import { panelFileInputSchema, type PanelUploadDeclaration } from "@ontomato/contracts/panel-upload";
 import { InvalidSkillPackageError } from "../../core/skills/manifest";
 import { tForLocale } from "../../i18n";
-import { assertPermission } from "../../identity/installed";
 import { HttpError } from "../../utils/errors";
 import type {
   PanelImpactInspector,
@@ -21,13 +20,11 @@ import type { PanelUploadedFile } from "../product-panels/upload-store";
 /*
  * The skill owner as panel server operations. `skills.import` takes the skill ZIP the reader staged and installs it
  * through `skillManager.importSkill`; a package whose name exists is refused with its `skillId`, and the same staged file
- * may then be sent again with `overwrite`, which the reader confirms against the named skill. Both are guarded by
- * `skill-management`. `skills.delete` inspects readable agent references before confirmation and delegates deletion to
+ * may then be sent again with `overwrite`, which the reader confirms against the named skill.
+ * `skills.delete` inspects readable agent references before confirmation and delegates deletion to
  * `skillManager.deleteSkill`. Read-only provider and built-in packages, as well as permission denials, surface as owner
  * refusals.
  */
-
-const skillManagementPermissions = ["skill-management"] as const;
 
 const skillObjectTarget = z.object({
   kind: z.literal("object"),
@@ -48,17 +45,12 @@ async function referenceAccess({ owner, credentials }: PanelOperationActor) {
   };
 }
 
-async function skillTitle(host: PanelOperationHost, target: PanelRecordTarget): Promise<string> {
-  const skillManager = await loadSkillManager();
-  return (await skillManager.getSkillInfo(host.initiator.owner.domainId, target.primaryKey, host.initiator.credentials)).title;
-}
-
 const deleteSkillImpact: PanelImpactInspector = {
   handlerRef: `${DELETE_SKILL}.inspect-impact`,
   async inspect(host, calls) {
     const skillManager = await loadSkillManager();
     const target = calls[0]!.target as PanelRecordTarget;
-    const agents = await skillManager.getSkillReferences(
+    const agents = await skillManager.getDeleteSkillReferences(
       host.initiator.owner.domainId,
       target.primaryKey,
       await referenceAccess(host.initiator),
@@ -129,7 +121,6 @@ export const skillServerOperations = [
       const { owner, credentials } = host.executor;
       const { locale } = credentials;
       try {
-        await assertPermission(credentials, skillManagementPermissions);
         const skill = await (await loadSkillManager()).importSkill(owner.domainId, file.bytes, credentials, overwrite === true);
         return {
           kind: "success",
@@ -161,7 +152,7 @@ export const skillServerOperations = [
     targetSchema: skillObjectTarget,
     inputSchema: deleteInputSchema,
     resultSchema: emptyResultSchema,
-    targetLabel: skillTitle,
+    targetLabel: async (_host: PanelOperationHost, target: PanelRecordTarget) => target.primaryKey,
     done: (host, name) => tForLocale(host.locale, "panels.skill.deleted", { name }),
     inspectImpact: deleteSkillImpact,
     async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
@@ -180,7 +171,6 @@ export const skillServerOperations = [
       if (target.kind !== "object") throw new Error("Delete acts on a selected skill");
       const { owner, credentials } = host.executor;
       try {
-        await assertPermission(credentials, skillManagementPermissions);
         const skillManager = await loadSkillManager();
         const result = await skillManager.deleteSkill(owner.domainId, target.primaryKey, await referenceAccess(host.executor));
         return {

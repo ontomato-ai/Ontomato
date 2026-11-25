@@ -242,7 +242,7 @@ describe("platform count reads", () => {
       { declaration: { componentId: "domain:registered" }, name: "Registered" },
     ]);
     await expect(readCount(SDK_COMPONENT)).resolves.toEqual({ status: "ready", value: { rows: [], total: 3 } });
-    expect(mocks.listVisibleDomainComponents).toHaveBeenCalledWith(owner.domainId, owner.userId);
+    expect(mocks.listVisibleDomainComponents).toHaveBeenCalledWith(owner.domainId, viewer, false);
   });
 
   it("counts only definitions with view, including visible system agents", async () => {

@@ -5,7 +5,7 @@ import { assistantAgentsQuerySchema } from "@ontomato/contracts/page-skills";
 import type { DomainSkillRegistryManager, SkillRegistryManager } from "../../../core/skills/registry/manager";
 import type { AgentRow } from "../store";
 
-type PageSkillRegistry = Pick<SkillRegistryManager, "getSkillByRef" | "failedManifests">;
+type PageSkillRegistry = Pick<SkillRegistryManager, "getSkills" | "getSkillByRef" | "failedManifests">;
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), post: vi.fn(), agents: vi.fn(), appBuilder: vi.fn(), builderAccess: vi.fn(), profile: vi.fn(),
@@ -24,10 +24,10 @@ vi.mock("../../../core/skills/manifest", () => ({
 vi.mock("../../../core/skills/registry/manager", () => ({ skillRegistryManager: {
   forDomain: async (...[, admit]: Parameters<DomainSkillRegistryManager["forDomain"]>): Promise<PageSkillRegistry> => {
     await admit?.([], []);
-    return { getSkillByRef: () => null, failedManifests: new Map() };
+    return { getSkills: () => [], getSkillByRef: () => null, failedManifests: new Map() };
   },
 } }));
-vi.mock("../../skills/skill-manager", () => ({ skillManager: { skillsInRegistry: () => mocks.managed } }));
+vi.mock("../../skills/skill-manager", () => ({ skillManager: { describeSkills: () => mocks.managed } }));
 vi.mock("../../agent-runtime/skills", () => ({
   workbenchBuiltinSkillRoot: () => "/resources",
   publishSkill: vi.fn(async (_root: string, skill: RuntimeSkillRef) => ({ skill, digest: "a".repeat(64) })),

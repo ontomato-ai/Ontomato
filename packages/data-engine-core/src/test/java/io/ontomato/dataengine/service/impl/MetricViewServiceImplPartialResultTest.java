@@ -39,6 +39,7 @@ class MetricViewServiceImplPartialResultTest {
 
 	@BeforeEach
 	void setUp() {
+    ReflectionTestUtils.setField(service, "definitions", io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain-a", "user-1"));
 		ReflectionTestUtils.setField(service, "abcProgramService", abcProgramService);
 		// Direct construction skips Spring, so the resolver is wired by hand; literal values need no lookup.
 		ReflectionTestUtils.setField(service, "subjectValues",

@@ -248,6 +248,8 @@ class QueryPermissionPolicyTest {
     var admin = mock(AdminService.class);
     when(admin.getJSONRule("domain")).thenReturn(Map.of("classDef", definitions()));
     var ontology = new OntologyQueryService(admin, null, metrics, null);
+    org.springframework.test.util.ReflectionTestUtils.setField(ontology, "metricDefinitions",
+        io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain", "user"));
     var permission = permission(); permission.setFullData(true);
     var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("user", "domain"), permission, null, null, null);
     var found = JSONObject.from(ontology.metrics(JSONObject.of("limit", 10), access)).getJSONArray("items");

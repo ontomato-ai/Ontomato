@@ -487,8 +487,14 @@ public class OntologyQueryService {
    * The metric's readable source, or null when this caller cannot read everything it touches. Definition-driven
    * catalogues share one answer to "may this caller run it" so a listing never offers what execution refuses.
    */
+  @org.springframework.beans.factory.annotation.Autowired
+  private io.ontomato.dataengine.service.authorization.CapabilityDefinitions metricDefinitions;
+
   private JSONObject readableSource(MetricView metric, QueryAccessService.Access access,
-      List<Map<String, Object>> available, Set<String> availableNames) {
+      List<Map<String, Object>> available, Set<String> availableNames,
+      io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext subject) {
+    if (!metricDefinitions.allows(subject, io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access(
+        metric, io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb.USE))) return null;
     JSONObject sourceAnalysis;
     try {
       sourceAnalysis = metricAnalysis(metric);
@@ -538,11 +544,12 @@ public class OntologyQueryService {
         available.stream().map(c -> (String) c.get("className")).collect(java.util.stream.Collectors.toSet());
     List<JSONObject> items = new ArrayList<>();
     Set<String> taken = new HashSet<>();
+    var subject = metricDefinitions.subject(access.user());
     for (var hit : metrics.recall(question, access.user().getDomainId(), RECALL_MAX_DISTANCE, RECALL_MAX_ROWS)) {
       if (items.size() == RECALL_MAX_METRICS) break;
       if (!taken.add(hit.metricId())) continue;
       MetricView metric = metrics.queryById(hit.metricId(), access.user().getDomainId());
-      if (readableSource(metric, access, available, availableNames) == null) continue;
+      if (readableSource(metric, access, available, availableNames, subject) == null) continue;
       Set<String> involved = involvedClasses(metric, metricAnalysis(metric));
       if (!access.classNames().isEmpty() && !access.classNames().containsAll(involved)) continue;
       JSONObject item = JSONObject.of("id", metric.getId(), "revision", revision(metric),
@@ -576,6 +583,7 @@ public class OntologyQueryService {
     var available = classes(access);
     Set<String> availableNames = available.stream().map(c -> (String) c.get("className")).collect(java.util.stream.Collectors.toSet());
     String next = null;
+    var subject = metricDefinitions.subject(access.user());
     for (MetricView metric : all.subList(0, Math.min(limit, all.size()))) {
       next = metric.getId();
       JSONObject spec =
@@ -583,7 +591,7 @@ public class OntologyQueryService {
               JSON.toJSONString(
                   metric, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
       spec.put("revision", revision(metric));
-      JSONObject sourceAnalysis = readableSource(metric, access, available, availableNames);
+      JSONObject sourceAnalysis = readableSource(metric, access, available, availableNames, subject);
       if (sourceAnalysis == null) continue;
       List<Object> fields = new ArrayList<>(), parameterFields = new ArrayList<>();
       var function = metric.getFunction();

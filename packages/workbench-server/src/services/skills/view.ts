@@ -6,7 +6,6 @@ import {
 } from "@ontomato/contracts/page-skills";
 import { config } from "../../config/application";
 import { isApplicationPanelUse, type ApplicationEntryResolution } from "@ontomato/contracts/product-panels";
-import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { SkillCatalogDiagnostics } from "@ontomato/contracts/skills";
 import {
   isProtectedSkillName, protectedSourceSkillRef, registeredSkillProviders, SkillSourceRecordError,
@@ -19,7 +18,7 @@ import { HttpError } from "../../utils/errors";
 import { requirePanelEntry } from "../product-panels/application-use";
 import { PANEL_SKILL_PROVIDER_ID } from "../product-panels/skill-identity";
 import { panelSkillProvider } from "../product-panels/skill-provider";
-import { grantedProductIds, productGrantsAllowedBatch } from "../product-governance/grants";
+import { usableCurrentIds } from "../product-panels/access";
 
 const javaPageSkills = z.object({
   success: z.literal(true),
@@ -115,16 +114,16 @@ function requiredResources(source: ListedPageSkill) {
   return "resourceIds" in source ? source.resourceIds : source.knownRequiredResourceIds;
 }
 
-async function grantedSkillResources(sources: readonly ListedPageSkill[], credentials: AssistantCredentials,
-  usableIds?: ReadonlySet<string>,
+async function grantedSkillResources(
+  domainId: string, sources: readonly ListedPageSkill[], credentials: AssistantCredentials,
 ) {
-  const required = new Set(sources.flatMap(requiredResources));
-  const platformIds = [...required].filter(isBuiltinProductId);
-  const [domainIds, platformGrants] = await Promise.all([
-    required.size > platformIds.length ? usableIds ?? grantedProductIds("use", credentials) : [],
-    productGrantsAllowedBatch(platformIds, "use", credentials),
+  const required = [...new Set(sources.flatMap(requiredResources))];
+  if (!required.length) return new Set<string>();
+  const [panels, projections] = await Promise.all([
+    usableCurrentIds("panel", domainId, required, credentials),
+    usableCurrentIds("projection", domainId, required, credentials),
   ]);
-  return new Set([...domainIds, ...platformIds.filter(id => platformGrants[id])]);
+  return new Set([...panels, ...projections]);
 }
 
 function sourceIdentityKey({ providerId, sourceKey }: SkillSourceIdentity) {
@@ -207,7 +206,7 @@ function candidatePageSkill(entrance: PageSkillEntrance, skill: RuntimeSkillRef,
 
 /** Read one page's skill and the admitted placements of that same skill. */
 export async function readPageCandidateSkill(caller: PageSkillViewCaller, entrance: PageSkillEntrance,
-  usableIds: ReadonlySet<string>, member?: PageSkillMember,
+  member?: PageSkillMember,
 ) {
   const { domainId, initiatorCredentials, userId } = caller;
   if (!member) {
@@ -245,7 +244,7 @@ export async function readPageCandidateSkill(caller: PageSkillViewCaller, entran
   const listed = { ...fact, ...identity, skill };
   const [java, grants] = await Promise.all([
     javaPageSkillProjection(initiatorCredentials, entrance, panelId),
-    grantedSkillResources([listed], initiatorCredentials, usableIds),
+    grantedSkillResources(domainId, [listed], initiatorCredentials),
   ]);
   const associations = source.kind === "application-use" ? [] : [{ entrance, identity }];
   const pages = pageAuthorization(java,
@@ -281,7 +280,7 @@ export async function openedPanelPageSkillContext(
   }], caller.initiatorCredentials);
   if (!("kind" in fact)) return absent;
   const ref = protectedSourceSkillRef(PANEL_SKILL_PROVIDER_ID, caller.domainId, fact);
-  const grants = await grantedSkillResources([{ ...fact, providerId: PANEL_SKILL_PROVIDER_ID, skill: ref }], caller.initiatorCredentials);
+  const grants = await grantedSkillResources(caller.domainId, [{ ...fact, providerId: PANEL_SKILL_PROVIDER_ID, skill: ref }], caller.initiatorCredentials);
   if (!fact.resourceIds.every(id => grants.has(id))) return absent;
   return {
     mode: "member", locator, entry: source,
@@ -308,7 +307,7 @@ export async function readSkillView(domainId: string, initiatorCredentials: Assi
   const registry = await skillRegistryManager.forDomain(domainId, async (sources, failures) => {
     const listed = [...sources, ...failures];
     const [grants, associations] = await Promise.all([
-      grantedSkillResources(listed, initiatorCredentials),
+      grantedSkillResources(domainId, listed, initiatorCredentials),
       Promise.all([...new Set(sourceOwners.values())].map(owner => owner.listAssociations(caller))),
     ]);
     pages = pageAuthorization(java, listed, grants, associations.flat());

@@ -8,20 +8,15 @@ import { installContentLayout } from "../../../content/layout";
 import { registerSkillProvider } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { HttpError } from "../../../utils/errors";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 
 const mocks = vi.hoisted(() => ({
-  assertPermission: vi.fn(),
   filterReadableAgentDefinitions: vi.fn(),
   listAnalysisAgentSkillReferences: vi.fn(),
   removeAnalysisAgentSkillReferences: vi.fn(),
   restoreAnalysisAgentSkillReferences: vi.fn(),
 }));
 
-vi.mock("../../../identity/installed", () => ({
-  assertPermission: mocks.assertPermission,
-}));
 vi.mock("../../assistant/definitions", () => ({
   filterReadableAgentDefinitions: mocks.filterReadableAgentDefinitions,
 }));
@@ -103,18 +98,38 @@ afterAll(async () => {
   await fs.rm(publicSkillsRoot, { recursive: true, force: true });
 });
 
+let refused: "EDIT" | "CREATE" | null;
+let retired: unknown[];
 beforeEach(() => {
-  mocks.assertPermission.mockReset().mockResolvedValue(undefined);
+  refused = null;
+  retired = [];
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "test-service-token");
   mocks.filterReadableAgentDefinitions.mockReset();
   mocks.listAnalysisAgentSkillReferences.mockReset().mockResolvedValue([]);
   mocks.removeAnalysisAgentSkillReferences.mockReset().mockResolvedValue(0);
   mocks.restoreAnalysisAgentSkillReferences.mockReset().mockResolvedValue(undefined);
-  vi.stubGlobal("fetch", vi.fn(async () =>
-    Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } })));
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (url.endsWith("/authorization/objects/retire")) {
+      retired.push(JSON.parse(String(init.body)));
+      return new Response(null, { status: 204 });
+    }
+    if (url.endsWith("/authorization/objects/decide-batch")) {
+      const { requests } = JSON.parse(String(init.body));
+      return Response.json({ decisions: requests.map((request: { create?: string; verb?: string }) =>
+        (request.create ? "CREATE" : request.verb) === refused
+          ? { allowed: false, code: "SKILL_FORBIDDEN", reason: "Skill operation denied" }
+          : { allowed: true }) });
+    }
+    if (url.endsWith("/platform/page-skills")) {
+      return Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
+    }
+    throw new Error(`Unexpected upstream: ${url}`);
+  }));
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("skill panel server operations", () => {
@@ -167,8 +182,11 @@ describe("skill panel server operations", () => {
       { kind: "object", objectType: SKILL, primaryKey: "removable-skill" },
     );
 
-    expect(mocks.assertPermission).toHaveBeenCalledWith(actor.credentials, ["skill-management"]);
     expect(mocks.removeAnalysisAgentSkillReferences).toHaveBeenCalledWith(domain, "removable-skill");
+    expect(retired).toContainEqual({
+      target: { domainId: domain, kind: "SKILL", id: "removable-skill" },
+      ownerFacts: { ownerId: null, state: "PUBLISHED" },
+    });
     expect(outcome).toEqual({
       kind: "success",
       data: {},
@@ -184,21 +202,22 @@ describe("skill panel server operations", () => {
     await expect(fs.stat(dir)).rejects.toThrow();
   });
 
-  it("refuses deletion without skill-management permission or for read-only public/provider packages", async () => {
-    await installDomainSkill("protected-check");
+  it("refuses deletion without EDIT or for read-only public/provider packages", async () => {
+    const domainSkill = await installDomainSkill("protected-check");
     const pubDir = path.join(publicSkillsRoot, "builtin-skill");
     await fs.mkdir(pubDir, { recursive: true });
     await fs.writeFile(path.join(pubDir, "SKILL.md"), "---\nname: builtin-skill\ndescription: Builtin\n---\n");
 
-    mocks.assertPermission.mockRejectedValueOnce(new HttpError(403, "Missing skill-management permission", "PERMISSION_DENIED"));
+    refused = "EDIT";
     expect(await deleteOp.execute(
       host,
       { kind: "object", objectType: SKILL, primaryKey: "protected-check" },
     )).toEqual({
       kind: "refusal",
-      code: "PERMISSION_DENIED",
-      message: "Missing skill-management permission",
+      code: "SKILL_FORBIDDEN",
+      message: "Skill operation denied",
     });
+    await expect(fs.stat(domainSkill)).resolves.toBeDefined();
 
     const zhHost: PanelOperationHost = {
       ...host,
@@ -270,7 +289,6 @@ describe("skill panel server operations", () => {
         kind: "success", message: "Imported skill imported-skill.", data: { id: "imported-skill", title: "imported-skill" },
         affected: { objects: [{ objectType: SKILL, primaryKey: "imported-skill" }], objectTypes: [SKILL] },
       });
-      expect(mocks.assertPermission).toHaveBeenCalledWith(actor.credentials, ["skill-management"]);
 
       const second = zip("imported-skill", "Revised");
       expect(await importOp.execute(host, null, call(second))).toEqual({
@@ -293,9 +311,9 @@ describe("skill panel server operations", () => {
       expect(await importOp.execute(host, null, { file: broken })).toEqual({
         kind: "refusal", code: "INVALID_SKILL_PACKAGE", message: "This file is not a valid skill package: Cannot read skill ZIP",
       });
-      mocks.assertPermission.mockRejectedValueOnce(new HttpError(403, "Missing skill-management permission", "PERMISSION_DENIED"));
+      refused = "CREATE";
       expect(await importOp.execute(host, null, call(zip("denied-skill")))).toEqual({
-        kind: "refusal", code: "PERMISSION_DENIED", message: "Missing skill-management permission",
+        kind: "refusal", code: "SKILL_FORBIDDEN", message: "Skill operation denied",
       });
     });
   });

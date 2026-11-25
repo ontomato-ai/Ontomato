@@ -79,6 +79,7 @@ let server: Server;
 let contentRoot: string;
 let cataloguePath: string;
 const grants = new Set<string>();
+let domainComponentReaderCanUse = false;
 const scheduledRun = scheduleExamples.runs.find(example => example.name === "agents-running")!.response;
 const frameDispatches: string[] = [];
 const codePanelId = "panel-schedules-mixed";
@@ -150,6 +151,31 @@ beforeAll(async () => {
     ? (token === "host-reader" || token === "host-no-entry") && verb === "use"
     : (token === "host-reader" && grants.has(id)) ||
       (token === "domain-component-reader" && id === "domain-component-projection" && verb === "use");
+  app.post("/authorization/objects/decide-batch", (req, res) => {
+    const tk = req.header("tk");
+    const decisions = req.body.requests.map((request: {
+      create?: string;
+      target?: { id: string; kind: string };
+      ownerFacts?: { ownerId: string | null };
+      verb?: string;
+    }) => {
+      const admitted = request.create ? tk === "host-reader"
+        : request.target?.kind === "COMPONENT" && tk === "domain-component-reader"
+          ? domainComponentReaderCanUse && request.verb === "USE"
+          : allowed(request.target!.id, request.verb!.toLowerCase(), tk) ||
+            (tk === "host-reader" && request.ownerFacts?.ownerId === "reader");
+      return admitted ? { allowed: true } : { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Access denied" };
+    });
+    res.json({ decisions });
+  });
+  app.post("/authorization/objects/first-publication", (req, res) => {
+    if (req.body.target.kind !== "COMPONENT") grants.add(req.body.target.id);
+    res.json({ status: "granted" });
+  });
+  app.post("/authorization/objects/retire", (req, res) => {
+    grants.delete(req.body.target.id);
+    res.status(204).end();
+  });
   app.post("/product-governance/check", (req, res) => {
     const token = req.header("tk");
     res.json(productGrantCheck(req.body, token === "host-reader" ? "reader" : undefined, (id, verb) => allowed(id, verb, token)));
@@ -1200,7 +1226,6 @@ it("stores domain components as source and protects every projection using their
     fetch(url, { method, headers: { "Content-Type": "application/json", ...headers }, body: body && JSON.stringify(body) });
   const definition = {
     name: "Domain component",
-    visibility: "private",
     declaration: {
       role: "presentation", meaning: "Shows a configuration value", data: {},
       config: [{ name: "caption", type: "string", description: "Caption", required: false }],
@@ -1208,7 +1233,7 @@ it("stores domain components as source and protects every projection using their
     },
     source: { template: "<span>{{ caption }}</span>", module: "export default { props: ['caption'] }" },
   };
-  const created = await call(collection, "POST", definition);
+  const created = await call(collection, "POST", { ...definition, publicationAccess: { kind: "policy", policyId: "private-policy" } });
   expect(created.status).toBe(201);
   const { component } = domainComponentResponseSchema.parse(await created.json());
   const { componentId } = component.declaration;
@@ -1224,13 +1249,17 @@ it("stores domain components as source and protects every projection using their
   expect((await call(url, "GET", undefined, badDomain)).status).toBe(404);
   expect((await (await call(collection, "GET", undefined, badDomain)).json()).components).toEqual([]);
   expect((await call(projectionUrl, "PUT", projection, badDomain)).status).toBe(400);
-  expect((await call(projectionUrl, "PUT", projection, { "X-Test-User": "another-author" })).status).toBe(400);
+  expect((await call(projectionUrl, "PUT", projection, { "X-Test-Token": "ordinary-reader" })).status).toBe(403);
   expect((await call(projectionUrl, "PUT", projection)).status).toBe(200);
 
   const render = () => call(projectionUrl, "GET", undefined, {
     [PANEL_MEMBER_RENDER_HEADER]: "1", "X-Test-Token": "domain-component-reader",
   });
+  domainComponentReaderCanUse = true;
   expect(await (await render()).json()).toMatchObject({ domainComponent: { domainId: "pilot", componentId, revision: 1 } });
+  domainComponentReaderCanUse = false;
+  expect((await render()).status).toBe(403);
+  domainComponentReaderCanUse = true;
   const updated = { ...definition, declaration: component.declaration, revision: 1, source: { ...definition.source, template: "<em>{{ caption }}</em>" } };
   expect((await call(url, "PUT", updated)).status).toBe(200);
   expect(await (await render()).json()).toMatchObject({ domainComponent: { revision: 2, source: updated.source } });

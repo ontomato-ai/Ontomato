@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service;
 
 import java.util.List;
+import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.function.Function;
@@ -20,14 +21,23 @@ public interface MetricViewService {
     /** Vector recall of published read metrics and their presets, with an absolute distance ceiling. */
     List<MetricRecall> recall(String question, String domainId, double maxDistance, int maxRows);
 	
-	public MetricView generateFromNatureLanguage(String question, String lang, String domainId, boolean persistence) throws Exception;
+	default MetricView generateFromNatureLanguage(String question, String lang, String domainId, boolean persistence) throws Exception {
+        return generateFromNatureLanguage(question, lang, domainId, persistence, null);
+    }
+
+    MetricView generateFromNatureLanguage(String question, String lang, String domainId, boolean persistence,
+                                         Selection publication) throws Exception;
 
 	public MetricView generateFromFunction(Function function);
 	
     MetricView publishWorkflowMetric(MetricView metric, String lang);
     List<MetricView> pendingForRetrieval(String domainId, String cursor, List<String> classes, int limit);
 
-	public MetricView save(MetricView metricView, String lang) throws Exception;
+	default MetricView save(MetricView metricView, String lang) throws Exception {
+        return save(metricView, lang, null);
+    }
+
+    MetricView save(MetricView metricView, String lang, Selection publication) throws Exception;
 
     MetricView saveAdoptedCandidate(MetricView metric, User user, String lang);
 
@@ -53,7 +63,11 @@ public interface MetricViewService {
     record StatusResult(String id, MetricView data, OwnerRefusal refusal, String error) {}
 
     /** Change only the status of each metric, one transaction per id. */
-    List<StatusResult> setStatus(String domainId, List<String> ids, String status, String lang);
+    default List<StatusResult> setStatus(String domainId, List<String> ids, String status, String lang) {
+        return setStatus(domainId, ids, status, lang, null);
+    }
+
+    List<StatusResult> setStatus(String domainId, List<String> ids, String status, String lang, Selection publication);
 	
 	public List<MetricView> find(String question, String className, String domainId);
 

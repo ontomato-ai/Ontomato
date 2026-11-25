@@ -11,8 +11,20 @@ import { parse } from "yaml";
 import type { ProtectedSkillOffering, SkillPackageContext } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
+import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 
 const referenceQuery = vi.hoisted(() => vi.fn());
+const decideSkill = vi.hoisted(() => vi.fn<[_request: ObjectDecisionRequest],
+  { allowed: true } | { allowed: false; reason: string; code: string }>());
+vi.mock("../../product-governance/authorization", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../product-governance/authorization")>();
+  return {
+    ...original,
+    decideObjects: async (requests: ObjectDecisionRequest[]) => requests.map(request => decideSkill(request)),
+    requireObject: async (request: ObjectDecisionRequest) => original.requireAllowed(decideSkill(request)),
+    retireObject: vi.fn(),
+  };
+});
 vi.mock("../../../infrastructure/postgres", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../infrastructure/postgres")>(),
   getPostgresPool: () => ({ query: referenceQuery }),
@@ -79,6 +91,7 @@ const panelReference = (name = "panel-skill"): RuntimeSkillRef => ({ namespace: 
 afterAll(async () => { await fs.rm(root, { recursive: true, force: true }); });
 const pageDirectory = () => Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
 beforeEach(() => {
+  decideSkill.mockReset().mockReturnValue({ allowed: true });
   panelOfferings = []; protectedPanelOfferings = []; conflictOfferings = []; panelCalls = []; panelListError = null;
   vi.stubGlobal("fetch", vi.fn(async () => pageDirectory()));
 });
@@ -96,6 +109,22 @@ it("round-trips a standard package byte-for-byte and lists and reads its files",
   expect(await skillManager.listSkillFiles(domain, reference.name, credentials)).toEqual(Object.keys(files).sort()
     .map((name) => ({ path: name, size: Buffer.byteLength(files[name as keyof typeof files]) })));
   expect(await skillManager.readSkillFile(domain, reference.name, "references/guide.md", credentials)).toBe(files["references/guide.md"]);
+});
+
+it("separates catalogue VIEW from runtime USE and refuses a denied run before publishing", async () => {
+  await skillManager.importSkill(domain, zip(), credentials, true);
+  decideSkill.mockImplementation(request => "verb" in request && request.verb === "USE"
+    ? { allowed: false, reason: "Use denied", code: "OBJECT_FORBIDDEN" }
+    : { allowed: true });
+  expect((await skillManager.getAllSkills(domain, credentials)).skills.some(skill => skill.id === reference.name)).toBe(true);
+  expect((await assistantSkillCatalog(domain, credentials)).skills.some(skill => skill.skill.name === reference.name)).toBe(false);
+  await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [reference] }, credentials))
+    .rejects.toMatchObject({ status: 403, code: "OBJECT_FORBIDDEN" });
+  expect(decideSkill).toHaveBeenCalledWith({
+    target: { domainId: domain, kind: "SKILL", id: reference.name },
+    ownerFacts: { ownerId: null, state: "PUBLISHED" },
+    verb: "USE",
+  });
 });
 
 it("keeps an older package's ontomato.* metadata in the package and reads none of it", async () => {

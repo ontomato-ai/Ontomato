@@ -60,7 +60,7 @@ export async function readPanelCandidate(
   ]);
   const [test, domainComponents] = await Promise.all([
     tests.current(),
-    readPanelDomainComponents(owner.domainId, panel.manifest.components, { authorId: owner.userId }),
+    readPanelDomainComponents({ domainId: owner.domainId, credentials }, panel.manifest.components),
   ]);
   return {
     kind: "candidate",

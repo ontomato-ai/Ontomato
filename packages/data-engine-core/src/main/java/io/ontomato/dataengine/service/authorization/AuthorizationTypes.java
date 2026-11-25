@@ -8,7 +8,7 @@ import java.util.Set;
 public final class AuthorizationTypes {
     private AuthorizationTypes() {}
 
-    public enum Kind { ENTRY, PANEL, PROJECTION, COMPONENT, AGENT, ACTION, METRIC, READ_FUNCTION, APPLICATION, WORKFLOW }
+    public enum Kind { ENTRY, PANEL, PROJECTION, COMPONENT, AGENT, ACTION, METRIC, READ_FUNCTION, APPLICATION, WORKFLOW, WRITE_FUNCTION, TRIGGER, SKILL }
     public enum Verb { ENTER, USE, VIEW, EDIT, CREATE, EXECUTE }
     public enum PolicyKind { OBJECT, MANAGEMENT }
     public enum DefinitionState { DRAFT, PUBLISHED }
@@ -28,6 +28,8 @@ public final class AuthorizationTypes {
     public record PolicyRef(String roleId, String policyId, PolicyKind kind) {}
 
     public record ObjectGrant(String policyId, ObjectTarget target, Verb verb, GrantScope scope) {}
+
+    public record ObjectGrantView(String policyId, String name, Verb verb) {}
 
     public record PendingGrant(long id, String source, String changeKey, String actorId,
                                ObjectTarget entry, ObjectGrant grant) {}

@@ -35,10 +35,12 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
         return switch (target.kind()) {
             case PANEL, PROJECTION, COMPONENT, AGENT, APPLICATION ->
                     products.allowedFor(target.domainId(), userId, target.id(), verb.name().toLowerCase(Locale.ROOT));
-            case METRIC, READ_FUNCTION, ACTION, WORKFLOW -> true;
+            case METRIC, READ_FUNCTION, WRITE_FUNCTION, TRIGGER, ACTION, WORKFLOW, SKILL -> true;
             case ENTRY -> false;
         };
     }
+
+    @Override public boolean requiresFirstPublicationAudience() { return false; }
 
     @Override
     public List<String> organizationCodes(String domainId, Set<String> roots, GrantScope.Kind kind) {
@@ -49,6 +51,8 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
     @Override public List<ObjectGrant> objectGrants(ObjectTarget target, Verb verb, Set<String> policyIds) { return List.of(); }
     @Override public Set<String> managementOperations(String domainId, Set<String> policyIds) { return Set.of(); }
     @Override public Set<String> entryPolicies(ObjectTarget entry) { return Set.of(); }
+
+    @Override public List<ObjectGrantView> objectGrantViews(ObjectTarget target) { return List.of(); }
 
     @Override public void grantObject(ObjectGrant grant) { throw noRolePolicies(); }
     @Override public void revokeObject(ObjectGrant grant) { throw noRolePolicies(); }
