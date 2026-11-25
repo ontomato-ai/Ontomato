@@ -1,11 +1,13 @@
 import { z } from "zod";
+import type { ObjectPublicationAccess } from "@ontomato/contracts/object-publication";
+import { agentObjectAccessSchema, productObjectAccessSchema, type ChangeProductObjectGrant } from "@ontomato/contracts/object-policy-access";
 import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendPost } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { productDefinitionOwnerHeaders } from "./grants";
 
-export type ObjectKind = "AGENT" | "PANEL" | "PROJECTION" | "COMPONENT" | "METRIC" | "READ_FUNCTION";
+export type ObjectKind = "AGENT" | "PANEL" | "PROJECTION" | "COMPONENT" | "METRIC" | "READ_FUNCTION" | "WRITE_FUNCTION" | "TRIGGER" | "SKILL";
 export type ObjectVerb = "USE" | "VIEW" | "EDIT";
 export interface ObjectDefinition {
   target: { domainId: string; kind: ObjectKind; id: string };
@@ -51,18 +53,15 @@ export async function requireObject(request: ObjectDecisionRequest, credentials:
   requireAllowed(await decideObject(request, credentials));
 }
 
-export type PublicationAccess = { kind: "domain" } | { kind: "policy"; policyId: string };
 export async function writeFirstPublication(
-  definition: ObjectDefinition, access: PublicationAccess, credentials: AssistantCredentials,
+  definition: ObjectDefinition, access: ObjectPublicationAccess, credentials: AssistantCredentials,
 ) {
   return z.object({ status: z.enum(["granted", "pending"]) })
     .parse(await post("first-publication", { ...definition, access }, credentials));
 }
 
-const agentPolicyGrantSchema = z.object({ policyId: z.string(), name: z.string(), level: z.enum(["USE", "VIEW", "EDIT"]) });
 export async function readAgentAccess(definition: ObjectDefinition, credentials: AssistantCredentials) {
-  return z.object({ shared: z.boolean(), grants: z.array(agentPolicyGrantSchema) })
-    .parse(await post("agent-access", definition, credentials));
+  return agentObjectAccessSchema.parse(await post("agent-access", definition, credentials));
 }
 
 export async function replaceAgentLevel(
@@ -77,4 +76,18 @@ export async function setAgentDomainUse(definition: ObjectDefinition, shared: bo
 
 export async function retireObject(definition: ObjectDefinition, credentials: AssistantCredentials) {
   await post("retire", definition, credentials);
+}
+
+export async function readProductObjectAccess(definition: ObjectDefinition, credentials: AssistantCredentials) {
+  return productObjectAccessSchema.parse(await post("product-access", definition, credentials));
+}
+
+export async function changeProductObjectAccess(
+  definition: ObjectDefinition, grant: ChangeProductObjectGrant, credentials: AssistantCredentials,
+) {
+  await post("product-grant", { ...definition, ...grant }, credentials);
+}
+
+export async function setProductDomainUse(definition: ObjectDefinition, shared: boolean, credentials: AssistantCredentials) {
+  await post("product-domain-use", { ...definition, shared }, credentials);
 }

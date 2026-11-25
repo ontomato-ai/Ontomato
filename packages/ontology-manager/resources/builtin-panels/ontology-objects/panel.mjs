@@ -30,13 +30,13 @@ const ATTRIBUTE_COLUMNS_WIDE = [
     key: "businessKey",
     labelKey: "ot.colBusinessKey",
     width: 112,
-    valueMap: { true: { labelKey: "ot.yes", tone: "info" }, false: { labelKey: "ot.dash" } },
+    valueMap: { true: { labelKey: "ot.yes" }, false: { labelKey: "ot.dash" } },
   },
   {
     key: "primaryKey",
     labelKey: "ot.colPrimaryKey",
     width: 112,
-    valueMap: { true: { labelKey: "ot.yes", tone: "success" }, false: { labelKey: "ot.dash" } },
+    valueMap: { true: { labelKey: "ot.yes" }, false: { labelKey: "ot.dash" } },
   },
   { key: "attrDesc", labelKey: "ot.colAttrDescription", emptyKey: "ot.dash", minWidth: 140 },
 ];
@@ -265,6 +265,7 @@ await mountPanel({
         creating: false,
         creatingAttribute: false,
         editingAttribute: null,
+        expandedAttributes: [],
       });
     }
 
@@ -274,6 +275,7 @@ await mountPanel({
         creating: false,
         creatingAttribute: false,
         editingAttribute: null,
+        expandedAttributes: [],
       });
     }
 
@@ -283,6 +285,7 @@ await mountPanel({
         creating: true,
         creatingAttribute: false,
         editingAttribute: null,
+        expandedAttributes: [],
       });
     }
 
@@ -306,10 +309,13 @@ await mountPanel({
       { pushHistory: true, forms: "objectForm" },
     );
 
-    // Clear create-attribute mode when no class is selected or when switching classes.
+    // Clear create-attribute mode and expanded attribute rows when no class is selected or when switching classes.
     watch(selectedKey, (nextKey, previousKey) => {
       if (!nextKey || (previousKey && nextKey !== previousKey)) {
-        if (creatingAttribute.value) instance.state.set("creatingAttribute", false);
+        const patch = {};
+        if (creatingAttribute.value) patch.creatingAttribute = false;
+        if ((instance.state.values.value.expandedAttributes?.length ?? 0) > 0) patch.expandedAttributes = [];
+        if (Object.keys(patch).length > 0) instance.state.setState(patch);
       }
     }, { immediate: true });
 
@@ -346,9 +352,17 @@ await mountPanel({
       if (creating.value) cancelCreate();
     }
 
-    function attributeSaved() {
+    function attributeSaved(saved, outcome) {
+      const key = saved?.primaryKey || outcome?.primaryKey;
+      const patch = {};
       if (creatingAttribute.value) {
-        instance.state.set("creatingAttribute", false);
+        patch.creatingAttribute = false;
+      }
+      if (key) {
+        patch.expandedAttributes = [key];
+      }
+      if (Object.keys(patch).length > 0) {
+        instance.state.setState(patch);
       }
     }
 

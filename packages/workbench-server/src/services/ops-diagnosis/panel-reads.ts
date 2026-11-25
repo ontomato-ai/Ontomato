@@ -399,6 +399,7 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
           },
           tones: {
             statusLabel: tone,
+            hasEvidence: item.evidence ? "info" : "warning",
             ...(kept ? { keptLabel: "info" as const } : {}),
           },
         };
@@ -446,6 +447,7 @@ export function createTurnEvidenceReadAdapter(owner: ProductOwner, viewer: Assis
         },
         tones: {
           statusLabel: tone,
+          hasEvidence: hasEvidence ? "info" : "warning",
           ...(kept ? { keptLabel: "info" as const } : {}),
         },
         outputs: { status, kept, hasEvidence },
@@ -658,6 +660,11 @@ export function createAutotestRunReadAdapter(owner: ProductOwner, viewer: Assist
         tones: {
           statusLabel: statusTone(row.status),
           verdictLabel: verdictTone(verdict),
+          ...(verdict === "wrong"
+            ? { verdict: "danger" as const }
+            : verdict === "abnormal"
+              ? { verdict: "warning" as const }
+              : {}),
         },
       }));
       return active ? withReadDirective(records, autotestRunReadDirective) : records;
@@ -729,7 +736,10 @@ export function createAutotestCaseArtifactReadAdapter(owner: ProductOwner, viewe
           evidenceHint: tForLocale(locale, "panels.ops.fields.evidenceNote"),
           ...(verdict ? { verdictLabel: tForLocale(locale, "panels.ops.fields.evalConclusion") } : {}),
         },
-        tones: verdict ? { verdictLabel: verdictTone(verdict) } : undefined,
+        tones: {
+          hasEvidence: hasEvidence ? "info" : "warning",
+          ...(verdict ? { verdictLabel: verdictTone(verdict) } : {}),
+        },
         outputs: { runId, caseId, hasEvidence },
       };
     },

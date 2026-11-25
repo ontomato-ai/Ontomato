@@ -1513,9 +1513,8 @@ export default {
           "allowStandalone": "Whether this application can be opened standalone without the platform sidebar and expose an external link.",
           "externalLink": "The standalone entry link exposed when standalone opening is enabled; omitted when disabled.",
           "entry": "The application's landing path with an optional renderer and home path.",
-          "panelUses": "Entries in their declared order, including paths, panel references, inputs, menu metadata, admission rules, and default agents.",
+          "panelUses": "Entries in their declared order, including paths, panel references, inputs, menu metadata, and default agents.",
           "groups": "Menu group keys, translated names, and sort order.",
-          "entryAccess": "Application-level admission rules visible to the application's maintainers.",
           "framePanelId": "The ID of the application's configured frame panel, visible to maintainers.",
           "theme": "The application's light and dark theme overrides, visible to maintainers.",
           "delivery": "Declared references to panels, projections, packages, agents, and skills, visible to maintainers."

@@ -33,12 +33,12 @@ public class ModelSettingsController {
       @Override
       public List<Operation> managementOperations() {
           return List.of(
-              new Operation(READ, ManagementOperations.Access.READ),
-              new Operation(CHANGE, ManagementOperations.Access.CHANGE),
-              new Operation(DISCOVER, ManagementOperations.Access.CHANGE),
-              new Operation(TEST, ManagementOperations.Access.CHANGE),
-              new Operation(AGENTS_READ, ManagementOperations.Access.READ),
-              new Operation(AGENTS_CHANGE, ManagementOperations.Access.CHANGE));
+              new Operation(READ, "Read model library settings", ManagementOperations.Access.READ),
+              new Operation(CHANGE, "Change model library settings", ManagementOperations.Access.CHANGE),
+              new Operation(DISCOVER, "Discover models", ManagementOperations.Access.CHANGE),
+              new Operation(TEST, "Test a model connection", ManagementOperations.Access.CHANGE),
+              new Operation(AGENTS_READ, "Read agent model selections", ManagementOperations.Access.READ),
+              new Operation(AGENTS_CHANGE, "Change agent model selections", ManagementOperations.Access.CHANGE));
       }
   }
 

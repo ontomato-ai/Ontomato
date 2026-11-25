@@ -92,7 +92,7 @@
             {
               "key": "stepsSummary",
               "labelKey": "col.steps",
-              "minWidth": 160
+              "minWidth": 150
             },
             {
               "key": "grantsSummary",
@@ -113,8 +113,8 @@
           ],
           "rowActions": {
             "labelKey": "col.actions",
-            "width": 224,
-            "minWidth": 216,
+            "width": 210,
+            "minWidth": 204,
             "maxVisible": 4,
             "fixed": "right",
             "items": [

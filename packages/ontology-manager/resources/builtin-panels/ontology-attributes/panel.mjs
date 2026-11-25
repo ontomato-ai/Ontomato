@@ -18,13 +18,13 @@ const COLUMNS_WIDE = [
     key: "businessKey",
     labelKey: "attr.colBizKey",
     width: 112,
-    valueMap: { true: { labelKey: "attr.yes", tone: "info" }, false: { labelKey: "attr.dash" } },
+    valueMap: { true: { labelKey: "attr.yes" }, false: { labelKey: "attr.dash" } },
   },
   {
     key: "primaryKey",
     labelKey: "attr.colPrimaryKey",
     width: 112,
-    valueMap: { true: { labelKey: "attr.yes", tone: "success" }, false: { labelKey: "attr.dash" } },
+    valueMap: { true: { labelKey: "attr.yes" }, false: { labelKey: "attr.dash" } },
   },
 ];
 const COLUMNS_MEDIUM = [
@@ -229,8 +229,12 @@ await mountPanel({
       },
     });
 
-    function onSaved() {
-      instance.state.set("creating", false);
+    function onSaved(saved, outcome) {
+      const key = saved?.primaryKey || outcome?.primaryKey;
+      instance.state.setState({
+        creating: false,
+        ...(key ? { expandedAttributes: [key] } : {}),
+      });
     }
 
     function onDiscarded() {

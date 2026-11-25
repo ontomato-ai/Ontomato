@@ -1,3 +1,4 @@
+import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 import { beforeEach, expect, it, vi } from "vitest";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 import { OBJECT_TYPE, PRODUCT_PANEL, SAVE_OBJECT_DETAIL_PANEL } from "@ontomato/contracts/platform-object-types";
@@ -17,13 +18,24 @@ vi.mock("../../../identity/management", () => ({ assertManagement: state.permiss
 vi.mock("../object-detail", () => ({
   findObjectDetailPanelId: state.getMapping, findDetailPanel: state.getPanel,
 }));
-vi.mock("../../product-governance/grants", () => ({ productGrantAllowed: state.allowed }));
+vi.mock("../../product-governance/authorization", async original => ({
+  ...await original<typeof import("../../product-governance/authorization")>(),
+  decideObject: state.allowed,
+  decideObjects: async (requests: ObjectDecisionRequest[]) => Promise.all(requests.map(request => state.allowed(request))),
+}));
+vi.mock("../../../infrastructure/product-current", () => ({
+  findCurrentProducts: async (domainId: string, kind: string, ids: string[]) => {
+    expect([domainId, kind, ids]).toEqual([owner.domainId, "panel", ["panel-1"]]);
+    return new Map([[panel.id, panel]]);
+  },
+}));
 vi.mock("../object-detail-write", () => ({ setObjectDetail: state.set, clearObjectDetail: state.clear }));
 
 configureI18n({
   defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false, packs: { en: { ...enLocaleMeta, messages: en } },
 });
 const owner = { domainId: "domain", userId: "reader" };
+const panel = { id: "panel-1", name: "Customer details", domainId: owner.domainId, ownerId: "panel-owner" };
 const credentials = { token: "viewer", locale: "en" };
 const adapter = createObjectDetailReadAdapter(owner, credentials);
 const actor = { owner, credentials };
@@ -36,8 +48,8 @@ const [save, clear] = objectDetailOperations;
 beforeEach(() => {
   vi.resetAllMocks();
   state.getMapping.mockResolvedValue("panel-1");
-  state.getPanel.mockResolvedValue({ status: "available", panel: { name: "Customer details" } });
-  state.allowed.mockResolvedValue(true);
+  state.getPanel.mockResolvedValue({ status: "available", panel });
+  state.allowed.mockResolvedValue({ allowed: true });
 });
 
 it("distinguishes an absent, usable, forbidden or broken mapping", async () => {
@@ -48,7 +60,7 @@ it("distinguishes an absent, usable, forbidden or broken mapping", async () => {
     outputs: { configured: true, panelStatus: "configured", canConfigure: true },
   });
 
-  state.allowed.mockResolvedValueOnce(false);
+  state.allowed.mockResolvedValueOnce({ allowed: false });
   state.permission.mockRejectedValueOnce(new HttpError(403, "Denied", "PERMISSION_DENIED"));
   expect(await adapter.record("Customer")).toMatchObject({
     fields: { panelId: "", panelName: "" },

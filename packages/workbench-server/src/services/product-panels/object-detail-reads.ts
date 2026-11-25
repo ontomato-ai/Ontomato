@@ -7,7 +7,9 @@ import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
-import { productGrantAllowed, type ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/grants";
+import { currentDefinition, usableCurrentIds } from "./access";
+import { decideObject } from "../product-governance/authorization";
 import { findDetailPanel, findObjectDetailPanelId } from "./object-detail";
 
 export const objectDetailText = (locale: string | undefined, key: string) =>
@@ -41,7 +43,7 @@ export function createObjectDetailReadAdapter(owner: ProductOwner, viewer: Assis
           panelStatus = "unavailable";
           unavailableReason = text(detail.status);
           if (canConfigure) panelId = id;
-        } else if (!await productGrantAllowed(id, "use", viewer)) {
+        } else if (!(await decideObject({ ...currentDefinition("panel", detail.panel, owner.domainId), verb: "USE" }, viewer)).allowed) {
           panelStatus = "forbidden";
           unavailableReason = text("forbidden");
           if (canConfigure) panelId = id;
@@ -66,7 +68,7 @@ export function createObjectDetailReadAdapter(owner: ProductOwner, viewer: Assis
       const [id, canConfigure] = await Promise.all([
         findObjectDetailPanelId(owner.domainId, className), canConfigureObjectDetail(owner, viewer),
       ]);
-      const panelId = canConfigure || id === null || await productGrantAllowed(id, "use", viewer) ? id : null;
+      const panelId = canConfigure || id === null || (await usableCurrentIds("panel", owner.domainId, [id], viewer)).has(id) ? id : null;
       return {
         fields: [{
           path: "/panelId", label: text("panelName"), help: text("formHelp"), required: false,

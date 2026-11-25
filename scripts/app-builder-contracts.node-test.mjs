@@ -228,11 +228,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       ? ok(id) : invalid([{ message: "Expected a platform product ID with prefix builtin-product-" }]) };
     export const appsSdkComponentCatalogSchema = { parse };
     export const domainApplicationIconKeys = ["app-window", "folder", "calendar"];
-    const applicationDeclaration = { extend: () => applicationDeclaration, passthrough: () => applicationDeclaration };
-    export const applicationCatalogueRecordSchema = {
-      parse, shape: {}, pick: () => ({ extend: () => ({ safeParse: ok }) }),
-    };
-    export const applicationIdentityUpdateSchema = { parse, omit: () => applicationDeclaration, partial: () => ({ strict: () => ({ parse }) }) };
+    export const applicationCatalogueRecordSchema = { parse };
+    export const applicationSourceManifestSchema = { safeParse: ok };
+    export const applicationIdentityUpdateSchema = { parse, partial: () => ({ strict: () => ({ parse }) }) };
     export async function panelModuleImports(source) {
       if (source.includes("element-plus")) throw new Error("A panel's module imports element-plus, which the platform does not give it");
     }
@@ -484,8 +482,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await writeFile(join(offlineSdk, "components.json"), JSON.stringify(catalogue));
     const oldChecker = checkModule.replace("export const domainProductIdSchema", "const domainProductIdSchema");
     await writeFile(join(offlineSdk, "check.mjs"), oldChecker);
-    assert.deepEqual(JSON.parse((await run("panel", "check", directory, "--sdk-dir", offlineSdk)).stdout).unchecked,
-      [{ kind: "projection", id: "tasks" }]);
+    const offlineUnchecked = JSON.parse((await run("panel", "check", directory, "--sdk-dir", offlineSdk)).stdout);
+    assert.equal(offlineUnchecked.typeTableChecked, false);
+    assert.deepEqual(offlineUnchecked.unchecked, [{ kind: "projection", id: "tasks" }]);
     await writeFile(join(offlineSdk, "check.mjs"), checkModule);
     const builtin = join(directory, "builtin");
     await mkdir(builtin);
@@ -539,7 +538,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       "Action legacy-action is unavailable. Stored function is missing\n" +
       "Action bad-action (ReviewQueue) is unavailable. target: invalid field\n" +
       "Customer type catalogue is unavailable. Object type catalogue permission required\n");
-    assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, unchecked: [] });
+    assert.deepEqual(JSON.parse(checked.stdout), { status: "valid", version: sdkVersion, digest: release.digest, typeTableChecked: true, unchecked: [] });
     assert.deepEqual(new Map(requests.splice(0).map(([method, url]) => [url, method])), new Map([
       ["/api/apps-sdk/current", "GET"], [`${sdkPath}/node/panel-check.mjs`, "GET"],
       [`${sdkPath}/components.json`, "GET"], ["/api/app-builder/type-table", "GET"], [projectionPath, "GET"],
@@ -582,7 +581,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     await assert.rejects(run("panel", "register", JSON.stringify(badIcon)), error =>
       error.stderr.includes("application app-acceptance: declaration.icon 'graph' is not available"));
     badIcon.applications[0].mode = "create";
-    badIcon.applications[0].input.entryAccess = ["domain-member"];
+    badIcon.applications[0].input.initialOpenEntryIds = [];
     badIcon.applications[0].input.declaration.icon = "settings";
     await writeFile(badIconFile, JSON.stringify(badIcon));
     await assert.rejects(run("panel", "check", directory, "--material", badIconFile), error =>
@@ -653,11 +652,13 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const detailMaterialFile = join(detailDir, "registration.json");
     const detailMaterial = JSON.parse(await readFile(detailMaterialFile, "utf8"));
     const [app] = detailMaterial.applications;
-    const { declaration, entryAccess, ...updateInput } = app.input;
+    const { declaration, initialOpenEntryIds, ...updateInput } = app.input;
     app.mode = "update";
     app.input = updateInput;
     requests.length = 0;
-    for (const [key, value] of Object.entries({ entryAccess, groups: declaration.groups, permissions: declaration.permissions })) {
+    for (const [key, value] of Object.entries({
+      initialOpenEntryIds, entryAccess: ["domain-member"], groups: declaration.groups, permissions: [],
+    })) {
       await writeFile(detailMaterialFile, JSON.stringify({
         ...detailMaterial, applications: [{ ...app, input: { ...updateInput, [key]: value } }],
       }));
@@ -715,15 +716,14 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
         id: "app-chat-only",
         mode: "create",
         input: {
-          declaration: { names: { en: "Chat" }, descriptions: { en: "Chat" }, groups: [], permissions: [] },
-          entryAccess: ["domain-member"],
+          declaration: { names: { en: "Chat" }, descriptions: { en: "Chat" }, groups: [] },
+          initialOpenEntryIds: ["chat-use"],
           entry: { path: "/applications/app-chat-only", renderer: "panels" },
           panelUses: [{
             id: "chat-use",
             pageKey: "chat-home",
             panelId: "chat-panel",
             path: "/applications/app-chat-only/home",
-            access: { kind: "domain-member" },
             names: { en: "Home" },
           }],
         },

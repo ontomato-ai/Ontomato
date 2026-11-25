@@ -1,3 +1,4 @@
+import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { randomUUID } from "node:crypto";
@@ -153,6 +154,11 @@ beforeAll(async () => {
   app.use(express.json());
   mountEntryDependencyOwner(app, { token: "fixture-service", entries: domain => domain === "facts"
     ? [{ entryId: `${use.applicationId}/${use.useId}`, roots: { panelIds: [panelId], agentIds: [] } }] : [] });
+  mountCurrentProductDecisions(app, {
+    token: "fixture-service", domain: "facts",
+    allow: (request, caller) => caller === "fact-reader" &&
+      (request.ownerFacts.ownerId === "reader" || (request.verb === "USE" && request.ownerFacts.ownerId === null)),
+  });
   app.post("/product-governance/register", (req, res) => { resourceIds.add(req.body.id); res.json({ success: true }); });
   app.post("/product-governance/check", (req, res) => res.json({ allowed: resourceIds.has(req.body.id) }));
   app.post("/product-governance/resources", (_req, res) => res.json({ ids: [...resourceIds] }));

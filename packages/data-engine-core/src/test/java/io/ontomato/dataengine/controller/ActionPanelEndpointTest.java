@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -52,7 +53,8 @@ class ActionPanelEndpointTest {
   private final ActionTrialStore actionTrialStore = mock(ActionTrialStore.class);
   private final ActionService actionService = mock(ActionService.class);
   private final LangService langService = mock(LangService.class);
-  private final CaseExecutionGuard caseExecutionGuard = mock(CaseExecutionGuard.class);
+  private final CaseExecutionGuard caseExecutionGuard = new CaseExecutionGuard("");
+  private final ActionAuthorization authorization = mock(ActionAuthorization.class);
   private final BusinessConfigService businessConfigService = mock(BusinessConfigService.class);
   private final DataSandboxService buildTests = mock(DataSandboxService.class);
   private final io.ontomato.dataengine.service.SandboxPermissionService sandboxPermissions =
@@ -81,6 +83,8 @@ class ActionPanelEndpointTest {
     ReflectionTestUtils.setField(controller, "langService", langService);
     ReflectionTestUtils.setField(controller, "identityService", identityService);
     ReflectionTestUtils.setField(controller, "caseExecutionGuard", caseExecutionGuard);
+    ReflectionTestUtils.setField(controller, "authorization", authorization);
+    when(authorization.allowsDefinition(any(), any())).thenReturn(true);
     ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
     ReflectionTestUtils.setField(controller, "buildTests", buildTests);
     ReflectionTestUtils.setField(controller, "sandboxPermissions", sandboxPermissions);
@@ -96,14 +100,14 @@ class ActionPanelEndpointTest {
 
   @Test
   void countsThroughTheSameListUrlWithoutReadingTheList() throws Exception {
-    when(actionService.count(eq("PUBLISHED"), isNull(), eq("Device"), eq("domain"))).thenReturn(3L);
+    when(actionService.count(eq("PUBLISHED"), isNull(), eq("Device"), eq("domain"), any())).thenReturn(3L);
 
     JSONObject body = perform("/action/queryList", """
         {"countOnly":true,"status":"PUBLISHED","className":"Device"}""");
 
     assertTrue(body.getBooleanValue("success"));
     assertEquals(3, body.getJSONObject("data").getIntValue("total"));
-    verify(actionService).count("PUBLISHED", null, "Device", "domain");
+    verify(actionService).count(eq("PUBLISHED"), isNull(), eq("Device"), eq("domain"), any());
     verify(actionService, never()).queryList(any(), any(), any(), any());
   }
 
@@ -179,7 +183,7 @@ class ActionPanelEndpointTest {
 
   @Test
   void aDraftsFieldErrorsAreASuccessfulFormRead() throws Exception {
-    when(actionService.definitionForm(any(), eq("en"), eq("domain"))).thenReturn(JSONObject.of(
+    when(actionService.definitionForm(any(), eq("en"), any(io.ontomato.dataengine.core.bean.User.class))).thenReturn(JSONObject.of(
         "fields", new JSONArray(), "values", JSONObject.of("name", ""),
         "errors", List.of(FormFields.error("/function/operation", "invalid_option", "expected OPERATION_WRITE")),
         "save", JSONObject.of("path", "/action/save")));
@@ -242,7 +246,7 @@ class ActionPanelEndpointTest {
 
   @Test
   void anUngrantedExecuteReturnsARefusalCode() throws Exception {
-    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any()))
+    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any(), any()))
         .thenThrow(new OwnerRefusal("ACTION_NOT_GRANTED", "No role grants this action"));
 
     JSONObject body = performExecute("a1", "{}");
@@ -256,7 +260,7 @@ class ActionPanelEndpointTest {
   void aPythonExecutionErrorStaysAnUncodedFailure() throws Exception {
     PythonExecuteResult result = new PythonExecuteResult();
     result.setError("program failed");
-    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any()))
+    when(actionService.execute(eq("a1"), any(JSONObject.class), eq("en"), any(), any(), anyInt(), any(), any()))
         .thenReturn(result);
 
     JSONObject body = performExecute("a1", "{}");
@@ -268,7 +272,7 @@ class ActionPanelEndpointTest {
 
   @Test
   void anUngrantedFormReturnsARefusalCode() throws Exception {
-    when(actionService.form(any(), any(), any(), any(), eq("en"), any()))
+    when(actionService.form(any(), any(), any(), any(), eq("en"), any(), any(), any()))
         .thenThrow(new OwnerRefusal("ACTION_NOT_GRANTED", "No role grants this action"));
 
     JSONObject body = perform("/action/form", """

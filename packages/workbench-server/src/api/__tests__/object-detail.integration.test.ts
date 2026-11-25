@@ -1,3 +1,4 @@
+import type { ObjectDecisionRequest } from "../../services/product-governance/authorization";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { Server } from "node:http";
@@ -32,7 +33,21 @@ vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
-vi.mock("../../services/product-governance/grants", () => ({ requireProductGrant: state.requireGrant }));
+vi.mock("../../services/product-governance/authorization", async original => {
+  const actual = await original<typeof import("../../services/product-governance/authorization")>();
+  const requireObject = async (request: ObjectDecisionRequest) => {
+    if (!("target" in request) || request.target.domainId !== owner.domainId || request.target.kind !== "PANEL")
+      throw new Error("Expected a current panel in the caller's domain");
+    await state.requireGrant(request.target.id, request.verb === "EDIT" ? "edit" : "use");
+  };
+  return { ...actual, requireObject, decideObjects: async (requests: ObjectDecisionRequest[]) => Promise.all(requests.map(async request => {
+    try { await requireObject(request); return { allowed: true }; }
+    catch (error) {
+      if (!(error instanceof HttpError) || error.status !== 403) throw error;
+      return { allowed: false, code: error.code, reason: error.message };
+    }
+  })) };
+});
 
 vi.mock("../../identity/installed", () => ({
   workbenchIdentity: () => ({ requireDomainId: (identity: { domainId: string }) => identity.domainId }),

@@ -54,7 +54,10 @@ public class Function {
                         throw new IllegalArgumentException("Function.parameters[" + i + "]." + field + ": expected a string");
             }
         }
-        return input.to(Function.class);
+        Function function = input.to(Function.class);
+        function.setCreatedBy(null);
+        function.setPublished(true);
+        return function;
     }
 
 	public List<Parameter> getParameters() {
@@ -65,5 +68,7 @@ public class Function {
 	private Long createTimestamp;
 	private Long modifyTimestamp;
 	private String domainId;
+	private String createdBy;
+	private boolean published = true;
 	
 }

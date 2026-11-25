@@ -4,8 +4,6 @@ import { skillManager } from "../../services/skills/skill-manager";
 import { filterReadableAgentDefinitions } from "../../services/assistant/definitions";
 import { InvalidSkillPackageError } from "../../core/skills/manifest";
 import { t, tApp } from "../../i18n";
-import { workbenchManagement } from "@ontomato/contracts/workbench-management";
-import { requireManagement, assertManagement } from "../../identity/management";
 import { credentialsFromRequest, type AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler, sendError } from "../utils/http";
 import { HttpError } from "../../utils/errors";
@@ -83,15 +81,12 @@ router.get(
 router.get(
   "/:id/export",
   asyncHandler(async (req: Request, res: Response) => {
-    const actor = req as AuthenticatedRequest;
-    const domainId = actor.domainId;
+    const domainId = (req as AuthenticatedRequest).domainId;
     if (!domainId) {
       res.status(204).end();
       return;
     }
-    const credentials = credentialsFromRequest(actor);
-    await assertManagement(workbenchManagement.skillsExport, actor, credentials);
-    const zipBuffer = await skillManager.exportSkill(domainId, req.params.id, credentials);
+    const zipBuffer = await skillManager.exportSkill(domainId, req.params.id, credentialsFromRequest(req as AuthenticatedRequest));
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${req.params.id}.zip"`);
     res.send(zipBuffer);
@@ -102,7 +97,6 @@ router.get(
 router.delete(
   "/:id",
   requireDomain,
-  requireManagement(workbenchManagement.skillsDelete),
   asyncHandler(async (req: Request, res: Response) => {
     const request = req as AuthenticatedRequest;
     const domainId = request.domainId!;
@@ -118,7 +112,6 @@ router.delete(
 router.post(
   "/import",
   requireDomain,
-  requireManagement(workbenchManagement.skillsImport),
   upload.single("file"),
   asyncHandler(async (req: Request, res: Response) => {
     try {

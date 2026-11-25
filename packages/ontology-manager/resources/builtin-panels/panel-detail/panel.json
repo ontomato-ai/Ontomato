@@ -76,26 +76,13 @@
           "type": "boolean"
         }
       },
-      "grantPrincipalKind": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "default": "principal"
-      },
-      "grantUser": {
+      "grantPolicy": {
         "type": {
           "kind": "object",
-          "objectType": "platform:User"
+          "objectType": "platform:PermissionPolicy"
         }
       },
-      "grantRole": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:Role"
-        }
-      },
-      "grantPrincipalId": {
+      "grantPolicyId": {
         "type": {
           "kind": "scalar",
           "type": "string"
@@ -106,7 +93,7 @@
           "kind": "scalar",
           "type": "string"
         },
-        "default": "use"
+        "default": "USE"
       },
       "previewTarget": {
         "type": {
@@ -330,11 +317,8 @@
               "state": "selected"
             },
             "params": {
-              "principalKind": {
-                "rowField": "principalKind"
-              },
-              "principalId": {
-                "rowField": "principalId"
+              "policyId": {
+                "rowField": "policyId"
               },
               "verb": {
                 "rowField": "verb"
@@ -349,14 +333,8 @@
           "emptyText": "grants.none",
           "columns": [
             {
-              "key": "principalKindLabel",
-              "labelKey": "grants.kind",
-              "kind": "tag",
-              "width": 120
-            },
-            {
               "key": "label",
-              "labelKey": "grants.principalCol",
+              "labelKey": "grants.policy",
               "subtitleKey": "subtitle",
               "minWidth": 200
             },
@@ -441,35 +419,19 @@
         },
         "id": "builtin-product-c7aa8f2a-e3fc-4a93-97b2-dd89935c4865"
       },
-      "userPicker": {
+      "policyPicker": {
         "component": "ReferencePicker",
-        "type": "platform:User",
+        "type": "platform:PermissionPolicy",
         "data": {
           "options": "options",
           "selected": "resolve"
         },
         "state": {
-          "selected": "grantUser"
+          "selected": "grantPolicy"
         },
         "config": {
           "size": "default",
-          "placeholderKey": "grants.selectMember"
-        },
-        "id": "builtin-product-ac985864-7186-4bbd-bbbd-9077239a2d42"
-      },
-      "rolePicker": {
-        "component": "ReferencePicker",
-        "type": "platform:Role",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "state": {
-          "selected": "grantRole"
-        },
-        "config": {
-          "size": "default",
-          "placeholderKey": "grants.selectRole"
+          "placeholderKey": "grants.selectPolicy"
         },
         "id": "builtin-product-3ef6f0d7-4bbf-4ef8-ab4a-6ec42128f0b5"
       },
@@ -479,11 +441,8 @@
         "target": "selected",
         "operation": "productPanels.grant",
         "operationParams": {
-          "principalKind": {
-            "state": "grantPrincipalKind"
-          },
-          "principalId": {
-            "state": "grantPrincipalId"
+          "policyId": {
+            "state": "grantPolicyId"
           },
           "verb": {
             "state": "grantVerb"
@@ -747,22 +706,17 @@
         "usage.none": "Nothing uses this panel.",
         "grants.shareTitle": "Share with domain members",
         "grants.sharedDesc": "All members in this domain can use this panel.",
-        "grants.privateDesc": "Only the granted members and roles below can use or edit it.",
-        "grants.shareNote": "Domain sharing also grants the projections this panel uses whenever you hold edit rights on them.",
+        "grants.privateDesc": "Access follows the object policies below.",
+        "grants.shareNote": "Domain sharing applies to this panel.",
         "grants.dialogTitle": "Add grant",
-        "grants.kind": "Subject type",
-        "grants.principalCol": "Subject",
-        "grants.role": "Role",
-        "grants.principal": "Member",
+        "grants.policy": "Object policy",
         "grants.verb": "Permission",
         "grants.actions": "Actions",
         "grants.use": "Use",
         "grants.edit": "Edit",
         "grants.none": "No individual grants recorded.",
-        "grants.selectMember": "Search or select a member",
-        "grants.selectRole": "Search or select a role",
+        "grants.selectPolicy": "Choose an object policy",
         "grants.updated": "Sharing updated.",
-        "grants.skipped": "Shared, except projections you cannot grant: {ids}",
         "copy.title": "Copy panel",
         "copy.saveAsTemplateTitle": "Save as template",
         "copy.fromTemplateTitle": "Create from template",
@@ -872,22 +826,17 @@
         "usage.none": "暂无其他位置使用这个面板。",
         "grants.shareTitle": "向本域成员共享",
         "grants.sharedDesc": "已向本域所有成员开放使用权限。",
-        "grants.privateDesc": "目前仅对下方授权的成员与角色开放。",
-        "grants.shareNote": "开启域内共享时，所有者会连带授出该面板引用且你有编辑权的投影。",
+        "grants.privateDesc": "此对象的访问权限由下方对象策略控制。",
+        "grants.shareNote": "域内共享仅适用于此面板。",
         "grants.dialogTitle": "添加授权",
-        "grants.kind": "主体类型",
-        "grants.principalCol": "主体",
-        "grants.role": "角色",
-        "grants.principal": "成员",
+        "grants.policy": "对象策略",
         "grants.verb": "权限",
         "grants.actions": "操作",
         "grants.use": "使用",
         "grants.edit": "编辑",
         "grants.none": "暂无单独授权记录。",
-        "grants.selectMember": "搜索或选择成员",
-        "grants.selectRole": "搜索或选择角色",
+        "grants.selectPolicy": "选择对象策略",
         "grants.updated": "共享状态已更新。",
-        "grants.skipped": "已共享，但以下投影因无权未能连带共享：{ids}",
         "copy.title": "复制面板",
         "copy.saveAsTemplateTitle": "另存为模板",
         "copy.fromTemplateTitle": "从模板创建面板",
@@ -997,22 +946,17 @@
         "usage.none": "暫無其他位置使用這個面板。",
         "grants.shareTitle": "向本域成員共享",
         "grants.sharedDesc": "已向本域所有成員開放使用權限。",
-        "grants.privateDesc": "目前僅對下方授權的成員與角色開放。",
-        "grants.shareNote": "開啟域內共享時，擁有者會連帶授出該面板參照且你有編輯權的投影。",
+        "grants.privateDesc": "此物件的存取權限由下方物件策略控制。",
+        "grants.shareNote": "域內共享僅適用於此面板。",
         "grants.dialogTitle": "新增授權",
-        "grants.kind": "主體類型",
-        "grants.principalCol": "主體",
-        "grants.role": "角色",
-        "grants.principal": "成員",
+        "grants.policy": "物件策略",
         "grants.verb": "權限",
         "grants.actions": "操作",
         "grants.use": "使用",
         "grants.edit": "編輯",
         "grants.none": "暫無單獨授權紀錄。",
-        "grants.selectMember": "搜尋或選擇成員",
-        "grants.selectRole": "搜尋或選擇角色",
+        "grants.selectPolicy": "選擇物件策略",
         "grants.updated": "共享狀態已更新。",
-        "grants.skipped": "已共享，但以下投影因無權未能連帶共享：{ids}",
         "copy.title": "複製面板",
         "copy.saveAsTemplateTitle": "另存為範本",
         "copy.fromTemplateTitle": "從範本建立面板",
@@ -1102,22 +1046,17 @@
         "usage.none": "このパネルを利用している箇所はありません。",
         "grants.shareTitle": "ドメインメンバーに共有",
         "grants.sharedDesc": "ドメイン内の全メンバーがこのパネルを利用できます。",
-        "grants.privateDesc": "以下に権限付与されたメンバー・ロールのみ利用できます。",
-        "grants.shareNote": "ドメイン共有を有効にすると、編集権限のある参照プロジェクションも併せて共有されます。",
+        "grants.privateDesc": "アクセスは以下のオブジェクトポリシーに従います。",
+        "grants.shareNote": "ドメイン共有はこのパネルに適用されます。",
         "grants.dialogTitle": "権限を追加",
-        "grants.kind": "対象種別",
-        "grants.principalCol": "対象",
-        "grants.role": "ロール",
-        "grants.principal": "メンバー",
+        "grants.policy": "オブジェクトポリシー",
         "grants.verb": "権限",
         "grants.actions": "操作",
         "grants.use": "使用",
         "grants.edit": "編集",
         "grants.none": "個別権限は設定されていません。",
-        "grants.selectMember": "メンバーを検索または選択",
-        "grants.selectRole": "ロールを検索または選択",
+        "grants.selectPolicy": "オブジェクトポリシーを選択",
         "grants.updated": "共有設定を更新しました。",
-        "grants.skipped": "共有しましたが、権限不足のため一部のプロジェクションは除外されました：{ids}",
         "copy.title": "パネルを複製",
         "copy.saveAsTemplateTitle": "テンプレートとして保存",
         "copy.fromTemplateTitle": "テンプレートから作成",
@@ -1207,22 +1146,17 @@
         "usage.none": "لا يوجد ما يستخدم هذه اللوحة.",
         "grants.shareTitle": "المشاركة مع أعضاء النطاق",
         "grants.sharedDesc": "يمكن لجميع أعضاء هذا النطاق استخدام هذه اللوحة.",
-        "grants.privateDesc": "يمكن فقط للأعضاء والأدوار الممنوحة أدناه استخدامها.",
-        "grants.shareNote": "تشمل مشاركة النطاق أيضًا الإسقاطات التي تستخدمها هذه اللوحة ولديك صلاحية تحريرها.",
+        "grants.privateDesc": "يخضع الوصول لسياسات الكائن أدناه.",
+        "grants.shareNote": "تنطبق المشاركة ضمن النطاق على هذه اللوحة.",
         "grants.dialogTitle": "إضافة صلاحية",
-        "grants.kind": "نوع الجهة",
-        "grants.principalCol": "الجهة",
-        "grants.role": "دور",
-        "grants.principal": "عضو",
+        "grants.policy": "سياسة الكائن",
         "grants.verb": "الصلاحية",
         "grants.actions": "الإجراءات",
         "grants.use": "استخدام",
         "grants.edit": "تحرير",
         "grants.none": "لا توجد صلاحيات فردية مسجلة.",
-        "grants.selectMember": "ابحث عن عضو أو اختره",
-        "grants.selectRole": "ابحث عن دور أو اختره",
+        "grants.selectPolicy": "اختر سياسة كائن",
         "grants.updated": "تم تحديث المشاركة.",
-        "grants.skipped": "تمت المشاركة باستثناء الإسقاطات التي لا تملك صلاحية منحها: {ids}",
         "copy.title": "نسخ اللوحة",
         "copy.saveAsTemplateTitle": "حفظ كقالب",
         "copy.fromTemplateTitle": "إنشاء من قالب",
@@ -1312,22 +1246,17 @@
         "usage.none": "Rien n'utilise ce panneau.",
         "grants.shareTitle": "Partager avec les membres du domaine",
         "grants.sharedDesc": "Tous les membres du domaine peuvent utiliser ce panneau.",
-        "grants.privateDesc": "Seuls les membres et rôles autorisés ci-dessous peuvent l'utiliser.",
-        "grants.shareNote": "Le partage de domaine accorde aussi les projections utilisées sur lesquelles vous avez un droit de modification.",
+        "grants.privateDesc": "L’accès dépend des stratégies d’objet ci-dessous.",
+        "grants.shareNote": "Le partage dans le domaine s’applique à ce panneau.",
         "grants.dialogTitle": "Ajouter un accès",
-        "grants.kind": "Type de bénéficiaire",
-        "grants.principalCol": "Bénéficiaire",
-        "grants.role": "Rôle",
-        "grants.principal": "Membre",
+        "grants.policy": "Stratégie d’objet",
         "grants.verb": "Droit",
         "grants.actions": "Actions",
         "grants.use": "Utiliser",
         "grants.edit": "Modifier",
         "grants.none": "Aucun accès individuel enregistré.",
-        "grants.selectMember": "Rechercher ou sélectionner un membre",
-        "grants.selectRole": "Rechercher ou sélectionner un rôle",
+        "grants.selectPolicy": "Choisir une stratégie d’objet",
         "grants.updated": "Partage mis à jour.",
-        "grants.skipped": "Partagé, sauf projections non accordables : {ids}",
         "copy.title": "Copier le panneau",
         "copy.saveAsTemplateTitle": "Enregistrer comme modèle",
         "copy.fromTemplateTitle": "Créer depuis le modèle",
@@ -1417,22 +1346,17 @@
         "usage.none": "Nichts verwendet dieses Panel.",
         "grants.shareTitle": "Mit Domänenmitgliedern teilen",
         "grants.sharedDesc": "Alle Mitglieder dieser Domäne können dieses Panel nutzen.",
-        "grants.privateDesc": "Nur die unten freigegebenen Mitglieder und Rollen können es nutzen.",
-        "grants.shareNote": "Die Domänenfreigabe gibt auch verwendete Projektionen frei, sofern Sie Bearbeitungsrechte darauf haben.",
+        "grants.privateDesc": "Der Zugriff richtet sich nach den folgenden Objektrichtlinien.",
+        "grants.shareNote": "Die Domänenfreigabe gilt für dieses Panel.",
         "grants.dialogTitle": "Freigabe hinzufügen",
-        "grants.kind": "Subjekttyp",
-        "grants.principalCol": "Subjekt",
-        "grants.role": "Rolle",
-        "grants.principal": "Mitglied",
+        "grants.policy": "Objektrichtlinie",
         "grants.verb": "Berechtigung",
         "grants.actions": "Aktionen",
         "grants.use": "Nutzen",
         "grants.edit": "Bearbeiten",
         "grants.none": "Keine Einzelfreigaben vorhanden.",
-        "grants.selectMember": "Mitglied suchen oder wählen",
-        "grants.selectRole": "Rolle suchen oder wählen",
+        "grants.selectPolicy": "Objektrichtlinie auswählen",
         "grants.updated": "Freigabe aktualisiert.",
-        "grants.skipped": "Freigegeben, außer Projektionen ohne Recht: {ids}",
         "copy.title": "Panel kopieren",
         "copy.saveAsTemplateTitle": "Als Vorlage speichern",
         "copy.fromTemplateTitle": "Aus Vorlage erstellen",
@@ -1522,22 +1446,17 @@
         "usage.none": "Nulla utilizza questo pannello.",
         "grants.shareTitle": "Condividi con i membri del dominio",
         "grants.sharedDesc": "Tutti i membri del dominio possono usare questo pannello.",
-        "grants.privateDesc": "Solo i membri e i ruoli autorizzati sotto possono usarlo.",
-        "grants.shareNote": "La condivisione di dominio include le proiezioni usate su cui hai diritti di modifica.",
+        "grants.privateDesc": "L’accesso è regolato dai criteri oggetto elencati sotto.",
+        "grants.shareNote": "La condivisione nel dominio si applica a questo pannello.",
         "grants.dialogTitle": "Aggiungi autorizzazione",
-        "grants.kind": "Tipo soggetto",
-        "grants.principalCol": "Soggetto",
-        "grants.role": "Ruolo",
-        "grants.principal": "Membro",
+        "grants.policy": "Criterio oggetto",
         "grants.verb": "Permesso",
         "grants.actions": "Azioni",
         "grants.use": "Usa",
         "grants.edit": "Modifica",
         "grants.none": "Nessuna autorizzazione individuale registrata.",
-        "grants.selectMember": "Cerca o seleziona un membro",
-        "grants.selectRole": "Cerca o seleziona un ruolo",
+        "grants.selectPolicy": "Scegli un criterio oggetto",
         "grants.updated": "Condivisione aggiornata.",
-        "grants.skipped": "Condiviso, escluse le proiezioni senza permessi: {ids}",
         "copy.title": "Copia pannello",
         "copy.saveAsTemplateTitle": "Salva come modello",
         "copy.fromTemplateTitle": "Crea da modello",

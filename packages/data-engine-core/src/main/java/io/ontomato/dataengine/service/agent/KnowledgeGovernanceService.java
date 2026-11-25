@@ -44,26 +44,26 @@ public class KnowledgeGovernanceService {
   private final AuthorizationService authorization;
   private final Map<String,JSONSchema> schemas = new HashMap<>();
 
-  private static final Operation OPEN_WINDOW = new Operation("knowledge-governance.window.open", CHANGE);
-  private static final Operation CLOSE_WINDOW = new Operation("knowledge-governance.window.close", CHANGE);
+  private static final Operation OPEN_WINDOW = new Operation("knowledge-governance.window.open", "Open governance window", CHANGE);
+  private static final Operation CLOSE_WINDOW = new Operation("knowledge-governance.window.close", "Close governance window", CHANGE);
 
   private enum Action {
-    READ_INPUT("input.read", READ, false),
-    READ_KNOWLEDGE("knowledge.read", READ, true),
-    READ_ONTOLOGY("ontology.read", READ, true),
-    READ_WORK_RECORD("work-record.read", READ, false),
-    SEARCH_HISTORY("history.search", READ, false),
-    READ_HISTORY("history.read", READ, false),
-    READ_EVIDENCE("evidence.read", READ, false),
-    COLLECT_TURN_ARTIFACTS("turn-artifacts.collect", READ, false),
-    UPDATE_WORK_RECORD("work-record.update", CHANGE, false),
-    IMPORT_KNOWLEDGE("knowledge.import", CHANGE, true);
+    READ_INPUT("input.read", "Read governance input", READ, false),
+    READ_KNOWLEDGE("knowledge.read", "Read governance knowledge", READ, true),
+    READ_ONTOLOGY("ontology.read", "Read ontology for governance", READ, true),
+    READ_WORK_RECORD("work-record.read", "Read governance work record", READ, false),
+    SEARCH_HISTORY("history.search", "Search governance history", READ, false),
+    READ_HISTORY("history.read", "Read governance history", READ, false),
+    READ_EVIDENCE("evidence.read", "Read governance evidence", READ, false),
+    COLLECT_TURN_ARTIFACTS("turn-artifacts.collect", "Read governance turn artifacts", READ, false),
+    UPDATE_WORK_RECORD("work-record.update", "Update governance work record", CHANGE, false),
+    IMPORT_KNOWLEDGE("knowledge.import", "Import governance knowledge", CHANGE, true);
 
     private final Operation operation;
     private final boolean usesExecutor;
 
-    Action(String id, ManagementOperations.Access access, boolean usesExecutor) {
-      this.operation = new Operation("knowledge-governance." + id, access);
+    Action(String id, String label, ManagementOperations.Access access, boolean usesExecutor) {
+      this.operation = new Operation("knowledge-governance." + id, label, access);
       this.usesExecutor = usesExecutor;
     }
 
@@ -73,6 +73,10 @@ public class KnowledgeGovernanceService {
       }
       throw AgentHttpException.invalid("Unknown governance action");
     }
+  }
+
+  public static boolean businessAction(String action) {
+    return Action.resolve(action).usesExecutor;
   }
 
   @Component
@@ -196,7 +200,7 @@ public class KnowledgeGovernanceService {
     var result=open(id,run,owner,false,"workbench",session,deadline,null);
     result.put("token",grants.issue(executor,owner.domainId(),"knowledge-governance",run,
       Instant.parse(result.getString("expiresAt")).toEpochMilli(),List.of(),null,
-      JSONObject.of("initiatorUserId",owner.userId(),"executionUserId",selected)));
+      JSONObject.of("initiatorUserId",owner.userId(),"executionUserId",selected,"recordId",id)));
     return result;
   }
   public void closePlatform(String run,String domain) {

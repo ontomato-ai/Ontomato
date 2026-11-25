@@ -59,15 +59,15 @@ public class BusinessConfigController {
         @Override
         public List<Operation> managementOperations() {
             return List.of(
-                new Operation(GENERAL_READ, ManagementOperations.Access.READ),
-                new Operation(GENERAL_CHANGE, ManagementOperations.Access.CHANGE),
-                new Operation(CONNECTIONS_READ, ManagementOperations.Access.READ),
-                new Operation(CONNECTIONS_CHANGE, ManagementOperations.Access.CHANGE),
-                new Operation(CONNECTIONS_TEST, ManagementOperations.Access.CHANGE),
-                new Operation(CONNECTIONS_PROBE, ManagementOperations.Access.CHANGE),
-                new Operation(VECTORS_READ, ManagementOperations.Access.READ),
-                new Operation(VECTORS_CHANGE, ManagementOperations.Access.CHANGE),
-                new Operation(DIAGNOSTIC_READ, ManagementOperations.Access.READ));
+                new Operation(GENERAL_READ, "Read general settings", ManagementOperations.Access.READ),
+                new Operation(GENERAL_CHANGE, "Change general settings", ManagementOperations.Access.CHANGE),
+                new Operation(CONNECTIONS_READ, "Read data connections", ManagementOperations.Access.READ),
+                new Operation(CONNECTIONS_CHANGE, "Change data connections", ManagementOperations.Access.CHANGE),
+                new Operation(CONNECTIONS_TEST, "Test data connections", ManagementOperations.Access.CHANGE),
+                new Operation(CONNECTIONS_PROBE, "Probe the sandbox connection", ManagementOperations.Access.CHANGE),
+                new Operation(VECTORS_READ, "Read vector index configuration", ManagementOperations.Access.READ),
+                new Operation(VECTORS_CHANGE, "Change vector index configuration", ManagementOperations.Access.CHANGE),
+                new Operation(DIAGNOSTIC_READ, "Read monitoring configuration", ManagementOperations.Access.READ));
         }
     }
 

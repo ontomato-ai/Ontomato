@@ -132,11 +132,11 @@ describe("official presentational PageHeader component", () => {
     }
   });
 
-  it("supports custom #title slot (for projection-bound object names) and non-compact mode", () => {
+  it("supports custom #title slot (for projection-bound object names) and expanded density", () => {
     const view = mountHeader(
       {
         backLabel: "Back to object types",
-        compact: false,
+        density: "expanded",
       },
       {
         title: () =>

@@ -28,7 +28,7 @@ import { installContentLayout } from "../../content/layout";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
-import { productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
+import { mountCurrentProductDecisions, productGrantCheck } from "../../__tests__/fixtures/product-grant-check";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { panelStateKey } from "../../services/product-panels/personal-state-key";
 import { errorHandler } from "../middleware/error-handler";
@@ -62,6 +62,7 @@ const nestedRootId = "nested-root-fixture";
 const nestedAgentId = "51e55fe0-352a-4958-87a2-2d348d470758";
 const nestedDeletes: string[] = [];
 const grants = new Map<string, string>();
+const retired = new Set<string>();
 const shared = new Set<string>();
 const trialApplications = new Set<string>();
 const editOnlyPanels = new Set<string>();
@@ -105,14 +106,36 @@ beforeAll(async () => {
       { entryId: "app-personal/main", roots: { panelIds: [personalPanelId], agentIds: [] } },
       ...[...trialApplications].map(id => ({ entryId: `${id}/trial`, roots: { panelIds: [id], agentIds: [] } })),
     ] : [] });
-  const granted = (token: string | undefined, id: string, verb: "use" | "edit") => {
-    const owner = grants.get(id);
+  const granted = (token: string | undefined, id: string, verb: "use" | "edit", storedOwner?: string | null) => {
+    const owner = grants.get(id) ?? storedOwner;
     return owner !== undefined && ((owner === token && (verb === "edit" || !editOnlyPanels.has(id))) || (verb === "use" && (
       token === "author" || shared.has(id) || id === personalPanelId || id === personalChildId ||
       id === snapshotPanelId || id === "visible-projection" ||
       (token === "hidden-panel-owner" && id === "cascade-in-use")
     )));
   };
+  mountCurrentProductDecisions(app, {
+    token: "fixture-service", domain: "test-domain",
+    allow: ({ target, ownerFacts, verb }, caller) =>
+      verb !== "VIEW" && granted(caller, target.id, verb === "EDIT" ? "edit" : "use", ownerFacts.ownerId),
+  });
+  app.post("/authorization/objects/retire", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    expect(req.body.target.domainId).toBe("test-domain");
+    retired.add(req.body.target.id);
+    shared.delete(req.body.target.id);
+    res.sendStatus(204);
+  });
+  app.post("/authorization/objects/product-domain-use", (req, res) => {
+    const { target, ownerFacts, shared: enabled } = req.body;
+    if (!granted(req.header("tk"), target.id, "edit", ownerFacts.ownerId)) {
+      res.status(403).json({ code: "PRODUCT_FORBIDDEN" });
+      return;
+    }
+    if (enabled) shared.add(target.id);
+    else shared.delete(target.id);
+    res.sendStatus(204);
+  });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     grants.set(req.body.id, req.body.ownerId);
@@ -475,11 +498,12 @@ it("lets the panel's registered owner clean it up after retiring a same-ID trial
   expect(retired.status).toBe(204);
   const record = await request("GET", resource, "author");
   expect(record.status).toBe(200);
-  expect(productPanelResponseSchema.parse(await record.json()).panel).toMatchObject({ id, ownerId: "author", revision: 1, editable: false });
+  expect(productPanelResponseSchema.parse(await record.json()).panel).toMatchObject({ id, ownerId: "author", revision: 1, editable: true });
   const rows = await request("GET", `product-panels?scope=mine&q=${id}`, "author");
   expect(await rows.json()).toMatchObject({ items: [{ id, revision: 1 }] });
   expect((await request("GET", resource, "unrelated-reader")).status).toBe(403);
-  expect((await request("GET", `${resource}?view=1`, "author")).status).toBe(403);
+  expect((await request("GET", `${resource}?view=1`, "author")).status).toBe(200);
+  expect((await request("GET", `${resource}?view=1`, "unrelated-reader")).status).toBe(403);
   expect((await request("DELETE", `${resource}?revision=1`, "unrelated-reader")).status).toBe(403);
 
   const deleted = await request("DELETE", `${resource}?revision=1`, "author");
@@ -562,7 +586,7 @@ it("only accepts a recovered projection update while the original panel is its s
   });
 });
 
-it("shares editable member projections, reports skipped members once and does not revoke their sharing", async () => {
+it("shares the current panel independently of its member projections", async () => {
   const editable = "share-editable", restricted = "share-restricted", id = "share-panel";
   await saveProjection(editable);
   await saveProjection(restricted, "projection-owner");
@@ -571,20 +595,20 @@ it("shares editable member projections, reports skipped members once and does no
   const path = `product-panels/${id}/domain-grant`;
   const enabled = await request("POST", path, "author", { shared: true });
   expect(enabled.status).toBe(200);
-  expect(await enabled.json()).toEqual({ success: true, skippedProjectionIds: [restricted] });
+  expect(await enabled.json()).toEqual({ success: true });
   const read = (kind: string, productId: string) => request("GET", `product-${kind}s/${productId}`, "reader");
   expect((await read("panel", id)).status).toBe(200);
-  expect((await read("projection", editable)).status).toBe(200);
+  expect((await read("projection", editable)).status).toBe(403);
   expect((await read("projection", restricted)).status).toBe(403);
 
   const disabled = await request("POST", path, "author", { shared: false });
   expect(disabled.status).toBe(200);
-  expect(await disabled.json()).toEqual({ success: true, skippedProjectionIds: [] });
+  expect(await disabled.json()).toEqual({ success: true });
   expect((await read("panel", id)).status).toBe(403);
-  expect((await read("projection", editable)).status).toBe(200);
+  expect((await read("projection", editable)).status).toBe(403);
 });
 
-it("shares editable default placements and reports the defaults the caller cannot share", async () => {
+it("does not propagate panel sharing to default placements", async () => {
   const editable = "share-default-editable", restricted = "share-default-restricted", id = "share-default-panel";
   await saveProjection(editable);
   await saveProjection(restricted, "projection-owner");
@@ -596,8 +620,8 @@ it("shares editable default placements and reports the defaults the caller canno
   expect(saved.status, await saved.text()).toBe(200);
   const enabled = await request("POST", `product-panels/${id}/domain-grant`, "author", { shared: true });
   expect(enabled.status).toBe(200);
-  expect(await enabled.json()).toEqual({ success: true, skippedProjectionIds: [restricted] });
-  expect((await request("GET", `product-projections/${editable}`, "reader")).status).toBe(200);
+  expect(await enabled.json()).toEqual({ success: true });
+  expect((await request("GET", `product-projections/${editable}`, "reader")).status).toBe(403);
   expect((await request("GET", `product-projections/${restricted}`, "reader")).status).toBe(403);
 });
 
@@ -622,10 +646,10 @@ it("deletes only editable orphan projections and honors hidden panel references"
     `SELECT id FROM "${state.schema}".product_projections WHERE id=ANY($1::text[]) ORDER BY id`, [[orphan, restricted, inUse]],
   );
   expect(rows.map(row => row.id)).toEqual([inUse, restricted]);
-  expect(grants.has(orphan)).toBe(false);
-  expect(grants.has(id)).toBe(false);
-  expect(grants.has(restricted)).toBe(true);
-  expect(grants.has(inUse)).toBe(true);
+  expect(retired.has(orphan)).toBe(true);
+  expect(retired.has(id)).toBe(true);
+  expect(retired.has(restricted)).toBe(false);
+  expect(retired.has(inUse)).toBe(false);
 });
 
 it("cleans up a panel's default placement and preserves projections used by other placements", async () => {

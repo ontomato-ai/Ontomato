@@ -92,6 +92,12 @@ class MetricRecallTest {
     return JSONObject.from(ontology.recall(JSONObject.of("question", "How many people?"), access));
   }
 
+  @org.junit.jupiter.api.BeforeEach
+  void configureDefinitionAccess() {
+    org.springframework.test.util.ReflectionTestUtils.setField(ontology, "metricDefinitions",
+        io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain", "user"));
+  }
+
   @Test
   void aPublishedMetricWithoutAPresetIsOneItemWithItsDeclaredParameters() {
     var metric = metric("plain", "person");

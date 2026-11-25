@@ -10,6 +10,8 @@ import io.ontomato.dataengine.dao.*;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.impl.*;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
 import io.ontomato.dataengine.util.*;
@@ -101,6 +103,7 @@ class AgentWritePostgresContractTest {
       functions.initIndex();
       var actions = new ActionDao();
       ReflectionTestUtils.setField(actions, "jdbcTemplate", jdbc);
+      ReflectionTestUtils.setField(actions, "assetLookupPolicy", (AssetLookupPolicy) (database, table) -> true);
       ReflectionTestUtils.setField(actions, "functions", functions);
       var embedding = mock(EmbeddingService.class);
       when(embedding.embedding(anyString(), any())).thenReturn(new float[] {0, 1});
@@ -110,6 +113,10 @@ class AgentWritePostgresContractTest {
       ReflectionTestUtils.setField(actions, "retrievalGate", gate);
       actions.initIndex();
       var assets = new ActionServiceImpl();
+      var authorization = mock(ActionAuthorization.class);
+      var subject = mock(SubjectContext.class);
+      when(authorization.subject(any(QueryAccessService.GrantUser.class))).thenReturn(subject);
+      ReflectionTestUtils.setField(assets, "authorization", authorization);
       ReflectionTestUtils.setField(assets, "actionDao", actions);
       ReflectionTestUtils.setField(assets, "langService", mock(LangService.class));
       var assetInput = new MockHttpInputMessage(JSON.toJSONBytes(JSON.parseArray(fixture("actions.json")).getJSONObject(0)));
@@ -120,6 +127,7 @@ class AgentWritePostgresContractTest {
       try (var identity = mockStatic(SystemUtils.class)) {
         identity.when(SystemUtils::getCurUser).thenReturn(new QueryAccessService.GrantUser("test", "contract"));
         assertTrue(assets.importActions(bundle, "en").getBooleanValue("success"));
+        verify(authorization).requireCreate(subject);
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM action", Integer.class));
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM function", Integer.class));
       }
@@ -180,7 +188,8 @@ class AgentWritePostgresContractTest {
         assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM contract_person", Integer.class));
         assertEquals(21, jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'", Integer.class));
       }
-      python(endpoint, functions.queryById("contract-update-person-function").getCode());
+      String functionId = jdbc.queryForObject("SELECT function_id FROM action WHERE id=?", String.class, asset.getString("id"));
+      python(endpoint, functions.queryById(functionId).getCode());
       assertEquals(99, jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'", Integer.class));
       python(endpoint, "from query_runtime import delete\ndelete('contract_person', " + fixture("valid-where.json") + ")");
       assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM contract_person", Integer.class));

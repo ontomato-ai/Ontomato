@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 final class WorkbenchManagementOperations implements ManagementOperations.Contributor {
-    private record Declaration(String id, String access) {}
+    private record Declaration(String id, String name, String access) {}
 
     private final List<ManagementOperations.Operation> operations;
 
@@ -20,7 +20,7 @@ final class WorkbenchManagementOperations implements ManagementOperations.Contri
         try (var input = new ClassPathResource("ontology-contracts/workbench-management-operations.json").getInputStream()) {
             var declarations = mapper.readValue(input, new TypeReference<Map<String, Declaration>>() {});
             operations = declarations.values().stream()
-                .map(entry -> new ManagementOperations.Operation(entry.id(),
+                .map(entry -> new ManagementOperations.Operation(entry.id(), entry.name(),
                     ManagementOperations.Access.valueOf(entry.access().toUpperCase(Locale.ROOT))))
                 .toList();
         }

@@ -1,5 +1,10 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access;
+
 import io.ontomato.dataengine.bean.function.Function;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,6 +78,8 @@ public class MetricViewController {
 	
 	@Autowired
 	private MetricViewService metricViewService;
+
+    @Autowired private CapabilityDefinitions definitions;
 	
 	@Autowired
 	private LangService langService;
@@ -97,13 +104,16 @@ public class MetricViewController {
 			if (persistence == null) {
 				persistence = false;
 			}
-			MetricView metricView = metricViewService.generateFromNatureLanguage(question, lang, user.getDomainId(), persistence);
+			Selection publication = objectMapper.convertValue(param.get("publicationAccess"), Selection.class);
+            MetricView metricView = metricViewService.generateFromNatureLanguage(question, lang, user.getDomainId(), persistence, publication);
 			if (metricView == null) {
 				throw new Exception(langService.get(lang, "MetricView.notGenerated"));
 			}
 			ret.put("success", true);
 			ret.put("data", metricView);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -126,6 +136,7 @@ public class MetricViewController {
 		} else {
 			MetricView stored = metricViewService.queryById(id, domainId);
 			if (stored == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
+			definitions.require(definitions.current(), access(stored, Verb.EDIT));
 			saved = PanelFormFields.asset(stored);
 		}
 		JSONObject values = PanelFormFields.withSubmitted(saved, param, submitted);
@@ -149,12 +160,16 @@ public class MetricViewController {
 			if (metricView.getFunction() != null) {
 				metricView.getFunction().setDomainId(user.getDomainId());
 			}
-			MetricView saved = metricViewService.save(metricView, lang);
+			Selection publication = objectMapper.convertValue(param.get("publicationAccess"), Selection.class);
+            MetricView saved = publication == null ? metricViewService.save(metricView, lang)
+                    : metricViewService.save(metricView, lang, publication);
             ret.put("data", withDisplay(saved, subjectNames(user.getDomainId(), List.of(saved)), lang));
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -172,7 +187,9 @@ public class MetricViewController {
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -196,10 +213,13 @@ public class MetricViewController {
 			MetricView metricView = metricViewService.queryById(id, user.getDomainId());
             if (metricView == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
 			ret.put("success", true);
+			definitions.requireRead(definitions.subject(user), access(metricView, Verb.USE));
 			ret.put("data", withDisplay(metricView, subjectNames(user.getDomainId(), List.of(metricView)), lang));
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -219,18 +239,19 @@ public class MetricViewController {
 			String origin = param.getString("origin");
 			String className = param.getString("className");
 			ret.put("success", true);
-			if (param.getBooleanValue("countOnly")) {
-				ret.put("data", JSONObject.of("total",
-						metricViewService.count(status, null, className, origin, user.getDomainId())));
-			} else {
-				List<MetricView> metricViews = metricViewService.queryList(status, null, className, user.getDomainId());
-				if (origin != null && !origin.isBlank()) {
-					String expectedOrigin = origin.trim();
-					metricViews = metricViews.stream().filter(metric -> expectedOrigin.equals(metric.getOrigin())).toList();
-				}
-				ret.put("data", withDisplay(metricViews, user.getDomainId(), lang));
-			}
-		} catch (Exception e) {
+            if (param.getBooleanValue("countOnly")) {
+                ret.put("data", JSONObject.of("total", metricViewService.count(status, null, className, origin, user.getDomainId())));
+                return ret;
+            }
+            var subject = definitions.subject(user);
+            String expectedOrigin = origin == null ? "" : origin.trim();
+            List<MetricView> metricViews = metricViewService.queryList(status, null, className, user.getDomainId()).stream()
+                    .filter(metric -> expectedOrigin.isEmpty() || expectedOrigin.equals(metric.getOrigin()))
+                    .filter(metric -> definitions.canRead(subject, access(metric, Verb.USE))).toList();
+            ret.put("data", withDisplay(metricViews, user.getDomainId(), lang));
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -247,7 +268,9 @@ public class MetricViewController {
 					.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"metricViews.zip\"")
 					.contentType(MediaType.APPLICATION_OCTET_STREAM)
 					.body(data);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			return ResponseEntity.internalServerError().build();
 		}
@@ -260,7 +283,9 @@ public class MetricViewController {
 		JSONObject ret = new JSONObject();
 		try {
 			ret = metricViewService.importMetricViews(file.getBytes(), lang);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -279,7 +304,9 @@ public class MetricViewController {
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -293,8 +320,11 @@ public class MetricViewController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			List<MetricViewService.StatusResult> results = metricViewService.setStatus(user.getDomainId(),
-					statusIds(param), param.getString("status"), lang);
+			Selection publication = objectMapper.convertValue(param.get("publicationAccess"), Selection.class);
+            var ids = statusIds(param);
+            String status = param.getString("status");
+            var results = publication == null ? metricViewService.setStatus(user.getDomainId(), ids, status, lang)
+                    : metricViewService.setStatus(user.getDomainId(), ids, status, lang, publication);
 			JSONArray items = new JSONArray();
 			for (MetricViewService.StatusResult result : results) {
 				if (result.refusal() != null) {
@@ -311,7 +341,9 @@ public class MetricViewController {
 			ret.put("success", true);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -391,8 +423,10 @@ public class MetricViewController {
 				metricViews = metricViewService.find(question.trim(), className, user.getDomainId());
 			}
 			JSONArray metricViewDefs = new JSONArray();
-			for (MetricView metricView : metricViews) {
-				JSONObject metricViewDef = new JSONObject();
+			var subject = definitions.subject(user);
+            for (MetricView metricView : metricViews) {
+                if (!definitions.allows(subject, access(metricView, Verb.USE))) continue;
+                JSONObject metricViewDef = new JSONObject();
 				metricViewDef.put("id", metricView.getId());
 				metricViewDef.put("name", metricView.getName());
 				metricViewDef.put("logic", metricView.getFunction().getLogic());
@@ -403,7 +437,9 @@ public class MetricViewController {
 			}
 			ret.put("success", true);
 			ret.put("data", metricViewDefs);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -433,7 +469,9 @@ public class MetricViewController {
 			ret.put("data", metricViewContent);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -461,7 +499,9 @@ public class MetricViewController {
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
@@ -493,7 +533,9 @@ public class MetricViewController {
 			((PythonExecuteResult)o[1]).markCompleteness(ret);
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
-		} catch (Exception e) {
+		} catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());

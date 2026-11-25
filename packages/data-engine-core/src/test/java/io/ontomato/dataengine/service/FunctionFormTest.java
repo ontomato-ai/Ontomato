@@ -36,6 +36,8 @@ class FunctionFormTest {
 
   @BeforeEach
   void setup() {
+    ReflectionTestUtils.setField(service, "definitions", io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain-a", "user-1"));
+    ReflectionTestUtils.setField(service, "firstPublication", mock(io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.class));
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "metricViewDao", metricViewDao);
     ReflectionTestUtils.setField(service, "actionDao", actionDao);
@@ -100,13 +102,14 @@ class FunctionFormTest {
 
     Function system = writeFunction();
     system.setId("f1");
-    system.setOrigin(Function.ORIGIN_SYSTEM);
+    existing.setOrigin(Function.ORIGIN_SYSTEM);
     assertRefusal("FUNCTION_SYSTEM", () -> service.save(system, "en"));
+    existing.setOrigin(Function.ORIGIN_USER);
 
     Function otherDomain = writeFunction();
     otherDomain.setId("f1");
     otherDomain.setDomainId("domain-b");
-    assertRefusal("FUNCTION_DOMAIN_MISMATCH", () -> service.save(otherDomain, "en"));
+    assertRefusal("FUNCTION_NOT_FOUND", () -> service.save(otherDomain, "en"));
 
     Function replacement = writeFunction();
     replacement.setId("f1");

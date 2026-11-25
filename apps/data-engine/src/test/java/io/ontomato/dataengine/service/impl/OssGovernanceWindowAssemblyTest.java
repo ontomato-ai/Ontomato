@@ -83,7 +83,7 @@ class OssGovernanceWindowAssemblyTest {
     assertEquals(record,result.getString("id"));
     var stored=jdbc.queryForMap("SELECT owner_id,domain_id FROM ontology_governance_records WHERE id=?::uuid",record);
     assertEquals("admin",stored.get("owner_id"));assertEquals("1",stored.get("domain_id"));
-    var grant=grants.verify(result.getString("token"),run,"/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_work_record");
+    var grant=grants.verifyRequest(result.getString("token"), run, "POST", "/ontology/ai/knowledge-governance/"+record+"/runs/"+run+"/actions/read_work_record");
     assertEquals("admin",grant.getString("userId"));assertEquals("1",grant.getString("domainId"));
   }
   @Test void anotherWorkbenchOwnerIsRejectedWithoutCreatingARecord() throws Exception {

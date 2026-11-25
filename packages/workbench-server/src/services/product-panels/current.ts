@@ -16,8 +16,9 @@ import { lockProducts } from "../../infrastructure/product-write-lock";
 import { HttpError } from "../../utils/errors";
 import { tForLocale } from "../../i18n";
 import type { ProductOwner } from "../product-governance/grants";
-import { grantedProductIds, productGrantAllowed, productGrantsAllowedBatch, productManagementAccess, registerProductResource, requireProductGrant } from "../product-governance/grants";
-import { assertAppBuilderAccess } from "../app-builder/access";
+import type { ObjectPublicationAccess } from "@ontomato/contracts/object-publication";
+import { requireAllowed, requireObject, writeFirstPublication } from "../product-governance/authorization";
+import { currentDefinition, currentDefinitionAccess, definitionKinds } from "./access";
 import { notifyProductDefinitionChanged } from "./definition-stream";
 import { assistantStore } from "../assistant/store";
 import { configuredAssistantSkills } from "../assistant/skill-selection";
@@ -32,16 +33,21 @@ import { deliverEntryDependencyPublications } from "./entry-dependency-publicati
 
 type CurrentDefinition = ProductPanelInput | ProductProjectionInput;
 
-export async function loadCurrentProduct(domainId: string, kind: CurrentProductKind, id: string, client?: PoolClient) {
+export async function loadCurrentProduct(domainId: string, kind: CurrentProductKind, id: string, client?: Pick<PoolClient, "query">) {
   const row = await findCurrentProduct(domainId, kind, id, client);
   if (!row) throw new HttpError(404, "Current product definition not found", "PRODUCT_UNAVAILABLE");
   return row;
 }
 
 export async function requireCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials,
-  kind: CurrentProductKind, id: string, verb: "use" | "edit", client?: PoolClient) {
-  await requireProductGrant(id, verb, credentials);
-  return loadCurrentProduct(owner.domainId, kind, id, client);
+  kind: CurrentProductKind, id: string, verb: "use" | "edit", client?: Pick<PoolClient, "query">) {
+  const row = await loadCurrentProduct(owner.domainId, kind, id, client);
+  if (verb === "edit" && row.domainId === null)
+    throw new HttpError(403, "Platform definitions are read-only", "OBJECT_FORBIDDEN");
+  await requireObject({
+    ...currentDefinition(kind, row, owner.domainId), verb: verb === "use" ? "USE" : "EDIT",
+  }, credentials);
+  return row;
 }
 
 export function requireOrdinaryProjection(input: Pick<ProductProjectionInput, "componentId">) {
@@ -49,34 +55,22 @@ export function requireOrdinaryProjection(input: Pick<ProductProjectionInput, "c
     throw new HttpError(400, "Register a chart through its source card", "CHART_SOURCE_REGISTRATION_REQUIRED");
 }
 async function readCurrentRecord(
-  owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, reportMissingToAuthor: boolean,
+  owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, management: boolean,
 ) {
-  const row = reportMissingToAuthor
-    ? await findCurrentProduct(owner.domainId, kind, id)
-    : await requireCurrentProduct(owner, credentials, kind, id, "use");
+  const row = await findCurrentProduct(owner.domainId, kind, id);
   if (!row) {
-    await assertAppBuilderAccess(credentials);
-    throw new HttpError(404, `${kind === "panel" ? "Panel" : "Projection"} '${id}' does not exist`, "PRODUCT_UNAVAILABLE");
+    const label = kind === "panel" ? "Panel" : "Projection";
+    throw new HttpError(404, management ? `${label} '${id}' does not exist` : "Current product definition not found", "PRODUCT_UNAVAILABLE");
   }
-  const managePanel = reportMissingToAuthor && kind === "panel";
-  if (managePanel) {
-    const access = await readPanelManagementAccess(owner, credentials, row);
-    if (!access.allowed) throw new HttpError(403, "Product use Grant required", "PRODUCT_FORBIDDEN");
-    return { row, editable: access.editable };
-  }
-  if (reportMissingToAuthor) await requireProductGrant(id, "use", credentials);
-  const editable = row.domainId !== null && (await grantedProductIds("edit", credentials)).includes(id);
-  return { row, editable };
+  const { decisions, editable } = await currentDefinitionAccess(kind, [row], owner.domainId, credentials);
+  const canEdit = editable.has(id);
+  if (!management || !canEdit) requireAllowed(decisions[0]);
+  return { row, editable: canEdit };
 }
 
 export async function readPanelManagementAccess(owner: ProductOwner, credentials: AssistantCredentials, row: CurrentProductRow) {
-  if (row.domainId === null)
-    return { allowed: await productGrantAllowed(row.id, "use", credentials), authored: false, editable: false };
-  return productManagementAccess(
-    { domainId: owner.domainId, kind: "panel", id: row.id },
-    { ownerId: row.ownerId, state: "current" },
-    credentials,
-  );
+  const { decisions, editable } = await currentDefinitionAccess("panel", [row], owner.domainId, credentials);
+  return { allowed: decisions[0].allowed || editable.has(row.id), editable: editable.has(row.id) };
 }
 export async function readCurrentProjection(owner: ProductOwner, credentials: AssistantCredentials, id: string, reportMissingToAuthor = false) {
   const { row, editable } = await readCurrentRecord(owner, credentials, "projection", id, reportMissingToAuthor);
@@ -98,27 +92,19 @@ export async function readCurrentProjectionRecords(
   const results = new Map<string, CurrentProjectionBatchItem>();
   if (!uniqueIds.length) return results;
 
-  const allowed = await productGrantsAllowedBatch(uniqueIds, "use", credentials);
-  const allowedIds: string[] = [];
+  const rows = await findCurrentProducts(owner.domainId, "projection", uniqueIds);
+  const available = [...rows.values()];
+  const { decisions, editable } = await currentDefinitionAccess("projection", available, owner.domainId, credentials);
+  const byId = new Map(available.map((row, index) => [row.id, decisions[index]]));
   for (const id of uniqueIds) {
-    if (allowed[id]) allowedIds.push(id);
-    else results.set(id, { ok: false, error: new HttpError(403, "Product use Grant required", "PRODUCT_FORBIDDEN") });
-  }
-  if (!allowedIds.length) return results;
-
-  const rows = await findCurrentProducts(owner.domainId, "projection", allowedIds);
-  const hasDomainRows = [...rows.values()].some(row => row.domainId !== null);
-  const editableIds = hasDomainRows ? new Set(await grantedProductIds("edit", credentials)) : undefined;
-
-  for (const id of allowedIds) {
     const row = rows.get(id);
     if (!row) {
       results.set(id, { ok: false, error: new HttpError(404, "Current product definition not found", "PRODUCT_UNAVAILABLE") });
       continue;
     }
     try {
-      const editable = row.domainId !== null && (editableIds?.has(id) ?? false);
-      results.set(id, { ok: true, projection: projectionDefinition(row, editable) });
+      requireAllowed(byId.get(id)!);
+      results.set(id, { ok: true, projection: projectionDefinition(row, editable.has(id)) });
     } catch (error) {
       results.set(id, { ok: false, error });
     }
@@ -152,13 +138,13 @@ export async function requireDirectPanelMember(owner: ProductOwner, credentials:
 async function currentForSave(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string, revision: number) {
   domainProductIdSchema.parse(id);
   const existing = await findCurrentProduct(owner.domainId, kind, id);
-  if (existing) await requireProductGrant(id, "edit", credentials);
+  if (existing) await requireObject({ ...currentDefinition(kind, existing, owner.domainId), verb: "EDIT" }, credentials);
   if ((existing?.revision ?? 0) !== revision) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
   return existing;
 }
 
-async function validateProjectionForSave(client: PoolClient, owner: ProductOwner, id: string, input: ProductProjectionInput) {
-  await validateProjectionComponent(id, input, undefined, { domainId: owner.domainId, authorId: owner.userId, client });
+async function validateProjectionForSave(client: PoolClient, owner: ProductOwner, credentials: AssistantCredentials, id: string, input: ProductProjectionInput) {
+  await validateProjectionComponent(id, input, undefined, { domainId: owner.domainId, credentials, client });
   for (const { target, field } of declaredProjectionAgents(input)) {
     if (target.kind === "id" && !await assistantStore.findAgent(target.id, owner.domainId, client)) {
       throw new HttpError(400, `Projection '${id}', ${field}.id '${target.id}' is not in this domain`, "INVALID_PANEL_REFERENCE");
@@ -167,8 +153,9 @@ async function validateProjectionForSave(client: PoolClient, owner: ProductOwner
 }
 
 export async function insertCurrentProduct(client: PoolClient, owner: ProductOwner, credentials: AssistantCredentials,
-  kind: CurrentProductKind, id: string, input: CurrentDefinition): Promise<CurrentProductRow> {
+  kind: CurrentProductKind, id: string, input: CurrentDefinition, publicationAccess?: ObjectPublicationAccess): Promise<CurrentProductRow> {
   domainProductIdSchema.parse(id);
+  await requireObject({ create: definitionKinds[kind] }, credentials);
   const other = t(currentProductTables[kind === "panel" ? "projection" : "panel"]);
   const collision = await client.query(
     `SELECT id FROM ${other} WHERE domain_id=$1 AND id=$2
@@ -177,27 +164,30 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
     [owner.domainId, id],
   );
   if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");
-  if ("componentId" in input) await validateProjectionForSave(client, owner, id, input);
-  await registerProductResource(owner, id, input.visibility === "domain", { createOnly: true });
-  await requireProductGrant(id, "edit", credentials);
+  if ("componentId" in input) await validateProjectionForSave(client, owner, credentials, id, input);
   const result = await client.query(`INSERT INTO ${t(currentProductTables[kind])} (domain_id,id,owner_id,definition) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)]);
   if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
   await updatePanelDependencies(client, owner.domainId, owner.userId, kind, id);
-  return result.rows[0];
+  const row = result.rows[0];
+  if (publicationAccess) {
+    const object = currentDefinition(kind, row, owner.domainId);
+    await writeFirstPublication({ ...object, ownerFacts: { ...object.ownerFacts, state: "DRAFT" } }, publicationAccess, credentials);
+  }
+  return row;
 }
 
 async function save(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string,
-  input: CurrentDefinition, revision: number, solePanelId?: string) {
+  input: CurrentDefinition, revision: number, solePanelId?: string, publicationAccess?: ObjectPublicationAccess) {
   const row = await transaction(async client => {
     await lockProducts(client, owner);
-    if (revision !== 0 && "componentId" in input) await validateProjectionForSave(client, owner, id, input);
+    if (revision !== 0 && "componentId" in input) await validateProjectionForSave(client, owner, credentials, id, input);
     if (solePanelId !== undefined) {
       const users = await findPanelUsers(owner.domainId, "projection", id, client);
       if (users.length !== 1 || users[0]!.id !== solePanelId)
         throw new HttpError(409, "The projection's referencing panels changed. Register again to check its current uses.", "PROJECTION_REUSE_CONFLICT");
     }
     await validateCurrentProductReferences(owner, credentials, kind, id, input, client);
-    if (revision === 0) return insertCurrentProduct(client, owner, credentials, kind, id, input);
+    if (revision === 0) return insertCurrentProduct(client, owner, credentials, kind, id, input, publicationAccess);
     const result = await client.query(`UPDATE ${t(currentProductTables[kind])} SET definition=$3::jsonb,revision=revision+1,updated_at=now() WHERE domain_id=$1 AND id=$2 AND revision=$4 RETURNING ${currentProductColumns}`, [owner.domainId, id, JSON.stringify(input), revision]);
     if (!result.rows.length) throw new HttpError(409, "Definition changed; reload before saving", "PRODUCT_CONFLICT");
     await updatePanelDependencies(client, owner.domainId, owner.userId, kind, id);
@@ -223,14 +213,14 @@ export async function saveCurrentProjection(
   }
   if (existing?.definition.componentId === METRIC_CHART_COMPONENT)
     throw new HttpError(400, "A registered chart cannot change its component, metric or source", "CHART_SOURCE_IMMUTABLE");
-  const { revision, ...input } = request;
+  const { revision, publicationAccess, ...input } = request;
   requireOrdinaryProjection(input);
-  return productProjectionSchema.parse(await save(owner, credentials, "projection", id, input, revision, solePanelId));
+  return productProjectionSchema.parse(await save(owner, credentials, "projection", id, input, revision, solePanelId, publicationAccess));
 }
 
-export async function saveCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, input: ProductPanelInput, revision: number) {
+export async function saveCurrentPanel(owner: ProductOwner, credentials: AssistantCredentials, id: string, input: ProductPanelInput, revision: number, publicationAccess?: ObjectPublicationAccess) {
   await currentForSave(owner, credentials, "panel", id, revision);
-  return productPanelSchema.parse(await save(owner, credentials, "panel", id, input, revision));
+  return productPanelSchema.parse(await save(owner, credentials, "panel", id, input, revision, undefined, publicationAccess));
 }
 
 /** Java authorizes the registrant. This service call checks the current definitions used by the declaration. */

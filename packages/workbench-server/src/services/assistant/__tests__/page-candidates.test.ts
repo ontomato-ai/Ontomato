@@ -1,3 +1,4 @@
+import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -20,12 +21,25 @@ import type { AgentRow } from "../store";
 const mocks = vi.hoisted(() => ({
   agents: vi.fn<[], Promise<AgentRow[]>>(),
   opsDiagnosis: vi.fn<[], Promise<AgentRow | undefined>>(),
-  profile: vi.fn<[string, string[], ReadonlySet<string>], Promise<Map<string, string>>>(),
+  profile: vi.fn<[{ domainId: string; userId: string }, string[]], Promise<Map<string, string>>>(),
   findByUse: vi.fn(),
   observeAccess: vi.fn<[], Promise<void>>(),
   homePanelId: vi.fn<[], Promise<string | null>>(),
 }));
 
+vi.mock("../../../infrastructure/product-current", () => ({
+  findCurrentProducts: async (domainId: string, kind: string, ids: string[]) => new Map(
+    [...new Set(offerings.flatMap(offer => offer.resourceIds))]
+      .filter(id => ids.includes(id) && (kind === "panel") === !id.startsWith("proj-"))
+      .map(id => [id, { id, domainId, ownerId: "author" }]),
+  ),
+}));
+vi.mock("../../product-governance/authorization", async original => ({
+  ...await original<typeof import("../../product-governance/authorization")>(),
+  decideObjects: async (requests: ObjectDecisionRequest[]) => requests.map(request =>
+    "target" in request && request.verb === "USE" && grantedIds.includes(request.target.id)
+      ? { allowed: true } : { allowed: false, code: "FORBIDDEN", reason: "Denied" }),
+}));
 vi.mock("../store", () => ({ assistantStore: { channelAgents: mocks.agents } }));
 vi.mock("../authorization", () => ({
   allowedAgents: async (agents: AgentRow[]) => agents.filter(agent => Object.values(agentIds).includes(agent.id) || grantedIds.includes(agent.id)),
@@ -268,13 +282,6 @@ beforeEach(() => {
         });
         pageSkillsFetches += 1;
         return Response.json({ success: true, data: projection });
-      }
-      if (url.endsWith("/product-governance/resources")) {
-        return Response.json({ ids: [...grantedIds, ...Object.values(agentIds)] });
-      }
-      if (url.endsWith("/product-governance/check")) {
-        const body = JSON.parse(String(init?.body ?? "{}")) as { id?: string };
-        return Response.json({ allowed: Boolean(body.id && grantedIds.includes(body.id)) });
       }
       if (url.includes("/resolve-entry?")) {
         const response = panelUsesHandler(url);

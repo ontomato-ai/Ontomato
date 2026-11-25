@@ -359,6 +359,15 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 
 	@Override
 	public FormDescription objectTypeForm(FormRequest body, User user, String lang) {
+		return buildObjectTypeForm(body, user, lang, false);
+	}
+
+	@Override
+	public FormDescription objectTypeInlineForm(FormRequest body, User user, String lang) {
+		return buildObjectTypeForm(body, user, lang, true);
+	}
+
+	private FormDescription buildObjectTypeForm(FormRequest body, User user, String lang, boolean inline) {
 		Map<String, Object> rule = rule(user);
 		boolean edit = editTarget(body);
 		String className = trim(body.target().primaryKey());
@@ -373,11 +382,20 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 					? draftObjectTypeUpdate(rule, className, values, user, lang)
 					: draftObjectTypeCreate(rule, values, user, lang);
 		}
-		return new FormDescription(objectTypeFields(edit, lang), values, objectTypeFormSave(edit, lang));
+		return new FormDescription(objectTypeFields(edit, inline, lang), values, objectTypeFormSave(edit, lang));
 	}
 
 	@Override
 	public FormDescription attributeForm(FormRequest body, User user, String lang) {
+		return buildAttributeForm(body, user, lang, false);
+	}
+
+	@Override
+	public FormDescription attributeInlineForm(FormRequest body, User user, String lang) {
+		return buildAttributeForm(body, user, lang, true);
+	}
+
+	private FormDescription buildAttributeForm(FormRequest body, User user, String lang, boolean inline) {
 		Map<String, Object> rule = rule(user);
 		boolean edit = editTarget(body);
 		String[] key = edit ? attributeKey(body.target().primaryKey()) : null;
@@ -391,7 +409,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		if (draftToCheck(body)) {
 			values = edit ? draftAttributeUpdate(rule, key, values, user, lang) : draftAttributeCreate(rule, values, user, lang);
 		}
-		return new FormDescription(attributeFields(rule, edit, attrDef, lang), values, attributeFormSave(edit, lang));
+		return new FormDescription(attributeFields(rule, edit, inline, attrDef, lang), values, attributeFormSave(edit, lang));
 	}
 
 	@Override
@@ -956,6 +974,11 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	/** One field of a panel form, as the contract describes it; the reason appears only on a locked field. */
 	private static ObjectNode panelField(String path, String label, boolean required, ObjectNode control,
 			ObjectNode valueSchema, boolean readOnly, String readOnlyReason, boolean refreshOnChange) {
+		return panelField(path, label, required, control, valueSchema, readOnly, readOnlyReason, refreshOnChange, null);
+	}
+
+	private static ObjectNode panelField(String path, String label, boolean required, ObjectNode control,
+			ObjectNode valueSchema, boolean readOnly, String readOnlyReason, boolean refreshOnChange, String submitOn) {
 		ObjectNode field = object("path", path, "label", label, "control", control, "valueSchema", valueSchema,
 				"required", required, "readOnly", readOnly);
 		if (readOnlyReason != null) {
@@ -963,6 +986,9 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		}
 		if (refreshOnChange) {
 			field.put("refreshOnChange", true);
+		}
+		if (submitOn != null) {
+			field.put("submitOn", submitOn);
 		}
 		return field;
 	}
@@ -1030,7 +1056,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		return labels;
 	}
 
-	private List<ObjectNode> objectTypeFields(boolean edit, String lang) {
+	private List<ObjectNode> objectTypeFields(boolean edit, boolean inline, String lang) {
 		Map<String, String> label = labels(OBJECT_TYPE_LABEL_KEYS, lang);
 		String classNameLabel = label.get("className");
 		String primaryKeyNameLabel = label.get("primaryKeyName");
@@ -1039,12 +1065,13 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		List<ObjectNode> fields = new ArrayList<>();
 		if (edit) {
 			// Match the detail view's edit order: editable display name first, read-only API name second, description last.
+			String textSubmitOn = inline ? "blur" : null;
 			fields.add(panelField("/showName", showNameLabel, false, textControl(false, 80),
-					stringSchema(showNameLabel, 80), false, null, false));
-			fields.add(panelField("/className", classNameLabel, false, textControl(false),
+					stringSchema(showNameLabel, 80), false, null, false, textSubmitOn));
+			fields.add(panelField("/className", classNameLabel, false, inline ? hiddenControl() : textControl(false),
 					stringSchema(classNameLabel), true, null, false));
 			fields.add(panelField("/classDesc", descLabel, false, textControl(true, 400),
-					stringSchema(descLabel, 400), false, null, false));
+					stringSchema(descLabel, 400), false, null, false, textSubmitOn));
 		} else {
 			fields.add(panelField("/className", classNameLabel, true,
 					textControl(false, 80, langService.get(lang, "Admin.form.exampleClassName")),
@@ -1062,8 +1089,8 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		return fields;
 	}
 
-	private List<ObjectNode> attributeFields(Map<String, Object> rule, boolean edit, Map<String, Object> attrDef,
-			String lang) {
+	private List<ObjectNode> attributeFields(Map<String, Object> rule, boolean edit, boolean inline,
+			Map<String, Object> attrDef, String lang) {
 		Map<String, String> label = labels(ATTRIBUTE_LABEL_KEYS, lang);
 		String ownerLabel = label.get("className");
 		String nameLabel = label.get("name");
@@ -1077,24 +1104,27 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		boolean primaryKeyEligible = attrDef != null && "varchar".equals(attrDef.get("type"));
 		List<ObjectNode> fields = new ArrayList<>();
 		if (edit) {
-			// Inline edit keeps owner/name/type hidden (already displayed on the row above) and shows editable fields.
+			// Inline edit keeps owner/name hidden; visual modeling inline mode renders read-only type and auto-saves fields.
+			String textSubmitOn = inline ? "blur" : null;
+			String toggleSubmitOn = inline ? "change" : null;
 			fields.add(panelField("/className", ownerLabel, true, hiddenControl(), stringSchema(ownerLabel), true, null, false));
 			fields.add(panelField("/name", nameLabel, true, hiddenControl(), stringSchema(nameLabel), true, null, false));
-			fields.add(panelField("/type", typeLabel, true, hiddenControl(), enumSchema(typeLabel, ATTRIBUTE_TYPES), true, null, false));
+			fields.add(panelField("/type", typeLabel, true, inline ? textControl(false) : hiddenControl(),
+					enumSchema(typeLabel, ATTRIBUTE_TYPES), true, null, false));
 			fields.add(panelField("/showName", showNameLabel, false, textControl(false, 80), stringSchema(showNameLabel, 80),
-					false, null, false));
+					false, null, false, textSubmitOn));
 			fields.add(panelField("/attrDesc", descLabel, false, textControl(true, 400), stringSchema(descLabel, 400),
-					false, null, false));
+					false, null, false, textSubmitOn));
 			fields.add(panelField("/enable", enableLabel, false, switchControl(), booleanSchema(enableLabel), locked,
-					locked ? langService.get(lang, "Admin.form.primaryKeyEnableLocked") : null, false));
+					locked ? langService.get(lang, "Admin.form.primaryKeyEnableLocked") : null, false, toggleSubmitOn));
 			fields.add(panelField("/businessKey", businessKeyLabel, false, switchControl(), booleanSchema(businessKeyLabel),
-					false, null, false));
+					false, null, false, toggleSubmitOn));
 			boolean primaryKeyReadOnly = locked || !primaryKeyEligible;
 			String primaryKeyReadOnlyReason = locked
 					? langService.get(lang, "Admin.attr.primaryKeyLocked")
 					: (!primaryKeyEligible ? langService.get(lang, "Admin.attr.primaryKeyInvalid") : null);
 			fields.add(panelField("/primaryKey", primaryKeyLabel, false, switchControl(), booleanSchema(primaryKeyLabel),
-					primaryKeyReadOnly, primaryKeyReadOnlyReason, false));
+					primaryKeyReadOnly, primaryKeyReadOnlyReason, false, toggleSubmitOn));
 			return fields;
 		}
 		fields.add(panelField("/className", ownerLabel, true,

@@ -27,7 +27,7 @@ public class ApplicationController {
     static final class Operations implements ManagementOperations.Contributor {
         @Override
         public List<ManagementOperations.Operation> managementOperations() {
-            return List.of(new ManagementOperations.Operation(CONNECT_APPLICATION, ManagementOperations.Access.CHANGE));
+            return List.of(new ManagementOperations.Operation(CONNECT_APPLICATION, "Register a connected application", ManagementOperations.Access.CHANGE));
         }
     }
 

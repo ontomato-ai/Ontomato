@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { installedPackageClosure } from "./package-components-release.mjs";
+import { resolveDeclaredConfig } from "./reference.mjs";
 
 /*
  * The component catalogue an SDK release ships (design 6, "需要的数据"): `components.json` declares, beside each public
@@ -156,7 +157,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       }, resultSchemas: { panelRecordList: { type: "array" } } });
       const cli = join(HERE, "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
       const checked = exec([cli, "panel", "check", "panel", "--sdk-dir", sdk, "--component-package", author, "--type-table", "types.json"]);
-      assert.deepEqual(JSON.parse(checked), { status: "valid", version, unchecked: [] });
+      assert.deepEqual(JSON.parse(checked), { status: "valid", version, typeTableChecked: true, unchecked: [] });
     });
 
     await t.test("the offline checker requires an explicit form for a draft read before writing any IDs", () => {
@@ -285,8 +286,9 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       assert.match(prop?.type ?? "", /boolean/, `ObjectRelations.${propName} is boolean`);
       assert.equal(prop?.default, "false", `ObjectRelations.${propName} defaults to false`);
     }
-    // The upload control runs its operation through the platform's upload contract, in a frame and in the platform's page.
-    assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "overwrite-on")?.required, false);
+    // The upload control runs its operation through the platform's upload contract; platform-specific overwrite flow stays out of author config.
+    assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "operation")?.required, true);
+    assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "overwrite-on"), undefined);
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
     const listLayout = declared.get("ObjectList").config.find(prop => prop.name === "layout");
     assert.equal(listLayout?.required, false);
@@ -491,16 +493,60 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     for (const excluded of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "DashboardMetricPreview", "ScheduledTaskAppFilterBar", "ScheduledTaskSummaryList", "ScheduledTaskRunDetail", "EffectivePermissionsView", "TestcaseWorkbench", "DataAdapterTestReport", "ProductAssetGraph", "OntologyModelGraph", "VisualModelingGraph"]) {
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
+      assert.equal(entry?.config, undefined, `non-panel ${excluded} must not emit author-facing config`);
     }
     const objectGraph = declared.get("ObjectGraph");
     const objectGraphConfigNames = (objectGraph.config ?? []).map((prop) => prop.name);
-    assert.ok(objectGraphConfigNames.includes("export-background"), "ObjectGraph exposes single-page export-background prop");
-    assert.ok(objectGraphConfigNames.includes("export-filename"), "ObjectGraph exposes single-page export-filename prop");
+    for (const reclaimedGraphProp of ["node-size", "label-size", "highlight-banner", "show-focus-button", "export-background", "export-filename"]) {
+      assert.equal(
+        objectGraphConfigNames.includes(reclaimedGraphProp),
+        false,
+        `ObjectGraph must not emit reclaimed single-page prop '${reclaimedGraphProp}' in author-facing config`,
+      );
+    }
     assert.doesNotMatch(
       objectGraph.meaning,
       /exportBackground|exportFilename|export-background|export-filename/u,
       "ObjectGraph meaning must not list single-page PNG export presentation attributes",
     );
+    // Author-facing `config` is emitted strictly from explicit `catalogue.ts` declarations: host-only inputs,
+    // platform-fixed styles, deleted props, and duplicate wiring/locale-map props stay out of `components.json`
+    // and `docs/components/<ComponentId>.md`.
+    const excludedAuthorConfigs = [
+      ["AgentChat", ["client", "agent-id", "agent", "labels", "session-id"]],
+      ["ObjectList", ["leading-icon-kind", "leading-icon-size", "skeleton-count", "tabs-variant", "inline-rename", "expanded-keys", "search-submit", "row-tone-map", "row-action-icon-variant"]],
+      ["GroupedGrid", ["section-columns", "section-row-heights", "section-order", "section-min-col-spans", "section-resize-axes"]],
+      ["ObjectCount", ["labels"]],
+      ["ObjectSummary", ["text-field"]],
+      ["ObjectHeader", ["record", "danger-operations", "primary-operation"]],
+      ["ObjectForm", ["show-required-mark"]],
+      ["FileUploadControl", ["overwrite-on"]],
+      ["ReferencePicker", ["placeholders"]],
+      ["InteractiveGraphCanvas", ["style-overrides"]],
+      ["OntologyGraph", ["mode", "start", "selected", "selected-type", "selected-group", "query", "layers", "show-layer-filter", "show-hint", "show-aggregate-toggle", "show-edge-label-toggle", "show-zoom-controls", "show-refresh-control", "neighbor-filter"]],
+      ["ObjectRelations", ["selected", "visible-relation-kinds"]],
+      ["PageHeader", ["compact"]],
+      ["RecordTemplate", ["templates", "record"]],
+      ["InfoBanner", ["tone-map", "titles", "texts", "templates"]],
+      ["ObjectRefCard", ["record", "captions", "button-labels"]],
+      ["MetricCard", ["labels", "units", "descriptions", "value-size"]],
+      ["AnnotatedCode", ["stale-label", "stale-hint", "segments-title", "summary-title", "empty-summary-text", "legend-label"]],
+      ["ConversationEntry", ["agent-picker-variant"]],
+    ];
+    for (const [componentId, forbiddenProps] of excludedAuthorConfigs) {
+      const names = new Set((declared.get(componentId).config ?? []).map((prop) => prop.name));
+      const pageMd = readFileSync(join(out, version, "docs/components", `${componentId}.md`), "utf8");
+      const configSection = pageMd.match(/Configuration \(the projection's `config`\):([\s\S]*?)(?:\n\n[A-Z]|$)/u)?.[1] ?? "";
+      for (const propName of forbiddenProps) {
+        assert.equal(names.has(propName), false, `${componentId}.config must not expose '${propName}'`);
+        const camel = propName.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
+        assert.doesNotMatch(
+          configSection,
+          new RegExp(`^- \`${camel}\`\\b`, "mu"),
+          `docs/components/${componentId}.md Configuration must not list '${camel}'`,
+        );
+      }
+    }
     // Guard against single-page exclusive presentation attributes (Groups A–F) leaking into public component meanings.
     const singlePageExclusions = [
       ["ObjectList", /rowToneMap|row-tone-map|rowToneField|row-tone-field|searchSubmit|search-submit|skeletonCount|skeleton-count|leadingIconSize|leading-icon-size|tagEffect|tag-effect|rowActionIconVariant|row-action-icon-variant|iconVariant|icon-variant|\bmetaField\b|meta-field/u],
@@ -515,8 +561,24 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         `${name} meaning must not list single-page exclusive presentation attributes`,
       );
     }
+    // Status semantic tones travel on values or record.tones — never via ObjectList.rowToneMap or InfoBanner.toneMap.
+    const objectListConfigNames = (declared.get("ObjectList").config ?? []).map((prop) => prop.name);
+    assert.equal(objectListConfigNames.includes("row-tone-map"), false, "ObjectList must not expose row-tone-map");
+    assert.equal(objectListConfigNames.includes("row-tone-field"), true, "ObjectList retains row-tone-field");
+    const infoBannerConfigNames = (declared.get("InfoBanner").config ?? []).map((prop) => prop.name);
+    assert.equal(infoBannerConfigNames.includes("tone-map"), false, "InfoBanner must not expose tone-map");
+    assert.equal(infoBannerConfigNames.includes("tone-field"), true, "InfoBanner retains tone-field");
     // Verify Group F public general capabilities are reflected in catalogue metadata and config.
     assert.match(declared.get("ObjectForm").meaning, /\bsubmitOn\b/u, "ObjectForm meaning documents submitOn");
+    assert.doesNotMatch(
+      declared.get("ObjectForm").meaning,
+      /config\.actions` to `header`/u,
+      "ObjectForm meaning must not document removed actions: 'header'",
+    );
+    assert.ok(
+      declared.get("OperationButton").bindsElement.includes("Action:*"),
+      "OperationButton bindsElement must include customer Action:*",
+    );
     assert.equal(
       declared.get("AnnotatedCode").inputs?.language?.kind,
       "scalar",
@@ -636,4 +698,37 @@ test("the @ontomato/sdk/ui entry exports every SDK_UI_COMPONENTS primitive and d
   const dialogMod = await import("element-plus/es/components/dialog/index.mjs");
   assert.equal(buttonMod.ElButton.name, "ElButton");
   assert.equal(dialogMod.ElDialog.name, "ElDialog");
+});
+
+test("resolveDeclaredConfig emits strictly declared author-facing props and rejects missing, unknown, or duplicate entries", () => {
+  const vueProps = [
+    { name: "layout", type: "string", description: "", required: false },
+    { name: "page-size", type: "number", description: "", required: false },
+    { name: "host-client", type: "object", description: "", required: false },
+  ];
+  assert.deepEqual(
+    resolveDeclaredConfig({ componentId: "Demo", configProps: ["layout", "pageSize"] }, vueProps, { requireDeclaration: true })
+      ?.map((p) => p.name),
+    ["layout", "page-size"],
+  );
+  assert.equal(
+    resolveDeclaredConfig({ componentId: "PanelData", configProps: [] }, [], { requireDeclaration: true }),
+    undefined,
+  );
+  assert.equal(
+    resolveDeclaredConfig({ componentId: "HostOnly" }, vueProps, { requireDeclaration: false }),
+    undefined,
+  );
+  assert.throws(
+    () => resolveDeclaredConfig({ componentId: "Undocumented" }, vueProps, { requireDeclaration: true }),
+    /must explicitly declare its author-facing `configProps` prop list/,
+  );
+  assert.throws(
+    () => resolveDeclaredConfig({ componentId: "Demo", configProps: ["missingProp"] }, vueProps, { requireDeclaration: true }),
+    /is not declared on its Vue component/,
+  );
+  assert.throws(
+    () => resolveDeclaredConfig({ componentId: "Demo", configProps: ["pageSize", "page-size"] }, vueProps, { requireDeclaration: true }),
+    /declares duplicate `configProps` prop/,
+  );
 });

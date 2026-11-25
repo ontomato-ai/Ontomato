@@ -32,6 +32,15 @@
           "kind": "object",
           "objectType": "platform:Attribute"
         }
+      },
+      "expandedAttributes": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "scalar",
+            "type": "string"
+          }
+        }
       }
     },
     "members": {
@@ -199,11 +208,16 @@
             }
           }
         },
+        "state": {
+          "expandedKeys": "expandedAttributes"
+        },
         "operations": {
           "delete": "attributes.delete"
         },
         "config": {
           "layout": "table",
+          "rowActivation": "expand",
+          "rowExpandMode": "single",
           "showChevron": false,
           "showFooter": false,
           "searchable": false,
@@ -226,8 +240,7 @@
               "width": 112,
               "valueMap": {
                 "true": {
-                  "labelKey": "ot.yes",
-                  "tone": "info"
+                  "labelKey": "ot.yes"
                 },
                 "false": {
                   "labelKey": "ot.dash"
@@ -240,8 +253,7 @@
               "width": 112,
               "valueMap": {
                 "true": {
-                  "labelKey": "ot.yes",
-                  "tone": "success"
+                  "labelKey": "ot.yes"
                 },
                 "false": {
                   "labelKey": "ot.dash"

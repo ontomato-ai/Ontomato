@@ -352,6 +352,51 @@ export function baseComponentIds(source) {
   return ids;
 }
 
+/**
+ * Resolves a component's author-facing `config` prop entries strictly from its declared `metadata.configProps` list.
+ * Each declared name (camelCase or kebab-case) must match an actual Vue prop of the component and appear at most once;
+ * undeclared props (host-only inputs, platform-fixed styles, single-page knobs) are never emitted to author-facing docs.
+ */
+export function resolveDeclaredConfig(metadata, declaredProps, { requireDeclaration = false, defaultToAll = false } = {}) {
+  if (metadata.configProps === undefined) {
+    if (requireDeclaration) {
+      throw new Error(
+        `Catalogue component '${metadata.componentId}' is panel-usable and must explicitly declare its author-facing \`configProps\` prop list in catalogue.ts`,
+      );
+    }
+    return defaultToAll && declaredProps.length ? declaredProps : undefined;
+  }
+  if (!Array.isArray(metadata.configProps)) {
+    throw new Error(`Catalogue component '${metadata.componentId}' declared a non-array \`configProps\``);
+  }
+  const byName = new Map();
+  for (const prop of declaredProps) {
+    byName.set(prop.name, prop);
+    byName.set(prop.name.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase()), prop);
+  }
+  const resolved = [];
+  const seen = new Set();
+  for (const rawName of metadata.configProps) {
+    if (typeof rawName !== "string" || !rawName.trim()) {
+      throw new Error(`Catalogue component '${metadata.componentId}' declared an invalid \`configProps\` entry: ${JSON.stringify(rawName)}`);
+    }
+    const found = byName.get(rawName);
+    if (!found) {
+      throw new Error(
+        `Catalogue component '${metadata.componentId}' declares \`configProps\` prop '${rawName}', which is not declared on its Vue component`,
+      );
+    }
+    if (seen.has(found.name)) {
+      throw new Error(
+        `Catalogue component '${metadata.componentId}' declares duplicate \`configProps\` prop '${rawName}'`,
+      );
+    }
+    seen.add(found.name);
+    resolved.push(found);
+  }
+  return resolved.length ? resolved : undefined;
+}
+
 /** Single component detail page (`docs/components/<ComponentId>.md`), keeping all data, config, slots and events. */
 export function componentPageMarkdown(version, component, typeDefinitions = new Map()) {
   const placement = component.panelUsable === false

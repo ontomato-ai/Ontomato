@@ -85,7 +85,7 @@ async function readBundledPanelProjections(
       if (!item.ok) throw item.error;
       const { projection } = item;
       const domainComponent = await validateProjectionComponent(
-        projectionId, projection, undefined, { domainId: projection.domainId },
+        projectionId, projection, undefined, { domainId: projection.domainId, credentials: caller.credentials },
       );
       return `${JSON.stringify(projectionId)}:{"status":"ready",${renderProjectionFields(projection, domainComponent)}}`;
     } catch (error) {
@@ -218,7 +218,7 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
     const { panel } = await requireFrameForRead(query, c, id);
     const [projections, domainComponents] = await Promise.all([
       bundleProjections ? readBundledPanelProjections(c, panel) : Promise.resolve(undefined),
-      panel.manifest?.components ? readPanelDomainComponents(panel.domainId, panel.manifest.components) : Promise.resolve(undefined),
+      panel.manifest?.components ? readPanelDomainComponents({ domainId: panel.domainId, credentials: c.credentials }, panel.manifest.components) : Promise.resolve(undefined),
     ]);
     res.type("json").send(renderPanelJson(panel, projections, domainComponents));
     return;
@@ -226,14 +226,14 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
   const panel = await readCurrentPanelRecord(c.owner, c.credentials, id, query.view !== "1");
   const [projections, domainComponents] = await Promise.all([
     bundleProjections ? readBundledPanelProjections(c, panel) : Promise.resolve(undefined),
-    panel.manifest?.components ? readPanelDomainComponents(panel.domainId, panel.manifest.components) : Promise.resolve(undefined),
+    panel.manifest?.components ? readPanelDomainComponents({ domainId: panel.domainId, credentials: c.credentials }, panel.manifest.components) : Promise.resolve(undefined),
   ]);
   res.type("json").send(renderPanelJson(panel, projections, domainComponents));
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = domainProductIdParamsSchema.parse(req.params);
-  const { revision, ...input } = parseRegistration(registerProductPanelRequestSchema, req.body, `Panel '${id}'`);
-  const panel = await saveCurrentPanel(c.owner, c.credentials, id, input, revision);
+  const { revision, publicationAccess, ...input } = parseRegistration(registerProductPanelRequestSchema, req.body, `Panel '${id}'`);
+  const panel = await saveCurrentPanel(c.owner, c.credentials, id, input, revision, publicationAccess);
   res.json({ panel });
 }));
 export const productProjectionsRouter = Router();
@@ -276,7 +276,7 @@ productProjectionsRouter.get("/:id", wrap(async (req, res) => {
   const rendering = req.header(PANEL_MEMBER_RENDER_HEADER) === "1";
   const projection = await readCurrentProjectionRecord(c.owner, c.credentials, id, !rendering);
   const domainComponent = rendering
-    ? await validateProjectionComponent(id, projection, undefined, { domainId: projection.domainId })
+    ? await validateProjectionComponent(id, projection, undefined, { domainId: projection.domainId, credentials: c.credentials })
     : undefined;
   res.type("json").send(`{${renderProjectionFields(projection, domainComponent)}}`);
 }));

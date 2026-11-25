@@ -1,5 +1,5 @@
 /** Node release entry for checking the same panel sources accepted by the platform. */
-export { applicationCatalogueRecordSchema, applicationIdentityUpdateSchema } from "./application-catalogue";
+export { applicationCatalogueRecordSchema, applicationIdentityUpdateSchema, applicationSourceManifestSchema } from "./application-catalogue";
 export { applicationIconKeys, domainApplicationIconKeys } from "./application-icons";
 export {
   APPS_SDK_PACKAGE_COMPONENTS_PATH, appsSdkComponentCatalogSchema, appsSdkComponentDatum, appsSdkReleaseManifestSchema,

@@ -1,3 +1,4 @@
+import { objectPublicationAccessSchema } from "./object-publication";
 import { modelSelectionSchema } from "./model-settings";
 import { z } from "zod";
 import { agentHostAgentSchema } from "./agent-host";
@@ -52,8 +53,7 @@ export const assistantSkillInputSchema = runtimeSkillRefSchema.extend({
 });
 export const agentPublicationAccessSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("private") }).strict(),
-  z.object({ kind: z.literal("domain") }).strict(),
-  z.object({ kind: z.literal("policy"), policyId: z.string().trim().min(1) }).strict(),
+  ...objectPublicationAccessSchema.options,
 ]);
 export type AgentPublicationAccess = z.infer<typeof agentPublicationAccessSchema>;
 

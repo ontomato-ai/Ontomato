@@ -9,9 +9,24 @@ import type { RequestHandler } from "express";
 import { environment } from "../../config/environment";
 import { HttpError } from "../../utils/errors";
 
+export const executionCallbackPurpose = z.enum(["workbench", "ontology", "authoring", "panels", "retrieval"]);
+const scopeSchema = z.discriminatedUnion("purpose", [
+  z.object({ purpose: z.literal("execution"), capability: executionCallbackPurpose }).strict(),
+  z.object({ purpose: z.literal("governance"), sessionId: z.string().uuid() }).strict(),
+  z.object({ purpose: z.literal("product-tool"), profileId: z.string(), releaseId: z.string() }).strict(),
+  z.object({
+    purpose: z.literal("presentation"),
+    host: z.enum(["workbench", "observe"]),
+    sessionId: z.string().uuid(),
+    viewId: z.string().uuid(),
+  }).strict(),
+  z.object({ purpose: z.literal("diagnosis-evidence") }).strict(),
+]);
+export type CallbackScope = z.infer<typeof scopeSchema>;
+
 const claimsSchema = z
   .object({
-    pathPrefix: z.string(),
+    scope: scopeSchema,
     runId: z.string().uuid(),
     expiresAt: z.number(),
     token: z.string(),
@@ -22,7 +37,7 @@ function key() {
   const value = environment.agentRuntime().token;
   if (!value) throw new Error("Runtime service credential is not configured");
   return createHash("sha256")
-    .update("workbench-callback-v1\0" + value)
+    .update("workbench-callback-v2\0" + value)
     .digest();
 }
 /** Sealed user delegation: a worker receives only a short-lived callback capability. */
@@ -37,7 +52,7 @@ export function callbackCredential(input: z.infer<typeof claimsSchema>) {
   return {
     kind: "bearer" as const,
     value:
-      "wbc1." +
+      "wbc2." +
       Buffer.concat([nonce, cipher.getAuthTag(), ciphertext]).toString(
         "base64url",
       ),
@@ -45,12 +60,35 @@ export function callbackCredential(input: z.infer<typeof claimsSchema>) {
 }
 export interface RuntimeCallback { runId: string; businessGrant?: string }
 
+export const presentationHostPaths = {
+  workbench: "/api/assistant",
+  observe: "/api/observe/agent",
+} as const;
+
+function permits(scope: CallbackScope, runId: string, path: string): boolean {
+  switch (scope.purpose) {
+    case "execution": {
+      const endpoint = `/api/assistant/executions/${runId}/${scope.capability}`;
+      return scope.capability === "retrieval" ? path === endpoint : path.startsWith(endpoint + "/");
+    }
+    case "governance":
+      return path === `/api/assistant/sessions/${scope.sessionId}/governance-window`;
+    case "product-tool":
+      return path.startsWith(`/api/product-assets/${encodeURIComponent(scope.profileId)}/releases/${encodeURIComponent(scope.releaseId)}/tools/`);
+    case "presentation":
+      return path === `${presentationHostPaths[scope.host]}/sessions/${scope.sessionId}/runs/${runId}/presentation-call/${scope.viewId}`;
+    case "diagnosis-evidence":
+      return path.startsWith("/api/observe/evidence/");
+  }
+}
+
 /** Installed before ordinary authentication, which still verifies the delegated user. */
 export const unwrapCallbackCredential: RequestHandler = (req, res, next) => {
   const auth = req.header("X-Ontomato-Callback-Credential") ?? (typeof req.headers.tk === "string" ? req.headers.tk : "");
-  if (!auth.startsWith("wbc1.")) return next();
+  if (auth.startsWith("wbc1.")) return next(new HttpError(401, "Expired runtime callback credential"));
+  if (!auth.startsWith("wbc2.")) return next();
   try {
-    const bytes = Buffer.from(auth.slice("wbc1.".length), "base64url"),
+    const bytes = Buffer.from(auth.slice("wbc2.".length), "base64url"),
       decipher = createDecipheriv("aes-256-gcm", key(), bytes.subarray(0, 12));
     decipher.setAuthTag(bytes.subarray(12, 28));
     const claims = claimsSchema.parse(
@@ -62,7 +100,7 @@ export const unwrapCallbackCredential: RequestHandler = (req, res, next) => {
       ),
     );
     if (
-      !req.path.startsWith(claims.pathPrefix) ||
+      !permits(claims.scope, claims.runId, req.path) ||
       claims.expiresAt <= Date.now() ||
       req.header("X-Ontomato-Run-Id") !== claims.runId
     )

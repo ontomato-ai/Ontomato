@@ -169,20 +169,16 @@
               "kind": "tag",
               "valueMap": {
                 "running": {
-                  "labelKey": "runStatus.running",
-                  "tone": "info"
+                  "labelKey": "runStatus.running"
                 },
                 "completed": {
-                  "labelKey": "runStatus.completed",
-                  "tone": "success"
+                  "labelKey": "runStatus.completed"
                 },
                 "failed": {
-                  "labelKey": "runStatus.failed",
-                  "tone": "danger"
+                  "labelKey": "runStatus.failed"
                 },
                 "skipped": {
-                  "labelKey": "runStatus.skipped",
-                  "tone": "warning"
+                  "labelKey": "runStatus.skipped"
                 }
               }
             },

@@ -56,7 +56,8 @@ full-width detail), read the [management page wiring recipes](references/managem
      `OperationButton` `hideWhenUnavailable`), (3) standard Vue slots (`#cell-<key>`, `#actions`, `#row-detail`,
      `#field-<dotPath>`) with a slot-only domain component in `manifest.components` or nested `<projection :inputs="{ target: ref }">`,
      (4) a dedicated domain component only as a last resort.
-   - **Panels lay out and wire**: write layout in normal HTML, CSS (`@container`), and Vue (no layout components). Place
+   - **Panels lay out and wire**: write layout in normal HTML, CSS (`@container`), and Vue, and reuse SDK layout tags
+     such as `<two-pane-layout>` when they match the interaction. Place
      `<page-header>` at the top of `panel.html` when needed and wire edit Save/Discard with `usePanelFormDraft("form")`.
      Use `panelAddress(path, state)` for flat named URL query parameters (never mark dialog/edit toggles with
      `deepLink: true`), `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` tokens, `usePanelOutput` / `usePanelOutputs` for
@@ -78,7 +79,7 @@ registered `target.projectionId`.
 | `sdk icons` | Icon choices for applications from the current SDK |
 | `component list` | List visible domain-registered components in the current domain |
 | `component read <id>` | Read one domain-registered component's declaration, source and current revision |
-| `component register <directory> [--revision <number>]` | Register (create) or update (with `--revision`) a single domain component from `component.json`, `component.html` and optional `component.mjs` |
+| `component register <directory> [--revision <number>]` | Register (create) or update (with `--revision`) a single domain component from `component.json`, `component.html` and optional `component.mjs`. First registration requires `publicationAccess` in `component.json` |
 | `panel type <type-id> [--read <name>]` | Read signature with its result schema. With no filter, list the type's reads and operations. |
 | `panel type --all` | The visible author type table as JSON, for offline checks |
 | `panel delete application\|panel <id>` | Delete a trial application or panel through its owner |
@@ -90,7 +91,7 @@ registered `target.projectionId`.
 
 ### Custom components
 
-Use official SDK components and `config` first. When a dedicated custom component is truly needed, register a single
+Use official SDK components and `config` first. For first registration, set `publicationAccess` in `component.json` to `{"kind":"domain"}` or `{"kind":"policy","policyId":"..."}`. When a dedicated custom component is truly needed, register a single
 domain component with `node "$SKILL/scripts/ontomato.mjs" component register <directory>` (which assigns
 `domain-component:<uuid>` into `component.json`, inspectable via `component list` / `component read <id>`). Declare it
 under `manifest.components` in `panel.json` and place it directly inside an official component's Vue slot (see the

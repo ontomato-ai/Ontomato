@@ -445,3 +445,63 @@ it("keeps Java-authorized scalar column labels on empty pages", async () => {
     rows: [], total: 0, fieldLabels: { id: "ID", name: "Name" },
   });
 });
+
+it("propagates semantic tones declared on attribute options to query rows, single records, and form options", async () => {
+  const tonedAttributes = [
+    { className: "order", name: "id", showName: "Order ID", type: "varchar", attrDesc: "", enable: true, businessKey: false, primaryKey: true },
+    { className: "order", name: "title", showName: "Title", type: "varchar", attrDesc: "", enable: true, businessKey: true, primaryKey: false },
+    {
+      className: "order",
+      name: "status",
+      showName: "Status",
+      type: "varchar",
+      attrDesc: "",
+      enable: true,
+      businessKey: false,
+      primaryKey: false,
+      options: [
+        { value: "APPROVED", label: "Approved", tone: "success" },
+        { value: "REJECTED", label: "Rejected", tone: "danger" },
+        { value: "DRAFT", label: "Draft" },
+      ],
+    },
+  ];
+  stubOwner(request => {
+    if (request.url.pathname === "/ontology/model/attributes") return Response.json(tonedAttributes);
+    if (request.url.pathname === "/data/getWholeClassDataByPage") {
+      return Response.json({
+        success: true,
+        data: [
+          { id: "o-1", title: "Order 1", status: "APPROVED" },
+          { id: "o-2", title: "Order 2", status: "REJECTED" },
+          { id: "o-3", title: "Order 3", status: "DRAFT" },
+        ],
+        total_count: 3,
+        readable_fields: ["id", "title", "status"],
+      });
+    }
+    if (request.url.pathname === "/data/queryInfoByNode") {
+      return Response.json({ success: true, data: { data: { id: "o-1", title: "Order 1", status: "APPROVED" } } });
+    }
+    return undefined;
+  });
+
+  const adapter = createCustomerOntologyReadAdapter(owner, viewer);
+  const page = await adapter.query("order", {});
+  expect(page.rows[0]!.tones).toEqual({ status: "success" });
+  expect(page.rows[1]!.tones).toEqual({ status: "danger" });
+  expect(page.rows[2]!.tones).toBeUndefined();
+
+  const detail = await adapter.record("order", "o-1");
+  expect(detail.tones).toEqual({ status: "success" });
+
+  const form = await adapter.form("order", "o-1");
+  expect(form.fields.find(f => f.path === "/status")?.control).toMatchObject({
+    kind: "select",
+    options: [
+      { value: "APPROVED", label: "Approved", tone: "success" },
+      { value: "REJECTED", label: "Rejected", tone: "danger" },
+      { value: "DRAFT", label: "Draft" },
+    ],
+  });
+});

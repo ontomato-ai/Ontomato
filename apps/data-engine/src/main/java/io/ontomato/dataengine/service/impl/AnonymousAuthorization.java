@@ -3,6 +3,7 @@ package io.ontomato.dataengine.service.impl;
 import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
 import io.ontomato.dataengine.bean.workflow.GrantScope;
+import io.ontomato.dataengine.service.BuiltinProductIds;
 import io.ontomato.dataengine.service.ProductGrantService;
 import io.ontomato.dataengine.service.authorization.AuthorizationStore;
 import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
@@ -53,14 +54,23 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
     public boolean objectEntitlement(String userId, ObjectTarget target, Verb verb) {
         if (verb == Verb.CREATE) return target.kind() != Kind.ENTRY;
         return switch (target.kind()) {
-            case PANEL, PROJECTION, COMPONENT, APPLICATION ->
-                    products.allowedFor(target.domainId(), userId, target.id(), verb.name().toLowerCase(Locale.ROOT));
+            case PANEL, PROJECTION -> verb == Verb.USE &&
+                    (BuiltinProductIds.isValid(target.id()) || hasDomainUse(target));
+            case COMPONENT -> verb == Verb.USE && hasDomainUse(target);
+            case APPLICATION -> products.allowedFor(target.domainId(), userId, target.id(), verb.name().toLowerCase(Locale.ROOT));
             // The anonymous workbench could use and configure each registered agent.
             case AGENT -> verb == Verb.USE || verb == Verb.VIEW || verb == Verb.EDIT;
-            case METRIC, READ_FUNCTION, ACTION, WORKFLOW -> true;
+            case METRIC, READ_FUNCTION, WRITE_FUNCTION, TRIGGER, ACTION, WORKFLOW, SKILL -> true;
             case ENTRY -> false;
         };
     }
+
+    private boolean hasDomainUse(ObjectTarget target) {
+        return !objectGrants(target, Verb.USE, Set.of(DOMAIN_POLICY)).isEmpty();
+    }
+
+    @Override public boolean requiresFirstPublicationAudience() { return false; }
+    @Override public List<ObjectGrantView> objectGrantViews(ObjectTarget target) { return List.of(); }
 
     @Override
     public List<String> organizationCodes(String domainId, Set<String> roots, GrantScope.Kind kind) {
@@ -85,8 +95,14 @@ public final class AnonymousAuthorization implements AuthorizationSubjects, Auth
 
     @Override public List<AgentPolicyGrant> agentPolicyGrants(ObjectTarget target) { return List.of(); }
     @Override public void replaceAgentLevel(String policyId, ObjectTarget target, Verb level) { throw noRolePolicies(); }
+    @Override public List<ObjectGrant> policyObjectGrants(String domainId, String policyId) { return List.of(); }
+    @Override public List<ObjectGrant> domainObjectGrants(String domainId) { return List.of(); }
     @Override public Set<String> managementOperations(String domainId, Set<String> policyIds) { return Set.of(); }
     @Override public Set<String> entryPolicies(ObjectTarget entry) { return Set.of(); }
+    @Override public Set<String> policyRoleIds(String domainId, String policyId) { return Set.of(); }
+    @Override public Map<String, Long> countObjectGrantsByPolicy(String domainId, Set<String> policyIds) { return Map.of(); }
+    @Override public Map<String, Long> countManagementOperationsByPolicy(String domainId, Set<String> policyIds) { return Map.of(); }
+    @Override public Map<String, Long> countPendingGrantsByPolicy(String domainId, Set<String> policyIds) { return Map.of(); }
 
     @Override
     public void grantObject(ObjectGrant grant) {

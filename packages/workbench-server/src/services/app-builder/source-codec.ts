@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { applicationSourceManifestSchema, type ApplicationSourceManifest } from "@ontomato/contracts/application-catalogue";
 import { applicationMetadataSchema } from "@ontomato/contracts/application-metadata";
 import { panelManifestSchema, panelThemeOverridesSchema } from "@ontomato/contracts/panel-manifest";
 import {
-  applicationDeliverySchema, applicationPanelUseSchema, isApplicationPanelUse, panelApplicationEntryUseSchema, panelDefinitionContentSchema,
+  applicationPanelUseSchema, isApplicationPanelUse, panelDefinitionContentSchema,
   productPanelContentSchema, productPanelInputSchema, productProjectionInputSchema,
   type ApplicationDelivery, type ApplicationPanelUse, type PanelDefinitionContent,
   type ProductPanelInput, type ProductProjectionInput,
@@ -16,24 +17,7 @@ export const APPLICATION_SOURCE_FILE = "application.json";
 export const PANELS_SOURCE_DIR = "panels";
 export const PROJECTIONS_SOURCE_DIR = "projections";
 
-const panelEntrySchema = z.object({
-  path: z.string().regex(/^\/(?!\/)/),
-  renderer: z.literal("panels"),
-  home: z.string().regex(/^\/(?!\/)/).optional(),
-}).strict();
-
-/** Canonical `application.json` representation of a domain panel application. */
-export const applicationSourceManifestSchema = z.object({
-  declaration: applicationMetadataSchema,
-  allowStandalone: z.boolean().optional(),
-  entry: panelEntrySchema,
-  initialOpenEntryIds: z.array(applicationPanelUseSchema.shape.id).optional(),
-  framePanelId: z.string().min(1).optional(),
-  theme: panelThemeOverridesSchema.optional(),
-  panelUses: z.array(panelApplicationEntryUseSchema),
-  delivery: applicationDeliverySchema.optional(),
-}).strict();
-export type ApplicationSourceManifest = z.infer<typeof applicationSourceManifestSchema>;
+export type { ApplicationSourceManifest } from "@ontomato/contracts/application-catalogue";
 
 const legacyApplicationSourceSchema = z.object({
   entryAccess: z.array(z.string()).optional(),

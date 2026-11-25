@@ -11,13 +11,11 @@ import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
 /*
  * The skill owner's reference-picker reads through the real catalogue chain: packages really scanned from the
- * domain's skill root, real builtin resources, and the reader's credentials and language, with only the Java
- * page-skill projection answered at its HTTP boundary. `resolve` must name a form's held values one per value in
+ * domain's skill root, real builtin resources, and the reader's credentials and language, with Java calls
+ * answered at the HTTP boundary. `resolve` must name a form's held values one per value in
  * the submitted order, and every value this call cannot see — unreadable, missing, or removed — carries the same
  * generalized label and reason, never the skill's own name.
  */
-
-vi.mock("../../../identity/management", () => ({ assertManagement: vi.fn(async () => undefined) }));
 
 configureI18n({
   defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
@@ -46,11 +44,21 @@ afterAll(async () => {
   await fs.rm(publicSkillsRoot, { recursive: true, force: true });
 });
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn(async () =>
-    Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } })));
+  vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN", "test-service-token");
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
+    if (url.endsWith("/authorization/objects/decide-batch")) {
+      const { requests } = JSON.parse(String(init.body));
+      return Response.json({ decisions: requests.map(() => ({ allowed: true })) });
+    }
+    if (url.endsWith("/platform/page-skills")) {
+      return Response.json({ success: true, data: { pageSkills: [], registeredSkills: [] } });
+    }
+    throw new Error(`Unexpected upstream: ${url}`);
+  }));
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 it("answers the reader's visible catalogue as panel options in the owner's order", async () => {

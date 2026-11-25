@@ -9,7 +9,13 @@ import org.springframework.stereotype.Component;
 @Component
 public final class ManagementOperations {
     public enum Access { READ, CHANGE }
-    public record Operation(String id, Access access) {}
+    public record Operation(String id, String name, Access access) {
+        public Operation {
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("Management operation name is required: " + id);
+            }
+        }
+    }
 
     public interface Contributor {
         Collection<Operation> managementOperations();

@@ -350,7 +350,7 @@ it("uses owner operation names and fingerprints the names and language visible t
   expect(first.markdown).toContain("Start customer review (run.customer)");
   expect(backendPost).toHaveBeenCalledTimes(1);
   expect(backendPost).toHaveBeenCalledWith("action-object-catalog", "http://java.test/action/queryList",
-    { status: "PUBLISHED" }, { headers: expect.objectContaining({ tk: skillReader.token, "Accept-Language": "en" }) });
+    { purpose: "execute", status: "PUBLISHED" }, { headers: expect.objectContaining({ tk: skillReader.token, "Accept-Language": "en" }) });
 
   name = "Review the customer";
   const renamed = await readPackage(skillReader);

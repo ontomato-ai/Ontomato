@@ -17,7 +17,14 @@ public interface ActionService {
     PythonExecuteResult executeScheduled(Action action, JSONObject parameters, String lang, User creator,
             UserDataPermission permission, int timeoutMinutes, java.util.UUID runId) throws Exception;
 
-    PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception;
+    PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target,
+            io.ontomato.dataengine.service.authorization.AuthorizationService.ActionPath path) throws Exception;
+
+    default PythonExecuteResult execute(String id, JSONObject param, String lang, User user,
+            UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception {
+        return execute(id, param, lang, user, permission, timeoutMinutes, target,
+                new io.ontomato.dataengine.service.authorization.AuthorizationService.Standalone());
+    }
 
 	
 	public Action generateFromNatureLanguage(String question, String lang, String domainId, boolean persistence) throws Exception;
@@ -47,7 +54,7 @@ public interface ActionService {
 	 */
 	public ExplainedDraft explainDraft(String code, List<Parameter> parameters, Owner owner, String lang);
 	
-	public void delete(String id, String lang) throws Exception;
+	public void delete(String id, String lang, User user) throws Exception;
 
 	String systemDeletionRefusal(String id, String domainId, String lang);
 	
@@ -56,7 +63,8 @@ public interface ActionService {
 	public List<Action> queryList(String status, String functionId, String className, String domainId);
 
 	/** The number of Actions the same owner filters would list, counted without hydrating them. */
-	public long count(String status, String functionId, String className, String domainId);
+	public long count(String status, String functionId, String className, String domainId,
+            java.util.function.Predicate<Action> visible);
 	
 	public List<Action> find(String question, String className, String domainId);
 
@@ -73,10 +81,10 @@ public interface ActionService {
 	 * {@code submitted} text it also answers the field errors, or the typed parameters {@link #execute} takes; the
 	 * {@code readOnly} parameters keep their bound values.
 	 */
-	public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user) throws Exception;
+	public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user, UserDataPermission permission, ExecutionTarget target) throws Exception;
 
 	/** The owner's form description for an Action, or a field error for an incoming draft. */
-	public JSONObject definitionForm(JSONObject request, String lang, String domainId);
+	public JSONObject definitionForm(JSONObject request, String lang, User user);
 
 	/** One item of a batch publication-status change: its saved action, its refusal, or why it failed. */
 	record StatusResult(String id, Action data, OwnerRefusal refusal, String error) {}

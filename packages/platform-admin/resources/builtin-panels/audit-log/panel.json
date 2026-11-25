@@ -88,7 +88,9 @@
         },
         "config": {
           "presentation": "pre",
-          "textField": "description",
+          "fields": [
+            "description"
+          ],
           "showTitle": false
         },
         "name": "Audit log detail",

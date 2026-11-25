@@ -52,15 +52,15 @@ Customer ontology `query` reads
 }
 ```
 
-Example values written to `listFilters` and `listSort`:
+Example values written to `listFilters` and `listSort` (use `set(name, value)` for one field, or `setState(patch)` with an object to update multiple fields atomically):
 
 ```js
-instance.state.setState("listFilters", [
+instance.state.set("listFilters", [
   { field: "category", operator: "eq", value: "teaching" },
   { field: "status", operator: "ne", value: "archived" },
 ]);
-instance.state.setState("listSort", { field: "updated_at", order: "desc" });
-// Clear filters / sort:
-instance.state.setState("listFilters", null);
-instance.state.setState("listSort", null);
+instance.state.set("listSort", { field: "updated_at", order: "desc" });
+// Clear filters / sort (or atomically: instance.state.setState({ listFilters: null, listSort: null })):
+instance.state.set("listFilters", null);
+instance.state.set("listSort", null);
 ```

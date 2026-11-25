@@ -1,6 +1,7 @@
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, defineComponent, h, ref, resolveComponent, shallowRef, watch } from "vue";
 import {
   mountPanel,
+  useListRowSlot,
   usePanelBack,
   usePanelContext,
   usePanelNarrow,
@@ -10,7 +11,41 @@ import {
 const OBJECT_TYPE = "platform:ObjectType";
 const RELATIONSHIP_TYPE = "platform:Relationship";
 
+/** Row-scoped Delete button rendered inside each attribute card using owner operation availability. */
+const RowDeleteButton = defineComponent({
+  name: "RowDeleteButton",
+  props: {
+    label: { type: String, required: true },
+  },
+  setup(props) {
+    const rowSlot = useListRowSlot();
+    return () => {
+      const op = rowSlot?.operations.value?.delete;
+      if (!rowSlot || !op) return null;
+      const SdkButton = resolveComponent("sdk-button");
+      return h("div", { class: "vm-attr-row-delete" }, [
+        h(
+          SdkButton,
+          {
+            type: "danger",
+            text: true,
+            size: "small",
+            icon: "trash-2",
+            loading: Boolean(op.running),
+            disabled: !op.available || Boolean(op.running),
+            title: op.unavailable?.reason || props.label,
+            "aria-label": props.label,
+            onClick: () => void rowSlot.runOperation("delete"),
+          },
+          { default: () => props.label },
+        ),
+      ]);
+    };
+  },
+});
+
 await mountPanel({
+  components: { RowDeleteButton },
   setup() {
     const { instance, t, navigate, notify, refreshObjects, confirmLeaveUnsaved } = usePanelContext();
     const values = instance.state.values;
@@ -302,14 +337,41 @@ await mountPanel({
     async function openEditSelectedDialog() {
       if (!canEditSelected.value) return;
       if (selectedNode.value) {
-        if (instance.forms.dirty("classForm") && confirmLeaveUnsaved) {
+        if (instance.forms.dirty("classInlineForm") && confirmLeaveUnsaved) {
           const allowed = await confirmLeaveUnsaved();
           if (!allowed) return;
-          instance.forms.handle("classForm")?.reset({ confirm: false });
+          instance.forms.handle("classInlineForm")?.reset({ confirm: false });
         }
         instance.state.set("dialog", "editClass");
       } else if (selectedEdge.value) {
         instance.state.set("dialog", "editRelation");
+      }
+    }
+
+    // Double-clicking a node or edge on VisualModelingGraph emits choose with real object identity.
+    async function onGraphChoose(reference) {
+      if (!reference?.primaryKey) return;
+      if (reference.className === RELATIONSHIP_TYPE) {
+        instance.state.setState({
+          selectedNode: null,
+          selectedEdge: { className: RELATIONSHIP_TYPE, primaryKey: reference.primaryKey },
+          selectedAttribute: null,
+          dialog: "editRelation",
+        });
+        return;
+      }
+      if (reference.className === OBJECT_TYPE) {
+        if (instance.forms.dirty("classInlineForm") && confirmLeaveUnsaved) {
+          const allowed = await confirmLeaveUnsaved();
+          if (!allowed) return;
+          instance.forms.handle("classInlineForm")?.reset({ confirm: false });
+        }
+        instance.state.setState({
+          selectedNode: { className: OBJECT_TYPE, primaryKey: reference.primaryKey },
+          selectedEdge: null,
+          selectedAttribute: null,
+          dialog: "editClass",
+        });
       }
     }
 
@@ -340,7 +402,7 @@ await mountPanel({
       clearSelection,
       {
         pushHistory: true,
-        forms: () => (selectedNode.value ? ["classForm", "attributeForm"] : []),
+        forms: () => (selectedNode.value ? ["classInlineForm"] : []),
       },
     );
     const dialogBack = usePanelBack(
@@ -438,9 +500,6 @@ await mountPanel({
     const onRelationDeleted = (outcome) => {
       if (outcome?.kind === "success") clearSelection();
     };
-    const onAttributeDeleted = (outcome) => {
-      if (outcome?.kind === "success") instance.state.set("selectedAttribute", null);
-    };
 
     return {
       t,
@@ -479,6 +538,7 @@ await mountPanel({
       openRelationDialog,
       openAttributeDialog,
       openEditSelectedDialog,
+      onGraphChoose,
       closeDialog,
       onClassCreated,
       onRelationCreated,
@@ -486,7 +546,6 @@ await mountPanel({
       requestCloseSide,
       onClassDeleted,
       onRelationDeleted,
-      onAttributeDeleted,
       retryDetail: () => void refreshObjects(),
     };
   },

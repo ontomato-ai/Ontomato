@@ -4,6 +4,7 @@ import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
 import io.ontomato.dataengine.bean.workflow.GrantScope;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -13,8 +14,17 @@ public interface AuthorizationStore {
     List<PolicyRef> policies(String domainId, Set<String> roleIds);
 
     List<ObjectGrant> objectGrants(ObjectTarget target, Verb verb, Set<String> policyIds);
+    List<ObjectGrant> policyObjectGrants(String domainId, String policyId);
+    List<ObjectGrant> domainObjectGrants(String domainId);
     Set<String> managementOperations(String domainId, Set<String> policyIds);
     Set<String> entryPolicies(ObjectTarget entry);
+    Set<String> policyRoleIds(String domainId, String policyId);
+    Map<String, Long> countObjectGrantsByPolicy(String domainId, Set<String> policyIds);
+    Map<String, Long> countManagementOperationsByPolicy(String domainId, Set<String> policyIds);
+    Map<String, Long> countPendingGrantsByPolicy(String domainId, Set<String> policyIds);
+
+    default boolean requiresFirstPublicationAudience() { return true; }
+    default List<ObjectGrantView> objectGrantViews(ObjectTarget target) { throw unsupportedObjectPolicies(); }
 
     default PolicyRef domainPolicy(String domainId) { throw unsupportedObjectPolicies(); }
     default List<AgentPolicyGrant> agentPolicyGrants(ObjectTarget target) { throw unsupportedObjectPolicies(); }

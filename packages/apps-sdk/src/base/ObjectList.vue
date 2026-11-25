@@ -250,7 +250,6 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "showDraftIndicator",
   "searchSubmit",
   "rowToneField",
-  "rowToneMap",
   "checkDisabledWhen",
   "rowActionIconVariant",
   "metaField",
@@ -454,10 +453,8 @@ const props = withDefaults(
     showDraftIndicator?: boolean;
     /** Submit handler for pressing Enter in the top search box: selects an existing loaded row by `primaryKey`, or invokes the declared operation with `{ [inputField]: trimmed }`. */
     searchSubmit?: ObjectListSearchSubmit;
-    /** Optional field key in `row.fields` used to apply semantic whole-row background tinting in table mode. */
+    /** Optional field key in `row.fields` used to apply semantic whole-row background tinting in table mode (tone comes from the value or `row.tones[rowToneField]`). */
     rowToneField?: string;
-    /** Optional mapping from `row.fields[rowToneField]` values to semantic tones (`"success" | "danger" | "warning" | "info"`). */
-    rowToneMap?: Readonly<Record<string, ObjectListRowTone>>;
     /** Optional per-row condition(s) disabling row selection checkboxes and excluding matching rows from select-all. */
     checkDisabledWhen?: ObjectListRowActionCondition | readonly ObjectListRowActionCondition[];
     /** Visual variant for icon-only inline row action buttons: `"ghost"` (default) or `"bordered"` (`24x24` outlined square). */
@@ -518,7 +515,6 @@ const props = withDefaults(
     showDraftIndicator: undefined,
     searchSubmit: undefined,
     rowToneField: undefined,
-    rowToneMap: undefined,
     checkDisabledWhen: undefined,
     rowActionIconVariant: undefined,
     metaField: undefined,
@@ -706,11 +702,6 @@ const effectiveRowToneField = computed<string | undefined>(() => {
   const trimmed = raw.trim();
   return trimmed ? trimmed : undefined;
 });
-const effectiveRowToneMap = computed<Readonly<Record<string, ObjectListRowTone>> | undefined>(() => {
-  const raw = props.rowToneMap ?? rawConfig.value?.rowToneMap;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  return raw as Readonly<Record<string, ObjectListRowTone>>;
-});
 const effectiveCheckDisabledWhen = computed<
   ObjectListRowActionCondition | readonly ObjectListRowActionCondition[] | undefined
 >(() => {
@@ -741,15 +732,15 @@ function resolveRowTone(row: PlatformObjectRecord): ObjectListRowTone | null {
   const field = effectiveRowToneField.value;
   if (!field) return null;
   const raw = rawRecordField(row, field);
-  if (raw !== undefined && raw !== null) {
-    const key = String(raw);
-    const mapped = effectiveRowToneMap.value?.[key];
-    if (mapped && VALID_ROW_TONES.has(mapped)) return mapped;
-    if (VALID_ROW_TONES.has(key as ObjectListRowTone)) return key as ObjectListRowTone;
+  if (isRecordTag(raw) && raw.tone && VALID_ROW_TONES.has(raw.tone as ObjectListRowTone)) {
+    return raw.tone as ObjectListRowTone;
   }
   const ownerTone = row.tones?.[field];
   if (ownerTone && VALID_ROW_TONES.has(ownerTone as ObjectListRowTone)) {
     return ownerTone as ObjectListRowTone;
+  }
+  if (typeof raw === "string" && VALID_ROW_TONES.has(raw as ObjectListRowTone)) {
+    return raw as ObjectListRowTone;
   }
   return null;
 }
@@ -3695,7 +3686,7 @@ interface ResolvedTagArrayItem {
 
 /**
  * Resolve display text, semantic tone, and optional platform icon for one non-reference item inside a tag array.
- * Tag tones travel on the value itself (`kind: "tag"`) or on `column.valueMap` — never via `row.tones`.
+ * Tag tones travel on the value itself (`kind: "tag"`) — never via `column.valueMap` or `row.tones`.
  */
 function resolveTagArrayItem(
   item: Exclude<PanelRecordFieldArrayItem, PanelRecordReferenceFieldValue | PanelRecordChildReferenceFieldValue>,
@@ -3718,7 +3709,7 @@ function resolveTagArrayItem(
     if (mapped) {
       return {
         label: mapped.label ?? scalarFieldText(item, t),
-        tone: mapped.tone ?? "info",
+        tone: "info",
         icon: mapped.icon,
       };
     }
@@ -3745,22 +3736,26 @@ function columnIsTag(row: PlatformObjectRecord, column: ObjectListColumn): boole
   if (derived) {
     const mapped = columnMapped(row, column);
     if (derived.text === "" && !mapped?.label) return false;
-    return column.kind === "tag" || Boolean(derived.tone) || Boolean(mapped?.tone);
+    return column.kind === "tag" || Boolean(derived.tone);
   }
   if (fieldValue(row, column.key) === "") return false;
-  if (column.kind !== "text" && recordTagField(row, column.key)) return true;
-  return column.kind === "tag" || Boolean(columnMapped(row, column)?.tone);
+  if (column.kind !== "text") {
+    if (recordTagField(row, column.key)) return true;
+    const ownerTone = row.tones?.[column.key];
+    if (ownerTone && ownerTone !== "default") return true;
+  }
+  return column.kind === "tag";
 }
 
 function columnTone(row: PlatformObjectRecord, column: ObjectListColumn): string {
   const derived = resolveResultFromCell(row, column);
   if (derived) {
     if (derived.hasExplicitTone && derived.tone) return derived.tone;
-    return columnMapped(row, column)?.tone ?? derived.tone ?? "default";
+    return derived.tone ?? "default";
   }
   const tag = recordTagField(row, column.key);
   if (tag) return tag.tone ?? "default";
-  return columnMapped(row, column)?.tone ?? row.tones?.[column.key] ?? "default";
+  return row.tones?.[column.key] ?? "default";
 }
 
 function columnTagIcon(row: PlatformObjectRecord, column: ObjectListColumn): string | undefined {
@@ -5865,6 +5860,7 @@ defineExpose({
               v-if="slots.card"
               :list-slot="member.key"
               :row-ref="rowObjectRef(entry.row)"
+              :item-key="rowItemKey(entry.row)"
               :index="entry.rowIndex"
               :operations="rowOperationsFor(entry.row)"
               :operation-results="rowResultsFor(entry.row)"

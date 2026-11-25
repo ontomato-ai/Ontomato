@@ -1,14 +1,13 @@
 import { z } from "zod";
 import { applicationMetadataSchema, localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { productPanelUsedBySchema } from "@ontomato/contracts/product-panels";
-import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
 import { config } from "../../config/application";
 import { environment } from "../../config/environment";
 import type { CurrentProductKind } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet } from "../../utils/backend-client";
-import { grantedProductIds } from "../product-governance/grants";
+import { usableCurrentIds } from "./access";
 import { classesUsingDetailPanel } from "./object-detail";
 import { findPanelUsers } from "./references";
 
@@ -17,8 +16,8 @@ async function panelsUsingTarget(
 ) {
   const rows = await findPanelUsers(domainId, kind, id, client, excluding);
   if (!rows.length) return { panels: [], hiddenCount: 0 };
-  const visible = new Set(await grantedProductIds("use", credentials));
-  const panels = rows.filter(panel => isBuiltinProductId(panel.id) || visible.has(panel.id));
+  const visible = await usableCurrentIds("panel", domainId, rows.map(({ id }) => id), credentials, client);
+  const panels = rows.filter(panel => visible.has(panel.id));
   return { panels, hiddenCount: rows.length - panels.length };
 }
 

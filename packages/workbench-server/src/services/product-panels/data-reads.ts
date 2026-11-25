@@ -1,3 +1,4 @@
+import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { z } from "zod";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
@@ -26,6 +27,8 @@ import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
 import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
+import { registeredProductGraph } from "../product-assets/ontology";
+import { listProducts } from "../product-assets/store";
 
 import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
 import { createDataAdapterConfigReads } from "../admin/data-adapters-panel";
@@ -58,6 +61,7 @@ import { createAutotestCaseSetReadAdapter } from "../ops-diagnosis/case-sets-pan
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
 import { createGovernanceReadAdapters } from "../governance/panel-reads";
+import { loadPolicyWorkbenchCatalog } from "../governance/policy-catalog";
 import type { SkillResolveRequest } from "../skills/panel-reads";
 import { createApplicationReadAdapter } from "./application-catalogue";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
@@ -123,7 +127,9 @@ function customerReads(owner: ProductOwner, viewer: AssistantCredentials, caller
 
 function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation): Record<string, Record<string, ReadAdapter>> {
   const schedules = createScheduledTaskReadAdapter(viewer);
-  const governance = createGovernanceReadAdapters(viewer);
+  const governance = createGovernanceReadAdapters(viewer, {
+    loadPolicyCatalog: () => loadPolicyWorkbenchCatalog(owner.domainId, viewer.locale),
+  });
   const ontology = async () => {
     const { createPlatformOntologyReadAdapter } = await import("../platform-ontology/panel-reads");
     return createPlatformOntologyReadAdapter(owner, viewer, callerUserName);
@@ -389,15 +395,15 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       resolve: async (_selection, params) => (await options()).models.resolve(params.values as readonly unknown[]),
     },
     [SDK_COMPONENT]: {
-      count: () => countSdkComponents(owner),
-      catalogue: (_selection, params) => listSdkComponents(owner, viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
-      definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer.locale),
-      record: selection => readSdkComponentRecord(owner, selection.primaryKey!, viewer.locale),
-      dataRows: selection => readSdkComponentDataRows(owner, selection.primaryKey!, viewer.locale),
-      configRows: selection => readSdkComponentConfigRows(owner, selection.primaryKey!, viewer.locale),
-      inputRows: selection => readSdkComponentInputRows(owner, selection.primaryKey!, viewer.locale),
-      outputRows: selection => readSdkComponentOutputRows(owner, selection.primaryKey!, viewer.locale),
-      operationRows: selection => readSdkComponentOperationRows(owner, selection.primaryKey!, viewer.locale),
+      count: () => countSdkComponents(owner, viewer),
+      catalogue: (_selection, params) => listSdkComponents(owner, viewer, panelReadParameterSchemas.keyword.optional().parse(params.search)),
+      definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer),
+      record: selection => readSdkComponentRecord(owner, selection.primaryKey!, viewer),
+      dataRows: selection => readSdkComponentDataRows(owner, selection.primaryKey!, viewer),
+      configRows: selection => readSdkComponentConfigRows(owner, selection.primaryKey!, viewer),
+      inputRows: selection => readSdkComponentInputRows(owner, selection.primaryKey!, viewer),
+      outputRows: selection => readSdkComponentOutputRows(owner, selection.primaryKey!, viewer),
+      operationRows: selection => readSdkComponentOperationRows(owner, selection.primaryKey!, viewer),
     },
     [USER]: {
       options: async (_selection, params) => (await options()).users.options({
@@ -526,6 +532,18 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       ),
       detailPanel: selection => objectDetail.record(selection.primaryKey!),
       detailPanelForm: (selection, params) => objectDetail.form(selection.primaryKey!, formParams(params).values),
+      inlineForm: (selection, params) => model.inlineForm(selection.typeId, selection.primaryKey!, formParams(params)),
+      productGraph: async () => {
+        const graph = await registeredProductGraph(owner, await listProducts(owner), viewer);
+        return {
+          className: OBJECT_TYPE,
+          primaryKey: "product-graph",
+          label: "Product graph",
+          fields: {
+            graph: { kind: "json" as const, value: graph },
+          },
+        };
+      },
       options: () => model.objectTypeOptions(),
       resolve: (_selection, params) => model.resolveObjectTypes(panelReadParameterSchemas.optionValues.parse(params.values)),
     },
@@ -553,7 +571,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       }),
       record: selection => agentSessions.record(selection.primaryKey!),
     },
-    [ATTRIBUTE]: modelReads,
+    [ATTRIBUTE]: {
+      ...modelReads,
+      inlineForm: (selection, params) => model.inlineForm(selection.typeId, selection.primaryKey!, formParams(params)),
+    },
     [RELATIONSHIP]: modelReads,
     [PRODUCT_PROJECTION]: {
       ...catalogueReads(projectionCatalogue),
@@ -741,11 +762,14 @@ function parseReadParameter(parameter: keyof typeof panelReadParameterSchemas, v
 async function readParameters(
   projection: ProductProjection, member: ReadMember, dataName: string, data: DirectProjectionData,
   declaration: PlatformReadDeclaration, inputs: ReadInputs, runtimeParams: ProductPanelReadRequest["runtimeParams"],
+  viewer: AssistantCredentials,
 ) {
   const resolved = new Map<string, unknown>();
   const runtime = Object.entries(runtimeParams ?? {});
-  if (runtime.length) {
-    const component = await readProjectionComponent(projection.componentId, undefined, projection.domainId);
+  if (runtime.length || isDomainComponentId(projection.componentId)) {
+    const component = await readProjectionComponent(projection.componentId, undefined, { domainId: projection.domainId, credentials: viewer });
+    if (!component && isDomainComponentId(projection.componentId))
+      throw new HttpError(404, "Domain component is unavailable", "PANEL_COMPONENT_UNAVAILABLE");
     const names = appsSdkComponentDatum(component?.data, dataName)?.runtimeParams ?? [];
     for (const [name, value] of runtime) {
       const parameter = panelReadParameterId(declaration, name);
@@ -756,8 +780,20 @@ async function readParameters(
       if (!authoredReadParameterSource(data.params, name, member)) resolved.set(name, parsed);
     }
   }
+  const selectionInput = "object" in data.source && "input" in data.source.object ? data.source.object.input : undefined;
   const authored = new Set([...Object.keys(data.params), ...Object.keys(member.inputs ?? {}), ...Object.keys(member.outputs ?? {})]);
   for (const name of authored) {
+    // An input port consumed by `data.source.object` (such as `target` wired to panel state) selects the target
+    // object for `readSelection`, and declared projection ports unmapped in `data.params` are not implicit owner
+    // parameters.
+    if (
+      !Object.hasOwn(data.params, name)
+      && (name === selectionInput
+        || (declaration.parameterMode === "owner"
+          && (Object.hasOwn(projection.inputs, name) || Object.hasOwn(projection.outputs, name))))
+    ) {
+      continue;
+    }
     const source = authoredReadParameterSource(data.params, name, member);
     const parameter = panelReadParameterId(declaration, name);
     if (!source || !parameter) continue;
@@ -815,7 +851,7 @@ export async function executeProjectionDataRead(
   if (!declaration) {
     throw new HttpError(422, `Read '${data.read}' is not registered for datum '${dataName}'`, "PANEL_READ_UNAVAILABLE");
   }
-  const params = await readParameters(projection, member, dataName, data, declaration, inputs, runtimeParams);
+  const params = await readParameters(projection, member, dataName, data, declaration, inputs, runtimeParams, viewer);
   if (declaration.parameterMode === "fixed") {
     for (const name of declaration.requiredParams ?? [])
       if (!Object.hasOwn(params, name)) throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");

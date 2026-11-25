@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
-import { grantedProductIds } from "../product-governance/grants";
+import { usableCurrentIds } from "../product-panels/access";
 import { productReferenceKey } from "../product-panels/references";
 import { declarationChanges, findComponentUsers, type DeclarationChange } from "../product-panels/component-users";
 import type { CheckComponentPackageUpgrade, ComponentPackageUpgradeChange } from "./store";
@@ -25,17 +25,23 @@ export const checkComponentPackageUpgrade: CheckComponentPackageUpgrade = async 
   if (!affected.length) return [];
 
   const deployment = caller.diagnosticsScope === "deployment";
-  const visible = new Set<string>();
+  type ResourceRef = ComponentPackageUpgradeChange["projections"][number];
+  const visible = { panel: new Set<string>(), projection: new Set<string>() };
   if (!deployment && caller.domainId) {
+    const domainId = caller.domainId;
+    const scopedIds = (refs: readonly ResourceRef[]) =>
+      refs.filter(ref => ref.domainId === null || ref.domainId === domainId).map(ref => ref.id);
     try {
-      for (const id of await grantedProductIds("use", caller.credentials)) visible.add(id);
+      [visible.panel, visible.projection] = await Promise.all([
+        usableCurrentIds("panel", domainId, scopedIds([...users.values()].flatMap(group => [...group.values()])), caller.credentials),
+        usableCurrentIds("projection", domainId, scopedIds(affected), caller.credentials),
+      ]);
     } catch (error) {
       if (!(error instanceof HttpError && (error.status === 401 || error.status === 403))) throw error;
     }
   }
-  type ResourceRef = ComponentPackageUpgradeChange["projections"][number];
-  const canSee = ({ domainId, id }: ResourceRef) =>
-    deployment || domainId === null || (domainId === caller.domainId && visible.has(id));
+  const canSee = (kind: keyof typeof visible, { domainId, id }: ResourceRef) =>
+    deployment || ((domainId === null || domainId === caller.domainId) && visible[kind].has(id));
   const found = new Map<string, DeclarationChange & {
     component: string; projections: Map<string, ResourceRef>; panels: Map<string, ResourceRef>;
   }>();
@@ -45,9 +51,9 @@ export const checkComponentPackageUpgrade: CheckComponentPackageUpgrade = async 
     for (const change of projection.changes) {
       const key = JSON.stringify([component, change.field, change.before, change.after]);
       const entry = found.get(key) ?? { ...change, component, projections: new Map(), panels: new Map() };
-      if (canSee(projection)) entry.projections.set(projectionKey, { id, domainId });
+      if (canSee("projection", projection)) entry.projections.set(projectionKey, { id, domainId });
       for (const panel of users.get(projectionKey)?.values() ?? []) {
-        if (canSee(panel)) entry.panels.set(productReferenceKey(panel), { id: panel.id, domainId: panel.domainId });
+        if (canSee("panel", panel)) entry.panels.set(productReferenceKey(panel), { id: panel.id, domainId: panel.domainId });
       }
       found.set(key, entry);
     }

@@ -22,7 +22,7 @@ export async function listAssistantAgents(owner: AssistantOwner, credentials: As
     ? { applicationId: query.applicationId, entryKey: query.entryKey, pageKey: query.pageKey }
     : null;
   const page = entrance && await (await import("../skills/view")).readPageCandidateSkill(
-    { ...owner, initiatorCredentials: credentials }, entrance, undefined, "member" in query ? query.member : undefined,
+    { ...owner, initiatorCredentials: credentials }, entrance, "member" in query ? query.member : undefined,
   );
   if (entrance && !page) throw new HttpError(403, "Page skill is unavailable", "PAGE_SKILL_FORBIDDEN");
   const summary = (agent: AgentRow) => ({

@@ -1,3 +1,4 @@
+import type { ObjectDecisionRequest } from "../../services/product-governance/authorization";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -79,6 +80,8 @@ let server: Server;
 let contentRoot: string;
 let cataloguePath: string;
 const grants = new Set<string>();
+const readerUseGrants = new Set<string>();
+let domainComponentReaderCanUse = false;
 const scheduledRun = scheduleExamples.runs.find(example => example.name === "agents-running")!.response;
 const frameDispatches: string[] = [];
 const codePanelId = "panel-schedules-mixed";
@@ -146,10 +149,45 @@ beforeAll(async () => {
     grants.delete(req.body.id);
     res.json({ success: true });
   });
+  const callerDomains = new Map([
+    ["host-reader", "pilot"], ["host-no-entry", "pilot"], ["domain-component-reader", "pilot"],
+    ["another-domain-reader", "another-domain"],
+  ]);
+  const hasBuiltinEntry = (token?: string) => token === "host-reader" || token === "another-domain-reader";
   const allowed = (id: string, verb: string, token?: string) => isBuiltinProductId(id)
-    ? (token === "host-reader" || token === "host-no-entry") && verb === "use"
+    ? (hasBuiltinEntry(token) || token === "host-no-entry") && verb === "use"
     : (token === "host-reader" && grants.has(id)) ||
       (token === "domain-component-reader" && id === "domain-component-projection" && verb === "use");
+  app.post("/authorization/objects/decide-batch", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    const tk = req.header("tk");
+    const decisions = req.body.requests.map((request: ObjectDecisionRequest) => {
+      if ("create" in request) return decision(tk === "host-reader");
+      const { target, ownerFacts, verb } = request;
+      if (!tk || target.domainId !== callerDomains.get(tk)) return decision(false);
+      expect(ownerFacts.state).toBe("PUBLISHED");
+      if ((target.kind === "PANEL" || target.kind === "PROJECTION") && isBuiltinProductId(target.id))
+        return decision(verb === "USE");
+      if (target.kind === "COMPONENT" && tk === "domain-component-reader")
+        return decision(domainComponentReaderCanUse && verb === "USE");
+      const isOwner = tk === "host-reader" && ownerFacts.ownerId === "reader";
+      const explicitUse = tk === "host-reader" && verb === "USE" && readerUseGrants.has(target.id);
+      return decision(isOwner || explicitUse || allowed(target.id, verb.toLowerCase(), tk));
+    });
+    res.json({ decisions });
+
+    function decision(admitted: boolean) {
+      return admitted ? { allowed: true } : { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Access denied" };
+    }
+  });
+  app.post("/authorization/objects/first-publication", (req, res) => {
+    if (req.body.target.kind !== "COMPONENT") grants.add(req.body.target.id);
+    res.json({ status: "granted" });
+  });
+  app.post("/authorization/objects/retire", (req, res) => {
+    grants.delete(req.body.target.id);
+    res.status(204).end();
+  });
   app.post("/product-governance/check", (req, res) => {
     const token = req.header("tk");
     res.json(productGrantCheck(req.body, token === "host-reader" ? "reader" : undefined, (id, verb) => allowed(id, verb, token)));
@@ -188,7 +226,7 @@ beforeAll(async () => {
   });
   app.post("/action/queryList", (req, res) => {
     expect(req.header("tk")).toBe("host-reader");
-    expect(req.body).toEqual({ status: "PUBLISHED" });
+    expect(req.body).toEqual({ purpose: "execute", status: "PUBLISHED" });
     res.json({ success: true, data: [
       ...["missing-function-one", "missing-function-two", "missing-function-three"].map(id => ({
         id, name: "author-private-name", codeHash: "author-private-hash", target: null, function: null,
@@ -207,13 +245,13 @@ beforeAll(async () => {
     res.json({ success: true, data: builtinUses });
   });
   app.get("/platform/page-skills", (req, res) => {
-    const entrances = req.header("tk") === "host-reader" ? builtinUses.map(use => use.entrance) : [];
+    const entrances = hasBuiltinEntry(req.header("tk")) ? builtinUses.map(use => use.entrance) : [];
     res.json({ success: true, data: { pageSkills: entrances, admittedEntrances: entrances, registeredSkills: [] } });
   });
   mockApplicationEntry(app, "/platform/applications", (req, res, next) => {
     if (req.query.applicationId === "app-builtin-fixture") {
       if (req.header("tk") === "host-no-entry" && req.path.endsWith("/resolve-entry")) { res.sendStatus(403); return; }
-      expect(["host-reader", "host-no-entry"]).toContain(req.header("tk"));
+      expect(["host-reader", "host-no-entry", "another-domain-reader"]).toContain(req.header("tk"));
       res.json({ success: true, data: {
         applicationId: "app-builtin-fixture", menu: { singleEntry: true, groups: [], panelUses: [] },
         use: { id: "catalogue", pageKey: "catalogue", path: "/applications/app-builtin-fixture/catalogue",
@@ -338,7 +376,8 @@ it("reconciles the released built-in authoring sources and exposes the same read
   });
   const packages = [];
   for (const domainId of ["pilot", "another-domain"]) {
-    const headers = { "X-Test-Domain": domainId };
+    const token = domainId === "pilot" ? "host-reader" : "another-domain-reader";
+    const headers = { "X-Test-Domain": domainId, "X-Test-Token": token };
     const read = (resource: string) => fetch(`${state.base}/api/${resource}`, { headers });
     const panelResponse = await read("product-panels/" + builtinPanelId);
     expect(panelResponse.status).toBe(200);
@@ -365,7 +404,7 @@ it("reconciles the released built-in authoring sources and exposes the same read
     const context = await read(`product-panels/application-entry?${useQuery}`);
     expect(context.status).toBe(200);
     expect(await context.json()).toMatchObject({ pageSkillContext: { mode: "member", member: { ref: skill } } });
-    const view = await readSkillView(domainId, { token: "host-reader" });
+    const view = await readSkillView(domainId, { token });
     const entry = view.requireSkillById(skill.name);
     expect(entry.skill).toEqual(skill);
     expect(entry.source.kind).toBe("provider");
@@ -636,24 +675,37 @@ it("identifies malformed registrations and missing author references without byp
   } });
   expect(grants.has("author-panel")).toBe(false);
 
+  const readerHeaders = { "X-Test-Token": "ordinary-reader", "X-Test-User": "ordinary-reader" };
   for (const [collection, kind] of [["product-projections", "Projection"], ["product-panels", "Panel"]]) {
-    const lookup = await request("GET", collection + "/author-missing");
-    expect(lookup.status).toBe(404);
-    expect(await lookup.json()).toMatchObject({ error: {
+    const path = collection + "/author-missing";
+    const authorLookup = await request("GET", path);
+    expect(authorLookup.status).toBe(404);
+    expect(await authorLookup.json()).toMatchObject({ error: {
       code: "PRODUCT_UNAVAILABLE", message: `${kind} 'author-missing' does not exist`,
     } });
-  }
-  const readerLookup = await fetch(state.base + "/api/product-projections/author-missing", {
-    headers: { "X-Test-Token": "ordinary-reader" },
-  });
-  expect(readerLookup.status).toBe(403);
 
-  const saved = await request("PUT", "product-projections/author-protected", projectionRequest(summary.input, 0));
+    const renderingPanel = kind === "Panel" ? "?view=1" : "";
+    const readerLookup = await fetch(state.base + "/api/" + path + renderingPanel, {
+      headers: { ...readerHeaders, [PANEL_MEMBER_RENDER_HEADER]: "1" },
+    });
+    expect(readerLookup.status).toBe(404);
+    expect(await readerLookup.json()).toMatchObject({ error: {
+      code: "PRODUCT_UNAVAILABLE", message: "Current product definition not found",
+    } });
+  }
+
+  const protectedPath = "product-projections/author-protected";
+  const saved = await request("PUT", protectedPath, projectionRequest(summary.input, 0));
   expect(saved.status).toBe(200);
-  grants.delete("author-protected");
-  const forbidden = await request("GET", "product-projections/author-protected");
+  expect((await request("GET", protectedPath)).status).toBe(200);
+  const forbidden = await fetch(state.base + "/api/" + protectedPath, { headers: readerHeaders });
   expect(forbidden.status).toBe(403);
-  expect(await forbidden.json()).toMatchObject({ error: { code: "PRODUCT_FORBIDDEN" } });
+  expect(await forbidden.json()).toMatchObject({ error: { code: "OBJECT_FORBIDDEN" } });
+  const foreign = await fetch(state.base + "/api/" + protectedPath, {
+    headers: { "X-Test-Domain": "other-domain" },
+  });
+  expect(foreign.status).toBe(404);
+  expect(await foreign.json()).toMatchObject({ error: { code: "PRODUCT_UNAVAILABLE" } });
 });
 
 it("checks projection data against the current release before registering or changing a record", async () => {
@@ -736,6 +788,16 @@ function projectionRequest(input: (typeof trial.projections)[number]["input"], r
   return registerProductProjectionRequestSchema.parse({ ...input, revision });
 }
 
+async function giveReaderUseOfAnotherPublisherDefinition(kind: "panel" | "projection", id: string) {
+  const table = kind === "panel" ? "product_panels" : "product_projections";
+  const moved = await state.pool!.query(
+    `UPDATE "${state.schema}".${table} SET owner_id='other-publisher' WHERE domain_id='pilot' AND id=$1 AND owner_id='reader'`,
+    [id],
+  );
+  expect(moved.rowCount).toBe(1);
+  readerUseGrants.add(id);
+}
+
 it("reads the registered trial and follows its directly placed projections through the host routes", async () => {
   const { id, directory, name, description, manifest } = trial.panels.find(entry => entry.id === "panel-schedules-trial")!;
   for (const projection of trial.projections) {
@@ -743,6 +805,8 @@ it("reads the registered trial and follows its directly placed projections throu
     const response = await request("PUT", `product-projections/${projection.id}`, body);
     expect(response.status, await response.text()).toBe(200);
   }
+  const deniedProjection = "projection-schedules-summary";
+  await giveReaderUseOfAnotherPublisherDefinition("projection", deniedProjection);
   const body = registerProductPanelRequestSchema.parse({
     name, description, manifest, visibility: "domain", content: trial.panelContent(directory), revision: 0,
   });
@@ -802,8 +866,7 @@ it("reads the registered trial and follows its directly placed projections throu
   }
   expect(frames).toEqual(["snapshot", "definition-changed"]);
 
-  const deniedProjection = "projection-schedules-summary";
-  grants.delete(deniedProjection);
+  readerUseGrants.delete(deniedProjection);
   const partial = await request("GET", `product-panels/${id}/snapshot`);
   expect(partial.status).toBe(200);
   const partialSnapshot = panelDefinitionSnapshotSchema.parse(await partial.json());
@@ -946,6 +1009,7 @@ it("uses the authorized frame root for its record, snapshot, member reads, neste
     },
   });
   expect(frame.status, await frame.text()).toBe(200);
+  await giveReaderUseOfAnotherPublisherDefinition("panel", frameHostPanelId);
   framedEntryRegistered = true;
   const source = { kind: "frame", applicationId: "app-frame-host", useId: "framed" };
   const getFrame = (id = frameHostPanelId, useId = source.useId, suffix = "") => request("GET", `product-panels/${id}${suffix}?` +
@@ -994,7 +1058,7 @@ it("uses the authorized frame root for its record, snapshot, member reads, neste
   const preference = await request("POST", "product-panels/personal-state/read", { ...personal, fields: ["term"] });
   expect(await preference.json()).toEqual({ values: { term: "spring" } });
 
-  grants.delete(frameHostPanelId);
+  readerUseGrants.delete(frameHostPanelId);
   expect((await getFrame()).status).toBe(403);
   expect((await getSnapshot()).status).toBe(403);
   expect(await (await read("components")).json()).toEqual({ status: "forbidden", reason: expect.stringMatching(/\S/u) });
@@ -1018,6 +1082,7 @@ it("freezes the frame of a human operation and rechecks it before dispatch", asy
     });
     expect(saved.status, await saved.text()).toBe(200);
   }
+  await giveReaderUseOfAnotherPublisherDefinition("panel", replacement);
   state.operationFrameId = oldFrame;
 
   const scope = { applicationId: "app-frame-host", useId: "operable", operationId: "run.runNow" };
@@ -1052,10 +1117,10 @@ it("freezes the frame of a human operation and rechecks it before dispatch", asy
   expect(frameDispatches).toEqual([]);
 
   const newIntent = await prepare();
-  grants.delete(replacement);
+  readerUseGrants.delete(replacement);
   expect((await dispatch(newIntent)).status).toBe(403);
   expect(frameDispatches).toEqual([]);
-  grants.add(replacement);
+  readerUseGrants.add(replacement);
   const completed = await dispatch(newIntent);
   expect(completed.status, await completed.clone().text()).toBe(200);
   expect(await completed.json()).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
@@ -1200,7 +1265,6 @@ it("stores domain components as source and protects every projection using their
     fetch(url, { method, headers: { "Content-Type": "application/json", ...headers }, body: body && JSON.stringify(body) });
   const definition = {
     name: "Domain component",
-    visibility: "private",
     declaration: {
       role: "presentation", meaning: "Shows a configuration value", data: {},
       config: [{ name: "caption", type: "string", description: "Caption", required: false }],
@@ -1208,7 +1272,7 @@ it("stores domain components as source and protects every projection using their
     },
     source: { template: "<span>{{ caption }}</span>", module: "export default { props: ['caption'] }" },
   };
-  const created = await call(collection, "POST", definition);
+  const created = await call(collection, "POST", { ...definition, publicationAccess: { kind: "policy", policyId: "private-policy" } });
   expect(created.status).toBe(201);
   const { component } = domainComponentResponseSchema.parse(await created.json());
   const { componentId } = component.declaration;
@@ -1224,13 +1288,17 @@ it("stores domain components as source and protects every projection using their
   expect((await call(url, "GET", undefined, badDomain)).status).toBe(404);
   expect((await (await call(collection, "GET", undefined, badDomain)).json()).components).toEqual([]);
   expect((await call(projectionUrl, "PUT", projection, badDomain)).status).toBe(400);
-  expect((await call(projectionUrl, "PUT", projection, { "X-Test-User": "another-author" })).status).toBe(400);
+  expect((await call(projectionUrl, "PUT", projection, { "X-Test-Token": "ordinary-reader" })).status).toBe(403);
   expect((await call(projectionUrl, "PUT", projection)).status).toBe(200);
 
   const render = () => call(projectionUrl, "GET", undefined, {
     [PANEL_MEMBER_RENDER_HEADER]: "1", "X-Test-Token": "domain-component-reader",
   });
+  domainComponentReaderCanUse = true;
   expect(await (await render()).json()).toMatchObject({ domainComponent: { domainId: "pilot", componentId, revision: 1 } });
+  domainComponentReaderCanUse = false;
+  expect((await render()).status).toBe(403);
+  domainComponentReaderCanUse = true;
   const updated = { ...definition, declaration: component.declaration, revision: 1, source: { ...definition.source, template: "<em>{{ caption }}</em>" } };
   expect((await call(url, "PUT", updated)).status).toBe(200);
   expect(await (await render()).json()).toMatchObject({ domainComponent: { revision: 2, source: updated.source } });

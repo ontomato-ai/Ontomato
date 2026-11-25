@@ -5,7 +5,9 @@ import { defineComponent, h, nextTick, reactive, ref, computed } from "vue";
 import * as VueNamespace from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { appIcon } from "@ontomato/platform-shell";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { ApplicationEntryMenu, CurrentApplicationEntry } from "@ontomato/contracts/product-panels";
+import { createPanelState } from "../../../apps-sdk/src/panel/state";
 import { workbenchApplications } from "../../../workbench-server/src/services/applications/builtins";
 import { runPanelModule, useTemplateCompiler } from "../panel-module";
 
@@ -30,7 +32,7 @@ function opsMenu(granted: readonly string[]): ApplicationEntryMenu {
 async function mountOpsFrame(options: {
   granted?: readonly string[];
   initialEntry: CurrentApplicationEntry;
-  initialState?: Record<string, unknown>;
+  initialState?: Readonly<Record<string, RuntimeJsonValue>>;
   locale?: string;
 }) {
   await useTemplateCompiler();
@@ -43,13 +45,8 @@ async function mountOpsFrame(options: {
   const locale = options.locale ?? "en";
   const messages = panelJson.content.messages[locale] ?? panelJson.content.messages.en;
 
-  const stateValues = reactive<Record<string, unknown>>({
-    sessionId: null,
-    pane: "full",
-    selectedSession: null,
-    sessionLimit: 20,
-    ...(options.initialState ?? {}),
-  });
+  // Use the real createPanelState store so state.values is a Vue Ref and every write is schema-validated.
+  const panelState = createPanelState(panelJson.manifest, options.initialState);
 
   const currentEntry = ref<CurrentApplicationEntry>(options.initialEntry);
   const entryMenu = ref<ApplicationEntryMenu>(opsMenu(options.granted ?? ["observer", "user-feedback"]));
@@ -118,12 +115,7 @@ async function mountOpsFrame(options: {
     entryMenu: computed(() => entryMenu.value),
     navigate,
     instance: {
-      state: {
-        values: stateValues,
-        set(name: string, value: unknown) {
-          stateValues[name] = value;
-        },
-      },
+      state: panelState,
     },
   };
 
@@ -151,7 +143,8 @@ async function mountOpsFrame(options: {
 
   return {
     host,
-    stateValues,
+    panelState,
+    get stateValues() { return panelState.values.value; },
     currentEntry,
     navigate,
     panelOutputs,
@@ -234,6 +227,22 @@ describe("builtin-product-ops-frame", () => {
       expect(mounted.chatMounts).toBe(1);
       expect(mounted.chatProps.collapsed).toBe(true);
 
+      // Toggle side-by-side pane via header action button (full -> side -> full).
+      mounted.host.querySelector<HTMLButtonElement>("[data-ops-toggle-pane]")!.click();
+      await nextTick();
+      expect(workspace.dataset.opsLayout).toBe("side");
+      expect(mounted.stateValues.pane).toBe("side");
+      expect(mounted.chatProps.collapsed).toBe(false);
+      expect(mounted.host.querySelector("[data-ops-resize-handle]")).not.toBeNull();
+      expect(mounted.chatMounts).toBe(1);
+
+      mounted.host.querySelector<HTMLButtonElement>("[data-ops-toggle-pane]")!.click();
+      await nextTick();
+      expect(workspace.dataset.opsLayout).toBe("full");
+      expect(mounted.stateValues.pane).toBe("full");
+      expect(mounted.chatProps.collapsed).toBe(true);
+      expect(mounted.chatMounts).toBe(1);
+
       // Fold floating composer -> shows circular unfold button without unmounting AgentChat.
       mounted.host.querySelector<HTMLButtonElement>("[data-ops-fold-composer]")!.click();
       await nextTick();
@@ -255,19 +264,45 @@ describe("builtin-product-ops-frame", () => {
       expect(mounted.host.querySelector("[data-ops-resize-handle]")).not.toBeNull();
       expect(mounted.chatMounts).toBe(1);
 
-      // Click Close page -> switches to pure conversation (/ops/diagnosis), keeping sessionId and same AgentChat.
+      // Click Close page -> switches to pure conversation (/ops/diagnosis), keeping sessionId and syncing selectedSession with className.
       mounted.host.querySelector<HTMLButtonElement>("[data-ops-close-pane]")!.click();
       await nextTick();
       expect(mounted.navigate).toHaveBeenCalledWith("/ops/diagnosis");
       expect(workspace.dataset.opsLayout).toBe("pure");
       expect(mounted.stateValues.sessionId).toBe("sess-ops-42");
+      expect(mounted.stateValues.selectedSession).toEqual({
+        className: "platform:AgentSession",
+        primaryKey: "sess-ops-42",
+      });
       expect(mounted.chatMounts).toBe(1);
 
-      // Click New chat -> resets sessionId to null while keeping the same AgentChat mounted.
+      // Click New chat -> resets sessionId and selectedSession to null while keeping the same AgentChat mounted.
       mounted.host.querySelector<HTMLButtonElement>("[data-ops-new-chat]")!.click();
       await nextTick();
       expect(mounted.stateValues.sessionId).toBeNull();
+      expect(mounted.stateValues.selectedSession).toBeNull();
       expect(mounted.chatMounts).toBe(1);
+
+      // Selecting a recent session from a feature page updates sessionId and navigates to pure conversation.
+      mounted.host.querySelector<HTMLButtonElement>('[data-ops-nav="/ops/knowledge"]')!.click();
+      await nextTick();
+      expect(workspace.dataset.opsLayout).toBe("side");
+      mounted.panelState.set("selectedSession", {
+        className: "platform:AgentSession",
+        primaryKey: "sess-ops-99",
+      });
+      await nextTick();
+      expect(mounted.stateValues.sessionId).toBe("sess-ops-99");
+      expect(workspace.dataset.opsLayout).toBe("pure");
+
+      // Show more pagination advances sessionLimit from 20 to 40 when a full page is loaded.
+      mounted.panelOutputs["recentSessions:loadedCount"] = 20;
+      await nextTick();
+      const moreBtn = mounted.host.querySelector<HTMLButtonElement>("[data-ops-sessions-more]");
+      expect(moreBtn).not.toBeNull();
+      moreBtn!.click();
+      await nextTick();
+      expect(mounted.stateValues.sessionLimit).toBe(40);
     } finally {
       mounted.unmount();
     }

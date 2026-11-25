@@ -63,12 +63,10 @@ const props = withDefaults(
     copyableFields?: readonly string[];
     /**
      * Presentation mode: `"fields"` (default) renders structured fields or article layout; `"pre"` renders a single
-     * focusable scrollable `<pre tabindex="0">` block capped at `55dvh` showing the full text of `textField` (or the
-     * first text field when omitted).
+     * focusable scrollable `<pre tabindex="0">` block capped at `55dvh` showing the full text of the first configured
+     * field in `fields` (or the first text field on the record when `fields` is omitted).
      */
     presentation?: "fields" | "pre";
-    /** Field key displayed in `presentation="pre"` mode; omitted, uses the first text field on the record. */
-    textField?: string;
     /**
      * Spacing and column ratio for the `"fields"` definition list: `"comfortable"` (default) uses an airy `1fr 2fr`
      * two-column layout with `12px` row gap and `16px` column gap; `"compact"` uses tighter `auto 1fr` spacing for dense containers.
@@ -91,7 +89,6 @@ const props = withDefaults(
     missingText: undefined,
     copyableFields: undefined,
     presentation: "fields",
-    textField: undefined,
     density: "comfortable",
     keyValueFields: undefined,
     bordered: false,
@@ -136,7 +133,6 @@ const articleExtraFields = computed(() => {
 });
 
 function resolvePreFieldKey(current: PlatformObjectRecord): string | null {
-  if (props.textField) return props.textField;
   const candidates = props.fields ? [...props.fields] : Object.keys(current.fields);
   const firstNonEmptyString = candidates.find((key) => typeof current.fields[key] === "string" && current.fields[key].trim() !== "");
   if (firstNonEmptyString) return firstNonEmptyString;

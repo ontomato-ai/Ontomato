@@ -83,10 +83,13 @@ class AgentClassScopeReadBoundaryTest {
 		context.refresh();
 		new SpringBeanUtil().setApplicationContext(context);
 
+		long callerDeadline = System.currentTimeMillis() + 60_000;
 		when(agentAccess.scopedQuery(any(), eq(SCOPED_CALLER))).thenReturn(
-				new QueryAccessService.Access(user, permission, null, null, null, List.of("Order", "Item")));
+				new QueryAccessService.Access(user, permission, null, null, callerDeadline, List.of("Order", "Item"))
+						.withExecution(user.getId(), user.getId()));
 		when(agentAccess.scopedQuery(any(), eq(UNRESTRICTED_CALLER))).thenReturn(
-				new QueryAccessService.Access(user, permission, null, null, null, List.of()));
+				new QueryAccessService.Access(user, permission, null, null, callerDeadline, List.of())
+						.withExecution(user.getId(), user.getId()));
 		when(agentAccess.scopedQuery(any(), eq(CLOSED_CALLER)))
 				.thenThrow(new AgentHttpException(409, "RETRIEVAL_RUN_CLOSED", "Caller is closed"));
 

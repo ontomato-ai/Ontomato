@@ -262,6 +262,8 @@ class CheckServiceV2ImplTest {
     when(dao.queryById("metric-1", DOMAIN)).thenReturn(new Object[] {metric, "function-1"});
     when(functions.queryById("function-1")).thenReturn(metric.getFunction());
     MetricViewServiceImpl writer = new MetricViewServiceImpl();
+    ReflectionTestUtils.setField(writer, "definitions", io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain-a", "user-1"));
+    ReflectionTestUtils.setField(writer, "firstPublication", mock(io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.class));
     ReflectionTestUtils.setField(writer, "metricViewDao", dao);
     ReflectionTestUtils.setField(writer, "functionDao", functions);
     ReflectionTestUtils.setField(writer, "transactionManager", transactions);

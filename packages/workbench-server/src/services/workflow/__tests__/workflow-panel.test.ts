@@ -45,6 +45,7 @@ describe("built-in workflows panel validation", () => {
 
     expect(mod).not.toContain("usePanelData");
     expect(html).not.toMatch(/el-|--el-|v-loading/);
+    expect(html).not.toContain("@state-change");
     expect(html).not.toContain("<svg");
     expect(html).not.toContain(".sdk-object-list-table");
     expect(desc.manifest.members).not.toHaveProperty("grantsHeader");

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { h, nextTick } from "vue";
+import { defineComponent, h, nextTick } from "vue";
+import { provideUnsavedChanges } from "@ontomato/platform-shell";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
@@ -312,6 +313,7 @@ function mountAttributesRoute(options: {
   initialState?: Record<string, unknown>;
   attributes: FixtureAttribute[];
   onFormRead?: (key: string, defaultResponse: () => Response) => Response | Promise<Response>;
+  confirmLeave?: () => boolean | Promise<boolean>;
   onListRead?: (filterClass: string, defaultResponse: () => Response) => Response | Promise<Response>;
   onOperation?: (operationId: string, targetKey: string, call: PanelOperationCall) => unknown;
 }) {
@@ -502,6 +504,16 @@ function mountAttributesRoute(options: {
         },
       ];
       await router.push(panelAddress(use.path, options.initialState ?? {}, attributesPanel.manifest));
+      if (options.confirmLeave) {
+        const confirmLeaveUnsaved = async () => Boolean(await options.confirmLeave!());
+        const Shell = defineComponent({
+          setup() {
+            provideUnsavedChanges(confirmLeaveUnsaved);
+            return () => h(RouterView);
+          },
+        });
+        return mountPlatformPage(() => h(Shell), router);
+      }
       return mountPlatformPage(() => h(RouterView), router);
     },
   };
@@ -1373,6 +1385,133 @@ describe("ontology-attributes builtin panel", () => {
       });
     } finally {
       nonPkMounted.app.unmount();
+    }
+  });
+
+  it("OA-05: supports whole-row click, Enter/Space, trailing chevron indicator, dirty-form leave guard, and auto-expanding a newly created attribute", async () => {
+    const attributes: FixtureAttribute[] = [
+      { primaryKey: "Order.orderNo", className: "Order", classNameLabel: "Sales Order", name: "orderNo", label: "Order number", type: "varchar", primaryKeyFlag: true, businessKey: true, enable: true },
+      { primaryKey: "Order.amount", className: "Order", classNameLabel: "Sales Order", name: "amount", label: "Amount", type: "number", primaryKeyFlag: false, businessKey: false, enable: true },
+      { primaryKey: "Customer.email", className: "Customer", classNameLabel: "Customer", name: "email", label: "Email", type: "varchar", primaryKeyFlag: true, businessKey: false, enable: true },
+    ];
+    let allowLeave = false;
+    const confirmLeave = vi.fn(async () => allowLeave);
+    const route = mountAttributesRoute({
+      attributes,
+      confirmLeave,
+      onOperation: (operationId, _targetKey, call) => {
+        if (operationId === "form.save") {
+          const values = (call.input as { values?: Record<string, unknown> } | undefined)?.values ?? {};
+          const cls = String(values.className || "Order");
+          const name = String(values.name || "region");
+          const showName = String(values.showName || "Region");
+          const pk = `${cls}.${name}`;
+          attributes.push({
+            primaryKey: pk,
+            className: cls,
+            classNameLabel: cls,
+            name,
+            label: showName,
+            type: String(values.type || "varchar"),
+            attrDesc: String(values.attrDesc || ""),
+            enable: true,
+            businessKey: false,
+            primaryKeyFlag: false,
+          });
+          return {
+            kind: "success",
+            data: { primaryKey: pk },
+            created: { objectType: ATTRIBUTE, primaryKey: pk },
+            affected: {
+              objects: [{ objectType: ATTRIBUTE, primaryKey: pk }],
+              objectTypes: [ATTRIBUTE],
+            },
+          };
+        }
+        return { kind: "success", data: {} };
+      },
+    });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(element.querySelectorAll(".attrs-table-host tr[data-row-item='true']").length).toBe(3);
+      });
+
+      // No leading expand column; trailing chevron indicator rendered on every row.
+      expect(element.querySelector(".attrs-table-host .sdk-object-list-expand-col")).toBeNull();
+      const indicators = element.querySelectorAll<HTMLButtonElement>(".attrs-table-host [data-row-expand-indicator='true']");
+      expect(indicators.length).toBe(3);
+      expect(indicators[0]!.getAttribute("aria-expanded")).toBe("false");
+
+      const rows = element.querySelectorAll<HTMLTableRowElement>(".attrs-table-host tr[data-row-item='true']");
+      const row0 = rows[0]!;
+      const row1 = rows[1]!;
+
+      // Whole-row click expands row 0.
+      row0.click();
+      await vi.waitFor(() => {
+        expect(row0.getAttribute("aria-expanded")).toBe("true");
+        expect(element.querySelector<HTMLInputElement>('.attrs-row-editor [data-field="/showName"] input')).not.toBeNull();
+      });
+
+      // Enter key collapses row 0; Space key expands row 1.
+      row0.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      await vi.waitFor(() => {
+        expect(row0.getAttribute("aria-expanded")).toBe("false");
+        expect(element.querySelector(".attrs-row-editor")).toBeNull();
+      });
+
+      row1.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      await vi.waitFor(() => {
+        expect(row1.getAttribute("aria-expanded")).toBe("true");
+        expect(element.querySelector<HTMLInputElement>('.attrs-row-editor [data-field="/showName"] input')).not.toBeNull();
+      });
+
+      // Dirty-form leave guard prevents collapsing when cancelled, and proceeds when confirmed.
+      const editInput = element.querySelector<HTMLInputElement>('.attrs-row-editor [data-field="/showName"] input')!;
+      editInput.value = "Draft amount";
+      editInput.dispatchEvent(new Event("input", { bubbles: true }));
+      await nextTick();
+
+      row1.click();
+      await vi.waitFor(() => {
+        expect(confirmLeave).toHaveBeenCalledTimes(1);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await nextTick();
+      expect(row1.getAttribute("aria-expanded")).toBe("true");
+
+      allowLeave = true;
+      row1.click();
+      await vi.waitFor(() => {
+        expect(confirmLeave).toHaveBeenCalledTimes(2);
+        expect(row1.getAttribute("aria-expanded")).toBe("false");
+      });
+
+      // Creating a new attribute in the dialog auto-expands the newly created row via controlled expandedKeys.
+      const createBtn = [...element.querySelectorAll<HTMLButtonElement>(".sdk-page-header button")]
+        .find((btn) => btn.textContent?.includes("New attribute"))!;
+      createBtn.click();
+
+      const nameInput = await vi.waitFor(() => {
+        const input = document.querySelector<HTMLInputElement>('.el-dialog [data-field="/name"] input');
+        expect(input).not.toBeNull();
+        return input!;
+      });
+      nameInput.value = "region";
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      await nextTick();
+
+      const submitBtn = [...document.querySelectorAll<HTMLButtonElement>(".el-dialog .sdk-owner-form-actions button")]
+        .find((btn) => btn.classList.contains("el-button--primary") || btn.textContent?.includes("Create") || btn.textContent?.includes("Save"))!;
+      submitBtn.click();
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('.el-dialog [data-field="/name"]')).toBeNull();
+        expect(element.querySelector<HTMLInputElement>('.attrs-row-editor [data-field="/showName"] input')?.value).toBe("Region");
+      });
+    } finally {
+      app.unmount();
     }
   });
 });

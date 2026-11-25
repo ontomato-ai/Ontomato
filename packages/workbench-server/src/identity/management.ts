@@ -17,9 +17,9 @@ export async function assertManagement(
   operation: Operation, actor: Actor, credentials: AssistantCredentials,
 ): Promise<void> {
   if (!actor.domainId) throw new HttpError(403, "A business domain is required", "DOMAIN_REQUIRED");
+  const serviceToken = environment.agentRuntime().queryServiceToken;
+  if (!serviceToken) throw new Error("Workbench service credential is not configured");
   try {
-    const serviceToken = environment.agentRuntime().queryServiceToken;
-    if (!serviceToken) throw new Error("Workbench service credential is not configured");
     const response = await backendPost(
       path, config.dataQuery.baseUrl + path, { operationId: operation.id, domainId: actor.domainId },
       {
@@ -36,7 +36,9 @@ export async function assertManagement(
     if (error instanceof HttpError && error.status === 401) throw error;
     if (error instanceof HttpError && error.status === 403 && error.code !== "WORKBENCH_SERVICE_REQUIRED")
       throw new HttpError(403, error.message, "PERMISSION_DENIED");
-    throw new HttpError(502, "权限校验服务暂不可用", "SKILL_PERMISSION_UPSTREAM_UNAVAILABLE");
+    const unavailable = new HttpError(502, "Management authorization is unavailable", "DEPENDENCY_UNAVAILABLE");
+    unavailable.cause = error;
+    throw unavailable;
   }
 }
 

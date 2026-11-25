@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -42,7 +43,7 @@ class ActionTrialServiceTest {
   private final JSONRuleDao schemas = mock(JSONRuleDao.class);
   private final LangService messages = mock(LangService.class);
   private final ActionService actions = mock(ActionService.class);
-  private final IdentityService identity = mock(IdentityService.class);
+  private final ActionAuthorization authorization = mock(ActionAuthorization.class);
   private final DataSandboxService sandboxes = mock(DataSandboxService.class);
   private final ActionPreconditionService preconditions = mock(ActionPreconditionService.class);
   private final IdentitySnapshotLookup snapshots = mock(IdentitySnapshotLookup.class);
@@ -50,10 +51,11 @@ class ActionTrialServiceTest {
   private final UserDataPermission permission = new UserDataPermission();
   private final ActionTrialStore store = new ActionTrialStore(jdbc, schemas, messages);
   private final ActionTrialService trials =
-      new ActionTrialService(store, messages, actions, identity, sandboxes, preconditions, snapshots, programs);
+      new ActionTrialService(store, messages, actions, authorization, sandboxes, preconditions, snapshots, programs);
 
   @BeforeEach
   void setup() {
+    when(authorization.requireExecution(any(), any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.ALL);
     when(schemas.query(DOMAIN)).thenReturn(Map.of("classDef",
         List.of(Map.of("className", "Order"), Map.of("className", "/Invoice"))));
     when(messages.get(eq("en"), anyString())).thenAnswer(call -> call.getArgument(1));
@@ -102,6 +104,8 @@ class ActionTrialServiceTest {
           assertEquals(List.of("Order"), context.target().classNames());
           assertEquals(SANDBOX, context.target().sandboxId());
           assertTrue(context.target().actionTrial());
+          assertEquals(new ActionRuntimeGrant(DOMAIN, USER, ACTION,
+              new ActionRuntimeGrant.Row("Order", "trial-id"), null), context.action());
           return new Object[]{List.of("ok"), result};
         });
     var sample = sample("Order");
@@ -190,7 +194,7 @@ class ActionTrialServiceTest {
           assertTrue(authority.classNames().isEmpty());
           var token = grants.issueExecution(authority, run, System.currentTimeMillis() + 60_000);
           for (String path : List.of("/ontology/query/execute-dsl", "/writeFunctionOperation/insert")) {
-            var error = assertThrows(BuildTestException.class, () -> grants.verify(token, run, path));
+            var error = assertThrows(ResponseStatusException.class, () -> grants.verifyRequest(token, run, "POST", path));
             assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
           }
           return new PythonExecuteResult();
@@ -220,13 +224,13 @@ class ActionTrialServiceTest {
     String token = grants.issueExecution(authority, "trial-run", expires);
 
     for (String path : List.of("/ontology/query/execute-dsl", "/writeFunctionOperation/insert")) {
-      var claims = grants.verify(token, "trial-run", path);
+      var claims = grants.verifyRequest(token, "trial-run", "POST", path);
       assertEquals(SANDBOX, claims.getString("contextId"));
       assertEquals(SANDBOX, claims.getString("sandboxId"));
       assertEquals(List.of("Order"), claims.getList("classNames", String.class));
     }
     var error = assertThrows(ResponseStatusException.class,
-        () -> grants.verify(token, "trial-run", "/ontology/query/metrics/execute"));
+        () -> grants.verifyRequest(token, "trial-run", "POST", "/ontology/query/metrics/execute"));
     assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
   }
 
@@ -275,9 +279,9 @@ class ActionTrialServiceTest {
     assertEquals("ACTION_NOT_FOUND", assertThrows(OwnerRefusal.class,
         () -> trials.trialSavedAction("foreign", null, null, "en", CALLER, permission, 1)).code());
 
-    doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Denied")).when(identity).requireActionExecutionAccess(USER, DOMAIN);
+    doThrow(new ActionAuthorization.Denied("ACTION_TRIAL_FORBIDDEN", "Denied")).when(authorization).requireEdit(any(), any());
     assertEquals("ACTION_TRIAL_FORBIDDEN", assertThrows(OwnerRefusal.class, () -> trial(null, null)).code());
-    doNothing().when(identity).requireActionExecutionAccess(USER, DOMAIN);
+    doNothing().when(authorization).requireEdit(any(), any());
 
     when(sandboxes.validateSample(eq(JSONObject.of("objDatas", "bad")), eq(Map.of()), eq(DOMAIN)))
         .thenThrow(AgentHttpException.invalid("objDatas: expected an array"));

@@ -1,3 +1,5 @@
+import { HttpError } from "../../../utils/errors";
+import type { ObjectDecisionRequest } from "../../product-governance/authorization";
 import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -31,19 +33,18 @@ const state = vi.hoisted(() => ({
 
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java.test" } } }));
 
-vi.mock("../../product-governance/grants", () => ({
-  requireProductGrant: vi.fn(async (id: string) => {
-    if (!state.grantedPanelIds.has(id)) {
-      const error = new Error("Product use Grant required") as Error & { status?: number; code?: string };
-      error.status = 403;
-      error.code = "PRODUCT_FORBIDDEN";
-      throw error;
-    }
-  }),
-  productGrantAllowed: vi.fn(async (id: string) => state.grantedPanelIds.has(id)),
-  grantedProductIds: vi.fn(async () => [...state.grantedPanelIds]),
+vi.mock("../../product-governance/authorization", async original => ({
+  ...await original<typeof import("../../product-governance/authorization")>(),
+  requireObject: async (request: ObjectDecisionRequest) => {
+    if (!("target" in request) || request.target.kind !== "PANEL" || !state.grantedPanelIds.has(request.target.id))
+      throw new HttpError(403, "Product access denied", "OBJECT_FORBIDDEN");
+  },
+  decideObjects: async (requests: ObjectDecisionRequest[]) => requests.map(request => (
+    "target" in request && request.target.kind === "PANEL" && state.grantedPanelIds.has(request.target.id)
+      ? { allowed: true }
+      : { allowed: false, code: "OBJECT_FORBIDDEN", reason: "Product access denied" }
+  )),
 }));
-
 vi.mock("../../app-builder/sdk", () => ({
   readCurrentAppSdkComponents: async () => ({
     version: "test",

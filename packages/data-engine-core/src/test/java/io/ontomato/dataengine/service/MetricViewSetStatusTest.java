@@ -14,6 +14,13 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
 import io.ontomato.dataengine.service.impl.MetricViewServiceImpl;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.Decision;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
+import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
+import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication;
+import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Audience;
+import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
+import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -39,26 +46,28 @@ class MetricViewSetStatusTest {
   private final MetricViewDao metricViewDao = mock(MetricViewDao.class);
   private final FunctionDao functionDao = mock(FunctionDao.class);
   private final AdminService adminService = mock(AdminService.class);
-  private final IdentityService identityService = mock(IdentityService.class);
   private final LangService langService = mock(LangService.class);
+  private final DefinitionFirstPublication publication = mock(DefinitionFirstPublication.class);
+  private final CapabilityDefinitions definitions =
+      io.ontomato.dataengine.service.authorization.CapabilityDefinitionTestSupport.allowedDefinitions("domain-a", "reviewer");
   private final Map<String, MetricView> metrics = new LinkedHashMap<>();
 
   @BeforeEach
   void setup() {
     PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
     when(transactions.getTransaction(any())).thenAnswer(call -> new SimpleTransactionStatus());
+    ReflectionTestUtils.setField(service, "definitions", definitions);
+    ReflectionTestUtils.setField(service, "firstPublication", publication);
     ReflectionTestUtils.setField(service, "transactionManager", transactions);
     ReflectionTestUtils.setField(service, "metricViewDao", metricViewDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "adminService", adminService);
-    ReflectionTestUtils.setField(service, "identityService", identityService);
     ReflectionTestUtils.setField(service, "langService", langService);
     ReflectionTestUtils.setField(service, "subjectValues",
         new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
     when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
     when(adminService.getJSONRule(anyString())).thenReturn(Map.of("classDef", List.of(
         JSONObject.of("className", "/Employee", "attrs", List.of(JSONObject.of("name", "salary"))))));
-    when(identityService.getCurrentUserId()).thenReturn("reviewer");
     when(metricViewDao.queryById(anyString(), anyString())).thenAnswer(call -> {
       MetricView metric = metrics.get(call.getArgument(0));
       if (metric == null || !metric.getDomainId().equals(call.getArgument(1))) return null;
@@ -153,19 +162,47 @@ class MetricViewSetStatusTest {
   }
 
   @Test
-  void testExecuteRefusesAMetricThatIsNeitherPublishedNorTheCallersCandidate() {
+  void executionRefusesAnotherAuthorsDraft() {
     MetricView candidate = metric("candidate", MetricView.ORIGIN_USER);
     candidate.setCreatedBy("someone-else");
     put(candidate);
     User reader = mock(User.class);
     when(reader.getId()).thenReturn("reviewer");
     when(reader.getDomainId()).thenReturn("domain-a");
+    doThrow(new CapabilityDefinitions.Denied(new Decision(false, "PRIVATE_DRAFT", "Only the authors may access this draft.")))
+        .when(definitions).require(any(), eq(access(candidate, Verb.USE)));
 
-    OwnerRefusal refusal = assertThrows(OwnerRefusal.class, () -> service.testExecute(
-        candidate, null, new JSONObject(), "en", reader, new UserDataPermission(), 1));
+    var refusal = assertThrows(CapabilityDefinitions.Denied.class,
+        () -> service.execute("candidate", null, new JSONObject(), null, "en", reader, new UserDataPermission(), 1));
 
-    assertEquals("METRIC_VIEW_NOT_EXECUTABLE", refusal.code());
-    assertEquals("Executable read metric not found", refusal.getMessage());
+    assertEquals("PRIVATE_DRAFT", refusal.code());
+    assertEquals(403, refusal.getStatusCode().value());
+  }
+
+  @Test
+  void grantsOnlyAtFirstPublicationIncludingAfterRetirementAndRestore() {
+    MetricView definition = metric("m1", MetricView.ORIGIN_USER);
+    put(definition);
+    doCallRealMethod().when(publication).requireSelection(any());
+    when(publication.requiresSelection()).thenReturn(true);
+    when(metricViewDao.save(any())).thenAnswer(call -> {
+      MetricView stored = call.getArgument(0);
+      put(stored);
+      return stored;
+    });
+
+    var refused = service.setStatus("domain-a", List.of("m1"), MetricView.STATUS_PUBLISHED, "en").getFirst();
+    assertEquals("FIRST_PUBLICATION_AUDIENCE_REQUIRED", refused.refusal().code());
+    verify(metricViewDao, never()).save(any());
+    var selected = new Selection(Audience.policy, "policy-one");
+    var first = service.setStatus("domain-a", List.of("m1"), MetricView.STATUS_PUBLISHED, "en", selected).getFirst();
+    assertEquals(MetricView.STATUS_PUBLISHED, first.data().getStatus());
+    service.setStatus("domain-a", List.of("m1"), MetricView.STATUS_UNUSED, "en");
+    var restored = service.setStatus("domain-a", List.of("m1"), MetricView.STATUS_PUBLISHED, "en",
+        new Selection(Audience.domain, null)).getFirst();
+    assertEquals(MetricView.STATUS_PUBLISHED, restored.data().getStatus());
+    verify(publication).grantUse(any(), eq(access(definition, Verb.USE).target()), eq(selected));
+    verify(publication, times(1)).grantUse(any(), any(), any());
   }
 
   @Test

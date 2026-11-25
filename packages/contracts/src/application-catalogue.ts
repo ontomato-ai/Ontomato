@@ -61,3 +61,13 @@ export const applicationCatalogueCreateSchema = registerApplicationPanelUsesRequ
 export const applicationEntriesUpdateSchema = registerApplicationPanelUsesRequestSchema.omit({
   declaration: true, initialOpenEntryIds: true, allowStandalone: true,
 });
+
+const sourcePath = z.string().regex(/^\/(?!\/)/);
+export const applicationSourceManifestSchema = registerApplicationPanelUsesRequestSchema.omit({ shared: true }).extend({
+  declaration: applicationMetadataSchema,
+  entry: registerApplicationPanelUsesRequestSchema.shape.entry.extend({
+    path: sourcePath,
+    home: sourcePath.optional(),
+  }),
+});
+export type ApplicationSourceManifest = z.infer<typeof applicationSourceManifestSchema>;

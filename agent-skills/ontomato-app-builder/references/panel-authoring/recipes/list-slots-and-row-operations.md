@@ -5,7 +5,8 @@ and standard Vue slots (`#cell-<key>`, `#cell`, `#actions`, `#row-detail`, `#car
 the list without replacing the whole table.
 
 - **Action layout:** `rowActions.items` holds operations (`kind: "operation"`, `operation`) or local actions
-  (`kind: "local"`, `id`, optional `to`). Items accept `labelKey` or `label`, `primary`, `danger`, `when`
+  (`kind: "local"`, `id`, optional `to`). Items accept `labelKey` or `label`, `tone`
+  (`"default" | "primary" | "success" | "warning" | "danger"`), `icon`, `iconOnly`, `when`
   and `disabledWhen`. Conditions match owner fields against `equals`, `notEquals`, `in`, `notIn` or `truthy`.
   Operation items also accept `hideWhenUnavailable`. The action column accepts `labelKey` or `label`,
   `maxVisible` (overflow after two by default), `fixed: "right" | false`, `align`, `width` and `minWidth`.

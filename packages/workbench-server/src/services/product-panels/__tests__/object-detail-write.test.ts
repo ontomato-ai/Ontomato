@@ -11,7 +11,10 @@ vi.mock("../../../infrastructure/postgres-transaction", () => ({
   transaction: (callback: (client: { query: typeof state.query }) => Promise<void>) => callback({ query: state.query }),
 }));
 vi.mock("../../../infrastructure/product-write-lock", () => ({ lockProducts: vi.fn() }));
-vi.mock("../../product-governance/grants", () => ({ requireProductGrant: state.requireGrant }));
+vi.mock("../../product-governance/authorization", async original => ({
+  ...await original<typeof import("../../product-governance/authorization")>(),
+  decideObjects: state.requireGrant,
+}));
 vi.mock("../object-detail", () => ({ requireDetailPanel: state.requirePanel, findObjectDetailPanelId: async () => "old" }));
 vi.mock("../references", () => ({ validateObjectDetailPanelMapping: state.validate }));
 vi.mock("../entry-dependency-store", () => ({ compileRegisteredPanelRoots: vi.fn(), queueDependencyPublication: vi.fn() }));
@@ -20,18 +23,22 @@ vi.mock("../entry-dependency-publication", () => ({ deliverEntryDependencyPublic
 const owner = { domainId: "domain", userId: "modeler" };
 const viewer = { token: "modeling-token" };
 
-beforeEach(() => { vi.resetAllMocks(); });
+beforeEach(() => {
+  vi.resetAllMocks();
+  state.requirePanel.mockResolvedValue({ id: "new", domainId: owner.domainId, ownerId: "panel-owner" });
+});
 
 it("authorizes only the new panel when replacing a binding and needs no panel grant to clear it", async () => {
   state.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ panel_id: "new" }] });
-  state.requireGrant.mockImplementation(async (id, verb) => {
-    if (id !== "new" || verb !== "use") throw new HttpError(403, "Denied", "PRODUCT_FORBIDDEN");
-  });
+  state.requireGrant.mockResolvedValue([{ allowed: true }]);
   await setObjectDetail(owner, viewer, "Customer", "new");
   await clearObjectDetail(owner, viewer, "Customer");
 
   expect(state.assertPermission).toHaveBeenCalledWith(expect.objectContaining({ id: "object-details.mapping.change" }), owner, viewer);
-  expect(state.requireGrant.mock.calls).toEqual([["new", "use", viewer]]);
+  expect(state.requireGrant.mock.calls).toEqual([[[{
+    target: { id: "new", domainId: owner.domainId, kind: "PANEL" },
+    ownerFacts: { ownerId: "panel-owner", state: "PUBLISHED" }, verb: "USE",
+  }], viewer]]);
   expect(state.validate).toHaveBeenCalledWith(owner.domainId, "Customer", "new", expect.anything());
   expect(state.query.mock.calls).toHaveLength(2);
 });

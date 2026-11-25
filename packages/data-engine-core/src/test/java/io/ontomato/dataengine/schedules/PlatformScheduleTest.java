@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.schedules;
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import io.ontomato.dataengine.service.identity.UserCredentials;
 import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 import static org.awaitility.Awaitility.await;
@@ -55,7 +56,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   private PlatformTasks tasks;
   private UserDetail user;
   private ActionServiceImpl actions;
-  private CapabilityGrantLookup grantsForActions;
+  private ActionAuthorization grantsForActions;
   private OntologyQueryService targetQueries;
   private ABCProgramServiceImpl programs;
   private OntologyScheduleReferences references;
@@ -89,8 +90,9 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     credentials = new UserCredentials(store.jdbc(), identity, "test-seal");
     actions = spy(new ActionServiceImpl());
     doReturn(List.of()).when(actions).queryList(anyString(), isNull(), isNull(), anyString());
-    grantsForActions = mock(CapabilityGrantLookup.class);
-    when(grantsForActions.admission(anyString(), anyString(), anyString(), anyString())).thenReturn(CapabilityGrantLookup.Admission.ALL);
+    grantsForActions = mock(ActionAuthorization.class);
+    when(grantsForActions.standalone(any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.ALL);
+    when(grantsForActions.requireExecution(any(), any(), any(), any())).thenReturn(CapabilityGrantLookup.Admission.ALL);
     targetQueries = mock(OntologyQueryService.class);
     programs = new ABCProgramServiceImpl();
     // Ontology tasks created before Triggers took over keep running on this scheduler until they are migrated. The
@@ -122,7 +124,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
 
   private void wireActionExecutor() {
     ReflectionTestUtils.setField(actions, "abcProgramService", programs);
-    ReflectionTestUtils.setField(actions, "capabilityGrants", grantsForActions);
+    ReflectionTestUtils.setField(actions, "authorization", grantsForActions);
     ReflectionTestUtils.setField(actions, "queries", targetQueries);
     ReflectionTestUtils.setField(actions, "preconditions", new ActionPreconditionService(
         mock(DslService.class), mock(AdminService.class), targetQueries));
@@ -574,11 +576,14 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   @Test
   void scheduledActionsAndFunctionsReachRealGrantSigningAndVerification() throws Exception {
     jdbc.update(
-        "UPDATE function SET parameters=? WHERE id='f'",
+        "UPDATE function SET parameters=?, return_def=? WHERE id='f'",
         """
         [{"name":"org_id","type":"TYPE_STRING"},{"name":"up","type":"TYPE_NUMBER"},
          {"name":"tags","type":"TYPE_STRING_ARRAY"},{"name":"amounts","type":"TYPE_NUMBER_ARRAY"},
          {"name":"dates","type":"TYPE_TIME_ARRAY"},{"name":"cutoff","type":"TYPE_TIME"}]
+        """,
+        """
+        {"isVoid":true,"classNames":["Ledger"]}
         """);
     var grants =
         new QueryGrantService(jdbc, "test-signing", new WorkbenchServiceAuthentication("service"));
@@ -620,10 +625,9 @@ class PlatformScheduleTest extends PostgresTestDatabase {
                       .getJSONObject("secrets")
                       .getString("ONTOMATO_TK");
               String run = exchange.getRequestHeaders().getFirst("Idempotency-Key");
-              claims.set(grants.verify(token, run, "/writeFunctionOperation/update"));
+              claims.set(grants.verifyRequest(token, run, "POST", "/writeFunctionOperation/update"));
               assertEquals("alice", claims.get().getString("userId"));
               assertEquals("sales", claims.get().getString("domainId"));
-              assertEquals("sandbox-write", claims.get().getString("purpose"));
               var request = new MockHttpServletRequest();
               request.addHeader("tk", token);
               request.setAttribute(QueryGrantService.ATTRIBUTE, claims.get());
@@ -726,11 +730,22 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         assertNull(fixtureError.get(), String.valueOf(fixtureError.get()));
         assertEquals("completed", result.status(), String.valueOf(result.error()));
         assertEquals("done", result.result());
-        assertEquals(runId.toString(), claims.get().getString("runId"));
+        var verified = claims.get();
+        assertEquals(runId.toString(), verified.getString("runId"));
+        assertEquals("live", verified.getString("target"));
+        assertEquals(List.of("Ledger"), verified.getList("classNames", String.class));
         if (target.equals("action:a")) {
+          assertTrue(QueryGrantService.isActionExecution(verified));
+          var actionExecution = verified.getJSONObject("actionExecution");
+          assertEquals(action.getId(), actionExecution.getString("actionId"));
+          assertNull(actionExecution.get("workflowStep"));
           assertEquals("alice", deliveredIdentity.get().getString("principalId"));
           assertEquals("sales", deliveredIdentity.get().getString("domainId"));
-        } else assertNull(deliveredIdentity.get());
+        } else {
+          assertEquals("sandbox-write", verified.getString("purpose"));
+          assertNull(verified.get("actionExecution"));
+          assertNull(deliveredIdentity.get());
+        }
         sample("platformTaskRunSchema", result.wire());
         assertTrue(references.references("f"));
       }

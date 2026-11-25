@@ -4,7 +4,8 @@ import { qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { lockProducts } from "../../infrastructure/product-write-lock";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/grants";
+import { requireCurrentDefinitionUse } from "./access";
 import { findObjectDetailPanelId, requireDetailPanel } from "./object-detail";
 import { validateObjectDetailPanelMapping } from "./references";
 import { compileRegisteredPanelRoots, queueDependencyPublication } from "./entry-dependency-store";
@@ -25,8 +26,8 @@ async function writeObjectDetail(
       });
       return;
     }
-    await requireDetailPanel(owner.domainId, panelId, client);
-    await requireProductGrant(panelId, "use", credentials);
+    const panel = await requireDetailPanel(owner.domainId, panelId, client);
+    await requireCurrentDefinitionUse("panel", panel, owner.domainId, credentials);
     await validateObjectDetailPanelMapping(owner.domainId, className, panelId, client);
     const before = await findObjectDetailPanelId(owner.domainId, className, client);
     await compileRegisteredPanelRoots(client, owner.domainId, [panelId]);

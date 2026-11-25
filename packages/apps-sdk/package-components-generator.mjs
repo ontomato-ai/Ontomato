@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { checkCatalogue, componentMetadata, componentPorts } from "./reference.mjs";
+import { checkCatalogue, componentMetadata, componentPorts, resolveDeclaredConfig } from "./reference.mjs";
 
 export function generatePackageComponents({ root, catalogue, tsconfig, sources }, { componentPackageComponentsSchema, componentPackageManifestSchema }) {
   const manifest = componentPackageManifestSchema.parse(JSON.parse(readFileSync(join(root, "package.json"), "utf8")));
@@ -17,9 +17,12 @@ export function generatePackageComponents({ root, catalogue, tsconfig, sources }
       throw new Error(`${catalogue}:${line}: write the component's own name; the package name '${manifest.name}' is added`);
     const found = ports.get(`${metadata.module}#${metadata.exportName}`);
     if (!found) throw new Error(`${catalogue}:${line}: no --source exports ${metadata.exportName} as module ${metadata.module}`);
+    const restMetadata = { ...metadata };
+    delete restMetadata.configProps;
+    const resolvedConfig = resolveDeclaredConfig(metadata, found.props, { defaultToAll: true });
     return {
-      ...metadata, componentId: `${manifest.name}:${metadata.componentId}`,
-      ...(found.props.length ? { config: found.props } : {}), ports: found,
+      ...restMetadata, componentId: `${manifest.name}:${metadata.componentId}`,
+      ...(resolvedConfig?.length ? { config: resolvedConfig } : {}), ports: found,
     };
   }));
   const out = join(root, manifest.ontomato.components);

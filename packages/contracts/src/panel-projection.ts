@@ -31,19 +31,18 @@ const columnWidthSchema = z.union([z.number().positive(), z.string().min(1)]).op
 
 /**
  * Pure presentation mapping for one exact scalar value (string, number string, or `"true"`/`"false"`): maps the raw
- * value to a localized display label, semantic tone, and/or platform icon name. Never computes new values or evaluates
- * range/threshold expressions.
+ * value to a localized display label and/or platform icon name. Semantic tone travels on the value itself or
+ * `record.tones`, never in `valueMap`. Never computes new values or evaluates range/threshold expressions.
  */
 export const panelDisplayValueMapEntrySchema = z.object({
   label: z.string().min(1).optional().describe("Fallback display label when the exact raw value matches."),
   labelKey: panelMessageKeySchema.optional().describe("Panel message key or platform i18n key for the display label."),
   labels: z.record(z.string().min(1), z.string().min(1)).optional().describe("Locale-keyed display labels."),
-  tone: z.enum(["default", "info", "success", "warning", "danger"]).optional().describe("Semantic badge or text tone."),
   icon: z.string().min(1).optional().describe("Platform icon name resolved through the platform icon registry."),
 }).strict();
 export type PanelDisplayValueMapEntry = z.infer<typeof panelDisplayValueMapEntrySchema>;
 
-/** Map from exact scalar string key to pure presentation overrides (`label`/`labelKey`/`labels`, `tone`, `icon`). */
+/** Map from exact scalar string key to pure presentation overrides (`label`/`labelKey`/`labels`, `icon`). */
 export const panelDisplayValueMapSchema = z.record(z.string(), panelDisplayValueMapEntrySchema);
 export type PanelDisplayValueMap = z.infer<typeof panelDisplayValueMapSchema>;
 
@@ -66,7 +65,7 @@ export const panelObjectListColumnSchema = z.object({
   iconKey: z.string().min(1).optional(),
   emptyKey: panelMessageKeySchema.optional(),
   valueMap: panelDisplayValueMapSchema.optional().describe(
-    "Optional exact raw-value to display label/tone/icon mapping for cells in this column (pure presentation; no calculation or threshold expressions).",
+    "Optional exact raw-value to display label/icon mapping for cells in this column (pure presentation; semantic tone comes from the value or row.tones, not valueMap).",
   ),
   listSeparator: z.string().optional().describe(
     "Optional separator inserted between inline array items in this column (defaults to ', '; pass '' for inline sentence fragments).",

@@ -170,7 +170,7 @@
         "id": "builtin-product-9dc2abcb-1a64-4e1a-b919-0b8f69a02b65"
       },
       "graph": {
-        "component": "ObjectGraph",
+        "component": "OntologyModelGraph",
         "data": {
           "nodes": {
             "type": "platform:ObjectType",
@@ -195,14 +195,20 @@
             "source": "/fromclass",
             "target": "/toclass"
           },
-          "nodeCategory": "/className",
-          "nodeSize": 62,
-          "labelSize": 13,
-          "layout": "force",
-          "highlightBanner": false,
-          "showFocusButton": false
+          "nodeCategory": "/className"
         },
         "id": "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378"
+      },
+      "productGraph": {
+        "component": "ProductAssetGraph",
+        "type": "platform:ObjectType",
+        "data": {
+          "graph": "productGraph"
+        },
+        "config": {
+          "expanded": true
+        },
+        "id": "builtin-product-d5a7982b-81f6-4319-b51b-910c3e7f8412"
       },
       "pathFromPicker": {
         "component": "ReferencePicker",
@@ -396,6 +402,8 @@
         "panel.name": "本体图谱",
         "ontologyGraph.description": "探索本体中对象类型、属性与关系的结构",
         "ontologyGraph.statsLabel": "本体资源统计",
+        "ontologyGraph.productRelationGraph": "产品关系图谱",
+        "ontologyGraph.productGraphTitle": "产品资产关系图谱",
         "ontologyGraph.refresh": "刷新",
         "ontologyGraph.searchPlaceholder": "搜索 本体模型",
         "ontologyGraph.filterByType": "按类型筛选",
@@ -425,9 +433,12 @@
         "ontologyGraph.objectForbiddenTitle": "无权限查看该对象类型",
         "ontologyGraph.relationForbiddenTitle": "无权限查看该关系类型",
         "ontologyGraph.forbiddenDesc": "当前账号缺少读取该元素的权限。",
+        "ontologyGraph.graphReadFailedTitle": "读取本体图谱失败",
+        "ontologyGraph.graphReadFailedDesc": "暂时无法读取本体图谱数据，请稍后重试。",
         "ontologyGraph.objectReadFailedTitle": "读取对象类型失败",
         "ontologyGraph.relationReadFailedTitle": "读取关系类型失败",
         "ontologyGraph.readFailedFallback": "暂时无法读取该元素的最新内容，请重试。",
+        "ontologyGraph.navigationFailed": "暂时无法打开目标页面，请稍后重试。",
         "ontologyGraph.retry": "重试",
         "ontologyGraph.clearSelection": "清除选择"
       },
@@ -435,6 +446,8 @@
         "panel.name": "Ontology graph",
         "ontologyGraph.description": "Explore object types, attributes, and relationships in the ontology",
         "ontologyGraph.statsLabel": "Ontology summary",
+        "ontologyGraph.productRelationGraph": "Product relation graph",
+        "ontologyGraph.productGraphTitle": "Product asset relationship graph",
         "ontologyGraph.refresh": "Refresh",
         "ontologyGraph.searchPlaceholder": "Search ontology model",
         "ontologyGraph.filterByType": "Filter by type",
@@ -464,9 +477,12 @@
         "ontologyGraph.objectForbiddenTitle": "No permission to view this object type",
         "ontologyGraph.relationForbiddenTitle": "No permission to view this relation type",
         "ontologyGraph.forbiddenDesc": "Your account does not have permission to read this element.",
+        "ontologyGraph.graphReadFailedTitle": "Failed to load ontology graph",
+        "ontologyGraph.graphReadFailedDesc": "Unable to read the ontology graph right now. Please try again.",
         "ontologyGraph.objectReadFailedTitle": "Failed to load object type",
         "ontologyGraph.relationReadFailedTitle": "Failed to load relation type",
         "ontologyGraph.readFailedFallback": "Unable to read the latest details for this element. Please retry.",
+        "ontologyGraph.navigationFailed": "Unable to open the target page right now. Please try again.",
         "ontologyGraph.retry": "Retry",
         "ontologyGraph.clearSelection": "Clear selection"
       },
@@ -474,6 +490,8 @@
         "panel.name": "Ontology graph",
         "ontologyGraph.description": "Explore object types, attributes, and relationships in the ontology",
         "ontologyGraph.statsLabel": "Ontology summary",
+        "ontologyGraph.productRelationGraph": "Product relation graph",
+        "ontologyGraph.productGraphTitle": "Product asset relationship graph",
         "ontologyGraph.refresh": "Refresh",
         "ontologyGraph.searchPlaceholder": "Search ontology model",
         "ontologyGraph.filterByType": "Filter by type",
@@ -503,9 +521,12 @@
         "ontologyGraph.objectForbiddenTitle": "No permission to view this object type",
         "ontologyGraph.relationForbiddenTitle": "No permission to view this relation type",
         "ontologyGraph.forbiddenDesc": "Your account does not have permission to read this element.",
+        "ontologyGraph.graphReadFailedTitle": "Failed to load ontology graph",
+        "ontologyGraph.graphReadFailedDesc": "Unable to read the ontology graph right now. Please try again.",
         "ontologyGraph.objectReadFailedTitle": "Failed to load object type",
         "ontologyGraph.relationReadFailedTitle": "Failed to load relation type",
         "ontologyGraph.readFailedFallback": "Unable to read the latest details for this element. Please retry.",
+        "ontologyGraph.navigationFailed": "Unable to open the target page right now. Please try again.",
         "ontologyGraph.retry": "Retry",
         "ontologyGraph.clearSelection": "Clear selection"
       }

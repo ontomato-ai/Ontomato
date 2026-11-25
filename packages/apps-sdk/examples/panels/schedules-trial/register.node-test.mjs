@@ -128,6 +128,8 @@ test("registers the trial's projections, panels and applications in that order",
     ["/applications/app-panels-trial-b/summary", { en: "Task summary", "zh-CN": "任务摘要" }],
   ]);
   assert.ok(uses.every((use) => !Object.hasOwn(use, "skill")));
+  assert.deepEqual(requests.filter(request => request.method === "PUT" && request.url.includes("/platform/applications/"))
+    .map(({ body }) => body.initialOpenEntryIds), [["use-trial-a-tasks"], ["use-trial-b-tasks", "use-trial-b-summary"]]);
 
   const writes = requests.filter((request) => request.method === "PUT").map((request) => request.url);
   assert.deepEqual(
@@ -187,7 +189,7 @@ test("snapshots the pre-upgrade revisions and uses them without reading the lega
   ]);
   for (const { body } of writes.slice(6)) {
     assert.equal(Object.hasOwn(body, "declaration"), false);
-    assert.equal(Object.hasOwn(body, "entryAccess"), false);
+    assert.equal(Object.hasOwn(body, "initialOpenEntryIds"), false);
   }
 });
 

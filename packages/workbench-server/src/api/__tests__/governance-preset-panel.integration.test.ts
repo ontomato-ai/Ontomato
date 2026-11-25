@@ -1,3 +1,4 @@
+import { mountCurrentProductDecisions } from "../../__tests__/fixtures/product-grant-check";
 import { randomUUID } from "node:crypto";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -199,6 +200,10 @@ beforeAll(async () => {
 
   const app = express();
   app.use(express.json());
+  mountCurrentProductDecisions(app, {
+    token: "fixture-service", domain: caller => caller,
+    allow: ({ ownerFacts, verb }, caller) => Boolean(caller && (ownerFacts.ownerId === "admin" || verb === "USE" && ownerFacts.ownerId === null)),
+  });
   app.post("/product-governance/register", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
     registrations.push(req.body);

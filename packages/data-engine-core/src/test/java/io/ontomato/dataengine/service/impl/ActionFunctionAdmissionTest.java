@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service.impl;
 
 
+import io.ontomato.dataengine.service.authorization.ActionAuthorization;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -48,6 +49,7 @@ class ActionFunctionAdmissionTest {
     ReflectionTestUtils.setField(messages, "langMap", Map.of("en", english));
     ReflectionTestUtils.setField(service, "langService", messages);
     ReflectionTestUtils.setField(service, "functionDao", functions);
+    ReflectionTestUtils.setField(service, "authorization", mock(ActionAuthorization.class));
     ReflectionTestUtils.setField(service, "actionDao", actions);
     ReflectionTestUtils.setField(service, "abcProgramService", programs);
   }
@@ -105,7 +107,7 @@ class ActionFunctionAdmissionTest {
   void formAndExecutionRejectStoredInvalidAssetsWithTheSameMessage(String operation) throws Exception {
     doReturn(action(operation)).when(service).queryById("action-a");
     var formError = assertThrows(OwnerRefusal.class,
-        () -> service.form("action-a", new JSONObject(), null, List.of(), "en", user));
+        () -> service.form("action-a", new JSONObject(), null, List.of(), "en", user, new UserDataPermission(), io.ontomato.dataengine.service.ExecutionTarget.LIVE));
     var executionError = assertThrows(OwnerRefusal.class,
         () -> service.execute("action-a", new JSONObject(), "en", user, new UserDataPermission(), 1));
     assertEquals("ACTION_NOT_EXECUTABLE", formError.code());

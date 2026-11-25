@@ -4,7 +4,8 @@ import { currentProductRecord, findCurrentProduct } from "../../infrastructure/p
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
+import type { ProductOwner } from "../product-governance/grants";
+import { requireCurrentDefinitionUse } from "./access";
 
 type ObjectDetailResolution = { kind: "configured"; panelId: string } | { kind: "unconfigured" };
 type ObjectDetailPanelMapping = { className: string; panelId: string };
@@ -29,6 +30,7 @@ export async function requireDetailPanel(domainId: string, panelId: string, clie
   const result = await findDetailPanel(domainId, panelId, client);
   if (result.status === "missing") throw new HttpError(404, "Mapped detail panel does not exist", "PRODUCT_NOT_FOUND");
   if (result.status === "invalid") throw new HttpError(404, "Mapped detail panel definition is invalid", "PRODUCT_UNAVAILABLE");
+  return result.panel;
 }
 
 export async function resolveObjectDetail(
@@ -36,8 +38,8 @@ export async function resolveObjectDetail(
 ): Promise<ObjectDetailResolution> {
   const panelId = await findObjectDetailPanelId(owner.domainId, className);
   if (panelId === null) return { kind: "unconfigured" };
-  await requireDetailPanel(owner.domainId, panelId);
-  await requireProductGrant(panelId, "use", credentials);
+  const panel = await requireDetailPanel(owner.domainId, panelId);
+  await requireCurrentDefinitionUse("panel", panel, owner.domainId, credentials);
   return { kind: "configured", panelId };
 }
 
