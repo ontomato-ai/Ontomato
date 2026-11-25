@@ -4,17 +4,19 @@ import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 
 import io.ontomato.dataengine.applications.ApplicationCatalog;
 import io.ontomato.dataengine.bean.workflow.GrantScope;
+import io.ontomato.dataengine.migration.DataEngineMigration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
-public final class EntryDependencyChanges {
-    public record Source(String kind, String id, String actorId) {}
+public final class EntryDependencyChanges implements DataEngineMigration {
+    public record Source(String kind, String sequence, String actorId) {}
     public record Dependency(Kind objectType, String objectKey, Verb verb, GrantScope scope) {}
     public record EntryChange(String entryId, List<Dependency> before, List<Dependency> after) {}
     public record Publication(String domainId, Source source, List<EntryChange> entries) {}
@@ -22,12 +24,31 @@ public final class EntryDependencyChanges {
     private final AuthorizationStore store;
     private final ApplicationCatalog applications;
     private final TransactionTemplate transactions;
+    private final JdbcTemplate jdbc;
 
     public EntryDependencyChanges(AuthorizationStore store, ApplicationCatalog applications,
-                                  TransactionTemplate transactions) {
+                                  TransactionTemplate transactions, JdbcTemplate jdbc) {
         this.store = store;
         this.applications = applications;
         this.transactions = transactions;
+        this.jdbc = jdbc;
+    }
+
+    @Override
+    public String id() {
+        return "20261126-entry-dependency-publication-cursor";
+    }
+
+    @Override
+    public void run() {
+        jdbc.execute("""
+            CREATE TABLE IF NOT EXISTS entry_dependency_publication_cursor (
+                domain_id text NOT NULL,
+                source text NOT NULL,
+                sequence bigint NOT NULL,
+                PRIMARY KEY (domain_id, source)
+            )
+            """);
     }
 
     public void apply(Publication publication) {
@@ -36,13 +57,31 @@ public final class EntryDependencyChanges {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A domain, source and entry changes are required");
         if (publication.source().kind() == null
                 || !Set.of("panel", "application", "object-detail").contains(publication.source().kind())
-                || publication.source().id() == null || publication.source().id().isBlank()
+                || publication.source().sequence() == null || !publication.source().sequence().matches("[1-9][0-9]*")
                 || publication.source().actorId() == null || publication.source().actorId().isBlank())
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid entry dependency source");
 
+        var sequence = publicationSequence(publication.source().sequence());
         transactions.executeWithoutResult(ignored -> {
+            // The workbench commits its cursor after this transaction. Replayed events must
+            // not recreate a proposal that an administrator has already handled.
+            int advanced = jdbc.update("""
+                INSERT INTO entry_dependency_publication_cursor AS cursor (domain_id, source, sequence)
+                VALUES (?, ?, ?)
+                ON CONFLICT (domain_id, source) DO UPDATE SET sequence = EXCLUDED.sequence
+                WHERE cursor.sequence < EXCLUDED.sequence
+                """, publication.domainId(), publication.source().kind(), sequence);
+            if (advanced == 0) return;
             for (var entry : publication.entries()) apply(publication.domainId(), publication.source(), entry);
         });
+    }
+
+    private static long publicationSequence(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException error) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid entry dependency change sequence", error);
+        }
     }
 
     private void apply(String domainId, Source source, EntryChange change) {
@@ -63,7 +102,10 @@ public final class EntryDependencyChanges {
             }
         }
         closeRemoved(entry, removed);
-        if (!change.entryId().startsWith("object-detail:") && !applications.ownsEntry(domainId, change.entryId())) return;
+        if (!change.entryId().startsWith("object-detail:") && !applications.ownsEntry(domainId, change.entryId())) {
+            store.closePendingGrants(entry, entry, Verb.ENTER, null);
+            return;
+        }
         for (var added : difference(change.after(), change.before())) {
             AuthorizationPolicies.requireGrant(added.objectType(), added.objectKey(), added.verb(), added.scope(), true);
             var target = new ObjectTarget(domainId, added.objectType(), added.objectKey());
@@ -71,7 +113,7 @@ public final class EntryDependencyChanges {
                 if (store.objectGrants(target, added.verb(), Set.of(policy)).stream()
                         .anyMatch(grant -> java.util.Objects.equals(grant.scope(), added.scope()))) continue;
                 var grant = new ObjectGrant(policy, target, added.verb(), added.scope());
-                store.addPendingGrant(new PendingGrant(0, source.kind(), source.id(), source.actorId(), entry, grant));
+                store.addPendingGrant(new PendingGrant(0, source.kind(), source.sequence(), source.actorId(), entry, grant));
             }
         }
     }

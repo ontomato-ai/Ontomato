@@ -6,18 +6,20 @@ import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client
 import { assistantService } from "../assistant/service";
 import { panelFormSaveInputSchema } from "@ontomato/contracts/panel-projection";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
-import { changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema } from "@ontomato/contracts/product-governance";
+import { RETRIEVAL_AGENT_ID } from "@ontomato/contracts/product-governance";
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
-import { productGrantAllowed, requireProductGrant, setProductGrants, shareProductResource } from "../product-governance/grants";
+import { replaceAgentLevel, setAgentDomainUse } from "../product-governance/authorization";
+import { agentAllowed, requireAgent } from "../assistant/authorization";
+import { assistantStore } from "../assistant/store";
 import {
-  agentDefinitionDeletionRestriction, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, readStoredAgentDefinition, saveAgentDefinitionSnapshot,
+  agentDefinitionDeletionRestriction, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, saveAgentDefinitionSnapshot,
 } from "../assistant/definitions";
 import type { AssistantSkillView } from "../assistant/skills";
 import type { PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "./server-operations";
 import { AgentDefinitionFieldError, agentDefinitionSave, parseAgentDefinitionForm, parseAgentDefinitionUpdateForm } from "../assistant/definition-form-schema";
 import { modelSelectionWrite } from "../assistant/model-panel-form";
-import { createSystemAgentOwners, systemFormValues } from "./agent-definition-directory";
+import { agentPolicyDefinition, createSystemAgentOwners, systemFormValues } from "./agent-definition-directory";
 
 const resultSchema = z.union([assistantAgentDefinitionSchema, modelSelectionWrite]);
 const targetSchema = panelFormTargetSchema.options[0].extend({
@@ -60,7 +62,8 @@ async function definitionLabel(host: PanelOperationHost, target: PanelRecordTarg
   const { owner, credentials } = host.initiator;
   const source = await createSystemAgentOwners(owner, credentials).forTarget(target.primaryKey);
   if (source) {
-    await requireProductGrant(target.primaryKey, "view", credentials);
+    if (target.primaryKey !== RETRIEVAL_AGENT_ID)
+      await requireAgent(await assistantStore.agent(target.primaryKey, owner), "VIEW", credentials);
     return (await source.read()).name;
   }
   const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "GET" });
@@ -90,17 +93,14 @@ async function systemDeletionRestriction(host: PanelOperationHost, target: Panel
     return { reason: tForLocale(host.locale, "panels.agentDefinition.systemCannotDelete") };
 }
 
-const grantInput = changeProductGrantRequestSchema.omit({ remove: true });
-const grantLevels = {
-  use: ["use"],
-  view: ["use", "view"],
-  edit: ["use", "view", "edit"],
-} as const;
+const policyInput = z.object({ policyId: z.string().trim().min(1) }).strict();
+const grantInput = policyInput.extend({ verb: z.enum(["use", "view", "edit"]) });
+const verbs = { use: "USE", view: "VIEW", edit: "EDIT" } as const;
 
 function grantOperation<Input extends Record<string, unknown>>(
   name: "grant" | "revoke" | "share",
   schema: z.ZodType<Input>,
-  mutate: (id: string, credentials: PanelOperationHost["executor"]["credentials"], input: Input) => Promise<unknown>,
+  mutate: (definition: Awaited<ReturnType<typeof agentPolicyDefinition>>, credentials: PanelOperationHost["executor"]["credentials"], input: Input) => Promise<unknown>,
 ) {
   const handlerRef = `agents.${name}`;
   return {
@@ -121,10 +121,7 @@ function grantOperation<Input extends Record<string, unknown>>(
       const values = schema.parse(input);
       const { owner, credentials } = executor;
       try {
-        await requireProductGrant(primaryKey, "edit", credentials);
-        if (!await createSystemAgentOwners(owner, credentials).forTarget(primaryKey))
-          await readStoredAgentDefinition(primaryKey, owner, credentials.locale);
-        await mutate(primaryKey, credentials, values);
+        await mutate(await agentPolicyDefinition(owner, credentials, primaryKey), credentials, values);
         return { kind: "success", data: {}, affected: affectedDefinition(primaryKey) };
       } catch (error) {
         if (!(error instanceof HttpError) || error.status < 400 || error.status >= 500) throw error;
@@ -161,7 +158,8 @@ export const agentDefinitionOperations = [
           const caller = host.initiator;
           const source = await createSystemAgentOwners(caller.owner, caller.credentials).forTarget(target.primaryKey);
           if (source) {
-            await requireProductGrant(target.primaryKey, "edit", caller.credentials);
+            if (target.primaryKey !== RETRIEVAL_AGENT_ID)
+              await requireAgent(await assistantStore.agent(target.primaryKey, caller.owner), "EDIT", caller.credentials);
             if (submittedFields?.some(path => path !== "/modelSelection" && path !== "/modelSelection/modelId"))
               throw new HttpError(400, "Only the model selection can be changed", "INVALID_REQUEST");
             const data = submittedFields?.length === 0
@@ -204,10 +202,12 @@ export const agentDefinitionOperations = [
     done: (host, name) => tForLocale(host.locale, "panels.agentDefinition.deleted", { name }),
     inspectImpact: deleteImpact,
     async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
-      if (!await productGrantAllowed(target.primaryKey, "edit", host.initiator.credentials))
-        return { reason: tForLocale(host.locale, "panels.agentForm.editReadOnly") };
       const restriction = await systemDeletionRestriction(host, target);
-      return restriction ?? agentDefinitionDeletionRestriction(target.primaryKey, host.initiator.owner, host.locale);
+      if (restriction) return restriction;
+      const { owner, credentials } = host.initiator;
+      if (!await agentAllowed(await assistantStore.agent(target.primaryKey, owner), "EDIT", credentials))
+        return { reason: tForLocale(host.locale, "panels.agentForm.editReadOnly") };
+      return agentDefinitionDeletionRestriction(target.primaryKey, owner, host.locale);
     },
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const restriction = await systemDeletionRestriction(host, target);
@@ -218,10 +218,10 @@ export const agentDefinitionOperations = [
         : unsuccessfulWrite(response);
     },
   },
-  grantOperation("grant", grantInput, (id, credentials, { verb, ...principal }) =>
-    setProductGrants(credentials, { id, ...principal, verbs: [...grantLevels[verb]] })),
-  grantOperation("revoke", grantInput.omit({ verb: true }), (id, credentials, principal) =>
-    setProductGrants(credentials, { id, ...principal, verbs: [] })),
-  grantOperation("share", changeProductDomainGrantRequestSchema, (id, credentials, { shared }) =>
-    shareProductResource(id, shared, credentials)),
+  grantOperation("grant", grantInput, (definition, credentials, { policyId, verb }) =>
+    replaceAgentLevel(definition, policyId, verbs[verb], credentials)),
+  grantOperation("revoke", policyInput, (definition, credentials, { policyId }) =>
+    replaceAgentLevel(definition, policyId, null, credentials)),
+  grantOperation("share", z.object({ shared: z.boolean() }).strict(), (definition, credentials, { shared }) =>
+    setAgentDomainUse(definition, shared, credentials)),
 ] as const satisfies readonly PanelServerOperation[];

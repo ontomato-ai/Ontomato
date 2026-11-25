@@ -52,6 +52,8 @@ public class QueryAccessService {
     JSONObject grant = (JSONObject) request.getAttribute(QueryGrantService.ATTRIBUTE);
     if (grant != null) {
       String userId = grant.getString("userId"), domain = grant.getString("domainId");
+      if ("retrieval-exploration".equals(grant.getString("purpose")))
+        identity.requireQueryAccess(userId, domain);
       User user = new GrantUser(userId, domain);
       return new Access(
           user,
@@ -60,10 +62,20 @@ public class QueryAccessService {
           request.getHeader("tk"),
           grant.getLong("expiresAt")).withExecution(grant.getString("executionUserId"), grant.getString("initiatorUserId"));
     }
+    return userAccess(request, true);
+  }
+
+  public Access forRetrievalAdmission(HttpServletRequest request) {
+    if (request.getAttribute(QueryGrantService.ATTRIBUTE) != null)
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "A current user credential is required");
+    return userAccess(request, false);
+  }
+
+  private Access userAccess(HttpServletRequest request, boolean query) {
     User user = identity.getCurrentUser();
     if (user == null || !user.isEnable())
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication is required");
-    identity.requireQueryAccess();
+    if (query) identity.requireQueryAccess();
     return new Access(
         user, identity.getCurrentUserDataPermission(), null, null,
         identity.getCurrentCredentialExpiresAt()).withTarget(request.getHeader(DataSandboxService.HEADER)==null ? ExecutionTarget.LIVE : contexts.resolve(request));

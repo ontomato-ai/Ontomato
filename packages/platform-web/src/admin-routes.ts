@@ -32,6 +32,8 @@ export const legacyAdminRoutes: RouteRecordRaw[] = [
     path: "/admin/" + key, redirect: routes.metrics.path,
   })),
   { path: "/admin/knowledge", redirect: routes.knowledge.path },
+  // Exact legacy address redirect for user feedback, reusing /ops/feedback admission.
+  { path: "/governance/feedback", redirect: (to) => ({ path: routes.feedback.path, query: to.query }) },
   // The agents were configured under the old console's "analysis" pages; they are one page of the ontology manager now.
   ...["analysis", "system-agents"].map((key) => ({ path: "/admin/" + key, redirect: routes.ontologyAgents.path })),
   ...["skills", "skills/analysis", "skills/visualization"].map((key) => ({

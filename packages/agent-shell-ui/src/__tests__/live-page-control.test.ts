@@ -149,11 +149,15 @@ describe("live agent page control (requirement-64995244)", () => {
     const request = { kind: "fill_form" as const, member: "form", values: { "/name": "New name" } };
 
     expect(await display.present(frame(request))).toMatchObject({ status: "not_filled", reason: "blocked_unsaved" });
-    expect(fillForm).toHaveBeenLastCalledWith({ member: "form", values: request.values });
+    expect(fillForm).toHaveBeenLastCalledWith({
+      member: "form", values: request.values, agentRun: { sessionId: SESSION, runId: RUN, toolCallId: expect.any(String) },
+    });
     expect(await display.present(frame({ ...request, overwriteUnsaved: true }))).toMatchObject({
       status: "filled", member: "form", filledFields: ["/name"],
     });
-    expect(fillForm).toHaveBeenLastCalledWith({ member: "form", values: request.values, overwriteUnsaved: true });
+    expect(fillForm).toHaveBeenLastCalledWith(expect.objectContaining({
+      member: "form", values: request.values, overwriteUnsaved: true,
+    }));
     unregister();
   });
 
@@ -275,12 +279,12 @@ describe("live agent page control (requirement-64995244)", () => {
     unregister();
   });
 
-  it("executes fill_form and page_action through the mounted page controller and invalidates pending confirmation on navigation", async () => {
+  it.each(["page_action", "fill_form"] as const)("binds a write requested by %s and invalidates it on navigation", async (kind) => {
     const { display } = setup();
     await display.present(frame({ kind: "page", address: "/actions" }));
 
-    const fillForm = vi.fn(async () => ({
-      ok: true as const,
+    const fillForm = vi.fn(async (): Promise<import("@ontomato/contracts/agent-presentation").FormFillOutcome> => ({
+      ok: true,
       member: "form",
       filledFields: ["/name"],
     }));
@@ -330,8 +334,13 @@ describe("live agent page control (requirement-64995244)", () => {
     const filled = await display.present(frame({ kind: "fill_form", member: "form", values: { "/name": "Action A" } }));
     expect(filled).toMatchObject({ status: "filled", reason: "form_updated", member: "form", filledFields: ["/name"] });
 
-    // page_action returns awaiting_confirmation and binds the confirmation to this live page instance.
-    const awaiting = await display.present(frame({ kind: "page_action", operation: "form.save" }));
+    const writeFrame = kind === "page_action"
+      ? frame({ kind, operation: "form.save" })
+      : frame({ kind, member: "form", values: { "/name": "Action B" } });
+    if (kind === "fill_form") {
+      fillForm.mockResolvedValueOnce({ ok: true, member: "form", filledFields: [], write: await executeAction() });
+    }
+    const awaiting = await display.present(writeFrame);
     expect(awaiting).toMatchObject({
       status: "awaiting_confirmation",
       intentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -342,6 +351,23 @@ describe("live agent page control (requirement-64995244)", () => {
     await display.present(frame({ kind: "page", address: "/graph" }));
     expect(cancel).toHaveBeenCalledWith(expect.objectContaining({ code: "FORM_CONFIRMATION_STALE" }));
     expect(display.takePendingActionConfirmation("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")).toBeNull();
+    unregister();
+  });
+
+  it("returns the write receipt for an automatic field saved without a question", async () => {
+    const { display } = setup();
+    await display.present(frame({ kind: "page", address: "/actions" }));
+    const unregister = display.registerPageController("/actions", {
+      applyState() {},
+      async fillForm() {
+        return {
+          ok: true, member: "form", filledFields: [],
+          write: { ok: true, kind: "executed", operation: "form.save", intentId: "saved-intent" },
+        };
+      },
+    });
+    expect(await display.present(frame({ kind: "fill_form", member: "form", values: { "/name": "Saved" } })))
+      .toMatchObject({ status: "executed", intentId: "saved-intent" });
     unregister();
   });
 
@@ -387,13 +413,13 @@ describe("live agent page control (requirement-64995244)", () => {
       expectedTarget: { kind: "object", objectType: "platform:Action", primaryKey: "act-1" },
     }));
     expect(okFill).toMatchObject({ status: "filled", member: "form" });
-    expect(fillForm).toHaveBeenLastCalledWith({
+    expect(fillForm).toHaveBeenLastCalledWith(expect.objectContaining({
       member: "form",
       values: { "/name": "OK" },
       expectedPageInstanceId: firstPageInstanceId,
       expectedMemberInstanceId: "nested-1",
       expectedTarget: { kind: "object", objectType: "platform:Action", primaryKey: "act-1" },
-    });
+    }));
 
     // Remounting the page controller at the same path rotates pageInstanceId.
     unregister1();

@@ -40,7 +40,7 @@ class OntologyGenerationBackgroundContextTest {
     var jdbc = mock(JdbcTemplate.class);
     var identities = mock(io.ontomato.dataengine.schedules.ScheduleIdentity.class);
     var identity = mock(IdentityService.class);
-    var productGrants = mock(ProductGrantService.class);
+    var retrieverAccess = mock(RetrieverAccess.class);
     when(identity.getCurrentUser()).thenReturn(new SimpleUser(owner.userId(), "u", "u", true, owner.domainId()));
     long credentialExpiry = Instant.now().plusSeconds(3600).toEpochMilli();
     when(identity.getCurrentCredentialExpiresAt()).thenReturn(credentialExpiry);
@@ -48,7 +48,7 @@ class OntologyGenerationBackgroundContextTest {
       when(jdbc.queryForList(contains("FROM ontology_retrieval_callers"), eq(java.util.UUID.fromString(callerHeader))))
           .thenReturn(List.of(Map.of("user_id", owner.userId(), "domain_id", owner.domainId())));
     }
-    var callers = new AgentCaller(jdbc, identities, identity, productGrants);
+    var callers = new AgentCaller(jdbc, identities, identity, retrieverAccess);
 
     var store = mock(OntologyAgentStore.class);
     when(store.transaction(any())).thenAnswer(call -> call.<java.util.function.Supplier<?>>getArgument(0).get());

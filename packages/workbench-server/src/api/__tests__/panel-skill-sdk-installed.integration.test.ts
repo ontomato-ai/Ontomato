@@ -1,3 +1,4 @@
+import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
@@ -7,6 +8,15 @@ import { startPanelSkillEntryServer } from "../../__tests__/fixtures/panel-skill
 import { protectedSkillRef } from "../../core/skills/providers";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
 
+vi.mock("../../utils/backend-client", async original => {
+  const backend = await original<typeof import("../../utils/backend-client")>();
+  return { ...backend, async backendPost(...args: Parameters<typeof backend.backendPost>) {
+    if (args[0] !== "object-authorization-decide-batch") return backend.backendPost(...args);
+    const decisions = agentObjectDecisions(args[2] as Parameters<typeof agentObjectDecisions>[0], request =>
+      "create" in request || (request.target.domainId === server.domainId && fixture.grants.has(request.target.id)));
+    return { text: JSON.stringify(decisions) };
+  } };
+});
 vi.mock("../../services/assistant/execution-setting", () => ({ validateExecutionSetting: vi.fn() }));
 const governance = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "knowledge-governance" };
 const governanceDefault = { kind: "preset" as const, agentKind: "governance-report" };

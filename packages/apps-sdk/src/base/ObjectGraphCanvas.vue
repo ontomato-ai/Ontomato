@@ -1,16 +1,34 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { PageHighlight } from "@ontomato/contracts/page-context";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { G6GraphCanvas, layoutByForce, layoutByRelations, type GraphCanvasPoint, type GraphCanvasTone, type GraphCanvasViewport, type LayoutRoom } from "@ontomato/foundation-ui/graph/g6";
+import {
+  G6GraphCanvas,
+  layoutByForce,
+  layoutByRelations,
+  type GraphCanvasEdge,
+  type GraphCanvasElement,
+  type GraphCanvasNodeViewportBox,
+  type GraphCanvasPoint,
+  type GraphCanvasStyleOverrides,
+  type GraphCanvasTone,
+  type GraphCanvasViewport,
+  type LayoutRoom,
+} from "@ontomato/foundation-ui/graph/g6";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberOutput, useMemberParam } from "../panel/member";
 import { savePanelFile } from "../panel/save-file";
 import { useGraphRecords, type EdgeEndsConfig } from "./object-graph-data";
+import {
+  PENDING_GRAPH_EDGE_ID,
+  resolveGraphExportFilename,
+  type PendingGraphEdge,
+} from "./object-graph-export";
 import { findDirectedGraphPath } from "./object-graph-path";
+import type { ObjectListRef } from "./object-list-types";
 
 /**
  * The graph as a page draws it (the ontology graph, visual modeling): the owner's node and edge records on the platform's
@@ -28,7 +46,39 @@ const props = withDefaults(defineProps<{
   edgeEnds?: EdgeEndsConfig; editable?: boolean; categories?: readonly string[]; nodeCategory?: string;
   nodeSize?: number; labelSize?: number; layout?: "relations" | "force";
   highlightBanner?: boolean; showFocusButton?: boolean; hint?: string;
-}>(), { editable: undefined, highlightBanner: undefined, showFocusButton: undefined });
+  /** Single-page presentation option: background CSS colour composited behind exported PNG layers. */
+  exportBackground?: string;
+  /** Single-page presentation option: exported PNG filename template (`{date}` expands to local `YYYY-MM-DD`). */
+  exportFilename?: string;
+  /** Internal style overrides supplied by dedicated platform graph components (never exposed on `ObjectGraph`). */
+  styleOverrides?: GraphCanvasStyleOverrides;
+  /** Internal toolbar layout supplied by dedicated platform graph components (never exposed on `ObjectGraph`). */
+  toolbarPlacement?: "floating" | "top-four";
+  /** Internal hover connection-port overlay enabled only by `VisualModelingGraph`. */
+  connectPorts?: boolean;
+  /** Internal uncommitted visual pending edge preview enabled only by `VisualModelingGraph`. */
+  showPendingEdge?: boolean;
+  /** Optional explicit visual pending edge preview supplied by `VisualModelingGraph`. */
+  pendingEdge?: PendingGraphEdge | null;
+}>(), {
+  editable: undefined,
+  highlightBanner: undefined,
+  showFocusButton: undefined,
+  exportBackground: undefined,
+  exportFilename: undefined,
+  styleOverrides: undefined,
+  toolbarPlacement: "floating",
+  connectPorts: false,
+  showPendingEdge: false,
+  pendingEdge: null,
+});
+
+const emit = defineEmits<{
+  /** Emitted when the reader explicitly activates a node or edge by double-clicking it. */
+  choose: [value: ObjectListRef];
+}>();
+
+const previewMarkerId = `sdk-graph-connect-arrow-${useId().replace(/:/g, "")}`;
 
 const { t } = useI18n();
 const panel = usePanelContext();
@@ -68,6 +118,14 @@ const showFocusButton = computed(() => {
 const canvasHint = computed(() => {
   const value = props.hint ?? member.projection.config.hint;
   return typeof value === "string" && value.trim() ? value.trim() : "";
+});
+const exportBackground = computed(() => {
+  const value = props.exportBackground ?? member.projection.config.exportBackground;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+});
+const exportFilename = computed(() => {
+  const value = props.exportFilename ?? member.projection.config.exportFilename;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 });
 
 /** The type each datum reads: a chosen node or edge is an object of that type. */
@@ -350,7 +408,35 @@ useMemberOutput("edgeCount", () => resolved.value.links.length);
 const drawnNodes = computed(() => resolved.value.nodes.map((node) => ({
   ...node, ...computedLayout.value.positions.get(node.id), ...saved.value[node.id], tone: nodeToneOf(node.id),
 })));
-const drawnEdges = computed(() => resolved.value.links.map((edge) => ({ ...edge, tone: edgeToneOf(edge.id) })));
+/** Purely visual uncommitted edge shown while the reader completes a new-relation dialog (never written to the owner). */
+const activePendingEdge = computed<PendingGraphEdge | null>(() => {
+  if (!props.showPendingEdge) return null;
+  const existing = new Set(resolved.value.nodes.map((node) => node.id));
+  if (props.pendingEdge && existing.has(props.pendingEdge.source) && existing.has(props.pendingEdge.target)) {
+    return props.pendingEdge;
+  }
+  const source = endpointKeyOf(connectFrom.value.value, nodeType);
+  const target = endpointKeyOf(connectTo.value.value, nodeType);
+  if (source && target && existing.has(source) && existing.has(target)) {
+    return { source, target };
+  }
+  return null;
+});
+const drawnEdges = computed<GraphCanvasEdge[]>(() => {
+  const base: GraphCanvasEdge[] = resolved.value.links.map((edge) => ({ ...edge, tone: edgeToneOf(edge.id) }));
+  const pending = activePendingEdge.value;
+  if (pending) {
+    base.push({
+      id: PENDING_GRAPH_EDGE_ID,
+      source: pending.source,
+      target: pending.target,
+      label: pending.label ?? "",
+      line: "dashed",
+      tone: "path",
+    });
+  }
+  return base;
+});
 
 let selectionGuarding = false;
 /**
@@ -398,7 +484,7 @@ function chooseNode(ids: readonly string[]) {
 }
 
 function chooseEdge(ids: readonly string[]) {
-  const nextId = ids[0] ?? null;
+  const nextId = ids.find((id) => id !== PENDING_GRAPH_EDGE_ID) ?? null;
   if (nextId === null) {
     if (selectedEdge.value.value === null) return;
     guardSelectionChange(() => {
@@ -410,6 +496,43 @@ function chooseEdge(ids: readonly string[]) {
   guardSelectionChange(() => {
     if (selectedNode.value.value !== null) selectedNode.set(null);
     selectedEdge.set({ className: edgeType, primaryKey: nextId } as unknown as RuntimeJsonValue);
+  });
+}
+
+function activateElement(element: GraphCanvasElement) {
+  if (element.kind === "edge" && element.id === PENDING_GRAPH_EDGE_ID) return;
+  const refValue: ObjectListRef = {
+    className: element.kind === "node" ? nodeType : edgeType,
+    primaryKey: element.id,
+  };
+  if (element.kind === "node") {
+    const alreadySelected =
+      selectedNodes.value.length === 1
+      && selectedNodes.value[0] === element.id
+      && selectedEdge.value.value === null;
+    if (alreadySelected) {
+      emit("choose", refValue);
+      return;
+    }
+    guardSelectionChange(() => {
+      if (selectedEdge.value.value !== null) selectedEdge.set(null);
+      selectedNode.set(refValue as unknown as RuntimeJsonValue);
+      emit("choose", refValue);
+    });
+    return;
+  }
+  const alreadySelected =
+    selectedEdges.value.length === 1
+    && selectedEdges.value[0] === element.id
+    && selectedNode.value.value === null;
+  if (alreadySelected) {
+    emit("choose", refValue);
+    return;
+  }
+  guardSelectionChange(() => {
+    if (selectedNode.value.value !== null) selectedNode.set(null);
+    selectedEdge.set(refValue as unknown as RuntimeJsonValue);
+    emit("choose", refValue);
   });
 }
 
@@ -426,7 +549,160 @@ function connect(source: string, target: string) {
 }
 function move(id: string, place: GraphCanvasPoint) {
   positions.set({ ...saved.value, [id]: { x: place.x, y: place.y } } as unknown as RuntimeJsonValue);
+  if (props.connectPorts && hoveredNodeId.value === id) refreshHoveredNodeBox();
 }
+
+type PortDirection = "top" | "right" | "bottom" | "left";
+interface PortDragState {
+  sourceId: string;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+  targetId: string | null;
+  targetBox: GraphCanvasNodeViewportBox | null;
+}
+
+const hoveredNodeId = ref<string | null>(null);
+const hoveredNodeBox = ref<GraphCanvasNodeViewportBox | null>(null);
+const portDrag = ref<PortDragState | null>(null);
+let hoverClearTimer: ReturnType<typeof setTimeout> | undefined;
+
+function refreshHoveredNodeBox() {
+  if (!props.connectPorts || !hoveredNodeId.value) {
+    hoveredNodeBox.value = null;
+    return;
+  }
+  hoveredNodeBox.value = canvas.value?.nodeViewportBox?.(hoveredNodeId.value) ?? null;
+}
+
+function onHoverNode(id: string | null) {
+  if (!props.connectPorts) return;
+  clearTimeout(hoverClearTimer);
+  if (id) {
+    hoveredNodeId.value = id;
+    refreshHoveredNodeBox();
+    return;
+  }
+  if (portDrag.value) return;
+  hoverClearTimer = setTimeout(() => {
+    hoveredNodeId.value = null;
+    hoveredNodeBox.value = null;
+  }, 120);
+}
+
+function onPortMouseEnter() {
+  clearTimeout(hoverClearTimer);
+}
+
+function onPortMouseLeave() {
+  if (portDrag.value) return;
+  clearTimeout(hoverClearTimer);
+  hoverClearTimer = setTimeout(() => {
+    hoveredNodeId.value = null;
+    hoveredNodeBox.value = null;
+  }, 120);
+}
+
+const hoverPortHandles = computed(() => {
+  if (!props.connectPorts || !hoveredNodeBox.value || portDrag.value) return [];
+  const { id, x, y, radius } = hoveredNodeBox.value;
+  return [
+    { direction: "top" as PortDirection, nodeId: id, x, y: y - radius },
+    { direction: "right" as PortDirection, nodeId: id, x: x + radius, y },
+    { direction: "bottom" as PortDirection, nodeId: id, x, y: y + radius },
+    { direction: "left" as PortDirection, nodeId: id, x: x - radius, y },
+  ];
+});
+
+function stageLocalPoint(clientX: number, clientY: number): GraphCanvasPoint {
+  const rect = canvas.value?.frameRect?.() ?? element.value?.getBoundingClientRect();
+  if (!rect) return { x: clientX, y: clientY };
+  return { x: clientX - rect.left, y: clientY - rect.top };
+}
+
+function hitTestNodeAt(point: GraphCanvasPoint): GraphCanvasNodeViewportBox | null {
+  const rects = canvas.value?.nodeViewportRects?.() ?? [];
+  let closest: GraphCanvasNodeViewportBox | null = null;
+  let bestDist = Infinity;
+  for (const box of rects) {
+    const dist = Math.hypot(point.x - box.x, point.y - box.y);
+    if (dist <= box.radius + 14 && dist < bestDist) {
+      bestDist = dist;
+      closest = box;
+    }
+  }
+  return closest;
+}
+
+function stopPortDragListeners() {
+  window.removeEventListener("pointermove", onPortPointerMove);
+  window.removeEventListener("pointerup", onPortPointerUp);
+  window.removeEventListener("pointercancel", onPortPointerCancel);
+  window.removeEventListener("keydown", onPortKeyDown);
+}
+
+function onPortPointerMove(event: PointerEvent) {
+  if (!portDrag.value) return;
+  const point = stageLocalPoint(event.clientX, event.clientY);
+  const hit = hitTestNodeAt(point);
+  portDrag.value = {
+    ...portDrag.value,
+    currentX: hit ? hit.x : point.x,
+    currentY: hit ? hit.y : point.y,
+    targetId: hit ? hit.id : null,
+    targetBox: hit,
+  };
+}
+
+function onPortPointerUp(event: PointerEvent) {
+  const active = portDrag.value;
+  stopPortDragListeners();
+  portDrag.value = null;
+  if (!active) return;
+  const point = stageLocalPoint(event.clientX, event.clientY);
+  const hit = hitTestNodeAt(point) ?? active.targetBox;
+  if (hit) connect(active.sourceId, hit.id);
+}
+
+function onPortPointerCancel() {
+  stopPortDragListeners();
+  portDrag.value = null;
+}
+
+function onPortKeyDown(event: KeyboardEvent) {
+  if (event.key === "Escape") onPortPointerCancel();
+}
+
+function startPortConnect(handle: { direction: PortDirection; nodeId: string; x: number; y: number }, event: PointerEvent) {
+  if (!props.connectPorts || !editable.value) return;
+  clearTimeout(hoverClearTimer);
+  const point = stageLocalPoint(event.clientX, event.clientY);
+  portDrag.value = {
+    sourceId: handle.nodeId,
+    startX: handle.x,
+    startY: handle.y,
+    currentX: point.x,
+    currentY: point.y,
+    targetId: null,
+    targetBox: null,
+  };
+  window.addEventListener("pointermove", onPortPointerMove);
+  window.addEventListener("pointerup", onPortPointerUp);
+  window.addEventListener("pointercancel", onPortPointerCancel);
+  window.addEventListener("keydown", onPortKeyDown);
+}
+
+const portPreviewPath = computed(() => {
+  const drag = portDrag.value;
+  if (!drag) return "";
+  if (drag.targetBox && drag.targetId === drag.sourceId) {
+    const { x, y, radius } = drag.targetBox;
+    const topY = y - radius;
+    return `M ${x - radius * 0.45} ${topY} C ${x - radius * 1.4} ${topY - 56}, ${x + radius * 1.4} ${topY - 56}, ${x + radius * 0.45} ${topY}`;
+  }
+  return `M ${drag.startX} ${drag.startY} L ${drag.currentX} ${drag.currentY}`;
+});
 
 const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
 /** The whole graph, or — where it would be too small to read — the part around the chosen node, else the most connected. */
@@ -468,13 +744,18 @@ function resized(width: number, height: number) {
     void nextTick(fit);
   }, 200);
 }
-onBeforeUnmount(() => clearTimeout(settling));
+onBeforeUnmount(() => {
+  clearTimeout(settling);
+  clearTimeout(hoverClearTimer);
+  stopPortDragListeners();
+});
 /** The zoom the canvas shows, as the page reads it (`zoom`), to two decimals; and the zoom the page sets, shown. */
 let shownZoom: number | null = null;
 function viewed(viewport: GraphCanvasViewport) {
   if (fitted && partial.value) moved.value = true;
   shownZoom = Math.round(viewport.zoom * 100) / 100;
   if (zoom.value.value !== shownZoom) zoom.set(shownZoom);
+  if (props.connectPorts && hoveredNodeId.value) refreshHoveredNodeBox();
 }
 watch(() => zoom.value.value, (wanted) => {
   if (typeof wanted === "number" && wanted !== shownZoom && canvas.value) void canvas.value.zoomTo(wanted);
@@ -485,8 +766,12 @@ function relayout() {
   fit();
 }
 async function download() {
-  const image = await canvas.value!.exportImage();
-  savePanelFile({ bytes: new Uint8Array(await image.arrayBuffer()), mime: "image/png", suggestedName: `${member.projection.name}.png` });
+  const background = exportBackground.value;
+  const image = background
+    ? await canvas.value!.exportImage({ background })
+    : await canvas.value!.exportImage();
+  const suggestedName = resolveGraphExportFilename(exportFilename.value, member.projection.name);
+  savePanelFile({ bytes: new Uint8Array(await image.arrayBuffer()), mime: "image/png", suggestedName });
 }
 </script>
 
@@ -518,6 +803,67 @@ async function download() {
       </span>
       <span class="sdk-object-graph-canvas-highlight-text">{{ searchPreviewText }}</span>
     </div>
+    <div
+      v-if="toolbarPlacement === 'top-four'"
+      class="sdk-object-graph-canvas-top-bar"
+      data-graph-top-toolbar
+    >
+      <div class="sdk-object-graph-canvas-top-tools" role="toolbar" :aria-label="t('platform.graphFit')" data-graph-toolbar>
+        <button type="button" data-graph-action="zoom-in" :disabled="!showGraph" :title="t('platform.graphZoomIn')" :aria-label="t('platform.graphZoomIn')" @click="canvas?.zoomBy(ZOOM_STEP)">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M8 3.5v9M3.5 8h9" />
+          </svg>
+        </button>
+        <button type="button" data-graph-action="zoom-out" :disabled="!showGraph" :title="t('platform.graphZoomOut')" :aria-label="t('platform.graphZoomOut')" @click="canvas?.zoomBy(1 / ZOOM_STEP)">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3.5 8h9" />
+          </svg>
+        </button>
+        <button type="button" data-graph-action="fit" :disabled="!showGraph" :title="t('platform.graphFit')" :aria-label="t('platform.graphFit')" @click="fit">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />
+          </svg>
+        </button>
+        <button type="button" data-graph-action="relayout" :disabled="!showGraph" :title="t('platform.graphRelayout')" :aria-label="t('platform.graphRelayout')" @click="relayout">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <rect x="6" y="1.5" width="4" height="3.5" rx="0.8" />
+            <rect x="1.5" y="11" width="4" height="3.5" rx="0.8" />
+            <rect x="10.5" y="11" width="4" height="3.5" rx="0.8" />
+            <path d="M8 5v3M3.5 11V8h9v3" />
+          </svg>
+        </button>
+      </div>
+      <div class="sdk-object-graph-canvas-top-right" data-graph-toolbar-right>
+        <slot
+          name="toolbar-actions"
+          :selected-node="selectedNode.value.value"
+          :selected-edge="selectedEdge.value.value"
+          :selected-nodes="selectedNodes"
+          :selected-edges="selectedEdges"
+          :node-count="resolved.nodes.length"
+          :edge-count="resolved.links.length"
+          :zoom="zoom.value.value"
+          :zoom-in="() => canvas?.zoomBy(ZOOM_STEP)"
+          :zoom-out="() => canvas?.zoomBy(1 / ZOOM_STEP)"
+          :fit-view="fit"
+          :relayout="relayout"
+        ></slot>
+        <slot
+          name="toolbar-right"
+          :selected-node="selectedNode.value.value"
+          :selected-edge="selectedEdge.value.value"
+          :selected-nodes="selectedNodes"
+          :selected-edges="selectedEdges"
+          :node-count="resolved.nodes.length"
+          :edge-count="resolved.links.length"
+          :zoom="zoom.value.value"
+          :zoom-in="() => canvas?.zoomBy(ZOOM_STEP)"
+          :zoom-out="() => canvas?.zoomBy(1 / ZOOM_STEP)"
+          :fit-view="fit"
+          :relayout="relayout"
+        ></slot>
+      </div>
+    </div>
     <div ref="element" class="sdk-object-graph-canvas-stage">
       <el-skeleton v-if="resolved.loading" :rows="4" animated></el-skeleton>
       <p v-else-if="resolved.error" class="sdk-object-graph-canvas-error" role="alert">{{ resolved.error }}</p>
@@ -537,14 +883,68 @@ async function download() {
           :label-size="look.labelSize"
           readable-labels
           :editable="editable"
+          :style-overrides="styleOverrides"
           @update:selected="chooseNode($event)"
           @update:selected-edges="chooseEdge($event)"
+          @activate="activateElement"
+          @hover-node="onHoverNode"
           @blank="letGo"
           @connect="connect"
           @move="move"
           @viewport="viewed"
           @resized="resized"
         />
+        <div
+          v-if="connectPorts && hoverPortHandles.length"
+          class="sdk-object-graph-connect-ports"
+          data-connect-ports
+        >
+          <button
+            v-for="handle in hoverPortHandles"
+            :key="`${handle.nodeId}:${handle.direction}`"
+            type="button"
+            class="sdk-object-graph-connect-port"
+            :data-connect-port="handle.direction"
+            :data-connect-node="handle.nodeId"
+            :style="{ left: `${handle.x}px`, top: `${handle.y}px` }"
+            :aria-label="handle.direction"
+            @mouseenter="onPortMouseEnter"
+            @mouseleave="onPortMouseLeave"
+            @pointerdown.stop.prevent="startPortConnect(handle, $event)"
+          ></button>
+        </div>
+        <svg
+          v-if="connectPorts && portDrag"
+          class="sdk-object-graph-connect-preview"
+          data-connect-preview
+          aria-hidden="true"
+        >
+          <defs>
+            <marker
+              :id="previewMarkerId"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="8"
+              markerHeight="8"
+              orient="auto"
+            >
+              <path d="M 1 1 L 9 5 L 1 9 z" fill="currentColor" />
+            </marker>
+          </defs>
+          <circle
+            v-if="portDrag.targetBox"
+            class="sdk-object-graph-connect-target-ring"
+            :cx="portDrag.targetBox.x"
+            :cy="portDrag.targetBox.y"
+            :r="portDrag.targetBox.radius + 5"
+          />
+          <path
+            class="sdk-object-graph-connect-preview-line"
+            :d="portPreviewPath"
+            :marker-end="`url(#${previewMarkerId})`"
+          />
+        </svg>
         <div v-if="partial || resolved.edgesNotice" class="sdk-object-graph-canvas-notices">
           <p v-if="resolved.edgesNotice" class="sdk-object-graph-canvas-edge-notice" role="status" data-graph-edges-notice>
             {{ resolved.edgesNotice }}
@@ -553,7 +953,7 @@ async function download() {
             {{ t("platform.graphLargerThanCanvas") }}
           </p>
         </div>
-        <div class="sdk-object-graph-canvas-tools" data-graph-toolbar>
+        <div v-if="toolbarPlacement === 'floating'" class="sdk-object-graph-canvas-tools" data-graph-toolbar>
           <button type="button" data-graph-action="zoom-in" :title="t('platform.graphZoomIn')" :aria-label="t('platform.graphZoomIn')" @click="canvas?.zoomBy(ZOOM_STEP)">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <path d="M8 3.5v9M3.5 8h9" />
@@ -760,6 +1160,96 @@ async function download() {
 .sdk-object-graph-canvas-tools button:not(:disabled):hover {
   background: var(--ui-fill-tertiary);
   color: var(--el-text-color-primary);
+}
+.sdk-object-graph-canvas-top-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  min-height: 48px;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--el-border-color-lighter, var(--ui-divider));
+  background: var(--el-bg-color);
+}
+.sdk-object-graph-canvas-top-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.sdk-object-graph-canvas-top-tools button {
+  display: grid;
+  place-items: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--radius-sm);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+}
+.sdk-object-graph-canvas-top-tools button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.sdk-object-graph-canvas-top-tools button:not(:disabled):hover {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--ui-fill-tertiary);
+  color: var(--el-text-color-primary);
+}
+.sdk-object-graph-canvas-top-right {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+.sdk-object-graph-connect-ports {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.sdk-object-graph-connect-port {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 2px solid var(--el-color-primary);
+  border-radius: 50%;
+  background: var(--el-bg-color);
+  transform: translate(-50%, -50%);
+  cursor: crosshair;
+  pointer-events: auto;
+  box-shadow: 0 0 0 2px var(--el-bg-color);
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+.sdk-object-graph-connect-port:hover {
+  transform: translate(-50%, -50%) scale(1.25);
+  background: var(--el-color-primary-light-9);
+}
+.sdk-object-graph-connect-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 4;
+  pointer-events: none;
+  color: var(--el-color-primary);
+  overflow: visible;
+}
+.sdk-object-graph-connect-preview-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  stroke-linecap: round;
+}
+.sdk-object-graph-connect-target-ring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-opacity: 0.5;
 }
 .sdk-object-graph-canvas-op-hint {
   position: absolute;

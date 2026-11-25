@@ -1,3 +1,4 @@
+import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { randomUUID } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -129,6 +130,11 @@ beforeAll(async () => {
     const known = registered.has(id) || (verb === "use" && isBuiltinProductId(id));
     return known && (token === "reader" ? denied !== id : token === "executor" && executorDenied !== id);
   };
+  app.post("/authorization/objects/decide-batch", (req, res) => {
+    const token = req.header("tk");
+    res.json(agentObjectDecisions(req.body, request => "target" in request &&
+      request.target.domainId === domainId && allowed(request.target.id, request.verb.toLowerCase(), token)));
+  });
   app.post("/product-governance/check", (req, res) => {
     const token = req.header("tk");
     res.json(productGrantCheck(req.body, token, (id, verb) => allowed(id, verb, token)));

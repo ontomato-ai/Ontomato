@@ -36,6 +36,8 @@ const props = withDefaults(
     showDraftIndicator?: boolean;
     /** Auto-select the first available option once loaded when the current selection is empty or no longer present. */
     fallbackToFirst?: boolean;
+    /** Offer a manual refresh for a form field's choices. */
+    refreshable?: boolean;
   }>(),
   {
     placeholder: undefined,
@@ -48,6 +50,7 @@ const props = withDefaults(
     metaField: undefined,
     showDraftIndicator: undefined,
     fallbackToFirst: undefined,
+    refreshable: undefined,
   },
 );
 
@@ -72,6 +75,7 @@ defineSlots<{
     :path="fieldSlot.path.value"
     :show-draft-indicator="props.showDraftIndicator"
     :fallback-to-first="props.fallbackToFirst"
+    :refreshable="props.refreshable"
   >
     <template v-if="$slots.option" #option="scope">
       <slot name="option" v-bind="scope"></slot>

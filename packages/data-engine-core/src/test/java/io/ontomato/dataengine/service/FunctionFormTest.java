@@ -192,6 +192,7 @@ class FunctionFormTest {
     assertTrue(field(form, "/name").getBooleanValue("required"));
     JSONObject operation = field(form, "/operation");
     assertEquals("select", operation.getJSONObject("control").getString("kind"));
+    assertEquals("radio", operation.getJSONObject("control").getString("presentation"));
     assertTrue(operation.getBooleanValue("refreshOnChange"));
     assertTrue(operation.getBooleanValue("readOnly"));
     assertEquals("PanelForm.readOnly.operation", operation.getString("readOnlyReason"));
@@ -214,6 +215,7 @@ class FunctionFormTest {
     JSONObject parameters = field(form, "/parameters");
     JSONObject control = parameters.getJSONObject("control");
     assertEquals("object-array", control.getString("kind"));
+    assertEquals("inline", control.getString("presentation"));
     assertNull(control.getString("itemKeyPath"));
     assertEquals("", control.getJSONObject("defaultItem").getString("name"));
     assertEquals("TYPE_STRING", control.getJSONObject("defaultItem").getString("type"));

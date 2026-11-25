@@ -923,7 +923,7 @@ export function toProductProjectionPanelRecord(
   const word = (key: string) => tForLocale(language, `panels.productCatalog.projection.${key}`);
   const isDetail = "data" in row;
   const isChart = row.componentId === METRIC_CHART_COMPONENT && row.visibility !== "platform";
-  const isBuiltin = isBuiltinProductId(row.id);
+  const isBuiltin = row.visibility === "platform" || isBuiltinProductId(row.id);
   const componentDisplay = extra?.componentLabel || shortComponentName(row.componentId);
   const ownerDisplay = row.ownerId === null ? word("platformOwner") : (extra?.ownerLabel || row.ownerId);
   const scopeLabel = row.visibility === "platform"

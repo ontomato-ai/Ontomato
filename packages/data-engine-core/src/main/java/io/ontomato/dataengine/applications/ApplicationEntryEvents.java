@@ -51,13 +51,18 @@ public record ApplicationEntryEvents(JdbcTemplate db) implements DataEngineMigra
         return applicationId + "/" + useId;
     }
 
+    static Map<String, Roots> roots(JSONObject app, List<ApplicationPanelUse> entries) {
+        var applicationId = app.getString("id");
+        return roots(applicationId, entries, ApplicationCatalog.entryFramePanelId(app));
+    }
+
     static Map<String, Roots> roots(String applicationId, List<ApplicationPanelUse> entries, String framePanelId) {
         var result = new LinkedHashMap<String, Roots>();
         for (var entry : entries) {
             var panels = new LinkedHashSet<String>();
             if (entry.panelEntry()) panels.add(entry.panelId());
             if (entry.panelEntry() || entry.frameConversationEntry()) {
-                panels.add(framePanelId == null ? ApplicationCatalog.DEFAULT_FRAME_PANEL_ID : framePanelId);
+                panels.add(framePanelId);
             }
             var agents = entry.defaultAgent() != null && "id".equals(entry.defaultAgent().kind())
                     ? List.of(entry.defaultAgent().id()) : List.<String>of();
@@ -68,8 +73,7 @@ public record ApplicationEntryEvents(JdbcTemplate db) implements DataEngineMigra
     }
 
     static Map<String, Roots> roots(JSONObject app) {
-        return roots(app.getString("id"), app.getList("panelUses", ApplicationPanelUse.class),
-                app.getJSONObject("panelSettings").getString("framePanelId"));
+        return roots(app, app.getList("panelUses", ApplicationPanelUse.class));
     }
 
     static void append(JdbcTemplate db, String domainId, String actorId, Map<String, Roots> before, Map<String, Roots> after) {

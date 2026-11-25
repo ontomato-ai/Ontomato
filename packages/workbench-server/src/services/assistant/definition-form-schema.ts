@@ -35,6 +35,11 @@ export function agentDefinitionSave(target: PanelFormTarget): PanelFormDescripti
 }
 
 export function parseAgentDefinitionForm(values: unknown) {
+  if (values && typeof values === "object" && "publicationAccess" in values) {
+    const access = values.publicationAccess;
+    if (access && typeof access === "object" && "kind" in access && (access.kind === "private" || access.kind === "domain"))
+      return parseForm(inputSchema, { ...values, publicationAccess: { kind: access.kind } });
+  }
   return parseForm(inputSchema, values);
 }
 

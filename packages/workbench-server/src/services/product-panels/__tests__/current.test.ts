@@ -4,8 +4,10 @@ import path from "node:path";
 import { writeBundledAppSdkFixture } from "../../../__tests__/fixtures/bundled-app-sdk";
 import { installContentLayout } from "../../../content/layout";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import { registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
+import { productPanelInputSchema, registerProductPanelRequestSchema, registerProductProjectionRequestSchema } from "@ontomato/contracts/product-panels";
 import type { EntryDependency } from "@ontomato/contracts/entry-dependencies";
+import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
+import { METRIC_VIEW, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import { HttpError } from "../../../utils/errors";
 const mocks = vi.hoisted(() => ({ query: vi.fn(), grant: vi.fn(), grantBatch: vi.fn(), grantedIds: vi.fn(), managementAccess: vi.fn(), register: vi.fn(), share: vi.fn(), notify: vi.fn(), edits: [] as string[] }));
 vi.mock("../../../infrastructure/postgres", () => ({ getPostgresPool: () => ({ query: mocks.query }), qualifiedTable: (name: string) => name }));
@@ -20,6 +22,8 @@ import type { CurrentProductRow } from "../../../infrastructure/product-current"
 
 const owner = { domainId: "domain", userId: "author" }, credentials = { token: "caller" };
 let rows: Map<string, CurrentProductRow>;
+let dependencies: Map<string, EntryDependency[]>;
+let agentDomains: Map<string, string>;
 const projection = () => registerProductProjectionRequestSchema.parse({ name: "Task summary", description: "", visibility: "domain", revision: 0,
   componentId: "@ontomato/sdk:ObjectSummary", inputs: { task: { kind: "object", objectType: "platform:ScheduledTask" } },
   data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } }, outputs: {}, config: { fields: ["name"] } });
@@ -41,7 +45,8 @@ afterAll(() => rm(runtimeRoot, { recursive: true }));
 
 beforeEach(() => {
   vi.resetAllMocks(); mocks.edits = []; rows = new Map();
-  const dependencies = new Map<string, EntryDependency[]>();
+  dependencies = new Map();
+  agentDomains = new Map();
   mocks.grantedIds.mockImplementation(async () => mocks.edits);
   mocks.managementAccess.mockImplementation(async ({ id }: { id: string }, { ownerId }: { ownerId: string | null }) => ({
     allowed: true, authored: ownerId === owner.userId, editable: mocks.edits.includes(id),
@@ -49,6 +54,10 @@ beforeEach(() => {
   mocks.grantBatch.mockImplementation(async (ids: readonly string[]) => Object.fromEntries(ids.map(id => [id, true])));
   mocks.register.mockImplementation(async (_owner, id: string) => { mocks.edits.push(id); });
   mocks.query.mockImplementation(async (sql: string, args: unknown[] = []) => {
+    if (sql.includes("FROM assistant_agents WHERE id=$1 AND domain_id=$2")) {
+      const [id, domainId] = args as [string, string];
+      return { rows: agentDomains.get(id) === domainId ? [{ id }] : [] };
+    }
     if (sql.startsWith("SELECT panel_id,dependencies FROM product_panel_entry_dependencies")) {
       const [reference] = JSON.parse(String(args[1])) as Pick<EntryDependency, "objectType" | "objectKey">[];
       return { rows: [...dependencies].filter(([, list]) =>
@@ -97,6 +106,123 @@ it("registers source text without executing it, uses current definitions and nev
   expect((await readCurrentPanel(owner, credentials, "p")).manifest.members.summary.target).toEqual({ projectionId: "x" });
   expect(mocks.notify).toHaveBeenCalledWith({ kind: "definition-changed", domainId: "domain", target: { kind: "projection", id: "x" } });
   expect(mocks.query.mock.calls.some(([sql]) => /(?:INSERT INTO|UPDATE) (?:product_assets|product_asset_revisions|product_releases|product_bundle_heads)/.test(sql))).toBe(false);
+});
+
+it("recompiles the upper closure without inheriting a child default through a personal state wire", async () => {
+  const metric = (primaryKey: string) => ({ className: METRIC_VIEW, primaryKey });
+  const type = { kind: "object", objectType: METRIC_VIEW } as const;
+  const { revision, ...input } = panel();
+  const metricProjection = {
+    revision: 0, name: "Metric", description: "", visibility: "domain",
+    componentId: "@ontomato/sdk:ObjectSummary", inputs: { metric: type }, outputs: {}, config: { fields: ["name"] },
+    data: { record: { source: { object: { input: "metric" } }, read: "record", params: {} } },
+  } as const;
+  for (const id of ["selected-metric", "other-metric"])
+    await saveCurrentProjection(owner, credentials, id, registerProductProjectionRequestSchema.parse(metricProjection));
+  const child = productPanelInputSchema.parse({
+    ...input,
+    manifest: {
+      state: {
+        metric: { type, external: true, default: metric("child-default") },
+        selected: { type: { kind: "object", objectType: PRODUCT_PROJECTION } },
+      },
+      members: {
+        summary: {
+          target: { fromState: "selected", candidates: { projectionIds: ["selected-metric", "other-metric"] } },
+          inputs: { metric: { state: "metric" } },
+        },
+      },
+    },
+  });
+  const parent = productPanelInputSchema.parse({
+    ...input,
+    manifest: {
+      state: { metric: { type, personal: true, default: metric("personal-default") } },
+      members: { child: { target: { panelId: "child" } } },
+    },
+  });
+  const metricDependencies = (id: string) => dependencies.get(id)?.filter(item => item.objectType === "METRIC");
+  await saveCurrentPanel(owner, credentials, "child", child, revision);
+  await saveCurrentPanel(owner, credentials, "parent", parent, revision);
+  expect(metricDependencies("parent")).toEqual([{ objectType: "METRIC", objectKey: "child-default", verb: "VIEW" }]);
+
+  await saveCurrentPanel(owner, credentials, "parent", {
+    ...parent, manifest: {
+      ...parent.manifest, members: { child: { target: { panelId: "child" }, inputs: { metric: { state: "metric" } } } },
+    },
+  }, 1);
+  expect(metricDependencies("parent")).toEqual([]);
+  expect(metricDependencies("child")).toEqual([{ objectType: "METRIC", objectKey: "child-default", verb: "VIEW" }]);
+
+  await saveCurrentProjection(owner, credentials, "other-metric", registerProductProjectionRequestSchema.parse({
+    ...metricProjection, revision: 1,
+    data: { record: { source: { object: { literal: metric("projection-fixed") } }, read: "record", params: {} } },
+  }));
+  expect(metricDependencies("parent")).toEqual([{ objectType: "METRIC", objectKey: "projection-fixed", verb: "VIEW" }]);
+});
+
+it("excludes placement targets from a nested closure while the parent controls that state field", async () => {
+  await seedProjection();
+  const { revision, ...input } = panel();
+  const child = productPanelInputSchema.parse({
+    ...input,
+    manifest: {
+      state: {
+        placed: {
+          type: { kind: "placement", candidates: { projectionIds: ["x"] } }, external: true,
+          default: { id: "summary", target: { projectionId: "x" } },
+        },
+      },
+      members: {},
+    },
+  });
+  const parent = productPanelInputSchema.parse({
+    ...input,
+    manifest: {
+      state: {},
+      members: { child: { target: { panelId: "child" }, inputs: { placed: { literal: null } } } },
+    },
+  });
+  await saveCurrentPanel(owner, credentials, "child", child, revision);
+  await saveCurrentPanel(owner, credentials, "parent", parent, revision);
+  const projectionUse = { objectType: "PROJECTION", objectKey: "x", verb: "USE" };
+  expect(dependencies.get("child")).toContainEqual(projectionUse);
+  expect(dependencies.get("parent")).not.toContainEqual(projectionUse);
+});
+
+it.each(["ObjectList", "GroupedGrid"])("checks and compiles the declared row conversation agents of %s", async component => {
+  agentDomains.set("top-agent", owner.domainId);
+  agentDomains.set("row-agent", owner.domainId);
+  agentDomains.set("foreign-agent", "another-domain");
+  const rowConversation = (id: string, target?: PanelConversationEntry["target"]) =>
+    ({ kind: "conversation", id, ...(target && { target }) });
+  const rowActions = [
+    rowConversation("explicit", { kind: "id", id: "row-agent" }),
+    rowConversation("preset", { kind: "preset", agentKind: "regular" }),
+    rowConversation("dynamic", { kind: "page-default" }),
+    rowConversation("inherited"),
+  ];
+  const projectionRequest = (revision: number, items = rowActions) => registerProductProjectionRequestSchema.parse({
+    name: "Row conversations", description: "", visibility: "domain", revision,
+    componentId: `@ontomato/sdk:${component}`, inputs: {}, outputs: {}, data: {},
+    config: { rowActions: { items } },
+    conversationEntry: { target: { kind: "id", id: "top-agent" } },
+  });
+  await saveCurrentProjection(owner, credentials, "row-conversations", projectionRequest(0));
+  const { revision, ...input } = panel();
+  await saveCurrentPanel(owner, credentials, "row-panel", {
+    ...input, manifest: { state: {}, members: { list: { target: { projectionId: "row-conversations" } } } },
+  }, revision);
+  expect(new Set(dependencies.get("row-panel")?.filter(item => item.objectType === "AGENT"))).toEqual(new Set([
+    { objectType: "AGENT", objectKey: "top-agent", verb: "USE" },
+    { objectType: "AGENT", objectKey: "row-agent", verb: "USE" },
+    { objectType: "AGENT", objectKey: "preset:regular", verb: "USE" },
+  ]));
+
+  await expect(saveCurrentProjection(owner, credentials, "row-conversations", projectionRequest(1, [
+    rowConversation("foreign", { kind: "id", id: "foreign-agent" }),
+  ]))).rejects.toMatchObject({ status: 400, code: "INVALID_PANEL_REFERENCE" });
+  expect(rows.get("projection:row-conversations")?.revision).toBe(1);
 });
 
 it("requires current use/edit grants, preserves the owner for delegated edits and compares the current revision", async () => {

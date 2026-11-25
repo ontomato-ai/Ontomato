@@ -188,8 +188,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     return createSkillReadAdapter(owner, viewer, callerUserName);
   };
   const skills = async () => {
-    const { agentDefinitionPermissions } = await import("../assistant/definitions");
-    await assertPermission(viewer, agentDefinitionPermissions);
+    await assertPermission(viewer, ["analysis-agent"]);
     return skillLibrary();
   };
   const feedback = async () => {
@@ -341,6 +340,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [METRIC_VIEW]: {
       count: () => metrics.count(),
+      list: (_selection, params) => metrics.list(params),
       query: (_selection, params) => metrics.query(params),
       record: selection => metrics.record(selection.primaryKey!),
       form: (selection, params) => metrics.form(selection.primaryKey!, formParams(params)),
@@ -348,6 +348,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       result: (selection, params) => metrics.result(selection.primaryKey!, runtimeJsonObjectSchema.parse(params)),
     },
     [FUNCTION]: {
+      list: (_selection, params) => functions.list(params),
       query: (_selection, params) => functions.query(params),
       record: selection => functions.record(selection.primaryKey!),
       form: (selection, params) => functions.form(selection.primaryKey!, formParams(params)),
@@ -640,6 +641,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),
       counts: (_selection, params) => schedules.counts(panelReadParameterSchemas.keyword.optional().parse(params.by)),
+      status: () => schedules.status(),
       record: selection => schedules.record(selection.primaryKey!),
       runs: (selection, params) => schedules.runs(selection.primaryKey!, panelReadParameterSchemas.cursor.optional().parse(params.cursor)),
       run: (selection, params) => schedules.run(selection.primaryKey!, panelReadParameterSchemas.scheduledRunId.parse(params.runId)),

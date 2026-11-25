@@ -4,8 +4,11 @@ import io.ontomato.dataengine.service.authorization.CapabilityDefinitions;
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication;
 import io.ontomato.dataengine.service.authorization.DefinitionFirstPublication.Selection;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Create;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.ObjectAccess;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Kind;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.DefinitionState;
+import io.ontomato.dataengine.service.authorization.AuthorizationTypes.OwnerFacts;
 import io.ontomato.dataengine.service.authorization.AuthorizationTypes.Verb;
 import static io.ontomato.dataengine.service.authorization.CapabilityDefinitions.access;
 
@@ -487,6 +490,20 @@ public class MetricViewServiceImpl implements MetricViewService {
     definitions.require(definitions.subject(user), access(metric, Verb.USE));
   }
 
+  /**
+   * Draft-level executability when editing an existing metric: changing a published metric's draft status to UNUSED
+   * (or to another status the caller cannot execute) must fail execution rather than relying solely on stored state.
+   */
+  private boolean executableDraft(MetricView draft, MetricView stored, User user) {
+    String status = draft.getStatus();
+    if (status == null || MetricView.STATUS_PUBLISHED.equals(status)) return true;
+    if (!MetricView.STATUS_PENDING_REVIEW.equals(status)) return false;
+    var storedAccess = access(stored, Verb.USE);
+    var facts = storedAccess.ownerFacts();
+    return definitions.allows(definitions.subject(user), new ObjectAccess(storedAccess.target(), Verb.USE,
+        new OwnerFacts(facts.ownerId(), DefinitionState.DRAFT, facts.coauthorIds())));
+  }
+
   @Override
   public List<MetricView> queryList(String status, String functionId, String className, String domainId) {
     Objects.requireNonNull(domainId, "Current domain is required");
@@ -744,6 +761,8 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
       stored = queryById(metric.getId(), user.getDomainId());
       if (stored == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
       requireExecutableState(stored, user);
+      if (!executableDraft(metric, stored, user))
+        throw new OwnerRefusal("METRIC_VIEW_NOT_EXECUTABLE", "Executable read metric not found");
     } else if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus())) {
       throw new OwnerRefusal("METRIC_VIEW_NOT_EXECUTABLE", "Executable read metric not found");
     }

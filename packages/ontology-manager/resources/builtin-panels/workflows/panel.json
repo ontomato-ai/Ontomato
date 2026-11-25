@@ -74,30 +74,30 @@
               "key": "label",
               "labelKey": "col.name",
               "subtitleKey": "subtitle",
-              "minWidth": 160,
+              "minWidth": 150,
               "wrap": true
             },
             {
               "key": "statusBadges",
               "labelKey": "col.status",
-              "minWidth": 96,
-              "width": 112,
+              "minWidth": 76,
+              "width": 84,
               "wrap": true
             },
             {
               "key": "version",
               "labelKey": "col.version",
-              "width": 64
+              "width": 52
             },
             {
               "key": "stepsSummary",
               "labelKey": "col.steps",
-              "minWidth": 140
+              "minWidth": 160
             },
             {
               "key": "grantsSummary",
               "labelKey": "col.grants",
-              "minWidth": 140,
+              "minWidth": 132,
               "wrap": true
             },
             {
@@ -108,13 +108,13 @@
             {
               "key": "reviewedBy",
               "labelKey": "col.reviewedBy",
-              "width": 96
+              "width": 92
             }
           ],
           "rowActions": {
             "labelKey": "col.actions",
-            "width": 244,
-            "minWidth": 232,
+            "width": 224,
+            "minWidth": 216,
             "maxVisible": 4,
             "fixed": "right",
             "items": [

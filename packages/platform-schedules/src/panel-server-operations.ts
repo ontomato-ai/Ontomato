@@ -163,18 +163,35 @@ export function createScheduledTaskServerOperations(
       });
     },
   } as const;
+  const setEnabled = {
+    ...scheduledTaskSetEnabled,
+    execute(host: Host, target: Target, input: Record<string, unknown>) {
+      const change = platformTaskEnabledSchema.parse(input);
+      return outcome(async () => {
+        const data = await scheduledTaskPanelOperations(host).setEnabled(target.primaryKey, change);
+        const key = change.enabled ? "enabled" : "disabled";
+        return { data, taskId: data.id, message: translate(host.locale, `platformSchedules.panelManagement.${key}`) };
+      });
+    },
+  } as const;
   return [
     {
       ...scheduledTaskSaveOperation,
       async execute(...[host, target, input, intentId]: Parameters<typeof scheduledTaskSaveOperation.execute>) {
         const result = await scheduledTaskSaveOperation.execute(host, target, input, intentId);
-        if (result.kind !== "refusal" || result.code !== "REVISION_CONFLICT") return result;
-        return { kind: "refusal", code: result.code, message: translate(host.locale, "platformSchedules.panelErrors.revisionConflict") } as const;
+        if (result.kind !== "refusal") return result;
+        if (result.code === "REVISION_CONFLICT") {
+          return { kind: "refusal", code: result.code, message: translate(host.locale, "platformSchedules.panelErrors.revisionConflict") } as const;
+        }
+        if (result.code === "FORM_CHANGED") {
+          return { kind: "refusal", code: result.code, message: translate(host.locale, "platformSchedules.form.formChanged") } as const;
+        }
+        return result;
       },
     },
     runNow,
     scheduledTaskCreate,
-    scheduledTaskSetEnabled,
+    setEnabled,
     {
       handlerRef: RENEW_SCHEDULED_TASK_CREDENTIAL,
       labelKey: "platformSchedules.panelManagement.renewCredential",

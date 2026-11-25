@@ -32,35 +32,6 @@
         },
         "deepLink": false
       },
-      "grantPrincipalKind": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "deepLink": false,
-        "default": "principal"
-      },
-      "grantUser": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:User"
-        },
-        "deepLink": false
-      },
-      "grantRole": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:Role"
-        },
-        "deepLink": false
-      },
-      "grantPrincipalId": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "deepLink": false
-      },
       "grantVerb": {
         "type": {
           "kind": "scalar",
@@ -68,6 +39,20 @@
         },
         "deepLink": false,
         "default": "use"
+      },
+      "grantPolicy": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:PermissionPolicy"
+        },
+        "deepLink": false
+      },
+      "grantPolicyId": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false
       }
     },
     "members": {
@@ -198,11 +183,8 @@
               "state": "selected"
             },
             "params": {
-              "principalKind": {
-                "rowField": "principalKind"
-              },
-              "principalId": {
-                "rowField": "principalId"
+              "policyId": {
+                "rowField": "policyId"
               }
             }
           }
@@ -214,14 +196,8 @@
           "emptyText": "grants.none",
           "columns": [
             {
-              "key": "principalKindLabel",
-              "labelKey": "grants.kind",
-              "kind": "tag",
-              "width": 130
-            },
-            {
               "key": "label",
-              "labelKey": "grants.principalCol",
+              "labelKey": "grants.policy",
               "subtitleKey": "subtitle",
               "minWidth": 220
             },
@@ -314,53 +290,14 @@
         "description": "收回当前域内全员共享的使用权限，仅保留显式授权的成员与角色。",
         "id": "builtin-product-905d0ec9-f2b6-4d7e-881e-157afba366fe"
       },
-      "userPicker": {
-        "component": "ReferencePicker",
-        "type": "platform:User",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "state": {
-          "selected": "grantUser"
-        },
-        "config": {
-          "size": "default",
-          "placeholderKey": "grants.selectMember"
-        },
-        "name": "授权成员选择",
-        "description": "选择要授予智能体权限的域成员。",
-        "id": "builtin-product-8cd89b7c-6713-4457-b0e3-330c99f12ba3"
-      },
-      "rolePicker": {
-        "component": "ReferencePicker",
-        "type": "platform:Role",
-        "data": {
-          "options": "options",
-          "selected": "resolve"
-        },
-        "state": {
-          "selected": "grantRole"
-        },
-        "config": {
-          "size": "default",
-          "placeholderKey": "grants.selectRole"
-        },
-        "name": "授权角色选择",
-        "description": "选择要授予智能体权限的角色。",
-        "id": "builtin-product-9d7e868b-f8c4-424e-ab59-196ef88e9a81"
-      },
       "grantSubmit": {
         "component": "OperationButton",
         "type": "platform:AgentDefinition",
         "target": "selected",
         "operation": "agents.grant",
         "operationParams": {
-          "principalKind": {
-            "state": "grantPrincipalKind"
-          },
-          "principalId": {
-            "state": "grantPrincipalId"
+          "policyId": {
+            "state": "grantPolicyId"
           },
           "verb": {
             "state": "grantVerb"
@@ -373,6 +310,24 @@
         "name": "提交智能体授权",
         "description": "为选定成员或角色原子写入单选三档之一（使用、查看或编辑）的智能体授权。",
         "id": "builtin-product-716368b3-d65b-40b7-8951-74fa65259873"
+      },
+      "policyPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:PermissionPolicy",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "state": {
+          "selected": "grantPolicy"
+        },
+        "config": {
+          "size": "default",
+          "placeholderKey": "grants.selectPolicy"
+        },
+        "name": "授权策略选择",
+        "description": "选择写入智能体权限的对象策略。",
+        "id": "builtin-product-9d7e868b-f8c4-424e-ab59-196ef88e9a81"
       }
     }
   },
@@ -403,7 +358,7 @@
         "skills.selectedCount": "{count} selected",
         "tab.config": "Configuration",
         "tab.grants": "Permissions & sharing",
-        "grants.none": "No individual grants yet.",
+        "grants.none": "No object policies grant access yet.",
         "grants.kind": "Principal type",
         "grants.principalCol": "Principal",
         "grants.level": "Access level",
@@ -429,7 +384,9 @@
         "grants.selectRole": "Search or select a role",
         "grants.submit": "Grant",
         "grants.updated": "Permissions updated.",
-        "grants.systemNote": "Using a system built-in agent still requires its own feature access gate; object grants can only narrow who can see or use it."
+        "grants.systemNote": "Using a system built-in agent still requires its own feature access gate; object grants can only narrow who can see or use it.",
+        "grants.policy": "Object policy",
+        "grants.selectPolicy": "Choose an object policy"
       },
       "zh-CN": {
         "panel.name": "智能体",
@@ -456,7 +413,7 @@
         "skills.selectedCount": "已选 {count} 项",
         "tab.config": "配置",
         "tab.grants": "权限与共享",
-        "grants.none": "暂无单独授权记录。",
+        "grants.none": "暂无授予权限的对象策略。",
         "grants.kind": "主体类型",
         "grants.principalCol": "主体",
         "grants.level": "权限档位",
@@ -482,7 +439,9 @@
         "grants.selectRole": "搜索或选择角色",
         "grants.submit": "授予",
         "grants.updated": "权限已更新。",
-        "grants.systemNote": "系统内置智能体的「使用」仍受各自业务门禁约束，对象授权仅用于进一步收窄可见与使用范围。"
+        "grants.systemNote": "系统内置智能体的「使用」仍受各自业务门禁约束，对象授权仅用于进一步收窄可见与使用范围。",
+        "grants.policy": "对象策略",
+        "grants.selectPolicy": "选择对象策略"
       },
       "zh-TW": {
         "panel.name": "智慧體",
@@ -509,7 +468,7 @@
         "skills.selectedCount": "已選 {count} 項",
         "tab.config": "設定",
         "tab.grants": "權限與共享",
-        "grants.none": "暫無單獨授權紀錄。",
+        "grants.none": "尚無授予權限的物件策略。",
         "grants.kind": "主體類型",
         "grants.principalCol": "主體",
         "grants.level": "權限層級",
@@ -535,7 +494,9 @@
         "grants.selectRole": "搜尋或選擇角色",
         "grants.submit": "授予",
         "grants.updated": "權限已更新。",
-        "grants.systemNote": "系統內建智慧體的「使用」仍受各自業務門禁約束，物件授權僅用於進一步收窄可見與使用範圍。"
+        "grants.systemNote": "系統內建智慧體的「使用」仍受各自業務門禁約束，物件授權僅用於進一步收窄可見與使用範圍。",
+        "grants.policy": "物件策略",
+        "grants.selectPolicy": "選擇物件策略"
       },
       "ja": {
         "panel.name": "エージェント",
@@ -562,7 +523,7 @@
         "skills.selectedCount": "{count} 件選択中",
         "tab.config": "設定",
         "tab.grants": "権限と共有",
-        "grants.none": "個別の付与はまだありません。",
+        "grants.none": "アクセスを付与するポリシーはありません。",
         "grants.kind": "対象種別",
         "grants.principalCol": "対象",
         "grants.level": "権限レベル",
@@ -588,7 +549,9 @@
         "grants.selectRole": "ロールを検索または選択",
         "grants.submit": "付与",
         "grants.updated": "権限を更新しました。",
-        "grants.systemNote": "システム内蔵エージェントの使用にはそれぞれの機能ゲートも必要です。オブジェクト権限は可視範囲と使用範囲を絞り込むためにのみ機能します。"
+        "grants.systemNote": "システム内蔵エージェントの使用にはそれぞれの機能ゲートも必要です。オブジェクト権限は可視範囲と使用範囲を絞り込むためにのみ機能します。",
+        "grants.policy": "オブジェクトポリシー",
+        "grants.selectPolicy": "オブジェクトポリシーを選択"
       },
       "ar": {
         "panel.name": "الوكيل",
@@ -615,7 +578,7 @@
         "skills.selectedCount": "تم اختيار {count}",
         "tab.config": "الإعدادات",
         "tab.grants": "الصلاحيات والمشاركة",
-        "grants.none": "لا توجد صلاحيات فردية بعد.",
+        "grants.none": "لا توجد سياسات تمنح الوصول.",
         "grants.kind": "نوع الجهة",
         "grants.principalCol": "الجهة",
         "grants.level": "مستوى الصلاحية",
@@ -641,7 +604,9 @@
         "grants.selectRole": "ابحث عن دور أو اختره",
         "grants.submit": "منح",
         "grants.updated": "تم تحديث الصلاحيات.",
-        "grants.systemNote": "لا يزال استخدام الوكلاء المضمنة في النظام يتطلب صلاحية الميزة الخاصة بها؛ وتقتصر صلاحيات الكائن على تضييق نطاق الظهور والاستخدام."
+        "grants.systemNote": "لا يزال استخدام الوكلاء المضمنة في النظام يتطلب صلاحية الميزة الخاصة بها؛ وتقتصر صلاحيات الكائن على تضييق نطاق الظهور والاستخدام.",
+        "grants.policy": "سياسة الكائن",
+        "grants.selectPolicy": "اختر سياسة كائن"
       },
       "fr": {
         "panel.name": "Agent",
@@ -668,7 +633,7 @@
         "skills.selectedCount": "{count} sélectionnée(s)",
         "tab.config": "Configuration",
         "tab.grants": "Autorisations et partage",
-        "grants.none": "Aucune autorisation individuelle pour le moment.",
+        "grants.none": "Aucune stratégie ne donne encore accès.",
         "grants.kind": "Type de sujet",
         "grants.principalCol": "Sujet",
         "grants.level": "Niveau d'accès",
@@ -694,7 +659,9 @@
         "grants.selectRole": "Rechercher ou sélectionner un rôle",
         "grants.submit": "Accorder",
         "grants.updated": "Autorisations mises à jour.",
-        "grants.systemNote": "L'utilisation d'un agent système intégré reste soumise à son contrôle d'accès métier ; les autorisations d'objet servent uniquement à restreindre la visibilité et l'usage."
+        "grants.systemNote": "L'utilisation d'un agent système intégré reste soumise à son contrôle d'accès métier ; les autorisations d'objet servent uniquement à restreindre la visibilité et l'usage.",
+        "grants.policy": "Stratégie d’objet",
+        "grants.selectPolicy": "Choisir une stratégie d’objet"
       },
       "de": {
         "panel.name": "Agent",
@@ -721,7 +688,7 @@
         "skills.selectedCount": "{count} ausgewählt",
         "tab.config": "Konfiguration",
         "tab.grants": "Berechtigungen & Freigabe",
-        "grants.none": "Noch keine einzelnen Freigaben vorhanden.",
+        "grants.none": "Keine Richtlinie gewährt bisher Zugriff.",
         "grants.kind": "Subjekttyp",
         "grants.principalCol": "Subjekt",
         "grants.level": "Berechtigungsstufe",
@@ -747,7 +714,9 @@
         "grants.selectRole": "Rolle suchen oder auswählen",
         "grants.submit": "Gewähren",
         "grants.updated": "Berechtigungen aktualisiert.",
-        "grants.systemNote": "Die Nutzung eines systemintegrierten Agenten unterliegt weiterhin dessen fachlicher Zugangsprüfung; Objektberechtigungen können den Zugriff nur weiter einschränken."
+        "grants.systemNote": "Die Nutzung eines systemintegrierten Agenten unterliegt weiterhin dessen fachlicher Zugangsprüfung; Objektberechtigungen können den Zugriff nur weiter einschränken.",
+        "grants.policy": "Objektrichtlinie",
+        "grants.selectPolicy": "Objektrichtlinie auswählen"
       },
       "it": {
         "panel.name": "Agente",
@@ -774,7 +743,7 @@
         "skills.selectedCount": "{count} selezionate",
         "tab.config": "Configurazione",
         "tab.grants": "Autorizzazioni e condivisione",
-        "grants.none": "Nessuna autorizzazione individuale presente.",
+        "grants.none": "Nessun criterio concede ancora l’accesso.",
         "grants.kind": "Tipo di soggetto",
         "grants.principalCol": "Soggetto",
         "grants.level": "Livello di accesso",
@@ -800,7 +769,9 @@
         "grants.selectRole": "Cerca o seleziona un ruolo",
         "grants.submit": "Concedi",
         "grants.updated": "Autorizzazioni aggiornate.",
-        "grants.systemNote": "L'uso di un agente di sistema integrato resta soggetto al proprio controllo di accesso funzionale; le autorizzazioni sull'oggetto servono solo a restringerne la visibilità e l'uso."
+        "grants.systemNote": "L'uso di un agente di sistema integrato resta soggetto al proprio controllo di accesso funzionale; le autorizzazioni sull'oggetto servono solo a restringerne la visibilità e l'uso.",
+        "grants.policy": "Criterio oggetto",
+        "grants.selectPolicy": "Scegli un criterio oggetto"
       }
     }
   }

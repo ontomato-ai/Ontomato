@@ -104,7 +104,6 @@ function filesAreCanonicalEqual(a: unknown, b: unknown): boolean {
 
 /**
  * Authorizes access to an application project:
- * - Caller must hold `app-builder` application access.
  * - Published domain application: caller must satisfy Java `canMaintain === true` (excludes `builtin` & `connected`).
  * - Unpublished draft: must exist in `app_builder_projects` with `draft_meta IS NOT NULL` AND `created_by === owner.userId`.
  */
@@ -114,7 +113,6 @@ export async function authorizeBuilderProject(
   appId: string,
   options: { skipLiveRead?: boolean } = {},
 ): Promise<AuthorizedProjectContext> {
-  await assertAppBuilderAccess(credentials);
   const project = await appBuilderProjectStore.findByAppId(owner.domainId, appId);
   const runtime = appRuntimeClient(owner, appId);
 

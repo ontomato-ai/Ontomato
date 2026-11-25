@@ -61,15 +61,22 @@ await mountPanel({
       instance.refreshObjects();
     }
 
-    function onSaved(saved) {
-      if (!saved?.primaryKey) return;
-      const patch = {};
-      if (values.value.mode != null) patch.mode = null;
-      if (values.value.selected?.primaryKey !== saved.primaryKey) {
-        patch.selected = { className: FUNCTION, primaryKey: saved.primaryKey };
-      }
-      if (Object.keys(patch).length > 0) instance.state.setState(patch);
+    async function onSaved(saved) {
+      // ObjectForm.settleSave calls moveTo synchronously before emitting saved, so check mode === "create" as well.
+      const wasCreate = isCreate.value || values.value.mode === "create";
       notify({ kind: "success", text: t("saved") });
+      if (wasCreate) {
+        if (!saved?.primaryKey) return;
+        const patch = {};
+        if (values.value.mode != null) patch.mode = null;
+        if (values.value.selected?.primaryKey !== saved.primaryKey) {
+          patch.selected = { className: FUNCTION, primaryKey: saved.primaryKey };
+        }
+        if (Object.keys(patch).length > 0) instance.state.setState(patch);
+        return;
+      }
+      await nextTick();
+      void navigate(CATALOG_PATH).catch(() => undefined);
     }
 
     async function onDiscarded() {

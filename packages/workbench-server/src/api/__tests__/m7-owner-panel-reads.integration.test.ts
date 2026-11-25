@@ -1,3 +1,4 @@
+import { agentObjectDecisions } from "../../__tests__/fixtures/agent-object-decisions";
 import { mockApplicationEntry } from "../../__tests__/fixtures/application-entry";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
@@ -98,7 +99,7 @@ const projections = {
       search: { kind: "scalar", type: "string" },
       sourceType: { kind: "scalar", type: "string" },
       rating: { kind: "scalar", type: "string" },
-      cursor: { kind: "scalar", type: "string" },
+      page: { kind: "json" },
       size: { kind: "scalar", type: "number" },
     },
     outputs: {},
@@ -111,7 +112,7 @@ const projections = {
           search: { input: "search" },
           sourceType: { input: "sourceType" },
           rating: { input: "rating" },
-          cursor: { input: "cursor" },
+          page: { input: "page" },
           size: { input: "size" },
         },
       },
@@ -344,6 +345,10 @@ beforeAll(async () => {
     resourceIds.add(req.body.id);
     res.json({ success: true });
   });
+  app.post("/authorization/objects/decide-batch", (req, res) => {
+    res.json(agentObjectDecisions(req.body, request => "target" in request &&
+      request.target.domainId === domainId && request.target.id === agentIds.readable));
+  });
   app.post("/product-governance/check", (req, res) => {
     res.json({ allowed: req.header("tk") === "m7-reader" && resourceIds.has(req.body.id) });
   });
@@ -478,26 +483,26 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
   };
 
   // 1. FeedbackRecord reads backed by real PG assistant_feedback rows.
-  const feedbackPage1 = await read("feedbackList", "rows", { search: "chart", sourceType: "all", rating: "all", size: 1 });
+  const feedbackPage1 = await read("feedbackList", "rows", {
+    search: "chart", sourceType: "all", rating: "all", page: { number: 1, size: 1 },
+  });
   expect(feedbackPage1).toMatchObject({
     status: "ready",
     value: {
-      rows: [{ primaryKey: feedbackIds.qaLike, fields: { sourceType: "Query", rating: "Like" } }],
-      nextCursor: "1",
+      rows: [{ primaryKey: feedbackIds.qaLike, fields: { sourceType: "Query", rating: { kind: "tag", label: "Like", tone: "success" } } }],
       total: 2,
     },
   });
   const feedbackPage2 = await read("feedbackList", "rows", {
-    search: "chart", cursor: "1", size: 1,
+    search: "chart", page: { number: 2, size: 1 },
   }, "zh-CN");
   expect(feedbackPage2).toMatchObject({
     status: "ready",
     value: {
-      rows: [{ primaryKey: feedbackIds.qaDislike, fields: { sourceType: "问答", rating: "点踩" } }],
+      rows: [{ primaryKey: feedbackIds.qaDislike, fields: { sourceType: "问答", rating: { kind: "tag", label: "点踩", tone: "danger" } } }],
       total: 2,
     },
   });
-  expect(feedbackPage2.value.nextCursor).toBeUndefined();
 
   expect(await read("feedbackCounts", "counts", {
     by: "sourceType", search: "chart", sourceType: "analysis_task", rating: "like",
@@ -527,7 +532,7 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
     status: "ready",
     value: {
       primaryKey: feedbackIds.taskLike,
-      fields: { sourceType: "Analysis task", rating: "Like", feedbackText: "Good summary" },
+      fields: { sourceType: "Analysis task", rating: { kind: "tag", label: "Like", tone: "success" }, feedbackText: "Good summary" },
     },
   });
   expect(await read("feedbackDetail", "record", {

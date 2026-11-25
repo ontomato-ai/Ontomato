@@ -1,8 +1,10 @@
 package io.ontomato.dataengine.controller;
 
+import static io.ontomato.dataengine.service.authorization.AuthorizationTypes.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -20,18 +22,24 @@ import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.dao.VectorRebuildState;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.agent.ActionCreationService;
 import io.ontomato.dataengine.service.agent.AgentCaller;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.OntologyAgentAccess;
 import io.ontomato.dataengine.service.agent.OntologyAgentHost;
+import io.ontomato.dataengine.service.agent.OntologyAgentLabels;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.service.agent.OntologyRetrievalService;
 import io.ontomato.dataengine.service.agent.PlatformAuthoringService;
+import io.ontomato.dataengine.service.authorization.AuthorizationService;
+import io.ontomato.dataengine.service.authorization.AuthorizationStore;
+import io.ontomato.dataengine.service.authorization.AuthorizationSubjects;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -42,6 +50,48 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class JacksonAgentBoundaryTest {
+  @Test
+  void agentCatalogueUsesCurrentDomainActionCreateWithoutConsultingKnowledgePermissions() throws Exception {
+    var identity = mock(IdentityService.class);
+    var caller = new OntologyAgentStore.Owner("creator", "domain-a");
+    when(identity.getCurrentUser()).thenReturn(new QueryAccessService.GrantUser(caller.userId(), caller.domainId()));
+    var subjects = mock(AuthorizationSubjects.class);
+    var policies = mock(AuthorizationStore.class);
+    var roles = Set.of("member");
+    var policy = "action-policy";
+    when(subjects.resolveRoles(caller.domainId(), caller.userId()))
+        .thenReturn(new RoleResolution(roles, roles, List.of(), Set.of(), Map.of(), false));
+    when(policies.policies(caller.domainId(), roles))
+        .thenReturn(List.of(new PolicyRef("member", policy, PolicyKind.OBJECT)));
+    var createTarget = new ObjectTarget(caller.domainId(), Kind.ACTION, "");
+    when(policies.objectGrants(createTarget, Verb.CREATE, Set.of(policy)))
+        .thenReturn(List.of(new ObjectGrant(policy, createTarget, Verb.CREATE, null)), List.of());
+
+    var authorization = new AuthorizationService(subjects, policies, null, null, null);
+    var retrieval = mock(OntologyRetrievalService.class);
+    when(retrieval.canUse(caller)).thenReturn(true);
+    var labels = mock(OntologyAgentLabels.class);
+    when(labels.localize(anyString(), any(), anyString())).thenAnswer(call -> call.getArgument(1));
+    var host = new OntologyAgentHost(null, null, retrieval, null, null, labels, authorization);
+    var access = new OntologyAgentAccess(null, identity, null, null);
+    var mvc = statusBoundary(host, access);
+    var action = "$.agents[?(@.id == '%s')]".formatted(ActionCreationService.AGENT);
+    var retriever = "$.agents[?(@.id == '%s')]".formatted(OntologyAgentStore.RETRIEVER);
+
+    mvc.perform(get("/ontology/ai/agents").header("X-Domain-Id", "other-domain"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath(action).isNotEmpty())
+        .andExpect(jsonPath(retriever).isNotEmpty());
+
+    when(identity.hasKnowledgeGovernanceAccess()).thenReturn(true);
+    mvc.perform(get("/ontology/ai/agents"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath(action).isEmpty())
+        .andExpect(jsonPath(retriever).isNotEmpty());
+    verify(identity, never()).hasKnowledgeGovernanceAccess();
+    verify(identity, never()).hasKnowledgeGovernanceAccess(anyString(), anyString());
+  }
+
   @Test
   void authoringContextExplainsWhyVectorSearchIsUnavailable() throws Exception {
     var config = mock(BusinessConfig.class);

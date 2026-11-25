@@ -77,6 +77,9 @@ export const panelObjectListColumnSchema = z.object({
   wrap: z.boolean().optional().describe("Allow text in this column to wrap onto multiple lines. Defaults to false."),
   width: columnWidthSchema.describe("Optional fixed column width in pixels (number) or CSS length string (for example '160px' or '20%')."),
   minWidth: columnWidthSchema.describe("Optional minimum column width in pixels (number) or CSS length string."),
+  minContainerWidth: z.number().int().positive().optional().describe(
+    "Minimum list container width in pixels required to display this column. Automatically hides the column when the container is narrower than this threshold and restores it when wider.",
+  ),
   align: z.enum(["left", "center", "right"]).optional().describe("Optional text alignment for header and cells in this column."),
   headerTooltipKey: panelMessageKeySchema.optional().describe(
     "Optional panel message key shown in a tooltip beside the table column header.",
@@ -1003,6 +1006,8 @@ const objectControl = z.object({
   presentation: z.enum(["plain", "panel"]).optional(),
 }).strict();
 
+const formSubmitOn = z.enum(["manual", "blur", "change"]).optional();
+
 const fieldShape = z.object({
   path: fieldPath,
   label: z.string().min(1),
@@ -1016,6 +1021,7 @@ const fieldShape = z.object({
   readOnly: z.boolean(),
   readOnlyReason: z.string().min(1).optional(),
   refreshOnChange: z.boolean().optional(),
+  submitOn: formSubmitOn,
   /** In a multi-column grid, span across all columns instead of occupying a single column cell. */
   fullWidth: z.boolean().optional(),
   advanced: z.literal(true).optional().describe(
@@ -1389,6 +1395,7 @@ export const panelFormRevisionSchema = z.union([z.number().int().positive().safe
 export type PanelFormRevision = z.infer<typeof panelFormRevisionSchema>;
 
 export const panelFormDescriptionSchema = z.object({
+  submitOn: formSubmitOn,
   fields: z.array(panelFormFieldSchema),
   /** The form's sections in order; a form without them is one list of fields. */
   sections: z.array(panelFormSectionSchema).optional(),

@@ -26,6 +26,7 @@ export const panelFormOptionValueSchema = z.union([nonempty, z.number().finite()
 export const panelFormOptionSchema = formOptionShape.extend({
   value: panelFormOptionValueSchema,
   badge: nonempty.optional(),
+  icon: nonempty.optional(),
   tone: z.enum(["default", "info", "success", "warning", "danger"]).optional(),
   groupPath: z.array(nonempty).min(1).optional(),
 }).refine(optionAvailabilityMatches, optionAvailabilityMessage);

@@ -70,38 +70,67 @@
         },
         "operation": "platform:MetricView.save",
         "config": {
-          "actions": "none"
+          "actions": "none",
+          "presentation": "cards",
+          "cardColumns": 2,
+          "groups": [
+            {
+              "key": "definition",
+              "titleKey": "metricViews.sectionDefinition",
+              "column": "main",
+              "fields": [
+                "/name",
+                "/description",
+                "/status",
+                "/matchQuestions"
+              ]
+            },
+            {
+              "key": "bindings",
+              "titleKey": "metricViews.sectionBindings",
+              "column": "main",
+              "fields": [
+                "/bindings"
+              ]
+            },
+            {
+              "key": "logic",
+              "titleKey": "metricViews.sectionLogic",
+              "descriptionKey": "metricViews.sectionLogicEyebrow",
+              "column": "side",
+              "fields": [
+                "/function/name",
+                "/function/queryPackage",
+                "/function/returnDef/columnLabels",
+                "/function/code",
+                "/function/logic"
+              ]
+            }
+          ]
         },
         "name": "指标定义",
         "description": "指标的名称、描述、状态、匹配问题、函数逻辑（查询包、列标签、逻辑说明与旧格式只读代码）及参数绑定。",
         "id": "builtin-product-1d856c95-d8b9-4ade-bed9-88f912283c8c"
       },
       "testMarkdown": {
-        "component": "OperationButton",
+        "component": "PanelData",
         "type": "platform:MetricView",
         "operation": "metricViews.test",
         "draft": "definition",
         "parameters": {
           "state": "testParameters"
         },
-        "config": {
-          "type": "primary",
-          "labelKey": "metricViews.testMarkdown"
-        },
         "name": "Markdown 试运行",
         "description": "使用当前草稿和参数值试运行指标并返回 Markdown 预览，不保存修改。",
         "id": "builtin-product-34c95189-34b3-40fc-9f8c-5ea7e728c95b"
       },
       "testJson": {
-        "component": "OperationButton",
+        "component": "PanelData",
         "type": "platform:MetricView",
         "operation": "metricViews.testExecute",
         "draft": "definition",
         "parameters": {
           "state": "testParameters"
-        },
-        "config": {
-          "labelKey": "metricViews.testJson"
         },
         "name": "JSON 试运行",
         "description": "使用当前草稿和参数值试运行指标并返回 JSON 结果与截断提示，不保存修改。",
@@ -135,6 +164,10 @@
         "metricViews.forbidden": "You do not have permission to view this metric view.",
         "metricViews.loadError": "Failed to load this metric view.",
         "metricViews.retry": "Retry",
+        "metricViews.sectionDefinition": "Metric View",
+        "metricViews.sectionBindings": "Parameter Bindings",
+        "metricViews.sectionLogic": "Function Logic",
+        "metricViews.sectionLogicEyebrow": "Execution definition",
         "metricViews.test": "Test",
         "metricViews.testTitle": "Metric view test",
         "metricViews.testHint": "The test runs with the current draft and parameter values and does not save changes.",
@@ -147,7 +180,12 @@
         "metricViews.testMarkdown": "Test and generate Markdown",
         "metricViews.testJson": "Test and return JSON",
         "metricViews.testMarkdownTab": "Markdown test",
+        "metricViews.testMarkdownPreview": "Preview",
+        "metricViews.testMarkdownSource": "Source",
         "metricViews.testJsonTab": "JSON test",
+        "metricViews.testMarkdownPlaceholder": "Click \"Test and generate Markdown\" to preview the Markdown output.",
+        "metricViews.testJsonPlaceholder": "Click \"Test and return JSON\" to inspect the JSON result.",
+        "metricViews.testJsonPublishedOnly": "Only published metric views can run JSON execution tests.",
         "metricViews.testInvalidValue": "Invalid JSON value for parameter {name}",
         "metricViews.testNoDraft": "Open or create a metric first: the test runs the definition this page is editing.",
         "metricViews.close": "Close"
@@ -162,6 +200,10 @@
         "metricViews.forbidden": "当前账号无权读取该指标视图。",
         "metricViews.loadError": "读取指标视图失败。",
         "metricViews.retry": "重试",
+        "metricViews.sectionDefinition": "指标视图",
+        "metricViews.sectionBindings": "参数绑定",
+        "metricViews.sectionLogic": "函数逻辑",
+        "metricViews.sectionLogicEyebrow": "执行定义",
         "metricViews.test": "测试",
         "metricViews.testTitle": "指标视图测试",
         "metricViews.testHint": "测试会使用当前草稿和参数值执行，不会保存修改。",
@@ -174,7 +216,12 @@
         "metricViews.testMarkdown": "测试并生成 Markdown",
         "metricViews.testJson": "测试并返回 JSON",
         "metricViews.testMarkdownTab": "Markdown 测试",
+        "metricViews.testMarkdownPreview": "预览",
+        "metricViews.testMarkdownSource": "源码",
         "metricViews.testJsonTab": "JSON 测试",
+        "metricViews.testMarkdownPlaceholder": "点击「测试并生成 Markdown」后在此查看 Markdown 结果。",
+        "metricViews.testJsonPlaceholder": "点击「测试并返回 JSON」后在此查看 JSON 结果。",
+        "metricViews.testJsonPublishedOnly": "只有已发布的指标视图才能执行 JSON 测试。",
         "metricViews.testInvalidValue": "参数 {name} 不是有效的 JSON 值",
         "metricViews.testNoDraft": "先打开或新建一个指标：测试使用的是这一页正在编辑的定义。",
         "metricViews.close": "关闭"

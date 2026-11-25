@@ -264,6 +264,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           paused: { kind: "scalar", type: "boolean" },
           pauseCode: { kind: "scalar", type: "string" },
           latestResultPath: { kind: "scalar", type: "string" },
+          hasEarlierResult: { kind: "scalar", type: "boolean" },
+          lastRunStatus: { kind: "scalar", type: "string" },
           isRunning: { kind: "scalar", type: "boolean" },
           needsIntervention: { kind: "scalar", type: "boolean" },
           attentionGroup: { kind: "scalar", type: "string" },
@@ -272,6 +274,16 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         },
       },
       counts: { source: "type", parameterMode: "fixed", params: { by: "keyword" }, result: "panelGroupCounts" },
+      status: {
+        source: "type", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          canCreate: { kind: "scalar", type: "boolean" },
+          createBlockedReason: { kind: "scalar", type: "string" },
+          applicationsProblem: { kind: "scalar", type: "string" },
+          applicationsFailed: { kind: "scalar", type: "boolean" },
+          hasCredentialPaused: { kind: "scalar", type: "boolean" },
+        },
+      },
       record: {
         source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
         outputs: {
@@ -280,6 +292,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           paused: { kind: "scalar", type: "boolean" },
           pauseCode: { kind: "scalar", type: "string" },
           latestResultPath: { kind: "scalar", type: "string" },
+          hasEarlierResult: { kind: "scalar", type: "boolean" },
+          lastRunStatus: { kind: "scalar", type: "string" },
           isRunning: { kind: "scalar", type: "boolean" },
           needsIntervention: { kind: "scalar", type: "boolean" },
           attentionGroup: { kind: "scalar", type: "string" },
@@ -418,6 +432,15 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("metricView", "capability"),
     reads: {
       count: countRead,
+      list: {
+        source: "type", parameterMode: "fixed",
+        params: {
+          search: "keyword",
+          status: "metricViewStatus",
+          origin: "metricViewOrigin",
+        },
+        result: "panelRecordQuery",
+      },
       query: {
         source: "type", parameterMode: "fixed",
         params: {
@@ -503,6 +526,11 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [FUNCTION]: {
     ...describeType("function", "capability"),
     reads: {
+      list: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", operation: "functionOperation" },
+        result: "panelRecordQuery",
+      },
       query: {
         source: "type", parameterMode: "fixed",
         params: { search: "keyword", operation: "functionOperation", cursor: "cursor", size: "size" },
@@ -994,7 +1022,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       query: {
         source: "type", parameterMode: "fixed",
-        params: { search: "keyword", sourceType: "feedbackSourceType", rating: "feedbackRating", cursor: "cursor", size: "size" },
+        params: { search: "keyword", sourceType: "feedbackSourceType", rating: "feedbackRating", page: "page", size: "size" },
         result: "panelRecordQuery",
       },
       // Counts by one filter apply the search and the other filter, so each choice shows what selecting it would list.

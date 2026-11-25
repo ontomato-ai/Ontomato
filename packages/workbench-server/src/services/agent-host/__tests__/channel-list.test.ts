@@ -6,10 +6,9 @@ import { restoreAgentCaller } from "../caller";
 import { assistantStore } from "../../assistant/store";
 import { diagnosisService } from "../../ops-diagnosis/service";
 import { workbenchIdentity } from "../../../identity/installed";
-import { HttpError } from "../../../utils/errors";
 vi.mock("../../assistant/skills",()=>({needsRetrievalScope:()=>false}));
 vi.mock("../caller",() => ({ restoreAgentCaller: vi.fn() }));
-vi.mock("../../assistant/service",() => ({ assistantService: { admitAgent: vi.fn() } }));
+vi.mock("../../assistant/authorization",() => ({ allowedAgents: async (agents: unknown[]) => agents }));
 vi.mock("../../assistant/store",() => ({ assistantStore: { channelAgents: vi.fn() } }));
 vi.mock("../../ops-diagnosis/service",() => ({ diagnosisService: { agents: vi.fn() },createDiagnosis: vi.fn(),prepareDiagnosis: vi.fn() }));
 vi.mock("../../../identity/installed",() => ({ workbenchIdentity: vi.fn() }));
@@ -37,12 +36,14 @@ it("the diagnosis provider lists only its own agents",async () => {
   const result = await agentChannelService.list({ providerId: "observe",actor,language:"en" },"a");
   expect(result.agents.map(agent => agent.ref.providerId)).toEqual(["observe"]);
   expect(assistantStore.channelAgents).not.toHaveBeenCalled();
-  expect(observeAccess).toHaveBeenCalledTimes(1);
+  expect(observeAccess).not.toHaveBeenCalled();
 });
-it("a denied diagnosis capability contributes no entries",async () => {
-  observeAccess.mockRejectedValue(new HttpError(403,"Forbidden","FORBIDDEN"));
-  await expect(agentChannelService.list({ providerId: "observe",actor,language:"en" },"a")).resolves.toEqual({ agents: [] });
-  expect(diagnosisService.agents).not.toHaveBeenCalled();
+it("does not query observe access to list an authorized diagnosis agent",async () => {
+  observeAccess.mockRejectedValue(new Error("observe access must not be checked"));
+  const result = await agentChannelService.list({ providerId: "observe",actor,language:"en" },"a");
+  expect(result.agents.map(agent => agent.ref.providerId)).toEqual(["observe"]);
+  expect(diagnosisService.agents).toHaveBeenCalledOnce();
+  expect(observeAccess).not.toHaveBeenCalled();
 });
 
 it("uses the caller locale with the workbench's existing default label owner",async()=>{

@@ -444,11 +444,11 @@ export async function requestPresentation(
       resolve(result);
     };
     const abandon = () => {
-      if (!isPageAction) {
+      if (!isPageAction && !isFillForm) {
         finish(receiptMissing);
         return;
       }
-      // Recover the authoritative server intent status when a page_action receipt is lost so the agent never retries.
+      // Recover the authoritative server intent status when a page write receipt is lost so the agent never retries.
       void panelOperationStore.findByAgentToolCall(owner, runId, toolCallId).then((stored) => {
         if (stored?.kind === "current") {
           const { intent } = stored;

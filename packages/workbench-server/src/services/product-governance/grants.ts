@@ -16,7 +16,7 @@ import {
 
 export interface ProductOwner { domainId: string; userId: string }
 
-function serviceHeaders() {
+export function productGovernanceServiceHeaders() {
   const token = environment.agentRuntime().queryServiceToken;
   if (!token) throw new HttpError(503, "Product governance service credential is not configured", "PRODUCT_GOVERNANCE_UNAVAILABLE");
   return { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": token };
@@ -25,7 +25,7 @@ function serviceHeaders() {
 export function productDefinitionOwnerHeaders(credentials: AssistantCredentials) {
   return buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, {
     ...credentials.headers,
-    ...serviceHeaders(),
+    ...productGovernanceServiceHeaders(),
   });
 }
 
@@ -63,7 +63,7 @@ export async function productManagementAccess(
 
 export async function unregisterProductResource(domainId: string, id: string) {
   const response = await backendPost("product-grant-unregister", config.dataQuery.baseUrl + "/product-governance/unregister",
-    { domainId, id }, { headers: serviceHeaders(), retries: 1 });
+    { domainId, id }, { headers: productGovernanceServiceHeaders(), retries: 1 });
   if (JSON.parse(response.text).success !== true)
     throw new HttpError(503, "Product resource removal failed", "PRODUCT_GOVERNANCE_UNAVAILABLE");
 }
@@ -81,7 +81,7 @@ export async function registerProductResource(
   { ownerId = owner.userId, ...options }: ProductRegistrationOptions = {},
 ) {
   const response = await backendPost('product-grant-registration', config.dataQuery.baseUrl + '/product-governance/register',
-    { domainId: owner.domainId, ownerId, id, shared, ...options }, { headers: serviceHeaders(), retries: 1 });
+    { domainId: owner.domainId, ownerId, id, shared, ...options }, { headers: productGovernanceServiceHeaders(), retries: 1 });
   if(JSON.parse(response.text).success!==true)throw new HttpError(503,'Product resource registration failed','PRODUCT_GOVERNANCE_UNAVAILABLE');
 }
 export async function productGrantAllowed(id:string,verb: ProductGrantVerb,credentials:AssistantCredentials){
@@ -129,7 +129,7 @@ export async function shareProductResource(id:string,shared:boolean,credentials:
   if(JSON.parse(response.text).success!==true)throw new HttpError(503,'Product sharing update failed','PRODUCT_GOVERNANCE_UNAVAILABLE');
 }
 export async function productGrantIdsForOwner(owner:ProductOwner,verb: ProductGrantVerb):Promise<string[]>{
-  const response=await backendPost('product-grant-owner-resources',config.dataQuery.baseUrl+'/product-governance/service-resources',{domainId:owner.domainId,userId:owner.userId,verb},{headers:serviceHeaders(),retries:1});
+  const response=await backendPost('product-grant-owner-resources',config.dataQuery.baseUrl+'/product-governance/service-resources',{domainId:owner.domainId,userId:owner.userId,verb},{headers:productGovernanceServiceHeaders(),retries:1});
   const result=JSON.parse(response.text);
   if(!Array.isArray(result.ids)||result.ids.some((id:unknown)=>typeof id!=='string'))throw new HttpError(503,'Invalid product Grant response','PRODUCT_GOVERNANCE_UNAVAILABLE');
   return result.ids;

@@ -17,16 +17,19 @@ public interface AuthorizationStore {
     Set<String> entryPolicies(ObjectTarget entry);
 
     default boolean requiresFirstPublicationAudience() { return true; }
-    default PolicyRef domainPolicy(String domainId) {
-        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Ordinary object policies are not available");
-    }
+    default List<ObjectGrantView> objectGrantViews(ObjectTarget target) { throw unsupportedObjectPolicies(); }
 
-    default List<ObjectGrantView> objectGrantViews(ObjectTarget target) {
-        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Ordinary object policies are not available");
+    default PolicyRef domainPolicy(String domainId) { throw unsupportedObjectPolicies(); }
+    default List<AgentPolicyGrant> agentPolicyGrants(ObjectTarget target) { throw unsupportedObjectPolicies(); }
+    default void replaceAgentLevel(String policyId, ObjectTarget target, Verb level) { throw unsupportedObjectPolicies(); }
+
+    private static ResponseStatusException unsupportedObjectPolicies() {
+        return new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Ordinary object policies are not available");
     }
 
     void grantObject(ObjectGrant grant);
     void revokeObject(ObjectGrant grant);
+    default void retireObject(ObjectTarget target) { throw unsupportedObjectPolicies(); }
     void grantManagement(String domainId, String policyId, String operationId);
     void revokeManagement(String domainId, String policyId, String operationId);
 

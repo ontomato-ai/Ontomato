@@ -8,25 +8,24 @@ import { assistantAgentInputSchema } from "@ontomato/contracts/assistant-chat";
 import { AGENT_DEFINITION, DELETE_AGENT } from "@ontomato/contracts/panel-client-requests";
 import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
 
-const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", assertPermission: vi.fn(), skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
-const grants = vi.hoisted(() => ({ ids: vi.fn(), register: vi.fn(), unregister: vi.fn(), require: vi.fn(), allowed: vi.fn() }));
-vi.mock("../../services/product-governance/grants", () => ({
-  grantedProductIds: grants.ids,
-  registerProductResource: grants.register,
-  unregisterProductResource: grants.unregister,
-  requireProductGrant: grants.require,
-  productGrantAllowed: grants.allowed,
+const state = vi.hoisted(() => ({ pool: undefined as pg.Pool | undefined, schema: "", skillView: vi.fn(), hiddenSkills: vi.fn(), visibleSkills: vi.fn(), validateSkills: vi.fn().mockResolvedValue([]), setting: vi.fn(), prepare: vi.fn() }));
+const authorization = vi.hoisted(() => ({ post: vi.fn() }));
+vi.mock("../../utils/backend-client", async original => ({
+  ...await original<typeof import("../../utils/backend-client")>(),
+  backendPost: authorization.post,
 }));
+vi.mock("../../config/environment", async original => {
+  const { environment } = await original<typeof import("../../config/environment")>();
+  return { environment: { ...environment, agentRuntime: () => ({
+    ...environment.agentRuntime(), queryServiceToken: "fixture-service",
+  }) } };
+});
 const certainSkillView = { requireCertainStoredSkill: () => undefined };
 vi.mock("../../infrastructure/postgres", () => ({
   getPostgresPool: () => state.pool,
   qualifiedTable: (name: string) => `"${state.schema}"."${name}"`,
 }));
 vi.mock("../../infrastructure/agent-runtime/client", () => ({ RuntimeClient: class { async modelOptions() { return { models: [{ name: "configured", type: "chat" }], defaultModel: "configured" }; } } }));
-vi.mock("../../identity/installed", async original => ({
-  ...await original<typeof import("../../identity/installed")>(),
-  assertPermission: state.assertPermission,
-}));
 vi.mock("../../services/assistant/execution-setting", () => ({
   validateExecutionSetting: state.setting,
   prepareExecutionSetting: state.prepare,
@@ -89,7 +88,14 @@ describe("agent definitions on PostgreSQL", () => {
         BEGIN INSERT INTO "${state.schema}".skill_writes VALUES (NEW.id); RETURN NEW; END $$;
       CREATE TRIGGER record_skill_write AFTER UPDATE OF skills ON "${state.schema}".assistant_agents
         FOR EACH ROW EXECUTE FUNCTION "${state.schema}".record_skill_write()`);
-    grants.allowed.mockResolvedValue(true);
+    authorization.post.mockImplementation((endpoint, _url, body) => {
+      if (endpoint === "object-authorization-decide-batch")
+        return { text: JSON.stringify({ decisions: body.requests.map(() => ({ allowed: true })) }) };
+      if (endpoint === "object-authorization-retire") return { text: "" };
+      if (endpoint === "object-authorization-first-publication")
+        return { text: JSON.stringify({ status: "granted" }) };
+      throw new Error(`Unexpected backend endpoint: ${endpoint}`);
+    });
     state.skillView.mockResolvedValue(certainSkillView);
     state.hiddenSkills.mockImplementation((_refs, skillView: { hidden?: boolean }) => skillView.hidden === true);
     state.visibleSkills.mockImplementation((refs, skillView: { hidden?: boolean }) => skillView.hidden ? [] : refs);
@@ -161,7 +167,7 @@ describe("agent definitions on PostgreSQL", () => {
     expect(await remove.unavailable(host, target(custom))).toBeUndefined();
     expect(await remove.execute(host, target(custom))).toMatchObject({ kind: "success" });
     expect(await stored(custom)).toBeUndefined();
-    expect(await remove.unavailable(host, target(custom))).toBeUndefined();
+    await expect(remove.unavailable(host, target(custom))).rejects.toMatchObject({ status: 404 });
     expect((await fetch(base + "/" + custom, { method: "DELETE" })).status).toBe(404);
   });
   it("creates and replays a UUID definition with its selected class range", async () => {
@@ -169,13 +175,34 @@ describe("agent definitions on PostgreSQL", () => {
     const input = assistantAgentInputSchema.parse({ name: "Scoped agent", description: "", icon: null,
       enabled: true, systemPrompt: "Analyze the selected classes", skills: [], classNames: ["org"], enabledMcpServiceIds: [], sortOrder: 0 });
     const owner = { userId: "owner", domainId: "domain" };
+    authorization.post.mockClear();
     const result = await createAgentDefinition(id, input, owner, {});
     expect(result.id).toBe(id);
     expect(result.classNames).toEqual(["org"]);
     expect(await createAgentDefinition(id, input, owner, {})).toEqual(result);
     const stored = await state.pool!.query(`SELECT kind FROM "${state.schema}".assistant_agents WHERE id=$1`, [id]);
     expect(stored.rows[0].kind).toBe(id);
+    expect(authorization.post.mock.calls.map(([endpoint, , body]) => [endpoint, body])).toEqual([
+      ["object-authorization-decide-batch", { requests: [{ create: "AGENT" }] }],
+      ["object-authorization-decide-batch", { requests: [{ create: "AGENT" }] }],
+    ]);
   });
+  it.each([{ kind: "domain" }, { kind: "policy", policyId: "analyst-policy" }])(
+    "writes first publication once for $kind access", async (publicationAccess) => {
+      const id = randomUUID();
+      const input = assistantAgentInputSchema.parse({ ...form, skills: [], publicationAccess });
+      authorization.post.mockClear();
+      const created = await createAgentDefinition(id, input, owner, { token: "editor" });
+      expect(await createAgentDefinition(id, input, owner, { token: "editor" })).toEqual(created);
+      expect(authorization.post.mock.calls.filter(([endpoint]) => endpoint === "object-authorization-first-publication"))
+        .toEqual([[
+          "object-authorization-first-publication", expect.stringMatching(/\/authorization\/objects\/first-publication$/u),
+          { target: { domainId: owner.domainId, kind: "AGENT", id },
+            ownerFacts: { ownerId: owner.userId, state: "DRAFT" }, access: publicationAccess },
+          expect.objectContaining({ headers: expect.objectContaining({ tk: "editor" }) }),
+        ]]);
+    },
+  );
   it("defaults to PI, stores Codex, and preserves the engine on an omitted update", async () => {
     const id = randomUUID();
     const input = assistantAgentInputSchema.parse({ ...form, skills: [] });
@@ -366,16 +393,24 @@ describe("agent definitions on PostgreSQL", () => {
     await state.pool!.query(`INSERT INTO "${state.schema}".assistant_agents (id, domain_id, kind)
       VALUES ($1,$2,'custom'), ($3,$2,'app-builder'), ($4,'foreign','custom')`,
       [readable, owner.domainId, builder, foreign]);
-    grants.ids.mockResolvedValueOnce([readable, builder, foreign]);
+    await state.pool!.query(`UPDATE "${state.schema}".assistant_agents SET owner_id=$2 WHERE id=$1`, [readable, owner.userId]);
+    authorization.post.mockClear();
     const candidates = [readable, builder, foreign, randomUUID()];
     const credentials = { token: "editor" };
     expect(await filterReadableAgentDefinitions(owner, credentials, candidates)).toEqual(new Set([readable]));
-    expect(grants.ids).toHaveBeenLastCalledWith("view", credentials);
+    expect(authorization.post).toHaveBeenCalledWith(
+      "object-authorization-decide-batch", expect.stringMatching(/\/authorization\/objects\/decide-batch$/u),
+      { requests: [{ target: { domainId: owner.domainId, kind: "AGENT", id: readable },
+        ownerFacts: { ownerId: owner.userId, state: "PUBLISHED" }, verb: "VIEW" }] },
+      expect.objectContaining({ headers: expect.objectContaining({ tk: "editor" }) }),
+    );
 
-    grants.ids.mockResolvedValueOnce([]);
+    authorization.post.mockResolvedValueOnce({
+      text: JSON.stringify({ decisions: [{ allowed: false, code: "FORBIDDEN", reason: "Access denied" }] }),
+    });
     expect(await filterReadableAgentDefinitions(owner, credentials, candidates)).toEqual(new Set());
     const unavailable = new HttpError(502, "Permission service unavailable");
-    grants.ids.mockRejectedValueOnce(unavailable);
+    authorization.post.mockRejectedValueOnce(unavailable);
     await expect(filterReadableAgentDefinitions(owner, credentials, candidates)).rejects.toBe(unavailable);
   });
   it("keeps diagnosis selection domain-owned and validates changes", async () => {

@@ -7,6 +7,7 @@ import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.Management;
+import io.ontomato.dataengine.service.authorization.AuthorizationService.ObjectAccess;
 import io.ontomato.dataengine.service.authorization.AuthorizationService.SubjectContext;
 import java.util.List;
 import java.util.Set;
@@ -18,11 +19,11 @@ import org.springframework.web.server.ResponseStatusException;
 public final class AuthorizationPolicies implements DefinitionFirstPublication {
     public static final String READ = "authorization.policies.read";
     public static final String CHANGE = "authorization.policies.change";
-
     private static final Set<Kind> FIRST_PUBLICATION_KINDS = Set.of(Kind.PANEL, Kind.PROJECTION, Kind.COMPONENT,
             Kind.METRIC, Kind.READ_FUNCTION, Kind.AGENT);
 
     public enum PublicationStatus { granted, pending }
+    public record AgentAccess(boolean shared, List<AgentPolicyGrant> grants) {}
 
     private final AuthorizationStore store;
     private final ManagementOperations operations;
@@ -123,8 +124,73 @@ public final class AuthorizationPolicies implements DefinitionFirstPublication {
     private void requireProductEdit(SubjectContext ctx, ObjectTarget target, OwnerFacts facts) {
         if (target.kind() != Kind.PANEL && target.kind() != Kind.PROJECTION && target.kind() != Kind.COMPONENT)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected a registered product definition.");
-        var result = authorization.decide(ctx, new AuthorizationService.ObjectAccess(target, Verb.EDIT, facts));
-        if (!result.allowed()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, result.reason());
+        requireEdit(ctx, target, facts);
+    }
+
+    /** The definition owner calls this with the pre-publication facts on the first transition. */
+    public PublicationStatus firstPublication(SubjectContext ctx, ObjectTarget target, OwnerFacts facts, String policyId) {
+        if (facts.state() != DefinitionState.DRAFT)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "First publication requires a draft object.");
+        requireEdit(ctx, target, facts);
+        return applyFirstPublication(ctx, target, policyId);
+    }
+
+    public AgentAccess agentAccess(SubjectContext ctx, ObjectTarget target, OwnerFacts facts) {
+        requireAgent(target);
+        requireEdit(ctx, target, facts);
+        var domainPolicyId = store.domainPolicy(target.domainId()).policyId();
+        boolean shared = !store.objectGrants(target, Verb.USE, Set.of(domainPolicyId)).isEmpty();
+        var grants = store.agentPolicyGrants(target).stream().filter(grant -> !domainPolicyId.equals(grant.policyId())).toList();
+        return new AgentAccess(shared, grants);
+    }
+
+    public void replaceAgentLevel(SubjectContext ctx, String policyId, ObjectTarget target, Verb level, OwnerFacts facts) {
+        requireAgent(target);
+        requireManagement(ctx, CHANGE);
+        requireEdit(ctx, target, facts);
+        if (level != null) requireGrant(Kind.AGENT, target.id(), level, null, false);
+        store.replaceAgentLevel(policyId, target, level);
+    }
+
+    public void setAgentDomainUse(SubjectContext ctx, ObjectTarget target, OwnerFacts facts, boolean shared) {
+        requireAgent(target);
+        requireManagement(ctx, CHANGE);
+        requireEdit(ctx, target, facts);
+        var grant = domainUse(target);
+        if (shared) store.grantObject(grant);
+        else store.revokeObject(grant);
+    }
+
+    private ObjectGrant domainUse(ObjectTarget target) {
+        return new ObjectGrant(store.domainPolicy(target.domainId()).policyId(), target, Verb.USE, null);
+    }
+
+    private void requireEdit(SubjectContext ctx, ObjectTarget target, OwnerFacts facts) {
+        requireGrant(target.kind(), target.id(), Verb.EDIT, null, false);
+        var decision = authorization.decide(ctx, new ObjectAccess(target, Verb.EDIT, facts));
+        if (!decision.allowed()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
+    }
+
+    private static void requireAgent(ObjectTarget target) {
+        if (target.kind() != Kind.AGENT)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "An agent target is required.");
+    }
+
+    public static void requireObjectDecision(Kind kind, String id, Verb verb) {
+        if (verb != Verb.USE && verb != Verb.VIEW && verb != Verb.EDIT)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid object access verb.");
+        requireGrant(kind, id, verb, null, false);
+    }
+
+    public static void requireCreateDecision(Kind kind) {
+        requireGrant(kind, "", Verb.CREATE, null, false);
+    }
+
+    public void retireObject(SubjectContext ctx, ObjectTarget target, OwnerFacts facts) {
+        if (target.kind() == Kind.ENTRY || target.kind() == Kind.APPLICATION)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The definition owner must retire an object.");
+        requireEdit(ctx, target, facts);
+        store.retireObject(target);
     }
 
     public void grantManagement(SubjectContext ctx, String policyId, String operationId) {

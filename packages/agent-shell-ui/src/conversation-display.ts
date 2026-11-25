@@ -471,6 +471,104 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     if (current.restorable) void write(next, current.view, "replace");
   }
 
+  async function actionReceipt(
+    outcome: PageActionOutcome,
+    frame: PresentationFrame,
+    instance: string,
+    startPageInstanceId: string | null,
+    operation?: string,
+  ): Promise<DisplayPresentationResult> {
+    const stillSamePage =
+      shown.value.target?.kind === "page"
+      && shown.value.target.instance === instance
+      && effectivePageInstanceId(instance) === startPageInstanceId;
+    if (outcome.ok && outcome.kind === "awaiting_confirmation") {
+      if (!stillSamePage) {
+        await outcome.confirmation.cancel({
+          code: "FORM_CONFIRMATION_STALE",
+          message: "The page closed, remounted, or navigated away while preparing confirmation.",
+        }).catch(() => undefined);
+        return {
+          status: "not_executed",
+          reason: "stale",
+          operation: outcome.operation,
+          intentId: outcome.intentId,
+          current: snapshot(),
+          error: {
+            code: "STALE",
+            message: "The page closed, remounted, or navigated away while preparing confirmation.",
+          },
+        };
+      }
+      pendingConfirmations.set(outcome.questionId, {
+        sessionId: frame.sessionId,
+        pageInstance: instance,
+        pageInstanceId: startPageInstanceId ?? "",
+        confirmation: outcome.confirmation,
+      });
+      await nextTick();
+      await nextTick();
+      return {
+        status: "awaiting_confirmation",
+        reason: "confirmation_required",
+        operation: outcome.operation,
+        intentId: outcome.intentId,
+        questionId: outcome.questionId,
+        label: outcome.label,
+        current: snapshot(),
+      };
+    }
+    await nextTick();
+    await nextTick();
+    if (outcome.ok && outcome.kind === "executed") {
+      return {
+        status: "executed",
+        reason: "action_completed",
+        operation: outcome.operation,
+        ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
+        ...(outcome.outcome !== undefined ? { outcome: outcome.outcome } : {}),
+        current: snapshot(),
+      };
+    }
+    if ("kind" in outcome && outcome.kind === "partially_executed") {
+      return {
+        status: "partially_executed",
+        reason: "partial_completion",
+        operation: outcome.operation,
+        ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
+        ...(outcome.savedFields?.length ? { savedFields: [...outcome.savedFields] } : {}),
+        outcome: outcome.outcome,
+        current: snapshot(),
+        error: { code: outcome.code, message: outcome.message },
+      };
+    }
+    if ("kind" in outcome && outcome.kind === "unknown") {
+      return {
+        status: "unknown",
+        reason: "outcome_unknown",
+        operation: outcome.operation,
+        ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
+        ...(outcome.outcome !== undefined ? { outcome: outcome.outcome } : {}),
+        current: snapshot(),
+        error: {
+          code: "ACTION_OUTCOME_UNKNOWN",
+          message: outcome.message ?? "Operation was dispatched, but its outcome is unknown. Check the intent status without retrying.",
+        },
+      };
+    }
+    return {
+      status: "not_executed",
+      reason: outcome.reason,
+      ...((outcome.operation ?? operation) ? { operation: outcome.operation ?? operation } : {}),
+      ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
+      current: snapshot(),
+      ...(outcome.message || outcome.code
+        ? { error: { code: outcome.code ?? outcome.reason.toUpperCase(), message: outcome.message ?? outcome.reason } }
+        : {}),
+    };
+  }
+
+
   return {
     target,
     page,
@@ -627,7 +725,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
 
     /**
      * Resolves and removes the live-bound page confirmation for `questionId`, waiting for any in-flight
-     * `page_action` preparation on this tab to finish registering its confirmation closure when the SSE
+     * page write preparation on this tab to finish registering its confirmation closure when the SSE
      * confirmation question arrived before the preparation HTTP response returned.
      */
     async waitPendingActionConfirmation(questionId: string): Promise<BoundPageActionConfirmation | null> {
@@ -785,95 +883,9 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
             }
             outcome = await controller.executeAction(actionRequest);
           }
-          const stillSamePage =
-            shown.value.target?.kind === "page"
-            && shown.value.target.instance === currentTarget.instance
-            && effectivePageInstanceId(currentTarget.instance) === startPageInstanceId;
-          if (outcome.ok && outcome.kind === "awaiting_confirmation") {
-            if (!stillSamePage) {
-              await outcome.confirmation.cancel({
-                code: "FORM_CONFIRMATION_STALE",
-                message: "The page closed, remounted, or navigated away while preparing confirmation.",
-              }).catch(() => undefined);
-              return {
-                status: "not_executed",
-                reason: "stale",
-                operation: outcome.operation,
-                intentId: outcome.intentId,
-                current: snapshot(),
-                error: {
-                  code: "STALE",
-                  message: "The page closed, remounted, or navigated away while preparing confirmation.",
-                },
-              };
-            }
-            pendingConfirmations.set(outcome.questionId, {
-              sessionId: frame.sessionId,
-              pageInstance: currentTarget.instance,
-              pageInstanceId: startPageInstanceId ?? "",
-              confirmation: outcome.confirmation,
-            });
-            await nextTick();
-            await nextTick();
-            return {
-              status: "awaiting_confirmation",
-              reason: "confirmation_required",
-              operation: outcome.operation,
-              intentId: outcome.intentId,
-              questionId: outcome.questionId,
-              label: outcome.label,
-              current: snapshot(),
-            };
-          }
-          await nextTick();
-          await nextTick();
-          if (outcome.ok && outcome.kind === "executed") {
-            return {
-              status: "executed",
-              reason: "action_completed",
-              operation: outcome.operation,
-              ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
-              ...(outcome.outcome !== undefined ? { outcome: outcome.outcome } : {}),
-              current: snapshot(),
-            };
-          }
-          if ("kind" in outcome && outcome.kind === "partially_executed") {
-            return {
-              status: "partially_executed",
-              reason: "partial_completion",
-              operation: outcome.operation,
-              ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
-              ...(outcome.savedFields?.length ? { savedFields: [...outcome.savedFields] } : {}),
-              outcome: outcome.outcome,
-              current: snapshot(),
-              error: { code: outcome.code, message: outcome.message },
-            };
-          }
-          if ("kind" in outcome && outcome.kind === "unknown") {
-            return {
-              status: "unknown",
-              reason: "outcome_unknown",
-              operation: outcome.operation,
-              ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
-              ...(outcome.outcome !== undefined ? { outcome: outcome.outcome } : {}),
-              current: snapshot(),
-              error: {
-                code: "ACTION_OUTCOME_UNKNOWN",
-                message: outcome.message ?? "Operation was dispatched, but its outcome is unknown. Check the intent status without retrying.",
-              },
-            };
-          }
-          return {
-            status: "not_executed",
-            reason: outcome.reason,
-            ...(outcome.operation ? { operation: outcome.operation } : { operation: frame.target.operation }),
-            ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
-            current: snapshot(),
-            ...(outcome.message || outcome.code
-              ? { error: { code: outcome.code ?? outcome.reason.toUpperCase(), message: outcome.message ?? outcome.reason } }
-              : {}),
-          };
+          return actionReceipt(outcome, frame, currentTarget.instance, startPageInstanceId, frame.target.operation);
         }
+
         if (frame.target.kind === "fill_form") {
           const currentTarget = shown.value.target;
           if (!currentTarget || currentTarget.kind !== "page") {
@@ -935,6 +947,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
             ...(frame.target.member === undefined ? {} : { member: frame.target.member }),
             ...(frame.target.memberPath === undefined ? {} : { memberPath: frame.target.memberPath }),
             values: frame.target.values,
+            agentRun: { sessionId: frame.sessionId, runId: frame.runId, toolCallId: frame.toolCallId },
             ...(frame.target.overwriteUnsaved ? { overwriteUnsaved: true } : {}),
             ...(frame.target.expectedPageInstanceId === undefined ? {} : { expectedPageInstanceId: frame.target.expectedPageInstanceId }),
             ...(frame.target.expectedPanelInstanceId === undefined ? {} : { expectedPanelInstanceId: frame.target.expectedPanelInstanceId }),
@@ -982,6 +995,9 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
           }
           await nextTick();
           await nextTick();
+          if (outcome.ok && outcome.write) {
+            return actionReceipt(outcome.write, frame, currentTarget.instance, startPageInstanceId);
+          }
           const stillSamePage =
             shown.value.target?.kind === "page"
             && shown.value.target.instance === currentTarget.instance
@@ -1161,7 +1177,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
           ? { status: "opened", reason: "load_error", current: shownNow, ...(shownNow.load.error ? { error: shownNow.load.error } : {}) }
           : { status: "opened", reason: "target_selected", current: shownNow };
       });
-      if (frame.target.kind === "page_action") {
+      if (frame.target.kind === "page_action" || frame.target.kind === "fill_form") {
         inFlightPageActions.add(run);
         void run.finally(() => inFlightPageActions.delete(run));
       }

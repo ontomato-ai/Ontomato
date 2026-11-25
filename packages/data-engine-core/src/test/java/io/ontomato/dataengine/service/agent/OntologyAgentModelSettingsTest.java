@@ -55,4 +55,12 @@ class OntologyAgentModelSettingsTest {
       assertEquals(OntologyGenerationService.agentId(kind),definitions.generation("d",kind,"prompt","en",1000,List.of()).getString("modelId"));
   }
 
+  @Test void systemModelManagementListDoesNotReadAnUnauthorizedRetrieverSelection() {
+    var jdbc = mock(JdbcTemplate.class);
+    var models = new OntologyAgentModelSettings(jdbc, mock(AgentRuntimeClient.class));
+    var list = models.list("d", false).getJSONArray("agents");
+    assertTrue(list.stream().map(JSONObject::from).anyMatch(model -> ActionCreationService.AGENT.equals(model.getString("id"))));
+    verify(jdbc, never()).queryForList(anyString(), eq("d"), eq(OntologyAgentStore.RETRIEVER));
+  }
+
 }

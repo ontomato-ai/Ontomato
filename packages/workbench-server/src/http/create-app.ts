@@ -251,7 +251,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/query-history", queryHistoryRouter);
   app.use(
     [
-      "/api/observe/agent",
+      "/api/observe/agent/knowledge",
       "/api/observe/diagnoses",
       "/api/observe/evidence",
       "/api/observe/retention",

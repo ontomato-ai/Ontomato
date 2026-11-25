@@ -78,11 +78,13 @@ public final class FunctionForm {
     JSONArray operationEnum = product
         ? JSONArray.of(Function.OPERATION_READ, Function.OPERATION_WRITE, Function.OPERATION_PRODUCT)
         : JSONArray.of(Function.OPERATION_READ, Function.OPERATION_WRITE);
+    JSONObject operationControl = PanelFormFields.select(operationOptions(lang, langService, product));
+    operationControl.put("presentation", "radio");
     fields.add(
         PanelFormFields.field(
             "/operation",
             text(langService, lang, "PanelForm.operation"),
-            PanelFormFields.select(operationOptions(lang, langService, product)),
+            operationControl,
             JSONObject.of("type", "string", "enum", operationEnum),
             false,
             operationReason != null,
@@ -102,11 +104,14 @@ public final class FunctionForm {
               null,
               false));
     } else if (write) {
+      JSONObject parametersControl =
+          PanelFormFields.objectArray(parameterFields(lang, langService, readOnlyReason), defaultParameter(), null);
+      parametersControl.put("presentation", "inline");
       fields.add(
           PanelFormFields.field(
               "/parameters",
               text(langService, lang, "PanelForm.parameters"),
-              PanelFormFields.objectArray(parameterFields(lang, langService, readOnlyReason), defaultParameter(), null),
+              parametersControl,
               PanelFormFields.arraySchema(PanelFormFields.schema("object")),
               false,
               readOnlyReason != null,

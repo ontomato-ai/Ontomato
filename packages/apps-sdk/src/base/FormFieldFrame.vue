@@ -25,6 +25,7 @@ const props = withDefaults(defineProps<{
   value?: RuntimeJsonValue | undefined;
   /** Value writer when drawn outside `ObjectForm`. */
   onSet?: (value: RuntimeJsonValue) => void;
+  onFieldBlur?: () => void;
 }>(), { error: undefined, changed: false, disabled: false, fieldClass: "", value: undefined, onSet: undefined });
 
 const controls = inject(formControlsKey, null);
@@ -49,6 +50,14 @@ const atDefault = computed(() =>
 );
 const resetDisabled = computed(() => props.disabled || props.field.readOnly || (controls?.busy.value ?? false) || atDefault.value);
 
+function fieldFocusOut(event: FocusEvent) {
+  const root = event.currentTarget as HTMLElement;
+  if (props.disabled || (event.target as HTMLElement).closest("[data-field]") !== root
+    || root.contains(event.relatedTarget as Node | null)) return;
+  if (props.onFieldBlur) props.onFieldBlur();
+  else controls?.blur?.(props.path);
+}
+
 function resetToDefault() {
   if (resetDisabled.value || props.field.defaultValue === undefined) return;
   const next = cloneJsonValue(props.field.defaultValue);
@@ -66,6 +75,7 @@ function resetToDefault() {
     v-if="isRow"
     class="sdk-form-row-item"
     :class="[fieldClass, { 'is-readonly': field.readOnly, 'is-changed': changed, 'has-reset-column': hasDefaultsColumn, 'sdk-form-field-full-width': field.fullWidth === true }]"
+    @focusout="fieldFocusOut"
     :data-field="path"
     data-form-layout="rows"
   >
@@ -113,6 +123,7 @@ function resetToDefault() {
     :label="field.label"
     :required="field.required && showRequiredMark"
     :error="error"
+    @focusout="fieldFocusOut"
     :data-field="path"
   >
     <slot></slot>

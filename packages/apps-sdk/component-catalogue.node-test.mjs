@@ -214,11 +214,15 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     for (const param of declaredReadParameters()) assert.ok(panelData.data["*"].runtimeParams.includes(param), `PanelData takes ${param}`);
     // A placement binds a component's outputs to the panel's state by type; an object of the projection's own type is
     // `@binding`, which registration resolves, and a signal with no state stays an event.
+    assert.deepEqual(declared.get("ObjectList").inputs, {
+      expandedKeys: { kind: "list", items: { kind: "scalar", type: "string" } },
+    });
     assert.deepEqual(declared.get("ObjectList").outputs, {
       selected: { kind: "object", objectType: "@binding" },
       checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
+      expandedKeys: { kind: "list", items: { kind: "scalar", type: "string" } },
     });
     assert.equal(declared.get("ObjectCount").outputs, undefined, "ObjectCount is presentation-only");
     assert.deepEqual(declared.get("ReferencePicker").outputs, {
@@ -314,6 +318,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(rowActivation?.required, false);
     assert.match(rowActivation?.type ?? "", /"click"/);
     assert.match(rowActivation?.type ?? "", /"dblclick"/);
+    assert.match(rowActivation?.type ?? "", /"expand"/);
     assert.equal(rowActivation?.default, '"click"');
     const showPageJumper = declared.get("ObjectList").config.find(prop => prop.name === "show-page-jumper");
     assert.equal(showPageJumper?.required, false);
@@ -483,10 +488,61 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         assert.ok(!componentsDoc.includes(overviewLink), `non-panel ${component.componentId} must be excluded from docs/components.md`);
       }
     }
-    for (const excluded of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "DashboardMetricPreview", "ScheduledTaskSummaryList", "ScheduledTaskRunDetail", "EffectivePermissionsView", "TestcaseWorkbench", "DataAdapterTestReport"]) {
+    for (const excluded of ["AgentShell", "ShellComposer", "PageComposer", "ShellColumn", "MetricViewData", "ProductAsset", "Projection", "DashboardMetricPreview", "ScheduledTaskAppFilterBar", "ScheduledTaskSummaryList", "ScheduledTaskRunDetail", "EffectivePermissionsView", "TestcaseWorkbench", "DataAdapterTestReport", "ProductAssetGraph", "OntologyModelGraph", "VisualModelingGraph"]) {
       const entry = catalogue.components.find((c) => c.componentId === excluded);
       assert.equal(entry?.panelUsable, false, `${excluded} must derive panelUsable === false`);
     }
+    const objectGraph = declared.get("ObjectGraph");
+    const objectGraphConfigNames = (objectGraph.config ?? []).map((prop) => prop.name);
+    assert.ok(objectGraphConfigNames.includes("export-background"), "ObjectGraph exposes single-page export-background prop");
+    assert.ok(objectGraphConfigNames.includes("export-filename"), "ObjectGraph exposes single-page export-filename prop");
+    assert.doesNotMatch(
+      objectGraph.meaning,
+      /exportBackground|exportFilename|export-background|export-filename/u,
+      "ObjectGraph meaning must not list single-page PNG export presentation attributes",
+    );
+    // Guard against single-page exclusive presentation attributes (Groups A–F) leaking into public component meanings.
+    const singlePageExclusions = [
+      ["ObjectList", /rowToneMap|row-tone-map|rowToneField|row-tone-field|searchSubmit|search-submit|skeletonCount|skeleton-count|leadingIconSize|leading-icon-size|tagEffect|tag-effect|rowActionIconVariant|row-action-icon-variant|iconVariant|icon-variant|\bmetaField\b|meta-field/u],
+      ["ObjectTree", /directoryIndexFile|directory-index-file/u],
+      ["ObjectForm", /showRequiredMark|show-required-mark|showToc|show-toc|array-item-footer|fixedRows|fixed-rows|labelPosition|label-position|labelWidth|label-width|field-after-|variablesCollapsible|variables-collapsible|variablesPresentation|variables-presentation/u],
+      ["ObjectSummary", /\btextField\b|text-field/u],
+    ];
+    for (const [name, pattern] of singlePageExclusions) {
+      assert.doesNotMatch(
+        declared.get(name).meaning,
+        pattern,
+        `${name} meaning must not list single-page exclusive presentation attributes`,
+      );
+    }
+    // Verify Group F public general capabilities are reflected in catalogue metadata and config.
+    assert.match(declared.get("ObjectForm").meaning, /\bsubmitOn\b/u, "ObjectForm meaning documents submitOn");
+    assert.equal(
+      declared.get("AnnotatedCode").inputs?.language?.kind,
+      "scalar",
+      "AnnotatedCode declares inputs.language port",
+    );
+    assert.ok(
+      (declared.get("AnnotatedCode").config ?? []).some((prop) => prop.name === "language"),
+      "AnnotatedCode exposes language config prop",
+    );
+    assert.ok(
+      (declared.get("ReferencePicker").config ?? []).some((prop) => prop.name === "refreshable"),
+      "ReferencePicker exposes refreshable config prop",
+    );
+    assert.match(declared.get("ReferencePicker").meaning, /\brefreshable\b/u, "ReferencePicker meaning documents refreshable");
+    assert.match(declared.get("ReferencePicker").meaning, /\bMemberDataState\b/u, "ReferencePicker meaning documents MemberDataState retry");
+    for (const forbidden of ["style-overrides", "toolbar-placement", "connect-ports", "show-pending-edge", "pending-edge"]) {
+      assert.equal(
+        objectGraphConfigNames.includes(forbidden),
+        false,
+        `ObjectGraph must not expose dedicated platform prop '${forbidden}'`,
+      );
+    }
+    assert.ok(
+      (objectGraph.ports?.events ?? []).some((event) => event.name === "choose"),
+      "ObjectGraph declares the choose activation event matching ObjectList",
+    );
     assert.deepEqual(
       declared.get("TestcaseWorkbench").bindsElement,
       ["PlatformObjectType:platform:AutotestCaseSet"],
@@ -531,6 +587,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       "docs/components/ObjectList.md must expand ObjectListColumn fields beside ObjectList config",
     );
     const columnTypeLine = objectListDoc.match(/type ObjectListColumn = [^\n]+/u)?.[0] ?? "";
+    assert.ok(columnTypeLine.includes("minContainerWidth"), `ObjectListColumn in docs/components/ObjectList.md must include minContainerWidth: ${columnTypeLine}`);
     for (const kind of ['"text"', '"tag"', '"tags"', '"reference"', '"time"']) {
       assert.ok(columnTypeLine.includes(kind), `ObjectListColumn in docs/components/ObjectList.md must include kind ${kind}: ${columnTypeLine}`);
     }

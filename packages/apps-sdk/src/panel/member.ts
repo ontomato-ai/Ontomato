@@ -1,9 +1,10 @@
-import { computed, inject, onBeforeUnmount, watch, type ComputedRef, type InjectionKey } from "vue";
+import { computed, inject, onBeforeUnmount, onScopeDispose, shallowRef, watch, type ComputedRef, type InjectionKey } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import type { MemberData, MemberDataState, MemberInputs } from "./direct";
+import type { MemberData, MemberInputs } from "./direct";
+import { withMemberReadRetry, type MemberDataState, type MemberReadyData } from "./member-data-state";
 import { panelContextKey, usePanelContext } from "./context";
 import type { MemberOperationsState } from "./member-operations";
 
@@ -83,6 +84,34 @@ export function useMemberParam(name: string): MemberParam {
 export function useMemberRead(name: string): (params: Readonly<Record<string, RuntimeJsonValue>>) => Promise<MemberDataState> {
   const { data } = member();
   return (params) => data.read(name, params);
+}
+
+/** A component-owned parameterized read with the same stale data and retry presentation as a bound datum. */
+export function useParameterizedMemberData(name: string) {
+  const read = useMemberRead(name);
+  const state = shallowRef<MemberDataState>({ status: "awaiting" });
+  let previous: MemberReadyData | undefined;
+  let sequence = 0;
+  onScopeDispose(() => { sequence += 1; });
+  async function refresh(params: MemberInputs | null) {
+    const reading = ++sequence;
+    if (params === null) {
+      previous = undefined;
+      state.value = { status: "awaiting" };
+      return;
+    }
+    state.value = { status: "loading", previous };
+    const result = await Promise.resolve().then(() => read(params))
+      .catch(() => ({ status: "error", message: "", unreachable: true }) as const);
+    if (reading !== sequence) return;
+    if (result.status === "ready") previous = result;
+    else if (result.status !== "error") previous = undefined;
+    // Parameterized readers can receive owner transport or schema diagnostics in an error response.
+    // Show the shared localized read failure instead of formatting that text in the control.
+    const safe = result.status === "error" ? { ...result, message: "", unreachable: true as const } : result;
+    state.value = withMemberReadRetry(safe, previous, () => { void refresh(params); });
+  }
+  return { state: readerDataState(computed(() => state.value)), refresh };
 }
 
 /** Re-read one named datum (or all active data of this member) without reloading unrelated panel members. */

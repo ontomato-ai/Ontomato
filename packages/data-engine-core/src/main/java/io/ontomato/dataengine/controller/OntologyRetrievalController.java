@@ -93,7 +93,7 @@ public class OntologyRetrievalController {
       @RequestHeader("Idempotency-Key") String key,
       @RequestBody JSONObject body,
       HttpServletRequest req) {
-    return retrieval.begin(AgentJson.id(key), body, access.executionContext(req));
+    return retrieval.begin(AgentJson.id(key), body, access.retrievalAdmission(req));
   }
 
   @PostMapping("/ontology/retrievals/{id}/skill-runs/{run}/close")
