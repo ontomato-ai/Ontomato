@@ -642,7 +642,8 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       list: async () => (await ontology()).relationKinds(),
     },
     [SCHEDULED_TASK]: {
-      list: (_selection, params) => schedules.list({
+      list: () => schedules.list(),
+      catalogue: (_selection, params) => schedules.list({
         application: panelReadParameterSchemas.keyword.optional().parse(params.scope),
         search: panelReadParameterSchemas.keyword.optional().parse(params.search),
       }),

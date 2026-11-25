@@ -92,7 +92,7 @@
         "type": "platform:ScheduledTask",
         "data": {
           "rows": {
-            "read": "list",
+            "read": "catalogue",
             "params": {
               "scope": {
                 "state": "app"

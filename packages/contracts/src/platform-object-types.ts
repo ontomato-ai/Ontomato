@@ -251,27 +251,33 @@ const productCatalogueOperations = (type: string, collection: string) => [
 ];
 const modelListByClass = { source: "type", parameterMode: "fixed", params: { className: "className" }, result: "panelRecordList" } as const;
 
+const scheduledTaskRowOutputs = {
+  revision: { kind: "scalar", type: "number" },
+  enabled: { kind: "scalar", type: "boolean" },
+  paused: { kind: "scalar", type: "boolean" },
+  pauseCode: { kind: "scalar", type: "string" },
+  latestResultPath: { kind: "scalar", type: "string" },
+  hasEarlierResult: { kind: "scalar", type: "boolean" },
+  lastRunStatus: { kind: "scalar", type: "string" },
+  isRunning: { kind: "scalar", type: "boolean" },
+  needsIntervention: { kind: "scalar", type: "boolean" },
+  attentionGroup: { kind: "scalar", type: "string" },
+  latestRunId: { kind: "scalar", type: "string" },
+  openPath: { kind: "scalar", type: "string" },
+} as const;
+
 /** Type-level metadata shared by projection bindings and ontology catalogues. */
 export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDeclaration>> = {
   [SCHEDULED_TASK]: {
     ...describeType("scheduledTask", "capability"),
     reads: {
       list: {
+        source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList",
+        outputs: scheduledTaskRowOutputs,
+      },
+      catalogue: {
         source: "type", parameterMode: "fixed", params: { scope: "keyword", search: "keyword" }, result: "panelRecordList",
-        outputs: {
-          revision: { kind: "scalar", type: "number" },
-          enabled: { kind: "scalar", type: "boolean" },
-          paused: { kind: "scalar", type: "boolean" },
-          pauseCode: { kind: "scalar", type: "string" },
-          latestResultPath: { kind: "scalar", type: "string" },
-          hasEarlierResult: { kind: "scalar", type: "boolean" },
-          lastRunStatus: { kind: "scalar", type: "string" },
-          isRunning: { kind: "scalar", type: "boolean" },
-          needsIntervention: { kind: "scalar", type: "boolean" },
-          attentionGroup: { kind: "scalar", type: "string" },
-          latestRunId: { kind: "scalar", type: "string" },
-          openPath: { kind: "scalar", type: "string" },
-        },
+        outputs: scheduledTaskRowOutputs,
       },
       counts: { source: "type", parameterMode: "fixed", params: { by: "keyword" }, result: "panelGroupCounts" },
       status: {
