@@ -271,7 +271,7 @@ export function panelHasAgentChat(panel: ProductPanel, projections?: Record<stri
 export function platformPanelHost(
   applicationId: string, use: ApplicationPanelUse, changed: (change: PanelObjectChange) => void, mode: PanelDefinitionMode = { kind: "view" },
   /** Hears which page skill a message written beside this page reaches, as Node answers it with the panel. */
-  pageSkill?: (context: PageSkillContext) => void,
+  pageSkill?: (context: PageSkillContext | null) => void,
   /** Beside a conversation, the conversation's display, which opens an address the panel asks for; at full page, none. */
   beside?: (address: string) => void,
   /** Platform page counter provided by the outer layout, bridged into direct-mounted panel Vue apps for inline composers. */
@@ -312,11 +312,12 @@ export function platformPanelHost(
       sourceReconciled = false;
       let sourceFailed = false;
       void json(`${panelHostPaths.pageSkillContext(use.panelId)}?${page}`, {}, { notifyDenied: false })
-        .then((answer) => {
-          if (!sourceFailed) pageSkill?.(productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext);
-        })
-        // Without it the page's composer stays closed, as for a page that reaches no skill; the panel is unaffected.
-        .catch(() => undefined);
+        .then(answer => productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext)
+        // A failed skill read leaves the composer closed and does not affect the panel record.
+        .then(
+          context => { if (!sourceFailed) pageSkill?.(context); },
+          () => { if (!sourceFailed) pageSkill?.(null); },
+        );
       try {
         const cached = getCachedPanel(use.panelId);
         if (cached) {

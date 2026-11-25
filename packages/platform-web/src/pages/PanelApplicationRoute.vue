@@ -77,7 +77,7 @@ const emit = defineEmits<{
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
   /** Which page skill a message written beside the shown page reaches, as Node answered it with the page's panel. */
-  "display-skill": [context: PageSkillContext];
+  "display-skill": [context: PageSkillContext | null];
 }>();
 
 const route = useRoute();
@@ -208,8 +208,8 @@ interface KeptPage {
   context: PageContext | null;
   /** Whether it holds unsaved changes; only the shown page can, and leaving it so drops it. */
   dirty: boolean;
-  /** Which page skill a message beside it reaches, as its instance's latest read for it answered; null until one has. */
-  pageSkill: PageSkillContext | null;
+  /** The latest page skill answer. Undefined means the first read is pending. */
+  pageSkill: PageSkillContext | null | undefined;
   /** Shown again and not yet through its checks: what it reaches is passed on only once they have confirmed it. */
   rechecking: boolean;
   /** True by default for synchronous mock hosts in tests; real PanelHost emits false on mount until its surface renders. */
@@ -637,7 +637,7 @@ const composerProblem = ref<string | null>(null);
 /** The page skill a message written on the shown page reaches, once its read or its checks have said which. */
 const shownSkill = shallowRef<PageSkillContext | null>(null);
 /** The shown page's skill is known: a message beside it, and the page's own composer, reach it. */
-function passSkill(context: PageSkillContext) {
+function passSkill(context: PageSkillContext | null) {
   shownSkill.value = context;
   emit("display-skill", context);
 }
@@ -848,7 +848,8 @@ function markReopened(page: KeptPage) {
   performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
   // Its checks are through: the page skill they confirmed is the one a message beside it reaches now.
   page.rechecking = false;
-  passSkill(page.pageSkill!);
+  if (page.pageSkill !== undefined) passSkill(page.pageSkill);
+  if (page === shownPage.value) reportLoad(page, page.load);
 }
 
 /** A new instance for a page of this application. */
@@ -861,7 +862,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
     reported: pageAddress.value,
     context: null,
     dirty: false,
-    pageSkill: null,
+    pageSkill: undefined,
     rechecking: false,
     surfaceReady: true,
     lastShown: ++showings,
@@ -908,10 +909,13 @@ function reportSurfaceReady(page: KeptPage, ready: boolean) {
  * same instance is the shown page and not in the middle of being checked again — an answer that arrives after the reader
  * moved on, or for an instance since dropped, stays its own. A page shown again passes on what its checks confirmed.
  */
-function reportPageSkill(page: KeptPage, context: PageSkillContext) {
+function reportPageSkill(page: KeptPage, context: PageSkillContext | null) {
   const changed = JSON.stringify(context) !== JSON.stringify(page.pageSkill);
   page.pageSkill = context;
-  if (changed && shownPage.value && toRaw(shownPage.value) === page && !page.rechecking) passSkill(context);
+  if (changed && shownPage.value && toRaw(shownPage.value) === page && !page.rechecking) {
+    passSkill(context);
+    reportLoad(shownPage.value, page.load);
+  }
 }
 
 /** A kept page shown again whose use relation was withdrawn or bound elsewhere ends; the page opens from the current relations. */
@@ -948,7 +952,9 @@ function setPageHost(page: KeptPage, controller: ShownInstance | null) {
 
 function reportLoad(page: KeptPage, load: DisplayLoad) {
   page.load = load;
-  if (page === shownPage.value) emit("display-loaded", load);
+  if (page !== shownPage.value) return;
+  // The panel can render while the conversation waits for its page-skill context.
+  emit("display-loaded", load.status === "ready" && page.pageSkill === undefined ? { status: "loading" } : load);
 }
 
 function reportContext(page: KeptPage, context: PageContext) {
