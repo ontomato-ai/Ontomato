@@ -87,5 +87,6 @@ function subscribe(request: BrowserEventRequest, signal?: AbortSignal | null): P
 /** The same authenticated request port serves native shells and the platform side of the SDK bridge. */
 export function fetchWorkbench(base: string, path: string, init: RequestInit): Promise<Response> {
   if (!isAgentEventRequest(path, init.method ?? "GET")) return fetch(`${base}${path}`, init);
-  return subscribe({ base, path, headers: [...new Headers(init.headers)] }, init.signal);
+  const apiBase = new URL(base, window.location.href).href;
+  return subscribe({ base: apiBase, path, headers: [...new Headers(init.headers)] }, init.signal);
 }

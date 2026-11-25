@@ -4,6 +4,7 @@ import { installWorkbenchI18n } from "../i18n";
 import { installAuthHost, type WorkbenchAuthHost } from "../utils/auth";
 import { installErrorPunctuation } from "../utils/error-punctuation";
 import { apiGet, apiPost, ApiRequestError } from "../utils/api";
+import { fetchWorkbench, type BrowserEventRequest } from "../utils/browser-events";
 
 const credential = { token: null as string | null, apiKey: null as string | null };
 const statusCalls: [number, string | null][] = [];
@@ -118,5 +119,26 @@ describe("shared request boundary", () => {
     await expect(apiGet("/x")).resolves.toEqual({ success: true, data: 2 });
     vi.stubGlobal("fetch", async () => jsonResponse(200, { success: false, message: "denied" }));
     await expect(apiGet("/x")).rejects.toThrow("denied");
+  });
+
+  it("uses the same event connection identity for the native and SDK API bases", async () => {
+    const postMessage = vi.fn((_request: BrowserEventRequest, [port]: MessagePort[]) => {
+      port!.postMessage({ type: "subscribed" });
+      port!.close();
+    });
+    vi.stubGlobal("SharedWorker", class extends EventTarget {
+      port = { postMessage };
+    });
+
+    const relativeBase = "/workbench/api";
+    const absoluteBase = new URL(relativeBase, window.location.href).href;
+    const path = "/assistant/sessions/run-events";
+    const responses = await Promise.all([
+      fetchWorkbench(relativeBase, path, {}),
+      fetchWorkbench(absoluteBase, path, {}),
+    ]);
+    expect(postMessage.mock.calls.map(([request]) => request.base)).toEqual([absoluteBase, absoluteBase]);
+
+    await Promise.all(responses.map(response => response.body!.cancel()));
   });
 });
