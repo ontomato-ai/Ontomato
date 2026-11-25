@@ -377,6 +377,15 @@ export const components: readonly ComponentMetadata[] = [
       "Displays the result of a read-only panel operation (`markdown`, `json`, `file`, or tabbed `sections`). Pure presentation: reads and writes nothing itself.",
   }),
   defineComponentMeta({
+    componentId: "DataAdapterTestReport",
+    module: "@ontomato/sdk/base",
+    exportName: "DataAdapterTestReport",
+    role: "presentation",
+    group: "action",
+    meaning:
+      "Dedicated structured presentation for a data adapter connection test outcome (catalog tables/views or search engine indices, plus metadata descriptions and semantic success/error alert). Pure presentation: reads and writes nothing itself.",
+  }),
+  defineComponentMeta({
     componentId: "FileUploadControl",
     module: "@ontomato/sdk/base",
     exportName: "FileUploadControl",

@@ -31,6 +31,7 @@ const controls = inject(formControlsKey, null);
 const { t } = useI18n();
 
 const isRow = computed(() => controls !== null && controls.layout.value === "rows" && controls.isTopLevel(props.path));
+const showRequiredMark = computed(() => controls?.showRequiredMark.value ?? true);
 const hasDefaultsColumn = computed(() => controls?.hasDefaults.value ?? false);
 const helpText = computed(() => {
   if (props.field.readOnly && props.field.readOnlyReason) {
@@ -64,19 +65,19 @@ function resetToDefault() {
   <div
     v-if="isRow"
     class="sdk-form-row-item"
-    :class="[fieldClass, { 'is-readonly': field.readOnly, 'is-changed': changed, 'has-reset-column': hasDefaultsColumn }]"
+    :class="[fieldClass, { 'is-readonly': field.readOnly, 'is-changed': changed, 'has-reset-column': hasDefaultsColumn, 'sdk-form-field-full-width': field.fullWidth === true }]"
     :data-field="path"
     data-form-layout="rows"
   >
     <div class="sdk-form-row-meta">
-      <span class="sdk-form-row-label" :class="{ 'is-required': field.required, 'is-changed': changed }">{{ field.label }}</span>
+      <span class="sdk-form-row-label" :class="{ 'is-required': field.required && showRequiredMark, 'is-changed': changed }">{{ field.label }}</span>
       <p v-if="helpText" class="sdk-form-row-help">{{ helpText }}</p>
     </div>
     <div class="sdk-form-row-control">
       <el-form-item
         class="sdk-form-row-control-item"
         :error="error"
-        :required="field.required"
+        :required="field.required && showRequiredMark"
         :aria-label="field.label"
       >
         <slot></slot>
@@ -108,9 +109,9 @@ function resetToDefault() {
   <el-form-item
     v-else
     class="sdk-form-field-frame"
-    :class="[fieldClass, { 'sdk-form-field-changed': changed, 'is-readonly': field.readOnly, 'has-warning': Boolean(warningText) }]"
+    :class="[fieldClass, { 'sdk-form-field-changed': changed, 'is-readonly': field.readOnly, 'has-warning': Boolean(warningText), 'sdk-form-field-full-width': field.fullWidth === true }]"
     :label="field.label"
-    :required="field.required"
+    :required="field.required && showRequiredMark"
     :error="error"
     :data-field="path"
   >
@@ -154,6 +155,9 @@ function resetToDefault() {
 </template>
 
 <style scoped>
+.sdk-form-field-full-width {
+  grid-column: 1 / -1;
+}
 /* A value the owner keeps read-only is still the reader's to read: Element Plus's disabled grey is for a control that is
    off, not for a value that is shown. */
 .is-readonly :deep(:is(.el-input__inner, .el-textarea__inner, .el-select__selected-item)) {

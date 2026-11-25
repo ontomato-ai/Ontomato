@@ -3,6 +3,7 @@ import { panelSecretValuePresent, splitPanelSecrets } from "@ontomato/contracts/
 import { projectionElement } from "../panel/projection-element";
 import { Comment, computed, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowReactive, shallowRef, useSlots, watch, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
+import { ElAlert } from "element-plus/es/components/alert/index";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElForm } from "element-plus/es/components/form/index";
 import { confirmDanger } from "@ontomato/platform-shell";
@@ -22,7 +23,7 @@ import { slotInputState, usePanelContext, useProjectionForm, useProjectionObject
 import type { FormSubmitOverride, InvalidFormText, PanelFormDraft } from "../panel/forms";
 import type { PanelFieldValue } from "../panel/state";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
-import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
+import { cloneJsonValue, jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember, useMemberOutput } from "../panel/member";
 import { missingOperationDescriptorResult } from "../panel/member-operations";
@@ -147,6 +148,12 @@ const props = withDefaults(defineProps<{
    * owner field is lost; `"omit"` leaves them out of declarative groups.
    */
   unassignedFields?: "append" | "omit";
+  /** Whether required fields render the red required asterisk `*` (defaults to `true`). */
+  showRequiredMark?: boolean;
+  /** Whether owner `sections` render the sticky right-hand table-of-contents sidebar in `default` presentation (defaults to `true`). */
+  showToc?: boolean;
+  /** Grid column count for fields rendered inside the form (`1` default or `2`). */
+  columns?: 1 | 2;
 }>(), {
   fixedFields: () => ({}),
   layout: "stacked",
@@ -157,6 +164,9 @@ const props = withDefaults(defineProps<{
   activeGroup: undefined,
   allowStepJump: true,
   unassignedFields: "append",
+  showRequiredMark: true,
+  showToc: true,
+  columns: 1,
 });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created (primaryKey is null when not reported). */
@@ -182,6 +192,15 @@ interface FormFieldSlotScope {
   readonly remove: () => void;
 }
 
+interface FormArrayItemFooterSlotScope {
+  readonly arrayPath: string;
+  readonly item: RuntimeJsonValue;
+  readonly index: number;
+  readonly key: string;
+  readonly disabled: boolean;
+  readonly readOnly: boolean;
+}
+
 defineSlots<{
   /**
    * Optional custom layout distributing this form's fields into panel-authored cards, tabs, or steps using
@@ -196,6 +215,10 @@ defineSlots<{
   field?(props: FormFieldSlotScope): unknown;
   /** Catch-all custom renderer for array item fields; returning empty content falls back to `#field` or the default control. */
   "row-field"?(props: FormFieldSlotScope): unknown;
+  /** Item-level footer slot for a specific `object-array` card (`#array-item-footer-sources` or `#array-item-footer-/sources`). */
+  [key: `array-item-footer-${string}`]: ((props: FormArrayItemFooterSlotScope) => unknown) | undefined;
+  /** Catch-all item-level footer slot for `object-array` cards. */
+  "array-item-footer"?(props: FormArrayItemFooterSlotScope): unknown;
   /** Optional dynamic header/footer slots for declarative groups (`#group-<key>-header`, `#group-<key>-footer`). */
   [name: `group-${string}-header`]: ((props: { group: ObjectFormResolvedGroup }) => unknown) | undefined;
   [name: `group-${string}-footer`]: ((props: { group: ObjectFormResolvedGroup }) => unknown) | undefined;
@@ -475,6 +498,7 @@ function adopt(
   marked: ReadonlySet<string> = new Set(),
   written: ReadonlySet<string> = new Set(),
 ) {
+  branchDrafts.clear();
   submitted.value = written;
   editedPaths.value = new Set();
   userEditedPaths.value = new Set();
@@ -933,12 +957,72 @@ function remove(path: string) {
   edit(path, withoutValueAt(values.value, path), "user");
 }
 
+/**
+ * Local per-branch unsaved draft cache for `refreshOnChange` discriminator fields: switching away from a branch keeps
+ * its edited field values locally without polluting the active branch's values or `dirty` state, and switching back
+ * restores them.
+ */
+interface RefreshBranchDraft {
+  readonly entries: readonly { readonly path: string; readonly value: RuntimeJsonValue | undefined }[];
+  readonly editedPaths: readonly string[];
+  readonly userEditedPaths: readonly string[];
+  readonly agentFilledPaths: readonly string[];
+  readonly submitted: readonly string[];
+}
+const branchDrafts = new Map<string, RefreshBranchDraft>();
+function branchDraftKey(fieldPath: string, branchValue: RuntimeJsonValue | undefined): string {
+  return `${fieldPath}\0${JSON.stringify(branchValue ?? null)}`;
+}
+
 /** The reader's edit of one field, as the values it leaves: submitted, and the owner asked again where it says so. */
 function edit(path: string, next: PanelFormValues, source: "user" | "agent" = "user") {
   if (isFixed(path)) throw new Error(`The page fixes the field ${path}; it is not edited in the form`);
+  const previousValues = values.value;
+  const previousFields = fields.value;
+  const field = activeFieldAt(previousFields, next, path);
+  const switchingRefreshBranch = Boolean(
+    field?.refreshOnChange && !jsonValuesEqual(valueAt(previousValues, path), valueAt(next, path)),
+  );
+  if (switchingRefreshBranch) {
+    const previousBranchKey = branchDraftKey(path, valueAt(previousValues, path));
+    const branchEdited = [...editedPaths.value].filter(
+      (editedPath) => !pathsOverlap(editedPath, path) && !isFixed(editedPath)
+        && activeFieldAt(previousFields, previousValues, editedPath) !== undefined,
+    );
+    const branchUserEdited = [...userEditedPaths.value].filter((p) => branchEdited.includes(p));
+    const branchAgentFilled = [...agentFilledPaths.value].filter((p) => branchEdited.includes(p));
+    const branchSubmitted = [...submitted.value].filter((p) => !pathsOverlap(p, path) && p !== path);
+    if (branchEdited.length > 0) {
+      branchDrafts.set(previousBranchKey, {
+        entries: branchEdited.map((editedPath) => {
+          const held = valueAt(previousValues, editedPath);
+          return { path: editedPath, value: held === undefined ? undefined : cloneJsonValue(held) };
+        }),
+        editedPaths: branchEdited,
+        userEditedPaths: branchUserEdited,
+        agentFilledPaths: branchAgentFilled,
+        submitted: branchSubmitted,
+      });
+    } else {
+      branchDrafts.delete(previousBranchKey);
+    }
+    // Remove previous-branch-only edits from active tracking so untouched switches back to baseline stay clean.
+    const branchEditedSet = new Set(branchEdited);
+    editedPaths.value = new Set([...editedPaths.value].filter((p) => !branchEditedSet.has(p)));
+    userEditedPaths.value = new Set([...userEditedPaths.value].filter((p) => !branchEditedSet.has(p)));
+    agentFilledPaths.value = new Set([...agentFilledPaths.value].filter((p) => !branchEditedSet.has(p)));
+    submitted.value = new Set([...submitted.value].filter((p) => !branchSubmitted.includes(p)));
+  }
+
   // The described field the edit is in: a row's or an object's field submits the array or object it belongs to.
-  const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
-  if (described) submitted.value = new Set([...submitted.value, described.path]);
+  const described = previousFields.find((item) => path === item.path || path.startsWith(`${item.path}/`));
+  if (described) {
+    if (switchingRefreshBranch && opened.value && jsonValuesEqual(valueAt(next, path), valueAt(opened.value.values, path))) {
+      submitted.value = new Set([...submitted.value].filter((p) => p !== described.path));
+    } else {
+      submitted.value = new Set([...submitted.value, described.path]);
+    }
+  }
   editedPaths.value = new Set([...editedPaths.value, path]);
   if (source === "user") {
     userEditedPaths.value = new Set([...userEditedPaths.value, path]);
@@ -950,7 +1034,6 @@ function edit(path: string, next: PanelFormValues, source: "user" | "agent" = "u
   editGeneration += 1;
   values.value = next;
   editedAt.set(path, ++edits);
-  const field = activeFieldAt(fields.value, next, path);
   if (field?.refreshOnChange) askOwner(path);
 }
 
@@ -1000,10 +1083,25 @@ function askOwner(changedField: string) {
     const localDraft = values.value;
     ownerShown.value = answer;
     description.value = fixDescription(answer);
+    let baseValues = description.value.values;
+    const cachedBranch = branchDrafts.get(branchDraftKey(changedField, valueAt(localDraft, changedField)));
+    if (cachedBranch) {
+      for (const entry of cachedBranch.entries) {
+        if (isFixed(entry.path)) continue;
+        if (activeFieldAt(description.value.fields, baseValues, entry.path) === undefined) continue;
+        baseValues = entry.value === undefined
+          ? withoutValueAt(baseValues, entry.path)
+          : withValueAt(baseValues, entry.path, cloneJsonValue(entry.value));
+      }
+      editedPaths.value = new Set([...editedPaths.value, ...cachedBranch.editedPaths]);
+      userEditedPaths.value = new Set([...userEditedPaths.value, ...cachedBranch.userEditedPaths]);
+      agentFilledPaths.value = new Set([...agentFilledPaths.value, ...cachedBranch.agentFilledPaths]);
+      submitted.value = new Set([...submitted.value, ...cachedBranch.submitted]);
+    }
     const replayed = [...editedAt].filter(([, at]) => at > askedAt).reduce((all, [edited]) => {
       const kept = valueAt(localDraft, edited);
       return kept === undefined ? withoutValueAt(all, edited) : withValueAt(all, edited, kept);
-    }, description.value.values);
+    }, baseValues);
     values.value = preserveInactiveVariantValues(description.value.fields, localDraft, replayed);
     errors.value = fieldMessages(answer.errors);
   }, (reason) => {
@@ -1278,6 +1376,7 @@ provide(formControlsKey, {
   changed,
   busy: saving,
   layout: computed(() => props.layout),
+  showRequiredMark: computed(() => props.showRequiredMark),
   hasDefaults,
   sharedReadOnlyReasons,
   isTopLevel: (path) => topLevelPaths.value.has(path),
@@ -1310,6 +1409,18 @@ provide(formControlsKey, {
       set: (value: RuntimeJsonValue) => set(absolutePath, value),
       remove: () => remove(absolutePath),
     };
+    if (!exactSlot) {
+      const rendered = chosen(slotProps);
+      if (!hasRenderedNodes(rendered)) return undefined;
+    }
+    return { slot: chosen, props: slotProps };
+  },
+  resolveArrayItemFooterSlot(arrayPath, item, index, key, disabled, readOnly) {
+    const dotPath = arrayPath.replace(/^\/+/u, "").replaceAll("/", ".");
+    const exactSlot = slots[`array-item-footer-${dotPath}`] ?? slots[`array-item-footer-${arrayPath}`];
+    const chosen = exactSlot ?? slots["array-item-footer"];
+    if (!chosen) return undefined;
+    const slotProps = { arrayPath, item, index, key, disabled, readOnly };
     if (!exactSlot) {
       const rendered = chosen(slotProps);
       if (!hasRenderedNodes(rendered)) return undefined;
@@ -1667,16 +1778,32 @@ async function saveFromForm() {
  */
 const refusalFoot = computed(() => {
   if (!refusal.value) return null;
+  if (!(refusal.value instanceof PlatformObjectRefusal)) {
+    return { title: refusal.value.message, fields: [] as string[], said: [refusal.value.message], problems: [] as { path: string; message: string }[] };
+  }
+  const details = refusal.value.details;
   const named = Object.entries(errors.value);
-  if (!(refusal.value instanceof PlatformObjectRefusal) || !named.length) return { fields: [], said: [refusal.value.message] };
+  if (!named.length && !details.length) {
+    return { title: refusal.value.message, fields: [] as string[], said: [refusal.value.message], problems: [] as { path: string; message: string }[] };
+  }
   const onFields = new Set<string>();
   const said: string[] = [];
+  const problems: { path: string; message: string }[] = [];
   for (const [path, message] of named) {
     const field = fieldShowing(fields.value, values.value, path);
     if (field === null) said.push(message);
     else onFields.add(field);
   }
-  return { fields: [...onFields], said };
+  // Surface an aggregated structured problem alert when the owner reports multiple refusal details or unfielded
+  // path-located issues (for example multi-source validation problems).
+  const hasMultipleDetails = details.length > 1;
+  const hasUnshownDetail = details.some(({ path }) => fieldShowing(fields.value, values.value, path) === null);
+  if (hasMultipleDetails || (details.length > 0 && hasUnshownDetail)) {
+    for (const detail of details) {
+      problems.push({ path: detail.path, message: detail.message });
+    }
+  }
+  return { title: refusal.value.message, fields: [...onFields], said, problems };
 });
 const formElement = ref<HTMLElement | null>(null);
 /** Takes the reader to the first field, in the form's order, that the refusal's messages are on. */
@@ -2032,7 +2159,7 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
     <data-state :result="shown" :labels="labels">
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
-    <el-form label-position="top" class="sdk-owner-form-inner">
+    <el-form label-position="top" :hide-required-asterisk="!showRequiredMark" class="sdk-owner-form-inner">
       <div class="sdk-owner-form-body">
         <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
 
@@ -2234,7 +2361,7 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
           </div>
         </template>
 
-        <div v-else-if="sectionGroups" class="sdk-owner-form-sectioned">
+        <div v-else-if="sectionGroups" class="sdk-owner-form-sectioned" :class="{ 'is-no-toc': !props.showToc }">
           <div class="sdk-owner-form-sections">
             <section
               v-for="group in sectionGroups"
@@ -2245,34 +2372,56 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
             >
               <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
               <p v-if="group.hint" class="sdk-owner-form-section-hint">{{ group.hint }}</p>
-              <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
-              <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
-                <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
-              </form-advanced-section>
+              <div class="sdk-owner-form-field-list" :class="{ 'is-two-col': props.columns === 2 }">
+                <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
+                <form-advanced-section v-if="group.advanced.length" class="sdk-owner-form-advanced-span" :paths="group.advanced.map((field) => field.path)">
+                  <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
+                </form-advanced-section>
+              </div>
             </section>
           </div>
           <!-- The form's contents: each entry brings its section into view; every section stays on the page. -->
-          <nav class="sdk-owner-form-contents" :aria-label="t('platform.formSections')">
+          <nav v-if="props.showToc" class="sdk-owner-form-contents" :aria-label="t('platform.formSections')">
             <button v-for="group in sectionGroups.filter((item) => item.title)" :key="group.key" type="button" @click="goToSection(group.key)">
               {{ group.title }}
             </button>
           </nav>
         </div>
-        <template v-else>
+        <div v-else class="sdk-owner-form-field-list" :class="{ 'is-two-col': props.columns === 2 }">
           <form-field-place v-for="field in plain" :key="field.path" :field="field"></form-field-place>
-          <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
+          <form-advanced-section v-if="advanced.length" class="sdk-owner-form-advanced-span" :paths="advanced.map((field) => field.path)">
             <form-field-place v-for="field in advanced" :key="field.path" :field="field"></form-field-place>
           </form-advanced-section>
-        </template>
+        </div>
         <slot name="after-fields"></slot>
         <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
           {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
         </p>
         <div v-if="refusalFoot" class="sdk-owner-form-refusal" role="alert">
-          <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
-            {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
-          </button>
-          <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
+          <el-alert
+            v-if="refusalFoot.problems.length > 0"
+            type="error"
+            :closable="false"
+            show-icon
+            :title="refusalFoot.title"
+            class="sdk-owner-form-refusal-alert"
+          >
+            <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
+              {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
+            </button>
+            <ul class="sdk-owner-form-refusal-problems">
+              <li v-for="(problem, index) in refusalFoot.problems" :key="`${problem.path}-${index}`">
+                <code v-if="problem.path" class="sdk-owner-form-refusal-path">{{ problem.path }}</code>
+                <span>{{ problem.message }}</span>
+              </li>
+            </ul>
+          </el-alert>
+          <template v-else>
+            <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
+              {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
+            </button>
+            <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
+          </template>
         </div>
       </div>
       <div v-if="$slots.actions || showActionBar" class="sdk-owner-form-actions">
@@ -2348,6 +2497,25 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
   grid-template-columns: minmax(0, 1fr) 160px;
   gap: var(--spacing-2xl);
   align-items: start;
+}
+.sdk-owner-form-sectioned.is-no-toc {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sdk-owner-form-field-list {
+  min-width: 0;
+}
+.sdk-owner-form-field-list.is-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--spacing-lg);
+}
+.sdk-owner-form-advanced-span {
+  grid-column: 1 / -1;
+}
+@container sdk-owner-form (max-width: 640px) {
+  .sdk-owner-form-field-list.is-two-col {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .sdk-owner-form-section {
   min-width: 0;
@@ -2427,6 +2595,21 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
 }
 .sdk-owner-form-refusal > p {
   margin: 0;
+}
+.sdk-owner-form-refusal-alert {
+  margin-top: var(--spacing-sm);
+}
+.sdk-owner-form-refusal-problems {
+  margin: var(--spacing-xs) 0 0;
+  padding-inline-start: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sdk-owner-form-refusal-path {
+  margin-inline-end: var(--spacing-xs);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
 }
 /* The count of fields to change, which takes the reader to the first of them. */
 .sdk-owner-form-refusal-count {

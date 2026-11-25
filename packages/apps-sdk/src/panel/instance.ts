@@ -1,7 +1,7 @@
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
 import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import { computed, nextTick, reactive, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
+import { computed, nextTick, reactive, readonly, ref, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext, PageFormSnapshot, PageHighlight } from "@ontomato/contracts/page-context";
 import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
@@ -362,10 +362,15 @@ export interface PanelInstance {
   /**
    * Anything this panel shows may have changed: every datum it shows is read again, as the page header's refresh reads
    * it, and every component that reads its own data is told so. The page's own code calls it to keep what it shows
-   * current (polling while a run goes on); an operation's reported changes need no call.
+   * current (polling while a run goes on); an operation's reported changes need no call. Resolves once all triggered
+   * refreshes settle.
    */
-  refreshObjects(): void;
-  onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
+  refreshObjects(): Promise<void>;
+  /** True while one or more refreshes triggered by `refreshObjects()` are in flight. */
+  readonly refreshing: ComputedRef<boolean>;
+  /** Tracks an asynchronous refresh promise in `refreshing` until it settles. */
+  trackRefresh<T>(task: Promise<T>): Promise<T>;
+  onObjectChanged(listener: (object: PanelObjectIdentity | null) => void | Promise<unknown>): () => void;
   /** Reads a projection record by ID, as the reader. */
   projection(id: string): Promise<ProductProjection>;
   /**
@@ -446,10 +451,27 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   let disposed = false;
   const secretDeliveries = shallowRef<readonly PanelSecretDelivery[]>([]);
   const state = createPanelState(manifest, options.initial);
-  const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
+  const objectListeners = new Set<(object: PanelObjectIdentity | null) => void | Promise<unknown>>();
   const operationCompletedListeners = new Set<(event: PanelOperationCompletion) => void>();
-  const objectChanged = (object: PanelObjectIdentity | null) => {
-    for (const listener of objectListeners) listener(object);
+  const activeRefreshes = ref(0);
+  const refreshing = computed(() => activeRefreshes.value > 0);
+  function trackRefresh<T>(task: Promise<T>): Promise<T> {
+    activeRefreshes.value += 1;
+    return task.finally(() => {
+      activeRefreshes.value = Math.max(0, activeRefreshes.value - 1);
+    });
+  }
+  const objectChanged = (object: PanelObjectIdentity | null): Promise<void> => {
+    const tasks: Promise<unknown>[] = [];
+    for (const listener of objectListeners) {
+      const result = listener(object);
+      if (result && typeof (result as PromiseLike<unknown>).then === "function") {
+        tasks.push(result as Promise<unknown>);
+      }
+    }
+    if (!tasks.length) return Promise.resolve();
+    const settled = Promise.allSettled(tasks).then(() => undefined);
+    return object === null ? trackRefresh(settled) : settled;
   };
   const registrations = shallowRef<readonly PanelProjectionRegistration[]>([]);
   /** Each member's own parameter values: those its component set and no panel state holds. */
@@ -1155,6 +1177,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       }
     },
     refreshObjects: () => objectChanged(null),
+    refreshing,
+    trackRefresh,
     onObjectChanged(listener) {
       objectListeners.add(listener);
       return () => objectListeners.delete(listener);

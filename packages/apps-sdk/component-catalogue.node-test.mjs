@@ -499,7 +499,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
 test("the @ontomato/sdk/ui entry exports every SDK_UI_COMPONENTS primitive and directive while keeping component names intact", async () => {
   const { SDK_UI_COMPONENTS, SDK_UI_DIRECTIVES } = await import("../contracts/src/sdk-ui-map.ts");
   const uiSource = readFileSync(join(HERE, "src/entries/ui.ts"), "utf8");
-  const sdkWrappedPrimitives = new Set(["SdkDialog", "SdkDrawer"]);
+  const sdkWrappedPrimitives = new Set(["SdkButton", "SdkDialog", "SdkDrawer"]);
   for (const entry of SDK_UI_COMPONENTS) {
     if (sdkWrappedPrimitives.has(entry.sdkExport)) {
       assert.match(

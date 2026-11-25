@@ -71,6 +71,10 @@ export interface PanelContext {
   readonly manifest: PanelManifest;
   /** This instance: its state, page context, projections and operations. */
   readonly instance: PanelInstance;
+  /** True while one or more refreshes triggered by `refreshObjects()` are in flight. */
+  readonly refreshing: ComputedRef<boolean>;
+  /** Re-reads all mounted projections and data in this panel instance; resolves once they settle. */
+  refreshObjects(): Promise<void>;
   /**
    * In an application's frame: the entry the reader opened (it follows the reader to another entry of the application),
    * and the menu the same resolution gave, to draw the frame's menu with and mark the entry. Null in any other panel.
@@ -256,11 +260,11 @@ export function formFieldAt(instance: PanelInstance, formSlot: string, path: () 
 }
 
 /** Refresh this projection when a local or server operation changed an object it shows. */
-export function useProjectionObjectRefresh(shows: (id: string) => boolean, refresh: () => void): void {
+export function useProjectionObjectRefresh(shows: (id: string) => boolean, refresh: () => void | Promise<unknown>): void {
   const { instance } = usePanelContext();
   const slot = useProjectionSlot();
   onBeforeUnmount(instance.onObjectChanged(object => {
-    if (!object || (projectionElement(slot.projection).id === object.objectType && shows(object.primaryKey))) refresh();
+    if (!object || (projectionElement(slot.projection).id === object.objectType && shows(object.primaryKey))) return refresh();
   }));
 }
 
