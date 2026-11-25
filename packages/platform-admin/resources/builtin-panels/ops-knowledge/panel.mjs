@@ -1,20 +1,24 @@
-import { mountPanel, usePanelContext, usePanelState } from "@ontomato/sdk/panel";
+import { computed } from "vue";
+import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
-    const context = usePanelContext();
-    const filePath = usePanelState("filePath");
+    const { instance, t } = usePanelContext();
+    const filePath = computed(() => {
+      const value = instance.state.values.value.filePath;
+      return typeof value === "string" && value.length > 0 ? value : null;
+    });
 
     function refresh() {
-      context.refresh();
+      instance.refreshObjects();
     }
 
     function clearSelection() {
-      filePath.value = null;
+      instance.state.setState({ filePath: null });
     }
 
     return {
-      t: context.t,
+      t,
       filePath,
       refresh,
       clearSelection,

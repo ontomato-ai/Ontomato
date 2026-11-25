@@ -57,7 +57,7 @@ await mountPanel({
     );
 
     function refresh() {
-      context.refresh();
+      instance.refreshObjects();
     }
 
     function clearSelection() {

@@ -88,6 +88,11 @@
     min-width: 0;
     min-height: 0;
   }
+  .ops-results-banner-wrap,
+  .ops-results-metrics-wrap {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
   .ops-results-table-section {
     display: flex;
     flex: 1 1 auto;
@@ -98,6 +103,7 @@
   }
   .ops-results-table-toolbar {
     display: flex;
+    flex: 0 0 auto;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
@@ -184,17 +190,20 @@
       </template>
 
       <div v-if="selectedKey" class="ops-results-detail-stack">
-        <info-banner
-          v-if="runActive"
-          tone="info"
-          :text="t('detail.activeNotice')"
-        >
-          <template #actions>
-            <sdk-button size="small" @click="refresh">{{ t("panel.refresh") }}</sdk-button>
-          </template>
-        </info-banner>
+        <div v-if="runActive" class="ops-results-banner-wrap">
+          <info-banner
+            tone="info"
+            :text="t('detail.activeNotice')"
+          >
+            <template #actions>
+              <sdk-button size="small" @click="refresh">{{ t("panel.refresh") }}</sdk-button>
+            </template>
+          </info-banner>
+        </div>
 
-        <projection slot="runMetrics"></projection>
+        <div class="ops-results-metrics-wrap">
+          <projection slot="runMetrics"></projection>
+        </div>
 
         <section class="ops-results-table-section">
           <div class="ops-results-table-toolbar">

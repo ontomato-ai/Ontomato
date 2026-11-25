@@ -1,5 +1,5 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelOutput, usePanelState } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 /*
  * Built-in autotest case artifact panel: inspects one AutotestCaseArtifact (primary key `runId::caseId`),
@@ -27,9 +27,15 @@ await mountPanel({
     const context = usePanelContext();
     const { instance, navigate, t } = context;
 
-    const selected = usePanelState("selected");
-    const filePath = usePanelState("filePath");
-    const fileSearch = usePanelState("fileSearch");
+    const selected = computed(() => instance.state.values.value.selected ?? null);
+    const filePath = computed(() => {
+      const value = instance.state.values.value.filePath;
+      return typeof value === "string" && value.length > 0 ? value : null;
+    });
+    const fileSearch = computed(() => {
+      const value = instance.state.values.value.fileSearch;
+      return typeof value === "string" && value.length > 0 ? value : null;
+    });
 
     const selectedKey = computed(() => selected.value?.primaryKey ?? "");
     const parsedKey = computed(() => parseCaseArtifactKey(selectedKey.value));
@@ -91,11 +97,11 @@ await mountPanel({
     }
 
     function refresh() {
-      context.refresh();
+      instance.refreshObjects();
     }
 
     function clearFileSelection() {
-      filePath.value = null;
+      instance.state.setState({ filePath: null });
     }
 
     return {
