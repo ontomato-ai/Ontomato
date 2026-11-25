@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ops-dsl-console",
+      "input": {
+        "name": "DSL execution",
+        "description": "Edit and execute read-only DSL queries against the current domain and inspect tabular and raw JSON results."
+      }
+    }
+  ]
+}

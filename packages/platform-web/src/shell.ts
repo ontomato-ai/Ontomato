@@ -4,7 +4,7 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Code, ListChecks } from "lucide-vue-next";
+import { ListChecks } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
@@ -153,7 +153,6 @@ export function createServiceManager(options: {
  */
 const operationsNativePages: readonly PlatformPage[] = [
   { path: platformRoutes.cases.path, titleKey: "ops.cases", icon: ListChecks, permissions: ["observer"], group: "platform", ownHeader: true },
-  { path: platformRoutes.dsl.path, titleKey: "ops.dsl", icon: Code, permissions: ["observer"], group: "platform", ownHeader: true },
 ];
 
 /** The native operations pages shared by the edition assemblies. */

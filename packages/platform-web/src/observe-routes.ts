@@ -6,8 +6,6 @@ import type { RouteMeta, RouteRecordRaw, RouteRecordSingleView } from "vue-route
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
 
 export interface ObserveRouteOptions {
-  /** Edition-specific override for the DSL execution page (`/ops/dsl`), e.g. enterprise MQL tab. */
-  dslComponent?: PageComponent;
   meta?: RouteMeta;
   props?: Record<string, unknown>;
 }
@@ -16,13 +14,11 @@ const autotestPage: PageComponent = () =>
   import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.AutotestPage);
 const liveLogsPage: PageComponent = () =>
   import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.LiveLogsPage);
-const dslTestPage: PageComponent = () =>
-  import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.DslTestPage);
 
 /**
  * Native operations diagnosis routes still awaiting Batch 2 panel migration, plus legacy deep-link redirects to the
  * unified agent platform (`/ops/diagnosis` -> `/agents/chat`) and migrated built-in panels (`/ops/turn`, `/ops/results`,
- * `/ops/autotest/case`, `/ops/knowledge`, `/ops/feedback`).
+ * `/ops/autotest/case`, `/ops/dsl`, `/ops/knowledge`, `/ops/feedback`).
  * Every route renders inside the shared platform application frame (`builtin-product-platform-frame`).
  */
 export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecordRaw[] {
@@ -77,11 +73,6 @@ export function observePageRoutes(options: ObserveRouteOptions = {}): RouteRecor
       ...routes.logs,
       component: liveLogsPage,
       meta: { ...baseMeta, page: routes.logs.path },
-    },
-    {
-      ...routes.dsl,
-      component: options.dslComponent ?? dslTestPage,
-      meta: { ...baseMeta, page: routes.dsl.path },
     },
   ];
 }

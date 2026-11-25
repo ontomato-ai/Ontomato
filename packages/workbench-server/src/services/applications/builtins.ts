@@ -351,6 +351,27 @@ export const workbenchApplications: BuiltinApplication[] = [
           "zh-CN": "实时查看与筛选服务运行日志，辅助排障定位"
         }
       }, {
+        "id": "ops-dsl-console",
+        "pageKey": "ops-dsl-console",
+        "panelId": "builtin-product-ops-dsl-console",
+        "path": "/ops/dsl",
+        "access": { "permissionCode": "observer" },
+        "icon": "function",
+        "names": {
+          "en": "DSL execution",
+          "zh-CN": "DSL 执行",
+          "zh-TW": "DSL 執行",
+          "ja": "DSL 実行",
+          "de": "DSL-Ausführung",
+          "fr": "Exécution DSL",
+          "it": "Esecuzione DSL",
+          "ar": "تنفيذ DSL"
+        },
+        "descriptions": {
+          "en": "Edit and execute read-only DSL queries against the current domain",
+          "zh-CN": "编写并执行当前域的只读 DSL 查询，查看表格与原始响应结果"
+        }
+      }, {
         "id": "ops-knowledge",
         "pageKey": "ops-knowledge",
         "panelId": "builtin-product-ops-knowledge",

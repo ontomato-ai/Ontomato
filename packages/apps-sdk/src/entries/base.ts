@@ -50,6 +50,7 @@ export type {
   ObjectFormSlotScope,
 } from "../base/object-form-types";
 export { default as OperationButton } from "../base/OperationButton.vue";
+export { default as OperationResult } from "../base/OperationResult.vue";
 export { default as FileUploadControl } from "../base/FileUploadControl.vue";
 export { default as SegmentedControl } from "../base/SegmentedControl.vue";
 export type { SegmentedControlOption } from "../base/segmented-control-types";

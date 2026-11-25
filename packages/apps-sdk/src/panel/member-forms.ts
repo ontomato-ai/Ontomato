@@ -440,7 +440,13 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
   const { projection } = member;
   /** The datum a target's form is read from, and the run inputs that read it for the target and the form's values. */
   function formRead(target: PanelFormTarget, values: PanelFormValues | undefined, changedField: string | null) {
-    const name = target.kind === "object" ? "form" : "createForm";
+    const name = target.kind === "object"
+      ? "form"
+      : projection.data.createForm
+        ? "createForm"
+        : projection.data.form && "type" in projection.data.form.source
+          ? "form"
+          : "createForm";
     const data = projection.data[name];
     if (!data) throw new Error(`Member '${member.key}' declares no ${name} datum: it ${target.kind === "object" ? "edits no object" : "creates nothing"}`);
     const params: Record<string, RuntimeJsonValue> = { ...(values === undefined ? {} : { values }), changedField };

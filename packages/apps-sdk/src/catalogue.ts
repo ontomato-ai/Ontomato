@@ -326,6 +326,14 @@ export const components: readonly ComponentMetadata[] = [
     data: {},
   }),
   defineComponentMeta({
+    componentId: "OperationResult",
+    module: "@ontomato/sdk/base",
+    exportName: "OperationResult",
+    role: "presentation",
+    meaning:
+      "Displays the result returned by a read-only panel operation (`markdown`, `json`, `file`, or multi-section `sections` with tabbed `records` tables, language-tagged `code`, and `json` panes). Pure presentation: reads and writes nothing itself.",
+  }),
+  defineComponentMeta({
     componentId: "FileUploadControl",
     module: "@ontomato/sdk/base",
     exportName: "FileUploadControl",
