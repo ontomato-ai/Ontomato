@@ -3,7 +3,8 @@ import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import { withMemberReadRetry, type MemberData, type MemberDataState, type MemberInputs, type MemberReadyData } from "./direct";
+import type { MemberData, MemberInputs } from "./direct";
+import { withMemberReadRetry, type MemberDataState, type MemberReadyData } from "./member-data-state";
 import { panelContextKey, usePanelContext } from "./context";
 import type { MemberOperationsState } from "./member-operations";
 
