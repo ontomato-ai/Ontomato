@@ -21,11 +21,14 @@ import java.util.function.Supplier;
 import io.ontomato.dataengine.util.CodeHashUtil;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -36,6 +39,7 @@ class ActionExplanationReuseTest {
   private static final String CODE = "# ontomato-python:2\nprint('ok')";
   private final ActionDao actions = mock(ActionDao.class);
   private final OntologyGenerationService generation = mock(OntologyGenerationService.class);
+  private final ThreadLocal<Boolean> inTransaction = ThreadLocal.withInitial(() -> false);
   private final ActionServiceImpl service = new ActionServiceImpl();
   private final Owner owner = new Owner("user-a", "domain-a");
   private final JSONArray segments = JSONArray.of(JSONObject.of("id", "s1"));
@@ -43,7 +47,14 @@ class ActionExplanationReuseTest {
   @BeforeEach
   void setup() {
     OntologyAgentStore store = mock(OntologyAgentStore.class);
-    when(store.transaction(any())).thenAnswer(call -> call.<Supplier<?>>getArgument(0).get());
+    when(store.transaction(any())).thenAnswer(call -> {
+      inTransaction.set(true);
+      try {
+        return call.<Supplier<?>>getArgument(0).get();
+      } finally {
+        inTransaction.remove();
+      }
+    });
     ReflectionTestUtils.setField(service, "store", store);
     ReflectionTestUtils.setField(service, "actionDao", actions);
     ReflectionTestUtils.setField(service, "generationService", generation);
@@ -80,6 +91,7 @@ class ActionExplanationReuseTest {
 
     Action saved = service.save(draft(), "run-1", owner, "en");
 
+    assertEquals(Action.STATUS_PENDING_REVIEW, saved.getStatus());
     assertEquals(segments, saved.getCodeSegments());
     assertEquals(List.of("Approve the expense"), saved.getBusinessMeaning().getOperations());
     assertEquals(CodeHashUtil.sha256(CODE), saved.getCodeHash());
@@ -87,8 +99,9 @@ class ActionExplanationReuseTest {
     verify(generation, never()).generate(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
   }
 
-  @Test
-  void savingClearsAnOldExplanationAndALateResultCannotReplaceNewerCode() throws Exception {
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void backgroundExplanationUsesATransactionAndWritesOnlyForMatchingCode(boolean changedAgain) throws Exception {
     Action previous = draft();
     previous.setId("a1");
     previous.getFunction().setId("f1");
@@ -99,7 +112,18 @@ class ActionExplanationReuseTest {
     var functions = mock(FunctionDao.class);
     ReflectionTestUtils.setField(service, "functionDao", functions);
     ReflectionTestUtils.setField(service, "scheduledReferences", mock(OntologyScheduleReferences.class));
-    when(actions.queryById("a1")).thenAnswer(call -> new Object[] {current.get(), "f1"});
+    doAnswer(call -> {
+      assertTrue(inTransaction.get());
+      return null;
+    }).when(actions).lock("a1", "domain-a");
+    when(actions.queryById("a1")).thenAnswer(call -> {
+      assertTrue(inTransaction.get());
+      return new Object[] {current.get(), "f1"};
+    });
+    doAnswer(call -> {
+      assertTrue(inTransaction.get());
+      return null;
+    }).when(actions).updateExplanation(any());
     when(functions.queryById("f1")).thenAnswer(call -> current.get().getFunction());
     when(actions.saveDraft(any(), anyString())).thenAnswer(call -> {
       Action saved = call.getArgument(0);
@@ -119,10 +143,18 @@ class ActionExplanationReuseTest {
     var delivery = mock(OntologyGenerationService.Generation.class);
     when(delivery.result()).thenReturn(JSONObject.of("segs", JSONArray.of(JSONObject.of(
         "id", "s1", "kind", "COMPUTE", "title", "Calculate", "codeRange", JSONObject.of("start", 1, "end", 2)))));
-    when(delivery.settle(any())).thenAnswer(call -> call.<OntologyGenerationService.Work<?>>getArgument(0).run());
+    var completed = new CompletableFuture<Boolean>();
+    when(delivery.settle(any())).thenAnswer(call -> {
+      try {
+        boolean written = call.<OntologyGenerationService.Work<Boolean>>getArgument(0).run();
+        completed.complete(written);
+        return written;
+      } catch (AssertionError error) {
+        completed.completeExceptionally(error);
+        throw error;
+      }
+    });
     var finish = new CountDownLatch(1);
-    var closed = new CountDownLatch(1);
-    doAnswer(call -> { closed.countDown(); return null; }).when(delivery).close();
     when(generation.generate(eq("explain"), anyString(), anyString(), eq("en"), eq("domain-a"), anyString()))
         .thenAnswer(call -> {
           assertTrue(finish.await(5, TimeUnit.SECONDS));
@@ -141,14 +173,18 @@ class ActionExplanationReuseTest {
       assertNull(saved.getBusinessMeaning());
       assertNull(saved.getCodeHash());
       assertNull(saved.getExplanationVersion());
-      Action newer = draft();
-      newer.getFunction().setCode("# ontomato-python:2\nprint('newer')");
-      current.set(newer);
+      if (changedAgain) {
+        Action newer = draft();
+        newer.getFunction().setCode("# ontomato-python:2\nprint('newer')");
+        current.set(newer);
+      }
     } finally {
       finish.countDown();
     }
-    assertTrue(closed.await(5, TimeUnit.SECONDS));
-    verify(actions, never()).updateExplanation(any());
+    assertEquals(!changedAgain, completed.get(5, TimeUnit.SECONDS));
+    if (changedAgain) verify(actions, never()).updateExplanation(any());
+    else verify(actions).updateExplanation(argThat(item -> CodeHashUtil.sha256(
+        item.getFunction().getCode()).equals(item.getCodeHash())));
   }
 
   @Test

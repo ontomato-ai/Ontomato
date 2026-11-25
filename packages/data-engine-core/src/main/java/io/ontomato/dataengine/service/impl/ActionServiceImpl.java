@@ -337,6 +337,7 @@ public class ActionServiceImpl implements ActionService {
       } else if (sameCode && ActionCodeExplanationValidator.ready(previous)) {
         setExplanation(action, previous.getCodeHash(), previous.getCodeSegments(), previous.getBusinessMeaning());
       }
+      action.setStatus(previous == null ? Action.STATUS_PENDING_REVIEW : previous.getStatus());
       return persistDraft(action, lang);
     });
     completeDraftInBackground(saved, owner, lang);
@@ -344,7 +345,6 @@ public class ActionServiceImpl implements ActionService {
   }
 
   Action persistDraft(Action action, String lang) {
-    action.setStatus(Action.STATUS_PENDING_REVIEW);
     action.setAdopted(true);
     action.setOrigin(Action.ORIGIN_USER);
     action.setDefinition(ActionDefinitionProjector.project(action));
@@ -380,13 +380,15 @@ public class ActionServiceImpl implements ActionService {
   }
 
   private boolean writeExplanation(String id, String domain, String codeHash, JSONArray segments, BusinessMeaning meaning) {
-    actionDao.lock(id, domain);
-    Action current = queryById(id);
-    if (current == null || !domain.equals(current.getDomainId())
-        || !codeHash.equals(CodeHashUtil.sha256(current.getFunction().getCode()))) return false;
-    setExplanation(current, codeHash, segments, meaning);
-    actionDao.updateExplanation(current);
-    return true;
+    return store.transaction(() -> {
+      actionDao.lock(id, domain);
+      Action current = queryById(id);
+      if (current == null || !domain.equals(current.getDomainId())
+          || !codeHash.equals(CodeHashUtil.sha256(current.getFunction().getCode()))) return false;
+      setExplanation(current, codeHash, segments, meaning);
+      actionDao.updateExplanation(current);
+      return true;
+    });
   }
 
   static void clearExplanation(Action action) {

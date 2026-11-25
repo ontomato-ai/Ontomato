@@ -125,7 +125,7 @@ class ActionPanelEndpointTest {
     assertEquals("Approve open order", action.getName());
     assertEquals("Approve a pending order", action.getDescription());
     assertEquals(Action.ORIGIN_USER, action.getOrigin());
-    assertEquals(Action.STATUS_PENDING_REVIEW, action.getStatus());
+    assertNull(action.getStatus());
     assertEquals("open", action.getSubmissionCriteria().getJSONArray("conditions").getJSONObject(0).getString("value"));
     assertEquals(1_700_000_000_000L, action.getCreateTimestamp());
     assertEquals("f1", action.getFunction().getId());

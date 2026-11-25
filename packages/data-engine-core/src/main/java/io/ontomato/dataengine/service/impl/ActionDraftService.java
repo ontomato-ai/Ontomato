@@ -319,6 +319,7 @@ public class ActionDraftService {
     if (!ActionCodeExplanationValidator.ready(action)) ActionServiceImpl.clearExplanation(action);
     if (action.getCreatedBy() == null) action.setCreatedBy(owner.userId());
     action.setReviewedBy(null);
+    action.setStatus(Action.STATUS_PENDING_REVIEW);
     Action saved = actions.persistDraft(action, lang);
     store.update("UPDATE action_drafts SET consumed_at=now() WHERE id=?", uuid(draftId));
     return saved;

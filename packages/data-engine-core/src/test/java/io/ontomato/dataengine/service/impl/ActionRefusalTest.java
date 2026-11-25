@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.action.Action;
@@ -18,6 +19,7 @@ import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore;
 import java.util.function.Supplier;
 import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
+import io.ontomato.dataengine.util.CodeHashUtil;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -67,6 +69,28 @@ class ActionRefusalTest {
 
     assertEquals("ACTION_SYSTEM", error.code());
     assertEquals("Action.cannotModifySystem", error.getMessage());
+  }
+
+  @Test
+  void renamingAPublishedActionPreservesItsPublicationAndExplanation() throws Exception {
+    Action stored = action("a1", Action.ORIGIN_USER, Action.STATUS_PUBLISHED);
+    stored.setCodeSegments(JSONArray.of(JSONObject.of("id", "compute")));
+    stored.setCodeHash(CodeHashUtil.sha256(CODE));
+    stored.setExplanationVersion(Action.EXPLANATION_VERSION);
+    stored.setReviewedBy("reviewer");
+    when(actionDao.queryById("a1")).thenReturn(new Object[] {stored, "f-a1"});
+    when(functionDao.queryById("f-a1")).thenReturn(stored.getFunction());
+    when(actionDao.saveDraft(any(), eq("en"))).thenAnswer(call -> call.getArgument(0));
+
+    Action submitted = action("a1", Action.ORIGIN_USER, null);
+    submitted.setName("Approve the order");
+    Action saved = service.save(submitted, null, null, "en");
+
+    assertEquals("Approve the order", saved.getName());
+    assertEquals(Action.STATUS_PUBLISHED, saved.getStatus());
+    assertEquals(stored.getCodeHash(), saved.getCodeHash());
+    assertEquals("reviewer", saved.getReviewedBy());
+    verify(actionDao).saveDraft(argThat(item -> Action.STATUS_PUBLISHED.equals(item.getStatus())), eq("en"));
   }
 
   @Test

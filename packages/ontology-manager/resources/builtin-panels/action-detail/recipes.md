@@ -75,7 +75,7 @@ Do **not** pass a whole `/function` object as one field, and do **not** pass `ex
 5. Leave saving to the reader, or invoke `page_action` `form.save` when the reader explicitly asks to save (default
    sessions ask for confirmation in chat first; full-auto saves directly).
 
-Saving keeps the action pending. Use the catalog's status operation to publish after the explanation is ready.
+Saving a new action creates a pending draft. Editing an existing action preserves its status. Use the catalog's status operation to publish after the explanation is ready.
 The owner refuses changes to a published action's code at `/function/code`.
 
 ## Creating an action via agent

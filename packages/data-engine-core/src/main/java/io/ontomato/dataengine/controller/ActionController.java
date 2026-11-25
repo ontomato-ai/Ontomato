@@ -169,7 +169,8 @@ public class ActionController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			ActionForm.requireDraftStatus(request.getString("status"));
+			String requestedStatus = request.getString("status");
+			ActionForm.requireDraftStatus(requestedStatus);
 			JSONObject param = submittedValues(request, user.getDomainId(), lang);
 			Function acceptedFunction;
 			try {
@@ -179,7 +180,7 @@ public class ActionController {
 			}
             Action action = param.to(Action.class);
             action.setFunction(acceptedFunction);
-            action.setStatus(Action.STATUS_PENDING_REVIEW);
+            action.setStatus(requestedStatus);
 			action.setDomainId(user.getDomainId());
 			action.setCreatedBy(user.getId());
 			Action saved = actionService.save(action, param.getString("explanationRef"),
