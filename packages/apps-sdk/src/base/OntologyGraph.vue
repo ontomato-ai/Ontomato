@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { ElButton } from "element-plus/es/components/button/index";
+import { ElCheckbox } from "element-plus/es/components/checkbox/index";
 import { ElEmpty } from "element-plus/es/components/empty/index";
+import { ElPopover } from "element-plus/es/components/popover/index";
+import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
+import { ElSwitch } from "element-plus/es/components/switch/index";
+import { ElTooltip } from "element-plus/es/components/tooltip/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { matchesObjectType, type PanelObjectRef } from "@ontomato/contracts/panel-manifest";
 import type {
@@ -16,6 +22,7 @@ import {
   G6GraphCanvas,
   G6_LABEL_SIZE,
   G6_LABEL_WIDTH,
+  G6_NODE_SIZE,
   graphCategorySlot,
   readGraphPalette,
   type GraphCanvasEdge,
@@ -65,6 +72,14 @@ import {
 type PanelObjectValue = PanelObjectRef;
 type NeighborDirection = "both" | "incoming" | "outgoing";
 
+export interface GraphNeighborFilter {
+  readonly targetClass?: string | null;
+  readonly relationKind?: string | null;
+  readonly direction?: NeighborDirection;
+  readonly fitAfterExpand?: boolean;
+  readonly revision?: number;
+}
+
 interface NeighborPageState {
   readonly nextOffset: number | null;
   readonly total: number | null;
@@ -72,6 +87,7 @@ interface NeighborPageState {
 }
 
 const ZOOM_STEP = 1.2;
+const GENERATION_POLL_INTERVAL_MS = 2000;
 
 /**
  * Projection-level interactive graph powered by G6 (`@ontomato/foundation-ui/graph/g6`).
@@ -98,36 +114,50 @@ const props = withDefaults(
     selected?: PanelObjectValue | null;
     /** Currently selected type ID in type mode (e.g. `"platform:Action"`). */
     selectedType?: string | null;
+    /** Active highlighted group ID in overview mode (e.g. synced with a group/type filter). */
+    selectedGroup?: string | null;
     /** Search string that highlights drawn matches without hiding other nodes or querying upstream. */
     query?: string | null;
     /** Accessible graph label; falls back to the projection's name. */
     label?: string;
     /** Initial enabled layers; defaults to all layers present in schema or loaded nodes. */
     layers?: readonly string[] | null;
+    /** Viewport fitting & label scaling mode: `"fit"` shows the whole graph in panorama without forced zoom-in; `"readable"` holds labels at screen size. Defaults to `"fit"` when `overview` is bound, `"readable"` otherwise. */
+    fitMode?: "fit" | "readable";
+    /** Neighbor expansion trigger in instance mode: `"activate"` selects on single click and expands on double click; `"select"` expands unexpanded nodes on click. Defaults to `"activate"` when `overview` is bound, `"select"` otherwise. */
+    expandOn?: "activate" | "select";
     /** Show layer filter pills when multiple layers exist. */
     showLayerFilter?: boolean;
     /** Show legend strip. */
     showLegend?: boolean;
     /** Show floating graph toolbar. */
     showToolbar?: boolean;
+    /** Show bottom-right interaction hint strip. */
+    showHint?: boolean;
     /** Aggregate inter-group edges in overview mode (enabled by default). */
     aggregateEdges?: boolean;
     /** Draw labels on graph edges (enabled by default). */
     showEdgeLabels?: boolean;
-    /** Show the aggregated-edges toggle button in overview mode. */
+    /** Show the aggregated-edges toggle inside display settings in overview mode. */
     showAggregateToggle?: boolean;
-    /** Show the edge-labels toggle button in the toolbar. */
+    /** Show the edge-labels toggle inside display settings. */
     showEdgeLabelToggle?: boolean;
     /** Show zoom-in and zoom-out buttons in the toolbar. */
     showZoomControls?: boolean;
     /** Show refresh button in the toolbar. */
     showRefreshControl?: boolean;
-    /** Show neighbor pagination and direction/target-group filter controls when supported by the neighbors port. */
+    /** Show built-in neighbor filter popover controls when supported by the neighbors port. */
     showNeighborControls?: boolean;
     /** Initial neighbor traversal direction filter (`both` | `outgoing` | `incoming`). */
     neighborDirection?: NeighborDirection;
     /** Initial neighbor target group filter (`className`). */
     neighborTargetClass?: string | null;
+    /** Initial neighbor relation kind filter. */
+    neighborRelationKind?: string | null;
+    /** Re-fit the graph viewport after incremental neighbor expansion. */
+    fitAfterExpand?: boolean;
+    /** Batch neighbor filter configuration; updating this applies all filter criteria together. */
+    neighborFilter?: GraphNeighborFilter | null;
     /** Page size (`limit`) used when the bound `neighbors` port supports paginated loading. */
     neighborPageSize?: number;
     /** Optional max height in CSS pixels forwarded to `G6GraphCanvas`. */
@@ -138,12 +168,16 @@ const props = withDefaults(
     start: null,
     selected: null,
     selectedType: null,
+    selectedGroup: null,
     query: "",
     label: undefined,
     layers: undefined,
+    fitMode: undefined,
+    expandOn: undefined,
     showLayerFilter: true,
     showLegend: true,
     showToolbar: true,
+    showHint: true,
     aggregateEdges: true,
     showEdgeLabels: true,
     showAggregateToggle: true,
@@ -153,6 +187,9 @@ const props = withDefaults(
     showNeighborControls: true,
     neighborDirection: "both",
     neighborTargetClass: null,
+    neighborRelationKind: null,
+    fitAfterExpand: false,
+    neighborFilter: null,
     neighborPageSize: 50,
     maxHeight: undefined,
   },
@@ -163,9 +200,13 @@ const emit = defineEmits<{
   "update:selected": [node: PanelObjectValue | null];
   /** Emitted in type mode when a reader selects a type node or clears selection. */
   "update:selectedType": [typeId: string | null];
-  /** Emitted when the aggregated-edges toolbar toggle changes. */
+  /** Emitted in overview mode when a reader selects a cluster group heading. */
+  "update:selectedGroup": [groupId: string | null];
+  /** Emitted in overview mode when a reader clicks a cluster group heading to filter by that group. */
+  "select-group": [groupId: string];
+  /** Emitted when the aggregated-edges display setting changes. */
   "update:aggregateEdges": [value: boolean];
-  /** Emitted when the edge-labels toolbar toggle changes. */
+  /** Emitted when the edge-labels display setting changes. */
   "update:showEdgeLabels": [value: boolean];
 }>();
 
@@ -297,6 +338,26 @@ const isPositionsBound = computed(() => {
 });
 const savedPositions = computed<Map<string, GraphCanvasPoint>>(() => sanitizeSavedPositions(positionsParam.value.value));
 
+/**
+ * Bidirectional selected overview group (`selectedGroup`, scalar string) for cluster heading highlight and filtering.
+ */
+const selectedGroupParam = useMemberParam("selectedGroup");
+const localSelectedGroup = ref<string | null>(null);
+const activeSelectedGroup = computed<string | null>(() => {
+  if (typeof props.selectedGroup === "string" && props.selectedGroup) return props.selectedGroup;
+  const paramVal = selectedGroupParam.value.value;
+  if (typeof paramVal === "string" && paramVal) return paramVal;
+  return localSelectedGroup.value;
+});
+
+const effectiveFitMode = computed<"fit" | "readable">(() =>
+  props.fitMode ?? (hasOverviewPort ? "fit" : "readable"),
+);
+const useReadableLabels = computed(() => effectiveFitMode.value === "readable");
+const effectiveExpandOn = computed<"activate" | "select">(() =>
+  props.expandOn ?? (hasOverviewPort ? "activate" : "select"),
+);
+
 function nameNodes(nodes: readonly PlatformGraphNode[]) {
   const byType = new Map<string, { primaryKey: string; label: string }[]>();
   for (const node of nodes) {
@@ -394,6 +455,16 @@ const expanding = ref(false);
 const forbidden = ref(false);
 const errorMessage = ref<string | null>(null);
 const versionChanged = ref(false);
+const drawing = ref({ drawn: 0, total: 0 });
+const rendering = computed(() => drawing.value.total > 0 && drawing.value.drawn < drawing.value.total);
+let generationTimer: ReturnType<typeof setTimeout> | undefined;
+
+function clearGenerationTimer() {
+  if (generationTimer !== undefined) {
+    clearTimeout(generationTimer);
+    generationTimer = undefined;
+  }
+}
 
 // Toolbar toggles (synced with props)
 const aggregateEdgesEnabled = ref(props.aggregateEdges);
@@ -401,14 +472,26 @@ watch(() => props.aggregateEdges, (next) => { aggregateEdgesEnabled.value = next
 const edgeLabelsEnabled = ref(props.showEdgeLabels);
 watch(() => props.showEdgeLabels, (next) => { edgeLabelsEnabled.value = next; });
 
+function setAggregateEdges(next: string | number | boolean) {
+  const enabled = Boolean(next);
+  if (aggregateEdgesEnabled.value === enabled) return;
+  aggregateEdgesEnabled.value = enabled;
+  emit("update:aggregateEdges", enabled);
+}
+
+function setEdgeLabels(next: string | number | boolean) {
+  const enabled = Boolean(next);
+  if (edgeLabelsEnabled.value === enabled) return;
+  edgeLabelsEnabled.value = enabled;
+  emit("update:showEdgeLabels", enabled);
+}
+
 function toggleAggregateEdges() {
-  aggregateEdgesEnabled.value = !aggregateEdgesEnabled.value;
-  emit("update:aggregateEdges", aggregateEdgesEnabled.value);
+  setAggregateEdges(!aggregateEdgesEnabled.value);
 }
 
 function toggleEdgeLabels() {
-  edgeLabelsEnabled.value = !edgeLabelsEnabled.value;
-  emit("update:showEdgeLabels", edgeLabelsEnabled.value);
+  setEdgeLabels(!edgeLabelsEnabled.value);
 }
 
 // Mode transitions between sampled overview and neighborhood exploration
@@ -467,10 +550,39 @@ const neighborPagesByNode = shallowRef<Map<string, NeighborPageState>>(new Map()
 const instancePositions = shallowRef<Map<string, GraphCanvasPoint>>(new Map());
 const lastNeighborVersion = ref<string | null>(null);
 
-const neighborDirection = ref<NeighborDirection>(props.neighborDirection);
-watch(() => props.neighborDirection, (next) => { neighborDirection.value = next; });
-const neighborTargetGroup = ref<string>(props.neighborTargetClass ?? "");
-watch(() => props.neighborTargetClass, (next) => { neighborTargetGroup.value = next ?? ""; });
+// Draft & applied neighbor filters (batch-submitted via Apply Filters or props.neighborFilter)
+const draftNeighborDirection = ref<NeighborDirection>(props.neighborDirection);
+const appliedNeighborDirection = ref<NeighborDirection>(props.neighborDirection);
+watch(() => props.neighborDirection, (next) => {
+  draftNeighborDirection.value = next;
+  appliedNeighborDirection.value = next;
+});
+const draftNeighborTargetGroup = ref<string>(props.neighborTargetClass ?? "");
+const appliedNeighborTargetGroup = ref<string>(props.neighborTargetClass ?? "");
+watch(() => props.neighborTargetClass, (next) => {
+  draftNeighborTargetGroup.value = next ?? "";
+  appliedNeighborTargetGroup.value = next ?? "";
+});
+const draftNeighborRelationKind = ref<string>(props.neighborRelationKind ?? "");
+const appliedNeighborRelationKind = ref<string>(props.neighborRelationKind ?? "");
+watch(() => props.neighborRelationKind, (next) => {
+  draftNeighborRelationKind.value = next ?? "";
+  appliedNeighborRelationKind.value = next ?? "";
+});
+const draftFitAfterExpand = ref<boolean>(props.fitAfterExpand);
+const appliedFitAfterExpand = ref<boolean>(props.fitAfterExpand);
+watch(() => props.fitAfterExpand, (next) => {
+  draftFitAfterExpand.value = next;
+  appliedFitAfterExpand.value = next;
+});
+const neighborFiltersDirty = computed(
+  () =>
+    draftNeighborDirection.value !== appliedNeighborDirection.value
+    || draftNeighborTargetGroup.value !== appliedNeighborTargetGroup.value
+    || draftNeighborRelationKind.value !== appliedNeighborRelationKind.value,
+);
+const neighborPopoverVisible = ref(false);
+const displaySettingsVisible = ref(false);
 
 // Local canvas viewport and focus
 const hasExplicitLayers = Array.isArray(props.layers) && props.layers.length > 0;
@@ -487,10 +599,24 @@ function focusAnchor(): string | undefined {
   return rootNodeId.value ?? undefined;
 }
 
-/** Opens the graph at a zoom where node names stay readable, centering the chosen/start node when the graph overflows. */
-function fitReadable(target = canvas.value) {
+/** Fits the graph to the canvas according to `fitMode` (panoramic `"fit"` or screen-sized `"readable"`). */
+function fitGraph(target = canvas.value) {
   if (!target) return;
   fitting = true;
+  if (effectiveFitMode.value === "fit") {
+    const padding: number | [number, number, number, number] = activeMode.value === "overview" ? [64, 48, 48, 48] : 48;
+    void target
+      .fit({ maxZoom: 1, padding })
+      .then(() => {
+        partial.value = false;
+        moved.value = false;
+        fitted = true;
+      })
+      .finally(() => {
+        fitting = false;
+      });
+    return;
+  }
   const padding: number | [number, number, number, number] = activeMode.value === "overview" ? [64, 48, 48, 48] : 36;
   void target
     .fit({ maxZoom: 1.15, keepNames: true, padding, around: focusAnchor() })
@@ -504,10 +630,9 @@ function fitReadable(target = canvas.value) {
     });
 }
 
-// The canvas is there only while something is drawn: one that appears after an empty or loading view opens at a
-// readable zoom around its start rather than in the corner.
+// The canvas is there only while something is drawn: one that appears after an empty or loading view opens cleanly fitted.
 watch(canvas, (shown, before) => {
-  if (shown && !before) fitReadable(shown);
+  if (shown && !before) fitGraph(shown);
 });
 
 function recordFailure(reason: unknown) {
@@ -671,6 +796,41 @@ const availableTargetGroups = computed<Array<{ id: string; label: string }>>(() 
   }
   return [...byId.entries()].map(([id, label]) => ({ id, label }));
 });
+
+const availableRelationKinds = computed<Array<{ id: string; label: string }>>(() => {
+  const byId = new Map<string, string>();
+  for (const kind of overviewData.value?.relationTypes ?? []) {
+    if (!byId.has(kind)) byId.set(kind, relationDisplayName(kind));
+  }
+  for (const spec of typeSchema.value?.relationKinds ?? []) {
+    byId.set(spec.id, relationDisplayName(spec.id, spec.label, spec.labelKey));
+  }
+  for (const edge of overviewEdges.value) {
+    if (!byId.has(edge.relationKind)) {
+      byId.set(edge.relationKind, relationDisplayName(edge.relationKind, edge.label));
+    }
+  }
+  for (const edge of instanceEdges.value.values()) {
+    if (!byId.has(edge.relationKind)) {
+      byId.set(edge.relationKind, relationDisplayName(edge.relationKind, edge.label));
+    }
+  }
+  for (const statuses of relationStatusesByNode.value.values()) {
+    for (const status of statuses) {
+      if (!byId.has(status.relationKind)) {
+        byId.set(status.relationKind, relationDisplayName(status.relationKind, status.label));
+      }
+    }
+  }
+  return [...byId.entries()].map(([id, label]) => ({ id, label }));
+});
+
+const hasAnyNeighborFilter = computed(
+  () =>
+    supportsDirectionFilter.value
+    || (supportsTargetGroupFilter.value && availableTargetGroups.value.length > 0)
+    || (supportsRelationKindsParam.value && availableRelationKinds.value.length > 0),
+);
 
 // ---- Read-only projection outputs ----
 const startNode = computed<PlatformGraphNode | null>(() =>
@@ -1155,6 +1315,12 @@ const drawnNodeCount = computed(() => {
   return canvasNodes.value.length;
 });
 
+const drawnEdgeCount = computed(() => {
+  if (activeMode.value === "overview") return visibleOverviewEdges.value.length;
+  if (activeMode.value === "instance") return visibleInstanceEdges.value.length;
+  return canvasEdges.value.length;
+});
+
 const reportedNodeCount = computed(() => {
   if (activeMode.value === "overview") return overviewData.value?.nodeCount ?? visibleOverviewNodes.value.length;
   return drawnNodeCount.value;
@@ -1165,6 +1331,9 @@ const reportedEdgeCount = computed(() => {
   return canvasEdges.value.length;
 });
 
+const overviewComplete = computed<boolean>(() => overviewData.value?.complete ?? true);
+const overviewFailures = computed<readonly string[]>(() => overviewData.value?.failures ?? []);
+
 const activeSelectedNode = computed<PanelObjectValue | null>(() => {
   if (activeMode.value === "overview") {
     const node = selectedOverviewNode.value;
@@ -1173,13 +1342,94 @@ const activeSelectedNode = computed<PanelObjectValue | null>(() => {
   return props.selected ?? null;
 });
 
+const activeSelectedNodeId = computed<string | null>(() => {
+  if (activeMode.value === "overview") return activeOverviewSelectedId.value;
+  if (activeMode.value === "instance") {
+    const chosen = props.selected ? encodeGraphNodeId(props.selected) : null;
+    if (chosen && instanceNodes.value.has(chosen)) return chosen;
+    return null;
+  }
+  return null;
+});
+
+const activeSelectedNodeLabel = computed<string>(() => {
+  if (activeMode.value === "overview") return selectedOverviewNode.value?.label ?? "";
+  if (activeMode.value === "instance" && activeSelectedNodeId.value) {
+    return instanceNodes.value.get(activeSelectedNodeId.value)?.label ?? "";
+  }
+  return "";
+});
+
+const selectedNodeNeighborPage = computed<NeighborPageState | null>(() => {
+  if (activeMode.value !== "instance" || !activeSelectedNodeId.value) return null;
+  return neighborPagesByNode.value.get(activeSelectedNodeId.value) ?? null;
+});
+
+const currentNeighborProgress = computed<{ loaded: number; total: number | null; hasMore: boolean } | null>(() => {
+  const page = selectedNodeNeighborPage.value ?? currentNeighborPage.value;
+  if (!page) return null;
+  return {
+    loaded: page.loaded,
+    total: page.total,
+    hasMore: page.nextOffset !== null,
+  };
+});
+
+/** Screen coordinates directly above the currently selected node for the floating `.node-actions` toolbar. */
+const nodeActionPosition = computed<{ x: number; y: number } | null>(() => {
+  if (activeMode.value === "type") return null;
+  const view = currentViewport.value;
+  const nodeId = activeSelectedNodeId.value;
+  if (!view || !nodeId) return null;
+  const pos = activeMode.value === "overview"
+    ? overviewResolvedPositions.value.get(nodeId)
+    : (savedPositions.value.get(nodeId) ?? instancePositions.value.get(nodeId));
+  if (!pos) return null;
+  const x = (pos.x - view.x) * view.zoom;
+  const y = (pos.y - view.y) * view.zoom;
+  const viewWidth = view.width * view.zoom;
+  const viewHeight = view.height * view.zoom;
+  if (x < 0 || x > viewWidth || y < 0 || y > viewHeight) return null;
+  const nodeRadius = (G6_NODE_SIZE / 2 + 2.5) * view.zoom;
+  return {
+    x: Math.max(48, Math.min(viewWidth - 48, x)),
+    y: Math.max(44, y - nodeRadius - 12),
+  };
+});
+
+const canExpandSelectedNode = computed<boolean>(() => {
+  if (!activeSelectedNodeId.value || rendering.value || expanding.value || versionChanged.value) return false;
+  if (activeMode.value === "overview") return true;
+  if (neighborFiltersDirty.value) return false;
+  const page = selectedNodeNeighborPage.value;
+  return !page || page.nextOffset !== null;
+});
+
 useMemberOutput("activeMode", () => activeMode.value);
 useMemberOutput("graphStatus", () => graphStatus.value);
 useMemberOutput("graphVersion", () => graphVersion.value);
 useMemberOutput("sampleToken", () => sampleToken.value);
 useMemberOutput("nodeCount", () => reportedNodeCount.value);
 useMemberOutput("edgeCount", () => reportedEdgeCount.value);
+useMemberOutput("drawnNodeCount", () => drawnNodeCount.value);
+useMemberOutput("drawnEdgeCount", () => drawnEdgeCount.value);
+useMemberOutput("overviewEdgesTruncated", () => overviewEdgesTruncated.value);
+useMemberOutput("complete", () => overviewComplete.value);
+useMemberOutput("failures", () => [...overviewFailures.value]);
+useMemberOutput("groups", () =>
+  overviewGroups.value.map((group) => ({
+    id: group.id,
+    label: group.label,
+    totalCount: group.totalCount,
+    sampleCount: group.sampleCount,
+  })),
+);
+useMemberOutput("relationKinds", () => availableRelationKinds.value);
 useMemberOutput("hasMoreNeighbors", () => hasMoreNeighbors.value);
+useMemberOutput("neighborProgress", () => currentNeighborProgress.value);
+useMemberOutput("drawingProgress", () =>
+  rendering.value ? { drawn: drawing.value.drawn, total: drawing.value.total } : null,
+);
 useMemberOutput("versionChanged", () => versionChanged.value);
 
 const queryMatchCount = computed(() => {
@@ -1277,8 +1527,18 @@ function writeSelectedType(typeId: string | null) {
   emit("update:selectedType", typeId);
 }
 
+function selectOverviewGroup(groupId: string) {
+  const next = activeSelectedGroup.value === groupId ? null : groupId;
+  localSelectedGroup.value = next;
+  selectedGroupParam.set(next);
+  void panel.instance.output(member.key, "selectedGroup", next);
+  emit("update:selectedGroup", next);
+  emit("select-group", groupId);
+}
+
 // ---- Data loading & incremental 1-hop expansion ----
 async function loadTypeMode(generation: number) {
+  clearGenerationTimer();
   loading.value = true;
   forbidden.value = false;
   errorMessage.value = null;
@@ -1292,7 +1552,7 @@ async function loadTypeMode(generation: number) {
     typeCounts.value = counts;
     if (!isPositionsBound.value) positionsParam.set(null);
     await nextTick();
-    fitReadable();
+    fitGraph();
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
     recordFailure(reason);
@@ -1320,6 +1580,7 @@ function computeOverviewBaseLayout(
 }
 
 async function loadOverviewMode(generation: number) {
+  clearGenerationTimer();
   if (!graphSource.overview) {
     loading.value = false;
     return;
@@ -1340,6 +1601,13 @@ async function loadOverviewMode(generation: number) {
       overviewEdges.value = [];
       overviewBasePositions.value = new Map();
       loading.value = false;
+      if (result.status === "GENERATING") {
+        generationTimer = setTimeout(() => {
+          if (generation === loadGeneration && activeMode.value === "overview") {
+            void loadOverviewMode(generation);
+          }
+        }, GENERATION_POLL_INTERVAL_MS);
+      }
       return;
     }
 
@@ -1359,14 +1627,14 @@ async function loadOverviewMode(generation: number) {
       overviewEdgesTruncated.value = Boolean(result.edgesTruncated);
       loading.value = false;
       await nextTick();
-      fitReadable();
+      fitGraph();
       return;
     }
 
     overviewEdges.value = [];
     loading.value = false;
     await nextTick();
-    fitReadable();
+    fitGraph();
 
     if (graphSource.connections && result.version) {
       loadingConnections.value = true;
@@ -1420,17 +1688,19 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
       ? [...enabledLayers.value]
       : undefined;
 
-  const activeRelationKinds =
-    supportsRelationKindsParam.value && shownKinds.value && shownKinds.value.size > 0
-      ? [...shownKinds.value]
-      : undefined;
+  const activeRelationKinds = (() => {
+    if (!supportsRelationKindsParam.value) return undefined;
+    if (appliedNeighborRelationKind.value) return [appliedNeighborRelationKind.value];
+    if (shownKinds.value && shownKinds.value.size > 0) return [...shownKinds.value];
+    return undefined;
+  })();
 
   const query: PlatformGraphNeighborsQuery = {
     node: refValue,
     ...(activeLayers ? { layers: activeLayers } : {}),
     ...(activeRelationKinds ? { relationKinds: activeRelationKinds } : {}),
-    ...(supportsDirectionFilter.value ? { direction: neighborDirection.value } : {}),
-    ...(supportsTargetGroupFilter.value && neighborTargetGroup.value ? { targetClass: neighborTargetGroup.value } : {}),
+    ...(supportsDirectionFilter.value ? { direction: appliedNeighborDirection.value } : {}),
+    ...(supportsTargetGroupFilter.value && appliedNeighborTargetGroup.value ? { targetClass: appliedNeighborTargetGroup.value } : {}),
     ...(supportsNeighborPaging.value && props.neighborPageSize > 0 ? { limit: props.neighborPageSize } : {}),
     ...(supportsNeighborPaging.value ? { offset: offset ?? 0 } : {}),
   };
@@ -1514,9 +1784,9 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
       }
     }
 
-    if (isRoot || resetSubgraph) {
+    if (isRoot || resetSubgraph || appliedFitAfterExpand.value) {
       await nextTick();
-      fitReadable();
+      fitGraph();
     }
 
     // If additional layers were enabled while this request was in flight, backfill them once unlocked.
@@ -1541,6 +1811,7 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
 }
 
 async function loadInstanceMode(generation: number) {
+  clearGenerationTimer();
   loading.value = true;
   forbidden.value = false;
   errorMessage.value = null;
@@ -1596,7 +1867,7 @@ async function loadInstanceMode(generation: number) {
     focusedNodeId.value = selectedId && instanceNodes.value.has(selectedId) ? selectedId : rootNodeId.value;
     if (expandedExtra) {
       await nextTick();
-      fitReadable();
+      fitGraph();
     }
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
@@ -1606,6 +1877,7 @@ async function loadInstanceMode(generation: number) {
 }
 
 function reload() {
+  clearGenerationTimer();
   const generation = ++loadGeneration;
   if (activeMode.value === "type") void loadTypeMode(generation);
   else if (activeMode.value === "overview") void loadOverviewMode(generation);
@@ -1637,9 +1909,21 @@ function exploreNode(node: PlatformGraphNode | PanelObjectValue) {
   writeSelectedNode(refValue);
 }
 
-function loadMoreNeighbors() {
+function focusDirectNeighbors(node: PlatformGraphNode | PanelObjectValue) {
+  const refValue: PanelObjectValue = { className: node.className, primaryKey: node.primaryKey };
+  if (activeMode.value !== "instance") {
+    exploreNode(refValue);
+    return;
+  }
+  const generation = ++loadGeneration;
+  expandingNodeIds.clear();
+  writeSelectedNode(refValue);
+  void expandInstanceNode(refValue, generation, { resetSubgraph: true, offset: 0 });
+}
+
+function loadMoreNeighbors(explicitNodeId?: string | null) {
   if (activeMode.value !== "instance" || expanding.value) return;
-  const targetId = focusedNodeId.value ?? (props.selected ? encodeGraphNodeId(props.selected) : null) ?? rootNodeId.value;
+  const targetId = explicitNodeId ?? focusedNodeId.value ?? (props.selected ? encodeGraphNodeId(props.selected) : null) ?? rootNodeId.value;
   if (!targetId) return;
   const page = neighborPagesByNode.value.get(targetId);
   const node = instanceNodes.value.get(targetId);
@@ -1651,9 +1935,30 @@ function loadMoreNeighbors() {
   );
 }
 
+function expandSelectedNodeAction() {
+  if (!activeSelectedNode.value || !canExpandSelectedNode.value) return;
+  if (activeMode.value === "overview") {
+    exploreNode(activeSelectedNode.value);
+    return;
+  }
+  const targetId = activeSelectedNodeId.value;
+  if (!targetId) return;
+  const page = selectedNodeNeighborPage.value;
+  if (page && page.nextOffset !== null) {
+    loadMoreNeighbors(targetId);
+    return;
+  }
+  void expandInstanceNode(activeSelectedNode.value, loadGeneration);
+}
+
 function applyNeighborFilters() {
+  appliedNeighborDirection.value = draftNeighborDirection.value;
+  appliedNeighborTargetGroup.value = draftNeighborTargetGroup.value;
+  appliedNeighborRelationKind.value = draftNeighborRelationKind.value;
+  appliedFitAfterExpand.value = draftFitAfterExpand.value;
+  neighborPopoverVisible.value = false;
   if (activeMode.value !== "instance") return;
-  const targetId = focusedNodeId.value ?? rootNodeId.value;
+  const targetId = activeSelectedNodeId.value ?? focusedNodeId.value ?? rootNodeId.value;
   const node = targetId ? instanceNodes.value.get(targetId) : undefined;
   if (!node) return;
   const generation = ++loadGeneration;
@@ -1665,17 +1970,18 @@ function applyNeighborFilters() {
   );
 }
 
-function handleDirectionChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value as NeighborDirection;
-  neighborDirection.value = value;
-  applyNeighborFilters();
-}
-
-function handleTargetGroupChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value;
-  neighborTargetGroup.value = value;
-  applyNeighborFilters();
-}
+watch(
+  () => props.neighborFilter,
+  (next) => {
+    if (!next) return;
+    if (next.direction !== undefined) draftNeighborDirection.value = next.direction;
+    if (next.targetClass !== undefined) draftNeighborTargetGroup.value = next.targetClass ?? "";
+    if (next.relationKind !== undefined) draftNeighborRelationKind.value = next.relationKind ?? "";
+    if (next.fitAfterExpand !== undefined) draftFitAfterExpand.value = Boolean(next.fitAfterExpand);
+    applyNeighborFilters();
+  },
+  { deep: true },
+);
 
 watch(
   () => [activeMode.value, effectiveStart.value?.className ?? "", effectiveStart.value?.primaryKey ?? ""] as const,
@@ -1720,7 +2026,7 @@ watch(
     }
     if (activeMode.value !== "instance") return;
     focusedNodeId.value = id;
-    if (instanceNodes.value.has(id) && !expandedNodes.value.has(id)) {
+    if (effectiveExpandOn.value === "select" && instanceNodes.value.has(id) && !expandedNodes.value.has(id)) {
       void expandInstanceNode({ className, primaryKey }, loadGeneration);
     }
   },
@@ -1758,15 +2064,31 @@ function handleSelect(ids: string[]) {
   const fullRef: PanelObjectValue = { className: node.className, primaryKey: node.primaryKey };
   focusedNodeId.value = pickedId;
   writeSelectedNode(fullRef);
-  if (!expandedNodes.value.has(pickedId)) {
+  if (effectiveExpandOn.value === "select" && !expandedNodes.value.has(pickedId)) {
     void expandInstanceNode(fullRef, loadGeneration);
   }
 }
 
 function handleActivate(element: GraphCanvasElement) {
-  if (activeMode.value !== "overview" || element.kind !== "node" || isOverviewGroupAnchorId(element.id)) return;
-  const node = overviewNodes.value.get(element.id);
-  if (node) exploreNode(node);
+  if (element.kind !== "node" || isOverviewGroupAnchorId(element.id)) return;
+  if (activeMode.value === "overview") {
+    const node = overviewNodes.value.get(element.id);
+    if (node) exploreNode(node);
+    return;
+  }
+  if (activeMode.value === "instance") {
+    const node = instanceNodes.value.get(element.id);
+    if (!node || expanding.value || rendering.value || versionChanged.value) return;
+    const fullRef: PanelObjectValue = { className: node.className, primaryKey: node.primaryKey };
+    focusedNodeId.value = element.id;
+    writeSelectedNode(fullRef);
+    const page = neighborPagesByNode.value.get(element.id);
+    if (page && page.nextOffset !== null) {
+      loadMoreNeighbors(element.id);
+    } else if (!expandedNodes.value.has(element.id)) {
+      void expandInstanceNode(fullRef, loadGeneration);
+    }
+  }
 }
 
 function handleBlank() {
@@ -1797,15 +2119,22 @@ function handleViewport(viewport: GraphCanvasViewport) {
   if (fitted && !fitting && partial.value) moved.value = true;
 }
 
+function handleProgress(drawn: number, total: number) {
+  drawing.value = { drawn, total };
+}
+
 /** Re-fits the graph once its container settles at a new size (e.g. a side panel toggling or composer resizing). */
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 function handleResized() {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
-    fitReadable();
+    fitGraph();
   }, 200);
 }
-onBeforeUnmount(() => clearTimeout(resizeTimer));
+onBeforeUnmount(() => {
+  clearTimeout(resizeTimer);
+  clearGenerationTimer();
+});
 
 // ---- Toolbar actions ----
 function zoomIn() {
@@ -1819,8 +2148,8 @@ function zoomOut() {
 function fitView() {
   partial.value = false;
   moved.value = false;
-  const padding: number | [number, number, number, number] = activeMode.value === "overview" ? [64, 48, 48, 48] : 36;
-  void canvas.value?.fit({ maxZoom: 1.2, padding });
+  const padding: number | [number, number, number, number] = activeMode.value === "overview" ? [64, 48, 48, 48] : 48;
+  void canvas.value?.fit({ maxZoom: effectiveFitMode.value === "fit" ? 1 : 1.2, padding });
 }
 
 async function relayout() {
@@ -1845,7 +2174,7 @@ async function relayout() {
   }
   await nextTick();
   await canvas.value?.relayout?.();
-  fitReadable();
+  fitGraph();
 }
 
 async function downloadPng() {
@@ -1902,83 +2231,6 @@ onBeforeUnmount(() => {
           {{ t("platform.graphCounts", { nodes: drawnNodeCount, edges: canvasEdges.length }) }}
         </span>
       </div>
-    </div>
-
-    <div
-      v-if="showNeighborControls && activeMode === 'instance' && (canReturnToOverview || supportsDirectionFilter || (supportsTargetGroupFilter && availableTargetGroups.length > 0) || (currentNeighborPage && currentNeighborPage.nextOffset !== null))"
-      class="sdk-ontology-graph-controls"
-      data-graph-neighbor-controls
-    >
-      <button
-        v-if="canReturnToOverview"
-        type="button"
-        class="sdk-ontology-graph-pill-btn"
-        data-graph-action="back-to-overview"
-        @click="backToOverview"
-      >
-        {{ t("platform.graphBackToOverview") }}
-      </button>
-      <label v-if="supportsDirectionFilter" class="sdk-ontology-graph-filter">
-        <span>{{ t("platform.graphDirection") }}</span>
-        <select
-          class="sdk-ontology-graph-select"
-          data-graph-filter="direction"
-          :value="neighborDirection"
-          @change="handleDirectionChange"
-        >
-          <option value="both">{{ t("platform.graphDirectionBoth") }}</option>
-          <option value="outgoing">{{ t("platform.graphDirectionOutgoing") }}</option>
-          <option value="incoming">{{ t("platform.graphDirectionIncoming") }}</option>
-        </select>
-      </label>
-      <label v-if="supportsTargetGroupFilter && availableTargetGroups.length > 0" class="sdk-ontology-graph-filter">
-        <span>{{ t("platform.graphTargetGroup") }}</span>
-        <select
-          class="sdk-ontology-graph-select"
-          data-graph-filter="target-group"
-          :value="neighborTargetGroup"
-          @change="handleTargetGroupChange"
-        >
-          <option value="">{{ t("platform.graphAllGroups") }}</option>
-          <option v-for="group in availableTargetGroups" :key="group.id" :value="group.id">
-            {{ group.label }}
-          </option>
-        </select>
-      </label>
-      <div v-if="currentNeighborPage && currentNeighborPage.nextOffset !== null" class="sdk-ontology-graph-paging" data-graph-neighbors-paging>
-        <span class="sdk-ontology-graph-paging-text" data-graph-neighbors-progress>
-          {{
-            currentNeighborPage.total != null
-              ? t("platform.graphNeighborsProgress", { loaded: currentNeighborPage.loaded, total: currentNeighborPage.total })
-              : t("platform.graphNeighborsLoadedCount", { loaded: currentNeighborPage.loaded })
-          }}
-        </span>
-        <button
-          type="button"
-          class="sdk-ontology-graph-pill-btn is-primary"
-          data-graph-action="load-more-neighbors"
-          :disabled="expanding"
-          @click="loadMoreNeighbors"
-        >
-          {{ t("platform.graphLoadMoreNeighbors") }}
-        </button>
-      </div>
-    </div>
-
-    <div
-      v-if="showNeighborControls && activeMode === 'overview' && selectedOverviewNode"
-      class="sdk-ontology-graph-controls"
-      data-graph-overview-selection
-    >
-      <span class="sdk-ontology-graph-selection-name">{{ selectedOverviewNode.label }}</span>
-      <button
-        type="button"
-        class="sdk-ontology-graph-pill-btn is-primary"
-        data-graph-action="explore-neighbors"
-        @click="exploreNode(selectedOverviewNode)"
-      >
-        {{ t("platform.graphExploreNeighbors") }}
-      </button>
     </div>
 
     <div v-if="showLegend && (activeMode === 'type' ? typeLegend.length : instanceLegend.length)" class="sdk-ontology-graph-legend">
@@ -2068,13 +2320,17 @@ onBeforeUnmount(() => {
       :description="t('platform.graphOverviewNotGenerated')"
       :image-size="48"
       data-graph-state="not-generated"
-    />
+    >
+      <el-button type="primary" data-graph-action="refresh" @click="reload">
+        {{ t("platform.graphRefresh") }}
+      </el-button>
+    </el-empty>
     <el-empty
       v-else-if="!loading && !forbidden && !errorMessage && drawnNodeCount === 0"
       :description="t('platform.graphEmpty')"
       :image-size="48"
     />
-    <div v-else class="sdk-ontology-graph-frame">
+    <div v-else class="sdk-ontology-graph-frame" :class="{ 'is-bordered': effectiveFitMode === 'readable' }">
       <G6GraphCanvas
         ref="canvas"
         class="sdk-ontology-graph-canvas"
@@ -2085,65 +2341,131 @@ onBeforeUnmount(() => {
         :selection="'single'"
         :layout="{ type: 'preset' }"
         :categories="canvasCategories"
-        readable-labels
+        :readable-labels="useReadableLabels"
         :max-height="maxHeight"
         @update:selected="handleSelect"
         @activate="handleActivate"
         @blank="handleBlank"
         @move="handleMove"
         @viewport="handleViewport"
+        @progress="handleProgress"
         @resized="handleResized"
       />
-      <div v-if="overviewGroupHeadings.length > 0" class="sdk-ontology-graph-headings" data-graph-group-headings aria-hidden="true">
+      <div
+        v-if="overviewGroupHeadings.length > 0"
+        class="sdk-ontology-graph-headings"
+        data-graph-group-headings
+        role="group"
+        :aria-label="t('platform.graphTargetGroup')"
+      >
         <div
           v-for="heading in overviewGroupHeadings"
           :key="heading.id"
-          class="sdk-ontology-graph-heading"
-          :data-graph-group-heading="heading.id"
-          :style="{ left: `${heading.x}px`, top: `${heading.y}px`, maxWidth: `${heading.width}px` }"
+          class="sdk-ontology-graph-heading-wrap"
+          :style="{
+            left: `${heading.x}px`,
+            top: `${heading.y}px`,
+            maxWidth: `${heading.width}px`,
+            '--group-color': categoryColor(heading.id),
+          }"
         >
-          <i class="sdk-ontology-graph-dot" :style="{ background: categoryColor(heading.id) }" />
-          <span class="sdk-ontology-graph-heading-label">{{ heading.label }}</span>
-          <span class="sdk-ontology-graph-heading-count">{{ heading.countText }}</span>
+          <el-tooltip placement="top" :content="`${heading.label} (${heading.countText})`">
+            <button
+              type="button"
+              class="sdk-ontology-graph-heading"
+              :class="{ 'is-selected': activeSelectedGroup === heading.id }"
+              :aria-pressed="activeSelectedGroup === heading.id"
+              :data-graph-group-heading="heading.id"
+              @click.stop="selectOverviewGroup(heading.id)"
+            >
+              <span class="sdk-ontology-graph-heading-label">{{ heading.label }}</span>
+              <span class="sdk-ontology-graph-heading-count">{{ heading.countText }}</span>
+            </button>
+          </el-tooltip>
         </div>
       </div>
+
+      <el-button
+        v-if="canReturnToOverview"
+        class="sdk-ontology-graph-back-btn"
+        size="small"
+        :disabled="loading || rendering || expanding"
+        data-graph-action="back-to-overview"
+        @click="backToOverview"
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="margin-inline-end: 4px">
+          <path d="M10 3.5 5.5 8 10 12.5" />
+        </svg>
+        {{ t("platform.graphBackToOverview") }}
+      </el-button>
+
+      <div
+        v-if="activeMode !== 'type' && activeSelectedNode && nodeActionPosition"
+        class="sdk-ontology-graph-node-actions"
+        :style="{ left: `${nodeActionPosition.x}px`, top: `${nodeActionPosition.y}px` }"
+        role="toolbar"
+        :aria-label="activeSelectedNodeLabel"
+        data-graph-node-actions
+      >
+        <button
+          v-if="activeMode === 'instance' && selectedNodeNeighborPage && selectedNodeNeighborPage.nextOffset !== null"
+          type="button"
+          class="sdk-ontology-graph-tool"
+          data-graph-action="load-more-neighbors"
+          :disabled="!canExpandSelectedNode"
+          :title="selectedNodeNeighborPage.total != null ? `${t('platform.graphLoadMoreNeighbors')} (${t('platform.graphNeighborsProgress', { loaded: selectedNodeNeighborPage.loaded, total: selectedNodeNeighborPage.total })})` : t('platform.graphLoadMoreNeighbors')"
+          :aria-label="t('platform.graphLoadMoreNeighbors')"
+          @click.stop="expandSelectedNodeAction"
+        >
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="4" cy="4" r="1.5" />
+            <circle cx="12" cy="4" r="1.5" />
+            <circle cx="8" cy="12" r="1.5" />
+            <path d="M4 5.5v1a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-1M8 8.5v2" />
+          </svg>
+        </button>
+        <button
+          v-else
+          type="button"
+          class="sdk-ontology-graph-tool"
+          data-graph-action="explore-neighbors"
+          :disabled="!canExpandSelectedNode"
+          :title="t('platform.graphExploreNeighbors')"
+          :aria-label="t('platform.graphExploreNeighbors')"
+          @click.stop="expandSelectedNodeAction"
+        >
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="4" cy="4" r="1.5" />
+            <circle cx="12" cy="4" r="1.5" />
+            <circle cx="8" cy="12" r="1.5" />
+            <path d="M4 5.5v1a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-1M8 8.5v2" />
+          </svg>
+        </button>
+        <button
+          v-if="activeMode === 'instance'"
+          type="button"
+          class="sdk-ontology-graph-tool"
+          data-graph-action="direct-neighbors"
+          :disabled="expanding || rendering || versionChanged"
+          :title="t('platform.graphDirectNeighbors')"
+          :aria-label="t('platform.graphDirectNeighbors')"
+          @click.stop="focusDirectNeighbors(activeSelectedNode)"
+        >
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="8" cy="3" r="1.5" />
+            <circle cx="3" cy="8" r="1.5" />
+            <circle cx="13" cy="8" r="1.5" />
+            <circle cx="8" cy="13" r="1.5" />
+            <path d="M6.8 4.2 4.2 6.8M9.2 4.2l2.6 2.6M4.2 9.2l2.6 2.6M11.8 9.2l-2.6 2.6" />
+          </svg>
+        </button>
+      </div>
+
       <p v-if="partial" class="sdk-ontology-graph-hint" :class="{ quiet: moved }" role="status" data-graph-hint>
         {{ t("platform.graphLargerThanCanvas") }}
       </p>
-      <div v-if="showToolbar" class="sdk-ontology-graph-tools" data-graph-toolbar>
-        <button
-          v-if="showAggregateToggle && activeMode === 'overview'"
-          type="button"
-          class="sdk-ontology-graph-tool"
-          :class="{ 'is-active': aggregateEdgesEnabled }"
-          :aria-pressed="aggregateEdgesEnabled"
-          data-graph-action="toggle-aggregate"
-          :title="t('platform.graphAggregateEdges')"
-          :aria-label="t('platform.graphAggregateEdges')"
-          @click="toggleAggregateEdges"
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <circle cx="3.5" cy="4" r="1.5" />
-            <circle cx="3.5" cy="12" r="1.5" />
-            <circle cx="12.5" cy="8" r="1.5" />
-            <path d="M5 4.5 11 7.5M5 11.5 11 8.5" />
-          </svg>
-        </button>
-        <button
-          v-if="showEdgeLabelToggle"
-          type="button"
-          class="sdk-ontology-graph-tool"
-          :class="{ 'is-active': edgeLabelsEnabled }"
-          :aria-pressed="edgeLabelsEnabled"
-          data-graph-action="toggle-edge-labels"
-          :title="t('platform.graphShowEdgeLabels')"
-          :aria-label="t('platform.graphShowEdgeLabels')"
-          @click="toggleEdgeLabels"
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M2.5 5h11M2.5 11h7M11.5 9.5l2 2-2 2" />
-          </svg>
-        </button>
+
+      <div v-if="showToolbar" class="sdk-ontology-graph-tools" role="toolbar" :aria-label="accessibleLabel" data-graph-toolbar>
         <button
           v-if="showZoomControls"
           type="button"
@@ -2153,7 +2475,7 @@ onBeforeUnmount(() => {
           :aria-label="t('platform.graphZoomIn')"
           @click="zoomIn"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path d="M8 3.5v9M3.5 8h9" />
           </svg>
         </button>
@@ -2166,7 +2488,7 @@ onBeforeUnmount(() => {
           :aria-label="t('platform.graphZoomOut')"
           @click="zoomOut"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path d="M3.5 8h9" />
           </svg>
         </button>
@@ -2178,35 +2500,168 @@ onBeforeUnmount(() => {
           :aria-label="t('platform.graphFit')"
           @click="fitView"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />
           </svg>
         </button>
+
+        <span class="sdk-ontology-graph-tool-sep" aria-hidden="true" />
+
+        <el-popover
+          v-if="(showAggregateToggle && activeMode === 'overview') || showEdgeLabelToggle"
+          v-model:visible="displaySettingsVisible"
+          trigger="click"
+          :width="260"
+          placement="top-start"
+          :teleported="false"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="sdk-ontology-graph-tool"
+              :aria-expanded="displaySettingsVisible"
+              data-graph-action="display-settings"
+              :title="t('platform.graphDisplaySettings')"
+              :aria-label="t('platform.graphDisplaySettings')"
+            >
+              <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M2.5 5h4.5M10.5 5h3M2.5 11h3M9 11h4.5" />
+                <circle cx="8.75" cy="5" r="1.75" />
+                <circle cx="7.25" cy="11" r="1.75" />
+              </svg>
+            </button>
+          </template>
+          <div class="sdk-ontology-graph-popover" data-graph-display-settings>
+            <strong>{{ t("platform.graphDisplaySettings") }}</strong>
+            <label v-if="showEdgeLabelToggle" class="sdk-ontology-graph-setting-row">
+              <span>{{ t("platform.graphShowEdgeLabels") }}</span>
+              <el-switch
+                :model-value="edgeLabelsEnabled"
+                :aria-label="t('platform.graphShowEdgeLabels')"
+                :disabled="loading || rendering || expanding"
+                size="small"
+                data-graph-action="toggle-edge-labels"
+                @update:model-value="setEdgeLabels"
+              />
+            </label>
+            <label
+              v-if="showAggregateToggle && activeMode === 'overview'"
+              class="sdk-ontology-graph-setting-row"
+              :title="t('platform.graphAggregateHint')"
+            >
+              <span>{{ t("platform.graphAggregateEdges") }}</span>
+              <el-switch
+                :model-value="aggregateEdgesEnabled"
+                :aria-label="t('platform.graphAggregateEdges')"
+                :disabled="loading || rendering || expanding"
+                size="small"
+                data-graph-action="toggle-aggregate"
+                @update:model-value="setAggregateEdges"
+              />
+            </label>
+            <p v-if="showAggregateToggle && activeMode === 'overview'" class="sdk-ontology-graph-popover-hint">
+              {{ t("platform.graphAggregateHint") }}
+            </p>
+          </div>
+        </el-popover>
+
+        <el-popover
+          v-if="showNeighborControls && activeMode === 'instance' && hasAnyNeighborFilter"
+          v-model:visible="neighborPopoverVisible"
+          trigger="click"
+          :width="290"
+          placement="top-start"
+          :teleported="false"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="sdk-ontology-graph-tool"
+              :class="{ 'is-active': neighborFiltersDirty || Boolean(appliedNeighborTargetGroup || appliedNeighborRelationKind || appliedNeighborDirection !== 'both') }"
+              :aria-expanded="neighborPopoverVisible"
+              data-graph-action="neighbor-filters"
+              :title="t('platform.graphNeighborFilters')"
+              :aria-label="t('platform.graphNeighborFilters')"
+            >
+              <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M2.5 3.5h11l-4.2 4.8v4l-2.6 1.2V8.3L2.5 3.5Z" />
+              </svg>
+            </button>
+          </template>
+          <div class="sdk-ontology-graph-popover sdk-ontology-graph-neighbor-popover" data-graph-neighbor-controls>
+            <strong>{{ t("platform.graphNeighborFilters") }}</strong>
+            <div v-if="supportsDirectionFilter" class="sdk-ontology-graph-filter-field">
+              <span class="sdk-ontology-graph-filter-label">{{ t("platform.graphDirection") }}</span>
+              <el-select
+                v-model="draftNeighborDirection"
+                size="small"
+                :teleported="false"
+                data-graph-filter="direction"
+              >
+                <el-option value="both" :label="t('platform.graphDirectionBoth')" />
+                <el-option value="outgoing" :label="t('platform.graphDirectionOutgoing')" />
+                <el-option value="incoming" :label="t('platform.graphDirectionIncoming')" />
+              </el-select>
+            </div>
+            <div v-if="supportsTargetGroupFilter && availableTargetGroups.length > 0" class="sdk-ontology-graph-filter-field">
+              <span class="sdk-ontology-graph-filter-label">{{ t("platform.graphTargetGroup") }}</span>
+              <el-select
+                v-model="draftNeighborTargetGroup"
+                size="small"
+                clearable
+                :placeholder="t('platform.graphAllGroups')"
+                :teleported="false"
+                data-graph-filter="target-group"
+              >
+                <el-option value="" :label="t('platform.graphAllGroups')" />
+                <el-option v-for="group in availableTargetGroups" :key="group.id" :value="group.id" :label="group.label" />
+              </el-select>
+            </div>
+            <div v-if="supportsRelationKindsParam && availableRelationKinds.length > 0" class="sdk-ontology-graph-filter-field">
+              <span class="sdk-ontology-graph-filter-label">{{ t("platform.graphRelationKind") }}</span>
+              <el-select
+                v-model="draftNeighborRelationKind"
+                size="small"
+                clearable
+                :placeholder="t('platform.graphAllRelations')"
+                :teleported="false"
+                data-graph-filter="relation-kind"
+              >
+                <el-option value="" :label="t('platform.graphAllRelations')" />
+                <el-option v-for="kind in availableRelationKinds" :key="kind.id" :value="kind.id" :label="kind.label" />
+              </el-select>
+            </div>
+            <el-checkbox v-model="draftFitAfterExpand" size="small" data-graph-filter="fit-after-expand">
+              {{ t("platform.graphFitAfterExpand") }}
+            </el-checkbox>
+            <el-button
+              type="primary"
+              size="small"
+              :disabled="expanding || rendering"
+              data-graph-action="apply-filters"
+              @click="applyNeighborFilters"
+            >
+              {{ t("platform.graphApplyFilters") }}
+            </el-button>
+          </div>
+        </el-popover>
+
         <button
           type="button"
           class="sdk-ontology-graph-tool"
           data-graph-action="relayout"
+          :disabled="loading || rendering || expanding"
           :title="t('platform.graphRelayout')"
           :aria-label="t('platform.graphRelayout')"
           @click="relayout"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path d="M13.5 8a5.5 5.5 0 1 1-1.3-3.55M13.5 2.5v2.75h-2.75" />
           </svg>
         </button>
-        <button
-          v-if="showRefreshControl"
-          type="button"
-          class="sdk-ontology-graph-tool"
-          data-graph-action="refresh"
-          :title="t('platform.graphRefresh')"
-          :aria-label="t('platform.graphRefresh')"
-          @click="reload"
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M2.5 8a5.5 5.5 0 0 1 9.5-3.75L13.5 5.5M13.5 2.5v3h-3M13.5 8a5.5 5.5 0 0 1-9.5 3.75L2.5 10.5M2.5 13.5v-3h3" />
-          </svg>
-        </button>
+
+        <span class="sdk-ontology-graph-tool-sep" aria-hidden="true" />
+
         <button
           type="button"
           class="sdk-ontology-graph-tool"
@@ -2215,8 +2670,22 @@ onBeforeUnmount(() => {
           :aria-label="t('common.download')"
           @click="downloadPng"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11" />
+          </svg>
+        </button>
+        <button
+          v-if="showRefreshControl"
+          type="button"
+          class="sdk-ontology-graph-tool"
+          data-graph-action="refresh"
+          :disabled="expanding"
+          :title="t('platform.graphRefresh')"
+          :aria-label="t('platform.graphRefresh')"
+          @click="reload"
+        >
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M2.5 8a5.5 5.5 0 0 1 9.5-3.75L13.5 5.5M13.5 2.5v3h-3M13.5 8a5.5 5.5 0 0 1-9.5 3.75L2.5 10.5M2.5 13.5v-3h3" />
           </svg>
         </button>
         <slot
@@ -2237,8 +2706,11 @@ onBeforeUnmount(() => {
           :can-return-to-overview="canReturnToOverview"
           :node-count="reportedNodeCount"
           :edge-count="reportedEdgeCount"
+          :drawn-node-count="drawnNodeCount"
+          :drawn-edge-count="drawnEdgeCount"
         />
       </div>
+
       <div v-if="$slots.overlay" class="sdk-ontology-graph-overlay" data-graph-overlay>
         <slot
           name="overlay"
@@ -2247,22 +2719,45 @@ onBeforeUnmount(() => {
           :version="graphVersion"
           :sample-token="sampleToken"
           :groups="overviewGroups"
+          :relation-kinds="availableRelationKinds"
+          :selected-group="activeSelectedGroup"
           :selected-node="activeSelectedNode"
           :node-count="reportedNodeCount"
           :edge-count="reportedEdgeCount"
+          :drawn-node-count="drawnNodeCount"
+          :drawn-edge-count="drawnEdgeCount"
+          :overview-edges-truncated="overviewEdgesTruncated"
+          :complete="overviewComplete"
+          :failures="overviewFailures"
           :has-more-neighbors="hasMoreNeighbors"
+          :neighbor-progress="currentNeighborProgress"
+          :drawing-progress="rendering ? drawing : null"
           :version-changed="versionChanged"
           :refresh="reload"
           :back-to-overview="backToOverview"
           :explore-node="exploreNode"
+          :focus-direct-neighbors="focusDirectNeighbors"
+          :select-group="selectOverviewGroup"
         />
       </div>
-      <span v-if="loadingConnections" class="sdk-ontology-graph-busy" role="status" data-graph-state="connections-loading">
+
+      <span v-if="rendering" class="sdk-ontology-graph-busy" role="status" data-graph-state="rendering">
+        {{ t("platform.graphRenderProgress", { drawn: drawing.drawn, total: drawing.total }) }}
+      </span>
+      <span v-else-if="loadingConnections" class="sdk-ontology-graph-busy" role="status" data-graph-state="connections-loading">
         {{ t("platform.graphConnectionsLoading") }}
       </span>
       <span v-else-if="expanding" class="sdk-ontology-graph-busy" role="status">
         {{ t("platform.graphExpanding") }}
       </span>
+      <div
+        v-else-if="showHint && !partial"
+        class="sdk-ontology-graph-interaction-hint"
+        data-graph-interaction-hint
+      >
+        <span class="sdk-ontology-graph-interaction-dot" aria-hidden="true" />
+        {{ t("platform.graphInteractionHint") }}
+      </div>
     </div>
   </section>
 </template>
@@ -2285,75 +2780,6 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm) var(--spacing-md);
-}
-
-.sdk-ontology-graph-controls {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-sm);
-  font-size: var(--text-xs);
-  color: var(--el-text-color-secondary);
-}
-
-.sdk-ontology-graph-selection-name {
-  font-weight: var(--font-medium);
-  color: var(--el-text-color-primary);
-}
-
-.sdk-ontology-graph-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-}
-
-.sdk-ontology-graph-select {
-  height: var(--control-height-sm);
-  padding: 0 var(--spacing-sm);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-sm);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-primary);
-  font-size: var(--text-xs);
-}
-
-.sdk-ontology-graph-paging {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  margin-inline-start: auto;
-}
-
-.sdk-ontology-graph-paging-text {
-  color: var(--el-text-color-secondary);
-}
-
-.sdk-ontology-graph-pill-btn {
-  display: inline-flex;
-  align-items: center;
-  height: var(--control-height-sm);
-  padding: 0 var(--spacing-sm);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-sm);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-primary);
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
-.sdk-ontology-graph-pill-btn:hover:not(:disabled) {
-  background: var(--ui-fill-tertiary);
-}
-
-.sdk-ontology-graph-pill-btn.is-primary {
-  border-color: var(--brand-primary, var(--el-color-primary));
-  color: var(--brand-link, var(--el-color-primary));
-}
-
-.sdk-ontology-graph-pill-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .sdk-ontology-graph-layers {
@@ -2498,16 +2924,22 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 420px;
   overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background-color: var(--el-bg-color-page);
+  background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.sdk-ontology-graph-frame.is-bordered {
   border: 1px solid var(--ui-divider);
   border-radius: var(--radius-md);
-  background-color: var(--el-fill-color-blank);
 }
 
 .sdk-ontology-graph-canvas {
   width: 100%;
   height: 100%;
-  background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
-  background-size: 18px 18px;
+  background: transparent;
 }
 
 .sdk-ontology-graph-headings {
@@ -2515,34 +2947,88 @@ onBeforeUnmount(() => {
   inset: 0;
   pointer-events: none;
   overflow: hidden;
+  z-index: 1;
+}
+
+.sdk-ontology-graph-heading-wrap {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
 .sdk-ontology-graph-heading {
-  position: absolute;
+  pointer-events: auto;
   display: inline-flex;
+  box-sizing: border-box;
   align-items: center;
-  gap: var(--spacing-xs);
+  max-width: 100%;
   height: 26px;
-  padding: 0 var(--spacing-sm);
-  border: 1px solid var(--ui-divider);
-  border-radius: var(--radius-full);
-  background: var(--el-bg-color-overlay);
+  padding: 4px 9px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--group-color, var(--el-color-primary)) 8%, var(--el-bg-color));
   color: var(--el-text-color-primary);
-  font-size: var(--text-xs);
-  line-height: 1;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
   white-space: nowrap;
   overflow: hidden;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.sdk-ontology-graph-heading:hover {
+  background: color-mix(in srgb, var(--group-color, var(--el-color-primary)) 26%, var(--el-bg-color));
+}
+
+.sdk-ontology-graph-heading.is-selected {
+  background: color-mix(in srgb, var(--group-color, var(--el-color-primary)) 32%, var(--el-bg-color));
+  color: var(--el-text-color-primary);
+  font-weight: var(--font-semibold);
+}
+
+.sdk-ontology-graph-heading:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 
 .sdk-ontology-graph-heading-label {
-  font-weight: var(--font-semibold);
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--el-text-color-primary);
 }
 
 .sdk-ontology-graph-heading-count {
-  color: var(--el-text-color-secondary);
   flex: 0 0 auto;
+  margin-inline-start: 6px;
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sdk-ontology-graph-back-btn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 3;
+  margin: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.sdk-ontology-graph-node-actions {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--elevation-overlay, 0 4px 16px rgba(0, 0, 0, 0.12));
 }
 
 .sdk-ontology-graph-overlay {
@@ -2558,48 +3044,106 @@ onBeforeUnmount(() => {
 
 .sdk-ontology-graph-tools {
   position: absolute;
-  top: var(--spacing-sm);
-  right: var(--spacing-sm);
+  bottom: 16px;
+  left: 16px;
   z-index: 2;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-xs);
-  padding: calc(var(--spacing-xs) / 2);
-  border: 1px solid var(--ui-divider);
+  max-width: calc(100% - 32px);
+  padding: var(--spacing-xs);
+  border: 0;
   border-radius: var(--radius-md);
   background: var(--el-bg-color-overlay);
+  box-shadow: var(--elevation-overlay, 0 4px 16px rgba(0, 0, 0, 0.12));
+}
+
+.sdk-ontology-graph-tool-sep {
+  flex: 0 0 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--el-border-color-light);
 }
 
 .sdk-ontology-graph-tool {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-height-sm);
-  height: var(--control-height-sm);
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   background: transparent;
   color: var(--el-text-color-secondary);
   cursor: pointer;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-/* Icon tools are borderless: a quiet fill on hover and press, the group's surface behind them (DESIGN.md). */
-.sdk-ontology-graph-tool:hover {
-  background: var(--ui-fill-tertiary);
-  color: var(--el-text-color-primary);
+.sdk-ontology-graph-tool:hover:not(:disabled) {
+  background: var(--el-fill-color-light);
+  color: var(--el-color-primary);
 }
 
-.sdk-ontology-graph-tool:active,
+.sdk-ontology-graph-tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sdk-ontology-graph-tool[aria-expanded="true"],
+.sdk-ontology-graph-tool[aria-pressed="true"],
 .sdk-ontology-graph-tool.is-active {
-  background: var(--ui-fill-quaternary);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+.sdk-ontology-graph-popover {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+.sdk-ontology-graph-popover > strong {
   color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+}
+
+.sdk-ontology-graph-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  min-height: 28px;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+}
+
+.sdk-ontology-graph-popover-hint {
+  margin: 0;
+  color: var(--el-text-color-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.sdk-ontology-graph-neighbor-popover :deep(.el-select) {
+  width: 100%;
+}
+
+.sdk-ontology-graph-filter-field {
+  display: grid;
+  gap: var(--spacing-xs);
+}
+
+.sdk-ontology-graph-filter-label {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
 }
 
 .sdk-ontology-graph-hint {
   position: absolute;
-  inset-block-end: var(--spacing-sm);
-  inset-inline-start: var(--spacing-sm);
+  inset-block-end: 64px;
+  inset-inline-start: 16px;
   margin: 0;
   padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
   border-radius: var(--radius-md);
@@ -2614,10 +3158,31 @@ onBeforeUnmount(() => {
   opacity: 0.55;
 }
 
+.sdk-ontology-graph-interaction-hint {
+  position: absolute;
+  right: 18px;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--el-text-color-tertiary);
+  font-size: var(--text-xs);
+  pointer-events: none;
+}
+
+.sdk-ontology-graph-interaction-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--el-color-success);
+}
+
 .sdk-ontology-graph-busy {
   position: absolute;
-  bottom: var(--spacing-sm);
-  right: var(--spacing-sm);
+  bottom: 16px;
+  right: 16px;
+  z-index: 2;
   padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
   border-radius: var(--radius-xs);
   background: var(--el-bg-color);

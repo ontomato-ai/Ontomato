@@ -11,10 +11,25 @@
   padding-block: var(--spacing-xs);
   line-height: var(--leading-sm);
 }
+.sdk-reference-option-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  width: 100%;
+}
 .sdk-reference-option-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.sdk-reference-option-meta {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
 }
 .sdk-reference-option-description {
   overflow: hidden;

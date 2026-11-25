@@ -756,3 +756,64 @@ it.each([false, true])("obeys a fixed options signature without page when keywor
     mocked.mockRestore();
   }
 });
+
+it("renders right-aligned option secondary count/meta text from metaField and optionMeta", async () => {
+  const picker: DirectProjection = {
+    ...meta,
+    id: "meta-object-picker",
+    name: "Meta object picker",
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: {},
+    outputs: { selected: { kind: "object", objectType: OBJECT_TYPE } },
+    config: {
+      placeholder: "Select type",
+      metaField: "instanceCount",
+      optionMeta: { Line: "42" },
+    },
+    data: {
+      rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} },
+    },
+  };
+  const manifest: DirectPanelManifest = {
+    state: {
+      selectedType: { type: { kind: "object", objectType: OBJECT_TYPE }, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      picker: {
+        target: { projectionId: picker.id },
+        outputs: { selected: { state: "selectedType" } },
+      },
+    },
+  };
+
+  const { container } = mountPanel(manifest, { [picker.id]: picker }, () =>
+    ready([
+      { className: OBJECT_TYPE, primaryKey: "Factory", label: "Factory", fields: { instanceCount: 10 } },
+      { className: OBJECT_TYPE, primaryKey: "Order", label: "Order", fields: { instanceCount: 1200 } },
+      { className: OBJECT_TYPE, primaryKey: "Line", label: "Line", fields: {} },
+    ]),
+  );
+
+  await vi.waitFor(() => {
+    expect(container.querySelector(".sdk-inline-reference-picker")?.getAttribute("data-state")).toBe("ready");
+  });
+
+  container.querySelector<HTMLElement>(".sdk-inline-reference-picker .el-select__wrapper")!
+    .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+  await vi.waitFor(() => {
+    const rows = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")];
+    expect(rows).toHaveLength(3);
+    const metaByLabel = Object.fromEntries(
+      rows.map((row) => [
+        row.querySelector(".sdk-reference-option-label")?.textContent?.trim(),
+        row.querySelector(".sdk-reference-option-meta")?.textContent?.trim() ?? null,
+      ]),
+    );
+    expect(metaByLabel).toEqual({
+      Factory: "10",
+      Order: (1200).toLocaleString(),
+      Line: "42",
+    });
+  });
+});

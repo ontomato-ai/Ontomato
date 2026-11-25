@@ -18,12 +18,14 @@ import { projectionElement } from "../panel/projection-element";
 import { stateObject, type PanelFieldValue, type PanelObjectRef } from "../panel/state";
 import { readConfigString, readConfigStringMap, resolveLocalizedText } from "./localized-text";
 import { resolveGroupForRecord } from "./object-list-local";
+import { rawRecordField } from "./record-field";
 
 interface InlineOption {
   readonly primaryKey: string;
   readonly className: string;
   readonly label: string;
   readonly description?: string;
+  readonly meta?: string;
   readonly groupKey?: string;
   readonly groupLabel?: string;
   readonly unavailableReason?: string;
@@ -39,6 +41,8 @@ const props = withDefaults(
     disabled?: boolean;
     size?: "small" | "default" | "large";
     groupBy?: string;
+    metaField?: string;
+    optionMeta?: Readonly<Record<string, string | number>>;
   }>(),
   {
     placeholder: undefined,
@@ -48,6 +52,8 @@ const props = withDefaults(
     disabled: false,
     size: "small",
     groupBy: undefined,
+    metaField: undefined,
+    optionMeta: undefined,
   },
 );
 
@@ -97,6 +103,22 @@ const groupByKey = computed<string | undefined>(() => {
   return trimmed ? trimmed : undefined;
 });
 
+const metaFieldKey = computed<string | undefined>(() => {
+  const configured = props.metaField ?? readConfigString(rawConfig.value, "metaField", "meta-field");
+  const trimmed = configured?.trim();
+  return trimmed ? trimmed : undefined;
+});
+
+function formatOptionMeta(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === "number") return Number.isFinite(value) ? value.toLocaleString(locale.value) : undefined;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+  return undefined;
+}
+
 const knownOptions = shallowRef(new Map<string, InlineOption>());
 
 function rememberOptions(list: readonly InlineOption[]) {
@@ -141,10 +163,13 @@ function toRowOption(row: PlatformObjectRecord): InlineOption {
   const group = groupField
     ? resolveGroupForRecord(row, groupField, defaultClassName, locale.value, localized, "")
     : null;
+  const metaField = metaFieldKey.value;
+  const meta = metaField ? formatOptionMeta(rawRecordField(row, metaField)) : undefined;
   return {
     ...object,
     label: row.label || object.primaryKey,
     description: row.subtitle,
+    ...(meta !== undefined ? { meta } : {}),
     ...(group && !group.isEmpty ? { groupKey: group.key, groupLabel: group.label } : {}),
   };
 }
@@ -320,10 +345,23 @@ const isLoading = computed(() =>
 const isDisabled = computed(() => props.disabled || unavailableNotice.value !== undefined);
 
 const mergedOptions = computed<readonly InlineOption[]>(() => {
-  if (dataMode === "rows" && !isPagedRows && !selectedDatum) return allRowOptions.value;
-  const source = dataMode === "rows" ? allRowOptions.value : offeredOptions.value;
-  const held = effectiveHeldOptions.value[0];
-  return held && !source.some((option) => option.primaryKey === held.primaryKey) ? [held, ...source] : source;
+  let list: readonly InlineOption[];
+  if (dataMode === "rows" && !isPagedRows && !selectedDatum) {
+    list = allRowOptions.value;
+  } else {
+    const source = dataMode === "rows" ? allRowOptions.value : offeredOptions.value;
+    const held = effectiveHeldOptions.value[0];
+    list = held && !source.some((option) => option.primaryKey === held.primaryKey) ? [held, ...source] : source;
+  }
+  const externalMeta = props.optionMeta;
+  if (!externalMeta) return list;
+  return list.map((option) => {
+    const resolved = Object.prototype.hasOwnProperty.call(externalMeta, option.primaryKey)
+      ? formatOptionMeta(externalMeta[option.primaryKey])
+      : undefined;
+    if (resolved === undefined || resolved === option.meta) return option;
+    return { ...option, meta: resolved };
+  });
 });
 
 const shownOptions = computed<readonly InlineOption[]>(() => {
@@ -447,7 +485,7 @@ function onSelect(value: string | undefined) {
               :label="option.label"
               :disabled="option.unavailableReason !== undefined"
               :title="option.unavailableReason ?? option.description"
-              :class="{ 'sdk-reference-option-described': Boolean(option.description) }"
+              :class="{ 'sdk-reference-option-described': Boolean(option.description), 'sdk-reference-option-with-meta': Boolean(option.meta) }"
             >
               <slot
                 name="option"
@@ -455,7 +493,10 @@ function onSelect(value: string | undefined) {
                 :selected="currentKey === option.primaryKey"
                 :disabled="option.unavailableReason !== undefined"
               >
-                <span class="sdk-reference-option-label">{{ option.label }}</span>
+                <span class="sdk-reference-option-main">
+                  <span class="sdk-reference-option-label">{{ option.label }}</span>
+                  <span v-if="option.meta" class="sdk-reference-option-meta" data-picker-option-meta>{{ option.meta }}</span>
+                </span>
                 <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
               </slot>
             </el-option>
@@ -468,7 +509,7 @@ function onSelect(value: string | undefined) {
               :label="option.label"
               :disabled="option.unavailableReason !== undefined"
               :title="option.unavailableReason ?? option.description"
-              :class="{ 'sdk-reference-option-described': Boolean(option.description) }"
+              :class="{ 'sdk-reference-option-described': Boolean(option.description), 'sdk-reference-option-with-meta': Boolean(option.meta) }"
             >
               <slot
                 name="option"
@@ -476,7 +517,10 @@ function onSelect(value: string | undefined) {
                 :selected="currentKey === option.primaryKey"
                 :disabled="option.unavailableReason !== undefined"
               >
-                <span class="sdk-reference-option-label">{{ option.label }}</span>
+                <span class="sdk-reference-option-main">
+                  <span class="sdk-reference-option-label">{{ option.label }}</span>
+                  <span v-if="option.meta" class="sdk-reference-option-meta" data-picker-option-meta>{{ option.meta }}</span>
+                </span>
                 <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
               </slot>
             </el-option>
@@ -491,7 +535,7 @@ function onSelect(value: string | undefined) {
           :label="option.label"
           :disabled="option.unavailableReason !== undefined"
           :title="option.unavailableReason ?? option.description"
-          :class="{ 'sdk-reference-option-described': Boolean(option.description) }"
+          :class="{ 'sdk-reference-option-described': Boolean(option.description), 'sdk-reference-option-with-meta': Boolean(option.meta) }"
         >
           <slot
             name="option"
@@ -499,7 +543,10 @@ function onSelect(value: string | undefined) {
             :selected="currentKey === option.primaryKey"
             :disabled="option.unavailableReason !== undefined"
           >
-            <span class="sdk-reference-option-label">{{ option.label }}</span>
+            <span class="sdk-reference-option-main">
+              <span class="sdk-reference-option-label">{{ option.label }}</span>
+              <span v-if="option.meta" class="sdk-reference-option-meta" data-picker-option-meta>{{ option.meta }}</span>
+            </span>
             <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
           </slot>
         </el-option>
