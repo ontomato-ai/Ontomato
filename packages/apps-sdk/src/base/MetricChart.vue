@@ -23,7 +23,7 @@ type ChartPayload = {
  * MetricView's output (its `result`) for the card's saved parameters with the values this panel binds laid over them,
  * which the card's owner works out for the reader. Supports toggling between the drawn chart and a formatted data
  * table (formatted with the chart file's declared `formats`, up to `tableMaxRows`), opening a fullscreen zoom modal
- * (`min(1100px, 92vw) x min(720px, 92vh)`), keeping the previous chart visible under a translucent overlay during
+ * (`min(1100px, 92%) x min(720px, 92%)`), keeping the previous chart visible under a translucent overlay during
  * refresh instead of flashing blank, and rendering truncation warnings either inline, as a compact 14px orange
  * warning icon, or delegated to an outer card header via `@truncation-change`.
  */
@@ -47,7 +47,7 @@ const props = withDefaults(
     tableMaxRows?: number;
     /** How truncation notices appear: `"inline"` (default bar above chart), `"icon"` (14px warning triangle), or `"none"`. */
     truncationDisplay?: "inline" | "icon" | "none";
-    /** Keep the previous rendered chart/table visible with a translucent loading veil while refreshing (default `true`). */
+    /** Keep the previous rendered chart/table visible with a translucent loading veil while refreshing (default `false`). */
     keepPreviousOnRefresh?: boolean;
     /** Optional minimum height of the chart container (CSS length, default `"320px"`). */
     minHeight?: string;
@@ -62,7 +62,7 @@ const props = withDefaults(
     zoomed: undefined,
     tableMaxRows: 500,
     truncationDisplay: "inline",
-    keepPreviousOnRefresh: true,
+    keepPreviousOnRefresh: false,
     minHeight: "320px",
   },
 );
@@ -275,7 +275,7 @@ const showInternalToolbar = computed(() =>
   ),
 );
 
-const labels = useDataStateLabels();
+const labels = useDataStateLabels(() => translate("ontology.ovNoChartData", "No chart data"));
 
 function onModalKeydown(event: KeyboardEvent) {
   if (event.key === "Escape" && isZoomed.value) {
@@ -363,7 +363,7 @@ defineExpose({
       </button>
     </div>
 
-    <DataState :result="result" :labels="labels" @retry="memberRefresh">
+    <DataState :result="result" :labels="labels">
       <template #default="{ value }">
         <div v-if="activeViewMode === 'table'" class="sdk-metric-chart-table-overlay" data-testid="metric-chart-data-overlay">
           <div class="sdk-metric-chart-table-body">
@@ -490,7 +490,7 @@ defineExpose({
   width: 100%;
   height: 100%;
   min-width: 0;
-  min-height: 0;
+  min-height: 320px;
 }
 
 .sdk-metric-chart-toolbar {
@@ -630,8 +630,8 @@ defineExpose({
 .sdk-metric-chart-zoom-dialog {
   display: flex;
   flex-direction: column;
-  width: min(1100px, 92vw);
-  height: min(720px, 92vh);
+  width: min(1100px, 92%);
+  height: min(720px, 92%);
   border-radius: var(--radius-lg, 12px);
   background: var(--el-bg-color);
   box-shadow: var(--el-box-shadow, 0 20px 50px rgba(0, 0, 0, 0.22));
