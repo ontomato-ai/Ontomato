@@ -30,7 +30,8 @@ export const panelSkillProvider: SkillProvider<ProtectedSkillOffering> & {
   async list({ domainId, userId, reader, reportSourceFailure }) {
     const { panelSkillSources } = await import("./skill-package");
     const rawSources = await readPanelSkillSources(domainId);
-    const homePanelId = userId ? await platformHomeStore.homePanelId({ domainId, userId }) : null;
+    const hasHomeEntry = rawSources.some(entry => entry.applicationId === "home" && entry.useId === "home");
+    const homePanelId = userId && hasHomeEntry ? await platformHomeStore.homePanelId({ domainId, userId }) : null;
     const sources = homePanelId !== null
       ? rawSources.map(entry =>
           entry.applicationId === "home" && entry.useId === "home"
