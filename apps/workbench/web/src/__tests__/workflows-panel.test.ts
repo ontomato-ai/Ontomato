@@ -123,7 +123,7 @@ const workflowsPanel = {
 
 type DataReadRequest = Extract<ProductPanelReadRequest, { dataName: string }>;
 
-function workflowRow(id: string, name: string) {
+function workflowRow(id: string, name: string, stepsSummary = "Submit -> Approve") {
   return {
     primaryKey: id,
     label: name,
@@ -144,7 +144,7 @@ function workflowRow(id: string, name: string) {
       canActivate: false,
       canDeactivate: true,
       version: "v2",
-      stepsSummary: "Submit -> Approve",
+      stepsSummary,
       grantsSummary: "1 role grant in force",
       createdBy: "Alice",
       reviewedBy: "Bob",
@@ -424,5 +424,33 @@ describe("workflows builtin panel effective grants modal", () => {
     expect(grantsBody.textContent).toContain("Could not read authority.");
     const sections = [...grantsBody.querySelectorAll<HTMLElement>("section.wf-grants-group")];
     expect(sections.every((section) => !isSectionVisible(section))).toBe(true);
+  });
+
+  it("bounds the steps cell with a definite max-width and full-text title without piercing ObjectList table classes", async () => {
+    const longSteps =
+      "Prepare statement [Human · Case-scoped] -> Reconcile differences [Human · Case-scoped] -> Department chair sign-off [Human · Case-scoped]";
+    const route = mountWorkflowsRoute((body) => {
+      const member = body.memberPath[0]?.member;
+      if (member === "catalog") {
+        return Response.json({
+          status: "ready",
+          value: { rows: [workflowRow("wf-long", "Workload audit", longSteps)], total: 1 },
+        });
+      }
+      return Response.json({ status: "empty" });
+    });
+
+    const root = await route.open();
+    const stepsSpan = await vi.waitFor(() => {
+      const el = root.querySelector<HTMLSpanElement>(".wf-steps-summary");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+
+    expect(stepsSpan.textContent).toBe(longSteps);
+    expect(stepsSpan.getAttribute("title")).toBe(longSteps);
+    expect(html).not.toContain(".sdk-object-list-table");
+    expect(html).not.toMatch(/\.wf-steps-summary\s*\{[^}]*min\(/);
+    expect(html).toMatch(/\.wf-steps-summary\s*\{[^}]*max-width:\s*186px;/);
   });
 });
