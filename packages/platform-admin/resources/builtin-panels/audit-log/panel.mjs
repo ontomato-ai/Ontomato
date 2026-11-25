@@ -5,6 +5,20 @@ import {
   usePanelContext,
 } from "@ontomato/sdk/panel";
 
+const BUSINESS_LABEL_KEYS = {
+  BKNOWLEDGE: "business.knowledge",
+  BTERM: "business.glossary",
+  BEXAMPLE: "business.example",
+  SCHEMA: "business.schema",
+  ANALYSIS: "business.analysis",
+};
+
+const OPERATION_LABEL_KEYS = {
+  ADD: "operation.add",
+  UPD: "operation.modify",
+  DEL: "operation.delete",
+};
+
 await mountPanel({
   setup() {
     const { instance, t } = usePanelContext();
@@ -65,6 +79,20 @@ await mountPanel({
       });
     }
 
+    function filterLabel(value, labelKeys) {
+      if (!value) return t("filter.all");
+      const key = labelKeys[value];
+      return key ? t(key) : String(value);
+    }
+
+    function resultScopeLabel(page) {
+      return t("list.resultScope", {
+        page,
+        business: filterLabel(values.value.business, BUSINESS_LABEL_KEYS),
+        operation: filterLabel(values.value.operation, OPERATION_LABEL_KEYS),
+      });
+    }
+
     function refresh() {
       instance.refreshObjects();
     }
@@ -77,6 +105,7 @@ await mountPanel({
       openDetail,
       closeDetail,
       applyFilters,
+      resultScopeLabel,
       refresh,
     };
   },

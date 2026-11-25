@@ -91,7 +91,12 @@ export function createGeneralSettingsReads(actor: PanelOperationActor) {
           control: name === "lang" ? {
             kind: "select",
             options: options.map(value => ({ value, label: languageNames[value]!, description: null, disabled: false, disabledReason: null })),
-          } : { kind: "number" },
+          } : {
+            kind: "number",
+            min: 1,
+            step: name === "dslCookerTimeoutSeconds" ? 10 : 1,
+            presentation: "stepper",
+          },
         })),
         save: { method: "POST", path: "/api" + generalSettingsSavePath, bodySchema: cachedZodToRuntimeJsonSchema(generalSettingsPatch) },
       };
