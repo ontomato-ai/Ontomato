@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
-public final class AuthorizationPolicies {
+public class AuthorizationPolicies {
     public static final String READ = "authorization.policies.read";
     public static final String CHANGE = "authorization.policies.change";
     private static final Set<Kind> FIRST_PUBLICATION_KINDS = Set.of(Kind.PANEL, Kind.PROJECTION, Kind.COMPONENT,
