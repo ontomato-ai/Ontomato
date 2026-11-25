@@ -310,32 +310,48 @@ public class ActionDao extends BaseDao {
 			return oList;
 		}
 		try {
-			StringBuilder whereSql = new StringBuilder("1 = 1");
-			List<Object> params = new ArrayList<>();
-			if (status != null && !"".equals(status.trim())) {
-				whereSql.append(" AND status = ?");
-				params.add(status.trim());
-			}
-			if (functionId != null && !"".equals(functionId.trim())) {
-				whereSql.append(" AND function_id = ?");
-				params.add(functionId.trim());
-			}
-			if (className != null && !"".equals(className.trim())) {
-				whereSql.append(" AND class_names LIKE ?");
-				params.add("%," + className.trim() + ",%");
-			}
-			if (domainId != null && !"".equals(domainId.trim())) {
-				whereSql.append(" AND domain_id = ?");
-				params.add(domainId.trim());
-			}
-
+			Filter filter = filter(status, functionId, className, domainId);
 			oList = jdbcTemplate.query(
-					"SELECT " + COLUMNS + " FROM " + TABLE_NAME + " WHERE " + whereSql + " ORDER BY modify_timestamp DESC",
-					(rs, rowNum) -> mapRowWithFunctionId(rs), params.toArray());
+					"SELECT " + COLUMNS + " FROM " + TABLE_NAME + " WHERE " + filter.sql + " ORDER BY modify_timestamp DESC",
+					(rs, rowNum) -> mapRowWithFunctionId(rs), filter.params.toArray());
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 		}
 		return oList;
+	}
+
+	/** The number of Actions the list filters select, without loading their functions or definitions. */
+	public long count(String status, String functionId, String className, String domainId) {
+		if (!assetLookupPolicy.shouldQuery(jdbcTemplate, TABLE_NAME)) {
+			return 0L;
+		}
+		Filter filter = filter(status, functionId, className, domainId);
+		return jdbcTemplate.queryForObject(
+				"SELECT COUNT(*) FROM " + TABLE_NAME + " WHERE " + filter.sql, Long.class, filter.params.toArray());
+	}
+
+	private record Filter(String sql, List<Object> params) {}
+
+	private static Filter filter(String status, String functionId, String className, String domainId) {
+		StringBuilder whereSql = new StringBuilder("1 = 1");
+		List<Object> params = new ArrayList<>();
+		if (status != null && !"".equals(status.trim())) {
+			whereSql.append(" AND status = ?");
+			params.add(status.trim());
+		}
+		if (functionId != null && !"".equals(functionId.trim())) {
+			whereSql.append(" AND function_id = ?");
+			params.add(functionId.trim());
+		}
+		if (className != null && !"".equals(className.trim())) {
+			whereSql.append(" AND class_names LIKE ?");
+			params.add("%," + className.trim() + ",%");
+		}
+		if (domainId != null && !"".equals(domainId.trim())) {
+			whereSql.append(" AND domain_id = ?");
+			params.add(domainId.trim());
+		}
+		return new Filter(whereSql.toString(), params);
 	}
 
 	public List<Object[]> find(String question, String className, int maxResult, double minScore, String domainId) {

@@ -216,13 +216,18 @@ public class MetricViewController {
 			String status = param.getString("status");
 			String origin = param.getString("origin");
 			String className = param.getString("className");
-			List<MetricView> metricViews = metricViewService.queryList(status, null, className, user.getDomainId());
-			if (origin != null && !origin.isBlank()) {
-				String expectedOrigin = origin.trim();
-				metricViews = metricViews.stream().filter(metric -> expectedOrigin.equals(metric.getOrigin())).toList();
-			}
 			ret.put("success", true);
-			ret.put("data", withDisplay(metricViews, user.getDomainId(), lang));
+			if (param.getBooleanValue("countOnly")) {
+				ret.put("data", JSONObject.of("total",
+						metricViewService.count(status, null, className, origin, user.getDomainId())));
+			} else {
+				List<MetricView> metricViews = metricViewService.queryList(status, null, className, user.getDomainId());
+				if (origin != null && !origin.isBlank()) {
+					String expectedOrigin = origin.trim();
+					metricViews = metricViews.stream().filter(metric -> expectedOrigin.equals(metric.getOrigin())).toList();
+				}
+				ret.put("data", withDisplay(metricViews, user.getDomainId(), lang));
+			}
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);

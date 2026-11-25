@@ -478,6 +478,12 @@ public class MetricViewServiceImpl implements MetricViewService {
   }
 
   @Override
+  public long count(String status, String functionId, String className, String origin, String domainId) {
+    Objects.requireNonNull(domainId, "Current domain is required");
+    return metricViewDao.count(status, functionId, className, origin, domainId);
+  }
+
+  @Override
   public JSONObject form(JSONObject request, String lang, String domainId) {
     JSONObject target = request.getJSONObject("target");
     if (target == null) throw new IllegalArgumentException("target is required");

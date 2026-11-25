@@ -60,6 +60,19 @@ class MetricViewPanelEndpointTest {
   }
 
   @Test
+  void countsThroughTheSameListUrlWithoutHydratingTheList() throws Exception {
+    when(metricViewService.count(eq("PUBLISHED"), isNull(), isNull(), eq("SYSTEM"), eq("domain"))).thenReturn(3L);
+
+    JSONObject body = perform("/metricView/queryList", """
+        {"countOnly":true,"status":"PUBLISHED","origin":"SYSTEM"}""");
+
+    assertTrue(body.getBooleanValue("success"));
+    assertEquals(3, body.getJSONObject("data").getIntValue("total"));
+    verify(metricViewService).count("PUBLISHED", null, null, "SYSTEM", "domain");
+    verify(metricViewService, never()).queryList(any(), any(), any(), any());
+  }
+
+  @Test
   void theListCarriesTheCreatorsAndReviewersDisplayNames() throws Exception {
     MetricView first = new MetricView();
     first.setId("m1");

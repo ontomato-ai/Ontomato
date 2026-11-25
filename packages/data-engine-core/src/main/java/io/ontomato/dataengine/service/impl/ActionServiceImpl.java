@@ -497,6 +497,11 @@ public class ActionServiceImpl implements ActionService {
 	}
 
   @Override
+	public long count(String status, String functionId, String className, String domainId) {
+		return actionDao.count(status, functionId, className, domainId);
+	}
+
+  @Override
 	public List<Action> find(String question, String className, String domainId) {
 		List<Object[]> oList = actionDao.find(question, className, 10, 0, domainId);
 		List<Function> functions = functionDao.queryList(null, null, domainId);

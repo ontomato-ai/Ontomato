@@ -278,6 +278,35 @@ public class ApplicationCatalog {
         return JSONObject.of("rows", rows, "total", total);
     }
 
+    /**
+     * The frame's default visible count. Only the columns the entry and maintain rules read are selected; those rules
+     * choose the admitted IDs, and the count itself is one SQL COUNT over them. The catalogue's search, sort and
+     * maintainable scope are not part of this read.
+     */
+    public JSONObject catalogueCount(User user) {
+        return access.withPageSkillAuthorization(user, () -> {
+            var facts = loadCatalogueAccessFacts(user.getDomainId());
+            var enterable = access.enterableApplicationIds(facts, user);
+            var ids = facts.stream()
+                .filter(app -> enterable.contains(app.getString("id")) || canMaintainCatalogue(app, user))
+                .map(app -> app.getString("id")).toList();
+            if (ids.isEmpty()) return JSONObject.of("total", 0L);
+            var placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
+            return JSONObject.of("total", db.queryForObject(
+                "SELECT COUNT(*) FROM sys_application WHERE id IN (" + placeholders + ")",
+                Long.class, ids.toArray()));
+        });
+    }
+
+    /** The authorization inputs of the domain and built-in applications, without loading the catalogue projection. */
+    private List<JSONObject> loadCatalogueAccessFacts(String domainId) {
+        return db.query("SELECT id, domain_id, owner_user_id, entry_access FROM sys_application"
+                        + " WHERE kind IS NOT NULL AND (domain_id IS NULL OR domain_id = ?)",
+                (row, index) -> JSONObject.of("id", row.getString("id"), "domainId", row.getString("domain_id"),
+                        "ownerUserId", row.getString("owner_user_id"),
+                        "entryAccess", JSON.parseArray(row.getString("entry_access"))), domainId);
+    }
+
     private static String catalogueName(JSONObject app, Locale locale) {
         var name = localizedText(app.getJSONObject("names"), locale);
         return name != null ? name : app.getString("id");

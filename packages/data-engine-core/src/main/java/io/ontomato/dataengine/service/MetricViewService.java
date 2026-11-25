@@ -43,6 +43,9 @@ public interface MetricViewService {
 	
 	public List<MetricView> queryList(String status, String functionId, String className, String domainId);
 
+    /** The number of metric views the list filters select, without hydrating bindings or display fields. */
+    long count(String status, String functionId, String className, String origin, String domainId);
+
     /** The owner's form description for a MetricView, or a field error for an incoming draft. */
     JSONObject form(JSONObject request, String lang, String domainId);
 

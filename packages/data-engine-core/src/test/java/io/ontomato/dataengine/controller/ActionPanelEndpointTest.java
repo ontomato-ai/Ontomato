@@ -82,6 +82,19 @@ class ActionPanelEndpointTest {
   }
 
   @Test
+  void countsThroughTheSameListUrlWithoutReadingTheList() throws Exception {
+    when(actionService.count(eq("PUBLISHED"), isNull(), eq("Device"), eq("domain"))).thenReturn(3L);
+
+    JSONObject body = perform("/action/queryList", """
+        {"countOnly":true,"status":"PUBLISHED","className":"Device"}""");
+
+    assertTrue(body.getBooleanValue("success"));
+    assertEquals(3, body.getJSONObject("data").getIntValue("total"));
+    verify(actionService).count("PUBLISHED", null, "Device", "domain");
+    verify(actionService, never()).queryList(any(), any(), any(), any());
+  }
+
+  @Test
   void publishedStatusInASaveRequestIsRefusedAtTheHttpBoundary() throws Exception {
     JSONObject body = perform("/action/save", """
         {"status":"PUBLISHED","submittedFields":["/name"],"name":"Approve"}""");

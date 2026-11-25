@@ -191,9 +191,13 @@ public class TriggerController {
 		try {
 			User user = SystemUtils.getCurUser();
 			String status = param == null ? null : param.getString("status");
-			List<Trigger> list = triggers.queryList(user.getDomainId(), status);
-			ret.put("data", withDisplay(list, user.getDomainId(), lang));
 			ret.put("success", true);
+			if (param != null && param.getBooleanValue("countOnly")) {
+				ret.put("data", JSONObject.of("total", triggers.count(user.getDomainId(), status)));
+			} else {
+				List<Trigger> list = triggers.queryList(user.getDomainId(), status);
+				ret.put("data", withDisplay(list, user.getDomainId(), lang));
+			}
 		} catch (OwnerRefusal e) {
 			e.writeTo(ret);
 		} catch (Exception e) {

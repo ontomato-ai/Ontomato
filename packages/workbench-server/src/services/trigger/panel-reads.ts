@@ -47,6 +47,7 @@ const triggerSchema = z.object({
   modifyTimestamp: z.number().nullish(),
 }).passthrough();
 type TriggerAsset = z.infer<typeof triggerSchema>;
+const triggerCountSchema = z.object({ total: z.number().int().nonnegative() }).strict();
 
 const catalogueQuerySchema = z.object({
   search: panelReadParameterSchemas.keyword.optional(),
@@ -152,8 +153,8 @@ export function createTriggerReadAdapter(reader: ProductOwner, viewer: Assistant
   return {
     list,
     async count(): Promise<PanelRecordQuery> {
-      const all = await list();
-      return { rows: [], total: all.length };
+      const { total } = await owner("trigger-count", "/trigger/queryList", { countOnly: true }, triggerCountSchema);
+      return { rows: [], total };
     },
     async armedCount(): Promise<PanelRecordQuery> {
       const all = await list();
