@@ -121,7 +121,7 @@ export function useCollectionData(
   let fixedParams: MemberInputs | undefined;
   if (datum) {
     const declaration = directReadDeclaration(member.projection, datum);
-    const placement = panel?.manifest.members[member.key];
+    const placement = panel?.manifest?.members?.[member.key];
     const authorBoundPaging = Boolean(
       authoredReadParameterSource(datum.params, "page", placement)
       || authoredReadParameterSource(datum.params, "size", placement)

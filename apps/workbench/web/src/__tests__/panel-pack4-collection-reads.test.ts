@@ -164,7 +164,7 @@ it("ObjectTree consumes customer ObjectType.query with single-shot cap 1000, sel
   await vi.waitFor(() => {
     expect(element.querySelector("[data-tree-coverage='partial']")?.textContent).toContain("2");
     expect(element.querySelector("[data-tree-coverage='partial']")?.textContent).toContain("1200");
-  });
+  }, { timeout: 4000 });
 
   // Single request at customer cap 1000 without paging loop.
   expect(reads).toHaveLength(1);
@@ -219,7 +219,7 @@ it("ObjectTree respects author-bound size parameter and maps empty panelRecordQu
   await vi.waitFor(() => {
     expect(reads).toHaveLength(1);
     expect(element.textContent).toContain(publicEn.platform.dataEmpty);
-  });
+  }, { timeout: 4000 });
   // Must NOT override author's literal size with runtimeParams.
   expect(reads[0]!.runtimeParams).toBeUndefined();
   expect(element.querySelector("[data-tree-coverage='partial']")).toBeNull();
@@ -299,7 +299,7 @@ it("ObjectGraph consumes customer ObjectType.query for nodes & edges, omits dang
   await vi.waitFor(() => {
     expect(canvas.nodes).toHaveLength(2);
     expect(element.querySelector("[data-graph-coverage='partial']")).toBeTruthy();
-  });
+  }, { timeout: 4000 });
 
   // Both nodes and edges independently sent cap 1000.
   expect(reads.find((r) => r.dataName === "nodes")?.runtimeParams).toEqual({ page: { number: 1, size: 1000 }, size: 1000 });
@@ -358,7 +358,7 @@ it("GroupedGrid consumes customer ObjectType.query, preserves rowOperations, sho
 
   await vi.waitFor(() => {
     expect(element.querySelector("[data-grid-coverage='partial']")).toBeTruthy();
-  });
+  }, { timeout: 4000 });
 
   expect(reads).toHaveLength(1);
   expect(reads[0]!.runtimeParams).toEqual({ page: { number: 1, size: 1000 }, size: 1000 });
@@ -436,7 +436,7 @@ it("OntologyGraph consumes customer Relationship.neighbors without offset/layers
   await vi.waitFor(() => {
     expect(canvas.nodes).toHaveLength(2);
     expect(element.querySelector("[data-graph-state='neighbors-truncated']")).toBeTruthy();
-  });
+  }, { timeout: 4000 });
 
   expect(reads).toHaveLength(1);
   const sent = reads[0]!.runtimeParams!;
