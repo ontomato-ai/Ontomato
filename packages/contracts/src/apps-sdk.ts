@@ -2,7 +2,15 @@ import { z } from "zod";
 import { directPanelPortTypeSchema } from "./panel-manifest";
 import { panelReadResultIdSchema } from "./panel-operations";
 import { directProjectionInputTypeSchema, panelLocalOperationNameSchema } from "./panel-projection";
-import { componentDataSchema, componentDeclarationBase, componentConfigSchema, componentPortSchema } from "./component-declaration";
+import {
+  APPS_SDK_COMPONENT_GROUPS,
+  appsSdkComponentGroupSchema,
+  componentConfigSchema,
+  componentDataSchema,
+  componentDeclarationBase,
+  componentPortSchema,
+  type AppsSdkComponentGroup,
+} from "./component-declaration";
 import { componentIdSchema } from "./product-record-id";
 import { SDK_UI_ENTRY_SPECIFIER } from "./sdk-ui-map";
 import { workspacePathSchema } from "./workspaces";
@@ -66,18 +74,7 @@ export const componentDeclarationSchema = componentDeclarationBaseSchema.extend(
 });
 export type ComponentDeclaration = z.infer<typeof componentDeclarationSchema>;
 
-export const appsSdkComponentGroupSchema = z.enum([
-  "list",
-  "detail",
-  "form",
-  "action",
-  "chart",
-  "graph",
-  "content",
-  "conversation",
-  "layout",
-]);
-export type AppsSdkComponentGroup = z.infer<typeof appsSdkComponentGroupSchema>;
+export { APPS_SDK_COMPONENT_GROUPS, appsSdkComponentGroupSchema, type AppsSdkComponentGroup };
 
 export const appsSdkComponentCatalogEntrySchema = componentDeclarationBaseSchema.extend({
   module: z.string().min(1),

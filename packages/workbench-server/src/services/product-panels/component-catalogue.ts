@@ -5,8 +5,11 @@ import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
 import { domainComponentForProjection, domainComponentRecord, listVisibleDomainComponents } from "../domain-components/store";
 import {
-  appsSdkComponentCatalogSchema, appsSdkComponentDatum,
+  APPS_SDK_COMPONENT_GROUPS,
+  appsSdkComponentCatalogSchema,
+  appsSdkComponentDatum,
   type AppsSdkComponentCatalogEntry,
+  type AppsSdkComponentGroup,
 } from "@ontomato/contracts/apps-sdk";
 import type { DirectPanelPortType } from "@ontomato/contracts/panel-manifest";
 import { directReadDeclaration, type PanelRecord } from "@ontomato/contracts/panel-projection";
@@ -18,8 +21,20 @@ import { HttpError } from "../../utils/errors";
 import { readCurrentAppSdkComponents } from "../app-builder/sdk";
 import { listComponentPackages, readComponentPackage } from "../component-packages/store";
 
-type AuthorComponentDeclaration = ComponentDeclaration & Partial<Pick<AppsSdkComponentCatalogEntry, "module" | "exportName">>;
+type AuthorComponentDeclaration = ComponentDeclaration & Partial<Pick<AppsSdkComponentCatalogEntry, "module" | "exportName" | "group">>;
 type AuthorComponentEntry = { declaration: AuthorComponentDeclaration; label: string; packageName?: string };
+
+const SDK_COMPONENT_GROUP_ORDER = new Map<AppsSdkComponentGroup, number>(
+  APPS_SDK_COMPONENT_GROUPS.map((group, index) => [group, index]),
+);
+
+function sdkComponentGroupLabel(group: AppsSdkComponentGroup | undefined, locale: string | undefined): string | undefined {
+  return group ? tForLocale(locale, `panels.sdkComponent.group.${group}`) : undefined;
+}
+
+function sdkComponentGroupRank(group: AppsSdkComponentGroup | undefined): number {
+  return group ? (SDK_COMPONENT_GROUP_ORDER.get(group) ?? APPS_SDK_COMPONENT_GROUPS.length) : APPS_SDK_COMPONENT_GROUPS.length;
+}
 
 export async function readPanelComponentCatalogue() {
   const { version, digest, catalogue: raw } = await readCurrentAppSdkComponents();
@@ -110,20 +125,47 @@ export async function countSdkComponents(owner: ProductOwner) {
   return { rows: [], total: (await readAuthorComponentCatalogue(owner)).size };
 }
 
-export async function listSdkComponents(owner: ProductOwner, locale: string | undefined, search?: string): Promise<PanelRecord[]> {
+export type ListSdkComponentsFilter = {
+  search?: string;
+  group?: AppsSdkComponentGroup;
+};
+
+export async function listSdkComponents(
+  owner: ProductOwner,
+  locale: string | undefined,
+  filter?: ListSdkComponentsFilter,
+): Promise<PanelRecord[]> {
   const components = await readAuthorComponentCatalogue(owner);
-  const term = search?.trim().toLowerCase();
+  const term = filter?.search?.trim().toLowerCase();
+  const groupFilter = filter?.group;
   const fieldLabels = {
     package: tForLocale(locale, "panels.sdkComponent.package"),
+    group: tForLocale(locale, "panels.sdkComponent.group"),
     meaning: tForLocale(locale, "panels.sdkComponent.meaning"),
   };
-  return [...components].flatMap(([primaryKey, { label, declaration: { meaning, effects }, packageName }]) => {
-    if (term && ![primaryKey, label, packageName, meaning, effects].some(text => text?.toLowerCase().includes(term))) return [];
-    return [{
-      primaryKey, label,
-      fields: { package: packageName ?? tForLocale(locale, "panels.sdkComponent.domain"), meaning }, fieldLabels,
-    }];
-  });
+  const matched: Array<{ rank: number; record: PanelRecord }> = [];
+  for (const [primaryKey, { label, declaration: { group, meaning, effects }, packageName }] of components) {
+    if (groupFilter && group !== groupFilter) continue;
+    const groupLabel = sdkComponentGroupLabel(group, locale);
+    if (term && ![primaryKey, label, packageName, group, groupLabel, meaning, effects].some(text => text?.toLowerCase().includes(term))) {
+      continue;
+    }
+    matched.push({
+      rank: sdkComponentGroupRank(group),
+      record: {
+        primaryKey,
+        label,
+        fields: {
+          package: packageName ?? tForLocale(locale, "panels.sdkComponent.domain"),
+          ...(groupLabel && { group: groupLabel }),
+          meaning,
+        },
+        fieldLabels,
+      },
+    });
+  }
+  matched.sort((left, right) => left.rank - right.rank);
+  return matched.map(({ record }) => record);
 }
 
 export async function readSdkComponent(owner: ProductOwner, componentId: string, locale: string | undefined) {
@@ -144,12 +186,14 @@ export async function readSdkComponentRecord(
     : declaration.role === "control"
       ? word("roleControl")
       : declaration.role;
+  const groupLabel = sdkComponentGroupLabel(declaration.group, locale);
   const fields: PanelRecord["fields"] = {
     componentId: declaration.componentId,
     package: packageLabel,
     ...(declaration.module && { module: declaration.module }),
     ...(declaration.exportName && { exportName: declaration.exportName }),
     role: roleLabel,
+    ...(groupLabel && { group: groupLabel }),
     meaning: declaration.meaning,
     ...(declaration.effects && { effects: declaration.effects }),
   };
@@ -169,6 +213,7 @@ export async function readSdkComponentRecord(
       module: word("module"),
       exportName: word("exportName"),
       role: word("role"),
+      group: word("group"),
       bindsElement: word("bindsElement"),
       meaning: word("meaning"),
       effects: word("effects"),

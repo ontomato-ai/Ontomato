@@ -723,6 +723,15 @@ test("metric and function catalogue queries bind owner filters to enum inputs", 
   assert.equal(panelReadInputMatches("metricViewStatus", { kind: "scalar", type: "string" }), true);
   assert.equal(panelReadInputMatches("metricViewOrigin", { kind: "scalar", type: "string" }), true);
   assert.equal(panelReadInputMatches("functionOperation", { kind: "scalar", type: "string" }), true);
+  assert.equal(panelReadInputMatches("sdkComponentGroup", { kind: "scalar", type: "string" }), true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...list,
+    data: { rows: { source: { type: platformType("platform:SDKComponent") }, read: "catalogue", params: { group: { literal: "list" } } } },
+  }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...list,
+    data: { rows: { source: { type: platformType("platform:SDKComponent") }, read: "catalogue", params: { group: { literal: "unknown" } } } },
+  }).success, false);
 });
 
 test("audit log queries bind filters to string inputs", () => {

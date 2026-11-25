@@ -14,6 +14,18 @@ import { mountPanel, panelAddress, usePanelBack, usePanelContext, usePanelOutput
 /** The capability map's type mode, opened at the platform's SDK component class. */
 const CAPABILITY_MAP = "/ontology/assets/capability-map";
 const COMPONENT_CLASS = "platform:SDKComponent";
+const PURPOSE_GROUPS = [
+  "list",
+  "detail",
+  "form",
+  "action",
+  "chart",
+  "graph",
+  "content",
+  "conversation",
+  "layout",
+];
+const PURPOSE_GROUP_SET = new Set(PURPOSE_GROUPS);
 
 /** Locate the nearest scrollable ancestor of the panel root, falling back to the document scrolling element. */
 function findScrollContainer(start) {
@@ -40,6 +52,25 @@ await mountPanel({
       get: () => String(instance.state.values.value.search ?? ""),
       set: (value) => instance.state.set("search", value || null),
     });
+
+    const group = computed({
+      get: () => {
+        const current = instance.state.values.value.group;
+        return typeof current === "string" && PURPOSE_GROUP_SET.has(current) ? current : "all";
+      },
+      set: (value) => {
+        instance.state.set("group", typeof value === "string" && PURPOSE_GROUP_SET.has(value) ? value : null);
+      },
+    });
+
+    const groupOptions = computed(() => [
+      { value: "all", label: t("components.group.all") },
+      ...PURPOSE_GROUPS.map((key) => ({ value: key, label: t(`components.group.${key}`) })),
+    ]);
+
+    function clearFilters() {
+      instance.state.setState({ search: null, group: null });
+    }
 
     // `catalogue` declares server-side `search`, so ObjectList leaves `filteredCount` null and reports `loadedCount`.
     const filteredCount = usePanelOutput("list", "filteredCount");
@@ -128,6 +159,9 @@ await mountPanel({
     return {
       rootRef,
       search,
+      group,
+      groupOptions,
+      clearFilters,
       countText,
       selectedKey,
       recordStatus,

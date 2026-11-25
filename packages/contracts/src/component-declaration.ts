@@ -51,4 +51,18 @@ export const componentDeclarationBase = <Data extends z.ZodTypeAny, Input extend
   }).strict(),
 }).strict();
 
+export const appsSdkComponentGroupSchema = z.enum([
+  "list",
+  "detail",
+  "form",
+  "action",
+  "chart",
+  "graph",
+  "content",
+  "conversation",
+  "layout",
+]);
+export const APPS_SDK_COMPONENT_GROUPS = appsSdkComponentGroupSchema.options;
+export type AppsSdkComponentGroup = z.infer<typeof appsSdkComponentGroupSchema>;
+
 export type { ComponentDeclaration } from "./apps-sdk";
