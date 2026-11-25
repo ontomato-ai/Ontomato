@@ -395,10 +395,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [SDK_COMPONENT]: {
       count: () => countSdkComponents(owner),
-      catalogue: (_selection, params) => listSdkComponents(owner, viewer.locale, {
-        search: panelReadParameterSchemas.keyword.optional().parse(params.search),
-        group: panelReadParameterSchemas.sdkComponentGroup.optional().parse(params.group),
-      }),
+      catalogue: (_selection, params) => listSdkComponents(owner, viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
       definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer.locale),
       record: selection => readSdkComponentRecord(owner, selection.primaryKey!, viewer.locale),
       dataRows: selection => readSdkComponentDataRows(owner, selection.primaryKey!, viewer.locale),
