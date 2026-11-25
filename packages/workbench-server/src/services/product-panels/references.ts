@@ -320,6 +320,15 @@ async function incompatiblePort(
   const normalizedWiring = toMemberWiring(wiring);
   for (const name of new Set([...Object.keys(wiring.inputs ?? {}), ...Object.keys(wiring.outputs ?? {})])) {
     for (const { datum, declaration } of reads) {
+      const selectionInput = "object" in datum.source && "input" in datum.source.object ? datum.source.object.input : undefined;
+      if (
+        !Object.hasOwn(datum.params, name)
+        && (name === selectionInput
+          || (declaration.parameterMode === "owner"
+            && (Object.hasOwn(target.inputs, name) || Object.hasOwn(target.outputs, name))))
+      ) {
+        continue;
+      }
       const binding = authoredReadParameterSource(datum.params, name, normalizedWiring);
       const parameter = panelReadParameterId(declaration, name);
       if (!binding || !parameter || (!("state" in binding) && !("output" in binding))) continue;
