@@ -29,5 +29,7 @@
   "opsRunsStart": { "id": "ops.autotest.runs.start", "access": "change" },
   "opsRunsStop": { "id": "ops.autotest.runs.stop", "access": "change" },
   "opsRunsRetention": { "id": "ops.autotest.runs.retention.change", "access": "change" },
-  "opsRunsDelete": { "id": "ops.autotest.runs.delete", "access": "change" }
+  "opsRunsDelete": { "id": "ops.autotest.runs.delete", "access": "change" },
+  "platformAssetsSynchronize": { "id": "platform.assets.synchronize", "access": "change" },
+  "objectDetailsChange": { "id": "object-details.mapping.change", "access": "change" }
 }

@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java" }, apiBase: "/api" } }));
 vi.mock("../../../identity/management", () => ({ assertManagement: vi.fn(async () => undefined) }));
-vi.mock("../../../identity/installed", () => ({ assertPermission: vi.fn(async () => undefined) }));
 vi.mock("../../../product/installed", () => ({
   workbenchProduct: () => ({ analysisMcpServerName: "analysis-agents", opsMcpServerName: "ops-agent" }),
 }));

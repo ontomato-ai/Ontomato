@@ -54,9 +54,7 @@ import {
   REBUILD_VECTORS,
   TEST_MODEL_CONNECTION,
 } from "@ontomato/contracts/platform-object-types";
-import { assertPermission } from "../../identity/installed";
 import { tForLocale } from "../../i18n";
-import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import {
@@ -79,8 +77,7 @@ import type {
 
 /*
  * Domain model settings owner for the two platform-admin built-in panels (`model-connections` and `model-usage`).
- * Every read and write goes through Java `ModelSettingsController` and `BusinessConfigController` under the
- * `system-config` permission boundary, never directly to the LiteLLM gateway.
+ * Java's `ModelSettingsController` and `BusinessConfigController` authorize settings reads, writes, discovery, and tests.
  */
 
 const DOMAIN_KEY = "domain";
@@ -241,7 +238,13 @@ async function requestOwnerEnvelope(
     ? { method: method ?? "GET" }
     : { method: method ?? "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
   const response = await host.request(`${DATA_QUERY_GATEWAY}${path}`, init);
-  return { status: response.status, envelope: ownerEnvelopeSchema.parse(await response.json()) };
+  const envelope = ownerEnvelopeSchema.parse(await response.json());
+  const { status } = response;
+  if (status === 401 || status === 403) {
+    const code = typeof envelope.code === "string" ? envelope.code : (status === 401 ? "UNAUTHENTICATED" : "FORBIDDEN");
+    throw new HttpError(status, envelope.message ?? `Owner request failed: ${path}`, code);
+  }
+  return { status, envelope };
 }
 
 async function ownerData<T>(
@@ -270,34 +273,28 @@ async function ownerWrite(
   return { ok: true, data: envelope.data };
 }
 
-async function readSettings(host: DataQueryOperationHost, credentials: AssistantCredentials): Promise<ModelSettingsData> {
-  await assertPermission(credentials, ["system-config"]);
+async function readSettings(host: DataQueryOperationHost): Promise<ModelSettingsData> {
   return ownerData(host, "/model-settings", modelSettingsSchema);
 }
 
 async function saveSettings(
   host: DataQueryOperationHost,
-  credentials: AssistantCredentials,
   write: ModelSettingsWrite,
 ): Promise<{ ok: true; data: ModelSettingsData } | { ok: false; outcome: Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }> }> {
-  await assertPermission(credentials, ["system-config"]);
   const result = await ownerWrite(host, "/model-settings/save", write, "MODEL_SETTINGS_SAVE_FAILED", "Unable to save model settings");
   if (!result.ok) return result;
   return { ok: true, data: modelSettingsSchema.parse(result.data) };
 }
 
-async function readOntologyAgents(host: DataQueryOperationHost, credentials: AssistantCredentials): Promise<OntologyAgentModel[]> {
-  await assertPermission(credentials, ["system-config"]);
+async function readOntologyAgents(host: DataQueryOperationHost): Promise<OntologyAgentModel[]> {
   return (await ownerData(host, "/ontology/ai/agent-models", ontologyAgentModelsSchema)).agents;
 }
 
 async function saveOntologyAgentModel(
   host: DataQueryOperationHost,
-  credentials: AssistantCredentials,
   agentId: string,
   modelId: string | null,
 ): Promise<{ ok: true; data: OntologyAgentModel } | { ok: false; outcome: Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }> }> {
-  await assertPermission(credentials, ["system-config"]);
   const body = ontologyAgentModelWriteSchema.parse({ modelSelection: { modelId } });
   const { envelope } = await requestOwnerEnvelope(
     host,
@@ -311,8 +308,7 @@ async function saveOntologyAgentModel(
   return { ok: true, data: ontologyAgentModelSchema.parse(envelope.data) };
 }
 
-async function readVectorRebuild(host: DataQueryOperationHost, credentials: AssistantCredentials): Promise<VectorRebuildStatus> {
-  await assertPermission(credentials, ["system-config"]);
+async function readVectorRebuild(host: DataQueryOperationHost): Promise<VectorRebuildStatus> {
   return ownerData(host, "/businessConfig/vectorRebuildStatus", vectorRebuildStatusSchema);
 }
 
@@ -980,36 +976,36 @@ export function createModelConnectionReads(actor: PanelOperationActor) {
 
   return {
     async list(): Promise<PanelRecord[]> {
-      const settings = await readSettings(host, actor.credentials);
+      const settings = await readSettings(host);
       return Object.entries(settings.connections).map(([name, connection]) =>
         connectionRecord(name, connection, settings, locale));
     },
 
     async record(primaryKey: string): Promise<PanelRecord> {
-      const settings = await readSettings(host, actor.credentials);
+      const settings = await readSettings(host);
       const connection = settings.connections[primaryKey];
       if (!connection) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
       return connectionRecord(primaryKey, connection, settings, locale);
     },
 
     async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
-      const settings = await readSettings(host, actor.credentials);
+      const settings = await readSettings(host);
       if (!settings.connections[primaryKey]) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
       return buildConnectionForm(false, primaryKey, settings, inputs, locale);
     },
 
     async createForm(inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
-      const settings = await readSettings(host, actor.credentials);
+      const settings = await readSettings(host);
       return buildConnectionForm(true, null, settings, inputs, locale);
     },
 
     async createModelForm(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
-      const settings = await readSettings(host, actor.credentials);
+      const settings = await readSettings(host);
       return buildModelForm(primaryKey, null, settings, inputs, locale);
     },
 
     async models(primaryKey: string): Promise<PanelRecord[]> {
-      const settings = await readSettings(host, actor.credentials);
+      const settings = await readSettings(host);
       if (!settings.connections[primaryKey]) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
       return modelsForConnection(settings, primaryKey).map(([modelName, entry]): PanelRecord => {
         const defaultTag = modelName === settings.defaultModel
@@ -1043,8 +1039,8 @@ export function createModelConnectionReads(actor: PanelOperationActor) {
 
     async usages(primaryKey: string): Promise<PanelRecord[]> {
       const [settings, agents] = await Promise.all([
-        readSettings(host, actor.credentials),
-        readOntologyAgents(host, actor.credentials),
+        readSettings(host),
+        readOntologyAgents(host),
       ]);
       if (!settings.connections[primaryKey]) throw new HttpError(404, `Connection '${primaryKey}' not found`, "NOT_FOUND");
       const names = new Set(modelsForConnection(settings, primaryKey).map(([modelName]) => modelName));
@@ -1095,7 +1091,7 @@ export function createModelEntryReads(actor: PanelOperationActor) {
 
   return {
     async record(primaryKey: string): Promise<PanelRecord> {
-      const settings = await readSettings(host, actor.credentials);
+      const settings = await readSettings(host);
       const entry = settings.models[primaryKey];
       if (!entry) throw new HttpError(404, `Model '${primaryKey}' not found`, "NOT_FOUND");
       return {
@@ -1118,7 +1114,7 @@ export function createModelEntryReads(actor: PanelOperationActor) {
     },
 
     async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
-      const settings = await readSettings(host, actor.credentials);
+      const settings = await readSettings(host);
       const entry = settings.models[primaryKey];
       if (!entry) throw new HttpError(404, `Model '${primaryKey}' not found`, "NOT_FOUND");
       return buildModelForm(entry.connection, primaryKey, settings, inputs, locale);
@@ -1244,8 +1240,8 @@ export function createModelUsageReads(actor: PanelOperationActor) {
     async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {
       requireDomainKey(primaryKey);
       const [settings, ontologyAgents] = await Promise.all([
-        readSettings(host, actor.credentials),
-        readOntologyAgents(host, actor.credentials),
+        readSettings(host),
+        readOntologyAgents(host),
       ]);
       const tasks = backgroundTaskAgents(ontologyAgents);
       const chatModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "chat");
@@ -1431,7 +1427,7 @@ export function createModelUsageReads(actor: PanelOperationActor) {
 
     async vectorRebuild(primaryKey: string): Promise<PanelRecord> {
       requireDomainKey(primaryKey);
-      const status = await readVectorRebuild(host, actor.credentials);
+      const status = await readVectorRebuild(host);
       const state = status.state ?? "";
       const stateLabel = status.configured && status.state
         ? t(`panels.modelSettings.vectorRebuild.states.${status.state}`)
@@ -1493,8 +1489,8 @@ const deleteConnectionImpact: PanelImpactInspector = {
   async inspect(host, calls) {
     const target = calls[0]!.target as PanelRecordTarget;
     const [settings, agents] = await Promise.all([
-      readSettings(host, host.executor.credentials),
-      readOntologyAgents(host, host.executor.credentials),
+      readSettings(host),
+      readOntologyAgents(host),
     ]);
     const removedModels = modelsForConnection(settings, target.primaryKey).map(([name]) => name);
     const removedSet = new Set(removedModels);
@@ -1526,8 +1522,8 @@ const deleteModelImpact: PanelImpactInspector = {
   async inspect(host, calls) {
     const target = calls[0]!.target as PanelRecordTarget;
     const [settings, agents] = await Promise.all([
-      readSettings(host, host.executor.credentials),
-      readOntologyAgents(host, host.executor.credentials),
+      readSettings(host),
+      readOntologyAgents(host),
     ]);
     const notes: string[] = [];
     if (settings.defaultModel === target.primaryKey) {
@@ -1556,8 +1552,8 @@ const saveModelImpact: PanelImpactInspector = {
     if (!call.target || call.target.kind !== "object") return null;
     const currentName = call.target.primaryKey;
     const [settings, agents] = await Promise.all([
-      readSettings(host, host.executor.credentials),
-      readOntologyAgents(host, host.executor.credentials),
+      readSettings(host),
+      readOntologyAgents(host),
     ]);
     const existing = settings.models[currentName];
     if (!existing) return null;
@@ -1611,7 +1607,7 @@ const saveModelImpact: PanelImpactInspector = {
 const saveUsageImpact: PanelImpactInspector = {
   handlerRef: `${SAVE_USAGE_OP}.inspect-impact`,
   async inspect(host, calls) {
-    const settings = await readSettings(host, host.executor.credentials);
+    const settings = await readSettings(host);
     const { values, submittedFields } = saveInputSchema.parse(calls[0]!.input);
     const evaluated = parseUsageDraft(values, settings, new Map(), submittedFields, host.locale);
     if (!evaluated.next || !evaluated.writesDefaults) return null;
@@ -1646,7 +1642,7 @@ const saveUsageImpact: PanelImpactInspector = {
 const rebuildVectorsImpact: PanelImpactInspector = {
   handlerRef: `${REBUILD_VECTORS}.inspect-impact`,
   async inspect(host) {
-    const status = await readVectorRebuild(host, host.executor.credentials);
+    const status = await readVectorRebuild(host);
     if (status.state !== "PENDING") return null;
     return {
       summary: tForLocale(host.locale, "panels.modelSettings.impact.rebuildVectors"),
@@ -1680,7 +1676,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     draftInput: (input) => saveInputSchema.parse(input).values,
     create: true,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      const settings = await readSettings(host, host.executor.credentials);
+      const settings = await readSettings(host);
       const { values } = saveInputSchema.parse(input);
       const creating = target.kind === "draft";
       const existingName = target.kind === "object" ? target.primaryKey : null;
@@ -1703,7 +1699,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       if (!checked.success) {
         return { kind: "refusal", code: "INVALID_MODEL_SETTINGS", message: checked.error.issues[0]?.message ?? "Invalid model settings" };
       }
-      const saved = await saveSettings(host, host.executor.credentials, checked.data);
+      const saved = await saveSettings(host, checked.data);
       if (!saved.ok) return saved.outcome;
       return {
         kind: "success",
@@ -1729,7 +1725,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     targetLabel: async (_host, target) => target.primaryKey,
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Deleting a connection requires a selected connection");
-      const settings = await readSettings(host, host.executor.credentials);
+      const settings = await readSettings(host);
       if (!settings.connections[target.primaryKey]) {
         return { kind: "refusal", code: "NOT_FOUND", message: `Connection '${target.primaryKey}' not found` };
       }
@@ -1744,7 +1740,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       }
       if (next.defaultModel && removed.has(next.defaultModel)) next.defaultModel = null;
       if (next.embeddingModel && removed.has(next.embeddingModel)) next.embeddingModel = null;
-      const saved = await saveSettings(host, host.executor.credentials, next);
+      const saved = await saveSettings(host, next);
       if (!saved.ok) return saved.outcome;
       return {
         kind: "success",
@@ -1768,7 +1764,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     inputSchema: discoverInputSchema,
     resultSchema: z.object({ kind: z.literal("json"), value: runtimeModelDiscoveryResponseSchema }).strict(),
     async execute(host: PanelOperationHost, call) {
-      const settings = await readSettings(host, host.executor.credentials);
+      const settings = await readSettings(host);
       const { draft } = discoverInputSchema.parse(call.input);
       const request = buildConnectionDraftFromForm(draft, settings, host.locale);
       const value = await ownerData(host, "/model-settings/discover", runtimeModelDiscoveryResponseSchema, request);
@@ -1787,7 +1783,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     inputSchema: testInputSchema,
     resultSchema: z.object({ kind: z.literal("json"), value: runtimeModelTestResponseSchema }).strict(),
     async execute(host: PanelOperationHost, call) {
-      const settings = await readSettings(host, host.executor.credentials);
+      const settings = await readSettings(host);
       const parsed = testInputSchema.parse(call.input);
       let connectionName: string;
       let connection: ModelConnectionWrite;
@@ -1835,7 +1831,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     draftInput: (input) => saveInputSchema.parse(input).values,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Adding a model requires a selected connection");
-      const settings = await readSettings(host, host.executor.credentials);
+      const settings = await readSettings(host);
       if (!settings.connections[target.primaryKey]) {
         return { kind: "refusal", code: "NOT_FOUND", message: `Connection '${target.primaryKey}' not found` };
       }
@@ -1855,7 +1851,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       if (!checked.success) {
         return { kind: "refusal", code: "INVALID_MODEL_SETTINGS", message: checked.error.issues[0]?.message ?? "Invalid model settings" };
       }
-      const saved = await saveSettings(host, host.executor.credentials, checked.data);
+      const saved = await saveSettings(host, checked.data);
       if (!saved.ok) return saved.outcome;
       return {
         kind: "success",
@@ -1880,7 +1876,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     inspectImpact: saveModelImpact,
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Updating a model requires a selected model");
-      const settings = await readSettings(host, host.executor.credentials);
+      const settings = await readSettings(host);
       const existing = settings.models[target.primaryKey];
       if (!existing) return { kind: "refusal", code: "NOT_FOUND", message: `Model '${target.primaryKey}' not found` };
       if (!settings.connections[existing.connection]) {
@@ -1911,7 +1907,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       if (!checked.success) {
         return { kind: "refusal", code: "INVALID_MODEL_SETTINGS", message: checked.error.issues[0]?.message ?? "Invalid model settings" };
       }
-      const saved = await saveSettings(host, host.executor.credentials, checked.data);
+      const saved = await saveSettings(host, checked.data);
       if (!saved.ok) return saved.outcome;
       return {
         kind: "success",
@@ -1936,7 +1932,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     targetLabel: async (_host, target) => target.primaryKey,
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Deleting a model requires a selected model");
-      const settings = await readSettings(host, host.executor.credentials);
+      const settings = await readSettings(host);
       if (!settings.models[target.primaryKey]) {
         return { kind: "refusal", code: "NOT_FOUND", message: `Model '${target.primaryKey}' not found` };
       }
@@ -1944,7 +1940,7 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       delete next.models[target.primaryKey];
       if (next.defaultModel === target.primaryKey) next.defaultModel = null;
       if (next.embeddingModel === target.primaryKey) next.embeddingModel = null;
-      const saved = await saveSettings(host, host.executor.credentials, next);
+      const saved = await saveSettings(host, next);
       if (!saved.ok) return saved.outcome;
       return {
         kind: "success",
@@ -1971,8 +1967,8 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     inspectImpact: saveUsageImpact,
     async execute(host: PanelOperationHost, _target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const [settings, ontologyAgents] = await Promise.all([
-        readSettings(host, host.executor.credentials),
-        readOntologyAgents(host, host.executor.credentials),
+        readSettings(host),
+        readOntologyAgents(host),
       ]);
       const tasks = backgroundTaskAgents(ontologyAgents);
       const { values, submittedFields } = saveInputSchema.parse(input);
@@ -1989,13 +1985,13 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       const defaultsChanged = evaluated.writesDefaults
         && (evaluated.next.defaultModel !== settings.defaultModel || evaluated.next.embeddingModel !== settings.embeddingModel);
       if (defaultsChanged) {
-        const saved = await saveSettings(host, host.executor.credentials, evaluated.next);
+        const saved = await saveSettings(host, evaluated.next);
         if (!saved.ok) return saved.outcome;
         savedSettings = saved.data;
       }
       const updatedTasks = new Map(tasks);
       for (const update of evaluated.taskUpdates) {
-        const savedTask = await saveOntologyAgentModel(host, host.executor.credentials, update.agent.id, update.modelId);
+        const savedTask = await saveOntologyAgentModel(host, update.agent.id, update.modelId);
         if (!savedTask.ok) return savedTask.outcome;
         updatedTasks.set(update.kind, savedTask.data);
       }
@@ -2021,7 +2017,6 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     targetLabel: async (host) => tForLocale(host.locale, "panels.modelSettings.usageTitle"),
     inspectImpact: rebuildVectorsImpact,
     async execute(host: PanelOperationHost): Promise<SinglePanelOperationOutcome> {
-      await assertPermission(host.executor.credentials, ["system-config"]);
       const result = await ownerWrite(host, "/businessConfig/rebuildVectors", {}, "VECTOR_REBUILD_FAILED", "Unable to start vector rebuild");
       if (!result.ok) return result.outcome;
       return { kind: "success", data: {}, affected: affected(MODEL_USAGE, DOMAIN_KEY, [MODEL_USAGE]) };
@@ -2041,7 +2036,6 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     targetInput: "usage",
     targetLabel: async (host) => tForLocale(host.locale, "panels.modelSettings.usageTitle"),
     async execute(host: PanelOperationHost): Promise<SinglePanelOperationOutcome> {
-      await assertPermission(host.executor.credentials, ["system-config"]);
       const result = await ownerWrite(host, "/businessConfig/pauseVectorRebuild", {}, "VECTOR_REBUILD_PAUSE_FAILED", "Unable to pause vector rebuild");
       if (!result.ok) return result.outcome;
       return { kind: "success", data: {}, affected: affected(MODEL_USAGE, DOMAIN_KEY, [MODEL_USAGE]) };

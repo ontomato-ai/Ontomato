@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
   permission: vi.fn(), getMapping: vi.fn(), getPanel: vi.fn(), allowed: vi.fn(),
   set: vi.fn(), clear: vi.fn(),
 }));
-vi.mock("../../../identity/installed", () => ({ assertPermission: state.permission }));
+vi.mock("../../../identity/management", () => ({ assertManagement: state.permission }));
 vi.mock("../object-detail", () => ({
   findObjectDetailPanelId: state.getMapping, findDetailPanel: state.getPanel,
 }));

@@ -1,9 +1,14 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 import {productAssetInputSchema,productQuerySchema} from '@ontomato/contracts/product-assets';
-const mocks=vi.hoisted(()=>({query:vi.fn(),validate:vi.fn(),get:vi.fn()}));
-vi.mock('../../../utils/backend-client',async importOriginal=>({...await importOriginal<typeof import('../../../utils/backend-client')>(),backendGet:mocks.get,buildBackendHeaders:(token:string)=>({tk:token})}));
+import {workbenchManagement} from '@ontomato/contracts/workbench-management';
+import {configureI18n} from '../../../i18n';
+import {en,enLocaleMeta} from '../../../i18n/locales/en';
+import {BackendResponseError} from '../../../utils/backend-client';
+import {HttpError} from '../../../utils/errors';
+const mocks=vi.hoisted(()=>({query:vi.fn(),validate:vi.fn(),get:vi.fn(),post:vi.fn()}));
+vi.mock('../../../utils/backend-client',async importOriginal=>({...await importOriginal<typeof import('../../../utils/backend-client')>(),backendGet:mocks.get,backendPost:mocks.post}));
 vi.mock('../../../core/skills/registry/manager',()=>({skillRegistryManager:{forDomain:vi.fn()}}));
-vi.mock('../../../identity/installed',()=>({requirePermission:()=> (_req:unknown,_res:unknown,next:()=>void)=>next(),workbenchIdentity:()=>({requireDomainId:(identity:{domainId:string})=>identity.domainId})}));
+vi.mock('../../../identity/installed',()=>({workbenchIdentity:()=>({requireDomainId:(identity:{domainId:string})=>identity.domainId})}));
 const access=vi.hoisted(()=>({use:new Set<string>(),edit:new Set<string>()}));
 vi.mock('../grants',()=>({withProductGrants:async(_owner:unknown,action:()=>unknown)=>action(),currentProductGrants:()=>access,refreshProductGrants:vi.fn()}));
 vi.mock('../../product-governance/grants',()=>({registerProductResource:async(_owner:unknown,id:string)=>{access.use.add(id);access.edit.add(id);},productGrantIdsForOwner:async(_owner:unknown,verb:string)=>[...access[verb==='edit'?'edit':'use']],shareProductResource:vi.fn()}));
@@ -12,10 +17,61 @@ vi.mock('../../../infrastructure/postgres-transaction',()=>({transaction:async(f
 vi.mock('../validation',()=>({validateProduct:mocks.validate,validatePageBindings:vi.fn()}));
 vi.mock('../ontology',()=>({ontologyRegistration:()=>null,synchronizeProductOntology:async()=>{}}));
 import {saveProduct,getProduct,getApplicationProduct} from '../store';
+configureI18n({
+  defaultLocale: 'en', appTextLocale: 'en', languageSwitchEnabled: false,
+  packs: { en: { ...enLocaleMeta, messages: en } },
+});
 const owner={domainId:'one',userId:'alice'},credentials={token:'test-caller'};
 const input=()=>productAssetInputSchema.parse({name:'Text',document:{kind:'widget',widget:{id:'text',kind:'text',title:'Note',span:12,text:'Hello'}}});
 beforeEach(()=>{mocks.query.mockReset();mocks.validate.mockReset();mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{entry:{renderer:'native'}}})});access.use=new Set(['shared','home','hidden','chart']);access.edit=new Set(['home','chart']);});
 describe('product mutation boundary',()=>{
+  it('requires the platform synchronization operation and application entry access before synchronizing', async () => {
+    const express = (await import('express')).default;
+    const {createServer} = await import('node:http');
+    const router = (await import('../../../api/routes/product-assets')).default;
+    const synchronize = vi.spyOn(await import('../platform-assets'), 'synchronizePlatformAssets')
+      .mockResolvedValue({ created: ['platform-home'] });
+    const appAccess = vi.spyOn(await import('../../app-builder/access'), 'assertAppBuilderAccess')
+      .mockRejectedValueOnce(new HttpError(403, 'Application access denied', 'FORBIDDEN'))
+      .mockResolvedValue([]);
+    mocks.post.mockReset()
+      .mockRejectedValueOnce(new BackendResponseError(403, JSON.stringify({ message: 'Synchronization denied' })))
+      .mockResolvedValue({ status: 204, text: '' });
+    vi.stubEnv('ONTOMATO_QUERY_SERVICE_TOKEN', 'workbench-test');
+    const app = express().use(express.json()).use((req, _res, next) => {
+      Object.assign(req, owner, credentials);
+      next();
+    }).use('/api/product-assets', router);
+    const server = createServer(app);
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}/api/product-assets/synchronize-platform`;
+    try {
+      expect((await fetch(url, { method: 'POST' })).status).toBe(403);
+      expect(mocks.post).toHaveBeenCalledWith(
+        '/internal/workbench-management/require', expect.stringContaining('/internal/workbench-management/require'),
+        { operationId: workbenchManagement.platformAssetsSynchronize.id, domainId: owner.domainId },
+        expect.objectContaining({ headers: expect.objectContaining({
+          tk: credentials.token, 'X-Ontomato-Query-Service-Token': 'workbench-test',
+        }) }),
+      );
+      expect(appAccess).not.toHaveBeenCalled();
+      expect((await fetch(url, { method: 'POST' })).status).toBe(403);
+      expect(synchronize).not.toHaveBeenCalled();
+
+      const response = await fetch(url, { method: 'POST' });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ created: ['platform-home'] });
+      expect(synchronize).toHaveBeenCalledWith(owner, expect.objectContaining(credentials));
+    } finally {
+      synchronize.mockRestore();
+      appAccess.mockRestore();
+      mocks.post.mockReset();
+      vi.unstubAllEnvs();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  });
+
   it('rejects direct old HTTP writes and publication for a panels application before legacy side effects',async()=>{
     mocks.query.mockImplementation(async(sql:string)=>({rows:sql==='SELECT id,document FROM product_assets WHERE domain_id=$1'?[{id:'old-root',document:{kind:'application',applicationId:'app-panel-a',children:[]}}]:[]}));
     mocks.get.mockResolvedValue({text:JSON.stringify({success:true,data:{entry:{renderer:'panels'}}})});

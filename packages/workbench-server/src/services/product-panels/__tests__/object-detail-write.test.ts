@@ -5,7 +5,7 @@ import { clearObjectDetail, setObjectDetail } from "../object-detail-write";
 const state = vi.hoisted(() => ({
   assertPermission: vi.fn(), requireGrant: vi.fn(), requirePanel: vi.fn(), validate: vi.fn(), query: vi.fn(),
 }));
-vi.mock("../../../identity/installed", () => ({ assertPermission: state.assertPermission }));
+vi.mock("../../../identity/management", () => ({ assertManagement: state.assertPermission }));
 vi.mock("../../../infrastructure/postgres", () => ({ qualifiedTable: (table: string) => table }));
 vi.mock("../../../infrastructure/postgres-transaction", () => ({
   transaction: (callback: (client: { query: typeof state.query }) => Promise<void>) => callback({ query: state.query }),
@@ -30,7 +30,7 @@ it("authorizes only the new panel when replacing a binding and needs no panel gr
   await setObjectDetail(owner, viewer, "Customer", "new");
   await clearObjectDetail(owner, viewer, "Customer");
 
-  expect(state.assertPermission).toHaveBeenCalledWith(viewer, ["ontology-modeling"]);
+  expect(state.assertPermission).toHaveBeenCalledWith(expect.objectContaining({ id: "object-details.mapping.change" }), owner, viewer);
   expect(state.requireGrant.mock.calls).toEqual([["new", "use", viewer]]);
   expect(state.validate).toHaveBeenCalledWith(owner.domainId, "Customer", "new", expect.anything());
   expect(state.query.mock.calls).toHaveLength(2);

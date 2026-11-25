@@ -55,7 +55,7 @@ export const objectDetailOperations = [
     resultSchema,
     async unavailable({ executor, locale }, target) {
       const { primaryKey } = targetSchema.parse(target);
-      if (!await canConfigureObjectDetail(executor.credentials))
+      if (!await canConfigureObjectDetail(executor.owner, executor.credentials))
         return { reason: objectDetailText(locale, "configureForbidden") };
       if (await findObjectDetailPanelId(executor.owner.domainId, primaryKey) === null)
         return { reason: objectDetailText(locale, "unconfigured") };
