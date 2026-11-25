@@ -187,8 +187,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     return createSkillReadAdapter(owner, viewer, callerUserName);
   };
   const skills = async () => {
-    const { agentDefinitionPermissions } = await import("../assistant/definitions");
-    await assertPermission(viewer, agentDefinitionPermissions);
+    await assertPermission(viewer, ["analysis-agent"]);
     return skillLibrary();
   };
   const feedback = async () => {

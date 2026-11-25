@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-vi.mock("../../../identity/installed", () => ({ assertPermission: vi.fn() }));
+vi.mock("../authorization", () => ({ requireAgentCreation: vi.fn() }));
 vi.mock("../../../config/application", () => ({ config: { dataQuery: { baseUrl: "http://java" } } }));
 import { tmpdir } from "node:os";
 import { installContentLayout } from "../../../content/layout";
@@ -65,7 +65,7 @@ it("groups the form into the agent page's sections, each field under its own, wi
     ] },
   });
   expect(sectionOf).toEqual({
-    "/name": "basics", "/description": "basics", "/icon": "basics", "/enabled": "basics",
+    "/name": "basics", "/description": "basics", "/icon": "basics", "/enabled": "basics", "/publicationAccess/kind": "basics",
     "/engine": "model", "/modelSelection/modelId": "model", "/systemPrompt": "prompt",
     "/skills": "capabilities", "/enabledMcpServiceIds": "capabilities",
     "/executionUserId": "execution", "/classNames": "data",

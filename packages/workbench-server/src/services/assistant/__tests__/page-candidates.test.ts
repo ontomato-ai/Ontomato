@@ -25,7 +25,10 @@ const mocks = vi.hoisted(() => ({
   observeAccess: vi.fn<[], Promise<void>>(),
 }));
 
-vi.mock("../store", () => ({ assistantStore: { agents: mocks.agents, opsDiagnosis: mocks.opsDiagnosis, appBuilder: async () => undefined } }));
+vi.mock("../store", () => ({ assistantStore: { channelAgents: mocks.agents } }));
+vi.mock("../authorization", () => ({
+  allowedAgents: async (agents: AgentRow[]) => agents.filter(agent => Object.values(agentIds).includes(agent.id) || grantedIds.includes(agent.id)),
+}));
 vi.mock("../../../identity/installed", () => ({
   workbenchIdentity: () => ({ assertObserveAccess: mocks.observeAccess }),
 }));
@@ -97,7 +100,7 @@ function agentRow(
     description: "",
     icon: null,
     enabled: options.enabled ?? true,
-    execution_user_id: null,
+    owner_id: null, execution_user_id: null,
     system_prompt: "prompt",
     model_selection: { modelId: null },
     skills,
@@ -547,17 +550,17 @@ it("propagates source resolution errors instead of treating them as null", async
   ).rejects.toThrow("source owner unavailable");
 });
 
-it("gates ops-diagnosis by observe access and use grant in both unfiltered and observer page directories", async () => {
+it("uses only agent authorization for ops-diagnosis in chat and still verifies the page entrance", async () => {
   const { HttpError } = await import("../../../utils/errors");
   const opsId = "88888888-8888-4888-8888-888888888888";
   const builderId = "99999999-9999-4999-8999-999999999999";
   const opsTurnRef = protectedSkillRef("product-panels", domain, "builtin-product-ops-turn-evidence");
   const observerEntrance: PageSkillEntrance = { permissionCode: "observer", pageKey: "ops-turn-evidence" };
 
-  mocks.opsDiagnosis.mockResolvedValue(agentRow(opsId, "ops-diagnosis", [], { sortOrder: 3 }));
   mocks.agents.mockResolvedValue([
     agentRow(agentIds.regular, "regular", [], { sortOrder: 0 }),
     agentRow(builderId, "app-builder", [], { sortOrder: 2 }),
+    agentRow(opsId, "ops-diagnosis", [], { sortOrder: 3 }),
   ]);
   offerings = [
     ...offerings,
@@ -597,9 +600,9 @@ it("gates ops-diagnosis by observe access and use grant in both unfiltered and o
     });
   grantedIds = [...grantedIds, "builtin-product-ops-turn-evidence", opsId, builderId];
 
-  // Both gates granted: ops-diagnosis appears in unfiltered chat directory, app-builder never does.
+  // Both authorized system agents appear in the chat directory.
   const unfiltered = await listAssistantAgents(owner, credentials);
-  expect(unfiltered.agents.map((a) => a.id)).toEqual([agentIds.regular, opsId]);
+  expect(unfiltered.agents.map((a) => a.id)).toEqual([agentIds.regular, builderId, opsId]);
   expect(unfiltered.agents.find((a) => a.id === opsId)).toMatchObject({ kind: "ops-diagnosis" });
 
   // Observer page: ops-diagnosis is selected as defaultAgentId and exposed in presetAgentIds["ops-diagnosis"].
@@ -626,9 +629,9 @@ it("gates ops-diagnosis by observe access and use grant in both unfiltered and o
   expect(nonOpsPage.agents.map((a) => a.id)).toEqual([agentIds.regular]);
   expect(nonOpsPage.presetAgentIds).toEqual({ regular: agentIds.regular });
 
-  // Missing observe access: ops-diagnosis is hidden from both unfiltered and page-filtered directories.
+  // The legacy diagnose permission makes no difference to agent use or an already admitted page.
   mocks.observeAccess.mockRejectedValue(new HttpError(403, "Observe permission required", "FORBIDDEN"));
-  expect((await listAssistantAgents(owner, credentials)).agents.map((a) => a.id)).toEqual([agentIds.regular]);
+  expect((await listAssistantAgents(owner, credentials)).agents.map((a) => a.id)).toEqual([agentIds.regular, builderId, opsId]);
   const deniedObserverPage = await listAssistantAgents(
     owner,
     credentials,
@@ -638,11 +641,12 @@ it("gates ops-diagnosis by observe access and use grant in both unfiltered and o
       member: JSON.stringify({ source: opsSource, memberPath: [], ref: opsTurnRef }),
     }),
   );
-  expect(deniedObserverPage.agents.map((a) => a.id)).toEqual([agentIds.regular]);
-  expect(deniedObserverPage.presetAgentIds).toEqual({ regular: agentIds.regular });
+  expect(deniedObserverPage.agents.map((a) => a.id)).toEqual([agentIds.regular, opsId]);
+  expect(deniedObserverPage.presetAgentIds).toEqual({ regular: agentIds.regular, "ops-diagnosis": opsId });
+  expect(mocks.observeAccess).not.toHaveBeenCalled();
 
-  // Observe access granted, but product_grant(opsId, "use") revoked: ops-diagnosis is hidden.
+  // Revoking USE removes diagnosis from the directory.
   mocks.observeAccess.mockResolvedValue(undefined);
   grantedIds = grantedIds.filter((id) => id !== opsId);
-  expect((await listAssistantAgents(owner, credentials)).agents.map((a) => a.id)).toEqual([agentIds.regular]);
+  expect((await listAssistantAgents(owner, credentials)).agents.map((a) => a.id)).toEqual([agentIds.regular, builderId]);
 });

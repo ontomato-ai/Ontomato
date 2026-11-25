@@ -9,7 +9,7 @@ vi.mock("../../../i18n", () => ({ tForLocale: mocks.translate }));
 function agent(id: string, kind: string, name: string, enabled = true): AgentRow {
   return {
     id, kind, name, enabled, domain_id: "chosen-domain", description: "", icon: null, system_prompt: null,
-    execution_user_id: null, model_selection: { modelId: null }, skills: [], class_names: [],
+    owner_id: null, execution_user_id: null, model_selection: { modelId: null }, skills: [], class_names: [],
     enabled_mcp_service_ids: [], sort_order: 0,
   };
 }
